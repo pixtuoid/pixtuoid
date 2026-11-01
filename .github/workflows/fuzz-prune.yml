@@ -1,0 +1,31 @@
+name: fuzz prune
+
+# "If batch fuzzing is running, you must also run corpus pruning"
+# (google/clusterfuzzlite docs/running-clusterfuzzlite/github_actions.md). Its own
+# run, not a job of fuzz.yml's: each uploads one artifact per target under the same
+# name, and "Artifact names must be unique" within a run (actions/upload-artifact).
+on:
+  schedule:
+    - cron: "17 11 * * *" # daily 11:17 UTC, past fuzz.yml's run
+  workflow_dispatch:
+
+permissions: {}
+# As fuzz.yml's.
+cache-mode: none
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read # the corpus, another run's artifact
+    steps:
+      - uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: rust
+      - uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ github.token }}
+          language: rust
+          mode: prune
+          fuzz-seconds: 600

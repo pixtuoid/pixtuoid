@@ -289,7 +289,7 @@ type Decoded = (
 /// Everything the registry reads from a line, not only the line decoder: a
 /// daemon's envelopes decode to no `AgentEvent` by design (presence rides
 /// `presence_decoder`), and the watcher registers a `transcript` through
-/// `cwd_extractor` and `parent_extractor`, which the harness never calls — it
+/// `cwd_extractor` and `parent_extractor`, which `Drive` never calls — it
 /// seeds a fixed cwd and no parent. A hook envelope never meets them.
 /// Compared as rendered, the way a golden is: `PathBuf` equality drops a
 /// trailing slash, and grok's `workspaceRoot` fallback differs by exactly that.
@@ -309,11 +309,7 @@ fn events_of(source: &str, drive: &Drive, lines: &[Value], transcript: bool) -> 
         .collect();
     let presence = lines
         .iter()
-        .map(|line| {
-            let obj = line.as_object()?;
-            let src = obj.get(crate::source::decoder::SOURCE_STAMP)?.as_str()?;
-            registry::presence_decoder_for(src)?(obj).ok()
-        })
+        .map(|line| registry::presence_of(line.as_object()?)?.1.ok())
         .collect();
     let failures = |f: &[LineFailure]| f.iter().map(|x| format!("{x:?}")).collect::<Vec<_>>();
     (

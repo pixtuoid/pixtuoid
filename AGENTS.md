@@ -47,6 +47,7 @@ crates/   DAG: pixtuoid-core ← pixtuoid-scene ← {pixtuoid, pixtuoid-web, pix
 └── pixtuoid-hook/   tiny shim CC invokes — stdin JSON → socket/named pipe
 scripts/  gen-media.py (the ONE driver for the README's committed media and the site's CI-rendered demos), gen-art.py (the generated sprites: every @Nx + the 1x pieces it owns), each shipped plugin's selftest, and in lib/ its harness and the openclaw tier
 policy/   CI contracts no linter sees (jq over yq) + behavior tests of workflow shell
+fuzz/     cargo-fuzz targets over harness::Drive and remote, its own workspace; `.clusterfuzzlite/` builds them for fuzz.yml
 site/     Astro landing page; integrations/raycast/  Raycast extension
 ```
 
@@ -67,7 +68,7 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 - Fixtures are RECORDED, never composed (`just hermetic --record` for a scenario a profile records, else `just capture-fixture` — BILLED), and the recorder blanks every subtree no decoder reads (derived by probe, never listed); every scenario declares `provenance.json`. Rules: [`tests/sources/README.md`](crates/pixtuoid-core/tests/sources/README.md). `just restrip-fixtures` re-strips the committed corpus offline; `just corpus-all` censuses local corpora.
 - Visual verification for sprite work: snapshot example → `scripts/crop-snapshot.py` → READ the PNG; loop in `.claude/skills/beautify-decoration/SKILL.md`.
 - CI is the gate, and a green preflight is NOT a green PR. A PR's pushes run only the light tier; the full tier runs on `main`, and in the merge queue unless Mergify merges an up-to-date PR alone at the front directly (two-step CI).
-- Advisory (never gates): `just mutants`, `just bench`, `just bench-pacing`, CodSpeed.
+- Advisory (never gates): `just mutants`, `just bench`, `just bench-pacing`, CodSpeed, `fuzz.yml` (a crash's input is its run's `crashes-<target>` artifact; `just fuzz <target> <file>` replays it).
 - Fluency gate, local and pre-release (a wall-clock budget, so never CI): `just pace-check`; its runs and verdict in `scripts/pace-check.py`'s header.
 - Hooks: `git config core.hooksPath .githooks` once per clone; `just setup-tools` installs `mise.toml`'s tools and rust-analyzer (without it the agent LSP degrades to grep).
 - Release is a human step: [`CONTRIBUTING.md#releasing`](docs/CONTRIBUTING.md#releasing).

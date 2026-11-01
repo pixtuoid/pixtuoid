@@ -552,10 +552,15 @@ pub(crate) fn path_filter_for(source: &str) -> PathFilter {
 /// therefore never learns what makes two instances of a daemon different.
 pub(crate) type PresenceDecoder = fn(&HookObject) -> Result<crate::source::daemon::DecodedPresence>;
 
-/// The presence decoder for a daemon source, or `None` for an agent source.
+/// The daemon source stamped on a hook envelope with its decoded presence, or
+/// `None` for any other envelope, which belongs to the agent arms.
 #[cfg(any(feature = "native", feature = "harness"))]
-pub(crate) fn presence_decoder_for(source: &str) -> Option<PresenceDecoder> {
-    descriptor_for(source).and_then(|d| d.presence_decoder())
+pub(crate) fn presence_of(
+    obj: &HookObject,
+) -> Option<(&str, Result<crate::source::daemon::DecodedPresence>)> {
+    let source = obj.get(crate::source::decoder::SOURCE_STAMP)?.as_str()?;
+    let decode = descriptor_for(source)?.presence_decoder()?;
+    Some((source, decode(obj)))
 }
 
 /// Every registered daemon source paired with its presence-decay profile, so

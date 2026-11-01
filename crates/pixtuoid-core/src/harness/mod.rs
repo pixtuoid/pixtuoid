@@ -23,12 +23,14 @@ use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
 
-use crate::source::decoder::{LineDecoder, decode_hook_payload, display_safe};
+use crate::source::daemon::{PresenceMsg, apply_presence};
+use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
 
 mod captures;
+pub mod fuzz;
 pub mod hermetic;
 pub mod host;
 pub mod merge;
@@ -125,6 +127,9 @@ pub struct Driven {
     pub scene: SceneState,
     /// Every decoded event in wire order, seed first when there is one.
     pub events: Vec<AgentEvent>,
+    /// Every daemon envelope's presence deltas, which [`Drive::fold`] merges into
+    /// `scene` on their own channel, never through the reducer.
+    pub(crate) presence: Vec<PresenceMsg>,
     /// How many leading `events` are the first-sight SEED, not the wire's own
     /// output (0 or 1). A census must report [`Self::wire_events`] instead — the
     /// seed registers a slot unconditionally, so counting it scores garbage 1/1.
@@ -134,8 +139,8 @@ pub struct Driven {
     /// Lines the watcher skips too, outside the decoder contract: not UTF-8, or
     /// not JSON.
     pub unparseable: usize,
-    /// Hook lines the dispatcher refused. A refusal of bytes the source itself
-    /// wrote is drift in our decoder.
+    /// Hook lines the dispatcher or a daemon's presence decoder refused. A refusal
+    /// of bytes the source itself wrote is drift in our decoder.
     pub(crate) decode_errors: Vec<LineFailure>,
     /// Each slot's lifecycle classes, as each was first reached: the one record
     /// [`Self::reached`] unions.
@@ -151,6 +156,7 @@ impl Driven {
         Self {
             scene: SceneState::uniform(DRIVEN_DESKS),
             events: Vec::new(),
+            presence: Vec::new(),
             seed_events: 0,
             lines: 0,
             unparseable: 0,
@@ -257,8 +263,8 @@ enum Decode {
 
 impl Decode {
     /// A line's events, counted in `d`: blank, `None` uncounted; not JSON or
-    /// refused by the decoder, `None` counted as such. `parsed` reads the line
-    /// before the decoder takes it.
+    /// refused by the decoder, `None` counted as such; a daemon's, `None` with its
+    /// presence in `d`. `parsed` reads the line before the decoder takes it.
     fn line(
         &self,
         line: Option<&str>,
@@ -274,23 +280,35 @@ impl Decode {
             return None;
         };
         parsed(&v);
+        let refused = |d: &mut Driven, e: DecodeError| {
+            d.decode_errors.push(LineFailure {
+                line: d.lines,
+                shape: shape_of(line),
+                message: e.to_string(),
+            });
+        };
         match self {
             Self::Transcript {
                 decode,
                 source,
                 logical,
             } => Some(decode(logical, source, v)),
-            Self::Hooks => match decode_hook_payload(v) {
-                Ok(events) => Some(events),
-                Err(e) => {
-                    d.decode_errors.push(LineFailure {
-                        line: d.lines,
-                        shape: shape_of(line),
-                        message: e.to_string(),
-                    });
-                    None
+            Self::Hooks => {
+                if let Some((source, presence)) = v.as_object().and_then(registry::presence_of) {
+                    match presence {
+                        Ok(decoded) => d.presence.extend(decoded.into_msgs(source)),
+                        Err(e) => refused(d, e),
+                    }
+                    return None;
                 }
-            },
+                match decode_hook_payload(v) {
+                    Ok(events) => Some(events),
+                    Err(e) => {
+                        refused(d, e);
+                        None
+                    }
+                }
+            }
         }
     }
 }
@@ -332,8 +350,9 @@ impl Drive {
     }
 
     /// Drive hook envelopes through the shared `decode_hook_payload` on
-    /// `Transport::Hook`. Takes NO source: the dispatcher routes by the
-    /// envelope's own `_pixtuoid_source` stamp.
+    /// `Transport::Hook`, a daemon's through its presence decoder instead. Takes NO
+    /// source: the dispatcher routes by the envelope's own `_pixtuoid_source`
+    /// stamp.
     ///
     /// There is no seed here by construction — a hook for an unknown id
     /// REGISTERS it (hooks are proof of life), so hook bytes never need one.
@@ -452,6 +471,9 @@ impl Drive {
             reducer.tick(&mut d.scene, self.now + CASCADE_TICK);
             note_reached(&d.scene, &mut d.reaches);
         }
+        for msg in &d.presence {
+            apply_presence(&mut d.scene, &msg.key, msg.delta.clone(), self.now);
+        }
     }
 }
 
@@ -544,6 +566,22 @@ fn shape_of(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_daemon_envelope_reaches_the_scene_on_the_presence_channel() {
+        let up = r#"{"type":"gateway_start","gatewayPort":49242,"_pixtuoid_source":"openclaw"}"#;
+        let d = Drive::hooks().lines([up]);
+        assert_eq!(d.scene.daemons().count(), 1, "{d:?}");
+        assert!(d.events.is_empty(), "never an AgentEvent: {d:?}");
+    }
+
+    #[test]
+    fn a_daemon_envelope_its_decoder_refuses_is_a_decode_error() {
+        let bad = r#"{"gatewayPort":49242,"_pixtuoid_source":"openclaw"}"#;
+        let d = Drive::hooks().lines([bad]);
+        assert_eq!(d.decode_errors.len(), 1, "{d:?}");
+        assert_eq!(d.scene.daemons().count(), 0, "{d:?}");
+    }
 
     #[test]
     fn a_breadcrumb_a_decode_logs_is_part_of_what_it_decoded() {

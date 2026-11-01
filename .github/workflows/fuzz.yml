@@ -1,0 +1,63 @@
+name: fuzz
+
+# ClusterFuzzLite: a PR touching a fuzzed parser gets a short run off the corpus
+# main's long run grows. ADVISORY by construction, like mutants.yml: nothing
+# `needs:` it and no queue condition reads it, because a run's red can't convict
+# the PR it ran on. With no build of the base commits, which `cflite_build.yml`
+# would upload on every main push, a reproducible crash "was newly introduced"
+# (oss-fuzz infra/cifuzz/fuzz_target.py, `is_crash_novel`).
+#
+# A crash reads the same on either trigger: the run goes red and its
+# `crashes-<target>` artifact holds the input and stack, which `just fuzz` replays.
+# Nothing files an issue: GitHub notifies whoever last set the cron
+# (docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs).
+on:
+  pull_request:
+    # As ci.yml's.
+    types: [opened, synchronize, reopened]
+    paths:
+      - .clusterfuzzlite/**
+      - .github/workflows/fuzz.yml
+      - Cargo.lock
+      - Cargo.toml
+      - crates/pixtuoid-core/Cargo.toml
+      - crates/pixtuoid-core/src/harness/fuzz.rs
+      - crates/pixtuoid-core/src/harness/mod.rs
+      - crates/pixtuoid-core/src/remote.rs
+      - crates/pixtuoid-core/src/source/**
+      - crates/pixtuoid-core/src/state/**
+      - fuzz/**
+  schedule:
+    - cron: "17 9 * * *" # daily 09:17 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+# As scorecard.yml's: a scheduled run on main executes tree code under a third
+# party's action.
+cache-mode: none
+
+jobs:
+  fuzz:
+    # The queue's draft repeats a PR already fuzzed, and a bot's pin bump moves
+    # a version constant.
+    if: ${{ !startsWith(github.head_ref, 'mergify/merge-queue/') && !startsWith(github.head_ref, 'bot/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 30 || 100 }}
+    permissions:
+      actions: read # the corpus, another run's artifact
+    steps:
+      # No storage-repo, which needs a PAT: the corpus stays an artifact, and
+      # every run rebuilds the seeds it could lose to retention.
+      - uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: rust
+      - uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ github.token }}
+          language: rust
+          mode: ${{ github.event_name == 'pull_request' && 'code-change' || 'batch' }}
+          fuzz-seconds: ${{ github.event_name == 'pull_request' && 240 || 3600 }}

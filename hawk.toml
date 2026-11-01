@@ -13,3 +13,9 @@ crate = "pixtuoid_core"
 module = "remote"
 level = "expect"
 reason = "the wire's one definition, read by an app outside this workspace"
+
+[[exclude]]
+crate = "pixtuoid_core"
+module = "harness::fuzz"
+level = "expect"
+reason = "what the fuzz targets drive, a workspace of their own"

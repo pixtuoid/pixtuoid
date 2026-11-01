@@ -177,3 +177,5 @@ signal-hook        = "0.4"
 # keep the sums check testable.
 regex              = "1"
 sha2               = { version = "0.11", default-features = false }
+# The fuzz targets' mutator: rust-fuzz's book names it for `fuzz_mutator!`.
+mutatis            = { version = "0.5", features = ["std"] }

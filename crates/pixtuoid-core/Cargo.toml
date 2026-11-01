@@ -60,6 +60,8 @@ harness = [
     "dep:regex",
     # A command line always names a program (`harness::plan::Argv`).
     "dep:vec1",
+    # The fuzz targets' JSON mutator (`harness::fuzz`).
+    "dep:mutatis",
 ]
 
 [dependencies]
@@ -82,6 +84,7 @@ sha2        = { workspace = true, optional = true }
 syn         = { workspace = true, optional = true }
 # The id families a re-record may rename: `harness::captures::canonical_capture`.
 regex       = { workspace = true, optional = true }
+mutatis     = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

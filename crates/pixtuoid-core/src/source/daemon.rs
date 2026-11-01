@@ -131,6 +131,18 @@ pub struct DecodedPresence {
     pub updates: Vec<DaemonPresenceUpdate>,
 }
 
+#[cfg(any(feature = "native", feature = "harness"))]
+impl DecodedPresence {
+    /// Its deltas, each tagged with `source`'s instance they route to.
+    pub(crate) fn into_msgs(self, source: &str) -> impl Iterator<Item = PresenceMsg> {
+        let key = DaemonInstanceKey::new(source, self.instance);
+        self.updates.into_iter().map(move |delta| PresenceMsg {
+            key: key.clone(),
+            delta,
+        })
+    }
+}
+
 /// Per-daemon decay/stale knobs. A daemon has no per-session pid, so silence is
 /// the only abrupt-exit signal — these bound how long running/up linger without
 /// fresh deltas.

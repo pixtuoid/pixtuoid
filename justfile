@@ -54,15 +54,17 @@ WASM_CRATES := "pixtuoid-web pixtuoid-web-music"
 # workflow `run:` blocks go to actionlint, composite-action ones to
 # `actionlint-composites`. Both are shellcheck-only — shfmt cannot rewrite a
 # scalar in place — so adding a file here is not enough for embedded shell.
-SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh"
+SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh .clusterfuzzlite/*.sh"
 
 # The projects that run their own checkers (site/AGENTS.md,
 # integrations/raycast/AGENTS.md), as git pathspecs.
 SELF_GATED := "':!:site/' ':!:integrations/'"
 
 # The nightly the api-surface goldens are pinned to (rustdoc JSON is
-# nightly-only). Provisioned by `_api-toolchain`, which also fails while it
-# can't build what rust-toolchain.toml's release admits (`_toolchain-covers`).
+# nightly-only), which `fuzz` and .clusterfuzzlite/build.sh build on too.
+# Provisioned by `_nightly`, which also fails while it
+# can't build what rust-toolchain.toml's release admits (`_toolchain-covers`);
+# build.sh installs it itself, unchecked.
 API_NIGHTLY := "nightly-2026-10-22"
 
 # The cargo-public-api the api/ goldens are reproducible against — tool-exact:
@@ -483,13 +485,10 @@ api-surface mode="": _api-toolchain
 [group('rust')]
 api-surface-check: (api-surface "check")
 
-# Both halves of the goldens' reproducibility contract: refuse a mismatched
-# cargo-public-api, then self-provision the pinned nightly (rustdoc JSON is
-# nightly-only) if it isn't already installed, and refuse one older than
-# rust-toolchain.toml's release. The minimal profile carries rustdoc (bundled
-# with rustc), all cargo-public-api needs.
+# Both halves of the goldens' reproducibility contract: the pinned nightly, and
+# refuse a mismatched cargo-public-api.
 [private]
-_api-toolchain:
+_api-toolchain: _nightly
     #!/usr/bin/env bash
     set -euo pipefail
     have="$(cargo public-api --version | awk '{print $NF}')"
@@ -497,8 +496,16 @@ _api-toolchain:
         echo "error: cargo-public-api $have installed, goldens need {{ API_PUBLIC_API }} (just setup-tools)" >&2
         exit 1
     fi
+
+# Self-provision the pinned nightly if it isn't already installed, and refuse
+# one older than rust-toolchain.toml's release. The minimal profile carries
+# rustdoc (bundled with rustc), all cargo-public-api needs.
+[private]
+_nightly:
+    #!/usr/bin/env bash
+    set -euo pipefail
     rustup toolchain list | grep -q '{{ API_NIGHTLY }}' || {
-        echo "installing {{ API_NIGHTLY }} (api-surface needs nightly rustdoc JSON)…" >&2
+        echo "installing {{ API_NIGHTLY }}…" >&2
         rustup toolchain install {{ API_NIGHTLY }} --profile minimal
     }
     just _toolchain-covers "$(rustup run {{ API_NIGHTLY }} rustc --version | cut -d' ' -f2)" API_NIGHTLY
@@ -628,6 +635,12 @@ mutants *args:
         exit 1
     fi
     TZ={{ TEST_TZ }} cargo mutants --in-diff target/mutants.diff "$@"
+
+[doc('Fuzz `target` (hook, transcript, remote), or replay a crash file — advisory')]
+[group('rust')]
+fuzz target *args: _nightly
+    cp Cargo.lock fuzz/Cargo.lock
+    cargo +{{ API_NIGHTLY }} fuzz run "$@"
 
 # Record a conformance fixture from bytes a real CLI actually sent, the CLI run
 # under a throwaway home holding only the built pixtuoid's hook for it and a

@@ -2081,6 +2081,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mutatis"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a61dd769784c9841c5020894ef75c02b3e747b4818e3c74f5e5362e50dfe5f5b"
+dependencies = [
+ "rand 0.8.8",
+]
+
+[[package]]
 name = "naga"
 version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2997,6 +3006,7 @@ dependencies = [
  "filetime",
  "insta",
  "libc",
+ "mutatis",
  "notify",
  "pixtuoid-core",
  "portable-pty",
