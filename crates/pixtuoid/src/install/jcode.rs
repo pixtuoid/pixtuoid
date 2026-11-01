@@ -2,13 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use toml::{Table, Value};
 
 use super::hook_cmd::{SOURCE_FLAG, shell_single_quote};
-use super::merge::{
-    hook_path_str, parse_toml_or_empty, toml_merge_outcome, toml_table, with_toml_table,
-};
+use super::merge::{hook_path_str, install_toml_table, open_toml_table, toml_merge_outcome};
 use super::target::MergeOutcome;
 use super::verify::{SchemaParse, ShimRef, assemble, posix_unquote};
 use pixtuoid_core::source::jcode::SOURCE_NAME;
@@ -68,22 +66,16 @@ fn managed_path(command: &str) -> Option<PathBuf> {
     (hook_command(&path, true).ok().as_deref() == Some(command)).then_some(path)
 }
 
-/// Refuses what a merge would coerce: [`with_toml_table`] turns `hooks = 1` into
-/// an empty table.
-fn refuse_foreign_shape(content: &str) -> Result<()> {
-    let root = parse_toml_or_empty(content)?;
-    let Some(hooks) = root.get("hooks") else {
-        return Ok(());
-    };
-    let hooks = hooks
-        .as_table()
-        .context("`hooks` is not a table — refusing to overwrite")?;
+/// Refuses an event whose value holds something other than commands: the merge
+/// could neither keep it beside ours nor recognize it.
+fn refuse_foreign_commands(hooks: &toml_edit::Table) -> Result<()> {
     for event in JCODE_EVENTS {
-        let valid = match hooks.get(*event) {
-            None | Some(Value::String(_)) => true,
-            Some(Value::Array(commands)) => commands.iter().all(Value::is_str),
-            Some(_) => false,
-        };
+        let valid = hooks.get(event).is_none_or(|item| {
+            item.is_str()
+                || item
+                    .as_array()
+                    .is_some_and(|a| a.iter().all(|c| c.is_str()))
+        });
         ensure!(
             valid,
             "`hooks.{event}` is neither a command nor an array of them — refusing to overwrite"
@@ -126,9 +118,11 @@ fn retarget(hooks: &mut toml_edit::Table, ours: Option<&str>) {
 }
 
 pub(crate) fn merge_install(content: &str, command: &str) -> Result<MergeOutcome> {
-    refuse_foreign_shape(content)?;
     toml_merge_outcome(content, |doc| {
-        with_toml_table(doc, "hooks", |hooks| retarget(hooks, Some(command)));
+        let hooks = install_toml_table(doc, "hooks")?;
+        refuse_foreign_commands(hooks)?;
+        retarget(hooks, Some(command));
+        Ok(())
     })
 }
 
@@ -136,9 +130,10 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     toml_merge_outcome(content, |doc| {
         // An emptied `[hooks]` stays: the text above a header goes with its table,
         // and Jcode's default config keeps a section's commented options there.
-        if let Some(hooks) = doc.get_mut("hooks").and_then(toml_table) {
+        if let Some(hooks) = doc.get_mut("hooks").and_then(open_toml_table) {
             retarget(hooks, None);
         }
+        Ok(())
     })
 }
 

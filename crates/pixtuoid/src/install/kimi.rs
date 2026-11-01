@@ -91,24 +91,24 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 
 pub(crate) fn merge_install(content: &str, hook_cmd: &str) -> Result<MergeOutcome> {
     merge::toml_merge_outcome(content, |doc| {
-        merge::with_toml_tables(doc, "hooks", |hooks| {
-            hooks.retain(|entry| !is_managed_entry(entry));
-            for ev in KIMI_EVENTS {
-                hooks.push(managed_entry(ev, hook_cmd));
-            }
-        });
+        let hooks = merge::install_toml_tables(doc, "hooks")?;
+        hooks.retain(|entry| !is_managed_entry(entry));
+        for ev in KIMI_EVENTS {
+            hooks.push(managed_entry(ev, hook_cmd));
+        }
+        Ok(())
     })
 }
 
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     merge::toml_merge_outcome(content, |doc| {
-        let Some(hooks) = doc.get_mut("hooks").and_then(merge::toml_tables) else {
-            return;
-        };
-        hooks.retain(|entry| !is_managed_entry(entry));
-        if hooks.is_empty() {
-            doc.remove("hooks");
+        if let Some(hooks) = doc.get_mut("hooks").and_then(merge::open_toml_tables) {
+            hooks.retain(|entry| !is_managed_entry(entry));
+            if hooks.is_empty() {
+                doc.remove("hooks");
+            }
         }
+        Ok(())
     })
 }
 
@@ -359,14 +359,6 @@ command = "terminal-notifier -message done"
     #[test]
     fn merge_install_rejects_invalid_toml() {
         assert!(merge_install("not = valid = toml", CMD).is_err());
-    }
-
-    #[test]
-    fn install_coerces_a_non_array_hooks_key() {
-        let out = merge_install("hooks = \"garbage\"\n", CMD).unwrap();
-        let v = parse(&out.content);
-        assert!(v["hooks"].is_array());
-        assert_eq!(v["hooks"].as_array().unwrap().len(), KIMI_EVENTS.len());
     }
 
     #[test]

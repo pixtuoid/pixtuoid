@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde_json::json;
 
-use crate::install::SENTINEL_KEY;
 use crate::install::host_plugin::{self, NAME};
 use crate::install::target::{
     HostRegistration, LegacyConfig, MergeOutcome, Pickup, PluginCopy, Unregistered,
@@ -267,20 +266,20 @@ fn read_codex_config() -> Result<toml::Value> {
 /// Strips what a pixtuoid from before the plugin merged into `config.toml`.
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     merge::toml_merge_outcome(content, |doc| {
-        let Some(hooks) = doc.get_mut("hooks").and_then(merge::toml_table) else {
-            return;
+        let Some(hooks) = doc.get_mut("hooks").and_then(merge::open_toml_table) else {
+            return Ok(());
         };
         for (_event, groups) in hooks.iter_mut() {
-            let Some(groups) = merge::toml_tables(groups) else {
+            let Some(groups) = merge::open_toml_tables(groups) else {
                 continue;
             };
             for group in groups.iter_mut() {
-                if let Some(handlers) = group.get_mut("hooks").and_then(merge::toml_tables) {
+                if let Some(handlers) = group.get_mut("hooks").and_then(merge::open_toml_tables) {
                     // Sentinel-only, no basename fallback: no released version ever
                     // wrote a sentinel-less entry, so a basename match could only ever
                     // hit a USER hand-written entry pointing at the shim, which
                     // uninstall must not touch.
-                    handlers.retain(|handler| !merge::is_toml_managed(handler, SENTINEL_KEY));
+                    handlers.retain(|handler| !merge::is_toml_managed(handler));
                 }
             }
             groups.retain(|group| !group.get("hooks").is_some_and(is_emptied));
@@ -289,6 +288,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
         if hooks.is_empty() {
             doc.remove("hooks");
         }
+        Ok(())
     })
 }
 
@@ -354,7 +354,11 @@ _pixtuoid = true
             let group = &hooks[*ev][0];
             assert!(group.get("matcher").is_none(), "{ev}: {group}");
             assert_eq!(group["hooks"][0]["command"], json!(cmd));
-            assert!(group["hooks"][0].get(SENTINEL_KEY).is_none());
+            assert!(
+                group["hooks"][0]
+                    .get(crate::install::SENTINEL_KEY)
+                    .is_none()
+            );
         }
         assert_eq!(
             doc.as_object().unwrap().keys().collect::<Vec<_>>(),

@@ -613,7 +613,13 @@ fn uninstall_preserves_the_config_file_even_when_it_merges_to_empty() {
 fn install_on_a_malformed_config_errors_without_rewriting() {
     for (t, malformed) in [
         (&target::CODEWHALE, "this is = = not valid toml [[["),
+        (&target::CODEWHALE, "hooks = 1\n"),
+        (&target::CODEWHALE, "[hooks]\nhooks = 1\n"),
+        (&target::KIMI, "hooks = 1\n"),
+        (&target::KIMI, "hooks = [{ command = 'keep' }, 'stray']\n"),
         (&crate::install::target::CURSOR, "{ not valid json,,, "),
+        (&crate::install::target::CURSOR, r#"{"hooks": 1}"#),
+        (&crate::install::target::CURSOR, r#"{"hooks": {"stop": 1}}"#),
     ] {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");

@@ -55,7 +55,7 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 pub(crate) fn merge_install(content: &str, base_cmd: &str) -> Result<MergeOutcome> {
     merge::flat_json_merge_outcome_install(content, "hooks.json", |mut root| {
         root.insert(HOOK_NAME.into(), hook_set(base_cmd));
-        root
+        Ok(root)
     })
 }
 

@@ -167,29 +167,28 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 
 pub(crate) fn merge_install(content: &str, base_cmd: &str) -> Result<MergeOutcome> {
     merge::toml_merge_outcome(content, |doc| {
-        merge::with_toml_table(doc, "hooks", |hooks| {
-            // Set the gate ONLY when the user made no explicit choice: an explicit
-            // `enabled = false` is their own "all CodeWhale hooks off" switch, and we
-            // could not faithfully restore it on disconnect. Ours then won't fire, but
-            // `verify_schema` surfaces exactly that, so it isn't a silent no-sprite.
-            hooks.entry("enabled").or_insert(toml_edit::value(true));
-            merge::with_toml_tables(hooks, "hooks", |entries| {
-                entries.retain(|entry| !merge::is_toml_managed(entry, SENTINEL_KEY));
-                for (ev, env_mode) in CODEWHALE_EVENTS {
-                    entries.push(managed_entry(ev, *env_mode, base_cmd));
-                }
-            });
-        });
+        let hooks = merge::install_toml_table(doc, "hooks")?;
+        // Set the gate ONLY when the user made no explicit choice: an explicit
+        // `enabled = false` is their own "all CodeWhale hooks off" switch, and we
+        // could not faithfully restore it on disconnect. Ours then won't fire, but
+        // `verify_schema` surfaces exactly that, so it isn't a silent no-sprite.
+        hooks.entry("enabled").or_insert(toml_edit::value(true));
+        let entries = merge::install_toml_tables(hooks, "hooks")?;
+        entries.retain(|entry| !merge::is_toml_managed(entry));
+        for (ev, env_mode) in CODEWHALE_EVENTS {
+            entries.push(managed_entry(ev, *env_mode, base_cmd));
+        }
+        Ok(())
     })
 }
 
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     merge::toml_merge_outcome(content, |doc| {
-        let Some(hooks) = doc.get_mut("hooks").and_then(merge::toml_table) else {
-            return;
+        let Some(hooks) = doc.get_mut("hooks").and_then(merge::open_toml_table) else {
+            return Ok(());
         };
-        if let Some(entries) = hooks.get_mut("hooks").and_then(merge::toml_tables) {
-            entries.retain(|entry| !merge::is_toml_managed(entry, SENTINEL_KEY));
+        if let Some(entries) = hooks.get_mut("hooks").and_then(merge::open_toml_tables) {
+            entries.retain(|entry| !merge::is_toml_managed(entry));
             if entries.is_empty() {
                 hooks.remove("hooks");
             }
@@ -203,6 +202,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
         if ours_only {
             doc.remove("hooks");
         }
+        Ok(())
     })
 }
 
@@ -632,17 +632,6 @@ command = "echo hi"
         assert!(merge_install("not = valid = toml", BASE).is_err());
     }
 
-    #[test]
-    fn install_coerces_non_table_hooks_and_non_array_entries() {
-        let out = merge_install("hooks = \"garbage\"", BASE).unwrap();
-        let v = parse(&out.content);
-        assert!(v["hooks"].is_table());
-        assert_eq!(
-            v["hooks"]["hooks"].as_array().unwrap().len(),
-            CODEWHALE_EVENTS.len()
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn hook_command_is_the_base_env_prefix_form_without_event() {
@@ -742,22 +731,6 @@ command = "echo hi"
         assert!(
             !joined.contains("missing hook entries for"),
             "a complete-but-disabled install reports the gate, not missing events"
-        );
-    }
-
-    #[test]
-    fn install_coerces_inner_non_array_hooks_key() {
-        let out = merge_install("[hooks]\nhooks = \"garbage\"\n", BASE).unwrap();
-        let v = parse(&out.content);
-        assert!(v["hooks"].is_table());
-        assert!(
-            v["hooks"]["hooks"].is_array(),
-            "the scalar `hooks` key must be coerced to an array"
-        );
-        assert_eq!(
-            v["hooks"]["hooks"].as_array().unwrap().len(),
-            CODEWHALE_EVENTS.len(),
-            "after coercion every managed event must be written"
         );
     }
 
