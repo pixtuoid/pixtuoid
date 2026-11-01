@@ -518,7 +518,7 @@ mod tests {
         assert_ne!(
             (color_of(&a, HAIR_KEY), color_of(&a, SKIN_KEY)),
             (color_of(&b, HAIR_KEY), color_of(&b, SKIN_KEY)),
-            "different agents in the same repo must differ in hair/skin"
+            "different agents with the same cwd basename must differ in hair/skin"
         );
     }
 
