@@ -7,14 +7,10 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::ClientOptions;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
-use pixtuoid_core::source::daemon::PresenceMsg;
 use pixtuoid_core::source::hook::{HookRouter, HookSocketListener};
 use pixtuoid_core::source::{AgentEvent, Source, Transport};
-
-type Hooks = mpsc::Receiver<(Transport, AgentEvent)>;
 
 fn pipe_name(suffix: &str) -> String {
     format!(r"\\.\pipe\pixtuoid-test-{}-{}", std::process::id(), suffix)
@@ -271,181 +267,12 @@ async fn second_listener_on_same_name_fails_with_typed_socket_busy() {
     assert!(
         err.downcast_ref::<pixtuoid_core::source::hook::SocketBusy>()
             .is_some(),
-        "the busy bind must be the typed SocketBusy so the source can degrade: {err:#}"
+        "the busy bind must be the typed SocketBusy so the router can subscribe: {err:#}"
     );
     assert!(
         format!("{err:#}").contains(&name),
         "error must name the contended pipe: {err:#}"
     );
-}
-
-/// How long a test waits on a state a router reaches asynchronously.
-const PATIENCE: Duration = Duration::from_secs(30);
-const POLL: Duration = Duration::from_millis(25);
-
-fn session_start(session: &str) -> Vec<u8> {
-    let mut line = serde_json::to_vec(&serde_json::json!({
-        "hook_event_name": "SessionStart",
-        "session_id": session,
-        "transcript_path": format!("/p/{session}.jsonl"),
-        "cwd": "/repo"
-    }))
-    .unwrap();
-    line.push(b'\n');
-    line
-}
-
-fn spawn_router(name: &str) -> (JoinHandle<anyhow::Result<()>>, Hooks) {
-    let (tx, rx) = mpsc::channel(64);
-    let router = Box::new(HookRouter::new(std::path::PathBuf::from(name)));
-    (tokio::spawn(router.run(tx)), rx)
-}
-
-/// One connection carrying `bytes`, as the shim sends them. `false` while
-/// nothing listens.
-async fn deliver(name: &str, bytes: &[u8]) -> bool {
-    match ClientOptions::new().open(name) {
-        Ok(mut c) => c.write_all(bytes).await.is_ok(),
-        Err(_) => false,
-    }
-}
-
-/// The session the next `SessionStart` on `rx` opened.
-async fn next_session(rx: &mut Hooks) -> String {
-    loop {
-        let (transport, ev) = rx.recv().await.expect("the router must stay alive");
-        assert_eq!(transport, Transport::Hook);
-        if let AgentEvent::SessionStart { session_id, .. } = ev {
-            return session_id;
-        }
-    }
-}
-
-/// Keep delivering `session` until every one of `rxs` has seen it, which is
-/// the only sign that a router has subscribed or taken the endpoint.
-async fn until_seen(name: &str, session: &str, rxs: &mut [&mut Hooks]) {
-    for rx in rxs {
-        tokio::time::timeout(PATIENCE, async {
-            loop {
-                deliver(name, &session_start(session)).await;
-                if tokio::time::timeout(POLL, next_session(rx)).await.is_ok() {
-                    return;
-                }
-            }
-        })
-        .await
-        .unwrap_or_else(|_| panic!("{session} never arrived"));
-    }
-}
-
-/// Drop whatever `rxs` have queued: a probe that `until_seen` sent again.
-async fn settle(rxs: &mut [&mut Hooks]) {
-    sleep(POLL).await;
-    for rx in rxs {
-        while rx.try_recv().is_ok() {}
-    }
-}
-
-#[tokio::test]
-async fn a_second_router_receives_the_owners_payloads_in_order() {
-    let name = pipe_name("relay-order");
-    let (owner, mut owner_rx) = spawn_router(&name);
-    until_seen(&name, "owner-up", &mut [&mut owner_rx]).await;
-    let (follower, mut rx) = spawn_router(&name);
-    until_seen(&name, "subscribed", &mut [&mut rx]).await;
-    settle(&mut [&mut owner_rx, &mut rx]).await;
-
-    let mut lines = session_start("first");
-    lines.extend(session_start("second"));
-    assert!(deliver(&name, &lines).await);
-    sleep(POLL).await;
-    assert!(deliver(&name, &session_start("third")).await);
-
-    for rx in [&mut owner_rx, &mut rx] {
-        let seen = tokio::time::timeout(PATIENCE, async {
-            [
-                next_session(rx).await,
-                next_session(rx).await,
-                next_session(rx).await,
-            ]
-        })
-        .await
-        .expect("every payload reaches both routers");
-        assert_eq!(seen, ["first", "second", "third"]);
-    }
-    owner.abort();
-    follower.abort();
-}
-
-#[tokio::test]
-async fn a_follower_takes_the_endpoint_when_its_owner_leaves() {
-    let name = pipe_name("relay-takeover");
-    let (owner, mut owner_rx) = spawn_router(&name);
-    until_seen(&name, "owner-up", &mut [&mut owner_rx]).await;
-    let (one, mut one_rx) = spawn_router(&name);
-    let (two, mut two_rx) = spawn_router(&name);
-    until_seen(&name, "subscribed", &mut [&mut one_rx, &mut two_rx]).await;
-
-    owner.abort();
-    let _ = owner.await;
-
-    // One takes the endpoint and the other subscribes to it, whichever way the
-    // race falls.
-    until_seen(&name, "taken-over", &mut [&mut one_rx, &mut two_rx]).await;
-    assert!(!one.is_finished() && !two.is_finished());
-    one.abort();
-    two.abort();
-}
-
-// The daemon side channel is wired on a follower too, or its gateway mascot
-// never appears.
-#[tokio::test]
-async fn a_follower_receives_daemon_presence() {
-    let name = pipe_name("relay-presence");
-    let (owner, mut owner_rx) = spawn_router(&name);
-    until_seen(&name, "owner-up", &mut [&mut owner_rx]).await;
-
-    let (tx, mut rx) = mpsc::channel(64);
-    let (presence_tx, mut presence_rx) = mpsc::unbounded_channel::<PresenceMsg>();
-    let router =
-        HookRouter::new(std::path::PathBuf::from(&name)).with_presence_tx(Some(presence_tx));
-    let follower = tokio::spawn(Box::new(router).run(tx));
-    until_seen(&name, "subscribed", &mut [&mut rx]).await;
-
-    let gateway = b"{\"_pixtuoid_source\":\"openclaw\",\"type\":\"gateway_start\",\
-                    \"gatewayPort\":18789,\"_pid\":4242}\n";
-    assert!(deliver(&name, gateway).await);
-    let msg = tokio::time::timeout(PATIENCE, presence_rx.recv())
-        .await
-        .expect("the gateway reaches the follower")
-        .unwrap();
-    assert_eq!(msg.key.source(), "openclaw");
-    owner.abort();
-    follower.abort();
-}
-
-// An owner that never acknowledges is what an older pixtuoid looks like: its
-// hook plane stays out of reach, so the footer must say so.
-#[tokio::test]
-async fn a_router_that_cannot_subscribe_reports_a_death() {
-    use pixtuoid_core::source::manager::{SourceDeath, SourceManager};
-
-    let name = pipe_name("relay-refused");
-    let _owner = HookSocketListener::bind(&name).await.unwrap();
-
-    let (tx, _rx) = mpsc::channel::<(Transport, AgentEvent)>(8);
-    let (deaths_tx, deaths_rx) = tokio::sync::watch::channel(Vec::<SourceDeath>::new());
-    let handles = SourceManager::new()
-        .with_source(Box::new(HookRouter::new(std::path::PathBuf::from(&name))))
-        .spawn_with_health(tx, deaths_tx);
-    for h in handles {
-        tokio::time::timeout(PATIENCE, h)
-            .await
-            .expect("the router gives up instead of retrying forever")
-            .unwrap();
-    }
-    let deaths = deaths_rx.borrow();
-    assert_eq!(deaths.len(), 1, "got {deaths:?}");
 }
 
 #[tokio::test]

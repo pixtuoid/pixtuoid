@@ -198,17 +198,19 @@ fn acquire_bind_lock(path: &Path) -> Result<std::fs::File> {
 /// One accepted hook connection.
 pub(super) type Conn = UnixStream;
 
+/// A client's end of a [`Conn`].
+pub(super) type Client = UnixStream;
+
 /// Connect to the hook endpoint at `path`, as long as its owner is this user:
 /// another user's listener squatting it could feed the office invented agents.
-pub(crate) async fn connect(path: &Path) -> std::io::Result<UnixStream> {
-    let conn = UnixStream::connect(path).await?;
-    ensure_peer(&conn, rustix::process::getuid().as_raw())?;
-    Ok(conn)
+pub(crate) async fn connect(path: &Path) -> std::io::Result<Client> {
+    connect_as(path, rustix::process::getuid().as_raw()).await
 }
 
-fn ensure_peer(conn: &UnixStream, uid: u32) -> std::io::Result<()> {
+async fn connect_as(path: &Path, uid: u32) -> std::io::Result<Client> {
+    let conn = UnixStream::connect(path).await?;
     if conn.peer_cred()?.uid() == uid {
-        Ok(())
+        Ok(conn)
     } else {
         Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
@@ -328,11 +330,13 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn a_peer_is_accepted_as_its_own_uid_and_refused_as_any_other() {
-        let (conn, _peer) = UnixStream::pair().unwrap();
+    async fn a_listener_is_accepted_as_its_own_uid_and_refused_as_any_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hook.sock");
+        let _listener = UnixListener::bind(&path).unwrap();
         let ours = rustix::process::getuid().as_raw();
-        ensure_peer(&conn, ours).expect("our own peer");
-        let err = ensure_peer(&conn, ours + 1).expect_err("another uid");
+        connect_as(&path, ours).await.expect("our own listener");
+        let err = connect_as(&path, ours + 1).await.expect_err("another uid");
         assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 

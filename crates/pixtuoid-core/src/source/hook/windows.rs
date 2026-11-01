@@ -10,15 +10,13 @@ use tokio::net::windows::named_pipe::{
 use tokio::sync::Semaphore;
 use tracing::warn;
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY, HANDLE};
-use windows_sys::Win32::Security::{
-    EqualSid, GetTokenInformation, PSID, TOKEN_QUERY, TOKEN_USER, TokenUser,
-};
+use windows_sys::Win32::Security::{EqualSid, PSID, TOKEN_USER, TokenUser};
 use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
 use windows_sys::Win32::System::Threading::{
-    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 
-use crate::win32::SecurityDescriptor;
+use crate::win32::{SecurityDescriptor, token_info};
 
 use super::{CONN_TIMEOUT, MAX_CONCURRENT_CONNS};
 
@@ -50,6 +48,9 @@ fn create_pipe(
 /// One accepted hook connection.
 pub(super) type Conn = NamedPipeServer;
 
+/// A client's end of a [`Conn`].
+pub(super) type Client = NamedPipeClient;
+
 /// How long a connect waits out a pipe whose every instance is mid-handshake.
 pub(crate) const PIPE_BUSY_BOUND: Duration = Duration::from_secs(2);
 pub(crate) const PIPE_BUSY_BACKOFF: Duration = Duration::from_millis(10);
@@ -57,7 +58,7 @@ pub(crate) const PIPE_BUSY_BACKOFF: Duration = Duration::from_millis(10);
 /// Connect to the hook endpoint at `path`, as long as its server is this user:
 /// the pipe namespace is machine-wide, so another user can squat the name and
 /// feed the office invented agents.
-pub(crate) async fn connect(path: &Path) -> std::io::Result<NamedPipeClient> {
+pub(crate) async fn connect(path: &Path) -> std::io::Result<Client> {
     let started = std::time::Instant::now();
     let client = loop {
         match ClientOptions::new().open(path) {
@@ -81,35 +82,6 @@ pub(crate) async fn connect(path: &Path) -> std::io::Result<NamedPipeClient> {
     }
 }
 
-/// The `TOKEN_USER` blob for `process`'s token, `u64`-backed so the embedded
-/// `PSID` pointer is aligned. The buffer OWNS the SID.
-///
-/// SAFETY: `process` is a valid process handle for the call's duration.
-unsafe fn token_user_blob(process: HANDLE) -> Option<Vec<u64>> {
-    let mut token: HANDLE = std::ptr::null_mut();
-    // SAFETY: `process` is forwarded from this fn's contract; `token` is a live out-param.
-    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
-        return None;
-    }
-    // Size probe (returns 0 + sets `len`), then the real read.
-    let mut len: u32 = 0;
-    // SAFETY: `token` is open; a null buffer of length 0 is the documented size probe.
-    unsafe { GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut len) };
-    let blob = if len == 0 {
-        None
-    } else {
-        let mut buf = vec![0u64; (len as usize).div_ceil(8)];
-        // SAFETY: `token` is open and `buf` spans at least `len` bytes for the call.
-        let read = unsafe {
-            GetTokenInformation(token, TokenUser, buf.as_mut_ptr().cast(), len, &mut len)
-        };
-        if read == 0 { None } else { Some(buf) }
-    };
-    // SAFETY: `token` is open, and this is its only close.
-    unsafe { CloseHandle(token) };
-    blob
-}
-
 /// The `PSID` embedded in a `TOKEN_USER` blob. Valid only while `blob` lives.
 ///
 /// SAFETY: `blob` is a `TOKEN_USER` written by `GetTokenInformation`, u64-aligned.
@@ -125,26 +97,29 @@ fn server_is_us(client: &NamedPipeClient) -> bool {
     use std::os::windows::io::AsRawHandle;
     let handle = client.as_raw_handle() as HANDLE;
     // SAFETY: `handle` is a live connected pipe; `server` (from OpenProcess) is
-    // closed exactly once; the two SID buffers outlive the EqualSid call.
+    // closed exactly once.
     unsafe {
         let mut server_pid: u32 = 0;
         if GetNamedPipeServerProcessId(handle, &mut server_pid) == 0 {
             return false;
         }
-        // Our own user SID (GetCurrentProcess is a pseudo-handle — never closed).
-        let Some(ours) = token_user_blob(GetCurrentProcess()) else {
-            return false;
-        };
         let server = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, server_pid);
         if server.is_null() {
             return false;
         }
-        let theirs = token_user_blob(server);
+        let theirs = token_info(server, TokenUser);
         CloseHandle(server);
-        let Some(theirs) = theirs else {
-            return false;
-        };
-        EqualSid(sid_of(&ours), sid_of(&theirs)) != 0
+        theirs.is_some_and(|theirs| is_us(&theirs))
+    }
+}
+
+/// Whether `user`, a `TOKEN_USER` blob, is our own user.
+fn is_us(user: &[u64]) -> bool {
+    // SAFETY: the pseudo-handle needs no close, and the two SID buffers outlive
+    // the EqualSid call.
+    unsafe {
+        token_info(GetCurrentProcess(), TokenUser)
+            .is_some_and(|ours| EqualSid(sid_of(&ours), sid_of(user)) != 0)
     }
 }
 
@@ -238,6 +213,33 @@ mod tests {
     use windows_sys::Win32::Security::Authorization::SE_KERNEL_OBJECT;
 
     use crate::win32::test_support::held_dacl;
+
+    #[test]
+    fn another_user_is_not_us() {
+        use windows_sys::Win32::Foundation::LocalFree;
+        use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidW;
+        use windows_sys::Win32::Security::SID_AND_ATTRIBUTES;
+        // The anonymous logon, which no test runner is.
+        let wide = crate::win32::nul_terminated(std::ffi::OsStr::new("S-1-5-7"));
+        let mut sid: PSID = std::ptr::null_mut();
+        // SAFETY: `wide` is NUL-terminated; `sid` is a live out-param.
+        assert_ne!(
+            unsafe { ConvertStringSidToSidW(wide.as_ptr(), &mut sid) },
+            0
+        );
+        let user = TOKEN_USER {
+            User: SID_AND_ATTRIBUTES {
+                Sid: sid,
+                Attributes: 0,
+            },
+        };
+        let words = size_of::<TOKEN_USER>() / size_of::<u64>();
+        // SAFETY: `user` is u64-aligned and spans `words` words.
+        let blob = unsafe { std::slice::from_raw_parts((&raw const user).cast::<u64>(), words) };
+        assert!(!is_us(blob));
+        // SAFETY: LocalAlloc'd above, freed once.
+        unsafe { LocalFree(sid) };
+    }
 
     #[tokio::test]
     async fn our_own_pipe_server_verifies_as_us() {

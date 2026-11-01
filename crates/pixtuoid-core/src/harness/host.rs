@@ -436,14 +436,13 @@ fn windows_owned(path: &Path) -> Option<bool> {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE, LocalFree};
     use windows_sys::Win32::Security::Authorization::{GetSecurityInfo, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
-        EqualSid, GetTokenInformation, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
-        TOKEN_OWNER, TOKEN_QUERY, TokenOwner,
+        EqualSid, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, TOKEN_OWNER, TokenOwner,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
         FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, READ_CONTROL,
     };
-    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
     let wide = nul_terminated(path.as_os_str());
     // SAFETY: `wide` is NUL-terminated; the handle is closed below. The
@@ -482,34 +481,15 @@ fn windows_owned(path: &Path) -> Option<bool> {
         if rc != 0 {
             return None;
         }
-        let mut token = std::ptr::null_mut();
-        // SAFETY: the pseudo-handle needs no close; `token` is a live out-pointer.
+        // SAFETY: the pseudo-handle is always valid.
         let matches =
-            if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
-                None
-            } else {
-                let mut len = 0u32;
-                // SAFETY: a null buffer of length 0 is the documented size probe.
-                unsafe {
-                    GetTokenInformation(token, TokenOwner, std::ptr::null_mut(), 0, &mut len);
-                }
-                // `u64`-backed so the TOKEN_OWNER's SID pointer is aligned.
-                let mut buf = vec![0u64; (len as usize).div_ceil(8)];
-                // SAFETY: `token` is open and `buf` spans at least `len` bytes.
-                let read = unsafe {
-                    GetTokenInformation(token, TokenOwner, buf.as_mut_ptr().cast(), len, &mut len)
-                };
-                let matches = (read != 0).then(|| {
-                    // SAFETY: a successful read filled `buf` with a TOKEN_OWNER whose
-                    // SID points into `buf`, which outlives this borrow.
-                    let ours = unsafe { (*buf.as_ptr().cast::<TOKEN_OWNER>()).Owner };
-                    // SAFETY: both SIDs are valid for the call.
-                    unsafe { EqualSid(owner, ours) != 0 }
-                });
-                // SAFETY: opened above, closed once.
-                unsafe { CloseHandle(token) };
-                matches
-            };
+            unsafe { crate::win32::token_info(GetCurrentProcess(), TokenOwner) }.map(|buf| {
+                // SAFETY: a successful read filled `buf` with a TOKEN_OWNER whose
+                // SID points into `buf`, which outlives this borrow.
+                let ours = unsafe { (*buf.as_ptr().cast::<TOKEN_OWNER>()).Owner };
+                // SAFETY: both SIDs are valid for the call.
+                unsafe { EqualSid(owner, ours) != 0 }
+            });
         // SAFETY: LocalAlloc'd by GetSecurityInfo; `owner` pointed into it and is
         // not read again.
         unsafe { LocalFree(psd) };

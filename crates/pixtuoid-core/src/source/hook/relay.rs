@@ -1,6 +1,6 @@
-//! The hook plane of every instance but the one holding the endpoint: a
-//! subscriber keeps one connection to that owner and reads each payload line it
-//! accepts, so every instance decodes them into its own office.
+//! One hook endpoint, one office per instance: the instance holding the
+//! endpoint fans each payload line out, and every other instance keeps a
+//! subscription to it and decodes those lines through its own reducer.
 //!
 //! Lines cross, not decoded events: a line is the shim's wire, which every
 //! installed version already reads, and an `AgentEvent` is an internal type two
@@ -14,12 +14,12 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWrite
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use super::{CONN_TIMEOUT, HookConn, imp};
+use super::{CONN_TIMEOUT, Client, HookConn, connect};
 
-/// A subscriber's first line. An owner older than the relay decodes it to
-/// nothing and hangs up, which [`subscribe`] reads as a refusal.
-pub(super) const SUBSCRIBE_LINE: &str = "{\"_pixtuoid_subscribe\":1}\n";
-const SUBSCRIBED_LINE: &str = "{\"_pixtuoid_subscribed\":1}\n";
+/// A subscriber's first line. Not JSON: an owner older than the relay skips it
+/// as malformed, where an object would raise that owner's decode-drift nudge.
+const SUBSCRIBE_LINE: &str = "pixtuoid-subscribe\n";
+const SUBSCRIBED_LINE: &str = "pixtuoid-subscribed\n";
 
 /// Payload lines a subscriber can fall behind before it loses the oldest.
 const BACKLOG: usize = 1024;
@@ -43,7 +43,7 @@ impl Relay {
 
     /// `conn`'s payload, or `None` once a subscribing `conn` is attached. The
     /// spawned feed is what leaves the listener's budget and permit behind.
-    pub(super) async fn payload_of(
+    pub(super) async fn payload_or_subscribe(
         &self,
         conn: HookConn,
     ) -> Option<impl AsyncRead + Unpin + Send + use<>> {
@@ -62,13 +62,13 @@ impl Relay {
 }
 
 async fn feed(mut conn: impl AsyncWrite + Unpin, mut lines: broadcast::Receiver<Arc<str>>) {
-    if conn.write_all(SUBSCRIBED_LINE.as_bytes()).await.is_err() {
+    if !write_line(&mut conn, SUBSCRIBED_LINE).await {
         return;
     }
     loop {
         match lines.recv().await {
             Ok(line) => {
-                if conn.write_all(line.as_bytes()).await.is_err() {
+                if !write_line(&mut conn, &line).await {
                     return;
                 }
             }
@@ -83,26 +83,41 @@ async fn feed(mut conn: impl AsyncWrite + Unpin, mut lines: broadcast::Receiver<
     }
 }
 
-/// The subscriber's half: the payload lines of the instance holding `path`,
-/// from here until it exits.
-pub(super) async fn subscribe(path: &Path) -> Result<impl AsyncRead + Unpin + use<>> {
-    let mut conn = imp::connect(path).await.context("connecting")?;
+/// Whether `line` went out in time. A subscriber that stopped reading (SIGSTOP,
+/// a debugger) must lose its feed, or its receiver pins [`BACKLOG`] lines in the
+/// owner; it subscribes again once it reads the hang-up.
+async fn write_line(conn: &mut (impl AsyncWrite + Unpin), line: &str) -> bool {
+    matches!(
+        tokio::time::timeout(CONN_TIMEOUT, conn.write_all(line.as_bytes())).await,
+        Ok(Ok(()))
+    )
+}
+
+/// The payload lines of the instance holding an endpoint, until it exits.
+pub(super) type Payloads = BufReader<Client>;
+
+/// The subscriber's half.
+pub(super) async fn subscribe(path: &Path) -> Result<Payloads> {
+    let mut conn = connect(path).await.context("connecting")?;
     conn.write_all(SUBSCRIBE_LINE.as_bytes())
         .await
         .context("subscribing")?;
     let mut conn = BufReader::new(conn);
     let mut ack = String::new();
-    tokio::time::timeout(CONN_TIMEOUT, conn.read_line(&mut ack))
-        .await
-        .context("waiting for the subscription")?
-        .context("reading the subscription")?;
-    anyhow::ensure!(ack == SUBSCRIBED_LINE, "the owner refused the subscription");
+    let read = tokio::time::timeout(CONN_TIMEOUT, conn.read_line(&mut ack)).await;
+    anyhow::ensure!(
+        matches!(read, Ok(Ok(_))) && ack == SUBSCRIBED_LINE,
+        "its owner took no subscription: quit it if it is an older pixtuoid, then restart this one"
+    );
     Ok(conn)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::{HookPidWatch, HookRouter, HookSocketListener};
     use super::*;
+    use crate::source::{AgentEvent, Source, TaggedReceiver};
+    use std::path::PathBuf;
     use std::time::Duration;
 
     const PATIENCE: Duration = Duration::from_secs(5);
@@ -141,27 +156,164 @@ mod tests {
         assert_eq!(lines_of(&out), [SUBSCRIBED_LINE.trim_end(), "one", "two"]);
     }
 
-    // What an owner older than the relay does with a subscriber, which never
-    // reaches its reducer as an agent.
     #[tokio::test]
-    async fn an_owner_without_a_relay_decodes_a_subscribe_line_to_nothing() {
+    async fn a_subscriber_that_stopped_reading_loses_its_feed() {
+        const SMALLER_THAN_THE_ACK: usize = 4;
+        let (conn, _stalled) = tokio::io::duplex(SMALLER_THAN_THE_ACK);
+        let (tx, rx) = broadcast::channel::<Arc<str>>(1);
+        tokio::time::timeout(PATIENCE, feed(conn, rx))
+            .await
+            .expect("a stalled write times out");
+        assert_eq!(tx.receiver_count(), 0, "its receiver pins no line");
+    }
+
+    // An owner older than the relay is the one reader of this line that isn't
+    // ours to change.
+    #[tokio::test]
+    async fn an_owner_without_a_relay_skips_a_subscribe_line() {
         let (mut client, server) = tokio::io::duplex(64);
         let (tx, mut rx) = tokio::sync::mpsc::channel(4);
         client.write_all(SUBSCRIBE_LINE.as_bytes()).await.unwrap();
         drop(client);
-        let conn = server.take(super::super::MAX_CONN_BYTES);
-        super::super::handle_conn(conn, tx, None, None, None).await;
+        super::super::handle_conn(server, tx, None, None, None).await;
         assert!(rx.recv().await.is_none());
     }
 
     #[tokio::test]
     async fn the_feed_ends_when_its_subscriber_is_gone() {
-        let (conn, peer) = tokio::io::duplex(64);
-        drop(peer);
+        let (conn, mut peer) = tokio::io::duplex(64);
         let (tx, rx) = broadcast::channel(1);
-        tokio::time::timeout(PATIENCE, feed(conn, rx))
+        let feeding = tokio::spawn(feed(conn, rx));
+        let mut ack = vec![0; SUBSCRIBED_LINE.len()];
+        peer.read_exact(&mut ack).await.unwrap();
+        drop(peer);
+        tx.send(Arc::from("line\n")).unwrap();
+        tokio::time::timeout(PATIENCE, feeding)
+            .await
+            .expect("a failed write ends the feed")
+            .unwrap();
+    }
+
+    /// `tag`'s private endpoint and the directory keeping it so.
+    fn endpoint(tag: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = if cfg!(windows) {
+            let pid = std::process::id();
+            PathBuf::from(format!(r"\\.\pipe\pixtuoid-relay-{pid}-{tag}"))
+        } else {
+            dir.path().join("hook.sock")
+        };
+        (dir, path)
+    }
+
+    fn listen(path: &Path) -> (tokio::task::JoinHandle<Result<()>>, TaggedReceiver) {
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        let path = path.to_path_buf();
+        let task = tokio::spawn(async move { HookSocketListener::bind(path).await?.run(tx).await });
+        (task, rx)
+    }
+
+    /// A connection to `path` as soon as its listener takes one.
+    async fn client(path: &Path) -> Client {
+        tokio::time::timeout(PATIENCE, async {
+            loop {
+                match connect(path).await {
+                    Ok(conn) => return conn,
+                    Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+                }
+            }
+        })
+        .await
+        .expect("the listener comes up")
+    }
+
+    #[tokio::test]
+    async fn a_subscribe_line_split_across_writes_still_subscribes() {
+        let (_dir, path) = endpoint("split");
+        let (task, _rx) = listen(&path);
+        let mut conn = client(&path).await;
+        let (head, tail) = SUBSCRIBE_LINE.split_at(SUBSCRIBE_LINE.len() / 2);
+        conn.write_all(head.as_bytes()).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        conn.write_all(tail.as_bytes()).await.unwrap();
+
+        let mut ack = vec![0; SUBSCRIBED_LINE.len()];
+        tokio::time::timeout(PATIENCE, conn.read_exact(&mut ack))
+            .await
+            .expect("a subscriber is answered")
+            .unwrap();
+        assert_eq!(ack, SUBSCRIBED_LINE.as_bytes());
+        task.abort();
+    }
+
+    // Only a connection's first line subscribes, so the listener must not write
+    // back to a shim. The read ends at the listener's budget.
+    #[tokio::test]
+    async fn a_subscribe_line_after_a_payload_gets_no_answer() {
+        let (_dir, path) = endpoint("second-line");
+        let (task, mut rx) = listen(&path);
+        let mut conn = client(&path).await;
+        let session = "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
+                       \"transcript_path\":\"/p/s.jsonl\",\"cwd\":\"/repo\"}\n";
+        conn.write_all(format!("{session}{SUBSCRIBE_LINE}").as_bytes())
             .await
             .unwrap();
-        drop(tx);
+        let mut answer = Vec::new();
+        let _ = tokio::time::timeout(PATIENCE, conn.read_to_end(&mut answer)).await;
+
+        assert!(answer.is_empty(), "got {answer:?}");
+        let (_, ev) = rx.recv().await.expect("the payload still decodes");
+        assert!(matches!(ev, AgentEvent::SessionStart { .. }));
+        task.abort();
+    }
+
+    // The exit watch runs on a subscriber too, or an abrupt exit leaves its
+    // sprite to the stale sweep.
+    #[tokio::test]
+    async fn a_subscriber_ends_a_session_whose_pid_dies() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+        if HookPidWatch::spawn(tx.clone()).is_none() {
+            return; // no exit-watch backend on this platform
+        }
+        let (_dir, path) = endpoint("pid");
+        let (owner, _owner_rx) = listen(&path);
+        drop(client(&path).await);
+        let subscriber = tokio::spawn(Box::new(HookRouter::new(path.clone())).run(tx));
+
+        let mut cli = crate::test_child::sleeper();
+        let pid = cli.id();
+        let line = format!(
+            "{{\"_pixtuoid_source\":\"kimi\",\"hook_event_name\":\"SessionStart\",\
+             \"session_id\":\"sess-K\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n"
+        );
+        tokio::time::timeout(PATIENCE, async {
+            loop {
+                client(&path)
+                    .await
+                    .write_all(line.as_bytes())
+                    .await
+                    .unwrap();
+                let got = tokio::time::timeout(Duration::from_millis(25), rx.recv()).await;
+                if got.is_ok() {
+                    return;
+                }
+            }
+        })
+        .await
+        .expect("the line reaches the subscriber");
+
+        cli.kill().expect("kill the cli");
+        let _ = cli.wait();
+        tokio::time::timeout(PATIENCE, async {
+            while let Some((_, ev)) = rx.recv().await {
+                if matches!(ev, AgentEvent::SessionEnd { .. }) {
+                    return;
+                }
+            }
+        })
+        .await
+        .expect("a SessionEnd once the watched pid dies");
+        owner.abort();
+        subscriber.abort();
     }
 }

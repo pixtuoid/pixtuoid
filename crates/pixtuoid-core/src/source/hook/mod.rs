@@ -26,6 +26,7 @@ use windows as imp;
 /// through [`MAX_CONN_BYTES`].
 pub(crate) type HookConn = tokio::io::Take<imp::Conn>;
 
+use imp::Client;
 pub(crate) use imp::connect;
 #[cfg(all(windows, test))]
 pub(crate) use windows::{PIPE_BUSY_BACKOFF, PIPE_BUSY_BOUND};
@@ -67,8 +68,8 @@ impl std::error::Error for SocketBusy {}
 
 /// Listener for the shared hook socket (Unix domain socket / Windows named
 /// pipe) every CLI's hook shim connects to. Frames + decodes each payload onto
-/// the tagged `AgentEvent` channel; optionally attaches a pid-exit watch and the
-/// daemon presence side-channel.
+/// the tagged `AgentEvent` channel and relays it to any subscribed instance;
+/// optionally attaches a pid-exit watch and the daemon presence side-channel.
 #[derive(Debug)]
 pub struct HookSocketListener {
     inner: imp::Listener,
@@ -110,7 +111,7 @@ impl HookSocketListener {
     }
 
     /// Accept connections forever, decoding each hook payload onto `tx` (and, if
-    /// wired, the pid-watch / presence side-channel).
+    /// wired, the pid-watch / presence side-channel) and relaying it.
     ///
     /// # Errors
     ///
@@ -122,8 +123,7 @@ impl HookSocketListener {
             let (tx, pid_watch) = (tx.clone(), pid_watch.clone());
             let (presence_tx, relay) = (presence_tx.clone(), relay.clone());
             async move {
-                if let Some(payload) = relay.payload_of(conn).await {
-                    let payload = payload.take(MAX_CONN_BYTES);
+                if let Some(payload) = relay.payload_or_subscribe(conn).await {
                     handle_conn(payload, tx, pid_watch, presence_tx, Some(relay)).await;
                 }
             }
@@ -260,7 +260,7 @@ fn patch_identity_pids(evs: &mut [AgentEvent], pid: Option<i32>) {
 }
 
 async fn handle_conn(
-    stream: tokio::io::Take<impl AsyncRead + Unpin>,
+    stream: impl AsyncRead + Unpin,
     tx: TaggedSender,
     pid_watch: Option<HookPidWatch>,
     presence_tx: Option<PresenceSender>,
