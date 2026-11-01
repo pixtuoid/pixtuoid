@@ -257,6 +257,13 @@ fn agent_cases() -> Vec<WireCase> {
             must_reach: &[Reach::Running],
         },
         WireCase {
+            name: "jcode",
+            source: "jcode",
+            fixture: "jcode/fixtures/tool-run-hermetic/hook-payloads.jsonl",
+            wire: Wire::Hooks,
+            must_reach: &[Reach::Running],
+        },
+        WireCase {
             name: "opencode",
             source: "opencode",
             fixture: "opencode/fixtures/permission-hermetic/hook-payloads.jsonl",

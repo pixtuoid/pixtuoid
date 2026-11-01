@@ -120,7 +120,7 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     }
     #[cfg(unix)]
     {
-        Ok(crate::install::hook_cmd::unix::shell_single_quote(path))
+        Ok(crate::install::hook_cmd::shell_single_quote(path))
     }
     #[cfg(windows)]
     {

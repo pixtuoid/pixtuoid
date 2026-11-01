@@ -252,34 +252,19 @@ pub fn connect(
     }
 }
 
-/// `folder`'s path, which "does not include a trailing backslash"
-/// (learn.microsoft.com, SHGetKnownFolderPath).
+/// `folder`'s path.
 ///
 /// # Errors
 ///
 /// If the shell has no path for it.
 #[cfg(windows)]
 pub(crate) fn known_folder(folder: KnownFolder) -> std::io::Result<PathBuf> {
-    use windows_sys::Win32::System::Com::CoTaskMemFree;
-    use windows_sys::Win32::UI::Shell::{
-        FOLDERID_Profile, FOLDERID_ProgramData, SHGetKnownFolderPath,
-    };
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Profile, FOLDERID_ProgramData};
 
-    let id = match folder {
+    crate::win32::known_folder(match folder {
         KnownFolder::ProgramData => &FOLDERID_ProgramData,
         KnownFolder::Profile => &FOLDERID_Profile,
-    };
-    let mut raw: windows_sys::core::PWSTR = std::ptr::null_mut();
-    // SAFETY: `id` is a live GUID, a null token asks for the current user, and
-    // `raw` is a live out-pointer.
-    let hr = unsafe { SHGetKnownFolderPath(id, 0, std::ptr::null_mut(), &mut raw) };
-    // SAFETY: on success `raw` is the NUL-terminated path the call allocated.
-    let path =
-        (hr >= 0 && !raw.is_null()).then(|| PathBuf::from(unsafe { crate::win32::wide_at(raw) }));
-    // SAFETY: the caller frees `raw` "whether SHGetKnownFolderPath succeeds or
-    // not"; freeing null is a no-op.
-    unsafe { CoTaskMemFree(raw.cast()) };
-    path.ok_or_else(|| std::io::Error::from_raw_os_error(hr))
+    })
 }
 
 /// `path` with a leading `{FOLDERID_*}` placeholder resolved, or `None` when

@@ -381,7 +381,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn claude_shim_ref_recovers_a_single_quoted_path_with_an_apostrophe() {
-        use crate::install::hook_cmd::unix::shell_single_quote;
+        use crate::install::hook_cmd::shell_single_quote;
         let path = "/U/O'B/pixtuoid-hook";
         let cmd = shell_single_quote(path);
         assert!(

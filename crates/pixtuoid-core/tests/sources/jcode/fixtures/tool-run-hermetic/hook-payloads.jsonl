@@ -1,0 +1,5 @@
+{"event":"turn_start","session_id":"session_snail_1793522910925_c15f18c032a3d66a","cwd":"/private/tmp/pixtuoid-capture/proj","model":"hermetic","_shim_ts_ms":1793522910982,"_pixtuoid_source":"jcode","_pid":63461}
+{"event":"pre_tool","session_id":"session_snail_1793522910925_c15f18c032a3d66a","cwd":"/private/tmp/pixtuoid-capture/proj","tool_name":"read","_shim_ts_ms":1793522910992,"_pixtuoid_source":"jcode","_pid":63461}
+{"event":"post_tool","session_id":"session_snail_1793522910925_c15f18c032a3d66a","cwd":"/private/tmp/pixtuoid-capture/proj","tool_name":"","_shim_ts_ms":1793522910997,"_pixtuoid_source":"jcode","_pid":63461}
+{"event":"turn_end","session_id":"session_snail_1793522910925_c15f18c032a3d66a","cwd":"/private/tmp/pixtuoid-capture/proj","model":"hermetic","_shim_ts_ms":1793522911008,"_pixtuoid_source":"jcode"}
+{"event":"session_end","session_id":"session_snail_1793522910925_c15f18c032a3d66a","cwd":"","model":"","_shim_ts_ms":1793522911008,"_pixtuoid_source":"jcode"}

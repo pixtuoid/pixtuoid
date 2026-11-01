@@ -13,7 +13,7 @@ use crate::source::decoder::{
 };
 use crate::source::{
     AgentEvent, antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes,
-    kimi, omp, openclaw, opencode, reasonix,
+    jcode, kimi, omp, openclaw, opencode, reasonix,
 };
 
 /// The wire NAME of the per-call tool id in this source's hook envelope, read by
@@ -431,6 +431,7 @@ pub const REGISTRY: &[SourceDescriptor] = &[
     openclaw::DESCRIPTOR,
     grok::DESCRIPTOR,
     kimi::DESCRIPTOR,
+    jcode::DESCRIPTOR,
 ];
 
 /// Linear scan — a handful of entries; a map would cost more ceremony than it

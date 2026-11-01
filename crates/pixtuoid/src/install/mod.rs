@@ -8,6 +8,7 @@ pub(crate) mod hermes;
 mod hook_cmd;
 pub(crate) mod host_plugin;
 pub(crate) mod io;
+pub(crate) mod jcode;
 pub(crate) mod kimi;
 pub(crate) use io::{nonempty_abs_env, owner_only_create};
 pub(crate) mod dsh;
@@ -60,8 +61,8 @@ const PLUGIN_MENTION: &str = "pixtuoid";
 
 /// The fallback when a config cannot be PARSED for a real answer — without it, a
 /// never-connected OpenClaw user with a comment in their legal-JSON5 config was reported
-/// hooks-INSTALLED and then verified BROKEN. Lowercased for `kimi`, the one target with
-/// no `_pixtuoid` sentinel (UPPERCASE `PIXTUOID_SOURCE=kimi`); an OpenClaw plugin id is
+/// hooks-INSTALLED and then verified BROKEN. Lowercased for `kimi`, whose marker is the
+/// UPPERCASE `PIXTUOID_SOURCE=kimi`; an OpenClaw plugin id is
 /// case-SENSITIVE upstream (`openclaw::is_plugin_id`) — don't harmonize the two.
 fn config_mentions_us(content: &str) -> bool {
     content.to_ascii_lowercase().contains(PLUGIN_MENTION)

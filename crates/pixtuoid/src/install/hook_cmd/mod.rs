@@ -1,10 +1,8 @@
-//! Hook-`command` quoting for CLIs whose hook runner SHELLS the command
-//! (`/bin/sh -c` on Unix, `cmd.exe /C` on Windows).
+//! Hook-`command` quoting: `/bin/sh -c` on Unix, `cmd.exe /C` on Windows, and
+//! the POSIX splitting Jcode's runner does on both.
 
 use anyhow::Result;
 
-#[cfg(unix)]
-pub(crate) mod unix;
 // Compiled on all platforms so the cmd-safety decision core (with the 8.3
 // resolver injected) unit-tests on macOS; only the Win32 FFI is `#[cfg(windows)]`.
 mod windows;
@@ -19,7 +17,7 @@ pub(crate) fn windows_short_path(long: &str) -> Option<String> {
 }
 
 /// The shim's source/event flag tokens — the ONE spelling shared by the WRITERS
-/// and the READER (`verify::shell_shim_ref`). Both
+/// and the READERS (`verify::shell_shim_ref`, Jcode's `managed_path`). Both
 /// surrounding spaces are part of the token, so every site splices/splits on the
 /// exact same bytes and a rename can't produce a compiler-invisible write↔read
 /// desync (a path with the un-stripped tail baked in reads as "shim missing").
@@ -28,6 +26,14 @@ pub(crate) fn windows_short_path(long: &str) -> Option<String> {
 pub(crate) const SOURCE_FLAG: &str = " --source ";
 pub(crate) const EVENT_FLAG: &str = " --event ";
 pub(crate) const HOOK_EVENT_FLAG: &str = " --hook-event ";
+
+/// POSIX single-quote a string so a shell treats it as one literal token: an
+/// unquoted path containing spaces would split into multiple args and the hook
+/// would never be found. On Windows, shell-running targets use
+/// `windows_bare_hook_command` instead; Jcode's POSIX-like parser wants it there too.
+pub(crate) fn shell_single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
 
 /// The OS-correct hook `command` string for a shell-running CLI — the single OS
 /// fork for that strategy.
@@ -48,15 +54,59 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     {
         Ok(format!(
             "PIXTUOID_SOURCE={source} {}",
-            unix::shell_single_quote(path)
+            shell_single_quote(path)
         ))
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn quotes_plain_path() {
+        assert_eq!(
+            shell_single_quote("/opt/bin/pixtuoid-hook"),
+            "'/opt/bin/pixtuoid-hook'"
+        );
+    }
+
+    #[test]
+    fn quotes_path_with_spaces() {
+        assert_eq!(
+            shell_single_quote("/Users/Jane Doe/bin/pixtuoid-hook"),
+            "'/Users/Jane Doe/bin/pixtuoid-hook'"
+        );
+    }
+
+    #[test]
+    fn escapes_embedded_single_quote() {
+        // '\'' is close, escaped literal, reopen — the string stays ONE token.
+        assert_eq!(shell_single_quote("a'b"), r#"'a'\''b'"#);
+    }
+
+    // `verify::posix_unquote` must reverse this byte-for-byte, or the on-disk shim
+    // path can't be recovered → a false "shim binary missing" in `doctor` / the
+    // Sources panel.
+    #[test]
+    fn quoting_round_trips_through_the_verify_reader() {
+        use crate::install::verify::posix_unquote;
+        for p in [
+            "/opt/bin/pixtuoid-hook",
+            "/Users/Jane Doe/bin/pixtuoid-hook",
+            "/opt/it's mine/pixtuoid-hook",
+            "/a'b'c/pixtuoid-hook",
+            "/weird; path,&(x)/pixtuoid-hook",
+        ] {
+            assert_eq!(
+                posix_unquote(&shell_single_quote(p)),
+                p,
+                "shell_single_quote → posix_unquote drifted for {p:?}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
     #[test]
     fn valid_source_keeps_the_env_prefix_form_byte_for_byte() {
         assert_eq!(

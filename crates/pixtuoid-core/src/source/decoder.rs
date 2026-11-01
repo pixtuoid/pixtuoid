@@ -706,8 +706,9 @@ pub const ELLIPSIS: char = '\u{2026}';
 /// Make an untrusted wire value safe to DISPLAY: strip control characters, then cap
 /// at [`MAX_DECODED_FIELD_CHARS`]. For the HUMAN sinks that are NOT cell buffers —
 /// the [`super::drift`] breadcrumbs and [`DecodeError`]'s wire strings, which
-/// reach stderr under whatever `tracing` subscriber the host installs. The
-/// binary's `strip_control_chars` is a COPY — keep the two in step.
+/// reach stderr under whatever `tracing` subscriber the host installs — and for
+/// Jcode's decoded fields. The binary's `strip_control_chars` is a COPY — keep
+/// the two in step.
 pub(crate) fn display_safe(s: &str) -> String {
     let stripped: String = s
         .chars()
@@ -1461,8 +1462,8 @@ mod tests {
     #[test]
     fn every_agent_decoder_caps_its_tool_display() {
         use crate::source::{
-            antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, kimi,
-            omp, opencode, reasonix, registry,
+            antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, jcode,
+            kimi, omp, opencode, reasonix, registry,
         };
         use serde_json::json;
         use std::collections::HashSet;
@@ -1533,6 +1534,14 @@ mod tests {
                         json!({"type":"message","message":{"role":"assistant","content":[
                             {"type":"toolCall","id":"t1","name":name,"arguments":{"command":tgt}}]}}),
                     )
+                }),
+            ),
+            (
+                jcode::SOURCE_NAME,
+                Box::new(|| {
+                    jcode::decode_jcode_hook_payload(test_obj(&json!({
+                        "event":"pre_tool","session_id":"session_fox_123_a","tool_name":name})))
+                    .expect("jcode decodes")
                 }),
             ),
             (
@@ -1660,8 +1669,8 @@ mod tests {
     #[test]
     fn every_agent_decoder_caps_its_user_action_request_reason() {
         use crate::source::{
-            antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, kimi,
-            omp, opencode, reasonix, registry,
+            antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, jcode,
+            kimi, omp, opencode, reasonix, registry,
         };
         use serde_json::json;
         use std::collections::HashSet;
@@ -1781,6 +1790,16 @@ mod tests {
                     codewhale::decode_cw_hook_payload(test_obj(&json!({
                         "event":"waiting_for_user","session_id":"s","cwd":"/r","message":raw})))
                     .expect("codewhale decodes")
+                }),
+            ),
+            (
+                jcode::SOURCE_NAME,
+                ReasonKind::NoReason,
+                Box::new(|| {
+                    jcode::decode_jcode_hook_payload(test_obj(&json!({
+                        "event":"pre_tool","session_id":"session_fox_123_a",
+                        "tool_name":"bash","message":raw})))
+                    .expect("jcode decodes")
                 }),
             ),
             (
