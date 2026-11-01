@@ -244,7 +244,7 @@ impl Office {
             // in the background the engine fills a too-small classic with.
             self.screen.blank(px);
             self.shown_badges.clear();
-            let bg = pixtuoid_core::sprite::RgbBuffer::filled(
+            let bg = pixtuoid_scene::sprite::RgbBuffer::filled(
                 px.0,
                 px.1,
                 self.theme.surface.bg_fallback,
@@ -626,7 +626,7 @@ impl Office {
 
 /// `buf` into the RGBA staging vec `rgba`: `Rgb` is not `repr(C)`, so
 /// per-pixel (opaque alpha) — don't cast.
-fn expand_rgba(rgba: &mut Vec<u8>, buf: &pixtuoid_core::sprite::RgbBuffer) {
+fn expand_rgba(rgba: &mut Vec<u8>, buf: &pixtuoid_scene::sprite::RgbBuffer) {
     let px = buf.as_slice();
     rgba.clear();
     rgba.reserve(px.len() * 4);
@@ -637,7 +637,7 @@ fn expand_rgba(rgba: &mut Vec<u8>, buf: &pixtuoid_core::sprite::RgbBuffer) {
 
 // Hand-built JSON — the wasm artifact ships no serde.
 
-fn hex(c: pixtuoid_core::sprite::Rgb) -> String {
+fn hex(c: pixtuoid_scene::sprite::Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
 }
 

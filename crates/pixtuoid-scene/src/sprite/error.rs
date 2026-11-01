@@ -88,7 +88,7 @@ pub enum PackError {
         /// The key it steps from.
         of: char,
     },
-    /// A ramp's level is zero or past [`MAX_RAMP_LEVEL`](super::format::MAX_RAMP_LEVEL).
+    /// A ramp's level is zero or past `MAX_RAMP_LEVEL`.
     #[error(
         "ramp {key:?} level {level} must be nonzero and within ±{}",
         super::format::MAX_RAMP_LEVEL

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use enum_map::EnumMap;
 use serde::Deserialize;
+#[cfg(any(test, feature = "pack-toml"))]
 use strum::VariantArray;
 use vec1::Vec1;
 
@@ -733,6 +734,7 @@ struct AnimationToml {
 /// behind the windows.
 #[derive(Debug, Clone)]
 pub struct Pack {
+    #[cfg(test)]
     palette: Arc<Palette>,
     /// A pack that lacks a piece does not load.
     pieces: EnumMap<Piece, Sprite>,
@@ -805,7 +807,7 @@ impl Material {
     }
 
     /// Every material, in declaration order.
-    pub const ALL: [Material; 7] = [
+    pub(crate) const ALL: [Material; 7] = [
         Material::Facade,
         Material::Shade,
         Material::Roof,
@@ -818,11 +820,11 @@ impl Material {
 
 /// The palette key each [`Material`] is drawn in, from `[city]`.
 #[derive(Debug, Clone)]
-pub struct CityMaterials([char; Material::ALL.len()]);
+pub(crate) struct CityMaterials([char; Material::ALL.len()]);
 
 impl CityMaterials {
     /// The key `material` is drawn in.
-    pub fn key(&self, material: Material) -> char {
+    pub(crate) fn key(&self, material: Material) -> char {
         self.0[material.index()]
     }
 }
@@ -830,7 +832,7 @@ impl CityMaterials {
 /// A depth plane of the city a building may stand in: the far plane is the
 /// painter's own silhouettes, so a pack draws only these two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CityPlane {
+pub(crate) enum CityPlane {
     /// The middle distance.
     Mid,
     /// The nearest buildings, their feet below the sill.
@@ -851,7 +853,7 @@ impl CityPlane {
 /// `[buildings.<name>]` and its `[buildings."<name>@<N>x"]` variants: drawn
 /// only in the `[city]` materials, and the planes it stands in.
 #[derive(Debug, Clone)]
-pub struct Building {
+pub(crate) struct Building {
     name: String,
     planes: Vec<CityPlane>,
     base: BuildingArt,
@@ -860,17 +862,17 @@ pub struct Building {
 
 impl Building {
     /// The building's name.
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
 
     /// Whether it may stand in `plane`.
-    pub fn stands_in(&self, plane: CityPlane) -> bool {
+    pub(crate) fn stands_in(&self, plane: CityPlane) -> bool {
         self.planes.contains(&plane)
     }
 
     /// Its size in logical units: its base art's.
-    pub fn size(&self) -> (u16, u16) {
+    pub(crate) fn size(&self) -> (u16, u16) {
         self.base
             .sprite
             .frames()
@@ -879,32 +881,32 @@ impl Building {
     }
 
     /// Its base art, at 1x.
-    pub fn base(&self) -> &BuildingArt {
+    pub(crate) fn base(&self) -> &BuildingArt {
         &self.base
     }
 
     /// Its variant drawn at `density`, above its [`base`](Self::base).
-    pub fn variant(&self, density: Density) -> Option<&BuildingArt> {
+    pub(crate) fn variant(&self, density: Density) -> Option<&BuildingArt> {
         self.variants.get(&density)
     }
 }
 
 /// A building drawn at one density: its one-frame sprite, and its windows.
 #[derive(Debug, Clone)]
-pub struct BuildingArt {
+pub(crate) struct BuildingArt {
     sprite: Sprite,
     windows: Vec<Vec<(u16, u16)>>,
 }
 
 impl BuildingArt {
     /// The one-frame drawing, in the `[city]` materials.
-    pub fn sprite(&self) -> &Sprite {
+    pub(crate) fn sprite(&self) -> &Sprite {
         &self.sprite
     }
 
     /// Its windows: each a connected run of [`Material::Glass`] pixels, which
     /// lights as one.
-    pub fn windows(&self) -> &[Vec<(u16, u16)>] {
+    pub(crate) fn windows(&self) -> &[Vec<(u16, u16)>] {
         &self.windows
     }
 }
@@ -914,7 +916,7 @@ impl BuildingArt {
 /// so it only ever dresses art at its own density: the classic `1x` art is
 /// never dressed.
 #[derive(Debug, Clone)]
-pub struct Hairstyle {
+pub(crate) struct Hairstyle {
     name: String,
     density: Density,
     views: [Option<HairLayers>; HeadView::ALL.len()],
@@ -922,17 +924,18 @@ pub struct Hairstyle {
 
 impl Hairstyle {
     /// The style's name, without its density.
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
 
     /// The density of the art it dresses.
-    pub fn density(&self) -> Density {
+    #[cfg(test)]
+    pub(crate) fn density(&self) -> Density {
         self.density
     }
 
     /// Its layers for a head facing `view`.
-    pub fn layers(&self, view: HeadView) -> Option<&HairLayers> {
+    pub(crate) fn layers(&self, view: HeadView) -> Option<&HairLayers> {
         self.views[view.index()].as_ref()
     }
 }
@@ -940,64 +943,65 @@ impl Hairstyle {
 /// One view's layers: `behind` goes under the body, `over` on top. Each is a
 /// one-frame sprite whose head mark lands on the body's.
 #[derive(Debug, Clone)]
-pub struct HairLayers {
+pub(crate) struct HairLayers {
     behind: Option<Sprite>,
     over: Option<Sprite>,
 }
 
 impl HairLayers {
     /// The layer under the body.
-    pub fn behind(&self) -> Option<&Sprite> {
+    pub(crate) fn behind(&self) -> Option<&Sprite> {
         self.behind.as_ref()
     }
 
     /// The layer over the body.
-    pub fn over(&self) -> Option<&Sprite> {
+    pub(crate) fn over(&self) -> Option<&Sprite> {
         self.over.as_ref()
     }
 }
 
 impl Pack {
     /// The buildings of the city behind the windows, in name order.
-    pub fn buildings(&self) -> impl Iterator<Item = &Building> {
+    pub(crate) fn buildings(&self) -> impl Iterator<Item = &Building> {
         self.buildings.values()
     }
 
     /// The keys the buildings are drawn in, from `[city]`.
-    pub fn city_materials(&self) -> &CityMaterials {
+    pub(crate) fn city_materials(&self) -> &CityMaterials {
         &self.city_materials
     }
 
     /// The pack's hairstyles, every density of each, in name order.
-    pub fn hairstyles(&self) -> impl Iterator<Item = &Hairstyle> {
+    pub(crate) fn hairstyles(&self) -> impl Iterator<Item = &Hairstyle> {
         self.hairstyles.values()
     }
 
     /// The style `name` at `density`, where the pack draws one.
-    pub fn hairstyle(&self, name: &str, density: Density) -> Option<&Hairstyle> {
+    pub(crate) fn hairstyle(&self, name: &str, density: Density) -> Option<&Hairstyle> {
         self.hairstyles.get(&format!("{name}@{density}x"))
     }
 
     /// The colour of the one line round every marked character frame at a
     /// density of 2 and up, dressed or bare, from `[characters]`.
-    pub fn character_outline(&self) -> Rgb {
+    pub(crate) fn character_outline(&self) -> Rgb {
         self.character_outline
     }
 
     /// The icon `name`'s art, from `[icons]`.
-    pub fn icon(&self, name: &str) -> Option<&Sprite> {
+    pub(crate) fn icon(&self, name: &str) -> Option<&Sprite> {
         self.icons.get(name)
     }
 
     /// The names of the pack's icons, in order: the icon tests' check that
     /// the pack draws no icon nothing names.
-    #[doc(hidden)]
-    pub fn icon_names(&self) -> impl Iterator<Item = &str> {
+    #[cfg(test)]
+    pub(crate) fn icon_names(&self) -> impl Iterator<Item = &str> {
         self.icons.keys().map(String::as_str)
     }
 
     /// The palette the pack's frames were drawn with.
-    pub fn palette(&self) -> &Palette {
+    #[cfg(test)]
+    pub(crate) fn palette(&self) -> &Palette {
         &self.palette
     }
 
@@ -1008,12 +1012,12 @@ impl Pack {
 
     /// `piece` redrawn at each density the pack draws it at, above its
     /// [`piece`](Self::piece) art.
-    pub fn variants_of(&self, piece: Piece) -> &BTreeMap<Density, Sprite> {
+    pub(crate) fn variants_of(&self, piece: Piece) -> &BTreeMap<Density, Sprite> {
         &self.variants[piece]
     }
 
     /// Every density variant, in piece then density order.
-    pub fn variants(&self) -> impl Iterator<Item = (Piece, Density, &Sprite)> {
+    pub(crate) fn variants(&self) -> impl Iterator<Item = (Piece, Density, &Sprite)> {
         self.variants
             .iter()
             .flat_map(|(p, by)| by.iter().map(move |(&d, s)| (p, d, s)))
@@ -1021,13 +1025,13 @@ impl Pack {
 
     /// The base-grid pixels `walk` covers in one full cycle of its frames:
     /// every walk declares one, or the pack does not load.
-    pub fn stride(&self, walk: Walk) -> NonZeroU16 {
+    pub(crate) fn stride(&self, walk: Walk) -> NonZeroU16 {
         self.strides[walk]
     }
 
     /// The densest of [`Pack::density_variants`], or [`Density::ONE`] when the
     /// pack ships none.
-    pub fn max_density_variant(&self) -> Density {
+    pub(crate) fn max_density_variant(&self) -> Density {
         self.densities.first().copied().unwrap_or(Density::ONE)
     }
 
@@ -1039,7 +1043,7 @@ impl Pack {
     /// divides. Only a variant of a registered animation that redraws its base
     /// (`variant_redraws`) counts: a stray key names nothing a painter asks
     /// for, and every renderer skips a variant that does not redraw its base.
-    pub fn density_variants(&self) -> &[Density] {
+    pub(crate) fn density_variants(&self) -> &[Density] {
         &self.densities
     }
 
@@ -1218,6 +1222,7 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
     }
 
     let mut pack = Pack {
+        #[cfg(test)]
         palette,
         pieces,
         variants,
@@ -1403,7 +1408,7 @@ pub(crate) const PACK_MANIFEST: &str = "pack.toml";
 ///
 /// If `pack_toml` does not parse, a frame it names is absent from `frames`, or the pack fails validation.
 #[cfg(feature = "pack-toml")]
-pub fn load_pack_from_strings(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
+pub(crate) fn load_pack_from_strings(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
     load_from_strings(pack_toml, frames, &mut |_| {})
 }
 
@@ -1413,7 +1418,7 @@ pub fn load_pack_from_strings(pack_toml: &str, frames: &[(&str, &str)]) -> Resul
 /// # Errors
 ///
 /// If `pack_json` does not parse, a frame it names is absent from `frames`, or the pack fails validation.
-pub fn load_pack_from_json(pack_json: &str, frames: &[(&str, &str)]) -> Result<Pack> {
+pub(crate) fn load_pack_from_json(pack_json: &str, frames: &[(&str, &str)]) -> Result<Pack> {
     let parsed: PackToml =
         serde_json::from_str(pack_json).map_err(|e| PackError::JsonManifest {
             message: e.to_string(),
@@ -1505,9 +1510,8 @@ pub fn load_filled_pack(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack
 /// # Errors
 ///
 /// As [`load_pack_from_strings`].
-#[cfg(feature = "pack-toml")]
-#[doc(hidden)]
-pub fn frames_read_by(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Vec<String>> {
+#[cfg(all(test, feature = "pack-toml"))]
+pub(crate) fn frames_read_by(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Vec<String>> {
     let mut read = Vec::new();
     load_from_strings(pack_toml, frames, &mut |fname| read.push(fname.to_owned()))?;
     Ok(read)
@@ -1564,7 +1568,7 @@ fn single_char(k: &str, what: KeySite) -> Result<char> {
 /// The furthest a `[ramps]` level may step either way. Past it the darkest
 /// colors stop changing from one level to the next in 8 bits. Also the depth
 /// [`Rgb::ramp`](super::Rgb::ramp) shares its headroom over, so changing it recolours every ramp.
-pub const MAX_RAMP_LEVEL: i8 = 10;
+pub(crate) const MAX_RAMP_LEVEL: i8 = 10;
 
 fn build_palette(
     colors: &BTreeMap<String, String>,
@@ -1609,7 +1613,7 @@ fn build_palette(
 /// Every piece a pack draws: the character poses, the furniture and the
 /// room's fixtures, and the creatures. A pack ships each, so a loaded
 /// [`Pack`] hands out any of them ([`Pack::piece`]); the manifest keys it
-/// by its [`name`](Self::name).
+/// by its `name`.
 #[derive(
     Debug,
     Clone,
@@ -1690,8 +1694,9 @@ pub enum Piece {
 }
 
 /// What a [`Piece`] is.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PieceKind {
+pub(crate) enum PieceKind {
     /// A character pose, which a hairstyle dresses.
     Character,
     /// Furniture or a fixture of the room.
@@ -1703,17 +1708,18 @@ pub enum PieceKind {
 
 impl Piece {
     /// Its key in the manifest's `[animations]`.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         self.into()
     }
 
     /// The piece `name` keys, if it keys one.
-    pub fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         name.parse().ok()
     }
 
     /// What it is.
-    pub fn kind(self) -> PieceKind {
+    #[cfg(test)]
+    pub(crate) fn kind(self) -> PieceKind {
         use Piece::*;
         match self {
             Seated | Typing | Standing | Walking | WalkingBack | SeatedSleeping
@@ -1726,13 +1732,14 @@ impl Piece {
     }
 
     /// The walk it is, if a walker steps it by the ground it covers.
-    pub fn walk(self) -> Option<Walk> {
+    #[cfg(any(test, feature = "pack-toml"))]
+    pub(crate) fn walk(self) -> Option<Walk> {
         Walk::VARIANTS.iter().copied().find(|w| w.piece() == self)
     }
 
     /// The fewest frames it is drawn in: an animation that never moves is
     /// not one.
-    pub fn min_frames(self) -> usize {
+    pub(crate) fn min_frames(self) -> usize {
         match self {
             Piece::Door => 3,
             Piece::Typing
@@ -1749,7 +1756,7 @@ impl Piece {
     /// what of `desk` stands nearer the viewer than its sitter's props. An
     /// overlay keeps that piece's canvas rather than grounding on its own
     /// bottom row.
-    pub fn overlay_of(self) -> Option<Piece> {
+    pub(crate) fn overlay_of(self) -> Option<Piece> {
         match self {
             Piece::DeskFront => Some(Piece::Desk),
             _ => None,
@@ -1758,7 +1765,7 @@ impl Piece {
 }
 
 /// A piece a walker steps by the ground it covers: its frames advance by
-/// distance, so a planted foot stays planted at any speed ([`Pack::stride`]).
+/// distance, so a planted foot stays planted at any speed (`Pack::stride`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_map::Enum, strum::VariantArray)]
 #[expect(missing_docs, reason = "a variant is its piece, `Walk::piece`")]
 pub enum Walk {
@@ -1826,8 +1833,7 @@ impl Density {
     }
 
     /// The density as the non-zero factor it is.
-    #[doc(hidden)]
-    pub const fn as_nonzero(self) -> NonZeroU16 {
+    pub(crate) const fn as_nonzero(self) -> NonZeroU16 {
         self.0
     }
 }
@@ -1839,18 +1845,9 @@ impl std::fmt::Display for Density {
 }
 
 /// The animation name for `base` drawn at `density`x.
-pub fn density_variant_name(base: &str, density: Density) -> String {
-    let mut out = String::with_capacity(base.len() + 4);
-    density_variant_name_into(&mut out, base, density);
-    out
-}
-
-/// [`density_variant_name`] into a caller-owned buffer, so a lookup loop reuses
-/// one allocation.
-pub(crate) fn density_variant_name_into(out: &mut String, base: &str, density: Density) {
-    use std::fmt::Write;
-    // Writing to a String is infallible.
-    let _ = write!(out, "{base}{DENSITY_VARIANT_SEP}{density}x");
+#[cfg(test)]
+pub(crate) fn density_variant_name(base: &str, density: Density) -> String {
+    format!("{base}{DENSITY_VARIANT_SEP}{density}x")
 }
 
 /// The largest density a variant name may claim.

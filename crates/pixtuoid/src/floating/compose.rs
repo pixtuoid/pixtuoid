@@ -1,6 +1,6 @@
 //! What a frame shows, layer by layer, and whether the screen already shows it.
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use pixtuoid_scene::sprite::{Rgb, RgbBuffer};
 
 use pixtuoid_scene::cutaway::canvas::Dirty;
 use pixtuoid_scene::layout::Bounds;

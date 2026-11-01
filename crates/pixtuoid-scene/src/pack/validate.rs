@@ -3,10 +3,8 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU16;
 
-use pixtuoid_core::sprite::format::{
-    Density, Hairstyle, Pack, Piece, PieceKind, density_variant_name,
-};
-use pixtuoid_core::sprite::{Frame, HeadMark, HeadView, Sprite};
+use crate::sprite::format::{Density, Hairstyle, Pack, Piece, PieceKind, density_variant_name};
+use crate::sprite::{Frame, HeadMark, HeadView, Sprite};
 use strum::VariantArray as _;
 
 use super::lookup;
@@ -48,7 +46,7 @@ pub(crate) struct HairOverhang {
 }
 
 /// What a loaded pack draws as its author may not have meant: a pack that
-/// can't draw at all does not load ([`PackError`](pixtuoid_core::sprite::error::PackError)).
+/// can't draw at all does not load ([`PackError`](crate::sprite::error::PackError)).
 #[derive(Debug, Default)]
 pub(crate) struct ValidationReport {
     /// One per character animation.
@@ -260,7 +258,7 @@ fn looped_animations() -> Vec<(Piece, usize)> {
     let creatures = Piece::VARIANTS
         .iter()
         .copied()
-        .filter(|p| p.kind() == pixtuoid_core::sprite::format::PieceKind::Creature);
+        .filter(|p| p.kind() == crate::sprite::format::PieceKind::Creature);
     [
         Piece::FishTank,
         Piece::WaterCooler,
@@ -282,7 +280,7 @@ pub(crate) fn validate_pack(pack: &Pack) -> ValidationReport {
 
 #[cfg(test)]
 mod tests {
-    use pixtuoid_core::sprite::format::load_filled_pack;
+    use crate::sprite::format::load_filled_pack;
 
     use super::*;
 

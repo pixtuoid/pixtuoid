@@ -62,8 +62,8 @@ pub(crate) use coarse::{
     COARSE_CELL_SIZE, CoarseGrid, cell_anchor, cell_center, cell_walkable, snap, snap_where,
 };
 
+use crate::walkable::WalkableMask;
 use pixtuoid_core::state::FloorLocalDeskIndex;
-use pixtuoid_core::walkable::WalkableMask;
 
 /// Primitive rectangle — same shape as `ratatui::layout::Rect` so the binary
 /// converts field-by-field without core paying for the ratatui dep.

@@ -300,7 +300,7 @@ fn a_new_pack_or_theme_empties_the_office_caches() {
                 size: (w, 32),
                 bays: crate::layout::window_slots(w).collect(),
             },
-            pixtuoid_core::sprite::format::Density::ONE,
+            crate::sprite::format::Density::ONE,
             crate::glass_weather::GlassWeather::of(&moment),
         )[0]
         .1
@@ -328,7 +328,7 @@ fn a_new_pack_or_theme_empties_the_office_caches() {
 /// either end clamps, and a NaN leaves the frame as drawn.
 #[test]
 fn a_dim_darkens_each_pixel_a_frame_may_write() {
-    let px = pixtuoid_core::sprite::Rgb {
+    let px = crate::sprite::Rgb {
         r: 201,
         g: 103,
         b: 7,

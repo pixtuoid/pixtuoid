@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::RgbBuffer;
+use crate::sprite::RgbBuffer;
 
 use crate::cutaway::paint::paint;
 use crate::display::light::Ambient;
@@ -198,7 +198,7 @@ impl CutawayCanvas {
     pub fn new(pack: Arc<OfficeArt>) -> Self {
         Self {
             pack,
-            buf: RgbBuffer::filled(0, 0, pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 }),
+            buf: RgbBuffer::filled(0, 0, crate::sprite::Rgb { r: 0, g: 0, b: 0 }),
             shown: None,
             lights: crate::display::compose::LightCache::default(),
         }

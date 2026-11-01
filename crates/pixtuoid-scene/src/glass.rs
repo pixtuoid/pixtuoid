@@ -9,8 +9,8 @@
 //! and sill — and a face-on pane's glint are colours of their own, drawn from
 //! the theme's trim.
 
-use pixtuoid_core::sprite::Rgb;
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::Rgb;
+use crate::sprite::format::Density;
 
 use crate::dither::Stepped;
 use crate::layout::WallPiece;

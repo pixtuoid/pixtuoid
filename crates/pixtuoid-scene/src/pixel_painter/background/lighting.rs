@@ -3,7 +3,7 @@
 
 use std::time::SystemTime;
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 use crate::dither::FALLOFF_TONES;
 use crate::floor::NeonLook;
@@ -332,7 +332,7 @@ mod tests {
         };
         let cells: Vec<_> = crate::ground::Depths::of(
             std::iter::once(crate::ground::Contact::under(5, 10, 10)),
-            pixtuoid_core::sprite::format::Density::ONE,
+            crate::sprite::format::Density::ONE,
         )
         .expect("one contact")
         .cells()

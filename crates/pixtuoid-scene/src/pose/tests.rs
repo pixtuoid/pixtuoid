@@ -3,8 +3,8 @@ use crate::anim::PAINT_FRAME_MS;
 use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, octile_distance, octile_path_len, walk_profile};
 use crate::walk::settle_len;
+use crate::walkable::WalkableMask;
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind, ToolUse};
-use pixtuoid_core::walkable::WalkableMask;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,7 +30,7 @@ impl Router for StubRouter {
     fn route(
         &mut self,
         _: &WalkableMask,
-        _: &pixtuoid_core::walkable::OccupancyOverlay,
+        _: &crate::walkable::OccupancyOverlay,
         from: Point,
         to: Point,
     ) -> Vec<Point> {
@@ -58,7 +58,7 @@ impl Router for ChangingRouter {
     fn route(
         &mut self,
         _: &WalkableMask,
-        _: &pixtuoid_core::walkable::OccupancyOverlay,
+        _: &crate::walkable::OccupancyOverlay,
         _from: Point,
         _to: Point,
     ) -> Vec<Point> {
@@ -1943,7 +1943,7 @@ impl Router for FlipRouter {
     fn route(
         &mut self,
         _: &WalkableMask,
-        _: &pixtuoid_core::walkable::OccupancyOverlay,
+        _: &crate::walkable::OccupancyOverlay,
         _from: Point,
         _to: Point,
     ) -> Vec<Point> {

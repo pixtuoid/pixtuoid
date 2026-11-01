@@ -7,10 +7,10 @@
 //! Every length is in layout units: x from the window run's west end, y from
 //! the glass's top.
 
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::format::Density;
 use std::ops::Range;
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 use crate::atmosphere::Moment;
 use crate::outside::{Cell, WindowView};

@@ -19,14 +19,14 @@ pub type WalkableMask = Grid<bool>;
 impl Grid<bool> {
     /// Create a fully-open mask. Caller fills obstacles via `mark_blocked`.
     #[inline]
-    pub fn new_open(width: u16, height: u16) -> Self {
+    pub(crate) fn new_open(width: u16, height: u16) -> Self {
         Grid::filled(width, height, true)
     }
 
     /// Mark a rect (with `pad` extra pixels on each side) as blocked.
     /// Out-of-bounds pixels are clipped — caller doesn't need to bounds-check.
     #[inline]
-    pub fn mark_blocked(&mut self, x: u16, y: u16, w: u16, h: u16, pad: u16) {
+    pub(crate) fn mark_blocked(&mut self, x: u16, y: u16, w: u16, h: u16, pad: u16) {
         let min_x = x.saturating_sub(pad);
         let max_x = x.saturating_add(w).saturating_add(pad).min(self.width);
         let min_y = y.saturating_sub(pad);
@@ -38,8 +38,9 @@ impl Grid<bool> {
         }
     }
 
-    /// Carve `true` back into a rect — used for door cutouts in the wall band.
-    pub fn mark_walkable(&mut self, x: u16, y: u16, w: u16, h: u16) {
+    /// Carve `true` back into a rect.
+    #[cfg(test)]
+    pub(crate) fn mark_walkable(&mut self, x: u16, y: u16, w: u16, h: u16) {
         let max_x = x.saturating_add(w).min(self.width);
         let max_y = y.saturating_add(h).min(self.height);
         for yy in y..max_y {
@@ -67,17 +68,17 @@ pub struct OccupancyOverlay {
 
 impl OccupancyOverlay {
     /// An empty overlay — no rects blocked.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Drop every blocked rect, ready to rebuild for the next frame.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.rects.clear();
     }
 
     /// Block the rect at `(x, y)` of size `w × h`.
-    pub fn add(&mut self, x: u16, y: u16, w: u16, h: u16) {
+    pub(crate) fn add(&mut self, x: u16, y: u16, w: u16, h: u16) {
         self.rects.push((x, y, w, h));
     }
 
@@ -89,14 +90,14 @@ impl OccupancyOverlay {
 
     /// True when no rect is blocked.
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.rects.is_empty()
     }
 
     /// True if (`x`, `y`) falls inside any current occupancy rect.
     /// Linear scan — fine while N stays in the low tens.
     #[inline]
-    pub fn blocks(&self, x: u16, y: u16) -> bool {
+    pub(crate) fn blocks(&self, x: u16, y: u16) -> bool {
         self.rects.iter().any(|&(rx, ry, rw, rh)| {
             x >= rx && x < rx.saturating_add(rw) && y >= ry && y < ry.saturating_add(rh)
         })
@@ -105,10 +106,10 @@ impl OccupancyOverlay {
     /// Order-stable hash of the current occupancy set — rects are sorted
     /// before hashing, so push order cannot change the signature the router
     /// cache invalidates on.
-    pub fn signature(&self) -> u64 {
+    pub(crate) fn signature(&self) -> u64 {
         let mut sorted: Vec<(u16, u16, u16, u16)> = self.rects.clone();
         sorted.sort_unstable();
-        crate::id::fnv1a(
+        pixtuoid_core::id::fnv1a(
             sorted
                 .iter()
                 .flat_map(|&(x, y, w, h)| [x, y, w, h])

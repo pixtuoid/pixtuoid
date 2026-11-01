@@ -2,11 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use pixtuoid_core::sprite::format::Piece;
-use pixtuoid_core::sprite::{Frame, Rgb};
 use pixtuoid_core::state::ActivityState;
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, SceneState};
 use pixtuoid_scene::frame_cache::{FrameCache, FrameKey};
+use pixtuoid_scene::sprite::format::Piece;
+use pixtuoid_scene::sprite::{Frame, Rgb};
 
 fn key(id: AgentId, anim_name: Piece, frame_idx: usize, flip_x: bool) -> FrameKey {
     FrameKey {
@@ -16,7 +16,7 @@ fn key(id: AgentId, anim_name: Piece, frame_idx: usize, flip_x: bool) -> FrameKe
         flip_x,
         glow_tint: None,
         burn: pixtuoid_scene::burn::BurnTier::Normal,
-        density: pixtuoid_core::sprite::format::Density::ONE,
+        density: pixtuoid_scene::sprite::format::Density::ONE,
     }
 }
 

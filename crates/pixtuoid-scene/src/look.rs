@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::state::DaemonState;
 
 /// Where a [`Rendered`] frame may differ from the last: the frame entry's
@@ -400,7 +400,7 @@ impl Raster {
 
     fn classic(&mut self) -> &mut Classic {
         self.classic.get_or_insert_with(|| Classic {
-            buf: RgbBuffer::filled(0, 0, pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 }),
+            buf: RgbBuffer::filled(0, 0, crate::sprite::Rgb { r: 0, g: 0, b: 0 }),
             caches: ClassicCaches::new(),
             badges: Vec::new(),
             bubbles: Vec::new(),

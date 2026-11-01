@@ -129,7 +129,7 @@ fn draw_text(
     color: Rgba<u8>,
     halo: Option<Rgba<u8>>,
 ) -> i32 {
-    let rgb = |c: Rgba<u8>| pixtuoid_core::sprite::Rgb {
+    let rgb = |c: Rgba<u8>| pixtuoid_scene::sprite::Rgb {
         r: c[0],
         g: c[1],
         b: c[2],

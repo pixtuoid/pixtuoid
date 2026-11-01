@@ -3,7 +3,7 @@
 //! lights resolved on the art grid ([`LightView`]). The rasterizer applies
 //! them.
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 use crate::display::Span;
 use crate::display::pen::{ArtPx, ArtRect, Pen, layout_point};

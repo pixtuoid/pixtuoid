@@ -32,12 +32,12 @@ pub fn blit_frame(frame: &Frame, dst_x: u16, dst_y: u16, dst: &mut RgbBuffer) {
 /// Nearest-neighbour and integer-only, deliberately — pixel art must land on
 /// exact pixel boundaries, and any filtering blurs the very edges the style is
 /// made of. Not `image::imageops::resize`: that would pull a large dependency
-/// into the headless core for a doubled loop, and it cannot composite
+/// into this crate for a doubled loop, and it cannot composite
 /// transparency into an existing buffer, which is the whole job here.
 ///
 /// `scale` is [`NonZeroU16`] so a zero factor — which would silently paint
 /// nothing — is unrepresentable rather than merely documented.
-pub fn blit_frame_scaled(
+pub(crate) fn blit_frame_scaled(
     frame: &Frame,
     dst_x: u16,
     dst_y: u16,

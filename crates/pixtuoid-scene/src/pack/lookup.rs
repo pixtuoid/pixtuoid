@@ -2,8 +2,8 @@
 //! theme recolours.
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::format::{Density, Piece};
-use pixtuoid_core::sprite::{Pixel, Rgb, Sprite};
+use crate::sprite::format::{Density, Piece};
+use crate::sprite::{Pixel, Rgb, Sprite};
 
 /// The pack key of a monitor's glass.
 pub(crate) const SCREEN_GLASS_KEY: char = 'j';
@@ -154,10 +154,7 @@ pub(crate) fn desk_mark(
 }
 
 /// The 1x art a desk seating its occupant toward `facing` draws.
-pub(crate) fn desk_art(
-    pack: &OfficeArt,
-    facing: crate::layout::Facing,
-) -> &pixtuoid_core::sprite::Frame {
+pub(crate) fn desk_art(pack: &OfficeArt, facing: crate::layout::Facing) -> &crate::sprite::Frame {
     pack.desk(super::Desk::facing(facing)).base().sprite.first()
 }
 

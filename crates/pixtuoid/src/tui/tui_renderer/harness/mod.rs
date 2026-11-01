@@ -141,7 +141,7 @@ pub(super) fn frame_text(buf: &ratatui::buffer::Buffer) -> String {
     }
     out
 }
-pub(super) fn lum(c: pixtuoid_core::sprite::Rgb) -> f32 {
+pub(super) fn lum(c: pixtuoid_scene::sprite::Rgb) -> f32 {
     0.299 * f32::from(c.r) + 0.587 * f32::from(c.g) + 0.114 * f32::from(c.b)
 }
 pub(super) fn avg_lum(buf: &RgbBuffer, x0: u16, y0: u16, w: u16, h: u16) -> f32 {
@@ -310,8 +310,8 @@ pub(super) fn assert_world_text_dims(
     use ratatui::style::Color;
     let under = |c: Color| match c {
         Color::Rgb(r, g, b) => {
-            let pixtuoid_core::sprite::Rgb { r, g, b } =
-                dim.of(pixtuoid_core::sprite::Rgb { r, g, b });
+            let pixtuoid_scene::sprite::Rgb { r, g, b } =
+                dim.of(pixtuoid_scene::sprite::Rgb { r, g, b });
             Color::Rgb(r, g, b)
         }
         other => other,

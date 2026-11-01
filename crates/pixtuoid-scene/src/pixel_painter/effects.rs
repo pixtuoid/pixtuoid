@@ -1,7 +1,7 @@
 //! Effects that ride on a character, a pet or a fixture, painted with it in
 //! z-order in their [look](crate::effects::look), and a screen's own.
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 use super::palette::{WHITE, blend_pixel};
 use crate::effects::Effect;
@@ -111,9 +111,7 @@ mod tests {
     fn the_glow_lands_on_the_desk_arts_monitor() {
         use crate::pack::{SCREEN_GLASS_KEY, SCREEN_TEXT_KEY};
         let pack = crate::pack::test_office();
-        let art = pack
-            .piece(pixtuoid_core::sprite::format::Piece::DeskNorth)
-            .first();
+        let art = pack.piece(crate::sprite::format::Piece::DeskNorth).first();
         let screen: Vec<Rgb> = [SCREEN_GLASS_KEY, SCREEN_TEXT_KEY]
             .iter()
             .map(|&k| {

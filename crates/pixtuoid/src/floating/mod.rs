@@ -177,7 +177,7 @@ impl PipelineBoot {
     pub(crate) fn spawn(
         self,
         window_size: winit::dpi::PhysicalSize<u32>,
-        density: pixtuoid_core::sprite::format::Density,
+        density: pixtuoid_scene::sprite::format::Density,
         zoom: geometry::Zoom,
     ) -> LivePipeline {
         let _guard = self.rt.enter(); // spawn_pipeline's internal spawns need it

@@ -5,7 +5,7 @@
 
 use std::num::NonZeroU16;
 
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::format::Density;
 
 use crate::pack::OfficeArt;
 

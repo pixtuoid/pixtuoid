@@ -4,7 +4,7 @@ use super::*;
 use crate::graphics::kitty::PLACEHOLDER;
 use crate::graphics::{CellSize, ImageProtocol, cutaway_fit};
 use crate::tui::cutaway::TileCutaway;
-use pixtuoid_core::sprite::format::Density;
+use pixtuoid_scene::sprite::format::Density;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A cell whose natural scale is the bundled art's density, so the image is

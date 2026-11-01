@@ -1,5 +1,5 @@
-use pixtuoid_core::sprite::blit::blit_frame;
-use pixtuoid_core::sprite::{Frame, Pixel, Rgb, RgbBuffer};
+use pixtuoid_scene::sprite::blit::blit_frame;
+use pixtuoid_scene::sprite::{Frame, Pixel, Rgb, RgbBuffer};
 
 fn px(r: u8, g: u8, b: u8) -> Pixel {
     Some(Rgb { r, g, b })

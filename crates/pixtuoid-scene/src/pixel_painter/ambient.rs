@@ -1,7 +1,7 @@
 //! Ambient pass — painted between the background and the y-sorted
 //! drawables: ceiling halos above running monitors.
 
-use pixtuoid_core::sprite::RgbBuffer;
+use crate::sprite::RgbBuffer;
 
 use crate::lighting::{Emitter, EmitterKind};
 use crate::pixel_painter::background::paint_light;
@@ -25,7 +25,7 @@ pub(super) fn paint_ceiling_halos(buf: &mut RgbBuffer, theme: &Theme, halos: &[E
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pixtuoid_core::sprite::Rgb;
+    use crate::sprite::Rgb;
 
     /// One monitor halo centred at `(x, y)`, over an edit.
     fn one_halo(x: u16, y: u16) -> Vec<Emitter> {

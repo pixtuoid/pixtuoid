@@ -6,7 +6,7 @@ use super::{
     Furniture, MeetingRoom, PANTRY_FOOTPRINT_DEPTH, Pivot, PlantItem, PodDecorItem, Point, Size,
     WALL_THICK_V, WallDecorItem, Waypoint, WaypointKind, anchored_top_left, furniture_def,
 };
-use pixtuoid_core::walkable::WalkableMask;
+use crate::walkable::WalkableMask;
 
 /// Stamp a furniture footprint as a collision rect DECLARED relative to its
 /// VISUAL box. The visual top-left comes from `pivot` via `anchored_top_left`

@@ -3,8 +3,8 @@
 //! cells to the layout unit, so each painter draws one design at its own
 //! density.
 
-use pixtuoid_core::sprite::Rgb;
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::Rgb;
+use crate::sprite::format::Density;
 
 use crate::anim::Beat;
 use crate::atmosphere::Moment;

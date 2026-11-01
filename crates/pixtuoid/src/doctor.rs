@@ -705,7 +705,7 @@ impl Ink {
 fn probe_terminal_caps(
     probe_ok: bool,
     look: crate::graphics::LookChoice,
-    max_density: pixtuoid_core::sprite::format::Density,
+    max_density: pixtuoid_scene::sprite::format::Density,
 ) -> (Option<crate::term::Truecolor>, crate::graphics::Plan) {
     let truecolor_probe =
         probe_ok.then(|| crate::term::query_truecolor(crate::term::TRUECOLOR_PROBE_TIMEOUT));
@@ -1747,7 +1747,7 @@ mod tests {
             width: 200,
             height: 49,
         };
-        let density = pixtuoid_core::sprite::format::Density::new(4).expect("nonzero");
+        let density = pixtuoid_scene::sprite::format::Density::new(4).expect("nonzero");
         r.graphics_plan = Plan::Cutaway {
             fit: cutaway_fit(cell, area, density).expect("fits"),
             route: crate::graphics::Route::direct(ImageProtocol::Kitty, false),

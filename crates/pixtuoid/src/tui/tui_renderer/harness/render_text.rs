@@ -295,7 +295,7 @@ fn meeting_glass_partition_connects_at_window_and_corner() {
     let top_wall_h = layout.top_margin - 4;
 
     let buf = r.buf().expect("a frame");
-    let dist = |a: pixtuoid_core::sprite::Rgb, b: pixtuoid_core::sprite::Rgb| {
+    let dist = |a: pixtuoid_scene::sprite::Rgb, b: pixtuoid_scene::sprite::Rgb| {
         (i32::from(a.r) - i32::from(b.r)).abs()
             + (i32::from(a.g) - i32::from(b.g)).abs()
             + (i32::from(a.b) - i32::from(b.b)).abs()
@@ -306,7 +306,7 @@ fn meeting_glass_partition_connects_at_window_and_corner() {
     let glass_rim = buf.get(v_x, layout.top_margin + 2);
     let glass_pane = buf.get(v_x + 2, layout.top_margin + 2);
     let floor_ref = buf.get(v_x.saturating_sub(8), top_wall_h + 6);
-    let is_glass = |p: pixtuoid_core::sprite::Rgb| {
+    let is_glass = |p: pixtuoid_scene::sprite::Rgb| {
         dist(p, glass_rim).min(dist(p, glass_pane)) < dist(p, floor_ref)
     };
 

@@ -4,8 +4,8 @@
 
 use std::collections::HashMap;
 
+use crate::sprite::Rgb;
 use pixtuoid_core::AgentSlot;
-use pixtuoid_core::sprite::Rgb;
 use pixtuoid_core::state::ActivityState;
 
 use crate::layout::DESK_W;
@@ -432,7 +432,7 @@ mod tests {
 
     /// WCAG 2.2's relative luminance
     /// (<https://www.w3.org/TR/WCAG22/#dfn-relative-luminance>).
-    fn luminance(c: pixtuoid_core::sprite::Rgb) -> f64 {
+    fn luminance(c: crate::sprite::Rgb) -> f64 {
         let linear = |v: u8| {
             let s = f64::from(v) / 255.0;
             if s <= 0.04045 {
@@ -445,7 +445,7 @@ mod tests {
     }
 
     /// WCAG 2.2's contrast ratio (<https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio>).
-    fn contrast(a: pixtuoid_core::sprite::Rgb, b: pixtuoid_core::sprite::Rgb) -> f64 {
+    fn contrast(a: crate::sprite::Rgb, b: crate::sprite::Rgb) -> f64 {
         let (la, lb) = (luminance(a), luminance(b));
         (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
     }

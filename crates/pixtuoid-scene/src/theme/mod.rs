@@ -5,7 +5,7 @@ mod gruvbox;
 mod normal;
 mod tokyo_night;
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 pub(crate) use catppuccin::CATPPUCCIN;
 pub use cyberpunk::CYBERPUNK;

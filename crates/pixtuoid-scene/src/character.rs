@@ -3,9 +3,9 @@
 use std::time::SystemTime;
 
 use crate::pack::OfficeArt;
+use crate::sprite::format::Piece;
+use crate::sprite::{Frame, Rgb};
 use pixtuoid_core::AgentSlot;
-use pixtuoid_core::sprite::format::Piece;
-use pixtuoid_core::sprite::{Frame, Rgb};
 
 use crate::frame_cache::FrameCache;
 use crate::sim::{CharacterGlow, outfit_seed_for};
@@ -147,7 +147,7 @@ pub(crate) struct CharacterKey {
     pub(crate) outfit: u64,
     /// The agent's colours, resolved: the recolor reads nothing of the agent
     /// beyond what this and `frame` carry.
-    palette: [(char, pixtuoid_core::sprite::Pixel); 4],
+    palette: [(char, crate::sprite::Pixel); 4],
     /// How the frame is dressed, resolved once for every reader: the recolor
     /// and the cutaway's figure box.
     pub(crate) dress: Option<Dress>,

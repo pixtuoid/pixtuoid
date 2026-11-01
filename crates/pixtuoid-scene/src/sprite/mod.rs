@@ -74,7 +74,7 @@ impl Rgb {
     /// hue: a hue rotation flips direction at the hue opposite its target and
     /// has nothing to rotate on a grey, where the pull warms its lights.
     #[must_use]
-    pub fn ramp(self, level: i8) -> Rgb {
+    pub(crate) fn ramp(self, level: i8) -> Rgb {
         if level == 0 {
             return self;
         }
@@ -143,7 +143,7 @@ impl Rgb {
     /// lightness moves evenly with `t` where an sRGB mix of two hues sags
     /// through a darker, muddier middle.
     #[must_use]
-    pub fn mix(self, other: Rgb, t: f32) -> Rgb {
+    pub(crate) fn mix(self, other: Rgb, t: f32) -> Rgb {
         debug_assert!(!t.is_nan(), "a NaN t survives the clamp");
         Rgb::from_oklab_in_gamut(self.to_oklab().mix(other.to_oklab(), t))
     }
@@ -151,7 +151,7 @@ impl Rgb {
     /// How light this color looks, from black at 0 to white at 1: OKLab's
     /// lightness, the axis [`Rgb::ramp`] steps along and [`Rgb::mix`] runs
     /// evenly on.
-    pub fn lightness(self) -> f32 {
+    pub(crate) fn lightness(self) -> f32 {
         self.to_oklab().l
     }
 
@@ -238,7 +238,7 @@ enum Entry {
 /// replacing a key's color recolors exactly the pixels drawn with that key and
 /// every ramp of it, even where another key has the same color.
 #[derive(Debug, Clone, Default)]
-pub struct Palette {
+pub(crate) struct Palette {
     /// In index order.
     entries: Vec<(char, Entry)>,
     index: HashMap<char, usize>,
@@ -281,7 +281,7 @@ impl Palette {
     /// Look up `key`: `None` if it is undefined, a ramp that does not resolve
     /// included (`insert_ramp`), else `Some(pixel)` (the
     /// pixel itself may be transparent).
-    pub fn get(&self, key: char) -> Option<Pixel> {
+    pub(crate) fn get(&self, key: char) -> Option<Pixel> {
         self.resolve(self.entry(key)?)
     }
 
@@ -373,7 +373,7 @@ impl Frame {
 
     /// Reverse each row — turns a right-facing sprite into a left-facing one.
     #[must_use]
-    pub fn mirror_horizontal(&self) -> Self {
+    pub(crate) fn mirror_horizontal(&self) -> Self {
         let w = self.width as usize;
         let h = self.height as usize;
         let src = self.as_slice();
@@ -389,7 +389,7 @@ impl Frame {
 
     /// Flip rows top-to-bottom.
     #[must_use]
-    pub fn mirror_vertical(&self) -> Self {
+    pub(crate) fn mirror_vertical(&self) -> Self {
         let w = self.width as usize;
         let h = self.height as usize;
         let src = self.as_slice();
@@ -407,7 +407,7 @@ impl Frame {
 /// A named point on one frame, from a `.sprite` frame's `@mark <name> <x> <y>`:
 /// where a painter lays something over the art, in the frame's own pixels.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Mark {
+pub(crate) struct Mark {
     name: String,
     x: u16,
     y: u16,
@@ -419,17 +419,17 @@ impl Mark {
     }
 
     /// Its name: `head.<view>` is where a hairstyle is laid ([`Sprite::head`]).
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
 
     /// Its column.
-    pub fn x(&self) -> u16 {
+    pub(crate) fn x(&self) -> u16 {
         self.x
     }
 
     /// Its row.
-    pub fn y(&self) -> u16 {
+    pub(crate) fn y(&self) -> u16 {
         self.y
     }
 }
@@ -478,11 +478,11 @@ impl HeadView {
 /// head is laid on, read from the frame's one `head.<view>` [`Mark`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub struct HeadMark {
+pub(crate) struct HeadMark {
     /// Which way the head faces.
-    pub view: HeadView,
+    pub(crate) view: HeadView,
     /// The mark's column.
-    pub x: u16,
+    pub(crate) x: u16,
     /// The mark's row.
     pub(crate) y: u16,
 }
@@ -540,17 +540,17 @@ impl Sprite {
     }
 
     /// Frame `idx`'s marks, in the order the file names them.
-    pub fn marks(&self, idx: usize) -> &[Mark] {
+    pub(crate) fn marks(&self, idx: usize) -> &[Mark] {
         self.marks.get(idx).map_or(&[], Vec::as_slice)
     }
 
     /// Frame `idx`'s head: where a hairstyle dresses it.
-    pub fn head(&self, idx: usize) -> Option<HeadMark> {
+    pub(crate) fn head(&self, idx: usize) -> Option<HeadMark> {
         self.marks(idx).iter().find_map(HeadMark::of)
     }
 
     /// Frame 0 and its offset when its own head mark is laid on `head`.
-    pub fn laid_on(&self, head: HeadMark) -> Option<(&Frame, i32, i32)> {
+    pub(crate) fn laid_on(&self, head: HeadMark) -> Option<(&Frame, i32, i32)> {
         let mark = self.head(0)?;
         Some((
             self.first(),
@@ -572,18 +572,18 @@ impl Sprite {
     /// `idx`, or `0` once it runs past the last frame: an animation with fewer
     /// frames than a shared cycle's index then shows its first rather than
     /// vanishing.
-    pub fn wrap(&self, idx: usize) -> usize {
+    pub(crate) fn wrap(&self, idx: usize) -> usize {
         if idx < self.frames.len() { idx } else { 0 }
     }
 
-    /// Frame [`wrap`](Self::wrap)`(idx)`.
+    /// Frame `wrap(idx)`.
     pub fn frame_at(&self, idx: usize) -> &Frame {
         &self.frames[self.wrap(idx)]
     }
 
     /// Frame [`wrap`](Self::wrap)`(idx)` as the palette indices a recolor
     /// resolves.
-    pub fn recolorable_at(&self, idx: usize) -> RecolorableFrame<'_> {
+    pub(crate) fn recolorable_at(&self, idx: usize) -> RecolorableFrame<'_> {
         RecolorableFrame {
             indexed: &self.indexed[self.wrap(idx)],
             palette: &self.palette,
@@ -591,7 +591,7 @@ impl Sprite {
     }
 
     /// How long each frame holds before advancing, in milliseconds: a walk
-    /// with a [`stride`](Self::stride) steps by distance instead.
+    /// with a `stride` steps by distance instead.
     pub fn frame_ms(&self) -> u32 {
         self.frame_ms
     }
@@ -599,14 +599,14 @@ impl Sprite {
     /// The base-grid pixels a walker covers in one full cycle of its frames:
     /// they advance by distance travelled, so a planted foot stays planted at
     /// any speed. `None` where the pack declares none.
-    pub fn stride(&self) -> Option<std::num::NonZeroU16> {
+    pub(crate) fn stride(&self) -> Option<std::num::NonZeroU16> {
         self.stride
     }
 }
 
 /// One frame of a [`Sprite`] as palette indices, from [`Sprite::recolorable_at`].
 #[derive(Debug, Clone, Copy)]
-pub struct RecolorableFrame<'a> {
+pub(crate) struct RecolorableFrame<'a> {
     indexed: &'a IndexedFrame,
     palette: &'a Palette,
 }
@@ -618,7 +618,7 @@ impl RecolorableFrame<'_> {
     /// An override replaces a color and never adds one: a key the palette
     /// lacks or holds transparent stays as it is, so a pack that leaves a part
     /// out (a character with no hair) keeps it out for every agent.
-    pub fn recolored(&self, overrides: &[(char, Pixel)]) -> Frame {
+    pub(crate) fn recolored(&self, overrides: &[(char, Pixel)]) -> Frame {
         let mut palette = self.palette.clone();
         for &(key, pixel) in overrides {
             if let Some(Some(_)) = palette.get(key) {
@@ -630,7 +630,7 @@ impl RecolorableFrame<'_> {
 
     /// Which of the frame's pixels, row by row, it draws in one of `keys`:
     /// those that go transparent when the keys are blanked.
-    pub fn drawn_in(&self, keys: &[char]) -> Vec<bool> {
+    pub(crate) fn drawn_in(&self, keys: &[char]) -> Vec<bool> {
         let art = self.recolored(&[]);
         let blank = self.recolored(&keys.iter().map(|&k| (k, None)).collect::<Vec<_>>());
         let opaque = |f: &Frame, x, y| f.get(x, y).and_then(|p| *p).is_some();
@@ -653,7 +653,7 @@ pub struct RgbBuffer {
 
 /// A write epoch of the one buffer whose [`RgbBuffer::begin_writes`] minted it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WriteEpoch(u32);
+pub(crate) struct WriteEpoch(u32);
 
 /// Each pixel's epoch of its last noted write.
 #[derive(Debug, Clone)]
@@ -730,9 +730,9 @@ impl RgbBuffer {
         self.pixels.as_slice()[self.checked_index(x, y)]
     }
 
-    /// Write `rgb` at `(x, y)`, unless a [`with_clip`](Self::with_clip) keeps
+    /// Write `rgb` at `(x, y)`, unless a `with_clip` keeps
     /// it out. Debug-asserts the point is in bounds; use
-    /// [`put_checked`](Self::put_checked) when `(x, y)` may fall outside.
+    /// `put_checked` when `(x, y)` may fall outside.
     #[inline]
     pub fn put(&mut self, x: u16, y: u16, rgb: Rgb) {
         if self.clipped(x, y) {
@@ -747,10 +747,8 @@ impl RgbBuffer {
     /// `restore`. A repaint of part of the buffer runs the whole paint and
     /// lands only there; a bulk writer goes through
     /// [`writable_rows_mut`](Self::writable_rows_mut), never
-    /// [`as_mut_slice`](Self::as_mut_slice). A painter's mechanism, not
-    /// core's contract.
-    #[doc(hidden)]
-    pub fn with_clip<T>(
+    /// [`as_mut_slice`](Self::as_mut_slice).
+    pub(crate) fn with_clip<T>(
         &mut self,
         (columns, rows): (Range<u16>, Range<u16>),
         paint: impl FnOnce(&mut Self) -> T,
@@ -768,8 +766,7 @@ impl RgbBuffer {
 
     /// Each writable row as `(y, its first writable column, its writable
     /// pixels)`: a bulk write that keeps to the clip by construction.
-    #[doc(hidden)]
-    pub fn writable_rows_mut(&mut self) -> impl Iterator<Item = (u16, u16, &mut [Rgb])> {
+    pub(crate) fn writable_rows_mut(&mut self) -> impl Iterator<Item = (u16, u16, &mut [Rgb])> {
         let (xs, ys) = self.writable();
         if let Some(w) = &mut self.writes {
             w.note_all();
@@ -790,8 +787,7 @@ impl RgbBuffer {
     }
 
     /// The columns and rows a write may land in: the clip, within the buffer.
-    #[doc(hidden)]
-    pub fn writable(&self) -> (Range<u16>, Range<u16>) {
+    pub(crate) fn writable(&self) -> (Range<u16>, Range<u16>) {
         let (w, h) = (self.pixels.width, self.pixels.height);
         match &self.clip {
             Some((xs, ys)) => (
@@ -815,7 +811,7 @@ impl RgbBuffer {
     /// loop bounds to [`writable`](Self::writable) once and keeps
     /// [`put`](Self::put).
     #[inline]
-    pub fn put_checked(&mut self, x: u16, y: u16, rgb: Rgb) {
+    pub(crate) fn put_checked(&mut self, x: u16, y: u16, rgb: Rgb) {
         if x < self.pixels.width && y < self.pixels.height && !self.clipped(x, y) {
             let i = self.raw_index(x, y);
             self.write(i, rgb);
@@ -823,10 +819,10 @@ impl RgbBuffer {
     }
 
     /// Every pixel, row-major, to write in bulk. While
-    /// [`begin_writes`](Self::begin_writes) tracks, the whole buffer counts as
+    /// `begin_writes` tracks, the whole buffer counts as
     /// written this epoch, since a bulk write may touch any of it. Outside any
-    /// [`with_clip`](Self::with_clip) only: it hands out the whole buffer, so a
-    /// clipped bulk write goes through [`writable_rows_mut`](Self::writable_rows_mut).
+    /// `with_clip` only: it hands out the whole buffer, so a
+    /// clipped bulk write goes through `writable_rows_mut`.
     pub fn as_mut_slice(&mut self) -> &mut [Rgb] {
         debug_assert!(
             self.clip.is_none(),
@@ -840,7 +836,7 @@ impl RgbBuffer {
 
     /// Resize to `width × height` with every pixel `fill`, which counts as
     /// writing every pixel.
-    pub fn resize_fill(&mut self, width: u16, height: u16, fill: Rgb) {
+    pub(crate) fn resize_fill(&mut self, width: u16, height: u16, fill: Rgb) {
         let reshaped = (width, height) != (self.pixels.width, self.pixels.height);
         self.pixels.resize_fill(width, height, fill);
         if let Some(w) = &mut self.writes {
@@ -862,7 +858,7 @@ impl RgbBuffer {
 
     /// Start a write epoch and return it, for [`written_in`](Self::written_in):
     /// unlike a diff, it sees a pixel written in the colour already there.
-    pub fn begin_writes(&mut self) -> WriteEpoch {
+    pub(crate) fn begin_writes(&mut self) -> WriteEpoch {
         let n = self.pixels.as_slice().len();
         let w = self.writes.get_or_insert_with(|| Writes {
             at: vec![0; n],
@@ -880,14 +876,14 @@ impl RgbBuffer {
 
     /// Stop noting writes until the next [`begin_writes`](Self::begin_writes);
     /// epochs already noted still answer [`written_in`](Self::written_in).
-    pub fn end_writes(&mut self) {
+    pub(crate) fn end_writes(&mut self) {
         if let Some(w) = &mut self.writes {
             w.tracking = false;
         }
     }
 
     /// Whether `(x, y)` was last written in `epoch` ([`begin_writes`](Self::begin_writes)).
-    pub fn written_in(&self, x: u16, y: u16, epoch: WriteEpoch) -> bool {
+    pub(crate) fn written_in(&self, x: u16, y: u16, epoch: WriteEpoch) -> bool {
         x < self.pixels.width
             && y < self.pixels.height
             && self

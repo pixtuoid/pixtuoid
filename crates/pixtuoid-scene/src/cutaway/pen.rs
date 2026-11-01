@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 use crate::cutaway::shade::fill;
 use crate::display::pen::{ArtPx, ArtRect, BufferPx, Pen};
@@ -80,7 +80,7 @@ impl Pen {
     }
 
     /// Step every pixel of `r` `stepped`'s level stops along its own ramp
-    /// ([`Rgb::ramp`](pixtuoid_core::sprite::Rgb::ramp)), clipped to the
+    /// ([`Rgb::ramp`](crate::sprite::Rgb::ramp)), clipped to the
     /// buffer: a tone relative to what is already painted there, not a colour
     /// of its own. An art pixel that was one colour stays one.
     fn shade(self, buf: &mut RgbBuffer, r: ArtRect, stepped: &mut Stepped) {

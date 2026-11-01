@@ -527,7 +527,7 @@ fn badge_at(anchor: crate::layout::Point) -> TextRun {
         align: Align::Over,
         spans: vec![crate::display::TextSpan::new(
             "cc",
-            pixtuoid_core::sprite::Rgb { r: 9, g: 9, b: 9 },
+            crate::sprite::Rgb { r: 9, g: 9, b: 9 },
         )],
         plate: None,
         strip: None,

@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-use pixtuoid_core::sprite::{Frame, Rgb};
+use crate::sprite::{Frame, Rgb};
 use pixtuoid_core::{AgentId, SceneState};
 
 /// Cache identity for one recolored frame — every input that changes the output
@@ -17,7 +17,7 @@ use pixtuoid_core::{AgentId, SceneState};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FrameKey {
     pub agent_id: AgentId,
-    pub anim_name: pixtuoid_core::sprite::format::Piece,
+    pub anim_name: crate::sprite::format::Piece,
     pub frame_idx: usize,
     pub flip_x: bool,
     pub glow_tint: Option<Rgb>,
@@ -26,7 +26,7 @@ pub struct FrameKey {
     pub burn: crate::burn::BurnTier,
     /// The grid the recolored art is authored on — 1 for the base sprite, `N`
     /// for its `@Nx` variant: the same frame at two densities is two images.
-    pub density: pixtuoid_core::sprite::format::Density,
+    pub density: crate::sprite::format::Density,
 }
 
 #[derive(Debug, Default)]
@@ -94,12 +94,12 @@ mod tests {
     fn key_for(id: AgentId) -> FrameKey {
         FrameKey {
             agent_id: id,
-            anim_name: pixtuoid_core::sprite::format::Piece::Standing,
+            anim_name: crate::sprite::format::Piece::Standing,
             frame_idx: 0,
             flip_x: false,
             glow_tint: None,
             burn: crate::burn::BurnTier::Normal,
-            density: pixtuoid_core::sprite::format::Density::ONE,
+            density: crate::sprite::format::Density::ONE,
         }
     }
 

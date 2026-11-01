@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::pack::OfficeArt;
+use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::SceneState;
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
 
 use super::{
     AudioFrame, FloorInputs, FloorMeta, FloorTransition, PerFloor, PerOffice, waypoint_kind_of,

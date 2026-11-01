@@ -8,8 +8,8 @@
 use std::collections::VecDeque;
 
 use super::{COARSE_CELL_SIZE, CoarseGrid, Point, snap};
-use pixtuoid_core::grid::Grid;
-use pixtuoid_core::walkable::{OccupancyOverlay, WalkableMask};
+use crate::grid::Grid;
+use crate::walkable::{OccupancyOverlay, WalkableMask};
 
 /// How far (in coarse cells) to snap a blocked seed to the nearest walkable
 /// coarse cell — mirrors the router's start-snap so a seed sitting on a blocked

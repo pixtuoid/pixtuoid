@@ -1,7 +1,7 @@
 //! Headless office → `RgbBuffer` rendering for the `pixtuoid floating` desktop window.
 
-use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_core::state::SceneState;
+use pixtuoid_scene::sprite::RgbBuffer;
 
 use pixtuoid_scene::floor::{FloorInputs, OfficeSession};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
@@ -443,9 +443,9 @@ mod tests {
     use super::super::geometry::{Zoom, window_geometry};
     use super::super::overlays::footer_budget;
     use super::*;
-    use pixtuoid_core::sprite::Rgb;
     use pixtuoid_scene::cutaway::glyph_cell;
     use pixtuoid_scene::floor::{FloorMeta, PetInputs};
+    use pixtuoid_scene::sprite::Rgb;
     use winit::dpi::PhysicalSize;
 
     use pixtuoid_scene::layout::Size;
@@ -1358,7 +1358,7 @@ mod tests {
         let pet = HoverTarget::Pet(PetHover {
             kind: PetKind::Cat,
             centre: pixtuoid_scene::layout::Point { x: 0, y: 0 },
-            anim: pixtuoid_core::sprite::format::Piece::CatSit,
+            anim: pixtuoid_scene::sprite::format::Piece::CatSit,
         });
         let playing = PetState {
             petted_at: now,

@@ -11,9 +11,9 @@ use crate::layout::{
     desk_walk_anchor_facing, furniture_def,
 };
 use crate::physics::LegProgress;
+use crate::sprite::Sprite;
 use crate::walk::{WanderKind, WanderTarget};
 use pixtuoid_core::AgentId;
-use pixtuoid_core::sprite::Sprite;
 use pixtuoid_core::state::{ActivityState, AgentSlot};
 
 /// Base of the stale-resume / off-screen-gap sentinel in

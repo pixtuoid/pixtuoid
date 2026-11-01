@@ -6,8 +6,8 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::Rgb;
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::Rgb;
+use crate::sprite::format::Density;
 
 use crate::atmosphere::Moment;
 use crate::celestial::SkyView;
@@ -440,7 +440,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::display::pen::test_density;
     use crate::sky::{Sky, Weather};
-    use pixtuoid_core::sprite::RgbBuffer;
+    use crate::sprite::RgbBuffer;
 
     /// The windows a wall `buf_w` wide has.
     fn slots(buf_w: u16) -> Vec<WindowBay> {

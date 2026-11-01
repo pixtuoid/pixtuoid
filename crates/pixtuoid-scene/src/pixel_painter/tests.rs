@@ -18,8 +18,8 @@ use crate::sim::anchors::{
 };
 use crate::sim::seat::{Seat, settle_seat};
 use crate::sim::{CharacterGlow, CharacterPlacement, SimInputs, SimStores, sim_step};
-use pixtuoid_core::sprite::Frame;
-use pixtuoid_core::sprite::format::Piece;
+use crate::sprite::Frame;
+use crate::sprite::format::Piece;
 use pixtuoid_core::state::{
     ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind, ToolUse,
 };
@@ -387,10 +387,7 @@ fn a_back_turned_desk_shows_the_pose_s_own_back_view() {
 }
 
 /// `piece`'s base art and each density variant, named as the manifest keys them.
-fn arts_of(
-    pack: &crate::pack::OfficeArt,
-    piece: Piece,
-) -> Vec<(String, &pixtuoid_core::sprite::Sprite)> {
+fn arts_of(pack: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::sprite::Sprite)> {
     std::iter::once((piece.name().to_owned(), pack.piece(piece)))
         .chain(
             pack.variants_of(piece)
@@ -405,10 +402,10 @@ fn arts_of(
 /// hairstyles.
 fn looks(
     pack: &crate::pack::OfficeArt,
-    anim: &pixtuoid_core::sprite::Sprite,
+    anim: &crate::sprite::Sprite,
     i: usize,
-    overrides: &[(char, pixtuoid_core::sprite::Pixel)],
-) -> Vec<pixtuoid_core::sprite::Frame> {
+    overrides: &[(char, crate::sprite::Pixel)],
+) -> Vec<crate::sprite::Frame> {
     let bare = anim.recolorable_at(i).recolored(overrides);
     let line = pack.character_outline();
     match anim.head(i) {
@@ -426,7 +423,7 @@ fn looks(
 /// Whether recoloring `key` changes some pixel of every look of frame `i`.
 fn recolors(
     pack: &crate::pack::OfficeArt,
-    anim: &pixtuoid_core::sprite::Sprite,
+    anim: &crate::sprite::Sprite,
     i: usize,
     key: char,
 ) -> bool {
@@ -470,7 +467,7 @@ fn every_character_frame_at_every_density_recolors_hair_and_shirt() {
     let mut variants = 0;
     for &base in Piece::VARIANTS
         .iter()
-        .filter(|p| p.kind() == pixtuoid_core::sprite::format::PieceKind::Character)
+        .filter(|p| p.kind() == crate::sprite::format::PieceKind::Character)
     {
         for (name, anim) in arts_of(&pack, base) {
             variants += usize::from(name.contains('@'));
@@ -765,7 +762,7 @@ fn bare_desks_toml(density: u16, variant: bool) -> String {
     }
     for piece in Piece::VARIANTS
         .iter()
-        .filter(|p| p.kind() == pixtuoid_core::sprite::format::PieceKind::Character)
+        .filter(|p| p.kind() == crate::sprite::format::PieceKind::Character)
     {
         toml += &format!(
             "[animations.{}]\nframes=[{}]\nframe_ms=100\n{}",
@@ -3523,7 +3520,7 @@ fn a_bubble_hangs_over_its_speakers_badge_in_both_looks() {
 fn a_pet_tied_with_an_agent_sorts_under_them_in_both_looks() {
     use crate::display::{HoverTarget, PieceKind};
     use crate::layout::{Bounds, Pivot, Point};
-    use pixtuoid_core::sprite::format::Piece as PackPiece;
+    use crate::sprite::format::Piece as PackPiece;
     let (layout, pack, frames, _) =
         crate::display::compose::tests::sit_down(crate::layout::Facing::South, 2);
     let theme = crate::theme::theme_by_name("normal").expect("normal theme");
@@ -3619,7 +3616,7 @@ fn a_pet_tied_with_an_agent_sorts_under_them_in_both_looks() {
 #[test]
 fn the_classic_layers_creatures_under_characters_in_any_queue_order() {
     use crate::layout::Point;
-    use pixtuoid_core::sprite::format::Piece as PackPiece;
+    use crate::sprite::format::Piece as PackPiece;
     let (layout, pack, frames, _) =
         crate::display::compose::tests::sit_down(crate::layout::Facing::South, 2);
     let theme = crate::theme::theme_by_name("normal").expect("normal theme");

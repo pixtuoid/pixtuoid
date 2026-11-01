@@ -399,7 +399,7 @@ mod tests {
 
     /// A floor's picture flashing `flashes`, answering a pointer with `hits`.
     fn floor_picture<'a>(
-        pixels: &'a pixtuoid_core::sprite::RgbBuffer,
+        pixels: &'a crate::sprite::RgbBuffer,
         hits: &'a crate::look::Hits,
         flashes: Flashes,
     ) -> crate::look::Picture<'a> {
@@ -436,7 +436,7 @@ mod tests {
         let [one, two] = two_pictures();
         let [first, second] = two_layouts();
         let (first_hits, second_hits) = (hits(&first), hits(&second));
-        let pixels = pixtuoid_core::sprite::RgbBuffer::filled(1, 1, crate::composite::BLACK);
+        let pixels = crate::sprite::RgbBuffer::filled(1, 1, crate::composite::BLACK);
         let screen_clock = ManualClock::default();
         let mut screen = Screen::on(screen_clock.clock());
         screen_clock.at(at(0));
@@ -466,7 +466,7 @@ mod tests {
         let [one, _] = two_pictures();
         let [first, _] = two_layouts();
         let first_hits = hits(&first);
-        let pixels = pixtuoid_core::sprite::RgbBuffer::filled(1, 1, crate::composite::BLACK);
+        let pixels = crate::sprite::RgbBuffer::filled(1, 1, crate::composite::BLACK);
         let screen_clock = ManualClock::default();
         let mut screen = Screen::on(screen_clock.clock());
         screen_clock.at(at(0));
