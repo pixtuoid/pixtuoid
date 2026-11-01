@@ -223,10 +223,8 @@ mod tests {
         let wide = crate::win32::nul_terminated(std::ffi::OsStr::new("S-1-5-7"));
         let mut sid: PSID = std::ptr::null_mut();
         // SAFETY: `wide` is NUL-terminated; `sid` is a live out-param.
-        assert_ne!(
-            unsafe { ConvertStringSidToSidW(wide.as_ptr(), &mut sid) },
-            0
-        );
+        let converted = unsafe { ConvertStringSidToSidW(wide.as_ptr(), &mut sid) };
+        assert_ne!(converted, 0);
         let user = TOKEN_USER {
             User: SID_AND_ATTRIBUTES {
                 Sid: sid,

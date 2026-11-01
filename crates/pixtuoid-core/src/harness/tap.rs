@@ -65,7 +65,7 @@ impl Endpoint {
     ///
     /// # Errors
     ///
-    /// If nothing listens, or the write fails.
+    /// If nothing listens, another user owns the endpoint, or the write fails.
     pub async fn send(&self, bytes: &[u8]) -> std::io::Result<()> {
         let mut conn = crate::source::hook::connect(&self.0).await?;
         conn.write_all(bytes).await?;

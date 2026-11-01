@@ -52,7 +52,7 @@ The components that handle untrusted or privileged input, and how they're bounde
    `O_NOFOLLOW`, atomic-rename bind — only the local user can connect. A second
    instance subscribes over it to every payload the owner accepts, after checking
    the owner is this user; another process of this user could too, which crosses
-   no boundary, since it can already read the transcripts. The CLI's
+   no boundary: it already runs with this user's access. The CLI's
    plain-text surfaces (the `--headless` summary, the `doctor` report, the
    Sources/install output) **strip control characters** from untrusted wire values
    (`strip_control_chars`) so a crafted transcript can't smuggle escape sequences

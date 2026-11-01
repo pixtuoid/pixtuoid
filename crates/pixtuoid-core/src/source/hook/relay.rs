@@ -171,12 +171,16 @@ mod tests {
     // ours to change.
     #[tokio::test]
     async fn an_owner_without_a_relay_skips_a_subscribe_line() {
+        let (logs, _guard) = crate::test_capture::capture_warns();
         let (mut client, server) = tokio::io::duplex(64);
         let (tx, mut rx) = tokio::sync::mpsc::channel(4);
         client.write_all(SUBSCRIBE_LINE.as_bytes()).await.unwrap();
         drop(client);
         super::super::handle_conn(server, tx, None, None, None).await;
         assert!(rx.recv().await.is_none());
+        let out = logs.contents();
+        assert!(out.contains("malformed hook line skipped"), "got {out:?}");
+        assert!(!out.contains("hook decode error"), "got {out:?}");
     }
 
     #[tokio::test]
