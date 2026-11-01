@@ -6,7 +6,7 @@
   },
   {
     "q": "is anything uploaded?",
-    "a": "nothing — read-only local logs; nothing ever leaves your machine.",
+    "a": "nothing — read-only local logs, no telemetry. only pixtuoid serve, if you start it, sends agent status to devices you paired on your LAN.",
     "cite": "the machine-room copy (HowItWorks, step 02)"
   }
 ]

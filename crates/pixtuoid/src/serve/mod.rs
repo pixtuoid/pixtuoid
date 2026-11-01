@@ -35,8 +35,8 @@ use crate::runtime::{
 use device::Devices;
 use store::{CODE_LIFETIME, Store, spki_pin};
 
-/// In a range IANA leaves unassigned, and fixed so that a pairing outlives a
-/// restart.
+/// In a range [IANA leaves unassigned](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.csv),
+/// and fixed so that a pairing outlives a restart.
 pub(crate) const DEFAULT_PORT: u16 = 47_820;
 
 /// Connections at once, a stranger's handshake included.
@@ -135,9 +135,10 @@ async fn serve(
 }
 
 /// Whether `ip` is in a local range: private, link-local or loopback. Only a
-/// range can be judged before TLS, so this keeps out the internet and a Tailscale
-/// tailnet's `100.64/10`; within the ranges, pairing is the gate. Bound to IPv4
-/// only, so there is no v6 peer to judge.
+/// range can be judged before TLS, so this keeps out the internet and a tailnet's
+/// [`100.64/10`](https://tailscale.com/kb/1015/100.x-addresses); within the
+/// ranges, pairing is the gate. Bound to IPv4 only, so there is no v6 peer to
+/// judge.
 fn lan_peer(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_loopback(),

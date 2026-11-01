@@ -579,8 +579,9 @@ doc-check: (_targets DOC_TARGETS)
         [ "$target" = "$host" ] && continue # the "" pass already rendered it
         # The `pixtuoid` bin shares its lib's name, so the workspace pass skips it
         # (cargo still warns the two share one output path: cargo#6313).
-        doc -p pixtuoid --bin pixtuoid ${target:+--target "$target"}
-        doc --workspace ${target:+--target "$target"}
+        # Cross passes leave `serve` out, as the cross-lints do.
+        doc -p pixtuoid --bin pixtuoid ${target:+--target "$target" --no-default-features --features audio}
+        doc --workspace ${target:+--target "$target" --no-default-features --features pixtuoid/audio}
     done
     doc --workspace --examples
     cargo test --doc --workspace

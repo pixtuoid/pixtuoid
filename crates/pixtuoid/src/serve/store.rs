@@ -36,6 +36,12 @@ struct Pending {
     expires: SystemTime,
 }
 
+impl Stored {
+    fn outstanding(&self, code: &Hashed, now: SystemTime) -> bool {
+        (self.code.as_ref()).is_some_and(|pending| pending.hash == *code && now < pending.expires)
+    }
+}
+
 /// A code's or a token's hash, as a paired device is known. Compared in the open:
 /// a timing leak gives away a digest's prefix, and no input can be chosen to
 /// extend one.
@@ -83,17 +89,12 @@ impl Store {
         self.parse(&read_config(&self.0)?)
     }
 
-    /// One locked read→change→write round, which touches the disk only if
-    /// `change` changed something: a stranger's refused hello costs no fsync.
+    /// One locked read→change→write round.
     fn update<T>(&self, change: impl FnOnce(&mut Stored) -> Result<T>) -> Result<T> {
         let lock = lock_config(&self.0)?;
-        let before = lock.read()?;
-        let mut stored = self.parse(&before)?;
+        let mut stored = self.parse(&lock.read()?)?;
         let out = change(&mut stored)?;
-        let after = serde_json::to_string_pretty(&stored)?;
-        if after != before {
-            lock.write_atomic(&after)?;
-        }
+        lock.write_atomic(&serde_json::to_string_pretty(&stored)?)?;
         Ok(out)
     }
 
@@ -125,14 +126,16 @@ impl Store {
     }
 
     /// Spend `code` on a new device, returning its token. A wrong code leaves the
-    /// outstanding one alone, or a stranger could spend the owner's by guessing.
+    /// outstanding one alone, or a stranger could spend the owner's by guessing,
+    /// and takes no lock, or a stranger's guesses could fail the owner's `pair`.
     pub(super) fn redeem(&self, code: &str, now: SystemTime) -> Result<Option<String>> {
+        let presented = Hashed::of(code);
+        if !self.read()?.outstanding(&presented, now) {
+            return Ok(None);
+        }
         let token = secret()?;
         self.update(|stored| {
-            let presented = Hashed::of(code);
-            let good = (stored.code.as_ref())
-                .is_some_and(|pending| pending.hash == presented && now < pending.expires);
-            if !good {
+            if !stored.outstanding(&presented, now) {
                 return Ok(None);
             }
             stored.code = None;
@@ -302,17 +305,11 @@ mod tests {
         );
     }
 
-    /// A refused hello must not cost a stranger's connection an fsync.
     #[test]
-    fn an_update_that_changes_nothing_leaves_the_file_alone() {
+    fn a_strangers_guess_takes_no_lock() {
         let (_dir, store) = fixture();
         store.issue_code(now()).expect("a code");
-        let before = std::fs::metadata(&store.0).expect("it exists");
-        store.redeem("guess", now()).expect("it redeems");
-        let after = std::fs::metadata(&store.0).expect("it exists");
-        assert_eq!(
-            before.modified().expect("mtime"),
-            after.modified().expect("mtime")
-        );
+        let _held = lock_config(&store.0).expect("the lock");
+        assert_eq!(store.redeem("guess", now()).expect("it redeems"), None);
     }
 }

@@ -9,6 +9,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
+use pixtuoid_core::harness::host::SandboxEnv;
 use pixtuoid_core::harness::tap::Endpoint;
 use pixtuoid_core::remote::{Hello, PairLink, RemoteOffice, Reply};
 use pixtuoid_core::state::MAX_FLOORS;
@@ -164,7 +165,8 @@ impl Device {
 
 /// A HOME of its own, where cursor is connected, and one hook endpoint.
 struct World {
-    home: tempfile::TempDir,
+    _home: tempfile::TempDir,
+    env: SandboxEnv,
     endpoint: Endpoint,
 }
 
@@ -172,7 +174,16 @@ impl World {
     fn new() -> Self {
         let home = tempfile::tempdir().expect("tempdir");
         let endpoint = Endpoint::in_dir(home.path(), "hook");
-        let world = Self { home, endpoint };
+        let mut env = SandboxEnv::new(home.path(), [], &[]).expect("a sandbox");
+        // Where `just coverage` collects a child's profile.
+        if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+            env.set("LLVM_PROFILE_FILE", profile);
+        }
+        let world = Self {
+            _home: home,
+            env,
+            endpoint,
+        };
         // The hook path it installs is one nothing here runs.
         let connect = world
             .pixtuoid()
@@ -185,23 +196,7 @@ impl World {
     }
 
     fn pixtuoid(&self) -> Command {
-        let home = self.home.path();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_pixtuoid"));
-        // Cleared: a source's own variable (`COPILOT_HOME`) would have this server
-        // tail the developer's real sessions. What's kept is what a process needs
-        // to start on Windows, and where `just coverage` collects a child's profile.
-        command
-            .env_clear()
-            .env("HOME", home)
-            .env("USERPROFILE", home)
-            .env("XDG_CONFIG_HOME", home.join(".config"))
-            .env("XDG_STATE_HOME", home.join("state"));
-        for kept in ["SystemRoot", "LLVM_PROFILE_FILE"] {
-            if let Some(value) = std::env::var_os(kept) {
-                command.env(kept, value);
-            }
-        }
-        command
+        self.env.command(env!("CARGO_BIN_EXE_pixtuoid"))
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -455,8 +450,19 @@ fn a_second_server_on_a_port_says_so_and_leaves() {
     assert!(stderr.contains("already running"), "{stderr}");
 }
 
-#[test]
-fn pair_refuses_a_host_that_cant_go_in_a_link() {
-    let out = World::new().run(&["pair", "--host", "evil.example/path"]);
-    assert!(!out.status.success());
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_that_cant_go_in_a_link_leaves_the_printed_code_good() {
+    let world = World::new();
+    let (_server, port) = world.serve();
+    let link = world.pair(port);
+
+    let refused = world.run(&["pair", "--host", "evil.example/path"]);
+    assert!(!refused.status.success());
+
+    let code = link.code.clone();
+    let reply = Device::connect(&link)
+        .await
+        .hello(&Hello::Pair { code })
+        .await;
+    assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
 }

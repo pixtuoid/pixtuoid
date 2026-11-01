@@ -23,7 +23,8 @@ pixtuoid is **telemetry-free and local by default**:
 - **No listener unless you start one.** Only `pixtuoid serve` listens on a
   network, and only a device you paired on your local network gets anything from
   it.
-- **Your session data stays on your machine.** pixtuoid reads your agent CLIs'
+- **Your session data stays on your machine unless you run `pixtuoid serve`.**
+  pixtuoid reads your agent CLIs'
   transcripts (e.g. `~/.claude/projects`, `~/.codex/sessions`) **read-only**, to
   derive what each sprite is doing. Only `pixtuoid serve` sends anything: agent
   status, model, usage and repo names (a project directory's last component) to
@@ -82,7 +83,8 @@ The components that handle untrusted or privileged input, and how they're bounde
 
 4. **`pixtuoid serve`**, the only network listener, binds IPv4 on every interface
    and, before any TLS, drops a peer that isn't private, link-local or loopback,
-   a Tailscale tailnet's `100.64.0.0/10` included. It speaks TLS 1.3 only.
+   a Tailscale tailnet's
+   [`100.64.0.0/10`](https://tailscale.com/kb/1015/100.x-addresses) included. It speaks TLS 1.3 only.
    Its key is made on first use, and a device pins that key's SPKI hash from the
    QR code `pixtuoid pair` prints, beside a one-time code that expires
    (`CODE_LIFETIME`) and is redeemed for a device token. The key and the hashes of

@@ -298,8 +298,15 @@ mod tests {
     #[tokio::test]
     async fn a_hello_this_build_cant_read_gets_no_reply() {
         let fixture = fixture();
-        let too_long = "x".repeat(usize::try_from(MAX_HELLO_BYTES).expect("small") * 2);
-        for hello in [r#"{"hello":"from_the_future"}"#, "junk", too_long.as_str()] {
+        let past_the_cap = Hello::Resume {
+            token: "t".repeat(usize::try_from(MAX_HELLO_BYTES).expect("small")),
+        };
+        let past_the_cap = serde_json::to_string(&past_the_cap).expect("it encodes");
+        for hello in [
+            r#"{"hello":"from_the_future"}"#,
+            "junk",
+            past_the_cap.as_str(),
+        ] {
             let mut peer = Peer::connect(&fixture.devices);
             peer.say(hello).await;
             assert_eq!(peer.line().await, "", "{hello}");
