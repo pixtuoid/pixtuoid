@@ -680,7 +680,9 @@ mod tests {
             let line = line.to_string();
             office.apply(line.as_bytes(), at(AT)).expect("it applies");
             let agents = office.scene().agents.values();
-            assert!(agents.map(|a| a.created_at).all(|t| t == at(read)));
+            let times: Vec<_> = agents.map(|a| a.created_at).collect();
+            let exiting_unseen = 1;
+            assert_eq!(times, vec![at(read); 8 - exiting_unseen], "{created}");
         }
     }
 
