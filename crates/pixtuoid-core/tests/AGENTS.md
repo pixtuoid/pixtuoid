@@ -67,7 +67,7 @@ under a `sources/<module>/fixtures/` would be mis-scanned.
 
 1. **Always:** `tests/sources/<module>/fixtures/<scenario>/` — at
    minimum a RECORDED SessionStart scenario (`just hermetic --record <source>`, else
-   the billed `just capture-fixture`) with the
+   the billed `just capture-fixture <source> <scenario> <command…>`) with the
    `provenance.json` the recorder writes. `conformance.rs`
    auto-discovers the dir; `supported_sources_manifest` forces the manifest
    row; `cargo insta review` accepts the snapshot. Dir name = the source's
