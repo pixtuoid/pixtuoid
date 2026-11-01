@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn agent_overrides_outfit_is_keyed_by_cwd_basename_not_id() {
         let a = make_slot_cwd("/demo/api/aaaa.jsonl", "/demo/api", false);
-        let b = make_slot_cwd("/demo/api/bbbb.jsonl", "/demo/api", false);
+        let b = make_slot_cwd("/other/api/bbbb.jsonl", "/other/api", false);
         assert_eq!(
             color_of(&a, SHIRT_KEY),
             color_of(&b, SHIRT_KEY),
@@ -537,13 +537,13 @@ mod tests {
     }
 
     #[test]
-    fn agent_overrides_same_id_different_cwd_changes_outfit() {
+    fn agent_overrides_same_id_different_cwd_basename_changes_outfit() {
         let a = make_slot_cwd("/p/aaaa.jsonl", "/demo/api", false);
         let b = make_slot_cwd("/p/aaaa.jsonl", "/demo/infra", false);
         assert_ne!(
             color_of(&a, SHIRT_KEY),
             color_of(&b, SHIRT_KEY),
-            "different cwds should pick different outfits"
+            "different cwd basenames should pick different outfits"
         );
         assert_eq!(color_of(&a, HAIR_KEY), color_of(&b, HAIR_KEY));
         assert_eq!(color_of(&a, SKIN_KEY), color_of(&b, SKIN_KEY));

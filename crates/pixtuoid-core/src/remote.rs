@@ -728,6 +728,25 @@ mod tests {
     }
 
     #[test]
+    fn a_server_sends_the_clean_basename() {
+        let dirty = format!("x\u{1b}\u{202e}{}", "y".repeat(MAX_DECODED_FIELD_CHARS * 2));
+        let cwd = Path::new("/work").join(dirty);
+        let id = AgentId::from_parts("claude-code", "a");
+        let mut scene = crowd(&["a"]);
+        scene.agents.get_mut(&id).unwrap().cwd = Arc::from(cwd.as_path());
+
+        let line: Value = serde_json::from_str(&sent(&scene)).unwrap();
+        let name = line["agents"][0]["cwd_basename"].as_str().unwrap();
+
+        assert_eq!(Some(name), cwd_basename(&cwd).as_deref());
+        assert!(!name.contains(['\u{1b}', '\u{202e}']), "{name}");
+        assert!(
+            name.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,
+            "{name}"
+        );
+    }
+
+    #[test]
     fn a_basename_with_a_path_in_it_stays_one_component() {
         for (sent, kept) in [
             ("/etc/passwd", Some("passwd")),
