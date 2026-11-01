@@ -11,6 +11,8 @@ cargo-fuzz = true
 libfuzzer-sys = "=0.4.13"
 pixtuoid-core = { path = "../crates/pixtuoid-core", features = ["harness"] }
 
+# Its own: cargo-fuzz builds on a nightly with sanitizers, which no
+# `--workspace` gate on any target can.
 [workspace]
 
 [[bin]]

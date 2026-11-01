@@ -18,7 +18,7 @@ mkdir -p "$seeds"/{hook,transcript,remote}
 
 # One seed per recording, whole, so a fold's state survives from line to line.
 # A transcript leads with its source (`harness::fuzz::transcript`), which its
-# module directory spells (`harness::module_of`).
+# module directory spells (`harness::source_of`).
 fixtures=crates/pixtuoid-core/tests/sources
 while IFS= read -r file; do
     name=$(sha256sum <"$file" | cut -c1-32)
@@ -34,15 +34,12 @@ while IFS= read -r file; do
     esac
 done < <(find "$fixtures" -path '*/fixtures/*' -name '*.jsonl')
 
-# Every parser `harness::fuzz::remote` drives, and a stream of two lines, the
-# second keeping the first's desks.
+# A stream of two lines, the second keeping the first's desks, beside a seed for
+# each other parser `harness::fuzz::remote` drives.
+cp fuzz/seeds/remote/* "$seeds/remote"
 line=$(python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin)))' \
     <crates/pixtuoid-core/src/remote.v1.golden.json)
 printf '%s\n%s\n' "$line" "$line" >"$seeds/remote/stream"
-hex=$(printf 'A%.0s' {1..64})
-printf 'pixtuoid://pair?host=office.local&port=7878&spki=%s&code=%s' "$hex" "$hex" >"$seeds/remote/link"
-printf '{"hello":"pair","code":"%s"}' "$hex" >"$seeds/remote/hello"
-printf '{"reply":"paired","token":"%s"}' "$hex" >"$seeds/remote/reply"
 
 for target in hook transcript remote; do
     python3 -m zipfile -c "$OUT/${target}_seed_corpus.zip" "$seeds/$target"/*

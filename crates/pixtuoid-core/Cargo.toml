@@ -90,7 +90,6 @@ sha2        = { workspace = true, optional = true }
 syn         = { workspace = true, optional = true }
 # The id families a re-record may rename: `harness::captures::canonical_capture`.
 regex       = { workspace = true, optional = true }
-# Mutates a fuzz input's JSON: `harness::fuzz::json_mutate`.
 mutatis     = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]

@@ -54,7 +54,7 @@ updates:
     cooldown:
       default-days: 7
 
-  # libfuzzer-sys's exact pin: the rest of fuzz/'s graph is the root lockfile's.
+  # libfuzzer-sys's exact pin: fuzz/ keeps no lockfile that would move it.
   - package-ecosystem: cargo
     directory: /fuzz
     schedule:

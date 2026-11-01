@@ -8,9 +8,6 @@ members  = [
     "crates/pixtuoid-web",
     "crates/pixtuoid-web-music",
 ]
-# Its own workspace: cargo-fuzz builds on a nightly with sanitizers, which no
-# `--workspace` gate on any target can.
-exclude = ["fuzz"]
 
 [workspace.package]
 version      = "0.21.0"

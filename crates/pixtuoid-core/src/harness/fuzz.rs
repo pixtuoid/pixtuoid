@@ -1,10 +1,10 @@
-//! What a fuzz target (`fuzz/fuzz_targets/`) drives past [`Drive`] alone. Their
-//! one contract: a refusal is fine, a panic is not.
+//! What a fuzz target (`fuzz/fuzz_targets/`) drives past [`Drive`] alone, and
+//! the mutator they share. Their one contract: a refusal is fine, a panic is not.
 
 use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
 
-use mutatis::{Candidates, Mutate, Session, mutators as m};
+use mutatis::{Candidates, Context, Mutate, Session, mutators as m};
 use serde_json::Value;
 
 use super::{DEFAULT_NOW_EPOCH_SECS, DRIVEN_DESKS, Drive, Driven};
@@ -14,10 +14,10 @@ use crate::source::claude_code::cc_activity_recency;
 use crate::source::registry;
 use crate::state::MAX_FLOORS;
 
-/// `<source>\n<transcript>`: its source's first-sight reads and tail scan, then
-/// [`Drive`]. A source by name, not by index, so a new row leaves every
-/// accumulated input meaning what it did. `None` when the first line names no
-/// transcript source.
+/// `<source>\n<transcript>`: the registry's cwd and parent extractors, Claude
+/// Code's tail scan, then [`Drive`]. A source by name, not by index, so a new row
+/// leaves every accumulated input meaning what it did. `None` when the first line
+/// names no transcript source.
 pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     let end = bytes.iter().position(|b| *b == b'\n')?;
     let (source, body) = bytes.split_at(end);
@@ -36,8 +36,9 @@ pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     Some(drive.body(body))
 }
 
-/// All a network peer can send, in any order: a pairing link, a hello, a reply,
-/// then one stream's lines, whose office is then re-encoded and re-seated.
+/// Each parser a peer's bytes or a scanned link reach: the whole input to the
+/// link, hello and reply parsers, then split as one stream, whose office is
+/// re-encoded and re-seated.
 pub fn remote(bytes: &[u8]) -> RemoteOffice {
     if let Ok(text) = std::str::from_utf8(bytes) {
         let _ = PairLink::from_str(text);
@@ -54,14 +55,15 @@ pub fn remote(bytes: &[u8]) -> RemoteOffice {
     office
 }
 
-/// `fuzz_mutator!`'s body: mutates one node or line of `data`'s JSON lines, which
-/// every other line, a transcript's source among them, passes through. A byte
+/// `fuzz_mutator!`'s body: mutates one node or the order of `data`'s JSON lines,
+/// every other line, a transcript's source among them, staying put. A byte
 /// mutation of JSON text is nearly always a parse error, and no run of them
 /// spells a multi-byte character, so a parser's strings would stay as recorded
 /// (<https://github.com/google/fuzzing/blob/master/docs/structure-aware-fuzzing.md>).
 ///
 /// `None` leaves this mutation to `fuzzer_mutate`: on even seeds, for what only
-/// bytes reach, a line's syntax, and when no JSON line fits `max_size`.
+/// bytes reach, a line's syntax; with no JSON line; and when the mutant outgrows
+/// `max_size`.
 pub fn json_mutate(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> Option<usize> {
     if seed.is_multiple_of(2) {
         return None;
@@ -75,7 +77,7 @@ pub fn json_mutate(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> 
     }
     Session::new()
         .seed(seed.into())
-        .mutate_with(&mut Lines, &mut lines)
+        .mutate_with(&mut LinesMutator, &mut lines)
         .ok()?;
     let mutant = lines.iter().fold(Vec::new(), |mut bytes, line| {
         line.write(&mut bytes);
@@ -108,32 +110,34 @@ impl Line {
     }
 }
 
-/// Any node of any JSON line, or the lines' own order: a fold's state turns on
+/// Any node of any JSON line, or those lines' own order: a fold's state turns on
 /// which event came first.
-struct Lines;
+struct LinesMutator;
 
-impl Mutate<Vec<Line>> for Lines {
+impl Mutate<Vec<Line>> for LinesMutator {
     fn mutate(&mut self, c: &mut Candidates, lines: &mut Vec<Line>) -> mutatis::Result<()> {
         for line in lines.iter_mut() {
             if let Line::Json(v) = line {
-                Json.mutate(c, v)?;
+                JsonMutator.mutate(c, v)?;
             }
         }
-        if lines.len() > 1 {
+        let json: Vec<_> = (lines.iter().enumerate())
+            .filter(|(_, line)| matches!(line, Line::Json(_)))
+            .map(|(index, _)| index)
+            .collect();
+        let pick = |ctx: &mut Context| json[ctx.rng().gen_index(json.len()).unwrap_or_default()];
+        if json.len() > 1 {
             c.mutation(|ctx| {
-                let index = ctx.rng().gen_index(lines.len()).unwrap_or_default();
-                lines.remove(index);
+                lines.remove(pick(ctx));
                 Ok(())
             })?;
             c.mutation(|ctx| {
-                let a = ctx.rng().gen_index(lines.len()).unwrap_or_default();
-                let b = ctx.rng().gen_index(lines.len()).unwrap_or_default();
-                lines.swap(a, b);
+                lines.swap(pick(ctx), pick(ctx));
                 Ok(())
             })?;
         }
         c.mutation(|ctx| {
-            let index = ctx.rng().gen_index(lines.len()).unwrap_or_default();
+            let index = pick(ctx);
             lines.insert(index, lines[index].clone());
             Ok(())
         })
@@ -141,9 +145,9 @@ impl Mutate<Vec<Line>> for Lines {
 }
 
 /// Every node may lose its fields, take a neighboring value, or change kind.
-struct Json;
+struct JsonMutator;
 
-impl Mutate<Value> for Json {
+impl Mutate<Value> for JsonMutator {
     fn mutate(&mut self, c: &mut Candidates, value: &mut Value) -> mutatis::Result<()> {
         match value {
             Value::Bool(flag) => m::default::<bool>().mutate(c, flag)?,
@@ -200,6 +204,8 @@ impl Mutate<Value> for Json {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     const LINE: &str = r#"{"type":"assistant","sessionId":"s","cwd":"/repo","message":{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"Write","input":{}}]}}"#;
@@ -228,6 +234,18 @@ mod tests {
         assert!(remote(b"garbage").scene().agents.is_empty());
     }
 
+    #[test]
+    fn each_committed_remote_seed_gets_past_its_parser() {
+        let seed = |name: &str| {
+            let seeds = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/seeds/remote");
+            std::fs::read_to_string(seeds.join(name)).expect(name)
+        };
+        PairLink::from_str(&seed("link")).expect("a link");
+        serde_json::from_str::<Hello>(&seed("hello")).expect("a hello");
+        let reply = serde_json::from_str(&seed("reply")).expect("a reply");
+        assert!(matches!(reply, Reply::Paired { .. }));
+    }
+
     const MUTABLE: &str =
         "claude-code\n{\"text\":\"ascii\",\"n\":1,\"list\":[true,null]}\n{\"other\":{}}\n";
     const ROOM: usize = 4096;
@@ -243,12 +261,15 @@ mod tests {
     }
 
     #[test]
-    fn a_mutant_stays_json_lines_and_keeps_its_opaque_line_verbatim() {
+    fn a_mutant_stays_json_lines_under_its_opaque_line() {
         let mut count = 0;
         for mutant in mutants() {
             count += 1;
             assert!(mutant.ends_with('\n'), "{mutant}");
-            for line in mutant.lines().filter(|line| *line != "claude-code") {
+            let json = mutant
+                .strip_prefix("claude-code\n")
+                .expect("its opaque line");
+            for line in json.lines() {
                 serde_json::from_str::<Value>(line).expect(line);
             }
         }
@@ -256,7 +277,7 @@ mod tests {
     }
 
     #[test]
-    fn the_mutants_reach_what_a_byte_mutation_cannot() {
+    fn the_mutants_reach_every_kind_of_change() {
         let all: Vec<_> = mutants().map(|m| m.replace("claude-code\n", "")).collect();
         let reached = |what: &str, found: fn(&str) -> bool| {
             assert!(all.iter().any(|m| found(m)), "no mutant {what}");

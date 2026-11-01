@@ -263,8 +263,8 @@ enum Decode {
 
 impl Decode {
     /// A line's events, counted in `d`: blank, `None` uncounted; not JSON or
-    /// refused by the decoder, `None` counted as such. `parsed` reads the line
-    /// before the decoder takes it.
+    /// refused by the decoder, `None` counted as such; a daemon's, `None` with its
+    /// presence in `d`. `parsed` reads the line before the decoder takes it.
     fn line(
         &self,
         line: Option<&str>,
@@ -350,8 +350,9 @@ impl Drive {
     }
 
     /// Drive hook envelopes through the shared `decode_hook_payload` on
-    /// `Transport::Hook`. Takes NO source: the dispatcher routes by the
-    /// envelope's own `_pixtuoid_source` stamp.
+    /// `Transport::Hook`, a daemon's through its presence decoder instead. Takes NO
+    /// source: the dispatcher routes by the envelope's own `_pixtuoid_source`
+    /// stamp.
     ///
     /// There is no seed here by construction — a hook for an unknown id
     /// REGISTERS it (hooks are proof of life), so hook bytes never need one.
