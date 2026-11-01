@@ -139,8 +139,7 @@ parent dirs that leave the registry's own `id_deriver_for` id unchanged, and the
 harness recurses to find it.
 
 (`conformance.rs` scans every capture but a `harness::OUTSIDE_CONFORMANCE` one, and each
-home must be a registered source's; hand-built inputs — `sources/decode/fixtures/`,
-`render/fixtures/` — live with their module. See [`tests/AGENTS.md`](../AGENTS.md).)
+home must be a registered source's; hand-built inputs — `sources/decode/fixtures/` — live with their module. See [`tests/AGENTS.md`](../AGENTS.md).)
 
 The harness, for each fixture dir:
 1. decodes the transcript lines (via the source's `LineDecoder`) and the hook
