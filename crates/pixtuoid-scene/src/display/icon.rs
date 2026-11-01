@@ -162,7 +162,7 @@ mod tests {
         }
         let named: std::collections::BTreeSet<&str> =
             Icon::VARIANTS.iter().map(|i| i.art()).collect();
-        let drawn: std::collections::BTreeSet<&str> = pack.pack().icon_names().collect();
+        let drawn: std::collections::BTreeSet<&str> = pack.inner().icon_names().collect();
         assert_eq!(drawn, named);
     }
 

@@ -388,12 +388,7 @@ pub fn coffee() -> Tooltip {
 
 /// A pet's label: its reaction while a petting plays, else what it is doing,
 /// else its name.
-pub fn pet(
-    kind: PetKind,
-    anim: crate::sprite::format::Piece,
-    on_cooldown: bool,
-    name: &str,
-) -> Tooltip {
+pub fn pet(kind: PetKind, anim: crate::pack::Piece, on_cooldown: bool, name: &str) -> Tooltip {
     let idle = format!(" {name} ");
     let text: &str = if on_cooldown {
         match kind {

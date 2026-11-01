@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU16;
 
 use crate::pack::OfficeArt;
-use crate::sprite::format::{Density, Piece};
+use crate::pack::Piece;
+use crate::sprite::format::Density;
 use crate::sprite::{Frame, RecolorableFrame, Sprite};
 
 use crate::render_scale::RenderScale;
@@ -61,7 +62,7 @@ pub(crate) fn densest_frame(
     scale: RenderScale,
 ) -> DenseFrame<'_> {
     let base = pack.piece(piece);
-    let (art, density, blit_at) = densest(base, pack.variants_of(piece), scale);
+    let (art, density, blit_at) = densest(base, pack.inner().variants_of(piece), scale);
     DenseFrame::of(base, art, frame_idx, (density, blit_at))
 }
 

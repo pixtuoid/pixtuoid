@@ -1,7 +1,7 @@
 use super::*;
 use crate::character::test_support::make_slot;
+use crate::pack::{Piece, Walk};
 use crate::physics::{LegProgress, Segment};
-use crate::sprite::format::{Piece, Walk};
 use pixtuoid_core::state::{GlobalDeskIndex, ToolKind, ToolUse};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -657,7 +657,7 @@ fn a_walking_person_never_slides() {
     use crate::physics::{SPEED_MULT_MAX, WalkIntent, speed_mult, walk_profile, walk_progress};
     let pack = crate::pack::test_office();
     let walk = pack.piece(Piece::Walking);
-    let stride = pack.stride(Walk::Walking);
+    let stride = pack.inner().stride(Walk::Walking);
     let per_frame = f32::from(stride.get()) / walk.frames().len() as f32;
     // sampled as a painter paints: a frame stepped past between two paints is lost
     let paint_ms = crate::anim::PAINT_FRAME_MS;
@@ -734,7 +734,7 @@ fn a_walking_person_never_slides() {
 fn a_walk_steps_by_the_ground_it_covers() {
     let pack = crate::pack::test_office();
     let walk = pack.piece(Piece::Walking);
-    let stride = pack.stride(Walk::Walking);
+    let stride = pack.inner().stride(Walk::Walking);
     let frames = walk.frames().len() as u32;
     let per_cycle = u32::from(stride.get()) * crate::physics::OCTILE_STRAIGHT_COST;
     // the first distance the second frame shows at

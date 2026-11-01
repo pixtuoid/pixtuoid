@@ -3,7 +3,8 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU16;
 
-use crate::sprite::format::{Density, Hairstyle, Pack, Piece, density_variant_name};
+use crate::pack::{Hairstyle, Pack, Piece};
+use crate::sprite::format::{Density, density_variant_name};
 use crate::sprite::{Frame, HeadMark, HeadView, Sprite};
 use strum::VariantArray as _;
 
@@ -73,7 +74,7 @@ pub(crate) struct HairOverhang {
 }
 
 /// What a loaded pack draws as its author may not have meant: a pack that
-/// can't draw at all does not load ([`PackError`](crate::sprite::error::PackError)).
+/// can't draw at all does not load ([`PackError`](crate::pack::PackError)).
 #[derive(Debug, Default)]
 pub(crate) struct ValidationReport {
     /// One per character animation.
@@ -307,7 +308,7 @@ pub(crate) fn validate_pack(pack: &Pack) -> ValidationReport {
 
 #[cfg(test)]
 mod tests {
-    use crate::sprite::format::load_filled_pack;
+    use crate::pack::load_filled_pack;
 
     use super::*;
 

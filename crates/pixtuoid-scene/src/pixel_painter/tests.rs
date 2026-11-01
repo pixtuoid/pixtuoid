@@ -9,6 +9,7 @@ use crate::display::pen::test_density;
 use crate::floor::{FloorInputs, PetInputs};
 use crate::layout::CHARACTER_SPRITE_W;
 use crate::layout::{HomeDesk, Point, Size, sort_row_at};
+use crate::pack::Piece;
 use crate::pack::desk_art_top;
 use crate::physics::LegProgress;
 use crate::pose;
@@ -19,7 +20,6 @@ use crate::sim::anchors::{
 use crate::sim::seat::{Seat, settle_seat};
 use crate::sim::{CharacterGlow, CharacterPlacement, SimInputs, SimStores, sim_step};
 use crate::sprite::Frame;
-use crate::sprite::format::Piece;
 use pixtuoid_core::state::{
     ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind, ToolUse,
 };
@@ -390,7 +390,8 @@ fn a_back_turned_desk_shows_the_pose_s_own_back_view() {
 fn arts_of(pack: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::sprite::Sprite)> {
     std::iter::once((piece.name().to_owned(), pack.piece(piece)))
         .chain(
-            pack.variants_of(piece)
+            pack.inner()
+                .variants_of(piece)
                 .iter()
                 .map(|(d, s)| (format!("{}@{d}x", piece.name()), s)),
         )
@@ -407,10 +408,11 @@ fn looks(
     overrides: &[(char, crate::sprite::Pixel)],
 ) -> Vec<crate::sprite::Frame> {
     let bare = anim.recolorable_at(i).recolored(overrides);
-    let line = pack.character_outline();
+    let line = pack.inner().character_outline();
     match anim.head(i) {
         None => vec![bare],
         Some(head) => pack
+            .inner()
             .hairstyles()
             .map(|s| {
                 let dress = crate::character::Dress::of(&bare, head, Some(s));
@@ -611,7 +613,7 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
         };
         let (anchor_toml, anchor_art) = grid_anchor(DENSITY, SHIRT_KEY);
         let stride = anim.walk().map_or(String::new(), |walk| {
-            format!("stride={}\n", bundled.stride(walk))
+            format!("stride={}\n", bundled.inner().stride(walk))
         });
         let toml = format!(
             "[palette]\n\
@@ -3520,7 +3522,7 @@ fn a_bubble_hangs_over_its_speakers_badge_in_both_looks() {
 fn a_pet_tied_with_an_agent_sorts_under_them_in_both_looks() {
     use crate::display::{HoverTarget, PieceKind};
     use crate::layout::{Bounds, Pivot, Point};
-    use crate::sprite::format::Piece as PackPiece;
+    use crate::pack::Piece as PackPiece;
     let (layout, pack, frames, _) =
         crate::display::compose::tests::sit_down(crate::layout::Facing::South, 2);
     let theme = crate::theme::theme_by_name("normal").expect("normal theme");
@@ -3616,7 +3618,7 @@ fn a_pet_tied_with_an_agent_sorts_under_them_in_both_looks() {
 #[test]
 fn the_classic_layers_creatures_under_characters_in_any_queue_order() {
     use crate::layout::Point;
-    use crate::sprite::format::Piece as PackPiece;
+    use crate::pack::Piece as PackPiece;
     let (layout, pack, frames, _) =
         crate::display::compose::tests::sit_down(crate::layout::Facing::South, 2);
     let theme = crate::theme::theme_by_name("normal").expect("normal theme");
@@ -4148,9 +4150,12 @@ fn a_busy_loop_spends_most_of_its_frames_away_from_rest() {
         ("printer", pack.piece(Piece::Printer)),
         (
             "vending_machine@4x",
-            &pack.variants_of(Piece::VendingMachine)[&four],
+            &pack.inner().variants_of(Piece::VendingMachine)[&four],
         ),
-        ("printer@4x", &pack.variants_of(Piece::Printer)[&four]),
+        (
+            "printer@4x",
+            &pack.inner().variants_of(Piece::Printer)[&four],
+        ),
     ] {
         let frames = art.frames();
         let (rest, busy) = frames.split_first().expect("a rest frame");

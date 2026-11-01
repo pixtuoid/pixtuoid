@@ -56,7 +56,7 @@ impl RenderScale {
     /// difference, but 16 (×4/3) is nearer than 8 (×3/2).
     ///
     /// The rule meets HERE, in the engine, because the densities are the
-    /// PACK's ([`Pack::density_variants`](crate::sprite::format::Pack::density_variants))
+    /// PACK's ([`Pack::density_variants`](crate::pack::Pack::density_variants))
     /// and every painter that picks a scale
     /// needs it; a surface only contributes `natural`.
     ///

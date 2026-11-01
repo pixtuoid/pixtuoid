@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use pixtuoid_core::state::ActivityState;
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, SceneState};
 use pixtuoid_scene::frame_cache::{FrameCache, FrameKey};
-use pixtuoid_scene::sprite::format::Piece;
+use pixtuoid_scene::pack::Piece;
 use pixtuoid_scene::sprite::{Frame, Rgb};
 
 fn key(id: AgentId, anim_name: Piece, frame_idx: usize, flip_x: bool) -> FrameKey {

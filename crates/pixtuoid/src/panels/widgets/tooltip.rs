@@ -250,7 +250,7 @@ mod tests {
     fn paint_pet_tooltip(
         f: &mut ratatui::Frame<'_>,
         kind: pixtuoid_scene::pet::PetKind,
-        anim: pixtuoid_scene::sprite::format::Piece,
+        anim: pixtuoid_scene::pack::Piece,
         on_cooldown: bool,
         name: &str,
         at: TooltipAt,

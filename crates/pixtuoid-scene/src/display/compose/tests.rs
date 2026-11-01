@@ -564,7 +564,7 @@ fn the_floor_indicator_stays_in_its_cell() {
         .expect("lays out")
         .door;
     let rows = crate::layout::floor_indicator_rows(door.y);
-    let densities = pack.density_variants();
+    let densities = pack.inner().density_variants();
     assert!(!densities.is_empty(), "the pack draws a density");
     for d in densities {
         let pen = Pen::new(RenderScale::from(*d), *d).expect("d divides itself");

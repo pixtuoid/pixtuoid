@@ -20,7 +20,7 @@ fn main() {
     // script, which rewrites everything it embeds.
     println!("cargo:rerun-if-changed={}", asset_dir.display());
 
-    // `sprite::format::PACK_MANIFEST`, which a build script cannot import: a rename fails
+    // `pack::error::PACK_MANIFEST`, which a build script cannot import: a rename fails
     // this read, and so the build.
     let pack_toml = comments::strip_comments(
         &std::fs::read_to_string(asset_dir.join("pack.toml")).expect("read pack.toml"),

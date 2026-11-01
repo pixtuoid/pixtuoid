@@ -50,7 +50,7 @@ pub struct PetHover {
     /// Its centre, in logical units.
     pub centre: Point,
     /// The animation it shows.
-    pub anim: crate::sprite::format::Piece,
+    pub anim: crate::pack::Piece,
 }
 
 /// One frame's hovers, back to front.

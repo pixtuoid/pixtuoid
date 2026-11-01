@@ -120,7 +120,7 @@ mod tests {
         let cat = HoverTarget::Pet(crate::display::PetHover {
             kind: crate::pet::PetKind::Cat,
             centre: crate::layout::Point { x: mid.x, y: mid.y },
-            anim: crate::sprite::format::Piece::CatWalk,
+            anim: crate::pack::Piece::CatWalk,
         });
         assert!(matches!(
             figure_or_fixture(Some(&cat), None, &layout, mid),
@@ -142,7 +142,7 @@ mod tests {
         let pet = HoverTarget::Pet(PetHover {
             kind: PetKind::Dog,
             centre: crate::layout::Point { x: 0, y: 0 },
-            anim: crate::sprite::format::Piece::DogSit,
+            anim: crate::pack::Piece::DogSit,
         });
         let playing = PetState {
             petted_at: now,

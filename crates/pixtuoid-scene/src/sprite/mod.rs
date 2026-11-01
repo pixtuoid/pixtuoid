@@ -10,8 +10,8 @@ use crate::grid::Grid;
 
 /// Compositing a `Frame` onto an `RgbBuffer`, skipping transparent pixels.
 pub(crate) mod blit;
-pub mod error;
-/// Sprite-pack file format: `pack.toml` + `.sprite` parsing and in-memory pack building.
+pub(crate) mod error;
+/// `.sprite` decoding and density-variant naming; [`crate::pack`] loads packs.
 pub mod format;
 
 /// An opaque 24-bit color.
@@ -52,6 +52,11 @@ thread_local! {
     /// Ramp levels already walked: a painter re-resolves palette ramps per frame.
     static RAMP_MEMO: std::cell::RefCell<HashMap<(Rgb, i8), Rgb>> = Default::default();
 }
+
+/// The furthest a `[ramps]` level may step either way. Past it the darkest
+/// colors stop changing from one level to the next in 8 bits. Also the depth
+/// [`Rgb::ramp`] shares its headroom over, so changing it recolours every ramp.
+pub(crate) const MAX_RAMP_LEVEL: i8 = 10;
 
 impl Rgb {
     const WHITE: Rgb = Rgb {
@@ -111,7 +116,7 @@ impl Rgb {
         let (a, b) = (base.a + pull * cos, base.b + pull * sin);
         let room = if lit { 1.0 - prev_aim } else { prev_aim };
         // One share held back keeps the last declarable level off white or black.
-        let shares = format::MAX_RAMP_LEVEL.unsigned_abs().saturating_sub(steps) + 2;
+        let shares = MAX_RAMP_LEVEL.unsigned_abs().saturating_sub(steps) + 2;
         let gap = GAMUT_JND.min(room / f32::from(shares));
         let aim = if lit {
             own.max(prev_aim + gap)
@@ -299,13 +304,13 @@ impl Palette {
         }
     }
 
-    fn index_of(&self, key: char) -> Option<usize> {
+    pub(crate) fn index_of(&self, key: char) -> Option<usize> {
         self.index.get(&key).copied()
     }
 
     /// The index a frame stores for `key`, if the key resolves: decided from
     /// the entries alone, so parsing a pixel never derives a ramp's color.
-    fn drawable_index(&self, key: char) -> Option<usize> {
+    pub(crate) fn drawable_index(&self, key: char) -> Option<usize> {
         let index = self.index_of(key)?;
         match self.entry(key)? {
             Entry::Color(_) => Some(index),
@@ -315,7 +320,7 @@ impl Palette {
 
     /// Every index's pixel: what a frame's indices resolve through. An index
     /// that does not resolve is transparent, though no parsed frame holds one.
-    fn resolved(&self) -> Vec<Pixel> {
+    pub(crate) fn resolved(&self) -> Vec<Pixel> {
         self.entries
             .iter()
             .map(|&(_, e)| self.resolve(e).flatten())
@@ -325,15 +330,15 @@ impl Palette {
 
 /// A palette index as a frame stores it: the indexed-color convention, so a
 /// palette addresses at most [`PALETTE_CAPACITY`] keys.
-type PaletteIndex = u8;
+pub(crate) type PaletteIndex = u8;
 
 /// The most keys a palette's frames can address.
-const PALETTE_CAPACITY: usize = PaletteIndex::MAX as usize + 1;
+pub(crate) const PALETTE_CAPACITY: usize = PaletteIndex::MAX as usize + 1;
 
 /// A frame as palette indices: how a pack holds its art, so a recolor resolves
 /// the same indices through a different palette.
 #[derive(Debug, Clone)]
-struct IndexedFrame(Grid<PaletteIndex>);
+pub(crate) struct IndexedFrame(pub(crate) Grid<PaletteIndex>);
 
 impl IndexedFrame {
     /// The frame in `pixels`' colors, one entry per palette index.
@@ -437,8 +442,7 @@ impl Mark {
 /// Which way a character frame's head faces the viewer: the view a hairstyle
 /// draws its layers for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[non_exhaustive]
-pub enum HeadView {
+pub(crate) enum HeadView {
     /// The face toward the viewer.
     Front,
     /// The back of the head toward the viewer.
@@ -519,7 +523,7 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    fn new(
+    pub(crate) fn new(
         marked: vec1::Vec1<(IndexedFrame, Vec<Mark>)>,
         palette: Arc<Palette>,
         frame_ms: u32,
@@ -1032,7 +1036,7 @@ mod tests {
     ];
 
     fn shades(base: Rgb) -> Vec<Rgb> {
-        let max = usize::from(format::MAX_RAMP_LEVEL.unsigned_abs());
+        let max = usize::from(MAX_RAMP_LEVEL.unsigned_abs());
         let mut shades: Vec<Rgb> = base.ramp_run(false).take(max).collect();
         shades.reverse();
         shades.push(base);
@@ -1042,7 +1046,7 @@ mod tests {
 
     #[test]
     fn a_ramp_level_is_that_step_of_its_walk() {
-        let max = format::MAX_RAMP_LEVEL;
+        let max = MAX_RAMP_LEVEL;
         for base in RAMP_BASES {
             let shades = shades(base);
             for (n, &shade) in (-max..=max).zip(&shades) {

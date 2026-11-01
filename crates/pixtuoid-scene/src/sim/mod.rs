@@ -7,7 +7,7 @@
 //! `floor::FloorSession::step` to observe poses/positions without buying a
 //! pixel pass.
 
-use crate::sprite::format::{Piece, Walk};
+use crate::pack::{Piece, Walk};
 use pixtuoid_core::remote::cwd_basename;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -523,7 +523,7 @@ fn pet_placement(
     creatures.retain(|key, _| !matches!(key, CreatureKey::Pet(k) if Some(*k) != kind));
     let kind = kind?;
     let walk_anim = kind.walk_anim();
-    let stride = pack.stride(walk_anim);
+    let stride = pack.inner().stride(walk_anim);
     let walk = creatures
         .entry(CreatureKey::Pet(kind))
         .or_insert_with(|| CreatureWalk::at_home(layout, floor.floor_seed, now));
@@ -637,7 +637,7 @@ fn mascot_placements(
             continue;
         };
         let state = presence.display_state();
-        let roam = Roam::mascot(pack.stride(def.walk), state);
+        let roam = Roam::mascot(pack.inner().stride(def.walk), state);
         let key = DaemonInstanceKey::new(source, instance.clone());
         let creature = CreatureKey::Mascot(key.clone());
         if presence.liveness != DaemonLiveness::Down
@@ -697,7 +697,7 @@ fn mascot_placements(
             creatures.remove(&creature);
             continue;
         };
-        let roam = Roam::mascot(pack.stride(def.walk), DaemonState::Down);
+        let roam = Roam::mascot(pack.inner().stride(def.walk), DaemonState::Down);
         if !walk.leaving() {
             walk.leave(elevator, roam, ground, now);
         }
@@ -731,7 +731,7 @@ fn mascot_placements(
                         pose::walk_frame(
                             segment.travelled(),
                             pack.piece(def.walk.piece()),
-                            pack.stride(def.walk),
+                            pack.inner().stride(def.walk),
                         ),
                     ),
                     None => (
@@ -1049,7 +1049,8 @@ pub(crate) fn resolve_characters(
                     WALK
                 };
                 let anim_name = walk.piece();
-                let frame = pose::walk_frame(travelled, pack.piece(anim_name), pack.stride(walk));
+                let frame =
+                    pose::walk_frame(travelled, pack.piece(anim_name), pack.inner().stride(walk));
                 placements.push((
                     CharacterPlacement {
                         agent_idx,

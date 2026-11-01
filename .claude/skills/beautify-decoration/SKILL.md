@@ -111,7 +111,7 @@ Run this checklist before each render you send in a beautify loop, and state eac
 1. Sketch the design as a list of cells per row (count exactly).
 2. Pick a palette: reuse `pack.toml` keys; only add new ones if necessary.
 3. Write the `.sprite` file; verify row widths with the awk command above.
-4. Add a `Piece::Foo` variant (scene `sprite::format`) and the `[animations.foo]` block to `pack.toml` (`build.rs` embeds the file itself): a pack without it, or a key no piece names, does not load.
+4. Add a `Piece::Foo` variant (scene `pack/piece.rs`) and the `[animations.foo]` block to `pack.toml` (`build.rs` embeds the file itself): a pack without it, or a key no piece names, does not load.
 5. Decide where it lives in the layout — add a `Point` placement in `SceneLayout::compute`.
 6. Give it a `Furniture` variant + `furniture_def` row (§6 step 1). A new plant, wall-decor or pod-decor kind is then stamped by its collection's loop in `mask::build_walkable_mask`; a one-off piece also needs a `MaskObstacles` field and its own `stamp_ground` from that row, like `fish_tank` (or add a waypoint kind if it's interactive).
 7. Add a `DrawableKind::Foo` variant + `paint_drawable` arm if z-sorting matters.

@@ -95,7 +95,7 @@ pub mod sim;
 pub mod sky;
 pub(crate) mod skyline;
 /// Sprite vocabulary: `Frame`/`Sprite`, the `RgbBuffer` blit target, and the
-/// `.sprite`/`pack.toml` pack loader.
+/// `.sprite` decoder.
 pub mod sprite;
 #[doc(hidden)]
 pub mod tally;

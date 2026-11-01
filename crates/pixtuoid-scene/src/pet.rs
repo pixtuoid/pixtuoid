@@ -56,8 +56,8 @@ impl PetKind {
     }
 
     /// Its walk.
-    pub fn walk_anim(self) -> crate::sprite::format::Walk {
-        use crate::sprite::format::Walk;
+    pub fn walk_anim(self) -> crate::pack::Walk {
+        use crate::pack::Walk;
         match self {
             PetKind::Cat => Walk::CatWalk,
             PetKind::Dog => Walk::DogWalk,
@@ -65,8 +65,8 @@ impl PetKind {
     }
 
     /// Its sitting/resting pose.
-    pub fn sit_anim(self) -> crate::sprite::format::Piece {
-        use crate::sprite::format::Piece;
+    pub fn sit_anim(self) -> crate::pack::Piece {
+        use crate::pack::Piece;
         match self {
             PetKind::Cat => Piece::CatSit,
             PetKind::Dog => Piece::DogSit,
@@ -74,8 +74,8 @@ impl PetKind {
     }
 
     /// Its sleeping pose.
-    pub fn sleep_anim(self) -> crate::sprite::format::Piece {
-        use crate::sprite::format::Piece;
+    pub fn sleep_anim(self) -> crate::pack::Piece {
+        use crate::pack::Piece;
         match self {
             PetKind::Cat => Piece::CatSleep,
             PetKind::Dog => Piece::DogSleep,

@@ -3,7 +3,7 @@
 use std::time::SystemTime;
 
 use crate::pack::OfficeArt;
-use crate::sprite::format::Piece;
+use crate::pack::Piece;
 use crate::sprite::{Frame, Rgb};
 use pixtuoid_core::AgentSlot;
 
@@ -118,9 +118,9 @@ fn recolor<'c>(
                 dress
                     .style
                     .as_deref()
-                    .and_then(|name| pack.hairstyle(name, dense.density)),
+                    .and_then(|name| pack.inner().hairstyle(name, dense.density)),
                 &key.palette,
-                pack.character_outline(),
+                pack.inner().character_outline(),
             ),
             None => bare,
         };
@@ -258,12 +258,12 @@ mod tests {
             flip_x: false,
             glow_tint: None,
         };
-        let coffee = pack.variants_of(Piece::HoldingCoffee)[&density].frame_ms();
+        let coffee = pack.inner().variants_of(Piece::HoldingCoffee)[&density].frame_ms();
         let coworker =
             character_frame(pose, agent, pack, scale, &mut cache, SystemTime::UNIX_EPOCH)
                 .frame
                 .clone();
-        let cat = &pack.variants_of(Piece::CatSleep)[&density];
+        let cat = &pack.inner().variants_of(Piece::CatSleep)[&density];
         let art: Vec<_> = std::iter::once(("coworker", coffee, &coworker))
             .chain(cat.frames().iter().map(|f| ("cat", cat.frame_ms(), f)))
             .collect();
