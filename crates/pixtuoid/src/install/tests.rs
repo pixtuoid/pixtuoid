@@ -613,7 +613,13 @@ fn uninstall_preserves_the_config_file_even_when_it_merges_to_empty() {
 fn install_on_a_malformed_config_errors_without_rewriting() {
     for (t, malformed) in [
         (&target::CODEWHALE, "this is = = not valid toml [[["),
+        (&target::CODEWHALE, "hooks = 1\n"),
+        (&target::CODEWHALE, "[hooks]\nhooks = 1\n"),
+        (&target::KIMI, "hooks = 1\n"),
+        (&target::KIMI, "hooks = [{ command = 'keep' }, 'stray']\n"),
         (&crate::install::target::CURSOR, "{ not valid json,,, "),
+        (&crate::install::target::CURSOR, r#"{"hooks": 1}"#),
+        (&crate::install::target::CURSOR, r#"{"hooks": {"stop": 1}}"#),
     ] {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg");
@@ -626,12 +632,12 @@ fn install_on_a_malformed_config_errors_without_rewriting() {
             Some(PathBuf::from("/fake/pixtuoid-hook")),
         )
         .unwrap_err();
-        // "refusing to overwrite" is what proves the error came from the parse
-        // step and not a downstream write failure.
+        // "refusing to overwrite" is what proves the error came from a refusal and
+        // not a downstream write failure.
         let msg = format!("{err:#}");
         assert!(
             msg.contains("refusing to overwrite"),
-            "{}: the error must come from the parse guard, got: {msg}",
+            "{}: the error must come from a refusal, got: {msg}",
             t.name
         );
 

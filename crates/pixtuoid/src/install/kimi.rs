@@ -20,10 +20,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use toml::value::Table;
 
-use crate::install::io;
 use crate::install::target::MergeOutcome;
+use crate::install::{io, merge};
 use pixtuoid_core::source::kimi::SOURCE_NAME;
 
 /// Events we register == events we decode, enforced by
@@ -86,16 +85,31 @@ pub(crate) fn detect_installed() -> bool {
 /// [`crate::install::hook_cmd::shell_hook_command`]'s. Err on non-UTF-8 (prevents
 /// the to_string_lossy dead-hook).
 pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
-    let p = crate::install::merge::hook_path_str(resolved)?;
+    let p = merge::hook_path_str(resolved)?;
     crate::install::hook_cmd::shell_hook_command(p, SOURCE_NAME)
 }
 
 pub(crate) fn merge_install(content: &str, hook_cmd: &str) -> Result<MergeOutcome> {
-    crate::install::merge::toml_merge_outcome(content, |root| toml_merge_install(root, hook_cmd))
+    merge::toml_merge_outcome(content, |doc| {
+        let hooks = merge::install_toml_tables(doc, "hooks")?;
+        hooks.retain(|entry| !is_managed_entry(entry));
+        for ev in KIMI_EVENTS {
+            hooks.push(managed_entry(ev, hook_cmd));
+        }
+        Ok(())
+    })
 }
 
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
-    crate::install::merge::toml_merge_outcome(content, toml_merge_uninstall)
+    merge::toml_merge_outcome(content, |doc| {
+        if let Some(hooks) = doc.get_mut("hooks").and_then(merge::open_toml_tables) {
+            hooks.retain(|entry| !is_managed_entry(entry));
+            if hooks.is_empty() {
+                doc.remove("hooks");
+            }
+        }
+        Ok(())
+    })
 }
 
 /// The `PIXTUOID_SOURCE=kimi` env-prefix marker (Unix `shell_hook_command` form).
@@ -118,46 +132,19 @@ fn is_managed_command(command: &str) -> bool {
     command.contains(&env_marker()) || command.contains(&flag_marker())
 }
 
-fn is_managed_entry(entry: &toml::Value) -> bool {
+fn is_managed_entry(entry: &toml_edit::Table) -> bool {
     entry
         .get("command")
-        .and_then(|c| c.as_str())
+        .and_then(toml_edit::Item::as_str)
         .is_some_and(is_managed_command)
 }
 
-fn managed_entry(event: &str, hook_cmd: &str) -> toml::Value {
-    let mut t = Table::new();
-    t.insert("event".into(), toml::Value::String(event.into()));
-    t.insert("command".into(), toml::Value::String(hook_cmd.into()));
-    t.insert(
-        "timeout".into(),
-        toml::Value::Integer(KIMI_HOOK_TIMEOUT_SECS),
-    );
-    toml::Value::Table(t)
-}
-
-fn toml_merge_install(mut root: Table, hook_cmd: &str) -> Table {
-    crate::install::merge::with_toml_array(&mut root, "hooks", |arr| {
-        arr.retain(|e| !is_managed_entry(e));
-        for ev in KIMI_EVENTS {
-            arr.push(managed_entry(ev, hook_cmd));
-        }
-    });
-    root
-}
-
-fn toml_merge_uninstall(mut root: Table) -> Table {
-    if let Some(arr) = root.get_mut("hooks").and_then(|h| h.as_array_mut()) {
-        arr.retain(|e| !is_managed_entry(e));
-    }
-    if root
-        .get("hooks")
-        .and_then(|h| h.as_array())
-        .is_some_and(|a| a.is_empty())
-    {
-        root.remove("hooks");
-    }
-    root
+fn managed_entry(event: &str, hook_cmd: &str) -> toml_edit::Table {
+    let mut entry = toml_edit::Table::new();
+    entry["event"] = toml_edit::value(event);
+    entry["command"] = toml_edit::value(hook_cmd);
+    entry["timeout"] = toml_edit::value(KIMI_HOOK_TIMEOUT_SECS);
+    entry
 }
 
 /// Install-schema verification: every `KIMI_EVENTS` event still has a managed
@@ -171,7 +158,15 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
     let entries: Vec<&toml::Value> = doc
         .get("hooks")
         .and_then(|h| h.as_array())
-        .map(|a| a.iter().filter(|e| is_managed_entry(e)).collect())
+        .map(|a| {
+            a.iter()
+                .filter(|e| {
+                    e.get("command")
+                        .and_then(|c| c.as_str())
+                        .is_some_and(is_managed_command)
+                })
+                .collect()
+        })
         .unwrap_or_default();
     // The shared `assemble` no-managed message names the `_pixtuoid` sentinel
     // Kimi can't carry, so word this one here.
@@ -278,7 +273,10 @@ mod tests {
                 entry.get("_pixtuoid").is_none(),
                 "must NOT write a sentinel (Kimi rejects extra fields)"
             );
-            assert!(is_managed_entry(entry), "our entry must be self-detecting");
+            assert!(
+                is_managed_command(entry["command"].as_str().unwrap()),
+                "our entry must be self-detecting"
+            );
         }
     }
 
@@ -361,14 +359,6 @@ command = "terminal-notifier -message done"
     #[test]
     fn merge_install_rejects_invalid_toml() {
         assert!(merge_install("not = valid = toml", CMD).is_err());
-    }
-
-    #[test]
-    fn install_coerces_a_non_array_hooks_key() {
-        let out = merge_install("hooks = \"garbage\"\n", CMD).unwrap();
-        let v = parse(&out.content);
-        assert!(v["hooks"].is_array());
-        assert_eq!(v["hooks"].as_array().unwrap().len(), KIMI_EVENTS.len());
     }
 
     #[test]

@@ -124,7 +124,10 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
     parse
 }
 
-fn json_merge_install(mut root: Map<String, Value>, hook_command: &str) -> Map<String, Value> {
+fn json_merge_install(
+    mut root: Map<String, Value>,
+    hook_command: &str,
+) -> Result<Map<String, Value>> {
     // Cursor requires a `version`; set it if absent, preserve a user's value.
     root.entry("version".to_string())
         .or_insert_with(|| json!(1));
@@ -142,10 +145,7 @@ mod tests {
     use super::*;
 
     fn install_into(doc: Value, hook_command: &str) -> Value {
-        Value::Object(json_merge_install(
-            doc.as_object().cloned().unwrap(),
-            hook_command,
-        ))
+        Value::Object(json_merge_install(doc.as_object().cloned().unwrap(), hook_command).unwrap())
     }
 
     #[test]
@@ -330,14 +330,6 @@ mod tests {
     #[test]
     fn merge_install_rejects_invalid_json() {
         assert!(merge_install("{not json", "/x").is_err());
-    }
-
-    #[test]
-    fn install_coerces_non_object_hooks_and_non_array_events() {
-        let doc = install_into(json!({"hooks": "garbage"}), "/x");
-        assert!(doc["hooks"].is_object());
-        let doc = install_into(json!({"hooks": {"stop": 42}}), "/x");
-        assert_eq!(doc["hooks"]["stop"].as_array().unwrap().len(), 1);
     }
 
     // Unix-only: on Windows the bare form is emitted and this spaced path is REJECTED.
