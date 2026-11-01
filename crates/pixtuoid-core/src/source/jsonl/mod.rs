@@ -36,7 +36,7 @@ pub(crate) use root_watch::{Nudge, Reconciled, RootWatch, Wake, absolute_root};
 use unclaim::drain_child_end_unclaims;
 use walk::{scan_root, walk_jsonl};
 
-pub use crate::source::decoder::LineDecoder;
+use crate::source::decoder::LineDecoder;
 
 pub use crate::source::decoder::PathFilter;
 pub use crate::source::decoder::{IdDeriver, TailActivity};
@@ -52,7 +52,7 @@ fn default_prefixed_label(_path: &Path, source: &str, cwd: &Path) -> String {
 
 /// Predicate on a transcript's raw bytes: `true` when they carry a session-end
 /// marker, so the first-sight gate never seeds an already-ended transcript.
-pub type SessionEndChecker = fn(&[u8]) -> bool;
+pub(crate) type SessionEndChecker = fn(&[u8]) -> bool;
 
 /// Reads a transcript tail into a [`TailActivity`] verdict. Only **CC**
 /// supplies one (see `claude_code::cc_activity_recency` for the write that made

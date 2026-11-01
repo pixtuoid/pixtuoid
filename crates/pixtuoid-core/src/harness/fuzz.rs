@@ -13,7 +13,7 @@ use crate::remote::{self, Hello, PairLink, RemoteOffice, Reply};
 use crate::source::admit::{lines, whole};
 use crate::source::registry;
 #[cfg(feature = "native")]
-use crate::source::registry::NativeTranscript;
+use crate::source::registry::Transcript;
 use crate::state::MAX_FLOORS;
 
 /// A hook connection's bytes, framed as the listener frames them: a last line
@@ -46,19 +46,21 @@ pub fn transcript(bytes: &[u8]) -> Option<Driven> {
         let _ = row.parent_extractor.map(|extract| extract(line));
     }
     #[cfg(feature = "native")]
-    native_reads(row.native, source, Path::new(path), body, &parsed);
+    native_reads(row, source, Path::new(path), body, &parsed);
     Some(drive.body(body))
 }
 
 #[cfg(feature = "native")]
-fn native_reads(row: NativeTranscript, source: &str, path: &Path, body: &[u8], parsed: &[Value]) {
-    let _ = (row.check_ended)(body);
-    let _ = row.activity_recency.map(|recency| recency(body));
-    let cwd = row.cwd_derive.and_then(|derive| derive(path));
-    let _ = row.derive_label.map(|label| {
+fn native_reads(row: &Transcript, source: &str, path: &Path, body: &[u8], parsed: &[Value]) {
+    let native = row.native;
+    let _ = (native.check_ended)(body);
+    let _ = native.activity_recency.map(|recency| recency(body));
+    let head_cwd = parsed.iter().find_map(row.cwd_extractor);
+    let cwd = head_cwd.or_else(|| native.cwd_derive.and_then(|derive| derive(path)));
+    let _ = native.derive_label.map(|label| {
         label(path, source, cwd.as_deref().unwrap_or(Path::new("")));
     });
-    if let Some(label) = row.head_label {
+    if let Some(label) = native.head_label {
         parsed.iter().for_each(|line| drop(label(line)));
     }
 }

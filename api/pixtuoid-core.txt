@@ -637,10 +637,8 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::jsonl::ProbeSnapshot
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::jsonl::ProbeSnapshot
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::jsonl::ProbeSnapshot
 pub type pixtuoid_core::source::jsonl::IdDeriver = fn(&std::path::Path) -> alloc::string::String
-pub type pixtuoid_core::source::jsonl::LineDecoder = fn(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub type pixtuoid_core::source::jsonl::LivenessProbe = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn() -> core::option::Option<pixtuoid_core::source::jsonl::ProbeSnapshot> + core::marker::Send + core::marker::Sync)>
 pub type pixtuoid_core::source::jsonl::PathFilter = fn(&std::path::Path) -> bool
-pub type pixtuoid_core::source::jsonl::SessionEndChecker = fn(&[u8]) -> bool
 pub mod pixtuoid_core::source::kimi
 pub const pixtuoid_core::source::kimi::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::manager

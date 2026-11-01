@@ -3,8 +3,10 @@ use std::path::{Path, PathBuf};
 use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
+#[cfg(any(feature = "native", test))]
+use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, TailActivity, cwd_basename_label, ellipsize, extract_top_level_cwd,
+    MAX_DECODED_FIELD_CHARS, cwd_basename_label, ellipsize, extract_top_level_cwd,
     make_tool_detail, parsed_tail_lines,
 };
 
@@ -374,6 +376,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
 /// metadata unless it is a turn record (see `cc_activity_recency`): a
 /// STARTING session writes `bridge-session` / `pr-link` runs into an OTHER,
 /// long-dead transcript, bumping the mtime first-sight trusted as liveness.
+#[cfg(any(feature = "native", test))]
 const ACTIVITY_TYPES: &[&str] = &[
     "assistant",
     "attachment",
@@ -398,6 +401,7 @@ pub(crate) fn admits_transcript(path: &Path) -> bool {
 /// bytes were metadata. An UNNAMED type still counts as a turn when it is a
 /// turn record; the day CC renames one, reading it as "not a turn" would
 /// gate every live session at once.
+#[cfg(any(feature = "native", test))]
 fn classifies_as_turn(v: &Value) -> Option<bool> {
     let obj = v.as_object()?;
     let ty = obj.get("type").and_then(|t| t.as_str())?;
@@ -411,6 +415,7 @@ fn classifies_as_turn(v: &Value) -> Option<bool> {
 /// Accepted residual — an UNVOUCHED session (headless `claude -p`, a non-standard
 /// projects root, EVERY CC session on Windows) whose tail is momentarily all
 /// sidecar is invisible until its next turn; with hooks it registers regardless.
+#[cfg(any(feature = "native", test))]
 pub(crate) fn cc_activity_recency(tail: &[u8]) -> TailActivity {
     let mut newest: Option<u64> = None;
     let mut saw_turn = false;

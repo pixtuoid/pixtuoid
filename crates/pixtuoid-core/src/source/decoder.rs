@@ -234,12 +234,14 @@ pub enum TailActivity {
 
 /// An [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339#section-5.6) stamp →
 /// epoch seconds; every caller treats `None` as "no information".
+#[cfg(any(feature = "native", test))]
 pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
     rfc3339_to_epoch(s).map(|d| d.as_secs())
 }
 
 /// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond, by
 /// [`DateTime::parse_from_rfc3339`](chrono::DateTime::parse_from_rfc3339).
+#[cfg(any(feature = "native", feature = "harness", test))]
 pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     let t = chrono::DateTime::parse_from_rfc3339(s).ok()?;
     Some(std::time::Duration::new(
