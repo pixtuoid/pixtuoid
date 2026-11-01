@@ -3,54 +3,54 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     source: reasonix
-    session_id: 20261030-145628.769951000-deepseek-v4-flash + planner planner-model
+    session_id: 20261101-150149.713965000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     source: reasonix
-    session_id: 20261030-145628.769951000-deepseek-v4-flash + planner planner-model
+    session_id: 20261101-150149.713965000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     source: reasonix
-    session_id: 20261030-145628.769951000-deepseek-v4-flash + planner planner-model
+    session_id: 20261101-150149.713965000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     tool_use_id: ~
     detail:
       Generic:
         display: "read_file: NOTE.txt"
 - Identity:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     source: reasonix
-    session_id: 20261030-145628.769951000-deepseek-v4-flash + planner planner-model
+    session_id: 20261101-150149.713965000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     tool_use_id: ~
 - Identity:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     source: reasonix
-    session_id: 20261030-145628.769951000-deepseek-v4-flash + planner planner-model
+    session_id: 20261101-150149.713965000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     reason: "approval: bash rm NOTE.txt"
 - Identity:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     source: reasonix
-    session_id: 20261030-145628.769951000-deepseek-v4-flash + planner planner-model
+    session_id: 20261101-150149.713965000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     reason: "approval needed: bash rm NOTE.txt"
 - TurnEnd:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
 - SessionEnd:
-    agent_id: 1766208121922060257
+    agent_id: 12932396539785873574
     as_child: false

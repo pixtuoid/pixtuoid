@@ -205,7 +205,10 @@ diff, fixtures included.
 The review skips a fork's or a bot's PR, and its skipped check passes. A
 maintainer reviews a fork's or Dependabot's PR by hand before queueing it; a
 fork's author can resolve their own threads, so read each thread's
-`resolvedBy` and its reply.
+`resolvedBy` and its reply. To run the review on a fork's commits once its diff
+is read and touches no workflow, open them as a same-repo PR and close it unmerged:
+merging it would take the author's credit. Its checks share the fork PR's commit,
+so force-cancelling its other runs shows them cancelled there too.
 
 ### Dispositions
 
@@ -269,7 +272,19 @@ step 10 by the theme guards; steps 1–3 are on you.
    the home variable a hermetic profile sandboxes: re-probe it when the CLI majors.
    A custom root gets ONE `pub fn <cli>_home()`, called by both the watcher's
    `default_paths()` and the installer's `default_config_path()` so they
-   can't disagree.
+   can't disagree. No test can ask the rest, so the PR body answers each with an
+   upstream cite:
+   - **Where can hooks live?** A plugin or a dir the CLI scans keeps pixtuoid out
+     of the user's file (step 8). Name each route checked and, where one can't
+     run unattended, why.
+   - **What rewrites that file?** A CLI that saves its whole config can drop a
+     sentinel, so ownership keys on what survives (`install/jcode.rs`'s
+     `managed_path`).
+   - **Which events fire for a session nobody sees?** A resume, a reload or a
+     per-connection placeholder, each a phantom sprite if it registers
+     (`source/jcode.rs`'s `turn_start` arm).
+   - **How does a hook get its payload?** Off stdin, the shim needs an arm and
+     `shim_stamp_parity.rs` a pin, and it forwards only what a decoder reads.
 2. **Write the source module** — `crates/pixtuoid-core/src/source/<name>.rs`:
    `SOURCE_NAME`, a `LineDecoder` fn (one JSONL line → `Vec<AgentEvent>`), a label
    deriver, unit tests for mappings no fixture reaches. Format knowledge lives HERE.
@@ -289,15 +304,15 @@ step 10 by the theme guards; steps 1–3 are on you.
    must list it: `SNAPSHOTS=overwrite just test -p pixtuoid --test cli_json`.
 6. **Record the fixture** — the test steps in
    [`crates/pixtuoid-core/tests/AGENTS.md`](../crates/pixtuoid-core/tests/AGENTS.md)
-   (a RECORDED SessionStart scenario via `just capture-fixture`), then
-   `cargo insta review`.
+   (a RECORDED SessionStart scenario), then `cargo insta review`.
 7. **Wire it into `runtime/driver.rs::build_source_set`** (the one
    construction site; the registry drives the guard test, not the spawning).
 8. **If the CLI has hooks**, add an `install/` target: a `Target` row whose
-   `Primary` is either the CLI's config (`merge_install`/`merge_uninstall` + a
-   `verify_schema` fn mirroring its format) or a plugin file pixtuoid owns
-   whole, plus the registered-events↔decoder-arms guard.
-9. **Add a row to `site/src/sources.json`** (`status`, per-OS `platforms`), then `just gen-readme`. Pinned to `registered_source_names()`
+   `Primary` is a plugin file pixtuoid owns whole or, only when no such route
+   runs unattended, the CLI's config (`merge_install`/`merge_uninstall` + a
+   `verify_schema` fn mirroring its format), plus the registered-events↔decoder-arms
+   guard.
+9. **Add a row to `site/src/sources.json`** (`status`, per-OS `platforms` as its neighbours'), then `just gen-readme`. Pinned to `registered_source_names()`
    by `supported_sources_manifest.rs`.
 10. **Add the per-source badge hue** — a `SourceColors` field + value in EVERY
     theme file + `badge_color` in the manifest row; the coverage, legibility

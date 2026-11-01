@@ -141,15 +141,15 @@ fn register(config: &Path) -> Result<()> {
         CLI.run(&[PLUGINS.as_ref(), ENABLE.as_ref(), NAME.as_ref()])
             .map(drop)
     };
-    if let Err(e) = registered {
-        // Hermes lists any user dir that holds a manifest, code or none
-        // (`hermes_cli/plugins_cmd.py:869-881` at v0.22.5).
-        if fresh && let Err(undo) = host_plugin::remove_if_ours(dir, config, is_ours) {
-            return Err(e.context(format!("its manifest stays in place: {undo:#}")));
+    // Hermes lists any user dir that holds a manifest, code or none
+    // (`hermes_cli/plugins_cmd.py:869-881` at v0.22.5).
+    registered.map_err(|e| {
+        if fresh {
+            host_plugin::undo_registration(e, dir, config, is_ours)
+        } else {
+            e
         }
-        return Err(e);
-    }
-    Ok(())
+    })
 }
 
 /// `enable` reloads the gateway only for a selection it changed

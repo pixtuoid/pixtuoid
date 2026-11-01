@@ -618,16 +618,18 @@ pub(crate) const ANTIGRAVITY: Target = Target {
     display_name: "Antigravity CLI",
     default_config_path: crate::install::antigravity::default_config_path,
     hook_command: crate::install::antigravity::hook_command,
-    primary: Primary::Config {
-        merge_install: crate::install::antigravity::merge_install,
-        merge_uninstall: crate::install::antigravity::merge_uninstall,
+    primary: Primary::Owned {
+        render: crate::install::antigravity::render_hooks,
+        installed_shim: crate::install::antigravity::installed_shim,
+        uninstall: crate::install::antigravity::uninstall,
         verify_schema: crate::install::antigravity::verify_schema,
-        beside: None,
+        retired: None,
+        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::antigravity::detect_installed,
     post_install_hint: None,
-    host: None,
+    host: Some(&crate::install::antigravity::HOST),
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
