@@ -10,8 +10,8 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 
-use pixtuoid_core::grid::Grid;
-use pixtuoid_core::walkable::{OccupancyOverlay, WalkableMask};
+use crate::grid::Grid;
+use crate::walkable::{OccupancyOverlay, WalkableMask};
 
 use crate::layout::{
     Bounds, COARSE_CELL_SIZE, CoarseGrid, Point, cell_anchor, cell_center, cell_walkable, snap,

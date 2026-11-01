@@ -4,8 +4,8 @@
 
 use std::time::SystemTime;
 
+use crate::sprite::Rgb;
 use pixtuoid_core::source::registry::descriptor_for;
-use pixtuoid_core::sprite::Rgb;
 use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, SceneState};
 
@@ -390,7 +390,7 @@ pub fn coffee() -> Tooltip {
 /// else its name.
 pub fn pet(
     kind: PetKind,
-    anim: pixtuoid_core::sprite::format::Piece,
+    anim: crate::sprite::format::Piece,
     on_cooldown: bool,
     name: &str,
 ) -> Tooltip {

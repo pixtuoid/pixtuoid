@@ -2,7 +2,7 @@
 //! sampled nearest so each layer's whole-number scale stays pixel-exact.
 
 use anyhow::Context;
-use pixtuoid_core::sprite::RgbBuffer;
+use pixtuoid_scene::sprite::RgbBuffer;
 
 use super::compose::{Change, Composition, LayerId, LayerPixels};
 
@@ -534,9 +534,9 @@ mod tests {
     use crate::floating::compose::{
         Change, Composition, Layer, LayerId, LayerPixels, PxRect, RgbaLayer, XrgbSurface, composite,
     };
-    use pixtuoid_core::sprite::{Rgb, RgbBuffer};
     use pixtuoid_scene::cutaway::Canvas;
     use pixtuoid_scene::layout::Bounds;
+    use pixtuoid_scene::sprite::{Rgb, RgbBuffer};
 
     /// A painter on whatever adapter the host has, hardware or software.
     /// None fails the test: a skip would pass with the presenter untested.

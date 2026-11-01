@@ -2,8 +2,8 @@
 //! and what a pane's glass shows at a point, as a few tones resolved once a
 //! frame and picked per pixel by ordered dither.
 
-use pixtuoid_core::sprite::Rgb;
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::Rgb;
+use crate::sprite::format::Density;
 
 use crate::composite::{blend, blend_rgb};
 use crate::dither::FALLOFF_TONES;

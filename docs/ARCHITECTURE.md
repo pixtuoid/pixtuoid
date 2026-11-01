@@ -13,12 +13,12 @@ pixtuoid is a Cargo workspace of **six crates** wired as a strict
 **producer → reducer → renderer** pipeline:
 
 - **`pixtuoid-core`** — the headless library: sources and decoders, the
-  reducer + scene state, the sprite format, the grid/walkable vocabulary. No
-  terminal dependencies.
+  reducer + scene state. No terminal dependencies.
 - **`pixtuoid-scene`** — the backend-agnostic render + simulation **engine**:
-  the office world itself (`look::render`, layout, pose, walk
-  physics and pathfinding, themes, pets). Terminal- AND window-free **by
-  crate boundary** — compiler-enforced, not just a lint.
+  the office world itself (`look::render`, the sprite format, the grid/walkable
+  vocabulary, layout, pose, walk physics and pathfinding, themes, pets).
+  Terminal- AND window-free **by crate boundary** — compiler-enforced, not
+  just a lint.
 - **`pixtuoid`** — the binary: the CLI, the runtime wiring, and two thin
   painters over the engine — the TUI renderer and the floating desktop
   window.

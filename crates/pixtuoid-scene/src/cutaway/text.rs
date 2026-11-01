@@ -7,7 +7,7 @@
 //! (`scripts/gen-fonts.py`); a symbol is an icon, not a glyph
 //! ([`paint_icon`]). [`grid`](super::grid) paints screen text in it too.
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 use crate::display::pen::{ArtPx, ArtRect, Pen};
 use crate::display::text::{

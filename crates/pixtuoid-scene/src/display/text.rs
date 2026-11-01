@@ -4,7 +4,7 @@
 //! classic badge's terminal column. The rasterizer's font draws into these
 //! cells.
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 use pixtuoid_core::{AgentId, AgentSlot};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;

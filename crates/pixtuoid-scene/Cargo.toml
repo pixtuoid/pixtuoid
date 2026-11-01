@@ -43,6 +43,11 @@ foldhash      = { workspace = true }
 strum         = { workspace = true }
 enum-map      = { workspace = true }
 thiserror     = { workspace = true }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+# `Rgb`'s OKLab: `ramp` and `mix`.
+palette       = { workspace = true }
+vec1          = { workspace = true }
 
 [build-dependencies]
 toml       = { workspace = true }
@@ -51,14 +56,16 @@ serde_json = { workspace = true }
 [dev-dependencies]
 # `harness` is dev-only (see core's manifest), so `examples/corpus_check.rs`
 # requests it here rather than in [dependencies].
-pixtuoid-core = { path = "../pixtuoid-core", version = "0.21.0", default-features = false, features = ["harness", "pack-toml"] }
-serde_json = { workspace = true }
+pixtuoid-core = { path = "../pixtuoid-core", version = "0.21.0", default-features = false, features = ["harness"] }
+anyhow     = { workspace = true }
 proptest   = { workspace = true }
 tempfile   = { workspace = true }
 snapbox    = { workspace = true }
 # tests/model_boundary.rs parses the source.
 syn         = { workspace = true }
 proc-macro2 = { workspace = true }
+# The tests write packs in TOML; the loader reads their JSON transcode.
+toml       = { workspace = true }
 # The tests' manifest edits (`pack::density_art`, `test_office_with`).
 toml_edit  = { workspace = true }
 # Statistical render-path benchmarks (`just bench`). The CodSpeed compat

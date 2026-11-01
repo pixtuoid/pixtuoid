@@ -4,7 +4,7 @@
 
 use std::ops::Range;
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 use crate::layout::{Bounds, FixtureKind, SceneLayout, Size};
 use crate::theme::Theme;

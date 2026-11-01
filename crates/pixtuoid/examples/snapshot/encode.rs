@@ -281,7 +281,7 @@ pub(crate) fn cells_to_rgba(
 
 /// The colours a cell the terminal colours itself (`Reset`) shows in.
 const TERMINAL_BG: [u8; 3] = [20, 22, 28];
-const TERMINAL_FG: pixtuoid_core::sprite::Rgb = pixtuoid_core::sprite::Rgb {
+const TERMINAL_FG: pixtuoid_scene::sprite::Rgb = pixtuoid_scene::sprite::Rgb {
     r: 220,
     g: 220,
     b: 220,
@@ -523,12 +523,12 @@ impl<I: image::GenericImage> Canvas for ImageCanvas<'_, I>
 where
     I::Pixel: image::Pixel<Subpixel = u8>,
 {
-    fn pixel(&self, x: i32, y: i32) -> Option<pixtuoid_core::sprite::Rgb> {
+    fn pixel(&self, x: i32, y: i32) -> Option<pixtuoid_scene::sprite::Rgb> {
         use image::Pixel as _;
         let (x, y) = (u32::try_from(x).ok()?, u32::try_from(y).ok()?);
         (x < self.0.width() && y < self.0.height()).then(|| {
             let c = self.0.get_pixel(x, y).to_rgb();
-            pixtuoid_core::sprite::Rgb {
+            pixtuoid_scene::sprite::Rgb {
                 r: c[0],
                 g: c[1],
                 b: c[2],
@@ -536,7 +536,7 @@ where
         })
     }
 
-    fn set(&mut self, x: i32, y: i32, rgb: pixtuoid_core::sprite::Rgb) {
+    fn set(&mut self, x: i32, y: i32, rgb: pixtuoid_scene::sprite::Rgb) {
         use image::Pixel as _;
         let (Ok(x), Ok(y)) = (u32::try_from(x), u32::try_from(y)) else {
             return;

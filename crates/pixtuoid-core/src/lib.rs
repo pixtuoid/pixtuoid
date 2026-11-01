@@ -42,7 +42,6 @@
 // AGENTS.md's Errors rule, as a lint: no `unwrap()` outside tests.
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
-pub mod grid;
 /// The offline decode→reduce driver every test/tool that feeds real wire bytes
 /// through the production path rides.
 #[cfg(feature = "harness")]
@@ -54,32 +53,21 @@ pub mod remote;
 /// The source/decoder seam — the `Source` trait, per-CLI transcript/hook
 /// decoders, listeners, and the `SourceManager`.
 pub mod source;
-/// Sprite vocabulary: `Frame`/`Sprite`/`Palette`, the `RgbBuffer` blit target,
-/// and the `.sprite`/`pack.toml` pack loader.
-pub mod sprite;
 /// The reducer and `SceneState` — the event coordinator turning `AgentEvent`s
 /// into per-agent slot state.
 pub mod state;
 #[cfg(windows)]
 pub(crate) mod win32;
-// `WalkableMask` is an ALIAS for `Grid<bool>` whose obstacle ops are an
-// inherent `impl Grid<bool>`, and the orphan rule pins that impl to the crate
-// owning `Grid` — so the mask vocabulary stays here even though its producers
-// and consumers live in `pixtuoid-scene`.
-pub mod walkable;
 
-pub use grid::Grid;
 pub use id::AgentId;
 pub use source::{AgentEvent, ToolDetail, Transport};
 #[cfg(feature = "native")]
 pub use source::{Source, TaggedReceiver, TaggedSender};
-pub use sprite::{Frame, Palette, Pixel, Rgb, RgbBuffer, Sprite, WriteEpoch};
 pub use state::reducer::Reducer;
 pub use state::{
     ActivityState, AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, SceneState, SlotLabel,
     ToolKind, ToolUse,
 };
-pub use walkable::{OccupancyOverlay, WalkableMask};
 
 #[cfg(test)]
 pub(crate) mod test_capture;

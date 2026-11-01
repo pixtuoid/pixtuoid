@@ -17,7 +17,7 @@ use crate::walk::{
     LegPlan, Lifted, Settle, WalkLeg, WalkPathSnapshot, WalkState, WanderKind, WanderPhase,
     advance_wander, snapshot_leg_profile,
 };
-use pixtuoid_core::walkable::{OccupancyOverlay, WalkableMask};
+use crate::walkable::{OccupancyOverlay, WalkableMask};
 
 pub(crate) use pure::{
     ENTRY_ANIMATION_MS, STALE_RESUME_GAP_BASE_MS, WANDER_DWELL_EST_MS, derive, derive_state_only,

@@ -7,7 +7,6 @@ use std::time::SystemTime;
 
 use anyhow::{Context as _, Result};
 use pixtuoid::dev::ImageCells;
-use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_scene::cutaway::Canvas as _;
 use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
 use pixtuoid_scene::layout::{Point, SceneLayout};
@@ -15,6 +14,7 @@ use pixtuoid_scene::look::{Dim, Look, Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pet::Pet;
 use pixtuoid_scene::render_scale::PixelFit;
+use pixtuoid_scene::sprite::RgbBuffer;
 use pixtuoid_scene::theme::Theme;
 
 use crate::encode::{ImageCanvas, terminal_cell};

@@ -7,9 +7,9 @@ use std::time::SystemTime;
 use anyhow::Result;
 #[cfg(test)]
 use pixtuoid_core::AgentId;
-use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::pack::OfficeArt;
+use pixtuoid_scene::sprite::RgbBuffer;
 
 use ratatui::Terminal;
 use ratatui::backend::Backend;

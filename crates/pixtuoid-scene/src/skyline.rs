@@ -13,8 +13,8 @@
 use std::ops::RangeInclusive;
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::format::{Building, CityMaterials, CityPlane, Density, Material};
-use pixtuoid_core::sprite::{Frame, Pixel, Rgb};
+use crate::sprite::format::{Building, CityMaterials, CityPlane, Density, Material};
+use crate::sprite::{Frame, Pixel, Rgb};
 
 use crate::atmosphere::SkyTones;
 use crate::layout::pct;

@@ -67,6 +67,7 @@ pub mod footer;
 pub mod frame_cache;
 pub(crate) mod glass;
 pub(crate) mod glass_weather;
+pub mod grid;
 pub(crate) mod ground;
 pub mod layout;
 pub(crate) mod lighting;
@@ -93,6 +94,9 @@ pub mod render_scale;
 pub mod sim;
 pub mod sky;
 pub(crate) mod skyline;
+/// Sprite vocabulary: `Frame`/`Sprite`, the `RgbBuffer` blit target, and the
+/// `.sprite`/`pack.toml` pack loader.
+pub mod sprite;
 #[doc(hidden)]
 pub mod tally;
 /// The color-theme MODEL: the `Theme` role palette and the bundled themes.
@@ -101,6 +105,7 @@ pub mod token_meter;
 #[doc(hidden)]
 pub mod tooltip;
 pub mod walk;
+pub mod walkable;
 
 /// The repos (cwd basenames) the demo agents work in: pixtuoid-web's hero
 /// cast takes one each, in order, and the `snapshot` and `cutaway_snapshot`

@@ -662,7 +662,7 @@ fn route_through_wall(l: &SceneLayout, path: &[Point]) -> Option<(Point, WallPie
 /// through a wall, described.
 fn corner_routes_through_walls(w: u16, h: u16, seed: u64, l: &SceneLayout) -> Vec<String> {
     use crate::pathfind::find_path;
-    let overlay = pixtuoid_core::walkable::OccupancyOverlay::new();
+    let overlay = crate::walkable::OccupancyOverlay::new();
     let mut v = Vec::new();
     for probes in wall_corner_probes(l) {
         for (i, &from) in probes.iter().enumerate() {
@@ -848,7 +848,7 @@ impl std::fmt::Display for WanderLeg {
 /// approach.
 fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
     use crate::pathfind::find_path;
-    let overlay = pixtuoid_core::walkable::OccupancyOverlay::new();
+    let overlay = crate::walkable::OccupancyOverlay::new();
     // Deduped: the desk loop otherwise re-routes one `(origin, approach)` pair
     // once per desk sharing that approach cell.
     let mut seen: std::collections::HashSet<(Point, Point)> = std::collections::HashSet::new();
@@ -891,7 +891,7 @@ fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &Scene
     // A free fn, not a closure: three sweeps share it — the placement seed axis,
     // the production floor seeds, and the step-1 `NARROW_BAND` width scan.
     use crate::pathfind::find_path;
-    let overlay = pixtuoid_core::walkable::OccupancyOverlay::new();
+    let overlay = crate::walkable::OccupancyOverlay::new();
     let door = l.door_threshold;
     for (i, &desk) in l.home_desks.iter().enumerate() {
         let approach = crate::pose::desk_approach_cell(desk, l).unwrap_or_else(|| {

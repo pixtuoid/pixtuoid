@@ -52,8 +52,8 @@ use crate::pose::{
     WANDER_DWELL_EST_MS, dwell_ms, est_wander_cycle_ms, seated_dwell_ms, stale_resume_gap_ms,
     takes_trip,
 };
+use crate::walkable::{OccupancyOverlay, WalkableMask};
 use pixtuoid_core::state::ActivityState;
-use pixtuoid_core::walkable::{OccupancyOverlay, WalkableMask};
 use std::path::PathBuf;
 use std::sync::Arc;
 

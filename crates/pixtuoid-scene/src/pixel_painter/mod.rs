@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::format::Density;
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::format::Density;
+use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::{AgentSlot, SceneState};
 
 use crate::display::{Badge, Hover, HoverTarget, Hovers, TextRun};

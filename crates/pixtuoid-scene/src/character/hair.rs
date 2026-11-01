@@ -4,10 +4,10 @@
 //! ([`dress_for`]), so the classic 1x art never is.
 
 use crate::pack::OfficeArt;
+use crate::sprite::format::{Density, Hairstyle};
+use crate::sprite::{Frame, HeadMark, Pixel, Rgb, Sprite};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::id::{fnv1a, splitmix64};
-use pixtuoid_core::sprite::format::{Density, Hairstyle};
-use pixtuoid_core::sprite::{Frame, HeadMark, Pixel, Rgb, Sprite};
 
 /// Separates the pick's seed from the other per-agent draws that finalize the
 /// same id through `splitmix64` (`physics`, `pose::pure`), so the style is no
@@ -174,7 +174,8 @@ pub(crate) fn dress(
 mod tests {
     use super::*;
     use crate::display::pen::test_density;
-    use pixtuoid_core::sprite::format::{Piece, load_filled_pack};
+    use crate::pack::validate::PieceKind;
+    use crate::sprite::format::{Piece, load_filled_pack};
     use strum::VariantArray as _;
 
     const H: Rgb = Rgb {
@@ -395,7 +396,7 @@ mod tests {
         let (mut dressed, mut flaws) = (0, Vec::new());
         let arts = Piece::VARIANTS
             .iter()
-            .filter(|p| p.kind() == pixtuoid_core::sprite::format::PieceKind::Character)
+            .filter(|p| p.kind() == PieceKind::Character)
             .flat_map(|&p| {
                 std::iter::once((p.name().to_owned(), pack.piece(p))).chain(
                     pack.variants_of(p)

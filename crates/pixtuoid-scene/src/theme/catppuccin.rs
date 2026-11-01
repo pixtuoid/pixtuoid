@@ -1,4 +1,4 @@
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 use super::*;
 

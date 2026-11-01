@@ -1,6 +1,6 @@
 //! Furniture the pixel painter stamps procedurally, without pack art.
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 use crate::anim::FULL_TICK_MS;
 use crate::layout::{Bounds, COAT_HOOK_DX, COAT_RACK_BASE_DY, COAT_W};

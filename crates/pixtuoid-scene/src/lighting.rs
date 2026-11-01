@@ -486,7 +486,7 @@ pub(crate) fn desk_screen_glow(
     facing: crate::layout::Facing,
     seated: bool,
     theme: &crate::theme::Theme,
-) -> Option<pixtuoid_core::sprite::Rgb> {
+) -> Option<crate::sprite::Rgb> {
     occupant
         .and_then(|a| crate::lighting::lit_screen(a, facing, seated))
         .map(|work| theme.tool_glow.for_work(work))

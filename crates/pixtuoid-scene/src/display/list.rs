@@ -25,13 +25,10 @@ pub(crate) enum Screen {
     /// Dark glass.
     Off,
     /// The standby glow of an idle screen at night, its glass in this colour.
-    Standby(pixtuoid_core::sprite::Rgb),
+    Standby(crate::sprite::Rgb),
     /// Lit by its occupant's tool, in this glow, its scanline on glass column
     /// `scan` ([`crate::sim::scanline_col`]).
-    Lit {
-        glow: pixtuoid_core::sprite::Rgb,
-        scan: u16,
-    },
+    Lit { glow: crate::sprite::Rgb, scan: u16 },
 }
 
 impl Screen {
@@ -39,7 +36,7 @@ impl Screen {
     /// standing by at `idle` ([`crate::lighting::screen_idle`]) in `theme`'s
     /// idle tint, else dark.
     pub(super) fn of(
-        glow: Option<pixtuoid_core::sprite::Rgb>,
+        glow: Option<crate::sprite::Rgb>,
         scan: u16,
         idle: f32,
         theme: &Theme,
@@ -102,9 +99,9 @@ pub(crate) struct DisplayList<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Recolours {
     /// The appliances' and fixtures' keys.
-    pub(crate) art: Vec<(char, pixtuoid_core::sprite::Pixel)>,
+    pub(crate) art: Vec<(char, crate::sprite::Pixel)>,
     /// The desk props' cup and paper.
-    pub(crate) desk_props: [(char, pixtuoid_core::sprite::Pixel); 4],
+    pub(crate) desk_props: [(char, crate::sprite::Pixel); 4],
 }
 
 impl Recolours {
@@ -401,12 +398,12 @@ pub(crate) enum PieceKind {
     Window {
         /// Shared as [`LightPiece::view`] is.
         view: std::sync::Arc<WindowView>,
-        frame: pixtuoid_core::sprite::Rgb,
+        frame: crate::sprite::Rgb,
     },
     /// Decor hung on the north band, blitted at its top-left `at`.
     Hung {
         at: crate::layout::Point,
-        sprite: pixtuoid_core::sprite::format::Piece,
+        sprite: crate::sprite::format::Piece,
     },
     /// One segment of a room's wall run.
     WallSeg {
@@ -449,7 +446,7 @@ pub(crate) enum PieceKind {
     /// between (`push_sofa`).
     PropBand {
         at: crate::layout::Point,
-        sprite: pixtuoid_core::sprite::format::Piece,
+        sprite: crate::sprite::format::Piece,
         rows: (u16, u16),
     },
     Table {
@@ -463,16 +460,16 @@ pub(crate) enum PieceKind {
     /// The neon sign over `at`, in this frame's colours.
     Neon {
         at: Bounds,
-        tube: pixtuoid_core::sprite::Rgb,
-        hue: pixtuoid_core::sprite::Rgb,
-        interior: pixtuoid_core::sprite::Rgb,
+        tube: crate::sprite::Rgb,
+        hue: crate::sprite::Rgb,
+        interior: crate::sprite::Rgb,
     },
     /// The wall clock's dial from its top-left `at`, its hands at `reading`.
     Clock {
         at: crate::layout::Point,
         reading: crate::sky::ClockReading,
         /// The theme's hand colour.
-        hand: pixtuoid_core::sprite::Rgb,
+        hand: crate::sprite::Rgb,
     },
     /// A prop the model stands on a desk (`push_desk_props`).
     DeskProp(StoodProp),
@@ -505,7 +502,7 @@ pub(crate) enum PieceKind {
 /// `at`, where the desk art's mark for it stands it, turned as its desk turns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct StoodProp {
-    pub(crate) sprite: pixtuoid_core::sprite::format::Piece,
+    pub(crate) sprite: crate::sprite::format::Piece,
     pub(crate) frame: usize,
     pub(crate) at: (u16, u16),
     pub(crate) flip: Flip,
@@ -514,14 +511,14 @@ pub(crate) struct StoodProp {
 /// Which art a prop draws: a sprite's frame, turned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Art {
-    pub(crate) sprite: pixtuoid_core::sprite::format::Piece,
+    pub(crate) sprite: crate::sprite::format::Piece,
     pub(crate) frame: usize,
     pub(crate) flip: Flip,
 }
 
 impl Art {
     /// `sprite`'s first frame, as drawn.
-    pub(crate) fn still(sprite: pixtuoid_core::sprite::format::Piece) -> Self {
+    pub(crate) fn still(sprite: crate::sprite::format::Piece) -> Self {
         Self {
             sprite,
             frame: 0,

@@ -506,9 +506,9 @@ mod tests {
     use super::*;
     use crate::graphics::tiles::Tiles;
     use crate::graphics::{CellSize, ImageProtocol, cutaway_fit};
-    use pixtuoid_core::sprite::format::Density;
-    use pixtuoid_core::sprite::{Rgb, RgbBuffer};
     use pixtuoid_scene::cutaway::canvas::Dirty;
+    use pixtuoid_scene::sprite::format::Density;
+    use pixtuoid_scene::sprite::{Rgb, RgbBuffer};
     use ratatui::layout::Size as TermSize;
 
     fn tile(index: u32, cols: u16, rows: u16) -> Tile {

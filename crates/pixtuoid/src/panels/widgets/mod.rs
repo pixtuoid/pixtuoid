@@ -23,7 +23,7 @@ pub(crate) use welcome::paint_welcome;
 
 use std::time::SystemTime;
 
-use pixtuoid_core::sprite::Rgb;
+use pixtuoid_scene::sprite::Rgb;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Clear};
@@ -152,8 +152,8 @@ const SHADOW_OFFSET: u16 = 1;
 fn dim_color(c: Color, dim: pixtuoid_scene::look::Dim) -> Color {
     match c {
         Color::Rgb(r, g, b) => {
-            let pixtuoid_core::sprite::Rgb { r, g, b } =
-                dim.of(pixtuoid_core::sprite::Rgb { r, g, b });
+            let pixtuoid_scene::sprite::Rgb { r, g, b } =
+                dim.of(pixtuoid_scene::sprite::Rgb { r, g, b });
             Color::Rgb(r, g, b)
         }
         other => other,

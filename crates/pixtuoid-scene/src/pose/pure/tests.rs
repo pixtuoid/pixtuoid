@@ -1,7 +1,7 @@
 use super::*;
 use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, Segment};
-use pixtuoid_core::sprite::format::{Piece, Walk};
+use crate::sprite::format::{Piece, Walk};
 use pixtuoid_core::state::{GlobalDeskIndex, ToolKind, ToolUse};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -600,7 +600,7 @@ fn aimless_fallback_scans_the_midline_for_a_walkable_cell() {
         x: c.x + c.width - POCKET_PX / 2,
         y: mid_y,
     };
-    let mut mask = pixtuoid_core::walkable::WalkableMask::new_open(l.buf_w, l.buf_h);
+    let mut mask = crate::walkable::WalkableMask::new_open(l.buf_w, l.buf_h);
     mask.mark_blocked(0, 0, l.buf_w, l.buf_h, 0);
     mask.mark_walkable(
         open.x - POCKET_PX / 2,
@@ -633,7 +633,7 @@ fn aimless_fallback_on_a_fully_blocked_mask_returns_the_desk_anchor() {
     // Degenerate layout (nothing walkable at all): the desk anchor is a
     // destination every consumer already handles (A* snap / render anchor).
     let mut l = layout();
-    let mut mask = pixtuoid_core::walkable::WalkableMask::new_open(l.buf_w, l.buf_h);
+    let mut mask = crate::walkable::WalkableMask::new_open(l.buf_w, l.buf_h);
     mask.mark_blocked(0, 0, l.buf_w, l.buf_h, 0);
     l.walkable = mask;
 
@@ -755,7 +755,7 @@ fn a_walk_steps_by_the_ground_it_covers() {
 #[test]
 fn a_base_walker_keeps_the_standing_figure() {
     let pack = crate::pack::test_office();
-    let opaque = |f: &pixtuoid_core::sprite::Frame, y: u16| -> Vec<u16> {
+    let opaque = |f: &crate::sprite::Frame, y: u16| -> Vec<u16> {
         (0..f.width())
             .filter(|&x| f.get(x, y).copied().flatten().is_some())
             .collect()

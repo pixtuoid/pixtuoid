@@ -15,7 +15,7 @@ pub(super) use lighting::{
 };
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 use super::palette::{RgbLut, WHITE, blend_rgb};
 
@@ -162,7 +162,7 @@ pub(super) fn paint_windows(
         pack,
         theme,
         wall,
-        pixtuoid_core::sprite::format::Density::ONE,
+        crate::sprite::format::Density::ONE,
         GlassWeather::of(moment),
     );
     // The bolt, the strike's source, lights the glass in lockstep with

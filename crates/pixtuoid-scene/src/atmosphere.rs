@@ -2,7 +2,7 @@
 //! rather than pixels, so the painters share one answer; where each lands on
 //! screen stays with the painter.
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 use crate::dither::Dithered;
 use crate::sky::{BodyKind, Element, Sky, SkyBody, Transmission, Weather, WeatherMix};

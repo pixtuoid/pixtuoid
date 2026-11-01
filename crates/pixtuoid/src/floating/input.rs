@@ -94,7 +94,7 @@ pub(crate) fn zoomed(
     mods: ModifiersState,
     zoom: Zoom,
     size: winit::dpi::PhysicalSize<u32>,
-    density: pixtuoid_core::sprite::format::Density,
+    density: pixtuoid_scene::sprite::format::Density,
 ) -> Option<Zoom> {
     zoom_key(key, mods).map(|step| zoom.stepped(step, size, density))
 }

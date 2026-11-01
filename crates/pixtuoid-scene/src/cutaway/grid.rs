@@ -4,7 +4,7 @@
 //! terminal glyph, which draws as the icon's art from the pack.
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::{Frame, Rgb, RgbBuffer, Sprite};
+use crate::sprite::{Frame, Rgb, RgbBuffer, Sprite};
 
 use super::text::{self, LEFTMOST_PIXEL};
 use crate::display::Icon;

@@ -3,7 +3,7 @@
 //! flat bands with a dithered seam ([`step`]); a gradient between two is
 //! dithered across its span ([`takes_next`]).
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 /// The 4x4 ordered (Bayer) threshold matrix.
 ///

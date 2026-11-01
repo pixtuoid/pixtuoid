@@ -5,9 +5,9 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Range;
 
 use crossterm::{Command, cursor::MoveTo};
-use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_scene::cutaway::canvas::Dirty;
 use pixtuoid_scene::layout::Bounds;
+use pixtuoid_scene::sprite::RgbBuffer;
 use ratatui::layout::Position;
 
 use super::{CellSize, ImageProtocol, PixelFit, TileShape};
@@ -399,8 +399,8 @@ impl Tiles {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pixtuoid_core::sprite::Rgb;
-    use pixtuoid_core::sprite::format::Density;
+    use pixtuoid_scene::sprite::Rgb;
+    use pixtuoid_scene::sprite::format::Density;
     use ratatui::layout::Size as TermSize;
 
     const AREA: TermSize = TermSize {

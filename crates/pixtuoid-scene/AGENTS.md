@@ -2,8 +2,8 @@
 
 The **backend-agnostic render + simulation engine**: layout geometry,
 pose/walk/pathfinding, the frame entry every painter calls (`look::render`),
-the color-theme MODEL, pets, chitchat, frame cache, bundled
-sprite pack. The three painters (`tui`, `floating`, `pixtuoid-web`) sit on top.
+the color-theme MODEL, pets, chitchat, frame cache, sprite format + bundled pack,
+grid/walkable. The three painters (`tui`, `floating`, `pixtuoid-web`) sit on top.
 Module map: `ls src/` — each file's `//!` header is its annotation.
 Cross-cutting rules: workspace [`AGENTS.md`](../../AGENTS.md).
 

@@ -20,7 +20,7 @@ fn walkable_debug_toggle_tints_blocked_pixels_and_is_reversible() {
     let on = r.buf().expect("a frame").clone();
     // A warm cell's red channel barely rises while green/blue drop, so measure
     // DISTANCE to the blocked tint (220,60,60) rather than the red channel.
-    let to_red = |c: pixtuoid_core::sprite::Rgb| {
+    let to_red = |c: pixtuoid_scene::sprite::Rgb| {
         (i32::from(c.r) - 220).abs() + (i32::from(c.g) - 60).abs() + (i32::from(c.b) - 60).abs()
     };
     assert!(

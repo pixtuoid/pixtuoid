@@ -1,7 +1,7 @@
 //! What lies on the floor under the room's light, pixel-free: elliptical
 //! shadows.
 
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::format::Density;
 
 /// A shadow's strength at noon, where a solid's shadow is crispest.
 const NOON_SHADOW: f32 = 0.5;
