@@ -30,7 +30,6 @@ pub(crate) fn bake_hook_path(
     hook_path: &str,
     what: &str,
 ) -> anyhow::Result<String> {
-    use anyhow::Context;
     let json = serde_json::to_string(hook_path)
         .with_context(|| format!("serializing the hook path into the {what} plugin"))?;
     Ok(template.replace(HOOK_PLACEHOLDER, &json))

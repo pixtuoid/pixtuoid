@@ -632,12 +632,12 @@ fn install_on_a_malformed_config_errors_without_rewriting() {
             Some(PathBuf::from("/fake/pixtuoid-hook")),
         )
         .unwrap_err();
-        // "refusing to overwrite" is what proves the error came from the parse
-        // step and not a downstream write failure.
+        // "refusing to overwrite" is what proves the error came from a refusal and
+        // not a downstream write failure.
         let msg = format!("{err:#}");
         assert!(
             msg.contains("refusing to overwrite"),
-            "{}: the error must come from the parse guard, got: {msg}",
+            "{}: the error must come from a refusal, got: {msg}",
             t.name
         );
 
