@@ -216,7 +216,8 @@ fn project_agent(slot: &AgentSlot) -> Agent {
     }
 }
 
-/// `model`, less the directories when a local model goes by its path.
+/// `model`, less its directories when it is an absolute path: a relative `a/b`
+/// reads as a provider's id.
 fn model_name(model: &str) -> &str {
     let path = Path::new(model);
     path.is_absolute()
@@ -480,8 +481,7 @@ fn inflate_daemon(daemon: &Daemon, local: &impl Fn(u64) -> SystemTime) -> Daemon
         active_sessions: daemon.active_sessions,
         last_seen,
         entered_at: local(daemon.entered_ms),
-        // `display_state` reads Running off the turn set, so one stands in, and
-        // the mascot draws one turn's bubbles however many the server has.
+        // `display_state` reads Running off the turn set, so one stands in.
         in_flight_turns: running
             .then_some((TurnKey::Seq(0), last_seen))
             .into_iter()
@@ -665,16 +665,23 @@ mod tests {
     }
 
     #[test]
-    fn a_time_from_the_future_reads_as_now() {
-        let mut office = RemoteOffice::new(caps(4));
-        let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
-        for agent in line["agents"].as_array_mut().unwrap() {
-            agent["created_ms"] = u64::MAX.into();
+    fn a_time_past_the_drift_reads_as_now() {
+        let drift = MAX_CLOCK_DRIFT.as_millis() as u64;
+        for (created, read) in [
+            (AT + drift, AT + drift),
+            (AT + drift + 1, AT),
+            (u64::MAX, AT),
+        ] {
+            let mut office = RemoteOffice::new(caps(4));
+            let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
+            for agent in line["agents"].as_array_mut().unwrap() {
+                agent["created_ms"] = created.into();
+            }
+            let line = line.to_string();
+            office.apply(line.as_bytes(), at(AT)).expect("it applies");
+            let agents = office.scene().agents.values();
+            assert!(agents.map(|a| a.created_at).all(|t| t == at(read)));
         }
-        let line = line.to_string();
-        office.apply(line.as_bytes(), at(AT)).expect("it applies");
-        let agents = office.scene().agents.values();
-        assert!(agents.map(|a| a.created_at).all(|t| t == at(AT)));
     }
 
     #[test]
