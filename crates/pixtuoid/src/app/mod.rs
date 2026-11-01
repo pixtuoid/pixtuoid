@@ -135,6 +135,23 @@ pub fn run() -> Result<()> {
             }
             Ok(())
         }
+        #[cfg(feature = "serve")]
+        Cmd::Serve { source, port } => {
+            // Headless's boot: no painter, and no adoption, whose consent is an
+            // interactive launch.
+            let rc = build_run_config(
+                cli_theme.as_deref(),
+                source,
+                None,
+                true,
+                crate::cli::LookArgs::default(),
+                drift,
+            )?;
+            crate::serve::run(rc, port)?.reraise();
+            Ok(())
+        }
+        #[cfg(feature = "serve")]
+        Cmd::Pair { host, port, reset } => crate::serve::pair(host, port, reset),
         Cmd::Doctor { look, protocol } => {
             let report = doctor::run(
                 &crate::run_log::LogLocation::from_env(),
@@ -187,7 +204,7 @@ pub fn run() -> Result<()> {
 }
 
 /// Resolve the shared [`runtime::RunConfig`] — the common prelude for `run`
-/// (TUI) and `floating` (window).
+/// (TUI), `floating` (window) and `serve`.
 fn build_run_config(
     cli_theme: Option<&str>,
     source: SourceArgs,

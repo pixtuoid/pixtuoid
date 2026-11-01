@@ -119,6 +119,11 @@ channel** — never the agent channel — merged by the `AgentId`-free
 gateway route to distinct mascots; a daemon has no per-session pid, so
 *silence* (a decayed TTL) is its abrupt-down signal.
 
+**Off the machine.** `pixtuoid serve` is this pipeline with no painter, the one
+listener on a network: paired devices on the LAN read the scene over pinned TLS
+as `pixtuoid_core::remote` lines. A line carries no desk, since a device gives
+everyone one for its own screen and renders with the same engine.
+
 ## Seams & invariants
 
 Load-bearing — see `AGENTS.md` and the nested crate guides before changing:

@@ -21,10 +21,10 @@ use tokio::sync::{Notify, mpsc, watch};
 
 use crate::graphics::Plan;
 
-/// A painter's (TUI, floating) scene feed: [`SceneSink::Latest`](pipeline::SceneSink)
-/// publishes a fresh `Arc<SceneState>` after each change; the painter holds a
-/// `Receiver`, calls `borrow()` for an O(1) pointer read, and never blocks the
-/// writer.
+/// The scene feed of a painter (TUI, floating) or `serve`:
+/// [`SceneSink::Latest`](pipeline::SceneSink) publishes a fresh `Arc<SceneState>`
+/// after each change; the reader holds a `Receiver`, calls `borrow()` for an O(1)
+/// pointer read, and never blocks the writer.
 pub(crate) type SceneRx = watch::Receiver<Arc<SceneState>>;
 
 /// Fallback desk capacity when the terminal cannot be queried (e.g. headless mode).
@@ -292,7 +292,7 @@ impl LogQueue {
 /// `sanitize_line`d before printing: `error` is `format!("{e:#}")` of an `anyhow` chain
 /// that can embed external strings carrying terminal escapes, and `source` is sanitized
 /// too for defense-in-depth.
-fn format_source_death(d: &SourceDeath) -> String {
+pub(crate) fn format_source_death(d: &SourceDeath) -> String {
     format!(
         "warning: source '{}' died: {}",
         sanitize_line(&d.source),

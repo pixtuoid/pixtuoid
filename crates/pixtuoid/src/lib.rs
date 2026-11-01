@@ -23,6 +23,8 @@ pub(crate) mod pacing;
 pub(crate) mod panels;
 pub(crate) mod run_log;
 pub(crate) mod runtime;
+#[cfg(feature = "serve")]
+pub(crate) mod serve;
 pub(crate) mod sources;
 pub(crate) mod term;
 pub(crate) mod tui;
@@ -49,6 +51,8 @@ pub mod dev {
     pub use crate::panels::ui_state::{RenderFrames, VersionPopupFrame, popup_whole};
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
     pub use crate::panels::widgets::{footer_context, grid_of};
+    #[cfg(feature = "serve")]
+    pub use crate::serve::MAX_CONNS;
     pub use crate::sources::{ConnState, ConnectionRow};
     pub use crate::tui::cutaway::ImageCells;
     pub use crate::tui::renderer::{

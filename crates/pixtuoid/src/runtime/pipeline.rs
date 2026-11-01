@@ -1,4 +1,4 @@
-//! The ONE source→reducer pipeline spine both painters boot through.
+//! The ONE source→reducer pipeline spine both painters and `serve` boot through.
 //!
 //! What deliberately STAYS caller-side, because the two painters genuinely
 //! diverge there:
@@ -31,7 +31,8 @@ use super::{ConnectedSources, LogQueue, SceneRx, TransitionLog};
 
 /// Where [`reducer_task`] publishes the scene after each change it applies.
 pub(crate) enum SceneSink {
-    /// A painter's: it draws the newest scene, so one it never read is gone.
+    /// A painter's or `serve`'s: it reads the newest scene, so one it never read
+    /// is gone.
     Latest(watch::Sender<Arc<SceneState>>),
     /// Headless's: each change, as its [`TransitionLog`] line.
     Transitions(LogQueue, TransitionLog),
@@ -45,8 +46,8 @@ pub(crate) struct HeadlessLog {
 }
 
 impl SceneSink {
-    /// A painter's sink, and the watch it draws from, seeded with the empty
-    /// boot scene.
+    /// A sink for the newest scene, and the watch it's read from, seeded with
+    /// the empty boot scene.
     pub(crate) fn latest(boot_caps: [usize; MAX_FLOORS]) -> (Self, SceneRx) {
         let (tx, rx) = watch::channel(Arc::new(SceneState::new(boot_caps)));
         (Self::Latest(tx), rx)

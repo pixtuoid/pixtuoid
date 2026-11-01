@@ -423,19 +423,20 @@ hack:
     just test -p pixtuoid-scene --no-default-features
 
 # It catches cfg(windows)-only compile and lint errors locally; a string path
-# assert still fails only in `windows-test`.
+# assert still fails only in `windows-test`. `serve` stays out: ring's build
+# script can't find the target's C headers.
 [doc('Cross-lint the workspace for x86_64-pc-windows-msvc via clippy (no linking; ubuntu runner suffices)')]
 [group('rust')]
 check-windows: (_targets "x86_64-pc-windows-msvc")
-    cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+    cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc --no-default-features --features pixtuoid/audio -- -D warnings
 
 # The other-unix arms compile on none of the OSes release.yml ships, so only this
-# builds them. `portable` instead of the defaults: `audio`'s `alsa-sys` build
-# script can't probe a cross target.
+# builds them. No default features: `audio`'s `alsa-sys` build script can't probe
+# a cross target, and ring's, behind `serve`, can't find its C headers.
 [doc('Cross-lint the workspace for x86_64-unknown-freebsd, the stand-in for every other unix (no linking)')]
 [group('rust')]
 check-other-unix: (_targets "x86_64-unknown-freebsd")
-    cargo clippy --workspace --all-targets --target x86_64-unknown-freebsd --no-default-features --features pixtuoid/portable -- -D warnings
+    cargo clippy --workspace --all-targets --target x86_64-unknown-freebsd --no-default-features -- -D warnings
 
 # Reproduce release-plz's semver verdict LOCALLY. Not a gate and not in CI:
 # release-plz runs cargo-semver-checks itself on the release PR and RAISES the
