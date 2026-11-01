@@ -1,12 +1,15 @@
-//! The office over a wire: the line a server writes per change, and the office
-//! a device rebuilds from those lines to render with its own engine.
+//! The office over a wire: the handshake that opens a stream, the line a server
+//! writes per change, and the office a device rebuilds from those lines to render
+//! with its own engine.
 //!
 //! Not [`SceneState`] itself, which is internal and moves with every release,
 //! while a server and a device update on their own schedules. A field crosses
 //! only where `project_agent` or `project_daemon` names it, and a desk never does:
 //! desks follow each device's layout, so it takes its own.
 
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -27,6 +30,10 @@ use crate::state::{
 /// gains fields and tags, which `remote.v1.golden.json` holds it to; a reader
 /// ignores what it doesn't know and maps an unknown tag to its nearest state.
 pub const VERSION: u32 = 1;
+
+/// How often a server writes its line however quiet the office: a device takes
+/// silence past this for a dead link, and whoever didn't fit returns with a line.
+pub const HEARTBEAT: Duration = Duration::from_secs(15);
 
 /// How far a line's clock may stray from the skew already held before it is
 /// taken for a clock change rather than delivery latency.
@@ -269,6 +276,130 @@ pub fn encode(scene: &SceneState, now: SystemTime) -> serde_json::Result<String>
     })?;
     line.push('\n');
     Ok(line)
+}
+
+/// The entropy of a pairing code and of a device token.
+pub const SECRET_BYTES: usize = 32;
+
+/// SHA-256's output, the length of [`PairLink::spki`].
+const PIN_BYTES: usize = 32;
+
+const PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
+
+/// What a device scans to reach a server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairLink {
+    /// A name or IPv4 address on the local network.
+    pub host: String,
+    /// The port `host` listens on.
+    pub port: u16,
+    /// The SHA-256 of the server key's SPKI in uppercase hex, which the TLS
+    /// handshake must present: there is no CA to vouch for a server on a LAN.
+    pub spki: String,
+    /// The one-time code a [`Hello::Pair`] redeems, in hex.
+    pub code: String,
+}
+
+impl fmt::Display for PairLink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            host,
+            port,
+            spki,
+            code,
+        } = self;
+        write!(
+            f,
+            "{PAIR_LINK_PREFIX}host={host}&port={port}&spki={spki}&code={code}"
+        )
+    }
+}
+
+/// Whether `host` can go in a [`PairLink`]: nothing that could end the field or
+/// reach past a host.
+pub fn is_host(host: &str) -> bool {
+    !host.is_empty()
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
+}
+
+/// A string that isn't a [`PairLink`].
+#[derive(Debug, Error)]
+#[error("not a pixtuoid pairing link")]
+pub struct PairLinkError;
+
+impl FromStr for PairLink {
+    type Err = PairLinkError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let query = text.strip_prefix(PAIR_LINK_PREFIX).ok_or(PairLinkError)?;
+        let field = |key: &str| {
+            query
+                .split('&')
+                .find_map(|pair| pair.strip_prefix(key)?.strip_prefix('='))
+                .ok_or(PairLinkError)
+        };
+        let hex = |key: &str, bytes: usize| {
+            let value = field(key)?;
+            (value.len() == bytes * 2 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+                .then(|| value.to_owned())
+                .ok_or(PairLinkError)
+        };
+        let host = field("host")?;
+        if !is_host(host) {
+            return Err(PairLinkError);
+        }
+        let link = Self {
+            host: host.to_owned(),
+            port: field("port")?
+                .parse()
+                .ok()
+                .filter(|port| *port != 0)
+                .ok_or(PairLinkError)?,
+            spki: hex("spki", PIN_BYTES)?,
+            code: hex("code", SECRET_BYTES)?,
+        };
+        // A field read twice, or one a server never writes, reads as a forgery.
+        (link.to_string() == text)
+            .then_some(link)
+            .ok_or(PairLinkError)
+    }
+}
+
+/// The one line a device writes, once the TLS handshake is done: the stream runs
+/// one way from there.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "hello", rename_all = "snake_case")]
+pub enum Hello {
+    /// First contact, redeeming a [`PairLink`]'s code.
+    Pair {
+        /// [`PairLink::code`].
+        code: String,
+    },
+    /// Every later contact.
+    Resume {
+        /// What [`Reply::Paired`] gave this device.
+        token: String,
+    },
+}
+
+/// The server's answer to a [`Hello`]. Its [`encode`] lines follow an acceptance.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "reply", rename_all = "snake_case")]
+pub enum Reply {
+    /// The code was good, and this token stands in for it from now on.
+    Paired {
+        /// What a device sends as [`Hello::Resume`]; shown once, stored hashed.
+        token: String,
+    },
+    /// The token is still good.
+    Resumed,
+    /// Pair again: the code was spent or stale, or the token forgotten.
+    Refused,
+    /// A reply from a newer server, which says nothing against the pairing.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why [`RemoteOffice::apply`] refused a line. The office is unchanged.
@@ -1038,5 +1169,87 @@ mod tests {
             assert!(matches!(err, ApplyError::Malformed(_)), "{line:?}");
         }
         assert_eq!(office.scene().agents.len(), 1);
+    }
+
+    /// The handshake's wire, frozen as the snapshot's golden freezes its own.
+    #[test]
+    fn handshake_lines_keep_their_shape() {
+        let wire = |hello: &Hello| serde_json::to_string(hello).expect("it encodes");
+        assert_eq!(
+            wire(&Hello::Pair { code: "c".into() }),
+            r#"{"hello":"pair","code":"c"}"#
+        );
+        assert_eq!(
+            wire(&Hello::Resume { token: "t".into() }),
+            r#"{"hello":"resume","token":"t"}"#
+        );
+        let reply = |line: &str| serde_json::from_str::<Reply>(line).expect("it decodes");
+        assert_eq!(
+            reply(r#"{"reply":"paired","token":"t"}"#),
+            Reply::Paired { token: "t".into() }
+        );
+        assert_eq!(reply(r#"{"reply":"resumed"}"#), Reply::Resumed);
+        assert_eq!(reply(r#"{"reply":"refused"}"#), Reply::Refused);
+    }
+
+    /// A new tag must not send every older device back to a QR.
+    #[test]
+    fn a_reply_this_build_does_not_know_is_no_refusal() {
+        let reply: Reply =
+            serde_json::from_str(r#"{"reply":"from_the_future","extra":1}"#).expect("it decodes");
+        assert_eq!(reply, Reply::Unknown);
+    }
+
+    fn link() -> PairLink {
+        PairLink {
+            host: "studio.local".into(),
+            port: 47820,
+            spki: "ab".repeat(32),
+            code: "cd".repeat(32),
+        }
+    }
+
+    #[test]
+    fn a_pair_link_survives_its_text() {
+        let text = link().to_string();
+        assert!(text.starts_with("pixtuoid://pair?"), "{text}");
+        assert_eq!(text.parse::<PairLink>().expect("it parses"), link());
+    }
+
+    /// A link can reach a device from anywhere a URL can, so nothing it carries
+    /// is taken on trust.
+    #[test]
+    fn a_pair_link_refuses_what_a_server_never_writes() {
+        let with = |key: &str, value: &str| {
+            let mut fields = [
+                ("host", "studio.local".to_owned()),
+                ("port", "47820".to_owned()),
+                ("spki", "ab".repeat(32)),
+                ("code", "cd".repeat(32)),
+            ];
+            let field = fields.iter_mut().find(|(k, _)| *k == key).expect("a field");
+            field.1 = value.to_owned();
+            let query: Vec<_> = fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            format!("pixtuoid://pair?{}", query.join("&"))
+        };
+        for bad in [
+            "https://pair?host=a".to_owned(),
+            "pixtuoid://pair?host=a".to_owned(),
+            with("host", ""),
+            with("host", "evil.example/path"),
+            with("host", "a@b"),
+            with("port", "0"),
+            with("port", "70000"),
+            with("spki", "ab"),
+            with("spki", &"zz".repeat(32)),
+            with("code", ""),
+            format!("{}&port=1", link()),
+            format!("{}&extra=1", link()),
+            link()
+                .to_string()
+                .replace("host=studio.local", "host=a&port=1&host=b"),
+        ] {
+            assert!(bad.parse::<PairLink>().is_err(), "{bad}");
+        }
     }
 }
