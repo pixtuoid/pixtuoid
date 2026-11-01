@@ -3,6 +3,7 @@ Thanks for contributing to pixtuoid! Before you open this PR:
 - Read AGENTS.md (root) — architecture invariants & conventions are load-bearing.
 - Push: the pre-push hook runs `just preflight`; CI runs the tests.
 - From a fork: the automatic review skips it, and a maintainer reviews it by hand.
+- A new `Source` adapter: the `add-source` skill (docs/CONTRIBUTING.md's "Adding a new agent CLI" otherwise).
 Delete sections that don't apply.
 -->
 
