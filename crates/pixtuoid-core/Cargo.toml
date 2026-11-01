@@ -58,7 +58,7 @@ harness = [
     # A re-record's capture is read up to the ids its run mints
     # (`harness::captures::canonical_capture`).
     "dep:regex",
-    # A scenario's plan is a non-empty step list (`harness::plan`).
+    # A command line always names a program (`harness::plan::Argv`).
     "dep:vec1",
 ]
 
