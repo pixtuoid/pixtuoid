@@ -13,16 +13,23 @@ Upgrade to the newest release (`cargo install pixtuoid`, `brew upgrade`, or
 
 ## Privacy posture
 
-pixtuoid is **local-only and telemetry-free by design**:
+pixtuoid is **telemetry-free and local by default**:
 
-- **No network egress.** The binary makes no outbound network connections — no
+- **No outbound connections.** The binary makes no outbound network connections — no
   analytics, crash-reporting upload, update check, or "phone home". (The crash
   hook writes a backtrace to a *local* file and only ever offers a pre-filled
   GitHub URL for you to open manually.) The dependency set is audited daily for
   advisories via `cargo-deny` (see `.github/workflows/audit.yml`).
-- **Your session data stays on your machine.** pixtuoid reads your agent CLIs'
+- **No listener unless you start one.** Only `pixtuoid serve` listens on a
+  network, and only a device you paired on your local network gets anything from
+  it.
+- **Your session data stays on your machine unless you run `pixtuoid serve`.**
+  pixtuoid reads your agent CLIs'
   transcripts (e.g. `~/.claude/projects`, `~/.codex/sessions`) **read-only**, to
-  derive what each sprite is doing; nothing is transmitted anywhere.
+  derive what each sprite is doing. Only `pixtuoid serve` sends anything: agent
+  status, model, usage and repo names (a project directory's last component) to
+  paired devices. No path, prompt, tool input or transcript leaves; the wire is the
+  allowlist in [`remote.rs`](crates/pixtuoid-core/src/remote.rs).
 
 ## Trust boundaries / attack surface
 
@@ -42,8 +49,7 @@ The components that handle untrusted or privileged input, and how they're bounde
    verifies the pipe **server's** token user SID matches ours
    (`GetNamedPipeServerProcessId` → token compare) before writing — closing the
    same squat-and-intercept vector on the machine-global pipe namespace (#495).
-   It is a *local IPC* — there is no network
-   listener. The shim is hardened to **never block the agent**: it always exits
+   It is a *local IPC*, never on a network. The shim is hardened to **never block the agent**: it always exits
    `0` on any error, and a hard watchdog bounds its send (pixtuoid-hook's
    `transport::WRITE_TIMEOUT`). It does not execute or shell out to anything in
    the payload.
@@ -75,9 +81,23 @@ The components that handle untrusted or privileged input, and how they're bounde
    connected, enabled Codex's own `codex plugin add` to refresh a stale copy of
    the plugin.
 
+4. **`pixtuoid serve`**, the only network listener, binds IPv4 on every interface
+   and, before any TLS, drops a peer that isn't private, link-local or loopback,
+   a Tailscale tailnet's
+   [`100.64.0.0/10`](https://tailscale.com/kb/1015/100.x-addresses) included. It speaks TLS 1.3 only.
+   Its key is made on first use, and a device pins that key's SPKI hash from the
+   QR code `pixtuoid pair` prints, beside a one-time code that expires
+   (`CODE_LIFETIME`) and is redeemed for a device token. The key and the hashes of
+   the code and tokens sit in one owner-only file in the state directory, never
+   in a dotfiles-prone `~/.config`. `pair --reset` forgets every device, ending
+   its stream. A device is read-only: anything past its one hello line ends the
+   connection. Connections are capped (`MAX_CONNS`), and one that hasn't said
+   hello in time (`HELLO_TIMEOUT`) is dropped.
+
 If you find a way to cross one of these boundaries (e.g. a transcript or hook
 payload that escapes the terminal, a non-owner socket connect, an install path
-traversal, or any network egress), please report it.
+traversal, any outbound connection, or a way into `serve` without pairing),
+please report it.
 
 ## Reporting a Vulnerability
 

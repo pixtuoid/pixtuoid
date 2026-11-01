@@ -90,6 +90,37 @@ pub(crate) enum Cmd {
         #[command(flatten)]
         source: SourceArgs,
     },
+    /// Serve the office to paired devices on your local network, with no TUI
+    /// needed. Agent status, model, usage and repo names leave this machine;
+    /// paths, prompts, tool input and transcripts never do. Nothing listens on a
+    /// network unless this is running.
+    #[cfg(feature = "serve")]
+    Serve {
+        #[command(flatten)]
+        source: SourceArgs,
+        /// The TCP port to listen on.
+        #[arg(long, default_value_t = crate::serve::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Print a one-time QR code that pairs a device with `serve`, running or not.
+    #[cfg(feature = "serve")]
+    Pair {
+        /// The hostname or IPv4 address a device reaches this machine at.
+        /// Defaults to this Mac's `.local` name; required on other systems.
+        #[arg(long)]
+        host: Option<String>,
+        /// The port `serve` listens on.
+        #[arg(
+            long,
+            default_value_t = crate::serve::DEFAULT_PORT,
+            value_parser = clap::value_parser!(u16).range(1..),
+        )]
+        port: u16,
+        /// Forget every paired device instead, ending their streams; each must
+        /// pair again.
+        #[arg(long, conflicts_with_all = ["host", "port"])]
+        reset: bool,
+    },
     /// Diagnose source health: connection, hooks, and decode drift recorded in
     /// the log. Read-only.
     Doctor {
@@ -411,6 +442,28 @@ mod tests {
                 source: SourceArgs { socket: Some(_) },
             })
         ));
+    }
+
+    #[cfg(feature = "serve")]
+    #[test]
+    fn pair_refuses_port_zero_and_a_reset_with_a_link_flag() {
+        for (args, kind) in [
+            (
+                &["pixtuoid", "pair", "--port", "0"][..],
+                clap::error::ErrorKind::ValueValidation,
+            ),
+            (
+                &["pixtuoid", "pair", "--reset", "--host", "h"],
+                clap::error::ErrorKind::ArgumentConflict,
+            ),
+            (
+                &["pixtuoid", "pair", "--reset", "--port", "1"],
+                clap::error::ErrorKind::ArgumentConflict,
+            ),
+        ] {
+            let err = Cli::try_parse_from(args).unwrap_err();
+            assert_eq!(err.kind(), kind, "{args:?}");
+        }
     }
 
     #[test]
