@@ -1,6 +1,7 @@
-//! `HookRouter` — the single owner of the ONE shared hook socket that EVERY
+//! `HookRouter` — an instance's end of the ONE shared hook socket that EVERY
 //! source's hooks ride (Codex, Reasonix, CodeWhale, opencode, Cursor, and the
-//! OpenClaw daemon).
+//! OpenClaw daemon): it owns the socket, or subscribes to the instance that does
+//! and takes the socket over when that instance exits.
 //!
 //! It implements [`Source`] DELIBERATELY, to inherit `spawn_with_health`'s
 //! `SourceDeath` path for free instead of rebuilding it. It is still
@@ -9,16 +10,23 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use tokio::io::AsyncReadExt;
 
 use crate::source::jsonl::ChildEndUnclaims;
 use crate::source::{AgentEvent, Source, TaggedReceiver, TaggedSender, Transport};
 
-use super::{HookPidWatch, HookSocketListener, PresenceSender, SocketBusy};
+use super::{
+    CONN_TIMEOUT, HookPidWatch, HookSocketListener, PresenceSender, SocketBusy, handle_conn, relay,
+};
 
 /// Infrastructure name — NOT a registered source (no descriptor/badge). Names
 /// the footer attribution `spawn_with_health` publishes for a fatal bind error.
 pub(crate) const SOURCE_NAME: &str = "hook-router";
+
+/// How many subscriptions in a row may fail before the plane is reported dead.
+/// More than one: the loser of a takeover finds the winner not yet listening.
+const SUBSCRIBE_ATTEMPTS: u32 = 3;
 
 /// Producer half of the #246 child-end un-claim side-channel (see
 /// `ChildEndUnclaims` for the WHY): the ONE seam every decoded `SubagentStop`
@@ -93,23 +101,6 @@ impl Source for HookRouter {
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        // SocketBusy (another live instance owns the endpoint) takes ONLY the
-        // hook plane down: the hooks belong to the owning instance, so return
-        // Ok(()) with no `SourceDeath`. Every other bind error is fatal.
-        let socket = match HookSocketListener::bind(self.socket_path.clone()).await {
-            Ok(s) => s,
-            Err(e) if e.downcast_ref::<SocketBusy>().is_some() => {
-                let chain = format!("{e:#}");
-                tracing::warn!(
-                    error = ?chain,
-                    "hook plane disabled — hook-borne signals (permission requests, instant \
-                     lifecycle, daemon presence) belong to the owning instance; transcript \
-                     sources keep running"
-                );
-                return Ok(());
-            }
-            Err(e) => return Err(e),
-        };
         let tx_hook = match &self.child_end_unclaims {
             Some(unclaims) => {
                 let (tee_tx, tee_rx) =
@@ -121,10 +112,51 @@ impl Source for HookRouter {
         };
         // The pid-watch's synthesized SessionEnd goes on the main `tx`, not
         // `tx_hook`: it is `as_child: false`, which the #246 tee ignores anyway.
-        let socket = socket
-            .with_pid_watch(HookPidWatch::spawn(tx.clone()))
-            .with_presence(self.presence_tx.clone());
-        socket.run(tx_hook).await
+        let pid_watch = HookPidWatch::spawn(tx);
+        let mut refusals = 0;
+        loop {
+            let socket = match HookSocketListener::bind(self.socket_path.clone()).await {
+                Ok(socket) => socket,
+                Err(e) if e.downcast_ref::<SocketBusy>().is_none() => return Err(e),
+                Err(_) => match relay::subscribe(&self.socket_path).await {
+                    Ok(payloads) => {
+                        refusals = 0;
+                        // Unbounded: the owner already held each line to the
+                        // listener's byte cap.
+                        let payloads = payloads.take(u64::MAX);
+                        let presence_tx = self.presence_tx.clone();
+                        handle_conn(
+                            payloads,
+                            tx_hook.clone(),
+                            pid_watch.clone(),
+                            presence_tx,
+                            None,
+                        )
+                        .await;
+                        continue;
+                    }
+                    Err(e) => {
+                        refusals += 1;
+                        if refusals == SUBSCRIBE_ATTEMPTS {
+                            return Err(e).with_context(|| {
+                                format!(
+                                    "no hook plane: the instance holding {} takes no \
+                                     subscribers (restart it if it is an older pixtuoid)",
+                                    self.socket_path.display()
+                                )
+                            });
+                        }
+                        tokio::time::sleep(CONN_TIMEOUT).await;
+                        continue;
+                    }
+                },
+            };
+            return socket
+                .with_pid_watch(pid_watch)
+                .with_presence(self.presence_tx.clone())
+                .run(tx_hook)
+                .await;
+        }
     }
 }
 

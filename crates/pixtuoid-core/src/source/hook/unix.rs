@@ -182,9 +182,9 @@ fn acquire_bind_lock(path: &Path) -> Result<std::fs::File> {
     match lock.try_lock() {
         Ok(()) => Ok(lock),
         Err(std::fs::TryLockError::WouldBlock) => {
-            // Typed so the CC source degrades to transcript-only rather than
-            // dying; of two racing starts exactly one acquires the lock, so the
-            // loser leaves no anonymous listener.
+            // Typed so the router subscribes rather than dying; of two racing
+            // starts exactly one acquires the lock, so the loser leaves no
+            // anonymous listener.
             Err(anyhow::Error::new(super::SocketBusy {
                 path: path.to_path_buf(),
             }))
@@ -197,6 +197,25 @@ fn acquire_bind_lock(path: &Path) -> Result<std::fs::File> {
 
 /// One accepted hook connection.
 pub(super) type Conn = UnixStream;
+
+/// Connect to the hook endpoint at `path`, as long as its owner is this user:
+/// another user's listener squatting it could feed the office invented agents.
+pub(crate) async fn connect(path: &Path) -> std::io::Result<UnixStream> {
+    let conn = UnixStream::connect(path).await?;
+    ensure_peer(&conn, rustix::process::getuid().as_raw())?;
+    Ok(conn)
+}
+
+fn ensure_peer(conn: &UnixStream, uid: u32) -> std::io::Result<()> {
+    if conn.peer_cred()?.uid() == uid {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "another user owns the hook endpoint",
+        ))
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct Listener {
@@ -307,6 +326,15 @@ impl Listener {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_peer_is_accepted_as_its_own_uid_and_refused_as_any_other() {
+        let (conn, _peer) = UnixStream::pair().unwrap();
+        let ours = rustix::process::getuid().as_raw();
+        ensure_peer(&conn, ours).expect("our own peer");
+        let err = ensure_peer(&conn, ours + 1).expect_err("another uid");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
 
     #[test]
     fn accept_backoff_doubles_to_the_cap_and_resets_on_success() {

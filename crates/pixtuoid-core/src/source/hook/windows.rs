@@ -1,12 +1,22 @@
 use std::ffi::c_void;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tokio::net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions};
+use tokio::net::windows::named_pipe::{
+    ClientOptions, NamedPipeClient, NamedPipeServer, PipeMode, ServerOptions,
+};
 use tokio::sync::Semaphore;
 use tracing::warn;
-use windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED;
+use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY, HANDLE};
+use windows_sys::Win32::Security::{
+    EqualSid, GetTokenInformation, PSID, TOKEN_QUERY, TOKEN_USER, TokenUser,
+};
+use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 
 use crate::win32::SecurityDescriptor;
 
@@ -40,6 +50,104 @@ fn create_pipe(
 /// One accepted hook connection.
 pub(super) type Conn = NamedPipeServer;
 
+/// How long a connect waits out a pipe whose every instance is mid-handshake.
+pub(crate) const PIPE_BUSY_BOUND: Duration = Duration::from_secs(2);
+pub(crate) const PIPE_BUSY_BACKOFF: Duration = Duration::from_millis(10);
+
+/// Connect to the hook endpoint at `path`, as long as its server is this user:
+/// the pipe namespace is machine-wide, so another user can squat the name and
+/// feed the office invented agents.
+pub(crate) async fn connect(path: &Path) -> std::io::Result<NamedPipeClient> {
+    let started = std::time::Instant::now();
+    let client = loop {
+        match ClientOptions::new().open(path) {
+            Ok(client) => break client,
+            Err(e)
+                if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32)
+                    && started.elapsed() < PIPE_BUSY_BOUND =>
+            {
+                tokio::time::sleep(PIPE_BUSY_BACKOFF).await;
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    if server_is_us(&client) {
+        Ok(client)
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "another user owns the hook endpoint",
+        ))
+    }
+}
+
+/// The `TOKEN_USER` blob for `process`'s token, `u64`-backed so the embedded
+/// `PSID` pointer is aligned. The buffer OWNS the SID.
+///
+/// SAFETY: `process` is a valid process handle for the call's duration.
+unsafe fn token_user_blob(process: HANDLE) -> Option<Vec<u64>> {
+    let mut token: HANDLE = std::ptr::null_mut();
+    // SAFETY: `process` is forwarded from this fn's contract; `token` is a live out-param.
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
+        return None;
+    }
+    // Size probe (returns 0 + sets `len`), then the real read.
+    let mut len: u32 = 0;
+    // SAFETY: `token` is open; a null buffer of length 0 is the documented size probe.
+    unsafe { GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut len) };
+    let blob = if len == 0 {
+        None
+    } else {
+        let mut buf = vec![0u64; (len as usize).div_ceil(8)];
+        // SAFETY: `token` is open and `buf` spans at least `len` bytes for the call.
+        let read = unsafe {
+            GetTokenInformation(token, TokenUser, buf.as_mut_ptr().cast(), len, &mut len)
+        };
+        if read == 0 { None } else { Some(buf) }
+    };
+    // SAFETY: `token` is open, and this is its only close.
+    unsafe { CloseHandle(token) };
+    blob
+}
+
+/// The `PSID` embedded in a `TOKEN_USER` blob. Valid only while `blob` lives.
+///
+/// SAFETY: `blob` is a `TOKEN_USER` written by `GetTokenInformation`, u64-aligned.
+unsafe fn sid_of(blob: &[u64]) -> PSID {
+    let user = blob.as_ptr().cast::<TOKEN_USER>();
+    // SAFETY: forwarded from this fn's contract.
+    unsafe { (*user).User.Sid }
+}
+
+/// True iff the pipe server behind `client` runs as our user. Fail-closed. The
+/// shim's `transport::peer` is the twin: no dep edge joins the two crates.
+fn server_is_us(client: &NamedPipeClient) -> bool {
+    use std::os::windows::io::AsRawHandle;
+    let handle = client.as_raw_handle() as HANDLE;
+    // SAFETY: `handle` is a live connected pipe; `server` (from OpenProcess) is
+    // closed exactly once; the two SID buffers outlive the EqualSid call.
+    unsafe {
+        let mut server_pid: u32 = 0;
+        if GetNamedPipeServerProcessId(handle, &mut server_pid) == 0 {
+            return false;
+        }
+        // Our own user SID (GetCurrentProcess is a pseudo-handle — never closed).
+        let Some(ours) = token_user_blob(GetCurrentProcess()) else {
+            return false;
+        };
+        let server = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, server_pid);
+        if server.is_null() {
+            return false;
+        }
+        let theirs = token_user_blob(server);
+        CloseHandle(server);
+        let Some(theirs) = theirs else {
+            return false;
+        };
+        EqualSid(sid_of(&ours), sid_of(&theirs)) != 0
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct Listener {
     server: NamedPipeServer,
@@ -70,7 +178,7 @@ impl Listener {
             // ERROR_ACCESS_DENIED is almost always another instance holding
             // first_pipe_instance on this name — the one recoverable bind
             // failure. A genuine ACL denial (restricted token / AppContainer)
-            // is indistinguishable and also degrades to transcript-only;
+            // is indistinguishable and ends in the router's failed subscribe;
             // accepted trade-off. Every other create error stays fatal.
             Err(e)
                 if e.kind() == std::io::ErrorKind::PermissionDenied
@@ -130,6 +238,14 @@ mod tests {
     use windows_sys::Win32::Security::Authorization::SE_KERNEL_OBJECT;
 
     use crate::win32::test_support::held_dacl;
+
+    #[tokio::test]
+    async fn our_own_pipe_server_verifies_as_us() {
+        let name = format!(r"\\.\pipe\pixtuoid-peer-selftest-{}", std::process::id());
+        let _server = ServerOptions::new().create(&name).unwrap();
+        let client = ClientOptions::new().open(&name).unwrap();
+        assert!(server_is_us(&client));
+    }
 
     /// No API reads `PIPE_REJECT_REMOTE_CLIENTS` back off a pipe — neither
     /// [`GetNamedPipeInfo`](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-getnamedpipeinfo)

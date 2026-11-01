@@ -95,9 +95,12 @@ flowchart TB
 
 1. **Ingest.** A hook event rides the shim (enriched, watchdog-bounded, exit
    0) to `HookSocketListener`, where `decode_hook_object` turns it into
-   `AgentEvent`s. In parallel, `JsonlWatcher` tails each agent's transcript
-   (a first-sight gate keeps historical sessions from resurrecting) and
-   decodes lines via that source's own decoder.
+   `AgentEvent`s. A second instance's `HookRouter` subscribes to the socket's
+   owner for the same lines, so each instance keeps its own reducer and
+   viewport, and takes the socket when that owner exits. In parallel,
+   `JsonlWatcher` tails each agent's transcript (a first-sight gate keeps
+   historical sessions from resurrecting) and decodes lines via that source's
+   own decoder.
 2. **One channel.** Every source multiplexes onto a single
    `mpsc::Sender<(Transport, AgentEvent)>`; the `Transport` tag drives
    **hook-wins dedup**, so a hook and its transcript echo don't double-count.
