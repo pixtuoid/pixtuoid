@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use super::{SOURCE_NAME, decode_grok_line, grok_cwd_from_path, grok_home, grok_session_ended};
+use super::{SOURCE_NAME, grok_cwd_from_path, grok_home, grok_session_ended};
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
-use crate::source::registry::{FocusProbe, Native};
+use crate::source::registry::{FocusProbe, Native, TranscriptWatch};
 use crate::source::{Source, TaggedSender};
 
 /// Sized for the whole registry, not one entry: grok writes EVERY live TUI
@@ -186,13 +186,7 @@ impl Source for GrokSource {
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        let mut watcher = JsonlWatcher::new(
-            self.sessions_root.clone(),
-            SOURCE_NAME.to_string(),
-            decode_grok_line,
-            grok_session_ended,
-        )
-        .with_cwd_deriver(grok_cwd_from_path);
+        let mut watcher = JsonlWatcher::new(self.sessions_root.clone(), SOURCE_NAME.to_string());
         if let Some(root) = grok_probe_root(&self.sessions_root) {
             watcher = watcher
                 .with_liveness_probe(std::sync::Arc::new(move || live_grok_session_ids(&root)));
@@ -210,6 +204,13 @@ pub(crate) const NATIVE: Native = Native {
         paths: probe_paths,
         present: Path::is_file,
         pid_for_session,
+    }),
+    watch: Some(TranscriptWatch {
+        session_ended: grok_session_ended,
+        activity_recency: None,
+        head_label: None,
+        derive_label: None,
+        cwd_from_path: Some(grok_cwd_from_path),
     }),
 };
 

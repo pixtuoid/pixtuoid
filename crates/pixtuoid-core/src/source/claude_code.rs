@@ -18,7 +18,7 @@ use crate::source::registry::{
 #[cfg(feature = "native")]
 mod native;
 #[cfg(feature = "native")]
-pub use native::{ClaudeCodeSource, cc_watcher, live_cc_session_ids, registry_dir};
+pub use native::{ClaudeCodeSource, live_cc_session_ids, registry_dir};
 
 /// The Claude Code source's registry name (its `SourceDescriptor.name`).
 ///

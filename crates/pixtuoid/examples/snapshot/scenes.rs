@@ -20,8 +20,10 @@ pub(crate) async fn capture_live_scene(
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(1024);
     let tx_hook = tx.clone();
     let root = PathBuf::from(projects_root);
-    // Drive THE production chain, never a hand-mirrored copy of it.
-    let mut watcher = pixtuoid_core::source::claude_code::cc_watcher(root.clone());
+    let mut watcher = pixtuoid_core::source::jsonl::JsonlWatcher::new(
+        root.clone(),
+        pixtuoid_core::source::claude_code::SOURCE_NAME.to_string(),
+    );
     // The SAME liveness probe as the real source: without it an in-flight session
     // first-sights at EOF (no history replay), so session-cumulative state —
     // tokens_used above all — reads ZERO and `--live` renders no paper tower.

@@ -10,7 +10,6 @@ use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::Source;
 use pixtuoid_core::source::Transport;
 use pixtuoid_core::source::antigravity::AntigravitySource;
-use pixtuoid_core::source::antigravity::decode_ag_line;
 use pixtuoid_core::source::jsonl::JsonlWatcher;
 
 use crate::{
@@ -21,8 +20,6 @@ use crate::{
 #[tokio::test]
 async fn codex_watcher_registers_stale_rollout_when_probe_says_live() {
     fast_watch();
-    use pixtuoid_core::source::codex::decode_codex_line;
-
     let dir = TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
     let day_dir = root.join("2026").join("06").join("10");
@@ -40,11 +37,9 @@ async fn codex_watcher_registers_stale_rollout_when_probe_says_live() {
     set_file_mtime(&rollout, backdated).unwrap();
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string(), decode_codex_line, |_t| {
-        false
-    })
-    .with_initial_window(Duration::from_secs(60))
-    .with_liveness_probe(std::sync::Arc::new(move || vouch_snapshot(&[uuid])));
+    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string())
+        .with_initial_window(Duration::from_secs(60))
+        .with_liveness_probe(std::sync::Arc::new(move || vouch_snapshot(&[uuid])));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let expected = AgentId::from_parts("codex", uuid);
@@ -69,8 +64,6 @@ async fn codex_watcher_registers_stale_rollout_when_probe_says_live() {
 #[tokio::test]
 async fn codex_first_sight_session_start_carries_bare_uuid_session_id() {
     fast_watch();
-    use pixtuoid_core::source::codex::decode_codex_line;
-
     let dir = TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
     let day_dir = root.join("2026").join("06").join("10");
@@ -86,9 +79,7 @@ async fn codex_first_sight_session_start_carries_bare_uuid_session_id() {
         .unwrap();
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string(), decode_codex_line, |_t| {
-        false
-    });
+    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let mut got = None;
@@ -264,17 +255,13 @@ async fn watcher_custom_label_deriver() {
 #[tokio::test]
 async fn codex_rollout_yields_uuid_keyed_session_start() {
     fast_watch();
-    use pixtuoid_core::source::codex::decode_codex_line;
-
     let dir = TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
     let uuid = "019e7762-9ded-7e33-be41-946ecf105bf4";
     let transcript = root.join(format!("rollout-2026-05-29T22-36-52-{uuid}.jsonl"));
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string(), decode_codex_line, |_t| {
-        false
-    });
+    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -659,8 +646,7 @@ async fn the_registry_row_filters_the_untruncated_copy_and_the_builder_overrides
 
     async fn first_sight_starts(root: std::path::PathBuf, admit_all: bool, want: usize) -> usize {
         let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-        let mut watcher =
-            JsonlWatcher::new(root, "antigravity".to_string(), decode_ag_line, |_t| false);
+        let mut watcher = JsonlWatcher::new(root, "antigravity".to_string());
         if admit_all {
             watcher = watcher.with_path_filter(admit_every_jsonl);
         }

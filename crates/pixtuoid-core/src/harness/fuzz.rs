@@ -1,6 +1,8 @@
 //! What a fuzz target (`fuzz/fuzz_targets/`) drives past [`Drive`] alone, and
 //! the mutator they share. Their one contract: a refusal is fine, a panic is not.
 
+#[cfg(feature = "native")]
+use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -10,7 +12,6 @@ use serde_json::{Number, Value};
 use super::{DEFAULT_NOW_EPOCH_SECS, DRIVEN_DESKS, Drive, Driven};
 use crate::remote::{self, Hello, PairLink, RemoteOffice, Reply};
 use crate::source::admit::{lines, whole};
-use crate::source::claude_code::cc_activity_recency;
 use crate::source::registry;
 use crate::state::MAX_FLOORS;
 
@@ -22,10 +23,10 @@ pub fn hook(bytes: &[u8]) -> Driven {
     Drive::hooks().lines(lines)
 }
 
-/// `<source>\n<path>\n<transcript>`: the registry's cwd and parent extractors,
-/// Claude Code's tail scan, then [`Drive`]. A source by name, not by index, so a
-/// new row leaves every accumulated input meaning what it did, and a path because
-/// a nested transcript's parent is its path's. `None` when a header is missing or
+/// `<source>\n<path>\n<transcript>`: everything `source`'s registry row reads of
+/// a transcript, then [`Drive`]. A source by name, not by index, so a new row
+/// leaves every accumulated input meaning what it did, and a path because a
+/// nested transcript's parent is its path's. `None` when a header is missing or
 /// the first names no transcript source.
 pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     let mut parts = bytes.splitn(3, |b| *b == b'\n');
@@ -35,15 +36,32 @@ pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     let drive = Drive::transcript(source, path)?.seeded();
     let cwd = registry::cwd_extractor_for(source);
     let parent = registry::parent_extractor_for(source);
-    let parsed = lines(whole(body))
+    let parsed: Vec<Value> = lines(whole(body))
         .filter_map(Result::ok)
-        .filter_map(|line| serde_json::from_str(line).ok());
-    for line in parsed {
-        let _ = cwd(&line);
-        let _ = parent.map(|extract| extract(&line));
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    for line in &parsed {
+        let _ = cwd(line);
+        let _ = parent.map(|extract| extract(line));
     }
-    let _ = cc_activity_recency(body);
+    #[cfg(feature = "native")]
+    watched(source, Path::new(path), body, &parsed);
     Some(drive.body(body))
+}
+
+/// What only a watcher reads of a transcript.
+#[cfg(feature = "native")]
+fn watched(source: &str, path: &Path, body: &[u8], parsed: &[Value]) {
+    let watch = registry::transcript_watch_for(source);
+    let _ = (watch.session_ended)(body);
+    let _ = watch.activity_recency.map(|recency| recency(body));
+    let cwd = watch.cwd_from_path.and_then(|derive| derive(path));
+    let _ = watch.derive_label.map(|label| {
+        label(path, source, cwd.as_deref().unwrap_or(Path::new("")));
+    });
+    if let Some(label) = watch.head_label {
+        parsed.iter().for_each(|line| drop(label(line)));
+    }
 }
 
 /// Each parser a peer's bytes or a scanned link reach: the whole input to the

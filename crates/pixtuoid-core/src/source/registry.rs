@@ -1,10 +1,14 @@
 //! ONE row per agent CLI. A column must BOTH be picked by NAME by a generic caller
-//! AND be depended on by production, not merely reported (`ActivityRecency`,
-//! `should_seed_at_eof` fail that half). Exempt: `home_env`, the QUESTION a struct
+//! AND be depended on by production, not merely reported (`should_seed_at_eof`
+//! fails that half). Exempt: `home_env`, the QUESTION a struct
 //! literal forces since a checklist let three sources ship an unverified resolver
 //! (#880/#343/#342/#195), and every path doctor checks, in the `Native` column.
 
 use crate::source::decoder::DecodeResult as Result;
+#[cfg(feature = "native")]
+use crate::source::jsonl::{
+    ActivityRecency, CwdDeriver, HeadLabel, LabelDeriver, SessionEndChecker,
+};
 use serde_json::{Map, Value};
 
 use crate::source::decoder::{
@@ -276,6 +280,9 @@ pub(crate) struct Native {
     pub(crate) root: Option<fn() -> Option<std::path::PathBuf>>,
     /// The click-time pid lookup, for a source whose stamp is absent or untrusted.
     pub(crate) focus_probe: Option<FocusProbe>,
+    /// What a watcher reads of its transcripts past their lines (`None` without
+    /// any).
+    pub(crate) watch: Option<TranscriptWatch>,
 }
 
 #[cfg(feature = "native")]
@@ -283,6 +290,36 @@ impl Native {
     pub(crate) const NONE: Self = Self {
         root: None,
         focus_probe: None,
+        watch: None,
+    };
+}
+
+/// A transcript's reads only a watcher makes, so a source's parsers of one sit in
+/// one row: the watcher and the fuzz target can't each hold their own list.
+#[cfg(feature = "native")]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TranscriptWatch {
+    /// See [`SessionEndChecker`].
+    pub(crate) session_ended: SessionEndChecker,
+    /// See [`ActivityRecency`]; the file's mtime without one.
+    pub(crate) activity_recency: Option<ActivityRecency>,
+    /// See [`HeadLabel`].
+    pub(crate) head_label: Option<HeadLabel>,
+    /// See [`LabelDeriver`]; the source-prefixed cwd basename without one.
+    pub(crate) derive_label: Option<LabelDeriver>,
+    /// See [`CwdDeriver`].
+    pub(crate) cwd_from_path: Option<CwdDeriver>,
+}
+
+#[cfg(feature = "native")]
+impl TranscriptWatch {
+    /// What a name with no row reads: never an end, and nothing else.
+    const NONE: Self = Self {
+        session_ended: |_| false,
+        activity_recency: None,
+        head_label: None,
+        derive_label: None,
+        cwd_from_path: None,
     };
 }
 
@@ -522,6 +559,22 @@ pub fn cwd_extractor_for(source: &str) -> CwdExtractor {
 #[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn parent_extractor_for(source: &str) -> Option<ParentExtractor> {
     descriptor_for(source).and_then(|d| d.parent_extractor())
+}
+
+/// `source`'s line decoder, which decodes nothing for a name with no transcript.
+#[cfg(feature = "native")]
+pub(crate) fn line_decoder_for(source: &str) -> LineDecoder {
+    descriptor_for(source)
+        .and_then(SourceDescriptor::line_decoder)
+        .unwrap_or(|_, _, _| Vec::new())
+}
+
+/// What a watcher reads of `source`'s transcripts past their lines.
+#[cfg(feature = "native")]
+pub(crate) fn transcript_watch_for(source: &str) -> &'static TranscriptWatch {
+    descriptor_for(source)
+        .and_then(|d| d.native.watch.as_ref())
+        .unwrap_or(&TranscriptWatch::NONE)
 }
 
 /// How this source keys a transcript path onto a session id. THE single
@@ -903,6 +956,21 @@ mod tests {
             assert!(
                 d.line_decoder().is_none(),
                 "daemon {:?} must not also be a transcript source",
+                d.name
+            );
+        }
+    }
+
+    /// `Native`'s `watch` is an `Option` for the hook-only rows, so nothing else
+    /// stops a new transcript row reading no end marker.
+    #[cfg(feature = "native")]
+    #[test]
+    fn a_row_has_a_transcript_watch_exactly_when_it_has_a_transcript() {
+        for d in REGISTRY {
+            assert_eq!(
+                d.line_decoder().is_some(),
+                d.native.watch.is_some(),
+                "{}",
                 d.name
             );
         }

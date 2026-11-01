@@ -9,7 +9,6 @@ use std::time::{Duration, SystemTime};
 
 use filetime::{FileTime, set_file_mtime};
 
-use pixtuoid_core::source::codex::decode_codex_line;
 use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::jsonl::{JsonlWatcher, ProbeSnapshot, force_polling_backend_for_tests};
 use pixtuoid_core::source::{AgentEvent, Source, Transport};
@@ -38,9 +37,7 @@ fn vouch_snapshot(ids: &[&str]) -> Option<ProbeSnapshot> {
 
 fn cc_watcher(root: std::path::PathBuf) -> JsonlWatcher {
     fast_watch();
-    // THE production chain, not a mirror of it — hand-mirroring drifted three
-    // times (#203, #632, the activity clock).
-    pixtuoid_core::source::claude_code::cc_watcher(root)
+    JsonlWatcher::new(root, "claude-code".to_string())
 }
 
 /// Write a complete transcript (each line + trailing newline) in one shot, so
@@ -109,7 +106,7 @@ fn cc_subagent_line(stem: &str, cwd: &str, tool_use_id: &str) -> serde_json::Val
 
 fn codex_watcher(root: std::path::PathBuf) -> JsonlWatcher {
     fast_watch();
-    JsonlWatcher::new(root, "codex".to_string(), decode_codex_line, |_t| false)
+    JsonlWatcher::new(root, "codex".to_string())
 }
 
 fn codex_meta_line(uuid: &str, cwd: &str) -> serde_json::Value {

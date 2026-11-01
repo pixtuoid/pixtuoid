@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use super::{SOURCE_NAME, codex_home, codex_id_from_path, decode_codex_line};
+use super::{SOURCE_NAME, codex_home, codex_id_from_path};
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
-use crate::source::registry::{FocusProbe, Native};
+use crate::source::registry::{FocusProbe, Native, TranscriptWatch};
 use crate::source::{Source, TaggedSender};
 
 /// Codex writes no session-end marker — defer to the mtime window + stale-sweep.
@@ -70,13 +70,8 @@ impl Source for CodexSource {
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        let mut watcher = JsonlWatcher::new(
-            self.sessions_root.clone(),
-            SOURCE_NAME.to_string(),
-            decode_codex_line,
-            codex_session_ended,
-        )
-        .with_root_probe(live_codex_rollout_ids);
+        let mut watcher = JsonlWatcher::new(self.sessions_root.clone(), SOURCE_NAME.to_string())
+            .with_root_probe(live_codex_rollout_ids);
         if let Some(unclaims) = &self.child_end_unclaims {
             watcher = watcher.with_child_end_unclaims(unclaims.clone());
         }
@@ -90,6 +85,13 @@ pub(crate) const NATIVE: Native = Native {
         paths: probe_paths,
         present: Path::is_dir,
         pid_for_session,
+    }),
+    watch: Some(TranscriptWatch {
+        session_ended: codex_session_ended,
+        activity_recency: None,
+        head_label: None,
+        derive_label: None,
+        cwd_from_path: None,
     }),
 };
 

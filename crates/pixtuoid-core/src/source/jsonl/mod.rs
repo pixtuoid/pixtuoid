@@ -223,30 +223,23 @@ pub fn force_polling_backend_for_tests(interval: Duration) {
 static TEST_POLL_OVERRIDE: OnceLock<Duration> = OnceLock::new();
 
 impl JsonlWatcher {
-    /// A watcher over `root` for `source`, decoding each transcript line with
-    /// `decode_line` and gating ended sessions with `check_session_ended`. The
-    /// id derivation comes from `source`'s own registry row
-    /// ([`crate::source::registry::id_deriver_for`]), so there is no per-source
-    /// `run()` wiring to forget and the offline `harness::Drive` reads the same
-    /// row.
-    pub fn new(
-        root: PathBuf,
-        source: String,
-        decode_line: LineDecoder,
-        check_session_ended: SessionEndChecker,
-    ) -> Self {
+    /// A watcher over `root` for `source`, reading its transcripts as `source`'s
+    /// registry row says, so there is no per-source `run()` wiring to forget and
+    /// the offline `harness::Drive` reads the same row.
+    pub fn new(root: PathBuf, source: String) -> Self {
+        let watch = crate::source::registry::transcript_watch_for(&source);
         Self {
             id_derive: folded::FoldedDeriver::new(crate::source::registry::id_deriver_for(&source)),
             path_filter: crate::source::registry::path_filter_for(&source),
             root: absolute_root(root),
             initial_window: DEFAULT_INITIAL_WINDOW,
+            decode_line: crate::source::registry::line_decoder_for(&source),
             source_name: source,
-            decode_line,
-            derive_label: default_prefixed_label,
-            check_session_ended,
-            activity_recency: no_activity_recency,
-            cwd_derive: no_cwd_from_path,
-            head_label: None,
+            derive_label: watch.derive_label.unwrap_or(default_prefixed_label),
+            check_session_ended: watch.session_ended,
+            activity_recency: watch.activity_recency.unwrap_or(no_activity_recency),
+            cwd_derive: watch.cwd_from_path.unwrap_or(no_cwd_from_path),
+            head_label: watch.head_label,
             liveness_probe: None,
             poll_interval: DEFAULT_POLL_INTERVAL,
             negative_vouch_min_span: NEGATIVE_VOUCH_MIN_SPAN,
@@ -260,13 +253,6 @@ impl JsonlWatcher {
     #[must_use]
     pub fn with_initial_window(mut self, window: Duration) -> Self {
         self.initial_window = window;
-        self
-    }
-
-    /// Supply this source's [`ActivityRecency`] — what the first-sight gate
-    /// measures the initial window against, in place of the file mtime.
-    pub(crate) fn with_activity_recency(mut self, recency: ActivityRecency) -> Self {
-        self.activity_recency = recency;
         self
     }
 
@@ -297,20 +283,6 @@ impl JsonlWatcher {
     #[must_use]
     pub fn with_label_deriver(mut self, derive_label: LabelDeriver) -> Self {
         self.derive_label = derive_label;
-        self
-    }
-
-    /// Derive a first-sight cwd from the transcript PATH when the content
-    /// head-scan yields none (default: never). See [`CwdDeriver`].
-    pub(crate) fn with_cwd_deriver(mut self, cwd_derive: CwdDeriver) -> Self {
-        self.cwd_derive = cwd_derive;
-        self
-    }
-
-    /// Name the session from ONE decoded head line, ahead of the cwd-basename
-    /// deriver (default: never). See [`HeadLabel`].
-    pub(crate) fn with_head_label(mut self, head_label: HeadLabel) -> Self {
-        self.head_label = Some(head_label);
         self
     }
 
