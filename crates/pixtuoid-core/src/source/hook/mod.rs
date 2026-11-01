@@ -609,6 +609,30 @@ mod tests {
         \"tool_input\":{\"command\":\"ls\"},\
         \"tool_use_id\":\"t1\"}\n";
 
+    /// What keeps the hook fuzz target on the framing production runs.
+    #[cfg(feature = "harness")]
+    #[tokio::test]
+    async fn the_hook_fuzz_target_frames_a_connection_as_handle_conn_does() {
+        let payload: &[u8] =
+            br#"{"session_id":"s","cwd":"/repo","hook_event_name":"SessionStart"}"#;
+        let unterminated = payload.to_vec();
+        let past_a_bad_line = [b"\xff\n".as_slice(), payload].concat();
+        let past_blank_lines = [b"\n  \n".as_slice(), payload, b"\n"].concat();
+        for bytes in [unterminated, past_a_bad_line, past_blank_lines] {
+            let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+            handle_conn(&bytes[..], tx, None, None, None).await;
+            let mut listened = Vec::new();
+            while let Ok((_, event)) = rx.try_recv() {
+                listened.push(event);
+            }
+            assert_eq!(
+                listened,
+                crate::harness::fuzz::hook(&bytes).events,
+                "{bytes:?}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn handle_conn_decodes_one_line_via_duplex() {
         let (mut client, server) = tokio::io::duplex(4096);
