@@ -154,15 +154,15 @@ mod tests {
     /// the last gap, and the pack draws no icon nothing names.
     #[test]
     fn every_icon_has_its_art_and_every_art_an_icon() {
-        let pack = crate::pack::test_office();
+        let art = crate::pack::test_office();
         for icon in Icon::VARIANTS {
-            let art = pack.icon(*icon).first();
+            let frame = art.icon(*icon).first();
             let w = columns(cells(icon.terminal())).0 - 1;
-            assert_eq!((art.width(), art.height()), (w, LINE_H), "{icon:?}");
+            assert_eq!((frame.width(), frame.height()), (w, LINE_H), "{icon:?}");
         }
         let named: std::collections::BTreeSet<&str> =
             Icon::VARIANTS.iter().map(|i| i.art()).collect();
-        let drawn: std::collections::BTreeSet<&str> = pack.pack().icon_names().collect();
+        let drawn: std::collections::BTreeSet<&str> = art.pack().icon_names().collect();
         assert_eq!(drawn, named);
     }
 

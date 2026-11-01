@@ -559,12 +559,12 @@ fn a_badge_sits_above_the_head_and_centred_on_the_sprite() {
 #[test]
 fn the_floor_indicator_stays_in_its_cell() {
     use crate::display::text::LINE_H;
-    let pack = crate::pack::test_office();
+    let art = crate::pack::test_office();
     let door = SceneLayout::compute_with_seed(160, 96, None, 0)
         .expect("lays out")
         .door;
     let rows = crate::layout::floor_indicator_rows(door.y);
-    let densities = pack.pack().density_variants();
+    let densities = art.pack().density_variants();
     assert!(!densities.is_empty(), "the pack draws a density");
     for d in densities {
         let pen = Pen::new(RenderScale::from(*d), *d).expect("d divides itself");

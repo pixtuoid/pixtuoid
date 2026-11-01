@@ -173,9 +173,9 @@ fn carries_beacon(plane: Plane, stand: &Stand<'_>, tallest: u16) -> bool {
         && hash(stand.hash() ^ BEACON_SALT).is_multiple_of(BEACON_IN)
 }
 
-/// The tallest building `pack` stands in the near plane.
-fn tallest_near(pack: &OfficeArt) -> u16 {
-    pack.pack()
+/// The tallest building `art` stands in the near plane.
+fn tallest_near(art: &OfficeArt) -> u16 {
+    art.pack()
         .buildings()
         .filter(|b| b.stands_in(CityPlane::Near))
         .map(|b| b.size().1)
@@ -259,13 +259,13 @@ pub(crate) struct Skyline<'p> {
 }
 
 impl<'p> Skyline<'p> {
-    /// `pack`'s city across a run of glass `run_w` wide and `glass_h` tall, seen
+    /// `art`'s city across a run of glass `run_w` wide and `glass_h` tall, seen
     /// from `altitude` (0 at the ground floor, 1 at the top). A plane the pack
     /// stands no building in gets plain blocks, so every depth reads.
-    pub(crate) fn of(pack: &'p OfficeArt, run_w: u16, glass_h: u16, altitude: f32) -> Self {
+    pub(crate) fn of(art: &'p OfficeArt, run_w: u16, glass_h: u16, altitude: f32) -> Self {
         let kits = Plane::ALL.map(|plane| -> Vec<&'p Building> {
             plane.pack_plane().map_or_else(Vec::new, |p| {
-                pack.pack().buildings().filter(|b| b.stands_in(p)).collect()
+                art.pack().buildings().filter(|b| b.stands_in(p)).collect()
             })
         });
         // Near to far, each plane's band is held to the tallest the plane in
@@ -443,11 +443,11 @@ pub(crate) struct CityStrip {
 }
 
 impl CityStrip {
-    /// `pack`'s city across a run `run_w` wide behind glass `glass_h` tall, at
+    /// `art`'s city across a run `run_w` wide behind glass `glass_h` tall, at
     /// `moment`, at `density`. A building the pack draws no art for at
     /// `density` is its base, each pixel grown to fill its cell.
     pub(crate) fn draw(
-        pack: &OfficeArt,
+        art: &OfficeArt,
         (run_w, glass_h): (u16, u16),
         outlook: &crate::atmosphere::Outlook,
         theme: &Theme,
@@ -465,11 +465,11 @@ impl CityStrip {
         };
         let colours = Plane::ALL.map(|p| PlaneColours::of(p, look, theme));
         let mut recoloured: Vec<(&str, Plane, Frame)> = Vec::new();
-        let tallest = tallest_near(pack);
+        let tallest = tallest_near(art);
         // Every light's art pixels: drawn once every tower stands, so none
         // stands over one.
         let mut beacons: Vec<(i32, i32)> = Vec::new();
-        for (plane, stand) in Skyline::of(pack, run_w, glass_h, altitude).stands() {
+        for (plane, stand) in Skyline::of(art, run_w, glass_h, altitude).stands() {
             let c = &colours[plane.index()];
             let window = |i: usize| c.window(lit(plane, stand.hash(), i, look.darkness, beat));
             let beacon = carries_beacon(plane, &stand, tallest) && beacon_on(stand.hash(), beat);
@@ -492,8 +492,8 @@ impl CityStrip {
                 Stand::Kit {
                     building, x, top, ..
                 } => {
-                    let materials = pack.pack().city_materials();
-                    let (art, grow) = building
+                    let materials = art.pack().city_materials();
+                    let (piece, grow) = building
                         .variant(density)
                         .map_or((building.base(), d), |a| (a, 1));
                     let frame = match recoloured
@@ -502,7 +502,7 @@ impl CityStrip {
                     {
                         Some(i) => &recoloured[i].2,
                         None => {
-                            let f = art
+                            let f = piece
                                 .sprite()
                                 .recolorable_at(0)
                                 .recolored(&c.overrides(materials));
@@ -524,7 +524,7 @@ impl CityStrip {
                             }
                         }
                     }
-                    for (i, pane) in art.windows().iter().enumerate() {
+                    for (i, pane) in piece.windows().iter().enumerate() {
                         let colour = window(i);
                         for &(wx, wy) in pane {
                             strip.fill(cell(wx, wy), grow, colour);
@@ -865,7 +865,7 @@ mod tests {
     /// has flipped, and the city stands where it stood.
     #[test]
     fn aviation_lights_sit_only_on_rooftops_and_blink() {
-        let pack = pack();
+        let art = pack();
         let theme = crate::theme::theme_by_name("normal").expect("theme");
         let (run_w, glass_h) = (400, 24);
         let night = crate::localclock::at_hour(23);
@@ -880,7 +880,7 @@ mod tests {
                 );
                 let near = PlaneColours::of(Plane::Near, &moment.look, theme);
                 let s = CityStrip::draw(
-                    &pack,
+                    &art,
                     (run_w, glass_h),
                     &moment.outlook(theme),
                     theme,
@@ -905,9 +905,9 @@ mod tests {
             assert!(on_a.iter().all(|p| !on_b.contains(p)), "{d}: in turn");
             let shown = |s: &CityStrip| -> Vec<bool> { s.px.iter().map(Option::is_some).collect() };
             assert_eq!(shown(&a), shown(&b), "{d}: no light in the sky");
-            let city = Skyline::of(&pack, run_w, glass_h, 0.0);
-            let tallest = tallest_near(&pack);
-            let materials = pack.pack().city_materials();
+            let city = Skyline::of(&art, run_w, glass_h, 0.0);
+            let tallest = tallest_near(&art);
+            let materials = art.pack().city_materials();
             for &(x, y) in on_a.iter().chain(&on_b) {
                 let (x, y) = (i32::from(x), i32::from(y));
                 let on_a_roof = city.stands().any(|(plane, s)| {
@@ -920,10 +920,10 @@ mod tests {
                     else {
                         return false;
                     };
-                    let (art, grow) = building
+                    let (piece, grow) = building
                         .variant(test_density(d))
                         .map_or((building.base(), d), |a| (a, 1));
-                    let frame = art
+                    let frame = piece
                         .sprite()
                         .recolorable_at(0)
                         .recolored(&near.overrides(materials));
@@ -950,9 +950,9 @@ mod tests {
     /// keeps it there. Only art finer than its base has such a mast.
     #[test]
     fn a_light_leaves_a_neighbours_pixels_alone() {
-        let pack = pack();
+        let art = pack();
         let theme = crate::theme::theme_by_name("normal").expect("theme");
-        let materials = pack.pack().city_materials();
+        let materials = art.pack().city_materials();
         let near = PlaneColours::of(
             Plane::Near,
             &SkyTones::resolve(
@@ -961,19 +961,19 @@ mod tests {
             ),
             theme,
         );
-        let tallest = tallest_near(&pack);
+        let tallest = tallest_near(&art);
         let neighbour = Rgb { r: 1, g: 2, b: 3 };
         let mut spared = 0;
-        for tower in pack
+        for tower in art
             .pack()
             .buildings()
             .filter(|b| b.stands_in(CityPlane::Near) && b.size().1 >= tallest)
         {
             for d in 1..=4 {
-                let (art, grow) = tower
+                let (piece, grow) = tower
                     .variant(test_density(d))
                     .map_or((tower.base(), d), |a| (a, 1));
-                let frame = art
+                let frame = piece
                     .sprite()
                     .recolorable_at(0)
                     .recolored(&near.overrides(materials));

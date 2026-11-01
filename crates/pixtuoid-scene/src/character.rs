@@ -99,7 +99,7 @@ pub(crate) fn keyed_character_frame<'c>(
 fn recolor<'c>(
     dense: crate::pack::DenseFrame<'_>,
     key: &CharacterKey,
-    pack: &OfficeArt,
+    art: &OfficeArt,
     cache: &'c mut FrameCache,
 ) -> CharacterFrame<'c> {
     let flip_x = key.frame.flip_x;
@@ -118,9 +118,9 @@ fn recolor<'c>(
                 dress
                     .style
                     .as_deref()
-                    .and_then(|name| pack.pack().hairstyle(name, dense.density)),
+                    .and_then(|name| art.pack().hairstyle(name, dense.density)),
                 &key.palette,
-                pack.pack().character_outline(),
+                art.pack().character_outline(),
             ),
             None => bare,
         };
@@ -248,8 +248,8 @@ mod tests {
     /// The banner art for `agent`: their coworker holding a coffee as
     /// [`character_frame`] draws them at the pack's densest art, and the
     /// sleeping cat at the same density.
-    fn banner_art(pack: &OfficeArt, agent: &AgentSlot) -> String {
-        let density = pack.max_density_variant();
+    fn banner_art(art: &OfficeArt, agent: &AgentSlot) -> String {
+        let density = art.max_density_variant();
         let scale = crate::render_scale::RenderScale::new(density.get()).expect("nonzero");
         let mut cache = FrameCache::new();
         let pose = SpritePose {
@@ -258,16 +258,15 @@ mod tests {
             flip_x: false,
             glow_tint: None,
         };
-        let coffee = pack.pack().variants_of(Piece::HoldingCoffee)[&density].frame_ms();
-        let coworker =
-            character_frame(pose, agent, pack, scale, &mut cache, SystemTime::UNIX_EPOCH)
-                .frame
-                .clone();
-        let cat = &pack.pack().variants_of(Piece::CatSleep)[&density];
-        let art: Vec<_> = std::iter::once(("coworker", coffee, &coworker))
+        let coffee = art.pack().variants_of(Piece::HoldingCoffee)[&density].frame_ms();
+        let coworker = character_frame(pose, agent, art, scale, &mut cache, SystemTime::UNIX_EPOCH)
+            .frame
+            .clone();
+        let cat = &art.pack().variants_of(Piece::CatSleep)[&density];
+        let lineup: Vec<_> = std::iter::once(("coworker", coffee, &coworker))
             .chain(cat.frames().iter().map(|f| ("cat", cat.frame_ms(), f)))
             .collect();
-        golden(&art)
+        golden(&lineup)
     }
 
     /// `banner.golden` is the README banner's cutaway art as the office draws

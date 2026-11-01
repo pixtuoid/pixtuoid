@@ -510,7 +510,7 @@ fn take_grip(
 /// desk.
 fn pet_placement(
     agents: &[AgentSlot],
-    pack: &OfficeArt,
+    art: &OfficeArt,
     pets: PetInputs<'_>,
     floor: FloorMeta,
     timing: Timing,
@@ -523,7 +523,7 @@ fn pet_placement(
     creatures.retain(|key, _| !matches!(key, CreatureKey::Pet(k) if Some(*k) != kind));
     let kind = kind?;
     let walk_anim = kind.walk_anim();
-    let stride = pack.pack().stride(walk_anim);
+    let stride = art.pack().stride(walk_anim);
     let walk = creatures
         .entry(CreatureKey::Pet(kind))
         .or_insert_with(|| CreatureWalk::at_home(layout, floor.floor_seed, now));
@@ -538,7 +538,7 @@ fn pet_placement(
     let (anim_name, frame_idx, flip) = match walking.filter(|_| petted.is_none()) {
         Some(segment) => (
             walk_anim.piece(),
-            pose::walk_frame(segment.travelled(), pack.piece(walk_anim.piece()), stride),
+            pose::walk_frame(segment.travelled(), art.piece(walk_anim.piece()), stride),
             // its walk faces east
             segment.to().x < segment.from().x,
         ),
@@ -555,12 +555,12 @@ fn pet_placement(
             };
             (
                 anim,
-                crate::pack::looping_frame_index(pack.piece(anim), beat),
+                crate::pack::looping_frame_index(art.piece(anim), beat),
                 false,
             )
         }
     };
-    let size = pack_frame_size(pack, anim_name, frame_idx);
+    let size = pack_frame_size(art, anim_name, frame_idx);
     let pos = on_canvas(layout, Pivot::Center, at, size);
     Some(PetPlacement {
         kind,
@@ -621,7 +621,7 @@ struct DrawnMascot {
 /// each mascot shows once.
 fn mascot_placements(
     scene: &SceneState,
-    pack: &OfficeArt,
+    art: &OfficeArt,
     timing: Timing,
     ground: &mut Ground<'_>,
     creatures: &mut HashMap<CreatureKey, CreatureWalk>,
@@ -637,7 +637,7 @@ fn mascot_placements(
             continue;
         };
         let state = presence.display_state();
-        let roam = Roam::mascot(pack.pack().stride(def.walk), state);
+        let roam = Roam::mascot(art.pack().stride(def.walk), state);
         let key = DaemonInstanceKey::new(source, instance.clone());
         let creature = CreatureKey::Mascot(key.clone());
         if presence.liveness != DaemonLiveness::Down
@@ -697,7 +697,7 @@ fn mascot_placements(
             creatures.remove(&creature);
             continue;
         };
-        let roam = Roam::mascot(pack.pack().stride(def.walk), DaemonState::Down);
+        let roam = Roam::mascot(art.pack().stride(def.walk), DaemonState::Down);
         if !walk.leaving() {
             walk.leave(elevator, roam, ground, now);
         }
@@ -730,16 +730,16 @@ fn mascot_placements(
                         def.walk.piece(),
                         pose::walk_frame(
                             segment.travelled(),
-                            pack.piece(def.walk.piece()),
-                            pack.pack().stride(def.walk),
+                            art.piece(def.walk.piece()),
+                            art.pack().stride(def.walk),
                         ),
                     ),
                     None => (
                         def.rest,
-                        crate::pack::looping_frame_index(pack.piece(def.rest), beat),
+                        crate::pack::looping_frame_index(art.piece(def.rest), beat),
                     ),
                 };
-                let size = pack_frame_size(pack, anim_name, frame_idx);
+                let size = pack_frame_size(art, anim_name, frame_idx);
                 let pos = on_canvas(ground.layout, Pivot::Center, at, size);
                 Some(MascotPlacement {
                     pos,
@@ -869,7 +869,7 @@ pub(crate) fn resolve_characters(
     agents: &[AgentSlot],
     poses: &HashMap<AgentId, Option<Pose>>,
     layout: &SceneLayout,
-    pack: &OfficeArt,
+    art: &OfficeArt,
     coffee: &HashMap<AgentId, SystemTime>,
     timing: Timing,
 ) -> (
@@ -938,7 +938,7 @@ pub(crate) fn resolve_characters(
                 let (mut placement, cues) = seated(TYPING, CharacterGlow::Work, None);
                 // the art the seat resolved to, a back view's own loop included
                 placement.frame_idx =
-                    pose::typing_frame(agent, beat, pack.piece(placement.anim_name));
+                    pose::typing_frame(agent, beat, art.piece(placement.anim_name));
                 placements.push((placement, cues));
             }
             Pose::AtWaypoint { wp, kind } => {
@@ -1050,7 +1050,7 @@ pub(crate) fn resolve_characters(
                 };
                 let anim_name = walk.piece();
                 let frame =
-                    pose::walk_frame(travelled, pack.piece(anim_name), pack.pack().stride(walk));
+                    pose::walk_frame(travelled, art.piece(anim_name), art.pack().stride(walk));
                 placements.push((
                     CharacterPlacement {
                         agent_idx,
@@ -1072,7 +1072,7 @@ pub(crate) fn resolve_characters(
                     Cues {
                         planted_foot: Some(effects::planted_foot(
                             frame,
-                            pack.piece(anim_name).frames().len(),
+                            art.piece(anim_name).frames().len(),
                             flip,
                         )),
                         ..Cues::default()
@@ -1084,13 +1084,13 @@ pub(crate) fn resolve_characters(
     // ONE fit for every pose arm, on the frame each placement will blit, read by
     // both the sprite and its badge. The sort row keeps pre-fit geometry.
     for (p, cues) in &mut placements {
-        let size = pack_frame_size(pack, p.anim_name, p.frame_idx);
+        let size = pack_frame_size(art, p.anim_name, p.frame_idx);
         let fitted = on_canvas(layout, Pivot::TopLeft, p.top_left, size);
         // The painter's own desk art: whatever it raises behind the sitter's
         // head, the badge clears.
         let ceiling = p
             .seat_desk
-            .map(|d| desk_art_top(pack, d.at.y, desk_art(pack, d.facing).height()));
+            .map(|d| desk_art_top(art, d.at.y, desk_art(art, d.facing).height()));
         p.label_anchor = badge_anchor(fitted, size, ceiling);
         // Breath after the fit, so it never moves the badge.
         let agent = &agents[p.agent_idx];

@@ -72,13 +72,13 @@ impl Pen {
         })
     }
 
-    /// The pen for `pack` at `scale`: the densest of its variant densities that
+    /// The pen for `art` at `scale`: the densest of its variant densities that
     /// divides `scale`, else the base art's. [`densest_frame`](crate::pack::densest_frame)
     /// applies the same rule per piece, so the room shares every piece's grid
     /// only while the pack draws its variants at one density
     /// (`the_bundled_pack_draws_every_variant_at_one_density`).
-    pub(crate) fn for_pack(scale: RenderScale, pack: &OfficeArt) -> Self {
-        pack.pack()
+    pub(crate) fn for_pack(scale: RenderScale, art: &OfficeArt) -> Self {
+        art.pack()
             .density_variants()
             .iter()
             .find_map(|&d| Self::new(scale, d))
@@ -137,12 +137,12 @@ mod tests {
 
     #[test]
     fn the_bundled_pack_draws_every_variant_at_one_density() {
-        let pack = crate::pack::test_office();
+        let art = crate::pack::test_office();
         assert_eq!(
-            pack.pack().density_variants().len(),
+            art.pack().density_variants().len(),
             1,
             "{:?}",
-            pack.pack().density_variants()
+            art.pack().density_variants()
         );
     }
 

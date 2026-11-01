@@ -147,38 +147,38 @@ mod tests {
     /// A theme's fixtures take its colours.
     #[test]
     fn a_recolour_rethemes_the_fixture_art() {
-        let pack = crate::pack::test_office();
-        let art = pack.pack().variants_of(Piece::FishTank)[&test_density(4)].recolorable_at(0);
-        let water = pack.palette().get('Д').flatten().expect("the water");
-        let plain = art.recolored(&[]);
+        let art = crate::pack::test_office();
+        let tank = art.pack().variants_of(Piece::FishTank)[&test_density(4)].recolorable_at(0);
+        let water = art.palette().get('Д').flatten().expect("the water");
+        let plain = tank.recolored(&[]);
         let (x, y) = (0..plain.height())
             .flat_map(|y| (0..plain.width()).map(move |x| (x, y)))
             .find(|&(x, y)| plain.get(x, y) == Some(&Some(water)))
             .expect("the art draws its water");
         let [a, b] = ["normal", "cyberpunk"].map(|name| {
             let theme = crate::theme::theme_by_name(name).expect("theme");
-            art.recolored(&fixture_overrides(theme))
+            tank.recolored(&fixture_overrides(theme))
         });
-        assert_ne!(a.get(x, y), b.get(x, y), "the water kept the pack's colour");
+        assert_ne!(a.get(x, y), b.get(x, y), "the water kept the art's colour");
     }
 
     /// A recolour re-derives the shading: one shaded cell of the vending art
     /// is a different colour in two themes whose appliance bodies differ.
     #[test]
     fn a_recolour_reshades_the_appliance_art() {
-        let pack = crate::pack::test_office();
-        let art =
-            pack.pack().variants_of(Piece::VendingMachine)[&test_density(4)].recolorable_at(0);
+        let art = crate::pack::test_office();
+        let vending =
+            art.pack().variants_of(Piece::VendingMachine)[&test_density(4)].recolorable_at(0);
         let [a, b] = ["normal", "cyberpunk"].map(|name| {
             let theme = crate::theme::theme_by_name(name).expect("theme");
-            art.recolored(&appliance_overrides(&theme.appliance))
+            vending.recolored(&appliance_overrides(&theme.appliance))
         });
-        let shade = pack.palette().get('ъ').flatten().expect("the body's shade");
-        let plain = art.recolored(&[]);
+        let shade = art.palette().get('ъ').flatten().expect("the body's shade");
+        let plain = vending.recolored(&[]);
         let (x, y) = (0..plain.height())
             .flat_map(|y| (0..plain.width()).map(move |x| (x, y)))
             .find(|&(x, y)| plain.get(x, y) == Some(&Some(shade)))
             .expect("the art draws the body's shade");
-        assert_ne!(a.get(x, y), b.get(x, y), "the shade kept the pack's colour");
+        assert_ne!(a.get(x, y), b.get(x, y), "the shade kept the art's colour");
     }
 }

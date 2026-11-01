@@ -56,14 +56,14 @@ pub(crate) fn densest<'a, T>(
 /// Frame `frame_idx` of `piece`, [wrapped](Sprite::wrap) as the classic
 /// painter wraps it, from its [`densest`] art at `scale`.
 pub(crate) fn densest_frame(
-    pack: &OfficeArt,
+    art: &OfficeArt,
     piece: Piece,
     frame_idx: usize,
     scale: RenderScale,
 ) -> DenseFrame<'_> {
-    let base = pack.piece(piece);
-    let (art, density, blit_at) = densest(base, pack.pack().variants_of(piece), scale);
-    DenseFrame::of(base, art, frame_idx, (density, blit_at))
+    let base = art.piece(piece);
+    let (dense, density, blit_at) = densest(base, art.pack().variants_of(piece), scale);
+    DenseFrame::of(base, dense, frame_idx, (density, blit_at))
 }
 
 impl<'a> DenseFrame<'a> {

@@ -387,10 +387,10 @@ fn a_back_turned_desk_shows_the_pose_s_own_back_view() {
 }
 
 /// `piece`'s base art and each density variant, named as the manifest keys them.
-fn arts_of(pack: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::sprite::Sprite)> {
-    std::iter::once((piece.name().to_owned(), pack.piece(piece)))
+fn arts_of(art: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::sprite::Sprite)> {
+    std::iter::once((piece.name().to_owned(), art.piece(piece)))
         .chain(
-            pack.pack()
+            art.pack()
                 .variants_of(piece)
                 .iter()
                 .map(|(d, s)| (format!("{}@{d}x", piece.name()), s)),
@@ -402,16 +402,16 @@ fn arts_of(pack: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::
 /// recolored and, where the art marks its head, dressed in each of the pack's
 /// hairstyles.
 fn looks(
-    pack: &crate::pack::OfficeArt,
+    art: &crate::pack::OfficeArt,
     anim: &crate::sprite::Sprite,
     i: usize,
     overrides: &[(char, crate::sprite::Pixel)],
 ) -> Vec<crate::sprite::Frame> {
     let bare = anim.recolorable_at(i).recolored(overrides);
-    let line = pack.pack().character_outline();
+    let line = art.pack().character_outline();
     match anim.head(i) {
         None => vec![bare],
-        Some(head) => pack
+        Some(head) => art
             .pack()
             .hairstyles()
             .map(|s| {
@@ -4143,21 +4143,18 @@ fn appliance_at(sprite: Piece, busy: bool, ms: u64) -> RgbBuffer {
 /// than half its busy frames may show it at rest.
 #[test]
 fn a_busy_loop_spends_most_of_its_frames_away_from_rest() {
-    let pack = crate::pack::test_office();
+    let art = crate::pack::test_office();
     let four = test_density(4);
-    for (name, art) in [
-        ("vending_machine", pack.piece(Piece::VendingMachine)),
-        ("printer", pack.piece(Piece::Printer)),
+    for (name, variant) in [
+        ("vending_machine", art.piece(Piece::VendingMachine)),
+        ("printer", art.piece(Piece::Printer)),
         (
             "vending_machine@4x",
-            &pack.pack().variants_of(Piece::VendingMachine)[&four],
+            &art.pack().variants_of(Piece::VendingMachine)[&four],
         ),
-        (
-            "printer@4x",
-            &pack.pack().variants_of(Piece::Printer)[&four],
-        ),
+        ("printer@4x", &art.pack().variants_of(Piece::Printer)[&four]),
     ] {
-        let frames = art.frames();
+        let frames = variant.frames();
         let (rest, busy) = frames.split_first().expect("a rest frame");
         let at_rest = busy
             .iter()

@@ -1783,8 +1783,8 @@ mod tests {
     /// and that screen never lights.
     #[test]
     fn the_bundled_back_turned_desk_draws_its_screen_in_the_screen_keys() {
-        let pack = test_office();
-        let art = PackPiece::DeskNorth;
+        let art = test_office();
+        let desk = PackPiece::DeskNorth;
         let sentinel = crate::sprite::Rgb {
             r: 255,
             g: 0,
@@ -1792,11 +1792,11 @@ mod tests {
         };
         let glass_and_text = [SCREEN_GLASS_LEVEL, SCREEN_TEXT_LEVEL];
         let mut drawn = 0;
-        for (name, anim) in std::iter::once((art.name().to_owned(), pack.piece(art))).chain(
-            pack.pack()
-                .variants_of(art)
+        for (name, anim) in std::iter::once((desk.name().to_owned(), art.piece(desk))).chain(
+            art.pack()
+                .variants_of(desk)
                 .iter()
-                .map(|(d, s)| (format!("{}@{d}x", art.name()), s)),
+                .map(|(d, s)| (format!("{}@{d}x", desk.name()), s)),
         ) {
             let lit = relight_screen(anim.recolorable_at(0), sentinel);
             for level in glass_and_text {
@@ -1809,8 +1809,8 @@ mod tests {
         }
         assert!(
             drawn > 1,
-            "the bundled pack ships a density variant of {}",
-            art.name()
+            "the bundled art ships a density variant of {}",
+            desk.name()
         );
     }
 
@@ -3957,9 +3957,9 @@ mod tests {
         use crate::outside::tests::{
             UNPAINTED, assert_the_outside_reaches_only_the_glass, painted_alone,
         };
-        let pack = test_office();
+        let art = test_office();
         let theme = &crate::theme::NORMAL;
-        let office = FloorSession::new(std::sync::Arc::new(pack.clone()))
+        let office = FloorSession::new(std::sync::Arc::new(art.clone()))
             .step(
                 crate::floor::FloorInputs {
                     scene: &pixtuoid_core::SceneState::uniform(16),
@@ -3972,12 +3972,12 @@ mod tests {
             .expect("lays out");
         let layout = &office.layout;
         let mut scales = vec![1];
-        scales.extend(pack.pack().density_variants().iter().map(|d| d.get()));
+        scales.extend(art.pack().density_variants().iter().map(|d| d.get()));
         for s in scales {
             let scale = RenderScale::new(s).expect("nonzero");
             let at = Office {
                 layout,
-                pack: &pack,
+                pack: &art,
                 theme,
                 scale,
             };
@@ -4044,14 +4044,7 @@ mod tests {
                         )
                     },
                     |piece, over| {
-                        paint_piece(
-                            &piece.kind,
-                            &pack,
-                            list.recolours(),
-                            scale,
-                            &mut cache,
-                            over,
-                        )
+                        paint_piece(&piece.kind, &art, list.recolours(), scale, &mut cache, over)
                     },
                 )
             };
@@ -5786,17 +5779,17 @@ mod tests {
     /// meets it, so the seam paints under the sitter and the ridge over them.
     #[test]
     fn the_north_sofas_backrest_starts_on_its_lit_ridge() {
-        let pack = test_office();
+        let art = test_office();
         let densities = std::iter::once(crate::sprite::format::Density::ONE)
-            .chain(pack.pack().density_variants().iter().copied());
+            .chain(art.pack().density_variants().iter().copied());
         for d in densities {
             let name = format!("{}@{d}x", PackPiece::MeetingSofaNorth.name());
-            let art = if d == crate::sprite::format::Density::ONE {
-                Some(pack.piece(PackPiece::MeetingSofaNorth))
+            let variant = if d == crate::sprite::format::Density::ONE {
+                Some(art.piece(PackPiece::MeetingSofaNorth))
             } else {
-                pack.pack().variants_of(PackPiece::MeetingSofaNorth).get(&d)
+                art.pack().variants_of(PackPiece::MeetingSofaNorth).get(&d)
             };
-            let Some(f) = art.map(|a| a.first()) else {
+            let Some(f) = variant.map(|a| a.first()) else {
                 continue;
             };
             let (x, split) = (f.width() / 2, NORTH_SOFA_SEAT_ROWS * d.get());
