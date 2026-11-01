@@ -14,6 +14,14 @@ use crate::source::claude_code::cc_activity_recency;
 use crate::source::registry;
 use crate::state::MAX_FLOORS;
 
+/// A hook connection's bytes, framed as the listener frames them: a last line
+/// needs no `\n`, unlike a transcript's, and one that isn't UTF-8 ends the
+/// connection.
+pub fn hook(bytes: &[u8]) -> Driven {
+    let lines = (bytes.split(|b| *b == b'\n')).map_while(|line| std::str::from_utf8(line).ok());
+    Drive::hooks().lines(lines)
+}
+
 /// `<source>\n<path>\n<transcript>`: the registry's cwd and parent extractors,
 /// Claude Code's tail scan, then [`Drive`]. A source by name, not by index, so a
 /// new row leaves every accumulated input meaning what it did, and a path because
@@ -221,6 +229,18 @@ mod tests {
     use super::*;
 
     const LINE: &str = r#"{"type":"assistant","sessionId":"s","cwd":"/repo","message":{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"Write","input":{}}]}}"#;
+
+    #[test]
+    fn a_hook_connection_is_framed_as_the_listener_frames_it() {
+        let payload = br#"{"session_id":"s","cwd":"/repo","hook_event_name":"SessionStart"}"#;
+        assert_eq!(
+            hook(payload).registered(),
+            1,
+            "a last line needs no newline"
+        );
+        let past_a_bad_line = [b"\xff\n".as_slice(), payload].concat();
+        assert_eq!(hook(&past_a_bad_line).registered(), 0);
+    }
 
     #[test]
     fn a_transcript_folds_under_the_source_its_first_line_names() {
