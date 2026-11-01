@@ -50,6 +50,7 @@ pub mod harness;
 /// Agent identity: the `AgentId` session key and its path/parts derivations.
 pub mod id;
 pub mod platform;
+pub mod remote;
 /// The source/decoder seam — the `Source` trait, per-CLI transcript/hook
 /// decoders, listeners, and the `SourceManager`.
 pub mod source;

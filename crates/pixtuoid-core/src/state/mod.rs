@@ -314,11 +314,12 @@ pub struct AgentSlot {
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
-    /// GLOBAL desk index (assigned once at `SessionStart`, never mutated).
+    /// GLOBAL desk index, assigned once at `SessionStart`; only a device's new
+    /// layout ([`RemoteOffice::set_capacities`](crate::remote::RemoteOffice::set_capacities))
+    /// moves it.
     pub desk_index: GlobalDeskIndex,
-    /// Floor assigned at desk allocation time. Immutable for the agent's
-    /// lifetime so capacity growth never silently migrates agents between
-    /// floors.
+    /// Floor assigned with the desk and moved only with it, so capacity growth
+    /// never silently migrates agents between floors.
     pub floor_idx: usize,
     /// Monotonic count of tool calls this agent has made this session.
     pub tool_call_count: u32,
@@ -568,8 +569,9 @@ pub struct SceneState {
     /// an all-agent scene.
     ///
     /// PRIVATE with READ-ONLY accessors on purpose: mutation must stay inside
-    /// the daemon layer's apply/sweep/mark entry points, so nothing else can
-    /// invent presence.
+    /// the daemon layer's apply/sweep/mark entry points, or
+    /// [`RemoteOffice`](crate::remote::RemoteOffice)'s copy of a server's roster,
+    /// so nothing else can invent presence.
     #[serde(default)]
     pub(crate) daemons: DaemonRoster,
 }

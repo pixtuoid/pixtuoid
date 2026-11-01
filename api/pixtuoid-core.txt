@@ -74,6 +74,43 @@ pub fn pixtuoid_core::platform::path_env_trimmed(&str) -> core::option::Option<s
 pub fn pixtuoid_core::platform::resolve_user_config_dir(&str, core::option::Option<std::path::PathBuf>, core::option::Option<std::path::PathBuf>, &std::path::Path) -> std::path::PathBuf
 pub fn pixtuoid_core::platform::text_env(&str) -> core::option::Option<alloc::string::String>
 pub fn pixtuoid_core::platform::user_home_opt() -> core::option::Option<std::path::PathBuf>
+pub mod pixtuoid_core::remote
+#[non_exhaustive] pub enum pixtuoid_core::remote::ApplyError
+pub pixtuoid_core::remote::ApplyError::Incompatible
+pub pixtuoid_core::remote::ApplyError::Incompatible::v: u32
+pub pixtuoid_core::remote::ApplyError::Malformed(serde_json::error::Error)
+impl core::convert::From<serde_json::error::Error> for pixtuoid_core::remote::ApplyError
+pub fn pixtuoid_core::remote::ApplyError::from(serde_json::error::Error) -> Self
+impl core::error::Error for pixtuoid_core::remote::ApplyError
+pub fn pixtuoid_core::remote::ApplyError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for pixtuoid_core::remote::ApplyError
+pub fn pixtuoid_core::remote::ApplyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for pixtuoid_core::remote::ApplyError
+pub fn pixtuoid_core::remote::ApplyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for pixtuoid_core::remote::ApplyError
+impl core::marker::Send for pixtuoid_core::remote::ApplyError
+impl core::marker::Sync for pixtuoid_core::remote::ApplyError
+impl core::marker::Unpin for pixtuoid_core::remote::ApplyError
+impl core::marker::UnsafeUnpin for pixtuoid_core::remote::ApplyError
+impl !core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::ApplyError
+impl !core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::ApplyError
+pub struct pixtuoid_core::remote::RemoteOffice
+impl pixtuoid_core::remote::RemoteOffice
+pub fn pixtuoid_core::remote::RemoteOffice::apply(&mut self, &[u8], std::time::SystemTime) -> core::result::Result<(), pixtuoid_core::remote::ApplyError>
+pub fn pixtuoid_core::remote::RemoteOffice::new([usize; 10]) -> Self
+pub fn pixtuoid_core::remote::RemoteOffice::scene(&self) -> &pixtuoid_core::state::SceneState
+pub fn pixtuoid_core::remote::RemoteOffice::set_capacities(&mut self, [usize; 10])
+impl core::fmt::Debug for pixtuoid_core::remote::RemoteOffice
+pub fn pixtuoid_core::remote::RemoteOffice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for pixtuoid_core::remote::RemoteOffice
+impl core::marker::Send for pixtuoid_core::remote::RemoteOffice
+impl core::marker::Sync for pixtuoid_core::remote::RemoteOffice
+impl core::marker::Unpin for pixtuoid_core::remote::RemoteOffice
+impl core::marker::UnsafeUnpin for pixtuoid_core::remote::RemoteOffice
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::RemoteOffice
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::RemoteOffice
+pub const pixtuoid_core::remote::VERSION: u32
+pub fn pixtuoid_core::remote::encode(&pixtuoid_core::state::SceneState, std::time::SystemTime) -> serde_json::error::Result<alloc::string::String>
 pub mod pixtuoid_core::source
 pub mod pixtuoid_core::source::antigravity
 pub struct pixtuoid_core::source::antigravity::AntigravitySource
