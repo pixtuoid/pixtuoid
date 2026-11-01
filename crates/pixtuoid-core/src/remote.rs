@@ -281,7 +281,7 @@ pub fn encode(scene: &SceneState, now: SystemTime) -> serde_json::Result<String>
 /// The entropy of a pairing code and of a device token.
 pub const SECRET_BYTES: usize = 32;
 
-/// SHA-256's output, the length of [`PairLink::spki`].
+/// SHA-256's output in bytes, which [`PairLink::spki`] carries as hex.
 const PIN_BYTES: usize = 32;
 
 const PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
@@ -296,7 +296,7 @@ pub struct PairLink {
     /// The SHA-256 of the server key's SPKI in uppercase hex, which the TLS
     /// handshake must present: there is no CA to vouch for a server on a LAN.
     pub spki: String,
-    /// The one-time code a [`Hello::Pair`] redeems, in hex.
+    /// The one-time code a [`Hello::Pair`] redeems, in uppercase hex.
     pub code: String,
 }
 
@@ -342,7 +342,8 @@ impl FromStr for PairLink {
         };
         let hex = |key: &str, bytes: usize| {
             let value = field(key)?;
-            (value.len() == bytes * 2 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+            let uppercase_hex = |b: u8| matches!(b, b'0'..=b'9' | b'A'..=b'F');
+            (value.len() == bytes * 2 && value.bytes().all(uppercase_hex))
                 .then(|| value.to_owned())
                 .ok_or(PairLinkError)
         };
@@ -1200,20 +1201,25 @@ mod tests {
         assert_eq!(reply, Reply::Unknown);
     }
 
+    const EVERY_DIGIT: &str = "0123456789ABCDEF";
+
     fn link() -> PairLink {
         PairLink {
             host: "studio.local".into(),
             port: 47820,
-            spki: "ab".repeat(32),
-            code: "cd".repeat(32),
+            spki: EVERY_DIGIT.repeat(PIN_BYTES * 2 / EVERY_DIGIT.len()),
+            code: EVERY_DIGIT.repeat(SECRET_BYTES * 2 / EVERY_DIGIT.len()),
         }
     }
 
     #[test]
     fn a_pair_link_survives_its_text() {
-        let text = link().to_string();
-        assert!(text.starts_with("pixtuoid://pair?"), "{text}");
-        assert_eq!(text.parse::<PairLink>().expect("it parses"), link());
+        for port in [1, 47820, u16::MAX] {
+            let link = PairLink { port, ..link() };
+            let text = link.to_string();
+            assert!(text.starts_with("pixtuoid://pair?"), "{text}");
+            assert_eq!(text.parse::<PairLink>().expect("it parses"), link);
+        }
     }
 
     /// A link can reach a device from anywhere a URL can, so nothing it carries
@@ -1224,15 +1230,23 @@ mod tests {
             let mut fields = [
                 ("host", "studio.local".to_owned()),
                 ("port", "47820".to_owned()),
-                ("spki", "ab".repeat(32)),
-                ("code", "cd".repeat(32)),
+                ("spki", link().spki),
+                ("code", link().code),
             ];
             let field = fields.iter_mut().find(|(k, _)| *k == key).expect("a field");
             field.1 = value.to_owned();
             let query: Vec<_> = fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
             format!("pixtuoid://pair?{}", query.join("&"))
         };
-        for bad in [
+        // One character past each edge of the digits' ranges, at full length.
+        let edges = ['/', ':', '@', 'G'].into_iter().flat_map(|edge| {
+            let bad = |value: String| value.replacen('0', &edge.to_string(), 1);
+            [
+                with("spki", &bad(link().spki)),
+                with("code", &bad(link().code)),
+            ]
+        });
+        for bad in edges.chain([
             "https://pair?host=a".to_owned(),
             "pixtuoid://pair?host=a".to_owned(),
             with("host", ""),
@@ -1240,15 +1254,20 @@ mod tests {
             with("host", "a@b"),
             with("port", "0"),
             with("port", "70000"),
-            with("spki", "ab"),
-            with("spki", &"zz".repeat(32)),
+            with("spki", &"A".repeat(PIN_BYTES * 2 - 1)),
+            with("spki", &"A".repeat(PIN_BYTES * 2 + 1)),
+            with("spki", &"zz".repeat(PIN_BYTES)),
+            with("spki", &"ab".repeat(PIN_BYTES)),
             with("code", ""),
+            with("code", &"C".repeat(SECRET_BYTES * 2 - 1)),
+            with("code", &"C".repeat(SECRET_BYTES * 2 + 1)),
+            with("code", &"cd".repeat(SECRET_BYTES)),
             format!("{}&port=1", link()),
             format!("{}&extra=1", link()),
             link()
                 .to_string()
                 .replace("host=studio.local", "host=a&port=1&host=b"),
-        ] {
+        ]) {
             assert!(bad.parse::<PairLink>().is_err(), "{bad}");
         }
     }
