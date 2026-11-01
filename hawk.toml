@@ -1,0 +1,15 @@
+[[production]]
+package = "pixtuoid"
+bin = "pixtuoid"
+reason = "the shipped binary"
+
+[[production]]
+package = "pixtuoid-hook"
+bin = "pixtuoid-hook"
+reason = "the shim agent CLIs invoke"
+
+[[exclude]]
+crate = "pixtuoid_core"
+module = "remote"
+level = "expect"
+reason = "the wire's device half, whose reader is an app outside this workspace"

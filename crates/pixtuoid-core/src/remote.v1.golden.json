@@ -1,0 +1,70 @@
+{
+  "v": 1,
+  "now_ms": 1800000000000,
+  "agents": [
+    {
+      "id": 10948706948411984435,
+      "source": "claude-code",
+      "activity": {
+        "state": "idle"
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 13214166290797252754,
+      "parent": 15748592781060872162,
+      "source": "claude-code",
+      "repo": "child",
+      "activity": {
+        "state": "requires_action"
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "exiting_ms": 1799999999900,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 15748592781060872162,
+      "source": "claude-code",
+      "repo": "lead",
+      "activity": {
+        "state": "running",
+        "tool": {
+          "kind": "edit"
+        }
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 12000,
+      "last_usage": {
+        "delta": 800,
+        "at_ms": 1799999999300
+      },
+      "model": "some-model",
+      "effort": {
+        "value": "high",
+        "at_ms": 1799999999500
+      }
+    }
+  ],
+  "daemons": [
+    {
+      "source": "openclaw",
+      "instance": "18789",
+      "activity": {
+        "state": "running"
+      },
+      "active_sessions": 2,
+      "entered_ms": 1799999910000,
+      "last_seen_ms": 1799999999700
+    }
+  ]
+}
