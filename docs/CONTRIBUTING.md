@@ -139,12 +139,14 @@ fix with its pinning test) runs as an **arc**: design → build → gate → wra
 1. **Pick** — an issue (`gh issue list`) or backlog item.
 2. **Grill the design** — decide the open questions one at a time, each with a
    recommended answer, before writing code.
-3. **Design gate** (before build) — three lenses so slop dies in design:
+3. **Design gate** (before build) — four lenses so slop dies in design:
    best-practice search (confirm the idiomatic way against real docs online,
    never memory) · adversarial design review (red-team the design before code
    exists) · deepening lens (would deleting this concentrate complexity or
    just move it? does the change deepen a module or add a shallow one? a
-   refactor it warrants is in scope).
+   refactor it warrants is in scope) · reuse lens (which layer lets every
+   surface read this feature, which existing surfaces take it now, and why
+   the rest don't).
 4. **Spec** — synthesize into `docs/superpowers/specs/` (LOCAL, git-ignored),
    planned against [`REVIEW.md`](../REVIEW.md)'s lenses; the PR body states
    the change's claims, which the correctness lens holds it to.
