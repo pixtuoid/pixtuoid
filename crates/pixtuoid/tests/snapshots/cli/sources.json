@@ -96,5 +96,12 @@
     "connected": false,
     "cli_present": false,
     "health": null
+  },
+  {
+    "id": "jcode",
+    "display_name": "Jcode",
+    "connected": false,
+    "cli_present": false,
+    "health": null
   }
 ]

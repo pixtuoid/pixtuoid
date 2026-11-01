@@ -18,3 +18,11 @@ fn each_key_the_shim_stamps_is_the_one_core_reads() {
     assert_eq!(shim_keys::EVENT_STAMP, decoder::EVENT_STAMP);
     assert_eq!(shim_keys::PID_STAMP, decoder::PID_STAMP);
 }
+
+#[test]
+fn the_source_name_the_shim_branches_on_is_core_s() {
+    assert_eq!(
+        shim_keys::JCODE_SOURCE,
+        pixtuoid_core::source::jcode::SOURCE_NAME
+    );
+}

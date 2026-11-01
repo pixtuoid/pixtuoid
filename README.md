@@ -115,7 +115,8 @@ Then:
 <tr><td width="50%"><a href="https://github.com/anomalyco/opencode">opencode</a></td><td width="50%"><a href="https://cursor.com/cli">Cursor CLI</a></td></tr>
 <tr><td width="50%"><a href="https://hermes-agent.nousresearch.com">Hermes Agent</a></td><td width="50%"><a href="https://omp.sh">Oh My Pi</a></td></tr>
 <tr><td width="50%"><a href="https://github.com/openclaw/openclaw">OpenClaw</a></td><td width="50%"><a href="https://github.com/xai-org/grok-build">Grok Build</a></td></tr>
-<tr><td width="50%"><a href="https://github.com/MoonshotAI/kimi-code">Kimi Code CLI</a></td><td width="50%"><a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a></td></tr>
+<tr><td width="50%"><a href="https://github.com/MoonshotAI/kimi-code">Kimi Code CLI</a></td><td width="50%"><a href="https://github.com/1jehuang/jcode">Jcode</a></td></tr>
+<tr><td width="50%"><a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a></td></tr>
 </table>
 
 **→ [Every tool × OS on the site](https://pixtuoid.dev/#tools)**

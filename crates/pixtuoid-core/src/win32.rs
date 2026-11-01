@@ -1,6 +1,6 @@
-//! What the crate's Windows code shares: wide strings, and a security
-//! descriptor built from SDDL for each object created under it (the hook's
-//! pipe, the capture rig's private directory).
+//! What the crate's Windows code shares: wide strings, known folders, and a
+//! security descriptor built from SDDL for each object created under it (the
+//! hook's pipe, the capture rig's private directory).
 
 use std::ffi::OsStr;
 
@@ -58,13 +58,35 @@ pub(crate) unsafe fn token_info(
 /// # Safety
 ///
 /// `p` points to a live NUL-terminated UTF-16 string.
-#[cfg(any(test, feature = "harness"))]
 pub(crate) unsafe fn wide_at(p: *const u16) -> std::ffi::OsString {
     use std::os::windows::ffi::OsStringExt;
     // SAFETY: the caller's contract: every unit up to the NUL is readable.
     let units =
         unsafe { std::slice::from_raw_parts(p, (0..).take_while(|&i| *p.add(i) != 0).count()) };
     std::ffi::OsString::from_wide(units)
+}
+
+/// A known folder's path, which "does not include a trailing backslash"
+/// (learn.microsoft.com, SHGetKnownFolderPath).
+///
+/// # Errors
+///
+/// If the shell has no path for it.
+pub(crate) fn known_folder(id: &windows_sys::core::GUID) -> std::io::Result<std::path::PathBuf> {
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::SHGetKnownFolderPath;
+
+    let mut raw: windows_sys::core::PWSTR = std::ptr::null_mut();
+    // SAFETY: `id` is a live GUID, a null token asks for the current user, and
+    // `raw` is a live out-pointer.
+    let hr = unsafe { SHGetKnownFolderPath(id, 0, std::ptr::null_mut(), &mut raw) };
+    // SAFETY: on success `raw` is the NUL-terminated path the call allocated.
+    let path =
+        (hr >= 0 && !raw.is_null()).then(|| std::path::PathBuf::from(unsafe { wide_at(raw) }));
+    // SAFETY: the caller frees `raw` "whether SHGetKnownFolderPath succeeds or
+    // not"; freeing null is a no-op.
+    unsafe { CoTaskMemFree(raw.cast()) };
+    path.ok_or_else(|| std::io::Error::from_raw_os_error(hr))
 }
 
 /// Held alive for as long as a create call may borrow its attributes.

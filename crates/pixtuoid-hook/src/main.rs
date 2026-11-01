@@ -60,7 +60,19 @@ fn main() {
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
 
+    // Source precedence: the `--source <name>` argv flag (the Windows install
+    // form, and Jcode's everywhere) wins over the `PIXTUOID_SOURCE` env var (the Unix env-prefix
+    // form; grok delivers the same var via its handler `env` map, so this arm
+    // serves both). `--event` is orthogonal and never implies a source.
+    let source = source_from_argv(&args)
+        .or_else(|| std::env::var_os("PIXTUOID_SOURCE").and_then(|v| v.into_string().ok()));
     let mut payload: Value = match event_from_argv(&args) {
+        _ if source.as_deref() == Some(keys::JCODE_SOURCE) => {
+            let Some(payload) = jcode_payload_from(|k| std::env::var_os(k)) else {
+                return;
+            };
+            Value::Object(payload)
+        }
         // CodeWhale env-mode: identity arrives as env vars with `--event <name>`
         // baked into the registered command, so the envelope needs no stdin, and
         // a read it doesn't need is a wait the watchdog (armed below) never
@@ -90,12 +102,6 @@ fn main() {
     };
 
     if let Value::Object(map) = &mut payload {
-        // Source precedence: the `--source <name>` argv flag (the Windows install
-        // form) wins over the `PIXTUOID_SOURCE` env var (the Unix env-prefix
-        // form; grok delivers the same var via its handler `env` map, so this arm
-        // serves both). `--event` is orthogonal and never implies a source.
-        let source = source_from_argv(&args)
-            .or_else(|| std::env::var_os("PIXTUOID_SOURCE").and_then(|v| v.into_string().ok()));
         enrich_payload(map, source, hook_event_from_argv(&args), now_ms(), cli_pid);
     }
 
@@ -123,21 +129,55 @@ fn env_payload_from(
     event: &str,
     get: impl Fn(&str) -> Option<OsString>,
 ) -> serde_json::Map<String, Value> {
-    let get = |k: &str| get(k).map(|v| v.to_string_lossy().into_owned());
     let mut map = serde_json::Map::new();
     map.insert("event".into(), Value::from(event));
-    for (env_key, field) in [
-        ("DEEPSEEK_WORKSPACE", "cwd"),
-        ("CODEWHALE_SESSION_ID", "session_id"),
-        ("DEEPSEEK_TOOL_NAME", "tool"),
-        ("DEEPSEEK_TOOL_ARGS", "tool_args"),
-        ("CODEWHALE_TOOL_CALL_ID", "tool_call_id"),
-    ] {
+    fold_env(
+        &mut map,
+        &[
+            ("DEEPSEEK_WORKSPACE", "cwd"),
+            ("CODEWHALE_SESSION_ID", "session_id"),
+            ("DEEPSEEK_TOOL_NAME", "tool"),
+            ("DEEPSEEK_TOOL_ARGS", "tool_args"),
+            ("CODEWHALE_TOOL_CALL_ID", "tool_call_id"),
+        ],
+        get,
+    );
+    map
+}
+
+/// Jcode's envelope, or `None` without the two fields that name an event of a
+/// session. Observers have null stdin; pre_tool stdin is arguments, not an
+/// envelope. The full JCODE_HOOK_PAYLOAD also contains replies and tool input.
+fn jcode_payload_from(
+    get: impl Fn(&str) -> Option<OsString>,
+) -> Option<serde_json::Map<String, Value>> {
+    let mut map = serde_json::Map::new();
+    fold_env(
+        &mut map,
+        &[
+            ("JCODE_HOOK_EVENT", "event"),
+            ("JCODE_HOOK_SESSION_ID", "session_id"),
+            ("JCODE_HOOK_CWD", "cwd"),
+            ("JCODE_HOOK_TOOL_NAME", "tool_name"),
+            ("JCODE_HOOK_MODEL", "model"),
+        ],
+        get,
+    );
+    (map.contains_key("event") && map.contains_key("session_id")).then_some(map)
+}
+
+/// Each set `(env var, field)` of `table` into `map`, capped.
+fn fold_env(
+    map: &mut serde_json::Map<String, Value>,
+    table: &[(&str, &str)],
+    get: impl Fn(&str) -> Option<OsString>,
+) {
+    for (env_key, field) in table {
         if let Some(val) = get(env_key).filter(|v| !v.is_empty()) {
-            map.insert(field.into(), Value::from(cap_env_field(val)));
+            let val = val.to_string_lossy().into_owned();
+            map.insert((*field).into(), Value::from(cap_env_field(val)));
         }
     }
-    map
 }
 
 /// The value of `--<flag> <val>` or `--<flag>=<val>` in argv (first match wins),
@@ -157,7 +197,7 @@ fn flag_from_argv(args: &[String], flag: &str) -> Option<String> {
 }
 
 /// CodeWhale's env-mode trigger. Absent → the shim reads its payload from stdin
-/// (the CC/Codex/Reasonix path).
+/// (the CC/Codex/Reasonix path), unless the source is Jcode's.
 fn event_from_argv(args: &[String]) -> Option<String> {
     flag_from_argv(args, "--event")
 }
@@ -168,10 +208,10 @@ fn hook_event_from_argv(args: &[String]) -> Option<String> {
     flag_from_argv(args, "--hook-event")
 }
 
-/// The trusted CLI source, in its Windows install form: the hook command runs
-/// under `cmd.exe /C`, which has no inline `VAR=value cmd` env-prefix syntax (it
-/// would try to exec a program literally named `PIXTUOID_SOURCE=codex`), so the
-/// source rides as a flag. Absent → the caller falls back to `PIXTUOID_SOURCE`.
+/// The trusted CLI source, as a flag where no env prefix can carry it: `cmd.exe
+/// /C` has no inline `VAR=value cmd` syntax (it would try to exec a program
+/// literally named `PIXTUOID_SOURCE=codex`), and Jcode execs its hooks directly.
+/// Absent → the caller falls back to `PIXTUOID_SOURCE`.
 fn source_from_argv(args: &[String]) -> Option<String> {
     flag_from_argv(args, "--source")
 }

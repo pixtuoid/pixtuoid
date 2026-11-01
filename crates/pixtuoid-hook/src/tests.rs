@@ -225,6 +225,20 @@ fn env_mode_gets_its_pid_from_the_single_enrich_site() {
 }
 
 #[test]
+fn jcode_payload_needs_an_event_and_a_session() {
+    fn fields(env: &[(&str, &str)]) -> Option<usize> {
+        let env: std::collections::HashMap<&str, &str> = env.iter().copied().collect();
+        jcode_payload_from(|k| env.get(k).map(OsString::from)).map(|map| map.len())
+    }
+    let event = ("JCODE_HOOK_EVENT", "turn_end");
+    let session = ("JCODE_HOOK_SESSION_ID", "session_fox_123_a");
+    assert_eq!(fields(&[event]), None);
+    assert_eq!(fields(&[session]), None);
+    assert_eq!(fields(&[event, ("JCODE_HOOK_SESSION_ID", "")]), None);
+    assert_eq!(fields(&[event, session]), Some(2));
+}
+
+#[test]
 fn env_payload_omits_missing_and_empty_env() {
     let env: std::collections::HashMap<&str, &str> =
         [("DEEPSEEK_WORKSPACE", "/repo"), ("DEEPSEEK_TOOL_NAME", "")]

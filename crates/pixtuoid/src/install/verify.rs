@@ -227,7 +227,7 @@ pub(crate) fn shell_shim_ref(command: &str) -> ShimRef {
     }
 }
 
-/// Reverse `hook_cmd::unix::shell_single_quote` over a span that STARTS and ENDS
+/// Reverse `hook_cmd::shell_single_quote` over a span that STARTS and ENDS
 /// on a `'`, so a literal `'\''` decodes to a single `'` and an in-quote space
 /// stays literal.
 pub(crate) fn posix_unquote(span: &str) -> String {
