@@ -309,11 +309,7 @@ fn events_of(source: &str, drive: &Drive, lines: &[Value], transcript: bool) -> 
         .collect();
     let presence = lines
         .iter()
-        .map(|line| {
-            let obj = line.as_object()?;
-            let src = obj.get(crate::source::decoder::SOURCE_STAMP)?.as_str()?;
-            registry::presence_decoder_for(src)?(obj).ok()
-        })
+        .map(|line| registry::presence_of(line.as_object()?)?.1.ok())
         .collect();
     let failures = |f: &[LineFailure]| f.iter().map(|x| format!("{x:?}")).collect::<Vec<_>>();
     (

@@ -6,7 +6,7 @@ use tracing::{debug, warn};
 
 use crate::AgentId;
 use crate::source::decoder::{
-    PID_STAMP, SOURCE_STAMP, checked_pid, decode_hook_object, hook_object, hook_source,
+    PID_STAMP, checked_pid, decode_hook_object, hook_object, hook_source,
 };
 use crate::source::registry::SourceDescriptor;
 use crate::source::{AgentEvent, TaggedSender, Transport};
@@ -292,24 +292,16 @@ async fn handle_conn(
                     relay.forward(&line);
                 }
                 // DAEMON demux, registry-DRIVEN so a 2nd daemon needs NO edit
-                // here: `presence_decoder_for` returns `None` for every agent
-                // source, and a daemon's payloads decode to presence deltas on
-                // the sibling channel instead of `AgentEvent`s.
+                // here: `presence_of` returns `None` for every agent source, and
+                // a daemon's payloads decode to presence deltas on the sibling
+                // channel instead of `AgentEvent`s.
                 if let Some(ptx) = presence_tx.as_ref()
-                    && let Some(src) = obj.get(SOURCE_STAMP).and_then(serde_json::Value::as_str)
-                    && let Some(decode) = crate::source::registry::presence_decoder_for(src)
+                    && let Some((src, decoded)) = crate::source::registry::presence_of(obj)
                 {
-                    match decode(obj) {
+                    match decoded {
                         Ok(decoded) => {
-                            let key = crate::source::daemon::DaemonInstanceKey::new(
-                                src,
-                                decoded.instance,
-                            );
-                            for u in decoded.updates {
-                                let _ = ptx.send(crate::source::daemon::PresenceMsg {
-                                    key: key.clone(),
-                                    delta: u,
-                                });
+                            for msg in decoded.into_msgs(src) {
+                                let _ = ptx.send(msg);
                             }
                         }
                         Err(e) => warn!(error = %e, "daemon presence decode error"),
@@ -364,7 +356,7 @@ mod tests {
     use super::*;
     use crate::AgentId;
     use crate::source::AgentEvent;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{SOURCE_STAMP, test_obj};
     use tokio::io::AsyncWriteExt;
 
     #[test]

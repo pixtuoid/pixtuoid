@@ -8,6 +8,9 @@ members  = [
     "crates/pixtuoid-web",
     "crates/pixtuoid-web-music",
 ]
+# Its own workspace: cargo-fuzz builds on a nightly with sanitizers, which no
+# `--workspace` gate on any target can.
+exclude = ["fuzz"]
 
 [workspace.package]
 version      = "0.21.0"
@@ -177,3 +180,5 @@ signal-hook        = "0.4"
 # keep the sums check testable.
 regex              = "1"
 sha2               = { version = "0.11", default-features = false }
+# The fuzz targets' mutator: rust-fuzz's book names it for `fuzz_mutator!`.
+mutatis            = { version = "0.5", features = ["std"] }

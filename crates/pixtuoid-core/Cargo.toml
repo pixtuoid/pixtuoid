@@ -62,6 +62,8 @@ harness = [
     # A re-record's capture is read up to the ids its run mints
     # (`harness::captures::canonical_capture`).
     "dep:regex",
+    # The fuzz targets' JSON mutator (`harness::fuzz`).
+    "dep:mutatis",
 ]
 
 [dependencies]
@@ -88,6 +90,8 @@ sha2        = { workspace = true, optional = true }
 syn         = { workspace = true, optional = true }
 # The id families a re-record may rename: `harness::captures::canonical_capture`.
 regex       = { workspace = true, optional = true }
+# Mutates a fuzz input's JSON: `harness::fuzz::json_mutate`.
+mutatis     = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

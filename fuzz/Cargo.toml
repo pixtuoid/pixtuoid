@@ -1,0 +1,35 @@
+[package]
+name    = "pixtuoid-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+pixtuoid-core = { path = "../crates/pixtuoid-core", features = ["harness"] }
+
+[workspace]
+
+[[bin]]
+name  = "hook"
+path  = "fuzz_targets/hook.rs"
+test  = false
+doc   = false
+bench = false
+
+[[bin]]
+name  = "transcript"
+path  = "fuzz_targets/transcript.rs"
+test  = false
+doc   = false
+bench = false
+
+[[bin]]
+name  = "remote"
+path  = "fuzz_targets/remote.rs"
+test  = false
+doc   = false
+bench = false

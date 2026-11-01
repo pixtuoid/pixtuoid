@@ -54,6 +54,22 @@ updates:
     cooldown:
       default-days: 7
 
+  # libfuzzer-sys's exact pin: the rest of fuzz/'s graph is the root lockfile's.
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+
+  # The ClusterFuzzLite builder's digest.
+  - package-ecosystem: docker
+    directory: /.clusterfuzzlite
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+
   # rust-toolchain.toml's exact pin, so CodSpeed's base and head build on one
   # rustc and each release lands as its own PR; hawk and api-surface keep their
   # own, which `_toolchain-covers` holds at or past it.

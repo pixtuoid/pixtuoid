@@ -23,12 +23,14 @@ use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
 
-use crate::source::decoder::{LineDecoder, decode_hook_payload, display_safe};
+use crate::source::daemon::{PresenceMsg, apply_presence};
+use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
 
 mod captures;
+pub mod fuzz;
 pub mod hermetic;
 pub mod host;
 pub mod merge;
@@ -125,6 +127,9 @@ pub struct Driven {
     pub scene: SceneState,
     /// Every decoded event in wire order, seed first when there is one.
     pub events: Vec<AgentEvent>,
+    /// Every daemon envelope's presence deltas, which [`Drive::fold`] merges into
+    /// `scene` on their own channel, never through the reducer.
+    pub(crate) presence: Vec<PresenceMsg>,
     /// How many leading `events` are the first-sight SEED, not the wire's own
     /// output (0 or 1). A census must report [`Self::wire_events`] instead — the
     /// seed registers a slot unconditionally, so counting it scores garbage 1/1.
@@ -151,6 +156,7 @@ impl Driven {
         Self {
             scene: SceneState::uniform(DRIVEN_DESKS),
             events: Vec::new(),
+            presence: Vec::new(),
             seed_events: 0,
             lines: 0,
             unparseable: 0,
@@ -274,23 +280,35 @@ impl Decode {
             return None;
         };
         parsed(&v);
+        let refused = |d: &mut Driven, e: DecodeError| {
+            d.decode_errors.push(LineFailure {
+                line: d.lines,
+                shape: shape_of(line),
+                message: e.to_string(),
+            });
+        };
         match self {
             Self::Transcript {
                 decode,
                 source,
                 logical,
             } => Some(decode(logical, source, v)),
-            Self::Hooks => match decode_hook_payload(v) {
-                Ok(events) => Some(events),
-                Err(e) => {
-                    d.decode_errors.push(LineFailure {
-                        line: d.lines,
-                        shape: shape_of(line),
-                        message: e.to_string(),
-                    });
-                    None
+            Self::Hooks => {
+                if let Some((source, presence)) = v.as_object().and_then(registry::presence_of) {
+                    match presence {
+                        Ok(decoded) => d.presence.extend(decoded.into_msgs(source)),
+                        Err(e) => refused(d, e),
+                    }
+                    return None;
                 }
-            },
+                match decode_hook_payload(v) {
+                    Ok(events) => Some(events),
+                    Err(e) => {
+                        refused(d, e);
+                        None
+                    }
+                }
+            }
         }
     }
 }
@@ -452,6 +470,9 @@ impl Drive {
             reducer.tick(&mut d.scene, self.now + CASCADE_TICK);
             note_reached(&d.scene, &mut d.reaches);
         }
+        for msg in &d.presence {
+            apply_presence(&mut d.scene, &msg.key, msg.delta.clone(), self.now);
+        }
     }
 }
 
@@ -544,6 +565,22 @@ fn shape_of(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_daemon_envelope_reaches_the_scene_on_the_presence_channel() {
+        let up = r#"{"type":"gateway_start","gatewayPort":49242,"_pixtuoid_source":"openclaw"}"#;
+        let d = Drive::hooks().lines([up]);
+        assert_eq!(d.scene.daemons().count(), 1, "{d:?}");
+        assert!(d.events.is_empty(), "never an AgentEvent: {d:?}");
+    }
+
+    #[test]
+    fn a_daemon_envelope_its_decoder_refuses_is_a_decode_error() {
+        let bad = r#"{"gatewayPort":49242,"_pixtuoid_source":"openclaw"}"#;
+        let d = Drive::hooks().lines([bad]);
+        assert_eq!(d.decode_errors.len(), 1, "{d:?}");
+        assert_eq!(d.scene.daemons().count(), 0, "{d:?}");
+    }
 
     #[test]
     fn a_breadcrumb_a_decode_logs_is_part_of_what_it_decoded() {

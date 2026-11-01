@@ -29,6 +29,8 @@ cargo-insta = "latest"
 # v27.1.0 ships no aarch64-apple-darwin asset, so `github:` fails on Apple
 # silicon (https://github.com/sourcefrog/cargo-mutants/releases/tag/v27.1.0).
 "cargo:cargo-mutants" = "latest"
+# `just fuzz`; ClusterFuzzLite's image brings its own.
+"cargo:cargo-fuzz" = "latest"
 # `cargo set-version --workspace` (docs/CONTRIBUTING.md#releasing).
 "cargo:cargo-edit" = "latest"
 # The version gen-wasm's sha256 check covers.

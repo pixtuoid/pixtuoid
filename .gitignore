@@ -19,6 +19,12 @@ __pycache__/
 codecov.json
 mutants.out/
 mutants.out.old/
+/fuzz/artifacts/
+/fuzz/corpus/
+/fuzz/coverage/
+/fuzz/target/
+# A copy of the root lockfile (`just fuzz`), so a fuzz build runs the versions that ship.
+/fuzz/Cargo.lock
 
 # Recorder output awaiting a diff — promote it or delete it, never commit it.
 *.jsonl.new

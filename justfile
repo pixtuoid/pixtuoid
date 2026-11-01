@@ -54,14 +54,15 @@ WASM_CRATES := "pixtuoid-web pixtuoid-web-music"
 # workflow `run:` blocks go to actionlint, composite-action ones to
 # `actionlint-composites`. Both are shellcheck-only — shfmt cannot rewrite a
 # scalar in place — so adding a file here is not enough for embedded shell.
-SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh"
+SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh .clusterfuzzlite/*.sh"
 
 # The projects that run their own checkers (site/AGENTS.md,
 # integrations/raycast/AGENTS.md), as git pathspecs.
 SELF_GATED := "':!:site/' ':!:integrations/'"
 
 # The nightly the api-surface goldens are pinned to (rustdoc JSON is
-# nightly-only). Provisioned by `_api-toolchain`, which also fails while it
+# nightly-only), which `fuzz` and .clusterfuzzlite/build.sh build on too.
+# Provisioned by `_api-toolchain`, which also fails while it
 # can't build what rust-toolchain.toml's release admits (`_toolchain-covers`).
 API_NIGHTLY := "nightly-2026-10-22"
 
@@ -628,6 +629,13 @@ mutants *args:
         exit 1
     fi
     TZ={{ TEST_TZ }} cargo mutants --in-diff target/mutants.diff "$@"
+
+# fuzz.yml's `crashes-<target>` artifact replays here: `just fuzz hook crash-…`.
+[doc('Fuzz `target` (hook, transcript, remote), or replay a crash file — advisory')]
+[group('rust')]
+fuzz target *args:
+    cp Cargo.lock fuzz/Cargo.lock
+    cargo +{{ API_NIGHTLY }} fuzz run {{ target }} {{ args }}
 
 # Record a conformance fixture from bytes a real CLI actually sent, the CLI run
 # under a throwaway home holding only the built pixtuoid's hook for it and a
