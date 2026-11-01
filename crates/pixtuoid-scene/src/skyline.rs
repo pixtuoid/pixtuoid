@@ -13,7 +13,8 @@
 use std::ops::RangeInclusive;
 
 use crate::pack::OfficeArt;
-use crate::sprite::format::{Building, CityMaterials, CityPlane, Density, Material};
+use crate::pack::{Building, CityMaterials, CityPlane, Material};
+use crate::sprite::format::Density;
 use crate::sprite::{Frame, Pixel, Rgb};
 
 use crate::atmosphere::SkyTones;

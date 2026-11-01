@@ -1,6 +1,6 @@
 //! The pantry aggregate: bounds + the counter size + the island.
 
-use crate::sprite::format::Piece;
+use crate::pack::Piece;
 
 use crate::layout::placement::centred;
 use crate::layout::{

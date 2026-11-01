@@ -3,8 +3,8 @@
 //! ([`effects`](crate::display::effects)); steam stays with the classic pass.
 //! It never advances the sim; a mover here would desync the profiles.
 
+use crate::pack::Piece as PackPiece;
 use crate::pack::{Desk, DeskProp, OfficeArt};
-use crate::sprite::format::Piece as PackPiece;
 
 use super::{
     Art, DisplayList, Figure, Flip, Layer, LightPiece, Piece, PieceKind, Screen, Span, StoodProp,

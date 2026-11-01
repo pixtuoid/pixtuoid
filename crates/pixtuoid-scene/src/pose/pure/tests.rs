@@ -1,7 +1,7 @@
 use super::*;
 use crate::character::test_support::make_slot;
+use crate::pack::{Piece, Walk};
 use crate::physics::{LegProgress, Segment};
-use crate::sprite::format::{Piece, Walk};
 use pixtuoid_core::state::{GlobalDeskIndex, ToolKind, ToolUse};
 use std::path::PathBuf;
 use std::time::Duration;

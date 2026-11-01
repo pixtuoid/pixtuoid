@@ -96,8 +96,8 @@ pub(super) fn blend_pixel(buf: &mut RgbBuffer, x: u16, y: u16, tint: Rgb, t: f32
 mod tests {
     use super::*;
     use crate::display::pen::test_density;
+    use crate::pack::Piece;
     use crate::pack::{appliance_overrides, fixture_overrides};
-    use crate::sprite::format::Piece;
 
     #[test]
     fn blend_pixel_composites_in_bounds_and_noops_out_of_bounds() {

@@ -1037,6 +1037,154 @@ impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Slide
 impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::SlidePicture<'a>
 pub fn pixtuoid_scene::look::render(&mut pixtuoid_scene::floor::PerFloor, pixtuoid_scene::floor::OfficeStores<'_>, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>) -> core::option::Option<pixtuoid_scene::look::Rendered>
 pub mod pixtuoid_scene::pack
+pub mod pixtuoid_scene::pack::error
+#[non_exhaustive] pub enum pixtuoid_scene::pack::error::ColorError
+#[non_exhaustive] pub pixtuoid_scene::pack::error::ColorError::Hex
+pub pixtuoid_scene::pack::error::ColorError::Hex::value: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::ColorError::Prefix
+pub pixtuoid_scene::pack::error::ColorError::Prefix::value: alloc::string::String
+impl core::clone::Clone for pixtuoid_scene::pack::error::ColorError
+pub fn pixtuoid_scene::pack::error::ColorError::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::pack::error::ColorError
+impl core::cmp::PartialEq for pixtuoid_scene::pack::error::ColorError
+pub fn pixtuoid_scene::pack::error::ColorError::eq(&self, &Self) -> bool
+impl core::error::Error for pixtuoid_scene::pack::error::ColorError
+impl core::fmt::Debug for pixtuoid_scene::pack::error::ColorError
+pub fn pixtuoid_scene::pack::error::ColorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for pixtuoid_scene::pack::error::ColorError
+pub fn pixtuoid_scene::pack::error::ColorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_scene::pack::error::ColorError
+impl core::marker::Freeze for pixtuoid_scene::pack::error::ColorError
+impl core::marker::Send for pixtuoid_scene::pack::error::ColorError
+impl core::marker::Sync for pixtuoid_scene::pack::error::ColorError
+impl core::marker::Unpin for pixtuoid_scene::pack::error::ColorError
+impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::error::ColorError
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::error::ColorError
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::error::ColorError
+#[non_exhaustive] pub enum pixtuoid_scene::pack::error::KeySite
+pub pixtuoid_scene::pack::error::KeySite::CharacterOutline
+pub pixtuoid_scene::pack::error::KeySite::CityMaterial
+pub pixtuoid_scene::pack::error::KeySite::Palette
+pub pixtuoid_scene::pack::error::KeySite::Ramp
+pub pixtuoid_scene::pack::error::KeySite::RampBase
+impl core::clone::Clone for pixtuoid_scene::pack::error::KeySite
+pub fn pixtuoid_scene::pack::error::KeySite::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::pack::error::KeySite
+impl core::cmp::PartialEq for pixtuoid_scene::pack::error::KeySite
+pub fn pixtuoid_scene::pack::error::KeySite::eq(&self, &Self) -> bool
+impl core::error::Error for pixtuoid_scene::pack::error::KeySite
+impl core::fmt::Debug for pixtuoid_scene::pack::error::KeySite
+pub fn pixtuoid_scene::pack::error::KeySite::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for pixtuoid_scene::pack::error::KeySite
+pub fn pixtuoid_scene::pack::error::KeySite::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::pack::error::KeySite
+pub fn pixtuoid_scene::pack::error::KeySite::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_scene::pack::error::KeySite
+impl core::marker::StructuralPartialEq for pixtuoid_scene::pack::error::KeySite
+impl core::marker::Freeze for pixtuoid_scene::pack::error::KeySite
+impl core::marker::Send for pixtuoid_scene::pack::error::KeySite
+impl core::marker::Sync for pixtuoid_scene::pack::error::KeySite
+impl core::marker::Unpin for pixtuoid_scene::pack::error::KeySite
+impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::error::KeySite
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::error::KeySite
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::error::KeySite
+#[non_exhaustive] pub enum pixtuoid_scene::pack::error::PackError
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::BuildingDensity
+pub pixtuoid_scene::pack::error::PackError::BuildingDensity::key: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::BuildingFrames
+pub pixtuoid_scene::pack::error::PackError::BuildingFrames::file: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::BuildingOutsideMaterials
+pub pixtuoid_scene::pack::error::PackError::BuildingOutsideMaterials::file: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::BuildingOutsideMaterials::x: usize
+pub pixtuoid_scene::pack::error::PackError::BuildingOutsideMaterials::y: usize
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::BuildingPlane
+pub pixtuoid_scene::pack::error::PackError::BuildingPlane::key: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::BuildingPlane::plane: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::BuildingWithoutPlanes
+pub pixtuoid_scene::pack::error::PackError::BuildingWithoutPlanes::key: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::CityKeyShared
+pub pixtuoid_scene::pack::error::PackError::CityKeyShared::key: char
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::CityMissingMaterial
+pub pixtuoid_scene::pack::error::PackError::CityMissingMaterial::material: pixtuoid_scene::pack::Material
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::CityUnknownMaterial
+pub pixtuoid_scene::pack::error::PackError::CityUnknownMaterial::name: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::Color
+pub pixtuoid_scene::pack::error::PackError::Color::key: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::Color::source: pixtuoid_scene::pack::error::ColorError
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::Decode
+pub pixtuoid_scene::pack::error::PackError::Decode::file: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::Decode::source: pixtuoid_scene::sprite::error::SpriteError
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::HairLayerFrames
+pub pixtuoid_scene::pack::error::PackError::HairLayerFrames::file: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::HairLayerHead
+pub pixtuoid_scene::pack::error::PackError::HairLayerHead::file: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::HairLayerHead::view: pixtuoid_scene::sprite::HeadView
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::HairstyleDensity
+pub pixtuoid_scene::pack::error::PackError::HairstyleDensity::key: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::HairstylesDiffer
+pub pixtuoid_scene::pack::error::PackError::HairstylesDiffer::first: pixtuoid_scene::sprite::format::Density
+pub pixtuoid_scene::pack::error::PackError::HairstylesDiffer::other: pixtuoid_scene::sprite::format::Density
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::IconFrames
+pub pixtuoid_scene::pack::error::PackError::IconFrames::file: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::JsonManifest
+pub pixtuoid_scene::pack::error::PackError::JsonManifest::message: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::MissingEmbeddedFrame
+pub pixtuoid_scene::pack::error::PackError::MissingEmbeddedFrame::file: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::MissingPiece
+pub pixtuoid_scene::pack::error::PackError::MissingPiece::piece: pixtuoid_scene::pack::Piece
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::NotOneChar
+pub pixtuoid_scene::pack::error::PackError::NotOneChar::key: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::NotOneChar::what: pixtuoid_scene::pack::error::KeySite
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::NotOpaque
+pub pixtuoid_scene::pack::error::PackError::NotOpaque::key: char
+pub pixtuoid_scene::pack::error::PackError::NotOpaque::what: pixtuoid_scene::pack::error::KeySite
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::PaletteAndRamp
+pub pixtuoid_scene::pack::error::PackError::PaletteAndRamp::key: char
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::PaletteTooLarge
+pub pixtuoid_scene::pack::error::PackError::PaletteTooLarge::keys: usize
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::RampBase
+pub pixtuoid_scene::pack::error::PackError::RampBase::key: char
+pub pixtuoid_scene::pack::error::PackError::RampBase::of: char
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::RampLevel
+pub pixtuoid_scene::pack::error::PackError::RampLevel::key: char
+pub pixtuoid_scene::pack::error::PackError::RampLevel::level: i8
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::TooFewFrames
+pub pixtuoid_scene::pack::error::PackError::TooFewFrames::have: usize
+pub pixtuoid_scene::pack::error::PackError::TooFewFrames::key: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::TooFewFrames::need: usize
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::UnknownAnimation
+pub pixtuoid_scene::pack::error::PackError::UnknownAnimation::key: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::VariantDoesNotRedraw
+pub pixtuoid_scene::pack::error::PackError::VariantDoesNotRedraw::base_frames: usize
+pub pixtuoid_scene::pack::error::PackError::VariantDoesNotRedraw::key: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::VariantDoesNotRedraw::variant_frames: usize
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::VariantPlanes
+pub pixtuoid_scene::pack::error::PackError::VariantPlanes::key: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::VariantSize
+pub pixtuoid_scene::pack::error::PackError::VariantSize::base_h: u16
+pub pixtuoid_scene::pack::error::PackError::VariantSize::base_w: u16
+pub pixtuoid_scene::pack::error::PackError::VariantSize::density: pixtuoid_scene::sprite::format::Density
+pub pixtuoid_scene::pack::error::PackError::VariantSize::key: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::VariantWithoutBase
+pub pixtuoid_scene::pack::error::PackError::VariantWithoutBase::base: alloc::string::String
+pub pixtuoid_scene::pack::error::PackError::VariantWithoutBase::key: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::WalkWithoutStride
+pub pixtuoid_scene::pack::error::PackError::WalkWithoutStride::walk: pixtuoid_scene::pack::Piece
+impl core::convert::From<pixtuoid_scene::pack::error::PackError> for pixtuoid_scene::pack::ArtError
+pub fn pixtuoid_scene::pack::ArtError::from(pixtuoid_scene::pack::error::PackError) -> Self
+impl core::error::Error for pixtuoid_scene::pack::error::PackError
+pub fn pixtuoid_scene::pack::error::PackError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for pixtuoid_scene::pack::error::PackError
+pub fn pixtuoid_scene::pack::error::PackError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for pixtuoid_scene::pack::error::PackError
+pub fn pixtuoid_scene::pack::error::PackError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for pixtuoid_scene::pack::error::PackError
+impl core::marker::Send for pixtuoid_scene::pack::error::PackError
+impl core::marker::Sync for pixtuoid_scene::pack::error::PackError
+impl core::marker::Unpin for pixtuoid_scene::pack::error::PackError
+impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::error::PackError
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::error::PackError
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::error::PackError
 #[non_exhaustive] pub enum pixtuoid_scene::pack::ArtError
 #[non_exhaustive] pub pixtuoid_scene::pack::ArtError::ClockFace
 pub pixtuoid_scene::pack::ArtError::ClockFace::density: pixtuoid_scene::sprite::format::Density
@@ -1049,9 +1197,9 @@ pub pixtuoid_scene::pack::ArtError::DeskMark::desk: pixtuoid_scene::pack::Desk
 pub pixtuoid_scene::pack::ArtError::DeskMark::prop: pixtuoid_scene::pack::DeskProp
 #[non_exhaustive] pub pixtuoid_scene::pack::ArtError::IconArt
 pub pixtuoid_scene::pack::ArtError::IconArt::icon: crate::display::Icon
-pub pixtuoid_scene::pack::ArtError::Pack(pixtuoid_scene::sprite::error::PackError)
-impl core::convert::From<pixtuoid_scene::sprite::error::PackError> for pixtuoid_scene::pack::ArtError
-pub fn pixtuoid_scene::pack::ArtError::from(pixtuoid_scene::sprite::error::PackError) -> Self
+pub pixtuoid_scene::pack::ArtError::Pack(pixtuoid_scene::pack::error::PackError)
+impl core::convert::From<pixtuoid_scene::pack::error::PackError> for pixtuoid_scene::pack::ArtError
+pub fn pixtuoid_scene::pack::ArtError::from(pixtuoid_scene::pack::error::PackError) -> Self
 impl core::error::Error for pixtuoid_scene::pack::ArtError
 pub fn pixtuoid_scene::pack::ArtError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Debug for pixtuoid_scene::pack::ArtError
@@ -1117,10 +1265,172 @@ impl core::marker::Unpin for pixtuoid_scene::pack::DeskProp
 impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::DeskProp
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::DeskProp
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::DeskProp
+pub enum pixtuoid_scene::pack::Material
+pub pixtuoid_scene::pack::Material::Detail
+pub pixtuoid_scene::pack::Material::Facade
+pub pixtuoid_scene::pack::Material::Glass
+pub pixtuoid_scene::pack::Material::Mullion
+pub pixtuoid_scene::pack::Material::Roof
+pub pixtuoid_scene::pack::Material::Shade
+pub pixtuoid_scene::pack::Material::Sign
+impl core::clone::Clone for pixtuoid_scene::pack::Material
+pub fn pixtuoid_scene::pack::Material::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::pack::Material
+impl core::cmp::Ord for pixtuoid_scene::pack::Material
+pub fn pixtuoid_scene::pack::Material::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for pixtuoid_scene::pack::Material
+pub fn pixtuoid_scene::pack::Material::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for pixtuoid_scene::pack::Material
+pub fn pixtuoid_scene::pack::Material::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for pixtuoid_scene::pack::Material
+pub fn pixtuoid_scene::pack::Material::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::pack::Material
+pub fn pixtuoid_scene::pack::Material::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_scene::pack::Material
+impl core::marker::StructuralPartialEq for pixtuoid_scene::pack::Material
+impl core::marker::Freeze for pixtuoid_scene::pack::Material
+impl core::marker::Send for pixtuoid_scene::pack::Material
+impl core::marker::Sync for pixtuoid_scene::pack::Material
+impl core::marker::Unpin for pixtuoid_scene::pack::Material
+impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::Material
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::Material
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::Material
+pub enum pixtuoid_scene::pack::Piece
+pub pixtuoid_scene::pack::Piece::BackCouch
+pub pixtuoid_scene::pack::Piece::Bookshelf
+pub pixtuoid_scene::pack::Piece::BulletinBoard
+pub pixtuoid_scene::pack::Piece::CatSit
+pub pixtuoid_scene::pack::Piece::CatSleep
+pub pixtuoid_scene::pack::Piece::CatWalk
+pub pixtuoid_scene::pack::Piece::CoatRack
+pub pixtuoid_scene::pack::Piece::Desk
+pub pixtuoid_scene::pack::Piece::DeskChair
+pub pixtuoid_scene::pack::Piece::DeskCup
+pub pixtuoid_scene::pack::Piece::DeskFront
+pub pixtuoid_scene::pack::Piece::DeskNorth
+pub pixtuoid_scene::pack::Piece::DogSit
+pub pixtuoid_scene::pack::Piece::DogSleep
+pub pixtuoid_scene::pack::Piece::DogWalk
+pub pixtuoid_scene::pack::Piece::Door
+pub pixtuoid_scene::pack::Piece::ExitSign
+pub pixtuoid_scene::pack::Piece::FilingCabinet
+pub pixtuoid_scene::pack::Piece::FishTank
+pub pixtuoid_scene::pack::Piece::FloorLamp
+pub pixtuoid_scene::pack::Piece::HoldingCoffee
+pub pixtuoid_scene::pack::Piece::KitchenIsland
+pub pixtuoid_scene::pack::Piece::LobsterRest
+pub pixtuoid_scene::pack::Piece::LobsterWalk
+pub pixtuoid_scene::pack::Piece::MeetingChair
+pub pixtuoid_scene::pack::Piece::MeetingScreen
+pub pixtuoid_scene::pack::Piece::MeetingSofa
+pub pixtuoid_scene::pack::Piece::MeetingSofaNorth
+pub pixtuoid_scene::pack::Piece::MeetingTable
+pub pixtuoid_scene::pack::Piece::NoticeBoard
+pub pixtuoid_scene::pack::Piece::Pantry
+pub pixtuoid_scene::pack::Piece::PantryBin
+pub pixtuoid_scene::pack::Piece::PantrySmall
+pub pixtuoid_scene::pack::Piece::PhoneBooth
+pub pixtuoid_scene::pack::Piece::Plant
+pub pixtuoid_scene::pack::Piece::PlantFlower
+pub pixtuoid_scene::pack::Piece::PlantSucculent
+pub pixtuoid_scene::pack::Piece::PlantTall
+pub pixtuoid_scene::pack::Piece::Printer
+pub pixtuoid_scene::pack::Piece::Seated
+pub pixtuoid_scene::pack::Piece::SeatedBack
+pub pixtuoid_scene::pack::Piece::SeatedSleeping
+pub pixtuoid_scene::pack::Piece::SeatedSleepingAlt
+pub pixtuoid_scene::pack::Piece::SideSeated
+pub pixtuoid_scene::pack::Piece::SideTable
+pub pixtuoid_scene::pack::Piece::SnackShelf
+pub pixtuoid_scene::pack::Piece::Standing
+pub pixtuoid_scene::pack::Piece::StandingDesk
+pub pixtuoid_scene::pack::Piece::TokenSheet
+pub pixtuoid_scene::pack::Piece::TokenTower
+pub pixtuoid_scene::pack::Piece::TvStand
+pub pixtuoid_scene::pack::Piece::Typing
+pub pixtuoid_scene::pack::Piece::TypingBack
+pub pixtuoid_scene::pack::Piece::VendingMachine
+pub pixtuoid_scene::pack::Piece::Walking
+pub pixtuoid_scene::pack::Piece::WalkingBack
+pub pixtuoid_scene::pack::Piece::WalkingCoffee
+pub pixtuoid_scene::pack::Piece::WallClock
+pub pixtuoid_scene::pack::Piece::WaterCooler
+pub pixtuoid_scene::pack::Piece::Whiteboard
+impl core::clone::Clone for pixtuoid_scene::pack::Piece
+pub fn pixtuoid_scene::pack::Piece::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::pack::Piece
+impl core::cmp::Ord for pixtuoid_scene::pack::Piece
+pub fn pixtuoid_scene::pack::Piece::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for pixtuoid_scene::pack::Piece
+pub fn pixtuoid_scene::pack::Piece::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for pixtuoid_scene::pack::Piece
+pub fn pixtuoid_scene::pack::Piece::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::convert::From<pixtuoid_scene::pack::Piece> for &'static str
+pub fn &'static str::from(pixtuoid_scene::pack::Piece) -> &'static str
+impl core::convert::TryFrom<&str> for pixtuoid_scene::pack::Piece
+pub type pixtuoid_scene::pack::Piece::Error = strum::ParseError
+pub fn pixtuoid_scene::pack::Piece::try_from(&str) -> core::result::Result<pixtuoid_scene::pack::Piece, <Self as core::convert::TryFrom<&str>>::Error>
+impl core::fmt::Debug for pixtuoid_scene::pack::Piece
+pub fn pixtuoid_scene::pack::Piece::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::pack::Piece
+pub fn pixtuoid_scene::pack::Piece::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_scene::pack::Piece
+impl core::marker::StructuralPartialEq for pixtuoid_scene::pack::Piece
+impl core::str::traits::FromStr for pixtuoid_scene::pack::Piece
+pub type pixtuoid_scene::pack::Piece::Err = strum::ParseError
+pub fn pixtuoid_scene::pack::Piece::from_str(&str) -> core::result::Result<pixtuoid_scene::pack::Piece, <Self as core::str::traits::FromStr>::Err>
+impl enum_map::internal::Enum for pixtuoid_scene::pack::Piece
+pub type pixtuoid_scene::pack::Piece::Array<__EnumMapInternalV> = [__EnumMapInternalV; 60]
+pub fn pixtuoid_scene::pack::Piece::from_usize(usize) -> Self
+pub fn pixtuoid_scene::pack::Piece::into_usize(self) -> usize
+impl strum::VariantArray for pixtuoid_scene::pack::Piece
+pub const pixtuoid_scene::pack::Piece::VARIANTS: &'static [Self]
+impl<'_derivative_strum> core::convert::From<&'_derivative_strum pixtuoid_scene::pack::Piece> for &'static str
+pub fn &'static str::from(&'_derivative_strum pixtuoid_scene::pack::Piece) -> &'static str
+impl core::marker::Freeze for pixtuoid_scene::pack::Piece
+impl core::marker::Send for pixtuoid_scene::pack::Piece
+impl core::marker::Sync for pixtuoid_scene::pack::Piece
+impl core::marker::Unpin for pixtuoid_scene::pack::Piece
+impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::Piece
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::Piece
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::Piece
+pub enum pixtuoid_scene::pack::Walk
+pub pixtuoid_scene::pack::Walk::CatWalk
+pub pixtuoid_scene::pack::Walk::DogWalk
+pub pixtuoid_scene::pack::Walk::LobsterWalk
+pub pixtuoid_scene::pack::Walk::Walking
+pub pixtuoid_scene::pack::Walk::WalkingBack
+pub pixtuoid_scene::pack::Walk::WalkingCoffee
+impl pixtuoid_scene::pack::Walk
+pub fn pixtuoid_scene::pack::Walk::piece(self) -> pixtuoid_scene::pack::Piece
+impl core::clone::Clone for pixtuoid_scene::pack::Walk
+pub fn pixtuoid_scene::pack::Walk::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::pack::Walk
+impl core::cmp::PartialEq for pixtuoid_scene::pack::Walk
+pub fn pixtuoid_scene::pack::Walk::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::pack::Walk
+pub fn pixtuoid_scene::pack::Walk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::pack::Walk
+pub fn pixtuoid_scene::pack::Walk::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_scene::pack::Walk
+impl core::marker::StructuralPartialEq for pixtuoid_scene::pack::Walk
+impl enum_map::internal::Enum for pixtuoid_scene::pack::Walk
+pub type pixtuoid_scene::pack::Walk::Array<__EnumMapInternalV> = [__EnumMapInternalV; 6]
+pub fn pixtuoid_scene::pack::Walk::from_usize(usize) -> Self
+pub fn pixtuoid_scene::pack::Walk::into_usize(self) -> usize
+impl strum::VariantArray for pixtuoid_scene::pack::Walk
+pub const pixtuoid_scene::pack::Walk::VARIANTS: &'static [Self]
+impl core::marker::Freeze for pixtuoid_scene::pack::Walk
+impl core::marker::Send for pixtuoid_scene::pack::Walk
+impl core::marker::Sync for pixtuoid_scene::pack::Walk
+impl core::marker::Unpin for pixtuoid_scene::pack::Walk
+impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::Walk
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::Walk
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::Walk
 pub struct pixtuoid_scene::pack::OfficeArt
 impl pixtuoid_scene::pack::OfficeArt
 pub fn pixtuoid_scene::pack::OfficeArt::max_density_variant(&self) -> pixtuoid_scene::sprite::format::Density
-pub fn pixtuoid_scene::pack::OfficeArt::piece(&self, pixtuoid_scene::sprite::format::Piece) -> &pixtuoid_scene::sprite::Sprite
+pub fn pixtuoid_scene::pack::OfficeArt::piece(&self, pixtuoid_scene::pack::Piece) -> &pixtuoid_scene::sprite::Sprite
 impl core::clone::Clone for pixtuoid_scene::pack::OfficeArt
 pub fn pixtuoid_scene::pack::OfficeArt::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::pack::OfficeArt
@@ -1132,6 +1442,18 @@ impl core::marker::Unpin for pixtuoid_scene::pack::OfficeArt
 impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::OfficeArt
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::OfficeArt
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::OfficeArt
+pub struct pixtuoid_scene::pack::Pack
+impl core::clone::Clone for pixtuoid_scene::pack::Pack
+pub fn pixtuoid_scene::pack::Pack::clone(&self) -> Self
+impl core::fmt::Debug for pixtuoid_scene::pack::Pack
+pub fn pixtuoid_scene::pack::Pack::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for pixtuoid_scene::pack::Pack
+impl core::marker::Send for pixtuoid_scene::pack::Pack
+impl core::marker::Sync for pixtuoid_scene::pack::Pack
+impl core::marker::Unpin for pixtuoid_scene::pack::Pack
+impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::Pack
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::Pack
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::Pack
 pub fn pixtuoid_scene::pack::load_bundled_pack() -> core::result::Result<pixtuoid_scene::pack::OfficeArt, pixtuoid_scene::pack::ArtError>
 pub mod pixtuoid_scene::pathfind
 pub struct pixtuoid_scene::pathfind::AStarRouter
@@ -1166,9 +1488,9 @@ impl pixtuoid_scene::pet::PetKind
 pub const pixtuoid_scene::pet::PetKind::ALL: &'static [pixtuoid_scene::pet::PetKind]
 pub fn pixtuoid_scene::pet::PetKind::default_name(self) -> &'static str
 pub fn pixtuoid_scene::pet::PetKind::from_config_name(&str) -> core::option::Option<Self>
-pub fn pixtuoid_scene::pet::PetKind::sit_anim(self) -> pixtuoid_scene::sprite::format::Piece
-pub fn pixtuoid_scene::pet::PetKind::sleep_anim(self) -> pixtuoid_scene::sprite::format::Piece
-pub fn pixtuoid_scene::pet::PetKind::walk_anim(self) -> pixtuoid_scene::sprite::format::Walk
+pub fn pixtuoid_scene::pet::PetKind::sit_anim(self) -> pixtuoid_scene::pack::Piece
+pub fn pixtuoid_scene::pet::PetKind::sleep_anim(self) -> pixtuoid_scene::pack::Piece
+pub fn pixtuoid_scene::pet::PetKind::walk_anim(self) -> pixtuoid_scene::pack::Walk
 impl core::clone::Clone for pixtuoid_scene::pet::PetKind
 pub fn pixtuoid_scene::pet::PetKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::pet::PetKind
@@ -1278,7 +1600,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::render_scale::Rend
 pub mod pixtuoid_scene::sim
 pub struct pixtuoid_scene::sim::CharacterPlacement
 pub pixtuoid_scene::sim::CharacterPlacement::agent_idx: usize
-pub pixtuoid_scene::sim::CharacterPlacement::anim_name: pixtuoid_scene::sprite::format::Piece
+pub pixtuoid_scene::sim::CharacterPlacement::anim_name: pixtuoid_scene::pack::Piece
 pub pixtuoid_scene::sim::CharacterPlacement::frame_idx: usize
 pub pixtuoid_scene::sim::CharacterPlacement::top_left: pixtuoid_scene::layout::Point
 impl core::clone::Clone for pixtuoid_scene::sim::CharacterPlacement
@@ -1360,56 +1682,6 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sky::WeatherPolicy
 pub fn pixtuoid_scene::sky::hour_is_day(f32) -> bool
 pub mod pixtuoid_scene::sprite
 pub mod pixtuoid_scene::sprite::error
-#[non_exhaustive] pub enum pixtuoid_scene::sprite::error::ColorError
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::ColorError::Hex
-pub pixtuoid_scene::sprite::error::ColorError::Hex::value: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::ColorError::Prefix
-pub pixtuoid_scene::sprite::error::ColorError::Prefix::value: alloc::string::String
-impl core::clone::Clone for pixtuoid_scene::sprite::error::ColorError
-pub fn pixtuoid_scene::sprite::error::ColorError::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_scene::sprite::error::ColorError
-impl core::cmp::PartialEq for pixtuoid_scene::sprite::error::ColorError
-pub fn pixtuoid_scene::sprite::error::ColorError::eq(&self, &Self) -> bool
-impl core::error::Error for pixtuoid_scene::sprite::error::ColorError
-impl core::fmt::Debug for pixtuoid_scene::sprite::error::ColorError
-pub fn pixtuoid_scene::sprite::error::ColorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for pixtuoid_scene::sprite::error::ColorError
-pub fn pixtuoid_scene::sprite::error::ColorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for pixtuoid_scene::sprite::error::ColorError
-impl core::marker::Freeze for pixtuoid_scene::sprite::error::ColorError
-impl core::marker::Send for pixtuoid_scene::sprite::error::ColorError
-impl core::marker::Sync for pixtuoid_scene::sprite::error::ColorError
-impl core::marker::Unpin for pixtuoid_scene::sprite::error::ColorError
-impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::error::ColorError
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::error::ColorError
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::error::ColorError
-#[non_exhaustive] pub enum pixtuoid_scene::sprite::error::KeySite
-pub pixtuoid_scene::sprite::error::KeySite::CharacterOutline
-pub pixtuoid_scene::sprite::error::KeySite::CityMaterial
-pub pixtuoid_scene::sprite::error::KeySite::Palette
-pub pixtuoid_scene::sprite::error::KeySite::Ramp
-pub pixtuoid_scene::sprite::error::KeySite::RampBase
-impl core::clone::Clone for pixtuoid_scene::sprite::error::KeySite
-pub fn pixtuoid_scene::sprite::error::KeySite::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_scene::sprite::error::KeySite
-impl core::cmp::PartialEq for pixtuoid_scene::sprite::error::KeySite
-pub fn pixtuoid_scene::sprite::error::KeySite::eq(&self, &Self) -> bool
-impl core::error::Error for pixtuoid_scene::sprite::error::KeySite
-impl core::fmt::Debug for pixtuoid_scene::sprite::error::KeySite
-pub fn pixtuoid_scene::sprite::error::KeySite::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for pixtuoid_scene::sprite::error::KeySite
-pub fn pixtuoid_scene::sprite::error::KeySite::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for pixtuoid_scene::sprite::error::KeySite
-pub fn pixtuoid_scene::sprite::error::KeySite::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for pixtuoid_scene::sprite::error::KeySite
-impl core::marker::StructuralPartialEq for pixtuoid_scene::sprite::error::KeySite
-impl core::marker::Freeze for pixtuoid_scene::sprite::error::KeySite
-impl core::marker::Send for pixtuoid_scene::sprite::error::KeySite
-impl core::marker::Sync for pixtuoid_scene::sprite::error::KeySite
-impl core::marker::Unpin for pixtuoid_scene::sprite::error::KeySite
-impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::error::KeySite
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::error::KeySite
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::error::KeySite
 #[non_exhaustive] pub enum pixtuoid_scene::sprite::error::LineError
 pub pixtuoid_scene::sprite::error::LineError::DataBeforeFrame
 pub pixtuoid_scene::sprite::error::LineError::DuplicateMark
@@ -1460,103 +1732,6 @@ impl core::marker::Unpin for pixtuoid_scene::sprite::error::LineError
 impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::error::LineError
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::error::LineError
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::error::LineError
-#[non_exhaustive] pub enum pixtuoid_scene::sprite::error::PackError
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::BuildingDensity
-pub pixtuoid_scene::sprite::error::PackError::BuildingDensity::key: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::BuildingFrames
-pub pixtuoid_scene::sprite::error::PackError::BuildingFrames::file: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::BuildingOutsideMaterials
-pub pixtuoid_scene::sprite::error::PackError::BuildingOutsideMaterials::file: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::BuildingOutsideMaterials::x: usize
-pub pixtuoid_scene::sprite::error::PackError::BuildingOutsideMaterials::y: usize
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::BuildingPlane
-pub pixtuoid_scene::sprite::error::PackError::BuildingPlane::key: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::BuildingPlane::plane: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::BuildingWithoutPlanes
-pub pixtuoid_scene::sprite::error::PackError::BuildingWithoutPlanes::key: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::CityKeyShared
-pub pixtuoid_scene::sprite::error::PackError::CityKeyShared::key: char
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::CityMissingMaterial
-pub pixtuoid_scene::sprite::error::PackError::CityMissingMaterial::material: pixtuoid_scene::sprite::format::Material
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::CityUnknownMaterial
-pub pixtuoid_scene::sprite::error::PackError::CityUnknownMaterial::name: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::Color
-pub pixtuoid_scene::sprite::error::PackError::Color::key: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::Color::source: pixtuoid_scene::sprite::error::ColorError
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::Decode
-pub pixtuoid_scene::sprite::error::PackError::Decode::file: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::Decode::source: pixtuoid_scene::sprite::error::SpriteError
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::HairLayerFrames
-pub pixtuoid_scene::sprite::error::PackError::HairLayerFrames::file: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::HairLayerHead
-pub pixtuoid_scene::sprite::error::PackError::HairLayerHead::file: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::HairLayerHead::view: pixtuoid_scene::sprite::HeadView
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::HairstyleDensity
-pub pixtuoid_scene::sprite::error::PackError::HairstyleDensity::key: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::HairstylesDiffer
-pub pixtuoid_scene::sprite::error::PackError::HairstylesDiffer::first: pixtuoid_scene::sprite::format::Density
-pub pixtuoid_scene::sprite::error::PackError::HairstylesDiffer::other: pixtuoid_scene::sprite::format::Density
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::IconFrames
-pub pixtuoid_scene::sprite::error::PackError::IconFrames::file: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::JsonManifest
-pub pixtuoid_scene::sprite::error::PackError::JsonManifest::message: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::MissingEmbeddedFrame
-pub pixtuoid_scene::sprite::error::PackError::MissingEmbeddedFrame::file: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::MissingPiece
-pub pixtuoid_scene::sprite::error::PackError::MissingPiece::piece: pixtuoid_scene::sprite::format::Piece
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::NotOneChar
-pub pixtuoid_scene::sprite::error::PackError::NotOneChar::key: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::NotOneChar::what: pixtuoid_scene::sprite::error::KeySite
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::NotOpaque
-pub pixtuoid_scene::sprite::error::PackError::NotOpaque::key: char
-pub pixtuoid_scene::sprite::error::PackError::NotOpaque::what: pixtuoid_scene::sprite::error::KeySite
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::PaletteAndRamp
-pub pixtuoid_scene::sprite::error::PackError::PaletteAndRamp::key: char
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::PaletteTooLarge
-pub pixtuoid_scene::sprite::error::PackError::PaletteTooLarge::keys: usize
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::RampBase
-pub pixtuoid_scene::sprite::error::PackError::RampBase::key: char
-pub pixtuoid_scene::sprite::error::PackError::RampBase::of: char
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::RampLevel
-pub pixtuoid_scene::sprite::error::PackError::RampLevel::key: char
-pub pixtuoid_scene::sprite::error::PackError::RampLevel::level: i8
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::TooFewFrames
-pub pixtuoid_scene::sprite::error::PackError::TooFewFrames::have: usize
-pub pixtuoid_scene::sprite::error::PackError::TooFewFrames::key: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::TooFewFrames::need: usize
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::UnknownAnimation
-pub pixtuoid_scene::sprite::error::PackError::UnknownAnimation::key: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::VariantDoesNotRedraw
-pub pixtuoid_scene::sprite::error::PackError::VariantDoesNotRedraw::base_frames: usize
-pub pixtuoid_scene::sprite::error::PackError::VariantDoesNotRedraw::key: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::VariantDoesNotRedraw::variant_frames: usize
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::VariantPlanes
-pub pixtuoid_scene::sprite::error::PackError::VariantPlanes::key: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::VariantSize
-pub pixtuoid_scene::sprite::error::PackError::VariantSize::base_h: u16
-pub pixtuoid_scene::sprite::error::PackError::VariantSize::base_w: u16
-pub pixtuoid_scene::sprite::error::PackError::VariantSize::density: pixtuoid_scene::sprite::format::Density
-pub pixtuoid_scene::sprite::error::PackError::VariantSize::key: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::VariantWithoutBase
-pub pixtuoid_scene::sprite::error::PackError::VariantWithoutBase::base: alloc::string::String
-pub pixtuoid_scene::sprite::error::PackError::VariantWithoutBase::key: alloc::string::String
-#[non_exhaustive] pub pixtuoid_scene::sprite::error::PackError::WalkWithoutStride
-pub pixtuoid_scene::sprite::error::PackError::WalkWithoutStride::walk: pixtuoid_scene::sprite::format::Piece
-impl core::convert::From<pixtuoid_scene::sprite::error::PackError> for pixtuoid_scene::pack::ArtError
-pub fn pixtuoid_scene::pack::ArtError::from(pixtuoid_scene::sprite::error::PackError) -> Self
-impl core::error::Error for pixtuoid_scene::sprite::error::PackError
-pub fn pixtuoid_scene::sprite::error::PackError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
-impl core::fmt::Debug for pixtuoid_scene::sprite::error::PackError
-pub fn pixtuoid_scene::sprite::error::PackError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for pixtuoid_scene::sprite::error::PackError
-pub fn pixtuoid_scene::sprite::error::PackError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_scene::sprite::error::PackError
-impl core::marker::Send for pixtuoid_scene::sprite::error::PackError
-impl core::marker::Sync for pixtuoid_scene::sprite::error::PackError
-impl core::marker::Unpin for pixtuoid_scene::sprite::error::PackError
-impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::error::PackError
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::error::PackError
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::error::PackError
 #[non_exhaustive] pub enum pixtuoid_scene::sprite::error::SpriteError
 #[non_exhaustive] pub pixtuoid_scene::sprite::error::SpriteError::Line
 pub pixtuoid_scene::sprite::error::SpriteError::Line::kind: pixtuoid_scene::sprite::error::LineError
@@ -1581,168 +1756,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::error::SpriteError
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::error::SpriteError
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::error::SpriteError
 pub mod pixtuoid_scene::sprite::format
-pub enum pixtuoid_scene::sprite::format::Material
-pub pixtuoid_scene::sprite::format::Material::Detail
-pub pixtuoid_scene::sprite::format::Material::Facade
-pub pixtuoid_scene::sprite::format::Material::Glass
-pub pixtuoid_scene::sprite::format::Material::Mullion
-pub pixtuoid_scene::sprite::format::Material::Roof
-pub pixtuoid_scene::sprite::format::Material::Shade
-pub pixtuoid_scene::sprite::format::Material::Sign
-impl core::clone::Clone for pixtuoid_scene::sprite::format::Material
-pub fn pixtuoid_scene::sprite::format::Material::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_scene::sprite::format::Material
-impl core::cmp::Ord for pixtuoid_scene::sprite::format::Material
-pub fn pixtuoid_scene::sprite::format::Material::cmp(&self, &Self) -> core::cmp::Ordering
-impl core::cmp::PartialEq for pixtuoid_scene::sprite::format::Material
-pub fn pixtuoid_scene::sprite::format::Material::eq(&self, &Self) -> bool
-impl core::cmp::PartialOrd for pixtuoid_scene::sprite::format::Material
-pub fn pixtuoid_scene::sprite::format::Material::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for pixtuoid_scene::sprite::format::Material
-pub fn pixtuoid_scene::sprite::format::Material::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for pixtuoid_scene::sprite::format::Material
-pub fn pixtuoid_scene::sprite::format::Material::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for pixtuoid_scene::sprite::format::Material
-impl core::marker::StructuralPartialEq for pixtuoid_scene::sprite::format::Material
-impl core::marker::Freeze for pixtuoid_scene::sprite::format::Material
-impl core::marker::Send for pixtuoid_scene::sprite::format::Material
-impl core::marker::Sync for pixtuoid_scene::sprite::format::Material
-impl core::marker::Unpin for pixtuoid_scene::sprite::format::Material
-impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::format::Material
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::format::Material
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::format::Material
-pub enum pixtuoid_scene::sprite::format::Piece
-pub pixtuoid_scene::sprite::format::Piece::BackCouch
-pub pixtuoid_scene::sprite::format::Piece::Bookshelf
-pub pixtuoid_scene::sprite::format::Piece::BulletinBoard
-pub pixtuoid_scene::sprite::format::Piece::CatSit
-pub pixtuoid_scene::sprite::format::Piece::CatSleep
-pub pixtuoid_scene::sprite::format::Piece::CatWalk
-pub pixtuoid_scene::sprite::format::Piece::CoatRack
-pub pixtuoid_scene::sprite::format::Piece::Desk
-pub pixtuoid_scene::sprite::format::Piece::DeskChair
-pub pixtuoid_scene::sprite::format::Piece::DeskCup
-pub pixtuoid_scene::sprite::format::Piece::DeskFront
-pub pixtuoid_scene::sprite::format::Piece::DeskNorth
-pub pixtuoid_scene::sprite::format::Piece::DogSit
-pub pixtuoid_scene::sprite::format::Piece::DogSleep
-pub pixtuoid_scene::sprite::format::Piece::DogWalk
-pub pixtuoid_scene::sprite::format::Piece::Door
-pub pixtuoid_scene::sprite::format::Piece::ExitSign
-pub pixtuoid_scene::sprite::format::Piece::FilingCabinet
-pub pixtuoid_scene::sprite::format::Piece::FishTank
-pub pixtuoid_scene::sprite::format::Piece::FloorLamp
-pub pixtuoid_scene::sprite::format::Piece::HoldingCoffee
-pub pixtuoid_scene::sprite::format::Piece::KitchenIsland
-pub pixtuoid_scene::sprite::format::Piece::LobsterRest
-pub pixtuoid_scene::sprite::format::Piece::LobsterWalk
-pub pixtuoid_scene::sprite::format::Piece::MeetingChair
-pub pixtuoid_scene::sprite::format::Piece::MeetingScreen
-pub pixtuoid_scene::sprite::format::Piece::MeetingSofa
-pub pixtuoid_scene::sprite::format::Piece::MeetingSofaNorth
-pub pixtuoid_scene::sprite::format::Piece::MeetingTable
-pub pixtuoid_scene::sprite::format::Piece::NoticeBoard
-pub pixtuoid_scene::sprite::format::Piece::Pantry
-pub pixtuoid_scene::sprite::format::Piece::PantryBin
-pub pixtuoid_scene::sprite::format::Piece::PantrySmall
-pub pixtuoid_scene::sprite::format::Piece::PhoneBooth
-pub pixtuoid_scene::sprite::format::Piece::Plant
-pub pixtuoid_scene::sprite::format::Piece::PlantFlower
-pub pixtuoid_scene::sprite::format::Piece::PlantSucculent
-pub pixtuoid_scene::sprite::format::Piece::PlantTall
-pub pixtuoid_scene::sprite::format::Piece::Printer
-pub pixtuoid_scene::sprite::format::Piece::Seated
-pub pixtuoid_scene::sprite::format::Piece::SeatedBack
-pub pixtuoid_scene::sprite::format::Piece::SeatedSleeping
-pub pixtuoid_scene::sprite::format::Piece::SeatedSleepingAlt
-pub pixtuoid_scene::sprite::format::Piece::SideSeated
-pub pixtuoid_scene::sprite::format::Piece::SideTable
-pub pixtuoid_scene::sprite::format::Piece::SnackShelf
-pub pixtuoid_scene::sprite::format::Piece::Standing
-pub pixtuoid_scene::sprite::format::Piece::StandingDesk
-pub pixtuoid_scene::sprite::format::Piece::TokenSheet
-pub pixtuoid_scene::sprite::format::Piece::TokenTower
-pub pixtuoid_scene::sprite::format::Piece::TvStand
-pub pixtuoid_scene::sprite::format::Piece::Typing
-pub pixtuoid_scene::sprite::format::Piece::TypingBack
-pub pixtuoid_scene::sprite::format::Piece::VendingMachine
-pub pixtuoid_scene::sprite::format::Piece::Walking
-pub pixtuoid_scene::sprite::format::Piece::WalkingBack
-pub pixtuoid_scene::sprite::format::Piece::WalkingCoffee
-pub pixtuoid_scene::sprite::format::Piece::WallClock
-pub pixtuoid_scene::sprite::format::Piece::WaterCooler
-pub pixtuoid_scene::sprite::format::Piece::Whiteboard
-impl core::clone::Clone for pixtuoid_scene::sprite::format::Piece
-pub fn pixtuoid_scene::sprite::format::Piece::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_scene::sprite::format::Piece
-impl core::cmp::Ord for pixtuoid_scene::sprite::format::Piece
-pub fn pixtuoid_scene::sprite::format::Piece::cmp(&self, &Self) -> core::cmp::Ordering
-impl core::cmp::PartialEq for pixtuoid_scene::sprite::format::Piece
-pub fn pixtuoid_scene::sprite::format::Piece::eq(&self, &Self) -> bool
-impl core::cmp::PartialOrd for pixtuoid_scene::sprite::format::Piece
-pub fn pixtuoid_scene::sprite::format::Piece::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
-impl core::convert::From<pixtuoid_scene::sprite::format::Piece> for &'static str
-pub fn &'static str::from(pixtuoid_scene::sprite::format::Piece) -> &'static str
-impl core::convert::TryFrom<&str> for pixtuoid_scene::sprite::format::Piece
-pub type pixtuoid_scene::sprite::format::Piece::Error = strum::ParseError
-pub fn pixtuoid_scene::sprite::format::Piece::try_from(&str) -> core::result::Result<pixtuoid_scene::sprite::format::Piece, <Self as core::convert::TryFrom<&str>>::Error>
-impl core::fmt::Debug for pixtuoid_scene::sprite::format::Piece
-pub fn pixtuoid_scene::sprite::format::Piece::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for pixtuoid_scene::sprite::format::Piece
-pub fn pixtuoid_scene::sprite::format::Piece::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for pixtuoid_scene::sprite::format::Piece
-impl core::marker::StructuralPartialEq for pixtuoid_scene::sprite::format::Piece
-impl core::str::traits::FromStr for pixtuoid_scene::sprite::format::Piece
-pub type pixtuoid_scene::sprite::format::Piece::Err = strum::ParseError
-pub fn pixtuoid_scene::sprite::format::Piece::from_str(&str) -> core::result::Result<pixtuoid_scene::sprite::format::Piece, <Self as core::str::traits::FromStr>::Err>
-impl enum_map::internal::Enum for pixtuoid_scene::sprite::format::Piece
-pub type pixtuoid_scene::sprite::format::Piece::Array<__EnumMapInternalV> = [__EnumMapInternalV; 60]
-pub fn pixtuoid_scene::sprite::format::Piece::from_usize(usize) -> Self
-pub fn pixtuoid_scene::sprite::format::Piece::into_usize(self) -> usize
-impl strum::VariantArray for pixtuoid_scene::sprite::format::Piece
-pub const pixtuoid_scene::sprite::format::Piece::VARIANTS: &'static [Self]
-impl<'_derivative_strum> core::convert::From<&'_derivative_strum pixtuoid_scene::sprite::format::Piece> for &'static str
-pub fn &'static str::from(&'_derivative_strum pixtuoid_scene::sprite::format::Piece) -> &'static str
-impl core::marker::Freeze for pixtuoid_scene::sprite::format::Piece
-impl core::marker::Send for pixtuoid_scene::sprite::format::Piece
-impl core::marker::Sync for pixtuoid_scene::sprite::format::Piece
-impl core::marker::Unpin for pixtuoid_scene::sprite::format::Piece
-impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::format::Piece
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::format::Piece
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::format::Piece
-pub enum pixtuoid_scene::sprite::format::Walk
-pub pixtuoid_scene::sprite::format::Walk::CatWalk
-pub pixtuoid_scene::sprite::format::Walk::DogWalk
-pub pixtuoid_scene::sprite::format::Walk::LobsterWalk
-pub pixtuoid_scene::sprite::format::Walk::Walking
-pub pixtuoid_scene::sprite::format::Walk::WalkingBack
-pub pixtuoid_scene::sprite::format::Walk::WalkingCoffee
-impl pixtuoid_scene::sprite::format::Walk
-pub fn pixtuoid_scene::sprite::format::Walk::piece(self) -> pixtuoid_scene::sprite::format::Piece
-impl core::clone::Clone for pixtuoid_scene::sprite::format::Walk
-pub fn pixtuoid_scene::sprite::format::Walk::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_scene::sprite::format::Walk
-impl core::cmp::PartialEq for pixtuoid_scene::sprite::format::Walk
-pub fn pixtuoid_scene::sprite::format::Walk::eq(&self, &Self) -> bool
-impl core::fmt::Debug for pixtuoid_scene::sprite::format::Walk
-pub fn pixtuoid_scene::sprite::format::Walk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for pixtuoid_scene::sprite::format::Walk
-pub fn pixtuoid_scene::sprite::format::Walk::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for pixtuoid_scene::sprite::format::Walk
-impl core::marker::StructuralPartialEq for pixtuoid_scene::sprite::format::Walk
-impl enum_map::internal::Enum for pixtuoid_scene::sprite::format::Walk
-pub type pixtuoid_scene::sprite::format::Walk::Array<__EnumMapInternalV> = [__EnumMapInternalV; 6]
-pub fn pixtuoid_scene::sprite::format::Walk::from_usize(usize) -> Self
-pub fn pixtuoid_scene::sprite::format::Walk::into_usize(self) -> usize
-impl strum::VariantArray for pixtuoid_scene::sprite::format::Walk
-pub const pixtuoid_scene::sprite::format::Walk::VARIANTS: &'static [Self]
-impl core::marker::Freeze for pixtuoid_scene::sprite::format::Walk
-impl core::marker::Send for pixtuoid_scene::sprite::format::Walk
-impl core::marker::Sync for pixtuoid_scene::sprite::format::Walk
-impl core::marker::Unpin for pixtuoid_scene::sprite::format::Walk
-impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::format::Walk
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::format::Walk
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::format::Walk
 pub struct pixtuoid_scene::sprite::format::Density(_)
 impl pixtuoid_scene::sprite::format::Density
 pub const pixtuoid_scene::sprite::format::Density::ONE: Self
@@ -1774,18 +1787,6 @@ impl core::marker::Unpin for pixtuoid_scene::sprite::format::Density
 impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::format::Density
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::format::Density
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::format::Density
-pub struct pixtuoid_scene::sprite::format::Pack
-impl core::clone::Clone for pixtuoid_scene::sprite::format::Pack
-pub fn pixtuoid_scene::sprite::format::Pack::clone(&self) -> Self
-impl core::fmt::Debug for pixtuoid_scene::sprite::format::Pack
-pub fn pixtuoid_scene::sprite::format::Pack::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_scene::sprite::format::Pack
-impl core::marker::Send for pixtuoid_scene::sprite::format::Pack
-impl core::marker::Sync for pixtuoid_scene::sprite::format::Pack
-impl core::marker::Unpin for pixtuoid_scene::sprite::format::Pack
-impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::format::Pack
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::format::Pack
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::format::Pack
 #[non_exhaustive] pub enum pixtuoid_scene::sprite::HeadView
 pub pixtuoid_scene::sprite::HeadView::Back
 pub pixtuoid_scene::sprite::HeadView::Crown

@@ -127,12 +127,12 @@ pub(crate) enum StationArt {
     PantryCounter,
     SnackShelf,
     /// A corridor appliance, drawn from this piece.
-    Appliance(crate::sprite::format::Piece),
+    Appliance(crate::pack::Piece),
 }
 
 impl Station {
     pub(crate) fn art(self) -> StationArt {
-        use crate::sprite::format::Piece;
+        use crate::pack::Piece;
         match self {
             Station::PantryCounter => StationArt::PantryCounter,
             Station::SnackShelf => StationArt::SnackShelf,

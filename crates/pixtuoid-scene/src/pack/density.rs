@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU16;
 
 use crate::pack::OfficeArt;
-use crate::sprite::format::{Density, Piece};
+use crate::pack::Piece;
+use crate::sprite::format::Density;
 use crate::sprite::{Frame, RecolorableFrame, Sprite};
 
 use crate::render_scale::RenderScale;

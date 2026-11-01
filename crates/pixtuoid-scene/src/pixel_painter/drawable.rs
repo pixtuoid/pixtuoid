@@ -9,8 +9,8 @@
 use std::time::SystemTime;
 
 use crate::pack::OfficeArt;
+use crate::pack::Piece;
 use crate::sprite::blit::blit_frame;
-use crate::sprite::format::Piece;
 use crate::sprite::{Frame, Rgb, RgbBuffer};
 
 use crate::sim::DeskProps;

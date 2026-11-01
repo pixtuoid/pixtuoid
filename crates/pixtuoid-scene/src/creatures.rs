@@ -486,16 +486,16 @@ const fn longest_rest(rest_ms: u64) -> u64 {
 /// display name. The ONE place a new gateway registers its creature — `None` for
 /// non-gateway sources gates the whole mascot in the sim's `mascot_placements`.
 pub(crate) struct GatewayMascotDef {
-    pub walk: crate::sprite::format::Walk,
-    pub rest: crate::sprite::format::Piece,
+    pub walk: crate::pack::Walk,
+    pub rest: crate::pack::Piece,
     pub display_name: &'static str,
 }
 
 pub(crate) fn gateway_mascot_def(source: &str) -> Option<GatewayMascotDef> {
     match source {
         s if s == pixtuoid_core::source::openclaw::SOURCE_NAME => Some(GatewayMascotDef {
-            walk: crate::sprite::format::Walk::LobsterWalk,
-            rest: crate::sprite::format::Piece::LobsterRest,
+            walk: crate::pack::Walk::LobsterWalk,
+            rest: crate::pack::Piece::LobsterRest,
             display_name: "OpenClaw",
         }),
         _ => None,
@@ -593,7 +593,7 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use crate::pack::OfficeArt;
-    use crate::sprite::format::{Piece, Walk};
+    use crate::pack::{Piece, Walk};
     use pixtuoid_core::SceneState;
     use pixtuoid_core::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence};
 

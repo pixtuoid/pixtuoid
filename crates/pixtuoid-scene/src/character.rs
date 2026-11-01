@@ -3,7 +3,7 @@
 use std::time::SystemTime;
 
 use crate::pack::OfficeArt;
-use crate::sprite::format::Piece;
+use crate::pack::Piece;
 use crate::sprite::{Frame, Rgb};
 use pixtuoid_core::AgentSlot;
 

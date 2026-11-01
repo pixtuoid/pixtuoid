@@ -7,7 +7,7 @@
 //! `floor::FloorSession::step` to observe poses/positions without buying a
 //! pixel pass.
 
-use crate::sprite::format::{Piece, Walk};
+use crate::pack::{Piece, Walk};
 use pixtuoid_core::remote::cwd_basename;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;

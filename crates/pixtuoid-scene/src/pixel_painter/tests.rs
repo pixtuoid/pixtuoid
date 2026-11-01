@@ -9,6 +9,7 @@ use crate::display::pen::test_density;
 use crate::floor::{FloorInputs, PetInputs};
 use crate::layout::CHARACTER_SPRITE_W;
 use crate::layout::{HomeDesk, Point, Size, sort_row_at};
+use crate::pack::Piece;
 use crate::pack::desk_art_top;
 use crate::physics::LegProgress;
 use crate::pose;
@@ -19,7 +20,6 @@ use crate::sim::anchors::{
 use crate::sim::seat::{Seat, settle_seat};
 use crate::sim::{CharacterGlow, CharacterPlacement, SimInputs, SimStores, sim_step};
 use crate::sprite::Frame;
-use crate::sprite::format::Piece;
 use pixtuoid_core::state::{
     ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind, ToolUse,
 };
@@ -3520,7 +3520,7 @@ fn a_bubble_hangs_over_its_speakers_badge_in_both_looks() {
 fn a_pet_tied_with_an_agent_sorts_under_them_in_both_looks() {
     use crate::display::{HoverTarget, PieceKind};
     use crate::layout::{Bounds, Pivot, Point};
-    use crate::sprite::format::Piece as PackPiece;
+    use crate::pack::Piece as PackPiece;
     let (layout, pack, frames, _) =
         crate::display::compose::tests::sit_down(crate::layout::Facing::South, 2);
     let theme = crate::theme::theme_by_name("normal").expect("normal theme");
@@ -3616,7 +3616,7 @@ fn a_pet_tied_with_an_agent_sorts_under_them_in_both_looks() {
 #[test]
 fn the_classic_layers_creatures_under_characters_in_any_queue_order() {
     use crate::layout::Point;
-    use crate::sprite::format::Piece as PackPiece;
+    use crate::pack::Piece as PackPiece;
     let (layout, pack, frames, _) =
         crate::display::compose::tests::sit_down(crate::layout::Facing::South, 2);
     let theme = crate::theme::theme_by_name("normal").expect("normal theme");

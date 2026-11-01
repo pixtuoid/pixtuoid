@@ -1,9 +1,9 @@
 //! The cutaway's rasterizer: a frame's display list painted over its backdrop.
 
+use crate::pack::Piece as PackPiece;
 use crate::pack::{Desk, OfficeArt};
 use crate::sprite::RgbBuffer;
 use crate::sprite::blit::blit_frame_scaled;
-use crate::sprite::format::Piece as PackPiece;
 
 use crate::atmosphere::Carpet;
 use crate::cutaway::shade::{Ramp, fill, slab};
@@ -1567,7 +1567,7 @@ mod tests {
     fn a_lit_screen_relights_only_the_screen_keys() {
         let glass = crate::pack::SCREEN_GLASS_KEY;
         let text = crate::pack::SCREEN_TEXT_KEY;
-        let pack = crate::sprite::format::load_filled_pack(
+        let pack = crate::pack::load_filled_pack(
             &format!(
                 "[palette]\n\
                  \"{glass}\"=\"#1c2a36\"\n\"{text}\"=\"#34424e\"\n\

@@ -111,7 +111,7 @@ mod tests {
     fn the_glow_lands_on_the_desk_arts_monitor() {
         use crate::pack::{SCREEN_GLASS_KEY, SCREEN_TEXT_KEY};
         let pack = crate::pack::test_office();
-        let art = pack.piece(crate::sprite::format::Piece::DeskNorth).first();
+        let art = pack.piece(crate::pack::Piece::DeskNorth).first();
         let screen: Vec<Rgb> = [SCREEN_GLASS_KEY, SCREEN_TEXT_KEY]
             .iter()
             .map(|&k| {

@@ -553,7 +553,7 @@ mod tests {
     /// agent color keeps a shade of its own at every level a pack may declare.
     #[test]
     fn every_agent_color_keeps_a_distinct_shade_at_every_ramp_level() {
-        use crate::sprite::format::MAX_RAMP_LEVEL;
+        use crate::sprite::MAX_RAMP_LEVEL;
         let outfits = OUTFITS.iter().flat_map(|o| [o.shirt, o.pants]);
         let colors = HAIR_PRESETS
             .iter()

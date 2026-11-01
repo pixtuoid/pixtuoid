@@ -2,7 +2,7 @@
 //! furniture and waypoint kind in the office, plus THE table giving each its
 //! geometry. Kept separate so a new sprite kind doesn't churn the layout math.
 
-use crate::sprite::format::Piece;
+use crate::pack::Piece;
 
 use super::{DESK_FOOT_H, DESK_H, DESK_W, OBSTACLE_PAD_PX, Pivot, Point, Size, TIGHT_PAD_PX};
 

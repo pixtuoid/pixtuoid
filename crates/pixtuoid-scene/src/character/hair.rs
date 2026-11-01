@@ -3,8 +3,9 @@
 //! frame's head. A frame is dressed only at a density of 2 and up
 //! ([`dress_for`]), so the classic 1x art never is.
 
+use crate::pack::Hairstyle;
 use crate::pack::OfficeArt;
-use crate::sprite::format::{Density, Hairstyle};
+use crate::sprite::format::Density;
 use crate::sprite::{Frame, HeadMark, Pixel, Rgb, Sprite};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::id::{fnv1a, splitmix64};
@@ -175,7 +176,7 @@ mod tests {
     use super::*;
     use crate::display::pen::test_density;
     use crate::pack::validate::PieceKind;
-    use crate::sprite::format::{Piece, load_filled_pack};
+    use crate::pack::{Piece, load_filled_pack};
     use strum::VariantArray as _;
 
     const H: Rgb = Rgb {

@@ -403,7 +403,7 @@ pub(crate) enum PieceKind {
     /// Decor hung on the north band, blitted at its top-left `at`.
     Hung {
         at: crate::layout::Point,
-        sprite: crate::sprite::format::Piece,
+        sprite: crate::pack::Piece,
     },
     /// One segment of a room's wall run.
     WallSeg {
@@ -446,7 +446,7 @@ pub(crate) enum PieceKind {
     /// between (`push_sofa`).
     PropBand {
         at: crate::layout::Point,
-        sprite: crate::sprite::format::Piece,
+        sprite: crate::pack::Piece,
         rows: (u16, u16),
     },
     Table {
@@ -502,7 +502,7 @@ pub(crate) enum PieceKind {
 /// `at`, where the desk art's mark for it stands it, turned as its desk turns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct StoodProp {
-    pub(crate) sprite: crate::sprite::format::Piece,
+    pub(crate) sprite: crate::pack::Piece,
     pub(crate) frame: usize,
     pub(crate) at: (u16, u16),
     pub(crate) flip: Flip,
@@ -511,14 +511,14 @@ pub(crate) struct StoodProp {
 /// Which art a prop draws: a sprite's frame, turned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Art {
-    pub(crate) sprite: crate::sprite::format::Piece,
+    pub(crate) sprite: crate::pack::Piece,
     pub(crate) frame: usize,
     pub(crate) flip: Flip,
 }
 
 impl Art {
     /// `sprite`'s first frame, as drawn.
-    pub(crate) fn still(sprite: crate::sprite::format::Piece) -> Self {
+    pub(crate) fn still(sprite: crate::pack::Piece) -> Self {
         Self {
             sprite,
             frame: 0,

@@ -1358,7 +1358,7 @@ mod tests {
         let pet = HoverTarget::Pet(PetHover {
             kind: PetKind::Cat,
             centre: pixtuoid_scene::layout::Point { x: 0, y: 0 },
-            anim: pixtuoid_scene::sprite::format::Piece::CatSit,
+            anim: pixtuoid_scene::pack::Piece::CatSit,
         });
         let playing = PetState {
             petted_at: now,

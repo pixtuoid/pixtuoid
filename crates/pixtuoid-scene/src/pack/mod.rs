@@ -3,25 +3,32 @@
 //! the scene reads off them, each guaranteed by the parse.
 
 mod density;
+pub mod error;
+mod load;
 mod lookup;
+mod piece;
 #[cfg(test)]
 pub(crate) mod validate;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU16;
 
-use crate::sprite::Sprite;
-use crate::sprite::error::PackError;
 #[cfg(test)]
-use crate::sprite::format::load_pack_from_strings;
-use crate::sprite::format::{Density, Pack, Piece, load_pack_from_json};
+use crate::sprite::Palette;
+use crate::sprite::format::{Density, density_variant_name};
+use crate::sprite::{HeadView, Rgb, Sprite};
 use enum_map::EnumMap;
+use error::PackError;
+use load::load_pack_from_json;
+pub use piece::{Piece, Walk};
 use strum::VariantArray as _;
 
 use crate::display::Icon;
 use crate::render_scale::RenderScale;
 
 pub(crate) use density::{DenseFrame, densest, densest_frame};
+#[cfg(test)]
+pub(crate) use load::{frames_read_by, load_filled_pack, load_pack_from_strings};
 #[cfg(test)]
 pub(crate) use lookup::MONITOR_KEYS;
 pub(crate) use lookup::{
@@ -30,6 +37,329 @@ pub(crate) use lookup::{
     appliance_overrides, desk_art, desk_art_top, desk_mark, desk_prop_overrides, drawn_in,
     fixture_overrides, looping_frame_index, prop_left,
 };
+
+/// A loaded sprite pack: a palette, every [`Piece`] and the density variants
+/// that redraw them, the hairstyles that dress the characters, and the city
+/// behind the windows.
+#[derive(Debug, Clone)]
+pub struct Pack {
+    /// A pack that lacks a piece does not load.
+    pieces: EnumMap<Piece, Sprite>,
+    /// Each piece's density variants, each of which redraws it
+    /// ([`variant_redraws`](crate::sprite::format::variant_redraws)): one that
+    /// does not, does not load.
+    variants: EnumMap<Piece, BTreeMap<Density, Sprite>>,
+    /// A walk without one does not load.
+    strides: EnumMap<Walk, NonZeroU16>,
+    buildings: BTreeMap<String, Building>,
+    city_materials: CityMaterials,
+    hairstyles: BTreeMap<String, Hairstyle>,
+    character_outline: Rgb,
+    icons: BTreeMap<String, Sprite>,
+    /// [`Pack::density_variants`], counted once at load: a painter asks for it
+    /// every frame.
+    densities: Vec<Density>,
+}
+
+/// A material a `[buildings]` sprite is drawn in. A painter gives each its
+/// colour from the sky, the theme and the building's depth, so one drawing
+/// serves day and night alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Material {
+    /// The lit face of a wall.
+    Facade,
+    /// The face turned from the light.
+    Shade,
+    /// A roof line or cornice.
+    Roof,
+    /// A window's glass: each connected run of it is one window, lit or not.
+    Glass,
+    /// The frame between panes.
+    Mullion,
+    /// Rooftop plant: a tank, a mast, a unit.
+    Detail,
+    /// A sign's panel, lit after dark.
+    Sign,
+}
+
+impl Material {
+    /// Its name as `[city]` keys it.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Material::Facade => "facade",
+            Material::Shade => "shade",
+            Material::Roof => "roof",
+            Material::Glass => "glass",
+            Material::Mullion => "mullion",
+            Material::Detail => "detail",
+            Material::Sign => "sign",
+        }
+    }
+
+    fn from_name(name: &str) -> Option<Self> {
+        Material::ALL.into_iter().find(|m| m.name() == name)
+    }
+
+    /// Its place in [`Material::ALL`]; a new material fails to compile here
+    /// until it has one.
+    fn index(self) -> usize {
+        match self {
+            Material::Facade => 0,
+            Material::Shade => 1,
+            Material::Roof => 2,
+            Material::Glass => 3,
+            Material::Mullion => 4,
+            Material::Detail => 5,
+            Material::Sign => 6,
+        }
+    }
+
+    /// Every material, in declaration order.
+    pub(crate) const ALL: [Material; 7] = [
+        Material::Facade,
+        Material::Shade,
+        Material::Roof,
+        Material::Glass,
+        Material::Mullion,
+        Material::Detail,
+        Material::Sign,
+    ];
+}
+
+/// The palette key each [`Material`] is drawn in, from `[city]`.
+#[derive(Debug, Clone)]
+pub(crate) struct CityMaterials([char; Material::ALL.len()]);
+
+impl CityMaterials {
+    /// The key `material` is drawn in.
+    pub(crate) fn key(&self, material: Material) -> char {
+        self.0[material.index()]
+    }
+}
+
+/// A depth plane of the city a building may stand in: the far plane is the
+/// painter's own silhouettes, so a pack draws only these two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum CityPlane {
+    /// The middle distance.
+    Mid,
+    /// The nearest buildings, their feet below the sill.
+    Near,
+}
+
+impl CityPlane {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "mid" => Some(CityPlane::Mid),
+            "near" => Some(CityPlane::Near),
+            _ => None,
+        }
+    }
+}
+
+/// One building of the city behind the office's windows, loaded from
+/// `[buildings.<name>]` and its `[buildings."<name>@<N>x"]` variants: drawn
+/// only in the `[city]` materials, and the planes it stands in.
+#[derive(Debug, Clone)]
+pub(crate) struct Building {
+    name: String,
+    planes: Vec<CityPlane>,
+    base: BuildingArt,
+    variants: BTreeMap<Density, BuildingArt>,
+}
+
+impl Building {
+    /// The building's name.
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Whether it may stand in `plane`.
+    pub(crate) fn stands_in(&self, plane: CityPlane) -> bool {
+        self.planes.contains(&plane)
+    }
+
+    /// Its size in logical units: its base art's.
+    pub(crate) fn size(&self) -> (u16, u16) {
+        self.base
+            .sprite
+            .frames()
+            .first()
+            .map_or((0, 0), |f| (f.width(), f.height()))
+    }
+
+    /// Its base art, at 1x.
+    pub(crate) fn base(&self) -> &BuildingArt {
+        &self.base
+    }
+
+    /// Its variant drawn at `density`, above its [`base`](Self::base).
+    pub(crate) fn variant(&self, density: Density) -> Option<&BuildingArt> {
+        self.variants.get(&density)
+    }
+}
+
+/// A building drawn at one density: its one-frame sprite, and its windows.
+#[derive(Debug, Clone)]
+pub(crate) struct BuildingArt {
+    sprite: Sprite,
+    windows: Vec<Vec<(u16, u16)>>,
+}
+
+impl BuildingArt {
+    /// The one-frame drawing, in the `[city]` materials.
+    pub(crate) fn sprite(&self) -> &Sprite {
+        &self.sprite
+    }
+
+    /// Its windows: each a connected run of [`Material::Glass`] pixels, which
+    /// lights as one.
+    pub(crate) fn windows(&self) -> &[Vec<(u16, u16)>] {
+        &self.windows
+    }
+}
+
+/// A hairstyle: per view, the layers that dress a character frame whose head
+/// faces that way, laid mark on mark. Loaded from `[hairstyles."<name>@<N>x"]`,
+/// so it only ever dresses art at its own density: the classic `1x` art is
+/// never dressed.
+#[derive(Debug, Clone)]
+pub(crate) struct Hairstyle {
+    name: String,
+    density: Density,
+    views: [Option<HairLayers>; HeadView::ALL.len()],
+}
+
+impl Hairstyle {
+    /// The style's name, without its density.
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The density of the art it dresses.
+    #[cfg(test)]
+    pub(crate) fn density(&self) -> Density {
+        self.density
+    }
+
+    /// Its layers for a head facing `view`.
+    pub(crate) fn layers(&self, view: HeadView) -> Option<&HairLayers> {
+        self.views[view.index()].as_ref()
+    }
+}
+
+/// One view's layers: `behind` goes under the body, `over` on top. Each is a
+/// one-frame sprite whose head mark lands on the body's.
+#[derive(Debug, Clone)]
+pub(crate) struct HairLayers {
+    behind: Option<Sprite>,
+    over: Option<Sprite>,
+}
+
+impl HairLayers {
+    /// The layer under the body.
+    pub(crate) fn behind(&self) -> Option<&Sprite> {
+        self.behind.as_ref()
+    }
+
+    /// The layer over the body.
+    pub(crate) fn over(&self) -> Option<&Sprite> {
+        self.over.as_ref()
+    }
+}
+
+impl Pack {
+    /// The buildings of the city behind the windows, in name order.
+    pub(crate) fn buildings(&self) -> impl Iterator<Item = &Building> {
+        self.buildings.values()
+    }
+
+    /// The keys the buildings are drawn in, from `[city]`.
+    pub(crate) fn city_materials(&self) -> &CityMaterials {
+        &self.city_materials
+    }
+
+    /// The pack's hairstyles, every density of each, in name order.
+    pub(crate) fn hairstyles(&self) -> impl Iterator<Item = &Hairstyle> {
+        self.hairstyles.values()
+    }
+
+    /// The style `name` at `density`, where the pack draws one.
+    pub(crate) fn hairstyle(&self, name: &str, density: Density) -> Option<&Hairstyle> {
+        self.hairstyles.get(&density_variant_name(name, density))
+    }
+
+    /// The colour of the one line round every marked character frame at a
+    /// density of 2 and up, dressed or bare, from `[characters]`.
+    pub(crate) fn character_outline(&self) -> Rgb {
+        self.character_outline
+    }
+
+    /// The icon `name`'s art, from `[icons]`.
+    pub(crate) fn icon(&self, name: &str) -> Option<&Sprite> {
+        self.icons.get(name)
+    }
+
+    /// The names of the pack's icons, in order: the icon tests' check that
+    /// the pack draws no icon nothing names.
+    #[cfg(test)]
+    pub(crate) fn icon_names(&self) -> impl Iterator<Item = &str> {
+        self.icons.keys().map(String::as_str)
+    }
+
+    /// The palette the pack's frames were drawn with: every sprite shares it.
+    #[cfg(test)]
+    pub(crate) fn palette(&self) -> &Palette {
+        self.piece(Piece::Seated).palette()
+    }
+
+    /// The art of `piece`.
+    pub(crate) fn piece(&self, piece: Piece) -> &Sprite {
+        &self.pieces[piece]
+    }
+
+    /// `piece` redrawn at each density the pack draws it at, above its
+    /// [`piece`](Self::piece) art.
+    pub(crate) fn variants_of(&self, piece: Piece) -> &BTreeMap<Density, Sprite> {
+        &self.variants[piece]
+    }
+
+    /// Every density variant, in piece then density order.
+    pub(crate) fn variants(&self) -> impl Iterator<Item = (Piece, Density, &Sprite)> {
+        self.variants
+            .iter()
+            .flat_map(|(p, by)| by.iter().map(move |(&d, s)| (p, d, s)))
+    }
+
+    /// The base-grid pixels `walk` covers in one full cycle of its frames:
+    /// every walk declares one, or the pack does not load.
+    pub(crate) fn stride(&self, walk: Walk) -> NonZeroU16 {
+        self.strides[walk]
+    }
+
+    /// The densest of [`Pack::density_variants`], or [`Density::ONE`] when the
+    /// pack ships none.
+    pub(crate) fn max_density_variant(&self) -> Density {
+        self.densities.first().copied().unwrap_or(Density::ONE)
+    }
+
+    /// The densities this pack's variants are drawn at, densest first, each
+    /// once.
+    ///
+    /// A painter picks its render scale against these (the scene's
+    /// `RenderScale::fit`), since a variant only lands at a scale its density
+    /// divides. Only a variant of a registered animation that redraws its base
+    /// (`variant_redraws`) counts: a stray key names nothing a painter asks
+    /// for, and every renderer skips a variant that does not redraw its base.
+    pub(crate) fn density_variants(&self) -> &[Density] {
+        &self.densities
+    }
+
+    fn count_densities(&mut self) {
+        let densities: BTreeSet<Density> = self.variants().map(|(_, d, _)| d).collect();
+        self.densities = densities.into_iter().rev().collect();
+    }
+}
 
 /// Which desk art a seat faces: only a back-turned seat needs its own, since
 /// its occupant y-sorts in FRONT and covers the screen.
@@ -277,22 +607,22 @@ impl OfficeArt {
     }
 
     /// [`Pack::stride`].
-    pub(crate) fn stride(&self, walk: crate::sprite::format::Walk) -> NonZeroU16 {
+    pub(crate) fn stride(&self, walk: crate::pack::Walk) -> NonZeroU16 {
         self.pack.stride(walk)
     }
 
     /// [`Pack::buildings`].
-    pub(crate) fn buildings(&self) -> impl Iterator<Item = &crate::sprite::format::Building> {
+    pub(crate) fn buildings(&self) -> impl Iterator<Item = &crate::pack::Building> {
         self.pack.buildings()
     }
 
     /// [`Pack::city_materials`].
-    pub(crate) fn city_materials(&self) -> &crate::sprite::format::CityMaterials {
+    pub(crate) fn city_materials(&self) -> &crate::pack::CityMaterials {
         self.pack.city_materials()
     }
 
     /// [`Pack::hairstyles`].
-    pub(crate) fn hairstyles(&self) -> impl Iterator<Item = &crate::sprite::format::Hairstyle> {
+    pub(crate) fn hairstyles(&self) -> impl Iterator<Item = &crate::pack::Hairstyle> {
         self.pack.hairstyles()
     }
 
@@ -301,7 +631,7 @@ impl OfficeArt {
         &self,
         name: &str,
         density: Density,
-    ) -> Option<&crate::sprite::format::Hairstyle> {
+    ) -> Option<&crate::pack::Hairstyle> {
         self.pack.hairstyle(name, density)
     }
 
@@ -504,6 +834,13 @@ mod tests {
     use crate::render_scale::RenderScale;
     use crate::sprite::format::Density;
 
+    #[test]
+    fn every_material_has_its_own_place() {
+        for (i, m) in Material::ALL.into_iter().enumerate() {
+            assert_eq!(m.index(), i, "{m:?}");
+        }
+    }
+
     /// The beat check reaches every loop a painter plays: a typist off the
     /// beat is reported.
     #[test]
@@ -663,11 +1000,10 @@ mod tests {
 
     /// The sprites `toml` loads without: the ones nothing it registers draws.
     fn undrawn<'a>(toml: &str, srcs: &[(&'a str, &'a str)]) -> Vec<&'a str> {
-        let read: std::collections::HashSet<String> =
-            crate::sprite::format::frames_read_by(toml, srcs)
-                .expect("the whole set loads")
-                .into_iter()
-                .collect();
+        let read: std::collections::HashSet<String> = crate::pack::frames_read_by(toml, srcs)
+            .expect("the whole set loads")
+            .into_iter()
+            .collect();
         srcs.iter()
             .map(|&(name, _)| name)
             .filter(|&name| !read.contains(name))
