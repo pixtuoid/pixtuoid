@@ -1,6 +1,6 @@
 use super::*;
 use crate::install::target::{
-    CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Primary, REASONIX, Target,
+    ANTIGRAVITY, CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Primary, REASONIX, Target,
 };
 
 /// Claude's owned hooks file without its plugin registration or presence probe,
@@ -1318,7 +1318,8 @@ fn with_fake_hosts_failing<R>(fail: Option<&str>, f: impl FnOnce(&std::path::Pat
     let codex = dir.path().join("codex-home");
     let reasonix = dir.path().join("reasonix-home");
     let hermes = dir.path().join("hermes-home");
-    for home in [&claude, &codex, &reasonix, &hermes] {
+    let agy = dir.path().join("agy-home");
+    for home in [&claude, &codex, &reasonix, &hermes, &agy] {
         std::fs::create_dir_all(home).unwrap();
     }
     temp_env::with_vars(
@@ -1328,6 +1329,8 @@ fn with_fake_hosts_failing<R>(fail: Option<&str>, f: impl FnOnce(&std::path::Pat
             ("CODEX_HOME", Some(codex.as_os_str())),
             ("REASONIX_HOME", Some(reasonix.as_os_str())),
             ("HERMES_HOME", Some(hermes.as_os_str())),
+            ("HOME", Some(agy.as_os_str())),
+            ("USERPROFILE", Some(agy.as_os_str())),
             ("FAKE_HOST_FAIL", fail.map(std::ffi::OsStr::new)),
         ],
         || f(dir.path()),
@@ -1340,7 +1343,24 @@ const FAKE_HOSTS: &[(&str, &str, &str)] = &[
     ("codex", FAKE_CODEX_SH, FAKE_CODEX_CMD),
     ("reasonix", FAKE_REASONIX_SH, FAKE_REASONIX_CMD),
     ("hermes", FAKE_HERMES_SH, FAKE_HERMES_CMD),
+    ("agy", FAKE_AGY_SH, FAKE_AGY_CMD),
 ];
+
+const FAKE_AGY_SH: &str = r#"#!/bin/sh
+d=$(dirname "$0")
+echo "agy $*" >> "$d/calls.log"
+[ "agy $*" = "${FAKE_HOST_FAIL-}" ] && exit 1
+[ "$*" = "plugin uninstall pixtuoid" ] && rm -rf "$HOME/.gemini/config/plugins/pixtuoid"
+exit 0
+"#;
+
+const FAKE_AGY_CMD: &str = "@echo off\r
+set \"d=%~dp0\"\r
+>>\"%d%calls.log\" echo agy %~1 %~2 %~3\r
+if defined FAKE_HOST_FAIL if \"agy %*\"==\"%FAKE_HOST_FAIL%\" exit /b 1\r
+if \"%1 %2 %3\"==\"plugin uninstall pixtuoid\" rmdir /s /q \"%USERPROFILE%\\.gemini\\config\\plugins\\pixtuoid\"\r
+exit /b 0\r
+";
 
 const FAKE_CLAUDE_SH: &str = r#"#!/bin/sh
 d=$(dirname "$0")
@@ -2286,6 +2306,81 @@ fn reasonix_connect_fails_when_linking_fails_and_leaves_no_hooks() {
         let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
         assert!(install_target_from(&REASONIX, Some(manifest.clone()), hook).is_err());
         assert!(!has_hooks(&REASONIX, Some(manifest)));
+    });
+}
+
+/// The shared hooks file an older pixtuoid merged into, under the fake's `HOME`.
+fn agy_legacy_hooks() -> PathBuf {
+    let plugin = (ANTIGRAVITY.default_config_path)().expect("inside with_fake_hosts");
+    let config = plugin.ancestors().nth(3).unwrap();
+    std::fs::create_dir_all(config).unwrap();
+    config.join("hooks.json")
+}
+
+fn agy_calls(fake: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(fake.join("calls.log"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| l.starts_with("agy "))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn antigravity_connect_writes_its_plugin_and_strips_the_hook_an_older_pixtuoid_merged() {
+    with_fake_hosts(|fake| {
+        let legacy = agy_legacy_hooks();
+        std::fs::write(
+            &legacy,
+            r#"{"lint": {"Stop": []}, "pixtuoid": {"Stop": [{"command": "old"}]}}"#,
+        )
+        .unwrap();
+        let hook = Some(std::env::current_exe().unwrap());
+        let r = install_target_from(&ANTIGRAVITY, None, hook).unwrap();
+        assert!(matches!(r.outcome, InstallOutcome::Installed));
+
+        assert_eq!(agy_calls(fake), ["agy plugin enable pixtuoid"]);
+        let primary = (ANTIGRAVITY.default_config_path)().unwrap();
+        assert!(primary.with_file_name("plugin.json").exists());
+        let shared = std::fs::read_to_string(&legacy).unwrap();
+        assert!(
+            shared.contains("lint") && !shared.contains("pixtuoid"),
+            "{shared}"
+        );
+        assert!(has_hooks(&ANTIGRAVITY, None));
+        let v = verify_target(&ANTIGRAVITY, None);
+        assert!(v.is_sound(), "{:?}", v.issues);
+    });
+}
+
+#[test]
+fn antigravity_disconnect_removes_the_plugin_through_agy() {
+    with_fake_hosts(|fake| {
+        install_target_from(
+            &ANTIGRAVITY,
+            None,
+            Some(PathBuf::from("/fake/pixtuoid-hook")),
+        )
+        .unwrap();
+        std::fs::remove_file(fake.join("calls.log")).unwrap();
+        let u = uninstall_target(&ANTIGRAVITY, None).unwrap();
+        assert!(matches!(u.outcome, UninstallOutcome::Removed));
+        assert_eq!(agy_calls(fake), ["agy plugin uninstall pixtuoid"]);
+        assert!(!(ANTIGRAVITY.default_config_path)().unwrap().exists());
+    });
+}
+
+/// agy records only a disable, in its own config.
+#[test]
+fn antigravity_reads_a_disable_as_unregistered() {
+    with_fake_hosts(|_| {
+        let is_registered = ANTIGRAVITY.host.unwrap().is_registered;
+        assert!(is_registered().unwrap(), "no config.json");
+        let config = agy_legacy_hooks().with_file_name("config.json");
+        std::fs::write(&config, r#"{"plugins":{"pixtuoid":{"enabled":false}}}"#).unwrap();
+        assert!(!is_registered().unwrap());
+        std::fs::write(&config, "{not json").unwrap();
+        assert!(is_registered().is_err());
     });
 }
 
