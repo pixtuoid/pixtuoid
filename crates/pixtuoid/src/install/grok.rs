@@ -3,7 +3,7 @@
 //! grok discovers hooks from every `*.json` in `{grok_home}/hooks/` (global
 //! scope, ALWAYS trusted), so pixtuoid writes its OWN file
 //! `{grok_home}/hooks/pixtuoid.json` and never merges into a shared settings
-//! file. `merge_uninstall` replaces it with a sentinel-free empty stub because
+//! file. `uninstall` replaces it with a sentinel-free empty stub because
 //! the write-only orchestrator cannot delete.
 //!
 //! **Source attribution rides the handler `env` map** (`PIXTUOID_SOURCE:
@@ -138,20 +138,13 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     }
 }
 
-/// Render the whole managed file (it is wholly ours). `changed` is a SEMANTIC
-/// diff, so a hand-reformatted but equivalent file is never rewritten.
-pub(crate) fn merge_install(content: &str, hook_cmd: &str) -> Result<MergeOutcome> {
-    let rendered = render_hooks_file(hook_cmd);
-    let existing: Value = serde_json::from_str(content.trim()).unwrap_or_else(|_| json!({}));
-    Ok(MergeOutcome {
-        changed: existing != rendered,
-        content: format!("{}\n", serde_json::to_string_pretty(&rendered)?),
-    })
+pub(crate) fn installed_shim(content: &str) -> ShimRef {
+    verify_schema(content).shim
 }
 
 /// Replace our file with the sentinel-free stub. A foreign file (no sentinel
 /// key), an already-removed stub, or empty content is a semantic no-op.
-pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
+pub(crate) fn uninstall(content: &str) -> Result<MergeOutcome> {
     let ours = serde_json::from_str::<Value>(content.trim())
         .ok()
         .is_some_and(|v| v.get(SENTINEL_KEY).is_some());
@@ -165,7 +158,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     })
 }
 
-fn render_hooks_file(hook_cmd: &str) -> Value {
+pub(crate) fn render_hooks(hook_cmd: &str) -> Result<String> {
     let mut hooks = serde_json::Map::new();
     for event in GROK_EVENTS {
         // NO `matcher` key on ANY group: upstream rejects a matcher on a
@@ -183,7 +176,8 @@ fn render_hooks_file(hook_cmd: &str) -> Value {
             }]),
         );
     }
-    json!({ SENTINEL_KEY: SENTINEL_NOTE, "hooks": hooks })
+    let file = json!({ SENTINEL_KEY: SENTINEL_NOTE, "hooks": hooks });
+    Ok(format!("{}\n", serde_json::to_string_pretty(&file)?))
 }
 
 /// Install-schema verification. Checking EVERY registered event catches the
@@ -274,9 +268,8 @@ mod tests {
 
     #[test]
     fn install_renders_every_registered_event_with_env_attribution() {
-        let out = merge_install("", "/opt/bin/pixtuoid-hook").unwrap();
-        assert!(out.changed);
-        let doc: Value = serde_json::from_str(&out.content).unwrap();
+        let doc: Value =
+            serde_json::from_str(&render_hooks("/opt/bin/pixtuoid-hook").unwrap()).unwrap();
         assert!(doc.get(SENTINEL_KEY).is_some(), "sentinel present");
         let hooks = doc["hooks"].as_object().unwrap();
         assert_eq!(hooks.len(), GROK_EVENTS.len());
@@ -293,36 +286,16 @@ mod tests {
     }
 
     #[test]
-    fn install_is_idempotent_and_reformat_tolerant() {
-        let a = merge_install("", "/opt/bin/pixtuoid-hook").unwrap();
-        let b = merge_install(&a.content, "/opt/bin/pixtuoid-hook").unwrap();
-        assert!(!b.changed, "same-path re-install is a semantic no-op");
-        let reformatted =
-            serde_json::to_string(&serde_json::from_str::<Value>(&a.content).unwrap()).unwrap();
-        assert!(
-            !merge_install(&reformatted, "/opt/bin/pixtuoid-hook")
-                .unwrap()
-                .changed
-        );
-        let c = merge_install(&a.content, "/usr/local/bin/pixtuoid-hook").unwrap();
-        assert!(c.changed);
-    }
-
-    #[test]
     fn uninstall_writes_the_sentinel_free_stub_and_round_trips() {
-        let installed = merge_install("", "/opt/bin/pixtuoid-hook").unwrap();
-        let removed = merge_uninstall(&installed.content).unwrap();
+        let installed = render_hooks("/opt/bin/pixtuoid-hook").unwrap();
+        let removed = uninstall(&installed).unwrap();
         assert!(removed.changed);
         let doc: Value = serde_json::from_str(&removed.content).unwrap();
         assert!(doc.get(SENTINEL_KEY).is_none(), "stub drops the sentinel");
         assert_eq!(doc["hooks"], json!({}), "stub registers zero hooks");
-        assert!(!merge_uninstall(&removed.content).unwrap().changed);
-        assert!(
-            !merge_uninstall(r#"{"hooks":{"PreToolUse":[]}}"#)
-                .unwrap()
-                .changed
-        );
-        assert!(!merge_uninstall("").unwrap().changed);
+        assert!(!uninstall(&removed.content).unwrap().changed);
+        assert!(!uninstall(r#"{"hooks":{"PreToolUse":[]}}"#).unwrap().changed);
+        assert!(!uninstall("").unwrap().changed);
     }
 
     #[test]
@@ -374,20 +347,20 @@ mod tests {
 
     #[test]
     fn verify_flags_missing_events_lost_env_and_foreign_files() {
-        let installed = merge_install("", "/opt/bin/pixtuoid-hook").unwrap();
-        let sound = verify_schema(&installed.content);
+        let installed = render_hooks("/opt/bin/pixtuoid-hook").unwrap();
+        let sound = verify_schema(&installed);
         assert!(sound.issues.is_empty(), "{:?}", sound.issues);
         assert_eq!(
             sound.shim,
             ShimRef::Absolute(PathBuf::from("/opt/bin/pixtuoid-hook"))
         );
 
-        let mut doc: Value = serde_json::from_str(&installed.content).unwrap();
+        let mut doc: Value = serde_json::from_str(&installed).unwrap();
         doc["hooks"].as_object_mut().unwrap().remove("SubagentStop");
         let half_dead = verify_schema(&doc.to_string());
         assert!(half_dead.issues.iter().any(|i| i.contains("SubagentStop")));
 
-        let mut doc: Value = serde_json::from_str(&installed.content).unwrap();
+        let mut doc: Value = serde_json::from_str(&installed).unwrap();
         doc["hooks"]["Stop"][0]["hooks"][0]["env"] = json!({});
         assert!(
             verify_schema(&doc.to_string())
@@ -396,7 +369,7 @@ mod tests {
                 .any(|i| i.contains("PIXTUOID_SOURCE"))
         );
 
-        let mut doc: Value = serde_json::from_str(&installed.content).unwrap();
+        let mut doc: Value = serde_json::from_str(&installed).unwrap();
         doc["hooks"]["SessionStart"][0]["matcher"] = json!("*");
         assert!(
             verify_schema(&doc.to_string())

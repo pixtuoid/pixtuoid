@@ -130,6 +130,10 @@ pub enum Primary {
         /// Files pixtuoid owns beside the config, where [`RenderBeside`] says they
         /// live. Left in place on uninstall (the config un-merge disables loading).
         beside: Option<RenderBeside>,
+        /// Why no file pixtuoid owns can carry the hooks, with the upstream cite
+        /// (`every_merge_cites_why_no_owned_file_can_carry_its_hooks`).
+        #[cfg(test)]
+        no_owned_route: &'static str,
     },
     Owned {
         /// The primary's whole content, `hook_cmd` baked in.
@@ -363,6 +367,8 @@ pub(crate) const CODEWHALE: Target = Target {
         merge_uninstall: crate::install::codewhale::merge_uninstall,
         verify_schema: crate::install::codewhale::verify_schema,
         beside: None,
+        #[cfg(test)]
+        no_owned_route: "`codewhale install` leaves a plugin disabled and untrusted until `/plugin trust` and `/plugin enable` run in a session (`docs/PLUGINS.md:79-81,151-152` @ v0.10.2)",
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::codewhale::detect_installed,
@@ -415,11 +421,13 @@ pub(crate) const GROK: Target = Target {
     display_name: "Grok Build",
     default_config_path: crate::install::grok::default_config_path,
     hook_command: crate::install::grok::hook_command,
-    primary: Primary::Config {
-        merge_install: crate::install::grok::merge_install,
-        merge_uninstall: crate::install::grok::merge_uninstall,
+    primary: Primary::Owned {
+        render: crate::install::grok::render_hooks,
+        installed_shim: crate::install::grok::installed_shim,
+        uninstall: crate::install::grok::uninstall,
         verify_schema: crate::install::grok::verify_schema,
-        beside: None,
+        retired: None,
+        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::grok::detect_installed,
@@ -442,6 +450,8 @@ pub(crate) const CURSOR: Target = Target {
         merge_uninstall: crate::install::cursor::merge_uninstall,
         verify_schema: crate::install::cursor::verify_schema,
         beside: None,
+        #[cfg(test)]
+        no_owned_route: "`~/.cursor/plugins/local` is the pre-publish test route, off by default on Enterprise, and a marketplace plugin is reviewed by hand (https://cursor.com/docs/plugins.md#test-plugins-locally)",
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::cursor::detect_installed,
@@ -491,6 +501,8 @@ pub(crate) const OPENCLAW: Target = Target {
         merge_uninstall: crate::install::openclaw::merge_uninstall,
         verify_schema: crate::install::openclaw::verify_schema,
         beside: Some(crate::install::openclaw::plugin_artifacts),
+        #[cfg(test)]
+        no_owned_route: "the conversation-hook grant is `plugins.entries.<id>.hooks.allowConversationAccess` in the user's config (`docs/plugins/hooks.md:126` @ v2026.10.9)",
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     // openclaw.json is created by OpenClaw itself; probe its own dir so
@@ -523,6 +535,8 @@ pub(crate) const JCODE: Target = Target {
         merge_uninstall: crate::install::jcode::merge_uninstall,
         verify_schema: crate::install::jcode::verify_schema,
         beside: None,
+        #[cfg(test)]
+        no_owned_route: "hooks load only from `[hooks]` in `~/.jcode/config.toml` (`docs/HOOKS.md:11` @ v0.99.1)",
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::jcode::detect_installed,
@@ -545,6 +559,8 @@ pub(crate) const KIMI: Target = Target {
         merge_uninstall: crate::install::kimi::merge_uninstall,
         verify_schema: crate::install::kimi::verify_schema,
         beside: None,
+        #[cfg(test)]
+        no_owned_route: "a plugin's hooks need `/plugins install`, a TUI command with no CLI form (`docs/en/customization/plugins.md:33,57` @ 2.4.1)",
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     // Kimi may not create config.toml until a provider is configured, so probe the
@@ -569,6 +585,8 @@ pub(crate) const DSH: Target = Target {
         merge_uninstall: crate::install::dsh::merge_uninstall,
         verify_schema: crate::install::dsh::verify_schema,
         beside: Some(crate::install::dsh::plugin_artifacts),
+        #[cfg(test)]
+        no_owned_route: "a plugin reaches every profile only by a row in the one home patch file (`apps/cli/src/profile-boot.ts:68-73` @ dsh-v0.2.1-rc.5)",
     },
     // The plugin spawns the shim under Node by embedded path — no PATH.
     binary_strategy: BinaryStrategy::EmbedAbsolute,
@@ -769,6 +787,21 @@ mod tests {
                  an expected or not_yet hook the install never forwards is stale",
                 p.source
             );
+        }
+    }
+
+    /// A merge is the last resort, so each answers CONTRIBUTING's "Where can hooks
+    /// live?" where an author can't skip it and a reviewer can check the cite.
+    #[test]
+    fn every_merge_cites_why_no_owned_file_can_carry_its_hooks() {
+        for t in TARGETS {
+            if let Primary::Config { no_owned_route, .. } = t.primary {
+                assert!(
+                    no_owned_route.contains("https://") || no_owned_route.contains(" @ "),
+                    "{}: no_owned_route needs an upstream cite, `path:line @ version` or a URL",
+                    t.name
+                );
+            }
         }
     }
 
