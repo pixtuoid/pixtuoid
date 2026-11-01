@@ -3,8 +3,8 @@
 //!
 //! Not [`SceneState`] itself, which is internal and moves with every release,
 //! while a server and an installed App update on their own schedules. A field
-//! crosses only where `project_agent` names it, and a seat never does: seats
-//! follow each viewer's layout, so the device takes its own.
+//! crosses only where `project_agent` or `project_daemon` names it, and a desk
+//! never does: desks follow each viewer's layout, so the device takes its own.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -64,8 +64,8 @@ struct Agent {
     effort: Option<Effort>,
 }
 
-/// Internally tagged because only such an enum may carry `other`
-/// (<https://serde.rs/variant-attrs.html>), as is [`Tool`] and [`DaemonActivity`].
+/// Tagged so `other` can take a newer sender's state
+/// (<https://serde.rs/variant-attrs.html>), as are [`Tool`] and [`DaemonActivity`].
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 enum Activity {
@@ -267,7 +267,7 @@ pub enum ApplyError {
         /// The version the line carries.
         v: u32,
     },
-    /// The line isn't a frame of the version it claims.
+    /// The line isn't one of the version it claims.
     #[error("malformed office line")]
     Malformed(#[from] serde_json::Error),
 }
@@ -281,7 +281,7 @@ pub struct RemoteOffice {
 }
 
 impl RemoteOffice {
-    /// An empty office whose floors seat `capacities`, the device's own layout.
+    /// An empty office with `capacities` desks a floor, the device's own layout.
     pub fn new(capacities: [usize; MAX_FLOORS]) -> Self {
         Self {
             scene: SceneState::new(capacities),
@@ -294,8 +294,8 @@ impl RemoteOffice {
         &self.scene
     }
 
-    /// Take a new layout: everyone is reseated, oldest first, since a desk means
-    /// nothing in the old one. Whoever doesn't fit returns with a later line.
+    /// Take a new layout: everyone takes a new desk, oldest first, since the old
+    /// one means nothing here. Whoever doesn't fit returns with a later line.
     pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS]) {
         self.scene.floor_capacities = capacities;
         let mut agents: Vec<_> = std::mem::take(&mut self.scene.agents)
@@ -303,7 +303,7 @@ impl RemoteOffice {
             .collect();
         agents.sort_by_key(|slot| (slot.created_at, slot.agent_id));
         for mut slot in agents {
-            if let Some((desk_index, floor_idx)) = self.free_seat() {
+            if let Some((desk_index, floor_idx)) = self.free_desk() {
                 slot.desk_index = desk_index;
                 slot.floor_idx = floor_idx;
                 self.scene.agents.insert(slot.agent_id, slot);
@@ -316,7 +316,7 @@ impl RemoteOffice {
     ///
     /// # Errors
     ///
-    /// If the line is another wire version, or isn't a frame.
+    /// If the line is another wire version, or malformed.
     pub fn apply(&mut self, line: &[u8], now: SystemTime) -> Result<(), ApplyError> {
         #[derive(Deserialize)]
         struct Version {
@@ -334,21 +334,26 @@ impl RemoteOffice {
         } = serde_json::from_slice(line)?;
 
         let skew = self.skew_for(now_ms, now);
-        let local = |ms: u64| UNIX_EPOCH + Duration::from_millis(ms.saturating_add_signed(skew));
+        // A wire time can pass what this platform's clock holds, where `+` panics.
+        let local = |ms: u64| {
+            UNIX_EPOCH
+                .checked_add(Duration::from_millis(ms.saturating_add_signed(skew)))
+                .unwrap_or(now)
+        };
 
         agents.sort_by_key(|agent| (agent.created_ms, agent.id));
         self.scene
             .agents
             .retain(|id, _| agents.iter().any(|agent| agent.id == *id));
         for agent in agents {
-            let seat = match self.scene.agents.get(&agent.id) {
+            let desk = match self.scene.agents.get(&agent.id) {
                 Some(slot) => Some((slot.desk_index, slot.floor_idx)),
-                None => self.free_seat(),
+                None => self.free_desk(),
             };
-            if let Some(seat) = seat {
+            if let Some(desk) = desk {
                 self.scene
                     .agents
-                    .insert(agent.id, inflate(agent, seat, &local));
+                    .insert(agent.id, inflate(agent, desk, &local));
             }
         }
 
@@ -356,7 +361,7 @@ impl RemoteOffice {
         for daemon in daemons {
             if let Some(instance) = DaemonInstanceId::new(daemon.instance.as_str()) {
                 let presence = inflate_daemon(&daemon, &local);
-                self.scene.insert_daemon(&daemon.source, instance, presence);
+                (self.scene.daemons).insert(&daemon.source, instance, presence);
             }
         }
         Ok(())
@@ -379,7 +384,7 @@ impl RemoteOffice {
         }
     }
 
-    fn free_seat(&self) -> Option<(GlobalDeskIndex, usize)> {
+    fn free_desk(&self) -> Option<(GlobalDeskIndex, usize)> {
         let desk = self.scene.next_free_desk()?;
         Some((desk, self.scene.floor_of(desk)))
     }
@@ -575,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn a_v1_frame_still_applies() {
+    fn a_v1_line_still_applies() {
         let mut office = RemoteOffice::new(caps(4));
         office.apply(GOLDEN.as_bytes(), at(AT)).expect("v1 applies");
         let scene = office.scene();
@@ -594,8 +599,19 @@ mod tests {
         ));
     }
 
-    /// `old`'s every key and value type, at the same place in `new`: what a
-    /// reader built on `old` goes on to read.
+    /// No clock holds every `u64` of milliseconds; on Windows `+` panics on this.
+    #[test]
+    fn a_time_past_the_clocks_range_is_no_panic() {
+        let mut office = RemoteOffice::new(caps(4));
+        let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
+        line["agents"][0]["created_ms"] = u64::MAX.into();
+        let line = line.to_string();
+        office.apply(line.as_bytes(), at(AT)).expect("it applies");
+        assert_eq!(office.scene().agents.len(), 3);
+    }
+
+    /// `old`'s every key, value type and string, at the same place in `new`:
+    /// what a reader built on `old` goes on to read, a tag above all.
     fn assert_keeps(old: &Value, new: &Value, at: &str) {
         match (old, new) {
             (Value::Object(old), Value::Object(new)) => {
@@ -610,6 +626,7 @@ mod tests {
                     assert_keeps(o, n, &format!("{at}[{i}]"));
                 }
             }
+            (Value::String(old), Value::String(new)) => assert_eq!(old, new, "{at} changed"),
             _ => assert_eq!(
                 std::mem::discriminant(old),
                 std::mem::discriminant(new),
@@ -622,7 +639,7 @@ mod tests {
     fn this_version_writes_everything_a_v1_reader_reads() {
         let golden: Value = serde_json::from_str(GOLDEN).unwrap();
         let line: Value = serde_json::from_str(&sent(&full_scene())).unwrap();
-        assert_keeps(&golden, &line, "frame");
+        assert_keeps(&golden, &line, "line");
     }
 
     #[test]
@@ -636,7 +653,7 @@ mod tests {
             started: None,
         });
         let line = sent(&scene);
-        for secret in [
+        for private in [
             "/Users",
             "someone",
             "session-of",
@@ -648,7 +665,7 @@ mod tests {
             "4242",
             "run-1",
         ] {
-            assert!(!line.contains(secret), "{secret} leaked: {line}");
+            assert!(!line.contains(private), "{private} left: {line}");
         }
     }
 
@@ -663,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn seats_follow_the_devices_layout_not_the_senders() {
+    fn desks_follow_the_devices_layout_not_the_senders() {
         let mut scene = crowd(&["a", "b", "c"]);
         for (i, slot) in scene.agents.values_mut().enumerate() {
             slot.desk_index = GlobalDeskIndex(9 + i);
@@ -678,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn a_seat_outlives_its_neighbours_and_a_leavers_seat_is_reused() {
+    fn a_desk_outlives_its_neighbours_and_a_leavers_desk_is_reused() {
         let mut office = RemoteOffice::new(caps(4));
         received(&mut office, &crowd(&["a", "b", "c"]), AT);
         received(&mut office, &crowd(&["b", "c"]), AT);
@@ -698,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_layout_reseats_everyone_oldest_first() {
+    fn a_new_layout_gives_everyone_a_desk_oldest_first() {
         let mut office = RemoteOffice::new(caps(4));
         received(&mut office, &crowd(&["a", "b", "c"]), AT);
         received(&mut office, &crowd(&["b", "c"]), AT);
@@ -726,7 +743,7 @@ mod tests {
         assert_eq!(gateway.last_seen, at(AT - 300 + SKEW));
     }
 
-    // A walk restarts when `state_started_at` moves, so a frame's own latency
+    // A walk restarts when `state_started_at` moves, so a line's own latency
     // must not move it.
     #[test]
     fn jitter_leaves_an_agents_times_alone_and_a_clock_step_does_not() {
@@ -787,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn a_gateway_that_left_the_frame_leaves_the_office() {
+    fn a_gateway_that_left_the_line_leaves_the_office() {
         let mut office = RemoteOffice::new(caps(4));
         received(&mut office, &full_scene(), AT);
         received(&mut office, &crowd(&[]), AT);

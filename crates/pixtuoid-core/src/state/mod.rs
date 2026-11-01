@@ -568,8 +568,9 @@ pub struct SceneState {
     /// an all-agent scene.
     ///
     /// PRIVATE with READ-ONLY accessors on purpose: mutation must stay inside
-    /// the daemon layer's apply/sweep/mark entry points, so nothing else can
-    /// invent presence.
+    /// the daemon layer's apply/sweep/mark entry points, or
+    /// [`RemoteOffice`](crate::remote::RemoteOffice)'s copy of a server's roster,
+    /// so nothing else can invent presence.
     #[serde(default)]
     pub(crate) daemons: DaemonRoster,
 }
