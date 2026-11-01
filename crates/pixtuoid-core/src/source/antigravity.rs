@@ -407,7 +407,7 @@ mod tests {
                 .collect()
         };
         let last = Some(step_tool_id(i64::MAX));
-        assert_eq!(ids(i64::MAX - 1), [last.clone()]);
+        assert_eq!(ids(i64::MAX - 1), std::slice::from_ref(&last));
         assert_eq!(ids(i64::MAX), [last]);
     }
 

@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
 
 use mutatis::{Candidates, Context, Mutate, Session, mutators as m};
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 use super::{DEFAULT_NOW_EPOCH_SECS, DRIVEN_DESKS, Drive, Driven};
 use crate::remote::{self, Hello, PairLink, RemoteOffice, Reply};
@@ -154,11 +154,22 @@ impl Mutate<Value> for JsonMutator {
             Value::String(text) => m::default::<String>().mutate(c, text)?,
             Value::Number(number) => {
                 let near = number.as_i64().unwrap_or_default();
-                c.mutation(|_| Ok(*number = near.wrapping_add(1).into()))?;
-                c.mutation(|_| Ok(*number = near.wrapping_sub(1).into()))?;
-                c.mutation(|ctx| Ok(*number = ctx.rng().gen_i64().into()))?;
-                c.mutation(|_| Ok(*number = u64::MAX.into()))?;
-                c.mutation(|_| Ok(*number = i64::MIN.into()))?;
+                let neighbors = [
+                    Number::from(near.wrapping_add(1)),
+                    Number::from(near.wrapping_sub(1)),
+                    Number::from(u64::MAX),
+                    Number::from(i64::MIN),
+                ];
+                for neighbor in neighbors {
+                    c.mutation(|_| {
+                        *number = neighbor.clone();
+                        Ok(())
+                    })?;
+                }
+                c.mutation(|ctx| {
+                    *number = ctx.rng().gen_i64().into();
+                    Ok(())
+                })?;
             }
             Value::Array(items) => {
                 for item in items.iter_mut() {
