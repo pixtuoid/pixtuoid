@@ -125,6 +125,7 @@ const OWNERS: &[(&str, Owner)] = &[
     ("hook/unix.rs", Owner::Nobody(OUR_SHIM)),
     ("hook/windows.rs", Owner::Nobody(OUR_SHIM)),
     ("hook/pid_watch.rs", Owner::Nobody(OUR_SHIM)),
+    ("hook/relay.rs", Owner::Nobody(OUR_SHIM)),
 ];
 
 /// Why a path or environment name needs no fixture.

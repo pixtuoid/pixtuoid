@@ -4,16 +4,53 @@
 
 use std::ffi::OsStr;
 
-use windows_sys::Win32::Foundation::LocalFree;
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LocalFree};
 use windows_sys::Win32::Security::Authorization::{
     ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
-use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
+use windows_sys::Win32::Security::{
+    GetTokenInformation, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_INFORMATION_CLASS,
+    TOKEN_QUERY,
+};
+use windows_sys::Win32::System::Threading::OpenProcessToken;
 
 /// `s` as the NUL-terminated wide string a Win32 call takes.
 pub(crate) fn nul_terminated(s: &OsStr) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     s.encode_wide().chain(Some(0)).collect()
+}
+
+/// `process`'s token information of `class`, `u64`-backed so a SID pointer in it
+/// is aligned. The buffer owns that SID.
+///
+/// # Safety
+///
+/// `process` is a valid process handle for the call's duration.
+pub(crate) unsafe fn token_info(
+    process: HANDLE,
+    class: TOKEN_INFORMATION_CLASS,
+) -> Option<Vec<u64>> {
+    let mut token: HANDLE = std::ptr::null_mut();
+    // SAFETY: `process` is forwarded from this fn's contract; `token` is a live out-param.
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
+        return None;
+    }
+    // Size probe (returns 0 + sets `len`), then the real read.
+    let mut len: u32 = 0;
+    // SAFETY: `token` is open; a null buffer of length 0 is the documented size probe.
+    unsafe { GetTokenInformation(token, class, std::ptr::null_mut(), 0, &mut len) };
+    let blob = if len == 0 {
+        None
+    } else {
+        let mut buf = vec![0u64; (len as usize).div_ceil(8)];
+        // SAFETY: `token` is open and `buf` spans at least `len` bytes for the call.
+        let read =
+            unsafe { GetTokenInformation(token, class, buf.as_mut_ptr().cast(), len, &mut len) };
+        if read == 0 { None } else { Some(buf) }
+    };
+    // SAFETY: `token` is open, and this is its only close.
+    unsafe { CloseHandle(token) };
+    blob
 }
 
 /// The wide string a Win32 call wrote at `p`, up to its NUL.

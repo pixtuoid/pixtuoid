@@ -33,8 +33,7 @@ pub(crate) async fn capture_live_scene(
     let watcher_handle = tokio::spawn(async move { watcher.run(tx).await });
     // ALSO listen on the real hook socket: a live CC session's hooks carry
     // activity + the burn-tier effort level the transcript alone can't provide in
-    // real time. SocketBusy (a running pixtuoid owns it) degrades to
-    // transcript-only, like the app.
+    // real time. A running pixtuoid that owns it relays them, like the app.
     let hook_handle = {
         use pixtuoid_core::source::DynSource;
         use pixtuoid_core::source::hook::HookRouter;

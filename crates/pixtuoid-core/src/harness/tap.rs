@@ -16,12 +16,6 @@ const SETTLE: Duration = Duration::from_millis(500);
 const QUIET_ROUNDS: u32 = 4;
 const MAX_ROUNDS: u32 = 40;
 
-/// How long a send waits out a pipe whose every instance is mid-handshake.
-#[cfg(windows)]
-const PIPE_BUSY_BOUND: Duration = Duration::from_secs(2);
-#[cfg(windows)]
-const PIPE_BUSY_BACKOFF: Duration = Duration::from_millis(10);
-
 /// Where a shim connects: a Unix socket, or a Windows named pipe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint(PathBuf);
@@ -71,28 +65,9 @@ impl Endpoint {
     ///
     /// # Errors
     ///
-    /// If nothing listens, or the write fails.
-    pub(crate) async fn send(&self, bytes: &[u8]) -> std::io::Result<()> {
-        #[cfg(windows)]
-        let mut conn = {
-            use tokio::net::windows::named_pipe::ClientOptions;
-            let started = std::time::Instant::now();
-            loop {
-                match ClientOptions::new().open(&self.0) {
-                    Ok(c) => break c,
-                    Err(e)
-                        if e.raw_os_error()
-                            == Some(windows_sys::Win32::Foundation::ERROR_PIPE_BUSY as i32)
-                            && started.elapsed() < PIPE_BUSY_BOUND =>
-                    {
-                        tokio::time::sleep(PIPE_BUSY_BACKOFF).await;
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-        };
-        #[cfg(not(windows))]
-        let mut conn = tokio::net::UnixStream::connect(&self.0).await?;
+    /// If nothing listens, another user owns the endpoint, or the write fails.
+    pub async fn send(&self, bytes: &[u8]) -> std::io::Result<()> {
+        let mut conn = crate::source::hook::connect(&self.0).await?;
         conn.write_all(bytes).await?;
         conn.shutdown().await
     }
@@ -388,6 +363,7 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test]
     async fn a_send_waits_out_a_pipe_whose_one_instance_is_taken() {
+        use crate::source::hook::{PIPE_BUSY_BACKOFF, PIPE_BUSY_BOUND};
         use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
         const INSTANCES: usize = 2;
         let d = tempfile::tempdir().expect("tempdir");
