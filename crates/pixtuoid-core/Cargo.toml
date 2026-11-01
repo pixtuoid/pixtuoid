@@ -55,7 +55,6 @@ harness = [
     # shipped build's feature set.
     "windows-sys/Win32_Storage_FileSystem",
     "windows-sys/Win32_System_Com",
-    "windows-sys/Win32_System_Pipes",
     "windows-sys/Win32_System_Registry",
     "windows-sys/Win32_UI_Shell",
     # A release-binary profile's download is checked against its sums file.
@@ -105,7 +104,7 @@ rustix = { workspace = true, features = ["event", "process", "pipe"] }
 # Win32_System_Threading: OpenProcess + GetProcessTimes, the `proc_start`
 # creation-FILETIME marker (the Windows half of the pid-recycle guard), and
 # `exit_watch`'s handle wait, whose cap is SystemServices' MAXIMUM_WAIT_OBJECTS.
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_SystemServices", "Win32_System_Threading"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_System_SystemServices", "Win32_System_Threading"] }
 # The directory id a watch root is reconciled by.
 winapi-util = { workspace = true }
 

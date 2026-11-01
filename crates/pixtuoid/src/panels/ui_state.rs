@@ -494,9 +494,9 @@ impl UiState {
         // after actions, NOT per frame, because it does FS reads. Only the LIVE
         // facet + socket line recompute here.
         let connection_frame = if self.connection.open {
-            // NOT "(listening)": a second pixtuoid instance loses the hook plane
-            // to the lock-holding owner, so THIS process may own no socket at
-            // all. Don't assert what we haven't checked.
+            // NOT "(listening)": a second pixtuoid instance subscribes to the
+            // lock-holding owner, so THIS process may own no socket at all.
+            // Don't assert what we haven't checked.
             let socket_line = format!("socket  {}", self.socket_path.display());
             ConnectionFrame {
                 open: true,

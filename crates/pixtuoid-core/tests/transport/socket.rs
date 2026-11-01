@@ -10,8 +10,8 @@ use tokio::net::UnixStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
-use pixtuoid_core::source::hook::HookSocketListener;
-use pixtuoid_core::source::{AgentEvent, Transport};
+use pixtuoid_core::source::hook::{HookRouter, HookSocketListener};
+use pixtuoid_core::source::{AgentEvent, Source, Transport};
 
 #[tokio::test]
 async fn listener_parses_line_and_emits_event() {
@@ -174,7 +174,7 @@ async fn bind_bails_when_a_live_listener_holds_the_path() {
     assert!(
         err.downcast_ref::<pixtuoid_core::source::hook::SocketBusy>()
             .is_some(),
-        "the busy bind must be the typed SocketBusy so the source can degrade: {err:#}"
+        "the busy bind must be the typed SocketBusy so the router can subscribe: {err:#}"
     );
     let msg = format!("{err:#}");
     assert!(
@@ -263,7 +263,7 @@ async fn bound_socket_is_owner_only_with_no_temp_residue() {
     assert_eq!(mode, 0o600, "hook socket must be owner-only rw (0600)");
 
     // At a umask-default mode another local user could open+flock the
-    // arbiter and force every future daemon into transcript-only degradation.
+    // arbiter and leave every future daemon with no hook plane.
     let lock_mode = std::fs::metadata(dir.path().join("pixtuoid.sock.lock"))
         .unwrap()
         .permissions()
@@ -386,43 +386,12 @@ async fn listener_handles_concurrent_connections() {
     handle.abort();
 }
 
-// A second instance whose hook bind loses to a live daemon takes ONLY the hook
-// plane down: `run` returns Ok(()) with NO SourceDeath, else every 2nd launch
-// spuriously fires the footer death banner.
-#[tokio::test]
-async fn hook_router_socket_busy_exits_clean_without_death() {
-    use pixtuoid_core::source::hook::HookRouter;
-    use pixtuoid_core::source::manager::{SourceDeath, SourceManager};
-
-    let dir = TempDir::new().unwrap();
-    let sock = dir.path().join("pixtuoid.sock");
-    let _owner = HookSocketListener::bind(sock.clone()).await.unwrap();
-
-    let (tx, _rx) = mpsc::channel::<(Transport, AgentEvent)>(8);
-    let (deaths_tx, deaths_rx) = tokio::sync::watch::channel(Vec::<SourceDeath>::new());
-    let handles = SourceManager::new()
-        .with_source(Box::new(HookRouter::new(sock)))
-        .spawn_with_health(tx, deaths_tx);
-    for h in handles {
-        tokio::time::timeout(Duration::from_secs(10), h)
-            .await
-            .expect("router must exit promptly on SocketBusy")
-            .unwrap();
-    }
-    assert!(
-        deaths_rx.borrow().is_empty(),
-        "SocketBusy must degrade quietly (Ok) — no SourceDeath, the hook plane just goes dark"
-    );
-}
-
 // A SubagentStop on the shared socket must reach the downstream channel
 // unchanged AND land its child id in the one shared un-claim handle, for
 // EVERY source (stamped codex here).
 #[tokio::test]
 async fn hook_router_tee_captures_child_ends_from_the_shared_socket() {
     use pixtuoid_core::AgentId;
-    use pixtuoid_core::source::Source;
-    use pixtuoid_core::source::hook::HookRouter;
     use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 
     let dir = TempDir::new().unwrap();

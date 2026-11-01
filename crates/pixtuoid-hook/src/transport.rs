@@ -129,7 +129,7 @@ pub(crate) fn send_line(_bound: &TimeBound, endpoint: &std::path::Path, line: &[
             Ok(mut f) => {
                 // #495: before writing, verify the pipe SERVER runs as US — a
                 // co-located user who squatted our predictable default pipe (so
-                // our daemon's create failed → SocketBusy degrade) would else
+                // our daemon's create failed → SocketBusy) would else
                 // receive the payload. Scoped to our default rendezvous; an
                 // explicit PIXTUOID_SOCKET pipe is the user's trust call.
                 if endpoint == std::path::Path::new(&crate::paths::default_windows_pipe_name())

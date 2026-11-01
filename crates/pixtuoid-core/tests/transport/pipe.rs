@@ -9,8 +9,8 @@ use tokio::net::windows::named_pipe::ClientOptions;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
-use pixtuoid_core::source::hook::HookSocketListener;
-use pixtuoid_core::source::{AgentEvent, Transport};
+use pixtuoid_core::source::hook::{HookRouter, HookSocketListener};
+use pixtuoid_core::source::{AgentEvent, Source, Transport};
 
 fn pipe_name(suffix: &str) -> String {
     format!(r"\\.\pipe\pixtuoid-test-{}-{}", std::process::id(), suffix)
@@ -267,7 +267,7 @@ async fn second_listener_on_same_name_fails_with_typed_socket_busy() {
     assert!(
         err.downcast_ref::<pixtuoid_core::source::hook::SocketBusy>()
             .is_some(),
-        "the busy bind must be the typed SocketBusy so the source can degrade: {err:#}"
+        "the busy bind must be the typed SocketBusy so the router can subscribe: {err:#}"
     );
     assert!(
         format!("{err:#}").contains(&name),
@@ -276,35 +276,8 @@ async fn second_listener_on_same_name_fails_with_typed_socket_busy() {
 }
 
 #[tokio::test]
-async fn hook_router_socket_busy_exits_clean_without_death() {
-    use pixtuoid_core::source::hook::HookRouter;
-    use pixtuoid_core::source::manager::{SourceDeath, SourceManager};
-
-    let name = pipe_name("router-busy");
-    let _owner = HookSocketListener::bind(&name).await.unwrap();
-
-    let (tx, _rx) = mpsc::channel::<(Transport, AgentEvent)>(8);
-    let (deaths_tx, deaths_rx) = tokio::sync::watch::channel(Vec::<SourceDeath>::new());
-    let handles = SourceManager::new()
-        .with_source(Box::new(HookRouter::new(std::path::PathBuf::from(&name))))
-        .spawn_with_health(tx, deaths_tx);
-    for h in handles {
-        tokio::time::timeout(Duration::from_secs(10), h)
-            .await
-            .expect("router must exit promptly on SocketBusy")
-            .unwrap();
-    }
-    assert!(
-        deaths_rx.borrow().is_empty(),
-        "SocketBusy must degrade quietly (Ok) — no SourceDeath, the hook plane just goes dark"
-    );
-}
-
-#[tokio::test]
 async fn hook_router_tee_captures_child_ends_from_the_shared_socket() {
     use pixtuoid_core::AgentId;
-    use pixtuoid_core::source::Source;
-    use pixtuoid_core::source::hook::HookRouter;
     use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 
     let name = pipe_name("tee");
