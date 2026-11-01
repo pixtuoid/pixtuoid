@@ -63,7 +63,8 @@ SELF_GATED := "':!:site/' ':!:integrations/'"
 # The nightly the api-surface goldens are pinned to (rustdoc JSON is
 # nightly-only), which `fuzz` and .clusterfuzzlite/build.sh build on too.
 # Provisioned by `_nightly`, which also fails while it
-# can't build what rust-toolchain.toml's release admits (`_toolchain-covers`).
+# can't build what rust-toolchain.toml's release admits (`_toolchain-covers`);
+# build.sh installs it itself, unchecked.
 API_NIGHTLY := "nightly-2026-10-22"
 
 # The cargo-public-api the api/ goldens are reproducible against — tool-exact:

@@ -14,15 +14,17 @@ use crate::source::claude_code::cc_activity_recency;
 use crate::source::registry;
 use crate::state::MAX_FLOORS;
 
-/// `<source>\n<transcript>`: the registry's cwd and parent extractors, Claude
-/// Code's tail scan, then [`Drive`]. A source by name, not by index, so a new row
-/// leaves every accumulated input meaning what it did. `None` when the first line
-/// names no transcript source.
+/// `<source>\n<path>\n<transcript>`: the registry's cwd and parent extractors,
+/// Claude Code's tail scan, then [`Drive`]. A source by name, not by index, so a
+/// new row leaves every accumulated input meaning what it did, and a path because
+/// a nested transcript's parent is its path's. `None` when a header is missing or
+/// the first names no transcript source.
 pub fn transcript(bytes: &[u8]) -> Option<Driven> {
-    let end = bytes.iter().position(|b| *b == b'\n')?;
-    let (source, body) = bytes.split_at(end);
-    let source = std::str::from_utf8(source).ok()?;
-    let drive = Drive::transcript(source, "/fuzz/session.jsonl")?.seeded();
+    let mut parts = bytes.splitn(3, |b| *b == b'\n');
+    let source = std::str::from_utf8(parts.next()?).ok()?;
+    let path = std::str::from_utf8(parts.next()?).ok()?;
+    let body = parts.next()?;
+    let drive = Drive::transcript(source, path)?.seeded();
     let cwd = registry::cwd_extractor_for(source);
     let parent = registry::parent_extractor_for(source);
     let parsed = lines(whole(body))
@@ -57,8 +59,7 @@ pub fn remote(bytes: &[u8]) -> RemoteOffice {
 
 /// `fuzz_mutator!`'s body: mutates one node or the order of `data`'s JSON lines,
 /// every other line, a transcript's source among them, staying put. A byte
-/// mutation of JSON text is nearly always a parse error, and no run of them
-/// spells a multi-byte character, so a parser's strings would stay as recorded
+/// mutation of JSON text is nearly always a parse error
 /// (<https://github.com/google/fuzzing/blob/master/docs/structure-aware-fuzzing.md>).
 ///
 /// `None` leaves this mutation to `fuzzer_mutate`: on even seeds, for what only
@@ -223,15 +224,31 @@ mod tests {
 
     #[test]
     fn a_transcript_folds_under_the_source_its_first_line_names() {
-        let input = format!("claude-code\n{LINE}\n");
+        let input = format!("claude-code\n/p/session.jsonl\n{LINE}\n");
         let driven = transcript(input.as_bytes()).expect("a transcript source");
         assert_eq!(driven.registered(), 1);
         assert!(driven.wire_events() > 0, "{driven:?}");
     }
 
     #[test]
-    fn a_first_line_naming_no_transcript_source_drives_nothing() {
-        for input in ["not-a-source\n{}\n", "openclaw\n{}\n", "no newline"] {
+    fn the_path_line_keys_a_transcript_as_the_watcher_would() {
+        let drive = |path: &str| {
+            let input = format!("omp\n{path}\n{{}}\n");
+            let driven = transcript(input.as_bytes()).expect("a transcript source");
+            driven.scene.agents.keys().copied().collect::<Vec<_>>()
+        };
+        assert_ne!(drive("/s/parent.jsonl"), drive("/s/parent/task.jsonl"));
+    }
+
+    #[test]
+    fn an_input_missing_a_header_or_a_transcript_source_drives_nothing() {
+        let inputs = [
+            "not-a-source\n/p\n{}\n",
+            "openclaw\n/p\n{}\n",
+            "claude-code\n{}",
+            "no newline",
+        ];
+        for input in inputs {
             assert!(transcript(input.as_bytes()).is_none(), "{input}");
         }
     }
@@ -299,10 +316,17 @@ mod tests {
         reached("takes a boundary number", |m| {
             m.contains(&u64::MAX.to_string())
         });
-        reached("drops a field", |m| !m.contains("\"text\""));
+        reached("drops a field", |m| {
+            m.lines().count() == 2 && m.contains("\"n\":") && !m.contains("\"text\"")
+        });
+        reached("drops an array item", |m| {
+            m.contains("\"list\":[true]") || m.contains("\"list\":[null]")
+        });
         reached("drops a line", |m| m.lines().count() == 1);
         reached("repeats a line", |m| m.lines().count() == 3);
-        reached("reorders its lines", |m| m.starts_with("{\"other\""));
+        reached("reorders its lines", |m| {
+            m.lines().count() == 2 && m.starts_with("{\"other\"") && m.contains("\"text\"")
+        });
     }
 
     #[test]

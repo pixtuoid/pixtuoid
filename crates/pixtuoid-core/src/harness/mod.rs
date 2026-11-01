@@ -139,8 +139,8 @@ pub struct Driven {
     /// Lines the watcher skips too, outside the decoder contract: not UTF-8, or
     /// not JSON.
     pub unparseable: usize,
-    /// Hook lines the dispatcher refused. A refusal of bytes the source itself
-    /// wrote is drift in our decoder.
+    /// Hook lines the dispatcher or a daemon's presence decoder refused. A refusal
+    /// of bytes the source itself wrote is drift in our decoder.
     pub(crate) decode_errors: Vec<LineFailure>,
     /// Each slot's lifecycle classes, as each was first reached: the one record
     /// [`Self::reached`] unions.

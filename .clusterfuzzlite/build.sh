@@ -17,8 +17,8 @@ seeds=$WORK/seeds
 mkdir -p "$seeds"/{hook,transcript,remote}
 
 # One seed per recording, whole, so a fold's state survives from line to line.
-# A transcript leads with its source (`harness::fuzz::transcript`), which its
-# module directory spells (`harness::source_of`).
+# A transcript leads with its source and path (`harness::fuzz::transcript`), the
+# source spelled by its module directory (`harness::source_of`).
 fixtures=crates/pixtuoid-core/tests/sources
 while IFS= read -r file; do
     name=$(sha256sum <"$file" | cut -c1-32)
@@ -28,6 +28,7 @@ while IFS= read -r file; do
         module=${file#"$fixtures"/}
         {
             printf '%s\n' "${module%%/*}" | tr _ -
+            printf '%s\n' "$file"
             cat "$file"
         } >"$seeds/transcript/$name"
         ;;

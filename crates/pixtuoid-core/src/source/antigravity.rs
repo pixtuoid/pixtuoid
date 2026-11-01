@@ -123,7 +123,8 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
             // agy runs a step's calls in order, each as the next step: two calls
             // at step 1 ran as steps 2 and 3, the hook's `stepIdx` naming each.
             // Closed, since `..` overflows at the wire's largest index.
-            for (step, tc) in (step_index.saturating_add(1)..=i64::MAX).zip(tool_calls) {
+            let steps = (step_index.checked_add(1).into_iter()).flat_map(|next| next..=i64::MAX);
+            for (step, tc) in steps.zip(tool_calls) {
                 let Some(tc_obj) = tc.as_object() else {
                     continue;
                 };
@@ -406,9 +407,8 @@ mod tests {
                 })
                 .collect()
         };
-        let last = Some(step_tool_id(i64::MAX));
-        assert_eq!(ids(i64::MAX - 1), std::slice::from_ref(&last));
-        assert_eq!(ids(i64::MAX), [last]);
+        assert_eq!(ids(i64::MAX - 1), [Some(step_tool_id(i64::MAX))]);
+        assert_eq!(ids(i64::MAX), []);
     }
 
     #[test]
