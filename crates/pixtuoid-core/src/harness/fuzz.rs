@@ -237,7 +237,12 @@ mod tests {
             let driven = transcript(input.as_bytes()).expect("a transcript source");
             driven.scene.agents.keys().copied().collect::<Vec<_>>()
         };
-        assert_ne!(drive("/s/parent.jsonl"), drive("/s/parent/task.jsonl"));
+        let session = "2026-08-10T10-11-12-000Z_0197fa30";
+        assert_ne!(
+            drive(&format!("/s/{session}/task.jsonl")),
+            drive("/s/plain/task.jsonl"),
+            "only a nesting the whole path shows tells these apart"
+        );
     }
 
     #[test]
