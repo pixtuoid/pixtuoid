@@ -130,8 +130,8 @@ pub enum Primary {
         /// Files pixtuoid owns beside the config, where [`RenderBeside`] says they
         /// live. Left in place on uninstall (the config un-merge disables loading).
         beside: Option<RenderBeside>,
-        /// Why no file pixtuoid owns can carry the hooks, with the upstream cite
-        /// (`every_merge_cites_why_no_owned_file_can_carry_its_hooks`).
+        /// Why no route pixtuoid owns can load the hooks unattended, with the
+        /// upstream cite (`every_merge_cites_why_no_owned_route_runs_unattended`).
         #[cfg(test)]
         no_owned_route: &'static str,
     },
@@ -793,7 +793,7 @@ mod tests {
     /// A merge is the last resort, so each answers CONTRIBUTING's "Where can hooks
     /// live?" where an author can't skip it and a reviewer can check the cite.
     #[test]
-    fn every_merge_cites_why_no_owned_file_can_carry_its_hooks() {
+    fn every_merge_cites_why_no_owned_route_runs_unattended() {
         for t in TARGETS {
             if let Primary::Config { no_owned_route, .. } = t.primary {
                 assert!(
