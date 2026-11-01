@@ -1,9 +1,6 @@
 ---
 name: local-review
-version: 4.0.0
-description: "Run pixtuoid's review locally at either scope — a DIFF review (REVIEW.md with the CI review's own reviewers, plus the must-run items the read-only CI review can't run) or a whole-codebase AUDIT (subsystem × factor fan-out). Use when CONTRIBUTING's arc step 7 calls for a local review, when the owner asks, for a must-run item, on 'is this ready to merge', or on 'whole-codebase review' / pre-release / periodic audit."
-metadata:
-  scope: "pixtuoid repo only"
+description: "Runs pixtuoid's review locally at either scope — a DIFF review (REVIEW.md with the CI review's own reviewers, plus the must-run items the read-only CI review can't run) or a whole-codebase AUDIT (subsystem × factor fan-out). Use when CONTRIBUTING's arc step 7 calls for a local review, when the owner asks, for a must-run item, on 'is this ready to merge', or on 'whole-codebase review' / pre-release / periodic audit."
 ---
 
 # local-review — local orchestration of REVIEW.md
