@@ -1093,7 +1093,7 @@ fn the_packs_max_density_is_the_scale_a_painter_has_to_round_to() {
     );
 }
 
-/// Pins [`claimed_variant_size`].
+/// Pins [`claimed_variant_size`](crate::sprite::format::claimed_variant_size).
 #[test]
 fn a_claim_no_frame_can_meet_does_not_load() {
     let row = |w: usize| format!("{}\n", "A ".repeat(w).trim_end());
