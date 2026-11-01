@@ -1357,9 +1357,9 @@ d=$(dirname "$0")
 echo "agy $*" >> "$d/calls.log"
 [ "agy $*" = "${FAKE_HOST_FAIL-}" ] && exit 1
 case "$*" in
-"plugin enable pixtuoid") : > "$d/agy-enabled" ;;
-"plugin uninstall pixtuoid") rm -rf "$d/agy-enabled" "$HOME/.gemini/config/plugins/pixtuoid" ;;
-"plugin list --json") [ -f "$d/agy-enabled" ] && echo '[{"name":"pixtuoid","enabled":true}]' || echo '[]' ;;
+"plugin enable pixtuoid") echo '[{"name":"pixtuoid","enabled":true}]' > "$d/agy-plugins" ;;
+"plugin uninstall pixtuoid") rm -rf "$d/agy-plugins" "$HOME/.gemini/config/plugins/pixtuoid" ;;
+"plugin list --json") cat "$d/agy-plugins" 2>/dev/null || echo '[]' ;;
 esac
 exit 0
 "#;
@@ -1368,9 +1368,9 @@ const FAKE_AGY_CMD: &str = "@echo off\r
 set \"d=%~dp0\"\r
 >>\"%d%calls.log\" echo agy %~1 %~2 %~3\r
 if defined FAKE_HOST_FAIL if \"agy %*\"==\"%FAKE_HOST_FAIL%\" exit /b 1\r
-if \"%1 %2 %3\"==\"plugin enable pixtuoid\" (type nul >\"%d%agy-enabled\"& exit /b 0)\r
-if \"%1 %2 %3\"==\"plugin uninstall pixtuoid\" (del \"%d%agy-enabled\" 2>nul& rmdir /s /q \"%USERPROFILE%\\.gemini\\config\\plugins\\pixtuoid\"& exit /b 0)\r
-if \"%1 %2 %3\"==\"plugin list --json\" (if exist \"%d%agy-enabled\" (echo [{\"name\":\"pixtuoid\",\"enabled\":true}]) else (echo []))\r
+if \"%1 %2 %3\"==\"plugin enable pixtuoid\" (>\"%d%agy-plugins\" echo [{\"name\":\"pixtuoid\",\"enabled\":true}]& exit /b 0)\r
+if \"%1 %2 %3\"==\"plugin uninstall pixtuoid\" (del \"%d%agy-plugins\" 2>nul& rmdir /s /q \"%USERPROFILE%\\.gemini\\config\\plugins\\pixtuoid\"& exit /b 0)\r
+if \"%1 %2 %3\"==\"plugin list --json\" (if exist \"%d%agy-plugins\" (type \"%d%agy-plugins\") else (echo []))\r
 exit /b 0\r
 ";
 
@@ -2375,12 +2375,22 @@ fn antigravity_disconnect_removes_the_plugin_through_agy() {
 
 #[test]
 fn antigravity_reports_what_agy_lists() {
-    with_fake_hosts(|_| {
+    with_fake_hosts(|fake| {
         let is_registered = ANTIGRAVITY.host.unwrap().is_registered;
         assert!(!is_registered().unwrap(), "never connected");
         let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
         install_target_from(&ANTIGRAVITY, None, hook).unwrap();
         assert!(is_registered().unwrap(), "connected");
+        let listing = fake.join("agy-plugins");
+        for other in [
+            r#"[{"name":"pixtuoid","enabled":false}]"#,
+            r#"[{"name":"other","enabled":true}]"#,
+        ] {
+            std::fs::write(&listing, other).unwrap();
+            assert!(!is_registered().unwrap(), "{other}");
+        }
+        std::fs::write(&listing, "not json").unwrap();
+        assert!(is_registered().is_err());
         uninstall_target(&ANTIGRAVITY, None).unwrap();
         assert!(!is_registered().unwrap(), "disconnected");
     });
@@ -2410,6 +2420,20 @@ fn antigravity_connect_fails_when_enabling_fails_and_leaves_no_plugin() {
         assert!(!has_hooks(&ANTIGRAVITY, None));
         let primary = (ANTIGRAVITY.default_config_path)().unwrap();
         assert!(!primary.parent().unwrap().exists());
+    });
+}
+
+#[test]
+fn antigravity_reconnect_keeps_a_plugin_it_found_when_enabling_fails() {
+    with_fake_hosts_failing(Some("agy plugin enable pixtuoid"), |_| {
+        let manifest = (ANTIGRAVITY.default_config_path)()
+            .unwrap()
+            .with_file_name("plugin.json");
+        std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        std::fs::write(&manifest, r#"{"name":"pixtuoid"}"#).unwrap();
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        install_target_from(&ANTIGRAVITY, None, hook).unwrap_err();
+        assert!(manifest.exists());
     });
 }
 
@@ -2539,7 +2563,7 @@ fn hermes_connect_fails_when_enabling_fails_and_leaves_the_plugin_dir_as_it_foun
             }
             let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
             let e = install_target_from(&HERMES, None, hook).unwrap_err();
-            assert!(!format!("{e:#}").contains("stay in place"), "{e:#}");
+            assert!(!format!("{e:#}").contains("stays in place"), "{e:#}");
             assert!(!has_hooks(&HERMES, None));
             assert!(!plugin.with_file_name("plugin.yaml").exists());
             assert_eq!(std::fs::read_to_string(&plugin).ok().as_deref(), prior);

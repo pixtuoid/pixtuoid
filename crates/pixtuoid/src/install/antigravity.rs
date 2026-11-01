@@ -44,6 +44,7 @@ const PLUGIN: &str = "plugin";
 const ENABLE: &str = "enable";
 const UNINSTALL: &str = "uninstall";
 const LIST: &str = "list";
+
 const JSON_OUTPUT: &str = "--json";
 
 /// Events we register == events we decode (`source/antigravity.rs`). The bool
@@ -123,20 +124,15 @@ fn register(config: &Path) -> Result<()> {
         "description": "Sends Antigravity CLI's session events to the pixtuoid office",
     });
     host_plugin::write_manifests(&[(manifest_path.clone(), manifest)])?;
-    let enabled = CLI
-        .run(&[PLUGIN.as_ref(), ENABLE.as_ref(), NAME.as_ref()])
-        .map(drop);
-    if let Err(e) = enabled {
-        // A manifest alone is a plugin agy lists, and a later disconnect removes.
-        if fresh
-            && let Err(undo) =
-                host_plugin::remove_if_ours(plugin, &manifest_path, host_plugin::names_us)
-        {
-            return Err(e.context(format!("its manifest stays in place: {undo:#}")));
-        }
-        return Err(e);
-    }
-    Ok(())
+    CLI.run(&[PLUGIN.as_ref(), ENABLE.as_ref(), NAME.as_ref()])
+        .map(drop)
+        .map_err(|e| {
+            if fresh {
+                host_plugin::undo_registration(e, plugin, &manifest_path, host_plugin::names_us)
+            } else {
+                e
+            }
+        })
 }
 
 fn unregister(config: &Path) -> Result<Unregistered> {
@@ -152,9 +148,8 @@ fn unregister(config: &Path) -> Result<Unregistered> {
     Ok(Unregistered::Removed)
 }
 
-/// Asks agy, which documents this list (antigravity.google/docs/plugins.md, "List
-/// installed plugins") and not where it keeps enablement. It leaves out a dir with
-/// no manifest. Only `doctor` reads this, so the CLI start costs nothing.
+/// `plugin list --json`'s shape is antigravity.google/docs/plugins.md's, "List
+/// installed plugins".
 fn is_registered() -> Result<bool> {
     let listed = CLI.run(&[PLUGIN.as_ref(), LIST.as_ref(), JSON_OUTPUT.as_ref()])?;
     let plugins: Vec<Value> =

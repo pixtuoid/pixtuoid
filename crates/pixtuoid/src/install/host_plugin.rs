@@ -91,6 +91,21 @@ pub(crate) fn remove_if_ours(dir: &Path, file: &Path, ours: fn(&str) -> bool) ->
     Ok(())
 }
 
+/// `e`, a failed registration of a plugin `dir` that didn't exist before it, once
+/// [`remove_if_ours`] has taken the dir back: its manifest alone is a plugin the CLI
+/// lists.
+pub(crate) fn undo_registration(
+    e: anyhow::Error,
+    dir: &Path,
+    file: &Path,
+    ours: fn(&str) -> bool,
+) -> anyhow::Error {
+    match remove_if_ours(dir, file, ours) {
+        Ok(()) => e,
+        Err(undo) => e.context(format!("its manifest stays in place: {undo:#}")),
+    }
+}
+
 /// A JSON manifest naming [`NAME`].
 pub(crate) fn names_us(manifest: &str) -> bool {
     serde_json::from_str::<Value>(manifest).is_ok_and(|m| m["name"].as_str() == Some(NAME))
