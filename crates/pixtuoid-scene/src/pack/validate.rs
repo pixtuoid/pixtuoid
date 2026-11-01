@@ -74,7 +74,7 @@ pub(crate) struct HairOverhang {
 }
 
 /// What a loaded pack draws as its author may not have meant: a pack that
-/// can't draw at all does not load ([`PackError`](crate::pack::error::PackError)).
+/// can't draw at all does not load ([`PackError`](crate::pack::PackError)).
 #[derive(Debug, Default)]
 pub(crate) struct ValidationReport {
     /// One per character animation.

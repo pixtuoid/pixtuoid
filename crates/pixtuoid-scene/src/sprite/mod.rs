@@ -442,8 +442,7 @@ impl Mark {
 /// Which way a character frame's head faces the viewer: the view a hairstyle
 /// draws its layers for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[non_exhaustive]
-pub enum HeadView {
+pub(crate) enum HeadView {
     /// The face toward the viewer.
     Front,
     /// The back of the head toward the viewer.

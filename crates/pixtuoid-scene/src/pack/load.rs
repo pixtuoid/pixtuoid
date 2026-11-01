@@ -10,7 +10,7 @@ use serde::Deserialize;
 use strum::VariantArray;
 use vec1::Vec1;
 
-use super::error::{ColorError, KeySite, PackError};
+use super::error::{ColorError, KeySite, PackError, Repr};
 use super::piece::{Piece, Walk, parse_key};
 use super::{
     Building, BuildingArt, CityMaterials, CityPlane, HairLayers, Hairstyle, Material, Pack,
@@ -24,7 +24,7 @@ use crate::sprite::{
     PaletteIndex, Pixel, Rgb, Sprite,
 };
 
-type Result<T, E = PackError> = std::result::Result<T, E>;
+type Result<T, E = Repr> = std::result::Result<T, E>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,22 +107,22 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
     let city_materials = {
         let c = parsed.city;
         if let Some(other) = c.keys().find(|k| Material::from_name(k).is_none()) {
-            return Err(PackError::CityUnknownMaterial {
+            return Err(Repr::CityUnknownMaterial {
                 name: other.clone(),
             });
         }
         let mut keys = [' '; Material::ALL.len()];
         for material in Material::ALL {
             let Some(key) = c.get(material.name()) else {
-                return Err(PackError::CityMissingMaterial { material });
+                return Err(Repr::CityMissingMaterial { material });
             };
             let what = KeySite::CityMaterial;
             let key = single_char(key, what)?;
             if !matches!(palette.get(key), Some(Some(_))) {
-                return Err(PackError::NotOpaque { what, key });
+                return Err(Repr::NotOpaque { what, key });
             }
             if keys[..material.index()].contains(&key) {
-                return Err(PackError::CityKeyShared { key });
+                return Err(Repr::CityKeyShared { key });
             }
             keys[material.index()] = key;
         }
@@ -137,7 +137,7 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
         let materials = &city_materials;
         let (name, density) = split_density_variant(&key).unwrap_or((&key, Density::ONE));
         if density == Density::ONE && key.contains(DENSITY_VARIANT_SEP) {
-            return Err(PackError::BuildingDensity { key });
+            return Err(Repr::BuildingDensity { key });
         }
         let art = building_art(&building.sprite, &palette, materials, get_src)?;
         match (density, building.planes) {
@@ -145,7 +145,7 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
                 let planes = planes
                     .iter()
                     .map(|p| {
-                        CityPlane::from_name(p).ok_or_else(|| PackError::BuildingPlane {
+                        CityPlane::from_name(p).ok_or_else(|| Repr::BuildingPlane {
                             key: key.clone(),
                             plane: p.clone(),
                         })
@@ -161,10 +161,10 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
                     },
                 );
             }
-            (Density::ONE, _) => return Err(PackError::BuildingWithoutPlanes { key }),
-            (_, Some(_)) => return Err(PackError::VariantPlanes { key }),
+            (Density::ONE, _) => return Err(Repr::BuildingWithoutPlanes { key }),
+            (_, Some(_)) => return Err(Repr::VariantPlanes { key }),
             (_, None) => {
-                let no_base = |key| PackError::VariantWithoutBase {
+                let no_base = |key| Repr::VariantWithoutBase {
                     base: name.to_owned(),
                     key,
                 };
@@ -173,7 +173,7 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
                 };
                 if !variant_redraws(&base.base.sprite, density, &art.sprite) {
                     let (base_w, base_h) = base.size();
-                    return Err(PackError::VariantSize {
+                    return Err(Repr::VariantSize {
                         key,
                         density,
                         base_w,
@@ -190,23 +190,23 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
         let key = single_char(&parsed.characters.outline, what)?;
         match palette.get(key) {
             Some(Some(rgb)) => rgb,
-            _ => return Err(PackError::NotOpaque { what, key }),
+            _ => return Err(Repr::NotOpaque { what, key }),
         }
     };
     let mut hairstyles = BTreeMap::new();
     for (key, style) in parsed.hairstyles {
         let Some((name, density)) = split_density_variant(&key) else {
-            return Err(PackError::HairstyleDensity { key });
+            return Err(Repr::HairstyleDensity { key });
         };
         let mut layer = |view: HeadView, fname: &str| -> Result<Sprite> {
             let src = get_src(fname)?;
             let Some(frame) = one_frame(decode(fname, &src, &palette)?) else {
-                return Err(PackError::HairLayerFrames {
+                return Err(Repr::HairLayerFrames {
                     file: fname.to_owned(),
                 });
             };
             if frame.1.iter().find_map(HeadMark::of).map(|h| h.view) != Some(view) {
-                return Err(PackError::HairLayerHead {
+                return Err(Repr::HairLayerHead {
                     file: fname.to_owned(),
                     view,
                 });
@@ -248,7 +248,7 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
     if let [first, rest @ ..] = densities.iter().copied().collect::<Vec<_>>().as_slice()
         && let Some(d) = rest.iter().find(|&&d| names_at(d) != names_at(*first))
     {
-        return Err(PackError::HairstylesDiffer {
+        return Err(Repr::HairstylesDiffer {
             first: *first,
             other: *d,
         });
@@ -258,7 +258,7 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
     for (name, fname) in parsed.icons {
         let src = get_src(&fname)?;
         let Some(frame) = one_frame(decode(&fname, &src, &palette)?) else {
-            return Err(PackError::IconFrames { file: fname });
+            return Err(Repr::IconFrames { file: fname });
         };
         let art = Sprite::new(Vec1::new(frame), Arc::clone(&palette), 0, None);
         icons.insert(name, art);
@@ -298,7 +298,7 @@ fn build_pieces(
     let animations: BTreeMap<String, AnimationToml> = animations.into_iter().collect();
     for (key, anim) in animations {
         let Some((piece, density)) = parse_key(&key) else {
-            return Err(PackError::UnknownAnimation { key });
+            return Err(Repr::UnknownAnimation { key });
         };
         let mut frames = Vec::new();
         for fname in &anim.frames {
@@ -310,7 +310,7 @@ fn build_pieces(
         let have = frames.len();
         let frames = match Vec1::try_from_vec(frames) {
             Ok(frames) if have >= need => frames,
-            _ => return Err(PackError::TooFewFrames { key, need, have }),
+            _ => return Err(Repr::TooFewFrames { key, need, have }),
         };
         let sprite = Sprite::new(frames, Arc::clone(palette), anim.frame_ms, anim.stride);
         match density {
@@ -322,21 +322,18 @@ fn build_pieces(
             }
         }
     }
-    let pieces = EnumMap::try_from_fn(|piece| {
-        bases
-            .remove(&piece)
-            .ok_or(PackError::MissingPiece { piece })
-    })?;
+    let pieces =
+        EnumMap::try_from_fn(|piece| bases.remove(&piece).ok_or(Repr::MissingPiece { piece }))?;
     let strides = EnumMap::try_from_fn(|walk: Walk| {
         pieces[walk.piece()]
             .stride()
-            .ok_or(PackError::WalkWithoutStride { walk: walk.piece() })
+            .ok_or(Repr::WalkWithoutStride { walk: walk.piece() })
     })?;
     let mut redrawn: EnumMap<Piece, BTreeMap<Density, Sprite>> = EnumMap::default();
     for ((piece, density), (key, variant)) in variants {
         let base = &pieces[piece];
         if !variant_redraws(base, density, &variant) {
-            return Err(PackError::VariantDoesNotRedraw {
+            return Err(Repr::VariantDoesNotRedraw {
                 key,
                 base_frames: base.frames().len(),
                 variant_frames: variant.frames().len(),
@@ -361,7 +358,7 @@ fn building_art(
 ) -> Result<BuildingArt> {
     let src = get_src(fname)?;
     let Some(one) = one_frame(decode(fname, &src, palette)?) else {
-        return Err(PackError::BuildingFrames {
+        return Err(Repr::BuildingFrames {
             file: fname.to_owned(),
         });
     };
@@ -374,7 +371,7 @@ fn building_art(
         let p = usize::from(p);
         if pixels.get(p).copied().flatten().is_some() && !drawn.contains(&p) {
             let w = usize::from(grid.width());
-            return Err(PackError::BuildingOutsideMaterials {
+            return Err(Repr::BuildingOutsideMaterials {
                 file: fname.to_owned(),
                 x: i % w,
                 y: i / w,
@@ -446,12 +443,18 @@ fn runs_of(grid: &Grid<PaletteIndex>, index: PaletteIndex) -> Vec<Vec<(u16, u16)
 /// # Errors
 ///
 /// If `pack_json` does not parse, a frame it names is absent from `frames`, or the pack fails validation.
-pub(crate) fn load_pack_from_json(pack_json: &str, frames: &[(&str, &str)]) -> Result<Pack> {
-    build_pack(manifest_from_json(pack_json)?, &mut frame_lookup(frames))
+pub(crate) fn load_pack_from_json(
+    pack_json: &str,
+    frames: &[(&str, &str)],
+) -> Result<Pack, PackError> {
+    Ok(build_pack(
+        manifest_from_json(pack_json)?,
+        &mut frame_lookup(frames),
+    )?)
 }
 
 fn manifest_from_json(pack_json: &str) -> Result<PackToml> {
-    serde_json::from_str(pack_json).map_err(|e| PackError::JsonManifest {
+    serde_json::from_str(pack_json).map_err(|e| Repr::JsonManifest {
         message: e.to_string(),
     })
 }
@@ -463,7 +466,7 @@ fn frame_lookup(frames: &[(&str, &str)]) -> impl Fn(&str) -> Result<String> {
         frames
             .get(fname)
             .map(|s| s.to_string())
-            .ok_or_else(|| PackError::MissingEmbeddedFrame {
+            .ok_or_else(|| Repr::MissingEmbeddedFrame {
                 file: fname.to_owned(),
             })
     }
@@ -476,10 +479,13 @@ fn transcode(pack_toml: &str) -> String {
     manifest.to_string()
 }
 
-/// [`load_pack_from_json`] of a TOML manifest's [`transcode`].
+/// [`load_pack_from_json`] of a TOML manifest's [`transcode`], with the error it hides.
 #[cfg(test)]
 pub(crate) fn load_pack_from_strings(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
-    load_pack_from_json(&transcode(pack_toml), frames)
+    build_pack(
+        manifest_from_json(&transcode(pack_toml))?,
+        &mut frame_lookup(frames),
+    )
 }
 
 /// The one-frame sprite [`fill_pack_manifest`] draws every piece it adds in.
@@ -568,7 +574,7 @@ pub(crate) fn frames_read_by(pack_toml: &str, frames: &[(&str, &str)]) -> Result
 
 /// Frame file `file`'s source, decoded against `palette`.
 fn decode(file: &str, src: &str, palette: &Palette) -> Result<Vec<(IndexedFrame, Vec<Mark>)>> {
-    parse_indexed(src, palette).map_err(|source| PackError::Decode {
+    parse_indexed(src, palette).map_err(|source| Repr::Decode {
         file: file.to_owned(),
         source,
     })
@@ -577,7 +583,7 @@ fn decode(file: &str, src: &str, palette: &Palette) -> Result<Vec<(IndexedFrame,
 fn single_char(k: &str, what: KeySite) -> Result<char> {
     let mut it = k.chars();
     let (Some(key), None) = (it.next(), it.next()) else {
-        return Err(PackError::NotOneChar {
+        return Err(Repr::NotOneChar {
             what,
             key: k.to_owned(),
         });
@@ -591,12 +597,12 @@ fn build_palette(
 ) -> Result<Palette> {
     let keys = colors.len() + ramps.len();
     if keys > PALETTE_CAPACITY {
-        return Err(PackError::PaletteTooLarge { keys });
+        return Err(Repr::PaletteTooLarge { keys });
     }
     let mut palette = Palette::new();
     for (k, v) in colors {
         let key = single_char(k, KeySite::Palette)?;
-        let pixel = parse_palette_value(v).map_err(|source| PackError::Color {
+        let pixel = parse_palette_value(v).map_err(|source| Repr::Color {
             key: k.clone(),
             source,
         })?;
@@ -606,16 +612,16 @@ fn build_palette(
         let key = single_char(k, KeySite::Ramp)?;
         let of = single_char(&ramp.of, KeySite::RampBase)?;
         if colors.contains_key(k) {
-            return Err(PackError::PaletteAndRamp { key });
+            return Err(Repr::PaletteAndRamp { key });
         }
         // `colors`, not the palette being built, names the possible bases, so
         // an earlier-loaded ramp is never one.
         if !colors.contains_key(&ramp.of) || !matches!(palette.get(of), Some(Some(_))) {
-            return Err(PackError::RampBase { key, of });
+            return Err(Repr::RampBase { key, of });
         }
         // Zero is a second name for the base itself.
         if ramp.level == 0 || ramp.level.unsigned_abs() > MAX_RAMP_LEVEL.unsigned_abs() {
-            return Err(PackError::RampLevel {
+            return Err(Repr::RampLevel {
                 key,
                 level: ramp.level,
             });

@@ -6,10 +6,9 @@ use strum::VariantArray;
 use crate::sprite::format::{Density, split_density_variant};
 
 /// Every piece a pack draws: the character poses, the furniture and the
-/// room's fixtures, and the creatures. A pack ships each, so a loaded
-/// [`Pack`](super::Pack) hands out any of them
-/// ([`OfficeArt::piece`](super::OfficeArt::piece)); the manifest keys it by its
-/// `name`.
+/// room's fixtures, and the creatures. A pack ships each, so a loaded pack
+/// hands out any of them ([`OfficeArt::piece`](super::OfficeArt::piece)); the
+/// manifest keys it by its `name`.
 #[derive(
     Debug,
     Clone,

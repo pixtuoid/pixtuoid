@@ -24,9 +24,10 @@ fn parse(src: &str) -> anyhow::Result<Vec<Frame>> {
     Ok(pack.piece(Piece::Seated).frames().to_vec())
 }
 
-/// A caller can match the failure, and `{:#}` names each step of it once.
+/// The failure names its line, and what a caller sees of it (`{:#}`) names each
+/// step once.
 #[test]
-fn a_bad_pixel_is_matchable_and_its_chain_prints_each_step_once() {
+fn a_bad_pixel_names_its_line_and_its_chain_prints_each_step_once() {
     let err = load_filled_pack(
         "[palette]\n\"A\"=\"#010203\"\n\
          [animations.seated]\nframes=[\"f.sprite\"]\nframe_ms=100\n",
@@ -36,7 +37,7 @@ fn a_bad_pixel_is_matchable_and_its_chain_prints_each_step_once() {
     assert!(
         matches!(
             &err,
-            PackError::Decode {
+            Repr::Decode {
                 file,
                 source: SpriteError::Line {
                     line: 2,
@@ -49,7 +50,7 @@ fn a_bad_pixel_is_matchable_and_its_chain_prints_each_step_once() {
         "{err:?}"
     );
     assert_eq!(
-        format!("{:#}", anyhow::Error::from(err)),
+        format!("{:#}", anyhow::Error::from(PackError::from(err))),
         "decoding f.sprite: unknown palette key 'z' (line 2)"
     );
 }
@@ -63,7 +64,7 @@ fn a_shape_error_names_the_line_at_fault() {
     )
     .unwrap_err()
     {
-        PackError::Decode {
+        Repr::Decode {
             source: SpriteError::Line { line, .. },
             ..
         } => line,
@@ -169,7 +170,7 @@ fn a_single_frame_typing_does_not_load() {
     )
     .unwrap_err();
     assert!(
-        matches!(&err, PackError::TooFewFrames { key, need: 2, have: 1, .. } if key == "typing"),
+        matches!(&err, Repr::TooFewFrames { key, need: 2, have: 1, .. } if key == "typing"),
         "{err:?}"
     );
 }
@@ -192,7 +193,7 @@ fn an_unregistered_animation_does_not_load() {
     )
     .unwrap_err();
     assert!(
-        matches!(&err, PackError::UnknownAnimation { key, .. } if key == "idle"),
+        matches!(&err, Repr::UnknownAnimation { key, .. } if key == "idle"),
         "{err:?}"
     );
 }
@@ -682,7 +683,7 @@ fn pack_with(animations: &str) -> Pack {
 }
 
 /// `animations` as a manifest `try_pack_with_frames` refuses.
-fn refused(animations: &str, frames: &[(&str, &str)]) -> PackError {
+fn refused(animations: &str, frames: &[(&str, &str)]) -> Repr {
     try_pack_with_frames(animations, frames).expect_err("the pack does not load")
 }
 
@@ -759,7 +760,7 @@ fn a_pack_lacking_a_piece_does_not_load() {
         let err = load_pack_from_strings(&manifest.to_string(), &[FILLER_SPRITE])
             .expect_err("a piece is missing");
         assert!(
-            matches!(err, PackError::MissingPiece { piece: p } if p == piece),
+            matches!(err, Repr::MissingPiece { piece: p } if p == piece),
             "{piece:?}: {err:?}"
         );
     }
@@ -770,7 +771,7 @@ fn an_unknown_animation_does_not_load() {
     for key in ["idle", "dsek@4x", "desk@1x", "typo@64x", "desk@60000x"] {
         let err = refused(&anim(key, &["f.sprite"]), &[("f.sprite", "@frame 0\nA")]);
         assert!(
-            matches!(&err, PackError::UnknownAnimation { key: k } if k == key),
+            matches!(&err, Repr::UnknownAnimation { key: k } if k == key),
             "{key}: {err:?}"
         );
     }
@@ -784,7 +785,7 @@ fn a_pack_without_city_or_characters_does_not_load() {
         let err = load_pack_from_strings(&manifest.to_string(), &[FILLER_SPRITE])
             .expect_err("a required table is missing");
         assert!(
-            matches!(&err, PackError::JsonManifest { message } if message.contains(table)),
+            matches!(&err, Repr::JsonManifest { message } if message.contains(table)),
             "{table}: {err:?}"
         );
     }
@@ -801,7 +802,7 @@ fn a_json_manifest_loads_and_a_bad_one_says_why() {
     for (bad, why) in [("{".to_owned(), "EOF"), (unknown.to_string(), "sprites")] {
         let err = load_pack_from_json(&bad, &[FILLER_SPRITE]).expect_err("refused");
         assert!(
-            matches!(&err, PackError::JsonManifest { message } if message.contains(why)),
+            matches!(&err.0, Repr::JsonManifest { message } if message.contains(why)),
             "{why}: {err:?}"
         );
     }
@@ -815,7 +816,7 @@ fn a_walk_without_a_stride_does_not_load() {
         let files = vec!["f.sprite"; piece.min_frames()];
         let err = refused(&anim(piece.name(), &files), &[("f.sprite", "@frame 0\nA")]);
         assert!(
-            matches!(err, PackError::WalkWithoutStride { walk: p } if p == piece),
+            matches!(err, Repr::WalkWithoutStride { walk: p } if p == piece),
             "{piece:?}: {err:?}"
         );
     }
@@ -839,7 +840,7 @@ fn a_short_animation_does_not_load() {
         assert!(
             matches!(
                 &err,
-                PackError::TooFewFrames { key, need, have }
+                Repr::TooFewFrames { key, need, have }
                     if key == piece.name()
                         && *need == piece.min_frames()
                         && *have == piece.min_frames() - 1
@@ -860,7 +861,7 @@ fn a_door_needs_three_frames_a_typist_two_and_any_other_piece_one() {
             &[("f.sprite", "@frame 0\nA")],
         );
         assert!(
-            matches!(&err, PackError::TooFewFrames { key, need: n, have: h }
+            matches!(&err, Repr::TooFewFrames { key, need: n, have: h }
                 if key == name && *n == need && *h == have),
             "{name}: {err:?}"
         );
@@ -875,7 +876,7 @@ fn an_animation_with_no_frames_does_not_load() {
             &[],
         );
         assert!(
-            matches!(&err, PackError::TooFewFrames { key, need: 1, have: 0 } if key == name),
+            matches!(&err, Repr::TooFewFrames { key, need: 1, have: 0 } if key == name),
             "{name}: {err:?}"
         );
     }
@@ -896,7 +897,7 @@ fn an_icon_of_two_frames_is_refused() {
         "[icons]\nstar=\"two.sprite\"\n",
         &[("two.sprite", "@frame 0\nA\n@frame 1\nA")],
     );
-    assert!(matches!(err, PackError::IconFrames { file } if file == "two.sprite"));
+    assert!(matches!(err, Repr::IconFrames { file } if file == "two.sprite"));
 }
 
 /// A walk carries its stride; a stride of nothing is no walk and the pack
@@ -946,7 +947,7 @@ fn a_density_with_a_leading_zero_is_not_a_variant() {
         SIZED_FRAMES,
     );
     assert!(
-        matches!(&err, PackError::UnknownAnimation { key } if key == "desk@02x"),
+        matches!(&err, Repr::UnknownAnimation { key } if key == "desk@02x"),
         "{err:?}"
     );
 }
@@ -994,7 +995,7 @@ fn a_variant_that_does_not_redraw_its_piece_does_not_load() {
     ] {
         let err = refused(&typing(variant), SIZED_FRAMES);
         assert!(
-            matches!(&err, PackError::VariantDoesNotRedraw {
+            matches!(&err, Repr::VariantDoesNotRedraw {
                 key, base_frames: 2, variant_frames: v
             } if key == "typing@2x" && *v == variant_frames),
             "{why}: {err:?}"
@@ -1022,10 +1023,7 @@ fn each_variant_frame_is_proved_against_the_matching_base_frame() {
     ));
     // each frame fits a base frame, but not the matching one
     let err = refused(&walking(&["six.sprite", "two.sprite"]), SIZED_FRAMES);
-    assert!(
-        matches!(err, PackError::VariantDoesNotRedraw { .. }),
-        "{err:?}"
-    );
+    assert!(matches!(err, Repr::VariantDoesNotRedraw { .. }), "{err:?}");
 }
 
 /// Pins [`DENSITY_VARIANT_SEP`]'s claim: `@4x` of a 2-wide base is 8 wide.
@@ -1041,7 +1039,7 @@ fn a_variant_that_lies_about_its_density_does_not_load() {
         ],
     );
     assert!(
-        matches!(&err, PackError::VariantDoesNotRedraw { key, .. } if key == "desk@4x"),
+        matches!(&err, Repr::VariantDoesNotRedraw { key, .. } if key == "desk@4x"),
         "{err:?}"
     );
 }
@@ -1055,7 +1053,7 @@ fn an_empty_density_variant_does_not_load() {
         &[("f.sprite", "@frame 0\nA")],
     );
     assert!(
-        matches!(&err, PackError::TooFewFrames { key, need: 1, have: 0 } if key == "desk@4x"),
+        matches!(&err, Repr::TooFewFrames { key, need: 1, have: 0 } if key == "desk@4x"),
         "{err:?}"
     );
 }
@@ -1107,7 +1105,7 @@ fn a_claim_no_frame_can_meet_does_not_load() {
         &[("base.sprite", &base), ("variant.sprite", &variant)],
     );
     assert!(
-        matches!(&err, PackError::VariantDoesNotRedraw { key, .. } if key == "desk@2x"),
+        matches!(&err, Repr::VariantDoesNotRedraw { key, .. } if key == "desk@2x"),
         "80_000 wide is claimed, 65_535 is found: {err:?}"
     );
 }
