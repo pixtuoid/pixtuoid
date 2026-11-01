@@ -541,7 +541,7 @@ impl OfficeArt {
     }
 
     /// The parsed pack: its pieces, density variants, city and hairstyles.
-    pub(crate) fn pack(&self) -> &Pack {
+    pub(crate) fn inner(&self) -> &Pack {
         &self.pack
     }
 
@@ -629,7 +629,7 @@ pub(crate) fn test_office() -> OfficeArt {
 /// The bundled pack's pieces, for unit tests: [`test_office`]'s.
 #[cfg(test)]
 pub(crate) fn test_default_pack() -> Pack {
-    test_office().pack().clone()
+    test_office().inner().clone()
 }
 
 /// The default pack's manifest, as `build.rs` embeds it.

@@ -387,10 +387,10 @@ fn a_back_turned_desk_shows_the_pose_s_own_back_view() {
 }
 
 /// `piece`'s base art and each density variant, named as the manifest keys them.
-fn arts_of(art: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::sprite::Sprite)> {
-    std::iter::once((piece.name().to_owned(), art.piece(piece)))
+fn arts_of(pack: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::sprite::Sprite)> {
+    std::iter::once((piece.name().to_owned(), pack.piece(piece)))
         .chain(
-            art.pack()
+            pack.inner()
                 .variants_of(piece)
                 .iter()
                 .map(|(d, s)| (format!("{}@{d}x", piece.name()), s)),
@@ -402,17 +402,17 @@ fn arts_of(art: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::s
 /// recolored and, where the art marks its head, dressed in each of the pack's
 /// hairstyles.
 fn looks(
-    art: &crate::pack::OfficeArt,
+    pack: &crate::pack::OfficeArt,
     anim: &crate::sprite::Sprite,
     i: usize,
     overrides: &[(char, crate::sprite::Pixel)],
 ) -> Vec<crate::sprite::Frame> {
     let bare = anim.recolorable_at(i).recolored(overrides);
-    let line = art.pack().character_outline();
+    let line = pack.inner().character_outline();
     match anim.head(i) {
         None => vec![bare],
-        Some(head) => art
-            .pack()
+        Some(head) => pack
+            .inner()
             .hairstyles()
             .map(|s| {
                 let dress = crate::character::Dress::of(&bare, head, Some(s));
@@ -613,7 +613,7 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
         };
         let (anchor_toml, anchor_art) = grid_anchor(DENSITY, SHIRT_KEY);
         let stride = anim.walk().map_or(String::new(), |walk| {
-            format!("stride={}\n", bundled.pack().stride(walk))
+            format!("stride={}\n", bundled.inner().stride(walk))
         });
         let toml = format!(
             "[palette]\n\
@@ -4143,18 +4143,21 @@ fn appliance_at(sprite: Piece, busy: bool, ms: u64) -> RgbBuffer {
 /// than half its busy frames may show it at rest.
 #[test]
 fn a_busy_loop_spends_most_of_its_frames_away_from_rest() {
-    let art = crate::pack::test_office();
+    let pack = crate::pack::test_office();
     let four = test_density(4);
-    for (name, variant) in [
-        ("vending_machine", art.piece(Piece::VendingMachine)),
-        ("printer", art.piece(Piece::Printer)),
+    for (name, art) in [
+        ("vending_machine", pack.piece(Piece::VendingMachine)),
+        ("printer", pack.piece(Piece::Printer)),
         (
             "vending_machine@4x",
-            &art.pack().variants_of(Piece::VendingMachine)[&four],
+            &pack.inner().variants_of(Piece::VendingMachine)[&four],
         ),
-        ("printer@4x", &art.pack().variants_of(Piece::Printer)[&four]),
+        (
+            "printer@4x",
+            &pack.inner().variants_of(Piece::Printer)[&four],
+        ),
     ] {
-        let frames = variant.frames();
+        let frames = art.frames();
         let (rest, busy) = frames.split_first().expect("a rest frame");
         let at_rest = busy
             .iter()

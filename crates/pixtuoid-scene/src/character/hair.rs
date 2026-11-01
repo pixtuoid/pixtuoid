@@ -19,9 +19,9 @@ const HAIRSTYLE_SALT: u64 = 0x6861_6972_7374_796c;
 /// rendezvous hashing, so adding a style to a pack moves only the agents that
 /// now prefer it. It is picked by name, whatever the density, so an agent keeps
 /// their style when the renderer lands on another.
-fn pick(art: &OfficeArt, agent: AgentId) -> Option<&str> {
+fn pick(pack: &OfficeArt, agent: AgentId) -> Option<&str> {
     let seed = splitmix64(splitmix64(agent.raw() ^ HAIRSTYLE_SALT));
-    art.pack()
+    pack.inner()
         .hairstyles()
         .map(Hairstyle::name)
         .max_by_key(|name| splitmix64(seed ^ fnv1a(name.bytes().map(u64::from))))
@@ -42,14 +42,14 @@ pub(crate) struct Dress {
 /// The [`Dress`] of `body`, frame `head`'s art at `density`, for `agent`:
 /// `None` at 1x or on an unmarked frame, which is drawn as it is.
 pub(crate) fn dress_for(
-    art: &OfficeArt,
+    pack: &OfficeArt,
     agent: AgentId,
     body: &Frame,
     head: Option<HeadMark>,
     density: Density,
 ) -> Option<Dress> {
     let head = head.filter(|_| density.get() > 1)?;
-    let style = pick(art, agent).and_then(|name| art.pack().hairstyle(name, density));
+    let style = pick(pack, agent).and_then(|name| pack.inner().hairstyle(name, density));
     Some(Dress::of(body, head, style))
 }
 
@@ -220,21 +220,21 @@ mod tests {
     /// The one-skin-pixel body the tests dress.
     const BODY: &str = ". . .\n. . .\n. S .\n. . .\n";
 
-    /// `art`'s body dressed as it would be for `agent` at 2x.
-    fn dressed(art: &OfficeArt, agent: AgentId) -> (Dress, Frame) {
-        let sprite = art.piece(Piece::Seated);
+    /// `pack`'s body dressed as it would be for `agent` at 2x.
+    fn dressed(pack: &OfficeArt, agent: AgentId) -> (Dress, Frame) {
+        let sprite = pack.piece(Piece::Seated);
         let body = sprite.first();
-        let dress = dress_for(art, agent, body, sprite.head(0), TWO).expect("a marked 2x frame");
+        let dress = dress_for(pack, agent, body, sprite.head(0), TWO).expect("a marked 2x frame");
         let style = dress
             .style
             .as_deref()
-            .and_then(|n| art.pack().hairstyle(n, TWO));
+            .and_then(|n| pack.inner().hairstyle(n, TWO));
         let f = super::dress(
             body,
             &dress,
             style,
             &[('H', Some(H))],
-            art.pack().character_outline(),
+            pack.inner().character_outline(),
         );
         (dress, f)
     }
@@ -396,15 +396,15 @@ mod tests {
     /// see it.
     #[test]
     fn every_bundled_character_dressed_in_every_style_keeps_its_outline_whole() {
-        let art = crate::pack::test_office();
-        let line = art.pack().character_outline();
+        let pack = crate::pack::test_office();
+        let line = pack.inner().character_outline();
         let (mut dressed, mut flaws) = (0, Vec::new());
         let arts = Piece::VARIANTS
             .iter()
             .filter(|p| p.kind() == PieceKind::Character)
             .flat_map(|&p| {
-                std::iter::once((p.name().to_owned(), art.piece(p))).chain(
-                    art.pack()
+                std::iter::once((p.name().to_owned(), pack.piece(p))).chain(
+                    pack.inner()
                         .variants_of(p)
                         .iter()
                         .map(move |(d, s)| (format!("{}@{d}x", p.name()), s)),
@@ -415,7 +415,7 @@ mod tests {
                 let Some(head) = sprite.head(i) else {
                     continue;
                 };
-                let styles = art.pack().hairstyles().map(Some).chain([None]);
+                let styles = pack.inner().hairstyles().map(Some).chain([None]);
                 for style in styles {
                     let d = Dress::of(body, head, style);
                     let f = dress(body, &d, style, &[], line);

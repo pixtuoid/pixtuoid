@@ -1425,7 +1425,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sky::WeatherPol
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sky::WeatherPolicy
 pub fn pixtuoid_scene::sky::hour_is_day(f32) -> bool
 pub mod pixtuoid_scene::sprite
-pub mod pixtuoid_scene::sprite::error
 pub mod pixtuoid_scene::sprite::format
 pub struct pixtuoid_scene::sprite::format::Density(_)
 impl pixtuoid_scene::sprite::format::Density

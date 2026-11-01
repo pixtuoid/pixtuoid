@@ -10,8 +10,8 @@ use crate::grid::Grid;
 
 /// Compositing a `Frame` onto an `RgbBuffer`, skipping transparent pixels.
 pub(crate) mod blit;
-pub mod error;
-/// Sprite-pack file format: `pack.toml` + `.sprite` parsing and in-memory pack building.
+pub(crate) mod error;
+/// `.sprite` decoding and density-variant naming; [`crate::pack`] loads packs.
 pub mod format;
 
 /// An opaque 24-bit color.

@@ -1,7 +1,5 @@
-//! Why a sprite pack failed to load. The public [`PackError`] hides [`Repr`],
-//! so a new pack rule is not an API change. A variant that wraps a cause keeps
-//! the cause out of its own message, so `{:#}` prints each step of the chain
-//! once.
+//! Why a sprite pack failed to load. A variant that wraps a cause keeps the
+//! cause out of its own message, so `{:#}` prints each step of the chain once.
 
 use super::{CLOCK_FACE_KEY, DESK_BULB_KEY, Desk, DeskProp, Material, Piece};
 use crate::display::Icon;
@@ -12,8 +10,7 @@ use crate::sprite::{HEAD_MARK, HeadView, MAX_RAMP_LEVEL, PALETTE_CAPACITY};
 /// The manifest's name in errors.
 pub(crate) const PACK_MANIFEST: &str = "pack.toml";
 
-/// A sprite pack that could not be loaded. It says why when printed, and its
-/// [`source`](std::error::Error::source) chain says why again, one step each.
+/// A sprite pack that could not be loaded.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct PackError(#[from] pub(crate) Repr);
