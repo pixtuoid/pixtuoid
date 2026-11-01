@@ -1350,7 +1350,11 @@ const FAKE_AGY_SH: &str = r#"#!/bin/sh
 d=$(dirname "$0")
 echo "agy $*" >> "$d/calls.log"
 [ "agy $*" = "${FAKE_HOST_FAIL-}" ] && exit 1
-[ "$*" = "plugin uninstall pixtuoid" ] && rm -rf "$HOME/.gemini/config/plugins/pixtuoid"
+case "$*" in
+"plugin enable pixtuoid") : > "$d/agy-enabled" ;;
+"plugin uninstall pixtuoid") rm -rf "$d/agy-enabled" "$HOME/.gemini/config/plugins/pixtuoid" ;;
+"plugin list --json") [ -f "$d/agy-enabled" ] && echo '[{"name":"pixtuoid","enabled":true}]' || echo '[]' ;;
+esac
 exit 0
 "#;
 
@@ -1358,7 +1362,9 @@ const FAKE_AGY_CMD: &str = "@echo off\r
 set \"d=%~dp0\"\r
 >>\"%d%calls.log\" echo agy %~1 %~2 %~3\r
 if defined FAKE_HOST_FAIL if \"agy %*\"==\"%FAKE_HOST_FAIL%\" exit /b 1\r
-if \"%1 %2 %3\"==\"plugin uninstall pixtuoid\" rmdir /s /q \"%USERPROFILE%\\.gemini\\config\\plugins\\pixtuoid\"\r
+if \"%1 %2 %3\"==\"plugin enable pixtuoid\" (type nul >\"%d%agy-enabled\"& exit /b 0)\r
+if \"%1 %2 %3\"==\"plugin uninstall pixtuoid\" (del \"%d%agy-enabled\" 2>nul& rmdir /s /q \"%USERPROFILE%\\.gemini\\config\\plugins\\pixtuoid\"& exit /b 0)\r
+if \"%1 %2 %3\"==\"plugin list --json\" (if exist \"%d%agy-enabled\" (echo [{\"name\":\"pixtuoid\",\"enabled\":true}]) else (echo []))\r
 exit /b 0\r
 ";
 
@@ -2311,19 +2317,10 @@ fn reasonix_connect_fails_when_linking_fails_and_leaves_no_hooks() {
 
 /// The shared hooks file an older pixtuoid merged into, under the fake's `HOME`.
 fn agy_legacy_hooks() -> PathBuf {
-    let plugin = (ANTIGRAVITY.default_config_path)().expect("inside with_fake_hosts");
-    let config = plugin.ancestors().nth(3).unwrap();
-    std::fs::create_dir_all(config).unwrap();
-    config.join("hooks.json")
-}
-
-fn agy_calls(fake: &std::path::Path) -> Vec<String> {
-    std::fs::read_to_string(fake.join("calls.log"))
-        .unwrap_or_default()
-        .lines()
-        .filter(|l| l.starts_with("agy "))
-        .map(str::to_owned)
-        .collect()
+    let legacy = ANTIGRAVITY.host.unwrap().legacy.as_ref().unwrap();
+    let path = (legacy.path)().expect("inside with_fake_hosts");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    path
 }
 
 #[test]
@@ -2339,7 +2336,7 @@ fn antigravity_connect_writes_its_plugin_and_strips_the_hook_an_older_pixtuoid_m
         let r = install_target_from(&ANTIGRAVITY, None, hook).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::Installed));
 
-        assert_eq!(agy_calls(fake), ["agy plugin enable pixtuoid"]);
+        assert_eq!(calls_of(fake, "agy"), ["agy plugin enable pixtuoid"]);
         let primary = (ANTIGRAVITY.default_config_path)().unwrap();
         assert!(primary.with_file_name("plugin.json").exists());
         let shared = std::fs::read_to_string(&legacy).unwrap();
@@ -2365,22 +2362,48 @@ fn antigravity_disconnect_removes_the_plugin_through_agy() {
         std::fs::remove_file(fake.join("calls.log")).unwrap();
         let u = uninstall_target(&ANTIGRAVITY, None).unwrap();
         assert!(matches!(u.outcome, UninstallOutcome::Removed));
-        assert_eq!(agy_calls(fake), ["agy plugin uninstall pixtuoid"]);
+        assert_eq!(calls_of(fake, "agy"), ["agy plugin uninstall pixtuoid"]);
         assert!(!(ANTIGRAVITY.default_config_path)().unwrap().exists());
     });
 }
 
-/// agy records only a disable, in its own config.
 #[test]
-fn antigravity_reads_a_disable_as_unregistered() {
+fn antigravity_reports_what_agy_lists() {
     with_fake_hosts(|_| {
         let is_registered = ANTIGRAVITY.host.unwrap().is_registered;
-        assert!(is_registered().unwrap(), "no config.json");
-        let config = agy_legacy_hooks().with_file_name("config.json");
-        std::fs::write(&config, r#"{"plugins":{"pixtuoid":{"enabled":false}}}"#).unwrap();
-        assert!(!is_registered().unwrap());
-        std::fs::write(&config, "{not json").unwrap();
-        assert!(is_registered().is_err());
+        assert!(!is_registered().unwrap(), "never connected");
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        install_target_from(&ANTIGRAVITY, None, hook).unwrap();
+        assert!(is_registered().unwrap(), "connected");
+        uninstall_target(&ANTIGRAVITY, None).unwrap();
+        assert!(!is_registered().unwrap(), "disconnected");
+    });
+}
+
+#[test]
+fn antigravity_reconnect_rebinds_a_moved_shim() {
+    with_fake_hosts(|_| {
+        for shim in ["/old/pixtuoid-hook", "/new/pixtuoid-hook"] {
+            install_target_from(&ANTIGRAVITY, None, Some(PathBuf::from(shim))).unwrap();
+        }
+        let hooks = std::fs::read_to_string((ANTIGRAVITY.default_config_path)().unwrap());
+        let hooks = hooks.unwrap();
+        assert!(
+            hooks.contains("/new/pixtuoid-hook") && !hooks.contains("/old/"),
+            "{hooks}"
+        );
+    });
+}
+
+#[test]
+fn antigravity_connect_fails_when_enabling_fails_and_leaves_no_plugin() {
+    with_fake_hosts_failing(Some("agy plugin enable pixtuoid"), |_| {
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        let e = install_target_from(&ANTIGRAVITY, None, hook).unwrap_err();
+        assert!(!format!("{e:#}").contains("stays in place"), "{e:#}");
+        assert!(!has_hooks(&ANTIGRAVITY, None));
+        let primary = (ANTIGRAVITY.default_config_path)().unwrap();
+        assert!(!primary.parent().unwrap().exists());
     });
 }
 
@@ -2390,11 +2413,13 @@ fn hermes_plugin() -> PathBuf {
     (HERMES.default_config_path)().expect("inside with_fake_hosts")
 }
 
-fn hermes_calls(fake: &std::path::Path) -> Vec<String> {
+/// What `cli`'s fake was called with.
+fn calls_of(fake: &std::path::Path, cli: &str) -> Vec<String> {
+    let prefix = format!("{cli} ");
     std::fs::read_to_string(fake.join("calls.log"))
         .unwrap_or_default()
         .lines()
-        .filter(|l| l.starts_with("hermes "))
+        .filter(|l| l.starts_with(&prefix))
         .map(str::to_owned)
         .collect()
 }
@@ -2411,7 +2436,7 @@ fn hermes_connect_enables_the_plugin_and_strips_the_shell_hooks_an_older_pixtuoi
         let r = install_target_from(&HERMES, None, hook).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::Installed));
 
-        assert_eq!(hermes_calls(fake), ["hermes plugins enable pixtuoid"]);
+        assert_eq!(calls_of(fake, "hermes"), ["hermes plugins enable pixtuoid"]);
         let manifest =
             std::fs::read_to_string(hermes_plugin().with_file_name("plugin.yaml")).unwrap();
         assert!(manifest.starts_with("name: pixtuoid\n"), "{manifest}");
@@ -2437,7 +2462,7 @@ fn hermes_reconnect_reloads_the_plugin_into_a_running_gateway() {
         let r = install_target_from(&HERMES, None, hook()).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::AlreadyUpToDate));
         assert_eq!(
-            hermes_calls(fake),
+            calls_of(fake, "hermes"),
             [
                 "hermes plugins disable pixtuoid",
                 "hermes plugins enable pixtuoid"
@@ -2458,7 +2483,7 @@ fn hermes_disconnect_disables_the_plugin_before_removing_it() {
         assert!(!hermes_plugin().parent().unwrap().exists());
         assert!(!(HERMES.host.unwrap().is_registered)().unwrap());
         assert_eq!(
-            hermes_calls(fake),
+            calls_of(fake, "hermes"),
             [
                 "hermes plugins disable pixtuoid",
                 "hermes plugins remove pixtuoid"
@@ -2468,7 +2493,7 @@ fn hermes_disconnect_disables_the_plugin_before_removing_it() {
         let u2 = uninstall_target(&HERMES, None).unwrap();
         assert!(matches!(u2.outcome, UninstallOutcome::NothingToRemove));
         assert_eq!(
-            hermes_calls(fake).len(),
+            calls_of(fake, "hermes").len(),
             2,
             "nothing registered starts no CLI"
         );

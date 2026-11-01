@@ -61,9 +61,9 @@ The components that handle untrusted or privileged input, and how they're bounde
    `0600` socket and transcripts), not by echoing raw bytes to the terminal.
 
 3. **Hook installation** (when you explicitly *connect* a source) goes through
-   the agent CLI's own plugin system where it has one — Claude Code, Codex and
-   Reasonix get a local plugin registered with their own `plugin` commands, so
-   each CLI writes its own settings — and otherwise edits the CLI's config through a single advisory-locked,
+   the agent CLI's own plugin system where it has one — Claude Code, Codex, Hermes,
+   Reasonix and Antigravity get a local plugin managed with their own `plugin`
+   commands, so each CLI writes its own settings — and otherwise edits the CLI's config through a single advisory-locked,
    `fsync` + atomic-rename writer that **preserves the file's permissions,
    follows stow symlinks, and changes only pixtuoid's own entries**. A
    rewritten config keeps every other setting, though not its comments or

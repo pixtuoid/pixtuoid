@@ -43,6 +43,8 @@ const MANIFEST: &str = "plugin.json";
 const PLUGIN: &str = "plugin";
 const ENABLE: &str = "enable";
 const UNINSTALL: &str = "uninstall";
+const LIST: &str = "list";
+const JSON_OUTPUT: &str = "--json";
 
 /// Events we register == events we decode (`source/antigravity.rs`). The bool
 /// says whether the event's handlers sit in a `{matcher, hooks}` group, as a
@@ -111,16 +113,30 @@ fn strip_legacy_hooks(content: &str) -> Result<MergeOutcome> {
     })
 }
 
-/// `enable` because agy keeps a user's earlier `disable`, and a connect overrides it.
+/// `enable` because a connect overrides a user's earlier `disable`.
 fn register(config: &Path) -> Result<()> {
     let (plugin, _) = host_plugin::layout(config, &[HOOKS_FILE])?;
+    let manifest_path = plugin.join(MANIFEST);
+    let fresh = !manifest_path.exists();
     let manifest = json!({
         "name": NAME,
         "description": "Sends Antigravity CLI's session events to the pixtuoid office",
     });
-    host_plugin::write_manifests(&[(plugin.join(MANIFEST), manifest)])?;
-    CLI.run(&[PLUGIN.as_ref(), ENABLE.as_ref(), NAME.as_ref()])
-        .map(drop)
+    host_plugin::write_manifests(&[(manifest_path.clone(), manifest)])?;
+    let enabled = CLI
+        .run(&[PLUGIN.as_ref(), ENABLE.as_ref(), NAME.as_ref()])
+        .map(drop);
+    if let Err(e) = enabled {
+        // A manifest alone is a plugin agy lists, and a later disconnect removes.
+        if fresh
+            && let Err(undo) =
+                host_plugin::remove_if_ours(plugin, &manifest_path, host_plugin::names_us)
+        {
+            return Err(e.context(format!("its manifest stays in place: {undo:#}")));
+        }
+        return Err(e);
+    }
+    Ok(())
 }
 
 fn unregister(config: &Path) -> Result<Unregistered> {
@@ -136,13 +152,16 @@ fn unregister(config: &Path) -> Result<Unregistered> {
     Ok(Unregistered::Removed)
 }
 
-/// agy enables a plugin it finds until told otherwise. Read-only, so a status check
-/// starts no CLI.
+/// Asks agy, which documents this list (antigravity.google/docs/plugins.md, "List
+/// installed plugins") and not where it keeps enablement. It leaves out a dir with
+/// no manifest. Only `doctor` reads this, so the CLI start costs nothing.
 fn is_registered() -> Result<bool> {
-    let path = config_dir()?.join("config.json");
-    let config = merge::parse_json_or_empty(&io::read_config(&path)?)
-        .with_context(|| format!("parsing {}", path.display()))?;
-    Ok(config["plugins"][NAME]["enabled"] != json!(false))
+    let listed = CLI.run(&[PLUGIN.as_ref(), LIST.as_ref(), JSON_OUTPUT.as_ref()])?;
+    let plugins: Vec<Value> =
+        serde_json::from_str(&listed).context("parsing `agy plugin list --json`")?;
+    Ok(plugins
+        .iter()
+        .any(|plugin| plugin["name"] == NAME && plugin["enabled"] == true))
 }
 
 fn hook_set(base_cmd: &str) -> Value {

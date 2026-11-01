@@ -48,7 +48,7 @@ struct Notice {
 }
 
 /// Every notice, in the order the popup lists them: an action before a tip.
-const NOTICES: [Notice; 3] = [
+const NOTICES: [Notice; 4] = [
     Notice {
         last_without: Version::new(0, 19, 0),
         says: |facts| reconnect(&REPLUGGED, facts),
@@ -56,6 +56,10 @@ const NOTICES: [Notice; 3] = [
     Notice {
         last_without: Version::new(0, 20, 0),
         says: |facts| reconnect(&[&target::HERMES], facts),
+    },
+    Notice {
+        last_without: Version::new(0, 21, 0),
+        says: |facts| reconnect(&[&target::ANTIGRAVITY], facts),
     },
     Notice {
         last_without: Version::new(0, 20, 0),
