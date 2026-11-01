@@ -55,6 +55,12 @@ NOT_GENERATED = {"screenshot-real.png"}
 FRAME_PATTERN = "f%04d.png"
 # A job's `look` (the TUI's `--look` names), as the snapshot's flags.
 LOOK_ARGS = {"classic": [], "cutaway": ["--cutaway"]}
+# The look a job renders in unless it names one: the site's own live office.
+DEFAULT_LOOK = "cutaway"
+
+
+def job_look(job):
+    return job.get("look", DEFAULT_LOOK)
 
 
 def build_once():
@@ -77,7 +83,7 @@ def snap(
     day=None,
     theme=None,
     weather=None,
-    look="classic",
+    look=DEFAULT_LOOK,
     extra=(),
     gif=None,
     frames_dir=None,
@@ -121,7 +127,7 @@ def run_render(job, out_dirs, work, intermediates):
                     day=job.get("day"),
                     theme=f.get("theme"),
                     weather=f.get("weather"),
-                    look=job.get("look", "classic"),
+                    look=job_look(job),
                 )
         return
 
@@ -134,7 +140,7 @@ def run_render(job, out_dirs, work, intermediates):
         day=job.get("day"),
         theme=job.get("theme"),
         weather=job.get("weather"),
-        look=job.get("look", "classic"),
+        look=job_look(job),
         extra=job.get("extra", ()),
     )
     intermediates[job["id"]] = raw  # crops read the render
@@ -170,7 +176,7 @@ def run_composite(job, out_dirs, work, intermediates):
     over = job["over"]
     values = [x["id"] for x in expand_ref(over)] if isinstance(over, str) else over
     axis = job.get("axis", "theme")
-    inputs = {"theme": job.get("theme"), "look": job.get("look", "classic")}
+    inputs = {"theme": job.get("theme"), "look": job_look(job)}
     slant = job["slant"]
     paths = []
     for i, value in enumerate(values):
@@ -225,7 +231,7 @@ def run_gif(job, out_dirs, work, intermediates):
             day=job.get("day"),
             theme=job.get("theme"),
             weather=seg.get("weather"),
-            look=job.get("look", "classic"),
+            look=job_look(job),
             extra=["--warmup-secs", str(warmup)] if warmup else [],
             gif={"duration": seg["duration"], "fps": job["fps"]},
         )
@@ -310,7 +316,7 @@ def run_clip(job, out_dirs, work, intermediates):
         cols=job["cols"],
         rows=job["rows"],
         hour=job["hour"],
-        look=job.get("look", "classic"),
+        look=job_look(job),
         extra=job.get("extra", ()),
         gif={"duration": job["duration"], "fps": fps},
         frames_dir=frames,
@@ -410,6 +416,7 @@ def run_proof(job, out_dirs, work, intermediates):
             job["theme"],
             "--weather",
             "clear",
+            *LOOK_ARGS[job_look(job)],
             *(["--now-day", str(job["day"])] if "day" in job else []),
         ],
         check=True,
