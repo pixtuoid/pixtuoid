@@ -10,7 +10,7 @@
 //!
 //! [`display::light`]: crate::display::light
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 use crate::display::light::{Ambient, Flash, LightView};
 use crate::display::pen::{ArtRect, BufferPx, Pen};

@@ -14,7 +14,7 @@
 use super::decor::{Facing, Furniture, WaypointKind, furniture_def};
 use super::reach::ReachSet;
 use super::{Point, Size};
-use pixtuoid_core::walkable::WalkableMask;
+use crate::walkable::WalkableMask;
 
 /// How far past `half + def.stand_clearance()` to keep probing for a walkable
 /// cell before giving up on a side.

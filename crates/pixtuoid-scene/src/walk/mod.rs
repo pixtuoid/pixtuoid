@@ -7,9 +7,9 @@ use crate::physics::{
     LegProgress, WalkIntent, WalkProfile, octile_distance, octile_path_len, walk_arrived,
     walk_profile,
 };
+use crate::walkable::{OccupancyOverlay, WalkableMask};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::AgentSlot;
-use pixtuoid_core::walkable::{OccupancyOverlay, WalkableMask};
 
 use crate::layout::{HomeDesk, Point, SceneLayout, WaypointKind};
 use crate::pathfind::Router;

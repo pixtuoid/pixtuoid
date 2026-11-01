@@ -10,12 +10,12 @@ pub(crate) mod validate;
 use std::collections::BTreeMap;
 use std::num::NonZeroU16;
 
-use enum_map::EnumMap;
-use pixtuoid_core::sprite::Sprite;
-use pixtuoid_core::sprite::error::PackError;
+use crate::sprite::Sprite;
+use crate::sprite::error::PackError;
 #[cfg(test)]
-use pixtuoid_core::sprite::format::load_pack_from_strings;
-use pixtuoid_core::sprite::format::{Density, Pack, Piece, load_pack_from_json};
+use crate::sprite::format::load_pack_from_strings;
+use crate::sprite::format::{Density, Pack, Piece, load_pack_from_json};
+use enum_map::EnumMap;
 use strum::VariantArray as _;
 
 use crate::display::Icon;
@@ -195,7 +195,7 @@ pub enum ArtError {
     },
 }
 
-/// The pack, parsed into what the office draws: [`Pack`]'s pieces, and each
+/// The pack, parsed into what the office draws: its pieces, and each
 /// desk's props and bulb, the clock's face and every icon's art, guaranteed by
 /// the parse rather than checked where a painter reads them.
 #[derive(Debug, Clone)]
@@ -262,11 +262,11 @@ impl OfficeArt {
 
     /// [`Pack::palette`].
     #[cfg(test)]
-    pub(crate) fn palette(&self) -> &pixtuoid_core::sprite::Palette {
+    pub(crate) fn palette(&self) -> &crate::sprite::Palette {
         self.pack.palette()
     }
 
-    /// [`Pack::piece`].
+    /// The art of `piece`.
     pub fn piece(&self, piece: Piece) -> &Sprite {
         self.pack.piece(piece)
     }
@@ -277,26 +277,22 @@ impl OfficeArt {
     }
 
     /// [`Pack::stride`].
-    pub(crate) fn stride(&self, walk: pixtuoid_core::sprite::format::Walk) -> NonZeroU16 {
+    pub(crate) fn stride(&self, walk: crate::sprite::format::Walk) -> NonZeroU16 {
         self.pack.stride(walk)
     }
 
     /// [`Pack::buildings`].
-    pub(crate) fn buildings(
-        &self,
-    ) -> impl Iterator<Item = &pixtuoid_core::sprite::format::Building> {
+    pub(crate) fn buildings(&self) -> impl Iterator<Item = &crate::sprite::format::Building> {
         self.pack.buildings()
     }
 
     /// [`Pack::city_materials`].
-    pub(crate) fn city_materials(&self) -> &pixtuoid_core::sprite::format::CityMaterials {
+    pub(crate) fn city_materials(&self) -> &crate::sprite::format::CityMaterials {
         self.pack.city_materials()
     }
 
     /// [`Pack::hairstyles`].
-    pub(crate) fn hairstyles(
-        &self,
-    ) -> impl Iterator<Item = &pixtuoid_core::sprite::format::Hairstyle> {
+    pub(crate) fn hairstyles(&self) -> impl Iterator<Item = &crate::sprite::format::Hairstyle> {
         self.pack.hairstyles()
     }
 
@@ -305,16 +301,17 @@ impl OfficeArt {
         &self,
         name: &str,
         density: Density,
-    ) -> Option<&pixtuoid_core::sprite::format::Hairstyle> {
+    ) -> Option<&crate::sprite::format::Hairstyle> {
         self.pack.hairstyle(name, density)
     }
 
     /// [`Pack::character_outline`].
-    pub(crate) fn character_outline(&self) -> pixtuoid_core::sprite::Rgb {
+    pub(crate) fn character_outline(&self) -> crate::sprite::Rgb {
         self.pack.character_outline()
     }
 
-    /// [`Pack::max_density_variant`].
+    /// The densest of the pack's variants, or [`Density::ONE`] when it ships
+    /// none.
     pub fn max_density_variant(&self) -> Density {
         self.pack.max_density_variant()
     }
@@ -402,7 +399,7 @@ const BUNDLED_PACK_TOML: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_
 /// [`load_bundled_pack`] reads.
 const BUNDLED_PACK_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_pack.json"));
 
-/// The compiled-in default pack, parsed: all a build without `native` can load.
+/// The compiled-in default pack, parsed.
 ///
 /// # Errors
 ///
@@ -505,7 +502,7 @@ mod tests {
     use super::*;
     use crate::display::pen::test_density;
     use crate::render_scale::RenderScale;
-    use pixtuoid_core::sprite::format::Density;
+    use crate::sprite::format::Density;
 
     /// The beat check reaches every loop a painter plays: a typist off the
     /// beat is reported.
@@ -667,7 +664,7 @@ mod tests {
     /// The sprites `toml` loads without: the ones nothing it registers draws.
     fn undrawn<'a>(toml: &str, srcs: &[(&'a str, &'a str)]) -> Vec<&'a str> {
         let read: std::collections::HashSet<String> =
-            pixtuoid_core::sprite::format::frames_read_by(toml, srcs)
+            crate::sprite::format::frames_read_by(toml, srcs)
                 .expect("the whole set loads")
                 .into_iter()
                 .collect();
@@ -724,7 +721,7 @@ mod tests {
         }
     }
 
-    /// Core's creature list is exactly the animations the pets and the gateway
+    /// The pack's creature list is exactly the animations the pets and the gateway
     /// mascots draw, so neither can gain a creature the other misses.
     #[test]
     fn the_creature_animations_are_the_pets_and_mascots() {
@@ -740,7 +737,7 @@ mod tests {
         let listed: std::collections::BTreeSet<Piece> = Piece::VARIANTS
             .iter()
             .copied()
-            .filter(|p| p.kind() == pixtuoid_core::sprite::format::PieceKind::Creature)
+            .filter(|p| p.kind() == crate::pack::validate::PieceKind::Creature)
             .collect();
         assert_eq!(drawn, listed);
     }
@@ -754,8 +751,7 @@ mod tests {
             .iter()
             .copied()
             .filter(|p| {
-                p.kind() == pixtuoid_core::sprite::format::PieceKind::Furniture
-                    && p.overlay_of().is_none()
+                p.kind() == crate::pack::validate::PieceKind::Furniture && p.overlay_of().is_none()
             })
             .flat_map(|p| {
                 let name = p.name();
@@ -808,7 +804,7 @@ mod tests {
         let pack = test_default_pack();
         for &piece in Piece::VARIANTS
             .iter()
-            .filter(|p| p.kind() == pixtuoid_core::sprite::format::PieceKind::Character)
+            .filter(|p| p.kind() == crate::pack::validate::PieceKind::Character)
         {
             let name = piece.name();
             for frame in pack.piece(piece).frames() {
@@ -862,7 +858,7 @@ mod tests {
                 .flatten()
                 .unwrap_or_else(|| panic!("{key:?} is an opaque surface key"))
         });
-        let surface_rows = |f: &pixtuoid_core::sprite::Frame| {
+        let surface_rows = |f: &crate::sprite::Frame| {
             (0..f.height())
                 .filter(|&y| {
                     (0..f.width()).any(|x| {

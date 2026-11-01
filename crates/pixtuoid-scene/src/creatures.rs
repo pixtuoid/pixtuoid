@@ -9,12 +9,12 @@
 use std::num::NonZeroU16;
 use std::time::{Duration, SystemTime};
 
+use crate::walkable::OccupancyOverlay;
 use pixtuoid_core::AgentSlot;
 use pixtuoid_core::SceneState;
 use pixtuoid_core::id::splitmix64;
 use pixtuoid_core::source::daemon::DaemonInstanceKey;
 use pixtuoid_core::state::{ActivityState, DaemonState};
-use pixtuoid_core::walkable::OccupancyOverlay;
 
 use crate::anim::{FULL_TICK_MS, Timing, elapsed_ms};
 use crate::layout::{Point, SceneLayout};
@@ -486,16 +486,16 @@ const fn longest_rest(rest_ms: u64) -> u64 {
 /// display name. The ONE place a new gateway registers its creature — `None` for
 /// non-gateway sources gates the whole mascot in the sim's `mascot_placements`.
 pub(crate) struct GatewayMascotDef {
-    pub walk: pixtuoid_core::sprite::format::Walk,
-    pub rest: pixtuoid_core::sprite::format::Piece,
+    pub walk: crate::sprite::format::Walk,
+    pub rest: crate::sprite::format::Piece,
     pub display_name: &'static str,
 }
 
 pub(crate) fn gateway_mascot_def(source: &str) -> Option<GatewayMascotDef> {
     match source {
         s if s == pixtuoid_core::source::openclaw::SOURCE_NAME => Some(GatewayMascotDef {
-            walk: pixtuoid_core::sprite::format::Walk::LobsterWalk,
-            rest: pixtuoid_core::sprite::format::Piece::LobsterRest,
+            walk: crate::sprite::format::Walk::LobsterWalk,
+            rest: crate::sprite::format::Piece::LobsterRest,
             display_name: "OpenClaw",
         }),
         _ => None,
@@ -593,8 +593,8 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use crate::pack::OfficeArt;
+    use crate::sprite::format::{Piece, Walk};
     use pixtuoid_core::SceneState;
-    use pixtuoid_core::sprite::format::{Piece, Walk};
     use pixtuoid_core::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence};
 
     use super::*;
@@ -1612,7 +1612,7 @@ mod tests {
     }
 
     /// Whether `f`'s eye (the bundled pack's `e`) sits east of its middle.
-    fn faces_east(pack: &OfficeArt, f: &pixtuoid_core::sprite::Frame) -> bool {
+    fn faces_east(pack: &OfficeArt, f: &crate::sprite::Frame) -> bool {
         let eye = pack.palette().get('e').flatten();
         let xs: Vec<u32> = (0..f.height())
             .flat_map(|y| (0..f.width()).map(move |x| (x, y)))

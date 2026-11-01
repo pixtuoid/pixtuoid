@@ -11,8 +11,8 @@
 
 use std::collections::HashMap;
 
+use crate::sprite::Rgb;
 use pixtuoid_core::SceneState;
-use pixtuoid_core::sprite::Rgb;
 use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS, ToolKind, ToolUse};
 
 use crate::neon_sign::gateway_label;

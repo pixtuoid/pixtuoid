@@ -41,7 +41,7 @@ fn frame_layout_memo_matches_fresh_compute_across_hits_resizes_and_none() {
 #[test]
 fn a_new_layout_drops_the_routers_cached_paths() {
     use crate::pathfind::Router;
-    use pixtuoid_core::walkable::OccupancyOverlay;
+    use crate::walkable::OccupancyOverlay;
     let cache_a_route = |ctx: &mut FloorCtx, l: &crate::layout::SceneLayout| {
         let mut walkable = (0..l.buf_h)
             .flat_map(|y| (0..l.buf_w).map(move |x| crate::layout::Point { x, y }))
@@ -672,7 +672,7 @@ fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
     assert!(
         buf.as_slice()
             .iter()
-            .any(|p| *p != pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 } && *p != bg),
+            .any(|p| *p != crate::sprite::Rgb { r: 0, g: 0, b: 0 } && *p != bg),
         "the pixel pass painted office content"
     );
 }
@@ -2062,7 +2062,7 @@ fn a_slides_gap_dims_with_its_floors() {
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
     let scene = make_scene(3, 2);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let gap = pixtuoid_core::sprite::Rgb {
+    let gap = crate::sprite::Rgb {
         r: u8::MAX,
         g: 0,
         b: u8::MAX,

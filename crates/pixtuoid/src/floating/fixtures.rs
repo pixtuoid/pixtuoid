@@ -1,9 +1,9 @@
 //! Test fixtures the floating modules' tests share.
 
-use pixtuoid_core::sprite::format::Density;
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::render_scale::PixelFit;
+use pixtuoid_scene::sprite::format::Density;
 
 /// The bundled pack's densest art, which the window draws at.
 pub(super) fn density() -> Density {

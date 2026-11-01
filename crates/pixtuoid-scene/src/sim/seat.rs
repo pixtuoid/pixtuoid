@@ -5,7 +5,7 @@
 //! not the authority.
 
 use super::*;
-use pixtuoid_core::sprite::format::Piece;
+use crate::sprite::format::Piece;
 
 use crate::sim::anchors::{back_couch_top_left, waypoint_top_left};
 

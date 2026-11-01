@@ -4,7 +4,7 @@
 //! ones ratatui's buffer writes ([`text::cells`](super::text::cells)), so
 //! both draw the same layout.
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 use super::text::clusters;
 

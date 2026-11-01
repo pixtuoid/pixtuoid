@@ -1,7 +1,7 @@
 //! The classic's ground wash: [`SkyTones::ground_wash`]'s blends laid over the ground
 //! band.
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 #[cfg(doc)]
 use crate::atmosphere::SkyTones;

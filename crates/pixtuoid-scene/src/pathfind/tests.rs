@@ -398,7 +398,7 @@ fn path_cache_is_bounded_and_still_routes_after_the_clear() {
 
 #[test]
 fn routes_around_dynamic_obstacle() {
-    let mask = pixtuoid_core::walkable::WalkableMask::new_open(100, 100);
+    let mask = crate::walkable::WalkableMask::new_open(100, 100);
     let mut overlay = OccupancyOverlay::new();
     let from = Point { x: 10, y: 50 };
     let to = Point { x: 90, y: 50 };
@@ -720,7 +720,7 @@ fn octile_cost_is_the_shared_diag_straight_formula() {
 fn snap_lands_on_an_open_pixel_when_the_cell_centre_itself_is_blocked() {
     // The coarse grid calls a cell walkable at `COARSE_CELL_WALKABLE_MIN` of its
     // 16 px open, so the cell it snaps to can have a BLOCKED centre.
-    let mut mask = pixtuoid_core::walkable::WalkableMask::new_open(64, 64);
+    let mut mask = crate::walkable::WalkableMask::new_open(64, 64);
     let cell = (4u16, 4u16);
     let centre = cell_center(cell.0, cell.1);
     // 2x2 leaves 12 of the cell's 16 px open — walkable to the coarse grid, centre blocked.
@@ -744,7 +744,7 @@ fn snap_lands_on_an_open_pixel_when_the_cell_centre_itself_is_blocked() {
 
 #[test]
 fn a_route_turns_on_the_open_pixel_nearest_a_blocked_centre() {
-    let mut mask = pixtuoid_core::walkable::WalkableMask::new_open(64, 64);
+    let mut mask = crate::walkable::WalkableMask::new_open(64, 64);
     let cell = (4u16, 4u16);
     let centre = cell_center(cell.0, cell.1);
     // The cell's south half: still walkable to the coarse grid, centre inside.

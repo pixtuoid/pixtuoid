@@ -24,7 +24,6 @@ use std::time::{Duration, SystemTime};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_main};
 use pixtuoid_core::id::AgentId;
-use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind, ToolUse};
 use pixtuoid_core::{AgentSlot, SceneState};
 use pixtuoid_scene::cutaway::canvas::CutawayCanvas;
@@ -39,6 +38,7 @@ use pixtuoid_scene::look::{Look, Place, RenderInputs};
 use pixtuoid_scene::neon_sign::BoardModel;
 use pixtuoid_scene::render_scale::RenderScale;
 use pixtuoid_scene::sky::{Weather, WeatherPolicy, hour_is_day};
+use pixtuoid_scene::sprite::RgbBuffer;
 
 // Inside a weather slot (`sky::WEATHER_CYCLE_MS`, crate-private) with room to
 // spare, so the `SIM_WINDOW_FRAMES` × `FRAME_STEP_MS` window below never

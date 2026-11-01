@@ -4,7 +4,7 @@
 //! Nothing blends: "lit" is a color of its own and a gradient is a dither — the
 //! pixel-art convention the room is drawn in.
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 use crate::render_scale::RenderScale;
 

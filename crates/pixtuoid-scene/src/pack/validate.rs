@@ -3,13 +3,38 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU16;
 
-use pixtuoid_core::sprite::format::{
-    Density, Hairstyle, Pack, Piece, PieceKind, density_variant_name,
-};
-use pixtuoid_core::sprite::{Frame, HeadMark, HeadView, Sprite};
+use crate::sprite::format::{Density, Hairstyle, Pack, Piece, density_variant_name};
+use crate::sprite::{Frame, HeadMark, HeadView, Sprite};
 use strum::VariantArray as _;
 
 use super::lookup;
+
+/// What a [`Piece`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PieceKind {
+    /// A character pose, which a hairstyle dresses.
+    Character,
+    /// Furniture or a fixture of the room.
+    Furniture,
+    /// A pet or a gateway mascot: it stands on its feet wherever its frame
+    /// ends, so it is kept apart from the furniture.
+    Creature,
+}
+
+impl Piece {
+    /// What it is.
+    pub(crate) fn kind(self) -> PieceKind {
+        use Piece::*;
+        match self {
+            Seated | Typing | Standing | Walking | WalkingBack | SeatedSleeping
+            | SeatedSleepingAlt | HoldingCoffee | BackCouch | WalkingCoffee | SideSeated
+            | SeatedBack | TypingBack => PieceKind::Character,
+            CatWalk | CatSit | CatSleep | DogWalk | DogSit | DogSleep | LobsterWalk
+            | LobsterRest => PieceKind::Creature,
+            _ => PieceKind::Furniture,
+        }
+    }
+}
 
 /// A character frame a hairstyle would dress but for its missing head mark: it
 /// is drawn bare.
@@ -48,7 +73,7 @@ pub(crate) struct HairOverhang {
 }
 
 /// What a loaded pack draws as its author may not have meant: a pack that
-/// can't draw at all does not load ([`PackError`](pixtuoid_core::sprite::error::PackError)).
+/// can't draw at all does not load ([`PackError`](crate::sprite::error::PackError)).
 #[derive(Debug, Default)]
 pub(crate) struct ValidationReport {
     /// One per character animation.
@@ -260,7 +285,7 @@ fn looped_animations() -> Vec<(Piece, usize)> {
     let creatures = Piece::VARIANTS
         .iter()
         .copied()
-        .filter(|p| p.kind() == pixtuoid_core::sprite::format::PieceKind::Creature);
+        .filter(|p| p.kind() == PieceKind::Creature);
     [
         Piece::FishTank,
         Piece::WaterCooler,
@@ -282,7 +307,7 @@ pub(crate) fn validate_pack(pack: &Pack) -> ValidationReport {
 
 #[cfg(test)]
 mod tests {
-    use pixtuoid_core::sprite::format::load_filled_pack;
+    use crate::sprite::format::load_filled_pack;
 
     use super::*;
 

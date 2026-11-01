@@ -4,8 +4,8 @@
 //! mark beside its head, else its [shared look](crate::effects::look), a
 //! layout cell per art cell block. A look stays whole down to [`LOOK_SOLID`].
 
-use pixtuoid_core::sprite::Rgb;
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::Rgb;
+use crate::sprite::format::Density;
 
 use crate::display::Span;
 use crate::display::pen::Pen;

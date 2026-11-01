@@ -1,9 +1,9 @@
 //! The cutaway's rasterizer: a frame's display list painted over its backdrop.
 
 use crate::pack::{Desk, OfficeArt};
-use pixtuoid_core::sprite::RgbBuffer;
-use pixtuoid_core::sprite::blit::blit_frame_scaled;
-use pixtuoid_core::sprite::format::Piece as PackPiece;
+use crate::sprite::RgbBuffer;
+use crate::sprite::blit::blit_frame_scaled;
+use crate::sprite::format::Piece as PackPiece;
 
 use crate::atmosphere::Carpet;
 use crate::cutaway::shade::{Ramp, fill, slab};
@@ -57,10 +57,7 @@ const SCREEN_TEXT_LEVEL: i8 = 9;
 
 impl Screen {
     /// `art` with its screen keys showing this screen.
-    fn on(
-        self,
-        art: pixtuoid_core::sprite::RecolorableFrame<'_>,
-    ) -> Option<pixtuoid_core::sprite::Frame> {
+    fn on(self, art: crate::sprite::RecolorableFrame<'_>) -> Option<crate::sprite::Frame> {
         match self {
             Self::Off => None,
             Self::Standby(glass) => {
@@ -341,9 +338,9 @@ fn paint_pieces(
 }
 
 /// [`mark_glow`]'s marks: colours no art is painted in, only a scratch buffer.
-const NO_MARK: pixtuoid_core::sprite::Rgb = pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 };
-const EMISSIVE_MARK: pixtuoid_core::sprite::Rgb = pixtuoid_core::sprite::Rgb { r: 1, g: 0, b: 0 };
-const SHADED_MARK: pixtuoid_core::sprite::Rgb = pixtuoid_core::sprite::Rgb { r: 2, g: 0, b: 0 };
+const NO_MARK: crate::sprite::Rgb = crate::sprite::Rgb { r: 0, g: 0, b: 0 };
+const EMISSIVE_MARK: crate::sprite::Rgb = crate::sprite::Rgb { r: 1, g: 0, b: 0 };
+const SHADED_MARK: crate::sprite::Rgb = crate::sprite::Rgb { r: 2, g: 0, b: 0 };
 
 /// Mark into `marks` where `kind` glows of its own, never outside its span,
 /// the most [`paint_pieces`] clears; whether it marked any.
@@ -419,7 +416,7 @@ fn mark_glow(
         Screen::Standby(_) | Screen::Lit { .. } => EMISSIVE_MARK,
     };
     let (w, h) = (desk.frame.width(), desk.frame.height());
-    let pixels: Vec<pixtuoid_core::sprite::Pixel> = bulb
+    let pixels: Vec<crate::sprite::Pixel> = bulb
         .iter()
         .zip(&screen_cells)
         .map(|(&bulb, &screen)| {
@@ -433,7 +430,7 @@ fn mark_glow(
         })
         .collect();
     let any = pixels.iter().any(Option::is_some);
-    let only = pixtuoid_core::sprite::Frame::from_pixels(w, h, pixels);
+    let only = crate::sprite::Frame::from_pixels(w, h, pixels);
     let (x, top_y) = (scale.to_buffer(span.x0), scale.to_buffer(span.y0));
     blit_frame_scaled(&only, x, top_y, desk.blit_at, marks);
     any
@@ -461,7 +458,7 @@ fn mark_bulbs(
     if !bulbs.iter().any(|&b| b) {
         return false;
     }
-    let only = pixtuoid_core::sprite::Frame::from_pixels(
+    let only = crate::sprite::Frame::from_pixels(
         dense.frame.width(),
         dense.frame.height(),
         bulbs.iter().map(|&b| b.then_some(EMISSIVE_MARK)).collect(),
@@ -515,7 +512,7 @@ impl CutawayCache {
 #[derive(Debug, Default)]
 pub(crate) struct ArtCache {
     cells: std::collections::HashMap<(PackPiece, usize, u16, &'static [char]), Vec<bool>>,
-    screens: std::collections::HashMap<(PackPiece, u16, Screen), pixtuoid_core::sprite::Frame>,
+    screens: std::collections::HashMap<(PackPiece, u16, Screen), crate::sprite::Frame>,
 }
 
 impl ArtCache {
@@ -536,7 +533,7 @@ impl ArtCache {
         art: PackPiece,
         desk: &crate::pack::DenseFrame<'_>,
         screen: Screen,
-    ) -> Option<&pixtuoid_core::sprite::Frame> {
+    ) -> Option<&crate::sprite::Frame> {
         match screen {
             Screen::Off => None,
             Screen::Standby(_) | Screen::Lit { .. } => Some(
@@ -702,8 +699,8 @@ const NOON_DARKNESS: f32 = 0.0;
 /// its own front, has floor under its art where the base gets a derived face.
 #[cfg(test)]
 pub(crate) fn assert_variant_desk_foot(
-    variant: &[pixtuoid_core::sprite::Rgb],
-    base: &[pixtuoid_core::sprite::Rgb],
+    variant: &[crate::sprite::Rgb],
+    base: &[crate::sprite::Rgb],
     layout: &crate::layout::SceneLayout,
     base_pack: &OfficeArt,
     theme: &crate::theme::Theme,
@@ -763,12 +760,11 @@ pub(crate) fn assert_variant_desk_foot(
         differs_outside, None,
         "the desk art moved with its density (first differing buffer pixel)"
     );
-    let at = |px: &[pixtuoid_core::sprite::Rgb], x: u16, y: u16| {
+    let at = |px: &[crate::sprite::Rgb], x: u16, y: u16| {
         px[usize::from(scale.to_buffer(y)) * buf_w + usize::from(scale.to_buffer(x))]
     };
     let deepest = deepest_shadow_stop();
-    let ground_or_its_shadow = |c: pixtuoid_core::sprite::Rgb,
-                                floor: pixtuoid_core::sprite::Rgb| {
+    let ground_or_its_shadow = |c: crate::sprite::Rgb, floor: crate::sprite::Rgb| {
         (0..=deepest).any(|k| c == ambient.on(floor.ramp(-k)))
     };
     // The desk's own edge column: a sitter and their chair stand centred on it.
@@ -788,7 +784,7 @@ pub(crate) fn assert_variant_desk_foot(
 }
 
 impl Flip {
-    fn turn(self, frame: pixtuoid_core::sprite::Frame) -> pixtuoid_core::sprite::Frame {
+    fn turn(self, frame: crate::sprite::Frame) -> crate::sprite::Frame {
         match self {
             Self::None => frame,
             Self::Horizontal => frame.mirror_horizontal(),
@@ -847,12 +843,7 @@ fn paint_wall(backdrop: &Backdrop, scale: RenderScale, pen: Pen, buf: &mut RgbBu
 }
 
 /// Paint a [`PieceKind::Window`], each cell an art pixel.
-fn paint_window(
-    view: &WindowView,
-    frame: pixtuoid_core::sprite::Rgb,
-    pen: Pen,
-    buf: &mut RgbBuffer,
-) {
+fn paint_window(view: &WindowView, frame: crate::sprite::Rgb, pen: Pen, buf: &mut RgbBuffer) {
     let cell = |(x, y)| ArtRect {
         x: ArtPx(x),
         y: ArtPx(y),
@@ -922,7 +913,7 @@ fn paint_carpet_tones(backdrop: &Backdrop, carpet: Carpet, pen: Pen, buf: &mut R
 /// woven lattice and fringe at its short ends wherever the density has room.
 fn paint_rug(
     rug: crate::layout::Bounds,
-    [rug_trim, rug_accent, rug_field]: [pixtuoid_core::sprite::Rgb; 3],
+    [rug_trim, rug_accent, rug_field]: [crate::sprite::Rgb; 3],
     pen: Pen,
     buf: &mut RgbBuffer,
 ) {
@@ -1080,9 +1071,9 @@ fn paint_derived_face(
 /// the art drew — at whatever density it was drawn — and no other pixel, even
 /// one the same colour as the glass.
 fn relight_screen(
-    art: pixtuoid_core::sprite::RecolorableFrame<'_>,
-    glow: pixtuoid_core::sprite::Rgb,
-) -> pixtuoid_core::sprite::Frame {
+    art: crate::sprite::RecolorableFrame<'_>,
+    glow: crate::sprite::Rgb,
+) -> crate::sprite::Frame {
     art.recolored(&[
         (
             crate::pack::SCREEN_GLASS_KEY,
@@ -1099,16 +1090,16 @@ fn relight_screen(
 /// column `scan`: the glass's columns split evenly among the classic's
 /// [`SCREEN_GLASS_COLS`](crate::layout::SCREEN_GLASS_COLS).
 fn scanline(
-    lit: pixtuoid_core::sprite::Frame,
-    art: pixtuoid_core::sprite::RecolorableFrame<'_>,
-    glow: pixtuoid_core::sprite::Rgb,
+    lit: crate::sprite::Frame,
+    art: crate::sprite::RecolorableFrame<'_>,
+    glow: crate::sprite::Rgb,
     scan: u16,
-) -> pixtuoid_core::sprite::Frame {
+) -> crate::sprite::Frame {
     use crate::pack::{SCREEN_GLASS_KEY, SCREEN_TEXT_KEY};
     // The glass is wherever the screen keys draw: what clearing them uncovers.
     let bare = art.recolored(&[(SCREEN_GLASS_KEY, None), (SCREEN_TEXT_KEY, None)]);
     let (w, h) = (lit.width(), lit.height());
-    let px = |f: &pixtuoid_core::sprite::Frame, x, y| f.get(x, y).copied().flatten();
+    let px = |f: &crate::sprite::Frame, x, y| f.get(x, y).copied().flatten();
     let glass = |x, y| px(&lit, x, y).is_some() && px(&bare, x, y).is_none();
     let Some((x0, x1)) = (0..w)
         .filter(|&x| (0..h).any(|y| glass(x, y)))
@@ -1132,7 +1123,7 @@ fn scanline(
             }
         })
         .collect();
-    pixtuoid_core::sprite::Frame::from_pixels(w, h, pixels)
+    crate::sprite::Frame::from_pixels(w, h, pixels)
 }
 
 /// The most common opaque colour in `row` of `frame` — how the cutaway learns a
@@ -1140,12 +1131,9 @@ fn scanline(
 /// never had has to be SOME colour, and the desk's lives in the PACK (the
 /// shaded wood, palette key `d`), not the theme, where `furniture.wood_top`
 /// reads nearly like the carpet.
-fn dominant_opaque_row(
-    frame: &pixtuoid_core::sprite::Frame,
-    row: u16,
-) -> Option<pixtuoid_core::sprite::Rgb> {
+fn dominant_opaque_row(frame: &crate::sprite::Frame, row: u16) -> Option<crate::sprite::Rgb> {
     let w = frame.width();
-    let mut best: Option<(pixtuoid_core::sprite::Rgb, usize)> = None;
+    let mut best: Option<(crate::sprite::Rgb, usize)> = None;
     for x in 0..w {
         let Some(c) = frame.get(x, row).and_then(|p| *p) else {
             continue;
@@ -1209,7 +1197,7 @@ fn paint_figure(
             .flat_map(|y| (0..f.width()).map(move |x| (x, y)))
             .map(|(x, y)| f.get(x, y).copied().flatten())
             .collect();
-        clipped = pixtuoid_core::sprite::Frame::from_pixels(f.width(), rows, px);
+        clipped = crate::sprite::Frame::from_pixels(f.width(), rows, px);
         &clipped
     };
     blit_frame_scaled(
@@ -1247,7 +1235,7 @@ fn paint_art(
     at: Point,
     art: Art,
     pack: &OfficeArt,
-    recolours: &[(char, pixtuoid_core::sprite::Pixel)],
+    recolours: &[(char, crate::sprite::Pixel)],
     scale: RenderScale,
     buf: &mut RgbBuffer,
 ) {
@@ -1282,7 +1270,7 @@ fn paint_creature(
 fn paint_desk_prop(
     prop: StoodProp,
     pack: &OfficeArt,
-    recolours: &[(char, pixtuoid_core::sprite::Pixel)],
+    recolours: &[(char, crate::sprite::Pixel)],
     scale: RenderScale,
     buf: &mut RgbBuffer,
 ) {
@@ -1313,7 +1301,7 @@ fn paint_door(at: Point, frame: usize, pack: &OfficeArt, scale: RenderScale, buf
 /// pixels of its hue.
 fn paint_neon(
     at: Bounds,
-    [tube, hue, interior]: [pixtuoid_core::sprite::Rgb; 3],
+    [tube, hue, interior]: [crate::sprite::Rgb; 3],
     pen: Pen,
     buf: &mut RgbBuffer,
 ) {
@@ -1360,9 +1348,9 @@ fn paint_neon(
 fn paint_clock(
     at: Point,
     reading: crate::sky::ClockReading,
-    hand: pixtuoid_core::sprite::Rgb,
+    hand: crate::sprite::Rgb,
     pack: &OfficeArt,
-    recolours: &[(char, pixtuoid_core::sprite::Pixel)],
+    recolours: &[(char, crate::sprite::Pixel)],
     scale: RenderScale,
     buf: &mut RgbBuffer,
 ) {
@@ -1438,7 +1426,7 @@ const CLOCK_MINUTE_HAND_SHARE: f32 = 0.85;
 /// The classic's corridor runner on the art grid, its lines one art pixel wide.
 fn paint_runner(
     b: Bounds,
-    [runner_base, runner_stripe, runner_edge]: [pixtuoid_core::sprite::Rgb; 3],
+    [runner_base, runner_stripe, runner_edge]: [crate::sprite::Rgb; 3],
     pen: Pen,
     buf: &mut RgbBuffer,
 ) {
@@ -1518,7 +1506,7 @@ fn paint_prop_band(
     let d = dense.density.get();
     let fw = usize::from(dense.frame.width());
     let px = dense.frame.as_slice();
-    let band = pixtuoid_core::sprite::Frame::from_pixels(
+    let band = crate::sprite::Frame::from_pixels(
         dense.frame.width(),
         (r1 - r0).saturating_mul(d),
         px[usize::from(r0) * usize::from(d) * fw..usize::from(r1) * usize::from(d) * fw].to_vec(),
@@ -1566,7 +1554,7 @@ mod tests {
     use crate::theme::Theme;
 
     /// `theme`'s rug tones, as a covering carries them.
-    fn rug_tones(theme: &Theme) -> [pixtuoid_core::sprite::Rgb; 3] {
+    fn rug_tones(theme: &Theme) -> [crate::sprite::Rgb; 3] {
         let f = &theme.furniture;
         [f.rug_trim, f.rug_accent, f.rug_field]
     }
@@ -1579,7 +1567,7 @@ mod tests {
     fn a_lit_screen_relights_only_the_screen_keys() {
         let glass = crate::pack::SCREEN_GLASS_KEY;
         let text = crate::pack::SCREEN_TEXT_KEY;
-        let pack = pixtuoid_core::sprite::format::load_filled_pack(
+        let pack = crate::sprite::format::load_filled_pack(
             &format!(
                 "[palette]\n\
                  \"{glass}\"=\"#1c2a36\"\n\"{text}\"=\"#34424e\"\n\
@@ -1591,7 +1579,7 @@ mod tests {
         )
         .expect("pack builds");
         let anim = pack.piece(PackPiece::Desk);
-        let glow = pixtuoid_core::sprite::Rgb {
+        let glow = crate::sprite::Rgb {
             r: 40,
             g: 180,
             b: 220,
@@ -1797,7 +1785,7 @@ mod tests {
     fn the_bundled_back_turned_desk_draws_its_screen_in_the_screen_keys() {
         let pack = test_office();
         let art = PackPiece::DeskNorth;
-        let sentinel = pixtuoid_core::sprite::Rgb {
+        let sentinel = crate::sprite::Rgb {
             r: 255,
             g: 0,
             b: 255,
@@ -1874,7 +1862,7 @@ mod tests {
     fn a_runs_spans_step_on_one_grid_on_a_plate_or_off_one() {
         use crate::display::text::advance;
         use crate::display::{TextRole, TextSpan};
-        use pixtuoid_core::sprite::Rgb;
+        use crate::sprite::Rgb;
         let pen =
             Pen::new(RenderScale::new(4).expect("nonzero"), test_density(4)).expect("4 divides 4");
         let (first, second) = ("I日b", "I");
@@ -1973,7 +1961,7 @@ mod tests {
         let mut buf = RgbBuffer::filled(
             scale.to_buffer(layout.buf_w),
             scale.to_buffer(layout.buf_h),
-            pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 },
+            crate::sprite::Rgb { r: 0, g: 0, b: 0 },
         );
         paint_carpet(
             &Backdrop::of(layout, &crate::theme::NORMAL),
@@ -2004,7 +1992,7 @@ mod tests {
                 let mut buf = RgbBuffer::filled(
                     scale.to_buffer(layout.buf_w),
                     scale.to_buffer(layout.buf_h),
-                    pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 },
+                    crate::sprite::Rgb { r: 0, g: 0, b: 0 },
                 );
                 paint_backdrop(
                     &Backdrop::of(&layout, theme),
@@ -2052,8 +2040,7 @@ mod tests {
                 width,
                 height,
             };
-            let blank =
-                || RgbBuffer::filled(32, 32, pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 });
+            let blank = || RgbBuffer::filled(32, 32, crate::sprite::Rgb { r: 0, g: 0, b: 0 });
             let (mut cutaway, mut classic) = (blank(), blank());
             paint_rug(rug, rug_tones(theme), pen, &mut cutaway);
             crate::pixel_painter::paint_area_rug(&mut classic, rug, theme);
@@ -2084,12 +2071,12 @@ mod tests {
         buf
     }
 
-    const WEST: pixtuoid_core::sprite::Rgb = pixtuoid_core::sprite::Rgb {
+    const WEST: crate::sprite::Rgb = crate::sprite::Rgb {
         r: 150,
         g: 110,
         b: 72,
     };
-    const EAST: pixtuoid_core::sprite::Rgb = pixtuoid_core::sprite::Rgb {
+    const EAST: crate::sprite::Rgb = crate::sprite::Rgb {
         r: 70,
         g: 90,
         b: 140,
@@ -2128,8 +2115,7 @@ mod tests {
             "east of it, its own tone"
         );
         assert_eq!(buf.get(0, 0), WEST, "nothing past the rim");
-        let stepped =
-            |c, ground: pixtuoid_core::sprite::Rgb| (0..=deepest).any(|k| c == ground.ramp(-k));
+        let stepped = |c, ground: crate::sprite::Rgb| (0..=deepest).any(|k| c == ground.ramp(-k));
         for y in 0..buf.height() {
             for x in 0..buf.width() {
                 let ground = if x < buf.width() / 2 { WEST } else { EAST };
@@ -2155,7 +2141,7 @@ mod tests {
             shadowed(8, 4, &[wide, narrow]),
         );
         assert!(ab.as_slice() == ba.as_slice(), "order-free");
-        let lum = pixtuoid_core::sprite::Rgb::lightness;
+        let lum = crate::sprite::Rgb::lightness;
         let mut mixed = false;
         for ((&both, &a), &b) in ab.as_slice().iter().zip(a.as_slice()).zip(b.as_slice()) {
             let deeper = if lum(a) <= lum(b) { a } else { b };
@@ -2184,7 +2170,7 @@ mod tests {
         let theme = crate::theme::theme_by_name("normal").expect("theme");
         let (layout, pack, frames, _) = sit_down(crate::layout::Facing::South, 2);
         let scale = RenderScale::from(pack.max_density_variant());
-        let ground = pixtuoid_core::sprite::Rgb {
+        let ground = crate::sprite::Rgb {
             r: 150,
             g: 110,
             b: 72,
@@ -2926,9 +2912,9 @@ mod tests {
     }
 
     /// The two fills a piece is painted over to tell what it writes.
-    const UNDER: [pixtuoid_core::sprite::Rgb; 2] = [
-        pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 },
-        pixtuoid_core::sprite::Rgb {
+    const UNDER: [crate::sprite::Rgb; 2] = [
+        crate::sprite::Rgb { r: 0, g: 0, b: 0 },
+        crate::sprite::Rgb {
             r: 255,
             g: 255,
             b: 255,
@@ -3238,7 +3224,7 @@ mod tests {
             RgbBuffer::filled(
                 scale.to_buffer(layout.buf_w),
                 scale.to_buffer(layout.buf_h),
-                pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 },
+                crate::sprite::Rgb { r: 0, g: 0, b: 0 },
             )
         };
         let (mut night, mut raw) = (blank(), blank());
@@ -3356,7 +3342,7 @@ mod tests {
             RgbBuffer::filled(
                 scale.to_buffer(layout.buf_w),
                 scale.to_buffer(layout.buf_h),
-                pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 },
+                crate::sprite::Rgb { r: 0, g: 0, b: 0 },
             )
         };
         let mut cache = CutawayCache::default();
@@ -3386,7 +3372,7 @@ mod tests {
             &mut night,
         );
         paint_list(&list, &mut cache, &mut night);
-        let luma = pixtuoid_core::sprite::Rgb::lightness;
+        let luma = crate::sprite::Rgb::lightness;
         let (mut kept, mut lifted) = (0, 0);
         for y in 0..night.height() {
             for x in 0..night.width() {
@@ -3431,7 +3417,7 @@ mod tests {
             RgbBuffer::filled(
                 scale.to_buffer(12),
                 scale.to_buffer(12),
-                pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 },
+                crate::sprite::Rgb { r: 0, g: 0, b: 0 },
             )
         };
         let mut bare = blank();
@@ -3488,7 +3474,7 @@ mod tests {
                 RgbBuffer::filled(
                     scale.to_buffer(layout.buf_w),
                     scale.to_buffer(layout.buf_h),
-                    pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 },
+                    crate::sprite::Rgb { r: 0, g: 0, b: 0 },
                 )
             };
             let (mut bare, mut laid) = (blank(), blank());
@@ -3565,7 +3551,7 @@ mod tests {
         let (w, h) = base_size(&pack, PackPiece::MeetingSofaNorth);
         for s in [1, pack.max_density_variant().get()] {
             let scale = RenderScale::new(s).expect("nonzero");
-            let ground = pixtuoid_core::sprite::Rgb { r: 1, g: 2, b: 3 };
+            let ground = crate::sprite::Rgb { r: 1, g: 2, b: 3 };
             let blank =
                 || RgbBuffer::filled(scale.to_buffer(w + 40), scale.to_buffer(h + 20), ground);
             let (mut whole, mut split) = (blank(), blank());
@@ -3599,7 +3585,7 @@ mod tests {
     #[test]
     fn only_the_top_down_base_desk_gets_a_derived_front_face() {
         let pack = test_office();
-        let ground = pixtuoid_core::sprite::Rgb { r: 1, g: 2, b: 3 };
+        let ground = crate::sprite::Rgb { r: 1, g: 2, b: 3 };
         let at = crate::layout::Point { x: 1, y: 1 };
         let (bw, bh) = base_size(&pack, PackPiece::Desk);
         let span = desk_span(&pack, Desk::South, at, RenderScale::ONE);
@@ -3653,14 +3639,14 @@ mod tests {
                 ("b.sprite", "@frame 0\nB B\nB B"),
             ],
         );
-        let variant = pixtuoid_core::sprite::Rgb {
+        let variant = crate::sprite::Rgb {
             r: 0xa0,
             g: 0xb0,
             b: 0xc0,
         };
         let scale = RenderScale::new(2).expect("nonzero");
         let at = crate::layout::Point { x: 3, y: 3 };
-        let blank = || RgbBuffer::filled(16, 16, pixtuoid_core::sprite::Rgb { r: 0, g: 0, b: 0 });
+        let blank = || RgbBuffer::filled(16, 16, crate::sprite::Rgb { r: 0, g: 0, b: 0 });
         let drawn = |buf: &RgbBuffer| buf.get(scale.to_buffer(at.x), scale.to_buffer(at.y));
 
         let mut buf = blank();
@@ -3856,7 +3842,7 @@ mod tests {
     fn a_lit_screens_scanline_is_on_the_models_column() {
         let pack = test_office();
         let art = Desk::North.piece();
-        let glow = pixtuoid_core::sprite::Rgb {
+        let glow = crate::sprite::Rgb {
             r: 40,
             g: 180,
             b: 220,
@@ -4865,7 +4851,7 @@ mod tests {
     #[test]
     fn a_change_dithers_the_ground_and_the_veil_on_the_art_grid() {
         use crate::sky::{Sky, Weather, WeatherMix};
-        use pixtuoid_core::sprite::Rgb;
+        use crate::sprite::Rgb;
         let theme = &crate::theme::NORMAL;
         let pack = test_office();
         let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
@@ -5799,11 +5785,11 @@ mod tests {
     #[test]
     fn the_north_sofas_backrest_starts_on_its_lit_ridge() {
         let pack = test_office();
-        let densities = std::iter::once(pixtuoid_core::sprite::format::Density::ONE)
+        let densities = std::iter::once(crate::sprite::format::Density::ONE)
             .chain(pack.density_variants().iter().copied());
         for d in densities {
             let name = format!("{}@{d}x", PackPiece::MeetingSofaNorth.name());
-            let art = if d == pixtuoid_core::sprite::format::Density::ONE {
+            let art = if d == crate::sprite::format::Density::ONE {
                 Some(pack.piece(PackPiece::MeetingSofaNorth))
             } else {
                 pack.variants_of(PackPiece::MeetingSofaNorth).get(&d)

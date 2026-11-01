@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::{AgentId, SceneState};
 
 use super::palette::blend_pixel;

@@ -1,7 +1,7 @@
 //! Each effect's look in layout cells, which every painter draws it from;
 //! [`super`] decides only when and where one shows.
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 use super::{Effect, EffectKind, HEART_LIFE_MS, SLEEP_Z_RISE_MS, STEAM_CYCLE_MS};
 use crate::composite::WHITE;

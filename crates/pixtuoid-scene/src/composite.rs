@@ -2,7 +2,7 @@
 //! sRGB channel, as the web composites. A gradient between two hues whose middle
 //! must not sag is [`Rgb::mix`] instead.
 
-use pixtuoid_core::sprite::Rgb;
+use crate::sprite::Rgb;
 
 /// The blend anchors: a lit fixture is its tint pushed toward [`WHITE`], an unlit
 /// one toward [`BLACK`] — one pair, so the lamps, the screens and the neon tube

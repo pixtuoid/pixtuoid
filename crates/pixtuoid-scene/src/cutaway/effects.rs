@@ -2,7 +2,7 @@
 //! each [`Riding`]'s look, a square of art pixels at a time, a fade dithered on
 //! the look's own grid.
 
-use pixtuoid_core::sprite::RgbBuffer;
+use crate::sprite::RgbBuffer;
 
 use crate::display::effects::Riding;
 use crate::display::pen::{ArtPx, ArtRect};
@@ -37,7 +37,7 @@ impl Riding {
 
 #[cfg(test)]
 mod tests {
-    use pixtuoid_core::sprite::Rgb;
+    use crate::sprite::Rgb;
 
     use super::*;
     use crate::display::pen::Pen;

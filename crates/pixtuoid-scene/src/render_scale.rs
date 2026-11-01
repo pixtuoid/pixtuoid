@@ -14,7 +14,7 @@
 
 use std::num::NonZeroU16;
 
-use pixtuoid_core::sprite::format::Density;
+use crate::sprite::format::Density;
 
 /// How many buffer pixels one layout unit paints as.
 ///
@@ -56,7 +56,7 @@ impl RenderScale {
     /// difference, but 16 (×4/3) is nearer than 8 (×3/2).
     ///
     /// The rule meets HERE, in the engine, because the densities are the
-    /// PACK's ([`Pack::density_variants`](pixtuoid_core::sprite::format::Pack::density_variants))
+    /// PACK's ([`Pack::density_variants`](crate::sprite::format::Pack::density_variants))
     /// and every painter that picks a scale
     /// needs it; a surface only contributes `natural`.
     ///
@@ -97,11 +97,10 @@ impl RenderScale {
         self.0.get()
     }
 
-    /// The factor as a [`NonZeroU16`], for the core blitter.
+    /// The factor as a [`NonZeroU16`], for the blitter.
     ///
-    /// `pixtuoid-core` owns the pixel primitives but sits BELOW this crate in
-    /// the DAG, so it cannot name `RenderScale`; it takes the bare non-zero
-    /// factor, which this module and the density-variant picker make. Core gets
+    /// `sprite::blit` owns the pixel primitives and takes the bare non-zero
+    /// factor, which this module and the density-variant picker make: it gets
     /// "repeat each pixel N times", the layout↔buffer meaning stays here.
     pub(crate) fn factor(self) -> NonZeroU16 {
         self.0
@@ -161,8 +160,8 @@ pub struct PixelFit {
 impl PixelFit {
     /// The surface's `natural` real pixels per unit fitted to `density` (the
     /// pack's [`max_density_variant`](crate::pack::OfficeArt::max_density_variant))
-    /// over a surface `px` big; `None` when [`RenderScale::fit`] finds no
-    /// scale.
+    /// over a surface `px` big; `None` when no multiple of `density` lies near
+    /// enough `natural`.
     pub fn new(natural: u16, density: Density, px: crate::layout::Size) -> Option<Self> {
         RenderScale::fit(natural, density).map(|scale| Self::at(scale, density, px))
     }
@@ -232,6 +231,7 @@ mod tests {
     use super::*;
     use crate::display::pen::test_density;
     use crate::floor::{floor_capacity, floor_capacity_scaled, floor_seed};
+    use crate::sprite::format::MAX_DENSITY_VARIANT;
 
     fn fit(natural: u16, density: u16) -> Option<u16> {
         RenderScale::fit(natural, test_density(density)).map(RenderScale::get)
@@ -302,10 +302,10 @@ mod tests {
     }
 
     /// The properties the table samples, over natural scales to 256 and every
-    /// density a pack may claim (core's `MAX_DENSITY_VARIANT`).
+    /// density a pack may claim ([`MAX_DENSITY_VARIANT`]).
     #[test]
     fn every_pick_is_a_multiple_within_the_ratio_bound_and_the_nearest_one() {
-        for d in 1..=64u16 {
+        for d in 1..=MAX_DENSITY_VARIANT {
             for n in 0..=256u16 {
                 let Some(s) = fit(n, d) else {
                     // Only a scale with no multiple of `d` in reach goes without.
@@ -362,13 +362,13 @@ mod tests {
         assert_eq!(s.logical(643), 160);
     }
 
-    /// The seam reaches the core blitter unchanged — a scale that says "4" must
+    /// The seam reaches the blitter unchanged — a scale that says "4" must
     /// expand a sprite by 4, or layout and paint would disagree about what a
     /// unit is while every test above still passed.
     #[test]
-    fn the_factor_drives_the_core_blitter_at_the_same_scale() {
-        use pixtuoid_core::sprite::blit::blit_frame_scaled;
-        use pixtuoid_core::sprite::{Frame, Rgb, RgbBuffer};
+    fn the_factor_drives_the_blitter_at_the_same_scale() {
+        use crate::sprite::blit::blit_frame_scaled;
+        use crate::sprite::{Frame, Rgb, RgbBuffer};
 
         let red = Rgb { r: 255, g: 0, b: 0 };
         let bg = Rgb { r: 0, g: 0, b: 0 };

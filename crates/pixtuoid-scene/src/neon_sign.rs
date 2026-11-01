@@ -11,8 +11,8 @@
 
 use std::time::SystemTime;
 
+use crate::sprite::Rgb;
 use pixtuoid_core::SceneState;
-use pixtuoid_core::sprite::Rgb;
 use pixtuoid_core::state::DaemonState;
 
 use crate::display::{Content, Icon};

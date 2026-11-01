@@ -10,10 +10,10 @@ use std::time::SystemTime;
 
 use crate::pack::OfficeArt;
 use crate::physics::{WalkProfile, walk_arrived};
+use crate::sprite::Rgb;
+use crate::walkable::OccupancyOverlay;
 use pixtuoid_core::AgentId;
-use pixtuoid_core::sprite::Rgb;
 use pixtuoid_core::state::{AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, SceneState};
-use pixtuoid_core::walkable::OccupancyOverlay;
 
 use crate::audio::{AudioCueTracker, AudioFrame};
 use crate::chitchat::{ActiveChitchat, VenueKey};

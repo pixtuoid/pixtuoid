@@ -3003,13 +3003,11 @@ dependencies = [
  "chrono",
  "codspeed-criterion-compat",
  "dunce",
- "enum-map",
  "filetime",
  "insta",
  "libc",
  "mutatis",
  "notify",
- "palette",
  "pixtuoid-core",
  "portable-pty",
  "process-wrap",
@@ -3059,15 +3057,18 @@ checksum = "80530eb1c5851ce478034ca1ca2a11d478ef4b2ceda1fa435e4151312dd21735"
 name = "pixtuoid-scene"
 version = "0.21.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "codspeed-criterion-compat",
  "enum-map",
  "foldhash",
  "lru",
+ "palette",
  "pixtuoid-core",
  "pixtuoid-lofi",
  "proc-macro2",
  "proptest",
+ "serde",
  "serde_json",
  "snapbox",
  "strum",
@@ -3079,6 +3080,7 @@ dependencies = [
  "tracing",
  "unicode-segmentation",
  "unicode-width",
+ "vec1",
 ]
 
 [[package]]

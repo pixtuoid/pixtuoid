@@ -250,7 +250,7 @@ mod tests {
     fn paint_pet_tooltip(
         f: &mut ratatui::Frame<'_>,
         kind: pixtuoid_scene::pet::PetKind,
-        anim: pixtuoid_core::sprite::format::Piece,
+        anim: pixtuoid_scene::sprite::format::Piece,
         on_cooldown: bool,
         name: &str,
         at: TooltipAt,
@@ -572,7 +572,7 @@ mod tests {
     fn a_badge_sits_on_its_plate() {
         use pixtuoid_scene::badge::BadgeTone;
         use pixtuoid_scene::layout::Point;
-        let plate = pixtuoid_core::sprite::Rgb { r: 1, g: 2, b: 3 };
+        let plate = pixtuoid_scene::sprite::Rgb { r: 1, g: 2, b: 3 };
         let badge = super::Badge {
             plate,
             ..badge(

@@ -13,9 +13,9 @@
 //! detection module whose decisions are only exercised through that query is a
 //! module with no tests at all.
 
-use pixtuoid_core::sprite::format::Density;
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::render_scale::PixelFit;
+use pixtuoid_scene::sprite::format::Density;
 use ratatui::layout::Size as TermSize;
 
 /// String Terminator: ends any APC or DCS a cut-short write left open.

@@ -8,7 +8,7 @@
 //! Workspace-only test, excluded from the published package (`Cargo.toml`
 //! `exclude`).
 
-use pixtuoid_core::sprite::Rgb;
+use pixtuoid_scene::sprite::Rgb;
 use pixtuoid_scene::theme::{Theme, theme_by_name};
 
 const PALETTE_PATH: &str = concat!(

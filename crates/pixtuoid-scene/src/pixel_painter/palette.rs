@@ -1,7 +1,7 @@
 //! The color math the classic painter's passes share.
 
 pub(super) use crate::composite::{BLACK, WHITE, blend_rgb};
-use pixtuoid_core::sprite::{Frame, Rgb, RgbBuffer};
+use crate::sprite::{Frame, Rgb, RgbBuffer};
 
 /// Map one mascot pixel to its "degraded" look: a gateway that is UP but whose
 /// model backend fails every run must read as UNWELL.
@@ -97,7 +97,7 @@ mod tests {
     use super::*;
     use crate::display::pen::test_density;
     use crate::pack::{appliance_overrides, fixture_overrides};
-    use pixtuoid_core::sprite::format::Piece;
+    use crate::sprite::format::Piece;
 
     #[test]
     fn blend_pixel_composites_in_bounds_and_noops_out_of_bounds() {

@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU16;
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::format::{Density, Piece};
-use pixtuoid_core::sprite::{Frame, RecolorableFrame, Sprite};
+use crate::sprite::format::{Density, Piece};
+use crate::sprite::{Frame, RecolorableFrame, Sprite};
 
 use crate::render_scale::RenderScale;
 
@@ -27,7 +27,7 @@ pub(crate) struct DenseFrame<'a> {
     pub(crate) blit_at: NonZeroU16,
     /// Where the frame's head is, if the art marks it: where a hairstyle
     /// dresses it ([`crate::character::dress_for`]).
-    pub(crate) head: Option<pixtuoid_core::sprite::HeadMark>,
+    pub(crate) head: Option<crate::sprite::HeadMark>,
 }
 
 /// The densest of `variants` whose density divides `scale`, else `base`, with
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn a_variant_is_read_at_the_same_frame_as_its_base() {
         let pack = variant_pack();
-        let b = pixtuoid_core::sprite::Rgb { r: 4, g: 5, b: 6 };
+        let b = crate::sprite::Rgb { r: 4, g: 5, b: 6 };
         let d = densest_frame(
             &pack,
             Piece::Typing,
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn a_frame_past_the_end_reads_the_first() {
         let pack = variant_pack();
-        let a = pixtuoid_core::sprite::Rgb { r: 1, g: 2, b: 3 };
+        let a = crate::sprite::Rgb { r: 1, g: 2, b: 3 };
         let d = densest_frame(
             &pack,
             Piece::Typing,

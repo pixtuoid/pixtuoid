@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use anyhow::Result;
 use pixtuoid_core::SceneState;
-use pixtuoid_core::sprite::RgbBuffer;
+use pixtuoid_scene::sprite::RgbBuffer;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
 use ratatui::layout::Rect;
@@ -451,8 +451,8 @@ pub(crate) fn flush_buffer_to_term(f: &mut ratatui::Frame<'_>, buf: &RgbBuffer, 
 /// office paints with.
 fn set_half_block(
     cell: &mut ratatui::buffer::Cell,
-    top: pixtuoid_core::sprite::Rgb,
-    bottom: pixtuoid_core::sprite::Rgb,
+    top: pixtuoid_scene::sprite::Rgb,
+    bottom: pixtuoid_scene::sprite::Rgb,
 ) {
     cell.set_symbol("\u{2580}");
     cell.fg = Color::Rgb(top.r, top.g, top.b);
@@ -595,8 +595,8 @@ mod tests {
         assert_eq!(clip_widget_rect(inside, b), Some(inside));
     }
 
-    fn rgb(r: u8, g: u8, b: u8) -> pixtuoid_core::sprite::Rgb {
-        pixtuoid_core::sprite::Rgb { r, g, b }
+    fn rgb(r: u8, g: u8, b: u8) -> pixtuoid_scene::sprite::Rgb {
+        pixtuoid_scene::sprite::Rgb { r, g, b }
     }
 
     const HALF_BLOCK: &str = "\u{2580}";

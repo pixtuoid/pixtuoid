@@ -5,11 +5,11 @@
 /// A `width × height` row-major grid of `T`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Grid<T> {
-    // Not `pub`: `data.len() == width * height` is the invariant every checked
-    // access relies on, so an external caller must not be able to reassign a
-    // dimension out from under the data.
-    pub(crate) width: u16,
-    pub(crate) height: u16,
+    // Private: `data.len() == width * height` is the invariant every checked
+    // access relies on, and `Frame` derefs mutably to a `Grid`, so any holder
+    // of one could reassign a dimension out from under the data.
+    width: u16,
+    height: u16,
     data: Vec<T>,
 }
 
@@ -29,7 +29,7 @@ impl<T> Grid<T> {
 
 impl<T: Clone> Grid<T> {
     /// A `width × height` grid with every cell set to `fill`.
-    pub fn filled(width: u16, height: u16, fill: T) -> Self {
+    pub(crate) fn filled(width: u16, height: u16, fill: T) -> Self {
         Self {
             width,
             height,
@@ -79,14 +79,14 @@ impl<T> Grid<T> {
 
     /// The cell at `(x, y)`, or `None` out of bounds.
     #[inline]
-    pub fn get(&self, x: u16, y: u16) -> Option<&T> {
+    pub(crate) fn get(&self, x: u16, y: u16) -> Option<&T> {
         self.index(x, y).map(|i| &self.data[i])
     }
 
     /// Set `(x, y)` if in bounds; a no-op (clip) when out of bounds — callers
     /// stamp padded rects that may extend past the edge.
     #[inline]
-    pub fn set(&mut self, x: u16, y: u16, value: T) {
+    pub(crate) fn set(&mut self, x: u16, y: u16, value: T) {
         if let Some(i) = self.index(x, y) {
             self.data[i] = value;
         }
@@ -96,7 +96,7 @@ impl<T> Grid<T> {
 impl<T: Copy> Grid<T> {
     /// The cell at `(x, y)`, or `default` out of bounds.
     #[inline]
-    pub fn get_or(&self, x: u16, y: u16, default: T) -> T {
+    pub(crate) fn get_or(&self, x: u16, y: u16, default: T) -> T {
         self.get(x, y).copied().unwrap_or(default)
     }
 

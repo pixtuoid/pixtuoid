@@ -5,8 +5,8 @@
 //! with "routable here" (A\*).
 
 use super::Point;
-use pixtuoid_core::grid::Grid;
-use pixtuoid_core::walkable::{OccupancyOverlay, WalkableMask};
+use crate::grid::Grid;
+use crate::walkable::{OccupancyOverlay, WalkableMask};
 
 /// Coarse-cell edge in px. Smaller = more accurate paths, more work per query.
 /// `pathfind::CELL_SIZE` re-exports this value.

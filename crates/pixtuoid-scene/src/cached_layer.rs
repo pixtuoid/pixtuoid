@@ -2,7 +2,7 @@
 //! after: what lies under everything that moves, which every painter
 //! repaints whole or in damage boxes.
 
-use pixtuoid_core::sprite::{Rgb, RgbBuffer};
+use crate::sprite::{Rgb, RgbBuffer};
 
 /// The layer `K` names, and the key it was drawn for. `K` holds every input
 /// the drawing reads: a stale hit is invisible to every other gate, so the

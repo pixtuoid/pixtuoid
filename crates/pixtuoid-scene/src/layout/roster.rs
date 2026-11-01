@@ -127,12 +127,12 @@ pub(crate) enum StationArt {
     PantryCounter,
     SnackShelf,
     /// A corridor appliance, drawn from this piece.
-    Appliance(pixtuoid_core::sprite::format::Piece),
+    Appliance(crate::sprite::format::Piece),
 }
 
 impl Station {
     pub(crate) fn art(self) -> StationArt {
-        use pixtuoid_core::sprite::format::Piece;
+        use crate::sprite::format::Piece;
         match self {
             Station::PantryCounter => StationArt::PantryCounter,
             Station::SnackShelf => StationArt::SnackShelf,

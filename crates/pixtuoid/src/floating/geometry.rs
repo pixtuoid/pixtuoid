@@ -4,11 +4,11 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use pixtuoid_core::sprite::format::Density;
 use pixtuoid_core::state::MAX_FLOORS;
 use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::render_scale::PixelFit;
+use pixtuoid_scene::sprite::format::Density;
 use winit::dpi::{LogicalSize, PhysicalSize};
 
 /// Does the saved window rect `(x, y, w, h)` overlap ANY currently-connected monitor?

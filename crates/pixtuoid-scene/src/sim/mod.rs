@@ -7,16 +7,16 @@
 //! `floor::FloorSession::step` to observe poses/positions without buying a
 //! pixel pass.
 
+use crate::sprite::format::{Piece, Walk};
 use pixtuoid_core::remote::cwd_basename;
-use pixtuoid_core::sprite::format::{Piece, Walk};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::time::{Duration, SystemTime};
 
 use crate::pack::OfficeArt;
+use crate::walkable::OccupancyOverlay;
 use pixtuoid_core::source::daemon::DaemonInstanceKey;
 use pixtuoid_core::state::{ActivityState, DaemonLiveness, DaemonState, FloorLocalDeskIndex};
-use pixtuoid_core::walkable::OccupancyOverlay;
 use pixtuoid_core::{AgentId, AgentSlot, SceneState};
 
 use crate::anim::{Beat, Timing};
@@ -441,7 +441,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     }
 }
 
-/// The size of `anim`'s frame `frame_idx`, [wrapped](pixtuoid_core::sprite::Sprite::wrap).
+/// The size of `anim`'s frame `frame_idx`, [wrapped](crate::sprite::Sprite::wrap).
 pub(crate) fn pack_frame_size(pack: &OfficeArt, anim: Piece, frame_idx: usize) -> Size {
     let f = pack.piece(anim).frame_at(frame_idx);
     Size {
