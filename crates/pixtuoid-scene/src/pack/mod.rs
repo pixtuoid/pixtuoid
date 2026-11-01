@@ -459,15 +459,15 @@ impl<T> Densities<T> {
     fn of(
         pack: &Pack,
         piece: Piece,
-        mut read: impl FnMut(&Sprite, Density) -> Result<T, ArtError>,
-    ) -> Result<Self, ArtError> {
+        mut read: impl FnMut(&Sprite, Density) -> Result<T, PackError>,
+    ) -> Result<Self, PackError> {
         Ok(Densities {
             base: read(pack.piece(piece), Density::ONE)?,
             variants: pack
                 .variants_of(piece)
                 .iter()
                 .map(|(&d, sprite)| Ok((d, read(sprite, d)?)))
-                .collect::<Result<_, ArtError>>()?,
+                .collect::<Result<_, PackError>>()?,
         })
     }
 
@@ -480,49 +480,6 @@ impl<T> Densities<T> {
     pub(crate) fn base(&self) -> &T {
         &self.base
     }
-}
-
-/// Why the bundled pack can't draw the office.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum ArtError {
-    /// The pack itself does not load.
-    #[error(transparent)]
-    Pack(#[from] PackError),
-    /// A desk leaves a prop's mark out.
-    #[error("{} at {density}x marks no {}", desk.piece().name(), prop.mark())]
-    #[non_exhaustive]
-    DeskMark {
-        /// The desk.
-        desk: Desk,
-        /// The density of the art that leaves it out.
-        density: Density,
-        /// The prop.
-        prop: DeskProp,
-    },
-    /// A desk draws no bulb, or one too far above it.
-    #[error("{} at {density}x draws no bulb in {DESK_BULB_KEY:?} the desk can hang", desk.piece().name())]
-    #[non_exhaustive]
-    DeskBulb {
-        /// The desk.
-        desk: Desk,
-        /// The density of the art.
-        density: Density,
-    },
-    /// The wall clock draws no face along its middle row.
-    #[error("wall_clock at {density}x draws no face in {CLOCK_FACE_KEY:?} along its middle row")]
-    #[non_exhaustive]
-    ClockFace {
-        /// The density of the art.
-        density: Density,
-    },
-    /// An icon has no `[icons]` art.
-    #[error("[icons] has no {}", icon.art())]
-    #[non_exhaustive]
-    IconArt {
-        /// The icon.
-        icon: Icon,
-    },
 }
 
 /// The pack, parsed into what the office draws: [`Pack`]'s pieces, and each
@@ -544,7 +501,7 @@ impl OfficeArt {
     ///
     /// If a desk leaves a prop or its bulb out, the clock its face, or an
     /// icon its art.
-    pub(crate) fn parse(pack: Pack) -> Result<Self, ArtError> {
+    pub(crate) fn parse(pack: Pack) -> Result<Self, PackError> {
         let desks = EnumMap::try_from_fn(|desk: Desk| {
             Densities::of(&pack, desk.piece(), |sprite, density| {
                 read_desk(desk, sprite, density)
@@ -558,13 +515,13 @@ impl OfficeArt {
                 DESK_BEZEL_RAISE + art_h.saturating_sub(pack.piece(Piece::Desk).first().height());
             i16::try_from(i32::from(y) - i32::from(above))
                 .map(|dy| (x, dy))
-                .map_err(|_| ArtError::DeskBulb {
+                .map_err(|_| PackError::DeskBulb {
                     desk,
                     density: Density::ONE,
                 })
         })?;
         let clock = Densities::of(&pack, Piece::WallClock, |sprite, density| {
-            let face_reach = face_reach(sprite).ok_or(ArtError::ClockFace { density })?;
+            let face_reach = face_reach(sprite).ok_or(PackError::ClockFace { density })?;
             Ok(ClockArt {
                 sprite: sprite.clone(),
                 face_reach,
@@ -573,7 +530,7 @@ impl OfficeArt {
         let icons = EnumMap::try_from_fn(|icon: Icon| {
             pack.icon(icon.art())
                 .cloned()
-                .ok_or(ArtError::IconArt { icon })
+                .ok_or(PackError::IconArt { icon })
         })?;
         Ok(OfficeArt {
             pack,
@@ -584,8 +541,7 @@ impl OfficeArt {
         })
     }
 
-    /// The pieces.
-    #[cfg(test)]
+    /// The parsed pack: its pieces, density variants, city and hairstyles.
     pub(crate) fn pack(&self) -> &Pack {
         &self.pack
     }
@@ -601,54 +557,10 @@ impl OfficeArt {
         self.pack.piece(piece)
     }
 
-    /// [`Pack::variants_of`].
-    pub(crate) fn variants_of(&self, piece: Piece) -> &BTreeMap<Density, Sprite> {
-        self.pack.variants_of(piece)
-    }
-
-    /// [`Pack::stride`].
-    pub(crate) fn stride(&self, walk: crate::pack::Walk) -> NonZeroU16 {
-        self.pack.stride(walk)
-    }
-
-    /// [`Pack::buildings`].
-    pub(crate) fn buildings(&self) -> impl Iterator<Item = &crate::pack::Building> {
-        self.pack.buildings()
-    }
-
-    /// [`Pack::city_materials`].
-    pub(crate) fn city_materials(&self) -> &crate::pack::CityMaterials {
-        self.pack.city_materials()
-    }
-
-    /// [`Pack::hairstyles`].
-    pub(crate) fn hairstyles(&self) -> impl Iterator<Item = &crate::pack::Hairstyle> {
-        self.pack.hairstyles()
-    }
-
-    /// [`Pack::hairstyle`].
-    pub(crate) fn hairstyle(
-        &self,
-        name: &str,
-        density: Density,
-    ) -> Option<&crate::pack::Hairstyle> {
-        self.pack.hairstyle(name, density)
-    }
-
-    /// [`Pack::character_outline`].
-    pub(crate) fn character_outline(&self) -> crate::sprite::Rgb {
-        self.pack.character_outline()
-    }
-
     /// The densest of the pack's variants, or [`Density::ONE`] when it ships
     /// none.
     pub fn max_density_variant(&self) -> Density {
         self.pack.max_density_variant()
-    }
-
-    /// [`Pack::density_variants`].
-    pub(crate) fn density_variants(&self) -> &[Density] {
-        self.pack.density_variants()
     }
 
     /// `desk`'s art at each density.
@@ -674,20 +586,20 @@ impl OfficeArt {
 }
 
 /// `desk`'s art `sprite` at `density`, its props' marks and bulb read.
-fn read_desk(desk: Desk, sprite: &Sprite, density: Density) -> Result<DeskArt, ArtError> {
+fn read_desk(desk: Desk, sprite: &Sprite, density: Density) -> Result<DeskArt, PackError> {
     let marks = sprite.marks(0);
     let props = EnumMap::try_from_fn(|prop: DeskProp| {
         marks
             .iter()
             .find(|m| m.name() == prop.mark())
             .map(|m| (m.x(), m.y()))
-            .ok_or(ArtError::DeskMark {
+            .ok_or(PackError::DeskMark {
                 desk,
                 density,
                 prop,
             })
     })?;
-    let bulb = lookup::bulb_cell(sprite, density).ok_or(ArtError::DeskBulb { desk, density })?;
+    let bulb = lookup::bulb_cell(sprite, density).ok_or(PackError::DeskBulb { desk, density })?;
     Ok(DeskArt {
         sprite: sprite.clone(),
         props,
@@ -734,8 +646,8 @@ const BUNDLED_PACK_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_
 /// # Errors
 ///
 /// If the embedded manifest or a bundled sprite fails to load, or the pack
-/// can't draw the office ([`ArtError`]).
-pub fn load_bundled_pack() -> Result<OfficeArt, ArtError> {
+/// can't draw the office ([`PackError`]).
+pub fn load_bundled_pack() -> Result<OfficeArt, PackError> {
     OfficeArt::parse(load_pack_from_json(
         BUNDLED_PACK_JSON,
         &bundled_sprite_srcs(),
@@ -1313,7 +1225,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                ArtError::DeskMark {
+                PackError::DeskMark {
                     desk: Desk::South,
                     prop: DeskProp::Cup,
                     ..
@@ -1347,7 +1259,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                ArtError::DeskMark {
+                PackError::DeskMark {
                     desk: Desk::South,
                     prop: DeskProp::Cup,
                     density,
@@ -1369,7 +1281,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                ArtError::DeskBulb {
+                PackError::DeskBulb {
                     desk: Desk::North,
                     ..
                 }
@@ -1387,7 +1299,7 @@ mod tests {
         );
         let err =
             OfficeArt::parse(test_pack_with(&[("wall_clock.sprite", clock)])).expect_err("no face");
-        assert!(matches!(err, ArtError::ClockFace { .. }), "{err}");
+        assert!(matches!(err, PackError::ClockFace { .. }), "{err}");
     }
 
     /// An icon the pack leaves out of `[icons]` has no art to draw.
@@ -1396,7 +1308,7 @@ mod tests {
         let err = OfficeArt::parse(test_pack_declaring("\nalert ", "\nalarm "))
             .expect_err("no alert icon");
         assert!(
-            matches!(err, ArtError::IconArt { icon: Icon::Alert }),
+            matches!(err, PackError::IconArt { icon: Icon::Alert }),
             "{err}"
         );
     }

@@ -30,8 +30,8 @@ row" vocabulary across the crate for zero behavior change.)
 ## The sprite format
 
 The rules the bundled pack (`sprites/default/`) is drawn to. A pack that breaks
-one does not load (`PackError`, and `pack::ArtError` for what the office reads
-off its art); the test-only `pack::validate::validate_pack` finds art that loads but is
+one does not load (`PackError`, which also covers what the office reads off its
+art); the test-only `pack::validate::validate_pack` finds art that loads but is
 not as authored, and `the_bundled_pack_passes_its_own_validation` fails on a finding.
 
 Characters are recolored per agent by palette key: whatever a pack draws with `B`

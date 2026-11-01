@@ -21,7 +21,8 @@ const HAIRSTYLE_SALT: u64 = 0x6861_6972_7374_796c;
 /// their style when the renderer lands on another.
 fn pick(pack: &OfficeArt, agent: AgentId) -> Option<&str> {
     let seed = splitmix64(splitmix64(agent.raw() ^ HAIRSTYLE_SALT));
-    pack.hairstyles()
+    pack.pack()
+        .hairstyles()
         .map(Hairstyle::name)
         .max_by_key(|name| splitmix64(seed ^ fnv1a(name.bytes().map(u64::from))))
 }
@@ -48,7 +49,7 @@ pub(crate) fn dress_for(
     density: Density,
 ) -> Option<Dress> {
     let head = head.filter(|_| density.get() > 1)?;
-    let style = pick(pack, agent).and_then(|name| pack.hairstyle(name, density));
+    let style = pick(pack, agent).and_then(|name| pack.pack().hairstyle(name, density));
     Some(Dress::of(body, head, style))
 }
 
@@ -224,13 +225,16 @@ mod tests {
         let sprite = pack.piece(Piece::Seated);
         let body = sprite.first();
         let dress = dress_for(pack, agent, body, sprite.head(0), TWO).expect("a marked 2x frame");
-        let style = dress.style.as_deref().and_then(|n| pack.hairstyle(n, TWO));
+        let style = dress
+            .style
+            .as_deref()
+            .and_then(|n| pack.pack().hairstyle(n, TWO));
         let f = super::dress(
             body,
             &dress,
             style,
             &[('H', Some(H))],
-            pack.character_outline(),
+            pack.pack().character_outline(),
         );
         (dress, f)
     }
@@ -393,14 +397,15 @@ mod tests {
     #[test]
     fn every_bundled_character_dressed_in_every_style_keeps_its_outline_whole() {
         let pack = crate::pack::test_office();
-        let line = pack.character_outline();
+        let line = pack.pack().character_outline();
         let (mut dressed, mut flaws) = (0, Vec::new());
         let arts = Piece::VARIANTS
             .iter()
             .filter(|p| p.kind() == PieceKind::Character)
             .flat_map(|&p| {
                 std::iter::once((p.name().to_owned(), pack.piece(p))).chain(
-                    pack.variants_of(p)
+                    pack.pack()
+                        .variants_of(p)
                         .iter()
                         .map(move |(d, s)| (format!("{}@{d}x", p.name()), s)),
                 )
@@ -410,7 +415,7 @@ mod tests {
                 let Some(head) = sprite.head(i) else {
                     continue;
                 };
-                let styles = pack.hairstyles().map(Some).chain([None]);
+                let styles = pack.pack().hairstyles().map(Some).chain([None]);
                 for style in styles {
                     let d = Dress::of(body, head, style);
                     let f = dress(body, &d, style, &[], line);

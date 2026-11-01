@@ -1108,12 +1108,21 @@ pub pixtuoid_scene::pack::error::PackError::CityKeyShared::key: char
 pub pixtuoid_scene::pack::error::PackError::CityMissingMaterial::material: pixtuoid_scene::pack::Material
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::CityUnknownMaterial
 pub pixtuoid_scene::pack::error::PackError::CityUnknownMaterial::name: alloc::string::String
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::ClockFace
+pub pixtuoid_scene::pack::error::PackError::ClockFace::density: pixtuoid_scene::sprite::format::Density
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::Color
 pub pixtuoid_scene::pack::error::PackError::Color::key: alloc::string::String
 pub pixtuoid_scene::pack::error::PackError::Color::source: pixtuoid_scene::pack::error::ColorError
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::Decode
 pub pixtuoid_scene::pack::error::PackError::Decode::file: alloc::string::String
 pub pixtuoid_scene::pack::error::PackError::Decode::source: pixtuoid_scene::sprite::error::SpriteError
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::DeskBulb
+pub pixtuoid_scene::pack::error::PackError::DeskBulb::density: pixtuoid_scene::sprite::format::Density
+pub pixtuoid_scene::pack::error::PackError::DeskBulb::desk: pixtuoid_scene::pack::Desk
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::DeskMark
+pub pixtuoid_scene::pack::error::PackError::DeskMark::density: pixtuoid_scene::sprite::format::Density
+pub pixtuoid_scene::pack::error::PackError::DeskMark::desk: pixtuoid_scene::pack::Desk
+pub pixtuoid_scene::pack::error::PackError::DeskMark::prop: pixtuoid_scene::pack::DeskProp
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::HairLayerFrames
 pub pixtuoid_scene::pack::error::PackError::HairLayerFrames::file: alloc::string::String
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::HairLayerHead
@@ -1124,6 +1133,8 @@ pub pixtuoid_scene::pack::error::PackError::HairstyleDensity::key: alloc::string
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::HairstylesDiffer
 pub pixtuoid_scene::pack::error::PackError::HairstylesDiffer::first: pixtuoid_scene::sprite::format::Density
 pub pixtuoid_scene::pack::error::PackError::HairstylesDiffer::other: pixtuoid_scene::sprite::format::Density
+#[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::IconArt
+pub pixtuoid_scene::pack::error::PackError::IconArt::icon: crate::display::Icon
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::IconFrames
 pub pixtuoid_scene::pack::error::PackError::IconFrames::file: alloc::string::String
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::JsonManifest
@@ -1170,8 +1181,6 @@ pub pixtuoid_scene::pack::error::PackError::VariantWithoutBase::base: alloc::str
 pub pixtuoid_scene::pack::error::PackError::VariantWithoutBase::key: alloc::string::String
 #[non_exhaustive] pub pixtuoid_scene::pack::error::PackError::WalkWithoutStride
 pub pixtuoid_scene::pack::error::PackError::WalkWithoutStride::walk: pixtuoid_scene::pack::Piece
-impl core::convert::From<pixtuoid_scene::pack::error::PackError> for pixtuoid_scene::pack::ArtError
-pub fn pixtuoid_scene::pack::ArtError::from(pixtuoid_scene::pack::error::PackError) -> Self
 impl core::error::Error for pixtuoid_scene::pack::error::PackError
 pub fn pixtuoid_scene::pack::error::PackError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Debug for pixtuoid_scene::pack::error::PackError
@@ -1185,34 +1194,6 @@ impl core::marker::Unpin for pixtuoid_scene::pack::error::PackError
 impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::error::PackError
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::error::PackError
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::error::PackError
-#[non_exhaustive] pub enum pixtuoid_scene::pack::ArtError
-#[non_exhaustive] pub pixtuoid_scene::pack::ArtError::ClockFace
-pub pixtuoid_scene::pack::ArtError::ClockFace::density: pixtuoid_scene::sprite::format::Density
-#[non_exhaustive] pub pixtuoid_scene::pack::ArtError::DeskBulb
-pub pixtuoid_scene::pack::ArtError::DeskBulb::density: pixtuoid_scene::sprite::format::Density
-pub pixtuoid_scene::pack::ArtError::DeskBulb::desk: pixtuoid_scene::pack::Desk
-#[non_exhaustive] pub pixtuoid_scene::pack::ArtError::DeskMark
-pub pixtuoid_scene::pack::ArtError::DeskMark::density: pixtuoid_scene::sprite::format::Density
-pub pixtuoid_scene::pack::ArtError::DeskMark::desk: pixtuoid_scene::pack::Desk
-pub pixtuoid_scene::pack::ArtError::DeskMark::prop: pixtuoid_scene::pack::DeskProp
-#[non_exhaustive] pub pixtuoid_scene::pack::ArtError::IconArt
-pub pixtuoid_scene::pack::ArtError::IconArt::icon: crate::display::Icon
-pub pixtuoid_scene::pack::ArtError::Pack(pixtuoid_scene::pack::error::PackError)
-impl core::convert::From<pixtuoid_scene::pack::error::PackError> for pixtuoid_scene::pack::ArtError
-pub fn pixtuoid_scene::pack::ArtError::from(pixtuoid_scene::pack::error::PackError) -> Self
-impl core::error::Error for pixtuoid_scene::pack::ArtError
-pub fn pixtuoid_scene::pack::ArtError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
-impl core::fmt::Debug for pixtuoid_scene::pack::ArtError
-pub fn pixtuoid_scene::pack::ArtError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for pixtuoid_scene::pack::ArtError
-pub fn pixtuoid_scene::pack::ArtError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_scene::pack::ArtError
-impl core::marker::Send for pixtuoid_scene::pack::ArtError
-impl core::marker::Sync for pixtuoid_scene::pack::ArtError
-impl core::marker::Unpin for pixtuoid_scene::pack::ArtError
-impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::ArtError
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::ArtError
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::ArtError
 pub enum pixtuoid_scene::pack::Desk
 pub pixtuoid_scene::pack::Desk::North
 pub pixtuoid_scene::pack::Desk::South
@@ -1454,7 +1435,7 @@ impl core::marker::Unpin for pixtuoid_scene::pack::Pack
 impl core::marker::UnsafeUnpin for pixtuoid_scene::pack::Pack
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::Pack
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::Pack
-pub fn pixtuoid_scene::pack::load_bundled_pack() -> core::result::Result<pixtuoid_scene::pack::OfficeArt, pixtuoid_scene::pack::ArtError>
+pub fn pixtuoid_scene::pack::load_bundled_pack() -> core::result::Result<pixtuoid_scene::pack::OfficeArt, pixtuoid_scene::pack::error::PackError>
 pub mod pixtuoid_scene::pathfind
 pub struct pixtuoid_scene::pathfind::AStarRouter
 impl core::clone::Clone for pixtuoid_scene::pathfind::AStarRouter

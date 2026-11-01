@@ -390,7 +390,8 @@ fn a_back_turned_desk_shows_the_pose_s_own_back_view() {
 fn arts_of(pack: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::sprite::Sprite)> {
     std::iter::once((piece.name().to_owned(), pack.piece(piece)))
         .chain(
-            pack.variants_of(piece)
+            pack.pack()
+                .variants_of(piece)
                 .iter()
                 .map(|(d, s)| (format!("{}@{d}x", piece.name()), s)),
         )
@@ -407,10 +408,11 @@ fn looks(
     overrides: &[(char, crate::sprite::Pixel)],
 ) -> Vec<crate::sprite::Frame> {
     let bare = anim.recolorable_at(i).recolored(overrides);
-    let line = pack.character_outline();
+    let line = pack.pack().character_outline();
     match anim.head(i) {
         None => vec![bare],
         Some(head) => pack
+            .pack()
             .hairstyles()
             .map(|s| {
                 let dress = crate::character::Dress::of(&bare, head, Some(s));
@@ -611,7 +613,7 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
         };
         let (anchor_toml, anchor_art) = grid_anchor(DENSITY, SHIRT_KEY);
         let stride = anim.walk().map_or(String::new(), |walk| {
-            format!("stride={}\n", bundled.stride(walk))
+            format!("stride={}\n", bundled.pack().stride(walk))
         });
         let toml = format!(
             "[palette]\n\
@@ -4148,9 +4150,12 @@ fn a_busy_loop_spends_most_of_its_frames_away_from_rest() {
         ("printer", pack.piece(Piece::Printer)),
         (
             "vending_machine@4x",
-            &pack.variants_of(Piece::VendingMachine)[&four],
+            &pack.pack().variants_of(Piece::VendingMachine)[&four],
         ),
-        ("printer@4x", &pack.variants_of(Piece::Printer)[&four]),
+        (
+            "printer@4x",
+            &pack.pack().variants_of(Piece::Printer)[&four],
+        ),
     ] {
         let frames = art.frames();
         let (rest, busy) = frames.split_first().expect("a rest frame");

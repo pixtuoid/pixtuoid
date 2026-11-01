@@ -1793,7 +1793,8 @@ mod tests {
         let glass_and_text = [SCREEN_GLASS_LEVEL, SCREEN_TEXT_LEVEL];
         let mut drawn = 0;
         for (name, anim) in std::iter::once((art.name().to_owned(), pack.piece(art))).chain(
-            pack.variants_of(art)
+            pack.pack()
+                .variants_of(art)
                 .iter()
                 .map(|(d, s)| (format!("{}@{d}x", art.name()), s)),
         ) {
@@ -3971,7 +3972,7 @@ mod tests {
             .expect("lays out");
         let layout = &office.layout;
         let mut scales = vec![1];
-        scales.extend(pack.density_variants().iter().map(|d| d.get()));
+        scales.extend(pack.pack().density_variants().iter().map(|d| d.get()));
         for s in scales {
             let scale = RenderScale::new(s).expect("nonzero");
             let at = Office {
@@ -4340,6 +4341,7 @@ mod tests {
         // ...the mover in every style the pack draws, so a box that forgot the
         // rows a style's hair rises by shows...
         let styles: std::collections::BTreeSet<_> = test_office()
+            .pack()
             .hairstyles()
             .map(|s| s.name().to_owned())
             .collect();
@@ -5786,13 +5788,13 @@ mod tests {
     fn the_north_sofas_backrest_starts_on_its_lit_ridge() {
         let pack = test_office();
         let densities = std::iter::once(crate::sprite::format::Density::ONE)
-            .chain(pack.density_variants().iter().copied());
+            .chain(pack.pack().density_variants().iter().copied());
         for d in densities {
             let name = format!("{}@{d}x", PackPiece::MeetingSofaNorth.name());
             let art = if d == crate::sprite::format::Density::ONE {
                 Some(pack.piece(PackPiece::MeetingSofaNorth))
             } else {
-                pack.variants_of(PackPiece::MeetingSofaNorth).get(&d)
+                pack.pack().variants_of(PackPiece::MeetingSofaNorth).get(&d)
             };
             let Some(f) = art.map(|a| a.first()) else {
                 continue;

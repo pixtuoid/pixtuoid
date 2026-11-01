@@ -62,7 +62,7 @@ pub(crate) fn densest_frame(
     scale: RenderScale,
 ) -> DenseFrame<'_> {
     let base = pack.piece(piece);
-    let (art, density, blit_at) = densest(base, pack.variants_of(piece), scale);
+    let (art, density, blit_at) = densest(base, pack.pack().variants_of(piece), scale);
     DenseFrame::of(base, art, frame_idx, (density, blit_at))
 }
 

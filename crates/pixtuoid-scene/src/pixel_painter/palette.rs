@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn a_recolour_rethemes_the_fixture_art() {
         let pack = crate::pack::test_office();
-        let art = pack.variants_of(Piece::FishTank)[&test_density(4)].recolorable_at(0);
+        let art = pack.pack().variants_of(Piece::FishTank)[&test_density(4)].recolorable_at(0);
         let water = pack.palette().get('Д').flatten().expect("the water");
         let plain = art.recolored(&[]);
         let (x, y) = (0..plain.height())
@@ -167,7 +167,8 @@ mod tests {
     #[test]
     fn a_recolour_reshades_the_appliance_art() {
         let pack = crate::pack::test_office();
-        let art = pack.variants_of(Piece::VendingMachine)[&test_density(4)].recolorable_at(0);
+        let art =
+            pack.pack().variants_of(Piece::VendingMachine)[&test_density(4)].recolorable_at(0);
         let [a, b] = ["normal", "cyberpunk"].map(|name| {
             let theme = crate::theme::theme_by_name(name).expect("theme");
             art.recolored(&appliance_overrides(&theme.appliance))

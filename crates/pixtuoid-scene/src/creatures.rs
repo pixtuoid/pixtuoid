@@ -685,13 +685,13 @@ mod tests {
     /// Every creature's roam with the Full ticks it takes per cycle of its
     /// walk: each pet's, and the mascot's in every state.
     fn roams(pack: &OfficeArt) -> Vec<(Walk, Roam, u64)> {
-        let lobster = pack.stride(Walk::LobsterWalk);
+        let lobster = pack.pack().stride(Walk::LobsterWalk);
         PetKind::ALL
             .iter()
             .map(|k| {
                 (
                     k.walk_anim(),
-                    Roam::pet(pack.stride(k.walk_anim())),
+                    Roam::pet(pack.pack().stride(k.walk_anim())),
                     PET_TICKS_PER_STRIDE,
                 )
             })
@@ -769,7 +769,7 @@ mod tests {
             + 1;
         for (walk, roam, ticks) in roams(&pack) {
             let anim = walk.piece().name();
-            let stride = u32::from(pack.stride(walk).get()) * OCTILE_STRAIGHT_COST;
+            let stride = u32::from(pack.pack().stride(walk).get()) * OCTILE_STRAIGHT_COST;
             assert_eq!(
                 roam.gait.cruise,
                 stride as f32 / (ticks * FULL_TICK_MS) as f32,
@@ -815,8 +815,8 @@ mod tests {
     fn a_creature_walks_routed_ground_and_rests_on_clear_floor() {
         let pack = test_pack();
         let roams = [
-            Roam::mascot(pack.stride(Walk::LobsterWalk), DaemonState::Running),
-            Roam::pet(pack.stride(PetKind::Cat.walk_anim())),
+            Roam::mascot(pack.pack().stride(Walk::LobsterWalk), DaemonState::Running),
+            Roam::pet(pack.pack().stride(PetKind::Cat.walk_anim())),
         ];
         let min = crate::layout::min_layout_size();
         let (mut walking, mut resting) = (0u32, 0u32);
@@ -873,7 +873,7 @@ mod tests {
     #[test]
     fn a_calmer_tier_roams_a_quarter_as_often_and_a_still_one_never() {
         let pack = test_pack();
-        let roam = Roam::mascot(pack.stride(Walk::LobsterWalk), DaemonState::Running);
+        let roam = Roam::mascot(pack.pack().stride(Walk::LobsterWalk), DaemonState::Running);
         let l = layout(192, 80);
         let starts_at = |motion| {
             (0..4)
@@ -897,7 +897,7 @@ mod tests {
     #[test]
     fn a_walk_under_way_finishes_when_the_office_stills() {
         let pack = test_pack();
-        let roam = Roam::pet(pack.stride(PetKind::Cat.walk_anim()));
+        let roam = Roam::pet(pack.pack().stride(PetKind::Cat.walk_anim()));
         let l = layout(192, 80);
         let mut walk = CreatureWalk::at_home(&l, 3, at(0));
         let full = drive(&mut walk, roam, &l, Motion::Full, (0, 120_000));
@@ -929,7 +929,7 @@ mod tests {
     #[test]
     fn an_off_screen_floor_resumes_without_replaying_its_walks() {
         let pack = test_pack();
-        let roam = Roam::pet(pack.stride(PetKind::Dog.walk_anim()));
+        let roam = Roam::pet(pack.pack().stride(PetKind::Dog.walk_anim()));
         let l = layout(192, 80);
         let mut walk = CreatureWalk::at_home(&l, 5, at(0));
         drive(&mut walk, roam, &l, Motion::Full, (0, 60_000));
@@ -960,7 +960,7 @@ mod tests {
     #[test]
     fn longest_rest_bounds_every_rest() {
         let walk = CreatureWalk::at_home(&layout(192, 80), 0, at(0));
-        let roam = Roam::pet(test_pack().stride(PetKind::Cat.walk_anim()));
+        let roam = Roam::pet(test_pack().pack().stride(PetKind::Cat.walk_anim()));
         for roams in 0..2_000 {
             let w = CreatureWalk {
                 roams,
@@ -1097,7 +1097,7 @@ mod tests {
         const SPRITE_H: u16 = 12;
         const CROWDED_MAX_PCT: usize = 60;
         let pack = test_pack();
-        let roam = Roam::mascot(pack.stride(Walk::LobsterWalk), DaemonState::Idle);
+        let roam = Roam::mascot(pack.pack().stride(Walk::LobsterWalk), DaemonState::Idle);
         let l = layout(140, 120);
         let tracks: Vec<Vec<Point>> = (0..4u32)
             .map(|i| {
@@ -1133,7 +1133,7 @@ mod tests {
     #[test]
     fn a_pet_petted_mid_walk_walks_on_from_where_it_was_held() {
         let pack = test_pack();
-        let roam = Roam::pet(pack.stride(PetKind::Cat.walk_anim()));
+        let roam = Roam::pet(pack.pack().stride(PetKind::Cat.walk_anim()));
         let l = layout(192, 80);
         let mut router = AStarRouter::new();
         let overlay = OccupancyOverlay::new();
@@ -1672,7 +1672,7 @@ mod tests {
         let n = pack.max_density_variant();
         for kind in PetKind::ALL {
             let name = format!("{}@{n}x", kind.walk_anim().piece().name());
-            let master = &pack.variants_of(kind.walk_anim().piece())[&n];
+            let master = &pack.pack().variants_of(kind.walk_anim().piece())[&n];
             for (i, f) in master.frames().iter().enumerate() {
                 assert!(faces_east(&pack, f), "{name} {i} faces west");
             }

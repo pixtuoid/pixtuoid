@@ -2,7 +2,8 @@
 //! A variant that wraps a cause keeps the cause out of its own message, so
 //! `{:#}` prints each step of the chain once.
 
-use super::{Material, Piece};
+use super::{CLOCK_FACE_KEY, DESK_BULB_KEY, Desk, DeskProp, Material, Piece};
+use crate::display::Icon;
 use crate::sprite::error::SpriteError;
 use crate::sprite::format::{DENSITY_VARIANT_SEP, Density, MAX_DENSITY_VARIANT};
 use crate::sprite::{HEAD_MARK, HeadView, MAX_RAMP_LEVEL, PALETTE_CAPACITY};
@@ -286,6 +287,40 @@ pub enum PackError {
         first: Density,
         /// A density whose styles differ from it.
         other: Density,
+    },
+    /// A desk leaves a prop's mark out.
+    #[error("{} at {density}x marks no {}", desk.piece().name(), prop.mark())]
+    #[non_exhaustive]
+    DeskMark {
+        /// The desk.
+        desk: Desk,
+        /// The density of the art that leaves it out.
+        density: Density,
+        /// The prop.
+        prop: DeskProp,
+    },
+    /// A desk draws no bulb, or one too far above it.
+    #[error("{} at {density}x draws no bulb in {DESK_BULB_KEY:?} the desk can hang", desk.piece().name())]
+    #[non_exhaustive]
+    DeskBulb {
+        /// The desk.
+        desk: Desk,
+        /// The density of the art.
+        density: Density,
+    },
+    /// The wall clock draws no face along its middle row.
+    #[error("wall_clock at {density}x draws no face in {CLOCK_FACE_KEY:?} along its middle row")]
+    #[non_exhaustive]
+    ClockFace {
+        /// The density of the art.
+        density: Density,
+    },
+    /// An icon has no `[icons]` art.
+    #[error("[icons] has no {}", icon.art())]
+    #[non_exhaustive]
+    IconArt {
+        /// The icon.
+        icon: Icon,
     },
 }
 

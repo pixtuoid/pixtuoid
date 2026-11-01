@@ -78,7 +78,8 @@ impl Pen {
     /// only while the pack draws its variants at one density
     /// (`the_bundled_pack_draws_every_variant_at_one_density`).
     pub(crate) fn for_pack(scale: RenderScale, pack: &OfficeArt) -> Self {
-        pack.density_variants()
+        pack.pack()
+            .density_variants()
             .iter()
             .find_map(|&d| Self::new(scale, d))
             .unwrap_or(Self {
@@ -138,10 +139,10 @@ mod tests {
     fn the_bundled_pack_draws_every_variant_at_one_density() {
         let pack = crate::pack::test_office();
         assert_eq!(
-            pack.density_variants().len(),
+            pack.pack().density_variants().len(),
             1,
             "{:?}",
-            pack.density_variants()
+            pack.pack().density_variants()
         );
     }
 

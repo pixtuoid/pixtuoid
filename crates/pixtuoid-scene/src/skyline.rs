@@ -175,7 +175,8 @@ fn carries_beacon(plane: Plane, stand: &Stand<'_>, tallest: u16) -> bool {
 
 /// The tallest building `pack` stands in the near plane.
 fn tallest_near(pack: &OfficeArt) -> u16 {
-    pack.buildings()
+    pack.pack()
+        .buildings()
         .filter(|b| b.stands_in(CityPlane::Near))
         .map(|b| b.size().1)
         .max()
@@ -264,7 +265,7 @@ impl<'p> Skyline<'p> {
     pub(crate) fn of(pack: &'p OfficeArt, run_w: u16, glass_h: u16, altitude: f32) -> Self {
         let kits = Plane::ALL.map(|plane| -> Vec<&'p Building> {
             plane.pack_plane().map_or_else(Vec::new, |p| {
-                pack.buildings().filter(|b| b.stands_in(p)).collect()
+                pack.pack().buildings().filter(|b| b.stands_in(p)).collect()
             })
         });
         // Near to far, each plane's band is held to the tallest the plane in
@@ -491,7 +492,7 @@ impl CityStrip {
                 Stand::Kit {
                     building, x, top, ..
                 } => {
-                    let materials = pack.city_materials();
+                    let materials = pack.pack().city_materials();
                     let (art, grow) = building
                         .variant(density)
                         .map_or((building.base(), d), |a| (a, 1));
@@ -906,7 +907,7 @@ mod tests {
             assert_eq!(shown(&a), shown(&b), "{d}: no light in the sky");
             let city = Skyline::of(&pack, run_w, glass_h, 0.0);
             let tallest = tallest_near(&pack);
-            let materials = pack.city_materials();
+            let materials = pack.pack().city_materials();
             for &(x, y) in on_a.iter().chain(&on_b) {
                 let (x, y) = (i32::from(x), i32::from(y));
                 let on_a_roof = city.stands().any(|(plane, s)| {
@@ -951,7 +952,7 @@ mod tests {
     fn a_light_leaves_a_neighbours_pixels_alone() {
         let pack = pack();
         let theme = crate::theme::theme_by_name("normal").expect("theme");
-        let materials = pack.city_materials();
+        let materials = pack.pack().city_materials();
         let near = PlaneColours::of(
             Plane::Near,
             &SkyTones::resolve(
@@ -964,6 +965,7 @@ mod tests {
         let neighbour = Rgb { r: 1, g: 2, b: 3 };
         let mut spared = 0;
         for tower in pack
+            .pack()
             .buildings()
             .filter(|b| b.stands_in(CityPlane::Near) && b.size().1 >= tallest)
         {
