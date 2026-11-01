@@ -3,11 +3,11 @@ use std::num::NonZeroU16;
 use crate::sprite::{Frame, RgbBuffer};
 
 /// Blit a sprite frame into `dst` with top-left at `(dst_x, dst_y)`.
-pub fn blit_frame(frame: &Frame, dst_x: u16, dst_y: u16, dst: &mut RgbBuffer) {
+pub(crate) fn blit_frame(frame: &Frame, dst_x: u16, dst_y: u16, dst: &mut RgbBuffer) {
     let (xs, ys) = dst.writable();
-    for fy in 0..frame.height {
-        for fx in 0..frame.width {
-            let i = (fy as usize) * (frame.width as usize) + (fx as usize);
+    for fy in 0..frame.height() {
+        for fx in 0..frame.width() {
+            let i = (fy as usize) * (frame.width() as usize) + (fx as usize);
             let Some(rgb) = frame.as_slice()[i] else {
                 continue;
             };
@@ -46,14 +46,14 @@ pub(crate) fn blit_frame_scaled(
 ) {
     let s = scale.get();
     let (xs, ys) = dst.writable();
-    for fy in 0..frame.height {
+    for fy in 0..frame.height() {
         let by = dst_y.saturating_add(fy.saturating_mul(s));
         // a source row whose block misses the writable rows paints nothing
         if by >= ys.end || by.saturating_add(s) <= ys.start {
             continue;
         }
-        for fx in 0..frame.width {
-            let i = (fy as usize) * (frame.width as usize) + (fx as usize);
+        for fx in 0..frame.width() {
+            let i = (fy as usize) * (frame.width() as usize) + (fx as usize);
             let Some(rgb) = frame.as_slice()[i] else {
                 continue;
             };
@@ -84,6 +84,29 @@ mod tests {
     /// sees both that colour expands and that transparency is not painted.
     fn diagonal() -> Frame {
         Frame::from_pixels(2, 2, vec![Some(RED), None, None, Some(RED)])
+    }
+
+    #[test]
+    fn blit_writes_opaque_pixels_and_skips_transparent() {
+        let px = |r, g, b| Some(Rgb { r, g, b });
+        let frame = Frame::from_pixels(2, 2, vec![px(10, 0, 0), None, None, px(0, 0, 30)]);
+        let mut buf = RgbBuffer::filled(4, 4, BG);
+        blit_frame(&frame, 1, 1, &mut buf);
+
+        assert_eq!(buf.get(1, 1), Rgb { r: 10, g: 0, b: 0 });
+        assert_eq!(buf.get(2, 1), BG);
+        assert_eq!(buf.get(1, 2), BG);
+        assert_eq!(buf.get(2, 2), Rgb { r: 0, g: 0, b: 30 });
+        assert_eq!(buf.get(0, 0), BG);
+    }
+
+    #[test]
+    fn blit_ignores_out_of_bounds() {
+        let one = Some(Rgb { r: 1, g: 1, b: 1 });
+        let frame = Frame::from_pixels(3, 3, vec![one; 9]);
+        let mut buf = RgbBuffer::filled(2, 2, Rgb { r: 0, g: 0, b: 0 });
+        blit_frame(&frame, 1, 1, &mut buf);
+        assert_eq!(buf.get(1, 1), Rgb { r: 1, g: 1, b: 1 });
     }
 
     /// A scaled block straddling a clip's edge lands only its pixels inside:

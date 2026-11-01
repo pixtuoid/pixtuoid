@@ -5,11 +5,11 @@
 /// A `width × height` row-major grid of `T`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Grid<T> {
-    // Not `pub`: `data.len() == width * height` is the invariant every checked
-    // access relies on, so an external caller must not be able to reassign a
-    // dimension out from under the data.
-    pub(crate) width: u16,
-    pub(crate) height: u16,
+    // Private: `data.len() == width * height` is the invariant every checked
+    // access relies on, and `Frame` derefs mutably to a `Grid`, so any holder
+    // of one could reassign a dimension out from under the data.
+    width: u16,
+    height: u16,
     data: Vec<T>,
 }
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use enum_map::EnumMap;
 use serde::Deserialize;
-#[cfg(any(test, feature = "pack-toml"))]
+#[cfg(test)]
 use strum::VariantArray;
 use vec1::Vec1;
 
@@ -147,7 +147,10 @@ fn strip_comment_and_trim(line: &str) -> &str {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests;
+
+#[cfg(test)]
+mod manifest_tests {
     use super::*;
 
     #[test]
@@ -734,8 +737,6 @@ struct AnimationToml {
 /// behind the windows.
 #[derive(Debug, Clone)]
 pub struct Pack {
-    #[cfg(test)]
-    palette: Arc<Palette>,
     /// A pack that lacks a piece does not load.
     pieces: EnumMap<Piece, Sprite>,
     /// Each piece's density variants, each of which redraws it
@@ -978,7 +979,7 @@ impl Pack {
 
     /// The style `name` at `density`, where the pack draws one.
     pub(crate) fn hairstyle(&self, name: &str, density: Density) -> Option<&Hairstyle> {
-        self.hairstyles.get(&format!("{name}@{density}x"))
+        self.hairstyles.get(&density_variant_name(name, density))
     }
 
     /// The colour of the one line round every marked character frame at a
@@ -999,14 +1000,14 @@ impl Pack {
         self.icons.keys().map(String::as_str)
     }
 
-    /// The palette the pack's frames were drawn with.
+    /// The palette the pack's frames were drawn with: every sprite shares it.
     #[cfg(test)]
     pub(crate) fn palette(&self) -> &Palette {
-        &self.palette
+        self.piece(Piece::Seated).palette()
     }
 
     /// The art of `piece`.
-    pub fn piece(&self, piece: Piece) -> &Sprite {
+    pub(crate) fn piece(&self, piece: Piece) -> &Sprite {
         &self.pieces[piece]
     }
 
@@ -1222,8 +1223,6 @@ fn build_pack(parsed: PackToml, get_src: &mut dyn FnMut(&str) -> Result<String>)
     }
 
     let mut pack = Pack {
-        #[cfg(test)]
-        palette,
         pieces,
         variants,
         strides,
@@ -1399,55 +1398,67 @@ fn runs_of(grid: &Grid<PaletteIndex>, index: PaletteIndex) -> Vec<Vec<(u16, u16)
     runs
 }
 
-/// The file a pack directory's manifest is read from.
+/// The manifest's name in errors.
 pub(crate) const PACK_MANIFEST: &str = "pack.toml";
 
-/// A `Pack` from in-memory strings: its manifest and each frame file it names.
-///
-/// # Errors
-///
-/// If `pack_toml` does not parse, a frame it names is absent from `frames`, or the pack fails validation.
-#[cfg(feature = "pack-toml")]
-pub(crate) fn load_pack_from_strings(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
-    load_from_strings(pack_toml, frames, &mut |_| {})
-}
-
 /// A `Pack` from a manifest a build script transcoded to JSON, and each frame
-/// file it names: what a build without `pack-toml` loads.
+/// file it names.
 ///
 /// # Errors
 ///
 /// If `pack_json` does not parse, a frame it names is absent from `frames`, or the pack fails validation.
 pub(crate) fn load_pack_from_json(pack_json: &str, frames: &[(&str, &str)]) -> Result<Pack> {
-    let parsed: PackToml =
-        serde_json::from_str(pack_json).map_err(|e| PackError::JsonManifest {
-            message: e.to_string(),
-        })?;
-    build_from_strings(parsed, frames, &mut |_| {})
+    build_pack(manifest_from_json(pack_json)?, &mut frame_lookup(frames))
+}
+
+fn manifest_from_json(pack_json: &str) -> Result<PackToml> {
+    serde_json::from_str(pack_json).map_err(|e| PackError::JsonManifest {
+        message: e.to_string(),
+    })
+}
+
+/// The frame file `frames` holds under each name a manifest gives it.
+fn frame_lookup(frames: &[(&str, &str)]) -> impl Fn(&str) -> Result<String> {
+    let frames: HashMap<&str, &str> = frames.iter().copied().collect();
+    move |fname| {
+        frames
+            .get(fname)
+            .map(|s| s.to_string())
+            .ok_or_else(|| PackError::MissingEmbeddedFrame {
+                file: fname.to_owned(),
+            })
+    }
+}
+
+/// A manifest the tests write in TOML, as the JSON the loader reads.
+#[cfg(test)]
+fn transcode(pack_toml: &str) -> String {
+    let manifest: serde_json::Value = toml::from_str(pack_toml).expect("a test's manifest is TOML");
+    manifest.to_string()
+}
+
+/// [`load_pack_from_json`] of a TOML manifest's [`transcode`].
+#[cfg(test)]
+pub(crate) fn load_pack_from_strings(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
+    load_pack_from_json(&transcode(pack_toml), frames)
 }
 
 /// The one-frame sprite [`fill_pack_manifest`] draws every piece it adds in.
-#[cfg(feature = "pack-toml")]
+#[cfg(test)]
 pub(crate) const FILLER_SPRITE: (&str, &str) = ("filler.sprite", "@frame 0\n~");
 
 /// The palette keys [`fill_pack_manifest`] adds: the filler's, then one per
 /// [`Material`] and the character outline's.
-#[cfg(feature = "pack-toml")]
+#[cfg(test)]
 const FILLER_KEYS: [char; 9] = ['~', '^', '`', '|', '{', '}', '<', '>', '='];
 
 /// `pack_toml` with every piece it leaves out drawn in [`FILLER_SPRITE`],
 /// each walk given a stride, and `[city]` and `[characters]` added where it
 /// has none: a test's pack names only what it tests and still loads.
-///
-/// # Errors
-///
-/// If `pack_toml` is not TOML.
-#[cfg(feature = "pack-toml")]
-pub(crate) fn fill_pack_manifest(pack_toml: &str) -> Result<String> {
+#[cfg(test)]
+pub(crate) fn fill_pack_manifest(pack_toml: &str) -> String {
     use toml::{Table, Value};
-    let mut manifest: Table = pack_toml
-        .parse()
-        .map_err(|source| PackError::Manifest { source })?;
+    let mut manifest: Table = pack_toml.parse().expect("a test's manifest is TOML");
     // Taken out and put back: a key that holds no table is a test's mistake
     // the load reports.
     let mut take = |key: &str| match manifest.remove(key) {
@@ -1487,20 +1498,15 @@ pub(crate) fn fill_pack_manifest(pack_toml: &str) -> Result<String> {
         characters.insert("outline".into(), Value::String(FILLER_KEYS[8].to_string()));
         manifest.insert("characters".into(), Value::Table(characters));
     }
-    Ok(manifest.to_string())
+    manifest.to_string()
 }
 
 /// [`load_pack_from_strings`] of [`fill_pack_manifest`]`(pack_toml)`, with
 /// [`FILLER_SPRITE`] among `frames`.
-///
-/// # Errors
-///
-/// As [`load_pack_from_strings`].
-#[cfg(feature = "pack-toml")]
-#[doc(hidden)]
-pub fn load_filled_pack(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
+#[cfg(test)]
+pub(crate) fn load_filled_pack(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
     let frames: Vec<_> = frames.iter().copied().chain([FILLER_SPRITE]).collect();
-    load_pack_from_strings(&fill_pack_manifest(pack_toml)?, &frames)
+    load_pack_from_strings(&fill_pack_manifest(pack_toml), &frames)
 }
 
 /// The frame files [`load_pack_from_strings`] reads, in the order it reads
@@ -1510,40 +1516,15 @@ pub fn load_filled_pack(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack
 /// # Errors
 ///
 /// As [`load_pack_from_strings`].
-#[cfg(all(test, feature = "pack-toml"))]
+#[cfg(test)]
 pub(crate) fn frames_read_by(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Vec<String>> {
+    let lookup = frame_lookup(frames);
     let mut read = Vec::new();
-    load_from_strings(pack_toml, frames, &mut |fname| read.push(fname.to_owned()))?;
+    build_pack(manifest_from_json(&transcode(pack_toml))?, &mut |fname| {
+        read.push(fname.to_owned());
+        lookup(fname)
+    })?;
     Ok(read)
-}
-
-#[cfg(feature = "pack-toml")]
-fn load_from_strings(
-    pack_toml: &str,
-    frames: &[(&str, &str)],
-    on_read: &mut dyn FnMut(&str),
-) -> Result<Pack> {
-    let parsed: PackToml =
-        toml::from_str(pack_toml).map_err(|source| PackError::Manifest { source })?;
-    build_from_strings(parsed, frames, on_read)
-}
-
-fn build_from_strings(
-    parsed: PackToml,
-    frames: &[(&str, &str)],
-    on_read: &mut dyn FnMut(&str),
-) -> Result<Pack> {
-    let frame_lookup: HashMap<&str, &str> = frames.iter().copied().collect();
-
-    build_pack(parsed, &mut |fname| {
-        on_read(fname);
-        frame_lookup
-            .get(fname)
-            .map(|s| s.to_string())
-            .ok_or_else(|| PackError::MissingEmbeddedFrame {
-                file: fname.to_owned(),
-            })
-    })
 }
 
 /// Frame file `file`'s source, decoded against `palette`.
@@ -1612,8 +1593,8 @@ fn build_palette(
 
 /// Every piece a pack draws: the character poses, the furniture and the
 /// room's fixtures, and the creatures. A pack ships each, so a loaded
-/// [`Pack`] hands out any of them ([`Pack::piece`]); the manifest keys it
-/// by its `name`.
+/// [`Pack`] hands out any of them ([`OfficeArt::piece`](crate::pack::OfficeArt::piece));
+/// the manifest keys it by its `name`.
 #[derive(
     Debug,
     Clone,
@@ -1693,19 +1674,6 @@ pub enum Piece {
     LobsterRest,
 }
 
-/// What a [`Piece`] is.
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PieceKind {
-    /// A character pose, which a hairstyle dresses.
-    Character,
-    /// Furniture or a fixture of the room.
-    Furniture,
-    /// A pet or a gateway mascot: it stands on its feet wherever its frame
-    /// ends, so it is kept apart from the furniture.
-    Creature,
-}
-
 impl Piece {
     /// Its key in the manifest's `[animations]`.
     pub(crate) fn name(self) -> &'static str {
@@ -1717,22 +1685,8 @@ impl Piece {
         name.parse().ok()
     }
 
-    /// What it is.
-    #[cfg(test)]
-    pub(crate) fn kind(self) -> PieceKind {
-        use Piece::*;
-        match self {
-            Seated | Typing | Standing | Walking | WalkingBack | SeatedSleeping
-            | SeatedSleepingAlt | HoldingCoffee | BackCouch | WalkingCoffee | SideSeated
-            | SeatedBack | TypingBack => PieceKind::Character,
-            CatWalk | CatSit | CatSleep | DogWalk | DogSit | DogSleep | LobsterWalk
-            | LobsterRest => PieceKind::Creature,
-            _ => PieceKind::Furniture,
-        }
-    }
-
     /// The walk it is, if a walker steps it by the ground it covers.
-    #[cfg(any(test, feature = "pack-toml"))]
+    #[cfg(test)]
     pub(crate) fn walk(self) -> Option<Walk> {
         Walk::VARIANTS.iter().copied().find(|w| w.piece() == self)
     }
@@ -1845,7 +1799,6 @@ impl std::fmt::Display for Density {
 }
 
 /// The animation name for `base` drawn at `density`x.
-#[cfg(test)]
 pub(crate) fn density_variant_name(base: &str, density: Density) -> String {
     format!("{base}{DENSITY_VARIANT_SEP}{density}x")
 }
@@ -1953,8 +1906,7 @@ mod validation_floor_tests {
         let toml = fill_pack_manifest(
             "[palette]\n\"A\"=\"#010203\"\n\
              [animations.typing]\nframes=[\"a.sprite\", \"b.sprite\"]\nframe_ms=100\n",
-        )
-        .expect("a manifest");
+        );
         let frames = [
             ("a.sprite", "@frame 0\nA"),
             ("b.sprite", "@frame 0\nA"),
@@ -2041,10 +1993,7 @@ mod validation_floor_tests {
     #[test]
     fn a_pack_lacking_a_piece_does_not_load() {
         use toml::{Table, Value};
-        let full: Table = fill_pack_manifest("[palette]\n")
-            .expect("a manifest")
-            .parse()
-            .expect("toml");
+        let full: Table = fill_pack_manifest("[palette]\n").parse().expect("toml");
         for &piece in Piece::VARIANTS {
             let mut manifest = full.clone();
             let Some(Value::Table(animations)) = manifest.get_mut("animations") else {
@@ -2074,15 +2023,13 @@ mod validation_floor_tests {
     #[test]
     fn a_pack_without_city_or_characters_does_not_load() {
         for table in ["city", "characters"] {
-            let mut manifest: toml::Table = fill_pack_manifest("[palette]\n")
-                .expect("a manifest")
-                .parse()
-                .expect("toml");
+            let mut manifest: toml::Table =
+                fill_pack_manifest("[palette]\n").parse().expect("toml");
             manifest.remove(table);
             let err = load_pack_from_strings(&manifest.to_string(), &[FILLER_SPRITE])
                 .expect_err("a required table is missing");
             assert!(
-                matches!(&err, PackError::Manifest { source } if source.message().contains(table)),
+                matches!(&err, PackError::JsonManifest { message } if message.contains(table)),
                 "{table}: {err:?}"
             );
         }
@@ -2092,10 +2039,9 @@ mod validation_floor_tests {
     /// refuses is a `JsonManifest` error that says why.
     #[test]
     fn a_json_manifest_loads_and_a_bad_one_says_why() {
-        let manifest = fill_pack_manifest("[palette]\n").expect("a manifest");
-        let json: serde_json::Value = toml::from_str(&manifest).expect("toml");
-        load_pack_from_json(&json.to_string(), &[FILLER_SPRITE]).expect("the transcode loads");
-        let mut unknown = json.clone();
+        let json = transcode(&fill_pack_manifest("[palette]\n"));
+        load_pack_from_json(&json, &[FILLER_SPRITE]).expect("the transcode loads");
+        let mut unknown: serde_json::Value = serde_json::from_str(&json).expect("json");
         unknown["sprites"] = serde_json::json!({});
         for (bad, why) in [("{".to_owned(), "EOF"), (unknown.to_string(), "sprites")] {
             let err = load_pack_from_json(&bad, &[FILLER_SPRITE]).expect_err("refused");

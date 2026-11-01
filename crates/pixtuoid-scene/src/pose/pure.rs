@@ -24,7 +24,7 @@ pub(crate) const STALE_RESUME_GAP_BASE_MS: u64 = 7_000;
 pub(crate) const STALE_RESUME_GAP_RANGE_MS: u64 = 6_000;
 
 /// Stateless-overlay estimate of one wander walk leg. Exact coherence with the
-/// routed timeline is impossible (core has no router, and walk legs are
+/// routed timeline is impossible (this half does no routing, and walk legs are
 /// physics-timed only on the routed path), and `idle_pose` only needs an
 /// approximate timeline to place the occupancy overlay.
 pub(crate) const WANDER_WALK_EST_MS: u64 = 3_500;

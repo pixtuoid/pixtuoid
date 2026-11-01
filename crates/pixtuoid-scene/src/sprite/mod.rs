@@ -9,7 +9,7 @@ use palette::{Clamp, FromColor, IsWithinBounds, LinSrgb, Mix, Oklab, Oklch, Srgb
 use crate::grid::Grid;
 
 /// Compositing a `Frame` onto an `RgbBuffer`, skipping transparent pixels.
-pub mod blit;
+pub(crate) mod blit;
 pub mod error;
 /// Sprite-pack file format: `pack.toml` + `.sprite` parsing and in-memory pack building.
 pub mod format;
@@ -374,8 +374,8 @@ impl Frame {
     /// Reverse each row — turns a right-facing sprite into a left-facing one.
     #[must_use]
     pub(crate) fn mirror_horizontal(&self) -> Self {
-        let w = self.width as usize;
-        let h = self.height as usize;
+        let w = self.width() as usize;
+        let h = self.height() as usize;
         let src = self.as_slice();
         let mut pixels = Vec::with_capacity(src.len());
         for y in 0..h {
@@ -384,14 +384,14 @@ impl Frame {
                 pixels.push(src[row_start + x]);
             }
         }
-        Frame::from_pixels(self.width, self.height, pixels)
+        Frame::from_pixels(self.width(), self.height(), pixels)
     }
 
     /// Flip rows top-to-bottom.
     #[must_use]
     pub(crate) fn mirror_vertical(&self) -> Self {
-        let w = self.width as usize;
-        let h = self.height as usize;
+        let w = self.width() as usize;
+        let h = self.height() as usize;
         let src = self.as_slice();
         let mut pixels = Vec::with_capacity(src.len());
         for y in (0..h).rev() {
@@ -400,7 +400,7 @@ impl Frame {
                 pixels.push(src[row_start + x]);
             }
         }
-        Frame::from_pixels(self.width, self.height, pixels)
+        Frame::from_pixels(self.width(), self.height(), pixels)
     }
 }
 
@@ -477,7 +477,6 @@ impl HeadView {
 /// A frame's head: which way it faces and the point a hairstyle layer's own
 /// head is laid on, read from the frame's one `head.<view>` [`Mark`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
 pub(crate) struct HeadMark {
     /// Which way the head faces.
     pub(crate) view: HeadView,
@@ -560,7 +559,7 @@ impl Sprite {
     }
 
     /// The frames, played in order.
-    pub fn frames(&self) -> &[Frame] {
+    pub(crate) fn frames(&self) -> &[Frame] {
         &self.frames
     }
 
@@ -590,9 +589,15 @@ impl Sprite {
         }
     }
 
+    /// The palette its frames were drawn with.
+    #[cfg(test)]
+    pub(crate) fn palette(&self) -> &Palette {
+        &self.palette
+    }
+
     /// How long each frame holds before advancing, in milliseconds: a walk
     /// with a `stride` steps by distance instead.
-    pub fn frame_ms(&self) -> u32 {
+    pub(crate) fn frame_ms(&self) -> u32 {
         self.frame_ms
     }
 
@@ -706,7 +711,7 @@ impl RgbBuffer {
 
     #[inline]
     fn raw_index(&self, x: u16, y: u16) -> usize {
-        (y as usize) * (self.pixels.width as usize) + (x as usize)
+        (y as usize) * (self.pixels.width() as usize) + (x as usize)
     }
 
     /// [`raw_index`](Self::raw_index) guarded by a debug-only bounds assert: a
@@ -715,10 +720,10 @@ impl RgbBuffer {
     #[inline]
     fn checked_index(&self, x: u16, y: u16) -> usize {
         debug_assert!(
-            x < self.pixels.width && y < self.pixels.height,
+            x < self.pixels.width() && y < self.pixels.height(),
             "RgbBuffer index out of bounds: ({x},{y}) in {}x{}",
-            self.pixels.width,
-            self.pixels.height
+            self.pixels.width(),
+            self.pixels.height()
         );
         self.raw_index(x, y)
     }
@@ -771,7 +776,7 @@ impl RgbBuffer {
         if let Some(w) = &mut self.writes {
             w.note_all();
         }
-        let width = usize::from(self.pixels.width).max(1);
+        let width = usize::from(self.pixels.width()).max(1);
         self.pixels
             .as_mut_slice()
             .chunks_mut(width)
@@ -788,7 +793,7 @@ impl RgbBuffer {
 
     /// The columns and rows a write may land in: the clip, within the buffer.
     pub(crate) fn writable(&self) -> (Range<u16>, Range<u16>) {
-        let (w, h) = (self.pixels.width, self.pixels.height);
+        let (w, h) = (self.pixels.width(), self.pixels.height());
         match &self.clip {
             Some((xs, ys)) => (
                 xs.start.min(w)..xs.end.min(w),
@@ -812,7 +817,7 @@ impl RgbBuffer {
     /// [`put`](Self::put).
     #[inline]
     pub(crate) fn put_checked(&mut self, x: u16, y: u16, rgb: Rgb) {
-        if x < self.pixels.width && y < self.pixels.height && !self.clipped(x, y) {
+        if x < self.pixels.width() && y < self.pixels.height() && !self.clipped(x, y) {
             let i = self.raw_index(x, y);
             self.write(i, rgb);
         }
@@ -837,7 +842,7 @@ impl RgbBuffer {
     /// Resize to `width × height` with every pixel `fill`, which counts as
     /// writing every pixel.
     pub(crate) fn resize_fill(&mut self, width: u16, height: u16, fill: Rgb) {
-        let reshaped = (width, height) != (self.pixels.width, self.pixels.height);
+        let reshaped = (width, height) != (self.pixels.width(), self.pixels.height());
         self.pixels.resize_fill(width, height, fill);
         if let Some(w) = &mut self.writes {
             if reshaped {
@@ -884,8 +889,8 @@ impl RgbBuffer {
 
     /// Whether `(x, y)` was last written in `epoch` ([`begin_writes`](Self::begin_writes)).
     pub(crate) fn written_in(&self, x: u16, y: u16, epoch: WriteEpoch) -> bool {
-        x < self.pixels.width
-            && y < self.pixels.height
+        x < self.pixels.width()
+            && y < self.pixels.height()
             && self
                 .writes
                 .as_ref()
@@ -1279,8 +1284,8 @@ mod tests {
             ],
         );
         let m = f.mirror_horizontal();
-        assert_eq!(m.width, 3);
-        assert_eq!(m.height, 2);
+        assert_eq!(m.width(), 3);
+        assert_eq!(m.height(), 2);
         assert_eq!(
             m.as_slice(),
             vec![

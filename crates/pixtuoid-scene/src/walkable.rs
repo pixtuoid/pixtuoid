@@ -28,9 +28,9 @@ impl Grid<bool> {
     #[inline]
     pub(crate) fn mark_blocked(&mut self, x: u16, y: u16, w: u16, h: u16, pad: u16) {
         let min_x = x.saturating_sub(pad);
-        let max_x = x.saturating_add(w).saturating_add(pad).min(self.width);
+        let max_x = x.saturating_add(w).saturating_add(pad).min(self.width());
         let min_y = y.saturating_sub(pad);
-        let max_y = y.saturating_add(h).saturating_add(pad).min(self.height);
+        let max_y = y.saturating_add(h).saturating_add(pad).min(self.height());
         for yy in min_y..max_y {
             for xx in min_x..max_x {
                 self.set(xx, yy, false);
@@ -41,8 +41,8 @@ impl Grid<bool> {
     /// Carve `true` back into a rect.
     #[cfg(test)]
     pub(crate) fn mark_walkable(&mut self, x: u16, y: u16, w: u16, h: u16) {
-        let max_x = x.saturating_add(w).min(self.width);
-        let max_y = y.saturating_add(h).min(self.height);
+        let max_x = x.saturating_add(w).min(self.width());
+        let max_y = y.saturating_add(h).min(self.height());
         for yy in y..max_y {
             for xx in x..max_x {
                 self.set(xx, yy, true);
@@ -123,15 +123,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mark_walkable_carves_a_cutout() {
-        let mut m = WalkableMask::new_open(10, 10);
-        m.mark_blocked(0, 0, 10, 4, 0);
-        assert!(!m.is_walkable(5, 2));
-        m.mark_walkable(4, 0, 3, 4);
-        assert!(m.is_walkable(5, 2));
-    }
-
-    #[test]
     fn overlay_blocks_inside_rects() {
         let mut o = OccupancyOverlay::new();
         assert_eq!(o.len(), 0);
@@ -197,21 +188,6 @@ mod prop {
                 for xx in 0..w {
                     let blocked = (min_x..max_x).contains(&xx) && (min_y..max_y).contains(&yy);
                     prop_assert_eq!(m.is_walkable(xx, yy), !blocked, "cell ({}, {})", xx, yy);
-                }
-            }
-        }
-
-        #[test]
-        fn mark_walkable_over_the_whole_mask_restores_walkability(
-            w in 1u16..=48, h in 1u16..=48,
-            x in 0u16..96, y in 0u16..96, rw in 0u16..96, rh in 0u16..96, pad in 0u16..16,
-        ) {
-            let mut m = WalkableMask::new_open(w, h);
-            m.mark_blocked(x, y, rw, rh, pad);
-            m.mark_walkable(0, 0, w, h);
-            for yy in 0..h {
-                for xx in 0..w {
-                    prop_assert!(m.is_walkable(xx, yy));
                 }
             }
         }

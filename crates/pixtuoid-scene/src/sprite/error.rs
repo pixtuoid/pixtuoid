@@ -9,15 +9,6 @@ use super::format::{DENSITY_VARIANT_SEP, Material, PACK_MANIFEST};
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum PackError {
-    /// `pack.toml` is not valid TOML, or does not match the manifest schema.
-    #[cfg(feature = "pack-toml")]
-    #[error("parsing {PACK_MANIFEST}")]
-    #[non_exhaustive]
-    Manifest {
-        /// The parser's diagnostic.
-        #[source]
-        source: toml::de::Error,
-    },
     /// A manifest's JSON transcode is not valid JSON, or does not match the manifest schema.
     #[error("parsing the JSON transcode of {PACK_MANIFEST}: {message}")]
     #[non_exhaustive]
@@ -466,9 +457,7 @@ mod tests {
 
     /// Every error with a cause, built once — a new wrapping variant joins here.
     fn wrapping() -> Vec<PackError> {
-        let toml = toml::from_str::<toml::Table>("= broken").expect_err("not TOML");
         vec![
-            PackError::Manifest { source: toml },
             PackError::Color {
                 key: "A".into(),
                 source: ColorError::Hex {

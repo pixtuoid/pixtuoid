@@ -174,6 +174,7 @@ pub(crate) fn dress(
 mod tests {
     use super::*;
     use crate::display::pen::test_density;
+    use crate::pack::validate::PieceKind;
     use crate::sprite::format::{Piece, load_filled_pack};
     use strum::VariantArray as _;
 
@@ -395,7 +396,7 @@ mod tests {
         let (mut dressed, mut flaws) = (0, Vec::new());
         let arts = Piece::VARIANTS
             .iter()
-            .filter(|p| p.kind() == crate::sprite::format::PieceKind::Character)
+            .filter(|p| p.kind() == PieceKind::Character)
             .flat_map(|&p| {
                 std::iter::once((p.name().to_owned(), pack.piece(p))).chain(
                     pack.variants_of(p)

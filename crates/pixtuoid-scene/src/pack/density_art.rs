@@ -4,14 +4,11 @@
 
 use std::collections::BTreeSet;
 
+use crate::sprite::format::split_density_variant;
+
 /// `pack_toml` without its density-variant animations, its hairstyles (which
 /// only ever dress density art) and its buildings' density variants, and the
 /// files only those drew.
-///
-/// Every `@` key in the bundled manifest's `[animations]` and `[buildings]` is a
-/// density variant: the pack's load refuses an animation key that names no
-/// `Piece`, and a building base named with one. So `DENSITY_VARIANT_SEP`
-/// alone identifies them.
 pub(crate) fn strip_density_art(pack_toml: &str) -> (String, BTreeSet<String>) {
     let mut doc: toml_edit::DocumentMut = pack_toml.parse().expect("the bundled pack.toml parses");
     let mut dropped: BTreeSet<String> = BTreeSet::new();
@@ -28,7 +25,7 @@ pub(crate) fn strip_density_art(pack_toml: &str) -> (String, BTreeSet<String>) {
         let variants: Vec<String> = buildings
             .iter()
             .map(|(name, _)| name.to_string())
-            .filter(|name| name.contains('@'))
+            .filter(|name| split_density_variant(name).is_some())
             .collect();
         for name in &variants {
             let sprite = buildings.get(name).and_then(|b| b.get("sprite"));
@@ -42,7 +39,7 @@ pub(crate) fn strip_density_art(pack_toml: &str) -> (String, BTreeSet<String>) {
     let variants: Vec<String> = animations
         .iter()
         .map(|(name, _)| name.to_string())
-        .filter(|name| name.contains('@'))
+        .filter(|name| split_density_variant(name).is_some())
         .collect();
     let frames_of = |item: Option<&toml_edit::Item>| -> Vec<String> {
         item.and_then(|a| a.get("frames"))

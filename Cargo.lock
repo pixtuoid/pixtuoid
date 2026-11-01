@@ -3056,7 +3056,6 @@ dependencies = [
  "palette",
  "pixtuoid-core",
  "pixtuoid-lofi",
- "pixtuoid-scene",
  "proc-macro2",
  "proptest",
  "serde",

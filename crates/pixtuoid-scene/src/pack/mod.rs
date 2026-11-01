@@ -266,7 +266,7 @@ impl OfficeArt {
         self.pack.palette()
     }
 
-    /// [`Pack::piece`].
+    /// The art of `piece`.
     pub fn piece(&self, piece: Piece) -> &Sprite {
         self.pack.piece(piece)
     }
@@ -310,7 +310,8 @@ impl OfficeArt {
         self.pack.character_outline()
     }
 
-    /// `Pack::max_density_variant`.
+    /// The densest of the pack's variants, or [`Density::ONE`] when it ships
+    /// none.
     pub fn max_density_variant(&self) -> Density {
         self.pack.max_density_variant()
     }
@@ -398,7 +399,7 @@ const BUNDLED_PACK_TOML: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_
 /// [`load_bundled_pack`] reads.
 const BUNDLED_PACK_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_pack.json"));
 
-/// The compiled-in default pack, parsed: all a build without `native` can load.
+/// The compiled-in default pack, parsed.
 ///
 /// # Errors
 ///
@@ -736,7 +737,7 @@ mod tests {
         let listed: std::collections::BTreeSet<Piece> = Piece::VARIANTS
             .iter()
             .copied()
-            .filter(|p| p.kind() == crate::sprite::format::PieceKind::Creature)
+            .filter(|p| p.kind() == crate::pack::validate::PieceKind::Creature)
             .collect();
         assert_eq!(drawn, listed);
     }
@@ -750,7 +751,7 @@ mod tests {
             .iter()
             .copied()
             .filter(|p| {
-                p.kind() == crate::sprite::format::PieceKind::Furniture && p.overlay_of().is_none()
+                p.kind() == crate::pack::validate::PieceKind::Furniture && p.overlay_of().is_none()
             })
             .flat_map(|p| {
                 let name = p.name();
@@ -803,7 +804,7 @@ mod tests {
         let pack = test_default_pack();
         for &piece in Piece::VARIANTS
             .iter()
-            .filter(|p| p.kind() == crate::sprite::format::PieceKind::Character)
+            .filter(|p| p.kind() == crate::pack::validate::PieceKind::Character)
         {
             let name = piece.name();
             for frame in pack.piece(piece).frames() {

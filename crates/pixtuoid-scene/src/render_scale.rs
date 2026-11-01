@@ -160,8 +160,8 @@ pub struct PixelFit {
 impl PixelFit {
     /// The surface's `natural` real pixels per unit fitted to `density` (the
     /// pack's [`max_density_variant`](crate::pack::OfficeArt::max_density_variant))
-    /// over a surface `px` big; `None` when [`RenderScale::fit`] finds no
-    /// scale.
+    /// over a surface `px` big; `None` when no multiple of `density` lies near
+    /// enough `natural`.
     pub fn new(natural: u16, density: Density, px: crate::layout::Size) -> Option<Self> {
         RenderScale::fit(natural, density).map(|scale| Self::at(scale, density, px))
     }
@@ -231,6 +231,7 @@ mod tests {
     use super::*;
     use crate::display::pen::test_density;
     use crate::floor::{floor_capacity, floor_capacity_scaled, floor_seed};
+    use crate::sprite::format::MAX_DENSITY_VARIANT;
 
     fn fit(natural: u16, density: u16) -> Option<u16> {
         RenderScale::fit(natural, test_density(density)).map(RenderScale::get)
@@ -301,10 +302,10 @@ mod tests {
     }
 
     /// The properties the table samples, over natural scales to 256 and every
-    /// density a pack may claim (`sprite::format::MAX_DENSITY_VARIANT`).
+    /// density a pack may claim ([`MAX_DENSITY_VARIANT`]).
     #[test]
     fn every_pick_is_a_multiple_within_the_ratio_bound_and_the_nearest_one() {
-        for d in 1..=64u16 {
+        for d in 1..=MAX_DENSITY_VARIANT {
             for n in 0..=256u16 {
                 let Some(s) = fit(n, d) else {
                     // Only a scale with no multiple of `d` in reach goes without.

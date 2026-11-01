@@ -3,11 +3,38 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU16;
 
-use crate::sprite::format::{Density, Hairstyle, Pack, Piece, PieceKind, density_variant_name};
+use crate::sprite::format::{Density, Hairstyle, Pack, Piece, density_variant_name};
 use crate::sprite::{Frame, HeadMark, HeadView, Sprite};
 use strum::VariantArray as _;
 
 use super::lookup;
+
+/// What a [`Piece`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PieceKind {
+    /// A character pose, which a hairstyle dresses.
+    Character,
+    /// Furniture or a fixture of the room.
+    Furniture,
+    /// A pet or a gateway mascot: it stands on its feet wherever its frame
+    /// ends, so it is kept apart from the furniture.
+    Creature,
+}
+
+impl Piece {
+    /// What it is.
+    pub(crate) fn kind(self) -> PieceKind {
+        use Piece::*;
+        match self {
+            Seated | Typing | Standing | Walking | WalkingBack | SeatedSleeping
+            | SeatedSleepingAlt | HoldingCoffee | BackCouch | WalkingCoffee | SideSeated
+            | SeatedBack | TypingBack => PieceKind::Character,
+            CatWalk | CatSit | CatSleep | DogWalk | DogSit | DogSleep | LobsterWalk
+            | LobsterRest => PieceKind::Creature,
+            _ => PieceKind::Furniture,
+        }
+    }
+}
 
 /// A character frame a hairstyle would dress but for its missing head mark: it
 /// is drawn bare.
@@ -258,7 +285,7 @@ fn looped_animations() -> Vec<(Piece, usize)> {
     let creatures = Piece::VARIANTS
         .iter()
         .copied()
-        .filter(|p| p.kind() == crate::sprite::format::PieceKind::Creature);
+        .filter(|p| p.kind() == PieceKind::Creature);
     [
         Piece::FishTank,
         Piece::WaterCooler,

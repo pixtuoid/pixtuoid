@@ -1359,8 +1359,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sky::WeatherPol
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sky::WeatherPolicy
 pub fn pixtuoid_scene::sky::hour_is_day(f32) -> bool
 pub mod pixtuoid_scene::sprite
-pub mod pixtuoid_scene::sprite::blit
-pub fn pixtuoid_scene::sprite::blit::blit_frame(&pixtuoid_scene::sprite::Frame, u16, u16, &mut pixtuoid_scene::sprite::RgbBuffer)
 pub mod pixtuoid_scene::sprite::error
 #[non_exhaustive] pub enum pixtuoid_scene::sprite::error::ColorError
 #[non_exhaustive] pub pixtuoid_scene::sprite::error::ColorError::Hex
@@ -1777,8 +1775,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::format::Density
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::format::Density
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::format::Density
 pub struct pixtuoid_scene::sprite::format::Pack
-impl pixtuoid_scene::sprite::format::Pack
-pub fn pixtuoid_scene::sprite::format::Pack::piece(&self, pixtuoid_scene::sprite::format::Piece) -> &pixtuoid_scene::sprite::Sprite
 impl core::clone::Clone for pixtuoid_scene::sprite::format::Pack
 pub fn pixtuoid_scene::sprite::format::Pack::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::sprite::format::Pack
@@ -1885,8 +1881,6 @@ pub struct pixtuoid_scene::sprite::Sprite
 impl pixtuoid_scene::sprite::Sprite
 pub fn pixtuoid_scene::sprite::Sprite::first(&self) -> &pixtuoid_scene::sprite::Frame
 pub fn pixtuoid_scene::sprite::Sprite::frame_at(&self, usize) -> &pixtuoid_scene::sprite::Frame
-pub fn pixtuoid_scene::sprite::Sprite::frame_ms(&self) -> u32
-pub fn pixtuoid_scene::sprite::Sprite::frames(&self) -> &[pixtuoid_scene::sprite::Frame]
 impl core::clone::Clone for pixtuoid_scene::sprite::Sprite
 pub fn pixtuoid_scene::sprite::Sprite::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::sprite::Sprite

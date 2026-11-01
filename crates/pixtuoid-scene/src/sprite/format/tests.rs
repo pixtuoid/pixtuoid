@@ -1,6 +1,4 @@
-use pixtuoid_scene::sprite::error::{LineError, PackError, SpriteError};
-use pixtuoid_scene::sprite::format::{Pack, Piece, load_filled_pack};
-use pixtuoid_scene::sprite::{Frame, Rgb};
+use super::*;
 
 /// The `mini_pack` fixture: one one-frame piece, the rest filled in.
 fn mini_pack() -> Pack {
@@ -88,8 +86,7 @@ fn a_shape_error_names_the_line_at_fault() {
 
 #[test]
 fn parses_two_frame_mini_sprite() {
-    let src = std::fs::read_to_string("tests/sprite/fixtures/mini.sprite").unwrap();
-    let frames = parse(&src).unwrap();
+    let frames = parse(include_str!("fixtures/mini.sprite")).unwrap();
 
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0].width(), 4);

@@ -159,8 +159,7 @@ impl FloorNav {
         self.transition.as_ref()
     }
 
-    /// Slide to `target`, unless it is the floor showing or a slide is under
-    /// way; whether a slide began.
+    /// [`OfficeSession::navigate`].
     pub(crate) fn navigate(&mut self, target: usize, now: SystemTime) -> bool {
         if target == self.current || self.transition.is_some() {
             return false;
@@ -169,8 +168,7 @@ impl FloorNav {
         true
     }
 
-    /// End a slide at once on its destination, of `n_floors`: a cancel (a
-    /// resize) must not silently revert a navigation.
+    /// [`OfficeSession::cancel_slide`], of `n_floors`.
     pub(crate) fn cancel(&mut self, n_floors: usize) {
         if let Some(tr) = self.transition.take() {
             self.current = tr.to_floor.min(n_floors - 1);
@@ -339,14 +337,16 @@ impl OfficeSession {
         &self.nav
     }
 
-    /// Slide to floor `target`: [`FloorNav::navigate`].
+    /// Slide to floor `target`, unless it is the floor showing or a slide is
+    /// under way; whether a slide began.
     pub fn navigate(&mut self, target: usize, now: SystemTime) -> bool {
         self.nav.navigate(target, now)
     }
 
     /// Hand a pointer's lift to the floor showing, and its carry and drop to
-    /// the floor it lifted on, whatever shows since: [`PerFloor::grip`]. A
-    /// lift during a slide, which shows no one floor, lifts nothing.
+    /// the floor it lifted on, whatever shows since; that floor's next step
+    /// carries it out. A lift during a slide, which shows no one floor, lifts
+    /// nothing.
     pub fn grip(&mut self, gesture: &crate::interact::Gesture) {
         let floor = self.gripped.of(gesture, &self.nav);
         if let Some(view) = floor.and_then(|f| self.views.get_mut(f)) {
@@ -401,7 +401,8 @@ impl OfficeSession {
         floor_world(world, floor_scene, floor, self.n_floors, pets)
     }
 
-    /// End a slide at once on its destination: [`FloorNav::cancel`].
+    /// End a slide at once on its destination: a cancel (a resize) must not
+    /// silently revert a navigation.
     pub fn cancel_slide(&mut self) {
         self.nav.cancel(self.n_floors);
     }

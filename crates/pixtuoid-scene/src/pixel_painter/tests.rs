@@ -467,7 +467,7 @@ fn every_character_frame_at_every_density_recolors_hair_and_shirt() {
     let mut variants = 0;
     for &base in Piece::VARIANTS
         .iter()
-        .filter(|p| p.kind() == crate::sprite::format::PieceKind::Character)
+        .filter(|p| p.kind() == crate::pack::validate::PieceKind::Character)
     {
         for (name, anim) in arts_of(&pack, base) {
             variants += usize::from(name.contains('@'));
@@ -762,7 +762,7 @@ fn bare_desks_toml(density: u16, variant: bool) -> String {
     }
     for piece in Piece::VARIANTS
         .iter()
-        .filter(|p| p.kind() == crate::sprite::format::PieceKind::Character)
+        .filter(|p| p.kind() == crate::pack::validate::PieceKind::Character)
     {
         toml += &format!(
             "[animations.{}]\nframes=[{}]\nframe_ms=100\n{}",
