@@ -34,7 +34,7 @@
     "name": "Antigravity CLI",
     "url": "https://github.com/google-antigravity/antigravity-cli",
     "status": "supported",
-    "transport": "hooks (~/.gemini/config/hooks.json) + session transcripts (~/.gemini/antigravity-cli/brain/)",
+    "transport": "hooks (plugin → ~/.gemini/config/plugins/) + session transcripts (~/.gemini/antigravity-cli/brain/)",
     "platforms": {
       "macos": "yes",
       "linux": "yes",
