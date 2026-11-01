@@ -736,7 +736,7 @@ struct AnimationToml {
 /// that redraw them, the hairstyles that dress the characters, and the city
 /// behind the windows.
 #[derive(Debug, Clone)]
-pub struct Pack {
+pub(crate) struct Pack {
     /// A pack that lacks a piece does not load.
     pieces: EnumMap<Piece, Sprite>,
     /// Each piece's density variants, each of which redraws it
@@ -1592,8 +1592,8 @@ fn build_palette(
 }
 
 /// Every piece a pack draws: the character poses, the furniture and the
-/// room's fixtures, and the creatures. A pack ships each, so a loaded
-/// [`Pack`] hands out any of them ([`OfficeArt::piece`](crate::pack::OfficeArt::piece));
+/// room's fixtures, and the creatures. A pack ships each, so a loaded pack
+/// hands out any of them ([`OfficeArt::piece`](crate::pack::OfficeArt::piece));
 /// the manifest keys it by its `name`.
 #[derive(
     Debug,

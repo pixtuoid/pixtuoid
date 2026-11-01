@@ -195,7 +195,7 @@ pub enum ArtError {
     },
 }
 
-/// The pack, parsed into what the office draws: [`Pack`]'s pieces, and each
+/// The pack, parsed into what the office draws: its pieces, and each
 /// desk's props and bulb, the clock's face and every icon's art, guaranteed by
 /// the parse rather than checked where a painter reads them.
 #[derive(Debug, Clone)]

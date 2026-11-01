@@ -1774,18 +1774,6 @@ impl core::marker::Unpin for pixtuoid_scene::sprite::format::Density
 impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::format::Density
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::format::Density
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::format::Density
-pub struct pixtuoid_scene::sprite::format::Pack
-impl core::clone::Clone for pixtuoid_scene::sprite::format::Pack
-pub fn pixtuoid_scene::sprite::format::Pack::clone(&self) -> Self
-impl core::fmt::Debug for pixtuoid_scene::sprite::format::Pack
-pub fn pixtuoid_scene::sprite::format::Pack::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_scene::sprite::format::Pack
-impl core::marker::Send for pixtuoid_scene::sprite::format::Pack
-impl core::marker::Sync for pixtuoid_scene::sprite::format::Pack
-impl core::marker::Unpin for pixtuoid_scene::sprite::format::Pack
-impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::format::Pack
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::format::Pack
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::format::Pack
 #[non_exhaustive] pub enum pixtuoid_scene::sprite::HeadView
 pub pixtuoid_scene::sprite::HeadView::Back
 pub pixtuoid_scene::sprite::HeadView::Crown
