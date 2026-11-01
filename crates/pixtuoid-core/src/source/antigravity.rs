@@ -122,7 +122,8 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
         if let Some(Value::Array(tool_calls)) = obj.get("tool_calls") {
             // agy runs a step's calls in order, each as the next step: two calls
             // at step 1 ran as steps 2 and 3, the hook's `stepIdx` naming each.
-            for (step, tc) in (step_index + 1..).zip(tool_calls) {
+            // Closed, since `..` overflows at the wire's largest index.
+            for (step, tc) in (step_index.saturating_add(1)..=i64::MAX).zip(tool_calls) {
                 let Some(tc_obj) = tc.as_object() else {
                     continue;
                 };
@@ -387,6 +388,27 @@ mod tests {
             })
             .collect();
         assert_eq!(ids, [Some("ag-2".to_string()), Some("ag-3".to_string())]);
+    }
+
+    #[test]
+    fn calls_past_the_last_step_index_mint_no_wrapped_id() {
+        let ids = |step_index: i64| -> Vec<_> {
+            let v = serde_json::json!({
+                "type": "PLANNER_RESPONSE",
+                "step_index": step_index,
+                "tool_calls": [{ "name": "read_file" }, { "name": "read_file" }],
+            });
+            decode_ag_line("/x/t.jsonl", SOURCE_NAME, v)
+                .into_iter()
+                .map(|e| match e {
+                    AgentEvent::ToolUseStart { tool_use_id, .. } => tool_use_id,
+                    other => panic!("expected ToolUseStart, got {other:?}"),
+                })
+                .collect()
+        };
+        let last = Some(step_tool_id(i64::MAX));
+        assert_eq!(ids(i64::MAX - 1), [last.clone()]);
+        assert_eq!(ids(i64::MAX), [last]);
     }
 
     #[test]
