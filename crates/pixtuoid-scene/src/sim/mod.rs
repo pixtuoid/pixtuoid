@@ -13,7 +13,6 @@ use std::collections::hash_map::Entry;
 use std::time::{Duration, SystemTime};
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::id::normalize_path_key;
 use pixtuoid_core::source::daemon::DaemonInstanceKey;
 use pixtuoid_core::state::{ActivityState, DaemonLiveness, DaemonState, FloorLocalDeskIndex};
 use pixtuoid_core::walkable::OccupancyOverlay;
@@ -1133,11 +1132,11 @@ pub(crate) fn desk_occupant(
         .find(|a| a.desk_index.single_floor_local() == local && a.exiting_at.is_none())
 }
 
-/// Deterministic seed from a normalized cwd string: byte-fold, then the
+/// Deterministic seed from a lowercased cwd basename: byte-fold, then the
 /// splitmix64 finalizer. NOT `DefaultHasher`: its algorithm may change between
 /// Rust releases, which would re-dress every agent on a toolchain bump.
-fn cwd_outfit_seed(cwd_norm: &str) -> u64 {
-    let folded = cwd_norm
+fn basename_outfit_seed(basename: &str) -> u64 {
+    let folded = basename
         .bytes()
         .fold(0u64, |h, b| h.wrapping_mul(131).wrapping_add(u64::from(b)));
     pixtuoid_core::id::splitmix64(folded)
@@ -1147,17 +1146,53 @@ fn cwd_outfit_seed(cwd_norm: &str) -> u64 {
 /// `FrameCache::note_outfit_seed` watches the mid-lifetime cwd backfill through
 /// the EXACT unknown-cwd fallback [`agent_overrides`](crate::character::agent_overrides)
 /// uses; a second copy would drift.
+///
+/// The basename because it is all of a cwd that reaches a device, which must
+/// dress an agent as its server does. Lowercased here, not by
+/// `normalize_path_key`, whose fold is the host's: Windows only.
 pub(crate) fn outfit_seed_for(agent: &AgentSlot) -> u64 {
-    if agent.unknown_cwd || agent.cwd.as_os_str().is_empty() {
-        agent.agent_id.raw()
-    } else {
-        cwd_outfit_seed(&normalize_path_key(&agent.cwd.to_string_lossy()))
+    match agent.cwd.file_name() {
+        Some(name) if !agent.unknown_cwd => {
+            basename_outfit_seed(&name.to_string_lossy().to_lowercase())
+        }
+        _ => agent.agent_id.raw(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::character::test_support::make_slot_cwd;
+
+    /// What a phone rebuilds from the line, against what the Mac wrote it from.
+    fn seed_on_a_device(agent: &AgentSlot) -> u64 {
+        use pixtuoid_core::remote::{RemoteOffice, encode};
+        use pixtuoid_core::state::MAX_FLOORS;
+        use std::time::SystemTime;
+        let mut scene = pixtuoid_core::SceneState::uniform(4);
+        scene.agents.insert(agent.agent_id, agent.clone());
+        let now = SystemTime::now();
+        let line = encode(&scene, now).expect("a scene encodes");
+        let mut office = RemoteOffice::new([4; MAX_FLOORS]);
+        office.apply(line.as_bytes(), now).expect("it applies");
+        outfit_seed_for(&office.scene().agents[&agent.agent_id])
+    }
+
+    #[test]
+    fn an_agent_wears_the_same_outfit_on_a_device() {
+        for cwd in ["/Users/someone/work/app", "/Users/someone/work/App", "/"] {
+            let agent = make_slot_cwd("/p/aaaa.jsonl", cwd, false);
+            assert_eq!(outfit_seed_for(&agent), seed_on_a_device(&agent), "{cwd}");
+        }
+    }
+
+    #[test]
+    fn a_repos_name_decides_its_outfit_wherever_it_is_checked_out() {
+        let one = make_slot_cwd("/p/aaaa.jsonl", "/Users/someone/work/app", false);
+        let two = make_slot_cwd("/p/bbbb.jsonl", "/tmp/elsewhere/APP", false);
+        assert_eq!(outfit_seed_for(&one), outfit_seed_for(&two));
+    }
 
     /// The phase is epoch-based, so it outgrows a u16: the scanline must keep
     /// stepping one column per step rather than overflow or jump.

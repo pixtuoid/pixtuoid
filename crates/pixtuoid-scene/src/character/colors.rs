@@ -7,8 +7,8 @@ use pixtuoid_core::sprite::{Pixel, Rgb};
 use crate::composite::blend_rgb;
 use crate::sim::outfit_seed_for;
 
-/// A complete shirt + pants combo, keyed by the agent's normalized working
-/// directory (same cwd → same outfit, so the office reads as a color-coded
+/// A complete shirt + pants combo, keyed by the name of the agent's working
+/// directory (same name → same outfit, so the office reads as a color-coded
 /// org-chart). Whole outfits rather than independent shirt and pants colors, so
 /// the pairing is always harmonious instead of a random clash.
 #[derive(Clone, Copy)]
@@ -503,18 +503,18 @@ mod tests {
     }
 
     #[test]
-    fn agent_overrides_outfit_is_keyed_by_cwd_not_id() {
+    fn agent_overrides_outfit_is_keyed_by_cwd_name_not_id() {
         let a = make_slot_cwd("/demo/api/aaaa.jsonl", "/demo/api", false);
         let b = make_slot_cwd("/demo/api/bbbb.jsonl", "/demo/api", false);
         assert_eq!(
             color_of(&a, SHIRT_KEY),
             color_of(&b, SHIRT_KEY),
-            "same cwd should share shirt"
+            "same name should share shirt"
         );
         assert_eq!(
             color_of(&a, PANTS_KEY),
             color_of(&b, PANTS_KEY),
-            "same cwd should share pants"
+            "same name should share pants"
         );
         assert_ne!(
             (color_of(&a, HAIR_KEY), color_of(&a, SKIN_KEY)),
