@@ -275,8 +275,8 @@ step 10 by the theme guards; steps 1–3 are on you.
    can't disagree. No test can ask the rest, so the PR body answers each with an
    upstream cite:
    - **Where can hooks live?** A plugin or a dir the CLI scans keeps pixtuoid out
-     of the user's file (step 8). Name each route checked and, where one can't
-     run unattended, why.
+     of the user's file (step 8). Name each route checked; a merge's
+     `no_owned_route` cites why none runs unattended.
    - **What rewrites that file?** A CLI that saves its whole config can drop a
      sentinel, so ownership keys on what survives (`install/jcode.rs`'s
      `managed_path`).

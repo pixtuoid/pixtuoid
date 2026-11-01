@@ -1392,6 +1392,7 @@ mod tests {
             },
             verify_schema: |_| crate::install::verify::SchemaParse::broken("test fake"),
             beside: None,
+            no_owned_route: "",
         },
         binary_strategy: crate::install::target::BinaryStrategy::EmbedAbsolute,
         presence_probe: || false,
