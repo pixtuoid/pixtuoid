@@ -142,8 +142,10 @@ pixtuoid learns what each agent is doing from a tiny hook it installs, which nev
 
 ## Privacy & Security
 
-pixtuoid is **local-only and telemetry-free**: it makes no network connections, and your
-agents' sessions never leave your machine. Details: **[SECURITY.md](SECURITY.md)**.
+pixtuoid is **telemetry-free and local by default**: it makes no outbound connections, and
+accepts none unless you run `pixtuoid serve`, which sends agent status, model, usage and repo names,
+never paths, prompts or transcripts, to devices you paired on your local network. Details:
+**[SECURITY.md](SECURITY.md)**.
 
 ## Contributing
 

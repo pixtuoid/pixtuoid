@@ -104,8 +104,8 @@ examples).
 
 #### Security
 
-A trust boundary is the hook shim or socket/named-pipe transport; config
-writes or install targets; path, home, process, permission or credential
+A trust boundary is the hook shim or socket/named-pipe transport; the `serve`
+listener and its pairing store; config writes or install targets; path, home, process, permission or credential
 handling; transcript, hook, JSONL, pack or asset ingestion. When the diff
 touches none, the summary says so. Otherwise report only a concrete attack or
 invariant-breaking sequence against:
@@ -124,7 +124,8 @@ invariant-breaking sequence against:
    (`crates/pixtuoid-core/src/source/hook/`), arbitration cannot steal a live
    owner's socket, both `unix.rs`/`windows.rs` arms hold (Windows runs only in
    CI, outside mutation testing), and each guard is PINNED.
-3. Untrusted input (hook payloads, transcripts, JSONL, paths, pack data):
+3. Untrusted input (hook payloads, transcripts, JSONL, paths, pack data, a
+   network peer's bytes):
    sanitized where it enters, never at each use site; bounded, validated,
    skipped without panicking.
 4. Credentials and subprocesses: no secret in a command or log, no untrusted
