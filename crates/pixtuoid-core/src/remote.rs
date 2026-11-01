@@ -1201,12 +1201,14 @@ mod tests {
         assert_eq!(reply, Reply::Unknown);
     }
 
+    const EVERY_DIGIT: &str = "0123456789ABCDEF";
+
     fn link() -> PairLink {
         PairLink {
             host: "studio.local".into(),
             port: 47820,
-            spki: "AB".repeat(PIN_BYTES),
-            code: "CD".repeat(SECRET_BYTES),
+            spki: EVERY_DIGIT.repeat(PIN_BYTES * 2 / EVERY_DIGIT.len()),
+            code: EVERY_DIGIT.repeat(SECRET_BYTES * 2 / EVERY_DIGIT.len()),
         }
     }
 
@@ -1228,15 +1230,23 @@ mod tests {
             let mut fields = [
                 ("host", "studio.local".to_owned()),
                 ("port", "47820".to_owned()),
-                ("spki", "AB".repeat(PIN_BYTES)),
-                ("code", "CD".repeat(SECRET_BYTES)),
+                ("spki", link().spki),
+                ("code", link().code),
             ];
             let field = fields.iter_mut().find(|(k, _)| *k == key).expect("a field");
             field.1 = value.to_owned();
             let query: Vec<_> = fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
             format!("pixtuoid://pair?{}", query.join("&"))
         };
-        for bad in [
+        // One character past each edge of the digits' ranges, at full length.
+        let edges = ['/', ':', '@', 'G'].into_iter().flat_map(|edge| {
+            let bad = |value: String| value.replacen('0', &edge.to_string(), 1);
+            [
+                with("spki", &bad(link().spki)),
+                with("code", &bad(link().code)),
+            ]
+        });
+        for bad in edges.chain([
             "https://pair?host=a".to_owned(),
             "pixtuoid://pair?host=a".to_owned(),
             with("host", ""),
@@ -1257,7 +1267,7 @@ mod tests {
             link()
                 .to_string()
                 .replace("host=studio.local", "host=a&port=1&host=b"),
-        ] {
+        ]) {
             assert!(bad.parse::<PairLink>().is_err(), "{bad}");
         }
     }
