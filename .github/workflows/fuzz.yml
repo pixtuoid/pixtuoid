@@ -19,6 +19,7 @@ on:
       - .clusterfuzzlite/**
       - .github/workflows/fuzz.yml
       - Cargo.lock
+      - Cargo.toml
       - crates/pixtuoid-core/Cargo.toml
       - crates/pixtuoid-core/src/harness/fuzz.rs
       - crates/pixtuoid-core/src/harness/mod.rs

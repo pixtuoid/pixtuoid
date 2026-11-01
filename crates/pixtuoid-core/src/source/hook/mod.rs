@@ -610,7 +610,6 @@ mod tests {
         \"tool_use_id\":\"t1\"}\n";
 
     /// What keeps the hook fuzz target on the framing production runs.
-    #[cfg(feature = "harness")]
     #[tokio::test]
     async fn the_hook_fuzz_target_frames_a_connection_as_handle_conn_does() {
         let payload: &[u8] =
