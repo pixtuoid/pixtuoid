@@ -1,9 +1,6 @@
 ---
 name: beautify-decoration
-version: 1.0.0
-description: "Iterate on the visual identity of a top-down pixel-art decoration (sprite + layout integration) in pixtuoid. Use when redesigning an existing decoration (pantry, lounge, meeting room, cubicle decor) or adding a new one. Captures the rebuild trap, the visual-verification loop, resolution constraints, sprite-format pitfalls, and the layout-integration checklist."
-metadata:
-  scope: "pixtuoid repo only"
+description: "Iterates on the visual identity of a top-down pixel-art decoration (sprite + layout integration) in pixtuoid. Use when redesigning an existing decoration (pantry, lounge, meeting room, cubicle decor) or adding a new one. Captures the rebuild trap, the visual-verification loop, resolution constraints, sprite-format pitfalls, and the layout-integration checklist."
 ---
 
 # beautify-decoration

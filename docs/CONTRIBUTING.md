@@ -206,8 +206,9 @@ The review skips a fork's or a bot's PR, and its skipped check passes. A
 maintainer reviews a fork's or Dependabot's PR by hand before queueing it; a
 fork's author can resolve their own threads, so read each thread's
 `resolvedBy` and its reply. To run the review on a fork's commits once its diff
-is read and touches no workflow, open them as a same-repo PR, force-cancel its
-other runs, and close it unmerged: merging it would take the author's credit.
+is read and touches no workflow, open them as a same-repo PR and close it unmerged:
+merging it would take the author's credit. Its checks share the fork PR's commit,
+so force-cancelling its other runs shows them cancelled there too.
 
 ### Dispositions
 
@@ -277,7 +278,8 @@ step 10 by the theme guards; steps 1–3 are on you.
      of the user's file (step 8). Name each route checked and why it can't run
      unattended.
    - **What rewrites that file?** A CLI that saves its whole config can drop a
-     sentinel, so ownership keys on what survives (`jcode.rs`'s `managed_path`).
+     sentinel, so ownership keys on what survives (`install/jcode.rs`'s
+     `managed_path`).
    - **Which events fire for a session nobody sees?** A resume, a reload or a
      per-connection placeholder, each a phantom sprite if it registers
      (`source/jcode.rs`'s `turn_start` arm).
