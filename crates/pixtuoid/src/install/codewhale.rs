@@ -17,11 +17,10 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use toml::value::Table;
 
 use crate::install::SENTINEL_KEY;
-use crate::install::io;
 use crate::install::target::MergeOutcome;
+use crate::install::{io, merge};
 
 /// Events we register == events we decode (`source/codewhale.rs`). The `bool` is
 /// `env_mode`: `true` events carry identity via env vars, so their
@@ -162,25 +161,56 @@ pub(crate) fn detect_installed() -> bool {
 pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     // `_explicit` is Claude's bare-name-vs-absolute switch — CodeWhale always
     // embeds the absolute path, so the flag changes nothing here.
-    let p = crate::install::merge::hook_path_str(resolved)?;
+    let p = merge::hook_path_str(resolved)?;
     crate::install::hook_cmd::shell_hook_command(p, pixtuoid_core::source::codewhale::SOURCE_NAME)
 }
 
 pub(crate) fn merge_install(content: &str, base_cmd: &str) -> Result<MergeOutcome> {
-    crate::install::merge::toml_merge_outcome(content, |root| toml_merge_install(root, base_cmd))
+    merge::toml_merge_outcome(content, |doc| {
+        merge::with_toml_table(doc, "hooks", |hooks| {
+            // Set the gate ONLY when the user made no explicit choice: an explicit
+            // `enabled = false` is their own "all CodeWhale hooks off" switch, and we
+            // could not faithfully restore it on disconnect. Ours then won't fire, but
+            // `verify_schema` surfaces exactly that, so it isn't a silent no-sprite.
+            hooks.entry("enabled").or_insert(toml_edit::value(true));
+            merge::with_toml_tables(hooks, "hooks", |entries| {
+                entries.retain(|entry| !merge::is_toml_managed(entry, SENTINEL_KEY));
+                for (ev, env_mode) in CODEWHALE_EVENTS {
+                    entries.push(managed_entry(ev, *env_mode, base_cmd));
+                }
+            });
+        });
+    })
 }
 
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
-    crate::install::merge::toml_merge_outcome(content, toml_merge_uninstall)
+    merge::toml_merge_outcome(content, |doc| {
+        let Some(hooks) = doc.get_mut("hooks").and_then(merge::toml_table) else {
+            return;
+        };
+        if let Some(entries) = hooks.get_mut("hooks").and_then(merge::toml_tables) {
+            entries.retain(|entry| !merge::is_toml_managed(entry, SENTINEL_KEY));
+            if entries.is_empty() {
+                hooks.remove("hooks");
+            }
+        }
+        // A [hooks] table that is empty, or holds only the `enabled = true` a fresh
+        // install writes, was ours — drop it. Install never writes `enabled = false`,
+        // so a surviving one is the user's OWN switch and keeps its table alive.
+        let ours_only = hooks
+            .iter()
+            .all(|(key, value)| key == "enabled" && value.as_bool() != Some(false));
+        if ours_only {
+            doc.remove("hooks");
+        }
+    })
 }
 
 fn is_managed_entry(entry: &toml::Value) -> bool {
     entry.get(SENTINEL_KEY).and_then(|v| v.as_bool()) == Some(true)
 }
 
-fn managed_entry(event: &str, env_mode: bool, base_cmd: &str) -> toml::Value {
-    let mut entry = Table::new();
-    entry.insert("event".into(), toml::Value::String(event.into()));
+fn managed_entry(event: &str, env_mode: bool, base_cmd: &str) -> toml_edit::Table {
     // env-mode events bake `--event <name>` (the shim reads CodeWhale's hook env);
     // the subagent observer events forward the raw stdin JSON, so no `--event`.
     let command = if env_mode {
@@ -188,9 +218,11 @@ fn managed_entry(event: &str, env_mode: bool, base_cmd: &str) -> toml::Value {
     } else {
         base_cmd.to_string()
     };
-    entry.insert("command".into(), toml::Value::String(command));
-    entry.insert(SENTINEL_KEY.into(), toml::Value::Boolean(true));
-    toml::Value::Table(entry)
+    let mut entry = toml_edit::Table::new();
+    entry["event"] = toml_edit::value(event);
+    entry["command"] = toml_edit::value(command);
+    entry[SENTINEL_KEY] = toml_edit::value(true);
+    entry
 }
 
 /// Install-schema verification: every CODEWHALE_EVENTS event still has a
@@ -238,51 +270,6 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
         );
     }
     assemble(&missing, !entries.is_empty(), shim, extra)
-}
-
-fn toml_merge_install(mut root: Table, base_cmd: &str) -> Table {
-    crate::install::merge::with_toml_table(&mut root, "hooks", |hooks| {
-        // Set the gate ONLY when the user made no explicit choice: an explicit
-        // `enabled = false` is their own "all CodeWhale hooks off" switch, and we
-        // could not faithfully restore it on disconnect. Ours then won't fire, but
-        // `verify_schema` surfaces exactly that, so it isn't a silent no-sprite.
-        hooks
-            .entry("enabled".to_string())
-            .or_insert_with(|| toml::Value::Boolean(true));
-        crate::install::merge::with_toml_array(hooks, "hooks", |arr| {
-            arr.retain(|e| !is_managed_entry(e));
-            for (ev, env_mode) in CODEWHALE_EVENTS {
-                arr.push(managed_entry(ev, *env_mode, base_cmd));
-            }
-        });
-    });
-    root
-}
-
-fn toml_merge_uninstall(mut root: Table) -> Table {
-    let Some(toml::Value::Table(hooks)) = root.get_mut("hooks") else {
-        return root;
-    };
-    if let Some(arr) = hooks.get_mut("hooks").and_then(|h| h.as_array_mut()) {
-        arr.retain(|e| !is_managed_entry(e));
-    }
-    if hooks
-        .get("hooks")
-        .and_then(|h| h.as_array())
-        .is_some_and(|a| a.is_empty())
-    {
-        hooks.remove("hooks");
-    }
-    // A [hooks] table that is empty, or holds only the `enabled = true` a fresh
-    // install writes, was ours — drop it. Install never writes `enabled = false`,
-    // so a surviving one is the user's OWN switch and keeps its table alive.
-    let ours_only = hooks.is_empty()
-        || (hooks.keys().all(|k| k == "enabled")
-            && hooks.get("enabled").and_then(|v| v.as_bool()) != Some(false));
-    if ours_only {
-        root.remove("hooks");
-    }
-    root
 }
 
 #[cfg(test)]

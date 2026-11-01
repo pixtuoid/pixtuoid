@@ -6,7 +6,9 @@ use anyhow::{Context, Result, ensure};
 use toml::{Table, Value};
 
 use super::hook_cmd::{SOURCE_FLAG, shell_single_quote};
-use super::merge::{hook_path_str, parse_toml_or_empty, toml_merge_outcome, with_toml_table};
+use super::merge::{
+    hook_path_str, parse_toml_or_empty, toml_merge_outcome, toml_table, with_toml_table,
+};
 use super::target::MergeOutcome;
 use super::verify::{SchemaParse, ShimRef, assemble, posix_unquote};
 use pixtuoid_core::source::jcode::SOURCE_NAME;
@@ -92,42 +94,51 @@ fn refuse_foreign_shape(content: &str) -> Result<()> {
 
 /// Puts `ours` in place of each event's managed commands, or removes them,
 /// keeping every other command.
-fn retarget(hooks: &mut Table, ours: Option<&str>) {
-    let managed = |command: &Value| command.as_str().is_some_and(|c| managed_path(c).is_some());
+fn retarget(hooks: &mut toml_edit::Table, ours: Option<&str>) {
+    let managed =
+        |command: &toml_edit::Value| command.as_str().is_some_and(|c| managed_path(c).is_some());
     for event in JCODE_EVENTS {
-        let merged = match (hooks.remove(*event), ours) {
-            (None, ours) => ours.map(Value::from),
-            (Some(Value::Array(mut commands)), ours) => {
-                commands.retain(|c| !managed(c));
-                commands.extend(ours.map(Value::from));
-                Some(Value::Array(commands))
+        match hooks.get_mut(event).and_then(toml_edit::Item::as_value_mut) {
+            None => {
+                if let Some(ours) = ours {
+                    hooks.insert(event, toml_edit::value(ours));
+                }
             }
-            (Some(command), ours) if managed(&command) => ours.map(Value::from),
-            (Some(foreign), Some(ours)) => Some(Value::Array(vec![foreign, ours.into()])),
-            (foreign, None) => foreign,
-        };
-        if let Some(merged) = merged {
-            hooks.insert((*event).to_owned(), merged);
+            Some(toml_edit::Value::Array(commands)) => {
+                commands.retain(|command| !managed(command));
+                commands.extend(ours);
+            }
+            Some(command) if managed(command) => match ours {
+                Some(ours) => *command = ours.into(),
+                None => {
+                    hooks.remove(event);
+                }
+            },
+            // Fresh, not the old value moved in: its line comment would swallow the
+            // comma after it.
+            Some(foreign) => {
+                if let (Some(theirs), Some(ours)) = (foreign.as_str(), ours) {
+                    *foreign = toml_edit::Value::from_iter([theirs, ours]);
+                }
+            }
         }
     }
 }
 
 pub(crate) fn merge_install(content: &str, command: &str) -> Result<MergeOutcome> {
     refuse_foreign_shape(content)?;
-    toml_merge_outcome(content, |mut root| {
-        with_toml_table(&mut root, "hooks", |hooks| retarget(hooks, Some(command)));
-        root
+    toml_merge_outcome(content, |doc| {
+        with_toml_table(doc, "hooks", |hooks| retarget(hooks, Some(command)));
     })
 }
 
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
-    toml_merge_outcome(content, |mut root| {
+    toml_merge_outcome(content, |doc| {
         // An emptied `[hooks]` stays: the text above a header goes with its table,
         // and Jcode's default config keeps a section's commented options there.
-        if let Some(hooks) = root.get_mut("hooks").and_then(Value::as_table_mut) {
+        if let Some(hooks) = doc.get_mut("hooks").and_then(toml_table) {
             retarget(hooks, None);
         }
-        root
     })
 }
 
@@ -301,6 +312,14 @@ mod tests {
         assert!(removed.changed);
         assert_eq!(removed.content, original);
         assert!(!merge_uninstall(&removed.content).unwrap().changed);
+    }
+
+    #[test]
+    fn jcode_promotes_a_commented_foreign_command_to_an_array() {
+        let installed = merge_install("[hooks]\npre_tool = 'gate' # note\n", &command()).unwrap();
+        let doc: Value = toml::from_str(&installed.content).unwrap();
+        assert_eq!(doc["hooks"]["pre_tool"][0].as_str(), Some("gate"));
+        assert_eq!(doc["hooks"]["pre_tool"].as_array().unwrap().len(), 2);
     }
 
     #[test]

@@ -5,11 +5,11 @@ use serde_json::json;
 
 use crate::install::SENTINEL_KEY;
 use crate::install::host_plugin::{self, NAME};
-use crate::install::io;
 use crate::install::target::{
     HostRegistration, LegacyConfig, MergeOutcome, Pickup, PluginCopy, Unregistered,
 };
 use crate::install::verify::{SchemaParse, ShimRef};
+use crate::install::{io, merge};
 
 pub(crate) const CODEX_EVENTS: &[&str] = &[
     "SessionStart",
@@ -85,7 +85,7 @@ pub(crate) fn detect_installed() -> bool {
 pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     // `_explicit` is Claude's bare-name-vs-absolute switch — Codex always
     // embeds the absolute path, so the flag changes nothing here.
-    let p = crate::install::merge::hook_path_str(resolved)?;
+    let p = merge::hook_path_str(resolved)?;
     crate::install::hook_cmd::shell_hook_command(p, pixtuoid_core::source::codex::SOURCE_NAME)
 }
 
@@ -266,55 +266,35 @@ fn read_codex_config() -> Result<toml::Value> {
 
 /// Strips what a pixtuoid from before the plugin merged into `config.toml`.
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
-    crate::install::merge::toml_merge_outcome(content, toml_merge_uninstall)
-}
-
-fn handler_is_managed(h: &toml::Value) -> bool {
-    // Sentinel-only, no basename fallback: no released version ever wrote a
-    // sentinel-less entry, so a basename match could only ever hit a USER
-    // hand-written entry pointing at the shim, which uninstall must not touch.
-    h.get(SENTINEL_KEY).and_then(|v| v.as_bool()) == Some(true)
-}
-
-fn prune_managed_handlers(group: &mut toml::Value) {
-    if let Some(hooks) = group.get_mut("hooks").and_then(|h| h.as_array_mut()) {
-        hooks.retain(|h| !handler_is_managed(h));
-    }
-}
-
-fn group_has_no_hooks(group: &toml::Value) -> bool {
-    group
-        .get("hooks")
-        .and_then(|h| h.as_array())
-        .is_some_and(|h| h.is_empty())
-}
-
-fn toml_merge_uninstall(mut root: toml::Table) -> toml::Table {
-    let Some(toml::Value::Table(hooks)) = root.get_mut("hooks") else {
-        return root;
-    };
-    for (_ev, list) in hooks.iter_mut() {
-        if let Some(arr) = list.as_array_mut() {
-            for group in arr.iter_mut() {
-                prune_managed_handlers(group);
+    merge::toml_merge_outcome(content, |doc| {
+        let Some(hooks) = doc.get_mut("hooks").and_then(merge::toml_table) else {
+            return;
+        };
+        for (_event, groups) in hooks.iter_mut() {
+            let Some(groups) = merge::toml_tables(groups) else {
+                continue;
+            };
+            for group in groups.iter_mut() {
+                if let Some(handlers) = group.get_mut("hooks").and_then(merge::toml_tables) {
+                    // Sentinel-only, no basename fallback: no released version ever
+                    // wrote a sentinel-less entry, so a basename match could only ever
+                    // hit a USER hand-written entry pointing at the shim, which
+                    // uninstall must not touch.
+                    handlers.retain(|handler| !merge::is_toml_managed(handler, SENTINEL_KEY));
+                }
             }
-            arr.retain(|group| !group_has_no_hooks(group));
+            groups.retain(|group| !group.get("hooks").is_some_and(is_emptied));
         }
-    }
-    let empty: Vec<String> = hooks
-        .iter()
-        .filter_map(|(k, v)| match v.as_array() {
-            Some(a) if a.is_empty() => Some(k.clone()),
-            _ => None,
-        })
-        .collect();
-    for k in empty {
-        hooks.remove(&k);
-    }
-    if hooks.is_empty() {
-        root.remove("hooks");
-    }
-    root
+        hooks.retain(|_event, groups| !is_emptied(groups));
+        if hooks.is_empty() {
+            doc.remove("hooks");
+        }
+    })
+}
+
+fn is_emptied(item: &toml_edit::Item) -> bool {
+    item.as_array_of_tables()
+        .is_some_and(toml_edit::ArrayOfTables::is_empty)
 }
 
 #[cfg(test)]
@@ -520,6 +500,18 @@ command = "/hand/written/pixtuoid-hook"
         assert_eq!(
             cmd,
             "PIXTUOID_SOURCE=codex '/Users/Jane Doe/bin/pixtuoid-hook'"
+        );
+    }
+
+    #[test]
+    fn uninstall_strips_a_hand_inlined_legacy_handler() {
+        let cfg = "hooks = { Stop = [{ hooks = [{ command = \"x\", _pixtuoid = true }] }] }\n";
+        let out = merge_uninstall(cfg).unwrap();
+        assert!(out.changed);
+        assert!(
+            parse(&out.content).get("hooks").is_none(),
+            "{}",
+            out.content
         );
     }
 
