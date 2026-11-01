@@ -1,6 +1,6 @@
 use super::*;
 use crate::install::target::{
-    CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Primary, REASONIX, Target,
+    ANTIGRAVITY, CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Primary, REASONIX, Target,
 };
 
 /// Claude's owned hooks file without its plugin registration or presence probe,
@@ -1324,7 +1324,8 @@ fn with_fake_hosts_failing<R>(fail: Option<&str>, f: impl FnOnce(&std::path::Pat
     let codex = dir.path().join("codex-home");
     let reasonix = dir.path().join("reasonix-home");
     let hermes = dir.path().join("hermes-home");
-    for home in [&claude, &codex, &reasonix, &hermes] {
+    let agy = dir.path().join("agy-home");
+    for home in [&claude, &codex, &reasonix, &hermes, &agy] {
         std::fs::create_dir_all(home).unwrap();
     }
     temp_env::with_vars(
@@ -1334,6 +1335,8 @@ fn with_fake_hosts_failing<R>(fail: Option<&str>, f: impl FnOnce(&std::path::Pat
             ("CODEX_HOME", Some(codex.as_os_str())),
             ("REASONIX_HOME", Some(reasonix.as_os_str())),
             ("HERMES_HOME", Some(hermes.as_os_str())),
+            ("HOME", Some(agy.as_os_str())),
+            ("USERPROFILE", Some(agy.as_os_str())),
             ("FAKE_HOST_FAIL", fail.map(std::ffi::OsStr::new)),
         ],
         || f(dir.path()),
@@ -1346,7 +1349,30 @@ const FAKE_HOSTS: &[(&str, &str, &str)] = &[
     ("codex", FAKE_CODEX_SH, FAKE_CODEX_CMD),
     ("reasonix", FAKE_REASONIX_SH, FAKE_REASONIX_CMD),
     ("hermes", FAKE_HERMES_SH, FAKE_HERMES_CMD),
+    ("agy", FAKE_AGY_SH, FAKE_AGY_CMD),
 ];
+
+const FAKE_AGY_SH: &str = r#"#!/bin/sh
+d=$(dirname "$0")
+echo "agy $*" >> "$d/calls.log"
+[ "agy $*" = "${FAKE_HOST_FAIL-}" ] && exit 1
+case "$*" in
+"plugin enable pixtuoid") echo '[{"name":"pixtuoid","enabled":true}]' > "$d/agy-plugins" ;;
+"plugin uninstall pixtuoid") rm -rf "$d/agy-plugins" "$HOME/.gemini/config/plugins/pixtuoid" ;;
+"plugin list --json") cat "$d/agy-plugins" 2>/dev/null || echo '[]' ;;
+esac
+exit 0
+"#;
+
+const FAKE_AGY_CMD: &str = "@echo off\r
+set \"d=%~dp0\"\r
+>>\"%d%calls.log\" echo agy %~1 %~2 %~3\r
+if defined FAKE_HOST_FAIL if \"agy %*\"==\"%FAKE_HOST_FAIL%\" exit /b 1\r
+if \"%1 %2 %3\"==\"plugin enable pixtuoid\" (>\"%d%agy-plugins\" echo [{\"name\":\"pixtuoid\",\"enabled\":true}]& exit /b 0)\r
+if \"%1 %2 %3\"==\"plugin uninstall pixtuoid\" (del \"%d%agy-plugins\" 2>nul& rmdir /s /q \"%USERPROFILE%\\.gemini\\config\\plugins\\pixtuoid\"& exit /b 0)\r
+if \"%1 %2 %3\"==\"plugin list --json\" (if exist \"%d%agy-plugins\" (type \"%d%agy-plugins\") else (echo []))\r
+exit /b 0\r
+";
 
 const FAKE_CLAUDE_SH: &str = r#"#!/bin/sh
 d=$(dirname "$0")
@@ -2295,17 +2321,135 @@ fn reasonix_connect_fails_when_linking_fails_and_leaves_no_hooks() {
     });
 }
 
+/// The shared hooks file an older pixtuoid merged into, under the fake's `HOME`.
+fn agy_legacy_hooks() -> PathBuf {
+    let legacy = ANTIGRAVITY.host.unwrap().legacy.as_ref().unwrap();
+    let path = (legacy.path)().expect("inside with_fake_hosts");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn antigravity_connect_writes_its_plugin_and_strips_the_hook_an_older_pixtuoid_merged() {
+    with_fake_hosts(|fake| {
+        let legacy = agy_legacy_hooks();
+        std::fs::write(
+            &legacy,
+            r#"{"lint": {"Stop": []}, "pixtuoid": {"Stop": [{"command": "old"}]}}"#,
+        )
+        .unwrap();
+        let hook = Some(std::env::current_exe().unwrap());
+        let r = install_target_from(&ANTIGRAVITY, None, hook).unwrap();
+        assert!(matches!(r.outcome, InstallOutcome::Installed));
+
+        assert_eq!(calls_of(fake, "agy"), ["agy plugin enable pixtuoid"]);
+        let primary = (ANTIGRAVITY.default_config_path)().unwrap();
+        assert!(primary.with_file_name("plugin.json").exists());
+        let shared = std::fs::read_to_string(&legacy).unwrap();
+        assert!(
+            shared.contains("lint") && !shared.contains("pixtuoid"),
+            "{shared}"
+        );
+        assert!(has_hooks(&ANTIGRAVITY, None));
+        let v = verify_target(&ANTIGRAVITY, None);
+        assert!(v.is_sound(), "{:?}", v.issues);
+    });
+}
+
+#[test]
+fn antigravity_disconnect_removes_the_plugin_through_agy() {
+    with_fake_hosts(|fake| {
+        install_target_from(
+            &ANTIGRAVITY,
+            None,
+            Some(PathBuf::from("/fake/pixtuoid-hook")),
+        )
+        .unwrap();
+        std::fs::remove_file(fake.join("calls.log")).unwrap();
+        let u = uninstall_target(&ANTIGRAVITY, None).unwrap();
+        assert!(matches!(u.outcome, UninstallOutcome::Removed));
+        assert_eq!(calls_of(fake, "agy"), ["agy plugin uninstall pixtuoid"]);
+        assert!(!(ANTIGRAVITY.default_config_path)().unwrap().exists());
+    });
+}
+
+#[test]
+fn antigravity_reports_what_agy_lists() {
+    with_fake_hosts(|fake| {
+        let is_registered = ANTIGRAVITY.host.unwrap().is_registered;
+        assert!(!is_registered().unwrap(), "never connected");
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        install_target_from(&ANTIGRAVITY, None, hook).unwrap();
+        assert!(is_registered().unwrap(), "connected");
+        let listing = fake.join("agy-plugins");
+        for other in [
+            r#"[{"name":"pixtuoid","enabled":false}]"#,
+            r#"[{"name":"other","enabled":true}]"#,
+        ] {
+            std::fs::write(&listing, other).unwrap();
+            assert!(!is_registered().unwrap(), "{other}");
+        }
+        std::fs::write(&listing, "not json").unwrap();
+        assert!(is_registered().is_err());
+        uninstall_target(&ANTIGRAVITY, None).unwrap();
+        assert!(!is_registered().unwrap(), "disconnected");
+    });
+}
+
+#[test]
+fn antigravity_reconnect_rebinds_a_moved_shim() {
+    with_fake_hosts(|_| {
+        for shim in ["/old/pixtuoid-hook", "/new/pixtuoid-hook"] {
+            install_target_from(&ANTIGRAVITY, None, Some(PathBuf::from(shim))).unwrap();
+        }
+        let hooks = std::fs::read_to_string((ANTIGRAVITY.default_config_path)().unwrap());
+        let hooks = hooks.unwrap();
+        assert!(
+            hooks.contains("/new/pixtuoid-hook") && !hooks.contains("/old/"),
+            "{hooks}"
+        );
+    });
+}
+
+#[test]
+fn antigravity_connect_fails_when_enabling_fails_and_leaves_no_plugin() {
+    with_fake_hosts_failing(Some("agy plugin enable pixtuoid"), |_| {
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        let e = install_target_from(&ANTIGRAVITY, None, hook).unwrap_err();
+        assert!(!format!("{e:#}").contains("stays in place"), "{e:#}");
+        assert!(!has_hooks(&ANTIGRAVITY, None));
+        let primary = (ANTIGRAVITY.default_config_path)().unwrap();
+        assert!(!primary.parent().unwrap().exists());
+    });
+}
+
+#[test]
+fn antigravity_reconnect_keeps_a_plugin_it_found_when_enabling_fails() {
+    with_fake_hosts_failing(Some("agy plugin enable pixtuoid"), |_| {
+        let manifest = (ANTIGRAVITY.default_config_path)()
+            .unwrap()
+            .with_file_name("plugin.json");
+        std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        std::fs::write(&manifest, r#"{"name":"pixtuoid"}"#).unwrap();
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        install_target_from(&ANTIGRAVITY, None, hook).unwrap_err();
+        assert!(manifest.exists());
+    });
+}
+
 /// The plugin where hermes discovers it, under the fake's `HERMES_HOME`: the path
 /// a production connect takes.
 fn hermes_plugin() -> PathBuf {
     (HERMES.default_config_path)().expect("inside with_fake_hosts")
 }
 
-fn hermes_calls(fake: &std::path::Path) -> Vec<String> {
+/// What `cli`'s fake was called with.
+fn calls_of(fake: &std::path::Path, cli: &str) -> Vec<String> {
+    let prefix = format!("{cli} ");
     std::fs::read_to_string(fake.join("calls.log"))
         .unwrap_or_default()
         .lines()
-        .filter(|l| l.starts_with("hermes "))
+        .filter(|l| l.starts_with(&prefix))
         .map(str::to_owned)
         .collect()
 }
@@ -2322,7 +2466,7 @@ fn hermes_connect_enables_the_plugin_and_strips_the_shell_hooks_an_older_pixtuoi
         let r = install_target_from(&HERMES, None, hook).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::Installed));
 
-        assert_eq!(hermes_calls(fake), ["hermes plugins enable pixtuoid"]);
+        assert_eq!(calls_of(fake, "hermes"), ["hermes plugins enable pixtuoid"]);
         let manifest =
             std::fs::read_to_string(hermes_plugin().with_file_name("plugin.yaml")).unwrap();
         assert!(manifest.starts_with("name: pixtuoid\n"), "{manifest}");
@@ -2348,7 +2492,7 @@ fn hermes_reconnect_reloads_the_plugin_into_a_running_gateway() {
         let r = install_target_from(&HERMES, None, hook()).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::AlreadyUpToDate));
         assert_eq!(
-            hermes_calls(fake),
+            calls_of(fake, "hermes"),
             [
                 "hermes plugins disable pixtuoid",
                 "hermes plugins enable pixtuoid"
@@ -2369,7 +2513,7 @@ fn hermes_disconnect_disables_the_plugin_before_removing_it() {
         assert!(!hermes_plugin().parent().unwrap().exists());
         assert!(!(HERMES.host.unwrap().is_registered)().unwrap());
         assert_eq!(
-            hermes_calls(fake),
+            calls_of(fake, "hermes"),
             [
                 "hermes plugins disable pixtuoid",
                 "hermes plugins remove pixtuoid"
@@ -2379,7 +2523,7 @@ fn hermes_disconnect_disables_the_plugin_before_removing_it() {
         let u2 = uninstall_target(&HERMES, None).unwrap();
         assert!(matches!(u2.outcome, UninstallOutcome::NothingToRemove));
         assert_eq!(
-            hermes_calls(fake).len(),
+            calls_of(fake, "hermes").len(),
             2,
             "nothing registered starts no CLI"
         );
@@ -2419,7 +2563,7 @@ fn hermes_connect_fails_when_enabling_fails_and_leaves_the_plugin_dir_as_it_foun
             }
             let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
             let e = install_target_from(&HERMES, None, hook).unwrap_err();
-            assert!(!format!("{e:#}").contains("stay in place"), "{e:#}");
+            assert!(!format!("{e:#}").contains("stays in place"), "{e:#}");
             assert!(!has_hooks(&HERMES, None));
             assert!(!plugin.with_file_name("plugin.yaml").exists());
             assert_eq!(std::fs::read_to_string(&plugin).ok().as_deref(), prior);
