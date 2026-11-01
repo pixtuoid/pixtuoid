@@ -7,6 +7,7 @@
 //! `floor::FloorSession::step` to observe poses/positions without buying a
 //! pixel pass.
 
+use pixtuoid_core::remote::cwd_basename;
 use pixtuoid_core::sprite::format::{Piece, Walk};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -1147,14 +1148,12 @@ fn basename_outfit_seed(basename: &str) -> u64 {
 /// the EXACT unknown-cwd fallback [`agent_overrides`](crate::character::agent_overrides)
 /// uses; a second copy would drift.
 ///
-/// The basename because it is all of a cwd that reaches a device, which must
-/// dress an agent as its server does. Lowercased here, not by
+/// The wire's basename because it is all of a cwd that reaches a device, which
+/// must dress an agent as its server does. Lowercased here, not by
 /// `normalize_path_key`, whose fold is the host's: Windows only.
 pub(crate) fn outfit_seed_for(agent: &AgentSlot) -> u64 {
-    match agent.cwd.file_name() {
-        Some(name) if !agent.unknown_cwd => {
-            basename_outfit_seed(&name.to_string_lossy().to_lowercase())
-        }
+    match cwd_basename(&agent.cwd) {
+        Some(name) if !agent.unknown_cwd => basename_outfit_seed(&name.to_lowercase()),
         _ => agent.agent_id.raw(),
     }
 }
@@ -1165,7 +1164,7 @@ mod tests {
 
     use crate::character::test_support::make_slot_cwd;
 
-    /// What a phone rebuilds from the line, against what the Mac wrote it from.
+    /// The outfit seed a device rebuilds from its server's encoded line.
     fn seed_on_a_device(agent: &AgentSlot) -> u64 {
         use pixtuoid_core::remote::{RemoteOffice, encode};
         use pixtuoid_core::state::MAX_FLOORS;
@@ -1181,14 +1180,24 @@ mod tests {
 
     #[test]
     fn an_agent_wears_the_same_outfit_on_a_device() {
-        for cwd in ["/Users/someone/work/app", "/Users/someone/work/App", "/"] {
+        use pixtuoid_core::source::decoder::MAX_DECODED_FIELD_CHARS;
+        let long = format!("/work/{}", "x".repeat(MAX_DECODED_FIELD_CHARS + 10));
+        for cwd in [
+            "/Users/someone/work/app",
+            "/Users/someone/work/App",
+            "/",
+            "/work/a\u{7}b",
+            "/work/a\u{202e}b",
+            "/work/\u{7}",
+            long.as_str(),
+        ] {
             let agent = make_slot_cwd("/p/aaaa.jsonl", cwd, false);
             assert_eq!(outfit_seed_for(&agent), seed_on_a_device(&agent), "{cwd}");
         }
     }
 
     #[test]
-    fn a_repos_name_decides_its_outfit_wherever_it_is_checked_out() {
+    fn a_cwd_basename_decides_its_outfit_wherever_it_is_checked_out() {
         let one = make_slot_cwd("/p/aaaa.jsonl", "/Users/someone/work/app", false);
         let two = make_slot_cwd("/p/bbbb.jsonl", "/tmp/elsewhere/APP", false);
         assert_eq!(outfit_seed_for(&one), outfit_seed_for(&two));

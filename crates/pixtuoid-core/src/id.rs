@@ -35,17 +35,13 @@ pub fn fnv1a(words: impl IntoIterator<Item = u64>) -> u64 {
         .fold(FNV_OFFSET_BASIS, |h, w| (h ^ w).wrapping_mul(FNV_PRIME))
 }
 
-/// Canonical form of a path STRING before it is used as an identity key
-/// (an `AgentId` transcript-path key, or the palette's cwd outfit key).
+/// Canonical form of a path STRING before it is used as an `AgentId`
+/// transcript-path key.
 /// Identity on Unix. On Windows: `\`→`/` + lowercase — CC emits backslash
 /// paths in hook payloads but mixes `\`/`/` forms of the same file
 /// internally, and NTFS is case-insensitive; without folding, the hook key
 /// and the watcher key hash to two different AgentIds and every session
 /// renders as TWO sprites.
-///
-/// Lives HERE (the identity-keying module), not in `source::decoder`: the
-/// `pixtuoid-scene` palette shares this one identity-key definition, and the
-/// render layer must not depend on the decoder layer for it.
 #[doc(hidden)]
 pub fn normalize_path_key(s: &str) -> String {
     normalize_key_inner(cfg!(windows), s)

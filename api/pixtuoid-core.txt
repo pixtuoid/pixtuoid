@@ -110,6 +110,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::remote::RemoteOffice
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::RemoteOffice
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::RemoteOffice
 pub const pixtuoid_core::remote::VERSION: u32
+pub fn pixtuoid_core::remote::cwd_basename(&std::path::Path) -> core::option::Option<alloc::string::String>
 pub fn pixtuoid_core::remote::encode(&pixtuoid_core::state::SceneState, std::time::SystemTime) -> serde_json::error::Result<alloc::string::String>
 pub mod pixtuoid_core::source
 pub mod pixtuoid_core::source::antigravity
