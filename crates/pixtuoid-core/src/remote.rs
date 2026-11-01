@@ -599,7 +599,9 @@ mod tests {
         ));
     }
 
-    /// No clock holds every `u64` of milliseconds; on Windows `+` panics on this.
+    /// Only Windows' `SystemTime`, `i64` 100 ns intervals, stops short of this:
+    /// there `+` panics, while Unix's `i64` seconds hold it
+    /// (rust-lang/rust `library/std/src/sys/time/windows.rs`).
     #[test]
     fn a_time_past_the_clocks_range_is_no_panic() {
         let mut office = RemoteOffice::new(caps(4));
@@ -801,6 +803,26 @@ mod tests {
             let (_, _, got) = office.scene().daemons().next().unwrap();
             assert_eq!(got.display_state(), state);
         }
+    }
+
+    /// One bad record costs itself, not the line: refused, the whole office would
+    /// freeze on an older state.
+    #[test]
+    fn a_blank_gateway_id_drops_only_that_gateway() {
+        let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
+        let mut blank = line["daemons"][0].clone();
+        blank["instance"] = " ".into();
+        line["daemons"].as_array_mut().unwrap().insert(0, blank);
+        let line = line.to_string();
+
+        let mut office = RemoteOffice::new(caps(4));
+        office.apply(line.as_bytes(), at(AT)).expect("it applies");
+
+        let daemons: Vec<_> = (office.scene().daemons())
+            .map(|(_, instance, _)| instance.as_str())
+            .collect();
+        assert_eq!(daemons, ["18789"]);
+        assert_eq!(office.scene().agents.len(), 3);
     }
 
     #[test]
