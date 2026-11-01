@@ -1,0 +1,180 @@
+{
+  "v": 1,
+  "now_ms": 1800000000000,
+  "agents": [
+    {
+      "id": 5546351853058087378,
+      "source": "claude-code",
+      "cwd_basename": "bash",
+      "activity": {
+        "state": "running",
+        "tool": {
+          "kind": "bash"
+        }
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 10077944305008251937,
+      "source": "claude-code",
+      "cwd_basename": "task",
+      "activity": {
+        "state": "running",
+        "tool": {
+          "kind": "task"
+        }
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 10948706948411984435,
+      "source": "claude-code",
+      "activity": {
+        "state": "idle"
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 12510145841802381528,
+      "source": "claude-code",
+      "cwd_basename": "search",
+      "activity": {
+        "state": "running",
+        "tool": {
+          "kind": "search"
+        }
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 13214166290797252754,
+      "parent": 15748592781060872162,
+      "source": "claude-code",
+      "cwd_basename": "child",
+      "activity": {
+        "state": "requires_action"
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "exiting_ms": 1799999999900,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 14021061412767199814,
+      "source": "claude-code",
+      "cwd_basename": "other",
+      "activity": {
+        "state": "running",
+        "tool": {
+          "kind": "other"
+        }
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 14169202008918805304,
+      "source": "claude-code",
+      "cwd_basename": "read",
+      "activity": {
+        "state": "running",
+        "tool": {
+          "kind": "read"
+        }
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 0
+    },
+    {
+      "id": 15748592781060872162,
+      "source": "claude-code",
+      "cwd_basename": "lead",
+      "activity": {
+        "state": "running",
+        "tool": {
+          "kind": "edit"
+        }
+      },
+      "state_since_ms": 1799999998000,
+      "created_ms": 1799999940000,
+      "tool_calls": 3,
+      "running_ms": 4000,
+      "tokens": 12000,
+      "last_usage": {
+        "delta": 800,
+        "at_ms": 1799999999300
+      },
+      "model": "some-model",
+      "effort": {
+        "value": "high",
+        "at_ms": 1799999999500
+      }
+    }
+  ],
+  "daemons": [
+    {
+      "source": "openclaw",
+      "instance": "18789",
+      "activity": {
+        "state": "running"
+      },
+      "active_sessions": 2,
+      "entered_ms": 1799999910000,
+      "last_seen_ms": 1799999999700
+    },
+    {
+      "source": "openclaw",
+      "instance": "18790",
+      "activity": {
+        "state": "idle"
+      },
+      "active_sessions": 0,
+      "entered_ms": 1799999910000,
+      "last_seen_ms": 1799999999700
+    },
+    {
+      "source": "openclaw",
+      "instance": "18791",
+      "activity": {
+        "state": "degraded"
+      },
+      "active_sessions": 0,
+      "entered_ms": 1799999910000,
+      "last_seen_ms": 1799999999700
+    },
+    {
+      "source": "openclaw",
+      "instance": "18792",
+      "activity": {
+        "state": "down"
+      },
+      "active_sessions": 0,
+      "entered_ms": 1799999910000,
+      "last_seen_ms": 1799999999700
+    }
+  ]
+}

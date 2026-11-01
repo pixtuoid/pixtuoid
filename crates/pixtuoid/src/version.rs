@@ -372,6 +372,7 @@ mod tests {
             [
                 reconnect(&REPLUGGED, &all_hold()).expect("holds"),
                 reconnect(&[&target::HERMES], &all_hold()).expect("holds"),
+                reconnect(&[&target::ANTIGRAVITY], &all_hold()).expect("holds"),
                 cutaway_default(&all_hold()).expect("holds"),
             ]
         );
@@ -424,6 +425,29 @@ mod tests {
         for t in legacy_hosts() {
             assert!(said.contains(t.display_name), "{}: {said}", t.name);
         }
+    }
+
+    /// 0.21.0 merged Antigravity's hooks into the shared hooks.json, which a connected
+    /// check no longer reads.
+    #[test]
+    fn an_antigravity_upgrader_is_told_to_reconnect_it() {
+        let due_with = |connected: &[&str]| {
+            due(
+                Some(&versions("0.21.0", "0.22.0")),
+                &Facts {
+                    installed: &["antigravity"],
+                    connected: &set(connected),
+                    terminal_cutaway: false,
+                },
+            )
+        };
+        assert_eq!(
+            due_with(&[]),
+            [
+                "pixtuoid now connects to Antigravity CLI as a plugin: reconnect it in Sources (s) if you use it."
+            ]
+        );
+        assert!(due_with(&["antigravity"]).is_empty());
     }
 
     /// 0.20.0 merged Hermes's hooks into its own config.yaml, which the plugin
