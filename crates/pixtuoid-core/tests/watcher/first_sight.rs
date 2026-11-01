@@ -239,7 +239,6 @@ async fn codex_rollout_yields_uuid_keyed_session_start() {
 
     let expected = AgentId::from_parts("codex", uuid);
     let mut saw_session_start = false;
-    // The only watcher-level cover that the default label is live.
     let mut default_label = None;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {

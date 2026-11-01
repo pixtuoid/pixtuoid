@@ -1249,6 +1249,7 @@ mod tests {
         assert_eq!(cwd_basename_label("cc", Path::new("/")), None);
     }
 
+    #[cfg(feature = "native")]
     #[test]
     fn transcript_deriver_empty_cwd_fallback_equals_registry_prefix() {
         use crate::source::registry;
