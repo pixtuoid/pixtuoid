@@ -44,6 +44,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             path_filter: admits_transcript,
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
+            #[cfg(feature = "native")]
+            native: native::TRANSCRIPT,
         }),
         hook: Some(HookDecoding::Shared {
             tool_id_key: ToolIdKey::ToolUse,
@@ -409,7 +411,7 @@ fn classifies_as_turn(v: &Value) -> Option<bool> {
 /// Accepted residual — an UNVOUCHED session (headless `claude -p`, a non-standard
 /// projects root, EVERY CC session on Windows) whose tail is momentarily all
 /// sidecar is invisible until its next turn; with hooks it registers regardless.
-pub fn cc_activity_recency(tail: &[u8]) -> TailActivity {
+pub(crate) fn cc_activity_recency(tail: &[u8]) -> TailActivity {
     let mut newest: Option<u64> = None;
     let mut saw_turn = false;
     let mut saw_classified = false;

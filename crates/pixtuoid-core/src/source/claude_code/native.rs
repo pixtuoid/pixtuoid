@@ -4,13 +4,13 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 
 use super::{SOURCE_NAME, cc_derive_label, cc_session_ended, claude_config_dir};
 use crate::source::cc_probe::cc_sessions_dir;
 pub use crate::source::cc_probe::live_cc_session_ids;
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher};
-use crate::source::registry::{FocusProbe, Native, TranscriptWatch};
+use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
 
 /// A pure `~/.claude/projects` transcript watcher: no socket bind, no
@@ -82,7 +82,8 @@ impl Source for ClaudeCodeSource {
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        let mut watcher = JsonlWatcher::new(self.projects_root.clone(), SOURCE_NAME.to_string());
+        let mut watcher = JsonlWatcher::new(self.projects_root.clone(), SOURCE_NAME.to_string())
+            .context("no transcript row")?;
         if let Some(sessions_dir) = cc_sessions_dir(&self.projects_root) {
             watcher = watcher.with_liveness_probe(std::sync::Arc::new(move || {
                 live_cc_session_ids(&sessions_dir)
@@ -95,19 +96,20 @@ impl Source for ClaudeCodeSource {
     }
 }
 
+pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
+    check_ended: cc_session_ended,
+    activity_recency: Some(super::cc_activity_recency),
+    head_label: None,
+    derive_label: Some(cc_derive_label),
+    cwd_derive: None,
+};
+
 pub(crate) const NATIVE: Native = Native {
     root: Some(projects_root),
     focus_probe: Some(FocusProbe {
         paths: probe_paths,
         present: Path::is_dir,
         pid_for_session,
-    }),
-    watch: Some(TranscriptWatch {
-        session_ended: cc_session_ended,
-        activity_recency: Some(super::cc_activity_recency),
-        head_label: None,
-        derive_label: Some(cc_derive_label),
-        cwd_from_path: None,
     }),
 };
 

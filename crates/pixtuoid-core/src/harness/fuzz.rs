@@ -1,7 +1,6 @@
 //! What a fuzz target (`fuzz/fuzz_targets/`) drives past [`Drive`] alone, and
 //! the mutator they share. Their one contract: a refusal is fine, a panic is not.
 
-#[cfg(feature = "native")]
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
@@ -13,6 +12,8 @@ use super::{DEFAULT_NOW_EPOCH_SECS, DRIVEN_DESKS, Drive, Driven};
 use crate::remote::{self, Hello, PairLink, RemoteOffice, Reply};
 use crate::source::admit::{lines, whole};
 use crate::source::registry;
+#[cfg(feature = "native")]
+use crate::source::registry::NativeTranscript;
 use crate::state::MAX_FLOORS;
 
 /// A hook connection's bytes, framed as the listener frames them: a last line
@@ -33,33 +34,31 @@ pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     let source = std::str::from_utf8(parts.next()?).ok()?;
     let path = std::str::from_utf8(parts.next()?).ok()?;
     let body = parts.next()?;
+    let row = registry::transcript_for(source)?;
     let drive = Drive::transcript(source, path)?.seeded();
-    let cwd = registry::cwd_extractor_for(source);
-    let parent = registry::parent_extractor_for(source);
+    let _ = (row.path_filter)(Path::new(path));
     let parsed: Vec<Value> = lines(whole(body))
         .filter_map(Result::ok)
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect();
     for line in &parsed {
-        let _ = cwd(line);
-        let _ = parent.map(|extract| extract(line));
+        let _ = (row.cwd_extractor)(line);
+        let _ = row.parent_extractor.map(|extract| extract(line));
     }
     #[cfg(feature = "native")]
-    watched(source, Path::new(path), body, &parsed);
+    native_reads(row.native, source, Path::new(path), body, &parsed);
     Some(drive.body(body))
 }
 
-/// What only a watcher reads of a transcript.
 #[cfg(feature = "native")]
-fn watched(source: &str, path: &Path, body: &[u8], parsed: &[Value]) {
-    let watch = registry::transcript_watch_for(source);
-    let _ = (watch.session_ended)(body);
-    let _ = watch.activity_recency.map(|recency| recency(body));
-    let cwd = watch.cwd_from_path.and_then(|derive| derive(path));
-    let _ = watch.derive_label.map(|label| {
+fn native_reads(row: NativeTranscript, source: &str, path: &Path, body: &[u8], parsed: &[Value]) {
+    let _ = (row.check_ended)(body);
+    let _ = row.activity_recency.map(|recency| recency(body));
+    let cwd = row.cwd_derive.and_then(|derive| derive(path));
+    let _ = row.derive_label.map(|label| {
         label(path, source, cwd.as_deref().unwrap_or(Path::new("")));
     });
-    if let Some(label) = watch.head_label {
+    if let Some(label) = row.head_label {
         parsed.iter().for_each(|line| drop(label(line)));
     }
 }
@@ -242,8 +241,6 @@ impl Mutate<Value> for JsonMutator {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
 
     const LINE: &str = r#"{"type":"assistant","sessionId":"s","cwd":"/repo","message":{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"Write","input":{}}]}}"#;

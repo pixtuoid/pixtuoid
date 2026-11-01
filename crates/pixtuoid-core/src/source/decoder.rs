@@ -1249,21 +1249,15 @@ mod tests {
 
     #[test]
     fn transcript_deriver_empty_cwd_fallback_equals_registry_prefix() {
-        use crate::source::{claude_code, omp, registry};
-        // `line_decoder().is_some()` == transcript-bearing == has a LabelDeriver.
-        // A source with a CUSTOM deriver must be routed through it here, or the
-        // empty-cwd floor it actually ships goes unchecked.
-        for d in registry::REGISTRY
-            .iter()
-            .filter(|d| d.line_decoder().is_some())
-        {
-            let got = if d.name == claude_code::SOURCE_NAME {
-                claude_code::cc_derive_label(Path::new(""), d.name, Path::new(""))
-            } else if d.name == omp::SOURCE_NAME {
-                omp::omp_derive_label(Path::new(""), d.name, Path::new(""))
-            } else {
-                derive_prefixed_label(d.name, Path::new(""))
+        use crate::source::registry;
+        for d in registry::REGISTRY {
+            let Some(row) = registry::transcript_for(d.name) else {
+                continue;
             };
+            let got = row.native.derive_label.map_or_else(
+                || derive_prefixed_label(d.name, Path::new("")),
+                |derive| derive(Path::new(""), d.name, Path::new("")),
+            );
             assert_eq!(
                 got, d.label_prefix,
                 "{} deriver empty-cwd fallback must equal its registry prefix",

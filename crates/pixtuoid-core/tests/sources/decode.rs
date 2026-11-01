@@ -981,7 +981,8 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
     let hook_id = decode_single(hook_payload).agent_id();
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = JsonlWatcher::new(projects_root.clone(), "claude-code".to_string());
+    let watcher = JsonlWatcher::new(projects_root.clone(), "claude-code".to_string())
+        .expect("a transcript source");
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;

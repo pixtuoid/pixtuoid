@@ -47,6 +47,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             path_filter: accept_all_paths,
             cwd_extractor: extract_codex_cwd,
             parent_extractor: Some(extract_codex_parent),
+            #[cfg(feature = "native")]
+            native: native::TRANSCRIPT,
         }),
         hook: Some(HookDecoding::Shared {
             tool_id_key: ToolIdKey::ToolUse,

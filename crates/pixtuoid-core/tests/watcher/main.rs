@@ -37,7 +37,7 @@ fn vouch_snapshot(ids: &[&str]) -> Option<ProbeSnapshot> {
 
 fn cc_watcher(root: std::path::PathBuf) -> JsonlWatcher {
     fast_watch();
-    JsonlWatcher::new(root, "claude-code".to_string())
+    JsonlWatcher::new(root, "claude-code".to_string()).expect("a transcript source")
 }
 
 /// Write a complete transcript (each line + trailing newline) in one shot, so
@@ -106,7 +106,7 @@ fn cc_subagent_line(stem: &str, cwd: &str, tool_use_id: &str) -> serde_json::Val
 
 fn codex_watcher(root: std::path::PathBuf) -> JsonlWatcher {
     fast_watch();
-    JsonlWatcher::new(root, "codex".to_string())
+    JsonlWatcher::new(root, "codex".to_string()).expect("a transcript source")
 }
 
 fn codex_meta_line(uuid: &str, cwd: &str) -> serde_json::Value {

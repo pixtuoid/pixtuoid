@@ -26,6 +26,7 @@ const INITIAL_WINDOW: Duration = Duration::from_secs(60);
 
 fn codex_watcher(root: std::path::PathBuf) -> JsonlWatcher {
     JsonlWatcher::new(root, "codex".to_string())
+        .expect("a transcript source")
         .with_initial_window(INITIAL_WINDOW)
         .with_poll_interval(POLL)
 }

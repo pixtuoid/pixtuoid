@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 
 use super::{SOURCE_NAME, copilot_home};
 use crate::source::decoder::parsed_tail_lines;
 use crate::source::jsonl::JsonlWatcher;
-use crate::source::registry::{Native, TranscriptWatch};
+use crate::source::registry::{Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
 
 /// Copilot persists a real [`super::SESSION_SHUTDOWN`] event, so a transcript
@@ -41,21 +41,23 @@ impl Source for CopilotSource {
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
         JsonlWatcher::new(self.sessions_root.clone(), SOURCE_NAME.to_string())
+            .context("no transcript row")?
             .run(tx)
             .await
     }
 }
 
+pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
+    check_ended: copilot_session_ended,
+    activity_recency: None,
+    head_label: None,
+    derive_label: None,
+    cwd_derive: None,
+};
+
 pub(crate) const NATIVE: Native = Native {
     root: Some(sessions_root),
     focus_probe: None,
-    watch: Some(TranscriptWatch {
-        session_ended: copilot_session_ended,
-        activity_recency: None,
-        head_label: None,
-        derive_label: None,
-        cwd_from_path: None,
-    }),
 };
 
 fn sessions_root() -> Option<PathBuf> {

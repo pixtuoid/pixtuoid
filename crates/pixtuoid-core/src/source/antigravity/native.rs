@@ -3,11 +3,11 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 
 use super::{CLI_APP_DATA_DIR, SOURCE_NAME, gemini_dir};
 use crate::source::jsonl::JsonlWatcher;
-use crate::source::registry::{Native, TranscriptWatch};
+use crate::source::registry::{Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
 
 /// Source that watches Antigravity CLI conversation log directories.
@@ -32,7 +32,8 @@ impl Source for AntigravitySource {
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        let watcher = JsonlWatcher::new(self.brain_root.clone(), SOURCE_NAME.to_string());
+        let watcher = JsonlWatcher::new(self.brain_root.clone(), SOURCE_NAME.to_string())
+            .context("no transcript row")?;
         watcher.run(tx).await
     }
 }
@@ -41,16 +42,17 @@ fn ag_session_ended(_tail: &[u8]) -> bool {
     false
 }
 
+pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
+    check_ended: ag_session_ended,
+    activity_recency: None,
+    head_label: None,
+    derive_label: None,
+    cwd_derive: None,
+};
+
 pub(crate) const NATIVE: Native = Native {
     root: Some(brain_root),
     focus_probe: None,
-    watch: Some(TranscriptWatch {
-        session_ended: ag_session_ended,
-        activity_recency: None,
-        head_label: None,
-        derive_label: None,
-        cwd_from_path: None,
-    }),
 };
 
 fn brain_root() -> Option<PathBuf> {

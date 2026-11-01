@@ -23,7 +23,8 @@ pub(crate) async fn capture_live_scene(
     let mut watcher = pixtuoid_core::source::jsonl::JsonlWatcher::new(
         root.clone(),
         pixtuoid_core::source::claude_code::SOURCE_NAME.to_string(),
-    );
+    )
+    .expect("a transcript source");
     // The SAME liveness probe as the real source: without it an in-flight session
     // first-sights at EOF (no history replay), so session-cumulative state —
     // tokens_used above all — reads ZERO and `--live` renders no paper tower.

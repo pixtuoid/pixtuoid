@@ -62,7 +62,6 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     },
     #[cfg(feature = "native")]
     native: crate::source::registry::Native {
-        watch: None,
         root: Some(hermes_home),
         focus_probe: None,
     },

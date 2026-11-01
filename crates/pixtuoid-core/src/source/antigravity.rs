@@ -36,6 +36,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // `SessionStart` hook.
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
+            #[cfg(feature = "native")]
+            native: native::TRANSCRIPT,
         }),
         hook: Some(HookDecoding::ClaimsAll(decode_ag_hook_payload)),
         // Both false is VERIFIED: no end marker (`status` is per-step, always DONE)
