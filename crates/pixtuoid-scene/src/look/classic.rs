@@ -14,7 +14,7 @@ use crate::sprite::{Rgb, RgbBuffer};
 
 /// Layout units a side of the squares a frame is compared to the last in: a
 /// walker's step dirties a few, and a row of them compares as slices.
-const TILE: u16 = 4;
+pub(super) const SQUARE: u16 = 4;
 
 /// The scaled classic's state across frames.
 #[derive(Debug)]
@@ -52,7 +52,7 @@ impl Scaled {
         self.star = None;
         if text == WorldText::Baked {
             let pen = Pen::for_pack(scale, pack);
-            for run in runs(host) {
+            for run in runs(host, pen) {
                 if run.role == TextRole::Star {
                     self.star = Some(crate::display::compose::run_box(&run, pen));
                 }
@@ -92,38 +92,38 @@ fn blow_up(unit: &RgbBuffer, scale: RenderScale, out: &mut RgbBuffer) {
 }
 
 /// Where `now` differs from `was`, two frames `scale` buffer pixels a unit of
-/// one size: each row of [`TILE`]-unit squares' runs of changed ones, or the
-/// whole frame where most squares changed, which a run per square would cost a
-/// host more than.
-fn changed(was: &RgbBuffer, now: &RgbBuffer, scale: RenderScale) -> Dirty {
-    let side = TILE.saturating_mul(scale.get());
+/// one size: each row of [`SQUARE`]-unit squares' rects of changed ones, or
+/// the whole frame where most squares changed, which a rect a square would
+/// cost a host more than.
+pub(super) fn changed(was: &RgbBuffer, now: &RgbBuffer, scale: RenderScale) -> Dirty {
+    let side = SQUARE.saturating_mul(scale.get());
     let (w, h) = (now.width(), now.height());
-    let (mut runs, mut changed, mut squares) = (Vec::new(), 0usize, 0usize);
+    let (mut rects, mut dirty_squares, mut squares) = (Vec::new(), 0usize, 0usize);
     for top in (0..h).step_by(usize::from(side)) {
         let bottom = top.saturating_add(side).min(h);
-        let mut run: Option<Bounds> = None;
+        let mut rect: Option<Bounds> = None;
         for left in (0..w).step_by(usize::from(side)) {
             let right = left.saturating_add(side).min(w);
             squares += 1;
             if (top..bottom).any(|y| row(was, y, left..right) != row(now, y, left..right)) {
-                changed += 1;
+                dirty_squares += 1;
                 let square = Bounds {
                     x: left,
                     y: top,
                     width: right - left,
                     height: bottom - top,
                 };
-                run = Some(run.map_or(square, |r| r.union(square)));
-            } else if let Some(r) = run.take() {
-                runs.push(r);
+                rect = Some(rect.map_or(square, |r| r.union(square)));
+            } else if let Some(r) = rect.take() {
+                rects.push(r);
             }
         }
-        runs.extend(run);
+        rects.extend(rect);
     }
-    if changed * 2 > squares {
+    if dirty_squares * 2 > squares {
         Dirty::All
     } else {
-        Dirty::within(runs)
+        Dirty::within(rects)
     }
 }
 
@@ -133,11 +133,13 @@ fn row(buf: &RgbBuffer, y: u16, xs: std::ops::Range<u16>) -> &[Rgb] {
     &buf.as_slice()[at + usize::from(xs.start)..at + usize::from(xs.end)]
 }
 
-/// `host`'s runs in its paint order.
-fn runs(host: HostText<'_>) -> impl Iterator<Item = TextRun> + '_ {
+/// `host`'s runs in its paint order, of its signs those the pixel font sets
+/// on `pen`'s grid.
+fn runs(host: HostText<'_>, pen: Pen) -> impl Iterator<Item = TextRun> + '_ {
+    let signs = crate::display::compose::set_signs(host.signs, pen);
     host.badges
         .iter()
         .map(crate::display::Badge::run)
         .chain(host.bubbles.iter().cloned())
-        .chain(host.signs.iter().cloned())
+        .chain(signs.into_iter().map(|(run, _)| run.clone()))
 }

@@ -361,13 +361,10 @@ fn each_look_kind_has_its_own_id_and_every_look_has_a_kind() {
 /// The bundled pack, whose art a pixel painter's classic is drawn at the
 /// density of.
 fn bundled() -> (Arc<crate::pack::OfficeArt>, RenderScale) {
-    let pack = Arc::new(crate::pack::load_bundled_pack().expect("the bundled pack loads"));
-    let density = *pack
-        .inner()
-        .density_variants()
-        .first()
-        .expect("the bundled pack draws variants");
-    (pack, RenderScale::from(density))
+    let pack = Arc::new(crate::pack::test_office());
+    let scale = RenderScale::from(pack.max_density_variant());
+    assert!(scale != RenderScale::ONE, "the bundled pack draws variants");
+    (pack, scale)
 }
 
 fn scaled(scale: RenderScale, text: WorldText) -> Look {
@@ -514,34 +511,42 @@ fn baked_classic_text_is_the_cutaways_paint_of_its_runs() {
     );
 }
 
-/// A pointer finds the board's star the baked classic drew, where the
-/// half-blocks leave its placing to their host.
+/// The baked classic sets the board's star where the cutaway does at its
+/// scale, dropping it with the cutaway where a grid the pack's density does
+/// not divide would write it over the brand, and a pointer finds it there;
+/// the half-blocks leave its placing to their host.
 #[test]
-fn the_baked_classic_star_answers_a_pointer() {
-    let (pack, scale) = bundled();
+fn the_baked_classic_sets_the_star_the_cutaway_does() {
+    let (pack, density) = bundled();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let scene = office(t0);
-    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
-    let rendered = render(
-        &mut floor,
-        office.stores(),
-        scaled(scale, WorldText::Baked),
-        inputs(&scene, t0),
-    )
-    .expect("lays out");
-    let star = floor.raster.star().expect("the board draws its star");
-    assert!(matches!(
-        rendered.hits.at(star, None),
-        Some(crate::hit::SceneHit::Star)
-    ));
-    render(
-        &mut floor,
-        office.stores(),
-        Look::HALF_BLOCKS,
-        inputs(&scene, t0),
-    )
-    .expect("lays out");
-    assert_eq!(floor.raster.star(), None);
+    let star = |look: Look| {
+        let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+        let rendered =
+            render(&mut floor, office.stores(), look, inputs(&scene, t0)).expect("lays out");
+        let star = floor.raster.star();
+        if let Some(star) = star {
+            assert!(matches!(
+                rendered.hits.at(star, None),
+                Some(crate::hit::SceneHit::Star)
+            ));
+        }
+        star
+    };
+    let coarse = RenderScale::new(2).expect("nonzero");
+    for scale in [coarse, density] {
+        assert_eq!(
+            star(scaled(scale, WorldText::Baked)),
+            star(Look::Cutaway {
+                scale,
+                text: WorldText::Baked,
+            }),
+            "{scale:?}"
+        );
+    }
+    assert!(star(scaled(density, WorldText::Baked)).is_some());
+    assert_eq!(star(scaled(coarse, WorldText::Baked)), None);
+    assert_eq!(star(Look::HALF_BLOCKS), None);
 }
 
 /// A slide bakes every look's text but the half-blocks', which no glyph
@@ -599,7 +604,7 @@ fn a_dim_darkens_the_baked_classic_after_its_text() {
 }
 
 /// A frame most of whose squares changed is reported changed whole, not as
-/// a run a square.
+/// a rect a square.
 #[test]
 fn a_scaled_classic_changed_all_over_repaints_whole() {
     let (pack, scale) = bundled();
@@ -623,4 +628,24 @@ fn a_scaled_classic_changed_all_over_repaints_whole() {
         Dirty::All,
         "every pixel darker"
     );
+}
+
+/// A frame is changed whole only past half its squares changed.
+#[test]
+fn a_frame_is_changed_whole_past_half_its_squares() {
+    let side = usize::from(classic::SQUARE);
+    let (cols, rows) = (4, 2);
+    let size = |n: usize| u16::try_from(n * side).expect("fits");
+    let was = RgbBuffer::filled(size(cols), size(rows), crate::composite::BLACK);
+    let changed = |n: usize| {
+        let mut now = was.clone();
+        for i in 0..n {
+            let at = |square: usize| u16::try_from(square * side).expect("fits");
+            now.put(at(i % cols), at(i / cols), Rgb { r: 255, g: 0, b: 0 });
+        }
+        classic::changed(&was, &now, RenderScale::ONE)
+    };
+    let half = cols * rows / 2;
+    assert!(matches!(changed(half), Dirty::Rects(_)), "half");
+    assert_eq!(changed(half + 1), Dirty::All, "past half");
 }

@@ -403,6 +403,48 @@ mod tests {
         );
     }
 
+    /// `--pixel classic` draws the engine's baked classic at the fit's density.
+    #[test]
+    fn the_pixel_classic_is_the_baked_classic_at_the_fits_density() {
+        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let scene = sample_scene(epoch(), 12, 6);
+        let world = FloorInputs {
+            scene: &scene,
+            now: epoch(),
+            floor: FloorMeta::ground(),
+            pets: Default::default(),
+        };
+        let drawn = |look| {
+            let mut office = PixelOffice::of_draw_frame(&pack, (COLS, ROWS), look).unwrap();
+            office.render(world, &NORMAL, None).unwrap();
+            office
+        };
+        let (classic, cutaway) = (drawn(LookKind::Classic), drawn(LookKind::Cutaway));
+        let mut engine = FloorSession::new(Arc::clone(&pack));
+        engine.draw(
+            Look::Classic {
+                scale: pixtuoid_scene::render_scale::RenderScale::from(classic.fit.density()),
+                text: WorldText::Baked,
+            },
+            RenderInputs {
+                world,
+                theme: &NORMAL,
+                size: classic.fit.logical(),
+                place: Place {
+                    gateway: pixtuoid_scene::tally::office_gateway(&scene),
+                    floor: None,
+                },
+                debug_walkable: false,
+                dim: Dim::NONE,
+            },
+        );
+        let pixels = |office: &PixelOffice<FloorSession>| {
+            office.session.pixels().unwrap().as_slice().to_vec()
+        };
+        assert!(pixels(&classic) == engine.pixels().unwrap().as_slice());
+        assert!(pixels(&classic) != pixels(&cutaway));
+    }
+
     /// `frame_px` puts a point of the layout where `paint` puts its pixel.
     #[test]
     fn frame_px_lands_where_paint_puts_the_point() {

@@ -489,6 +489,20 @@ pub(crate) fn ground_shadow(
 /// The room's signs, `runs`, as the pixel font sets them.
 fn signs(office: Office<'_>, runs: &[TextRun]) -> Vec<(Span, PieceKind)> {
     let pen = Pen::for_pack(office.scale, office.pack);
+    set_signs(runs, pen)
+        .into_iter()
+        .map(|(run, rect)| {
+            (
+                topmost_span(rect, pen),
+                PieceKind::Text { run: run.clone() },
+            )
+        })
+        .collect()
+}
+
+/// The signs of `runs` the pixel font sets on `pen`'s grid, each where it
+/// lands there: every painter that bakes them sets these.
+pub(crate) fn set_signs(runs: &[TextRun], pen: Pen) -> Vec<(&TextRun, ArtRect)> {
     // On the base art's grid the pixel font is too wide for the sign.
     TextRun::set_first(
         runs,
@@ -496,12 +510,7 @@ fn signs(office: Office<'_>, runs: &[TextRun]) -> Vec<(Span, PieceKind)> {
         |&(y, r), &(line, rect)| y == line && meets(r, rect),
     )
     .into_iter()
-    .map(|(run, (_, rect))| {
-        (
-            topmost_span(rect, pen),
-            PieceKind::Text { run: run.clone() },
-        )
-    })
+    .map(|(run, (_, rect))| (run, rect))
     .collect()
 }
 

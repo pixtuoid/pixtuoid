@@ -137,7 +137,7 @@ impl Default for RenderScale {
     }
 }
 
-/// A cutaway on a surface of real pixels, whatever the painter: the office
+/// A pixel painter's fit on a surface of real pixels, in either look: the office
 /// renders at the pack's densest art and the image is that render upscaled a
 /// whole number of times to [`Self::scale`], so every art pixel lands as an
 /// equal square (integer scaling, as pixel-art engines draw:
@@ -146,7 +146,7 @@ impl Default for RenderScale {
 /// `the_cutaway_paints_whole_art_pixels`). The office takes the surface's
 /// shape; the sub-unit remainder is the painter's margin.
 ///
-/// The densest art, not whichever density the surface lands nearest: the one
+/// The cutaway's densest art, not whichever density the surface lands nearest: the one
 /// render draws every piece at one density, and a scale only a coarser density
 /// divides would draw the densest art from coarser stand-ins.
 #[doc(hidden)]

@@ -90,7 +90,7 @@ pub enum Dirty {
     All,
     /// Only inside these, in buffer pixels on whole layout cells.
     Rects(Rects),
-    /// Nowhere: the frame was not painted.
+    /// Nowhere: its pixels are the frame before's.
     Unchanged,
 }
 
