@@ -19,12 +19,28 @@ use crate::install::io::{lock_config, read_config};
 /// The least time between two writes of a changing count.
 const SAVE_EVERY: Duration = Duration::from_secs(60);
 
+/// How a reducer keeps the day's count.
+pub(crate) struct DayCount {
+    /// What dates the count, a test's own day keeping it off the runner's zone and clock.
+    pub(crate) day_of: fn(SystemTime) -> NaiveDate,
+    pub(crate) file: Option<TodayFile>,
+}
+
+impl DayCount {
+    pub(crate) fn local() -> Self {
+        Self {
+            day_of: local_day,
+            file: TodayFile::in_state_dir(),
+        }
+    }
+}
+
 /// The file behind the count.
 #[derive(Debug, Clone)]
 pub(crate) struct TodayFile(PathBuf);
 
 impl TodayFile {
-    pub(crate) fn in_state_dir() -> Option<Self> {
+    fn in_state_dir() -> Option<Self> {
         Some(Self(crate::config::state_dir()?.join("today.json")))
     }
 
@@ -88,9 +104,9 @@ pub(super) struct TodaySaver {
 }
 
 impl TodaySaver {
-    /// A saver over `file`, setting what it holds for `now`'s day on the boot `scene`.
-    pub(super) fn boot(file: TodayFile, scene: &mut SceneState, now: SystemTime) -> Self {
-        scene.today = file.load(local_day(now));
+    /// A saver over `file`, setting what it holds for `day` on the boot `scene`.
+    pub(super) fn boot(file: TodayFile, scene: &mut SceneState, day: NaiveDate) -> Self {
+        scene.today = file.load(day);
         Self {
             file,
             latest: scene.today,

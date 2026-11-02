@@ -31,7 +31,7 @@ use tokio::sync::mpsc;
 
 use super::gate;
 use super::pipeline::{HeadlessLog, SceneSink};
-use super::today::{TodayFile, TodaySaver};
+use super::today::{DayCount, TodaySaver};
 use super::{ConnectedSources, QuitArms, QuitSignal, RunConfig, resolve_boot_caps};
 
 /// Boot the TUI (unless headless) and drive the source pipeline until it exits;
@@ -194,9 +194,10 @@ pub(crate) async fn reducer_task(
     connected: ConnectedSources,
     mut presence_rx: tokio::sync::mpsc::UnboundedReceiver<PresenceMsg>,
     presence_exit_watch: Option<daemon::PresenceExitWatch>,
-    today_file: Option<TodayFile>,
+    today: DayCount,
 ) {
-    let mut reducer = Reducer::new().counting(pixtuoid_scene::tally::local_day);
+    let DayCount { day_of, file } = today;
+    let mut reducer = Reducer::new().counting(day_of);
     // Disabled once the presence channel closes (all senders dropped) so its
     // `recv() -> None` branch can't busy-loop the select.
     let mut presence_open = true;
@@ -208,7 +209,7 @@ pub(crate) async fn reducer_task(
         std::array::from_fn(|i| floor_caps[i].load(Ordering::Relaxed));
     let mut scene = SceneState::new(initial_caps);
     let mut today_saver =
-        today_file.map(|file| TodaySaver::boot(file, &mut scene, SystemTime::now()));
+        file.map(|file| TodaySaver::boot(file, &mut scene, day_of(SystemTime::now())));
     if !sink.publish(&scene) {
         return;
     }
@@ -367,6 +368,7 @@ fn write_log(lines: &mut mpsc::Receiver<String>, out: impl std::io::Write) -> st
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::today::TodayFile;
     use crate::runtime::{FALLBACK_DESKS, TRANSITION_LOG_CAPACITY};
     use pixtuoid_core::source::manager::SourceDeath;
     use tokio::sync::watch;
@@ -433,6 +435,10 @@ mod tests {
         reduce_saving(events, sink, None).await;
     }
 
+    fn the_day(_: SystemTime) -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 6, 1).expect("a date")
+    }
+
     /// [`reduce`], with the day's count in `file`.
     async fn reduce_saving(
         events: pixtuoid_core::TaggedReceiver,
@@ -447,7 +453,10 @@ mod tests {
             ConnectedSources::new(["claude-code".to_string()].into()),
             presence_rx,
             None,
-            file,
+            DayCount {
+                day_of: the_day,
+                file,
+            },
         )
         .await;
     }
@@ -460,7 +469,7 @@ mod tests {
 
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("today.json");
-        let saved = Today::new(pixtuoid_scene::tally::local_day(SystemTime::now()), 0, 5);
+        let saved = Today::new(the_day(SystemTime::UNIX_EPOCH), 0, 5);
         let json = serde_json::to_string(&saved).expect("it encodes");
         std::fs::write(&path, json).expect("it writes");
 

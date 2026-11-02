@@ -35,7 +35,7 @@ fn utc_day(now: SystemTime) -> NaiveDate {
         .date_naive()
 }
 
-/// The production wiring of the transcript source `name`, over `root`.
+/// Transcript source `name` over `root`, short of production's unclaims and omp's profiles.
 fn spawn_source(name: &str, root: PathBuf, tx: TaggedSender) -> JoinHandle<anyhow::Result<()>> {
     fast_watch();
     let source: Box<dyn DynSource> = match name {
@@ -155,10 +155,9 @@ async fn every_transcript_source_replays_uncounted_and_then_reaches_live() {
         .collect();
     let mut replayed_tokens = 0;
     for source in sources {
-        let recorded = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/sources")
-            .join(pixtuoid_core::harness::module_of(source))
-            .join("fixtures/tool-run-hermetic");
+        let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources");
+        let recorded =
+            pixtuoid_core::harness::fixtures_dir(&corpus, source).join("tool-run-hermetic");
         let transcript = transcript_in(source, &recorded)
             .unwrap_or_else(|found| panic!("{source}: one recorded transcript, found {found:?}"));
         let (head, tail) = split_at_the_last_counted_line(source, &transcript);

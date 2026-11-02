@@ -270,7 +270,7 @@ pub enum AgentEvent {
     Backlog {
         /// The agent whose events the reader is reading.
         agent_id: AgentId,
-        /// `true` while what follows is a replay, `false` from its last event on.
+        /// `true` ahead of a replay and `false` after it; a live read opens with `false` alone.
         replaying: bool,
     },
 }
