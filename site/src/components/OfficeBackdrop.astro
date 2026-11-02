@@ -402,7 +402,8 @@ const officeDriverUrl = asset('office-driver.js');
     // A ratio's float32 noise (110% reads 1.100000023841858) moves a whole size by far less; the box is then set to
     // the whole px itself, so no conversion of a fraction decides it.
     const WHOLE_CSS_EPS = 1 / 128;
-    // The fewest units from `units` whose box is a whole CSS px, with that size in CSS px.
+    // The fewest units from `units` whose box is a whole CSS px, with that size; none within the tries keeps `units`
+    // and its fractional size.
     function wholeCss(units, pxPerUnit, dpr) {
       for (let u = units; u < units + WHOLE_CSS_TRIES; u++) {
         const css = (u * pxPerUnit) / dpr;
