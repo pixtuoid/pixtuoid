@@ -45,13 +45,16 @@ pub(crate) fn classify(
     if meta.is_dir() {
         return Entry::Recurse;
     }
-    if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
-        return Entry::Skip;
+    if is_transcript(path, admits) {
+        Entry::Take
+    } else {
+        Entry::Skip
     }
-    if !admits(path) {
-        return Entry::Skip;
-    }
-    Entry::Take
+}
+
+/// Whether a file at `path` is a transcript of the source whose filter is `admits`.
+pub(crate) fn is_transcript(path: &Path, admits: &dyn Fn(&Path) -> bool) -> bool {
+    path.extension().and_then(|s| s.to_str()) == Some("jsonl") && admits(path)
 }
 
 /// `span`'s whole lines: everything through its last `\n`. What follows is a line

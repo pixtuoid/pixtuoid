@@ -10,7 +10,7 @@ use serde_json::{Number, Value};
 
 use super::{DEFAULT_NOW_EPOCH_SECS, DRIVEN_DESKS, Drive, Driven};
 use crate::remote::{self, Hello, PairLink, RemoteOffice, Reply};
-use crate::source::admit::{lines, whole};
+use crate::source::admit::{is_transcript, lines, whole};
 use crate::source::registry;
 #[cfg(feature = "native")]
 use crate::source::registry::Transcript;
@@ -35,7 +35,7 @@ pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     let path = std::str::from_utf8(parts.next()?).ok()?;
     let body = parts.next()?;
     let row = registry::transcript_for(source)?;
-    if !(row.path_filter)(Path::new(path)) {
+    if !is_transcript(Path::new(path), &row.path_filter) {
         return None;
     }
     let drive = Drive::transcript(source, path)?.seeded();
@@ -288,6 +288,8 @@ mod tests {
     fn a_path_the_watcher_would_not_read_drives_nothing() {
         assert!(transcript(b"grok\n/s/updates.jsonl\n{}\n").is_some());
         assert!(transcript(b"grok\n/s/chat_history.jsonl\n{}\n").is_none());
+        assert!(transcript(b"omp\n/s/session.jsonl\n{}\n").is_some());
+        assert!(transcript(b"omp\n/s/session.txt\n{}\n").is_none());
     }
 
     #[test]
