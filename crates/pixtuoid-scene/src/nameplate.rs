@@ -16,8 +16,6 @@ use pixtuoid_core::AgentSlot;
 /// char.
 pub(crate) const LABEL_SEP: char = '\u{b7}';
 
-const SUFFIXED_ID_MIN_CHARS: usize = 4;
-
 /// The labels a set of agents wear, counted, so each agent's
 /// [`label`](Self::label) tells it from its namesakes.
 #[derive(Debug)]
@@ -39,9 +37,7 @@ impl<'a> Namesakes<'a> {
     /// `agent`'s name, whole: its label, with its session's suffix when
     /// another counted agent wears that label.
     pub fn label<'b>(&self, agent: &'b AgentSlot) -> Cow<'b, str> {
-        let needs_disambig = self.0.get(&*agent.label).copied().unwrap_or(0) > 1
-            && agent.session_id.chars().count() >= SUFFIXED_ID_MIN_CHARS;
-        if needs_disambig {
+        if self.0.get(&*agent.label).copied().unwrap_or(0) > 1 {
             let id4 = disambig_suffix(&agent.session_id);
             Cow::Owned(format!("{}{LABEL_SEP}{id4}", agent.label))
         } else {
@@ -108,21 +104,19 @@ mod tests {
         assert_eq!(Namesakes::of([&lone]).label(&lone), "cc\u{b7}web");
     }
 
-    /// A namesake's session id earns a suffix from
-    /// [`SUFFIXED_ID_MIN_CHARS`](super::SUFFIXED_ID_MIN_CHARS) chars on.
+    /// The suffix hashes the whole id, so a one-char id tells a namesake apart
+    /// as well as a long one.
     #[test]
-    fn a_namesake_with_a_shorter_session_id_reads_bare() {
-        let min = super::SUFFIXED_ID_MIN_CHARS;
-        let (short, long) = ("\u{e9}".repeat(min - 1), "\u{e9}".repeat(min));
-        let a = agent("cc\u{b7}api", &short);
-        let b = agent("cc\u{b7}api", &long);
+    fn namesakes_with_one_char_session_ids_get_distinct_suffixes() {
+        let a = agent("cc\u{b7}api", "a");
+        let b = agent("cc\u{b7}api", "b");
         let all = [a.clone(), b.clone()];
         let namesakes = Namesakes::of(&all);
-        assert_eq!(namesakes.label(&a), "cc\u{b7}api");
         assert_eq!(
-            namesakes.label(&b),
-            format!("cc\u{b7}api\u{b7}{}", disambig_suffix(&long))
+            namesakes.label(&a),
+            format!("cc\u{b7}api\u{b7}{}", disambig_suffix("a"))
         );
+        assert_ne!(namesakes.label(&a), namesakes.label(&b));
     }
 
     #[test]
