@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ToolUse};
-use pixtuoid_scene::nameplate::Namesakes;
+use pixtuoid_scene::nameplate::{Nameplate, Namesakes};
 
 /// Roots with more than this many direct subagents render collapsed by default,
 /// so a large workflow doesn't flood the board.
@@ -39,7 +39,7 @@ pub struct DashboardRow {
     pub parent_id: Option<AgentId>,
     /// 0 = root, 1 = subagent.
     pub depth: u8,
-    pub label: Arc<str>,
+    pub name: Nameplate,
     pub source: Arc<str>,
     pub floor_idx: usize,
     pub state: RowState,
@@ -171,9 +171,13 @@ fn row_for(
         agent_id: slot.agent_id,
         parent_id,
         depth,
-        label: namesakes
-            .get(&slot.floor_idx)
-            .map_or_else(|| slot.label.text(), |n| Arc::from(&*n.label(slot))),
+        name: namesakes.get(&slot.floor_idx).map_or_else(
+            || Nameplate {
+                label: slot.label.text(),
+                suffix: None,
+            },
+            |n| n.nameplate(slot),
+        ),
         source: slot.source.clone(),
         floor_idx: slot.floor_idx,
         state: row_state(&slot.state),

@@ -1037,9 +1037,29 @@ impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Slide
 impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::SlidePicture<'a>
 pub fn pixtuoid_scene::look::render(&mut pixtuoid_scene::floor::PerFloor, pixtuoid_scene::floor::OfficeStores<'_>, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>) -> core::option::Option<pixtuoid_scene::look::Rendered>
 pub mod pixtuoid_scene::nameplate
+pub struct pixtuoid_scene::nameplate::Nameplate
+pub pixtuoid_scene::nameplate::Nameplate::label: alloc::rcs::arc::Arc<str>
+pub pixtuoid_scene::nameplate::Nameplate::suffix: core::option::Option<alloc::string::String>
+impl core::clone::Clone for pixtuoid_scene::nameplate::Nameplate
+pub fn pixtuoid_scene::nameplate::Nameplate::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::nameplate::Nameplate
+impl core::cmp::PartialEq for pixtuoid_scene::nameplate::Nameplate
+pub fn pixtuoid_scene::nameplate::Nameplate::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::nameplate::Nameplate
+pub fn pixtuoid_scene::nameplate::Nameplate::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for pixtuoid_scene::nameplate::Nameplate
+pub fn pixtuoid_scene::nameplate::Nameplate::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_scene::nameplate::Nameplate
+impl core::marker::Freeze for pixtuoid_scene::nameplate::Nameplate
+impl core::marker::Send for pixtuoid_scene::nameplate::Nameplate
+impl core::marker::Sync for pixtuoid_scene::nameplate::Nameplate
+impl core::marker::Unpin for pixtuoid_scene::nameplate::Nameplate
+impl core::marker::UnsafeUnpin for pixtuoid_scene::nameplate::Nameplate
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::nameplate::Nameplate
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::nameplate::Nameplate
 pub struct pixtuoid_scene::nameplate::Namesakes<'a>(_)
 impl<'a> pixtuoid_scene::nameplate::Namesakes<'a>
-pub fn pixtuoid_scene::nameplate::Namesakes<'a>::label<'b>(&self, &'b pixtuoid_core::state::AgentSlot) -> alloc::borrow::Cow<'b, str>
+pub fn pixtuoid_scene::nameplate::Namesakes<'a>::nameplate(&self, &pixtuoid_core::state::AgentSlot) -> pixtuoid_scene::nameplate::Nameplate
 pub fn pixtuoid_scene::nameplate::Namesakes<'a>::of(impl core::iter::traits::collect::IntoIterator<Item = &'a pixtuoid_core::state::AgentSlot>) -> Self
 impl<'a> core::fmt::Debug for pixtuoid_scene::nameplate::Namesakes<'a>
 pub fn pixtuoid_scene::nameplate::Namesakes<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

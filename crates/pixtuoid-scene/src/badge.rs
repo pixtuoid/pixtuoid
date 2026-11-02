@@ -7,7 +7,7 @@ use pixtuoid_core::AgentSlot;
 use pixtuoid_core::state::ActivityState;
 
 use crate::layout::DESK_W;
-use crate::nameplate::{LABEL_SEP, Namesakes};
+use crate::nameplate::{LABEL_SEP, Nameplate, Namesakes};
 use crate::theme::Theme;
 
 /// Activity-derived label tone — backend-agnostic.
@@ -78,11 +78,15 @@ pub fn badge_ink(text: &str, tone: BadgeTone, theme: &Theme) -> BadgeInk {
     }
 }
 
-/// `agent`'s badge text, with no marker: its [nameplate](Namesakes::label)
+/// `agent`'s badge text, with no marker: its [nameplate](Namesakes::nameplate)
 /// truncated to the cells the marker leaves.
 pub(crate) fn badge_text(namesakes: &Namesakes<'_>, agent: &AgentSlot) -> String {
     let marker = crate::display::text::cells(BADGE_MARKER.encode_utf8(&mut [0; 4]));
-    truncate_label(&namesakes.label(agent), BADGE_CELLS.saturating_sub(marker)).into_owned()
+    truncate_label(
+        &namesakes.nameplate(agent),
+        BADGE_CELLS.saturating_sub(marker),
+    )
+    .into_owned()
 }
 
 /// `agent`'s badge tone: exiting over whatever it last did.
@@ -104,24 +108,27 @@ pub(crate) fn badge_plate_colour(theme: &Theme) -> Rgb {
     theme.ui.tooltip_bg
 }
 
-/// Fit a label into `budget` terminal cells, and as many chars, without
-/// losing the `·xxxx` disambiguation suffix. Truncates from the
-/// base (left of the `·`), not the suffix — otherwise the disambig becomes
-/// useless ("TikTok-Android·a" tells us nothing the base alone wouldn't).
-pub fn truncate_label(label: &str, budget: u16) -> std::borrow::Cow<'_, str> {
+/// Fit a name into `budget` terminal cells, and as many chars, without
+/// losing its `·xxxx` disambiguation suffix. Truncates from the label, not
+/// the suffix — otherwise the disambig becomes useless ("TikTok-Android·a"
+/// tells us nothing the base alone wouldn't). A name with no suffix is cut
+/// from its end, its source prefix kept.
+pub fn truncate_label(name: &Nameplate, budget: u16) -> std::borrow::Cow<'_, str> {
     use std::borrow::Cow;
-    if span(label) <= budget {
-        return Cow::Borrowed(label);
+    let Some(suffix) = &name.suffix else {
+        return Cow::Borrowed(take_span(&name.label, budget));
+    };
+    let whole = name.to_string();
+    if span(&whole) <= budget {
+        return Cow::Owned(whole);
     }
-    if let Some(sep_byte) = label.rfind(LABEL_SEP) {
-        let suffix = &label[sep_byte..];
-        let suffix_span = span(suffix);
-        if suffix_span < budget {
-            let base = take_span(&label[..sep_byte], budget - suffix_span);
-            return Cow::Owned(format!("{base}{suffix}"));
-        }
+    let tail = format!("{LABEL_SEP}{suffix}");
+    let tail_span = span(&tail);
+    if tail_span < budget {
+        let base = take_span(&name.label, budget - tail_span);
+        return Cow::Owned(format!("{base}{tail}"));
     }
-    Cow::Borrowed(take_span(label, budget))
+    Cow::Owned(take_span(&whole, budget).to_owned())
 }
 
 /// What a label spends of a badge's budget: its cells, or its chars where a
@@ -147,7 +154,7 @@ fn take_span(text: &str, budget: u16) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{BadgeTone, badge_hue, badge_text, tone_of, truncate_label};
-    use crate::nameplate::{Namesakes, disambig_suffix};
+    use crate::nameplate::{Nameplate, Namesakes, disambig_suffix};
     use pixtuoid_core::AgentId;
     use pixtuoid_core::state::{
         ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
@@ -240,9 +247,12 @@ mod tests {
         let namesakes = Namesakes::of(s.agents.values());
         let anchor = crate::layout::Point { x: 0, y: 0 };
         let badge = crate::display::Badge::new(anchor, &a, &namesakes, &crate::theme::NORMAL);
-        let (shown, whole) = (badge.name.text(), namesakes.label(&a));
+        let (shown, whole) = (badge.name.text(), namesakes.nameplate(&a));
         let marker = crate::display::text::cells(super::BADGE_MARKER.encode_utf8(&mut [0; 4]));
-        assert!(shown.len() < whole.len(), "premise: {whole:?} is cut");
+        assert!(
+            shown.len() < whole.to_string().len(),
+            "premise: {whole} is cut"
+        );
         assert_eq!(shown, truncate_label(&whole, super::BADGE_CELLS - marker));
         assert!(
             shown.ends_with(&format!("\u{b7}{}", disambig_suffix(a.agent_id))),
@@ -314,18 +324,27 @@ mod tests {
             "a{}{ELLIPSIS}",
             "\u{301}".repeat(MAX_DECODED_FIELD_CHARS - 1)
         );
-        let shown = truncate_label(&capped, super::BADGE_CELLS);
+        let shown = fit(&capped, None, super::BADGE_CELLS);
         assert!(!shown.contains(ELLIPSIS), "{shown:?}");
+    }
+
+    /// [`truncate_label`] of the name `label` and `suffix` make.
+    fn fit(label: &str, suffix: Option<&str>, budget: u16) -> String {
+        let name = Nameplate {
+            label: label.into(),
+            suffix: suffix.map(str::to_owned),
+        };
+        truncate_label(&name, budget).into_owned()
     }
 
     #[test]
     fn truncate_label_passes_short_labels_through() {
-        assert_eq!(truncate_label("hello", 16), "hello");
+        assert_eq!(fit("hello", None, 16), "hello");
     }
 
     #[test]
     fn truncate_label_preserves_disambig_suffix() {
-        let out = truncate_label("TikTok-Android\u{00b7}a09a", 16);
+        let out = fit("TikTok-Android", Some("a09a"), 16);
         assert_eq!(out.chars().count(), 16);
         assert!(out.ends_with("\u{00b7}a09a"), "suffix lost: {out}");
         assert!(out.starts_with("TikTok"), "base over-truncated: {out}");
@@ -333,15 +352,28 @@ mod tests {
 
     #[test]
     fn truncate_label_falls_back_to_plain_truncate_when_no_separator() {
-        let out = truncate_label("a-very-long-project-name", 8);
+        let out = fit("a-very-long-project-name", None, 8);
         assert_eq!(out, "a-very-l");
     }
 
     #[test]
     fn truncate_label_plain_take_when_suffix_exceeds_budget() {
-        let out = truncate_label("x\u{00b7}abcdefgh", 4);
+        let out = fit("x", Some("abcdefgh"), 4);
         assert_eq!(out.chars().count(), 4);
         assert_eq!(out, "x\u{00b7}ab");
+    }
+
+    /// A lone agent's label one char past its badge keeps its source prefix:
+    /// only a namesake's suffix is kept by cutting the label's base.
+    #[test]
+    fn a_lone_label_just_past_its_badge_keeps_its_source_prefix() {
+        let marker = crate::display::text::cells(super::BADGE_MARKER.encode_utf8(&mut [0; 4]));
+        let budget = usize::from(super::BADGE_CELLS - marker);
+        let label = format!("cc\u{b7}{}", "r".repeat(budget - 2));
+        let a = slot(&label, "sess-abcd", 0, running());
+        let s = scene_of(vec![a.clone()]);
+        let shown = badge_text(&Namesakes::of(s.agents.values()), &a);
+        assert_eq!(shown, label.chars().take(budget).collect::<String>());
     }
 
     /// A long name's badge, marker and all, fills [`BADGE_CELLS`] and no
@@ -372,9 +404,9 @@ mod tests {
     /// gets half the characters, the suffix kept as for any other.
     #[test]
     fn truncate_label_budgets_cells_not_chars() {
-        assert_eq!(truncate_label("日本語プロジェクト", 8), "日本語プ");
+        assert_eq!(fit("日本語プロジェクト", None, 8), "日本語プ");
         assert_eq!(
-            truncate_label("日本語プロジェクト\u{00b7}a09a", 12),
+            fit("日本語プロジェクト", Some("a09a"), 12),
             "日本語\u{00b7}a09a"
         );
     }

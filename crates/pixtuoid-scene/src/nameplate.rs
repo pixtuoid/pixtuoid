@@ -2,8 +2,9 @@
 //! another agent wears the same label (`cc·api·3f2a`). A badge shows it cut to
 //! its cells; a device listing agents beside the office, whole.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt;
+use std::sync::Arc;
 
 use pixtuoid_core::id::splitmix64;
 use pixtuoid_core::{AgentId, AgentSlot};
@@ -17,8 +18,28 @@ use pixtuoid_core::{AgentId, AgentSlot};
 /// char.
 pub(crate) const LABEL_SEP: char = '\u{b7}';
 
+/// An agent's name in its two parts, so a cut can tell a suffix from the
+/// label's own `·`. Displays as the whole name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Nameplate {
+    /// The agent's label.
+    pub label: Arc<str>,
+    /// Its [suffix](disambig_suffix), where a namesake shares the label.
+    pub suffix: Option<String>,
+}
+
+impl fmt::Display for Nameplate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.label)?;
+        match &self.suffix {
+            Some(suffix) => write!(f, "{LABEL_SEP}{suffix}"),
+            None => Ok(()),
+        }
+    }
+}
+
 /// The labels a set of agents wear, counted, so each agent's
-/// [`label`](Self::label) tells it from its namesakes.
+/// [`nameplate`](Self::nameplate) tells it from its namesakes.
 #[derive(Debug)]
 pub struct Namesakes<'a>(HashMap<&'a str, usize>);
 
@@ -35,14 +56,13 @@ impl<'a> Namesakes<'a> {
         Self(counts)
     }
 
-    /// `agent`'s name, whole: its label, with its [suffix](disambig_suffix)
-    /// when another counted agent wears that label.
-    pub fn label<'b>(&self, agent: &'b AgentSlot) -> Cow<'b, str> {
-        if self.0.get(&*agent.label).copied().unwrap_or(0) > 1 {
-            let id4 = disambig_suffix(agent.agent_id);
-            Cow::Owned(format!("{}{LABEL_SEP}{id4}", agent.label))
-        } else {
-            Cow::Borrowed(&agent.label)
+    /// `agent`'s name, whole: its label, with its suffix when another counted
+    /// agent wears that label.
+    pub fn nameplate(&self, agent: &AgentSlot) -> Nameplate {
+        let shared = self.0.get(&*agent.label).copied().unwrap_or(0) > 1;
+        Nameplate {
+            label: agent.label.text(),
+            suffix: shared.then(|| disambig_suffix(agent.agent_id)),
         }
     }
 }
@@ -84,8 +104,8 @@ mod tests {
         let namesakes = Namesakes::of(&all);
         let want_a = format!("{label}\u{b7}{}", disambig_suffix(a.agent_id));
         let want_b = format!("{label}\u{b7}{}", disambig_suffix(b.agent_id));
-        assert_eq!(namesakes.label(&a), want_a);
-        assert_eq!(namesakes.label(&b), want_b);
+        assert_eq!(namesakes.nameplate(&a).to_string(), want_a);
+        assert_eq!(namesakes.nameplate(&b).to_string(), want_b);
         assert_ne!(want_a, want_b);
     }
 
@@ -97,8 +117,12 @@ mod tests {
             agent("cc\u{b7}api", "b"),
             lone.clone(),
         ];
-        assert_eq!(Namesakes::of(&all).label(&lone), "cc\u{b7}web");
-        assert_eq!(Namesakes::of([&lone]).label(&lone), "cc\u{b7}web");
+        let bare = super::Nameplate {
+            label: "cc\u{b7}web".into(),
+            suffix: None,
+        };
+        assert_eq!(Namesakes::of(&all).nameplate(&lone), bare);
+        assert_eq!(Namesakes::of([&lone]).nameplate(&lone), bare);
     }
 
     /// A suffix reads the same on every build and platform that shows its
@@ -140,10 +164,10 @@ mod tests {
             Namesakes::of(device.scene().agents.values()),
         );
         for agent in host.agents.values() {
-            let named = on_host.label(agent);
-            assert!(named.starts_with("cc\u{b7}api\u{b7}"), "premise: {named:?}");
+            let named = on_host.nameplate(agent);
+            assert!(named.suffix.is_some(), "premise: {named:?}");
             assert_eq!(
-                on_device.label(&device.scene().agents[&agent.agent_id]),
+                on_device.nameplate(&device.scene().agents[&agent.agent_id]),
                 named
             );
         }

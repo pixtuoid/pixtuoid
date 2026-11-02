@@ -67,7 +67,7 @@ fn rows_are_tree_ordered_roots_by_desk_index_children_following_parent() {
 
     let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
 
-    let labels: Vec<&str> = rows.iter().map(|r| r.label.as_ref()).collect();
+    let labels: Vec<String> = rows.iter().map(|r| r.name.to_string()).collect();
     assert_eq!(labels, ["cc·a", "explorer", "cc·b"]);
 
     let depths: Vec<u8> = rows.iter().map(|r| r.depth).collect();
@@ -339,16 +339,16 @@ fn namesake_rows_read_their_floors_nameplates() {
     let row = |agent| {
         rows.iter()
             .find(|r| r.agent_id == agent)
-            .map(|r| r.label.to_string())
+            .map(|r| r.name.clone())
             .expect("a row per agent")
     };
     for (agent, floor) in [(a, 0), (b, 0), (up, 1)] {
         let projection = pixtuoid_scene::floor::project_floor_scene(&scene, floor);
         let namesakes = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values());
-        assert_eq!(row(agent), namesakes.label(&scene.agents[&agent]));
+        assert_eq!(row(agent), namesakes.nameplate(&scene.agents[&agent]));
     }
     assert_ne!(row(a), row(b));
-    assert_eq!(row(up), "cc·api");
+    assert_eq!(row(up).to_string(), "cc·api");
 }
 
 #[test]

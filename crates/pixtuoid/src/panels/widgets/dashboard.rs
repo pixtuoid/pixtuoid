@@ -96,10 +96,10 @@ fn dashboard_line(
     // A row the marquee doesn't scroll is cut from its label's base, as a
     // badge is, so a namesake keeps the suffix that tells it apart.
     let label = if is_selected {
-        std::borrow::Cow::Borrowed(&*row.label)
+        std::borrow::Cow::Owned(row.name.to_string())
     } else {
         let room = LABEL_W.saturating_sub(prefix.chars().count() + count.chars().count());
-        truncate_label(&row.label, u16::try_from(room).unwrap_or(u16::MAX))
+        truncate_label(&row.name, u16::try_from(room).unwrap_or(u16::MAX))
     };
     let name = format!("{prefix}{label}{count}");
     let label_cell = format!(
@@ -149,6 +149,7 @@ fn dashboard_line(
 mod tests {
     use super::*;
     use pixtuoid_core::AgentId;
+    use pixtuoid_scene::nameplate::Nameplate;
     use pixtuoid_scene::theme::NORMAL;
     use std::sync::Arc;
 
@@ -157,7 +158,10 @@ mod tests {
             agent_id: AgentId::from_transcript_path("/x.jsonl"),
             parent_id: None,
             depth: 0,
-            label: label.into(),
+            name: Nameplate {
+                label: label.into(),
+                suffix: None,
+            },
             source: Arc::from(source),
             floor_idx: 0,
             state,
@@ -166,13 +170,29 @@ mod tests {
         }
     }
 
+    /// A lone label one char past the column keeps its source prefix: only a
+    /// namesake's suffix is kept by cutting the label's base.
+    #[test]
+    fn a_lone_label_just_past_the_column_keeps_its_source_prefix() {
+        let label = format!("cc\u{b7}{}", "r".repeat(28));
+        let row = make_row("cc", RowState::Idle, &label);
+        let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
+        let cell = line.spans[2].content.to_string();
+        let room = LABEL_W - 2;
+        assert_eq!(
+            cell.trim_start(),
+            label.chars().take(room).collect::<String>()
+        );
+    }
+
     /// Two namesakes too long for the column keep their suffixes, cut from
     /// the label's base as a badge is, so their rows stay apart.
     #[test]
     fn long_namesake_rows_keep_their_suffixes() {
         let base = "cc\u{b7}a-very-long-project-name-xyz";
         for suffix in ["75eb", "a39c"] {
-            let row = make_row("cc", RowState::Idle, &format!("{base}\u{b7}{suffix}"));
+            let mut row = make_row("cc", RowState::Idle, base);
+            row.name.suffix = Some(suffix.to_owned());
             let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
             let cell = line.spans[2].content.to_string();
             assert_eq!(cell.chars().count(), LABEL_W, "{cell:?}");

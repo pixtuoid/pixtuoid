@@ -2046,17 +2046,19 @@ fn every_floors_badges_read_its_projections_nameplates() {
         let projection = project_floor_scene(&scene, floor);
         let namesakes = crate::nameplate::Namesakes::of(projection.agents.values());
         for badge in text.badges {
-            let whole = namesakes.label(&projection.agents[&badge.agent]);
-            assert_eq!(badge.name.text(), whole, "floor {floor}");
+            let whole = namesakes.nameplate(&projection.agents[&badge.agent]);
+            assert_eq!(badge.name.text(), whole.to_string(), "floor {floor}");
             badged += 1;
         }
     }
     assert_eq!(badged, labels.len(), "premise: every agent wears a badge");
     let upstairs = AgentId::from_transcript_path("/p/3.jsonl");
     let whole_office = crate::nameplate::Namesakes::of(scene.agents.values());
-    assert_ne!(
-        whole_office.label(&scene.agents[&upstairs]),
-        "cc\u{b7}api",
+    assert!(
+        whole_office
+            .nameplate(&scene.agents[&upstairs])
+            .suffix
+            .is_some(),
         "premise: the whole office would suffix the namesake upstairs"
     );
 }
