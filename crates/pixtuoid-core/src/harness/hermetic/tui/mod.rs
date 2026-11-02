@@ -2,7 +2,7 @@
 //!
 //! Some wire exists only in a CLI's TUI: Claude Code's headless mode refuses a
 //! tool without firing `PermissionRequest`. The `tui_drive` example runs the CLI under a pty,
-//! hands [`Driver::observe`] what its [`SceneLog`] appends, and asks
+//! hands [`Driver::observe`] the lines its [`SceneLog`] reads, and asks
 //! [`Driver::step`] what to do with the screen it now shows; everything
 //! that differs between CLIs is its [`Tui`] row, never code here. A new CLI's
 //! edge case is that row plus a test over a screen its run recorded
