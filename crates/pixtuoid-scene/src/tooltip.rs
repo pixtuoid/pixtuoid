@@ -240,7 +240,7 @@ pub fn for_hit(hit: SceneHit<'_>, world: &FloorInputs<'_>) -> Option<Tooltip> {
     }
 }
 
-/// An agent's card: its badge, label and session id, then its state and
+/// An agent's card: its badge, label and suffix, then its state and
 /// tool, what it works on, under whom, where, on which model, and its
 /// session's stats. An exiting agent shows none of the live affordances: the
 /// walking-out slot keeps its Running/RequiresAction payload, so the exiting-first
@@ -310,7 +310,7 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
                 TipSpan::new(format!(" {}", agent.label), TipTone::Title),
             ],
             right: TipSpan::new(
-                format!("{LABEL_SEP}{}", disambig_suffix(&agent.session_id)),
+                format!("{LABEL_SEP}{}", disambig_suffix(agent.agent_id)),
                 TipTone::Dim,
             ),
         },

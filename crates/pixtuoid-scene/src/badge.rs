@@ -105,7 +105,7 @@ pub(crate) fn badge_plate_colour(theme: &Theme) -> Rgb {
 }
 
 /// Fit a label into `budget` terminal cells, and as many chars, without
-/// losing the `·xxxx` session-id disambiguation suffix. Truncates from the
+/// losing the `·xxxx` disambiguation suffix. Truncates from the
 /// base (left of the `·`), not the suffix — otherwise the disambig becomes
 /// useless ("TikTok-Android·a" tells us nothing the base alone wouldn't).
 pub(crate) fn truncate_label(label: &str, budget: u16) -> std::borrow::Cow<'_, str> {
@@ -245,7 +245,7 @@ mod tests {
         assert!(shown.len() < whole.len(), "premise: {whole:?} is cut");
         assert_eq!(shown, truncate_label(&whole, super::BADGE_CELLS - marker));
         assert!(
-            shown.ends_with(&format!("\u{b7}{}", disambig_suffix(&a.session_id))),
+            shown.ends_with(&format!("\u{b7}{}", disambig_suffix(a.agent_id))),
             "{shown:?}"
         );
     }
@@ -260,7 +260,7 @@ mod tests {
             let a = slot(&label, "session-aaaa", 0, running());
             let b = slot(&label, "session-bbbb", 1, running());
             let s = scene_of(vec![a.clone(), b]);
-            let want = format!("{label}\u{00b7}{}", disambig_suffix(&a.session_id));
+            let want = format!("{label}\u{00b7}{}", disambig_suffix(a.agent_id));
             assert_eq!(
                 badge_text(&Namesakes::of(s.agents.values()), &a),
                 want,

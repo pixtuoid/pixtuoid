@@ -332,8 +332,7 @@ fn namesake_rows_read_their_floors_nameplates() {
     let (a, b, up) = (id("/p/a.jsonl"), id("/p/b.jsonl"), id("/p/up.jsonl"));
     let mut scene = SceneState::uniform(2);
     for (agent, desk, floor) in [(a, 0, 0), (b, 1, 0), (up, 2, 1)] {
-        let mut slot = mk_slot(agent, "cc·api", desk, floor, None, ActivityState::Idle);
-        slot.session_id = Arc::from(format!("session-{desk}").as_str());
+        let slot = mk_slot(agent, "cc·api", desk, floor, None, ActivityState::Idle);
         scene.agents.insert(agent, slot);
     }
     let rows = build_dashboard_rows(&scene, &DashboardFolds::default());

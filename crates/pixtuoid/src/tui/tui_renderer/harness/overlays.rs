@@ -568,8 +568,7 @@ fn hovered_agent_tooltip_shows_source_badge() {
     r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(text.contains("[cc]"), "source badge on the tooltip: {text}");
-    // The fixtures' session_id is "s"; `disambig_suffix` is deterministic.
-    let id4 = pixtuoid_scene::nameplate::disambig_suffix("s");
+    let id4 = pixtuoid_scene::nameplate::disambig_suffix(id);
     assert!(
         text.contains(&format!("\u{b7}{id4}")),
         "id4 disambiguation suffix ·{id4}: {text}"

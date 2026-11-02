@@ -2013,7 +2013,6 @@ fn every_floors_badges_read_its_projections_nameplates() {
         let id = AgentId::from_transcript_path(&format!("/p/{i}.jsonl"));
         let agent = scene.agents.get_mut(&id).expect("make_scene's agent");
         agent.label = label.into();
-        agent.session_id = Arc::from(format!("session-{i}").as_str());
     }
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
