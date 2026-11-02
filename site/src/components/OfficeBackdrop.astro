@@ -394,42 +394,54 @@ const officeDriverUrl = asset('office-driver.js');
     let pauseOffset = 0;
     let pausedAt = 0;
 
-    // The office the engine fits to the backdrop's device pixels, and the canvas box that shows its frame at that
-    // whole upscale from the backdrop's corner, its crop at the far edges. CSS pixels times the ratio, the one
-    // measure every engine has: Safari has no device-pixel content box (MDN browser-compat-data,
-    // api/ResizeObserverEntry.json).
     let fitSeq = 0;
     // Chromium lays a box out in 64ths of a CSS px (`LayoutUnit`, blink's layout_unit.h:473), so a box finer than
     // that rasterizes a device pixel short and shifts every frame pixel past it: the office grows to a whole CSS
-    // pixel, within as many units as a common ratio's denominator.
+    // pixel, within as many units as the ratio's numerator (21 at 2.625).
     const WHOLE_CSS_TRIES = 32;
+    // Float error in `u * pxPerUnit / dpr`, far under one LayoutUnit.
+    const WHOLE_CSS_EPS = 1e-6;
     function wholeCss(units, pxPerUnit, dpr) {
       for (let u = units; u < units + WHOLE_CSS_TRIES; u++) {
         const css = (u * pxPerUnit) / dpr;
-        if (Math.abs(css - Math.round(css)) < 1e-6) return u;
+        if (Math.abs(css - Math.round(css)) < WHOLE_CSS_EPS) return u;
       }
       return units;
     }
+    // The office the engine fits to the backdrop's device pixels, and the canvas box that shows its frame at that
+    // whole upscale from the backdrop's corner, its crop at the far edges.
     function refit() {
       const r = wrap.getBoundingClientRect();
-      const devW = Math.round(r.width * devicePixelRatio);
-      const devH = Math.round(r.height * devicePixelRatio);
+      // The ratio the fit was asked at: a reply that lands after the ratio moves sizes the box it was fitted for.
+      const dpr = devicePixelRatio;
+      // CSS pixels times the ratio, the one measure every engine has: Safari has no device-pixel content box (MDN
+      // browser-compat-data, api/ResizeObserverEntry.json).
+      const devW = Math.round(r.width * dpr);
+      const devH = Math.round(r.height * dpr);
       if (!hero || devW < 1 || devH < 1) return;
       const seq = ++fitSeq;
-      hero.call('fit', devW, devH).then(function (fit) {
-        if (seq !== fitSeq) return;
-        const dpr = devicePixelRatio;
-        unitsW = wholeCss(fit[0], fit[2], dpr);
-        unitsH = wholeCss(fit[1], fit[2], dpr);
-        canvas.style.left = '0';
-        canvas.style.top = '0';
-        canvas.style.width = (unitsW * fit[2]) / dpr + 'px';
-        canvas.style.height = (unitsH * fit[2]) / dpr + 'px';
-        canvas.dataset.units = unitsW + 'x' + unitsH;
-        canvas.dataset.upscale = String(fit[3]);
-        // While paused no loop draws the new units, so re-render the ONE frozen frame at its frozen time.
-        if (paused && live) paint(pausedAt - pauseOffset);
-      });
+      hero.call('fit', devW, devH).then(
+        function (fit) {
+          if (seq !== fitSeq) return;
+          unitsW = wholeCss(fit[0], fit[2], dpr);
+          unitsH = wholeCss(fit[1], fit[2], dpr);
+          canvas.style.left = '0';
+          canvas.style.top = '0';
+          canvas.style.width = (unitsW * fit[2]) / dpr + 'px';
+          canvas.style.height = (unitsH * fit[2]) / dpr + 'px';
+          canvas.dataset.units = unitsW + 'x' + unitsH;
+          canvas.dataset.upscale = String(fit[3]);
+          // While paused no loop draws the new units, so re-render the ONE frozen frame at its frozen time.
+          if (paused && live) paint(pausedAt - pauseOffset);
+        },
+        function () {
+          // A host that died before the first fit leaves no frame to keep up, as a failed boot does.
+          if (unitsW < 1) {
+            uncover();
+            markEngineResolved();
+          }
+        }
+      );
     }
 
     const overlayEl = document.getElementById('office-overlay');

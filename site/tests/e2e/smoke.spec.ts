@@ -331,9 +331,94 @@ async function expectWholeDevicePixels(page: Page) {
   expect(b.top).toBeLessThanOrEqual(grain(b));
   expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain(b));
   expect(b.top + b.height).toBeGreaterThanOrEqual(b.viewH - grain(b));
+  // The fit crops under one unit and a whole CSS px adds under the ratio's numerator, `dpr` at a whole ratio.
+  const unit = b.width / b.uw;
+  expect(b.width - b.viewW).toBeLessThan(unit * b.dpr);
+  expect(b.height - b.viewH).toBeLessThan(unit * b.dpr);
 }
 
-// One rule at every ratio (#2029): the nearest whole upscale, at least 2x while the cast seats.
+/** The office host's replies to `fit` calls, passed through, failed, or held until the test releases them. */
+async function interceptFits(page: Page) {
+  // Plain JS: it patches `Worker` before office-driver.js constructs the host.
+  await page.addInitScript({
+    content: `(() => {
+      const fits = (window.__fits = { mode: 'pass', held: [] });
+      const Real = window.Worker;
+      window.Worker = class extends Real {
+        fitSeqs = new Set();
+        postMessage(msg, transfer) {
+          if (msg && msg.op === 'call' && msg.method === 'fit') this.fitSeqs.add(msg.seq);
+          super.postMessage(msg, transfer || []);
+        }
+        set onmessage(handler) {
+          super.onmessage = (e) => {
+            if (!this.fitSeqs.has(e.data.seq)) return handler(e);
+            if (fits.mode === 'fail') return handler({ data: { seq: e.data.seq, error: 'injected' } });
+            if (fits.mode === 'hold') return void fits.held.push(() => handler(e));
+            handler(e);
+          };
+        }
+        get onmessage() {
+          return super.onmessage;
+        }
+      };
+    })();`,
+  });
+}
+
+test('a host that fails the first fit leaves the poster up, as a failed boot does', async ({
+  page,
+}) => {
+  await interceptFits(page);
+  await page.addInitScript(() => {
+    (window as unknown as { __fits: { mode: string } }).__fits.mode = 'fail';
+    sessionStorage.setItem('pix-booted', '1');
+  });
+  await page.goto('./');
+  await expect(page.locator('#office-live')).toHaveCSS('opacity', '0', { timeout: 3_000 });
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __pixEngineReady?: boolean }).__pixEngineReady
+    )
+  ).toBe(true);
+});
+
+test('a fit asked at one ratio and answered after the ratio moved still covers the backdrop', async ({
+  page,
+}) => {
+  await interceptFits(page);
+  await gotoLive(page);
+  const cdp = await page.context().newCDPSession(page);
+  const { width, height } = page.viewportSize()!;
+  type Fits = { __fits: { mode: string; held: (() => void)[] } };
+  // Ask a fit at ratio 1 and hold its reply; land it once the ratio is 2, before any refit at 2 is asked (an emulated
+  // ratio fires no `change`, so none is).
+  await page.evaluate(() => {
+    (window as unknown as Fits).__fits.mode = 'hold';
+    window.dispatchEvent(new Event('resize'));
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as Fits).__fits.held.length))
+    .toBe(1);
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width,
+    height,
+    deviceScaleFactor: 2,
+    mobile: false,
+  });
+  await page.evaluate(() => {
+    (window as unknown as Fits).__fits.held.splice(0).forEach((reply) => reply());
+    return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+  const box = await page.evaluate(() => {
+    const r = document.getElementById('office-live')!.getBoundingClientRect();
+    return { right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight };
+  });
+  expect(box.right).toBeGreaterThanOrEqual(box.w);
+  expect(box.bottom).toBeGreaterThanOrEqual(box.h);
+});
+
+// One rule at every ratio (#2029): the nearest whole upscale, at least 2x where the office still lays out.
 for (const [width, height, deviceScaleFactor] of [
   [1440, 900, 1],
   [1366, 768, 1],
