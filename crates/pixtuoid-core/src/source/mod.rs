@@ -249,13 +249,29 @@ pub enum AgentEvent {
     /// A FRESH-token spend observation from a source's wire — cache READS are
     /// re-served context, not new spend, and are excluded. Each event is that
     /// reading's DELTA; the reducer accumulates onto an EXISTING slot only
-    /// (unknown id = no-op — usage never registers a session). JSONL-only (no
-    /// hook carries usage), so it never enters hook-wins dedup.
+    /// (unknown id = no-op — usage never registers a session). It names no call,
+    /// so it never enters hook-wins dedup.
     Usage {
         /// The agent whose token spend this reading records.
         agent_id: AgentId,
         /// Fresh tokens this reading: new input + cache writes + output.
         fresh_tokens: u64,
+        /// The id a wire gives a reading it can repeat: an id counts once per
+        /// agent. `None` counts every time, since an id is the only thing that
+        /// tells a repeat from an equal new reading.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reading_id: Option<String>,
+    },
+    /// Whether a transcript reader is replaying what `agent_id`'s transcript
+    /// already held. An event carries no time, and not every CLI stamps its
+    /// lines, so no clock can tell a replay from live work: a JSONL event counts
+    /// toward [`Today`](crate::state::Today) only once this has said `false`.
+    /// Never registers a session.
+    Backlog {
+        /// The agent whose events the reader is reading.
+        agent_id: AgentId,
+        /// `true` ahead of a replay and `false` after it; a live read opens with `false` alone.
+        replaying: bool,
     },
 }
 
@@ -389,14 +405,16 @@ impl AgentEvent {
             AgentEvent::Identity { agent_id, .. } => *agent_id,
             AgentEvent::ModelInfo { agent_id, .. } => *agent_id,
             AgentEvent::Usage { agent_id, .. } => *agent_id,
+            AgentEvent::Backlog { agent_id, .. } => *agent_id,
         }
     }
 
     /// Whether this event shows its session working now: the creation
     /// polarity's evidence for a slot no start announced. A session start
     /// carries its own authority, and a session end, a model, usage or title
-    /// line shows nothing, nor does [`ProofOfLife`](Self::ProofOfLife), which
-    /// vouches a visible slot past the sweeps and must never create one.
+    /// line shows nothing, nor does [`Backlog`](Self::Backlog), the reader's own
+    /// word, or [`ProofOfLife`](Self::ProofOfLife), which vouches a visible slot
+    /// past the sweeps and must never create one.
     pub(crate) fn shows_activity(&self) -> bool {
         match self {
             AgentEvent::ToolUseStart { .. }
@@ -412,7 +430,8 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
-            | AgentEvent::Usage { .. } => false,
+            | AgentEvent::Usage { .. }
+            | AgentEvent::Backlog { .. } => false,
         }
     }
 
@@ -433,7 +452,8 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
-            | AgentEvent::Usage { .. } => false,
+            | AgentEvent::Usage { .. }
+            | AgentEvent::Backlog { .. } => false,
         }
     }
 }

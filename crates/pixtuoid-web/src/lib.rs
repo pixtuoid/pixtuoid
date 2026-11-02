@@ -195,7 +195,7 @@ impl Office {
             theme: &NORMAL,
             fit,
             seed: u64::from(seed),
-            reducer: Reducer::new(),
+            reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
             beats: hero_script(),
             cursor: 0,
             presence_beats: lobster_beats(),
@@ -720,6 +720,14 @@ mod tests {
     /// UNIX_EPOCH sentinel; the value itself is arbitrary.
     const T0_MS: f64 = 1_000_000_000.0;
 
+    fn hires_alive(o: &Office) -> usize {
+        o.scene
+            .agents
+            .keys()
+            .filter(|id| !(0..crate::script::CAST_LEN).map(cast_id).any(|c| c == **id))
+            .count()
+    }
+
     #[test]
     fn overlay_json_carries_the_cli_badge_hue_for_registered_prefixes() {
         let mut o = office();
@@ -1047,6 +1055,20 @@ mod tests {
     }
 
     #[test]
+    fn the_sign_counts_the_cast_through_the_real_reducer() {
+        let mut o = office();
+        o.step(T0_MS, 288, 180);
+        o.step(T0_MS + 1_000.0, 288, 180);
+        let overlay: serde_json::Value =
+            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+        let context = overlay["board"]["context"].as_array().expect("a row");
+        let row: String = (context.iter())
+            .map(|segment| segment["text"].as_str().expect("text"))
+            .collect();
+        assert!(row.contains("1.2M tokens"), "{row:?}");
+    }
+
+    #[test]
     fn overlay_json_exports_a_board_and_a_label_per_visible_agent() {
         let mut o = office();
         // Poster-sized canvas, driven to mid-loop, so several agents are seated.
@@ -1254,15 +1276,10 @@ mod tests {
         o.step(T0_MS + 80_000.0, 160, 96);
         assert_eq!(o.scene.agents.len(), baseline + 1);
         // Past SessionEnd + exit grace + GC, and across the loop wrap.
-        let after = T0_MS + 31_000.0 + 70_000.0 + 20_000.0 + LOOP_MS as f64;
+        let after =
+            T0_MS + 31_000.0 + crate::script::HIRE_STAY_MS as f64 + 20_000.0 + LOOP_MS as f64;
         o.step(after, 160, 96);
-        let hired_alive = o
-            .scene
-            .agents
-            .keys()
-            .filter(|id| !(0..crate::script::CAST_LEN).map(cast_id).any(|c| c == **id))
-            .count();
-        assert_eq!(hired_alive, 0, "the hire left and never replays");
+        assert_eq!(hires_alive(&o), 0, "the hire left and never replays");
     }
 
     #[test]
@@ -1356,22 +1373,15 @@ mod tests {
             "only the first MAX_LIVE clicks are admitted; click spam past it is refused"
         );
         o.step(T0_MS + 32_000.0, 320, 180);
-        let count_hires = |o: &Office| {
-            o.scene
-                .agents
-                .keys()
-                .filter(|id| !(0..crate::script::CAST_LEN).map(cast_id).any(|c| c == **id))
-                .count()
-        };
         assert_eq!(
-            count_hires(&o),
+            hires_alive(&o),
             VisitorHires::MAX_LIVE,
             "click spam caps at the limit"
         );
         assert!(!o.hire(), "a post-burst click must not overshoot the cap");
         o.step(T0_MS + 33_000.0, 320, 180);
         assert_eq!(
-            count_hires(&o),
+            hires_alive(&o),
             VisitorHires::MAX_LIVE,
             "a post-burst click must not overshoot the cap"
         );
@@ -1390,30 +1400,23 @@ mod tests {
         );
         assert!(
             !o.hire(),
-            "a click past the cap is refused while the first three are live"
+            "a click past the cap is refused while the first MAX_LIVE are live"
         );
         o.step(T0_MS + 32_000.0, 320, 180);
 
-        let count_hires = |o: &Office| {
-            o.scene
-                .agents
-                .keys()
-                .filter(|id| !(0..crate::script::CAST_LEN).map(cast_id).any(|c| c == **id))
-                .count()
-        };
-        assert_eq!(count_hires(&o), VisitorHires::MAX_LIVE);
+        assert_eq!(hires_alive(&o), VisitorHires::MAX_LIVE);
 
         // Past the stay + exit grace + GC sweep.
         let after_stay = T0_MS + 32_000.0 + HIRE_STAY_MS as f64 + 20_000.0;
         o.step(after_stay, 320, 180);
-        assert_eq!(count_hires(&o), 0, "the earlier hires left the office");
+        assert_eq!(hires_alive(&o), 0, "the earlier hires left the office");
 
         assert!(
             o.hire(),
             "the cap frees up once the earlier hires pruned out"
         );
         o.step(after_stay + 1_000.0, 320, 180);
-        assert_eq!(count_hires(&o), 1, "the re-admitted hire walked in");
+        assert_eq!(hires_alive(&o), 1, "the re-admitted hire walked in");
     }
 
     #[test]

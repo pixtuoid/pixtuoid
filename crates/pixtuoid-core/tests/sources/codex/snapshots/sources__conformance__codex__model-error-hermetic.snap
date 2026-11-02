@@ -3,33 +3,33 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - TurnStart:
-    agent_id: 4893970031912353448
+    agent_id: 2015730346215033681
     turn:
-      Id: 01a18d50-ce39-7222-bf2c-ad8535853c6a
+      Id: 01a199b6-9060-7081-9db3-828c3727529c
 - ModelInfo:
-    agent_id: 4893970031912353448
+    agent_id: 2015730346215033681
     model: gpt-5.5
     effort: high
 - TurnEnd:
-    agent_id: 4893970031912353448
+    agent_id: 2015730346215033681
     turn:
-      Id: 01a18d50-ce39-7222-bf2c-ad8535853c6a
+      Id: 01a199b6-9060-7081-9db3-828c3727529c
 - SessionStart:
-    agent_id: 4893970031912353448
+    agent_id: 2015730346215033681
     source: codex
-    session_id: 01a18d50-cdce-74a0-9134-b8584c0d5ca6
+    session_id: 01a199b6-902a-7eb2-8d98-4da7ea9ae8ad
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 4893970031912353448
+    agent_id: 2015730346215033681
     model: gpt-5.5
     effort: ~
 - SessionStart:
-    agent_id: 4893970031912353448
+    agent_id: 2015730346215033681
     source: codex
-    session_id: 01a18d50-cdce-74a0-9134-b8584c0d5ca6
+    session_id: 01a199b6-902a-7eb2-8d98-4da7ea9ae8ad
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionEnd:
-    agent_id: 4893970031912353448
+    agent_id: 2015730346215033681
     as_child: false

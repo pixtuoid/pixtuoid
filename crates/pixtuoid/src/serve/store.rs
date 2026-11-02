@@ -2,8 +2,7 @@
 //! pairing code outstanding and the devices paired. Codes and tokens are held
 //! hashed, so reading the file pairs nobody.
 //!
-//! State rather than config: a stow-managed `~/.config` (invariant #4) is a
-//! dotfiles repo, which must not collect a private key.
+//! State rather than config: a dotfiles repo must not collect a private key.
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -67,12 +66,9 @@ impl Store {
     }
 
     pub(super) fn in_state_dir() -> Result<Self> {
-        let base = crate::install::nonempty_abs_env("XDG_STATE_HOME")
-            .or_else(|| {
-                pixtuoid_core::platform::user_home_opt().map(|h| h.join(".local").join("state"))
-            })
-            .context("no home directory to keep the pairing state in")?;
-        Ok(Self(base.join("pixtuoid").join("remote.json")))
+        let dir =
+            crate::config::state_dir().context("no home directory to keep the pairing state in")?;
+        Ok(Self(dir.join("remote.json")))
     }
 
     /// An error rather than a fresh state, a missing file aside: a new key would

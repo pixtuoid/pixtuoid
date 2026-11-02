@@ -273,6 +273,7 @@ pub fn decode_dsh_payload(
                     fresh_tokens: n("inputTokens")
                         .saturating_add(n("outputTokens"))
                         .saturating_add(n("cacheWriteTokens")),
+                    reading_id: None,
                 },
             ])
         }

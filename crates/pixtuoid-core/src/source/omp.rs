@@ -753,6 +753,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                             out.push(AgentEvent::Usage {
                                 agent_id: acting,
                                 fresh_tokens: fresh,
+                                reading_id: None,
                             });
                         }
                     }

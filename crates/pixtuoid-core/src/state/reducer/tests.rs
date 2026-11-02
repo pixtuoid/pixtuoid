@@ -913,7 +913,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     /// state proves nothing about a slow leak.
     const MAX_CORR_ENTRIES: usize = 1024;
     const ITERS: u64 = 3_000;
-    const MAP_NAMES: [&str; 7] = [
+    const MAP_NAMES: [&str; 8] = [
         "recent_hook_tool_uses",
         "tasks_in_flight",
         "recent_task_drains",
@@ -921,6 +921,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         "recent_proof_of_life",
         "action_requests",
         "counted_calls",
+        "counted_readings",
     ];
 
     let mut r = super::Reducer::new();
@@ -997,6 +998,16 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         );
         r.apply(
             &mut scene,
+            AgentEvent::Usage {
+                agent_id: a,
+                fresh_tokens: 1,
+                reading_id: Some(format!("msg_{i}")),
+            },
+            now,
+            Transport::Jsonl,
+        );
+        r.apply(
+            &mut scene,
             AgentEvent::SessionEnd {
                 agent_id: a,
                 as_child: true,
@@ -1037,11 +1048,8 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             r.corr.lifecycles.len(),
             r.corr.recent_proof_of_life.len(),
             r.corr.action_requests.len(),
-            r.corr
-                .counted_calls
-                .values()
-                .map(std::collections::HashMap::len)
-                .sum(),
+            r.corr.counted_calls.len(),
+            r.corr.counted_readings.len(),
         ];
         for (p, &l) in peak.iter_mut().zip(lens.iter()) {
             *p = (*p).max(l);

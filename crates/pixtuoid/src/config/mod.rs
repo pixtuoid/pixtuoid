@@ -161,6 +161,15 @@ pub(crate) fn config_base() -> Option<PathBuf> {
         .or_else(|| pixtuoid_core::platform::user_home_opt().map(|h| h.join(".config")))
 }
 
+/// Where pixtuoid keeps what a later run reads back, apart from a stow-managed
+/// `~/.config` (invariant #4), which is a dotfiles repo.
+pub(crate) fn state_dir() -> Option<PathBuf> {
+    let base = crate::install::io::nonempty_abs_env("XDG_STATE_HOME").or_else(|| {
+        pixtuoid_core::platform::user_home_opt().map(|h| h.join(".local").join("state"))
+    })?;
+    Some(base.join("pixtuoid"))
+}
+
 pub(crate) fn config_path() -> PathBuf {
     config_base().map_or_else(
         || PathBuf::from(".config/pixtuoid/config.toml"),

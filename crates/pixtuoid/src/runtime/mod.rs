@@ -5,6 +5,7 @@
 pub(crate) mod driver;
 pub(crate) mod gate;
 pub(crate) mod pipeline;
+pub(crate) mod today;
 
 pub(crate) use driver::run;
 pub(crate) use pixtuoid_core::source::hook::ConnectedSources;

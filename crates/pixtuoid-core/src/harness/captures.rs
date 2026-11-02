@@ -471,6 +471,12 @@ const ID_FAMILIES: &[IdFamily] = &[
         seen_in: "claude_code/fixtures/tool-run-hermetic",
         renamed: &[("toolu_whFwVaQVHr-tJpiG", "toolu_dft8jZ_PBInjS87R")],
     },
+    IdFamily {
+        name: "anthropic-message",
+        pattern: r"msg_[0-9A-Za-z_-]+",
+        seen_in: "claude_code/fixtures/tool-run-hermetic",
+        renamed: &[("msg_LWX8UtL2iJV4dA7e", "msg_0j52Kuc1lga-VWuW")],
+    },
     // Not the wire names that hold it (`call_id`, `function_call_output`): a
     // minted id starts a word, and its tail outruns every wire name's.
     IdFamily {

@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::Result;
 use pixtuoid_core::source::DynSource;
@@ -31,6 +31,7 @@ use tokio::sync::mpsc;
 
 use super::gate;
 use super::pipeline::{HeadlessLog, SceneSink};
+use super::today::{DayCount, TodaySaver};
 use super::{ConnectedSources, QuitArms, QuitSignal, RunConfig, resolve_boot_caps};
 
 /// Boot the TUI (unless headless) and drive the source pipeline until it exits;
@@ -195,8 +196,10 @@ pub(crate) async fn reducer_task(
     connected: ConnectedSources,
     mut presence_rx: tokio::sync::mpsc::UnboundedReceiver<PresenceMsg>,
     presence_exit_watch: Option<daemon::PresenceExitWatch>,
+    today: DayCount,
 ) {
-    let mut reducer = Reducer::new();
+    let DayCount { day_of, file } = today;
+    let mut reducer = Reducer::new().counting(day_of);
     // Disabled once the presence channel closes (all senders dropped) so its
     // `recv() -> None` branch can't busy-loop the select.
     let mut presence_open = true;
@@ -207,6 +210,8 @@ pub(crate) async fn reducer_task(
     let initial_caps: [usize; MAX_FLOORS] =
         std::array::from_fn(|i| floor_caps[i].load(Ordering::Relaxed));
     let mut scene = SceneState::new(initial_caps);
+    let mut today_saver =
+        file.map(|file| TodaySaver::boot(file, &mut scene, day_of(SystemTime::now())));
     if !sink.publish(&scene) {
         return;
     }
@@ -215,6 +220,9 @@ pub(crate) async fn reducer_task(
     let mut sweep_interval = tokio::time::interval(Duration::from_secs(SWEEP_TICK_INTERVAL_SECS));
     sweep_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
+        if let Some(saver) = &mut today_saver {
+            saver.note(scene.today);
+        }
         // Sync per-floor capacities from the shared atomics so the
         // auto-computed layout capacity propagates to next_free_desk().
         for (i, a) in floor_caps.iter().enumerate() {
@@ -269,12 +277,19 @@ pub(crate) async fn reducer_task(
             }
             _ = sweep_interval.tick() => {
                 gate::reconcile_sweep_tick(&mut reducer, &mut scene, &connected, SystemTime::now());
+                if let Some(saver) = &mut today_saver {
+                    saver.tick(scene.today, Instant::now());
+                }
                 if !sink.publish(&scene) {
                     tracing::warn!("scene reader gone or stalled — reducer stopping");
                     break;
                 }
             }
         }
+    }
+    // A break above leaves the event it applied unseen.
+    if let Some(saver) = &mut today_saver {
+        saver.note(scene.today);
     }
 }
 
@@ -355,6 +370,7 @@ fn write_log(lines: &mut mpsc::Receiver<String>, out: impl std::io::Write) -> st
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::today::TodayFile;
     use crate::runtime::{FALLBACK_DESKS, TRANSITION_LOG_CAPACITY};
     use pixtuoid_core::source::manager::SourceDeath;
     use tokio::sync::watch;
@@ -418,6 +434,19 @@ mod tests {
 
     /// Folds `events` to its end, publishing to `sink`.
     async fn reduce(events: pixtuoid_core::TaggedReceiver, sink: SceneSink) {
+        reduce_saving(events, sink, None).await;
+    }
+
+    fn the_day(_: SystemTime) -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 6, 1).expect("a date")
+    }
+
+    /// [`reduce`], with the day's count in `file`.
+    async fn reduce_saving(
+        events: pixtuoid_core::TaggedReceiver,
+        sink: SceneSink,
+        file: Option<TodayFile>,
+    ) {
         let (_presence_tx, presence_rx) = tokio::sync::mpsc::unbounded_channel();
         reducer_task(
             events,
@@ -426,8 +455,129 @@ mod tests {
             ConnectedSources::new(["claude-code".to_string()].into()),
             presence_rx,
             None,
+            DayCount {
+                day_of: the_day,
+                file,
+            },
         )
         .await;
+    }
+
+    /// The one reducer every front end runs keeps the count, on from what an
+    /// earlier run saved, and a replay stays out of it.
+    #[tokio::test]
+    async fn every_front_end_counts_on_from_the_saved_day() {
+        use pixtuoid_core::state::Today;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("today.json");
+        let saved = Today::new(the_day(SystemTime::UNIX_EPOCH), 0, 5);
+        let json = serde_json::to_string(&saved).expect("it encodes");
+        std::fs::write(&path, json).expect("it writes");
+
+        let mut events = batch(1).await;
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        while let Ok(queued) = events.try_recv() {
+            tx.send(queued).await.expect("it queues");
+        }
+        tx.send(hook_call("live")).await.expect("it queues");
+        drop(tx);
+
+        let (sink, scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+        reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))).await;
+        let today = scene.borrow().today.expect("a count");
+        assert_eq!(
+            (today.tokens, today.tool_calls),
+            (0, 6),
+            "the hook's call on the saved five, the unbracketed transcript's none"
+        );
+        assert_eq!(
+            saved_at(&path),
+            Some(today),
+            "the loop's end saves what no tick reached"
+        );
+    }
+
+    fn saved_at(path: &std::path::Path) -> Option<pixtuoid_core::state::Today> {
+        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+    }
+
+    fn hook_call(tool_use_id: &str) -> (pixtuoid_core::Transport, pixtuoid_core::AgentEvent) {
+        (
+            pixtuoid_core::Transport::Hook,
+            pixtuoid_core::AgentEvent::ToolUseStart {
+                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
+                tool_use_id: Some(tool_use_id.into()),
+                detail: Some("Bash".into()),
+            },
+        )
+    }
+
+    /// The reader gone, the event that finds it so ends the loop before its top
+    /// notes the count.
+    #[tokio::test]
+    async fn the_event_that_ends_the_run_is_saved() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("today.json");
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+        let run = tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
+        // The boot's publish and the first tick's, the next tick a second off.
+        for _ in 0..2 {
+            scene.changed().await.expect("the reducer publishes");
+        }
+        drop(scene);
+        tx.send(hook_call("t")).await.expect("it queues");
+        run.await.expect("the reducer stops on its reader");
+        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
+    }
+
+    /// `run` drops its runtime as `run_async` returns, cancelling the reducer's
+    /// task where it parks, with no line after its loop to reach. A tick's write
+    /// comes first, so the throttle leaves the last count to that drop.
+    #[test]
+    fn a_runtime_dropped_at_quit_still_saves_the_count() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("today.json");
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("a runtime");
+        let tx = rt.block_on(async {
+            let (tx, rx) = tokio::sync::mpsc::channel(8);
+            let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+            tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
+            // The slot's source: on a hook's blank one the gate drops the next call.
+            let start = pixtuoid_core::AgentEvent::SessionStart {
+                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/proj"),
+                parent_id: None,
+            };
+            tx.send((pixtuoid_core::Transport::Hook, start))
+                .await
+                .expect("it queues");
+            tx.send(hook_call("first")).await.expect("it queues");
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while saved_at(&path).is_none() {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("a tick writes the count while the run goes on");
+            tx.send(hook_call("last")).await.expect("it queues");
+            scene
+                .wait_for(|scene| scene.today.is_some_and(|today| today.tool_calls == 2))
+                .await
+                .expect("the reducer publishes");
+            tx
+        });
+        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
+        drop(rt);
+        drop(tx);
+        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(2));
     }
 
     #[test]

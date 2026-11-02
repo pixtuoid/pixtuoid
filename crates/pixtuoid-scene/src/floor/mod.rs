@@ -1139,6 +1139,7 @@ pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> SceneState {
     if floor_idx == 0 {
         s.clone_daemons_from(scene);
     }
+    s.today = scene.today;
     s
 }
 

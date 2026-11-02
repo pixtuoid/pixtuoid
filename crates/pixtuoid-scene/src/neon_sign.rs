@@ -1,8 +1,8 @@
 //! Backend-agnostic neon wall-board model — the SINGLE source of truth for the
 //! office's "lit sign": brand + ★ CTA (L1), the mood pulse (L2: the tally and a
 //! plain-English line, swapped by a split-flap roll), and the office-context row
-//! (L3: uptime · floor · gateway chip), rendered by the TUI, the floating window,
-//! and the wasm hero. It also owns `OfficeMood`, which the sign's light reads.
+//! (L3: uptime · floor · today · gateway chip), rendered by the TUI, the floating
+//! window, and the wasm hero. It also owns `OfficeMood`, which the sign's light reads.
 //!
 //! `scene` has no terminal/window deps (invariant #1), so the model carries a
 //! backend-agnostic `BoardTone` and [`BoardTone::rgb`] is the ONE tone→theme-role
@@ -16,7 +16,7 @@ use pixtuoid_core::SceneState;
 use pixtuoid_core::state::DaemonState;
 
 use crate::display::{Content, Icon};
-use crate::tally::{StateCounts, scene_stats};
+use crate::tally::{StateCounts, scene_stats, today_headline};
 use crate::theme::Theme;
 
 /// The oldest in-scene agent's age in seconds — every agent still in the scene
@@ -458,14 +458,16 @@ fn board_mood_at(counts: StateCounts, now_ms: u64) -> Vec<BoardSegment> {
 }
 
 /// Assemble the whole board model. `floor` is `(current, total_floors)` — a
-/// single-floor office passes `None`; `gateway` is the [`gateway_rollup`](crate::tally::gateway_rollup), where
-/// `None` suppresses the chip; `now` on `motion`'s beat drives L2's flap. The
-/// context separators (`"  "`) are baked into each following segment so
-/// painters just concatenate.
+/// single-floor office passes `None`; `headline` is the day's count in words,
+/// which yields first when the row can't hold it; `gateway` is the
+/// [`gateway_rollup`](crate::tally::gateway_rollup), where `None` suppresses the
+/// chip; `now` on `motion`'s beat drives L2's flap. The context separators (`"  "`)
+/// are baked into each following segment so painters just concatenate.
 pub fn build_board(
     counts: StateCounts,
     uptime_secs: u64,
     floor: Option<(usize, usize)>,
+    headline: Option<&str>,
     gateway: Option<DaemonState>,
     motion: crate::anim::Motion,
     now: SystemTime,
@@ -480,14 +482,22 @@ pub fn build_board(
             BoardTone::Dim,
         ));
     }
-    if let Some(state) = gateway {
+    let chip = gateway.map_or_else(Vec::new, |state| {
         let tone = gateway_tone(state);
-        context.extend([
+        vec![
             BoardSegment::new("  ", tone),
             BoardSegment::icon(Icon::Gateway, tone),
             BoardSegment::new(format!("gw {}", gateway_label(state)), tone),
-        ]);
-    }
+        ]
+    });
+    let headline = headline
+        .map(|headline| BoardSegment::new(format!("  {headline}"), BoardTone::Dim))
+        .filter(|headline| {
+            let row = [&context[..], std::slice::from_ref(headline), &chip[..]].concat();
+            segs_cells(&row) <= crate::layout::NEON_PANEL_INNER_W as usize
+        });
+    context.extend(headline);
+    context.extend(chip);
     BoardModel {
         brand: BoardSegment::new(BOARD_BRAND, BoardTone::Brand),
         star: board_star(),
@@ -506,10 +516,12 @@ pub fn wall_board(
     motion: crate::anim::Motion,
     now: SystemTime,
 ) -> BoardModel {
+    let headline = drawn.today.and_then(today_headline);
     build_board(
         scene_stats(drawn),
         scene_uptime_secs(drawn, now),
         floor.map(|f| (f.current, f.total_floors)),
+        headline.as_deref(),
         gateway,
         motion,
         now,
@@ -577,6 +589,7 @@ impl BoardModel {
 mod tests {
     use super::*;
     use crate::anim::Motion;
+    use pixtuoid_core::state::Today;
 
     /// Every face L2 can show — tally, persona, each drum glyph mid-roll — is
     /// one cell per char inside the sign's interior, or a roll shoves the row
@@ -597,7 +610,7 @@ mod tests {
             };
             for ms in (0..A_MINUTE_MS).step_by(FRAME_MS) {
                 let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ms);
-                let model = build_board(counts, 0, None, None, Motion::Full, now);
+                let model = build_board(counts, 0, None, None, None, Motion::Full, now);
                 let l2: String = model.mood.iter().map(|s| s.text()).collect();
                 let n = usize::from(cells(&l2));
                 assert_eq!(n, l2.chars().count(), "{l2:?} at {ms}ms");
@@ -674,6 +687,7 @@ mod tests {
         let b = build_board(
             counts(1, 0, 0),
             0,
+            None,
             None,
             None,
             Motion::Full,
@@ -1092,7 +1106,15 @@ mod tests {
             exiting: 0,
             total: 3,
         };
-        let b = build_board(c, 3661, None, None, Motion::Full, SystemTime::UNIX_EPOCH);
+        let b = build_board(
+            c,
+            3661,
+            None,
+            None,
+            None,
+            Motion::Full,
+            SystemTime::UNIX_EPOCH,
+        );
         assert_eq!(b.brand.tone, BoardTone::Brand);
         assert_eq!(
             b.mood,
@@ -1109,6 +1131,7 @@ mod tests {
             c,
             30,
             Some((2, 3)),
+            None,
             Some(DaemonState::Running),
             Motion::Full,
             SystemTime::UNIX_EPOCH,
@@ -1117,5 +1140,59 @@ mod tests {
         assert_eq!(ctx, "up <1m  F2/3  \u{2b22}gw run");
         let chip = b2.context.last().unwrap();
         assert_eq!(chip.tone, BoardTone::Running, "running gateway chip tone");
+    }
+
+    fn context_with(today: &str, gateway: Option<DaemonState>) -> Vec<BoardSegment> {
+        build_board(
+            counts(1, 0, 0),
+            30,
+            Some((2, 3)),
+            Some(today),
+            gateway,
+            Motion::Full,
+            SystemTime::UNIX_EPOCH,
+        )
+        .context
+    }
+
+    #[test]
+    fn today_follows_the_floor_in_the_dim_of_its_neighbours() {
+        let context = context_with("38 tool calls", None);
+        assert_eq!(text_of(&context), "up <1m  F2/3  38 tool calls");
+        let today = context.last().expect("a segment");
+        assert_eq!(today.tone, BoardTone::Dim);
+    }
+
+    /// Both sides of the row's edge, from the panel's own width.
+    #[test]
+    fn today_drops_first_and_only_past_the_rows_edge() {
+        let gateway = Some(DaemonState::Idle);
+        let without = text_of(&context_with("", gateway)).replacen("    ", "  ", 1);
+        let width = usize::from(crate::layout::NEON_PANEL_INNER_W);
+        let taken = segs_cells(&context_with("", gateway)) - "  ".len();
+        let room = width - taken - "  ".len();
+
+        let fits = "x".repeat(room);
+        let row = text_of(&context_with(&fits, gateway));
+        assert!(row.contains(&format!("  {fits}  ")), "{row:?}");
+        assert_eq!(segs_cells(&context_with(&fits, gateway)), width);
+
+        let over = "x".repeat(room + 1);
+        assert_eq!(text_of(&context_with(&over, gateway)), without);
+    }
+
+    fn board_of(today: Option<Today>) -> String {
+        let mut scene = SceneState::uniform(16);
+        scene.today = today;
+        let board = wall_board(&scene, None, None, Motion::Full, SystemTime::UNIX_EPOCH);
+        text_of(&board.context)
+    }
+
+    #[test]
+    fn the_wall_board_shows_todays_headline_and_needs_no_clock_of_its_own() {
+        let day = chrono::NaiveDate::from_ymd_opt(2027, 1, 15).expect("a date");
+        let row = board_of(Some(Today::new(day, 1_200_000, 38)));
+        assert_eq!(row, "up <1m  1.2M tokens");
+        assert_eq!(board_of(None), "up <1m");
     }
 }

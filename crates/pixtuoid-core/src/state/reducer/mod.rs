@@ -10,7 +10,9 @@ use crate::state::correlation::{Correlation, ToolEventKind, elapsed_at_least, el
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{End, Start};
-use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, ToolUse, TurnKey, fsm, scope};
+use crate::state::{
+    ActivityState, AgentSlot, SceneState, Today, ToolKind, ToolUse, TurnKey, fsm, scope,
+};
 
 #[doc(hidden)]
 pub use crate::state::correlation::{
@@ -268,6 +270,8 @@ pub struct Reducer {
     pending_b1_cascades: HashMap<AgentId, SystemTime>,
 
     next_label_n: u32,
+    /// What [`Self::counting`] was given; `None` keeps no count.
+    day_of: Option<fn(SystemTime) -> chrono::NaiveDate>,
 }
 
 impl Reducer {
@@ -276,15 +280,31 @@ impl Reducer {
         Self::default()
     }
 
+    /// This reducer, keeping [`SceneState::today`]. `day_of` is an instant's
+    /// date: the host's zone is the host's to give, and an injected `fn` keeps
+    /// tests off the runner's.
+    #[must_use]
+    pub fn counting(mut self, day_of: fn(SystemTime) -> chrono::NaiveDate) -> Self {
+        self.day_of = Some(day_of);
+        self
+    }
+
     /// Run the GC + exit-sweep without applying an event. Must be called
-    /// periodically so exiting slots are reclaimed and deferred cascades fire
-    /// even when no event arrives to drive `apply`.
+    /// periodically so exiting slots are reclaimed, deferred cascades fire and a
+    /// day that has passed is retired even when no event arrives to drive `apply`.
     pub fn tick(&mut self, scene: &mut SceneState, now: SystemTime) {
         self.corr.gc(now);
         self.corr.gc_slow(now);
         self.sweep_exited(scene, now);
         self.fire_pending_b1_cascades(scene, now);
         self.sweep_stale(scene, now);
+        // Here, not at each reader: a device in another zone has no clock that
+        // can say when this reducer's day ends.
+        if let Some(day_of) = self.day_of
+            && scene.today.is_some_and(|today| today.day != day_of(now))
+        {
+            scene.today = None;
+        }
         // Reap entries for agents that never got a SessionStart — a Task event
         // can arrive before JSONL creates the slot.
         self.corr
@@ -297,6 +317,9 @@ impl Reducer {
         self.corr
             .item_started_on
             .retain(|id, _| scene.agents.contains_key(id));
+        self.corr
+            .caught_up
+            .retain(|id| scene.agents.contains_key(id));
         self.pending_b1_cascades
             .retain(|id, _| scene.agents.contains_key(id));
     }
@@ -471,7 +494,25 @@ impl Reducer {
             AgentEvent::Usage {
                 agent_id,
                 fresh_tokens,
-            } => Self::apply_usage(scene, agent_id, fresh_tokens, now),
+                reading_id,
+            } => self.apply_usage(
+                scene,
+                agent_id,
+                fresh_tokens,
+                reading_id.as_deref(),
+                from,
+                now,
+            ),
+            AgentEvent::Backlog {
+                agent_id,
+                replaying,
+            } => {
+                if replaying {
+                    self.corr.caught_up.remove(&agent_id);
+                } else {
+                    self.corr.caught_up.insert(agent_id);
+                }
+            }
         }
     }
 
@@ -538,7 +579,7 @@ impl Reducer {
                 .is_some_and(|(_, kind)| *kind == ToolEventKind::End)
         {
             // The call did run.
-            self.count_call(scene, id, Some(tuid), detail, now);
+            self.count_call(scene, id, Some(tuid), detail, from, now);
             return Preprocessed::Drop;
         }
 
@@ -614,7 +655,7 @@ impl Reducer {
             from,
             is_requires_action(scene, agent_id),
         );
-        self.count_call(scene, agent_id, tool_use_id.as_deref(), &detail, now);
+        self.count_call(scene, agent_id, tool_use_id.as_deref(), &detail, from, now);
         if !runs {
             return;
         }
@@ -632,6 +673,7 @@ impl Reducer {
         agent_id: AgentId,
         tool_use_id: Option<&str>,
         detail: &Option<crate::source::ToolDetail>,
+        from: Transport,
         now: SystemTime,
     ) {
         if detail.as_ref().is_some_and(|d| d.is_task()) {
@@ -640,16 +682,34 @@ impl Reducer {
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        match tool_use_id {
-            Some(t) => {
-                let calls = self.corr.counted_calls.entry(agent_id).or_default();
-                if !calls.contains_key(t) {
-                    calls.insert(t.to_string(), now);
-                    slot.tool_call_count += 1;
-                }
+        if self.corr.counted_calls.first(agent_id, tool_use_id, now) {
+            slot.tool_call_count += 1;
+            if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
+                today.tool_calls = today.tool_calls.saturating_add(1);
             }
-            None => slot.tool_call_count += 1,
         }
+    }
+
+    /// The count an event of `agent_id`'s arriving on `from` adds to, which a
+    /// first event after midnight zeroes; `None` when none is kept or the event
+    /// may be a replay. A hook is live; anything else waits on
+    /// [`AgentEvent::Backlog`].
+    fn today_of<'s>(
+        &self,
+        today: &'s mut Option<Today>,
+        agent_id: AgentId,
+        from: Transport,
+        now: SystemTime,
+    ) -> Option<&'s mut Today> {
+        let day_of = self.day_of?;
+        if from != Transport::Hook && !self.corr.caught_up.contains(&agent_id) {
+            return None;
+        }
+        let day = day_of(now);
+        if today.is_none_or(|today| today.day != day) {
+            *today = Some(Today::new(day, 0, 0));
+        }
+        today.as_mut()
     }
 
     /// A start of `call` on `on` that has not ended, scoped to its own turn
@@ -993,11 +1053,26 @@ impl Reducer {
     }
 
     /// The `Usage` arm — updates an EXISTING slot only, the `ModelInfo`
-    /// posture. Saturating so a hostile/corrupt transcript can't overflow it.
-    fn apply_usage(scene: &mut SceneState, agent_id: AgentId, fresh_tokens: u64, now: SystemTime) {
-        if let Some(slot) = scene.agents.get_mut(&agent_id) {
+    /// posture, once per named reading. Saturating so a hostile/corrupt
+    /// transcript can't overflow it.
+    fn apply_usage(
+        &mut self,
+        scene: &mut SceneState,
+        agent_id: AgentId,
+        fresh_tokens: u64,
+        reading_id: Option<&str>,
+        from: Transport,
+        now: SystemTime,
+    ) {
+        let Some(slot) = scene.agents.get_mut(&agent_id) else {
+            return;
+        };
+        if self.corr.counted_readings.first(agent_id, reading_id, now) {
             slot.tokens_used = slot.tokens_used.saturating_add(fresh_tokens);
             slot.last_usage = Some(crate::state::UsageObservation::new(fresh_tokens, now));
+            if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
+                today.tokens = today.tokens.saturating_add(fresh_tokens);
+            }
         }
     }
 
@@ -1617,7 +1692,9 @@ impl Reducer {
         self.corr.action_requests.forget(id);
         self.corr.turns.forget(id);
         self.corr.item_started_on.remove(id);
-        self.corr.counted_calls.remove(id);
+        self.corr.counted_calls.forget(id);
+        self.corr.counted_readings.forget(id);
+        self.corr.caught_up.remove(id);
         self.pending_b1_cascades.remove(id);
     }
 

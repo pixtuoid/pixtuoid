@@ -338,6 +338,7 @@ pub(crate) fn decode_copilot_line(
                 evs.push(AgentEvent::Usage {
                     agent_id: root,
                     fresh_tokens: fresh,
+                    reading_id: None,
                 });
             }
             evs
@@ -783,6 +784,7 @@ mod tests {
                 AgentEvent::Usage {
                     agent_id,
                     fresh_tokens,
+                    reading_id: None,
                 },
             ] => {
                 assert_eq!(*agent_id, root());

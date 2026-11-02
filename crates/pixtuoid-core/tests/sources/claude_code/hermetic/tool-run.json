@@ -3,6 +3,7 @@
     {
       "match": { "hasToolResult": false },
       "response": {
+        "reasoning": "Read the note.",
         "toolCalls": [ { "name": "Read", "arguments": { "file_path": "{workspace}/NOTE.txt" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }
       }
