@@ -4560,6 +4560,9 @@ mod backlog {
     }
     use Pass::{Boot, Scan, Walk};
 
+    /// What befell the transcript, the pass that reads it, and what that sends.
+    type Step = (Change, Pass, &'static [Sent]);
+
     /// One transcript and the watcher's memory of it, across reads.
     struct Tail {
         dir: tempfile::TempDir,
@@ -4665,7 +4668,7 @@ mod backlog {
 
     #[tokio::test]
     async fn a_read_declares_around_what_it_replays() {
-        let rows: [(&str, &[(Change, Pass, &[Sent])]); 8] = [
+        let rows: [(&str, &[Step]); 8] = [
             (
                 "what predates the watch opens after its last event, and the next read is live",
                 &[
