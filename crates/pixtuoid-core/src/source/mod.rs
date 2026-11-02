@@ -256,10 +256,9 @@ pub enum AgentEvent {
         agent_id: AgentId,
         /// Fresh tokens this reading: new input + cache writes + output.
         fresh_tokens: u64,
-        /// The id a wire that repeats readings gives this one: an agent counts it
-        /// once, until the reducer's sweep lets it go, and a replay past that
-        /// re-counts on the meter. `None` counts every time, since an id is the
-        /// only thing that tells a repeat from an equal new reading.
+        /// The id a wire gives a reading it can repeat: an id counts once per
+        /// agent. `None` counts every time, since an id is the only thing that
+        /// tells a repeat from an equal new reading.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reading_id: Option<String>,
     },
