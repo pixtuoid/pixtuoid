@@ -20,13 +20,12 @@ use pixtuoid_core::source::registry::{descriptor_for, registered_source_names};
 use pixtuoid_core::source::{AgentEvent, Source, TaggedSender, Transport};
 use pixtuoid_core::{Reducer, SceneState};
 
-use crate::{codex_meta_line, codex_watcher, codex_work_line, fast_watch, write_lines};
+use crate::{codex_meta_line, codex_work_line, fast_watch, write_lines};
 
 /// Past the watcher's default first-sight window: no clock may be what tells a
 /// replay from live work.
 const HELD_PAST_ANY_WINDOW: Duration = Duration::from_secs(2 * 60 * 60);
 const DEADLINE: Duration = Duration::from_secs(15);
-const POLL_ATTACHES: Duration = Duration::from_millis(40);
 const QUIET: Duration = Duration::from_millis(300);
 
 fn utc_day(now: SystemTime) -> NaiveDate {
@@ -324,6 +323,9 @@ async fn what_a_late_root_already_held_is_a_replay() {
 #[cfg(unix)]
 #[tokio::test]
 async fn what_a_root_the_poll_attaches_already_held_is_a_replay() {
+    use crate::codex_watcher;
+    const POLL_ATTACHES: Duration = Duration::from_millis(40);
+
     let dir = TempDir::new().unwrap();
     let (empty, full) = (dir.path().join("empty"), dir.path().join("full"));
     tokio::fs::create_dir(&empty).await.unwrap();

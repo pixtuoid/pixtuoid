@@ -278,6 +278,25 @@ fn a_hostile_reading_saturates_the_count() {
     assert_eq!(counted(&scene), (u64::MAX, 0));
 }
 
+/// A hook is proof of life, so the agent it names has a slot before its call is
+/// counted, where a transcript's call for nobody counts nothing.
+#[test]
+fn a_hook_call_seats_its_agent_and_counts() {
+    let (mut r, mut scene) = counting();
+    let a = id("a");
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        a,
+        Some("t1"),
+        Some("Bash"),
+        t0(),
+        Transport::Hook,
+    );
+    assert!(scene.agents.contains_key(&a));
+    assert_eq!(counted(&scene), (0, 1));
+}
+
 #[test]
 fn work_nobody_seated_counts_nothing() {
     let (mut r, mut scene) = counting();
