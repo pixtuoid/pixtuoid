@@ -70,28 +70,43 @@ async function settleAnimations(page: Page): Promise<void> {
 }
 
 /**
- * One test per theme x hour for anything graded against the REAL office composite. The office's brightness follows the page's
- * local hour and a theme can be picked at any hour, so every theme meets every hour. A sweep of all 24 found the worst hours: 11
- * (office brightest, so light ink is worst) and the night ones (darkest, so dark ink is worst); 8 and 19 are kept as the dawn
- * and dusk ramp. `setSystemTime`, not `setFixedTime`: a frozen Date stalls the office host's own wait on the clock.
+ * The office moments anything graded against the REAL office composite must meet, in UTC: the office is lit by the sun and
+ * the weather, both functions of the absolute instant (the sun's height by local time, the weather by the epoch's 10-minute
+ * slot hash), and a theme can be picked at any time. So the moments are chosen by what drives the light, not by hour label:
+ * the brightest is a Clear slot at the sun's highest (12:30), the darkest a Storm slot in the deep night, plus a Clear
+ * dawn and dusk for the ramp. Found by sweeping `first_transition_into` over January 2026; `the office moments still
+ * span the light range` fails if the engine's weather draw ever moves them.
  */
-const OFFICE_HOURS = [0, 8, 11, 19];
-function atOfficeHours(
+const OFFICE_MOMENTS = [
+  { at: '2026-01-03T12:30:00Z', what: 'sun highest, Clear' },
+  { at: '2026-01-20T02:00:00Z', what: 'deep night, Storm' },
+  { at: '2026-01-07T05:00:00Z', what: 'dawn, Clear' },
+  { at: '2026-01-02T19:30:00Z', what: 'dusk, Clear' },
+] as const;
+
+/** Pins the clock to `at` (UTC) and seeds `theme`. `setSystemTime`, not `setFixedTime`: a frozen Date stalls the office host's own wait on the clock. */
+async function pinOfficeMoment(page: Page, at: string, theme: string): Promise<void> {
+  await page.clock.setSystemTime(new Date(at));
+  await page.addInitScript((t) => {
+    sessionStorage.setItem('pix-booted', '1');
+    localStorage.setItem('pix-theme', t);
+  }, theme);
+}
+
+/** One test per theme x office moment, each in UTC so the instant means the same everywhere. */
+function atOfficeMoments(
   title: string,
   themes: readonly string[],
-  run: (..._args: [page: Page, theme: string, hour: number]) => Promise<void>
+  run: (..._args: [page: Page, theme: string, moment: string]) => Promise<void>
 ): void {
   for (const theme of themes) {
-    for (const hour of OFFICE_HOURS) {
-      test(`${title}: ${theme} at ${hour}:00`, async ({ page }) => {
-        await page.clock.setSystemTime(
-          new Date(`2026-01-01T${String(hour).padStart(2, '0')}:00:00`)
-        );
-        await page.addInitScript((t) => {
-          sessionStorage.setItem('pix-booted', '1');
-          localStorage.setItem('pix-theme', t);
-        }, theme);
-        await run(page, theme, hour);
+    for (const { at, what } of OFFICE_MOMENTS) {
+      test.describe(`${title}: ${theme} at ${at} (${what})`, () => {
+        test.use({ timezoneId: 'UTC' });
+        test('grades', async ({ page }) => {
+          await pinOfficeMoment(page, at, theme);
+          await run(page, theme, `${at} (${what})`);
+        });
       });
     }
   }
@@ -2074,10 +2089,48 @@ test('text over the live office carries its own scrim (.text-scrim)', async ({ p
   expect(Math.abs(noteX - tabsX)).toBeLessThan(1);
 });
 
-atOfficeHours(
+test.describe('the office moments still span the light range', () => {
+  test.use({ timezoneId: 'UTC' });
+  test('brightest is the sun-highest Clear moment, darkest the deep-night Storm one', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const lum: number[] = [];
+    for (const { at } of OFFICE_MOMENTS) {
+      await pinOfficeMoment(page, at, 'night');
+      await page.goto('./');
+      await settleReveals(page);
+      await settleAnimations(page);
+      // The canvas's own mean, before any page dimmer: what the sun and weather drew.
+      await officeGrounds(page, '.hero .statement-sub');
+      lum.push(
+        await page.evaluate(() => {
+          const c = document.getElementById('office-live') as HTMLCanvasElement;
+          const copy = document.createElement('canvas');
+          copy.width = c.width;
+          copy.height = c.height;
+          const ctx = copy.getContext('2d')!;
+          ctx.drawImage(c, 0, 0);
+          const px = ctx.getImageData(0, 0, copy.width, copy.height).data;
+          let sum = 0;
+          for (let i = 0; i < px.length; i += 4)
+            sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+          return sum / (px.length / 4);
+        })
+      );
+    }
+    const [noon, night, dawn, dusk] = lum;
+    expect(noon, 'noon Clear is not clearly the brightest').toBeGreaterThan(
+      1.5 * Math.max(night, dawn, dusk)
+    );
+    expect(night, 'night Storm is not the darkest').toBeLessThanOrEqual(Math.min(dawn, dusk));
+  });
+});
+
+atOfficeMoments(
   'bare hero text clears WCAG AA at the real office composite',
   ['day', 'night', 'dracula'],
-  async (page, theme, hour) => {
+  async (page, theme, moment) => {
     // The hero copy has no plate, so legibility rests entirely on the ink token clearing contrast against what the office
     // ACTUALLY renders behind it — hence `paintedContrast` over real canvas pixels, not a --screen proxy.
     await page.goto('./');
@@ -2107,18 +2160,18 @@ atOfficeHours(
       const ratio = await paintedContrast(page, selector);
       expect(
         ratio,
-        `${theme} ${hour}:00 ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+        `${theme} ${moment} ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5);
     }
   }
 );
 
-atOfficeHours(
+atOfficeMoments(
   'plate and chip text clears WCAG AA',
   ['day', 'night', 'dracula'],
-  async (page, theme, hour) => {
+  async (page, theme, moment) => {
     // Two DOM-plate populations: the page's OPAQUE plates, and the TRANSLUCENT --screen chips whose ground is the office pixel behind them.
-    // DRACULA is the point — visitor-reachable via `?theme=dracula`, yet the office sweep runs day+night and Lighthouse scores one pinned theme.
+    // DRACULA is visitor-reachable via `?theme=dracula`, yet Lighthouse scores one pinned theme.
     const PLATE_SURFACES: Record<string, string[]> = {
       './': [
         '.terminal__title',
@@ -2146,7 +2199,7 @@ atOfficeHours(
           const ratio = await paintedContrast(page, selector, i);
           expect(
             ratio,
-            `${theme} ${hour}:00 ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+            `${theme} ${moment} ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
           ).toBeGreaterThanOrEqual(4.5);
           swept++;
         }
@@ -2341,10 +2394,10 @@ test('reduced motion: the prompt reveals the hovered name instantly', async ({ b
   await context.close();
 });
 
-atOfficeHours(
+atOfficeMoments(
   'hero prompt ink (default, hover, every chip name) clears WCAG AA at the real office composite',
   ['day', 'night', 'dracula'],
-  async (page, theme, hour) => {
+  async (page, theme, moment) => {
     await page.goto('./');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await settleReveals(page);
@@ -2361,7 +2414,7 @@ atOfficeHours(
     for (const [what, ratio] of ratios) {
       expect(
         ratio,
-        `${theme} ${hour}:00 ${what}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+        `${theme} ${moment} ${what}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5);
     }
   }

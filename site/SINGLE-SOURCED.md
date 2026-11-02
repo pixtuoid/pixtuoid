@@ -62,8 +62,7 @@ Notes no gate carries:
   ("bare hero text clears WCAG AA…" — `officeGrounds` scrolls the element in
   AND asserts the read hit painted canvas, else `getImageData` grades "dimmer
   over black"); opaque plates + translucent `--screen` chips ("plate and chip
-  text clears WCAG AA in every theme" — runs dracula too); the docs callout
-  window (its own sweep). `paintedContrast` composites ancestor backgrounds
+  text clears WCAG AA…"); the docs callout window (its own sweep). `paintedContrast` composites ancestor backgrounds
   down and FOLDS ancestor `opacity` into the ink. Corollary: de-emphasis
   comes from SIZE, never sub-AA ink or an opacity multiplier. Office-ground
   hues need theme-aware tokens (`--office-ink*`, `--led-ink`) measured
