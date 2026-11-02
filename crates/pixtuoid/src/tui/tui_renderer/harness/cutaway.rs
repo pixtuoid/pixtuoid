@@ -1675,6 +1675,33 @@ fn a_look_switch_clears_the_screen_and_switching_back_sends_every_tile() {
     }
 }
 
+/// A redraw inside a strike's hold paints its first frame at once: the
+/// screen it cleared shows no phase to wait for, so it is never left blank.
+#[test]
+fn a_redraw_is_never_held() {
+    use crate::test_flash::{held_frames, storm_strike};
+    let strike = storm_strike();
+    let [dark, late, held, _] = held_frames(&strike);
+    let (mut r, wire, screen) = on_screen(140, 60, ImageProtocol::Kitty);
+    r.set_weather(strike.weather);
+    r.set_motion(pixtuoid_scene::anim::Motion::Full);
+    let scene = office();
+    for at in [dark, late] {
+        screen.at(at);
+        r.render(&scene, at).expect("render");
+    }
+    wire.take();
+    r.redraw().expect("redraw");
+    screen.at(held);
+    r.render(&scene, held).expect("render");
+    let cells = r.terminal.backend().inner.buffer();
+    assert!(
+        cells.content().iter().any(|c| c.symbol() != " "),
+        "painted, not left blank"
+    );
+    assert!(wire.take().contains(TRANSMIT), "its tiles sent");
+}
+
 /// A look switch inside a strike's hold paints its first frame at once: the
 /// screen it cleared shows no phase to wait for, so neither look leaves it
 /// blank.
