@@ -12,7 +12,7 @@ reason = "the shim agent CLIs invoke"
 crate = "pixtuoid_core"
 module = "remote"
 level = "expect"
-reason = "the wire's one definition, read by an app outside this workspace"
+reason = "the wire's one definition, read by a device outside this workspace"
 
 [[exclude]]
 crate = "pixtuoid_scene"
