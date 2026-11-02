@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ToolUse};
-use pixtuoid_scene::nameplate::{Nameplate, Namesakes};
+use pixtuoid_scene::nameplate::{FloorNamesakes, Nameplate};
 
 /// Roots with more than this many direct subagents render collapsed by default,
 /// so a large workflow doesn't flood the board.
@@ -102,24 +102,13 @@ pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<D
         .collect();
     roots.sort_by_key(|s| s.desk_index);
 
-    // Counted per floor, as each floor's badges are, so a row reads its badge.
-    let mut floors: HashMap<usize, Vec<&AgentSlot>> = HashMap::new();
-    for slot in scene.agents.values() {
-        floors.entry(slot.floor_idx).or_default().push(slot);
-    }
-    let namesakes: FloorNamesakes<'_> = floors
-        .into_iter()
-        .map(|(floor, agents)| (floor, Namesakes::of(agents)))
-        .collect();
-
+    let namesakes = FloorNamesakes::of(scene);
     let mut rows = Vec::new();
     for root in roots {
         push_subtree(&children, folds, &namesakes, root, 0, None, &mut rows);
     }
     rows
 }
-
-type FloorNamesakes<'a> = HashMap<usize, Namesakes<'a>>;
 
 fn push_subtree(
     children: &HashMap<AgentId, Vec<&AgentSlot>>,
@@ -171,13 +160,7 @@ fn row_for(
         agent_id: slot.agent_id,
         parent_id,
         depth,
-        name: namesakes.get(&slot.floor_idx).map_or_else(
-            || Nameplate {
-                label: slot.label.text(),
-                suffix: None,
-            },
-            |n| n.nameplate(slot),
-        ),
+        name: namesakes.nameplate(slot),
         source: slot.source.clone(),
         floor_idx: slot.floor_idx,
         state: row_state(&slot.state),

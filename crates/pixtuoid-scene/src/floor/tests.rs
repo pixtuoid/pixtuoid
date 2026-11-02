@@ -2002,10 +2002,11 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
     );
 }
 
-/// A floor's projection names each agent as that floor's badge does, so a
-/// namesake upstairs leaves a label bare there.
+/// The whole office's [`FloorNamesakes`](crate::nameplate::FloorNamesakes)
+/// name each agent as its floor's badge does, so a namesake upstairs leaves a
+/// label bare.
 #[test]
-fn every_floors_badges_read_its_projections_nameplates() {
+fn every_floors_badges_read_the_offices_floor_nameplates() {
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
     let mut scene = make_scene(4, 2);
     let labels = ["cc\u{b7}api", "cc\u{b7}api", "cc\u{b7}web", "cc\u{b7}api"];
@@ -2016,6 +2017,7 @@ fn every_floors_badges_read_its_projections_nameplates() {
     }
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    let namesakes = crate::nameplate::FloorNamesakes::of(&scene);
     let mut badged = 0;
     for (floor, now) in [(0, t0), (1, t0 + Duration::from_secs(2))] {
         if floor > 0 {
@@ -2043,23 +2045,20 @@ fn every_floors_badges_read_its_projections_nameplates() {
             panic!("floor {floor} lays out");
         };
         let text = picture.text.expect("a classic floor hands its text over");
-        let projection = project_floor_scene(&scene, floor);
-        let namesakes = crate::nameplate::Namesakes::of(projection.agents.values());
         for badge in text.badges {
-            let whole = namesakes.nameplate(&projection.agents[&badge.agent]);
+            let whole = namesakes.nameplate(&scene.agents[&badge.agent]);
             assert_eq!(badge.name.text(), whole.to_string(), "floor {floor}");
             badged += 1;
         }
     }
     assert_eq!(badged, labels.len(), "premise: every agent wears a badge");
-    let upstairs = AgentId::from_transcript_path("/p/3.jsonl");
-    let whole_office = crate::nameplate::Namesakes::of(scene.agents.values());
+    let upstairs = &scene.agents[&AgentId::from_transcript_path("/p/3.jsonl")];
     assert!(
-        whole_office
-            .nameplate(&scene.agents[&upstairs])
-            .suffix
+        crate::nameplate::Namesakes::of(scene.agents.values())
+            .nameplate(upstairs)
+            .suffix()
             .is_some(),
-        "premise: the whole office would suffix the namesake upstairs"
+        "premise: one count over the whole office would suffix the namesake upstairs"
     );
 }
 

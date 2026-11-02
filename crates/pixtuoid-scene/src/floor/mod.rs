@@ -1097,24 +1097,29 @@ pub(crate) struct ProjectedSlot {
     pub(crate) desk: FloorLocalDeskIndex,
 }
 
-/// Extract agents belonging to `floor_idx`, pairing each with its desk remapped
-/// into the floor's `[0..capacity)` LOCAL space so the layout engine sees a
-/// self-contained floor. Uses the stored `floor_idx` on each slot so capacity
-/// growth never migrates agents between floors.
-pub(crate) fn build_floor_scene(scene: &SceneState, floor_idx: usize) -> Vec<ProjectedSlot> {
+/// The agents floor `floor_idx` draws. It goes by each slot's stored
+/// `floor_idx`, so capacity growth never migrates agents between floors, and
+/// leaves out one a lower floor's growth left below its offset
+/// ([`SceneState::floor_of`]).
+pub(crate) fn floor_agents(
+    scene: &SceneState,
+    floor_idx: usize,
+) -> impl Iterator<Item = &AgentSlot> + '_ {
     let offset = scene.floor_range(floor_idx).start;
     scene
         .agents
         .values()
-        .filter(|a| a.floor_idx == floor_idx)
-        .filter_map(|a| {
-            if a.desk_index.0 < offset {
-                return None;
-            }
-            Some(ProjectedSlot {
-                slot: a.clone(),
-                desk: FloorLocalDeskIndex(a.desk_index.0 - offset),
-            })
+        .filter(move |a| a.floor_idx == floor_idx && a.desk_index.0 >= offset)
+}
+
+/// Each of [`floor_agents`], paired with its desk remapped into the floor's
+/// `[0..capacity)` LOCAL space so the layout engine sees a self-contained floor.
+pub(crate) fn build_floor_scene(scene: &SceneState, floor_idx: usize) -> Vec<ProjectedSlot> {
+    let offset = scene.floor_range(floor_idx).start;
+    floor_agents(scene, floor_idx)
+        .map(|a| ProjectedSlot {
+            slot: a.clone(),
+            desk: FloorLocalDeskIndex(a.desk_index.0 - offset),
         })
         .collect()
 }

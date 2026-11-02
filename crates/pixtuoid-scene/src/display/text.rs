@@ -200,13 +200,13 @@ impl Badge {
         namesakes: &crate::nameplate::Namesakes<'_>,
         theme: &Theme,
     ) -> Self {
-        let text = crate::badge::badge_text(namesakes, agent);
-        let ink = crate::badge::badge_ink(&text, crate::badge::tone_of(agent), theme);
+        let name = namesakes.nameplate(agent);
+        let ink = crate::badge::badge_ink(name.label(), crate::badge::tone_of(agent), theme);
         Self {
             agent: agent.agent_id,
             at: anchor,
             marker: ink.marker,
-            name: TextSpan::new(text, ink.name),
+            name: TextSpan::new(crate::badge::badge_text(&name), ink.name),
             plate: crate::badge::badge_plate_colour(theme),
         }
     }

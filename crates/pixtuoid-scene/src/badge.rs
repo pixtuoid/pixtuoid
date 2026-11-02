@@ -7,7 +7,7 @@ use pixtuoid_core::AgentSlot;
 use pixtuoid_core::state::ActivityState;
 
 use crate::layout::DESK_W;
-use crate::nameplate::{LABEL_SEP, Nameplate, Namesakes};
+use crate::nameplate::{LABEL_SEP, Nameplate};
 use crate::theme::Theme;
 
 /// Activity-derived label tone — backend-agnostic.
@@ -36,8 +36,9 @@ impl BadgeTone {
 /// The source's badge hue for a name-badge label, or `None` when the label has
 /// no `LABEL_SEP` prefix (a bare-prefix / cwd-less label like `cx`) or the
 /// prefix is unregistered.
-pub(crate) fn badge_hue(text: &str, theme: &Theme) -> Option<Rgb> {
-    text.split_once(LABEL_SEP)
+pub(crate) fn badge_hue(label: &str, theme: &Theme) -> Option<Rgb> {
+    label
+        .split_once(LABEL_SEP)
         .and_then(|(prefix, _)| theme.source.by_prefix(prefix))
 }
 
@@ -57,7 +58,7 @@ pub struct BadgeInk {
 pub use crate::display::BADGE_MARKER;
 
 // A decoded label ends in core's ELLIPSIS only past this many chars, and a
-// badge keeps no more chars than cells (`truncate_label`), so it never shows
+// badge keeps no more chars than cells (`Nameplate::fit`), so it never shows
 // the mark.
 const _: () =
     assert!((BADGE_CELLS as usize) < pixtuoid_core::source::decoder::MAX_DECODED_FIELD_CHARS);
@@ -69,24 +70,22 @@ pub const BADGE_CELLS: u16 = DESK_W + BADGE_OVERHANG;
 /// The cells a badge may run past its desk's width.
 const BADGE_OVERHANG: u16 = 4;
 
-/// The [`BadgeInk`] of a badge reading `text` in `tone`.
-pub fn badge_ink(text: &str, tone: BadgeTone, theme: &Theme) -> BadgeInk {
+/// The [`BadgeInk`] of a badge in `tone` for an agent's
+/// [label](Nameplate::label): its shown name would not do, as a bare `cx`
+/// shown as `cx·ab12` reads as the `cx` source.
+pub fn badge_ink(label: &str, tone: BadgeTone, theme: &Theme) -> BadgeInk {
     let name = tone.rgb(theme);
     BadgeInk {
-        marker: badge_hue(text, theme).unwrap_or(name),
+        marker: badge_hue(label, theme).unwrap_or(name),
         name,
     }
 }
 
-/// `agent`'s badge text, with no marker: its [nameplate](Namesakes::nameplate)
-/// truncated to the cells the marker leaves.
-pub(crate) fn badge_text(namesakes: &Namesakes<'_>, agent: &AgentSlot) -> String {
+/// `name` as a badge shows it, with no marker: [fit](Nameplate::fit) to the
+/// cells the marker leaves.
+pub(crate) fn badge_text(name: &Nameplate) -> String {
     let marker = crate::display::text::cells(BADGE_MARKER.encode_utf8(&mut [0; 4]));
-    truncate_label(
-        &namesakes.nameplate(agent),
-        BADGE_CELLS.saturating_sub(marker),
-    )
-    .into_owned()
+    name.fit(BADGE_CELLS.saturating_sub(marker)).into_owned()
 }
 
 /// `agent`'s badge tone: exiting over whatever it last did.
@@ -108,53 +107,10 @@ pub(crate) fn badge_plate_colour(theme: &Theme) -> Rgb {
     theme.ui.tooltip_bg
 }
 
-/// Fit a name into `budget` terminal cells, and as many chars, without
-/// losing its `·xxxx` disambiguation suffix. Truncates from the label, not
-/// the suffix — otherwise the disambig becomes useless ("TikTok-Android·a"
-/// tells us nothing the base alone wouldn't). A name with no suffix is cut
-/// from its end, its source prefix kept.
-pub fn truncate_label(name: &Nameplate, budget: u16) -> std::borrow::Cow<'_, str> {
-    use std::borrow::Cow;
-    let Some(suffix) = &name.suffix else {
-        return Cow::Borrowed(take_span(&name.label, budget));
-    };
-    let whole = name.to_string();
-    if span(&whole) <= budget {
-        return Cow::Owned(whole);
-    }
-    let tail = format!("{LABEL_SEP}{suffix}");
-    let tail_span = span(&tail);
-    if tail_span < budget {
-        let base = take_span(&name.label, budget - tail_span);
-        return Cow::Owned(format!("{base}{tail}"));
-    }
-    Cow::Owned(take_span(&whole, budget).to_owned())
-}
-
-/// What a label spends of a badge's budget: its cells, or its chars where a
-/// run of zero-width marks has more.
-fn span(text: &str) -> u16 {
-    let chars = u16::try_from(text.chars().count()).unwrap_or(u16::MAX);
-    crate::display::text::cells(text).max(chars)
-}
-
-/// The longest start of `text` whose [`span`] fits `budget`, its clusters
-/// whole.
-fn take_span(text: &str, budget: u16) -> &str {
-    use unicode_segmentation::UnicodeSegmentation;
-    let end = text
-        .grapheme_indices(true)
-        .map(|(i, cluster)| i + cluster.len())
-        .take_while(|&end| span(&text[..end]) <= budget)
-        .last()
-        .unwrap_or(0);
-    &text[..end]
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BadgeTone, badge_hue, badge_text, tone_of, truncate_label};
-    use crate::nameplate::{Nameplate, Namesakes, disambig_suffix};
+    use super::{BadgeTone, badge_hue, badge_text, tone_of};
+    use crate::nameplate::{Namesakes, Suffix};
     use pixtuoid_core::AgentId;
     use pixtuoid_core::state::{
         ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
@@ -211,11 +167,15 @@ mod tests {
         s
     }
 
+    /// `agent`'s badge text among `slots`.
+    fn shown(slots: &[AgentSlot], agent: &AgentSlot) -> String {
+        badge_text(&Namesakes::of(slots).nameplate(agent))
+    }
+
     #[test]
     fn a_lone_running_agent_reads_its_bare_label_in_the_running_tone() {
         let a = slot("cc", "sess-abcd", 0, running());
-        let s = scene_of(vec![a.clone()]);
-        assert_eq!(badge_text(&Namesakes::of(s.agents.values()), &a), "cc");
+        assert_eq!(shown(std::slice::from_ref(&a), &a), "cc");
         assert_eq!(tone_of(&a), BadgeTone::Running);
     }
 
@@ -236,6 +196,24 @@ mod tests {
         assert_eq!(badge_hue("zz·repo", &crate::theme::NORMAL), None);
     }
 
+    /// A bare-prefix label's marker takes no source hue ([`badge_hue`]), and a
+    /// namesake's suffix doesn't lend it one.
+    #[test]
+    fn a_bare_prefix_namesakes_marker_matches_a_lone_ones() {
+        let marker = |slots: Vec<AgentSlot>| {
+            let s = scene_of(slots.clone());
+            let namesakes = Namesakes::of(s.agents.values());
+            let anchor = crate::layout::Point { x: 0, y: 0 };
+            crate::display::Badge::new(anchor, &slots[0], &namesakes, &crate::theme::NORMAL).marker
+        };
+        let lone = marker(vec![slot("cx", "session-aaaa", 0, running())]);
+        let shared = marker(vec![
+            slot("cx", "session-aaaa", 0, running()),
+            slot("cx", "session-bbbb", 1, running()),
+        ]);
+        assert_eq!(shared, lone);
+    }
+
     /// A namesake's badge, as every painter builds it, is its whole nameplate
     /// truncated, the suffix kept.
     #[test]
@@ -253,11 +231,8 @@ mod tests {
             shown.len() < whole.to_string().len(),
             "premise: {whole} is cut"
         );
-        assert_eq!(shown, truncate_label(&whole, super::BADGE_CELLS - marker));
-        assert!(
-            shown.ends_with(&format!("\u{b7}{}", disambig_suffix(a.agent_id))),
-            "{shown:?}"
-        );
+        assert_eq!(shown, whole.fit(super::BADGE_CELLS - marker));
+        assert!(shown.ends_with(&Suffix::of(a.agent_id).tail()), "{shown:?}");
     }
 
     /// The snapshot casts share each team's label, so every team badge is suffixed.
@@ -269,13 +244,8 @@ mod tests {
             let label = cc_derive_label(std::path::Path::new(""), SOURCE_NAME, &cwd);
             let a = slot(&label, "session-aaaa", 0, running());
             let b = slot(&label, "session-bbbb", 1, running());
-            let s = scene_of(vec![a.clone(), b]);
-            let want = format!("{label}\u{00b7}{}", disambig_suffix(a.agent_id));
-            assert_eq!(
-                badge_text(&Namesakes::of(s.agents.values()), &a),
-                want,
-                "{repo}"
-            );
+            let want = format!("{label}{}", Suffix::of(a.agent_id).tail());
+            assert_eq!(shown(&[a.clone(), b], &a), want, "{repo}");
         }
     }
 
@@ -298,25 +268,6 @@ mod tests {
         assert_eq!(tone_of(&exiting), BadgeTone::Exiting);
     }
 
-    /// A budget never splits a grapheme cluster: a ZWJ sequence is kept whole
-    /// or dropped whole.
-    #[test]
-    fn a_take_keeps_clusters_whole() {
-        let coder = "\u{1f469}\u{200d}\u{1f4bb}";
-        let text = format!("a{coder}b");
-        // The sequence is three chars in two cells, so it takes three.
-        assert_eq!(super::take_span(&text, 4), format!("a{coder}"));
-        assert_eq!(super::take_span(&text, 3), "a");
-        assert_eq!(super::take_span(&text, u16::MAX), text);
-    }
-
-    /// A first cluster wider than the budget takes nothing, as a terminal
-    /// can't draw half of it.
-    #[test]
-    fn a_cluster_wider_than_the_budget_is_dropped() {
-        assert_eq!(super::take_span("\u{65e5}x", 1), "");
-    }
-
     #[test]
     fn a_label_of_zero_width_marks_never_shows_the_cap_mark() {
         use pixtuoid_core::source::decoder::{ELLIPSIS, MAX_DECODED_FIELD_CHARS};
@@ -324,56 +275,21 @@ mod tests {
             "a{}{ELLIPSIS}",
             "\u{301}".repeat(MAX_DECODED_FIELD_CHARS - 1)
         );
-        let shown = fit(&capped, None, super::BADGE_CELLS);
-        assert!(!shown.contains(ELLIPSIS), "{shown:?}");
-    }
-
-    /// [`truncate_label`] of the name `label` and `suffix` make.
-    fn fit(label: &str, suffix: Option<&str>, budget: u16) -> String {
-        let name = Nameplate {
-            label: label.into(),
-            suffix: suffix.map(str::to_owned),
-        };
-        truncate_label(&name, budget).into_owned()
-    }
-
-    #[test]
-    fn truncate_label_passes_short_labels_through() {
-        assert_eq!(fit("hello", None, 16), "hello");
-    }
-
-    #[test]
-    fn truncate_label_preserves_disambig_suffix() {
-        let out = fit("TikTok-Android", Some("a09a"), 16);
-        assert_eq!(out.chars().count(), 16);
-        assert!(out.ends_with("\u{00b7}a09a"), "suffix lost: {out}");
-        assert!(out.starts_with("TikTok"), "base over-truncated: {out}");
-    }
-
-    #[test]
-    fn truncate_label_falls_back_to_plain_truncate_when_no_separator() {
-        let out = fit("a-very-long-project-name", None, 8);
-        assert_eq!(out, "a-very-l");
-    }
-
-    #[test]
-    fn truncate_label_plain_take_when_suffix_exceeds_budget() {
-        let out = fit("x", Some("abcdefgh"), 4);
-        assert_eq!(out.chars().count(), 4);
-        assert_eq!(out, "x\u{00b7}ab");
+        let a = slot(&capped, "sess-abcd", 0, running());
+        let text = shown(std::slice::from_ref(&a), &a);
+        assert!(!text.contains(ELLIPSIS), "{text:?}");
     }
 
     /// A lone agent's label one char past its badge keeps its source prefix:
-    /// only a namesake's suffix is kept by cutting the label's base.
+    /// only a namesake's suffix is kept by cutting the label.
     #[test]
     fn a_lone_label_just_past_its_badge_keeps_its_source_prefix() {
         let marker = crate::display::text::cells(super::BADGE_MARKER.encode_utf8(&mut [0; 4]));
         let budget = usize::from(super::BADGE_CELLS - marker);
         let label = format!("cc\u{b7}{}", "r".repeat(budget - 2));
         let a = slot(&label, "sess-abcd", 0, running());
-        let s = scene_of(vec![a.clone()]);
-        let shown = badge_text(&Namesakes::of(s.agents.values()), &a);
-        assert_eq!(shown, label.chars().take(budget).collect::<String>());
+        let text = shown(std::slice::from_ref(&a), &a);
+        assert_eq!(text, label.chars().take(budget).collect::<String>());
     }
 
     /// A long name's badge, marker and all, fills [`BADGE_CELLS`] and no
@@ -389,8 +305,7 @@ mod tests {
             "cc\u{b7}a日本語プロジェクト管理",
         ] {
             let a = slot(label, "sess-abcd", 0, running());
-            let s = scene_of(vec![a.clone()]);
-            let name = badge_text(&Namesakes::of(s.agents.values()), &a);
+            let name = shown(std::slice::from_ref(&a), &a);
             let badge = format!("{}{name}", super::BADGE_MARKER);
             let n = cells(&badge);
             assert!(
@@ -398,17 +313,6 @@ mod tests {
                 "{badge:?} takes {n} cells"
             );
         }
-    }
-
-    /// The budget is in cells, which a CJK character takes two of: a wide name
-    /// gets half the characters, the suffix kept as for any other.
-    #[test]
-    fn truncate_label_budgets_cells_not_chars() {
-        assert_eq!(fit("日本語プロジェクト", None, 8), "日本語プ");
-        assert_eq!(
-            fit("日本語プロジェクト", Some("a09a"), 12),
-            "日本語\u{00b7}a09a"
-        );
     }
 
     /// WCAG 2.2's relative luminance

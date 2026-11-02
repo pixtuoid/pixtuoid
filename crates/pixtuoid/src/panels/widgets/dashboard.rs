@@ -11,7 +11,6 @@ use ratatui::text::{Line, Span};
 
 use super::{Overflow, Panel, marquee_or_truncate, source_badge_span, to_color};
 use crate::panels::dashboard::{DASHBOARD_VIEWPORT_ROWS, DashboardFrame, DashboardRow, RowState};
-use pixtuoid_scene::badge::truncate_label;
 use pixtuoid_scene::theme::Theme;
 
 const LABEL_W: usize = 32;
@@ -93,15 +92,15 @@ fn dashboard_line(
     } else {
         String::new()
     };
-    // A row the marquee doesn't scroll is cut from its label's base, as a
-    // badge is, so a namesake keeps the suffix that tells it apart.
-    let label = if is_selected {
+    // A row the marquee doesn't scroll is cut as a badge is, so a namesake
+    // keeps the suffix that tells it apart.
+    let shown = if is_selected {
         std::borrow::Cow::Owned(row.name.to_string())
     } else {
         let room = LABEL_W.saturating_sub(prefix.chars().count() + count.chars().count());
-        truncate_label(&row.name, u16::try_from(room).unwrap_or(u16::MAX))
+        row.name.fit(u16::try_from(room).unwrap_or(u16::MAX))
     };
-    let name = format!("{prefix}{label}{count}");
+    let name = format!("{prefix}{shown}{count}");
     let label_cell = format!(
         "{:<LABEL_W$}",
         marquee_or_truncate(&name, LABEL_W, is_selected, now)
@@ -147,21 +146,26 @@ fn dashboard_line(
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::slot_with;
     use super::*;
     use pixtuoid_core::AgentId;
-    use pixtuoid_scene::nameplate::Nameplate;
+    use pixtuoid_core::state::ActivityState;
+    use pixtuoid_scene::nameplate::{Nameplate, Namesakes};
     use pixtuoid_scene::theme::NORMAL;
     use std::sync::Arc;
 
+    /// The row of a lone agent labelled `label`.
     fn make_row(source: &str, state: RowState, label: &str) -> DashboardRow {
+        let slot = slot_with(ActivityState::Idle, label);
+        row_named(source, state, Namesakes::of([&slot]).nameplate(&slot))
+    }
+
+    fn row_named(source: &str, state: RowState, name: Nameplate) -> DashboardRow {
         DashboardRow {
             agent_id: AgentId::from_transcript_path("/x.jsonl"),
             parent_id: None,
             depth: 0,
-            name: Nameplate {
-                label: label.into(),
-                suffix: None,
-            },
+            name,
             source: Arc::from(source),
             floor_idx: 0,
             state,
@@ -171,7 +175,7 @@ mod tests {
     }
 
     /// A lone label one char past the column keeps its source prefix: only a
-    /// namesake's suffix is kept by cutting the label's base.
+    /// namesake's suffix is kept by cutting the label.
     #[test]
     fn a_lone_label_just_past_the_column_keeps_its_source_prefix() {
         let label = format!("cc\u{b7}{}", "r".repeat(28));
@@ -185,20 +189,28 @@ mod tests {
         );
     }
 
-    /// Two namesakes too long for the column keep their suffixes, cut from
-    /// the label's base as a badge is, so their rows stay apart.
+    /// Two namesakes too long for the column keep their suffixes, cut as a
+    /// badge is, so their rows stay apart.
     #[test]
     fn long_namesake_rows_keep_their_suffixes() {
-        let base = "cc\u{b7}a-very-long-project-name-xyz";
-        for suffix in ["75eb", "a39c"] {
-            let mut row = make_row("cc", RowState::Idle, base);
-            row.name.suffix = Some(suffix.to_owned());
+        let label = "cc\u{b7}a-very-long-project-name-xyz";
+        let a = slot_with(ActivityState::Idle, label);
+        let mut b = slot_with(ActivityState::Idle, label);
+        b.agent_id = AgentId::from_transcript_path("/p/namesake.jsonl");
+        let namesakes = Namesakes::of([&a, &b]);
+        let mut cells = Vec::new();
+        for agent in [&a, &b] {
+            let name = namesakes.nameplate(agent);
+            let tail = name.suffix().expect("a namesake's suffix").tail();
+            let row = row_named("cc", RowState::Idle, name);
             let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
             let cell = line.spans[2].content.to_string();
             assert_eq!(cell.chars().count(), LABEL_W, "{cell:?}");
-            assert!(cell.ends_with(&format!("\u{b7}{suffix}")), "{cell:?}");
+            assert!(cell.ends_with(&tail), "{cell:?}");
             assert!(cell.trim_start().starts_with("cc\u{b7}a-very"), "{cell:?}");
+            cells.push(cell);
         }
+        assert_ne!(cells[0], cells[1]);
     }
 
     #[test]

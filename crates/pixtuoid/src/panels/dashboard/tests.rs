@@ -351,6 +351,30 @@ fn namesake_rows_read_their_floors_nameplates() {
     assert_eq!(row(up).to_string(), "cc·api");
 }
 
+/// An agent left below floor 1's offset when floor 0 grew is drawn on no
+/// floor, so a namesake seated on floor 1 since reads its badge's bare name.
+#[test]
+fn a_row_counts_its_floor_as_the_floors_badges_do() {
+    let mut capacities = [0; pixtuoid_core::state::MAX_FLOORS];
+    capacities[..2].copy_from_slice(&[4, 4]);
+    let mut scene = SceneState::new(capacities);
+    let (left, seated) = (id("/p/left.jsonl"), id("/p/seated.jsonl"));
+    let slot = mk_slot(left, "cc·api", 4, 1, None, ActivityState::Idle);
+    scene.agents.insert(left, slot);
+    scene.floor_capacities[0] = 8;
+    let slot = mk_slot(seated, "cc·api", 8, 1, None, ActivityState::Idle);
+    scene.agents.insert(seated, slot);
+    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+    let row = rows
+        .iter()
+        .find(|r| r.agent_id == seated)
+        .expect("the seated agent's row");
+    let projection = pixtuoid_scene::floor::project_floor_scene(&scene, 1);
+    let badge = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values())
+        .nameplate(&projection.agents[&seated]);
+    assert_eq!(row.name, badge);
+}
+
 #[test]
 fn build_dashboard_rows_empty_scene_is_empty() {
     let scene = SceneState::uniform(8);

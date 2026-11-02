@@ -26,7 +26,7 @@ use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
 use pixtuoid_scene::theme::theme_by_name;
 
 /// The two `cc` labels are a DELIBERATE collision, so the snapshot exercises the
-/// `·<id4>` disambiguation as well as every label tone.
+/// `·xxxx` suffix as well as every label tone.
 fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
     let archetypes: [(&str, ActivityState); 6] = [
         (

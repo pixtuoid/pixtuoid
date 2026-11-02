@@ -1,13 +1,15 @@
-//! What the office calls each agent: its label, and its own suffix where
-//! another agent wears the same label (`cc·api·3f2a`). A badge shows it cut to
-//! its cells; a device listing agents beside the office, whole.
+//! What the office calls each agent: its label, and its own [`Suffix`] where
+//! another agent wears the same label (`cc·api·3f2a`). A badge shows it
+//! [fit](Nameplate::fit) to its cells; a device listing agents beside the
+//! office, whole.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
 use pixtuoid_core::id::splitmix64;
-use pixtuoid_core::{AgentId, AgentSlot};
+use pixtuoid_core::{AgentId, AgentSlot, SceneState};
 
 /// The separator between a label's source prefix and its cwd/disambiguation
 /// tail (`cc·repo`, `cc·repo·1a2b`). The label is WRITTEN core-side as a bare
@@ -18,24 +20,109 @@ use pixtuoid_core::{AgentId, AgentSlot};
 /// char.
 pub(crate) const LABEL_SEP: char = '\u{b7}';
 
+/// What tells an agent from its namesakes: 16 bits of its [`AgentId`], which
+/// crosses the wire, so a device and its host show one. Displays as its 4 hex
+/// digits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Suffix(u16);
+
+impl Suffix {
+    /// `id`'s suffix: the low 16 bits of the [`splitmix64`]-finalized id, the
+    /// window `physics`'s `speed_mult` and `pause_ms_for` leave free, so a
+    /// suffix says nothing of a walk.
+    pub fn of(id: AgentId) -> Self {
+        let [low, high, ..] = splitmix64(id.raw()).to_le_bytes();
+        Self(u16::from_le_bytes([low, high]))
+    }
+
+    /// The tail a name carries it as: the label's separator, then the digits.
+    pub fn tail(self) -> String {
+        format!("{LABEL_SEP}{self}")
+    }
+}
+
+impl fmt::Display for Suffix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:04x}", self.0)
+    }
+}
+
 /// An agent's name in its two parts, so a cut can tell a suffix from the
-/// label's own `·`. Displays as the whole name.
+/// label's own `·`; only a count of its namesakes makes one. Displays as the
+/// whole name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Nameplate {
+    label: Arc<str>,
+    suffix: Option<Suffix>,
+}
+
+impl Nameplate {
+    fn of(agent: &AgentSlot, shared: bool) -> Self {
+        Self {
+            label: agent.label.text(),
+            suffix: shared.then(|| Suffix::of(agent.agent_id)),
+        }
+    }
+
     /// The agent's label.
-    pub label: Arc<str>,
-    /// Its [suffix](disambig_suffix), where a namesake shares the label.
-    pub suffix: Option<String>,
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    /// Its suffix, where a namesake shares the label.
+    pub fn suffix(&self) -> Option<Suffix> {
+        self.suffix
+    }
+
+    /// It in `cells` terminal cells, and as many chars. A suffix is kept by
+    /// cutting the label, as a suffix cut short tells nothing
+    /// (`TikTok-Android·a`); a name with none is cut from its end.
+    pub fn fit(&self, cells: u16) -> Cow<'_, str> {
+        let Some(suffix) = self.suffix else {
+            return Cow::Borrowed(take_span(&self.label, cells));
+        };
+        let whole = self.to_string();
+        if span(&whole) <= cells {
+            return Cow::Owned(whole);
+        }
+        let tail = suffix.tail();
+        let tail_span = span(&tail);
+        if tail_span < cells {
+            let base = take_span(&self.label, cells - tail_span);
+            return Cow::Owned(format!("{base}{tail}"));
+        }
+        Cow::Owned(take_span(&whole, cells).to_owned())
+    }
 }
 
 impl fmt::Display for Nameplate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.label)?;
-        match &self.suffix {
-            Some(suffix) => write!(f, "{LABEL_SEP}{suffix}"),
+        match self.suffix {
+            Some(suffix) => f.write_str(&suffix.tail()),
             None => Ok(()),
         }
     }
+}
+
+/// What a name spends of a cell budget: its cells, or its chars where a run of
+/// zero-width marks has more.
+fn span(text: &str) -> u16 {
+    let chars = u16::try_from(text.chars().count()).unwrap_or(u16::MAX);
+    crate::display::text::cells(text).max(chars)
+}
+
+/// The longest start of `text` whose [`span`] fits `budget`, its clusters
+/// whole.
+fn take_span(text: &str, budget: u16) -> &str {
+    use unicode_segmentation::UnicodeSegmentation;
+    let end = text
+        .grapheme_indices(true)
+        .map(|(i, cluster)| i + cluster.len())
+        .take_while(|&end| span(&text[..end]) <= budget)
+        .last()
+        .unwrap_or(0);
+    &text[..end]
 }
 
 /// The labels a set of agents wear, counted, so each agent's
@@ -44,10 +131,9 @@ impl fmt::Display for Nameplate {
 pub struct Namesakes<'a>(HashMap<&'a str, usize>);
 
 impl<'a> Namesakes<'a> {
-    /// `agents`' labels, counted. Count what a badge counts to name each agent
-    /// as its badge does: the scene its office draws, one floor's
-    /// [projection](crate::floor::project_floor_scene) in a multi-floor
-    /// office, agents it does not draw included.
+    /// `agents`' labels, counted: the agents a frame draws together, as its
+    /// badges count them, agents it does not draw included. A list of a whole
+    /// multi-floor office counts each floor with [`FloorNamesakes`].
     pub fn of(agents: impl IntoIterator<Item = &'a AgentSlot>) -> Self {
         let mut counts: HashMap<&str, usize> = HashMap::new();
         for agent in agents {
@@ -56,29 +142,50 @@ impl<'a> Namesakes<'a> {
         Self(counts)
     }
 
+    fn shares(&self, agent: &AgentSlot) -> bool {
+        self.0.get(&*agent.label).is_some_and(|&n| n > 1)
+    }
+
     /// `agent`'s name, whole: its label, with its suffix when another counted
     /// agent wears that label.
     pub fn nameplate(&self, agent: &AgentSlot) -> Nameplate {
-        let shared = self.0.get(&*agent.label).copied().unwrap_or(0) > 1;
-        Nameplate {
-            label: agent.label.text(),
-            suffix: shared.then(|| disambig_suffix(agent.agent_id)),
-        }
+        Nameplate::of(agent, self.shares(agent))
     }
 }
 
-/// `id`'s 4-hex-digit suffix, from the [`AgentId`] that crosses the wire, so a
-/// device and its host show one suffix: the low 16 bits of the
-/// [`splitmix64`]-finalized id, the window `physics`'s `speed_mult` and
-/// `pause_ms_for` leave free, so a suffix says nothing of a walk.
-#[doc(hidden)]
-pub fn disambig_suffix(id: AgentId) -> String {
-    format!("{:04x}", splitmix64(id.raw()) & u64::from(u16::MAX))
+/// Each floor's [`Namesakes`], counted over the agents that floor draws, so a
+/// list of a whole multi-floor office names each agent as its floor's badges
+/// do.
+#[derive(Debug)]
+pub struct FloorNamesakes<'a>(Vec<Namesakes<'a>>);
+
+impl<'a> FloorNamesakes<'a> {
+    /// The floors of `scene`, the whole office: a floor's
+    /// [projection](crate::floor::project_floor_scene) re-hosts its desks, so
+    /// it reads as no floor's.
+    pub fn of(scene: &'a SceneState) -> Self {
+        let floors = 0..scene.floor_capacities.len();
+        Self(
+            floors
+                .map(|floor| Namesakes::of(crate::floor::floor_agents(scene, floor)))
+                .collect(),
+        )
+    }
+
+    /// `agent`'s name as its floor's badges read it; an agent no floor draws
+    /// is counted on none.
+    pub fn nameplate(&self, agent: &AgentSlot) -> Nameplate {
+        let shared = self
+            .0
+            .get(agent.floor_idx)
+            .is_some_and(|floor| floor.shares(agent));
+        Nameplate::of(agent, shared)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Namesakes, disambig_suffix};
+    use super::{Nameplate, Namesakes, Suffix, take_span};
     use crate::character::test_support::make_slot;
     use pixtuoid_core::AgentId;
     use pixtuoid_core::state::{ActivityState, AgentSlot};
@@ -92,6 +199,15 @@ mod tests {
         a
     }
 
+    /// `label`'s name, with a real suffix when `suffixed`.
+    fn plate(label: &str, suffixed: bool) -> Nameplate {
+        let id = AgentId::from_transcript_path("/p/plate.jsonl");
+        Nameplate {
+            label: label.into(),
+            suffix: suffixed.then(|| Suffix::of(id)),
+        }
+    }
+
     /// Each namesake carries its own suffix after its whole label, whatever
     /// floor it works on: a host can draw a whole office in one view.
     #[test]
@@ -102,8 +218,8 @@ mod tests {
         b.floor_idx = a.floor_idx + 1;
         let all = [a.clone(), b.clone()];
         let namesakes = Namesakes::of(&all);
-        let want_a = format!("{label}\u{b7}{}", disambig_suffix(a.agent_id));
-        let want_b = format!("{label}\u{b7}{}", disambig_suffix(b.agent_id));
+        let want_a = format!("{label}{}", Suffix::of(a.agent_id).tail());
+        let want_b = format!("{label}{}", Suffix::of(b.agent_id).tail());
         assert_eq!(namesakes.nameplate(&a).to_string(), want_a);
         assert_eq!(namesakes.nameplate(&b).to_string(), want_b);
         assert_ne!(want_a, want_b);
@@ -117,10 +233,7 @@ mod tests {
             agent("cc\u{b7}api", "b"),
             lone.clone(),
         ];
-        let bare = super::Nameplate {
-            label: "cc\u{b7}web".into(),
-            suffix: None,
-        };
+        let bare = plate("cc\u{b7}web", false);
         assert_eq!(Namesakes::of(&all).nameplate(&lone), bare);
         assert_eq!(Namesakes::of([&lone]).nameplate(&lone), bare);
     }
@@ -139,7 +252,7 @@ mod tests {
             ("reasonix", "/work/client-x/app", "d5db"),
         ] {
             let id = AgentId::from_parts(source, opaque_id);
-            assert_eq!(disambig_suffix(id), suffix, "{source} {opaque_id}");
+            assert_eq!(Suffix::of(id).to_string(), suffix, "{source} {opaque_id}");
         }
     }
 
@@ -165,11 +278,71 @@ mod tests {
         );
         for agent in host.agents.values() {
             let named = on_host.nameplate(agent);
-            assert!(named.suffix.is_some(), "premise: {named:?}");
+            assert!(named.suffix().is_some(), "premise: {named:?}");
             assert_eq!(
                 on_device.nameplate(&device.scene().agents[&agent.agent_id]),
                 named
             );
         }
+    }
+
+    #[test]
+    fn a_fit_passes_a_short_name_through() {
+        assert_eq!(plate("hello", false).fit(16), "hello");
+        let short = plate("hi", true);
+        assert_eq!(short.fit(16), short.to_string());
+    }
+
+    #[test]
+    fn a_fit_keeps_the_suffix() {
+        let name = plate("TikTok-Android", true);
+        let tail = name.suffix().expect("suffixed").tail();
+        let out = name.fit(16);
+        assert_eq!(out.chars().count(), 16);
+        assert!(out.ends_with(&tail), "suffix lost: {out}");
+        assert!(out.starts_with("TikTok"), "label over-cut: {out}");
+    }
+
+    #[test]
+    fn a_fit_cuts_a_bare_name_from_its_end() {
+        assert_eq!(plate("a-very-long-project-name", false).fit(8), "a-very-l");
+    }
+
+    /// Cells too few for the tail take the whole name's start.
+    #[test]
+    fn a_fit_too_narrow_for_the_tail_cuts_the_whole_name() {
+        let name = plate("x", true);
+        let cells = 4;
+        let start: String = name.to_string().chars().take(usize::from(cells)).collect();
+        assert_eq!(name.fit(cells), start);
+    }
+
+    /// The budget is in cells, which a CJK character takes two of: a wide name
+    /// gets half the characters, the suffix kept as for any other.
+    #[test]
+    fn a_fit_budgets_cells_not_chars() {
+        assert_eq!(plate("日本語プロジェクト", false).fit(8), "日本語プ");
+        let suffixed = plate("日本語プロジェクト", true);
+        let tail = suffixed.suffix().expect("suffixed").tail();
+        assert_eq!(suffixed.fit(12), format!("日本語{tail}"));
+    }
+
+    /// A budget never splits a grapheme cluster: a ZWJ sequence is kept whole
+    /// or dropped whole.
+    #[test]
+    fn a_take_keeps_clusters_whole() {
+        let coder = "\u{1f469}\u{200d}\u{1f4bb}";
+        let text = format!("a{coder}b");
+        // The sequence is three chars in two cells, so it takes three.
+        assert_eq!(take_span(&text, 4), format!("a{coder}"));
+        assert_eq!(take_span(&text, 3), "a");
+        assert_eq!(take_span(&text, u16::MAX), text);
+    }
+
+    /// A first cluster wider than the budget takes nothing, as a terminal
+    /// can't draw half of it.
+    #[test]
+    fn a_cluster_wider_than_the_budget_is_dropped() {
+        assert_eq!(take_span("\u{65e5}x", 1), "");
     }
 }

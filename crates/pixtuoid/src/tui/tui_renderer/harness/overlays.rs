@@ -568,11 +568,8 @@ fn hovered_agent_tooltip_shows_source_badge() {
     r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(text.contains("[cc]"), "source badge on the tooltip: {text}");
-    let id4 = pixtuoid_scene::nameplate::disambig_suffix(id);
-    assert!(
-        text.contains(&format!("\u{b7}{id4}")),
-        "id4 disambiguation suffix ·{id4}: {text}"
-    );
+    let tail = pixtuoid_scene::nameplate::Suffix::of(id).tail();
+    assert!(text.contains(&tail), "the suffix {tail}: {text}");
 }
 
 #[test]

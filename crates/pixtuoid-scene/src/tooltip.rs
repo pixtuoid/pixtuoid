@@ -15,7 +15,7 @@ use crate::display::{GatewayCard, HoverTarget, PetHover};
 use crate::floor::FloorInputs;
 use crate::footer::{FooterTone, RungKind};
 use crate::hit::SceneHit;
-use crate::nameplate::{LABEL_SEP, disambig_suffix};
+use crate::nameplate::{Namesakes, Suffix};
 use crate::pet::PetKind;
 use crate::theme::Theme;
 
@@ -295,24 +295,14 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
         }
     }
     let dim = |text: String| TipRow::Spans(vec![TipSpan::new(text, TipTone::Dim)]);
+    let prefix = descriptor_for(agent.source.as_ref()).map_or("??", |d| d.label_prefix);
     let mut rows = vec![
         TipRow::Heading {
             left: vec![
-                TipSpan::new(
-                    format!(
-                        "[{:<2}]",
-                        descriptor_for(agent.source.as_ref()).map_or("??", |d| d.label_prefix)
-                    ),
-                    TipTone::Source(
-                        descriptor_for(agent.source.as_ref()).map_or("??", |d| d.label_prefix),
-                    ),
-                ),
+                TipSpan::new(format!("[{prefix:<2}]"), TipTone::Source(prefix)),
                 TipSpan::new(format!(" {}", agent.label), TipTone::Title),
             ],
-            right: TipSpan::new(
-                format!("{LABEL_SEP}{}", disambig_suffix(agent.agent_id)),
-                TipTone::Dim,
-            ),
+            right: TipSpan::new(Suffix::of(agent.agent_id).tail(), TipTone::Dim),
         },
         TipRow::Rule,
         TipRow::Spans(state),
@@ -324,7 +314,9 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
         )]));
     }
     if let Some(parent) = agent.parent_id.and_then(|p| scene.agents.get(&p)) {
-        rows.push(dim(format!("\u{21b3} under {}", parent.label)));
+        // A subagent shares its lead's label: name the lead as this frame's badge does.
+        let lead = Namesakes::of(scene.agents.values()).nameplate(parent);
+        rows.push(dim(format!("\u{21b3} under {lead}")));
     }
     rows.push(dim(format!("\u{25a4} {}", short_cwd(&agent.cwd))));
     // The effort is suffixed only while FRESH — the same burn-TTL the flame
@@ -477,6 +469,43 @@ mod tests {
                 .all(|x| card.get(x, y).and_then(|c| c.bg) == Some(theme.ui.tooltip_bg))
         }));
         assert!(card.get(1, 1).is_some_and(|c| c.bold));
+    }
+
+    /// A subagent works in its lead's repo, so the two are namesakes: its card
+    /// names its own lead as the lead's badge does, apart from another lead
+    /// of that repo.
+    #[test]
+    fn a_subagents_card_names_its_lead_by_its_nameplate() {
+        use crate::character::test_support::make_slot;
+        let label = "cc\u{b7}api";
+        let mut scene = SceneState::uniform(8);
+        let mut add = |key: &str, desk: usize, parent: Option<AgentId>| {
+            let id = AgentId::from_transcript_path(&format!("/p/{key}.jsonl"));
+            let mut a = make_slot(id, ActivityState::Idle);
+            a.label = label.into();
+            a.desk_index = pixtuoid_core::state::GlobalDeskIndex(desk);
+            a.parent_id = parent;
+            scene.agents.insert(id, a);
+            id
+        };
+        let lead = add("lead", 0, None);
+        add("other-lead", 1, None);
+        let sub = add("sub", 2, Some(lead));
+        let tip = agent(&scene, sub, SystemTime::UNIX_EPOCH).expect("the subagent's card");
+        let lineage: Vec<&str> = tip
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                TipRow::Spans(spans) => spans.first().map(|s| s.text.as_str()),
+                _ => None,
+            })
+            .filter(|text| text.contains("under"))
+            .collect();
+        let named = crate::nameplate::Namesakes::of(scene.agents.values())
+            .nameplate(&scene.agents[&lead])
+            .to_string();
+        assert!(named.len() > label.len(), "premise: {named:?} is suffixed");
+        assert_eq!(lineage, [format!("\u{21b3} under {named}")]);
     }
 
     /// An agent's card is at least [`MIN_CARD_W`] wide; a label is its text.
