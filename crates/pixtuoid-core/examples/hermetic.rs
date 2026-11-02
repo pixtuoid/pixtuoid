@@ -2027,6 +2027,7 @@ mod run {
                     source: p.source.to_owned(),
                     scenario: scenario.name.to_owned(),
                     log: run.out.join(TUI_LOG),
+                    scene_log: run.out.join(SCENE_LOG),
                     prompt: prompt.to_owned(),
                     program: run
                         .launch
@@ -2944,6 +2945,7 @@ mod run {
             let line = tui::CommandLine::parse(&words[1..]).expect("a driver command line");
             assert_eq!(line.scenario, scenario.name);
             assert_eq!(line.log, host("runs/x").join(TUI_LOG));
+            assert_eq!(line.scene_log, host("runs/x").join(SCENE_LOG));
             assert_eq!(line.prompt, scenario.turn.prompt.unwrap_or(DEFAULT_PROMPT));
             let program: Vec<OsString> = launch
                 .argv()

@@ -1,10 +1,11 @@
 //! Drive a CLI's interactive TUI under a pty for one hermetic scenario: the
 //! command `just hermetic` hands the recorder in place of the CLI's headless
 //! invocation. What to send comes from `harness::hermetic::tui::Driver`, reading
-//! the profile's `Tui` row; this shell only moves bytes and renders the screen.
+//! the profile's `Tui` row; this shell only moves bytes, renders the screen and
+//! reads the run's scene log.
 //!
 //! ```text
-//! tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]
+//! tui_drive <source> <scenario> <log> <scene-log> <prompt> -- <program> [args...]
 //! ```
 //!
 //! Exits with the CLI's status; when the driver gave up or the [`BUDGET`] ran
@@ -19,7 +20,9 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::hermetic;
-use pixtuoid_core::harness::hermetic::tui::{Action, BUDGET, CommandLine, Driver, GAVE_UP, Key};
+use pixtuoid_core::harness::hermetic::tui::{
+    Action, BUDGET, CommandLine, Driver, GAVE_UP, Key, SceneLog,
+};
 use pixtuoid_core::harness::{DRIVER_DIR_ENV, GAVE_UP_NOTE};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
@@ -48,7 +51,8 @@ const CURSOR_QUERY: &[u8] = b"\x1b[6n";
 const TERM: &str = "xterm-256color";
 
 const USAGE_ERROR: i32 = 2;
-const USAGE: &str = "usage: tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]";
+const USAGE: &str =
+    "usage: tui_drive <source> <scenario> <log> <scene-log> <prompt> -- <program> [args...]";
 
 fn main() {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -129,6 +133,7 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
     });
 
     let mut screen = parser();
+    let mut scene_log = SceneLog::new(line.scene_log);
     let mut quit_at: Option<Instant> = None;
     loop {
         if let Some(status) = child.try_wait()? {
@@ -158,6 +163,9 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
                     format!("\x1b[{};{}R", row + 1, col + 1).as_bytes(),
                 )?;
             }
+        }
+        if let Ok(appended) = scene_log.appended() {
+            driver.observe(&appended);
         }
         let shown = shown(screen.screen());
         let action = driver.step(&shown, Instant::now());
@@ -270,6 +278,7 @@ mod tests {
             source: "claude-code".into(),
             scenario: "permission".into(),
             log: dir.path().join("tui.log"),
+            scene_log: dir.path().join("scene.log"),
             prompt: "hi".into(),
             program: vec!["sh".into(), "-c".into(), "sleep 600".into()],
         };
@@ -288,6 +297,43 @@ mod tests {
             std::fs::read_to_string(dir.path().join(GAVE_UP_NOTE)).expect("its note"),
             format!("the {budget:?} budget ran out")
         );
+    }
+
+    /// kimi's composer; once the prompt's Enter arrives, its gate, with the
+    /// roster `$2` appended to the scene log `$1`; an exit once it is answered.
+    #[cfg(unix)]
+    const GATED: &str = r#"stty raw -echo
+printf '\033[2J\033[H╭──╮\r\n │ > \r\n'
+until [ "$(dd bs=1 count=1 2>/dev/null)" = "$(printf '\r')" ]; do :; done
+printf '\033[2J\033[HRun this command?\r\n'
+printf '%s\n' "$2" >> "$1"
+dd bs=1 count=1 >/dev/null 2>&1"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_gate_is_answered_once_the_scene_log_shows_it() {
+        for (roster, answered) in [
+            ("agents=[km\u{b7}proj@0:requires_action] daemons=[]", true),
+            ("agents=[km\u{b7}proj@0:running] daemons=[]", false),
+        ] {
+            let dir = tempfile::tempdir().expect("dir");
+            let scene_log = dir.path().join("scene.log");
+            let line = CommandLine {
+                source: "kimi".into(),
+                scenario: "permission".into(),
+                log: dir.path().join("tui.log"),
+                scene_log: scene_log.clone(),
+                prompt: "hi".into(),
+                program: ["sh", "-c", GATED, "sh"]
+                    .map(OsString::from)
+                    .into_iter()
+                    .chain([scene_log.into_os_string(), roster.into()])
+                    .collect(),
+            };
+            // Short of the driver's patience, past which it answers unseen.
+            let code = drive(line, Duration::from_secs(3)).expect("it drove");
+            assert_eq!(code == 0, answered, "{roster}");
+        }
     }
 
     #[test]

@@ -259,10 +259,22 @@ impl Shape {
         }
     }
 
+    /// The state the scene must show an agent of its run in.
+    pub(crate) const fn shown(self) -> &'static str {
+        match self {
+            // An item, not a bare open turn: the live pipeline delivered its start.
+            Self::ToolRun | Self::Subagent | Self::ChildError => "running(",
+            Self::Permission => "requires_action",
+            Self::ModelError | Self::Succession | Self::Cancel => "idle",
+        }
+    }
+
     /// How a TUI run answers its turn.
     pub(crate) const fn answer(self) -> tui::Answer {
         match self {
-            Self::Permission => tui::Answer::Gate,
+            Self::Permission => tui::Answer::Gate {
+                shown: self.shown(),
+            },
             Self::Cancel => tui::Answer::Cancel,
             Self::ToolRun
             | Self::Subagent
@@ -806,7 +818,7 @@ impl Scenario {
     /// its row lists no gate, as a seeded hook then decides every prompt.
     pub(crate) fn answer(&self) -> tui::Answer {
         match (self.shape.answer(), self.surface) {
-            (tui::Answer::Gate, Surface::Tui { row }) if row.gates.is_empty() => {
+            (tui::Answer::Gate { .. }, Surface::Tui { row }) if row.gates.is_empty() => {
                 tui::Answer::Nothing
             }
             (answer, _) => answer,

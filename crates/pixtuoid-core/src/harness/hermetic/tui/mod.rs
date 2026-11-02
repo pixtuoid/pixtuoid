@@ -1,8 +1,9 @@
 //! The interactive driver's decisions, over the screen a pty renders.
 //!
 //! Some wire exists only in a CLI's TUI: Claude Code's headless mode refuses a
-//! tool without firing `PermissionRequest`. The `tui_drive` example runs the CLI under a pty and
-//! asks [`Driver::step`] what to do with the screen it now shows; everything
+//! tool without firing `PermissionRequest`. The `tui_drive` example runs the CLI under a pty,
+//! hands [`Driver::observe`] the lines its [`SceneLog`] reads, and asks
+//! [`Driver::step`] what to do with the screen it now shows; everything
 //! that differs between CLIs is its [`Tui`] row, never code here. A new CLI's
 //! edge case is that row plus a test over a screen its run recorded
 //! (`tests/sources/<module>/screens/`).
@@ -20,6 +21,12 @@ const SETTLE: Duration = Duration::from_secs(3);
 /// How long an unchanged screen may stand before a turn that never finished is
 /// given up: an unrecognised dialog stalls a run, and its key is never guessed.
 const STALL: Duration = Duration::from_secs(20);
+/// How long a gate waits for the scene to show it before it is answered
+/// anyway, so the run ends and the scene's verdict names the miss: inside
+/// [`STALL`], which would otherwise end the run as one that never showed its
+/// gate.
+const SCENE_PATIENCE: Duration = Duration::from_secs(10);
+const _: () = assert!(SCENE_PATIENCE.as_millis() < STALL.as_millis());
 /// How long one run may take, end to end, before `tui_drive` kills the CLI:
 /// inside the recorder's [`super::TURN_BUDGET`], so the driver gives up first
 /// and logs the screen it stood at.
@@ -69,9 +76,12 @@ pub(crate) struct Gate {
 /// How a scenario's run answers its turn, and so when the turn is over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Answer {
-    /// Answer its dialog with its gate's `keys`; the turn is over once
-    /// answered and the screen settles.
-    Gate,
+    /// Answer its dialog with its gate's `keys` once the scene shows an agent
+    /// `shown`: kimi notifies of its dialog without awaiting the notice
+    /// (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:178-183`
+    /// at `@moonshot-ai/kimi-code@2.4.1`), which an answer on sight can
+    /// outrun. The turn is over once answered and the screen settles.
+    Gate { shown: &'static str },
     /// Cancel it with its row's `cancel` keys once the screen shows its reply
     /// streaming; the turn is over once cancelled and the screen settles.
     Cancel,
@@ -84,7 +94,7 @@ impl Answer {
     /// What the screen must show before this answer is given, if anything.
     pub(crate) const fn awaits(self) -> Option<&'static str> {
         match self {
-            Self::Gate => Some("a gate the driver knows to answer"),
+            Self::Gate { .. } => Some("a gate the driver knows to answer"),
             Self::Cancel => Some("its reply streaming for the driver to cancel"),
             Self::Nothing => None,
         }
@@ -206,6 +216,8 @@ struct Cue {
     keys: &'static [Key],
     /// As [`Gate::dwell`].
     dwell: Duration,
+    /// As [`Answer::Gate`]'s `shown`.
+    shown: Option<&'static str>,
 }
 
 /// A cue on screen, and when it appeared.
@@ -227,6 +239,9 @@ pub struct Driver<'a> {
     phase: Phase,
     screen: String,
     changed_at: Instant,
+    /// The scene's newest agents roster since the turn's prompt was entered:
+    /// one from before is an earlier turn's.
+    roster: String,
     open: Option<Open>,
     answered: bool,
 }
@@ -246,6 +261,7 @@ impl<'a> Driver<'a> {
             phase: Phase::Boot,
             screen: String::new(),
             changed_at: now,
+            roster: String::new(),
             open: None,
             answered: false,
         }
@@ -283,6 +299,7 @@ impl<'a> Driver<'a> {
             }
             Phase::Typed => {
                 self.phase = Phase::Submitted { enter_at: now };
+                self.roster.clear();
                 Action::Keys(&[Key::Enter])
             }
             // A turn already answered was submitted: a prompt shown after its
@@ -315,6 +332,14 @@ impl<'a> Driver<'a> {
         }
     }
 
+    /// Takes the lines appended to the run's scene log since the last call
+    /// ([`SceneLog::appended`]), the newest roster among them the scene's.
+    pub fn observe(&mut self, appended: &str) {
+        if let Some(roster) = super::verify::agent_rosters(appended).pop() {
+            roster.clone_into(&mut self.roster);
+        }
+    }
+
     /// What `tui_drive` exits with if it gives up now.
     pub fn gave_up(&self) -> i32 {
         match self.phase {
@@ -332,7 +357,7 @@ impl<'a> Driver<'a> {
     /// its row lists, for a cancel the reply's first line.
     fn cue(&self) -> Option<Cue> {
         match self.answer {
-            Answer::Gate => self
+            Answer::Gate { shown } => self
                 .tui
                 .gates
                 .iter()
@@ -341,18 +366,21 @@ impl<'a> Driver<'a> {
                     shows: g.shows,
                     keys: g.keys,
                     dwell: g.dwell,
+                    shown: Some(shown),
                 }),
             Answer::Cancel => self.screen.contains(super::STREAM_CUE).then_some(Cue {
                 shows: super::STREAM_CUE,
                 keys: self.tui.cancel,
                 dwell: Duration::ZERO,
+                shown: None,
             }),
             Answer::Nothing => None,
         }
     }
 
     /// Its answer, once its cue has stood its dwell after the prompt was
-    /// submitted; a cue before that stalls the run. Once per turn: a frame
+    /// submitted and the scene shows it, or has stood [`SCENE_PATIENCE`]; a
+    /// cue before the prompt stalls the run. Once per turn: a frame
     /// drawn before the answer landed still shows its cue, and a second key
     /// would land on the turn.
     fn answer(&mut self, now: Instant) -> Option<Action> {
@@ -374,7 +402,11 @@ impl<'a> Driver<'a> {
             },
         };
         self.open = Some(open);
-        if now.duration_since(open.since) < cue.dwell {
+        let stood = now.duration_since(open.since);
+        let unseen = cue
+            .shown
+            .is_some_and(|state| !super::verify::holds(&self.roster, "", state));
+        if stood < cue.dwell || (unseen && stood < SCENE_PATIENCE) {
             return Some(Action::Wait);
         }
         self.answered = true;
@@ -465,6 +497,45 @@ fn is_choice(typed: &str) -> bool {
         .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// The run's scene log ([`super::SCENE_LOG`]) as the headless pixtuoid appends
+/// to it, read from where the last read stopped.
+#[derive(Debug)]
+pub struct SceneLog {
+    path: PathBuf,
+    file: Option<std::fs::File>,
+    /// Read but not yet whole: a line still being written.
+    pending: Vec<u8>,
+}
+
+impl SceneLog {
+    /// The log at `path`, opened on its first read.
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            file: None,
+            pending: Vec::new(),
+        }
+    }
+
+    /// The whole lines appended since the last call.
+    ///
+    /// # Errors
+    ///
+    /// Opening or reading the log failed; the next call tries again.
+    pub fn appended(&mut self) -> std::io::Result<String> {
+        use std::io::Read;
+        if self.file.is_none() {
+            self.file = Some(std::fs::File::open(&self.path)?);
+        }
+        if let Some(file) = self.file.as_mut() {
+            file.read_to_end(&mut self.pending)?;
+        }
+        let whole = crate::source::admit::whole(&self.pending).len();
+        let lines: Vec<u8> = self.pending.drain(..whole).collect();
+        Ok(String::from_utf8_lossy(&lines).into_owned())
+    }
+}
+
 /// `tui_drive`'s command line, which the recorder runs in place of the CLI.
 #[derive(Debug, PartialEq, Eq)]
 pub struct CommandLine {
@@ -474,6 +545,8 @@ pub struct CommandLine {
     pub scenario: String,
     /// Where the pty log goes.
     pub log: PathBuf,
+    /// The run's scene log, which a [`SceneLog`] reads.
+    pub scene_log: PathBuf,
     /// What the driver types.
     pub prompt: String,
     /// The CLI's launch and interactive arguments.
@@ -489,7 +562,10 @@ impl CommandLine {
         [self.source.as_str(), self.scenario.as_str()]
             .map(OsString::from)
             .into_iter()
-            .chain([self.log.clone().into_os_string()])
+            .chain([
+                self.log.clone().into_os_string(),
+                self.scene_log.clone().into_os_string(),
+            ])
             .chain([OsString::from(&self.prompt), OsString::from(PROGRAM)])
             .chain(self.program.iter().cloned())
             .collect()
@@ -498,7 +574,7 @@ impl CommandLine {
     /// The command line `args` spells, or `None` when it spells none.
     pub fn parse(args: &[OsString]) -> Option<Self> {
         let split = args.iter().position(|a| a == PROGRAM)?;
-        let [source, scenario, log, prompt] = &args[..split] else {
+        let [source, scenario, log, scene_log, prompt] = &args[..split] else {
             return None;
         };
         let program = args[split + 1..].to_vec();
@@ -509,6 +585,7 @@ impl CommandLine {
             source: source.to_str()?.to_owned(),
             scenario: scenario.to_str()?.to_owned(),
             log: PathBuf::from(log),
+            scene_log: PathBuf::from(scene_log),
             prompt: prompt.to_str()?.to_owned(),
             program,
         })
@@ -583,18 +660,22 @@ mod tests {
         typed
     }
 
+    const ASKING: &str = "agents=[x@0:requires_action] daemons=[]\n";
+
     fn driver(t0: Instant) -> Driver<'static> {
         let (tui, answer) = tui_scenario("claude-code", "permission");
         Driver::new(tui, answer, PROMPT.to_owned(), t0)
     }
 
-    /// Steps a booted driver to a submitted prompt.
+    /// Steps a booted driver to a submitted prompt, its scene then showing the
+    /// dialog.
     fn submitted(d: &mut Driver<'_>, t0: Instant) {
         assert_eq!(d.step(BOOT, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(
             d.step(&typed(READY, READY_INPUT), t0),
             Action::Keys(&[Key::Enter])
         );
+        d.observe(ASKING);
     }
 
     #[test]
@@ -698,6 +779,7 @@ mod tests {
         let boot = screen!("hermes", "boot");
         assert_eq!(d.step(boot, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]));
+        d.observe(ASKING);
         let mut t = t0;
         let mut next = |screen| {
             t += ENTER_RETRY;
@@ -798,6 +880,12 @@ mod tests {
                 "{turn}: inside its dwell"
             );
             t += gate.dwell;
+            assert_eq!(
+                d.step(CODEX_GATE, t),
+                Action::Wait,
+                "{turn}: the scene has not shown its own dialog, though the first's still stands"
+            );
+            d.observe(ASKING);
             assert_eq!(d.step(CODEX_GATE, t), Action::Keys(gate.keys), "{turn}");
             t += Duration::from_millis(1);
             assert_eq!(
@@ -817,7 +905,11 @@ mod tests {
     #[test]
     fn a_run_quits_unanswered_only_where_it_answers_nothing() {
         let (tui, _) = omp();
-        for answer in [Answer::Gate, Answer::Cancel, Answer::Nothing] {
+        for answer in [
+            super::super::Shape::Permission.answer(),
+            Answer::Cancel,
+            Answer::Nothing,
+        ] {
             let t0 = Instant::now();
             let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
             assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
@@ -828,7 +920,7 @@ mod tests {
             let moved = t0 + Duration::from_millis(1);
             assert_eq!(d.step(OMP_NEW, moved), Action::Wait);
             let end = match answer {
-                Answer::Gate | Answer::Cancel => Action::Wait,
+                Answer::Gate { .. } | Answer::Cancel => Action::Wait,
                 Answer::Nothing => Action::Quit(tui.quit),
             };
             assert_eq!(d.step(OMP_NEW, moved + SETTLE), end, "{answer:?}");
@@ -1186,9 +1278,10 @@ mod tests {
                 Action::Keys(&[Key::Enter]),
                 "{source}/{name}"
             );
+            d.observe(ASKING);
             let moved = t0 + Duration::from_millis(1);
             let (first, then) = match scenario.answer() {
-                Answer::Gate => {
+                Answer::Gate { .. } => {
                     let [gate] = tui.gates else {
                         panic!("{source}: one gate per row");
                     };
@@ -1218,6 +1311,7 @@ mod tests {
                     t += SETTLE;
                     assert_eq!(d.step(after, t), Action::Type(second.to_owned()));
                     assert_eq!(d.step(after, t), Action::Keys(&[Key::Enter]));
+                    d.observe(ASKING);
                     t += Duration::from_millis(1);
                     assert_eq!(d.step(again, t), Action::Wait, "{source}/{name}: its dwell");
                     t += gate.dwell;
@@ -1273,23 +1367,104 @@ mod tests {
         }
     }
 
+    /// kimi's run at its gate, its scene showing only its tool call.
+    fn kimi_at_its_gate(t0: Instant) -> (Driver<'static>, &'static Tui, &'static str) {
+        let (tui, answer) = tui_scenario("kimi", "permission");
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+        let boot = screen!("kimi", "boot");
+        assert_eq!(d.step(boot, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]));
+        d.observe(KM_RUNNING);
+        (d, tui, screen!("kimi", "gate"))
+    }
+
+    const KM_RUNNING: &str = "agents=[] daemons=[]\n\
+                              agents=[km\u{b7}proj@0:running(Bash: rm NOTE.txt)] daemons=[]\n";
+
+    #[test]
+    fn a_gate_stands_until_the_scene_shows_it() {
+        let t0 = Instant::now();
+        let (mut d, tui, gate) = kimi_at_its_gate(t0);
+        let shown = t0 + Duration::from_millis(1);
+        assert_eq!(
+            d.step(gate, shown),
+            Action::Wait,
+            "its scene shows the call"
+        );
+        d.observe(&format!(
+            "{KM_RUNNING}agents=[km\u{b7}proj@0:requires_action] daemons=[]\n"
+        ));
+        assert_eq!(d.step(gate, shown), Action::Keys(tui.gates[0].keys));
+    }
+
+    #[test]
+    fn an_earlier_dialog_in_the_scene_answers_no_gate() {
+        let t0 = Instant::now();
+        let (mut d, _, gate) = kimi_at_its_gate(t0);
+        d.observe(&format!(
+            "agents=[km\u{b7}proj@0:requires_action] daemons=[]\n{KM_RUNNING}"
+        ));
+        assert_eq!(d.step(gate, t0 + Duration::from_millis(1)), Action::Wait);
+    }
+
+    #[test]
+    fn a_gate_the_scene_never_shows_is_answered_past_its_patience() {
+        let t0 = Instant::now();
+        let (mut d, tui, gate) = kimi_at_its_gate(t0);
+        let shown = t0 + Duration::from_millis(1);
+        assert_eq!(d.step(gate, shown), Action::Wait);
+        assert_eq!(
+            d.step(gate, shown + SCENE_PATIENCE - Duration::from_millis(1)),
+            Action::Wait
+        );
+        assert_eq!(
+            d.step(gate, shown + SCENE_PATIENCE),
+            Action::Keys(tui.gates[0].keys)
+        );
+    }
+
+    #[test]
+    fn the_scene_log_yields_each_whole_line_once_and_holds_back_one_being_written() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("scene.log");
+        let mut log = SceneLog::new(path.clone());
+        assert!(log.appended().is_err(), "not yet created");
+        let mut writer = std::fs::File::create(&path).expect("the log");
+        let asking = "agents=[km\u{b7}proj@0:requires_action] daemons=[]\n";
+        let (head, tail) = asking
+            .as_bytes()
+            .split_at(asking.find('\u{b7}').expect("·") + 1);
+        writer.write_all(KM_RUNNING.as_bytes()).expect("write");
+        writer.write_all(head).expect("write");
+        assert_eq!(
+            log.appended().expect("read"),
+            KM_RUNNING,
+            "a torn line held back"
+        );
+        writer.write_all(tail).expect("write");
+        assert_eq!(log.appended().expect("read"), asking);
+        assert_eq!(log.appended().expect("read"), "", "each line once");
+    }
+
     #[test]
     fn the_command_line_round_trips_and_refuses_a_short_one() {
         let line = CommandLine {
             source: "claude-code".into(),
             scenario: "permission".into(),
             log: PathBuf::from("/runs/x/tui.log"),
+            scene_log: PathBuf::from("/runs/x/scene.log"),
             prompt: "hi".into(),
             program: vec!["/cli/claude".into(), "--permission-mode".into()],
         };
         assert_eq!(CommandLine::parse(&line.to_args()), Some(line));
         let args = |v: &[&str]| v.iter().map(OsString::from).collect::<Vec<_>>();
         assert_eq!(
-            CommandLine::parse(&args(&["s", "p", "t", "hi", "--"])),
+            CommandLine::parse(&args(&["s", "p", "t", "o", "hi", "--"])),
             None
         );
         assert_eq!(
-            CommandLine::parse(&args(&["s", "p", "hi", "--", "cli"])),
+            CommandLine::parse(&args(&["s", "p", "t", "hi", "--", "cli"])),
             None
         );
     }

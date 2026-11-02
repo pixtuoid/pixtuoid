@@ -2659,6 +2659,7 @@ mod recorder {
                 "claude-code",
                 "permission",
                 "tui.log",
+                "scene.log",
                 "{prompt}",
                 "--",
                 "claude",

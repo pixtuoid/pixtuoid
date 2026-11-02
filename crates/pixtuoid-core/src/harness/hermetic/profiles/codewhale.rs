@@ -21,10 +21,7 @@ const TUI: tui::Tui = tui::Tui {
         shows: "Do you want to proceed?",
         // "Don't allow" (`crates/tui/src/tui/approval/view.rs:399-408`).
         keys: &[tui::Key::Text("n")],
-        // Its event loop fires `waiting_for_user` on its next pass
-        // (`crates/tui/src/tui/ui/event_loop.rs:2087`): answered on sight, the
-        // wait resolves unobserved (measured).
-        dwell: std::time::Duration::from_secs(1),
+        dwell: std::time::Duration::ZERO,
     }],
     cancel: &[],
     // A graceful shutdown, which fires `session_end` (`docs/HOOKS.md:236`,
