@@ -268,7 +268,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
     enqueue_room_walls(ctx.layout, &mut drawables);
     drawable::sort_drawables(&mut drawables);
     let mut drawn = Drawn::default();
-    let namesakes = crate::badge::Namesakes::of(ctx.scene.agents.values());
+    let namesakes = crate::nameplate::Namesakes::of(ctx.scene.agents.values());
     // A per-pixel diff finds EXACTLY what the foreground wrote. AFTER
     // `paint_shadows`/`paint_ceiling_halos`: both already carry the hour, so folding
     // them in here would apply it twice.

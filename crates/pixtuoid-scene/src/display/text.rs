@@ -197,10 +197,10 @@ impl Badge {
     pub(crate) fn new(
         anchor: Point,
         agent: &AgentSlot,
-        namesakes: &crate::badge::Namesakes<'_>,
+        namesakes: &crate::nameplate::Namesakes<'_>,
         theme: &Theme,
     ) -> Self {
-        let text = namesakes.text(agent);
+        let text = crate::badge::badge_text(namesakes, agent);
         let ink = crate::badge::badge_ink(&text, crate::badge::tone_of(agent), theme);
         Self {
             agent: agent.agent_id,

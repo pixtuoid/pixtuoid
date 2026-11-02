@@ -15,6 +15,7 @@ use crate::display::{GatewayCard, HoverTarget, PetHover};
 use crate::floor::FloorInputs;
 use crate::footer::{FooterTone, RungKind};
 use crate::hit::SceneHit;
+use crate::nameplate::{LABEL_SEP, disambig_suffix};
 use crate::pet::PetKind;
 use crate::theme::Theme;
 
@@ -309,7 +310,7 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
                 TipSpan::new(format!(" {}", agent.label), TipTone::Title),
             ],
             right: TipSpan::new(
-                format!("\u{b7}{}", crate::badge::disambig_suffix(&agent.session_id)),
+                format!("{LABEL_SEP}{}", disambig_suffix(&agent.session_id)),
                 TipTone::Dim,
             ),
         },

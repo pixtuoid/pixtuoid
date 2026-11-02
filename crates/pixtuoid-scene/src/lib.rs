@@ -74,6 +74,7 @@ pub(crate) mod lighting;
 #[doc(hidden)]
 pub mod localclock;
 pub mod look;
+pub mod nameplate;
 #[doc(hidden)]
 pub mod neon_sign;
 pub(crate) mod outside;

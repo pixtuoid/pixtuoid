@@ -714,7 +714,7 @@ fn inflate_agent(
     AgentSlot {
         agent_id: agent.id,
         source: Arc::from(source.as_str()),
-        // What `badge::disambig_suffix` tells two agents of one repo apart by.
+        // What `nameplate::disambig_suffix` tells two agents of one repo apart by.
         session_id: Arc::from(agent.id.to_string()),
         unknown_cwd,
         cwd: Arc::from(cwd.as_path()),

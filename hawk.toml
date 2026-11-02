@@ -15,6 +15,12 @@ level = "expect"
 reason = "the wire's one definition, read by an app outside this workspace"
 
 [[exclude]]
+crate = "pixtuoid_scene"
+module = "nameplate"
+level = "expect"
+reason = "what the office calls each agent, read by a device outside this workspace"
+
+[[exclude]]
 crate = "pixtuoid_core"
 module = "harness::fuzz"
 level = "expect"

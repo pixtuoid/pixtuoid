@@ -2,23 +2,13 @@
 //! name, its activity tone, its inks and its plate, which
 //! [`Badge`](crate::display::Badge) puts together for every painter.
 
-use std::collections::HashMap;
-
 use crate::sprite::Rgb;
 use pixtuoid_core::AgentSlot;
 use pixtuoid_core::state::ActivityState;
 
 use crate::layout::DESK_W;
+use crate::nameplate::{LABEL_SEP, Namesakes};
 use crate::theme::Theme;
-
-/// The separator between a label's source prefix and its cwd/disambiguation
-/// tail (`cc·repo`, `cc·repo·1a2b`). The label is WRITTEN core-side as a bare
-/// `·` at THREE sites — `decoder::cwd_basename_label` (the chokepoint),
-/// `claude_code::cc_derive_label`'s project-dir fallback, and the reducer's
-/// SessionStart back-fill, both of which document their bypass — and a crate
-/// boundary keeps this const out of reach of all three, so it must MATCH that
-/// char.
-const LABEL_SEP: char = '\u{b7}';
 
 /// Activity-derived label tone — backend-agnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -88,32 +78,11 @@ pub fn badge_ink(text: &str, tone: BadgeTone, theme: &Theme) -> BadgeInk {
     }
 }
 
-/// How many agents wear each label: an agent sharing its label carries its
-/// session's suffix, even where the namesake is not drawn.
-pub(crate) struct Namesakes<'a>(HashMap<&'a str, usize>);
-
-impl<'a> Namesakes<'a> {
-    pub(crate) fn of(agents: impl IntoIterator<Item = &'a AgentSlot>) -> Self {
-        let mut counts: HashMap<&str, usize> = HashMap::new();
-        for agent in agents {
-            *counts.entry(&*agent.label).or_insert(0) += 1;
-        }
-        Self(counts)
-    }
-
-    /// `agent`'s badge text, disambiguated and truncated, with no marker.
-    pub(crate) fn text(&self, agent: &AgentSlot) -> String {
-        let needs_disambig = self.0.get(&*agent.label).copied().unwrap_or(0) > 1
-            && agent.session_id.chars().count() >= 4;
-        let raw: std::borrow::Cow<'_, str> = if needs_disambig {
-            let id4 = disambig_suffix(&agent.session_id);
-            std::borrow::Cow::Owned(format!("{}{LABEL_SEP}{id4}", agent.label))
-        } else {
-            std::borrow::Cow::Borrowed(&*agent.label)
-        };
-        let marker = crate::display::text::cells(BADGE_MARKER.encode_utf8(&mut [0; 4]));
-        truncate_label(&raw, BADGE_CELLS.saturating_sub(marker)).into_owned()
-    }
+/// `agent`'s badge text, with no marker: its [nameplate](Namesakes::label)
+/// truncated to the cells the marker leaves.
+pub(crate) fn badge_text(namesakes: &Namesakes<'_>, agent: &AgentSlot) -> String {
+    let marker = crate::display::text::cells(BADGE_MARKER.encode_utf8(&mut [0; 4]));
+    truncate_label(&namesakes.label(agent), BADGE_CELLS.saturating_sub(marker)).into_owned()
 }
 
 /// `agent`'s badge tone: exiting over whatever it last did.
@@ -175,20 +144,10 @@ fn take_span(text: &str, budget: u16) -> &str {
     &text[..end]
 }
 
-/// 4-hex-char disambiguation suffix, hashed from the WHOLE `session_id` —
-/// shape-agnostic where any slice of the id is not (a raw-cwd id collides on
-/// both head and tail: `/x/app` vs `/y/app`), and multi-byte-safe by
-/// construction. `DefaultHasher` is per-process: a display aid, not an id.
-pub fn disambig_suffix(session_id: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    session_id.hash(&mut h);
-    format!("{:04x}", h.finish() & 0xffff)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BadgeTone, Namesakes, badge_hue, disambig_suffix, tone_of, truncate_label};
+    use super::{BadgeTone, badge_hue, badge_text, tone_of, truncate_label};
+    use crate::nameplate::{Namesakes, disambig_suffix};
     use pixtuoid_core::AgentId;
     use pixtuoid_core::state::{
         ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
@@ -249,7 +208,7 @@ mod tests {
     fn a_lone_running_agent_reads_its_bare_label_in_the_running_tone() {
         let a = slot("cc", "sess-abcd", 0, running());
         let s = scene_of(vec![a.clone()]);
-        assert_eq!(Namesakes::of(s.agents.values()).text(&a), "cc");
+        assert_eq!(badge_text(&Namesakes::of(s.agents.values()), &a), "cc");
         assert_eq!(tone_of(&a), BadgeTone::Running);
     }
 
@@ -270,17 +229,25 @@ mod tests {
         assert_eq!(badge_hue("zz·repo", &crate::theme::NORMAL), None);
     }
 
+    /// A namesake's badge, as every painter builds it, is its whole nameplate
+    /// truncated, the suffix kept.
     #[test]
-    fn colliding_labels_get_disambig_suffixes() {
-        let a = slot("cc", "session-aaaa", 0, running());
-        let b = slot("cc", "session-bbbb", 1, running());
-        let s = scene_of(vec![a.clone(), b.clone()]);
+    fn a_long_namesakes_badge_is_its_nameplate_truncated() {
+        let label = "cc\u{b7}a-very-long-project-name";
+        let a = slot(label, "session-aaaa", 0, running());
+        let b = slot(label, "session-bbbb", 1, running());
+        let s = scene_of(vec![a.clone(), b]);
         let namesakes = Namesakes::of(s.agents.values());
-        let want_a = format!("cc\u{00b7}{}", disambig_suffix(&a.session_id));
-        let want_b = format!("cc\u{00b7}{}", disambig_suffix(&b.session_id));
-        assert_eq!(namesakes.text(&a), want_a);
-        assert_eq!(namesakes.text(&b), want_b);
-        assert_ne!(want_a, want_b);
+        let anchor = crate::layout::Point { x: 0, y: 0 };
+        let badge = crate::display::Badge::new(anchor, &a, &namesakes, &crate::theme::NORMAL);
+        let (shown, whole) = (badge.name.text(), namesakes.label(&a));
+        let marker = crate::display::text::cells(super::BADGE_MARKER.encode_utf8(&mut [0; 4]));
+        assert!(shown.len() < whole.len(), "premise: {whole:?} is cut");
+        assert_eq!(shown, truncate_label(&whole, super::BADGE_CELLS - marker));
+        assert!(
+            shown.ends_with(&format!("\u{b7}{}", disambig_suffix(&a.session_id))),
+            "{shown:?}"
+        );
     }
 
     /// The snapshot casts share each team's label, so every team badge is suffixed.
@@ -294,7 +261,11 @@ mod tests {
             let b = slot(&label, "session-bbbb", 1, running());
             let s = scene_of(vec![a.clone(), b]);
             let want = format!("{label}\u{00b7}{}", disambig_suffix(&a.session_id));
-            assert_eq!(Namesakes::of(s.agents.values()).text(&a), want, "{repo}");
+            assert_eq!(
+                badge_text(&Namesakes::of(s.agents.values()), &a),
+                want,
+                "{repo}"
+            );
         }
     }
 
@@ -387,7 +358,7 @@ mod tests {
         ] {
             let a = slot(label, "sess-abcd", 0, running());
             let s = scene_of(vec![a.clone()]);
-            let name = Namesakes::of(s.agents.values()).text(&a);
+            let name = badge_text(&Namesakes::of(s.agents.values()), &a);
             let badge = format!("{}{name}", super::BADGE_MARKER);
             let n = cells(&badge);
             assert!(
@@ -406,28 +377,6 @@ mod tests {
             truncate_label("日本語プロジェクト\u{00b7}a09a", 12),
             "日本語\u{00b7}a09a"
         );
-    }
-
-    #[test]
-    fn uuid_ids_get_distinct_suffixes() {
-        let a = disambig_suffix("c0f7fb3f-dc9c-47c3-840d-f775dd2855a3");
-        let b = disambig_suffix("019ea57d-7fa7-7812-b864-bdcb9b6c7e17");
-        assert_ne!(a, b);
-        assert_eq!(a.len(), 4);
-    }
-
-    #[test]
-    fn ag_full_path_ids_get_distinct_suffixes() {
-        let a = disambig_suffix("/users/me/.gravity/sessions/proj/alpha-01.jsonl");
-        let b = disambig_suffix("/users/me/.gravity/sessions/proj/beta-02.jsonl");
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn rx_cwd_ids_with_colliding_basenames_get_distinct_suffixes() {
-        let a = disambig_suffix("/work/client-x/app");
-        let b = disambig_suffix("/work/client-y/app");
-        assert_ne!(a, b);
     }
 
     /// WCAG 2.2's relative luminance
@@ -483,12 +432,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn multibyte_ids_are_safe_and_deterministic() {
-        let a = disambig_suffix("/naïveté/app");
-        assert_eq!(a, disambig_suffix("/naïveté/app"));
-        assert_eq!(a.len(), 4);
     }
 }

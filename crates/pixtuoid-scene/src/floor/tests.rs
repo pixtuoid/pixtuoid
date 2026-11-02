@@ -2002,6 +2002,66 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
     );
 }
 
+/// A floor's projection names each agent as that floor's badge does, so a
+/// namesake upstairs leaves a label bare there.
+#[test]
+fn every_floors_badges_read_its_projections_nameplates() {
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+    let mut scene = make_scene(4, 2);
+    let labels = ["cc\u{b7}api", "cc\u{b7}api", "cc\u{b7}web", "cc\u{b7}api"];
+    for (i, label) in labels.into_iter().enumerate() {
+        let id = AgentId::from_transcript_path(&format!("/p/{i}.jsonl"));
+        let agent = scene.agents.get_mut(&id).expect("make_scene's agent");
+        agent.label = label.into();
+        agent.session_id = Arc::from(format!("session-{i}").as_str());
+    }
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    let mut badged = 0;
+    for (floor, now) in [(0, t0), (1, t0 + Duration::from_secs(2))] {
+        if floor > 0 {
+            assert!(office.navigate(floor, t0));
+        }
+        let _ = office.render(
+            crate::look::Look::Classic,
+            crate::look::RenderInputs {
+                world: FloorInputs {
+                    scene: &scene,
+                    now,
+                    floor: FloorMeta::ground(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                size: Size { w: 160, h: 96 },
+                place: crate::look::Place::default(),
+                debug_walkable: false,
+                dim: crate::look::Dim::NONE,
+            },
+            &[],
+            theme.surface.bg_fallback,
+        );
+        let Some(crate::look::Picture::Floor(picture)) = office.picture() else {
+            panic!("floor {floor} lays out");
+        };
+        let text = picture.text.expect("a classic floor hands its text over");
+        let projection = project_floor_scene(&scene, floor);
+        let namesakes = crate::nameplate::Namesakes::of(projection.agents.values());
+        for badge in text.badges {
+            let whole = namesakes.label(&projection.agents[&badge.agent]);
+            assert_eq!(badge.name.text(), whole, "floor {floor}");
+            badged += 1;
+        }
+    }
+    assert_eq!(badged, labels.len(), "premise: every agent wears a badge");
+    let upstairs = AgentId::from_transcript_path("/p/3.jsonl");
+    let whole_office = crate::nameplate::Namesakes::of(scene.agents.values());
+    assert_ne!(
+        whole_office.label(&scene.agents[&upstairs]),
+        "cc\u{b7}api",
+        "premise: the whole office would suffix the namesake upstairs"
+    );
+}
+
 /// A cutaway slide bakes both floors' text whoever sets it on a floor
 /// showing, so the text moves with its floor: it starts on the leaving
 /// floor's own frame, its board and badges included.
