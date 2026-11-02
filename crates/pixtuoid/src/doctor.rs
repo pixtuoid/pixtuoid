@@ -1506,7 +1506,7 @@ mod tests {
             run(
                 &crate::run_log::LogLocation::File("/nonexistent-pixtuoid-doctor-log".into()),
                 crate::graphics::LookChoice::new(
-                    crate::graphics::LookMode::Fixed(LookKind::Cutaway),
+                    crate::graphics::LookMode::Named(LookKind::Cutaway),
                     None,
                 ),
             )
@@ -2092,7 +2092,7 @@ mod tests {
         let out = run(
             &crate::run_log::LogLocation::File(dir.path().to_path_buf()),
             crate::graphics::LookChoice::new(
-                crate::graphics::LookMode::Fixed(LookKind::Cutaway),
+                crate::graphics::LookMode::Named(LookKind::Cutaway),
                 None,
             ),
         )
@@ -2161,7 +2161,7 @@ mod tests {
                 run(
                     &crate::run_log::LogLocation::File("/nonexistent-pixtuoid-doctor-log".into()),
                     crate::graphics::LookChoice::new(
-                        crate::graphics::LookMode::Fixed(LookKind::Cutaway),
+                        crate::graphics::LookMode::Named(LookKind::Cutaway),
                         None,
                     ),
                 )

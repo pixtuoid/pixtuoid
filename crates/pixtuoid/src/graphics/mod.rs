@@ -220,17 +220,19 @@ impl CellSize {
 pub(crate) enum LookMode {
     #[default]
     Auto,
-    Fixed(LookKind),
+    /// The look `--look` or the config named.
+    Named(LookKind),
 }
 
 /// Its values are the engine's [`LookKind::name`]s, beside `auto`.
 impl clap::ValueEnum for LookMode {
     fn value_variants<'a>() -> &'a [Self] {
-        const VARIANTS: [LookMode; 1 + LookKind::ALL.len()] = {
-            let mut variants = [LookMode::Auto; 1 + LookKind::ALL.len()];
+        const KINDS: &[LookKind] = LookKind::ALL;
+        const VARIANTS: [LookMode; 1 + KINDS.len()] = {
+            let mut variants = [LookMode::Auto; 1 + KINDS.len()];
             let mut i = 0;
-            while i < LookKind::ALL.len() {
-                variants[i + 1] = LookMode::Fixed(LookKind::ALL[i]);
+            while i < KINDS.len() {
+                variants[i + 1] = LookMode::Named(KINDS[i]);
                 i += 1;
             }
             variants
@@ -244,7 +246,7 @@ impl clap::ValueEnum for LookMode {
                 "auto",
                 "The cutaway where the terminal draws it, else the classic, without asking the terminal over ssh or inside GNU screen",
             ),
-            Self::Fixed(kind) => (
+            Self::Named(kind) => (
                 kind.name(),
                 match kind {
                     LookKind::Cutaway => {
@@ -281,7 +283,7 @@ impl LookChoice {
     pub(crate) fn new(look: LookMode, protocol: Option<ImageProtocol>) -> Self {
         Self {
             look: if protocol.is_some() {
-                LookMode::Fixed(LookKind::Cutaway)
+                LookMode::Named(LookKind::Cutaway)
             } else {
                 look
             },
@@ -293,8 +295,8 @@ impl LookChoice {
     /// `None` where it asks.
     fn unasked(self, env: &TermEnv) -> Option<ClassicReason> {
         match self.look {
-            LookMode::Fixed(LookKind::Classic) => Some(ClassicReason::Disabled),
-            LookMode::Fixed(LookKind::Cutaway) => None,
+            LookMode::Named(LookKind::Classic) => Some(ClassicReason::Disabled),
+            LookMode::Named(LookKind::Cutaway) => None,
             // Ours, not an upstream convention: every repaint would cross the
             // network.
             LookMode::Auto if env.ssh => Some(ClassicReason::OverSsh),
@@ -321,7 +323,7 @@ impl LookChoice {
 /// when the real cause was a pipe, or on the pipe when this build cannot ask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClassicReason {
-    /// [`LookMode::Fixed(LookKind::Classic)`].
+    /// [`LookMode::Named`]\([`LookKind::Classic`]\).
     Disabled,
     /// [`LookMode::Auto`] over ssh: the terminal was not asked.
     OverSsh,
@@ -656,18 +658,18 @@ impl ClassicReason {
     pub(crate) fn describe(self) -> String {
         match self {
             Self::Disabled => {
-                let classic = LookMode::Fixed(LookKind::Classic);
+                let classic = LookMode::Named(LookKind::Classic);
                 format!("chosen by `--look {classic}` or `look = \"{classic}\"`")
             }
             Self::OverSsh => format!(
                 "over ssh, where every repaint crosses the network — `--look {}` asks the \
                  terminal anyway",
-                LookMode::Fixed(LookKind::Cutaway)
+                LookMode::Named(LookKind::Cutaway)
             ),
             Self::InsideScreen => format!(
                 "inside GNU screen, which shows the graphics query in its status line and \
                  answers no protocol — `--look {}` asks anyway",
-                LookMode::Fixed(LookKind::Cutaway)
+                LookMode::Named(LookKind::Cutaway)
             ),
             Self::Unsupported => {
                 "this build cannot ask the terminal for graphics (not on Unix)".to_string()
@@ -1309,7 +1311,7 @@ mod tests {
         for env in [LOCAL, OVER_SSH, IN_SCREEN] {
             assert_eq!(
                 asked(
-                    look(LookMode::Fixed(LookKind::Classic)),
+                    look(LookMode::Named(LookKind::Classic)),
                     &env,
                     capable(CELL_8X16)
                 ),
@@ -1353,7 +1355,7 @@ mod tests {
         for env in [OVER_SSH, IN_SCREEN, both] {
             assert_eq!(
                 asked(
-                    look(LookMode::Fixed(LookKind::Cutaway)),
+                    look(LookMode::Named(LookKind::Cutaway)),
                     &env,
                     capable(CELL_8X16)
                 ),
@@ -1391,8 +1393,8 @@ mod tests {
     fn a_forced_protocol_implies_the_cutaway_and_asks_everywhere() {
         for over in [
             LookMode::Auto,
-            LookMode::Fixed(LookKind::Cutaway),
-            LookMode::Fixed(LookKind::Classic),
+            LookMode::Named(LookKind::Cutaway),
+            LookMode::Named(LookKind::Classic),
         ] {
             let choice = LookChoice::new(over, Some(ImageProtocol::Sixel));
             assert_eq!(choice, forced(ImageProtocol::Sixel), "{over:?}");
@@ -1452,7 +1454,7 @@ mod tests {
     fn every_other_choice_asks_once_and_plans_from_the_answer() {
         for choice in [
             look(LookMode::Auto),
-            look(LookMode::Fixed(LookKind::Cutaway)),
+            look(LookMode::Named(LookKind::Cutaway)),
             forced(ImageProtocol::Kitty),
             forced(ImageProtocol::Sixel),
             forced(ImageProtocol::Iterm2),
@@ -1673,7 +1675,7 @@ mod tests {
         let cases = [
             (
                 LOCAL,
-                look(LookMode::Fixed(LookKind::Classic)),
+                look(LookMode::Named(LookKind::Classic)),
                 capable(CELL_8X16),
                 BUNDLED,
                 "chosen by `--look classic` or `look = \"classic\"`",

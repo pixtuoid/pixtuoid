@@ -47,38 +47,23 @@ impl Look {
 }
 
 /// A look as a person picks it, apart from the scale and text a painter draws
-/// it at: what every host's picker, command line and config name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// it at: what a command line and a config name it by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum LookKind {
-    /// The half-block office.
-    Classic,
     /// The pixel-art office.
     Cutaway,
+    /// The half-block office.
+    Classic,
 }
 
 impl LookKind {
-    /// Every look, in the order a picker lists them.
-    pub const ALL: [Self; 2] = [Self::Cutaway, Self::Classic];
+    /// Every look, in its declaration's order.
+    pub const ALL: &'static [Self] = <Self as strum::VariantArray>::VARIANTS;
 
     /// Its id: the value a command line and a config take.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Classic => "classic",
-            Self::Cutaway => "cutaway",
-        }
-    }
-
-    /// What a person reads for it.
-    pub const fn display_name(self) -> &'static str {
-        match self {
-            Self::Classic => "Classic",
-            Self::Cutaway => "Cutaway",
-        }
-    }
-
-    /// The look whose [`Self::name`] is `name`.
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.name() == name)
+    pub fn name(self) -> &'static str {
+        self.into()
     }
 }
 

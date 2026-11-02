@@ -838,6 +838,8 @@ pub pixtuoid_scene::look::Look::Classic
 pub pixtuoid_scene::look::Look::Cutaway
 pub pixtuoid_scene::look::Look::Cutaway::scale: pixtuoid_scene::render_scale::RenderScale
 pub pixtuoid_scene::look::Look::Cutaway::text: pixtuoid_scene::look::WorldText
+impl pixtuoid_scene::look::Look
+pub const fn pixtuoid_scene::look::Look::kind(self) -> pixtuoid_scene::look::LookKind
 impl core::clone::Clone for pixtuoid_scene::look::Look
 pub fn pixtuoid_scene::look::Look::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::look::Look
@@ -854,6 +856,34 @@ impl core::marker::Unpin for pixtuoid_scene::look::Look
 impl core::marker::UnsafeUnpin for pixtuoid_scene::look::Look
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Look
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::Look
+pub enum pixtuoid_scene::look::LookKind
+pub pixtuoid_scene::look::LookKind::Classic
+pub pixtuoid_scene::look::LookKind::Cutaway
+impl pixtuoid_scene::look::LookKind
+pub const pixtuoid_scene::look::LookKind::ALL: &'static [Self]
+pub fn pixtuoid_scene::look::LookKind::name(self) -> &'static str
+impl core::clone::Clone for pixtuoid_scene::look::LookKind
+pub fn pixtuoid_scene::look::LookKind::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::look::LookKind
+impl core::cmp::PartialEq for pixtuoid_scene::look::LookKind
+pub fn pixtuoid_scene::look::LookKind::eq(&self, &Self) -> bool
+impl core::convert::From<pixtuoid_scene::look::LookKind> for &'static str
+pub fn &'static str::from(pixtuoid_scene::look::LookKind) -> &'static str
+impl core::fmt::Debug for pixtuoid_scene::look::LookKind
+pub fn pixtuoid_scene::look::LookKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::look::LookKind
+impl core::marker::StructuralPartialEq for pixtuoid_scene::look::LookKind
+impl strum::VariantArray for pixtuoid_scene::look::LookKind
+pub const pixtuoid_scene::look::LookKind::VARIANTS: &'static [Self]
+impl<'_derivative_strum> core::convert::From<&'_derivative_strum pixtuoid_scene::look::LookKind> for &'static str
+pub fn &'static str::from(&'_derivative_strum pixtuoid_scene::look::LookKind) -> &'static str
+impl core::marker::Freeze for pixtuoid_scene::look::LookKind
+impl core::marker::Send for pixtuoid_scene::look::LookKind
+impl core::marker::Sync for pixtuoid_scene::look::LookKind
+impl core::marker::Unpin for pixtuoid_scene::look::LookKind
+impl core::marker::UnsafeUnpin for pixtuoid_scene::look::LookKind
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::LookKind
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::LookKind
 pub enum pixtuoid_scene::look::Picture<'a>
 pub pixtuoid_scene::look::Picture::Floor(pixtuoid_scene::look::FloorPicture<'a>)
 pub pixtuoid_scene::look::Picture::Slide(pixtuoid_scene::look::SlidePicture<'a>)

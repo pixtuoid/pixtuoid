@@ -347,19 +347,9 @@ fn a_dim_darkens_each_pixel_a_frame_may_write() {
 }
 
 #[test]
-fn each_look_kind_has_its_own_id_and_name_and_every_look_has_a_kind() {
+fn each_look_kind_has_its_own_id_and_every_look_has_a_kind() {
     let ids: HashSet<_> = LookKind::ALL.iter().map(|k| k.name()).collect();
-    let names: HashSet<_> = LookKind::ALL.iter().map(|k| k.display_name()).collect();
     assert_eq!(ids.len(), LookKind::ALL.len());
-    assert_eq!(names.len(), LookKind::ALL.len());
-    for kind in LookKind::ALL {
-        assert_eq!(LookKind::from_name(kind.name()), Some(kind));
-    }
-    assert_eq!(
-        LookKind::from_name("Classic"),
-        None,
-        "ids are case-sensitive"
-    );
     assert_eq!(Look::Classic.kind(), LookKind::Classic);
     let cutaway = Look::Cutaway {
         scale: RenderScale::ONE,

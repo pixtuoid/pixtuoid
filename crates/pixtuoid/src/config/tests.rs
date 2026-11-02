@@ -956,11 +956,11 @@ fn look_precedence_is_cli_then_config_then_auto() {
     assert_eq!(resolve(None, None), LookMode::Auto);
     assert_eq!(
         resolve(Some("classic"), None),
-        LookMode::Fixed(LookKind::Classic)
+        LookMode::Named(LookKind::Classic)
     );
     assert_eq!(
         resolve(Some("cutaway"), None),
-        LookMode::Fixed(LookKind::Cutaway)
+        LookMode::Named(LookKind::Cutaway)
     );
     assert_eq!(
         resolve(Some("classic"), Some(LookMode::Auto)),
@@ -974,7 +974,7 @@ fn look_parses_from_the_file() {
     let cfg: AppConfig = toml::from_str("look = \"classic\"\n").expect("parses");
     assert_eq!(
         resolve_look(&cfg, None, &mut Vec::new()),
-        crate::graphics::LookMode::Fixed(LookKind::Classic)
+        crate::graphics::LookMode::Named(LookKind::Classic)
     );
 }
 
@@ -1024,10 +1024,10 @@ fn an_unknown_look_value_warns_and_falls_back_to_auto() {
     assert_eq!(
         look_of(
             Some("clasic"),
-            Some(LookMode::Fixed(LookKind::Classic)),
+            Some(LookMode::Named(LookKind::Classic)),
             &mut w
         ),
-        LookMode::Fixed(LookKind::Classic)
+        LookMode::Named(LookKind::Classic)
     );
     assert_eq!(w.len(), 1, "{w:?}");
 }

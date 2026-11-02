@@ -129,7 +129,7 @@ pub(crate) enum Cmd {
         /// The look the `graphics:` row plans, as `run --look` takes it.
         /// Defaults to `cutaway` whatever the `look` config key says: the row
         /// reports what this terminal can do.
-        #[arg(long, value_enum, default_value_t = crate::graphics::LookMode::Fixed(LookKind::Cutaway))]
+        #[arg(long, value_enum, default_value_t = crate::graphics::LookMode::Named(LookKind::Cutaway))]
         look: crate::graphics::LookMode,
         /// The protocol the row plans the cutaway in, as `run --protocol`
         /// takes it.
@@ -280,17 +280,17 @@ mod tests {
         };
         assert_eq!(
             doctor(&["pixtuoid", "doctor"]),
-            (LookMode::Fixed(LookKind::Cutaway), None),
+            (LookMode::Named(LookKind::Cutaway), None),
             "absent is what this terminal can do"
         );
         assert_eq!(
             doctor(&["pixtuoid", "doctor", "--look", "classic"]),
-            (LookMode::Fixed(LookKind::Classic), None)
+            (LookMode::Named(LookKind::Classic), None)
         );
         assert_eq!(
             doctor(&["pixtuoid", "doctor", "--protocol", "sixel"]),
             (
-                LookMode::Fixed(LookKind::Cutaway),
+                LookMode::Named(LookKind::Cutaway),
                 Some(ImageProtocol::Sixel)
             )
         );
@@ -308,8 +308,8 @@ mod tests {
         assert_eq!(look(&["pixtuoid", "run"]), (None, None));
         for (value, mode) in [
             ("auto", LookMode::Auto),
-            ("cutaway", LookMode::Fixed(LookKind::Cutaway)),
-            ("classic", LookMode::Fixed(LookKind::Classic)),
+            ("cutaway", LookMode::Named(LookKind::Cutaway)),
+            ("classic", LookMode::Named(LookKind::Classic)),
         ] {
             assert_eq!(
                 look(&["pixtuoid", "run", "--look", value]),
@@ -437,7 +437,7 @@ mod tests {
     fn cmd_or_default_preserves_explicit_subcommand() {
         let cli = Cli {
             cmd: Some(Cmd::Doctor {
-                look: crate::graphics::LookMode::Fixed(LookKind::Classic),
+                look: crate::graphics::LookMode::Named(LookKind::Classic),
                 protocol: None,
             }),
             log_level: LogLevel::Debug,
