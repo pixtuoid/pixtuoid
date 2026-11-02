@@ -156,11 +156,14 @@ fn named_as_the_shim(path: &Path) -> bool {
 }
 
 /// Run `shim` as a hook would, against a listener only it knows about. The real
-/// listener and decoder on purpose: the file name is checked first, because a
-/// hand-edited config can name anything and this feeds it an invented event.
+/// listener and decoder on purpose. The path must be absolute and named as the
+/// shim before anything runs: a hand-edited config can name anything, and this
+/// feeds it an invented event.
 async fn probe(shim: &Path, exit_deadline: Duration) -> ShimProbe {
     if !shim.is_absolute() {
-        return ShimProbe::NotTested("its path is relative, so it depends on the cwd".into());
+        return ShimProbe::NotTested(
+            "its path is relative, so what runs depends on where the CLI runs it".into(),
+        );
     }
     if !named_as_the_shim(shim) {
         let name = crate::install::io::hook_sibling_name();

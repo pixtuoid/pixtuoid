@@ -247,7 +247,7 @@ fn built_shim() -> std::path::PathBuf {
     shim
 }
 
-/// `pixtuoid doctor` with `home` as every home it reads, trying [`built_shim`].
+/// `pixtuoid doctor` with `home` as every home the environment can name.
 fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::Output {
     let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_pixtuoid"));
     // Cleared: an install that a CLI's own home variable leads to would stand in
@@ -277,13 +277,25 @@ fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::O
         .expect("run pixtuoid doctor")
 }
 
+/// By its path: on Windows Jcode's home ignores the environment, so an install
+/// there can stand in for the built shim.
+fn assert_the_built_shim_delivered(stdout: &str) {
+    let shim = built_shim().display().to_string();
+    assert!(
+        stdout
+            .lines()
+            .any(|row| row.contains(&shim) && row.contains("delivered a test event")),
+        "{stdout}"
+    );
+}
+
 #[test]
 fn doctor_proves_the_built_shim_delivers_with_no_office_open() {
     let home = tempfile::TempDir::new().expect("tempdir");
     let out = doctor(home.path(), &hook::private_endpoint(home.path(), "none"));
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "{out:?}");
-    assert!(stdout.contains("delivered a test event"), "{stdout}");
+    assert_the_built_shim_delivered(&stdout);
     assert!(stdout.contains("no instance on"), "{stdout}");
 }
 
@@ -326,6 +338,7 @@ async fn doctor_reads_what_the_built_shim_delivered_to_a_live_owner() {
         .await
         .expect("doctor ran");
     let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_the_built_shim_delivered(&stdout);
     assert!(stdout.contains("instance live on"), "{stdout}");
     assert!(stdout.contains("last hook"), "{stdout}");
     owner.abort();
