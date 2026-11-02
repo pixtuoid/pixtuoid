@@ -6,7 +6,7 @@
 //! The PROBED CLI is not read-only about its own state — see `may_probe_version`.
 //! The shim an install names does run, against a throwaway endpoint, and a hook
 //! endpoint nothing holds is bound for a moment, as the next instance would — see
-//! `delivery`.
+//! [`pixtuoid_core::source::hook::endpoint_status`].
 
 mod delivery;
 

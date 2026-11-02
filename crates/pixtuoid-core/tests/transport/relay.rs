@@ -261,8 +261,7 @@ async fn an_owner_answers_status_from_its_live_gate_and_last_hooks() {
 }
 
 // A status is the owner's: "since this instance took the endpoint" has to stay
-// true across a takeover. Waited on by delivery, since `endpoint_status` binds a
-// free endpoint and would race the takeover.
+// true across a takeover.
 #[tokio::test]
 async fn a_takeover_starts_its_last_hooks_from_nothing() {
     let (_dir, at) = endpoint("takeover-status");
@@ -288,6 +287,7 @@ async fn a_takeover_starts_its_last_hooks_from_nothing() {
 
     owner.abort();
     let _ = owner.await;
+    // By delivery: `endpoint_status` binds a free endpoint, which would race this.
     until_seen(&at, "taken-over", &mut [&mut next_rx]).await;
     let taken = live(&at).await;
     assert!(

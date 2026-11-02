@@ -111,7 +111,7 @@ pub(crate) fn verify_target(
         ShimRef::BareName => {
             // A doctor-process PATH miss is NOT proof the CLI can't resolve the bare
             // `pixtuoid-hook` → soft note only.
-            if !io::hook_on_path() {
+            if io::hook_on_path().is_none() {
                 notes.push(
                     "pixtuoid-hook not on this process's PATH (the CLI's PATH may differ)".into(),
                 );
@@ -583,7 +583,7 @@ fn install_target_from(
     // pixtuoid-hook on PATH would otherwise warn nothing. Skipped for an embedded path.
     let path_warning = t.binary_strategy == BinaryStrategy::BareNameOnPath
         && !explicit_hook
-        && !io::hook_on_path();
+        && io::hook_on_path().is_none();
     if outcome.changed {
         lock.write_atomic(&outcome.content)?;
     }

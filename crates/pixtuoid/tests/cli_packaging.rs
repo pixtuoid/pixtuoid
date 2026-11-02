@@ -314,12 +314,9 @@ async fn doctor_reads_what_the_built_shim_delivered_to_a_live_owner() {
     ));
     // Not `endpoint_status`: it binds a free endpoint, which would race this owner.
     let at = pixtuoid_core::harness::tap::Endpoint::at(endpoint.clone());
-    tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        while !at.accepting() {
-            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-        }
+    pixtuoid_core::harness::wait_until("the owner", pixtuoid_core::harness::BOOT, || {
+        Ok(at.accepting())
     })
-    .await
     .expect("the owner takes the endpoint");
 
     let mut shim = std::process::Command::new(built_shim())

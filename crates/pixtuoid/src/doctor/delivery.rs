@@ -115,7 +115,7 @@ pub(super) fn collect(rows: &[DoctorSourceRow]) -> anyhow::Result<Delivery> {
     let (mut named, bare) = shims_of(rows);
     let mut unlocated = None;
     // A bare hook is whatever PATH finds, never the installer's override or sibling.
-    let on_path = bare.then(|| which::which(HOOK_BIN).ok()).flatten();
+    let on_path = bare.then(crate::install::io::hook_on_path).flatten();
     if let Some(path) = &on_path {
         named.insert(path.clone());
     } else if bare || named.is_empty() {
