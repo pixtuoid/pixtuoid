@@ -143,6 +143,13 @@ const nameRules = badges
   }
   .hero__prompt-default:hover {
     color: var(--office-ink-accent);
+    text-decoration: underline;
+  }
+  /* Dracula's office is brightest at midday, where --chip-ink and the purple accent
+     both fall under AA; the brighter ink serves rest and hover, the underline marks hover. */
+  :root[data-theme='dracula'] .hero__prompt,
+  :root[data-theme='dracula'] .hero__prompt-default:hover {
+    color: var(--chip-bright);
   }
   .hero__badges {
     display: flex;

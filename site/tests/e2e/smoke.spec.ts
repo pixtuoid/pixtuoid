@@ -2319,37 +2319,46 @@ test('reduced motion: the prompt reveals the hovered name instantly', async ({ b
   await context.close();
 });
 
-test('hero prompt ink (default and every chip name) clears WCAG AA at the real office composite (day + night + dracula)', async ({
-  page,
-}) => {
-  for (const theme of ['day', 'night', 'dracula'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
-    await page.goto('./');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await settleReveals(page);
-    await settleAnimations(page);
-    const ratios = [await paintedContrast(page, '.hero__prompt-default')];
-    for (let i = 0; i < supportedSources.length; i++) {
-      ratios.push(await paintedContrast(page, '.hero__badge-name', i));
-    }
-    ratios.forEach((ratio, k) =>
-      expect(
-        ratio,
-        `${theme} ${k === 0 ? 'default prompt' : supportedSources[k - 1].name}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5)
-    );
-    const link = (await page.locator('.hero__prompt-default').boundingBox())!;
-    await page.mouse.move(link.x + 8, link.y + link.height / 2);
-    const hovered = await paintedContrast(page, '.hero__prompt-default');
-    expect(
-      hovered,
-      `${theme} default prompt hover: WCAG AA floor is 4.5:1; measured ${hovered.toFixed(2)}:1`
-    ).toBeGreaterThanOrEqual(4.5);
+// The office's brightness follows the wall clock (the engine reads the page's local hour), and a theme can
+// be picked at any hour, so every theme meets every hour. A sweep of all 24 found the worst hours: 11 (the
+// office brightest, so light ink is worst) and the night ones (darkest, so dark ink is worst); 8 and 19
+// are kept as the dawn and dusk ramp.
+for (const theme of ['day', 'night', 'dracula'] as const) {
+  for (const hour of [0, 8, 11, 19]) {
+    test(`hero prompt ink (default, hover, every chip name) clears WCAG AA at the real office composite: ${theme} at ${hour}:00`, async ({
+      page,
+    }) => {
+      // setSystemTime, not setFixedTime: a frozen Date stalls the office host's own wait on the clock.
+      await page.clock.setSystemTime(new Date(`2026-01-01T${String(hour).padStart(2, '0')}:00:00`));
+      await page.addInitScript((t) => {
+        sessionStorage.setItem('pix-booted', '1');
+        localStorage.setItem('pix-theme', t);
+      }, theme);
+      await page.goto('./');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await settleReveals(page);
+      await settleAnimations(page);
+      const ratios: [string, number][] = [
+        ['default prompt', await paintedContrast(page, '.hero__prompt-default')],
+      ];
+      for (let i = 0; i < supportedSources.length; i++) {
+        ratios.push([
+          supportedSources[i].name,
+          await paintedContrast(page, '.hero__badge-name', i),
+        ]);
+      }
+      const link = (await page.locator('.hero__prompt-default').boundingBox())!;
+      await page.mouse.move(link.x + 8, link.y + link.height / 2);
+      ratios.push(['default prompt hover', await paintedContrast(page, '.hero__prompt-default')]);
+      for (const [what, ratio] of ratios) {
+        expect(
+          ratio,
+          `${theme} ${hour}:00 ${what}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    });
   }
-});
+}
 
 test('a keyboard-focused default prompt link stays visible over a hovered chip, and the name stays off', async ({
   page,
