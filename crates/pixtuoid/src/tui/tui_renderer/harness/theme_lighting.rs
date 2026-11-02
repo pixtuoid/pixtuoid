@@ -340,10 +340,13 @@ fn theme_picker_renders_theme_names() {
     );
     r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
-    assert!(
-        text.contains("cyberpunk") || text.contains("normal"),
-        "the theme picker lists theme names"
-    );
+    for t in pixtuoid_scene::theme::ALL_THEMES {
+        assert!(
+            text.contains(t.display_name),
+            "the theme picker lists {:?}",
+            t.display_name
+        );
+    }
 }
 
 #[test]

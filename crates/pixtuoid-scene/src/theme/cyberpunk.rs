@@ -5,6 +5,7 @@ use super::*;
 /// The `cyberpunk` dark theme.
 pub static CYBERPUNK: Theme = Theme {
     name: "cyberpunk",
+    display_name: "Cyberpunk",
     kind: ThemeKind::Dark,
     surface: SurfaceColors {
         wall: Rgb {

@@ -5,6 +5,7 @@ use super::*;
 /// The default `normal` theme — the only light-mode palette.
 pub static NORMAL: Theme = Theme {
     name: "normal",
+    display_name: "Coworking",
     kind: ThemeKind::Light,
     surface: SurfaceColors {
         wall: Rgb {
