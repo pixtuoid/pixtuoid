@@ -209,6 +209,21 @@ impl TileCutaway {
         }
     }
 
+    /// What draws its frames, on the terminal `half_blocks` names: its
+    /// protocol at the scale it last fit; `None` while classic paints.
+    pub(crate) fn painter(
+        &self,
+        half_blocks: &crate::jank::Painter,
+    ) -> Option<crate::jank::Painter> {
+        let fitted = self.fitted?;
+        Some(crate::jank::Painter {
+            look: self.route.protocol().name(),
+            scale: fitted.fit.scale().get(),
+            tmux: self.route.tmux(),
+            ..half_blocks.clone()
+        })
+    }
+
     /// The office's logical extent as last fitted; `None` while classic
     /// paints.
     pub(crate) fn office(&self) -> Option<Size> {

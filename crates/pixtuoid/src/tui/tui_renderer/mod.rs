@@ -66,17 +66,11 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     /// The look picked: the cutaway draws only where there is one and it
     /// fits, the half-blocks everywhere else.
     look: LookKind,
-    /// How each look's frames are reported and its office moves.
-    looks: enum_map::EnumMap<pixtuoid_scene::look::LookKind, LookPaint>,
-}
-
-/// How the renderer paints a look.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct LookPaint {
-    /// What its frames' pacing is reported under.
-    pub(crate) painter: crate::jank::Painter,
-    /// How its office moves.
-    pub(crate) motion: pixtuoid_scene::anim::Motion,
+    /// What the half-blocks' frames' pacing is reported under, on this
+    /// terminal.
+    painter: crate::jank::Painter,
+    /// How the office moves in each look.
+    motions: enum_map::EnumMap<LookKind, pixtuoid_scene::anim::Motion>,
 }
 
 /// Everything a frame shows besides the floors: kept apart from `session` so a
@@ -219,16 +213,17 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             screen: Screen::on(pixtuoid_scene::screen::monotonic()),
             cutaway: None,
             look: LookKind::Classic,
-            looks: enum_map::EnumMap::default(),
+            painter: crate::jank::Painter::default(),
+            motions: enum_map::EnumMap::default(),
         }
     }
 
-    /// Paint each look as `looks` says, the cutaway as `cutaway` where the
-    /// run has one, from the next frame on, in `start`: the classic where
-    /// there is no cutaway.
+    /// Move each look's office as `motions` says, the cutaway painted as
+    /// `cutaway` where the run has one, from the next frame on, in `start`:
+    /// the classic where there is no cutaway.
     pub(crate) fn set_looks(
         &mut self,
-        looks: enum_map::EnumMap<LookKind, LookPaint>,
+        motions: enum_map::EnumMap<LookKind, pixtuoid_scene::anim::Motion>,
         cutaway: Option<crate::tui::cutaway::TileCutaway>,
         start: LookKind,
     ) {
@@ -238,8 +233,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         } else {
             LookKind::Classic
         };
-        self.chrome.motion = looks[self.look].motion;
-        self.looks = looks;
+        self.chrome.motion = motions[self.look];
+        self.motions = motions;
     }
 
     /// Draw `look` from the next frame on, the screen cleared of the last:
@@ -254,7 +249,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             cutaway.stand_aside()?;
         }
         self.look = look;
-        self.chrome.motion = self.looks[look].motion;
+        self.chrome.motion = self.motions[look];
         self.redraw()
     }
 
@@ -273,6 +268,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         window
     }
 
+    /// Name what draws the half-blocks' frames, for their pacing summaries:
+    /// the cutaway names its own, from its fit, on the same terminal.
+    pub(crate) fn painted_by(&mut self, painter: crate::jank::Painter) {
+        self.painter = painter;
+    }
+
     /// The cutaway, where it is the look picked.
     fn picked_cutaway(&self) -> Option<&crate::tui::cutaway::TileCutaway> {
         self.cutaway
@@ -281,6 +282,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     }
 
     /// The look the last frame drew: the cutaway where it was picked and fit.
+    #[cfg(test)]
     fn drawn_look(&self) -> LookKind {
         if self
             .picked_cutaway()
@@ -809,10 +811,11 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         presented?;
         self.screen.landed();
         let note = drawn?;
-        self.jank.painted_by(
-            &self.looks[self.drawn_look()].painter,
-            std::time::Instant::now(),
-        );
+        let painter = self
+            .picked_cutaway()
+            .and_then(|c| c.painter(&self.painter))
+            .unwrap_or_else(|| self.painter.clone());
+        self.jank.painted_by(&painter, begun);
         let send = self
             .picked_cutaway()
             .map(crate::tui::cutaway::TileCutaway::last_send);

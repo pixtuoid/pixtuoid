@@ -434,8 +434,9 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     }
 }
 
-/// Hand `renderer` the painters `plan` names, each look moving as `motion`
-/// says, starting in the plan's.
+/// Hand `renderer` the painter `plan` names, the half-blocks' on this
+/// terminal, which the cutaway names its own from, and the cutaway, each look
+/// moving as `motion` says, starting in the plan's.
 fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
     (plan, motion): (
@@ -445,33 +446,18 @@ fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     out: &FrameOut,
 ) {
     use pixtuoid_scene::look::LookKind;
-    let (terminal, tmux_env) = crate::graphics::terminal_and_tmux();
-    let cutaway = plan.cutaway();
-    let looks = enum_map::EnumMap::from_fn(|look| {
-        let painter = match (look, cutaway) {
-            (LookKind::Cutaway, Some(c)) => crate::jank::Painter {
-                look: c.route.protocol().name(),
-                scale: c.fit.scale().get(),
-                tmux: c.route.tmux(),
-                terminal: terminal.clone(),
-                sync: out.synchronized(),
-            },
-            _ => crate::jank::Painter {
-                look: LookKind::Classic.name(),
-                scale: 1,
-                tmux: tmux_env,
-                terminal: terminal.clone(),
-                sync: out.synchronized(),
-            },
-        };
-        tui_renderer::LookPaint {
-            painter,
-            motion: motion[look],
-        }
+    let (terminal, tmux) = crate::graphics::terminal_and_tmux();
+    renderer.painted_by(crate::jank::Painter {
+        look: LookKind::Classic.name(),
+        scale: 1,
+        tmux,
+        terminal,
+        sync: out.synchronized(),
     });
-    let tiles =
-        cutaway.map(|c| cutaway::TileCutaway::new(c.fit, c.cell, c.route, Box::new(out.clone())));
-    renderer.set_looks(looks, tiles, plan.start());
+    let tiles = plan
+        .cutaway()
+        .map(|c| cutaway::TileCutaway::new(c.fit, c.cell, c.route, Box::new(out.clone())));
+    renderer.set_looks(motion, tiles, plan.start());
     if plan.start() == LookKind::Classic {
         tracing::info!(plan = ?plan, "painting classic");
     }

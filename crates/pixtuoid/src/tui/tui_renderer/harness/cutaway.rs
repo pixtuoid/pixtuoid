@@ -1675,6 +1675,20 @@ fn a_look_switch_clears_the_screen_and_switching_back_sends_every_tile() {
     }
 }
 
+/// A resize clears the screen too: the frame after it sends every tile at
+/// once, inside the cadence.
+#[test]
+fn a_resize_sends_at_once_inside_the_cadence() {
+    let (mut r, wire) = painter(120, 40, ImageProtocol::Sixel);
+    let scene = office();
+    r.render(&scene, t0()).expect("render");
+    wire.take();
+    r.terminal.backend_mut().resize(128, 44);
+    r.render(&scene, t0() + ImageProtocol::Sixel.cadence() / 2)
+        .expect("render");
+    assert!(wire.take().contains(SIXEL));
+}
+
 /// A redraw inside a strike's hold paints its first frame at once: the
 /// screen it cleared shows no phase to wait for, so it is never left blank.
 #[test]
@@ -1737,45 +1751,35 @@ fn a_look_switch_is_never_held() {
     }
 }
 
-/// The pacing reports name the look each frame drew, a fall back to the
-/// half-blocks included, and the office moves as the look picked affords.
+/// The office moves as the look picked affords: a font zoom's fall back to
+/// the half-blocks keeps the cutaway's motion, a switch takes the look's.
 #[test]
-fn the_pacing_label_follows_the_drawn_look_and_the_motion_the_picked_one() {
+fn the_office_moves_as_the_picked_look_affords() {
     use pixtuoid_scene::anim::Motion;
     let (mut r, _wire) = kitty(140, 60);
     let scene = office();
     let cadence = ImageProtocol::Kitty.cadence();
-    let paint = |look, motion| super::super::LookPaint {
-        painter: crate::jank::Painter {
-            look,
-            ..Default::default()
-        },
-        motion,
-    };
     let tiles = r.cutaway.take();
     r.set_looks(
         enum_map::enum_map! {
-            LookKind::Cutaway => paint("kitty", Motion::Calm),
-            LookKind::Classic => paint("classic", Motion::Full),
+            LookKind::Cutaway => Motion::Calm,
+            LookKind::Classic => Motion::Full,
         },
         tiles,
         LookKind::Cutaway,
     );
     assert_eq!(r.chrome.motion, Motion::Calm);
     r.render(&scene, t0()).expect("render");
-    assert_eq!(r.jank.painter().look, "kitty");
     r.terminal.backend_mut().zoom(CellSize {
         w: CELL.w / 2,
         h: CELL.h / 2,
     });
     r.render(&scene, t0() + cadence).expect("render");
-    assert_eq!(r.jank.painter().look, "classic", "the fall back draws");
+    assert_eq!(r.drawn_look(), LookKind::Classic, "premise: the fall back");
     assert_eq!(r.chrome.motion, Motion::Calm, "the cutaway is still picked");
     r.terminal.backend_mut().zoom(CELL);
     r.set_look(LookKind::Classic).expect("switch");
     assert_eq!(r.chrome.motion, Motion::Full);
-    r.render(&scene, t0() + cadence * 2).expect("render");
-    assert_eq!(r.jank.painter().look, "classic");
 }
 
 /// The run's panels over a config at `path`, its picker's look row `look`.
@@ -1904,4 +1908,40 @@ fn a_cutaway_a_zoom_leaves_unfit_is_still_the_rows_pick() {
     press(&mut r, &mut ui, &path, KeyCode::Enter);
     assert_eq!(look(&path).as_deref(), Some("classic"));
     assert_eq!(r.look, LookKind::Classic);
+}
+
+/// The pacing reports name what drew each frame: the cutaway's protocol at
+/// the scale it last fit, a font zoom's refit included, and the half-blocks
+/// where a zoom leaves the cutaway no fit.
+#[test]
+fn the_pacing_label_follows_what_drew_each_frame() {
+    let (mut r, _wire) = kitty(140, 60);
+    let scene = office();
+    let cadence = ImageProtocol::Kitty.cadence();
+    r.painted_by(crate::jank::Painter {
+        look: "classic",
+        scale: 1,
+        ..Default::default()
+    });
+    let label = |r: &TuiRenderer<Window>| (r.jank.painter().look, r.jank.painter().scale);
+    r.render(&scene, t0()).expect("render");
+    let (look, scale) = label(&r);
+    assert_eq!(look, "kitty");
+    r.terminal.backend_mut().zoom(CellSize {
+        w: CELL.w * 2,
+        h: CELL.h * 2,
+    });
+    r.render(&scene, t0() + cadence).expect("render");
+    let (look, zoomed) = label(&r);
+    assert_eq!(look, "kitty");
+    assert!(
+        zoomed > scale,
+        "refit at the zoomed cell: {zoomed} after {scale}"
+    );
+    r.terminal.backend_mut().zoom(CellSize {
+        w: CELL.w / 2,
+        h: CELL.h / 2,
+    });
+    r.render(&scene, t0() + cadence * 2).expect("render");
+    assert_eq!(label(&r), ("classic", 1), "the fall back draws");
 }

@@ -4,7 +4,7 @@ a storm, or across dusk, and fail when its hitch rate, how late frames
 showed past their interval per second run, passes HITCH_RATE_MS_PER_S.
 
 The binary measures itself: its `frame pacing` summaries (`jank.rs`), a
-minute each and one at exit, are what this reads, from the log it writes.
+minute each, at a change of painter and at exit, are what this reads.
 `--live` runs it in this terminal, as a user would, which is the only run
 whose writes meet a real terminal's parser; without it, a pseudo-terminal
 sized for `--scale` stands in, which catches our side alone.
@@ -239,16 +239,17 @@ def main():
     if not windows:
         sys.exit(f"pace-check: no `frame pacing` summary in {log}")
     w0 = windows[0]
+    ran = sorted({f"{w.get('look')} x{w.get('scale')}" for w in windows})
     if args.floating:
-        if w0.get("look") != "floating":
-            sys.exit(f"pace-check: ran {w0.get('look')}, not floating: {log}")
+        if {w.get("look") for w in windows} != {"floating"}:
+            sys.exit(f"pace-check: ran {', '.join(ran)}, not floating: {log}")
     else:
         wanted = (
             ("classic", "1") if args.scale == "classic" else (args.protocol, args.scale)
         )
-        if (w0.get("look"), w0.get("scale")) != wanted:
+        if ran != [f"{wanted[0]} x{wanted[1]}"]:
             sys.exit(
-                f"pace-check: ran {w0.get('look')} x{w0.get('scale')}, not {wanted[0]} x{wanted[1]}: {log}"
+                f"pace-check: ran {', '.join(ran)}, not {wanted[0]} x{wanted[1]}: {log}"
             )
     # scheduled, hitch_ms and span_ms are indexed, not .get: a binary that logs
     # none raises instead of passing, and one that schedules no frame must not PASS.
