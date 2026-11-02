@@ -108,7 +108,7 @@ pub(crate) fn badge_plate_colour(theme: &Theme) -> Rgb {
 /// losing the `·xxxx` disambiguation suffix. Truncates from the
 /// base (left of the `·`), not the suffix — otherwise the disambig becomes
 /// useless ("TikTok-Android·a" tells us nothing the base alone wouldn't).
-pub(crate) fn truncate_label(label: &str, budget: u16) -> std::borrow::Cow<'_, str> {
+pub fn truncate_label(label: &str, budget: u16) -> std::borrow::Cow<'_, str> {
     use std::borrow::Cow;
     if span(label) <= budget {
         return Cow::Borrowed(label);

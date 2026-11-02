@@ -11,6 +11,7 @@ use ratatui::text::{Line, Span};
 
 use super::{Overflow, Panel, marquee_or_truncate, source_badge_span, to_color};
 use crate::panels::dashboard::{DASHBOARD_VIEWPORT_ROWS, DashboardFrame, DashboardRow, RowState};
+use pixtuoid_scene::badge::truncate_label;
 use pixtuoid_scene::theme::Theme;
 
 const LABEL_W: usize = 32;
@@ -87,10 +88,20 @@ fn dashboard_line(
         (0, false, _) => "▾ ".to_string(),
         _ => "  └ ".to_string(),
     };
-    let mut name = format!("{prefix}{}", row.label);
-    if row.collapsed && row.child_count > 0 {
-        name.push_str(&format!(" ({})", row.child_count));
-    }
+    let count = if row.collapsed && row.child_count > 0 {
+        format!(" ({})", row.child_count)
+    } else {
+        String::new()
+    };
+    // A row the marquee doesn't scroll is cut from its label's base, as a
+    // badge is, so a namesake keeps the suffix that tells it apart.
+    let label = if is_selected {
+        std::borrow::Cow::Borrowed(&*row.label)
+    } else {
+        let room = LABEL_W.saturating_sub(prefix.chars().count() + count.chars().count());
+        truncate_label(&row.label, u16::try_from(room).unwrap_or(u16::MAX))
+    };
+    let name = format!("{prefix}{label}{count}");
     let label_cell = format!(
         "{:<LABEL_W$}",
         marquee_or_truncate(&name, LABEL_W, is_selected, now)
@@ -152,6 +163,21 @@ mod tests {
             state,
             child_count: 0,
             collapsed: false,
+        }
+    }
+
+    /// Two namesakes too long for the column keep their suffixes, cut from
+    /// the label's base as a badge is, so their rows stay apart.
+    #[test]
+    fn long_namesake_rows_keep_their_suffixes() {
+        let base = "cc\u{b7}a-very-long-project-name-xyz";
+        for suffix in ["75eb", "a39c"] {
+            let row = make_row("cc", RowState::Idle, &format!("{base}\u{b7}{suffix}"));
+            let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
+            let cell = line.spans[2].content.to_string();
+            assert_eq!(cell.chars().count(), LABEL_W, "{cell:?}");
+            assert!(cell.ends_with(&format!("\u{b7}{suffix}")), "{cell:?}");
+            assert!(cell.trim_start().starts_with("cc\u{b7}a-very"), "{cell:?}");
         }
     }
 
@@ -253,9 +279,10 @@ mod tests {
         let row = make_row("cc", RowState::Running(Some(Arc::from(detail))), long);
         let unsel = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
         let name_unsel = unsel.spans[2].content.to_string();
+        assert_eq!(name_unsel.chars().count(), LABEL_W, "{name_unsel:?}");
         assert!(
-            name_unsel.contains('\u{2026}'),
-            "unselected long name must ellipsize: {name_unsel:?}"
+            long.starts_with(name_unsel.trim()),
+            "unselected long name must be cut to the column: {name_unsel:?}"
         );
         let t0 = SystemTime::UNIX_EPOCH;
         let t1 = SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(3000);
