@@ -6,6 +6,7 @@ use super::*;
 /// Based on <https://github.com/morhetz/gruvbox>
 pub(crate) static GRUVBOX: Theme = Theme {
     name: "gruvbox",
+    display_name: "Gruvbox",
     kind: ThemeKind::Dark,
     surface: SurfaceColors {
         wall: Rgb {

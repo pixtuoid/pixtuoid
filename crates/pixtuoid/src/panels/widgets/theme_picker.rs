@@ -18,6 +18,11 @@ pub(crate) fn paint_theme_picker(
 
     /// Fits the title, which outruns a row.
     const THEME_W: u16 = 28;
+    let name_w = theme::ALL_THEMES
+        .iter()
+        .map(|t| t.display_name.chars().count())
+        .max()
+        .unwrap_or_default();
     let items: Vec<Line<'static>> = theme::ALL_THEMES
         .iter()
         .enumerate()
@@ -32,7 +37,7 @@ pub(crate) fn paint_theme_picker(
             };
             let (brand, surface) = theme_swatch(t);
             Line::from(vec![
-                TSpan::styled(format!("{prefix}{:<12}", t.name), name_style),
+                TSpan::styled(format!("{prefix}{:<name_w$}", t.display_name), name_style),
                 TSpan::raw(" "),
                 TSpan::styled("\u{2588}", Style::default().fg(brand)),
                 TSpan::styled("\u{2588}", Style::default().fg(surface)),
@@ -74,6 +79,45 @@ mod tests {
             );
         })
         .unwrap();
+    }
+
+    #[test]
+    fn every_swatch_sits_one_cell_past_the_longest_display_name() {
+        use pixtuoid_scene::theme::ALL_THEMES;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let mut term = Terminal::new(TestBackend::new(60, 30)).unwrap();
+        term.draw(|f| {
+            paint_theme_picker(
+                f,
+                0,
+                Rect::new(0, 0, 60, 30),
+                &pixtuoid_scene::theme::NORMAL,
+            );
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let rows: Vec<String> = (0..buf.area.height)
+            .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect())
+            .collect();
+        let column = |row: &str, text: &str| row[..row.find(text).expect("drawn")].chars().count();
+        let longest = ALL_THEMES
+            .iter()
+            .map(|t| t.display_name.chars().count())
+            .max()
+            .expect("a theme");
+        for t in ALL_THEMES {
+            let row = rows
+                .iter()
+                .find(|r| r.contains(t.display_name))
+                .expect("listed");
+            assert_eq!(
+                column(row, "\u{2588}"),
+                column(row, t.display_name) + longest + 1,
+                "{}",
+                t.display_name
+            );
+        }
     }
 
     #[test]
