@@ -115,14 +115,18 @@ fn armed(
     // As the TUI does: the transmits land with their frame.
     let out = crate::tui::FrameOut::new(wire.clone(), false);
     r.present_through(out.clone());
-    r.set_cutaway(
-        TileCutaway::new(
-            fit(cols, rows),
-            CELL,
-            crate::graphics::Route::direct(protocol, false),
-            Box::new(out),
-        )
-        .arming(in_grid),
+    r.set_looks(
+        enum_map::EnumMap::default(),
+        Some(
+            TileCutaway::new(
+                fit(cols, rows),
+                CELL,
+                crate::graphics::Route::direct(protocol, false),
+                Box::new(out),
+            )
+            .arming(in_grid),
+        ),
+        pixtuoid_scene::look::LookKind::Cutaway,
     );
     (r, wire, in_grid)
 }
@@ -554,6 +558,29 @@ fn the_plans_cell_holds_until_the_windows_moves() {
     r.terminal.backend_mut().zoom(padded);
     r.render(&scene, t0() + cadence * 2).expect("render");
     assert!(wire.take().contains(&whole_tile(CELL)), "zoomed back");
+}
+
+/// A run that starts in the classic reads the window's cell from its first
+/// frame, as one starting in the cutaway does: a font zoom before the first
+/// switch to the cutaway refits it to the zoomed cell.
+#[test]
+fn a_zoom_before_the_first_switch_to_the_cutaway_is_still_a_zoom() {
+    let (cols, rows) = crate::tui::renderer::min_terminal_size();
+    let (mut r, wire) = painter(cols, rows, ImageProtocol::Sixel);
+    r.set_look(LookKind::Classic).expect("start in the classic");
+    let scene = office();
+    let cadence = ImageProtocol::Sixel.cadence();
+    r.render(&scene, t0()).expect("render");
+    let zoomed = CellSize {
+        w: CELL.w * 2,
+        h: CELL.h * 2,
+    };
+    r.terminal.backend_mut().zoom(zoomed);
+    r.render(&scene, t0() + cadence).expect("render");
+    wire.take();
+    r.set_look(LookKind::Cutaway).expect("switch");
+    r.render(&scene, t0() + cadence * 2).expect("render");
+    assert!(wire.take().contains(&whole_tile(zoomed)), "the zoomed cell");
 }
 
 /// A window that reports 0 px on the first frame has read nothing, so the
@@ -1213,12 +1240,16 @@ fn shared_memory_carries_the_tiles_the_escapes_would() {
         let wire = Wire::default();
         let out = crate::tui::FrameOut::new(wire.clone(), false);
         r.present_through(out.clone());
-        r.set_cutaway(TileCutaway::new(
-            fit(cols, rows),
-            CELL,
-            crate::graphics::Route::of(ImageProtocol::Kitty, false, shm),
-            Box::new(out),
-        ));
+        r.set_looks(
+            enum_map::EnumMap::default(),
+            Some(TileCutaway::new(
+                fit(cols, rows),
+                CELL,
+                crate::graphics::Route::of(ImageProtocol::Kitty, false, shm),
+                Box::new(out),
+            )),
+            pixtuoid_scene::look::LookKind::Cutaway,
+        );
         r.render(&office(), t0()).expect("render");
         kitty_images(&wire.take())
     };
@@ -1415,14 +1446,18 @@ fn kitty_transmits_before_the_flush_and_sixel_after() {
             vec![],
             pack_arc(),
         );
-        r.set_cutaway(
-            TileCutaway::new(
-                fit(120, 40),
-                CELL,
-                crate::graphics::Route::direct(protocol, false),
-                Box::new(wire.clone()),
-            )
-            .arming(Box::leak(Box::new(AtomicBool::new(false)))),
+        r.set_looks(
+            enum_map::EnumMap::default(),
+            Some(
+                TileCutaway::new(
+                    fit(120, 40),
+                    CELL,
+                    crate::graphics::Route::direct(protocol, false),
+                    Box::new(wire.clone()),
+                )
+                .arming(Box::leak(Box::new(AtomicBool::new(false)))),
+            ),
+            pixtuoid_scene::look::LookKind::Cutaway,
         );
         r.render(&office(), t0()).expect("render");
         let sent = wire.take();
@@ -1690,11 +1725,13 @@ fn the_pacing_label_follows_the_drawn_look_and_the_motion_the_picked_one() {
         },
         motion,
     };
+    let tiles = r.cutaway.take();
     r.set_looks(
-        crate::graphics::ByLook {
-            cutaway: paint("kitty", Motion::Calm),
-            classic: paint("classic", Motion::Full),
+        enum_map::enum_map! {
+            LookKind::Cutaway => paint("kitty", Motion::Calm),
+            LookKind::Classic => paint("classic", Motion::Full),
         },
+        tiles,
         LookKind::Cutaway,
     );
     assert_eq!(r.chrome.motion, Motion::Calm);
@@ -1768,6 +1805,32 @@ fn press(
             installed: Vec::new,
         },
     );
+}
+
+/// Esc reverts the look the picker previewed: a cutaway run back in the
+/// cutaway, its tiles sent again, and nothing written.
+#[test]
+fn esc_reverts_a_previewed_look() {
+    use crossterm::event::KeyCode;
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("config.toml");
+    let (mut r, wire) = kitty(140, 60);
+    let mut ui = panels_at(&path, Some(LookKind::Cutaway));
+    let scene = office();
+    let cadence = ImageProtocol::Kitty.cadence();
+    r.render(&scene, t0()).expect("render");
+    press(&mut r, &mut ui, &path, KeyCode::Char('t'));
+    press(&mut r, &mut ui, &path, KeyCode::Right);
+    r.render(&scene, t0() + cadence).expect("render");
+    assert_eq!(r.drawn_look(), LookKind::Classic, "premise: previewed");
+    wire.take();
+    press(&mut r, &mut ui, &path, KeyCode::Esc);
+    assert_eq!(ui.modal().appearance, None);
+    assert_eq!(ui.saved.look, Some(LookKind::Cutaway));
+    r.render(&scene, t0() + cadence * 2).expect("render");
+    assert_eq!(r.drawn_look(), LookKind::Cutaway);
+    assert!(wire.take().contains(TRANSMIT), "the tiles sent again");
+    assert!(!path.exists(), "a cancel writes nothing");
 }
 
 /// A run that booted in the cutaway keeps its look row when a font zoom

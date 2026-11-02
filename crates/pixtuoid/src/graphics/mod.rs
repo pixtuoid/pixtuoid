@@ -338,18 +338,17 @@ impl LookChoice {
             None => verdict(),
         };
         match self.look {
-            LookMode::Named(LookKind::Classic) => Plan::ClassicChosen {
+            LookMode::Named(LookKind::Classic) => Plan::ClassicNamed {
                 cutaway: verdict.cutaway(),
             },
             LookMode::Auto | LookMode::Named(LookKind::Cutaway) => verdict,
         }
     }
 
-    /// The plan this choice makes where this process runs, over `verdict`,
-    /// the plan a terminal already asked made: `run`'s, as `doctor` reports
-    /// it.
-    pub(crate) fn over_here(self, verdict: Plan) -> Plan {
-        self.over(&TermEnv::read(), || verdict)
+    /// The plan this choice makes where this process runs, over a terminal
+    /// that draws `cutaway`: `run`'s, as `doctor` reports it.
+    pub(crate) fn over_here(self, cutaway: CutawayPlan) -> Plan {
+        self.over(&TermEnv::read(), || Plan::Cutaway(cutaway))
     }
 }
 
@@ -361,9 +360,9 @@ impl LookChoice {
 /// when the real cause was a pipe, or on the pipe when this build cannot ask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClassicReason {
-    /// [`LookMode::Auto`] over ssh: the terminal was not asked.
+    /// `auto` or `classic` over ssh: the terminal was not asked.
     OverSsh,
-    /// [`LookMode::Auto`] inside GNU screen: the terminal was not asked.
+    /// `auto` or `classic` inside GNU screen: the terminal was not asked.
     InsideScreen,
     /// This build has no query to run ([`probe()`]).
     Unsupported,
@@ -411,7 +410,7 @@ pub(crate) enum Plan {
     /// The half-block office `--look classic` or `look = "classic"` chose,
     /// over the cutaway the terminal draws, where it draws one, which the run
     /// can switch to.
-    ClassicChosen { cutaway: Option<CutawayPlan> },
+    ClassicNamed { cutaway: Option<CutawayPlan> },
     /// The half-block office: one buffer pixel per half-block.
     Classic {
         /// Why this run is not painting the cutaway.
@@ -504,31 +503,6 @@ impl TermEnv {
     }
 }
 
-/// One of a thing for each look a run can draw.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct ByLook<T> {
-    pub(crate) cutaway: T,
-    pub(crate) classic: T,
-}
-
-impl<T> ByLook<T> {
-    /// Each look's `f` of it.
-    pub(crate) fn from_fn(f: impl Fn(LookKind) -> T) -> Self {
-        Self {
-            cutaway: f(LookKind::Cutaway),
-            classic: f(LookKind::Classic),
-        }
-    }
-
-    /// `look`'s.
-    pub(crate) fn of(&self, look: LookKind) -> &T {
-        match look {
-            LookKind::Cutaway => &self.cutaway,
-            LookKind::Classic => &self.classic,
-        }
-    }
-}
-
 /// What stands between this process and the screen: each hop makes a repaint
 /// dearer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -551,7 +525,7 @@ impl Plan {
     pub(crate) fn start(self) -> LookKind {
         match self {
             Plan::Cutaway(_) => LookKind::Cutaway,
-            Plan::ClassicChosen { .. } | Plan::Classic { .. } => LookKind::Classic,
+            Plan::ClassicNamed { .. } | Plan::Classic { .. } => LookKind::Classic,
         }
     }
 
@@ -559,7 +533,7 @@ impl Plan {
     pub(crate) fn cutaway(self) -> Option<CutawayPlan> {
         match self {
             Plan::Cutaway(cutaway) => Some(cutaway),
-            Plan::ClassicChosen { cutaway } => cutaway,
+            Plan::ClassicNamed { cutaway } => cutaway,
             Plan::Classic { .. } => None,
         }
     }
@@ -865,7 +839,7 @@ impl Plan {
             Plan::Cutaway(CutawayPlan { fit, cell, .. }) => {
                 fit.over(image_px(cell, image_area(term))).logical()
             }
-            Plan::ClassicChosen { .. } | Plan::Classic { .. } => {
+            Plan::ClassicNamed { .. } | Plan::Classic { .. } => {
                 let (w, h) = crate::tui::renderer::scene_buf_size(term.width, term.height);
                 Size { w, h }
             }
@@ -873,9 +847,9 @@ impl Plan {
     }
 
     /// The plan as `doctor`'s `graphics:` line: for a cutaway, everything a
-    /// tester reports back from a terminal, and why `run`'s own plan over the
-    /// same terminal starts in the classic; for classic, why.
-    pub(crate) fn diagnostic_row(self, run: Plan) -> String {
+    /// tester reports back from a terminal, and why `run`'s own plan over
+    /// that cutaway (`run`) starts in the classic; for classic, why.
+    pub(crate) fn diagnostic_row(self, run: Option<Plan>) -> String {
         match self {
             Plan::Cutaway(CutawayPlan {
                 fit,
@@ -894,7 +868,7 @@ impl Plan {
                     ms => format!("at most every {ms} ms"),
                 };
                 let why = run
-                    .classic_why()
+                    .and_then(Plan::classic_why)
                     .map(|why| format!(" — `run` paints classic here: {why}"))
                     .unwrap_or_default();
                 format!(
@@ -924,8 +898,8 @@ impl Plan {
                     shape.rows,
                 )
             }
-            Plan::ClassicChosen { cutaway } => {
-                format!("graphics: classic half-blocks — {}", chosen_why(cutaway))
+            Plan::ClassicNamed { cutaway } => {
+                format!("graphics: classic half-blocks — {}", named_why(cutaway))
             }
             Plan::Classic { reason } => {
                 format!("graphics: classic half-blocks — {}", reason.describe())
@@ -938,15 +912,15 @@ impl Plan {
     fn classic_why(self) -> Option<String> {
         match self {
             Plan::Cutaway(_) => None,
-            Plan::ClassicChosen { cutaway } => Some(chosen_why(cutaway)),
+            Plan::ClassicNamed { cutaway } => Some(named_why(cutaway)),
             Plan::Classic { reason } => Some(reason.describe()),
         }
     }
 }
 
-/// Why [`Plan::ClassicChosen`] starts in the classic, and the switch its
+/// Why [`Plan::ClassicNamed`] starts in the classic, and the switch its
 /// `cutaway` offers.
-fn chosen_why(cutaway: Option<CutawayPlan>) -> String {
+fn named_why(cutaway: Option<CutawayPlan>) -> String {
     let classic = LookMode::Named(LookKind::Classic);
     let switch = cutaway
         .map(|_| {
@@ -1082,7 +1056,7 @@ mod tests {
         for heavy in [ImageProtocol::Sixel, ImageProtocol::Iterm2] {
             for over in [
                 plan(heavy),
-                Plan::ClassicChosen {
+                Plan::ClassicNamed {
                     cutaway: plan(heavy).cutaway(),
                 },
             ] {
@@ -1205,8 +1179,7 @@ mod tests {
     }
 
     fn row_in(env: &TermEnv, choice: LookChoice, probe: Probe, max_density: Density) -> String {
-        let plan = detect(choice, env, max_density, AREA, || probe);
-        plan.diagnostic_row(plan)
+        detect(choice, env, max_density, AREA, || probe).diagnostic_row(None)
     }
 
     fn row(choice: LookChoice, probe: Probe, max_density: Density) -> String {
@@ -1443,7 +1416,7 @@ mod tests {
             assert_eq!(n, asks, "{env:?}");
             assert_eq!(
                 plan,
-                Plan::ClassicChosen {
+                Plan::ClassicNamed {
                     cutaway: auto.cutaway()
                 },
                 "{env:?}"
@@ -1819,9 +1792,10 @@ mod tests {
     #[test]
     fn a_cutaway_row_says_why_run_paints_classic() {
         let cutaway = plan(capable(CELL_8X16), BUNDLED);
-        let painted = cutaway.diagnostic_row(cutaway);
+        let painted = cutaway.diagnostic_row(None);
         assert!(!painted.contains("paints classic"), "{painted}");
-        let chosen = Plan::ClassicChosen {
+        assert_eq!(cutaway.diagnostic_row(Some(cutaway)), painted);
+        let named = Plan::ClassicNamed {
             cutaway: cutaway.cutaway(),
         };
         let unasked = Plan::Classic {
@@ -1829,25 +1803,25 @@ mod tests {
         };
         for (run, why) in [
             (
-                chosen,
+                named,
                 "chosen by `--look classic` or `look = \"classic\"` — `t` switches to the cutaway"
                     .to_string(),
             ),
             (unasked, ClassicReason::OverSsh.describe()),
         ] {
             assert_eq!(
-                cutaway.diagnostic_row(run),
+                cutaway.diagnostic_row(Some(run)),
                 format!("{painted} — `run` paints classic here: {why}")
             );
         }
         let classic = plan(Probe::NoAnswer, BUNDLED);
         assert_eq!(
-            classic.diagnostic_row(unasked),
-            classic.diagnostic_row(classic)
+            classic.diagnostic_row(Some(unasked)),
+            classic.diagnostic_row(None)
         );
     }
 
-    /// The chosen classic says it was chosen, and names the switch only
+    /// The named classic says it was chosen, and names the switch only
     /// where the terminal draws the cutaway.
     #[test]
     fn the_chosen_classic_names_the_switch_only_where_the_cutaway_draws() {

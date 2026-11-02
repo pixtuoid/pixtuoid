@@ -1,5 +1,5 @@
 //! The modal panels both painters show: the dashboard, the Sources panel, the
-//! help, the theme picker, the version popup and the onboarding, with the one
+//! help, the appearance picker, the version popup and the onboarding, with the one
 //! key dispatch that drives them ([`dispatch_key`] decodes, [`apply_key_action`]
 //! applies). A painter draws them through [`widgets`] into a ratatui frame and
 //! carries out what only it can through [`Host`].

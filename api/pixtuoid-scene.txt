@@ -889,6 +889,10 @@ impl core::fmt::Debug for pixtuoid_scene::look::LookKind
 pub fn pixtuoid_scene::look::LookKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::look::LookKind
 impl core::marker::StructuralPartialEq for pixtuoid_scene::look::LookKind
+impl enum_map::internal::Enum for pixtuoid_scene::look::LookKind
+pub type pixtuoid_scene::look::LookKind::Array<__EnumMapInternalV> = [__EnumMapInternalV; 2]
+pub fn pixtuoid_scene::look::LookKind::from_usize(usize) -> Self
+pub fn pixtuoid_scene::look::LookKind::into_usize(self) -> usize
 impl strum::VariantArray for pixtuoid_scene::look::LookKind
 pub const pixtuoid_scene::look::LookKind::VARIANTS: &'static [Self]
 impl<'_derivative_strum> core::convert::From<&'_derivative_strum pixtuoid_scene::look::LookKind> for &'static str

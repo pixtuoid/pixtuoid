@@ -643,9 +643,9 @@ struct DoctorReport {
     color_pf: crate::term::ColorPreflight,
     graphics_plan: crate::graphics::Plan,
     /// The plan `run`'s look without a flag — the config's, then the default —
-    /// makes over the terminal `graphics_plan` asked
+    /// makes over the cutaway `graphics_plan` found, where it found one
     /// ([`crate::graphics::LookChoice::over_here`]).
-    run_plan: crate::graphics::Plan,
+    run_plan: Option<crate::graphics::Plan>,
     rows: Vec<DoctorSourceRow>,
     delivery: delivery::Delivery,
     roots: Vec<RootStatus>,
@@ -813,11 +813,11 @@ fn collect(
     }
     let max_density = pixtuoid_scene::pack::load_bundled_pack()?.max_density_variant();
     let (truecolor_probe, graphics_plan) = probe_terminal_caps(probe_ok, look, max_density);
-    let run_plan = crate::graphics::LookChoice::new(
+    let run_look = crate::graphics::LookChoice::new(
         crate::config::resolve_look(&cfg, None, &mut config_warnings),
         None,
-    )
-    .over_here(graphics_plan);
+    );
+    let run_plan = graphics_plan.cutaway().map(|c| run_look.over_here(c));
 
     let rows: Vec<DoctorSourceRow> = registry::REGISTRY
         .iter()
@@ -1613,9 +1613,7 @@ mod tests {
             graphics_plan: crate::graphics::Plan::Classic {
                 reason: crate::graphics::ClassicReason::NotQueried,
             },
-            run_plan: crate::graphics::Plan::Classic {
-                reason: crate::graphics::ClassicReason::NotQueried,
-            },
+            run_plan: None,
             rows,
             delivery: delivery::Delivery::idle(),
             roots: vec![],
@@ -1786,17 +1784,17 @@ mod tests {
             cell,
             chosen: crate::graphics::Chosen::Answer,
         });
-        r.run_plan = r.graphics_plan;
+        r.run_plan = Some(r.graphics_plan);
         assert_eq!(
             terminal_category(&r).details[0],
             format!(
                 "{DETAIL_INDENT}{}",
-                r.graphics_plan.diagnostic_row(r.graphics_plan)
+                r.graphics_plan.diagnostic_row(r.run_plan)
             )
         );
-        r.run_plan = Plan::Classic {
+        r.run_plan = Some(Plan::Classic {
             reason: ClassicReason::OverSsh,
-        };
+        });
         let row = terminal_category(&r).details.swap_remove(0);
         assert_eq!(
             row,

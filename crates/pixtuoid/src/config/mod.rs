@@ -300,9 +300,10 @@ pub(crate) fn save_appearance(
         let Some(picked) = picked else {
             return;
         };
-        let held = doc.get("look").and_then(toml_edit::Item::as_str);
-        let persisted = held
-            .and_then(|v| <crate::graphics::LookMode as clap::ValueEnum>::from_str(v, false).ok())
+        let persisted = doc
+            .get("look")
+            .and_then(toml_edit::Item::as_str)
+            .and_then(parse_look)
             .unwrap_or_default();
         let target = persisted.picking(picked);
         if target != persisted {
@@ -473,7 +474,7 @@ pub(crate) fn resolve_look(
     warnings: &mut Vec<String>,
 ) -> crate::graphics::LookMode {
     let configured = config.look.as_deref().and_then(|v| {
-        let mode = <crate::graphics::LookMode as clap::ValueEnum>::from_str(v, false).ok();
+        let mode = parse_look(v);
         if mode.is_none() {
             warn_user(
                 warnings,
@@ -483,6 +484,11 @@ pub(crate) fn resolve_look(
         mode
     });
     cli.or(configured).unwrap_or_default()
+}
+
+/// The `look` key's value as the mode it names, by the flag's own parser.
+fn parse_look(value: &str) -> Option<crate::graphics::LookMode> {
+    <crate::graphics::LookMode as clap::ValueEnum>::from_str(value, false).ok()
 }
 
 /// How much of the office's ambient life moves: the `motion` config key.

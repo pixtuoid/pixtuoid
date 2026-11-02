@@ -356,7 +356,7 @@ pub(crate) struct TuiSession {
     pub plan: crate::graphics::Plan,
     /// How the office moves in each look, which `boot_tui` resolved beside
     /// the plan.
-    pub motion: crate::graphics::ByLook<pixtuoid_scene::anim::Motion>,
+    pub motion: enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
     pub floor_caps: Arc<[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS]>,
     pub theme: &'static theme::Theme,
     pub config_path: std::path::PathBuf,
@@ -440,14 +440,14 @@ fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
     (plan, motion): (
         crate::graphics::Plan,
-        crate::graphics::ByLook<pixtuoid_scene::anim::Motion>,
+        enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
     ),
     out: &FrameOut,
 ) {
     use pixtuoid_scene::look::LookKind;
     let (terminal, tmux_env) = crate::graphics::terminal_and_tmux();
     let cutaway = plan.cutaway();
-    let looks = crate::graphics::ByLook::from_fn(|look| {
+    let looks = enum_map::EnumMap::from_fn(|look| {
         let painter = match (look, cutaway) {
             (LookKind::Cutaway, Some(c)) => crate::jank::Painter {
                 look: c.route.protocol().name(),
@@ -466,18 +466,12 @@ fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
         };
         tui_renderer::LookPaint {
             painter,
-            motion: *motion.of(look),
+            motion: motion[look],
         }
     });
-    if let Some(c) = cutaway {
-        renderer.set_cutaway(cutaway::TileCutaway::new(
-            c.fit,
-            c.cell,
-            c.route,
-            Box::new(out.clone()),
-        ));
-    }
-    renderer.set_looks(looks, plan.start());
+    let tiles =
+        cutaway.map(|c| cutaway::TileCutaway::new(c.fit, c.cell, c.route, Box::new(out.clone())));
+    renderer.set_looks(looks, tiles, plan.start());
     if plan.start() == LookKind::Classic {
         tracing::info!(plan = ?plan, "painting classic");
     }

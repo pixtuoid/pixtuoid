@@ -60,7 +60,7 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<QuitSignal>> {
 type Boot = (
     Arc<pixtuoid_scene::pack::OfficeArt>,
     crate::graphics::Plan,
-    crate::graphics::ByLook<pixtuoid_scene::anim::Motion>,
+    enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
 );
 
 /// Load the pack, whose densest art the plan fits, plan, and pick the motion
@@ -70,7 +70,7 @@ fn boot_tui(cfg: &RunConfig) -> Result<Boot> {
     let plan = crate::graphics::plan_this_terminal(cfg.look, pack.max_density_variant(), true);
     tracing::info!(look = ?cfg.look, plan = ?plan, "graphics plan");
     let link = crate::graphics::Link::of_env();
-    let motion = crate::graphics::ByLook::from_fn(|look| cfg.motion.or(plan.motion(look, link)));
+    let motion = enum_map::EnumMap::from_fn(|look| cfg.motion.or(plan.motion(look, link)));
     tracing::info!(mode = ?cfg.motion, motion = ?motion, "motion");
     Ok((pack, plan, motion))
 }

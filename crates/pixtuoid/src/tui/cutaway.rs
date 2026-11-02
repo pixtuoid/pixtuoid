@@ -194,12 +194,18 @@ impl TileCutaway {
     /// [`crate::graphics::probe`] ranks them), until a font zoom moves the
     /// window's cell from what it read on the first frame.
     fn cell_under(&mut self, window: Option<CellSize>) -> CellSize {
-        if self.first_window.is_none() {
-            self.first_window = window;
-        }
+        self.saw_window(window);
         match window {
             Some(cell) if Some(cell) != self.first_window => cell,
             _ => self.planned,
+        }
+    }
+
+    /// The window's cell this frame: the first one read is the baseline a
+    /// font zoom moves from.
+    pub(crate) fn saw_window(&mut self, window: Option<CellSize>) {
+        if self.first_window.is_none() {
+            self.first_window = window;
         }
     }
 

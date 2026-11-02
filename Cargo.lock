@@ -2951,6 +2951,7 @@ dependencies = [
  "clap_mangen",
  "codspeed-criterion-compat",
  "crossterm",
+ "enum-map",
  "foldhash",
  "futures-util",
  "icy_sixel",

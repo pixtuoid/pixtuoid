@@ -18,7 +18,7 @@ pub(crate) fn paint_appearance(
 ) {
     use pixtuoid_scene::theme;
 
-    /// Fits the theme title, which outruns a row.
+    /// The theme picker's width, wider than its title and its rows.
     const THEME_W: u16 = 28;
     let selected = shown.theme;
     let accent = Style::default()
