@@ -2197,71 +2197,154 @@ test('hero badge row: one chip per registered source, matching the tools-table r
 }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
-  const chips = page.locator('.hero__badges .hero__badge:not(.hero__badge--more)');
+  const chips = page.locator('.hero__badges .hero__badge');
   await expect(chips).toHaveCount(supportedSources.length);
   await expect(chips.first().locator('.hero__badge-code')).toHaveText(
     supportedSources[0].badge.replace('·', '')
   );
   await expect(chips.first()).toHaveAttribute('aria-label', supportedSources[0].name);
-  const more = page.locator('.hero__badge--more a');
-  await expect(more).toHaveText(`${supportedSources.length} CLIs →`);
-  await expect(more).toHaveAttribute('href', '#tools');
   // Chips are not copy text: a UA/inherit regression here re-introduces the
   // per-glyph arrow↔I-beam flicker.
   await expect(chips.first()).toHaveCSS('cursor', 'default');
-  await expect(more).toHaveCSS('cursor', 'pointer');
 
   const tableRows = page.locator('.tools tbody:not(.tools__planned) tr');
   await expect(tableRows).toHaveCount(supportedSources.length);
 });
 
-test('hero badge hover expands the full CLI name in place', async ({ page }) => {
-  // Raw mouse.move, NOT page.hover(): the page's html { scroll-behavior: smooth } lets hover()'s actionability pass
-  // queue a smooth CDP scroll that slides the page out from under the pointer.
+// Widths and root font sizes that wrap the chip row at rest into 1, 2 and 3 lines: the prompt row is
+// fixed, so the hero must not move however the strip wraps.
+for (const { width, rootPx } of [
+  { width: 1440, rootPx: 16 },
+  { width: 880, rootPx: 16 },
+  { width: 760, rootPx: 16 },
+  { width: 480, rootPx: 16 },
+  { width: 1440, rootPx: 22 },
+]) {
+  test(`hero badge hover swaps the prompt text and moves nothing at ${width}px, root ${rootPx}px`, async ({
+    page,
+  }) => {
+    // Every chip, each waiting out the 0.3s typed reveal.
+    test.setTimeout(90_000);
+    // Raw mouse.move, NOT page.hover(): the page's html { scroll-behavior: smooth } lets hover()'s actionability pass
+    // queue a smooth CDP scroll that slides the page out from under the pointer.
+    await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+    const rect = (sel: string) =>
+      page.evaluate((s) => {
+        const r = document.querySelector(s)!.getBoundingClientRect();
+        return [r.x, r.y, r.width, r.height];
+      }, sel);
+    // Mechanism-neutral: whatever the entrance or the reveal animates, measure after it ends.
+    const settle = () =>
+      page.evaluate(async () => {
+        await new Promise((r) => requestAnimationFrame(r));
+        await Promise.all(
+          document
+            .getAnimations()
+            .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+            .map((a) => a.finished.catch(() => undefined))
+        );
+      });
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('./');
+    // Let the hero's `rise` entrance settle first — a one-shot mouse.move to a mid-animation center lands off the settled chip.
+    await page.waitForLoadState('networkidle');
+    await page.evaluate((px) => (document.documentElement.style.fontSize = `${px}px`), rootPx);
+    const chips = page.locator('.hero__badges .hero__badge');
+    const watched = ['.hero__copy h1', '.hero__prompt', '.hero__badges', '.hero__cta'];
+    await settle();
+    const rest = await Promise.all(watched.map(rect));
+    // What the prompt row SHOWS: the children neither faded out nor clipped away.
+    const shown = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('.hero__prompt > *')]
+          .filter(
+            (el) =>
+              getComputedStyle(el).opacity !== '0' &&
+              getComputedStyle(el.firstElementChild ?? el).clipPath !== 'inset(0px 100% 0px 0px)'
+          )
+          .map((el) => el.textContent!.replace(/\s+/g, ' ').trim())
+      );
+    for (let i = 0; i < supportedSources.length; i++) {
+      const chip = chips.nth(i);
+      const chipRest = (await chip.boundingBox())!;
+      await page.mouse.move(chipRest.x + chipRest.width / 2, chipRest.y + chipRest.height / 2);
+      await settle();
+      const at = `${width}px, root ${rootPx}px, chip ${i}`;
+      expect(await Promise.all(watched.map(rect)), `${at}: hover moved the hero`).toEqual(rest);
+      expect(await chip.boundingBox(), `${at}: the chip itself resized`).toEqual(chipRest);
+      expect(await shown(), `${at}: prompt does not show the name`).toEqual([
+        `$ ${supportedSources[i].name}`,
+      ]);
+    }
+    await page.mouse.move(0, 0);
+    await settle();
+    expect(await shown(), 'default prompt not restored').toEqual([
+      `$ works with ${supportedSources.length} coding CLIs →`,
+    ]);
+    expect(await Promise.all(watched.map(rect))).toEqual(rest);
+  });
+}
+
+test('hero prompt line links to the tools board', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
-  // Let the hero's `rise` entrance settle first — a one-shot mouse.move to a mid-animation center lands off the settled chip.
-  await page.waitForLoadState('networkidle');
-  const chip = page.locator('.hero__badges .hero__badge:not(.hero__badge--more)').nth(6);
-  const restBox = (await chip.boundingBox())!;
-  await page.mouse.move(restBox.x + restBox.width / 2, restBox.y + restBox.height / 2);
-  await expect
-    .poll(async () => (await chip.boundingBox())!.width)
-    .toBeGreaterThan(restBox.width + 20);
-  const hoverBox = (await chip.boundingBox())!;
-  expect(
-    Math.abs(hoverBox.x - restBox.x),
-    'the chip grows RIGHTWARD — its own left edge must not move (jitter-free)'
-  ).toBeLessThan(1);
-  await expect(chip.locator('.hero__badge-name')).toHaveCSS('opacity', '1');
+  const link = page.locator('.hero__prompt-default');
+  await expect(link).toHaveAttribute('href', '#tools');
+  await expect(link).toHaveCSS('cursor', 'pointer');
+  await link.click();
+  await expect(page).toHaveURL(/#tools$/);
 });
 
-test('reduced motion: the badge hover-expand is instant but still works', async ({ browser }) => {
-  // Under RM the name track's transition is zeroed by global.css's UNIVERSAL clamp — Hero.astro deliberately carries NO
-  // per-component arm (dead code under that !important). Motion removed ≠ feature removed: the hover rule still flips the 0fr track.
+test('reduced motion: the prompt reveals the hovered name instantly', async ({ browser }) => {
+  // Under RM the reveal's transition is zeroed by global.css's UNIVERSAL clamp — Hero.astro deliberately carries NO
+  // per-component arm (dead code under that !important). Motion removed ≠ feature removed: the hover rule still opens the clip.
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await context.newPage();
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   await page.waitForLoadState('networkidle');
-  const chip = page.locator('.hero__badges .hero__badge:not(.hero__badge--more)').nth(6);
-  const durationSecs = await chip
-    .locator('.hero__badge-name')
-    .evaluate((el) => parseFloat(getComputedStyle(el).transitionDuration));
+  const chip = page.locator('.hero__badges .hero__badge').nth(6);
+  const label = page.locator('.hero__badge-name > span').nth(6);
+  const durationSecs = await label.evaluate((el) =>
+    parseFloat(getComputedStyle(el).transitionDuration)
+  );
   expect(durationSecs).toBeLessThan(0.001);
+  await expect(label).toHaveCSS('clip-path', 'inset(0px 100% 0px 0px)');
   const restBox = (await chip.boundingBox())!;
   await page.mouse.move(restBox.x + restBox.width / 2, restBox.y + restBox.height / 2);
-  await expect
-    .poll(async () => (await chip.boundingBox())!.width)
-    .toBeGreaterThan(restBox.width + 20);
+  await expect(label).toHaveCSS('clip-path', 'inset(0px)');
   await context.close();
+});
+
+test('hero prompt ink (default and every chip name) clears WCAG AA at the real office composite (day + night + dracula)', async ({
+  page,
+}) => {
+  for (const theme of ['day', 'night', 'dracula'] as const) {
+    await page.addInitScript((t) => {
+      sessionStorage.setItem('pix-booted', '1');
+      localStorage.setItem('pix-theme', t);
+    }, theme);
+    await page.goto('./');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await settleReveals(page);
+    const ratios = [await paintedContrast(page, '.hero__prompt-default')];
+    for (let i = 0; i < supportedSources.length; i++) {
+      ratios.push(await paintedContrast(page, '.hero__badge-name', i));
+    }
+    ratios.forEach((ratio, k) =>
+      expect(
+        ratio,
+        `${theme} ${k === 0 ? 'default prompt' : supportedSources[k - 1].name}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(4.5)
+    );
+  }
 });
 
 test('hero badge hues clear WCAG AA against their theme-aware chip surface (day + night)', async ({
   page,
 }) => {
   // Same-hue text on same-hue ground is exactly where contrast silently dies: the cell is TINTED with the badge's own hue
-  // per theme, so sweep every rendered hue in both themes, and both text pairs (code + expanded name).
+  // per theme, so sweep every rendered hue in both themes, and the code text.
   for (const theme of ['day', 'night'] as const) {
     await page.addInitScript((t) => {
       sessionStorage.setItem('pix-booted', '1');
@@ -2271,46 +2354,22 @@ test('hero badge hues clear WCAG AA against their theme-aware chip surface (day 
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
     const chips = await page.evaluate(() =>
-      [...document.querySelectorAll('.hero__badge:not(.hero__badge--more)')].map((li) => ({
+      [...document.querySelectorAll('.hero__badge')].map((li) => ({
         codeColor: getComputedStyle(li.querySelector('.hero__badge-code')!).color,
-        nameColor: getComputedStyle(li.querySelector('.hero__badge-name')!).color,
         chipBg: getComputedStyle(li).backgroundColor,
         label: li.getAttribute('aria-label'),
       }))
     );
     expect(chips.length, `${theme}: no .hero__badge chips rendered`).toBe(supportedSources.length);
-    for (const { codeColor, nameColor, chipBg, label } of chips) {
+    for (const { codeColor, chipBg, label } of chips) {
       const bg = parseRgb(chipBg).slice(0, 3) as [number, number, number];
-      for (const [what, color] of [
-        ['code', codeColor],
-        ['hover-expanded name', nameColor],
-      ] as const) {
-        const fg = parseRgb(color).slice(0, 3) as [number, number, number];
-        const ratio = contrastRatio(fg, bg);
-        expect(
-          ratio,
-          `${theme} "${label}" ${what}: WCAG AA floor is 4.5:1; ${color} on cell ${chipBg} measured ${ratio.toFixed(2)}:1`
-        ).toBeGreaterThanOrEqual(4.5);
-      }
+      const fg = parseRgb(codeColor).slice(0, 3) as [number, number, number];
+      const ratio = contrastRatio(fg, bg);
+      expect(
+        ratio,
+        `${theme} "${label}" code: WCAG AA floor is 4.5:1; ${codeColor} on cell ${chipBg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(4.5);
     }
-
-    // REST ink only — the count-link's hover ink is --coral, the same
-    // transient-hover-dips-below-AA exception .hero__ghost documents.
-    const moreColor = await page.evaluate(() => {
-      const a = document.querySelector('.hero__badge--more a')!;
-      return {
-        fg: getComputedStyle(a).color,
-        bg: getComputedStyle(a.closest('.hero__badge')!).backgroundColor,
-      };
-    });
-    const moreRatio = contrastRatio(
-      parseRgb(moreColor.fg).slice(0, 3) as [number, number, number],
-      parseRgb(moreColor.bg).slice(0, 3) as [number, number, number]
-    );
-    expect(
-      moreRatio,
-      `${theme} count-link: WCAG AA floor is 4.5:1; measured ${moreRatio.toFixed(2)}:1`
-    ).toBeGreaterThanOrEqual(4.5);
   }
 });
 
