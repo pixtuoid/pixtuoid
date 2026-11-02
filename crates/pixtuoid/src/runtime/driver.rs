@@ -22,7 +22,7 @@ use pixtuoid_core::source::codex::CodexSource;
 use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::daemon::{self, PresenceMsg};
 use pixtuoid_core::source::grok::GrokSource;
-use pixtuoid_core::source::hook::{HookRouter, LiveConnected};
+use pixtuoid_core::source::hook::HookRouter;
 use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::omp::OmpSource;
 use pixtuoid_core::state::MAX_FLOORS;
@@ -148,7 +148,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
 pub(crate) fn build_source_set(
     socket_path: PathBuf,
     presence_tx: Option<daemon::PresenceSender>,
-    connected: Option<LiveConnected>,
+    connected: ConnectedSources,
 ) -> Vec<Box<dyn DynSource>> {
     let mut cc_src = ClaudeCodeSource::default_paths();
     let ag_src = AntigravitySource::default_paths();
@@ -435,7 +435,11 @@ mod tests {
         use pixtuoid_core::source::registry::{self, descriptor_for};
         use std::collections::BTreeSet;
 
-        let sources = build_source_set(PathBuf::from("/tmp/pixtuoid-test.sock"), None, None);
+        let sources = build_source_set(
+            PathBuf::from("/tmp/pixtuoid-test.sock"),
+            None,
+            ConnectedSources::default(),
+        );
         let built: BTreeSet<&str> = sources.iter().map(|s| s.name()).collect();
 
         // The HookRouter is infrastructure, not a registered CLI: it has no

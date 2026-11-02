@@ -8,17 +8,18 @@
 //! misdirected hook reaches nobody, so the report states the endpoint instead.
 
 use std::collections::BTreeSet;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Context;
 use pixtuoid_core::source::claude_code::{ClaudeCodeSource, SOURCE_NAME};
-use pixtuoid_core::source::hook::{self, EndpointStatus, HookActivity, HookSocketListener};
+use pixtuoid_core::source::hook::{self, EndpointStatus, HookSocketListener, OwnerStatus};
+use tokio::io::AsyncWriteExt;
 
 use super::{
-    CONT_INDENT, Category, CategoryStatus, DETAIL_INDENT, DoctorSourceRow, Ink, ShownPath, sanitize,
+    CONT_INDENT, Category, CategoryStatus, DETAIL_INDENT, DoctorSourceRow, Ink, SOURCE_W,
+    ShownPath, sanitize,
 };
 use crate::install::io::HOOK_BIN;
 use crate::install::verify::ShimRef;
@@ -27,7 +28,6 @@ use crate::panels::widgets::fmt_age;
 /// Far past the shim's own send bound, whose clock starts only once it runs: a
 /// first launch can stall in the OS before that.
 const EXIT_DEADLINE: Duration = Duration::from_secs(5);
-const EXIT_POLL: Duration = Duration::from_millis(5);
 /// The shim has exited, so the line already sits at the listener.
 const EVENT_WAIT: Duration = Duration::from_secs(1);
 /// The shim's watchdog can drop a send under load, which is no broken install.
@@ -139,11 +139,23 @@ pub(super) fn collect(rows: &[DoctorSourceRow]) -> anyhow::Result<Delivery> {
     })
 }
 
+/// The whole file name: a stem would pass the `pixtuoid-hook.sh` a user wrote.
+fn named_as_the_shim(path: &Path) -> bool {
+    let shim = crate::install::io::hook_sibling_name();
+    path.file_name().is_some_and(|name| {
+        if cfg!(windows) {
+            name.eq_ignore_ascii_case(&shim)
+        } else {
+            name == shim.as_str()
+        }
+    })
+}
+
 /// Run `shim` as a hook would, against a listener only it knows about. The real
 /// listener and decoder on purpose: the file name is checked first, because a
 /// hand-edited config can name anything and this feeds it an invented event.
 async fn probe(shim: &Path, exit_deadline: Duration) -> ShimProbe {
-    if shim.file_stem().is_none_or(|stem| stem != HOOK_BIN) {
+    if !named_as_the_shim(shim) {
         return ShimProbe::NotTested(format!("it is not named {HOOK_BIN}"));
     }
     let dir = match tempfile::Builder::new().prefix("px").tempdir() {
@@ -180,35 +192,28 @@ async fn probe(shim: &Path, exit_deadline: Duration) -> ShimProbe {
 }
 
 /// One run to a clean exit, which the shim's contract promises, so anything else
-/// is the OS refusing it or a file that is no shim. Polled: `std::process` has no
-/// timed wait, and the binary's tokio has no `process` feature.
+/// is the OS refusing it or a file that is no shim.
 async fn run_once(shim: &Path, endpoint: &Path, exit_deadline: Duration) -> Result<(), String> {
-    let mut child = crate::install::shim_command(shim, SOURCE_NAME)
+    let mut command =
+        tokio::process::Command::from(crate::install::shim_command(shim, SOURCE_NAME));
+    let mut child = command
         .env(hook::SOCKET_ENV, endpoint)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("it would not run: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
-        // A write error is the child leaving, which `try_wait` reports.
-        let _ = stdin.write_all(PROBE_PAYLOAD);
+        // A write error is the child leaving, which its status reports.
+        let _ = stdin.write_all(PROBE_PAYLOAD).await;
     }
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => return Ok(()),
-            Ok(Some(status)) => return Err(format!("it ended with {status}")),
-            Ok(None) if started.elapsed() < exit_deadline => {
-                tokio::time::sleep(EXIT_POLL).await;
-            }
-            Ok(None) => break,
-            Err(e) => return Err(format!("could not wait for it: {e}")),
-        }
+    match tokio::time::timeout(exit_deadline, child.wait()).await {
+        Ok(Ok(status)) if status.success() => Ok(()),
+        Ok(Ok(status)) => Err(format!("it ended with {status}")),
+        Ok(Err(e)) => Err(format!("could not wait for it: {e}")),
+        Err(_) => Err(format!("it did not exit within {exit_deadline:?}")),
     }
-    let _ = child.kill();
-    let _ = child.wait();
-    Err(format!("it did not exit within {exit_deadline:?}"))
 }
 
 fn shim_row((path, probed): &(ShownPath, ShimProbe), ink: &Ink) -> String {
@@ -223,16 +228,16 @@ fn shim_row((path, probed): &(ShownPath, ShimProbe), ink: &Ink) -> String {
 /// A source's row in a live owner's report, and whether the office lags the disk:
 /// `connect` from a shell reaches a running office's gate only at its next launch,
 /// so hooks that arrive are dropped and nothing else says why it stays empty.
-fn source_row(row: &DoctorSourceRow, activity: &HookActivity) -> Option<(String, bool)> {
+fn source_row(row: &DoctorSourceRow, status: &OwnerStatus) -> Option<(String, bool)> {
     let name = row.desc.name;
-    let seen = activity.last_hook_ago_ms.get(name);
-    let gated = (activity.connected.as_ref()).is_some_and(|live| !live.contains(name));
+    let seen = status.last_hook_ago_ms.get(name);
+    let gated = !status.connected.contains(name);
     let lagging = row.connected && gated;
     if !(row.hooks_installed || seen.is_some() || lagging) {
         return None;
     }
     let state = if lagging {
-        "connected after this office started: restart it to see its agents".to_string()
+        "connected after this instance started: restart it to see its agents".to_string()
     } else if let Some(ms) = seen {
         let age = fmt_age(Duration::from_millis(*ms));
         let gate = if gated {
@@ -246,7 +251,7 @@ fn source_row(row: &DoctorSourceRow, activity: &HookActivity) -> Option<(String,
     } else {
         "no hooks yet".to_string()
     };
-    Some((format!("{DETAIL_INDENT}{name:<13} {state}"), lagging))
+    Some((format!("{DETAIL_INDENT}{name:<SOURCE_W$} {state}"), lagging))
 }
 
 pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) -> Category {
@@ -270,12 +275,12 @@ pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) 
     let endpoint = &d.endpoint;
     let mut lagging = false;
     let (owner, owner_sound) = match &d.status {
-        EndpointStatus::Live(activity) => {
+        EndpointStatus::Live(status) => {
             details.push(format!(
                 "{DETAIL_INDENT}instance  held the endpoint for {}",
-                fmt_age(Duration::from_millis(activity.held_for_ms))
+                fmt_age(Duration::from_millis(status.held_for_ms))
             ));
-            for (row, lags) in rows.iter().filter_map(|row| source_row(row, activity)) {
+            for (row, lags) in rows.iter().filter_map(|row| source_row(row, status)) {
                 lagging |= lags;
                 details.push(row);
             }
@@ -286,7 +291,7 @@ pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) 
                 "{DETAIL_INDENT}no instance: hooks are dropped until `pixtuoid` runs"
             ));
             details.push(format!(
-                "{CONT_INDENT}\u{21b3} if an office is open, it and this shell resolve different \
+                "{CONT_INDENT}\u{21b3} if pixtuoid is running, it and this shell resolve different \
                  endpoints: run doctor from the shell your CLI runs in"
             ));
             (format!("no instance on {endpoint}"), true)
@@ -305,7 +310,7 @@ pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) 
         EndpointStatus::Silent => {
             details.push(format!(
                 "{DETAIL_INDENT}{}",
-                ink.warn("it gave no status: an older pixtuoid does not, so restart it")
+                ink.warn("it gave no status: restart it if it is an older pixtuoid")
             ));
             (format!("instance on {endpoint} is not answering"), false)
         }
@@ -322,7 +327,8 @@ pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) 
             .all(|(_, probed)| *probed == ShimProbe::Delivered);
     if failed {
         details.push(ink.hint(&format!(
-            "{DETAIL_INDENT}\u{2192} fix: reinstall pixtuoid, which ships {HOOK_BIN}"
+            "{DETAIL_INDENT}\u{2192} fix: reconnect in the Sources panel (press s); if it \
+             still fails, reinstall pixtuoid, which ships {HOOK_BIN}"
         )));
     }
     let status = if failed {
@@ -367,10 +373,10 @@ mod tests {
         }
     }
 
-    fn activity(connected: Option<&[&str]>, seen: &[(&str, u64)]) -> EndpointStatus {
-        EndpointStatus::Live(HookActivity {
+    fn live(connected: &[&str], seen: &[(&str, u64)]) -> EndpointStatus {
+        EndpointStatus::Live(OwnerStatus {
             held_for_ms: 7_380_000,
-            connected: connected.map(|names| names.iter().map(ToString::to_string).collect()),
+            connected: connected.iter().map(ToString::to_string).collect(),
             last_hook_ago_ms: seen
                 .iter()
                 .map(|(name, ms)| ((*name).to_string(), *ms))
@@ -392,8 +398,8 @@ mod tests {
     fn a_healthy_office_reads_each_sources_last_hook() {
         let rows = [row("claude-code", true, true), row("cursor", true, true)];
         let (status, text) = category(
-            activity(
-                Some(&["claude-code", "cursor"]),
+            live(
+                &["claude-code", "cursor"],
                 &[("claude-code", 3000), ("no-such-source", 1)],
             ),
             &rows,
@@ -414,7 +420,7 @@ mod tests {
     #[test]
     fn a_silent_source_gets_its_targets_own_next_step() {
         let rows = [row("codex", true, true)];
-        let (status, text) = category(activity(Some(&["codex"]), &[]), &rows);
+        let (status, text) = category(live(&["codex"], &[]), &rows);
         assert_eq!(status, CategoryStatus::Ok, "an unused CLI is no fault");
         assert!(
             text.contains(crate::sources::post_install_hint("codex").unwrap()),
@@ -424,17 +430,17 @@ mod tests {
 
     #[test]
     fn a_source_with_no_install_and_no_hook_stays_out_of_the_report() {
-        let (_, text) = category(activity(Some(&[]), &[]), &[row("cursor", false, false)]);
+        let (_, text) = category(live(&[], &[]), &[row("cursor", false, false)]);
         assert!(!text.contains("cursor"), "{text}");
     }
 
     #[test]
     fn an_office_behind_the_disk_is_told_to_restart() {
         let rows = [row("cursor", true, true)];
-        let (status, text) = category(activity(Some(&["codex"]), &[("cursor", 5)]), &rows);
+        let (status, text) = category(live(&["codex"], &[("cursor", 5)]), &rows);
         assert_eq!(status, CategoryStatus::Warn, "{text}");
         assert!(
-            text.contains("connected after this office started"),
+            text.contains("connected after this instance started"),
             "{text}"
         );
     }
@@ -442,16 +448,9 @@ mod tests {
     #[test]
     fn a_source_the_panel_disconnected_is_no_lag() {
         let rows = [row("cursor", false, false)];
-        let (status, text) = category(activity(Some(&[]), &[("cursor", 5)]), &rows);
+        let (status, text) = category(live(&[], &[("cursor", 5)]), &rows);
         assert_eq!(status, CategoryStatus::Ok, "{text}");
         assert!(text.contains("dropped: not connected"), "{text}");
-    }
-
-    #[test]
-    fn an_owner_with_no_gate_reports_no_lag() {
-        let rows = [row("cursor", true, true)];
-        let (status, text) = category(activity(None, &[]), &rows);
-        assert_eq!(status, CategoryStatus::Ok, "{text}");
     }
 
     #[test]
@@ -541,18 +540,19 @@ mod tests {
     #[tokio::test]
     async fn a_file_of_another_name_is_never_run() {
         let dir = tempfile::tempdir().unwrap();
-        let script = dir.path().join("log-hook.sh");
-        assert!(matches!(
-            probe(&script, EVENT_WAIT).await,
-            ShimProbe::NotTested(why) if why.contains("not named")
-        ));
+        for name in ["log-hook.sh", "pixtuoid-hook.sh", "pixtuoid-hook.bak"] {
+            assert!(matches!(
+                probe(&dir.path().join(name), EVENT_WAIT).await,
+                ShimProbe::NotTested(why) if why.contains("not named")
+            ));
+        }
     }
 
     /// A stand-in named as the shim is, so the name check passes it.
     #[cfg(unix)]
     fn stand_in(dir: &Path, body: &str) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
-        let path = dir.join(HOOK_BIN);
+        let path = dir.join(crate::install::io::hook_sibling_name());
         std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         path
@@ -615,9 +615,7 @@ mod tests {
     #[tokio::test]
     async fn a_shim_that_is_gone_fails() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir
-            .path()
-            .join(format!("{HOOK_BIN}{}", std::env::consts::EXE_SUFFIX));
+        let path = dir.path().join(crate::install::io::hook_sibling_name());
         let verdict = probe(&path, EXIT_DEADLINE).await;
         assert!(
             matches!(&verdict, ShimProbe::Failed(why) if why.contains("would not run")),

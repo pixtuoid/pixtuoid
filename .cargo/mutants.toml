@@ -7,6 +7,8 @@
 # nextest's `[profile.default] slow-timeout`, or a real hang files as `timeout`,
 # not `caught`.
 test_tool = "nextest"
+# These run the real shim, which a baseline scoped to `pixtuoid` never builds.
+additional_cargo_test_args = ["-E", "not test(built_shim)"]
 
 exclude_globs = [
     # winit / async glue: no headless test can kill these. Shared with codecov.yml's

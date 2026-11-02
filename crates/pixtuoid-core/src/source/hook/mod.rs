@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
@@ -36,8 +38,9 @@ pub(crate) use pid_watch::HookPidWatch;
 
 mod relay;
 mod router;
-pub(crate) use relay::Opening;
-pub use relay::{EndpointStatus, HookActivity, LiveConnected, endpoint_status};
+#[cfg(feature = "harness")]
+pub(crate) use relay::drive_wire;
+pub use relay::{EndpointStatus, OwnerStatus, endpoint_status};
 pub use router::HookRouter;
 
 /// The variable naming the hook endpoint: [`super::claude_code::ClaudeCodeSource::default_socket_path`]
@@ -57,6 +60,44 @@ pub fn private_endpoint(dir: &std::path::Path, name: &str) -> PathBuf {
         PathBuf::from(format!(r"\\.\pipe\pixtuoid-{tag}-{name}"))
     } else {
         dir.join(format!("{name}.sock"))
+    }
+}
+
+/// A live, shared set of connected source ids — the runtime mirror of the binary's
+/// `sources::connected`. On lock poison it recovers the set via `into_inner`: the data
+/// is always valid (insert/remove/contains never panic), and losing it would
+/// mass-evict the office.
+#[derive(Debug, Clone, Default)]
+pub struct ConnectedSources(Arc<Mutex<HashSet<String>>>);
+
+impl ConnectedSources {
+    /// A gate open to `initial`.
+    pub fn new(initial: HashSet<String>) -> Self {
+        Self(Arc::new(Mutex::new(initial)))
+    }
+
+    fn guard(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Whether `source_id` passes the gate.
+    pub fn is_connected(&self, source_id: &str) -> bool {
+        self.guard().contains(source_id)
+    }
+
+    /// The set as it stands.
+    pub fn snapshot(&self) -> HashSet<String> {
+        self.guard().clone()
+    }
+
+    /// Open or close the gate to `source_id`.
+    pub fn set(&self, source_id: &str, connected: bool) {
+        let mut g = self.guard();
+        if connected {
+            g.insert(source_id.to_string());
+        } else {
+            g.remove(source_id);
+        }
     }
 }
 
@@ -91,7 +132,7 @@ pub struct HookSocketListener {
     inner: imp::Listener,
     pid_watch: Option<HookPidWatch>,
     presence_tx: Option<PresenceSender>,
-    connected: Option<LiveConnected>,
+    connected: ConnectedSources,
 }
 
 pub(crate) type PresenceSender = crate::source::daemon::PresenceSender;
@@ -110,7 +151,7 @@ impl HookSocketListener {
             inner,
             pid_watch: None,
             presence_tx: None,
-            connected: None,
+            connected: ConnectedSources::default(),
         })
     }
 
@@ -129,7 +170,7 @@ impl HookSocketListener {
     }
 
     /// Attach the connection gate a status reports.
-    pub(crate) fn with_connected(mut self, connected: Option<LiveConnected>) -> Self {
+    pub(crate) fn with_connected(mut self, connected: ConnectedSources) -> Self {
         self.connected = connected;
         self
     }
@@ -324,7 +365,9 @@ async fn handle_conn(
                 {
                     match decoded {
                         Ok(decoded) => {
-                            if let Some(relay) = relay.as_ref() {
+                            if let Some(relay) =
+                                relay.as_ref().filter(|_| !decoded.updates.is_empty())
+                            {
                                 relay.sighted(src);
                             }
                             for msg in decoded.into_msgs(src) {

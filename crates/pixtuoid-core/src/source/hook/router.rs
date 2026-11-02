@@ -16,7 +16,8 @@ use crate::source::jsonl::ChildEndUnclaims;
 use crate::source::{AgentEvent, Source, TaggedReceiver, TaggedSender, Transport};
 
 use super::{
-    HookPidWatch, HookSocketListener, LiveConnected, PresenceSender, SocketBusy, handle_conn, relay,
+    ConnectedSources, HookPidWatch, HookSocketListener, PresenceSender, SocketBusy, handle_conn,
+    relay,
 };
 
 /// Infrastructure name — NOT a registered source (no descriptor/badge). Names
@@ -68,7 +69,7 @@ pub struct HookRouter {
     /// decode to presence deltas, not `AgentEvent`s. `None` disables it.
     presence_tx: Option<PresenceSender>,
     /// The gate a status reports while this instance owns the endpoint.
-    connected: Option<LiveConnected>,
+    connected: ConnectedSources,
 }
 
 impl HookRouter {
@@ -79,7 +80,7 @@ impl HookRouter {
             socket_path,
             child_end_unclaims: None,
             presence_tx: None,
-            connected: None,
+            connected: ConnectedSources::default(),
         }
     }
 
@@ -99,7 +100,7 @@ impl HookRouter {
 
     /// Wire the connection gate a status reports.
     #[must_use]
-    pub fn with_connected(mut self, connected: Option<LiveConnected>) -> Self {
+    pub fn with_connected(mut self, connected: ConnectedSources) -> Self {
         self.connected = connected;
         self
     }

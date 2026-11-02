@@ -1,7 +1,6 @@
 //! The hook relay on Unix and Windows alike: routers sharing one endpoint.
 
 use std::collections::{BTreeSet, HashSet};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -12,7 +11,7 @@ use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::tap::Endpoint;
 use pixtuoid_core::source::daemon::PresenceMsg;
 use pixtuoid_core::source::hook::{
-    EndpointStatus, HookActivity, HookRouter, HookSocketListener, LiveConnected, endpoint_status,
+    ConnectedSources, EndpointStatus, HookRouter, HookSocketListener, OwnerStatus, endpoint_status,
 };
 use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::manager::{SourceDeath, SourceManager};
@@ -224,9 +223,9 @@ async fn a_router_that_cannot_subscribe_reports_a_death() {
     assert_eq!(deaths.len(), 1, "got {deaths:?}");
 }
 
-async fn live(at: &Endpoint) -> HookActivity {
+async fn live(at: &Endpoint) -> OwnerStatus {
     match endpoint_status(at.path()).await {
-        EndpointStatus::Live(activity) => activity,
+        EndpointStatus::Live(status) => status,
         other => panic!("the endpoint's owner must answer, got {other:?}"),
     }
 }
@@ -237,40 +236,27 @@ async fn live(at: &Endpoint) -> HookActivity {
 async fn an_owner_answers_status_from_its_live_gate_and_last_hooks() {
     let (_dir, at) = endpoint("status");
     let (tx, mut rx) = mpsc::channel(64);
-    let connected: LiveConnected = Arc::new(Mutex::new(HashSet::from(["codex".to_string()])));
-    let router =
-        HookRouter::new(at.path().to_path_buf()).with_connected(Some(Arc::clone(&connected)));
+    let connected = ConnectedSources::new(HashSet::from(["codex".to_string()]));
+    let router = HookRouter::new(at.path().to_path_buf()).with_connected(connected.clone());
     let owner = tokio::spawn(Box::new(router).run(tx));
     until_seen(&at, "owner-up", &mut [&mut rx]).await;
 
-    let activity = live(&at).await;
+    let status = live(&at).await;
+    assert_eq!(status.connected, BTreeSet::from(["codex".to_string()]));
     assert_eq!(
-        activity.connected,
-        Some(BTreeSet::from(["codex".to_string()]))
-    );
-    assert_eq!(
-        activity.last_hook_ago_ms.keys().collect::<Vec<_>>(),
+        status.last_hook_ago_ms.keys().collect::<Vec<_>>(),
         ["claude-code"]
     );
 
-    connected.lock().unwrap().insert("cursor".to_string());
+    connected.set("cursor", true);
     assert_eq!(
         live(&at).await.connected,
-        Some(BTreeSet::from(["codex".to_string(), "cursor".to_string()])),
+        BTreeSet::from(["codex".to_string(), "cursor".to_string()]),
         "the gate is read when asked, so a panel toggle shows at once"
     );
 
     at.send(&session_start("after-status")).await.unwrap();
     assert_eq!(next_session(&mut rx).await, "after-status");
-    owner.abort();
-}
-
-#[tokio::test]
-async fn an_unwired_gate_is_absent_from_status() {
-    let (_dir, at) = endpoint("unwired");
-    let (owner, mut rx) = spawn_router(&at);
-    until_seen(&at, "owner-up", &mut [&mut rx]).await;
-    assert_eq!(live(&at).await.connected, None);
     owner.abort();
 }
 
@@ -290,7 +276,7 @@ async fn a_takeover_starts_its_activity_from_nothing() {
     let taken = tokio::time::timeout(PATIENCE, async {
         loop {
             match endpoint_status(at.path()).await {
-                EndpointStatus::Live(activity) => return activity,
+                EndpointStatus::Live(status) => return status,
                 _ => sleep(POLL).await,
             }
         }

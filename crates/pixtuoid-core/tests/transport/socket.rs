@@ -459,3 +459,15 @@ async fn an_endpoint_too_long_to_bind_is_unbindable() {
     ));
     assert!(HookSocketListener::bind(path).await.is_err());
 }
+
+#[tokio::test]
+async fn an_endpoint_under_a_file_is_unbindable() {
+    use pixtuoid_core::source::hook::{EndpointStatus, endpoint_status};
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("f");
+    std::fs::write(&file, "").unwrap();
+    assert!(matches!(
+        endpoint_status(&file.join("hook.sock")).await,
+        EndpointStatus::Unbindable(_)
+    ));
+}

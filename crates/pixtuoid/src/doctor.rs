@@ -4,6 +4,7 @@
 //! the warn-floor log. Strictly READ-ONLY: it never writes config (re-connecting
 //! hooks stays the Sources panel's job) and never spawns the TUI.
 //! The PROBED CLI is not read-only about its own state — see `may_probe_version`.
+//! The shim an install names does run, against a throwaway endpoint — see `delivery`.
 
 mod delivery;
 
@@ -437,7 +438,7 @@ fn format_doctor_row(row: &DoctorSourceRow, ink: &Ink) -> String {
         .filter(|s| !s.is_empty());
     let version = version.map_or_else(|| ink.dim("unknown"), str::to_string);
     let mut out = format!(
-        "{DETAIL_INDENT}{} {}\u{b7}{:<13} {} {:<15} {}",
+        "{DETAIL_INDENT}{} {}\u{b7}{:<SOURCE_W$} {} {:<15} {}",
         verdict_glyph(row, ink),
         row.desc.label_prefix,
         row.desc.name,
@@ -896,6 +897,8 @@ struct Category {
 /// further. Shared so the report can't go ragged one site at a time.
 const DETAIL_INDENT: &str = "      ";
 const CONT_INDENT: &str = "          ";
+/// The column a source's registry name fills.
+const SOURCE_W: usize = 13;
 
 fn terminal_category(r: &DoctorReport) -> Category {
     let verdict = crate::term::truecolor_verdict(r.colorterm_env.as_deref(), r.truecolor_probe);
@@ -1101,7 +1104,7 @@ fn format_root_row(r: &RootStatus, ink: &Ink) -> String {
         Some((var, true)) => format!(" (via ${var})"),
         _ => String::new(),
     };
-    let mut line = format!("{DETAIL_INDENT}{:<13} {}{via}", r.source, r.root);
+    let mut line = format!("{DETAIL_INDENT}{:<SOURCE_W$} {}{via}", r.source, r.root);
     if !r.exists {
         match r.env {
             Some((var, true)) => {

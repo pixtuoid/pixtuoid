@@ -249,7 +249,14 @@ fn built_shim() -> std::path::PathBuf {
 
 /// `pixtuoid doctor` with `home` as every home it reads, trying [`built_shim`].
 fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_pixtuoid"))
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_pixtuoid"));
+    // An install it found would stand in for the built shim.
+    for row in pixtuoid_core::source::registry::REGISTRY {
+        if let Some(home_env) = row.home_env {
+            command.env_remove(home_env);
+        }
+    }
+    command
         .arg("doctor")
         .env_remove("RUST_LOG")
         .env_remove("PIXTUOID_LOG")

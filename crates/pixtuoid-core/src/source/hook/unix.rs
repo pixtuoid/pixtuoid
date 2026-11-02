@@ -157,11 +157,14 @@ pub(super) fn bind_refusal(path: &Path) -> Option<String> {
 }
 
 fn bind_refusal_in(path: &Path, owned: &Path, uid: u32) -> Option<String> {
-    let created = is_owned_fallback_in(path, owned) && owned.symlink_metadata().is_ok();
-    created
-        .then(|| check_private_dir(owned, uid).err())
-        .flatten()
-        .map(|e| format!("{e:#}"))
+    if is_owned_fallback_in(path, owned) {
+        owned.symlink_metadata().ok()?;
+        return check_private_dir(owned, uid)
+            .err()
+            .map(|e| format!("{e:#}"));
+    }
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty())?;
+    (!parent.is_dir()).then(|| format!("hook socket dir {} does not exist", parent.display()))
 }
 
 /// A sibling of the FINAL socket path, named `<sock>.<suffix>`. Both siblings
@@ -408,6 +411,25 @@ mod tests {
             bind_refusal_in(&tmp.path().join("elsewhere.sock"), &owned, my_uid()),
             None,
             "only the fallback's dir is ours to police"
+        );
+
+        let squat = tmp.path().join("squat");
+        std::fs::write(&squat, "").unwrap();
+        let why = bind_refusal_in(&squat.join(SOCKET_FILE_NAME), &squat, my_uid())
+            .expect("a file in the dir's place refuses");
+        assert!(why.contains("not a directory"), "got {why:?}");
+    }
+
+    #[test]
+    fn a_bind_refuses_any_endpoint_whose_directory_is_gone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let owned = tmp.path().join("owned");
+        let gone = tmp.path().join("gone").join("elsewhere.sock");
+        assert!(bind_refusal_in(&gone, &owned, my_uid()).is_some());
+        assert_eq!(
+            bind_refusal_in(Path::new("relative.sock"), &owned, my_uid()),
+            None,
+            "the cwd is a directory"
         );
     }
 

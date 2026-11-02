@@ -31,7 +31,7 @@ path = "src/main.rs"
 [dependencies]
 pixtuoid-core  = { path = "../pixtuoid-core", version = "0.21.0" }
 pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.21.0" }
-tokio              = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net", "fs", "io-util"] }
+tokio              = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net", "fs", "io-util", "process"] }
 ratatui            = { workspace = true }
 # The base64 of kitty's transmits and of the probe's queries.
 base64-simd        = "0.8"

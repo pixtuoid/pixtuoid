@@ -161,7 +161,7 @@ fn path_hit_is_native(p: &Path, exe_extension: &str) -> bool {
 
 /// The hook binary's filename next to the running exe: exec-form spawning needs
 /// the real PE name; PATHEXT is a shell behavior we must not rely on.
-fn hook_sibling_name() -> String {
+pub(crate) fn hook_sibling_name() -> String {
     format!("{HOOK_BIN}{}", std::env::consts::EXE_SUFFIX)
 }
 

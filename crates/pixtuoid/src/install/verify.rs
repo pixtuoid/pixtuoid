@@ -100,7 +100,7 @@ pub(crate) struct SchemaVerifyResult {
     pub issues: Vec<String>,
     /// Shown by `doctor`, never the boot warning.
     pub notes: Vec<String>,
-    /// Every shim this install's hooks run, for `doctor` to run.
+    /// The shim each of this install's files names, for `doctor` to run.
     pub shims: Vec<ShimRef>,
 }
 

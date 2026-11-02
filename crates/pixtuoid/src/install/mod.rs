@@ -235,7 +235,7 @@ fn check_beside_shim(
 /// The shim an install would write here, by the installer's own order.
 pub(crate) fn located_shim() -> Result<PathBuf> {
     pixtuoid_core::platform::path_env(io::HOOK_OVERRIDE_ENV)
-        .map_or_else(io::default_hook_binary, Ok)
+        .map_or_else(io::default_hook_binary, absolute_hook_override)
 }
 
 /// `shim`, about to run as `source`'s hook.
@@ -451,6 +451,32 @@ fn is_drive_relative(p: &std::path::Path) -> bool {
     !p.has_root() && matches!(p.components().next(), Some(std::path::Component::Prefix(_)))
 }
 
+/// An EXPLICIT path gets EMBEDDED into the config, where a relative path would
+/// resolve against the CLI's cwd at hook time and hooks would never fire.
+fn absolute_hook_override(p: PathBuf) -> Result<PathBuf> {
+    let origin = io::HOOK_OVERRIDE_ENV;
+    if is_drive_relative(&p) {
+        bail!(
+            "{origin} {} is drive-relative (a drive prefix with no root, like C:foo.exe) \
+             and would resolve against a per-drive cwd at hook time; pass an absolute path",
+            p.display()
+        );
+    }
+    if !p.is_relative() {
+        return Ok(p);
+    }
+    // Plain join, not canonicalize — Windows canonicalize yields a \\?\ verbatim
+    // path that the cmd.exe bare form can't take. A failed cwd query must NOT fall
+    // back to embedding the relative path — that re-creates the never-fires bug
+    // absolutization exists to prevent.
+    let cwd = std::env::current_dir().with_context(|| {
+        format!(
+            "{origin} is relative and the current directory is unreadable; pass an absolute path"
+        )
+    })?;
+    Ok(cwd.join(&p))
+}
+
 /// The [`io::HOOK_OVERRIDE_ENV`] override always wins, and the returned bool reports
 /// that, so `install_target` EMBEDS it rather than discarding the user's choice for a
 /// bare PATH-resolved name. A `locate` failure is fatal only for targets that EMBED the
@@ -461,29 +487,9 @@ fn resolve_hook_binary_from(
     env_hook: Option<PathBuf>,
     locate: impl FnOnce() -> Result<PathBuf>,
 ) -> Result<(PathBuf, bool)> {
-    // An EXPLICIT path gets EMBEDDED into the config, where a relative path would
-    // resolve against the CLI's cwd at hook time and hooks would never fire.
     if let Some(p) = env_hook {
         let origin = io::HOOK_OVERRIDE_ENV;
-        if is_drive_relative(&p) {
-            bail!(
-                "{origin} {} is drive-relative (a drive prefix with no root, like C:foo.exe) \
-                 and would resolve against a per-drive cwd at hook time; pass an absolute path",
-                p.display()
-            );
-        }
-        // Plain join, not canonicalize — Windows canonicalize yields a \\?\ verbatim
-        // path that the cmd.exe bare form can't take.
-        let p = if p.is_relative() {
-            // A failed cwd query must NOT fall back to embedding the relative path —
-            // that re-creates the never-fires bug absolutization exists to prevent.
-            let cwd = std::env::current_dir().with_context(|| {
-                format!("{origin} is relative and the current directory is unreadable; pass an absolute path")
-            })?;
-            cwd.join(&p)
-        } else {
-            p
-        };
+        let p = absolute_hook_override(p)?;
         if !p.exists() {
             // tracing, not println!: install runs under the TUI alt-screen, where a stdout
             // write corrupts the frame. `?` escapes — `connect`/`setup` route to RAW stderr.
