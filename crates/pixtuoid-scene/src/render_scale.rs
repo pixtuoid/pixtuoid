@@ -137,14 +137,16 @@ impl Default for RenderScale {
     }
 }
 
-/// A pixel painter's fit on a surface of real pixels, in either look: the office
-/// renders at the pack's densest art and the image is that render upscaled a
+/// A pixel painter's fit on a surface of real pixels: the office renders at
+/// [`Self::density`] (the cutaway its densest art, the classic its base art
+/// with its text on that grid) and the image is that render upscaled a
 /// whole number of times to [`Self::scale`], so every art pixel lands as an
 /// equal square (integer scaling, as pixel-art engines draw:
 /// <https://docs.godotengine.org/en/stable/tutorials/rendering/multiple_resolutions.html>),
 /// pixel-identical to a render at the scale itself (pinned by
-/// `the_cutaway_paints_whole_art_pixels`). The office takes the surface's
-/// shape; the sub-unit remainder is the painter's margin.
+/// `the_cutaway_paints_whole_art_pixels` and
+/// `the_scaled_classic_is_the_half_blocks_blown_up`). The office takes the
+/// surface's shape; the sub-unit remainder is the painter's margin.
 ///
 /// The cutaway's densest art, not whichever density the surface lands nearest: the one
 /// render draws every piece at one density, and a scale only a coarser density
