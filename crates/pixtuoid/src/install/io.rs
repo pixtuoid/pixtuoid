@@ -455,7 +455,8 @@ impl HostCli {
 /// own words first.
 const HOST_CLI_LIMIT: Duration = Duration::from_secs(300);
 
-/// How often a run asks whether its host CLI has exited.
+/// A run polls `try_wait`, which answers an exit and never a stop, so a stopped
+/// host CLI still meets the kill.
 const EXIT_POLL: Duration = Duration::from_millis(20);
 
 /// `command`'s output with stdin null, or `None` past `limit`, which kills the
@@ -473,8 +474,6 @@ fn output_within(
         .spawn()?;
     let stdout = drain(child.stdout.take())?;
     let stderr = drain(child.stderr.take())?;
-    // Polled: `try_wait` answers an exit and never a stop, so a stopped child
-    // still meets the kill.
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
