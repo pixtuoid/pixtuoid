@@ -161,9 +161,9 @@
   why: >-
     A failing leg's runs artifact holds its verdicts.json too, so a triage
     download wider than the verdicts artifacts files that leg Lost in place
-    of its findings. Both files spell the stem: on a night one leg was never
-    acquired, triage logged `DRIFT: {}` and `pattern: *`
-    (github.com/pixtuoid/pixtuoid/actions/runs/41488302417).
+    of its findings. Both files spell the stem rather than read it from
+    drift's outputs: on a night one leg was never acquired, triage logged
+    `DRIFT: {}` and `pattern: *` (github.com/pixtuoid/pixtuoid/actions/runs/41488302417).
   assert: |
     [(.jobs.run.steps[]? | select(.with.path == "target/hermetic/runs/verdicts.json")
       | .with.name == $expected + "${{ matrix.os }}-${{ matrix.shard }}"),
