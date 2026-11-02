@@ -219,7 +219,6 @@ jobs:
       - run: cargo build --release -q -p pixtuoid-core --example issues --example hermetic
       # The unprofiled CLIs' latest releases, which no leg installs.
       - run: target/release/examples/hermetic --freshness >"$RUNNER_TEMP/freshness.json"
-      # `hermetic-nightly-reads-only-the-legs-verdicts`.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: hermetic-verdicts-${{ github.run_id }}-*
