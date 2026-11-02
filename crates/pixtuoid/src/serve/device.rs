@@ -35,7 +35,9 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const MIN_FRAME_GAP: Duration = Duration::from_millis(250);
 
 /// The least time between two writes' starts, across every device; a chosen
-/// value. A write sooner waits it out, holding [`Devices::gate`].
+/// value. Each write rewrites another CLI's config, which can race that CLI's own
+/// unlocked write, and may run the CLI: the gap bounds how often a device can.
+/// A write sooner waits it out, holding [`Devices::gate`].
 const MIN_WRITE_GAP: Duration = Duration::from_secs(1);
 
 /// What an [`Ask::Sources`] reads: blocking, as it reads files and may run a CLI.
@@ -321,15 +323,23 @@ mod tests {
     /// A source the fixture knows that is already as asked.
     const ALREADY_SO: &str = "codex";
 
-    /// Its changes are recorded: `copilot` changes, [`ALREADY_SO`] doesn't, and it
-    /// knows no other source.
     fn fixture_reading(rows: ReadRows) -> Fixture {
+        fixture_with(rows, Arc::new(|| {}))
+    }
+
+    /// What runs as a change begins, past its pairing check.
+    type Pause = Arc<dyn Fn() + Send + Sync>;
+
+    /// Its changes each run `before`, then are recorded: `copilot` changes,
+    /// [`ALREADY_SO`] doesn't, and it knows no other source.
+    fn fixture_with(rows: ReadRows, before: Pause) -> Fixture {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = Store::at(dir.path().join("remote.json"));
         let (scene, scene_rx) = watch::channel(Arc::new(SceneState::uniform(4)));
         let made = Made::default();
         let making = Arc::clone(&made);
         let change: MakeChange = Arc::new(move |who, source, on| {
+            before();
             let entry = (who.to_owned(), source.to_owned(), on);
             making.lock().expect("not poisoned").push(entry);
             let (id, outcome) = match source {
@@ -364,8 +374,10 @@ mod tests {
     /// test instead of hanging it.
     const HOLD: Duration = Duration::from_secs(5);
 
-    /// Rows that each wait on `release`, to show what goes on during an ask.
+    /// A pause that waits on `release`, and rows behind it, to show what goes on
+    /// during an ask.
     struct Held {
+        pause: Pause,
         rows: ReadRows,
         started: tokio::sync::mpsc::UnboundedReceiver<()>,
         release: std::sync::mpsc::Sender<()>,
@@ -375,10 +387,15 @@ mod tests {
         let (start, started) = tokio::sync::mpsc::unbounded_channel();
         let (release, released) = std::sync::mpsc::channel();
         let released = Mutex::new(released);
+        let pause: Pause = Arc::new(move || {
+            start.send(()).expect("the test waits on it");
+            let _ = released.lock().expect("not poisoned").recv_timeout(HOLD);
+        });
+        let before_rows = Arc::clone(&pause);
         Held {
+            pause,
             rows: Arc::new(move || {
-                start.send(()).expect("the test waits on it");
-                let _ = released.lock().expect("not poisoned").recv_timeout(HOLD);
+                before_rows();
                 vec![one_row()]
             }),
             started,
@@ -877,23 +894,53 @@ mod tests {
         assert!(asked.elapsed() < MIN_WRITE_GAP, "{:?}", asked.elapsed());
     }
 
-    /// `first`'s answer, once a write asked as soon as it came has waited out the
-    /// gap. The clock pauses, so no wait but the gap's reaches its edge.
+    /// A reset stops the next write, not one past its check, which is made and
+    /// answered for the device that asked.
+    #[tokio::test]
+    async fn a_write_past_its_check_finishes_through_a_reset() {
+        let mut held = held();
+        let fixture = fixture_with(Arc::new(Vec::new), Arc::clone(&held.pause));
+        let token = paired(&fixture);
+        let mut peer = Peer::connect(&fixture.devices);
+        peer.hello(&Hello::Resume {
+            token: token.clone(),
+        })
+        .await;
+        assert_eq!(peer.reply().await, Reply::Resumed);
+        peer.ask(&change("copilot", true)).await;
+        held.started
+            .recv()
+            .await
+            .expect("the write is past its check");
+
+        fixture.store.reset().expect("it resets");
+        held.release.send(()).expect("it waits");
+        assert!(matches!(peer.answer().await, Answer::Changed(_)));
+        let device = Hashed::of(&token).short().to_owned();
+        assert_eq!(made(&fixture), [(device, "copilot".to_owned(), true)]);
+    }
+
+    /// `first`'s answer, once a write asked as soon as it came has run within
+    /// `EDGE` of the gap's end, on either side. The clock pauses, and a
+    /// `spawn_blocking` holds its auto-advance until it ends (tokio's
+    /// `runtime/blocking/schedule.rs`), so the first write began as it answered.
     async fn a_second_write_waits_after(first: &Ask) -> Answer {
+        const EDGE: Duration = Duration::from_millis(1);
         let fixture = fixture();
         let mut peer = streaming(&fixture).await;
-        let first_asked = Instant::now();
         peer.ask(first).await;
         let answer = peer.answer().await;
+        let began = Instant::now();
 
         peer.ask(&change("copilot", true)).await;
-        sleep_until(first_asked + MIN_WRITE_GAP - Duration::from_millis(1)).await;
+        sleep_until(began + MIN_WRITE_GAP - EDGE).await;
         assert_eq!(
             made(&fixture).len(),
             1,
             "the second write ran inside the gap"
         );
-        assert!(matches!(peer.answer().await, Answer::Changed(_)));
+        let second = timeout_at(began + MIN_WRITE_GAP + EDGE, peer.answer()).await;
+        assert!(matches!(second, Ok(Answer::Changed(_))), "{second:?}");
         assert_eq!(made(&fixture).len(), 2);
         answer
     }

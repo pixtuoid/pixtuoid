@@ -206,9 +206,9 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::SourceSt
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::SourceState
 pub struct pixtuoid_core::remote::Changed
 impl pixtuoid_core::remote::Changed
-pub fn pixtuoid_core::remote::Changed::absent_cli(&'static str) -> Self
 pub fn pixtuoid_core::remote::Changed::line(&self, &str) -> alloc::string::String
 pub fn pixtuoid_core::remote::Changed::new(&'static str, bool, pixtuoid_core::remote::Outcome, bool, core::option::Option<&'static str>, core::option::Option<&'static str>) -> Self
+pub fn pixtuoid_core::remote::Changed::no_cli(&'static str) -> Self
 pub fn pixtuoid_core::remote::Changed::on(&self) -> bool
 pub fn pixtuoid_core::remote::Changed::outcome(&self) -> pixtuoid_core::remote::Outcome
 pub fn pixtuoid_core::remote::Changed::source(&self) -> &str

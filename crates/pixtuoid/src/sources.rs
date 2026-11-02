@@ -696,14 +696,15 @@ fn device_change_with(
         tracing::info!(device = ?who, source = ?source, on, outcome = %"unsupported", "a device changed a source");
         return None;
     };
-    let absent_cli = !cli_present(target_of(sid));
-    let state = conn_state(absent_cli, connected.is_connected(sid));
-    let (changed, outcome) = change_from(cfg, connected, sid, on, state);
+    let no_cli = !cli_present(target_of(sid));
+    let state = conn_state(no_cli, connected.is_connected(sid));
+    let changed = change_from(cfg, connected, sid, on, state);
+    let outcome = audit_token(changed.outcome());
     tracing::info!(device = ?who, source = ?source, on, outcome = %outcome, "a device changed a source");
     Some(changed)
 }
 
-/// [`device_change`] of `sid` in `state`, and its token.
+/// [`device_change`] of `sid` in `state`.
 #[cfg(feature = "serve")]
 fn change_from(
     cfg: &Path,
@@ -711,42 +712,36 @@ fn change_from(
     sid: &'static str,
     on: bool,
     state: ConnState,
-) -> (Changed, WireOutcome) {
-    let nothing = match toggle_intent(state) {
-        ToggleIntent::Connect if on => None,
-        ToggleIntent::Disconnect if !on => None,
-        ToggleIntent::Hint if on => Some(Changed::absent_cli(sid)),
-        _ => {
-            let outcome = WireOutcome::NoOp.into();
-            Some(Changed::new(sid, on, outcome, false, None, None))
-        }
-    };
-    if let Some(changed) = nothing {
-        return (changed, WireOutcome::NoOp);
+) -> Changed {
+    match toggle_intent(state) {
+        ToggleIntent::Connect if on => {}
+        ToggleIntent::Disconnect if !on => {}
+        ToggleIntent::Hint if on => return Changed::no_cli(sid),
+        _ => return Changed::new(sid, on, WireOutcome::NoOp.into(), false, None, None),
     }
     let done = if on {
         connect_source(cfg, connected, sid)
     } else {
         disconnect_source(cfg, connected, sid)
     };
-    match done {
-        Ok(changed) => {
-            let outcome = if on {
-                WireOutcome::Connected
-            } else {
-                WireOutcome::Disconnected
-            };
-            (changed, outcome)
-        }
-        Err(e) => {
-            tracing::warn!(source = sid, error = ?e, "a device's change failed");
-            let outcome = WireOutcome::Failed;
-            (
-                Changed::new(sid, on, outcome.into(), false, None, None),
-                outcome,
-            )
-        }
-    }
+    done.unwrap_or_else(|e| {
+        tracing::warn!(source = sid, error = ?e, "a device's change failed");
+        Changed::new(sid, on, WireOutcome::Failed.into(), false, None, None)
+    })
+}
+
+/// The token a device's change is audited under, [`WireOutcome`]'s, or the
+/// wire's `unknown` for an outcome only a newer server makes.
+#[cfg(feature = "serve")]
+fn audit_token(outcome: Outcome) -> &'static str {
+    let wire = match outcome {
+        Outcome::Connected => WireOutcome::Connected,
+        Outcome::Disconnected => WireOutcome::Disconnected,
+        Outcome::NoOp => WireOutcome::NoOp,
+        Outcome::Failed => WireOutcome::Failed,
+        Outcome::Unknown => return "unknown",
+    };
+    wire.token()
 }
 
 /// Connect each of `ids` — onboarding's confirm and `setup --yes`. Nothing is
@@ -820,8 +815,8 @@ fn cli_present(target: Option<&Target>) -> bool {
 }
 
 /// A row's state: an absent CLI's before its connection.
-fn conn_state(absent_cli: bool, connected: bool) -> ConnState {
-    if absent_cli {
+fn conn_state(no_cli: bool, connected: bool) -> ConnState {
+    if no_cli {
         ConnState::NoCli { connected }
     } else if connected {
         ConnState::Connected
@@ -834,11 +829,11 @@ pub(crate) fn build_rows_from(inputs: Vec<RowInput>) -> Vec<ConnectionRow> {
     inputs
         .into_iter()
         .map(|input| {
-            let absent_cli = matches!(
+            let no_cli = matches!(
                 (&input.target, &input.facts),
                 (Some(_), Some(f)) if !f.present
             );
-            let state = conn_state(absent_cli, input.connected);
+            let state = conn_state(no_cli, input.connected);
             ConnectionRow {
                 source_id: input.source_id,
                 label_prefix: input.label_prefix,
@@ -1555,31 +1550,64 @@ mod tests {
         assert!(!line.contains("sentinel"), "{line}");
     }
 
+    /// On every path a change takes, its token is the answer's outcome.
     #[cfg(feature = "serve")]
     #[test]
     fn a_devices_change_is_audited_field_by_field() {
+        const ABSENT: Target = Target {
+            presence_probe: || false,
+            ..FAIL_TARGET
+        };
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
+        // A config that isn't TOML refuses the write.
+        let broken = dir.path().join("broken.toml");
+        std::fs::write(&broken, "not = [valid").unwrap();
         let connected = ConnectedSources::default();
+        let asks = [
+            (&cfg, "copilot", true, Some(&ABSENT)),
+            (&cfg, "copilot", true, None),
+            (&cfg, "copilot", true, None),
+            (&cfg, "copilot", false, None),
+            (&broken, "copilot", true, None),
+            (&cfg, "no-such-cli", false, None),
+        ];
+        let mut answers = Vec::new();
         let out = crate::test_capture::capture(|| {
-            device_change(&cfg, &connected, "a1b2c3d4", "copilot", true);
-            device_change(&cfg, &connected, "a1b2c3d4", "no-such-cli", false);
+            for (cfg, source, on, target) in asks {
+                let target_of = |sid: &str| target.or_else(|| by_source(sid));
+                let answer = device_change_with(cfg, &connected, "a1b2c3d4", source, on, target_of);
+                answers.push(answer);
+            }
         });
-        let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines.len(), 2, "{out}");
-        for (line, source, on, outcome) in [
-            (lines[0], "copilot", true, "connected"),
-            (lines[1], "no-such-cli", false, "unsupported"),
-        ] {
-            assert!(line.contains("a device changed a source"), "{line}");
+        let outcomes: Vec<_> = answers.iter().flatten().map(Changed::outcome).collect();
+        use Outcome::{Connected, Disconnected, Failed, NoOp};
+        assert_eq!(outcomes, [NoOp, Connected, NoOp, Disconnected, Failed]);
+
+        let lines: Vec<&str> = out
+            .lines()
+            .filter(|line| line.contains("a device changed a source"))
+            .collect();
+        assert_eq!(lines.len(), asks.len(), "{out}");
+        for ((line, (_, source, on, _)), answer) in lines.iter().zip(asks).zip(&answers) {
+            let token = answer
+                .as_ref()
+                .map_or(serde_json::json!("unsupported"), |c| {
+                    serde_json::to_value(c.outcome()).unwrap()
+                });
+            let token = token.as_str().unwrap();
             for field in [
                 "device=\"a1b2c3d4\"".to_owned(),
                 format!("source=\"{source}\""),
                 format!("on={on}"),
-                format!("outcome={outcome}"),
+                format!("outcome={token}"),
             ] {
                 assert!(line.contains(&field), "{field} not in {line}");
             }
+        }
+        for outcome in [Connected, Disconnected, NoOp, Failed, Outcome::Unknown] {
+            let wire = serde_json::to_value(outcome).unwrap();
+            assert_eq!(serde_json::json!(audit_token(outcome)), wire);
         }
     }
 

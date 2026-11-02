@@ -20,7 +20,7 @@ pub struct Changed {
     on: bool,
     outcome: Outcome,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    cli_absent: bool,
+    no_cli: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     hook_off_path: bool,
     #[serde(
@@ -53,7 +53,7 @@ impl Changed {
             source: source.to_owned(),
             on,
             outcome,
-            cli_absent: false,
+            no_cli: false,
             hook_off_path,
             step: step.map(str::to_owned),
             plugin_left: plugin_left.map(str::to_owned),
@@ -61,9 +61,9 @@ impl Changed {
     }
 
     /// A connect of `source` that did nothing, its CLI not on the server's machine.
-    pub fn absent_cli(source: &'static str) -> Self {
+    pub fn no_cli(source: &'static str) -> Self {
         Self {
-            cli_absent: true,
+            no_cli: true,
             ..Self::new(source, true, Outcome::NoOp, false, None, None)
         }
     }
@@ -90,7 +90,7 @@ impl Changed {
             source,
             on,
             outcome,
-            cli_absent,
+            no_cli,
             hook_off_path,
             step,
             plugin_left,
@@ -98,7 +98,7 @@ impl Changed {
         let mut line = match outcome {
             Outcome::Connected => format!("\u{2713} {display_name} connected"),
             Outcome::Disconnected => format!("\u{2713} {display_name} disconnected"),
-            Outcome::NoOp if *cli_absent => not_detected(display_name),
+            Outcome::NoOp if *no_cli => not_detected(display_name),
             Outcome::NoOp => nothing_to_do(display_name),
             Outcome::Failed => {
                 let op = if *on { "connect" } else { "disconnect" };
@@ -111,9 +111,6 @@ impl Changed {
         if *hook_off_path {
             line.push_str(" \u{00b7} \u{26a0} pixtuoid-hook not on PATH");
         }
-        // Connecting is not always the last step: OpenClaw's `plugins.load` is
-        // `kind: "restart"` upstream, so a RUNNING gateway keeps serving without
-        // our plugin until it restarts.
         if let Some(step) = step {
             line.push_str(" \u{00b7} ");
             line.push_str(step);
@@ -208,8 +205,8 @@ mod tests {
                 r#"{"answer":"changed","source":"kimi","on":true,"outcome":"no_op"}"#,
             ),
             (
-                Changed::absent_cli("kimi"),
-                r#"{"answer":"changed","source":"kimi","on":true,"outcome":"no_op","cli_absent":true}"#,
+                Changed::no_cli("kimi"),
+                r#"{"answer":"changed","source":"kimi","on":true,"outcome":"no_op","no_cli":true}"#,
             ),
             (
                 Changed::new("kimi", false, Outcome::Failed, false, None, None),
@@ -268,7 +265,7 @@ mod tests {
             "nothing to do for Codex"
         );
         assert_eq!(
-            line(Changed::absent_cli("codex")),
+            line(Changed::no_cli("codex")),
             "Codex not detected on this machine"
         );
         // Exact: "disconnect failed" holds "connect failed".
