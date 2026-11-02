@@ -321,7 +321,7 @@ pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) 
         EndpointStatus::Silent => {
             details.push(format!(
                 "{DETAIL_INDENT}{}",
-                ink.warn("it gave no status: restart it (an older pixtuoid gives none, and one whose socket file was removed gets no hooks)")
+                ink.warn("it gave no status: restart it (an older pixtuoid gives none, and one that lost its endpoint gets no hooks)")
             ));
             (format!("instance on {endpoint} is not answering"), false)
         }

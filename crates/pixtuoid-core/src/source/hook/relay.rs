@@ -81,7 +81,7 @@ pub enum EndpointStatus {
     /// could not be proved.
     Denied,
     /// No status came back: an older pixtuoid, an owner too busy to read, or one
-    /// whose socket file is gone.
+    /// that lost its endpoint (a removed Unix socket file).
     Silent,
     /// The owner answered.
     Live(OwnerStatus),
