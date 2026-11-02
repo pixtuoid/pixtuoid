@@ -17,9 +17,7 @@ use ratatui::backend::Backend;
 use ratatui::layout::{Position, Rect};
 
 use crate::tui::renderer::PetState;
-use pixtuoid_scene::floor::{
-    FloorInputs, FloorMeta, FloorTransition, OfficeSession, PetInputs, project_floor_scene,
-};
+use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorTransition, OfficeSession, PetInputs};
 use pixtuoid_scene::layout::{SceneLayout, Size};
 use pixtuoid_scene::look::{FrameNote, Look, Picture, Place, RenderInputs};
 use pixtuoid_scene::screen::Screen;
@@ -121,22 +119,17 @@ impl Chrome {
         self.frames.overlays(popup_scale, host_keys)
     }
 
-    /// Floor `floor` of `session`'s office in `scene`, whose projection is
-    /// `floor_scene`: its inputs as [`OfficeSession::floor_world`] gives
-    /// every painter's floors.
+    /// Floor `floor` of `session`'s office in `scene`: its inputs as
+    /// [`OfficeSession::floor_world`] gives every painter's floors, over the
+    /// whole office a tooltip reads.
     fn world<'a>(
         &'a self,
         session: &OfficeSession,
-        floor_scene: &'a SceneState,
+        scene: &'a SceneState,
         now: SystemTime,
         floor: usize,
     ) -> FloorInputs<'a> {
-        session.floor_world(
-            self.office_world(floor_scene, now),
-            floor_scene,
-            floor,
-            &self.pets,
-        )
+        session.floor_world(self.office_world(scene, now), scene, floor, &self.pets)
     }
 
     /// The office's inputs over `scene`, as [`OfficeSession::render`] takes
@@ -799,7 +792,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             return self.draw_too_small(scene, now, true);
         };
         let current = self.session.nav().current();
-        let floor_scene = project_floor_scene(scene, current);
         let footer_scene = self.session.footer_scene(scene);
         let footer = pixtuoid_scene::footer::FooterInputs::new(
             &footer_scene,
@@ -807,7 +799,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         );
         let popup_scale = self.version_popup_scale(now);
         let mouse_pos = self.tooltip_pos();
-        let world = self.chrome.world(&self.session, &floor_scene, now, current);
+        let world = self.chrome.world(&self.session, scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -862,7 +854,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         };
         let term_size = self.terminal.size()?;
         let current = self.session.nav().current();
-        let floor_scene = project_floor_scene(scene, current);
         let footer_scene = self.session.footer_scene(scene);
         let footer = pixtuoid_scene::footer::FooterInputs::new(
             &footer_scene,
@@ -871,7 +862,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
         let mouse_pos = self.tooltip_pos();
-        let world = self.chrome.world(&self.session, &floor_scene, now, current);
+        let world = self.chrome.world(&self.session, scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());

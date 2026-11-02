@@ -367,7 +367,7 @@ pub(crate) struct ClassicFrame<'f> {
     pub(crate) footer: &'f FooterInputs<'f>,
     pub(crate) overlays: &'f crate::panels::OverlayFrame<'f>,
     pub(crate) theme: &'static pixtuoid_scene::theme::Theme,
-    /// The floor's inputs, which a tooltip reads.
+    /// The floor's inputs over the whole office, which a tooltip reads.
     pub(crate) world: &'f FloorInputs<'f>,
     pub(crate) mouse_pos: Option<(u16, u16)>,
 }

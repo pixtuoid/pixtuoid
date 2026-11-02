@@ -15,7 +15,7 @@ use crate::display::{GatewayCard, HoverTarget, PetHover};
 use crate::floor::FloorInputs;
 use crate::footer::{FooterTone, RungKind};
 use crate::hit::SceneHit;
-use crate::nameplate::{Namesakes, Suffix};
+use crate::nameplate::{FloorNamesakes, Suffix};
 use crate::pet::PetKind;
 use crate::theme::Theme;
 
@@ -217,7 +217,7 @@ const POINTER_GAP: u16 = 2;
 
 /// The tooltip for what `hit` names on `world`'s frame; `None` for the star,
 /// whose click is its whole story, and for an agent or gateway gone from the
-/// scene.
+/// scene. `world.scene` is the whole office, as an [`agent`]'s card needs.
 pub fn for_hit(hit: SceneHit<'_>, world: &FloorInputs<'_>) -> Option<Tooltip> {
     match hit {
         SceneHit::Figure(HoverTarget::Agent(id)) => agent(world.scene, *id, world.now),
@@ -244,7 +244,8 @@ pub fn for_hit(hit: SceneHit<'_>, world: &FloorInputs<'_>) -> Option<Tooltip> {
 /// tool, what it works on, under whom, where, on which model, and its
 /// session's stats. An exiting agent shows none of the live affordances: the
 /// walking-out slot keeps its Running/RequiresAction payload, so the exiting-first
-/// kind gates them, not the raw state.
+/// kind gates them, not the raw state. `scene` is the whole office, not a floor's
+/// projection: a lead may work on another floor, and its name counts its own.
 pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip> {
     let agent = scene.agents.get(&id)?;
     let kind = if agent.exiting_at.is_some() {
@@ -314,8 +315,7 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
         )]));
     }
     if let Some(parent) = agent.parent_id.and_then(|p| scene.agents.get(&p)) {
-        // A subagent shares its lead's label: name the lead as this frame's badge does.
-        let lead = Namesakes::of(scene.agents.values()).nameplate(parent);
+        let lead = FloorNamesakes::of(scene).nameplate(parent);
         rows.push(dim(format!("\u{21b3} under {lead}")));
     }
     rows.push(dim(format!("\u{25a4} {}", short_cwd(&agent.cwd))));
@@ -471,41 +471,73 @@ mod tests {
         assert!(card.get(1, 1).is_some_and(|c| c.bold));
     }
 
-    /// A subagent works in its lead's repo, so the two are namesakes: its card
-    /// names its own lead as the lead's badge does, apart from another lead
-    /// of that repo.
-    #[test]
-    fn a_subagents_card_names_its_lead_by_its_nameplate() {
-        use crate::character::test_support::make_slot;
-        let label = "cc\u{b7}api";
-        let mut scene = SceneState::uniform(8);
-        let mut add = |key: &str, desk: usize, parent: Option<AgentId>| {
-            let id = AgentId::from_transcript_path(&format!("/p/{key}.jsonl"));
-            let mut a = make_slot(id, ActivityState::Idle);
-            a.label = label.into();
-            a.desk_index = pixtuoid_core::state::GlobalDeskIndex(desk);
-            a.parent_id = parent;
-            scene.agents.insert(id, a);
-            id
-        };
-        let lead = add("lead", 0, None);
-        add("other-lead", 1, None);
-        let sub = add("sub", 2, Some(lead));
-        let tip = agent(&scene, sub, SystemTime::UNIX_EPOCH).expect("the subagent's card");
-        let lineage: Vec<&str> = tip
-            .rows
+    /// An office of two four-desk floors.
+    fn two_floor_office() -> SceneState {
+        let mut capacities = [0; pixtuoid_core::state::MAX_FLOORS];
+        capacities[..2].copy_from_slice(&[4, 4]);
+        SceneState::new(capacities)
+    }
+
+    /// Seat `key`, labelled `label`, at `desk` on `floor`, under `lead`.
+    fn seat(
+        office: &mut SceneState,
+        (key, label): (&str, &str),
+        (desk, floor): (usize, usize),
+        lead: Option<AgentId>,
+    ) -> AgentId {
+        let id = AgentId::from_transcript_path(&format!("/p/{key}.jsonl"));
+        let mut a = crate::character::test_support::make_slot(id, ActivityState::Idle);
+        a.label = label.into();
+        a.desk_index = pixtuoid_core::state::GlobalDeskIndex(desk);
+        a.floor_idx = floor;
+        a.parent_id = lead;
+        office.agents.insert(id, a);
+        id
+    }
+
+    /// `id`'s badge text on `floor`, as that floor's projection counts it.
+    fn badge_name(office: &SceneState, floor: usize, id: AgentId) -> String {
+        let projection = crate::floor::project_floor_scene(office, floor);
+        crate::nameplate::Namesakes::of(projection.agents.values())
+            .nameplate(&projection.agents[&id])
+            .to_string()
+    }
+
+    /// The `↳ under` rows of `office`'s card for `id`.
+    fn lineage(office: &SceneState, id: AgentId) -> Vec<String> {
+        let tip = agent(office, id, SystemTime::UNIX_EPOCH).expect("the agent's card");
+        tip.rows
             .iter()
             .filter_map(|row| match row {
-                TipRow::Spans(spans) => spans.first().map(|s| s.text.as_str()),
+                TipRow::Spans(spans) => spans.first().map(|s| s.text.clone()),
                 _ => None,
             })
             .filter(|text| text.contains("under"))
-            .collect();
-        let named = crate::nameplate::Namesakes::of(scene.agents.values())
-            .nameplate(&scene.agents[&lead])
-            .to_string();
-        assert!(named.len() > label.len(), "premise: {named:?} is suffixed");
-        assert_eq!(lineage, [format!("\u{21b3} under {named}")]);
+            .collect()
+    }
+
+    /// A card names its subagent's lead as the lead's badge does, apart from
+    /// another lead of that repo.
+    #[test]
+    fn a_subagents_card_names_its_lead_by_its_nameplate() {
+        let mut office = two_floor_office();
+        let lead = seat(&mut office, ("lead", "cc\u{b7}api"), (0, 0), None);
+        seat(&mut office, ("other-lead", "cc\u{b7}api"), (1, 0), None);
+        let sub = seat(&mut office, ("sub", "subagent"), (2, 0), Some(lead));
+        let named = badge_name(&office, 0, lead);
+        assert!(named.len() > "cc\u{b7}api".len(), "premise: {named:?}");
+        assert_eq!(lineage(&office, sub), [format!("\u{21b3} under {named}")]);
+    }
+
+    /// A namesake upstairs leaves the lead's badge bare, and so its card name.
+    #[test]
+    fn a_subagents_card_counts_its_leads_floor() {
+        let mut office = two_floor_office();
+        let lead = seat(&mut office, ("lead", "cc\u{b7}api"), (0, 0), None);
+        let sub = seat(&mut office, ("sub", "subagent"), (1, 0), Some(lead));
+        seat(&mut office, ("upstairs", "cc\u{b7}api"), (4, 1), None);
+        let named = badge_name(&office, 0, lead);
+        assert_eq!(lineage(&office, sub), [format!("\u{21b3} under {named}")]);
     }
 
     /// An agent's card is at least [`MIN_CARD_W`] wide; a label is its text.

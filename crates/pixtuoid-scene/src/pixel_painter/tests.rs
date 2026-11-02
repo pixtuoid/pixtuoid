@@ -3457,6 +3457,33 @@ fn both_looks_hang_a_badge_from_the_one_anchor() {
     }
 }
 
+/// A pixel painter's badge writes its name alone, the plate's strip standing
+/// in for the terminal's [`BADGE_MARKER`](crate::badge::BADGE_MARKER), so the
+/// office's font is never asked for that glyph.
+#[test]
+fn a_pixel_badge_writes_no_marker() {
+    let (layout, pack, frames, _) =
+        crate::display::compose::tests::sit_down(crate::layout::Facing::North, 2);
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme");
+    let office = crate::display::Office {
+        layout: &layout,
+        pack: &pack,
+        theme,
+        scale: crate::render_scale::RenderScale::ONE,
+    };
+    let list = crate::display::compose::tests::list_at(&frames[0], office, 12);
+    let badges: Vec<_> = list.badges().collect();
+    assert!(!badges.is_empty(), "premise: the walker wears a badge");
+    for run in badges {
+        let marker = crate::badge::BADGE_MARKER;
+        assert!(
+            run.spans.iter().all(|s| !s.text().contains(marker)),
+            "{run:?}"
+        );
+        assert!(run.strip.is_some(), "the strip stands in: {run:?}");
+    }
+}
+
 /// A chitchat bubble hangs over its speaker's badge, and both looks draw the
 /// same one.
 #[test]
