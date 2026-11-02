@@ -1,7 +1,7 @@
-//! copilot's recorded endings at 1.0.98: two refusals, the `-p` auto-deny, whose
-//! call then ends, and Esc at an interactive prompt, which aborts the turn with
-//! no end for the call, each one call that resolves its wait; and a child whose
-//! request errs, which its own failure ends.
+//! copilot's recorded runs: two refusals, the `-p` auto-deny, whose call then
+//! ends, and Esc at an interactive prompt, which aborts the turn with no end for
+//! the call, each one call that resolves its wait; a child whose request errs,
+//! which its own failure ends; and a resumed session's meter.
 
 use pixtuoid_core::harness::{Drive, Driven, Reach};
 use pixtuoid_core::source::AgentEvent;
@@ -116,4 +116,38 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
         "the parent still delegates: {:?}",
         parent.state
     );
+}
+
+/// A resumed session's second `session.shutdown` totals both lifetimes, so the
+/// meter is each call's own receipt, never a shutdown.
+#[test]
+fn a_resumed_run_counts_each_call_once() {
+    let t = super::captures::transcript_in(
+        &super::captures::sources_root().join("copilot/fixtures/resume-hermetic"),
+    );
+    let lines = super::captures::fixture_lines(&t);
+    let (mut shutdowns, mut receipts) = (0, 0);
+    for line in &lines {
+        let v: serde_json::Value = serde_json::from_str(line).expect("recorded JSON");
+        match v["type"].as_str() {
+            Some("session.shutdown") => shutdowns += 1,
+            Some("session.usage_record") => {
+                let usage = &v["data"]["usage"];
+                let count = |k: &str| usage[k].as_u64().expect("a recorded count");
+                receipts += count("inputTokens") - count("cacheReadTokens") + count("outputTokens");
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        shutdowns > 1 && receipts > 0,
+        "no resumed lifetime or no receipt here, so this recording proves nothing"
+    );
+    let d = Drive::transcript_at("copilot", &t)
+        .expect("copilot has a line decoder")
+        .seeded()
+        .lines(lines);
+    d.assert_clean("resume");
+    let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
+    assert_eq!(meter, receipts);
 }

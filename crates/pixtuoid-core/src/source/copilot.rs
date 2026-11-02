@@ -147,6 +147,7 @@ const SUBAGENT_STARTED: &str = "subagent.started";
 const SUBAGENT_COMPLETED: &str = "subagent.completed";
 const SUBAGENT_FAILED: &str = "subagent.failed";
 const SESSION_TASK_COMPLETE: &str = "session.task_complete";
+const SESSION_USAGE_RECORD: &str = "session.usage_record";
 const SESSION_SHUTDOWN: &str = "session.shutdown";
 
 /// Decode one `events.jsonl` line into zero or more `AgentEvent`s. Unknown,
@@ -313,36 +314,31 @@ pub(crate) fn decode_copilot_line(
         // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
         // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
         SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root)],
-        // `modelMetrics` is the one usage a shutdown always carries, hosted or
-        // BYOK (1.0.103's `schemas/session-events.schema.json`, `ShutdownData`'s
-        // `required`); its `inputTokens` counts cache reads, which are not fresh.
-        SESSION_SHUTDOWN => {
-            let mut evs = vec![AgentEvent::SessionEnd {
-                agent_id: root,
-                as_child: false,
-            }];
-            let fresh = data
-                .and_then(|d| d.get("modelMetrics"))
-                .and_then(Value::as_object)
-                .into_iter()
-                .flat_map(|models| models.values())
-                .filter_map(|metric| metric.get("usage"))
-                .map(|usage| {
-                    let count = |k: &str| usage.get(k).and_then(Value::as_u64).unwrap_or(0);
-                    count("inputTokens")
-                        .saturating_sub(count("cacheReadTokens"))
-                        .saturating_add(count("outputTokens"))
-                })
-                .fold(0u64, u64::saturating_add);
-            if fresh > 0 {
-                evs.push(AgentEvent::Usage {
-                    agent_id: root,
-                    fresh_tokens: fresh,
-                    reading_id: None,
-                });
+        // Each call's receipt (1.0.105's `schemas/session-events.schema.json`,
+        // `UsageAccountingRecordData`), since a shutdown's `modelMetrics` totals
+        // every lifetime of a resumed session. `inputTokens` counts cache reads.
+        SESSION_USAGE_RECORD => {
+            let Some(usage) = data.and_then(|d| d.get("usage")) else {
+                crate::source::drift::missing_field(source, "session.usage_record", "usage");
+                return vec![];
+            };
+            let count = |k: &str| usage.get(k).and_then(Value::as_u64).unwrap_or(0);
+            let fresh = count("inputTokens")
+                .saturating_sub(count("cacheReadTokens"))
+                .saturating_add(count("outputTokens"));
+            if fresh == 0 {
+                return vec![];
             }
-            evs
+            vec![AgentEvent::Usage {
+                agent_id: acting,
+                fresh_tokens: fresh,
+                reading_id: None,
+            }]
         }
+        SESSION_SHUTDOWN => vec![AgentEvent::SessionEnd {
+            agent_id: root,
+            as_child: false,
+        }],
         _ => vec![],
     }
 }
@@ -396,6 +392,7 @@ mod tests {
             SUBAGENT_COMPLETED,
             SUBAGENT_FAILED,
             SESSION_TASK_COMPLETE,
+            SESSION_USAGE_RECORD,
             SESSION_SHUTDOWN,
         ] {
             assert!(drive(kind), "{kind} must reach a real arm");
@@ -776,38 +773,14 @@ mod tests {
     }
 
     #[test]
-    fn a_shutdown_sums_each_models_fresh_usage_into_one_reading() {
-        let line = r#"{"type":"session.shutdown","data":{"shutdownType":"routine","modelMetrics":{"gpt-4.1":{"usage":{"inputTokens":1000,"outputTokens":77,"cacheReadTokens":300,"cacheWriteTokens":222}},"gpt-5-mini":{"usage":{"inputTokens":50,"outputTokens":5,"cacheReadTokens":0,"cacheWriteTokens":0}}}},"id":"e1","timestamp":"t","parentId":null}"#;
-        match &decode(line)[..] {
-            [
-                AgentEvent::SessionEnd { .. },
-                AgentEvent::Usage {
-                    agent_id,
-                    fresh_tokens,
-                    reading_id: None,
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(
-                    *fresh_tokens,
-                    (1000 - 300 + 77) + (50 + 5),
-                    "input less cache reads, plus output, over every model"
-                );
-            }
-            other => panic!("expected [SessionEnd, Usage], got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn a_shutdown_with_no_fresh_usage_reads_nothing() {
+    fn a_receipt_with_no_fresh_usage_reads_nothing() {
         // A reading of zero would be pushed into a monotone accumulator.
         for data in [
-            r#"{"modelMetrics":{}}"#,
-            r#"{"modelMetrics":{"m":{"usage":{"inputTokens":900,"outputTokens":0,"cacheReadTokens":900,"cacheWriteTokens":0}}}}"#,
-            r#"{"modelMetrics":{"m":{"requests":{"count":1}}}}"#,
+            r#"{"usage":{"model":"m"}}"#,
+            r#"{"usage":{"model":"m","inputTokens":900,"outputTokens":0,"cacheReadTokens":900,"cacheWriteTokens":0}}"#,
         ] {
             let line = format!(
-                r#"{{"type":"session.shutdown","data":{data},"id":"e2","timestamp":"t","parentId":null}}"#
+                r#"{{"type":"session.usage_record","data":{data},"id":"e2","timestamp":"t","parentId":null}}"#
             );
             assert!(
                 !decode(&line)

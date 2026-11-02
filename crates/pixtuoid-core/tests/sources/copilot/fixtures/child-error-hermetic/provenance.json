@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "copilot",
   "version": "GitHub Copilot CLI 1.0.105.",
-  "captured": "2026-10-28",
+  "captured": "2026-11-02",
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 74
+    "blanked": 120
   },
   "aimock": "1.47.0",
   "script": "tests/sources/copilot/hermetic/child-error.json",
@@ -20,7 +20,6 @@
         "assistant.turn_start",
         "session.error",
         "session.model_change",
-        "session.usage_record",
         "subagent.configured",
         "subagent.selected",
         "system.message",
@@ -29,8 +28,9 @@
     }
   },
   "sentinel_reads": {
-    "fee60b5b-7b5b-46bf-8adb-1e31ac33d1bc/events.jsonl": [
-      "24:/data/modelMetrics/gpt-4.1/usage/cacheReadTokens"
+    "0f4af534-097b-44ea-9525-2306bbc7da44/events.jsonl": [
+      "21:/data/usage/cacheReadTokens",
+      "5:/data/usage/cacheReadTokens"
     ]
   }
 }
