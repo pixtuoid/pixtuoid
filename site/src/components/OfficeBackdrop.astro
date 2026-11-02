@@ -366,7 +366,6 @@ const officeDriverUrl = asset('office-driver.js');
     if (hasWasm && !mq.matches) cover();
     else markEngineResolved();
 
-    const UNITS_H = 130;
     const FRAME_MS = 33;
     // ONE office for the whole page (user-pinned): seed 0 is the app's 1F Standard look.
     const SEED = 0;
@@ -385,6 +384,7 @@ const officeDriverUrl = asset('office-driver.js');
     let queuedPaint = null;
     let officeDriver = null;
     let unitsW = 0;
+    let unitsH = 0;
     let raf = 0;
     let last = 0;
     let live = false;
@@ -394,13 +394,59 @@ const officeDriverUrl = asset('office-driver.js');
     let pauseOffset = 0;
     let pausedAt = 0;
 
-    // Sprites are fixed-size, so a smaller office IS zoom — deliberately a closer camera than the app's. The host
-    // sizes the canvas to the units of the frame it draws.
-    function sizeCanvas() {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      if (w < 1 || h < 1) return;
-      unitsW = Math.min(640, Math.max(64, Math.round((w / h) * UNITS_H)));
+    let fitSeq = 0;
+    // Chromium lays a box out in 64ths of a CSS px (`LayoutUnit`, blink's layout_unit.h:473), so a box finer than
+    // that rasterizes a device pixel short and shifts every frame pixel past it: the office grows to a whole CSS
+    // pixel, within as many units as the ratio's numerator (21 at 2.625).
+    const WHOLE_CSS_TRIES = 32;
+    // A ratio's float32 noise (110% reads 1.100000023841858) moves a whole size by far less; the box is then set to
+    // the whole px itself, so no conversion of a fraction decides it.
+    const WHOLE_CSS_EPS = 1 / 128;
+    // The fewest units from `units` whose box is a whole CSS px, with that size; none within the tries keeps `units`
+    // and its fractional size.
+    function wholeCss(units, pxPerUnit, dpr) {
+      for (let u = units; u < units + WHOLE_CSS_TRIES; u++) {
+        const css = (u * pxPerUnit) / dpr;
+        if (Math.abs(css - Math.round(css)) < WHOLE_CSS_EPS) return [u, Math.round(css)];
+      }
+      return [units, (units * pxPerUnit) / dpr];
+    }
+    // The office the engine fits to the backdrop's device pixels, and the canvas box that shows its frame at that
+    // whole upscale from the backdrop's corner, its crop at the far edges.
+    function refit() {
+      const r = wrap.getBoundingClientRect();
+      // The ratio the fit was asked at: a reply that lands after the ratio moves sizes the box it was fitted for.
+      const dpr = devicePixelRatio;
+      // CSS pixels times the ratio, the one measure every engine has: Safari has no device-pixel content box (MDN
+      // browser-compat-data, api/ResizeObserverEntry.json).
+      const devW = Math.round(r.width * dpr);
+      const devH = Math.round(r.height * dpr);
+      if (!hero || devW < 1 || devH < 1) return;
+      const seq = ++fitSeq;
+      hero.call('fit', devW, devH).then(
+        function (fit) {
+          if (seq !== fitSeq) return;
+          const across = wholeCss(fit[0], fit[2], dpr);
+          const down = wholeCss(fit[1], fit[2], dpr);
+          unitsW = across[0];
+          unitsH = down[0];
+          canvas.style.left = '0';
+          canvas.style.top = '0';
+          canvas.style.width = across[1] + 'px';
+          canvas.style.height = down[1] + 'px';
+          canvas.dataset.units = unitsW + 'x' + unitsH;
+          canvas.dataset.upscale = String(fit[3]);
+          // While paused no loop draws the new units, so re-render the ONE frozen frame at its frozen time.
+          if (paused && live) paint(pausedAt - pauseOffset);
+        },
+        function () {
+          // A host that died before the first fit leaves no frame to keep up, as a failed boot does.
+          if (unitsW < 1) {
+            uncover();
+            markEngineResolved();
+          }
+        }
+      );
     }
 
     const overlayEl = document.getElementById('office-overlay');
@@ -448,14 +494,14 @@ const officeDriverUrl = asset('office-driver.js');
       }
     }
 
-    // object-fit:cover mapping in CSS px per unit: s = max(disp/units) — cover fills then crops, office centered.
+    // CSS px per unit over the box `refit` sized to the frame; object-fit:cover centres a frame of the last size till the next lands.
     function coverMap() {
       const r = canvas.getBoundingClientRect();
-      const s = Math.max(r.width / unitsW, r.height / UNITS_H);
+      const s = Math.max(r.width / unitsW, r.height / unitsH);
       return {
         s,
         ox: r.left + (r.width - unitsW * s) / 2,
-        oy: r.top + (r.height - UNITS_H * s) / 2,
+        oy: r.top + (r.height - unitsH * s) / 2,
       };
     }
 
@@ -552,7 +598,7 @@ const officeDriverUrl = asset('office-driver.js');
       // A paused repaint leaves the sound's clock where the pause froze it.
       const audio = audioReady && !paused;
       hero
-        .frame({ now: nowMs, w: unitsW, h: UNITS_H, draw, overlay: draw === 1, audio })
+        .frame({ now: nowMs, w: unitsW, h: unitsH, draw, overlay: draw === 1, audio })
         .then(
           function (r) {
             markEngineResolved();
@@ -954,7 +1000,7 @@ const officeDriverUrl = asset('office-driver.js');
         })
         .then(function (o) {
           hero = o;
-          sizeCanvas();
+          refit();
           start();
           if (window.requestIdleCallback) {
             window.requestIdleCallback(prewarm, { timeout: PREWARM_IDLE_TIMEOUT_MS });
@@ -986,16 +1032,28 @@ const officeDriverUrl = asset('office-driver.js');
     }
 
     let rraf = 0;
-    window.addEventListener('resize', function () {
+    function refitNextFrame() {
       if (rraf) return;
       rraf = requestAnimationFrame(function () {
         rraf = 0;
-        sizeCanvas();
-        // While paused no loop draws the new units, so re-render the ONE frozen
-        // frame at its frozen time.
-        if (paused && live) paint(pausedAt - pauseOffset);
+        refit();
       });
-    });
+    }
+    window.addEventListener('resize', refitNextFrame);
+    // A window moved to a screen of another ratio keeps its CSS size, so no `resize` says so: a query on the
+    // current ratio does, made anew for each ratio
+    // (https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio).
+    (function watchRatio() {
+      const ratio = window.matchMedia('(resolution: ' + devicePixelRatio + 'dppx)');
+      ratio.addEventListener(
+        'change',
+        function () {
+          refitNextFrame();
+          watchRatio();
+        },
+        { once: true }
+      );
+    })();
     let bgTimer = 0;
     function stopBgTicks() {
       if (bgTimer) clearInterval(bgTimer);

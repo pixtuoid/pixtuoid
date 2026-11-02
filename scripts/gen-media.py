@@ -339,8 +339,7 @@ def run_clip(job, out_dirs, work, intermediates):
 
 def run_wasm_still(job, out_dirs, work, intermediates):
     # The live-office backdrop's poster: a REAL frame of the pixtuoid-web Office,
-    # in the same buffer geometry the live canvas computes, so the poster→canvas
-    # crossfade dissolves in place instead of reframing. Deterministic per
+    # 16:9 at the height the live canvas aims for. Deterministic per
     # (t0_ms, advance_ms) under the TZ=UTC pin, so a re-render reproduces it; it is
     # site-only, so no gate compares it.
     subprocess.run(

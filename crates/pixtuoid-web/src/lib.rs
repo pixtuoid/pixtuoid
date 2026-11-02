@@ -170,6 +170,14 @@ pub struct Office {
     audio: Option<audio::WebAudioDriver>,
 }
 
+/// How many units tall [`Office::fit`] aims the site's office: a closer camera
+/// than the app's, since its sprites are fixed-size.
+const FRAMING_UNITS_H: u32 = 130;
+
+/// The fewest whole device pixels [`Office::fit`] paints an art pixel as where
+/// the office still lays out (owner-delegated, #2029).
+const MIN_UPSCALE: u16 = 2;
+
 #[wasm_bindgen]
 impl Office {
     /// Build an office seeded with `seed` (drives the layout variant).
@@ -285,6 +293,40 @@ impl Office {
     /// Frame pixels per layout unit `step` takes.
     pub fn scale(&self) -> u32 {
         u32::from(self.fit.scale().get())
+    }
+
+    /// The office for a `px_w`×`px_h` device-pixel surface, as
+    /// `[units_w, units_h, px_per_unit, upscale]`: `px_per_unit` is `upscale` whole
+    /// times [`Office::scale`], so the page's upscale of the frame lands every art
+    /// pixel on whole device pixels, and the units cover the surface, cropping under one.
+    ///
+    /// The scale nearest `FRAMING_UNITS_H` tall, at least `MIN_UPSCALE` whole
+    /// pixels, then stepped down while the office would not lay out and so paint
+    /// nothing, as the floating window steps down.
+    pub fn fit(&self, px_w: u32, px_h: u32) -> Vec<u32> {
+        let density = self.fit.density();
+        let d = density.get();
+        let px = |n: u32| u16::try_from(n).unwrap_or(u16::MAX);
+        let surface = Size {
+            w: px(px_w),
+            h: px(px_h),
+        };
+        let natural = px(px_h.saturating_add(FRAMING_UNITS_H / 2) / FRAMING_UNITS_H)
+            .max(MIN_UPSCALE.saturating_mul(d));
+        let natural = PixelFit::at_least_density(natural, density, surface)
+            .scale()
+            .get();
+        let units = |s: u16| (px_w.div_ceil(u32::from(s)), px_h.div_ceil(u32::from(s)));
+        let min = pixtuoid_scene::layout::min_layout_size();
+        let lays_out = |s: u16| {
+            let (w, h) = units(s);
+            w >= u32::from(min.w) && h >= u32::from(min.h)
+        };
+        let scale = std::iter::successors(Some(natural), |&s| s.checked_sub(d).filter(|&s| s >= d))
+            .find(|&s| lays_out(s))
+            .unwrap_or(d);
+        let (w, h) = units(scale);
+        vec![w, h, u32::from(scale), u32::from(scale / d)]
     }
 
     /// Hire one more agent: a new coworker walks into the background office,
@@ -726,6 +768,97 @@ mod tests {
             .keys()
             .filter(|id| !(0..crate::script::CAST_LEN).map(cast_id).any(|c| c == **id))
             .count()
+    }
+
+    /// Device pixel surfaces the site meets: laptops at DPR 1, a Retina laptop,
+    /// 4K, a phone held both ways, and short or narrow DPR 1 windows.
+    const SURFACES: &[(u32, u32)] = &[
+        (1440, 900),
+        (1366, 768),
+        (1280, 800),
+        (1920, 1080),
+        (2560, 1440),
+        (2880, 1800),
+        (3024, 1964),
+        (1170, 2532),
+        (2532, 1170),
+        (844, 390),
+        (390, 844),
+        (568, 320),
+        (1366, 650),
+    ];
+
+    fn fit_of(o: &Office, (pw, ph): (u32, u32)) -> (u32, u32, u32) {
+        match o.fit(pw, ph)[..] {
+            [w, h, s, up] => {
+                assert_eq!(
+                    s,
+                    up * o.scale(),
+                    "px_per_unit is the upscale of the frame's"
+                );
+                (w, h, s)
+            }
+            ref other => panic!("fit is [units_w, units_h, px_per_unit, upscale], got {other:?}"),
+        }
+    }
+
+    fn lays_out((uw, uh): (u32, u32)) -> bool {
+        let min = pixtuoid_scene::layout::min_layout_size();
+        uw >= u32::from(min.w) && uh >= u32::from(min.h)
+    }
+
+    #[test]
+    fn every_art_pixel_lands_on_whole_device_pixels_and_the_office_lays_out() {
+        let o = office();
+        let d = u32::from(o.fit.density().get());
+        let min = u32::from(MIN_UPSCALE) * d;
+        for &(pw, ph) in SURFACES {
+            let (uw, uh, s) = fit_of(&o, (pw, ph));
+            assert_eq!(
+                s % d,
+                0,
+                "{pw}x{ph}: {s} px per unit is no whole upscale of {d}x art"
+            );
+            assert!(
+                uw * s >= pw && (uw - 1) * s < pw,
+                "{pw}x{ph}: {uw} units across at {s}"
+            );
+            assert!(
+                uh * s >= ph && (uh - 1) * s < ph,
+                "{pw}x{ph}: {uh} units down at {s}"
+            );
+            assert!(lays_out((uw, uh)), "{pw}x{ph}: {uw}x{uh} lays nothing out");
+            if s < min {
+                let at_min = (pw.div_ceil(min), ph.div_ceil(min));
+                assert!(
+                    !lays_out(at_min),
+                    "{pw}x{ph}: under {MIN_UPSCALE}x though it lays out there"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_laptop_frames_the_office_near_its_target_height() {
+        let o = office();
+        assert_eq!(fit_of(&o, (1440, 900)), (180, 113, 8));
+        // The nearest whole upscale keeps the framing within the √2 `PixelFit`'s
+        // ratio rule allows, wherever neither floor binds.
+        for &(pw, ph) in SURFACES {
+            let (_, uh, s) = fit_of(&o, (pw, ph));
+            if s > u32::from(MIN_UPSCALE) * u32::from(o.fit.density().get()) {
+                let (lo, hi) = (uh.min(FRAMING_UNITS_H), uh.max(FRAMING_UNITS_H));
+                assert!(hi * hi <= 2 * lo * lo, "{pw}x{ph}: {uh} units tall");
+            }
+        }
+    }
+
+    #[test]
+    fn a_narrow_window_drops_below_two_whole_pixels_to_lay_out() {
+        let o = office();
+        let (uw, uh, s) = fit_of(&o, (390, 844));
+        assert!(s < u32::from(MIN_UPSCALE) * u32::from(o.fit.density().get()));
+        assert!(lays_out((uw, uh)));
     }
 
     #[test]
@@ -1293,10 +1426,10 @@ mod tests {
     #[test]
     fn capacity_tracks_the_canvas_layout_so_no_agent_is_stranded_unpainted() {
         use pixtuoid_scene::layout::SceneLayout;
-        // The site renders `UNITS_H` units tall; this width seats the full cast
-        // plus at least one spare. The free-desk count is DERIVED, not a size
+        // This width at the site's target height seats the full cast plus at
+        // least one spare. The free-desk count is DERIVED, not a size
         // literal — the density pass re-tunes desks-per-floor out from under a literal.
-        let (w, h) = (192u32, 130u32);
+        let (w, h) = (192u32, FRAMING_UNITS_H);
         let mut o = office();
         let mut t = 0u64;
         while t <= 30_000 {
