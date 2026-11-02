@@ -38,7 +38,7 @@ pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     if !is_transcript(Path::new(path), &row.path_filter) {
         return None;
     }
-    let drive = Drive::transcript(source, path)?.seeded();
+    let drive = Drive::transcript_at(source, Path::new(path))?.seeded();
     let parsed: Vec<Value> = lines(whole(body))
         .filter_map(Result::ok)
         .filter_map(|line| serde_json::from_str(line).ok())
