@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -148,6 +148,7 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         window,
         live: _,
         follower,
+        replaying,
     } = *ctx;
     let SourceDecoders {
         decode_line,
@@ -402,7 +403,20 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
     }
 
     let session_ended = decoded.iter().any(ends_this_agent);
-    for ev in decoded {
+    // A known file's read from the top follows a truncation or a re-vouch.
+    let replays = if known { cursor_now == 0 } else { replaying };
+    // Declared per read, and per agent a read names: a transcript carries its
+    // children's events, and the reducer forgets an agent at ends this watcher
+    // never hears of, such as a hook's or a sweep's.
+    let agents: BTreeSet<AgentId> = decoded.iter().map(AgentEvent::agent_id).collect();
+    let backlog = |replaying| {
+        (agents.iter()).map(move |&agent_id| AgentEvent::Backlog {
+            agent_id,
+            replaying,
+        })
+    };
+    let events = (backlog(replays).chain(decoded)).chain(backlog(false).filter(|_| replays));
+    for ev in events {
         if tx.send((Transport::Jsonl, ev)).await.is_err() {
             return;
         }

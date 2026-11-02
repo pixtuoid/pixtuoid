@@ -1,8 +1,11 @@
 //! The per-scene tally of agent activity and gateway liveness, computed once a
 //! frame and read by the footer, the neon sign and the audio, so no two
-//! surfaces count apart.
+//! surfaces count apart, and the day's count as every surface words it.
 
-use pixtuoid_core::state::{ActivityState, DaemonPresence, DaemonState, MAX_FLOORS};
+use std::time::SystemTime;
+
+use chrono::NaiveDate;
+use pixtuoid_core::state::{ActivityState, DaemonPresence, DaemonState, MAX_FLOORS, Today};
 use pixtuoid_core::{AgentSlot, SceneState};
 
 /// Per-scene tally of agent activity states, computed once per frame and shared
@@ -78,4 +81,43 @@ pub fn gateway_rollup<'a>(
 /// The [`gateway_rollup`] over every daemon in `scene`.
 pub fn office_gateway(scene: &SceneState) -> Option<DaemonState> {
     gateway_rollup(scene.daemons().map(|(_, _, p)| p))
+}
+
+/// `now`'s local date, what a host's reducer dates [`Today::day`] by.
+pub fn local_day(now: SystemTime) -> NaiveDate {
+    chrono::DateTime::<chrono::Local>::from(now).date_naive()
+}
+
+/// What every reader shows of `today`: its tokens, else its tool calls, else
+/// nothing, so nobody sees `0`.
+pub(crate) fn today_headline(today: Today) -> Option<String> {
+    let (count, unit) = match (today.tokens, today.tool_calls) {
+        (0, 0) => return None,
+        (0, calls) => (calls, "tool call"),
+        (tokens, _) => (tokens, "token"),
+    };
+    let plural = if count == 1 { "" } else { "s" };
+    let count = crate::token_meter::compact_tokens(count);
+    Some(format!("{count} {unit}{plural}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_headline_is_the_tokens_else_the_calls_else_nothing() {
+        let rows = [
+            (1_200_000, 38, Some("1.2M tokens")),
+            (0, 38, Some("38 tool calls")),
+            (0, 0, None),
+            (1, 38, Some("1 token")),
+            (0, 1, Some("1 tool call")),
+            (0, 1_500, Some("1.5K tool calls")),
+        ];
+        for (tokens, tool_calls, words) in rows {
+            let today = Today::new(NaiveDate::MIN, tokens, tool_calls);
+            assert_eq!(today_headline(today).as_deref(), words);
+        }
+    }
 }

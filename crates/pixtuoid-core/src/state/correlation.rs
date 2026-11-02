@@ -26,7 +26,7 @@ pub const HOOK_WINS_WINDOW: Duration = Duration::from_millis(500);
 /// ended revives only on a hook start. Hook connections are per-connection
 /// spawned tasks, so a session's SessionEnd and a trailing TurnEnd/ToolUseEnd can
 /// be DELIVERED reordered, and the straggler would otherwise synthesize a blank
-/// Idle ghost with NO SessionEnd left to remove it. 5s covers same-machine
+/// Idle ghost with NO SessionEnd left to remove it. The window covers same-machine
 /// scheduling jitter while never visibly delaying a genuine revival.
 #[doc(hidden)]
 pub const STRAGGLER_TTL: Duration = Duration::from_secs(5);
@@ -213,8 +213,13 @@ pub(super) struct Correlation {
     /// Usage readings already counted into `tokens_used`, by the id a wire that
     /// repeats one gives it. A slot's end forgets its ids, and they sweep with
     /// `counted_calls`, whose TTL far outlasts a repeat's lag; a replay past either
-    /// re-counts on the meter.
+    /// re-counts on the meter, never on [`Today`](crate::state::Today).
     pub(super) counted_readings: Counted,
+    /// Agents whose transcript events are live work, per
+    /// [`AgentEvent::Backlog`](crate::AgentEvent::Backlog). Absent is closed: a
+    /// reader that fails to declare costs its agent the count, and never counts
+    /// a replay.
+    pub(super) caught_up: HashSet<AgentId>,
     /// When [`Self::gc_slow`] last swept, so its cost is once per
     /// [`COUNTED_SWEEP_INTERVAL`] no matter how often the caller runs — the
     /// bench harness ticks per EVENT, and production ticks per frame.

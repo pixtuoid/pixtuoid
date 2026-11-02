@@ -33,12 +33,12 @@ tests/
 │   └── hermetic/aimock/ the scripted model's npm lock, shared by every profile
 ├── reducer/main.rs      state-machine behavior; shared builders + apply-DSL in main.rs
 │                        (lifecycle · activity · tasks · liveness · display ·
-│                        child_ledger · snapshot.rs, the full-scene insta golden #279)
+│                        child_ledger · today · snapshot.rs, the full-scene insta golden #279)
 ├── watcher/main.rs      JsonlWatcher behavior; the poll-seam harness in main.rs
 │                        (tailing · first_sight · liveness · unclaim · attach ·
 │                        sources.rs — ALL SIX transcript sources bind+spawn, keep all
-│                        six (#828), + the ONE fixture→Reducer fold: the only test that
-│                        drives committed wire through a real Reducer)
+│                        six (#828), + a fixture→Reducer fold · today.rs, that fold per
+│                        source: the replay `harness::Drive`, with no tailer, can't see)
 ├── native_watch.rs      tests needing the NATIVE watch backend: their own process, so
 │                        `watcher`'s process-wide `fast_watch()` polling can't reach them
 ├── transport/main.rs    relay (both) · #[cfg(unix)] socket / #[cfg(windows)] pipe

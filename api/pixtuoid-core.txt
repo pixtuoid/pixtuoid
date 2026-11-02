@@ -708,6 +708,9 @@ pub const pixtuoid_core::source::opencode::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::reasonix
 pub const pixtuoid_core::source::reasonix::SOURCE_NAME: &str
 #[non_exhaustive] pub enum pixtuoid_core::source::AgentEvent
+pub pixtuoid_core::source::AgentEvent::Backlog
+pub pixtuoid_core::source::AgentEvent::Backlog::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::Backlog::replaying: bool
 pub pixtuoid_core::source::AgentEvent::Identity
 pub pixtuoid_core::source::AgentEvent::Identity::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Identity::cwd: core::option::Option<std::path::PathBuf>
@@ -939,6 +942,7 @@ pub mod pixtuoid_core::state::reducer
 pub struct pixtuoid_core::state::reducer::Reducer
 impl pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::apply(&mut self, &mut pixtuoid_core::state::SceneState, pixtuoid_core::source::AgentEvent, std::time::SystemTime, pixtuoid_core::source::Transport)
+pub fn pixtuoid_core::state::reducer::Reducer::counting(self, fn(std::time::SystemTime) -> chrono::naive::date::NaiveDate) -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::new() -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::reconcile_connected(&self, &mut pixtuoid_core::state::SceneState, &std::collections::hash::set::HashSet<alloc::string::String>, std::time::SystemTime)
 pub fn pixtuoid_core::state::reducer::Reducer::tick(&mut self, &mut pixtuoid_core::state::SceneState, std::time::SystemTime)
@@ -1259,6 +1263,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::GlobalDeskIn
 pub struct pixtuoid_core::state::SceneState
 pub pixtuoid_core::state::SceneState::agents: alloc::collections::btree::map::BTreeMap<pixtuoid_core::id::AgentId, pixtuoid_core::state::AgentSlot>
 pub pixtuoid_core::state::SceneState::floor_capacities: [usize; 10]
+pub pixtuoid_core::state::SceneState::today: core::option::Option<pixtuoid_core::state::Today>
 impl pixtuoid_core::state::SceneState
 pub fn pixtuoid_core::state::SceneState::daemon(&self, &str, &pixtuoid_core::state::DaemonInstanceId) -> core::option::Option<&pixtuoid_core::state::DaemonPresence>
 pub fn pixtuoid_core::state::SceneState::daemons(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &pixtuoid_core::state::DaemonInstanceId, &pixtuoid_core::state::DaemonPresence)> + '_
@@ -1316,6 +1321,32 @@ impl core::marker::Unpin for pixtuoid_core::state::SlotLabel
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::SlotLabel
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::SlotLabel
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::SlotLabel
+#[non_exhaustive] pub struct pixtuoid_core::state::Today
+pub pixtuoid_core::state::Today::day: chrono::naive::date::NaiveDate
+pub pixtuoid_core::state::Today::tokens: u64
+pub pixtuoid_core::state::Today::tool_calls: u64
+impl pixtuoid_core::state::Today
+pub fn pixtuoid_core::state::Today::new(chrono::naive::date::NaiveDate, u64, u64) -> Self
+impl core::clone::Clone for pixtuoid_core::state::Today
+pub fn pixtuoid_core::state::Today::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::state::Today
+impl core::cmp::PartialEq for pixtuoid_core::state::Today
+pub fn pixtuoid_core::state::Today::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::state::Today
+pub fn pixtuoid_core::state::Today::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_core::state::Today
+impl core::marker::StructuralPartialEq for pixtuoid_core::state::Today
+impl serde_core::ser::Serialize for pixtuoid_core::state::Today
+pub fn pixtuoid_core::state::Today::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::Today
+pub fn pixtuoid_core::state::Today::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::state::Today
+impl core::marker::Send for pixtuoid_core::state::Today
+impl core::marker::Sync for pixtuoid_core::state::Today
+impl core::marker::Unpin for pixtuoid_core::state::Today
+impl core::marker::UnsafeUnpin for pixtuoid_core::state::Today
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::Today
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::Today
 pub struct pixtuoid_core::state::ToolUse
 pub pixtuoid_core::state::ToolUse::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::state::ToolUse::kind: pixtuoid_core::state::ToolKind
@@ -1391,6 +1422,9 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::state::ActivityState
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::ActivityState
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::ActivityState
 #[non_exhaustive] pub enum pixtuoid_core::AgentEvent
+pub pixtuoid_core::AgentEvent::Backlog
+pub pixtuoid_core::AgentEvent::Backlog::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::Backlog::replaying: bool
 pub pixtuoid_core::AgentEvent::Identity
 pub pixtuoid_core::AgentEvent::Identity::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Identity::cwd: core::option::Option<std::path::PathBuf>
@@ -1669,6 +1703,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::GlobalDeskIn
 pub struct pixtuoid_core::Reducer
 impl pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::apply(&mut self, &mut pixtuoid_core::state::SceneState, pixtuoid_core::source::AgentEvent, std::time::SystemTime, pixtuoid_core::source::Transport)
+pub fn pixtuoid_core::state::reducer::Reducer::counting(self, fn(std::time::SystemTime) -> chrono::naive::date::NaiveDate) -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::new() -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::reconcile_connected(&self, &mut pixtuoid_core::state::SceneState, &std::collections::hash::set::HashSet<alloc::string::String>, std::time::SystemTime)
 pub fn pixtuoid_core::state::reducer::Reducer::tick(&mut self, &mut pixtuoid_core::state::SceneState, std::time::SystemTime)
@@ -1686,6 +1721,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::reducer::Red
 pub struct pixtuoid_core::SceneState
 pub pixtuoid_core::SceneState::agents: alloc::collections::btree::map::BTreeMap<pixtuoid_core::id::AgentId, pixtuoid_core::state::AgentSlot>
 pub pixtuoid_core::SceneState::floor_capacities: [usize; 10]
+pub pixtuoid_core::SceneState::today: core::option::Option<pixtuoid_core::state::Today>
 impl pixtuoid_core::state::SceneState
 pub fn pixtuoid_core::state::SceneState::daemon(&self, &str, &pixtuoid_core::state::DaemonInstanceId) -> core::option::Option<&pixtuoid_core::state::DaemonPresence>
 pub fn pixtuoid_core::state::SceneState::daemons(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &pixtuoid_core::state::DaemonInstanceId, &pixtuoid_core::state::DaemonPresence)> + '_

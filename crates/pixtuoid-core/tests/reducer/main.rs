@@ -5,6 +5,7 @@ mod lifecycle;
 mod liveness;
 mod snapshot;
 mod tasks;
+mod today;
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};

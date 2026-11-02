@@ -4,8 +4,8 @@
 //!
 //! Not [`SceneState`] itself, which is internal and moves with every release,
 //! while a server and a device update on their own schedules. A field crosses
-//! only where `project_agent` or `project_daemon` names it, and a desk never does:
-//! desks follow each device's layout, so it takes its own.
+//! only where `project_agent`, `project_daemon` or `project_today` names it, and a
+//! desk never does: desks follow each device's layout, so it takes its own.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -20,8 +21,8 @@ use crate::AgentId;
 use crate::source::decoder::{cwd_basename_label, display_safe, label_prefix_for};
 use crate::state::{
     ActivityState, AgentSlot, DaemonInstanceId, DaemonLiveness, DaemonPresence, DaemonRoster,
-    DaemonState, EffortObservation, GlobalDeskIndex, MAX_FLOORS, SceneState, SlotLabel, ToolKind,
-    ToolUse, TurnKey, UsageObservation,
+    DaemonState, EffortObservation, GlobalDeskIndex, MAX_FLOORS, SceneState, SlotLabel, Today,
+    ToolKind, ToolUse, TurnKey, UsageObservation,
 };
 
 /// The wire version this build writes and reads. Within a version the line only
@@ -43,6 +44,15 @@ struct Snapshot {
     now_ms: u64,
     agents: Vec<Agent>,
     daemons: Vec<Daemon>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    today: Option<Day>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Day {
+    day: NaiveDate,
+    tokens: u64,
+    tool_calls: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -261,6 +271,19 @@ fn project_daemon(source: &str, instance: &DaemonInstanceId, presence: &DaemonPr
     }
 }
 
+fn project_today(today: &Today) -> Day {
+    let Today {
+        day,
+        tokens,
+        tool_calls,
+    } = *today;
+    Day {
+        day,
+        tokens,
+        tool_calls,
+    }
+}
+
 /// `scene` as one newline-terminated wire line, stamped with the server's `now`.
 ///
 /// # Errors
@@ -275,6 +298,7 @@ pub fn encode(scene: &SceneState, now: SystemTime) -> serde_json::Result<String>
             .daemons()
             .map(|(source, instance, presence)| project_daemon(source, instance, presence))
             .collect(),
+        today: scene.today.as_ref().map(project_today),
     })?;
     line.push('\n');
     Ok(line)
@@ -478,6 +502,7 @@ impl RemoteOffice {
             now_ms,
             mut agents,
             daemons,
+            today,
             ..
         } = serde_json::from_slice(line)?;
 
@@ -517,6 +542,8 @@ impl RemoteOffice {
                 (self.scene.daemons).insert(&display_safe(&daemon.source), instance, presence);
             }
         }
+
+        self.scene.today = today.map(|d| Today::new(d.day, d.tokens, d.tool_calls));
         Ok(())
     }
 
@@ -631,6 +658,10 @@ mod tests {
 
     const GOLDEN: &str = include_str!("remote.v1.golden.json");
     const AT: u64 = 1_800_000_000_000;
+
+    fn day() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2027, 1, 15).expect("a date")
+    }
 
     fn at(ms: u64) -> SystemTime {
         UNIX_EPOCH + Duration::from_millis(ms)
@@ -748,6 +779,7 @@ mod tests {
                 },
             );
         }
+        scene.today = Some(Today::new(day(), 1_200_000, 38));
         scene
     }
 
@@ -784,6 +816,7 @@ mod tests {
         let exiting_unseen = 1;
         assert_eq!(scene.agents.len(), 8 - exiting_unseen);
         assert_eq!(scene.daemons().count(), 4);
+        assert_eq!(scene.today, Some(Today::new(day(), 1_200_000, 38)));
         let lead = &scene.agents[&AgentId::from_parts("claude-code", "lead")];
         assert_eq!(&*lead.label, "cc·lead");
         assert_eq!(lead.tokens_used, 12_000);
@@ -796,6 +829,20 @@ mod tests {
                 })
             }
         ));
+    }
+
+    /// A day with nothing counted sends no field, and a reader drops the number
+    /// it held, as it does on a line from a server older than the count.
+    #[test]
+    fn a_line_with_no_count_gives_no_number() {
+        let line = sent(&SceneState::uniform(4));
+        assert!(!line.contains("today"), "{line}");
+
+        let mut office = RemoteOffice::new(caps(4));
+        received(&mut office, &full_scene(), AT);
+        assert!(office.scene().today.is_some());
+        office.apply(line.as_bytes(), at(AT)).expect("it applies");
+        assert_eq!(office.scene().today, None, "a stale number stays behind");
     }
 
     #[test]
