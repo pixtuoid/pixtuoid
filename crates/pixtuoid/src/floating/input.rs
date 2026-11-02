@@ -148,6 +148,12 @@ impl crate::panels::Host for WindowHost<'_> {
         *self.theme = theme;
     }
 
+    /// Never asked: the window draws the cutaway alone, so its picker has
+    /// no look row.
+    fn set_look(&mut self, _: pixtuoid_scene::look::LookKind) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn navigate_floor(&mut self, floor: usize, now: std::time::SystemTime) {
         self.renderer.navigate(floor, now);
     }
@@ -341,7 +347,7 @@ mod tests {
         let first = pixtuoid_scene::theme::ALL_THEMES[0];
         let mut k = Keys::new();
         assert!(!k.press(KeyCode::Char('t')));
-        assert!(k.ui.theme_picker.is_some(), "t opens the picker");
+        assert!(k.ui.appearance.is_some(), "t opens the picker");
         assert!(!k.press(KeyCode::Char('j')));
         assert!(!std::ptr::eq(k.theme, first), "j previews in the window");
         assert!(k.press(KeyCode::Char('q')), "q quits mid-preview");

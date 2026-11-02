@@ -876,6 +876,7 @@ pub pixtuoid_scene::look::LookKind::Classic
 pub pixtuoid_scene::look::LookKind::Cutaway
 impl pixtuoid_scene::look::LookKind
 pub const pixtuoid_scene::look::LookKind::ALL: &'static [Self]
+pub fn pixtuoid_scene::look::LookKind::display_name(self) -> &'static str
 pub fn pixtuoid_scene::look::LookKind::name(self) -> &'static str
 impl core::clone::Clone for pixtuoid_scene::look::LookKind
 pub fn pixtuoid_scene::look::LookKind::clone(&self) -> Self

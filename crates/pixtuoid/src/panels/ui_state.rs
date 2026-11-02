@@ -13,6 +13,7 @@ use std::time::{Instant, SystemTime};
 
 use pixtuoid_core::source::manager::SourceDeath;
 use pixtuoid_core::state::SceneState;
+use pixtuoid_scene::look::LookKind;
 use pixtuoid_scene::theme;
 
 use super::{ModalState, connection, dashboard, welcome};
@@ -24,13 +25,30 @@ use welcome::{OnboardingFrame, WelcomeUi};
 /// the push (one call in the loop) from drifting apart per surface.
 #[derive(Debug, Default)]
 pub struct RenderFrames {
-    pub theme_picker: Option<usize>,
+    pub appearance: AppearanceFrame,
     pub version_popup: VersionPopupFrame,
     pub help_open: bool,
     pub source_warning: Option<String>,
     pub dashboard: DashboardFrame,
     pub connection: ConnectionFrame,
     pub onboarding: OnboardingFrame,
+}
+
+/// What the appearance picker sets: a theme, and the look where the run can
+/// switch looks.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Appearance {
+    /// Its index in [`theme::ALL_THEMES`].
+    pub theme: usize,
+    /// `None` where the run draws one look only, whose picker has no look row.
+    pub look: Option<LookKind>,
+}
+
+/// The appearance picker: whether it is open, and what it shows, or would.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AppearanceFrame {
+    pub open: bool,
+    pub shown: Appearance,
 }
 
 /// The version popup: whether it is open, and what it last opened with,
@@ -55,7 +73,7 @@ impl RenderFrames {
         host_keys: &'static [super::widgets::Shortcut],
     ) -> super::OverlayFrame<'_> {
         super::OverlayFrame {
-            theme_picker: self.theme_picker,
+            appearance: self.appearance,
             dashboard: &self.dashboard,
             connection: &self.connection,
             popup_scale,
@@ -93,10 +111,10 @@ pub(crate) struct UiState {
     /// the clock `just pace-check` starts at a transition or at dusk, read
     /// nowhere else.
     fake_now: Option<(Instant, SystemTime)>,
-    /// Theme picker: `Some(preview index)` while open; `saved_theme_idx` is
-    /// the committed selection the cancel path reverts to.
-    pub(crate) theme_picker: Option<usize>,
-    pub(crate) saved_theme_idx: usize,
+    /// The appearance picker's preview while it is open.
+    pub(crate) appearance: Option<Appearance>,
+    /// The committed appearance, which a cancel reverts to.
+    pub(crate) saved: Appearance,
     pub(crate) dashboard: DashboardUi,
     pub(crate) connection: ConnectionUi,
     drift: crate::doctor::DriftSeen,
@@ -130,8 +148,8 @@ pub(crate) struct Boot<'a> {
     /// The sources connected at boot, for the notices a version popup opens
     /// with.
     pub(crate) connected: &'a HashSet<String>,
-    /// [`crate::version::Facts::terminal_cutaway`].
-    pub(crate) terminal_cutaway: bool,
+    /// The look the run starts in, where it can switch looks.
+    pub(crate) look: Option<LookKind>,
 }
 
 /// `$PIXTUOID_FAKE_NOW`'s clock, said once at warn: a stray export would
@@ -191,7 +209,8 @@ impl UiState {
         );
         ui.notices.versions = decision.versions;
         ui.notices.upgraded = decision.should_show_popup;
-        ui.notices.terminal_cutaway = boot.terminal_cutaway;
+        ui.notices.terminal_cutaway = boot.look == Some(LookKind::Cutaway);
+        ui.saved.look = boot.look;
         if pops_up {
             ui.open_version_popup(boot.connected, &installed());
         }
@@ -206,7 +225,7 @@ impl UiState {
         drift: crate::doctor::DriftSeen,
     ) -> Self {
         let onboarding_opened_at = (!onboarding_ui.is_empty()).then(Instant::now);
-        let saved_theme_idx = theme::ALL_THEMES
+        let theme = theme::ALL_THEMES
             .iter()
             .position(|t| std::ptr::eq(*t, boot_theme))
             .expect("the boot theme is one of ALL_THEMES");
@@ -219,8 +238,8 @@ impl UiState {
             help_open: false,
             pause: pixtuoid_scene::anim::PauseClock::default(),
             fake_now: fake_now(),
-            theme_picker: None,
-            saved_theme_idx,
+            appearance: None,
+            saved: Appearance { theme, look: None },
             dashboard: DashboardUi::default(),
             connection: ConnectionUi::default(),
             drift,
@@ -236,7 +255,7 @@ impl UiState {
             onboarding_open: self.onboarding_open(),
             help_open: self.help_open,
             version_popup_open: self.version_popup_open,
-            theme_picker: self.theme_picker,
+            appearance: self.appearance,
             dashboard_open: self.dashboard.open,
             connection_open: self.connection.open,
             connection_confirm: self.connection.confirm.is_some(),
@@ -297,23 +316,34 @@ impl UiState {
         &self.notices.shown
     }
 
-    pub(crate) fn open_theme_picker(&mut self) {
-        self.theme_picker = Some(self.saved_theme_idx);
+    pub(crate) fn open_appearance(&mut self) {
+        self.appearance = Some(self.saved);
     }
 
     pub(crate) fn preview_theme(&mut self, idx: usize) {
-        self.theme_picker = Some(idx);
+        if let Some(open) = &mut self.appearance {
+            open.theme = idx;
+        }
     }
 
-    pub(crate) fn commit_theme(&mut self, idx: usize) {
-        self.saved_theme_idx = idx;
-        self.theme_picker = None;
+    /// Preview `look`, where the picker has a look row.
+    pub(crate) fn preview_look(&mut self, look: LookKind) {
+        if let Some(open) = &mut self.appearance {
+            open.look = open.look.map(|_| look);
+        }
     }
 
-    /// Esc in the picker: close and return the saved index to revert to.
-    pub(crate) fn cancel_theme(&mut self) -> usize {
-        self.theme_picker = None;
-        self.saved_theme_idx
+    /// Enter in the picker: close, keeping what it showed, which it returns.
+    pub(crate) fn commit_appearance(&mut self) -> Option<Appearance> {
+        let committed = self.appearance.take()?;
+        self.saved = committed;
+        Some(committed)
+    }
+
+    /// Esc in the picker: close and return the saved appearance to revert to.
+    pub(crate) fn cancel_appearance(&mut self) -> Appearance {
+        self.appearance = None;
+        self.saved
     }
 
     pub(crate) fn toggle_dashboard(&mut self, scene: &SceneState) {
@@ -535,7 +565,10 @@ impl UiState {
         };
 
         RenderFrames {
-            theme_picker: self.theme_picker,
+            appearance: AppearanceFrame {
+                open: self.appearance.is_some(),
+                shown: self.appearance.unwrap_or(self.saved),
+            },
             version_popup: VersionPopupFrame {
                 open: self.version_popup_open,
                 upgraded: self.notices.upgraded,
@@ -647,7 +680,7 @@ mod tests {
             !m.onboarding_open
                 && !m.help_open
                 && !m.version_popup_open
-                && m.theme_picker.is_none()
+                && m.appearance.is_none()
                 && !m.dashboard_open
                 && !m.connection_open
                 && !m.connection_confirm,
@@ -659,13 +692,13 @@ mod tests {
         ui.close_help();
         assert!(!ui.modal().help_open);
 
-        ui.open_theme_picker();
-        assert_eq!(ui.modal().theme_picker, Some(ui.saved_theme_idx));
+        ui.open_appearance();
+        assert_eq!(ui.modal().appearance, Some(ui.saved));
         ui.preview_theme(2);
-        assert_eq!(ui.modal().theme_picker, Some(2));
-        ui.commit_theme(2);
-        assert_eq!(ui.modal().theme_picker, None);
-        assert_eq!(ui.saved_theme_idx, 2);
+        assert_eq!(ui.modal().appearance.map(|a| a.theme), Some(2));
+        assert_eq!(ui.commit_appearance().map(|a| a.theme), Some(2));
+        assert_eq!(ui.modal().appearance, None);
+        assert_eq!(ui.saved.theme, 2);
 
         let scene = SceneState::new([4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         ui.toggle_dashboard(&scene);
@@ -760,17 +793,17 @@ mod tests {
     /// A run of `current` booted over the config at `path`, with `welcome`'s
     /// onboarding and nothing connected.
     fn boot_at(path: &std::path::Path, welcome: WelcomeUi, current: &semver::Version) -> UiState {
-        boot_into(path, welcome, current, &HashSet::new(), false)
+        boot_into(path, welcome, current, &HashSet::new(), None)
     }
 
-    /// [`boot_at`] with `connected` at boot and whether the TUI draws the
-    /// cutaway.
+    /// [`boot_at`] with `connected` at boot and the look the run starts in,
+    /// where it can switch looks.
     fn boot_into(
         path: &std::path::Path,
         welcome: WelcomeUi,
         current: &semver::Version,
         connected: &HashSet<String>,
-        terminal_cutaway: bool,
+        look: Option<LookKind>,
     ) -> UiState {
         UiState::boot_with(
             Boot {
@@ -781,7 +814,7 @@ mod tests {
                 log: crate::run_log::LogLocation::File(path.with_extension("log")),
                 drift: crate::doctor::DriftSeen::default(),
                 connected,
-                terminal_cutaway,
+                look,
             },
             welcome,
             || INSTALLED.to_vec(),
@@ -825,13 +858,16 @@ mod tests {
         let across = crate::version::across_every_notice();
         crate::config::save_version(&path, &across.previous.to_string())
             .expect("seed the release before");
-        let ui = boot_into(
-            &path,
-            WelcomeUi::from_detected(&[]),
-            &across.current,
-            &HashSet::from(["codex".to_string()]),
-            true,
-        );
+        let booted = |look| {
+            boot_into(
+                &path,
+                WelcomeUi::from_detected(&[]),
+                &across.current,
+                &HashSet::from(["codex".to_string()]),
+                look,
+            )
+        };
+        let ui = booted(Some(LookKind::Cutaway));
         assert!(ui.modal().version_popup_open);
         let shown = ui.version_notices();
         assert_eq!(shown.len(), 2, "{shown:?}");
@@ -840,6 +876,16 @@ mod tests {
             "the connected Codex is not named: {shown:?}"
         );
         assert!(shown[1].contains("cutaway"), "{shown:?}");
+        crate::config::save_version(&path, &across.previous.to_string())
+            .expect("seed the release before");
+        let ui = booted(Some(LookKind::Classic));
+        let shown = ui.version_notices();
+        assert_eq!(shown.len(), 1, "a run starting in the classic: {shown:?}");
+        assert_eq!(
+            ui.saved.look,
+            Some(LookKind::Classic),
+            "its picker's look row"
+        );
     }
 
     /// Reopened, the popup lists only what is still due: a host reconnected

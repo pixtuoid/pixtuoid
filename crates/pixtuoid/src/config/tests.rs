@@ -83,12 +83,55 @@ use pixtuoid_scene::look::LookKind;
 fn save_then_load_roundtrips_and_leaves_no_tmp_sidecar() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");
-    save(&p, "cyberpunk").expect("save");
+    save_appearance(&p, "cyberpunk", None).expect("save");
     let cfg = load(&p, &mut Vec::new());
     assert_eq!(cfg.theme.as_deref(), Some("cyberpunk"));
     assert!(
         !p.with_extension("toml.tmp").exists(),
         "the tmp sidecar must be consumed by the atomic rename"
+    );
+}
+
+/// The picker's look lands as the mode that keeps the file's asking, keyed
+/// on what the file holds, never on a `--look` this run took: a run started
+/// `--look classic` over no key commits Classic as `classic`, one started
+/// `--look cutaway` over `classic` commits Cutaway as `auto`, and a commit
+/// that changes no mode, a theme-only one above all, leaves the key alone.
+#[test]
+fn a_committed_look_keeps_the_files_asking_and_writes_only_a_change() {
+    let cases: [(Option<&str>, LookKind, Option<&str>); 8] = [
+        (None, LookKind::Classic, Some("classic")),
+        (None, LookKind::Cutaway, None),
+        (Some("auto"), LookKind::Cutaway, Some("auto")),
+        (Some("classic"), LookKind::Cutaway, Some("auto")),
+        (Some("classic"), LookKind::Classic, Some("classic")),
+        (Some("cutaway"), LookKind::Cutaway, Some("cutaway")),
+        (Some("cutaway"), LookKind::Classic, Some("classic")),
+        (Some("bogus"), LookKind::Cutaway, Some("bogus")),
+    ];
+    for (held, picked, want) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.toml");
+        let mut body = String::from("# kept\nmotion = \"calm\"\n");
+        if let Some(held) = held {
+            body.push_str(&format!("look = \"{held}\"\n"));
+        }
+        std::fs::write(&p, &body).unwrap();
+        save_appearance(&p, "cyberpunk", Some(picked)).expect("save");
+        let cfg = load(&p, &mut Vec::new());
+        assert_eq!(cfg.look.as_deref(), want, "{held:?} picking {picked:?}");
+        assert_eq!(cfg.theme.as_deref(), Some("cyberpunk"));
+        let text = std::fs::read_to_string(&p).unwrap();
+        assert!(text.starts_with("# kept\n"), "{text}");
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::write(&p, "look = \"cutaway\"\n").unwrap();
+    save_appearance(&p, "dracula", None).expect("save");
+    assert_eq!(
+        load(&p, &mut Vec::new()).look.as_deref(),
+        Some("cutaway"),
+        "a picker that offered no look leaves the key alone"
     );
 }
 
@@ -580,7 +623,8 @@ fn update_config_refuses_a_type_invalid_config() {
     let p = dir.path().join("config.toml");
     let original = "theme = \"normal\"\nmax-desks = \"oops\"\n";
     std::fs::write(&p, original).unwrap();
-    let err = save(&p, "cyberpunk").expect_err("a type-invalid config must not be persisted");
+    let err = save_appearance(&p, "cyberpunk", None)
+        .expect_err("a type-invalid config must not be persisted");
     assert!(
         format!("{err:#}").contains("invalid values"),
         "error must name the value failure: {err:#}"
@@ -594,7 +638,8 @@ fn update_config_refuses_to_overwrite_a_malformed_config() {
     let p = dir.path().join("config.toml");
     let original = "theme = [unclosed";
     std::fs::write(&p, original).unwrap();
-    let err = save(&p, "cyberpunk").expect_err("a malformed config must not be persisted over");
+    let err = save_appearance(&p, "cyberpunk", None)
+        .expect_err("a malformed config must not be persisted over");
     let msg = format!("{err:#}");
     assert!(
         msg.contains(&p.display().to_string()) && msg.to_lowercase().contains("toml"),
@@ -624,7 +669,7 @@ fn save_preserves_comments_and_unknown_keys_byte_for_byte() {
     let original = "# pixtuoid config — hand-tuned\ntheme = \"normal\"\nfuture-key = 1 # written by a newer pixtuoid\n\n[[pets]]\nkind = \"cat\" # the office cat\n";
     std::fs::write(&p, original).unwrap();
 
-    save(&p, "cyberpunk").unwrap();
+    save_appearance(&p, "cyberpunk", None).unwrap();
 
     let after = std::fs::read_to_string(&p).unwrap();
     assert_eq!(
@@ -878,7 +923,7 @@ fn save_leaves_the_lock_file_in_place() {
     // different inodes.
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");
-    save(&p, "cyberpunk").unwrap();
+    save_appearance(&p, "cyberpunk", None).unwrap();
     assert!(
         dir.path().join("config.toml.lock").exists(),
         "the lock file must stay in place"

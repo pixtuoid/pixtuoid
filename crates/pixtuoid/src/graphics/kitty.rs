@@ -454,9 +454,22 @@ pub(crate) fn on_screen(tmux: bool, last: u32) {
 /// What the terminal unwind writes first: nothing until [`on_screen`], then
 /// [`unwind_for`] this process's ids.
 pub(crate) fn unwind() -> Vec<u8> {
-    ON_SCREEN.get().map_or_else(Vec::new, |&tmux| {
-        unwind_for(process_base()..=LAST_SENT.load(Ordering::Relaxed), tmux)
-    })
+    ON_SCREEN
+        .get()
+        .map_or_else(Vec::new, |&tmux| unwind_for(sent(), tmux))
+}
+
+/// The [`delete`] of every image this process sent, mid-run: nothing until
+/// [`on_screen`].
+pub(crate) fn delete_sent() -> Vec<u8> {
+    ON_SCREEN
+        .get()
+        .map_or_else(Vec::new, |&tmux| delete(sent(), tmux))
+}
+
+/// The ids this process has sent, from its block's base.
+fn sent() -> RangeInclusive<u32> {
+    process_base()..=LAST_SENT.load(Ordering::Relaxed)
 }
 
 /// An ST that ends an escape a failed write cut short, then [`delete`].

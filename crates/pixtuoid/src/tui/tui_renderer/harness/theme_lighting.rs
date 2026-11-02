@@ -333,7 +333,10 @@ fn theme_picker_renders_theme_names() {
     let mut r = build(140, 48, vec![]);
     r.set_frames(
         RenderFrames {
-            theme_picker: Some(0),
+            appearance: crate::panels::ui_state::AppearanceFrame {
+                open: true,
+                shown: crate::panels::ui_state::Appearance::default(),
+            },
             ..Default::default()
         },
         t0(),

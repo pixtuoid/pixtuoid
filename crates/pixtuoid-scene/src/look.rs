@@ -96,6 +96,14 @@ impl LookKind {
     pub fn name(self) -> &'static str {
         self.into()
     }
+
+    /// Its name as a picker shows it, as a theme's `display_name` is.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Cutaway => "Cutaway",
+            Self::Classic => "Classic",
+        }
+    }
 }
 
 /// Who sets a look's world text: the badges, bubbles, wall board and floor

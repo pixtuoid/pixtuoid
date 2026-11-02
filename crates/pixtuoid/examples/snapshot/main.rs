@@ -182,6 +182,11 @@ struct SnapshotArgs {
     #[arg(long, conflicts_with = "animation")]
     theme_picker: Option<usize>,
 
+    /// The look a run that can switch looks has picked: the open picker's
+    /// look row, and the help's appearance row.
+    #[arg(long, conflicts_with = "animation", value_parser = pixel_look())]
+    picker_look: Option<LookKind>,
+
     /// Force the version popup fully visible (for screenshots).
     #[arg(long, conflicts_with = "animation")]
     popup: bool,
@@ -744,7 +749,13 @@ fn main() -> Result<()> {
         socket_line: connection_socket_line,
     };
     let frames = pixtuoid::dev::RenderFrames {
-        theme_picker: args.theme_picker,
+        appearance: pixtuoid::dev::AppearanceFrame {
+            open: args.theme_picker.is_some(),
+            shown: pixtuoid::dev::Appearance {
+                theme: args.theme_picker.unwrap_or_default(),
+                look: args.picker_look,
+            },
+        },
         version_popup: pixtuoid::dev::VersionPopupFrame {
             open: args.popup,
             upgraded: true,

@@ -55,20 +55,22 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<QuitSignal>> {
     rt.block_on(async move { run_async(cfg, tui).await })
 }
 
-/// The TUI's pack, the plan for painting it, and how its office moves.
+/// The TUI's pack, the plan for painting it, and how its office moves in
+/// each look.
 type Boot = (
     Arc<pixtuoid_scene::pack::OfficeArt>,
     crate::graphics::Plan,
-    pixtuoid_scene::anim::Motion,
+    crate::graphics::ByLook<pixtuoid_scene::anim::Motion>,
 );
 
 /// Load the pack, whose densest art the plan fits, plan, and pick the motion
-/// the plan affords unless the config names one.
+/// each look affords on it unless the config names one.
 fn boot_tui(cfg: &RunConfig) -> Result<Boot> {
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack()?);
     let plan = crate::graphics::plan_this_terminal(cfg.look, pack.max_density_variant(), true);
     tracing::info!(look = ?cfg.look, plan = ?plan, "graphics plan");
-    let motion = cfg.motion.or(plan.motion(crate::graphics::Link::of_env()));
+    let link = crate::graphics::Link::of_env();
+    let motion = crate::graphics::ByLook::from_fn(|look| cfg.motion.or(plan.motion(look, link)));
     tracing::info!(mode = ?cfg.motion, motion = ?motion, "motion");
     Ok((pack, plan, motion))
 }

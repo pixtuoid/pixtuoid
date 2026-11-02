@@ -438,7 +438,7 @@ mod tests {
 
     fn classic() -> Plan {
         Plan::Classic {
-            reason: crate::graphics::ClassicReason::Disabled,
+            reason: crate::graphics::ClassicReason::NoAnswer,
         }
     }
 
@@ -589,12 +589,12 @@ mod tests {
         let density = pixtuoid_scene::sprite::format::Density::new(4).expect("nonzero");
         let fit = cutaway_fit(cell, area.as_size(), density).expect("fits");
         assert_eq!(fit.scale().get(), 8);
-        let cutaway = Plan::Cutaway {
+        let cutaway = Plan::Cutaway(crate::graphics::CutawayPlan {
             fit,
             route: crate::graphics::Route::direct(ImageProtocol::Kitty, false),
             cell,
             chosen: crate::graphics::Chosen::Answer,
-        };
+        });
         let seed = resolve_boot_caps(None, Some(cutaway), || term(cols, rows));
         let painted = fit.logical();
         for (i, &seeded) in seed.iter().enumerate() {

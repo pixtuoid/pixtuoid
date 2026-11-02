@@ -166,7 +166,7 @@ impl FloatingApp {
             log,
             drift: boot.drift.clone(),
             connected: &boot.connected.snapshot(),
-            terminal_cutaway: false,
+            look: None,
         });
         let connected = boot.connected.clone();
         Self {
@@ -534,11 +534,14 @@ impl FloatingApp {
             self.renderer.presented();
         }
         let now = Instant::now();
-        self.jank.painted_by(crate::jank::Painter {
-            look: "floating",
-            scale: at.scale().get(),
-            ..crate::jank::Painter::default()
-        });
+        self.jank.painted_by(
+            &crate::jank::Painter {
+                look: "floating",
+                scale: at.scale().get(),
+                ..crate::jank::Painter::default()
+            },
+            now,
+        );
         self.renderer
             .record(&mut self.jank, now - started, now - presenting, now);
     }

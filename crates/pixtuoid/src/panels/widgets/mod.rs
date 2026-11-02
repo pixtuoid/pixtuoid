@@ -1,22 +1,22 @@
 //! Ratatui widget paint functions.
 
+mod appearance;
 mod connection;
 mod dashboard;
 mod footer;
 mod help;
 mod panel;
-mod theme_picker;
 mod tooltip;
 mod version_popup;
 mod welcome;
 
+pub(crate) use appearance::paint_appearance;
 pub(crate) use connection::{fmt_age, paint_connection_panel};
 pub(crate) use dashboard::paint_dashboard;
 pub use footer::footer_context;
 pub(crate) use footer::paint_footer;
 pub(crate) use help::{Shortcut, paint_help_overlay};
 pub(crate) use panel::{Overflow, Panel, PanelGeometry, borderless_panel};
-pub(crate) use theme_picker::paint_theme_picker;
 pub(crate) use tooltip::{TooltipAt, paint_host_text, paint_tooltip, star_area};
 pub(crate) use version_popup::{paint_version_popup, release_url, version_popup_url_rect};
 pub(crate) use welcome::paint_welcome;

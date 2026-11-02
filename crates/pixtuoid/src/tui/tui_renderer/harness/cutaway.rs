@@ -531,12 +531,12 @@ fn the_plans_cell_holds_until_the_windows_moves() {
     let cadence = ImageProtocol::Sixel.cadence();
     r.render(&scene, t0()).expect("render");
     assert!(wire.take().contains(&whole_tile(CELL)), "the plan's cell");
-    let plan = crate::graphics::Plan::Cutaway {
+    let plan = crate::graphics::Plan::Cutaway(crate::graphics::CutawayPlan {
         fit: fit(cols, rows),
         route: crate::graphics::Route::direct(ImageProtocol::Sixel, false),
         cell: CELL,
         chosen: crate::graphics::Chosen::Answer,
-    };
+    });
     let office = plan.office_extent(ratatui::layout::Size::new(cols, rows));
     assert_eq!(
         r.office_extent(),
@@ -574,12 +574,12 @@ fn a_first_frame_with_no_pixels_does_not_pose_as_the_windows_baseline() {
     r.render(&scene, t0() + ImageProtocol::Sixel.cadence())
         .expect("render");
     assert_eq!(wire.take(), "", "the plan's cell holds, nothing re-cut");
-    let plan = crate::graphics::Plan::Cutaway {
+    let plan = crate::graphics::Plan::Cutaway(crate::graphics::CutawayPlan {
         fit: fit(cols, rows),
         route: crate::graphics::Route::direct(ImageProtocol::Sixel, false),
         cell: CELL,
         chosen: crate::graphics::Chosen::Answer,
-    };
+    });
     let office = plan.office_extent(ratatui::layout::Size::new(cols, rows));
     assert_eq!(
         r.office_extent(),
@@ -786,12 +786,26 @@ fn the_protocols_cadence_gates_its_transmits() {
     let scene = office();
     r.render(&scene, t0()).expect("render");
     wire.take();
-    r.redraw().expect("redraw");
+    r.forget_frame();
     let cadence = ImageProtocol::Sixel.cadence();
     r.render(&scene, t0() + cadence / 2).expect("render");
     assert_eq!(wire.take(), "", "inside the cadence, the tiles stay owed");
     r.render(&scene, t0() + cadence).expect("render");
     assert!(wire.take().contains(SIXEL));
+}
+
+/// A cleared screen shows nothing to wait for: the frame after a redraw
+/// sends every tile at once, inside the cadence.
+#[test]
+fn a_redraw_sends_at_once_inside_the_cadence() {
+    let (mut r, wire) = painter(120, 40, ImageProtocol::Sixel);
+    let scene = office();
+    r.render(&scene, t0()).expect("render");
+    let tiles = wire.take().matches(SIXEL).count();
+    r.redraw().expect("redraw");
+    r.render(&scene, t0() + ImageProtocol::Sixel.cadence() / 2)
+        .expect("render");
+    assert_eq!(wire.take().matches(SIXEL).count(), tiles);
 }
 
 /// How `protocol`'s transmit of one tile opens.
@@ -1565,4 +1579,239 @@ fn w_follows_the_look_the_frame_drew() {
     r.terminal.backend_mut().zoom(CELL);
     r.render(&scene, t0() + cadence * 6).expect("render");
     assert!(!r.offers_walkable_debug(), "the cutaway is back");
+}
+
+/// Whether `buf` holds no drawn cell: the screen a clear leaves.
+fn blank(buf: &ratatui::buffer::Buffer) -> bool {
+    buf.content().iter().all(|c| c.symbol() == " ")
+}
+
+/// Every cell of `buf` that names a kitty image.
+fn placeholders(buf: &ratatui::buffer::Buffer) -> usize {
+    buf.content()
+        .iter()
+        .filter(|c| c.symbol().starts_with(PLACEHOLDER))
+        .count()
+}
+
+/// Switching to the half-blocks deletes the images kitty holds and clears
+/// the screen, after which no cell names an image and nothing is sent;
+/// switching back clears it again and sends every tile, on every protocol.
+#[test]
+fn a_look_switch_clears_the_screen_and_switching_back_sends_every_tile() {
+    for protocol in [
+        ImageProtocol::Kitty,
+        ImageProtocol::Sixel,
+        ImageProtocol::Iterm2,
+    ] {
+        let (mut r, wire) = painter(120, 40, protocol);
+        let scene = office();
+        let cadence = protocol.cadence();
+        r.render(&scene, t0()).expect("render");
+        let tiles = wire.take().matches(intro(protocol)).count();
+        assert!(tiles > 0, "{protocol:?}: premise");
+        r.set_look(LookKind::Classic).expect("switch");
+        let deleted = wire.take().contains("\x1b_Ga=d,d=R");
+        assert_eq!(deleted, protocol == ImageProtocol::Kitty, "{protocol:?}");
+        assert!(
+            blank(r.terminal.backend().inner.buffer()),
+            "{protocol:?}: cleared"
+        );
+        r.render(&scene, t0() + cadence).expect("render");
+        assert_eq!(
+            wire.take(),
+            "",
+            "{protocol:?}: the half-blocks send nothing"
+        );
+        assert_eq!(placeholders(r.frame_buffer()), 0, "{protocol:?}");
+        assert_eq!(r.drawn_look(), LookKind::Classic, "{protocol:?}");
+        r.set_look(LookKind::Cutaway).expect("switch back");
+        assert!(
+            blank(r.terminal.backend().inner.buffer()),
+            "{protocol:?}: cleared"
+        );
+        r.render(&scene, t0() + cadence * 2).expect("render");
+        assert_eq!(
+            wire.take().matches(intro(protocol)).count(),
+            tiles,
+            "{protocol:?}: every tile again"
+        );
+        assert_eq!(r.drawn_look(), LookKind::Cutaway, "{protocol:?}");
+    }
+}
+
+/// A look switch inside a strike's hold paints its first frame at once: the
+/// screen it cleared shows no phase to wait for, so neither look leaves it
+/// blank.
+#[test]
+fn a_look_switch_is_never_held() {
+    use crate::test_flash::{held_frames, storm_strike};
+    let strike = storm_strike();
+    let [dark, late, held, _] = held_frames(&strike);
+    for to in [LookKind::Classic, LookKind::Cutaway] {
+        let (mut r, wire, screen) = on_screen(140, 60, ImageProtocol::Kitty);
+        r.set_weather(strike.weather);
+        r.set_motion(pixtuoid_scene::anim::Motion::Full);
+        let scene = office();
+        if to == LookKind::Cutaway {
+            r.set_look(LookKind::Classic).expect("premise: classic");
+        }
+        for at in [dark, late] {
+            screen.at(at);
+            r.render(&scene, at).expect("render");
+        }
+        wire.take();
+        r.set_look(to).expect("switch");
+        screen.at(held);
+        r.render(&scene, held).expect("render");
+        assert!(
+            !blank(r.terminal.backend().inner.buffer()),
+            "{to:?}: painted"
+        );
+        assert_eq!(r.drawn_look(), to);
+        if to == LookKind::Cutaway {
+            assert!(wire.take().contains(TRANSMIT), "sent");
+        }
+    }
+}
+
+/// The pacing reports name the look each frame drew, a fall back to the
+/// half-blocks included, and the office moves as the look picked affords.
+#[test]
+fn the_pacing_label_follows_the_drawn_look_and_the_motion_the_picked_one() {
+    use pixtuoid_scene::anim::Motion;
+    let (mut r, _wire) = kitty(140, 60);
+    let scene = office();
+    let cadence = ImageProtocol::Kitty.cadence();
+    let paint = |look, motion| super::super::LookPaint {
+        painter: crate::jank::Painter {
+            look,
+            ..Default::default()
+        },
+        motion,
+    };
+    r.set_looks(
+        crate::graphics::ByLook {
+            cutaway: paint("kitty", Motion::Calm),
+            classic: paint("classic", Motion::Full),
+        },
+        LookKind::Cutaway,
+    );
+    assert_eq!(r.chrome.motion, Motion::Calm);
+    r.render(&scene, t0()).expect("render");
+    assert_eq!(r.jank.painter().look, "kitty");
+    r.terminal.backend_mut().zoom(CellSize {
+        w: CELL.w / 2,
+        h: CELL.h / 2,
+    });
+    r.render(&scene, t0() + cadence).expect("render");
+    assert_eq!(r.jank.painter().look, "classic", "the fall back draws");
+    assert_eq!(r.chrome.motion, Motion::Calm, "the cutaway is still picked");
+    r.terminal.backend_mut().zoom(CELL);
+    r.set_look(LookKind::Classic).expect("switch");
+    assert_eq!(r.chrome.motion, Motion::Full);
+    r.render(&scene, t0() + cadence * 2).expect("render");
+    assert_eq!(r.jank.painter().look, "classic");
+}
+
+/// The run's panels over a config at `path`, its picker's look row `look`.
+fn panels_at(path: &Path, look: Option<LookKind>) -> crate::panels::ui_state::UiState {
+    let mut ui = crate::panels::ui_state::UiState::new(
+        normal_theme(),
+        crate::panels::welcome::WelcomeUi::from_detected(&[]),
+        path.with_extension("sock"),
+        None,
+        crate::doctor::DriftSeen::default(),
+    );
+    ui.saved.look = look;
+    ui
+}
+
+/// Press `code` over `r` as the TUI's loop does: through the shared
+/// dispatch and applier, the config at `path`.
+fn press(
+    r: &mut TuiRenderer<Window>,
+    ui: &mut crate::panels::ui_state::UiState,
+    path: &Path,
+    code: crossterm::event::KeyCode,
+) {
+    fn no_respawn(_: &crate::audio::AudioHandle, _: f32) {}
+    let action = crate::panels::dispatch_key(
+        code,
+        crossterm::event::KeyModifiers::NONE,
+        ui.modal(),
+        crate::panels::FloorNav {
+            n_floors: 1,
+            current_floor: 0,
+            in_transition: false,
+        },
+    );
+    let mut audio_ctl = crate::audio::AudioController::new_with(
+        crate::config::AudioConfig {
+            muted: true,
+            volume: 1.0,
+        },
+        path.to_path_buf(),
+        no_respawn,
+    );
+    crate::panels::apply_key_action(
+        action,
+        &mut crate::panels::KeyCtx {
+            ui,
+            host: r,
+            audio_ctl: &mut audio_ctl,
+            config_path: path,
+            connected: &crate::runtime::ConnectedSources::new(Default::default()),
+            snapshot: &SceneState::uniform(4),
+            now: t0(),
+            respawn: no_respawn,
+            installed: Vec::new,
+        },
+    );
+}
+
+/// A run that booted in the cutaway keeps its look row when a font zoom
+/// leaves the cutaway no fit: the row says Cutaway, the look picked, while
+/// the frame paints the half-blocks, and a commit keeps that pick, which a
+/// plain launch starts in; picking the classic writes it.
+#[test]
+fn a_cutaway_a_zoom_leaves_unfit_is_still_the_rows_pick() {
+    use crossterm::event::KeyCode;
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("config.toml");
+    let (mut r, _wire) = kitty(140, 60);
+    let mut ui = panels_at(&path, Some(LookKind::Cutaway));
+    let scene = office();
+    let cadence = ImageProtocol::Kitty.cadence();
+    r.render(&scene, t0()).expect("render");
+    r.terminal.backend_mut().zoom(CellSize {
+        w: CELL.w / 2,
+        h: CELL.h / 2,
+    });
+    r.render(&scene, t0() + cadence).expect("render");
+    assert_eq!(r.drawn_look(), LookKind::Classic, "premise: no fit");
+    let row = |ui: &crate::panels::ui_state::UiState| ui.modal().appearance.and_then(|a| a.look);
+    press(&mut r, &mut ui, &path, KeyCode::Char('t'));
+    assert_eq!(row(&ui), Some(LookKind::Cutaway), "the row shows the pick");
+    for (key, look) in [
+        (KeyCode::Right, LookKind::Classic),
+        (KeyCode::Left, LookKind::Cutaway),
+    ] {
+        press(&mut r, &mut ui, &path, key);
+        assert_eq!(row(&ui), Some(look));
+    }
+    r.render(&scene, t0() + cadence * 2).expect("render");
+    assert_eq!(r.drawn_look(), LookKind::Classic, "still no fit");
+    press(&mut r, &mut ui, &path, KeyCode::Enter);
+    let look = |path: &Path| crate::config::load(path, &mut Vec::new()).look;
+    assert_eq!(
+        look(&path),
+        None,
+        "auto, which starts in the cutaway, stays"
+    );
+    press(&mut r, &mut ui, &path, KeyCode::Char('t'));
+    press(&mut r, &mut ui, &path, KeyCode::Right);
+    press(&mut r, &mut ui, &path, KeyCode::Enter);
+    assert_eq!(look(&path).as_deref(), Some("classic"));
+    assert_eq!(r.look, LookKind::Classic);
 }

@@ -63,6 +63,20 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     screen: Screen<ratatui::layout::Size, crate::tui::geometry::SceneGeometry>,
     /// The cutaway, painted as terminal images in place of the half-blocks.
     cutaway: Option<crate::tui::cutaway::TileCutaway>,
+    /// The look picked: the cutaway draws only where there is one and it
+    /// fits, the half-blocks everywhere else.
+    look: LookKind,
+    /// How each look's frames are reported and its office moves.
+    looks: crate::graphics::ByLook<LookPaint>,
+}
+
+/// How the renderer paints a look.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LookPaint {
+    /// What its frames' pacing is reported under.
+    pub(crate) painter: crate::jank::Painter,
+    /// How its office moves.
+    pub(crate) motion: pixtuoid_scene::anim::Motion,
 }
 
 /// Everything a frame shows besides the floors: kept apart from `session` so a
@@ -204,12 +218,58 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             },
             screen: Screen::on(pixtuoid_scene::screen::monotonic()),
             cutaway: None,
+            look: LookKind::Classic,
+            looks: crate::graphics::ByLook::default(),
         }
     }
 
     /// Paint `cutaway` from the next frame on.
     pub(crate) fn set_cutaway(&mut self, cutaway: crate::tui::cutaway::TileCutaway) {
         self.cutaway = Some(cutaway);
+        self.look = LookKind::Cutaway;
+    }
+
+    /// Paint each look as `looks` says, starting in `start`.
+    pub(crate) fn set_looks(&mut self, looks: crate::graphics::ByLook<LookPaint>, start: LookKind) {
+        self.chrome.motion = looks.of(start).motion;
+        self.looks = looks;
+        self.look = start;
+    }
+
+    /// Draw `look` from the next frame on, the screen cleared of the last:
+    /// leaving the cutaway deletes its images, and the first frame in either
+    /// look repaints whole. A cutaway the renderer has none of changes
+    /// nothing.
+    pub(crate) fn set_look(&mut self, look: LookKind) -> Result<()> {
+        if look == self.look || (look == LookKind::Cutaway && self.cutaway.is_none()) {
+            return Ok(());
+        }
+        if let Some(cutaway) = self.cutaway.as_mut().filter(|_| look == LookKind::Classic) {
+            cutaway.stand_aside()?;
+        }
+        self.look = look;
+        self.chrome.motion = self.looks.of(look).motion;
+        self.redraw()
+    }
+
+    /// The cutaway, where it is the look picked.
+    fn picked_cutaway(&self) -> Option<&crate::tui::cutaway::TileCutaway> {
+        self.cutaway
+            .as_ref()
+            .filter(|_| self.look == LookKind::Cutaway)
+    }
+
+    /// The look the last frame drew: the cutaway where it was picked and fit.
+    fn drawn_look(&self) -> LookKind {
+        if self
+            .picked_cutaway()
+            .and_then(crate::tui::cutaway::TileCutaway::office)
+            .is_some()
+        {
+            LookKind::Cutaway
+        } else {
+            LookKind::Classic
+        }
     }
 
     /// Whether the last office frame drawn was the half-blocks of a debug
@@ -286,7 +346,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             .window_size()
             .ok()
             .and_then(crate::graphics::CellSize::of_window);
-        let fitted = self.cutaway.as_mut()?.fit_to(scene_area, window)?;
+        let look = self.look;
+        let fitted = self
+            .cutaway
+            .as_mut()
+            .filter(|_| look == LookKind::Cutaway)?
+            .fit_to(scene_area, window)?;
         Some((fitted.look(), fitted.fit.logical()))
     }
 
@@ -314,11 +379,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.frame_out = Some(out);
     }
 
-    /// Name what draws the frames, for their pacing summaries.
-    pub(crate) fn painted_by(&mut self, painter: crate::jank::Painter) {
-        self.jank.painted_by(painter);
-    }
-
     /// Paint and send the next frame whole, for the pacing bench's worst case.
     pub(crate) fn forget_frame(&mut self) {
         for floor in self.session.floors_mut() {
@@ -334,6 +394,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         if let Some(cutaway) = &mut self.cutaway {
             cutaway.forget();
         }
+        self.screen.wiped();
         let size = self.terminal.size()?;
         self.terminal.resize(Rect::from((Position::ORIGIN, size)))?;
         Ok(())
@@ -342,7 +403,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     /// The logical extent the current floor last laid out on: what a resize
     /// changes, and a slide does not.
     fn office_extent(&self) -> (u16, u16) {
-        if let Some(office) = self.cutaway.as_ref().and_then(|c| c.office()) {
+        if let Some(office) = self.picked_cutaway().and_then(|c| c.office()) {
             return (office.w, office.h);
         }
         self.buf().map_or((0, 0), |b| (b.width(), b.height()))
@@ -732,9 +793,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         presented?;
         self.screen.landed();
         let note = drawn?;
+        self.jank.painted_by(
+            &self.looks.of(self.drawn_look()).painter,
+            std::time::Instant::now(),
+        );
         let send = self
-            .cutaway
-            .as_ref()
+            .picked_cutaway()
             .map(crate::tui::cutaway::TileCutaway::last_send);
         self.jank.record(
             begun.elapsed(),
@@ -757,7 +821,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             self.chrome.active_pet = None;
         }
 
-        if let Some(mut cutaway) = self.cutaway.take() {
+        let look = self.look;
+        if let Some(mut cutaway) = self.cutaway.take_if(|_| look == LookKind::Cutaway) {
             cutaway.begin_frame();
             let size = self.terminal.size()?;
             let scene_area =

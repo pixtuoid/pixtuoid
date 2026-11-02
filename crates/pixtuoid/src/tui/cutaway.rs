@@ -459,6 +459,24 @@ impl TileCutaway {
     pub(crate) fn forget(&mut self) {
         self.tiles.forget();
     }
+
+    /// Leave the screen to the half-blocks: delete the images kitty holds,
+    /// which their cells no longer name, owe every tile, and fit nothing
+    /// until the next [`Self::fit_to`].
+    pub(crate) fn stand_aside(&mut self) -> std::io::Result<()> {
+        self.fitted = None;
+        self.pending = None;
+        self.shown = None;
+        self.tiles.forget();
+        if self.route.protocol() == ImageProtocol::Kitty {
+            let delete = kitty::delete_sent();
+            if !delete.is_empty() {
+                self.out.write_all(&delete)?;
+                self.out.flush()?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A thread's least share of a frame's tiles: below it, its spawn outweighs

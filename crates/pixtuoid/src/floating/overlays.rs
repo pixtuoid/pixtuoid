@@ -178,7 +178,7 @@ pub fn panel_preview(
             &crate::runtime::ConnectedSources::default().snapshot(),
             &ui.read_conn_log(),
         )),
-        "theme" => ui.open_theme_picker(),
+        "theme" => ui.open_appearance(),
         _ => return None,
     }
     panels_grid(
@@ -608,7 +608,7 @@ mod tests {
             ModalMouse::Took
         );
         assert!(!ui.help_open());
-        ui.open_theme_picker();
+        ui.open_appearance();
         assert_eq!(
             modal_press(&mut ui, corner, window, shown),
             ModalMouse::Inert

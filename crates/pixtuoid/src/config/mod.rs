@@ -285,9 +285,29 @@ where
     lock.write_atomic(&doc.to_string())
 }
 
-pub(crate) fn save(path: &Path, theme_name: &str) -> Result<()> {
+/// Save the appearance picker's commit: `theme`, and the look `picked`
+/// where the picker offered one. The look is written as the mode
+/// [`LookMode::picking`](crate::graphics::LookMode::picking) makes of the
+/// one the file holds, a `--look` this run took aside, and only where that
+/// changes it.
+pub(crate) fn save_appearance(
+    path: &Path,
+    theme: &str,
+    picked: Option<pixtuoid_scene::look::LookKind>,
+) -> Result<()> {
     update_config(path, |doc| {
-        doc["theme"] = toml_edit::value(theme_name);
+        doc["theme"] = toml_edit::value(theme);
+        let Some(picked) = picked else {
+            return;
+        };
+        let held = doc.get("look").and_then(toml_edit::Item::as_str);
+        let persisted = held
+            .and_then(|v| <crate::graphics::LookMode as clap::ValueEnum>::from_str(v, false).ok())
+            .unwrap_or_default();
+        let target = persisted.picking(picked);
+        if target != persisted {
+            doc["look"] = toml_edit::value(target.to_string());
+        }
     })
 }
 

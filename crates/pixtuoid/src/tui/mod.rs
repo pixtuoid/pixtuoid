@@ -127,6 +127,10 @@ impl<B: ratatui::backend::Backend<Error: Send + Sync + 'static>> crate::panels::
         TuiRenderer::set_theme(self, theme);
     }
 
+    fn set_look(&mut self, look: pixtuoid_scene::look::LookKind) -> anyhow::Result<()> {
+        TuiRenderer::set_look(self, look)
+    }
+
     fn navigate_floor(&mut self, floor: usize, now: SystemTime) {
         TuiRenderer::navigate_floor(self, floor, now);
     }
@@ -350,8 +354,9 @@ pub(crate) struct TuiSession {
     pub pack: Arc<pixtuoid_scene::pack::OfficeArt>,
     /// What `boot_tui` planned to paint.
     pub plan: crate::graphics::Plan,
-    /// How the office moves, which `boot_tui` resolved beside the plan.
-    pub motion: pixtuoid_scene::anim::Motion,
+    /// How the office moves in each look, which `boot_tui` resolved beside
+    /// the plan.
+    pub motion: crate::graphics::ByLook<pixtuoid_scene::anim::Motion>,
     pub floor_caps: Arc<[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS]>,
     pub theme: &'static theme::Theme,
     pub config_path: std::path::PathBuf,
@@ -429,41 +434,52 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     }
 }
 
-/// Hand `renderer` the painter `plan` names.
+/// Hand `renderer` the painters `plan` names, each look moving as `motion`
+/// says, starting in the plan's.
 fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
-    plan: crate::graphics::Plan,
+    (plan, motion): (
+        crate::graphics::Plan,
+        crate::graphics::ByLook<pixtuoid_scene::anim::Motion>,
+    ),
     out: &FrameOut,
 ) {
+    use pixtuoid_scene::look::LookKind;
     let (terminal, tmux_env) = crate::graphics::terminal_and_tmux();
-    match plan {
-        crate::graphics::Plan::Cutaway {
-            fit, route, cell, ..
-        } => {
-            renderer.painted_by(crate::jank::Painter {
-                look: route.protocol().name(),
-                scale: fit.scale().get(),
-                tmux: route.tmux(),
-                terminal,
+    let cutaway = plan.cutaway();
+    let looks = crate::graphics::ByLook::from_fn(|look| {
+        let painter = match (look, cutaway) {
+            (LookKind::Cutaway, Some(c)) => crate::jank::Painter {
+                look: c.route.protocol().name(),
+                scale: c.fit.scale().get(),
+                tmux: c.route.tmux(),
+                terminal: terminal.clone(),
                 sync: out.synchronized(),
-            });
-            renderer.set_cutaway(cutaway::TileCutaway::new(
-                fit,
-                cell,
-                route,
-                Box::new(out.clone()),
-            ));
-        }
-        _ => {
-            renderer.painted_by(crate::jank::Painter {
-                look: pixtuoid_scene::look::LookKind::Classic.name(),
+            },
+            _ => crate::jank::Painter {
+                look: LookKind::Classic.name(),
                 scale: 1,
                 tmux: tmux_env,
-                terminal,
+                terminal: terminal.clone(),
                 sync: out.synchronized(),
-            });
-            tracing::info!(plan = ?plan, "painting classic");
+            },
+        };
+        tui_renderer::LookPaint {
+            painter,
+            motion: *motion.of(look),
         }
+    });
+    if let Some(c) = cutaway {
+        renderer.set_cutaway(cutaway::TileCutaway::new(
+            c.fit,
+            c.cell,
+            c.route,
+            Box::new(out.clone()),
+        ));
+    }
+    renderer.set_looks(looks, plan.start());
+    if plan.start() == LookKind::Classic {
+        tracing::info!(plan = ?plan, "painting classic");
     }
 }
 
@@ -505,8 +521,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     let quit = arms.signalled();
     tokio::pin!(quit);
     let mut renderer = TuiRenderer::new(term, theme, pets, pack);
-    renderer.set_motion(motion);
-    paint_plan(&mut renderer, plan, &out);
+    paint_plan(&mut renderer, (plan, motion), &out);
     renderer.present_through(out);
     // A LOCAL so EVERY exit (q / Ctrl-C / terminate / error) drops it and joins
     // the device thread it owns.
@@ -520,7 +535,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         log,
         drift,
         connected: &connected.snapshot(),
-        terminal_cutaway: matches!(plan, crate::graphics::Plan::Cutaway { .. }),
+        look: plan.cutaway().map(|_| plan.start()),
     });
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
@@ -1274,7 +1289,7 @@ mod apply_key_action_tests {
             KeyAction::CloseHelp,
             KeyAction::DismissVersionPopup,
             KeyAction::OpenVersionPopup,
-            KeyAction::OpenThemePicker,
+            KeyAction::OpenAppearance,
             KeyAction::ToggleDashboard,
             KeyAction::DashboardClose,
             KeyAction::ConnectionClose,
@@ -1353,24 +1368,27 @@ mod apply_key_action_tests {
         );
     }
 
-    /// `ThemeCommit` persists; `ThemeCancel` restores the last COMMITTED theme,
-    /// not merely the previewed one.
+    /// A commit persists the theme it showed, and no look where the picker
+    /// had no look row; a cancel restores the last COMMITTED theme, not
+    /// merely the previewed one.
     #[test]
-    fn theme_commit_persists_and_cancel_restores_the_saved_theme() {
+    fn a_commit_persists_and_a_cancel_restores_the_saved_theme() {
         let mut h = Harness::new();
-        h.apply(KeyAction::OpenThemePicker);
-        h.apply(KeyAction::ThemeCommit(1));
+        h.apply(KeyAction::OpenAppearance);
+        h.apply(KeyAction::ThemePreview(1));
+        h.apply(KeyAction::AppearanceCommit);
         let saved = std::fs::read_to_string(&h.config_path).expect("config written");
         assert!(
             saved.contains(theme::ALL_THEMES[1].name),
             "commit must persist the theme: {saved:?}"
         );
+        assert!(!saved.contains("look"), "no look row, no look: {saved:?}");
 
-        h.apply(KeyAction::OpenThemePicker);
+        h.apply(KeyAction::OpenAppearance);
         h.apply(KeyAction::ThemePreview(3));
-        h.apply(KeyAction::ThemeCancel);
+        h.apply(KeyAction::AppearanceCancel);
         assert_eq!(
-            h.ui.saved_theme_idx, 1,
+            h.ui.saved.theme, 1,
             "cancel must restore the COMMITTED theme, not the preview"
         );
     }
