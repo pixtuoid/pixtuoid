@@ -434,9 +434,8 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     }
 }
 
-/// Hand `renderer` the painter `plan` names, the half-blocks' on this
-/// terminal, which the cutaway names its own from, and the cutaway, each look
-/// moving as `motion` says, starting in the plan's.
+/// Hand `renderer` the half-blocks' painter on this terminal and the cutaway
+/// `plan` names, each look moving as `motion` says, starting in the plan's.
 fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
     (plan, motion): (

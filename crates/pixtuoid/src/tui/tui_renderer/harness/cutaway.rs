@@ -1945,3 +1945,43 @@ fn the_pacing_label_follows_what_drew_each_frame() {
     r.render(&scene, t0() + cadence * 2).expect("render");
     assert_eq!(label(&r), ("classic", 1), "the fall back draws");
 }
+
+/// The frame a font zoom falls back on opens the half-blocks' pacing
+/// window, its time included: that window spans at least its slowest frame.
+#[test]
+fn a_fall_back_frame_is_inside_the_window_it_opens() {
+    let scene = office();
+    let logged = crate::test_capture::capture(|| {
+        let (mut r, _wire) = kitty(140, 60);
+        r.painted_by(crate::jank::Painter {
+            look: "classic",
+            scale: 1,
+            ..Default::default()
+        });
+        r.render(&scene, t0()).expect("render");
+        r.terminal.backend_mut().zoom(CellSize {
+            w: CELL.w / 2,
+            h: CELL.h / 2,
+        });
+        r.render(&scene, t0() + ImageProtocol::Kitty.cadence())
+            .expect("render");
+        r.finish_pacing();
+    });
+    let field = |line: &str, key: &str| -> f64 {
+        let at = line.find(&format!(" {key}=")).expect("logged") + key.len() + 2;
+        line[at..]
+            .split_whitespace()
+            .next()
+            .and_then(|v| v.parse().ok())
+            .expect("a number")
+    };
+    let classic = logged
+        .lines()
+        .filter(|l| l.contains("frame pacing"))
+        .find(|l| l.contains("look=\"classic\""))
+        .expect("the half-blocks' window");
+    assert!(
+        field(classic, "span_ms") >= field(classic, "max"),
+        "{classic}"
+    );
+}
