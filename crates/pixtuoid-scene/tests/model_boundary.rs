@@ -1,7 +1,7 @@
 //! The model names no rasterizer: outside `pixel_painter/`, `cutaway/` and the
 //! frame entry, no source file paths into either.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
 
@@ -334,6 +334,26 @@ impl<'ast> Visit<'ast> for ModelReads<'_> {
     }
 }
 
+/// Where `file`'s out-of-line `#[cfg(test)] mod`s live, as rustc resolves them:
+/// beside a `mod.rs`, else in the directory named for the file.
+fn test_modules(file: &Path, source: &str) -> Vec<PathBuf> {
+    let dir = match file.file_stem().and_then(|s| s.to_str()) {
+        Some("mod") | None => file.parent().expect("a file has a directory").to_path_buf(),
+        Some(_) => file.with_extension(""),
+    };
+    let parsed = syn::parse_file(source).expect("source parses");
+    parsed
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            syn::Item::Mod(m) if m.content.is_none() && is_test(&m.attrs) => {
+                Some(dir.join(m.ident.to_string()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// The cutaway draws only its display list: outside its tests and its frame
 /// entries ([`CUTAWAY_ENTRIES`]), nothing under `cutaway/` reads the theme or
 /// the layout, which the list has already resolved.
@@ -342,7 +362,19 @@ fn the_cutaway_draws_only_its_list() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cutaway");
     let mut files = Vec::new();
     rust_files(&dir, &mut files);
-    assert!(!files.is_empty(), "the cutaway has sources");
+    let tests: Vec<PathBuf> = files
+        .iter()
+        .flat_map(|file| test_modules(file, &std::fs::read_to_string(file).expect("source reads")))
+        .collect();
+    files.retain(|file| {
+        !tests
+            .iter()
+            .any(|t| file.with_extension("") == *t || file.starts_with(t))
+    });
+    assert!(
+        files.iter().any(|file| file.ends_with("paint.rs")),
+        "the cutaway's sources survive: {files:?}"
+    );
     let mut reads = Vec::new();
     for file in files {
         let name = file
@@ -363,6 +395,19 @@ fn the_cutaway_draws_only_its_list() {
         );
     }
     assert_eq!(reads, Vec::<String>::new(), "the cutaway reads the model");
+}
+
+#[test]
+fn an_out_of_line_test_module_is_found_where_rustc_looks() {
+    let source = "#[cfg(test)]\nmod tests;\nmod kept;\n#[cfg(test)]\nmod inline {}\n";
+    assert_eq!(
+        test_modules(Path::new("/s/paint.rs"), source),
+        [PathBuf::from("/s/paint/tests")]
+    );
+    assert_eq!(
+        test_modules(Path::new("/s/mod.rs"), source),
+        [PathBuf::from("/s/tests")]
+    );
 }
 
 #[test]
