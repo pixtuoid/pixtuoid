@@ -348,3 +348,34 @@ fn a_recorded_switch_ends_the_previous_session_and_starts_the_current() {
         "the switch decodes as End(previous) + Start(current), each session arm trailing its Identity"
     );
 }
+
+/// A prune or a compaction rewrites the session file shorter, and the watcher
+/// re-reads it from its top: the usage it had read counts nothing again.
+#[test]
+fn a_rewritten_sessions_re_read_counts_no_reading_twice() {
+    let t = super::captures::transcript_in(
+        &super::captures::sources_root().join("omp/fixtures/tool-run-hermetic"),
+    );
+    let lines = super::captures::fixture_lines(&t);
+    let expected: u64 = (lines.iter())
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("recorded JSON"))
+        .filter(|v| v["type"] == "message" && v["message"]["role"] == "assistant")
+        .map(|v| {
+            let usage = &v["message"]["usage"];
+            ["input", "cacheWrite", "output"]
+                .iter()
+                .filter_map(|k| usage[k].as_u64())
+                .sum::<u64>()
+        })
+        .sum();
+    assert!(
+        expected > 0,
+        "no recorded usage here, so this recording proves nothing"
+    );
+    let d = Drive::transcript_at("omp", &t)
+        .expect("omp has a line decoder")
+        .seeded()
+        .lines(lines.iter().chain(&lines));
+    let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
+    assert_eq!(meter, expected);
+}
