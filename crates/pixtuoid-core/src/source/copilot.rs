@@ -332,8 +332,10 @@ pub(crate) fn decode_copilot_line(
             vec![AgentEvent::Usage {
                 agent_id: acting,
                 fresh_tokens: fresh,
-                // A rewind (`session.snapshot_rewind`) removes events from the
-                // file, and the watcher then re-reads it from the top.
+                // A rewind rewrites the log without the events it removes, and the
+                // watcher re-reads a shorter file from its top: 1.0.105's
+                // `runtime.node` ("persisted history truncation", "read back …
+                // after the rewrite", `src/runtime/src/shared_api/history.rs`).
                 reading_id: non_empty(obj, "id").map(str::to_owned),
             }]
         }

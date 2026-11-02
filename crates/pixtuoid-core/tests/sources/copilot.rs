@@ -1,7 +1,7 @@
 //! copilot's recorded runs: two refusals, the `-p` auto-deny, whose call then
 //! ends, and Esc at an interactive prompt, which aborts the turn with no end for
 //! the call, each one call that resolves its wait; a child whose request errs,
-//! which its own failure ends; and a resumed session's meter.
+//! which its own failure ends; and the meter of a resume, a re-read and a child.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -163,18 +163,19 @@ fn a_resumed_run_counts_each_call_once() {
     assert_eq!(meter, expected);
 }
 
-/// A live session's rewind leaves a shorter file the watcher re-reads from its
-/// top, and the usage records it had read count nothing again.
+/// A re-read from the top (`walk_jsonl`'s truncation reset) of a live, resumed
+/// session counts no usage record twice, its earlier lifetime's included.
 #[test]
 fn a_rewinds_re_read_counts_no_call_twice() {
-    let (t, lines, records) = usage_records("copilot/fixtures/tool-run-hermetic");
-    let live: Vec<_> = (lines.iter())
-        .filter(|l| !l.contains(r#""type":"session.shutdown""#))
-        .collect();
+    let (t, lines, records) = usage_records("copilot/fixtures/resume-hermetic");
+    let last_end = (lines.iter())
+        .rposition(|l| l.contains(r#""type":"session.shutdown""#))
+        .expect("a recorded shutdown");
+    let live = &lines[..last_end];
     let d = Drive::transcript_at("copilot", &t)
         .expect("copilot has a line decoder")
         .seeded()
-        .lines(live.iter().chain(&live));
+        .lines(live.iter().chain(live));
     let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
     assert_eq!(meter, records.values().sum::<u64>());
 }
