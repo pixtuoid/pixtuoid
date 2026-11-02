@@ -1276,7 +1276,8 @@ mod tests {
         o.step(T0_MS + 80_000.0, 160, 96);
         assert_eq!(o.scene.agents.len(), baseline + 1);
         // Past SessionEnd + exit grace + GC, and across the loop wrap.
-        let after = T0_MS + 31_000.0 + 70_000.0 + 20_000.0 + LOOP_MS as f64;
+        let after =
+            T0_MS + 31_000.0 + crate::script::HIRE_STAY_MS as f64 + 20_000.0 + LOOP_MS as f64;
         o.step(after, 160, 96);
         assert_eq!(hires_alive(&o), 0, "the hire left and never replays");
     }

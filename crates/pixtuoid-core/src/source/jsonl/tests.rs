@@ -131,8 +131,8 @@ fn from_open_fds_with_joins_each_pid_to_the_transcripts_it_holds_open() {
     );
 }
 
-/// Safe to call from a unit test: no lib unit test constructs a `JsonlWatcher`,
-/// so this process-wide `OnceLock` changes nothing else in this binary.
+/// Safe to call from a unit test: only `RootWatch::new` reads this process-wide
+/// `OnceLock`, and no lib unit test builds one.
 #[test]
 fn force_polling_backend_for_tests_actually_sets_the_override() {
     force_polling_backend_for_tests(Duration::from_millis(25));
@@ -411,13 +411,9 @@ async fn walk_once_with_recency(
     let source: Arc<str> = Arc::from("test");
     let decoders = SourceDecoders {
         decode_line,
-        derive_label: t_label,
         check_ended,
         activity_recency,
-        id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
+        ..t_decoders()
     };
     let live = Arc::new(Mutex::new(HashSet::new()));
     let ctx = WatchCtx {
@@ -432,11 +428,7 @@ async fn walk_once_with_recency(
     };
     walk_jsonl(path, decoders, &ctx).await;
     drop(tx);
-    let mut events = Vec::new();
-    while let Ok(ev) = rx.try_recv() {
-        events.push(ev);
-    }
-    events
+    drain_events(&mut rx)
 }
 
 #[tokio::test]
@@ -451,14 +443,8 @@ async fn first_sight_cwd_falls_back_to_the_path_deriver_when_content_has_none() 
         let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
         let source: Arc<str> = Arc::from("test");
         let decoders = SourceDecoders {
-            decode_line: t_decode,
-            derive_label: t_label,
-            check_ended: t_ended,
-            activity_recency: super::no_activity_recency,
-            id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
-            path_filter: accept_all_paths,
             cwd_derive: derived_cwd,
-            head_label: None,
+            ..t_decoders()
         };
         let cursors = Arc::new(Mutex::new(HashMap::new()));
         let seen = Arc::new(Mutex::new(HashMap::new()));
@@ -505,14 +491,8 @@ async fn walk_once_live(
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
     let source: Arc<str> = Arc::from("test");
     let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
         id_derive: super::folded::FoldedDeriver::new(crate::source::claude_code::cc_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
+        ..t_decoders()
     };
     let ctx = WatchCtx {
         source: &source,
@@ -526,11 +506,7 @@ async fn walk_once_live(
     };
     walk_jsonl(path, decoders, &ctx).await;
     drop(tx);
-    let mut events = Vec::new();
-    while let Ok(ev) = rx.try_recv() {
-        events.push(ev);
-    }
-    events
+    drain_events(&mut rx)
 }
 
 fn backdate_one_hour(path: &Path) {
@@ -811,14 +787,8 @@ async fn walk_jsonl_honors_the_path_filter() {
     let seen = Arc::new(Mutex::new(HashMap::new()));
     let live = Arc::new(Mutex::new(HashSet::new()));
     let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
-        id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
         path_filter: skip_full,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
+        ..t_decoders()
     };
     let ctx = WatchCtx {
         source: &source,
@@ -982,14 +952,8 @@ async fn walk_once_with_head_label(
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(64);
     let source: Arc<str> = Arc::from("test");
     let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
-        id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
         head_label: Some(t_head_label),
+        ..t_decoders()
     };
     let live = Arc::new(Mutex::new(HashSet::new()));
     let ctx = WatchCtx {
@@ -1004,11 +968,7 @@ async fn walk_once_with_head_label(
     };
     walk_jsonl(path, decoders, &ctx).await;
     drop(tx);
-    let mut events = Vec::new();
-    while let Ok(ev) = rx.try_recv() {
-        events.push(ev);
-    }
-    events
+    drain_events(&mut rx)
 }
 
 const CODEX_CHILD: &str = "01a14e51-6b67-7d71-bf09-674db3be3c5e";
@@ -1037,13 +997,8 @@ async fn codex_first_sights(
     let source: Arc<str> = Arc::from(crate::source::codex::SOURCE_NAME);
     let decoders = SourceDecoders {
         decode_line: crate::source::codex::decode_codex_line,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
         id_derive: super::folded::FoldedDeriver::new(crate::source::codex::codex_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
+        ..t_decoders()
     };
     let live = Arc::new(Mutex::new(HashSet::new()));
     let ctx = WatchCtx {
@@ -1425,16 +1380,7 @@ async fn session_exit_drains_pending_bytes_so_a_straggler_walk_cannot_resurrect(
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
     let source: Arc<str> = Arc::from("test");
-    let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
-        id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
-    };
+    let decoders = t_decoders();
     let live = Arc::new(Mutex::new(HashSet::new()));
     let ctx = WatchCtx {
         source: &source,
@@ -1449,10 +1395,7 @@ async fn session_exit_drains_pending_bytes_so_a_straggler_walk_cannot_resurrect(
     let id = default_id_from_path(&path);
     emit_session_exit(&id, decoders, &ctx).await;
     drop(tx);
-    let mut exit_events = Vec::new();
-    while let Ok(ev) = rx.try_recv() {
-        exit_events.push(ev);
-    }
+    let exit_events = drain_events(&mut rx);
     assert!(
         matches!(
             exit_events.last(),
@@ -1504,16 +1447,7 @@ async fn session_exit_purges_live_so_a_probe_failure_pass_cannot_revouch() {
     let live: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::from([id.clone()])));
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(64);
     let source: Arc<str> = Arc::from("test");
-    let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
-        id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
-    };
+    let decoders = t_decoders();
     let ctx = WatchCtx {
         source: &source,
         cursors: &cursors,
@@ -1536,10 +1470,7 @@ async fn session_exit_purges_live_so_a_probe_failure_pass_cannot_revouch() {
     let mut health = FailureLatch::default();
     scan_root(dir.path(), decoders, &ctx, &mut health).await;
     drop(tx);
-    let mut events = Vec::new();
-    while let Ok(ev) = rx.try_recv() {
-        events.push(ev);
-    }
+    let events = drain_events(&mut rx);
     assert!(
         !events
             .iter()
@@ -1771,13 +1702,8 @@ async fn a_decoded_terminators_ended_claim_is_not_revouched_into_a_full_replay()
     let live: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::from([id])));
     let decoders = SourceDecoders {
         decode_line: t_decode_lifecycle,
-        derive_label: t_label,
         check_ended: never_ended,
-        activity_recency: super::no_activity_recency,
-        id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
+        ..t_decoders()
     };
     let ctx = WatchCtx {
         source: &source,
@@ -2025,16 +1951,7 @@ async fn known_oversized_tail_emits_session_end_if_the_skipped_span_ended() {
     let seen = Arc::new(Mutex::new(HashMap::new()));
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
     let source: Arc<str> = Arc::from("test");
-    let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
-        id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
-    };
+    let decoders = t_decoders();
     let live = Arc::new(Mutex::new(HashSet::new()));
     let ctx = WatchCtx {
         source: &source,
@@ -2049,10 +1966,7 @@ async fn known_oversized_tail_emits_session_end_if_the_skipped_span_ended() {
     walk_jsonl(&path, decoders, &ctx).await;
     drop(tx);
 
-    let mut events = Vec::new();
-    while let Ok(ev) = rx.try_recv() {
-        events.push(ev);
-    }
+    let events = drain_events(&mut rx);
     let expected = AgentId::from_parts("test", &default_id_from_path(&path));
     assert!(
         events.iter().any(
@@ -2248,7 +2162,10 @@ async fn probe_live_oversized_stale_file_registers_via_head_read() {
     let path = dir.path().join(format!("{LIVE_UUID}.jsonl"));
     let mut full = String::from("{\"type\":\"assistant\",\"cwd\":\"/repo/head\"}\n");
     full.push_str(&"{\"type\":\"assistant\"}\n".repeat(60_000));
-    assert!(full.len() as u64 > (1 << 20), "body must exceed 1 MiB");
+    assert!(
+        full.len() > MAX_PENDING,
+        "body must exceed MAX_PENDING_BYTES"
+    );
     tokio::fs::write(&path, &full).await.unwrap();
     backdate_one_hour(&path);
     let cursors = Arc::new(Mutex::new(HashMap::new()));
@@ -2295,14 +2212,8 @@ async fn scan_pass_re_vouches_a_transiently_gated_live_file() {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
     let source: Arc<str> = Arc::from("test");
     let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
         id_derive: super::folded::FoldedDeriver::new(crate::source::claude_code::cc_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
+        ..t_decoders()
     };
     let ctx = WatchCtx {
         source: &source,
@@ -2326,10 +2237,7 @@ async fn scan_pass_re_vouches_a_transiently_gated_live_file() {
     live.lock().await.insert(LIVE_UUID.to_string());
 
     scan_root(dir.path(), decoders, &ctx, &mut health).await;
-    let mut events = Vec::new();
-    while let Ok(ev) = rx.try_recv() {
-        events.push(ev);
-    }
+    let events = drain_events(&mut rx);
     let expected = AgentId::from_parts("test", LIVE_UUID);
     assert!(
         events.iter().any(|(_, e)| matches!(
@@ -2408,14 +2316,8 @@ async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
     let source: Arc<str> = Arc::from("test");
     let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
         id_derive: super::folded::FoldedDeriver::new(crate::source::claude_code::cc_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
+        ..t_decoders()
     };
     let ctx = WatchCtx {
         source: &source,
@@ -2454,7 +2356,10 @@ async fn probe_live_oversized_ended_first_sight_stays_unregistered() {
     let mut full = String::from("{\"type\":\"assistant\",\"cwd\":\"/repo/head\"}\n");
     full.push_str(&"{\"type\":\"assistant\"}\n".repeat(60_000));
     full.push_str("{\"type\":\"system\",\"subtype\":\"session_end\"}\n");
-    assert!(full.len() as u64 > (1 << 20), "body must exceed 1 MiB");
+    assert!(
+        full.len() > MAX_PENDING,
+        "body must exceed MAX_PENDING_BYTES"
+    );
     tokio::fs::write(&path, &full).await.unwrap();
     backdate_one_hour(&path);
     let cursors = Arc::new(Mutex::new(HashMap::new()));
@@ -2519,6 +2424,7 @@ async fn probe_parent_uuid_does_not_admit_subagent_transcript() {
 
 const FILLER_LINE: &str = "{\"type\":\"assistant\"}\n";
 const HEAD_LINE: &str = "{\"type\":\"assistant\",\"cwd\":\"/repo/head\"}\n";
+const MAX_PENDING: usize = super::walk::MAX_PENDING_BYTES as usize;
 
 fn task_dispatch_line(tuid: &str) -> String {
     serde_json::json!({
@@ -2545,7 +2451,7 @@ fn task_result_line(tuid: &str) -> String {
 
 fn oversized_body(tail_lines: &[String]) -> String {
     let mut full = String::from(HEAD_LINE);
-    while full.len() <= (1usize << 20) + 4096 {
+    while full.len() <= MAX_PENDING + 4096 {
         full.push_str(FILLER_LINE);
     }
     for l in tail_lines {
@@ -2763,8 +2669,7 @@ async fn pending_span_of_exactly_max_bytes_replays_instead_of_skipping() {
     })
     .to_string()
         + "\n";
-    // walk_jsonl's MAX_PENDING_BYTES (a fn-local const).
-    let target = 1usize << 20;
+    let target = MAX_PENDING;
     let pad_open = "{\"type\":\"assistant\",\"pad\":\"";
     let pad_close = "\"}\n";
     let pad_len = target - HEAD_LINE.len() - bash_line.len() - pad_open.len() - pad_close.len();
@@ -2772,7 +2677,11 @@ async fn pending_span_of_exactly_max_bytes_replays_instead_of_skipping() {
         "{HEAD_LINE}{pad_open}{}{pad_close}{bash_line}",
         "x".repeat(pad_len)
     );
-    assert_eq!(full.len(), target, "fixture: exactly 1 MiB pending");
+    assert_eq!(
+        full.len(),
+        target,
+        "fixture: exactly MAX_PENDING_BYTES pending"
+    );
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("boundary.jsonl");
@@ -2877,7 +2786,7 @@ async fn oversized_attach_dispatch_outside_window_is_missed() {
     let dispatch = task_dispatch_line("tu_buried");
     full.push_str(&dispatch);
     let dispatch_end = full.len();
-    while full.len() <= (1usize << 20) + 4096 {
+    while full.len() <= MAX_PENDING + 4096 {
         full.push_str(FILLER_LINE);
     }
     assert!(
@@ -2910,7 +2819,7 @@ async fn task_scan_handles_partial_first_line() {
 
     let mut full = String::from(HEAD_LINE);
     // Deep enough that suffix + window keeps the total > MAX_PENDING_BYTES.
-    while full.len() < (1usize << 20) {
+    while full.len() < MAX_PENDING {
         full.push_str(FILLER_LINE);
     }
     let offset_a = full.len();
@@ -3525,18 +3434,12 @@ async fn a_line_the_walker_skips_costs_only_itself() {
 }
 
 fn oversized_body_bytes(tail_chunks: &[Vec<u8>]) -> Vec<u8> {
-    let mut full = Vec::from(HEAD_LINE_BYTES);
-    while full.len() <= (1usize << 20) + 4096 {
-        full.extend_from_slice(FILLER_LINE_BYTES);
-    }
+    let mut full = oversized_body(&[]).into_bytes();
     for c in tail_chunks {
         full.extend_from_slice(c);
     }
     full
 }
-
-const HEAD_LINE_BYTES: &[u8] = b"{\"type\":\"assistant\",\"cwd\":\"/repo/head\"}\n";
-const FILLER_LINE_BYTES: &[u8] = b"{\"type\":\"assistant\"}\n";
 
 #[tokio::test]
 async fn task_scan_skips_empty_and_non_utf8_lines_and_still_seeds_a_dispatch() {
@@ -3616,16 +3519,7 @@ async fn revouch_pass_prunes_deleted_files_from_cursors() {
     ));
     let (tx, _rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(8);
     let source: Arc<str> = Arc::from("test");
-    let decoders = SourceDecoders {
-        decode_line: t_decode,
-        derive_label: t_label,
-        check_ended: t_ended,
-        activity_recency: super::no_activity_recency,
-        id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
-        path_filter: accept_all_paths,
-        cwd_derive: no_cwd_from_path,
-        head_label: None,
-    };
+    let decoders = t_decoders();
     let ctx = WatchCtx {
         source: &source,
         cursors: &cursors,
@@ -3795,7 +3689,7 @@ fn uuid_like() -> String {
 /// pass-through `id_for` returns the same string. It pins the shape; the
 /// discriminating assertion is the `cfg(windows)` twin below, which runs in the
 /// `windows-test` job (the same split as
-/// `claude_code::detect_parent_id_handles_backslash_paths`).
+/// `detect_parent_id_handles_backslash_paths`).
 #[test]
 fn folded_deriver_applies_the_id_path_fold() {
     fn echo(p: &std::path::Path) -> String {
@@ -3816,7 +3710,7 @@ fn folded_deriver_applies_the_id_path_fold() {
 
 /// The discriminating half: on Windows the fold is not identity, so a
 /// pass-through `id_for` would return the raw backslash/mixed-case form. Mirrors
-/// `claude_code::detect_parent_id_handles_backslash_paths`.
+/// `detect_parent_id_handles_backslash_paths`.
 #[cfg(windows)]
 #[test]
 fn folded_deriver_folds_separators_and_case_on_windows() {
