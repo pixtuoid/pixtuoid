@@ -24,6 +24,20 @@ pub fn hook(bytes: &[u8]) -> Driven {
     Drive::hooks().lines(lines)
 }
 
+/// What [`hook`] never reaches of the endpoint's wire.
+///
+/// # Panics
+///
+/// If the demux changes a payload, which is what the target hunts.
+#[cfg(feature = "native")]
+pub fn endpoint(bytes: &[u8]) {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("a runtime")
+        .block_on(crate::source::hook::drive_wire(bytes));
+}
+
 /// `<source>\n<path>\n<transcript>`: everything `source`'s registry row reads of
 /// a transcript, then [`Drive`]. A source by name, not by index, so a new row
 /// leaves every accumulated input meaning what it did, and a path because a
@@ -259,6 +273,19 @@ mod tests {
         );
         let past_a_bad_line = [b"\xff\n".as_slice(), payload].concat();
         assert_eq!(hook(&past_a_bad_line).registered(), 0);
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn the_hook_seeds_are_the_status_line_and_its_reply() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/seeds/hook");
+        for seed in ["status", "reply"] {
+            let bytes = std::fs::read(dir.join(seed)).unwrap();
+            endpoint(&bytes);
+            assert_eq!(hook(&bytes).registered(), 0, "{seed}");
+        }
+        let reply = std::fs::read(dir.join("reply")).unwrap();
+        serde_json::from_slice::<crate::source::hook::OwnerStatus>(&reply).unwrap();
     }
 
     #[test]

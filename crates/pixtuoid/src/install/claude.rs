@@ -239,14 +239,10 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
 fn claude_shim_ref(command: &str) -> ShimRef {
     // The SHELL form is `shell_shim_ref`'s own wire format, so it parses it —
     // including any future ` --event` suffix, which a private copy here would
-    // bake into the path. CC alone can answer `BareName`, so that is the one
-    // thing mapped on top.
+    // bake into the path.
     #[cfg(not(windows))]
     {
-        match crate::install::verify::shell_shim_ref(command.trim()) {
-            ShimRef::Absolute(p) if p.as_os_str() == io::HOOK_BIN => ShimRef::BareName,
-            other => other,
-        }
+        crate::install::verify::shell_shim_ref(command.trim())
     }
     // NOT that parser: CC's Windows entry is exec form, its `command` a bare
     // absolute path with no quoting and its `--source` in `args`, so it would fall

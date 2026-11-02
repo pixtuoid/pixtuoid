@@ -1,10 +1,12 @@
 //! Integration coverage for what only the REAL binary shows: the
 //! `completions` / `man` packaging dispatch (the generation itself is unit-tested
 //! in `cli.rs`) — that the SHELL arg reaches clap_complete and that stdout stays
-//! the clean artifact channel homebrew-core captures — the fatal-error exit, and
-//! the clean exit when a printing command's reader leaves.
+//! the clean artifact channel homebrew-core captures — the fatal-error exit, the
+//! clean exit when a printing command's reader leaves, and the two binaries
+//! talking over a real endpoint.
 
 use clap::ValueEnum;
+use pixtuoid_core::source::hook::{self, HookRouter};
 
 mod common;
 
@@ -231,4 +233,113 @@ fn a_tracing_warning_into_a_gone_stderr_exits_0() {
         .status()
         .expect("run pixtuoid");
     assert_eq!(status.code(), Some(0), "{status:?}");
+}
+
+/// The shim a workspace `just test` builds beside the binary.
+fn built_shim() -> std::path::PathBuf {
+    let shim = std::path::Path::new(env!("CARGO_BIN_EXE_pixtuoid"))
+        .with_file_name(format!("pixtuoid-hook{}", std::env::consts::EXE_SUFFIX));
+    assert!(
+        shim.exists(),
+        "{} is not built: `-p pixtuoid` alone doesn't build it",
+        shim.display()
+    );
+    shim
+}
+
+/// `pixtuoid doctor` with `home` as every home the environment can name.
+fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::Output {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_pixtuoid"));
+    // Cleared: an install that a CLI's own home variable leads to would stand in
+    // for the built shim. Windows starts no process and finds no temp dir without
+    // these.
+    command.arg("doctor").env_clear();
+    for kept in [
+        "PATH",
+        "SystemRoot",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "LLVM_PROFILE_FILE",
+    ] {
+        if let Some(value) = std::env::var_os(kept) {
+            command.env(kept, value);
+        }
+    }
+    command
+        .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("XDG_CONFIG_HOME", home)
+        .env("XDG_STATE_HOME", home)
+        .env(hook::SOCKET_ENV, endpoint)
+        .env("PIXTUOID_HOOK", built_shim())
+        .output()
+        .expect("run pixtuoid doctor")
+}
+
+/// By its path: on Windows Jcode's home ignores the environment, so an install
+/// there can stand in for the built shim.
+fn assert_the_built_shim_delivered(stdout: &str) {
+    let shim = built_shim().display().to_string();
+    assert!(
+        stdout
+            .lines()
+            .any(|row| row.contains(&shim) && row.contains("delivered a test event")),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn doctor_proves_the_built_shim_delivers_with_no_office_open() {
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let out = doctor(home.path(), &hook::private_endpoint(home.path(), "none"));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{out:?}");
+    assert_the_built_shim_delivered(&stdout);
+    assert!(stdout.contains("no instance on"), "{stdout}");
+}
+
+// The whole chain: a shim's hook reaches a live owner, and doctor reads it there.
+#[tokio::test(flavor = "multi_thread")]
+async fn doctor_reads_what_the_built_shim_delivered_to_a_live_owner() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let endpoint = hook::private_endpoint(home.path(), "live");
+    let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+    let owner = tokio::spawn(pixtuoid_core::Source::run(
+        Box::new(HookRouter::new(endpoint.clone())),
+        tx,
+    ));
+    // Not `endpoint_status`: it binds a free endpoint, which would race this owner.
+    let at = pixtuoid_core::harness::tap::Endpoint::at(endpoint.clone());
+    pixtuoid_core::harness::wait_until("the owner", pixtuoid_core::harness::BOOT, || {
+        Ok(at.accepting())
+    })
+    .expect("the owner takes the endpoint");
+
+    let mut shim = std::process::Command::new(built_shim())
+        .env(hook::SOCKET_ENV, &endpoint)
+        .args(["--source", "claude-code"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("run the shim");
+    shim.stdin
+        .take()
+        .expect("piped")
+        .write_all(br#"{"hook_event_name":"SessionStart","session_id":"s","cwd":""}"#)
+        .expect("feed the shim");
+    assert!(shim.wait().expect("the shim exits").success());
+    rx.recv().await.expect("the hook reaches the owner");
+
+    let (home_path, at) = (home.path().to_path_buf(), endpoint.clone());
+    let out = tokio::task::spawn_blocking(move || doctor(&home_path, &at))
+        .await
+        .expect("doctor ran");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_the_built_shim_delivered(&stdout);
+    assert!(stdout.contains("instance live on"), "{stdout}");
+    assert!(stdout.contains("last hook"), "{stdout}");
+    owner.abort();
 }

@@ -161,7 +161,7 @@ fn path_hit_is_native(p: &Path, exe_extension: &str) -> bool {
 
 /// The hook binary's filename next to the running exe: exec-form spawning needs
 /// the real PE name; PATHEXT is a shell behavior we must not rely on.
-fn hook_sibling_name() -> String {
+pub(crate) fn hook_sibling_name() -> String {
     format!("{HOOK_BIN}{}", std::env::consts::EXE_SUFFIX)
 }
 
@@ -441,11 +441,11 @@ impl HostCli {
     }
 }
 
-/// Whether the bare `pixtuoid-hook` name resolves on PATH: a bare-name target's
+/// What the bare `pixtuoid-hook` name resolves to on PATH: a bare-name target's
 /// hook config stores the name for portability and the CLI spawns hooks via PATH,
-/// so if this is false the installed hooks silently never fire.
-pub(crate) fn hook_on_path() -> bool {
-    which::which(HOOK_BIN).is_ok()
+/// so with `None` the installed hooks silently never fire.
+pub(crate) fn hook_on_path() -> Option<PathBuf> {
+    which::which(HOOK_BIN).ok()
 }
 
 /// Follow symlink chain to the final target, even if that target doesn't exist

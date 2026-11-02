@@ -107,7 +107,8 @@ pub(crate) fn render_hash(
 }
 
 /// `pixtuoid args` with its env cleared to `home`, so nothing reads the
-/// developer's real config or CLI dirs. PATH is replaced with a minimal one so
+/// developer's real config or CLI dirs, nor asks their live office anything: the
+/// default hook endpoint is keyed by uid, not `HOME`. PATH is replaced with a minimal one so
 /// the spawn works, and `LLVM_PROFILE_FILE` survives: `just coverage` sets it so
 /// an instrumented child writes its profile where the run collects it rather
 /// than into the crate dir.
@@ -132,6 +133,10 @@ pub(crate) fn isolated(args: &[&str], home: &std::path::Path) -> std::process::C
     cmd.args(args)
         .env_clear()
         .env("HOME", home)
+        .env(
+            pixtuoid_core::source::hook::SOCKET_ENV,
+            home.join("hook.sock"),
+        )
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()));
     if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
         cmd.env("LLVM_PROFILE_FILE", profile);

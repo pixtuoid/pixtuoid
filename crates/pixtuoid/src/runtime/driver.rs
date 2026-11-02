@@ -149,6 +149,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
 pub(crate) fn build_source_set(
     socket_path: PathBuf,
     presence_tx: Option<daemon::PresenceSender>,
+    connected: ConnectedSources,
 ) -> Vec<Box<dyn DynSource>> {
     let mut cc_src = ClaudeCodeSource::default_paths();
     let ag_src = AntigravitySource::default_paths();
@@ -171,7 +172,8 @@ pub(crate) fn build_source_set(
 
     let hook_router = HookRouter::new(socket_path)
         .with_child_end_unclaims(Some(child_end_unclaims))
-        .with_presence_tx(presence_tx);
+        .with_presence_tx(presence_tx)
+        .with_connected(connected);
 
     vec![
         Box::new(hook_router) as Box<dyn DynSource>,
@@ -583,7 +585,11 @@ mod tests {
         use pixtuoid_core::source::registry::{self, descriptor_for};
         use std::collections::BTreeSet;
 
-        let sources = build_source_set(PathBuf::from("/tmp/pixtuoid-test.sock"), None);
+        let sources = build_source_set(
+            PathBuf::from("/tmp/pixtuoid-test.sock"),
+            None,
+            ConnectedSources::default(),
+        );
         let built: BTreeSet<&str> = sources.iter().map(|s| s.name()).collect();
 
         // The HookRouter is infrastructure, not a registered CLI: it has no
