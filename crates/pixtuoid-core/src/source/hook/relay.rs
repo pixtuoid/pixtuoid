@@ -20,7 +20,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWrite
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use super::{CONN_TIMEOUT, Client, ConnectedSources, connect, imp};
+use super::{CONN_TIMEOUT, Client, ConnectedSources, HookSocketListener, SocketBusy, connect};
 
 /// A subscriber's first line. Not JSON: an owner older than the relay skips it
 /// as malformed, where an object would raise that owner's decode-drift nudge.
@@ -73,9 +73,9 @@ pub struct OwnerStatus {
 /// What asking a hook endpoint found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EndpointStatus {
-    /// Nothing listens there.
+    /// Nothing holds it, and an instance could.
     Absent,
-    /// Nothing listens there and a bind would refuse, for this reason.
+    /// Nothing holds it, and a bind refused, for this reason.
     Unbindable(String),
     /// This user may not connect: another user's endpoint, or one whose owner
     /// could not be proved.
@@ -247,21 +247,20 @@ pub(super) async fn subscribe(path: &Path) -> Result<Payloads> {
     Ok(conn)
 }
 
-/// Ask `path`'s owner what it knows, changing nothing there.
+/// Ask `path`'s owner what it knows, which changes nothing there. With no owner
+/// to ask, bind the endpoint for a moment, as the next instance would: nothing
+/// short of a bind can say whether one succeeds, and a connect's errno can't tell
+/// a dead endpoint from a saturated live one (`acquire_bind_lock`'s rationale).
 pub async fn endpoint_status(path: &Path) -> EndpointStatus {
-    use std::io::ErrorKind::{
-        ConnectionRefused, InvalidInput, NotADirectory, NotFound, PermissionDenied,
-    };
     let query = async {
         match connect(path).await {
             Ok(conn) => status_over(conn).await,
-            Err(e) if matches!(e.kind(), NotFound | ConnectionRefused | NotADirectory) => {
-                imp::bind_refusal(path).map_or(EndpointStatus::Absent, EndpointStatus::Unbindable)
-            }
-            // A path past `sun_path`'s limit, which a bind can't take either.
-            Err(e) if e.kind() == InvalidInput => EndpointStatus::Unbindable(e.to_string()),
-            Err(e) if e.kind() == PermissionDenied => EndpointStatus::Denied,
-            Err(_) => EndpointStatus::Silent,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => EndpointStatus::Denied,
+            Err(_) => match HookSocketListener::bind(path).await {
+                Ok(_) => EndpointStatus::Absent,
+                Err(e) if e.is::<SocketBusy>() => EndpointStatus::Silent,
+                Err(e) => EndpointStatus::Unbindable(format!("{e:#}")),
+            },
         }
     };
     // Past the budget that ends a served connection: a saturated owner lets the

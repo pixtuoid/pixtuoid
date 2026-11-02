@@ -335,9 +335,11 @@ async fn only_a_payload_that_decoded_to_something_is_a_sighting() {
 }
 
 #[tokio::test]
-async fn nothing_listening_is_absent() {
+async fn nothing_listening_is_absent_and_the_next_instance_still_binds() {
     let (_dir, at) = endpoint("absent");
     assert_eq!(endpoint_status(at.path()).await, EndpointStatus::Absent);
+    assert_eq!(endpoint_status(at.path()).await, EndpointStatus::Absent);
+    HookSocketListener::bind(at.path()).await.unwrap();
 }
 
 // Bound but not reading is what a saturated owner looks like: the connect lands

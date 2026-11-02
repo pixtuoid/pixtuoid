@@ -114,7 +114,11 @@ pub(super) fn collect(rows: &[DoctorSourceRow]) -> anyhow::Result<Delivery> {
         .context("building doctor's tokio runtime")?;
     let (mut named, bare) = shims_of(rows);
     let mut unlocated = None;
-    if bare || named.is_empty() {
+    // A bare hook is whatever PATH finds, never the installer's override or sibling.
+    let on_path = bare.then(|| which::which(HOOK_BIN).ok()).flatten();
+    if let Some(path) = &on_path {
+        named.insert(path.clone());
+    } else if bare || named.is_empty() {
         match crate::install::located_shim() {
             Ok(path) => {
                 named.insert(path);
@@ -133,7 +137,7 @@ pub(super) fn collect(rows: &[DoctorSourceRow]) -> anyhow::Result<Delivery> {
     Ok(Delivery {
         shims,
         unlocated,
-        bare_off_path: bare && !crate::install::io::hook_on_path(),
+        bare_off_path: bare && on_path.is_none(),
         status: runtime.block_on(hook::endpoint_status(&endpoint)),
         endpoint: ShownPath::new(endpoint),
     })
@@ -538,6 +542,38 @@ mod tests {
         assert_eq!(
             shims_of(&[one, two, row("cursor", false, false)]),
             (BTreeSet::from([PathBuf::from("/a/pixtuoid-hook")]), true)
+        );
+    }
+
+    // PATH, not the override, is what a bare hook runs.
+    #[cfg(unix)]
+    #[test]
+    fn a_bare_hook_is_probed_at_what_path_finds() {
+        let (bin, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let on_path = stand_in(bin.path(), "exit 3");
+        let override_shim = stand_in(other.path(), "exit 4");
+        let endpoint = hook::private_endpoint(bin.path(), "none");
+        let mut bare = row("claude-code", true, true);
+        bare.diag.install = Some(crate::install::verify::SchemaVerifyResult {
+            shims: vec![ShimRef::BareName],
+            ..Default::default()
+        });
+        let d = temp_env::with_vars(
+            [
+                ("PATH", Some(bin.path().as_os_str())),
+                ("PIXTUOID_HOOK", Some(override_shim.as_os_str())),
+                (hook::SOCKET_ENV, Some(endpoint.as_os_str())),
+            ],
+            || collect(&[bare]).unwrap(),
+        );
+        assert!(!d.bare_off_path);
+        let [(path, probed)] = d.shims.as_slice() else {
+            panic!("one shim, got {}", d.shims.len());
+        };
+        assert_eq!(path.to_string(), ShownPath::new(&on_path).to_string());
+        assert!(
+            matches!(probed, ShimProbe::Failed(why) if why.contains('3')),
+            "{probed:?}"
         );
     }
 

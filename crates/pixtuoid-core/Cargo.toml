@@ -93,7 +93,7 @@ libc = { workspace = true }
 # Unix-only like `libc`, so the wasm32 core build never sees it. libc STAYS for
 # the macOS libproc calls rustix doesn't wrap (proc_pidinfo start-time in
 # cc_probe, the fd→path table in fd_probe).
-rustix = { workspace = true, features = ["event", "fs", "process", "pipe"] }
+rustix = { workspace = true, features = ["event", "process", "pipe"] }
 
 [target.'cfg(windows)'.dependencies]
 # Win32_System_Threading: OpenProcess + GetProcessTimes, the `proc_start`

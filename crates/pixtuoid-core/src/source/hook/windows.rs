@@ -82,11 +82,6 @@ pub(crate) async fn connect(path: &Path) -> std::io::Result<Client> {
     }
 }
 
-/// A pipe's create takes no directory to refuse.
-pub(super) fn bind_refusal(_path: &Path) -> Option<String> {
-    None
-}
-
 /// The `PSID` embedded in a `TOKEN_USER` blob. Valid only while `blob` lives.
 ///
 /// SAFETY: `blob` is a `TOKEN_USER` written by `GetTokenInformation`, u64-aligned.

@@ -448,27 +448,32 @@ async fn hook_router_tee_captures_child_ends_from_the_shared_socket() {
     task.abort();
 }
 
-// Nothing can listen there, so it must not read as a listener gone quiet.
+// Nothing can listen at any of these, so none may read as a listener gone quiet.
 #[tokio::test]
-async fn an_endpoint_too_long_to_bind_is_unbindable() {
-    use pixtuoid_core::source::hook::{EndpointStatus, endpoint_status};
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(format!("{}.sock", "x".repeat(200)));
-    assert!(matches!(
-        endpoint_status(&path).await,
-        EndpointStatus::Unbindable(_)
-    ));
-    assert!(HookSocketListener::bind(path).await.is_err());
-}
+async fn an_endpoint_no_bind_can_take_is_unbindable() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-#[tokio::test]
-async fn an_endpoint_under_a_file_is_unbindable() {
     use pixtuoid_core::source::hook::{EndpointStatus, endpoint_status};
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("f");
     std::fs::write(&file, "").unwrap();
-    assert!(matches!(
-        endpoint_status(&file.join("hook.sock")).await,
-        EndpointStatus::Unbindable(why) if why.contains("not a directory")
-    ));
+    let mut refused = vec![
+        dir.path().join(format!("{}.sock", "x".repeat(200))),
+        dir.path().join("gone").join("hook.sock"),
+        file.join("hook.sock"),
+    ];
+    // Root passes whatever the mode says.
+    if std::fs::metadata(dir.path()).unwrap().uid() != 0 {
+        let read_only = dir.path().join("read-only");
+        std::fs::create_dir(&read_only).unwrap();
+        std::fs::set_permissions(&read_only, std::fs::Permissions::from_mode(0o500)).unwrap();
+        refused.push(read_only.join("hook.sock"));
+    }
+    for path in refused {
+        let status = endpoint_status(&path).await;
+        assert!(
+            matches!(status, EndpointStatus::Unbindable(_)),
+            "{path:?}: {status:?}"
+        );
+    }
 }

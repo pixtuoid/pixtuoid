@@ -4,7 +4,9 @@
 //! the warn-floor log. Strictly READ-ONLY: it never writes config (re-connecting
 //! hooks stays the Sources panel's job) and never spawns the TUI.
 //! The PROBED CLI is not read-only about its own state — see `may_probe_version`.
-//! The shim an install names does run, against a throwaway endpoint — see `delivery`.
+//! The shim an install names does run, against a throwaway endpoint, and a hook
+//! endpoint nothing holds is bound for a moment, as the next instance would — see
+//! `delivery`.
 
 mod delivery;
 
