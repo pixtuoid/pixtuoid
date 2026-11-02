@@ -84,8 +84,8 @@ impl Delivery {
     }
 }
 
-/// Every shim the installs run, the one an install would write when they name
-/// none, and whether any of them is a bare name.
+/// The absolute shim each install names, and whether any names the bare
+/// `pixtuoid-hook`.
 fn shims_of(rows: &[DoctorSourceRow]) -> (BTreeSet<PathBuf>, bool) {
     let mut named = BTreeSet::new();
     let mut bare = false;
@@ -155,8 +155,12 @@ fn named_as_the_shim(path: &Path) -> bool {
 /// listener and decoder on purpose: the file name is checked first, because a
 /// hand-edited config can name anything and this feeds it an invented event.
 async fn probe(shim: &Path, exit_deadline: Duration) -> ShimProbe {
+    if !shim.is_absolute() {
+        return ShimProbe::NotTested("its path is relative, so it depends on the cwd".into());
+    }
     if !named_as_the_shim(shim) {
-        return ShimProbe::NotTested(format!("it is not named {HOOK_BIN}"));
+        let name = crate::install::io::hook_sibling_name();
+        return ShimProbe::NotTested(format!("it is not named {name}"));
     }
     let dir = match tempfile::Builder::new().prefix("px").tempdir() {
         Ok(dir) => dir,
@@ -300,12 +304,12 @@ pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) 
             details.push(format!("{DETAIL_INDENT}{}", ink.warn(&sanitize(why))));
             (format!("no instance can bind {endpoint}"), false)
         }
-        EndpointStatus::Foreign => {
+        EndpointStatus::Denied => {
             details.push(format!(
                 "{DETAIL_INDENT}{}",
-                ink.warn("another user owns it, so your hooks never reach your office")
+                ink.warn("this user may not connect, so its hooks reach no instance there")
             ));
-            (format!("another user holds {endpoint}"), false)
+            (format!("access denied on {endpoint}"), false)
         }
         EndpointStatus::Silent => {
             details.push(format!(
@@ -466,7 +470,7 @@ mod tests {
     fn an_owner_it_cannot_read_is_a_warning_and_delivery_still_shows() {
         for (status, says) in [
             (EndpointStatus::Silent, "older pixtuoid"),
-            (EndpointStatus::Foreign, "another user"),
+            (EndpointStatus::Denied, "may not connect"),
             (EndpointStatus::Unbindable("refusing".into()), "refusing"),
         ] {
             let (verdict, text) = category(status, &[]);
@@ -474,7 +478,7 @@ mod tests {
             assert!(text.contains(says), "{text}");
             assert!(
                 text.contains("delivered a test event"),
-                "homebrew's future assertion must survive an old office: {text}"
+                "an unreadable owner must not hide the shim's verdict: {text}"
             );
         }
     }
@@ -546,6 +550,15 @@ mod tests {
                 ShimProbe::NotTested(why) if why.contains("not named")
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn a_relative_path_is_never_run() {
+        let relative = Path::new("bin").join(crate::install::io::hook_sibling_name());
+        assert!(matches!(
+            probe(&relative, EVENT_WAIT).await,
+            ShimProbe::NotTested(why) if why.contains("relative")
+        ));
     }
 
     /// A stand-in named as the shim is, so the name check passes it.

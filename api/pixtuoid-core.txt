@@ -523,7 +523,7 @@ pub fn pixtuoid_core::source::hermes::hermes_home() -> core::option::Option<std:
 pub mod pixtuoid_core::source::hook
 pub enum pixtuoid_core::source::hook::EndpointStatus
 pub pixtuoid_core::source::hook::EndpointStatus::Absent
-pub pixtuoid_core::source::hook::EndpointStatus::Foreign
+pub pixtuoid_core::source::hook::EndpointStatus::Denied
 pub pixtuoid_core::source::hook::EndpointStatus::Live(pixtuoid_core::source::hook::OwnerStatus)
 pub pixtuoid_core::source::hook::EndpointStatus::Silent
 pub pixtuoid_core::source::hook::EndpointStatus::Unbindable(alloc::string::String)

@@ -77,8 +77,9 @@ pub enum EndpointStatus {
     Absent,
     /// Nothing listens there and a bind would refuse, for this reason.
     Unbindable(String),
-    /// Another user holds it.
-    Foreign,
+    /// This user may not connect: another user's endpoint, or one whose owner
+    /// could not be proved.
+    Denied,
     /// No status came back: an older pixtuoid, or an owner too busy to read.
     Silent,
     /// The owner answered.
@@ -259,7 +260,7 @@ pub async fn endpoint_status(path: &Path) -> EndpointStatus {
             }
             // A path past `sun_path`'s limit, which a bind can't take either.
             Err(e) if e.kind() == InvalidInput => EndpointStatus::Unbindable(e.to_string()),
-            Err(e) if e.kind() == PermissionDenied => EndpointStatus::Foreign,
+            Err(e) if e.kind() == PermissionDenied => EndpointStatus::Denied,
             Err(_) => EndpointStatus::Silent,
         }
     };

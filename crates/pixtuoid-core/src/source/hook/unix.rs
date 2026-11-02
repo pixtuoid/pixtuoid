@@ -166,7 +166,12 @@ fn bind_refusal_in(path: &Path, owned: &Path, uid: u32) -> Option<String> {
     let parent = path.parent().filter(|p| !p.as_os_str().is_empty())?;
     // `metadata`, so a symlink to a directory still passes.
     match std::fs::metadata(parent) {
-        Ok(md) if md.is_dir() => None,
+        Ok(md) if md.is_dir() => {
+            use rustix::fs::{Access, access};
+            access(parent, Access::WRITE_OK | Access::EXEC_OK)
+                .err()
+                .map(|e| format!("hook socket dir {} is not writable: {e}", parent.display()))
+        }
         Ok(_) => Some(format!(
             "hook socket dir {} exists but is not a directory",
             parent.display()
@@ -439,6 +444,16 @@ mod tests {
             None,
             "the cwd is a directory"
         );
+
+        // Root's `access` passes whatever the mode says.
+        if my_uid() != 0 {
+            let read_only = tmp.path().join("read-only");
+            std::fs::create_dir(&read_only).unwrap();
+            std::fs::set_permissions(&read_only, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let why = bind_refusal_in(&read_only.join("s.sock"), &owned, my_uid())
+                .expect("the bind's lock can't be created there");
+            assert!(why.contains("not writable"), "got {why:?}");
+        }
     }
 
     #[test]

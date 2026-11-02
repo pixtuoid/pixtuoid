@@ -452,7 +452,8 @@ async fn hook_router_tee_captures_child_ends_from_the_shared_socket() {
 #[tokio::test]
 async fn an_endpoint_too_long_to_bind_is_unbindable() {
     use pixtuoid_core::source::hook::{EndpointStatus, endpoint_status};
-    let path = std::path::PathBuf::from(format!("/tmp/{}.sock", "x".repeat(200)));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(format!("{}.sock", "x".repeat(200)));
     assert!(matches!(
         endpoint_status(&path).await,
         EndpointStatus::Unbindable(_)
