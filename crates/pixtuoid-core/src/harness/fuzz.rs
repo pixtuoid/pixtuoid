@@ -9,7 +9,7 @@ use mutatis::{Candidates, Context, Mutate, Session, mutators as m};
 use serde_json::{Number, Value};
 
 use super::{DEFAULT_NOW_EPOCH_SECS, DRIVEN_DESKS, Drive, Driven};
-use crate::remote::{self, Hello, PairLink, RemoteOffice, Reply};
+use crate::remote::{self, Answer, Ask, Hello, PairLink, RemoteOffice, Reply};
 use crate::source::admit::{is_transcript, lines, whole};
 use crate::source::registry;
 #[cfg(feature = "native")]
@@ -82,18 +82,21 @@ fn native_reads(row: &Transcript, source: &str, path: &Path, body: &[u8], parsed
 }
 
 /// Each parser a peer's bytes or a scanned link reach: the whole input to the
-/// link, hello and reply parsers, then split as one stream, whose office is
-/// re-encoded and re-seated.
+/// link, hello, reply and ask parsers, then split as one stream of answers and
+/// office lines, whose office is re-encoded and re-seated.
 pub fn remote(bytes: &[u8]) -> RemoteOffice {
     if let Ok(text) = std::str::from_utf8(bytes) {
         let _ = PairLink::from_str(text);
         let _ = serde_json::from_str::<Hello>(text);
         let _ = serde_json::from_str::<Reply>(text);
+        let _ = serde_json::from_str::<Ask>(text);
     }
     let now = UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS);
     let mut office = RemoteOffice::new([DRIVEN_DESKS; MAX_FLOORS]);
     for line in bytes.split(|b| *b == b'\n') {
-        let _ = office.apply(line, now);
+        if Answer::from_line(line).is_none() {
+            let _ = office.apply(line, now);
+        }
     }
     let _ = remote::encode(office.scene(), now);
     office.set_capacities([1; MAX_FLOORS]);
@@ -341,6 +344,26 @@ mod tests {
         assert!(remote(b"garbage").scene().agents.is_empty());
     }
 
+    /// A line that reads as an office line too seats no one: only the answer
+    /// guard keeps it out, since `apply` would take it.
+    #[test]
+    fn an_answer_among_the_lines_is_not_taken_for_the_office() {
+        let golden: Value =
+            serde_json::from_str(include_str!("../remote.v1.golden.json")).expect("the golden");
+        let answer = serde_json::to_string(&Answer::Unsupported).expect("it encodes");
+        let office = remote(format!("{golden}\n{answer}").as_bytes());
+        assert!(!office.scene().agents.is_empty());
+
+        let mut both = golden;
+        both["answer"] = "unsupported".into();
+        assert!(
+            remote(both.to_string().as_bytes())
+                .scene()
+                .agents
+                .is_empty()
+        );
+    }
+
     #[test]
     fn each_committed_remote_seed_gets_past_its_parser() {
         let seed = |name: &str| {
@@ -351,6 +374,10 @@ mod tests {
         serde_json::from_str::<Hello>(&seed("hello")).expect("a hello");
         let reply = serde_json::from_str(&seed("reply")).expect("a reply");
         assert!(matches!(reply, Reply::Paired { .. }));
+        let ask = serde_json::from_str::<Ask>(&seed("ask")).expect("an ask");
+        assert_eq!(ask, Ask::Sources);
+        let answer = Answer::from_line(seed("answer").as_bytes()).expect("an answer");
+        assert!(matches!(answer, Answer::Sources { rows } if !rows.is_empty()));
     }
 
     const MUTABLE: &str =

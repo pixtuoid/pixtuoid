@@ -1,0 +1,1 @@
+{"answer":"sources","rows":[{"id":"codex","display_name":"Codex","state":{"kind":"connected"},"attention":false},{"id":"grok","display_name":"Grok","state":{"kind":"no_cli","connected":true},"attention":true}]}

@@ -1,6 +1,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
@@ -405,8 +406,14 @@ impl HostCli {
         })
     }
 
-    /// Run it with `args` and return its stdout; a non-zero exit is the error.
+    /// Run it with `args` and return its stdout; a non-zero exit is the error, as
+    /// is a run past [`HOST_CLI_LIMIT`], which kills it.
     pub(crate) fn run(self, args: &[&std::ffi::OsStr]) -> Result<String> {
+        self.run_within(args, HOST_CLI_LIMIT)
+    }
+
+    /// [`Self::run`] under `limit`.
+    fn run_within(self, args: &[&std::ffi::OsStr], limit: Duration) -> Result<String> {
         let Self { command, .. } = self;
         let cli = self.require()?;
         // The real CLI would register and remove plugins in the developer's own
@@ -417,18 +424,17 @@ impl HostCli {
             "a test is about to run the real {} — put a fake `{command}` first on PATH",
             cli.display()
         );
-        let out = std::process::Command::new(&cli)
-            .args(args)
-            .stdin(std::process::Stdio::null())
-            .output()
-            .with_context(|| format!("running {}", cli.display()))?;
+        let shown = args
+            .iter()
+            .map(|a| a.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let out = output_within(std::process::Command::new(&cli).args(args), limit)
+            .with_context(|| format!("running {}", cli.display()))?
+            .with_context(|| format!("`{command} {shown}` did not finish within {limit:?}"))?;
         if !out.status.success() {
             return Err(anyhow!(
-                "`{command} {}` failed: {}",
-                args.iter()
-                    .map(|a| a.to_string_lossy())
-                    .collect::<Vec<_>>()
-                    .join(" "),
+                "`{command} {shown}` failed: {}",
                 String::from_utf8_lossy(if out.stderr.is_empty() {
                     &out.stdout
                 } else {
@@ -439,6 +445,74 @@ impl HostCli {
         }
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
+}
+
+/// How long a host CLI may run before it is killed: two of Claude Code's own
+/// marketplace git timeouts, a refresh and the re-clone that follows its
+/// failure (`CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS`,
+/// `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE`:
+/// <https://code.claude.com/docs/en/env-vars>), so a slow network fails in its
+/// own words first.
+const HOST_CLI_LIMIT: Duration = Duration::from_secs(300);
+
+/// A run polls `try_wait`, which answers an exit and never a stop, so a stopped
+/// host CLI still meets the kill.
+const EXIT_POLL: Duration = Duration::from_millis(20);
+
+/// `command`'s output with stdin null, or `None` past `limit`, which kills the
+/// child, though not a grandchild.
+fn output_within(
+    command: &mut std::process::Command,
+    limit: Duration,
+) -> std::io::Result<Option<std::process::Output>> {
+    use std::process::Stdio;
+    let deadline = std::time::Instant::now() + limit;
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = drain(child.stdout.take())?;
+    let stderr = drain(child.stderr.take())?;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill()?;
+            // Reaped, so no zombie outlives the run.
+            child.wait()?;
+            return Ok(None);
+        }
+        std::thread::sleep(EXIT_POLL);
+    };
+    // A grandchild holding a pipe can keep it open past the child's exit.
+    let left = || deadline.saturating_duration_since(std::time::Instant::now());
+    match (stdout.recv_timeout(left()), stderr.recv_timeout(left())) {
+        (Ok(stdout), Ok(stderr)) => Ok(Some(std::process::Output {
+            status,
+            stdout: stdout?,
+            stderr: stderr?,
+        })),
+        _ => Ok(None),
+    }
+}
+
+/// What `pipe` holds, read to its end on a thread of its own, so neither pipe
+/// fills while the other is read or the child is waited on.
+fn drain(
+    pipe: Option<impl Read + Send + 'static>,
+) -> std::io::Result<std::sync::mpsc::Receiver<std::io::Result<Vec<u8>>>> {
+    let (done, read) = std::sync::mpsc::channel();
+    std::thread::Builder::new().spawn(move || {
+        let mut bytes = Vec::new();
+        let outcome = match pipe {
+            Some(mut pipe) => pipe.read_to_end(&mut bytes).map(|_| bytes),
+            None => Ok(bytes),
+        };
+        let _ = done.send(outcome);
+    })?;
+    Ok(read)
 }
 
 /// What the bare `pixtuoid-hook` name resolves to on PATH: a bare-name target's
@@ -963,5 +1037,136 @@ mod tests {
         assert_eq!(hook_sibling_name(), "pixtuoid-hook");
         #[cfg(windows)]
         assert_eq!(hook_sibling_name(), "pixtuoid-hook.exe");
+    }
+
+    const FAKE: HostCli = HostCli {
+        command: "pixtuoid-fake-cli",
+    };
+
+    /// [`FAKE`] first on PATH, as `unix` under `sh` or `windows` under `cmd`.
+    fn with_fake<R>(unix: &str, windows: &str, f: impl FnOnce() -> R) -> R {
+        let dir = TempDir::new().unwrap();
+        let unix = format!("#!/bin/sh\n{unix}\n");
+        let windows = format!("@echo off\r\n{windows}\r\n");
+        let fake = [(FAKE.command, unix.as_str(), windows.as_str())];
+        let path = crate::install::tests::fake_on_path(dir.path(), &fake);
+        temp_env::with_var("PATH", Some(path), f)
+    }
+
+    /// Past the limit's own wait, room for a loaded machine to spawn and kill.
+    const SLACK: Duration = Duration::from_secs(4);
+    const LIMIT: Duration = Duration::from_secs(1);
+    /// How long a fake hangs: past the limit and its slack, so a run that waits
+    /// it out fails.
+    const HANG: Duration = Duration::from_secs(10);
+
+    /// A run past `LIMIT`, how long it took, and what it said.
+    fn timed_out(unix: &str, windows: &str) -> (Duration, String) {
+        let started = std::time::Instant::now();
+        let arg: &std::ffi::OsStr = "hang".as_ref();
+        let err = with_fake(unix, windows, || FAKE.run_within(&[arg], LIMIT)).unwrap_err();
+        (started.elapsed(), format!("{err:#}"))
+    }
+
+    #[test]
+    fn a_hung_cli_is_killed_at_the_limit_and_named() {
+        let secs = HANG.as_secs();
+        let (took, err) = timed_out(
+            &format!("exec sleep {secs}"),
+            &format!("ping -n {} 127.0.0.1 >nul 2>nul", secs + 1),
+        );
+        assert!(took < LIMIT + SLACK, "{took:?}");
+        assert!(
+            err.contains("`pixtuoid-fake-cli hang` did not finish within"),
+            "{err}"
+        );
+    }
+
+    /// Whether `pid` is gone, reaped included, within [`SLACK`]: `kill -0` asks.
+    #[cfg(unix)]
+    fn gone(pid: &str) -> bool {
+        let deadline = std::time::Instant::now() + SLACK;
+        let lives = || {
+            std::process::Command::new("kill")
+                .args(["-0", pid])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        };
+        while lives() {
+            if std::time::Instant::now() > deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        true
+    }
+
+    /// The child, which writes its pid where its argument says, ends with the
+    /// run whether it hangs or stops, and a stop panics nothing. `$$` and
+    /// `kill -0` are unix's; Windows has the test above.
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_or_stopped_cli_is_killed_and_reaped() {
+        for then in [
+            format!("exec sleep {}", HANG.as_secs()),
+            "kill -STOP $$".into(),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let pid_file = dir.path().join("pid");
+            let started = std::time::Instant::now();
+            let err = with_fake(&format!("echo $$ > \"$1\"\n{then}"), "", || {
+                FAKE.run_within(&[pid_file.as_os_str()], LIMIT)
+            })
+            .unwrap_err();
+            assert!(started.elapsed() < LIMIT + SLACK, "{then}");
+            assert!(
+                format!("{err:#}").contains("did not finish within"),
+                "{then}"
+            );
+            let pid = std::fs::read_to_string(&pid_file).unwrap();
+            assert!(gone(pid.trim()), "{then}: the child outlived the run");
+        }
+    }
+
+    /// A `sh` fake hands a pipe to a background job as POSIX `&` does; `cmd`'s
+    /// `start /b` documents no such inheritance, so Windows has the test above.
+    #[cfg(unix)]
+    #[test]
+    fn a_grandchild_holding_the_pipes_cannot_hold_the_run_past_its_limit() {
+        let secs = HANG.as_secs();
+        for then in [format!("exec sleep {secs}"), "exit 0".to_owned()] {
+            let (took, err) = timed_out(&format!("sleep {secs} &\n{then}"), "");
+            assert!(took < LIMIT + SLACK, "{then}: {took:?}");
+            assert!(err.contains("did not finish within"), "{then}: {err}");
+        }
+    }
+
+    /// More than a pipe holds, so a run that waits before it reads never ends.
+    #[test]
+    fn a_chatty_cli_is_read_whole() {
+        const LINES: usize = 4096;
+        let line = "x".repeat(63);
+        let out = with_fake(
+            &format!("yes {line} | head -n {LINES}"),
+            &format!("for /l %%i in (1,1,{LINES}) do @echo {line}"),
+            || FAKE.run_within(&[], LIMIT + SLACK),
+        )
+        .unwrap();
+        assert_eq!(out.lines().count(), LINES);
+        assert!(out.lines().all(|l| l.trim_end() == line));
+    }
+
+    #[test]
+    fn a_failed_cli_keeps_its_error() {
+        let arg: &std::ffi::OsStr = "fail".as_ref();
+        let err = with_fake(
+            "echo boom >&2\nexit 3",
+            "echo boom 1>&2\r\nexit /b 3",
+            || FAKE.run_within(&[arg], HOST_CLI_LIMIT),
+        )
+        .unwrap_err();
+        assert_eq!(format!("{err:#}"), "`pixtuoid-fake-cli fail` failed: boom");
     }
 }

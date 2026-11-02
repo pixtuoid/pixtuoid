@@ -40,6 +40,30 @@ pub fn pixtuoid_core::platform::resolve_user_config_dir(&str, core::option::Opti
 pub fn pixtuoid_core::platform::text_env(&str) -> core::option::Option<alloc::string::String>
 pub fn pixtuoid_core::platform::user_home_opt() -> core::option::Option<std::path::PathBuf>
 pub mod pixtuoid_core::remote
+pub enum pixtuoid_core::remote::Answer
+pub pixtuoid_core::remote::Answer::Sources
+pub pixtuoid_core::remote::Answer::Sources::rows: alloc::vec::Vec<pixtuoid_core::remote::SourceRow>
+pub pixtuoid_core::remote::Answer::Unknown
+pub pixtuoid_core::remote::Answer::Unsupported
+impl pixtuoid_core::remote::Answer
+pub fn pixtuoid_core::remote::Answer::from_line(&[u8]) -> core::option::Option<Self>
+impl core::cmp::Eq for pixtuoid_core::remote::Answer
+impl core::cmp::PartialEq for pixtuoid_core::remote::Answer
+pub fn pixtuoid_core::remote::Answer::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::remote::Answer
+pub fn pixtuoid_core::remote::Answer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::remote::Answer
+impl serde_core::ser::Serialize for pixtuoid_core::remote::Answer
+pub fn pixtuoid_core::remote::Answer::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::remote::Answer
+pub fn pixtuoid_core::remote::Answer::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::remote::Answer
+impl core::marker::Send for pixtuoid_core::remote::Answer
+impl core::marker::Sync for pixtuoid_core::remote::Answer
+impl core::marker::Unpin for pixtuoid_core::remote::Answer
+impl core::marker::UnsafeUnpin for pixtuoid_core::remote::Answer
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::Answer
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::Answer
 #[non_exhaustive] pub enum pixtuoid_core::remote::ApplyError
 pub pixtuoid_core::remote::ApplyError::Incompatible
 pub pixtuoid_core::remote::ApplyError::Incompatible::v: u32
@@ -59,6 +83,26 @@ impl core::marker::Unpin for pixtuoid_core::remote::ApplyError
 impl core::marker::UnsafeUnpin for pixtuoid_core::remote::ApplyError
 impl !core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::ApplyError
 impl !core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::ApplyError
+pub enum pixtuoid_core::remote::Ask
+pub pixtuoid_core::remote::Ask::Sources
+pub pixtuoid_core::remote::Ask::Unknown
+impl core::cmp::Eq for pixtuoid_core::remote::Ask
+impl core::cmp::PartialEq for pixtuoid_core::remote::Ask
+pub fn pixtuoid_core::remote::Ask::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::remote::Ask
+pub fn pixtuoid_core::remote::Ask::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::remote::Ask
+impl serde_core::ser::Serialize for pixtuoid_core::remote::Ask
+pub fn pixtuoid_core::remote::Ask::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::remote::Ask
+pub fn pixtuoid_core::remote::Ask::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::remote::Ask
+impl core::marker::Send for pixtuoid_core::remote::Ask
+impl core::marker::Sync for pixtuoid_core::remote::Ask
+impl core::marker::Unpin for pixtuoid_core::remote::Ask
+impl core::marker::UnsafeUnpin for pixtuoid_core::remote::Ask
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::Ask
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::Ask
 pub enum pixtuoid_core::remote::Hello
 pub pixtuoid_core::remote::Hello::Pair
 pub pixtuoid_core::remote::Hello::Pair::code: alloc::string::String
@@ -104,6 +148,32 @@ impl core::marker::Unpin for pixtuoid_core::remote::Reply
 impl core::marker::UnsafeUnpin for pixtuoid_core::remote::Reply
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::Reply
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::Reply
+pub enum pixtuoid_core::remote::SourceState
+pub pixtuoid_core::remote::SourceState::Connected
+pub pixtuoid_core::remote::SourceState::Disconnected
+pub pixtuoid_core::remote::SourceState::NoCli
+pub pixtuoid_core::remote::SourceState::NoCli::connected: bool
+pub pixtuoid_core::remote::SourceState::Unknown
+impl core::clone::Clone for pixtuoid_core::remote::SourceState
+pub fn pixtuoid_core::remote::SourceState::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::remote::SourceState
+impl core::cmp::PartialEq for pixtuoid_core::remote::SourceState
+pub fn pixtuoid_core::remote::SourceState::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::remote::SourceState
+pub fn pixtuoid_core::remote::SourceState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_core::remote::SourceState
+impl core::marker::StructuralPartialEq for pixtuoid_core::remote::SourceState
+impl serde_core::ser::Serialize for pixtuoid_core::remote::SourceState
+pub fn pixtuoid_core::remote::SourceState::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::remote::SourceState
+pub fn pixtuoid_core::remote::SourceState::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::remote::SourceState
+impl core::marker::Send for pixtuoid_core::remote::SourceState
+impl core::marker::Sync for pixtuoid_core::remote::SourceState
+impl core::marker::Unpin for pixtuoid_core::remote::SourceState
+impl core::marker::UnsafeUnpin for pixtuoid_core::remote::SourceState
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::SourceState
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::SourceState
 pub struct pixtuoid_core::remote::PairLink
 pub pixtuoid_core::remote::PairLink::code: alloc::string::String
 pub pixtuoid_core::remote::PairLink::host: alloc::string::String
@@ -157,6 +227,30 @@ impl core::marker::Unpin for pixtuoid_core::remote::RemoteOffice
 impl core::marker::UnsafeUnpin for pixtuoid_core::remote::RemoteOffice
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::RemoteOffice
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::RemoteOffice
+pub struct pixtuoid_core::remote::SourceRow
+impl pixtuoid_core::remote::SourceRow
+pub fn pixtuoid_core::remote::SourceRow::attention(&self) -> bool
+pub fn pixtuoid_core::remote::SourceRow::display_name(&self) -> &str
+pub fn pixtuoid_core::remote::SourceRow::id(&self) -> &str
+pub fn pixtuoid_core::remote::SourceRow::new(&'static str, &'static str, pixtuoid_core::remote::SourceState, bool) -> Self
+pub fn pixtuoid_core::remote::SourceRow::state(&self) -> pixtuoid_core::remote::SourceState
+impl core::cmp::Eq for pixtuoid_core::remote::SourceRow
+impl core::cmp::PartialEq for pixtuoid_core::remote::SourceRow
+pub fn pixtuoid_core::remote::SourceRow::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::remote::SourceRow
+pub fn pixtuoid_core::remote::SourceRow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::remote::SourceRow
+impl serde_core::ser::Serialize for pixtuoid_core::remote::SourceRow
+pub fn pixtuoid_core::remote::SourceRow::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::remote::SourceRow
+pub fn pixtuoid_core::remote::SourceRow::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::remote::SourceRow
+impl core::marker::Send for pixtuoid_core::remote::SourceRow
+impl core::marker::Sync for pixtuoid_core::remote::SourceRow
+impl core::marker::Unpin for pixtuoid_core::remote::SourceRow
+impl core::marker::UnsafeUnpin for pixtuoid_core::remote::SourceRow
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::SourceRow
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::SourceRow
 pub const pixtuoid_core::remote::HEARTBEAT: core::time::Duration
 pub const pixtuoid_core::remote::SECRET_BYTES: usize
 pub const pixtuoid_core::remote::VERSION: u32

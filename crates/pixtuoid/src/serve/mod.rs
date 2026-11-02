@@ -52,15 +52,29 @@ const ACCEPT_BACKOFF: Duration = Duration::from_secs(1);
 ///
 /// If the port is taken or the pairing state is unreadable.
 pub(crate) fn run(cfg: RunConfig, port: u16) -> Result<QuitSignal> {
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?
-        .block_on(serve(cfg.socket, cfg.connected, port))
+        .build()?;
+    run_then_quit(runtime, serve(cfg.socket, cfg.connected, cfg.drift, port))
+}
+
+/// How long a quit waits on blocking work: past a store write, and short of a
+/// host CLI's read, which is left to end on its own.
+const QUIT_GRACE: Duration = Duration::from_secs(1);
+
+/// `work` on `runtime`, then at most [`QUIT_GRACE`] for its blocking work,
+/// which a dropped runtime would wait for without end
+/// (<https://docs.rs/tokio/latest/tokio/runtime/struct.Runtime.html#shutdown>).
+fn run_then_quit<F: Future>(runtime: tokio::runtime::Runtime, work: F) -> F::Output {
+    let done = runtime.block_on(work);
+    runtime.shutdown_timeout(QUIT_GRACE);
+    done
 }
 
 async fn serve(
     socket: Option<PathBuf>,
     connected: std::collections::HashSet<String>,
+    drift: crate::doctor::DriftSeen,
     port: u16,
 ) -> Result<QuitSignal> {
     let store = Store::in_state_dir()?;
@@ -75,9 +89,10 @@ async fn serve(
 
     let capacities = [FALLBACK_DESKS; MAX_FLOORS];
     let (sink, scene) = SceneSink::latest(capacities);
+    let connected = ConnectedSources::new(connected);
     let Pipeline { mut health_rx, .. } = spawn_pipeline(
         socket.unwrap_or_else(ClaudeCodeSource::default_socket_path),
-        ConnectedSources::new(connected),
+        connected.clone(),
         capacities,
         sink,
     );
@@ -89,7 +104,13 @@ async fn serve(
         listener.local_addr()?
     )?;
 
-    let devices = Devices::new(store, scene);
+    let deaths = health_rx.clone();
+    let rows = Arc::new(move || {
+        // Out of the watch first: reading files under its read lock holds the writer.
+        let deaths = deaths.borrow().clone();
+        crate::sources::device_rows(&connected.snapshot(), &deaths, &drift)
+    });
+    let devices = Devices::new(store, scene, rows);
     let slots = Arc::new(Semaphore::new(MAX_CONNS));
     let mut deaths_seen = 0;
     let mut accept_failing = false;
@@ -252,6 +273,26 @@ mod tests {
         ] {
             assert!(!lan_peer(ip.parse().expect("an IP")), "{ip}");
         }
+    }
+
+    /// A read still running when a quit comes is left behind, not waited for.
+    #[test]
+    fn a_quit_leaves_blocking_work_behind() {
+        const HELD: Duration = Duration::from_secs(10);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .build()
+            .expect("a runtime");
+        let (_release, held) = std::sync::mpsc::channel::<()>();
+        let started = std::time::Instant::now();
+        run_then_quit(runtime, async {
+            let (up, is_up) = tokio::sync::oneshot::channel();
+            tokio::task::spawn_blocking(move || {
+                let _ = up.send(());
+                held.recv_timeout(HELD)
+            });
+            is_up.await.expect("it runs");
+        });
+        assert!(started.elapsed() < HELD / 2, "{:?}", started.elapsed());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! The office over a wire: the handshake that opens a stream, the line a server
-//! writes per change, and the office a device rebuilds from those lines to render
-//! with its own engine.
+//! writes per change, the office a device rebuilds from those lines to render
+//! with its own engine, and what a device may ask between them.
 //!
 //! Not [`SceneState`] itself, which is internal and moves with every release,
 //! while a server and a device update on their own schedules. A field crosses
@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::AgentId;
@@ -394,8 +394,8 @@ impl FromStr for PairLink {
     }
 }
 
-/// The one line a device writes, once the TLS handshake is done: the stream runs
-/// one way from there.
+/// The first line a device writes, once the TLS handshake is done. All it may
+/// write after an acceptance is an [`Ask`].
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "hello", rename_all = "snake_case")]
 pub enum Hello {
@@ -411,7 +411,7 @@ pub enum Hello {
     },
 }
 
-/// The server's answer to a [`Hello`]. Its [`encode`] lines follow an acceptance.
+/// The server's reply to a [`Hello`]. Its [`encode`] lines follow an acceptance.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "reply", rename_all = "snake_case")]
 pub enum Reply {
@@ -425,6 +425,115 @@ pub enum Reply {
     /// Pair again: the code was spent or stale, or the token forgotten.
     Refused,
     /// A reply from a newer server, which says nothing against the pairing.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A line a device may write after an accepted [`Hello`], answered in the order
+/// asked by one [`Answer`] among the server's [`encode`] lines.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "ask", rename_all = "snake_case")]
+pub enum Ask {
+    /// Every agent CLI the server knows, installed on its machine or not.
+    Sources,
+    /// An ask from a newer device, which keeps its stream.
+    #[serde(other)]
+    Unknown,
+}
+
+/// What a server writes for an [`Ask`], so a device that never asks never reads one.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "answer", rename_all = "snake_case")]
+pub enum Answer {
+    /// Every agent CLI this server knows, installed or not.
+    Sources {
+        /// One per CLI.
+        rows: Vec<SourceRow>,
+    },
+    /// This server doesn't know the ask.
+    Unsupported,
+    /// An answer from a newer server.
+    #[serde(other)]
+    Unknown,
+}
+
+impl Answer {
+    /// The answer `line` holds, or `None` for any other line: an [`encode`] line
+    /// goes to [`RemoteOffice::apply`], which also refuses a broken one.
+    pub fn from_line(line: &[u8]) -> Option<Self> {
+        serde_json::from_slice(line).ok()
+    }
+}
+
+/// One agent CLI the server knows, whether or not it is installed there.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceRow {
+    #[serde(deserialize_with = "display_safe_text")]
+    id: String,
+    #[serde(deserialize_with = "display_safe_text")]
+    display_name: String,
+    state: SourceState,
+    attention: bool,
+}
+
+/// A row's text, a stranger's once it has crossed the wire, made safe to
+/// display as it is read.
+fn display_safe_text<'de, D: Deserializer<'de>>(text: D) -> Result<String, D::Error> {
+    String::deserialize(text).map(|text| display_safe(&text))
+}
+
+impl SourceRow {
+    /// `&'static str`s, so that no text a run reads can cross in a row.
+    pub fn new(
+        id: &'static str,
+        display_name: &'static str,
+        state: SourceState,
+        attention: bool,
+    ) -> Self {
+        Self {
+            id: id.to_owned(),
+            display_name: display_name.to_owned(),
+            state,
+            attention,
+        }
+    }
+
+    /// Its registry id.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// The name to show for it.
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    /// Whether it is connected, and whether its CLI is known missing.
+    pub fn state(&self) -> SourceState {
+        self.state
+    }
+
+    /// Whether the server says this source wants a look there.
+    pub fn attention(&self) -> bool {
+        self.attention
+    }
+}
+
+/// How a [`SourceRow`] stands. Tagged so `other` can take a newer server's state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SourceState {
+    /// Bound, its CLI not known to be missing.
+    Connected,
+    /// Not bound.
+    Disconnected,
+    /// Its CLI isn't on this machine.
+    NoCli {
+        /// Whether its hooks are in all the same: they live in a config, so a
+        /// disconnect needs no CLI.
+        connected: bool,
+    },
+    /// A state from a newer server.
     #[serde(other)]
     Unknown,
 }
@@ -1267,6 +1376,123 @@ mod tests {
         let reply: Reply =
             serde_json::from_str(r#"{"reply":"from_the_future","extra":1}"#).expect("it decodes");
         assert_eq!(reply, Reply::Unknown);
+    }
+
+    /// An ask's wire, frozen as the handshake's is.
+    #[test]
+    fn asks_and_answers_keep_their_shape() {
+        fn wire(value: &impl Serialize) -> String {
+            serde_json::to_string(value).expect("it encodes")
+        }
+        let line = wire(&Ask::Sources);
+        assert_eq!(line, r#"{"ask":"sources"}"#);
+        assert_eq!(serde_json::from_str::<Ask>(&line).unwrap(), Ask::Sources);
+
+        let rows = || {
+            vec![
+                SourceRow::new("codex", "Codex", SourceState::Connected, false),
+                SourceRow::new("cursor", "Cursor", SourceState::Disconnected, true),
+                SourceRow::new(
+                    "grok",
+                    "Grok",
+                    SourceState::NoCli { connected: true },
+                    false,
+                ),
+                SourceRow::new(
+                    "kimi",
+                    "Kimi",
+                    SourceState::NoCli { connected: false },
+                    false,
+                ),
+            ]
+        };
+        let line = wire(&Answer::Sources { rows: rows() });
+        assert_eq!(
+            line,
+            concat!(
+                r#"{"answer":"sources","rows":["#,
+                r#"{"id":"codex","display_name":"Codex","state":{"kind":"connected"},"attention":false},"#,
+                r#"{"id":"cursor","display_name":"Cursor","state":{"kind":"disconnected"},"attention":true},"#,
+                r#"{"id":"grok","display_name":"Grok","state":{"kind":"no_cli","connected":true},"attention":false},"#,
+                r#"{"id":"kimi","display_name":"Kimi","state":{"kind":"no_cli","connected":false},"attention":false}"#,
+                "]}"
+            )
+        );
+        assert_eq!(
+            Answer::from_line(line.as_bytes()),
+            Some(Answer::Sources { rows: rows() })
+        );
+
+        let line = wire(&Answer::Unsupported);
+        assert_eq!(line, r#"{"answer":"unsupported"}"#);
+        assert_eq!(
+            Answer::from_line(line.as_bytes()),
+            Some(Answer::Unsupported)
+        );
+    }
+
+    #[test]
+    fn a_row_reads_back_through_its_accessors() {
+        let row = SourceRow::new("cursor", "Cursor", SourceState::Connected, true);
+        assert_eq!(row.id(), "cursor");
+        assert_eq!(row.display_name(), "Cursor");
+        assert_eq!(row.state(), SourceState::Connected);
+        assert!(row.attention());
+    }
+
+    /// A newer peer's tag keeps the stream, whichever end is the newer.
+    #[test]
+    fn what_a_newer_peer_adds_is_read_as_unknown() {
+        let ask: Ask = serde_json::from_str(r#"{"ask":"from_the_future","x":1}"#).expect("an ask");
+        assert_eq!(ask, Ask::Unknown);
+        assert_eq!(
+            Answer::from_line(br#"{"answer":"from_the_future","x":1}"#),
+            Some(Answer::Unknown)
+        );
+        let line = br#"{"answer":"sources","rows":[{"id":"a","display_name":"A","state":{"kind":"from_the_future","x":1},"attention":false}]}"#;
+        let Some(Answer::Sources { rows }) = Answer::from_line(line) else {
+            panic!("an answer");
+        };
+        assert_eq!(rows[0].state(), SourceState::Unknown);
+    }
+
+    #[test]
+    fn an_office_line_is_no_answer_and_an_answer_is_no_office_line() {
+        assert_eq!(Answer::from_line(GOLDEN.as_bytes()), None);
+        assert_eq!(Answer::from_line(sent(&full_scene()).as_bytes()), None);
+        for broken in [&b""[..], b"not json", br#"{"answer":"sources"}"#] {
+            assert_eq!(Answer::from_line(broken), None);
+        }
+
+        let mut office = RemoteOffice::new(caps(4));
+        received(&mut office, &crowd(&["a"]), AT);
+        let answer = serde_json::to_string(&Answer::Unsupported).unwrap();
+        let err = office.apply(answer.as_bytes(), at(AT)).unwrap_err();
+        assert!(matches!(err, ApplyError::Malformed(_)));
+        assert_eq!(office.scene().agents.len(), 1);
+    }
+
+    #[test]
+    fn a_hostile_row_is_bounded_and_stripped_where_it_enters() {
+        let dirty = format!(
+            "x\u{1b}[2J\u{202e}{}",
+            "y".repeat(MAX_DECODED_FIELD_CHARS * 2)
+        );
+        let line = serde_json::json!({
+            "answer": "sources",
+            "rows": [{"id": dirty, "display_name": dirty, "state": {"kind": "connected"}, "attention": false}],
+        })
+        .to_string();
+        let Some(Answer::Sources { rows }) = Answer::from_line(line.as_bytes()) else {
+            panic!("an answer");
+        };
+        for text in [rows[0].id(), rows[0].display_name()] {
+            assert!(!text.contains(['\u{1b}', '\u{202e}']), "{text}");
+            assert!(
+                text.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,
+                "{text}"
+            );
+        }
     }
 
     const EVERY_DIGIT: &str = "0123456789ABCDEF";
