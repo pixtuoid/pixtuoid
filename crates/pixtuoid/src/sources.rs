@@ -1141,7 +1141,7 @@ mod tests {
             let device = device_row(&plain_row(state), &[], &[]);
             assert_eq!(device.state(), wire);
             assert_eq!(device.id(), "claude-code");
-            assert_eq!(device.name(), "Claude Code");
+            assert_eq!(device.display_name(), "Claude Code");
         }
     }
 

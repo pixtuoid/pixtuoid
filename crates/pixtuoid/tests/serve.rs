@@ -406,7 +406,7 @@ async fn a_device_lists_the_agent_clis_with_no_path_and_keeps_its_stream() {
     };
     let cursor = rows.iter().find(|row| row.id() == "cursor");
     let cursor = cursor.expect("every registered source has a row");
-    assert_eq!(cursor.name(), "Cursor CLI");
+    assert_eq!(cursor.display_name(), "Cursor CLI");
     assert_eq!(cursor.state(), SourceState::Connected);
 
     world.start_session("canary", device.sees("canary")).await;

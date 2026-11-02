@@ -434,7 +434,7 @@ pub enum Reply {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "ask", rename_all = "snake_case")]
 pub enum Ask {
-    /// The agent CLIs on the server's machine.
+    /// Every agent CLI the server knows, installed on its machine or not.
     Sources,
     /// An ask from a newer device, which keeps its stream.
     #[serde(other)]
@@ -465,44 +465,50 @@ impl Answer {
     }
 }
 
-/// One agent CLI on the server's machine.
+/// One agent CLI the server knows, whether or not it is installed there.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceRow {
     #[serde(deserialize_with = "display_safe_text")]
     id: String,
     #[serde(deserialize_with = "display_safe_text")]
-    name: String,
+    display_name: String,
     state: SourceState,
     attention: bool,
 }
 
-/// A row's text as the stranger's it is once it has crossed the wire.
+/// A row's text, a stranger's once it has crossed the wire, made safe to
+/// display as it is read.
 fn display_safe_text<'de, D: Deserializer<'de>>(text: D) -> Result<String, D::Error> {
     String::deserialize(text).map(|text| display_safe(&text))
 }
 
 impl SourceRow {
     /// `&'static str`s, so that no text a run reads can cross in a row.
-    pub fn new(id: &'static str, name: &'static str, state: SourceState, attention: bool) -> Self {
+    pub fn new(
+        id: &'static str,
+        display_name: &'static str,
+        state: SourceState,
+        attention: bool,
+    ) -> Self {
         Self {
             id: id.to_owned(),
-            name: name.to_owned(),
+            display_name: display_name.to_owned(),
             state,
             attention,
         }
     }
 
-    /// Its registry name.
+    /// Its registry id.
     pub fn id(&self) -> &str {
         &self.id
     }
 
     /// The name to show for it.
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn display_name(&self) -> &str {
+        &self.display_name
     }
 
-    /// Whether it is connected, and whether its CLI is here.
+    /// Whether it is connected, and whether its CLI is known missing.
     pub fn state(&self) -> SourceState {
         self.state
     }
@@ -517,7 +523,7 @@ impl SourceRow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceState {
-    /// Bound, its CLI here.
+    /// Bound, its CLI not known to be missing.
     Connected,
     /// Not bound.
     Disconnected,
@@ -1405,10 +1411,10 @@ mod tests {
             line,
             concat!(
                 r#"{"answer":"sources","rows":["#,
-                r#"{"id":"codex","name":"Codex","state":{"kind":"connected"},"attention":false},"#,
-                r#"{"id":"cursor","name":"Cursor","state":{"kind":"disconnected"},"attention":true},"#,
-                r#"{"id":"grok","name":"Grok","state":{"kind":"no_cli","connected":true},"attention":false},"#,
-                r#"{"id":"kimi","name":"Kimi","state":{"kind":"no_cli","connected":false},"attention":false}"#,
+                r#"{"id":"codex","display_name":"Codex","state":{"kind":"connected"},"attention":false},"#,
+                r#"{"id":"cursor","display_name":"Cursor","state":{"kind":"disconnected"},"attention":true},"#,
+                r#"{"id":"grok","display_name":"Grok","state":{"kind":"no_cli","connected":true},"attention":false},"#,
+                r#"{"id":"kimi","display_name":"Kimi","state":{"kind":"no_cli","connected":false},"attention":false}"#,
                 "]}"
             )
         );
@@ -1429,7 +1435,7 @@ mod tests {
     fn a_row_reads_back_through_its_accessors() {
         let row = SourceRow::new("cursor", "Cursor", SourceState::Connected, true);
         assert_eq!(row.id(), "cursor");
-        assert_eq!(row.name(), "Cursor");
+        assert_eq!(row.display_name(), "Cursor");
         assert_eq!(row.state(), SourceState::Connected);
         assert!(row.attention());
     }
@@ -1443,7 +1449,7 @@ mod tests {
             Answer::from_line(br#"{"answer":"from_the_future","x":1}"#),
             Some(Answer::Unknown)
         );
-        let line = br#"{"answer":"sources","rows":[{"id":"a","name":"A","state":{"kind":"from_the_future","x":1},"attention":false}]}"#;
+        let line = br#"{"answer":"sources","rows":[{"id":"a","display_name":"A","state":{"kind":"from_the_future","x":1},"attention":false}]}"#;
         let Some(Answer::Sources { rows }) = Answer::from_line(line) else {
             panic!("an answer");
         };
@@ -1474,13 +1480,13 @@ mod tests {
         );
         let line = serde_json::json!({
             "answer": "sources",
-            "rows": [{"id": dirty, "name": dirty, "state": {"kind": "connected"}, "attention": false}],
+            "rows": [{"id": dirty, "display_name": dirty, "state": {"kind": "connected"}, "attention": false}],
         })
         .to_string();
         let Some(Answer::Sources { rows }) = Answer::from_line(line.as_bytes()) else {
             panic!("an answer");
         };
-        for text in [rows[0].id(), rows[0].name()] {
+        for text in [rows[0].id(), rows[0].display_name()] {
             assert!(!text.contains(['\u{1b}', '\u{202e}']), "{text}");
             assert!(
                 text.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,

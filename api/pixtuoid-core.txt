@@ -230,8 +230,8 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::RemoteOffic
 pub struct pixtuoid_core::remote::SourceRow
 impl pixtuoid_core::remote::SourceRow
 pub fn pixtuoid_core::remote::SourceRow::attention(&self) -> bool
+pub fn pixtuoid_core::remote::SourceRow::display_name(&self) -> &str
 pub fn pixtuoid_core::remote::SourceRow::id(&self) -> &str
-pub fn pixtuoid_core::remote::SourceRow::name(&self) -> &str
 pub fn pixtuoid_core::remote::SourceRow::new(&'static str, &'static str, pixtuoid_core::remote::SourceState, bool) -> Self
 pub fn pixtuoid_core::remote::SourceRow::state(&self) -> pixtuoid_core::remote::SourceState
 impl core::cmp::Eq for pixtuoid_core::remote::SourceRow

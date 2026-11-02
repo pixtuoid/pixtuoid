@@ -91,7 +91,7 @@ impl Devices {
         }
     }
 
-    /// Read the hello and answer it. Anything but a verdict ends the connection
+    /// Read the hello and reply to it. Anything but a verdict ends the connection
     /// with no reply: that's a retry, where a refusal is a re-pair.
     async fn greet<S>(&self, stream: &mut S) -> Result<(Reply, Option<Hashed>)>
     where

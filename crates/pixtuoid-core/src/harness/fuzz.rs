@@ -344,6 +344,8 @@ mod tests {
         assert!(remote(b"garbage").scene().agents.is_empty());
     }
 
+    /// A line that reads as an office line too seats no one: only the answer
+    /// guard keeps it out, since `apply` would take it.
     #[test]
     fn an_answer_among_the_lines_is_not_taken_for_the_office() {
         let golden: Value =
@@ -351,6 +353,15 @@ mod tests {
         let answer = serde_json::to_string(&Answer::Unsupported).expect("it encodes");
         let office = remote(format!("{golden}\n{answer}").as_bytes());
         assert!(!office.scene().agents.is_empty());
+
+        let mut both = golden;
+        both["answer"] = "unsupported".into();
+        assert!(
+            remote(both.to_string().as_bytes())
+                .scene()
+                .agents
+                .is_empty()
+        );
     }
 
     #[test]
