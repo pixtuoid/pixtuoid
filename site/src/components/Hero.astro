@@ -127,18 +127,20 @@ const badges = sources.filter((s) => s.status === 'supported');
        glyph while sweeping the strip, and a drag would blue-select the codes. */
     cursor: default;
     user-select: none;
-    /* the gap lives in .hero__badge-name's inner padding instead, so a collapsed
-       name leaves no trailing space after the code */
-    gap: 0;
+    position: relative;
     white-space: nowrap;
     font-family: var(--font-mono);
     font-size: 0.8rem;
     letter-spacing: 0.02em;
     padding: 0.32rem 0.6rem;
     /* DAY default: the light --surface family — the dark hardware panel read too
-       heavy on the light day office. NIGHT below switches to --screen/--chip-line. */
-    background: color-mix(in srgb, var(--badge) 14%, var(--surface));
-    border: 1px solid color-mix(in srgb, var(--badge) 40%, var(--border-strong));
+       heavy on the light day office. NIGHT below switches to --screen/--chip-line.
+       Vars, not literals: the name label hangs off the chip in the same ground. */
+    --chip-bw: 1px;
+    --chip-bg: color-mix(in srgb, var(--badge) 14%, var(--surface));
+    --chip-bd: color-mix(in srgb, var(--badge) 40%, var(--border-strong));
+    background: var(--chip-bg);
+    border: var(--chip-bw) solid var(--chip-bd);
     color: var(--fg);
   }
   /* The one non-source cell. Its --badge is the NEUTRAL border tone so the shared
@@ -164,29 +166,43 @@ const badges = sources.filter((s) => s.status === 'supported');
        TINTED day cell — same-hue text on a same-hue tint eats contrast. */
     color: color-mix(in srgb, var(--badge) 50%, black);
   }
-  /* Collapsed-by-default name: a 0fr grid track animates open on hover. The chip
-     grows RIGHTWARD — its left edge never moves, so the pointer stays inside and
-     the HOVERED chip can't jitter (a trailing sibling can still re-wrap; accepted).
-     Hover-only on purpose: chips carry no tabindex, and the names stay available
-     via aria-label and at the #tools matrix. */
+  /* The name is a label hung off the chip's bottom edge, OUT of flow, so hover can
+     never re-wrap the row or move the hero (it fills the empty gap above the CTA).
+     This box is the pointer's hit area: full-size the moment the chip is hovered,
+     flush with the chip, so there is no dead zone between chip and label. Hover-only
+     on purpose: chips carry no tabindex, and the names stay available via
+     aria-label and at the #tools matrix. Gated on width: a wrapped row would put
+     the label over the chips below it. */
   .hero__badge-name {
-    display: inline-grid;
-    grid-template-columns: 0fr;
-    opacity: 0;
-    /* steps(), not ease: the track opens in discrete increments, so the name reveals
-       glyph-chunk by glyph-chunk — a terminal TYPING it, not a drawer sliding. */
-    transition:
-      grid-template-columns 0.3s steps(12, end),
-      opacity 0.06s linear;
+    display: none;
+    position: absolute;
+    top: calc(100% + var(--chip-bw));
+    left: calc(-1 * var(--chip-bw));
+    pointer-events: none;
+  }
+  /* The narrowest width the row stays on one line; smoke.spec's wrap test pins it. */
+  @media (min-width: 56rem) {
+    .hero__badge-name {
+      display: block;
+    }
+    .hero__badge:hover .hero__badge-name {
+      pointer-events: auto;
+    }
   }
   .hero__badge-name > span {
-    min-width: 0;
-    overflow: hidden;
-    padding-left: 0.4em;
+    display: block;
+    padding: 0.15rem 0.6rem;
+    background: var(--chip-bg);
+    border: var(--chip-bw) solid var(--chip-bd);
+    border-top: 0;
+    /* steps(), not ease: the label opens in discrete increments, so the name reveals
+       glyph-chunk by glyph-chunk — a terminal TYPING it, not a drawer sliding. A clip
+       is paint-only; it never touches layout. */
+    clip-path: inset(0 100% 0 0);
+    transition: clip-path 0.3s steps(12, end);
   }
-  .hero__badge:hover .hero__badge-name {
-    grid-template-columns: 1fr;
-    opacity: 1;
+  .hero__badge:hover .hero__badge-name > span {
+    clip-path: inset(0);
   }
   /* The typed name's blinking block caret is declared ENTIRELY in global.css's
      shared idiom (`.cursor, .hero__badge-name > span::after`) so it can't drift
@@ -195,27 +211,27 @@ const badges = sources.filter((s) => s.status === 'supported');
      (the strip must never move vertically). These mixes are the deepest that still
      hold 4.5:1 on rendered pixels across every hue. */
   .hero__badge:hover {
-    background: color-mix(in srgb, var(--badge) 26%, var(--surface));
-    border-color: color-mix(in srgb, var(--badge) 62%, var(--border-strong));
+    --chip-bg: color-mix(in srgb, var(--badge) 26%, var(--surface));
+    --chip-bd: color-mix(in srgb, var(--badge) 62%, var(--border-strong));
     transition:
       background-color 0.15s ease,
       border-color 0.15s ease;
   }
-  /* No per-component reduced-motion arm for the name track: global.css's universal
+  /* No per-component reduced-motion arm for the name reveal: global.css's universal
      RM clamp already zeroes it, so a local `transition: none` is dead code. */
   :root[data-theme='night'] .hero__badge,
   :root[data-theme='dracula'] .hero__badge {
     /* dracula's --bg is dark too, so it piggybacks on night's measured formula. */
-    background: color-mix(in srgb, var(--badge) 34%, var(--screen));
-    border-color: color-mix(in srgb, var(--badge) 60%, var(--chip-line));
+    --chip-bg: color-mix(in srgb, var(--badge) 34%, var(--screen));
+    --chip-bd: color-mix(in srgb, var(--badge) 60%, var(--chip-line));
     color: var(--chip-ink);
   }
   :root[data-theme='night'] .hero__badge:hover,
   :root[data-theme='dracula'] .hero__badge:hover {
     /* the pressed-key deepen, night flavor — without it the higher-specificity
        night base above pins hover at the resting tint */
-    background: color-mix(in srgb, var(--badge) 42%, var(--screen));
-    border-color: color-mix(in srgb, var(--badge) 74%, var(--chip-line));
+    --chip-bg: color-mix(in srgb, var(--badge) 42%, var(--screen));
+    --chip-bd: color-mix(in srgb, var(--badge) 74%, var(--chip-line));
   }
   :root[data-theme='night'] .hero__badge-code,
   :root[data-theme='dracula'] .hero__badge-code {

@@ -2215,45 +2215,117 @@ test('hero badge row: one chip per registered source, matching the tools-table r
   await expect(tableRows).toHaveCount(supportedSources.length);
 });
 
-test('hero badge hover expands the full CLI name in place', async ({ page }) => {
+test('hero badge hover moves nothing: the name is an out-of-flow label in the gap above the CTA', async ({
+  page,
+}) => {
+  // Every chip at two widths, each waiting out the 0.3s typed reveal.
+  test.setTimeout(90_000);
   // Raw mouse.move, NOT page.hover(): the page's html { scroll-behavior: smooth } lets hover()'s actionability pass
   // queue a smooth CDP scroll that slides the page out from under the pointer.
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./');
-  // Let the hero's `rise` entrance settle first — a one-shot mouse.move to a mid-animation center lands off the settled chip.
-  await page.waitForLoadState('networkidle');
-  const chip = page.locator('.hero__badges .hero__badge:not(.hero__badge--more)').nth(6);
-  const restBox = (await chip.boundingBox())!;
-  await page.mouse.move(restBox.x + restBox.width / 2, restBox.y + restBox.height / 2);
-  await expect
-    .poll(async () => (await chip.boundingBox())!.width)
-    .toBeGreaterThan(restBox.width + 20);
-  const hoverBox = (await chip.boundingBox())!;
-  expect(
-    Math.abs(hoverBox.x - restBox.x),
-    'the chip grows RIGHTWARD — its own left edge must not move (jitter-free)'
-  ).toBeLessThan(1);
-  await expect(chip.locator('.hero__badge-name')).toHaveCSS('opacity', '1');
+  const rect = (sel: string) =>
+    page.evaluate((s) => {
+      const r = document.querySelector(s)!.getBoundingClientRect();
+      return [r.x, r.y, r.width, r.height];
+    }, sel);
+  // Mechanism-neutral: whatever the entrance or the reveal animates, measure after it ends.
+  const settle = () =>
+    page.evaluate(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+      await Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map((a) => a.finished)
+      );
+    });
+  // 896 is the narrowest width with the label on; the row is one line from there up.
+  for (const width of [896, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('./');
+    // Let the hero's `rise` entrance settle first — a one-shot mouse.move to a mid-animation center lands off the settled chip.
+    await page.waitForLoadState('networkidle');
+    const chips = page.locator('.hero__badges .hero__badge:not(.hero__badge--more)');
+    const watched = ['.hero__copy h1', '.hero__badges', '.hero__cta'];
+    await settle();
+    const rest = await Promise.all(watched.map(rect));
+    for (let i = 0; i < supportedSources.length; i++) {
+      const chip = chips.nth(i);
+      const chipRest = (await chip.boundingBox())!;
+      await page.mouse.move(chipRest.x + chipRest.width / 2, chipRest.y + chipRest.height / 2);
+      await settle();
+      const at = `${width}px, chip ${i}`;
+      expect(await Promise.all(watched.map(rect)), `${at}: hover moved the hero`).toEqual(rest);
+      expect(await chip.boundingBox(), `${at}: the chip itself resized`).toEqual(chipRest);
+
+      const label = (await chip.locator('.hero__badge-name').boundingBox())!;
+      const cta = (await page.locator('.hero__cta').boundingBox())!;
+      const hero = (await page.locator('.hero').boundingBox())!;
+      // Flush under its own chip (no dead zone for the pointer, WCAG 1.4.13 "hoverable")
+      // and above the CTA, so it covers only empty space (no dismissal mechanism needed).
+      expect(label.y, `${at}: label not flush under the chip`).toBeCloseTo(
+        chipRest.y + chipRest.height,
+        0
+      );
+      expect(label.y + label.height, `${at}: label reaches the CTA`).toBeLessThan(cta.y);
+      expect(label.x, `${at}: label left of its chip`).toBeCloseTo(chipRest.x, 0);
+      expect(label.x + label.width, `${at}: label leaves the viewport`).toBeLessThanOrEqual(width);
+      expect(label.x + label.width, `${at}: label clipped by .hero`).toBeLessThanOrEqual(
+        hero.x + hero.width
+      );
+      // Pointer travels chip -> label without leaving the hover target.
+      await page.mouse.move(label.x + 4, label.y + label.height / 2);
+      expect(await chip.evaluate((el) => el.matches(':hover')), `${at}: label lost the hover`).toBe(
+        true
+      );
+    }
+    await page.mouse.move(0, 0);
+  }
 });
 
-test('reduced motion: the badge hover-expand is instant but still works', async ({ browser }) => {
-  // Under RM the name track's transition is zeroed by global.css's UNIVERSAL clamp — Hero.astro deliberately carries NO
-  // per-component arm (dead code under that !important). Motion removed ≠ feature removed: the hover rule still flips the 0fr track.
+test('hero badge label is off where the row wraps at rest: it would cover the chips below', async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  for (const width of [880, 886, 887, 896]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('./');
+    const wrapped = await page.evaluate(
+      () =>
+        new Set(
+          [...document.querySelectorAll('.hero__badge')].map((e) =>
+            Math.round(e.getBoundingClientRect().top)
+          )
+        ).size > 1
+    );
+    const shown = await page
+      .locator('.hero__badge-name')
+      .first()
+      .evaluate((el) => getComputedStyle(el).display !== 'none');
+    expect(shown && wrapped, `${width}px: label shown over a wrapped row`).toBe(false);
+  }
+});
+
+test('reduced motion: the badge label is still revealed on hover, instantly', async ({
+  browser,
+}) => {
+  // Under RM the reveal's transition is zeroed by global.css's UNIVERSAL clamp — Hero.astro deliberately carries NO
+  // per-component arm (dead code under that !important). Motion removed ≠ feature removed: the hover rule still opens the clip.
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await context.newPage();
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   await page.waitForLoadState('networkidle');
   const chip = page.locator('.hero__badges .hero__badge:not(.hero__badge--more)').nth(6);
-  const durationSecs = await chip
-    .locator('.hero__badge-name')
-    .evaluate((el) => parseFloat(getComputedStyle(el).transitionDuration));
+  const label = chip.locator('.hero__badge-name > span');
+  const durationSecs = await label.evaluate((el) =>
+    parseFloat(getComputedStyle(el).transitionDuration)
+  );
   expect(durationSecs).toBeLessThan(0.001);
+  await expect(label).toHaveCSS('clip-path', 'inset(0px 100% 0px 0px)');
   const restBox = (await chip.boundingBox())!;
   await page.mouse.move(restBox.x + restBox.width / 2, restBox.y + restBox.height / 2);
-  await expect
-    .poll(async () => (await chip.boundingBox())!.width)
-    .toBeGreaterThan(restBox.width + 20);
+  await expect(label).toHaveCSS('clip-path', 'inset(0px)');
   await context.close();
 });
 
