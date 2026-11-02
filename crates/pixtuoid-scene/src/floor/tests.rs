@@ -2030,7 +2030,7 @@ fn every_floors_badges_read_the_offices_floor_nameplates() {
             assert!(office.navigate(floor, t0));
         }
         let _ = office.render(
-            crate::look::Look::Classic,
+            crate::look::Look::HALF_BLOCKS,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
