@@ -70,6 +70,34 @@ async function settleAnimations(page: Page): Promise<void> {
 }
 
 /**
+ * One test per theme x hour for anything graded against the REAL office composite. The office's brightness follows the page's
+ * local hour and a theme can be picked at any hour, so every theme meets every hour. A sweep of all 24 found the worst hours: 11
+ * (office brightest, so light ink is worst) and the night ones (darkest, so dark ink is worst); 8 and 19 are kept as the dawn
+ * and dusk ramp. `setSystemTime`, not `setFixedTime`: a frozen Date stalls the office host's own wait on the clock.
+ */
+const OFFICE_HOURS = [0, 8, 11, 19];
+function atOfficeHours(
+  title: string,
+  themes: readonly string[],
+  run: (..._args: [page: Page, theme: string, hour: number]) => Promise<void>
+): void {
+  for (const theme of themes) {
+    for (const hour of OFFICE_HOURS) {
+      test(`${title}: ${theme} at ${hour}:00`, async ({ page }) => {
+        await page.clock.setSystemTime(
+          new Date(`2026-01-01T${String(hour).padStart(2, '0')}:00:00`)
+        );
+        await page.addInitScript((t) => {
+          sessionStorage.setItem('pix-booted', '1');
+          localStorage.setItem('pix-theme', t);
+        }, theme);
+        await run(page, theme, hour);
+      });
+    }
+  }
+}
+
+/**
  * Brightest and darkest office pixel under an element's box, each composited with the live dimmer; `null` with no live office.
  * Both extremes, never an average: day's dimmer lightens the composite toward `--paper`, night's darkens it toward `--bg`.
  * The scroll is load-bearing — the canvas is a viewport-fixed backdrop, so an off-screen box indexes past its buffer and `getImageData` hands back ZEROED pixels.
@@ -2046,19 +2074,16 @@ test('text over the live office carries its own scrim (.text-scrim)', async ({ p
   expect(Math.abs(noteX - tabsX)).toBeLessThan(1);
 });
 
-test('bare hero text clears WCAG AA at the real office composite (day + night)', async ({
-  page,
-}) => {
-  // The hero copy has no plate, so legibility rests entirely on the ink token clearing contrast against what the office
-  // ACTUALLY renders behind it — hence `paintedContrast` over real canvas pixels, not a --screen proxy.
-  for (const theme of ['day', 'night'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
+atOfficeHours(
+  'bare hero text clears WCAG AA at the real office composite',
+  ['day', 'night', 'dracula'],
+  async (page, theme, hour) => {
+    // The hero copy has no plate, so legibility rests entirely on the ink token clearing contrast against what the office
+    // ACTUALLY renders behind it — hence `paintedContrast` over real canvas pixels, not a --screen proxy.
     await page.goto('./');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await settleReveals(page);
+    await settleAnimations(page);
 
     for (const selector of [
       '.hero .eyebrow',
@@ -2082,41 +2107,38 @@ test('bare hero text clears WCAG AA at the real office composite (day + night)',
       const ratio = await paintedContrast(page, selector);
       expect(
         ratio,
-        `${theme} ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+        `${theme} ${hour}:00 ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5);
     }
   }
-});
+);
 
-test('plate and chip text clears WCAG AA in every theme (day + night + dracula)', async ({
-  page,
-}) => {
-  // Two DOM-plate populations: the page's OPAQUE plates, and the TRANSLUCENT --screen chips whose ground is the office pixel behind them.
-  // DRACULA is the point — visitor-reachable via `?theme=dracula`, yet the office sweep runs day+night and Lighthouse scores one pinned theme.
-  const PLATE_SURFACES: Record<string, string[]> = {
-    './': [
-      '.terminal__title',
-      '.osd__chip',
-      '.stage__caption',
-      '.vibing__ticks span',
-      '.footer__line a.footer__coffee',
-      '.footer__sep',
-      '.nav__version',
-    ],
-    './404': ['.terminal__title'],
-    './architecture': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
-  };
+atOfficeHours(
+  'plate and chip text clears WCAG AA',
+  ['day', 'night', 'dracula'],
+  async (page, theme, hour) => {
+    // Two DOM-plate populations: the page's OPAQUE plates, and the TRANSLUCENT --screen chips whose ground is the office pixel behind them.
+    // DRACULA is the point — visitor-reachable via `?theme=dracula`, yet the office sweep runs day+night and Lighthouse scores one pinned theme.
+    const PLATE_SURFACES: Record<string, string[]> = {
+      './': [
+        '.terminal__title',
+        '.osd__chip',
+        '.stage__caption',
+        '.vibing__ticks span',
+        '.footer__line a.footer__coffee',
+        '.footer__sep',
+        '.nav__version',
+      ],
+      './404': ['.terminal__title'],
+      './architecture': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
+    };
 
-  for (const theme of ['day', 'night', 'dracula'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
     let swept = 0;
     for (const [route, selectors] of Object.entries(PLATE_SURFACES)) {
       await page.goto(route);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await settleReveals(page);
+      await settleAnimations(page);
       for (const selector of selectors) {
         const count = await page.locator(selector).count();
         expect(count, `${theme} ${route}: no ${selector} to sweep`).toBeGreaterThan(0);
@@ -2124,7 +2146,7 @@ test('plate and chip text clears WCAG AA in every theme (day + night + dracula)'
           const ratio = await paintedContrast(page, selector, i);
           expect(
             ratio,
-            `${theme} ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+            `${theme} ${hour}:00 ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
           ).toBeGreaterThanOrEqual(4.5);
           swept++;
         }
@@ -2132,7 +2154,7 @@ test('plate and chip text clears WCAG AA in every theme (day + night + dracula)'
     }
     expect(swept, `${theme}: swept nothing`).toBeGreaterThan(0);
   }
-});
+);
 
 test('the architecture diagram: every SVG text clears WCAG AA and every box has a 3:1 boundary, in every theme', async ({
   page,
@@ -2319,46 +2341,31 @@ test('reduced motion: the prompt reveals the hovered name instantly', async ({ b
   await context.close();
 });
 
-// The office's brightness follows the wall clock (the engine reads the page's local hour), and a theme can
-// be picked at any hour, so every theme meets every hour. A sweep of all 24 found the worst hours: 11 (the
-// office brightest, so light ink is worst) and the night ones (darkest, so dark ink is worst); 8 and 19
-// are kept as the dawn and dusk ramp.
-for (const theme of ['day', 'night', 'dracula'] as const) {
-  for (const hour of [0, 8, 11, 19]) {
-    test(`hero prompt ink (default, hover, every chip name) clears WCAG AA at the real office composite: ${theme} at ${hour}:00`, async ({
-      page,
-    }) => {
-      // setSystemTime, not setFixedTime: a frozen Date stalls the office host's own wait on the clock.
-      await page.clock.setSystemTime(new Date(`2026-01-01T${String(hour).padStart(2, '0')}:00:00`));
-      await page.addInitScript((t) => {
-        sessionStorage.setItem('pix-booted', '1');
-        localStorage.setItem('pix-theme', t);
-      }, theme);
-      await page.goto('./');
-      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-      await settleReveals(page);
-      await settleAnimations(page);
-      const ratios: [string, number][] = [
-        ['default prompt', await paintedContrast(page, '.hero__prompt-default')],
-      ];
-      for (let i = 0; i < supportedSources.length; i++) {
-        ratios.push([
-          supportedSources[i].name,
-          await paintedContrast(page, '.hero__badge-name', i),
-        ]);
-      }
-      const link = (await page.locator('.hero__prompt-default').boundingBox())!;
-      await page.mouse.move(link.x + 8, link.y + link.height / 2);
-      ratios.push(['default prompt hover', await paintedContrast(page, '.hero__prompt-default')]);
-      for (const [what, ratio] of ratios) {
-        expect(
-          ratio,
-          `${theme} ${hour}:00 ${what}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-        ).toBeGreaterThanOrEqual(4.5);
-      }
-    });
+atOfficeHours(
+  'hero prompt ink (default, hover, every chip name) clears WCAG AA at the real office composite',
+  ['day', 'night', 'dracula'],
+  async (page, theme, hour) => {
+    await page.goto('./');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await settleReveals(page);
+    await settleAnimations(page);
+    const ratios: [string, number][] = [
+      ['default prompt', await paintedContrast(page, '.hero__prompt-default')],
+    ];
+    for (let i = 0; i < supportedSources.length; i++) {
+      ratios.push([supportedSources[i].name, await paintedContrast(page, '.hero__badge-name', i)]);
+    }
+    const link = (await page.locator('.hero__prompt-default').boundingBox())!;
+    await page.mouse.move(link.x + 8, link.y + link.height / 2);
+    ratios.push(['default prompt hover', await paintedContrast(page, '.hero__prompt-default')]);
+    for (const [what, ratio] of ratios) {
+      expect(
+        ratio,
+        `${theme} ${hour}:00 ${what}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   }
-}
+);
 
 test('a keyboard-focused default prompt link stays visible over a hovered chip, and the name stays off', async ({
   page,
