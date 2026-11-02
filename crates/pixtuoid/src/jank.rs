@@ -1,9 +1,9 @@
 //! Frame-time telemetry, after Android's JankStats
 //! (<https://developer.android.com/topic/performance/jankstats>): a frame past
 //! the loop's scheduled interval is a debug `frame slow`, one past twice it a
-//! debug `frame jank`, each with what it was drawn under; once a minute, and
-//! at exit, a `frame pacing` summary gives the spread, at warn when a frame
-//! janked.
+//! debug `frame jank`, each with what it was drawn under; once a minute, at a
+//! change of painter and at exit, a `frame pacing` summary gives the spread,
+//! at warn when a frame janked.
 
 use std::time::{Duration, Instant};
 
@@ -15,7 +15,7 @@ use pixtuoid_scene::look::FrameNote;
 /// (`pace_check_filters_the_reports_target`).
 const TARGET: &str = "pixtuoid::jank";
 
-/// How often the spread is reported.
+/// How often the spread is reported, a change of painter aside.
 const WINDOW: Duration = Duration::from_secs(60);
 /// A window's frames twice over, room for a loop that runs hot: past it the
 /// oldest are overwritten.
@@ -491,6 +491,33 @@ mod tests {
         assert_eq!(summaries.len(), 2, "{logged}");
         assert!(summaries[0].contains("look=\"kitty\"") && summaries[0].contains("frames=4"));
         assert!(summaries[1].contains("look=\"classic\"") && summaries[1].contains("frames=1"));
+    }
+
+    /// The frame that changes painter is the new window's, its time
+    /// included: the old window's span ends where that frame began.
+    #[test]
+    fn the_frame_that_changes_painter_spans_the_new_window() {
+        let t0 = Instant::now();
+        let painter = |look| Painter {
+            look,
+            ..Painter::default()
+        };
+        let ms = Duration::from_millis;
+        let logged = crate::test_capture::capture(|| {
+            let mut jank = Jank::new();
+            jank.painted_by(&painter("kitty"), t0);
+            jank.record(ms(10), Duration::ZERO, None, None, t0 + ms(10));
+            jank.painted_by(&painter("classic"), t0 + ms(10));
+            jank.record(ms(50), Duration::ZERO, None, None, t0 + ms(60));
+            jank.finish(t0 + ms(60));
+        });
+        let spans: Vec<&str> = logged
+            .lines()
+            .filter(|l| l.contains("frame pacing"))
+            .collect();
+        assert_eq!(spans.len(), 2, "{logged}");
+        assert!(spans[0].contains("span_ms=10.0"), "{}", spans[0]);
+        assert!(spans[1].contains("span_ms=50.0"), "{}", spans[1]);
     }
 
     /// A run that ends inside a window still reports it.

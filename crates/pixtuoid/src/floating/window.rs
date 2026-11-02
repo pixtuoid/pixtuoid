@@ -540,7 +540,7 @@ impl FloatingApp {
                 scale: at.scale().get(),
                 ..crate::jank::Painter::default()
             },
-            now,
+            started,
         );
         self.renderer
             .record(&mut self.jank, now - started, now - presenting, now);

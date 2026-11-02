@@ -63,8 +63,9 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     screen: Screen<ratatui::layout::Size, crate::tui::geometry::SceneGeometry>,
     /// The cutaway, painted as terminal images in place of the half-blocks.
     cutaway: Option<crate::tui::cutaway::TileCutaway>,
-    /// What each look's frames' pacing is reported under.
-    painters: enum_map::EnumMap<LookKind, crate::jank::Painter>,
+    /// What the half-blocks' frames' pacing is reported under, on this
+    /// terminal.
+    painter: crate::jank::Painter,
 }
 
 /// Everything a frame shows besides the floors: kept apart from `session` so a
@@ -206,7 +207,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             },
             screen: Screen::on(pixtuoid_scene::screen::monotonic()),
             cutaway: None,
-            painters: enum_map::EnumMap::default(),
+            painter: crate::jank::Painter::default(),
         }
     }
 
@@ -317,26 +318,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.frame_out = Some(out);
     }
 
-    /// Name what draws each look's frames, for their pacing summaries.
-    pub(crate) fn set_painters(
-        &mut self,
-        painters: enum_map::EnumMap<LookKind, crate::jank::Painter>,
-    ) {
-        self.painters = painters;
-    }
-
-    /// The look the last frame drew: the cutaway where it fit.
-    fn drawn_look(&self) -> LookKind {
-        if self
-            .cutaway
-            .as_ref()
-            .and_then(crate::tui::cutaway::TileCutaway::office)
-            .is_some()
-        {
-            LookKind::Cutaway
-        } else {
-            LookKind::Classic
-        }
+    /// Name what draws the half-blocks' frames, for their pacing summaries:
+    /// the cutaway names its own, from its fit, on the same terminal.
+    pub(crate) fn painted_by(&mut self, painter: crate::jank::Painter) {
+        self.painter = painter;
     }
 
     /// Paint and send the next frame whole, for the pacing bench's worst case.
@@ -753,8 +738,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         presented?;
         self.screen.landed();
         let note = drawn?;
-        self.jank
-            .painted_by(&self.painters[self.drawn_look()], std::time::Instant::now());
+        let painter = self
+            .cutaway
+            .as_ref()
+            .and_then(|c| c.painter(&self.painter))
+            .unwrap_or_else(|| self.painter.clone());
+        self.jank.painted_by(&painter, begun);
         let send = self
             .cutaway
             .as_ref()

@@ -1581,6 +1581,20 @@ fn w_follows_the_look_the_frame_drew() {
     assert!(!r.offers_walkable_debug(), "the cutaway is back");
 }
 
+/// A resize clears the screen too: the frame after it sends every tile at
+/// once, inside the cadence.
+#[test]
+fn a_resize_sends_at_once_inside_the_cadence() {
+    let (mut r, wire) = painter(120, 40, ImageProtocol::Sixel);
+    let scene = office();
+    r.render(&scene, t0()).expect("render");
+    wire.take();
+    r.terminal.backend_mut().resize(128, 44);
+    r.render(&scene, t0() + ImageProtocol::Sixel.cadence() / 2)
+        .expect("render");
+    assert!(wire.take().contains(SIXEL));
+}
+
 /// A redraw inside a strike's hold paints its first frame at once: the
 /// screen it cleared shows no phase to wait for, so it is never left blank.
 #[test]
@@ -1608,30 +1622,38 @@ fn a_redraw_is_never_held() {
     assert!(wire.take().contains(TRANSMIT), "its tiles sent");
 }
 
-/// The pacing reports name the look each frame drew: a font zoom that
-/// leaves the cutaway no fit reports the half-blocks' frames as theirs.
+/// The pacing reports name what drew each frame: the cutaway's protocol at
+/// the scale it last fit, a font zoom's refit included, and the half-blocks
+/// where a zoom leaves the cutaway no fit.
 #[test]
-fn the_pacing_label_follows_the_drawn_look() {
+fn the_pacing_label_follows_what_drew_each_frame() {
     let (mut r, _wire) = kitty(140, 60);
     let scene = office();
     let cadence = ImageProtocol::Kitty.cadence();
-    let painter = |look| crate::jank::Painter {
-        look,
+    r.painted_by(crate::jank::Painter {
+        look: "classic",
+        scale: 1,
         ..Default::default()
-    };
-    r.set_painters(enum_map::enum_map! {
-        LookKind::Cutaway => painter("kitty"),
-        LookKind::Classic => painter("classic"),
     });
+    let label = |r: &TuiRenderer<Window>| (r.jank.painter().look, r.jank.painter().scale);
     r.render(&scene, t0()).expect("render");
-    assert_eq!(r.jank.painter().look, "kitty");
+    let (look, scale) = label(&r);
+    assert_eq!(look, "kitty");
+    r.terminal.backend_mut().zoom(CellSize {
+        w: CELL.w * 2,
+        h: CELL.h * 2,
+    });
+    r.render(&scene, t0() + cadence).expect("render");
+    let (look, zoomed) = label(&r);
+    assert_eq!(look, "kitty");
+    assert!(
+        zoomed > scale,
+        "refit at the zoomed cell: {zoomed} after {scale}"
+    );
     r.terminal.backend_mut().zoom(CellSize {
         w: CELL.w / 2,
         h: CELL.h / 2,
     });
-    r.render(&scene, t0() + cadence).expect("render");
-    assert_eq!(r.jank.painter().look, "classic", "the fall back draws");
-    r.terminal.backend_mut().zoom(CELL);
     r.render(&scene, t0() + cadence * 2).expect("render");
-    assert_eq!(r.jank.painter().look, "kitty", "and back");
+    assert_eq!(label(&r), ("classic", 1), "the fall back draws");
 }

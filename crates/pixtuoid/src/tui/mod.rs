@@ -429,48 +429,32 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     }
 }
 
-/// Hand `renderer` the painters `plan` names.
+/// Hand `renderer` the painter `plan` names: the half-blocks' on this
+/// terminal, which the cutaway names its own from.
 fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
     plan: crate::graphics::Plan,
     out: &FrameOut,
 ) {
-    use pixtuoid_scene::look::LookKind;
-    let (terminal, tmux_env) = crate::graphics::terminal_and_tmux();
-    let classic = crate::jank::Painter {
-        look: LookKind::Classic.name(),
+    let (terminal, tmux) = crate::graphics::terminal_and_tmux();
+    renderer.painted_by(crate::jank::Painter {
+        look: pixtuoid_scene::look::LookKind::Classic.name(),
         scale: 1,
-        tmux: tmux_env,
-        terminal: terminal.clone(),
+        tmux,
+        terminal,
         sync: out.synchronized(),
-    };
-    let cutaway = match plan {
+    });
+    match plan {
         crate::graphics::Plan::Cutaway {
             fit, route, cell, ..
-        } => {
-            renderer.set_cutaway(cutaway::TileCutaway::new(
-                fit,
-                cell,
-                route,
-                Box::new(out.clone()),
-            ));
-            crate::jank::Painter {
-                look: route.protocol().name(),
-                scale: fit.scale().get(),
-                tmux: route.tmux(),
-                terminal,
-                sync: out.synchronized(),
-            }
-        }
-        _ => {
-            tracing::info!(plan = ?plan, "painting classic");
-            crate::jank::Painter::default()
-        }
-    };
-    renderer.set_painters(enum_map::enum_map! {
-        LookKind::Cutaway => cutaway.clone(),
-        LookKind::Classic => classic.clone(),
-    });
+        } => renderer.set_cutaway(cutaway::TileCutaway::new(
+            fit,
+            cell,
+            route,
+            Box::new(out.clone()),
+        )),
+        _ => tracing::info!(plan = ?plan, "painting classic"),
+    }
 }
 
 /// The least time between two of the event loop's frames.
