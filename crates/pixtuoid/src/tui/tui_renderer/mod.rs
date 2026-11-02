@@ -18,7 +18,8 @@ use ratatui::layout::{Position, Rect};
 
 use crate::tui::renderer::PetState;
 use pixtuoid_scene::floor::{
-    FloorInputs, FloorMeta, FloorTransition, OfficeSession, PetInputs, project_floor_scene,
+    FloorInputs, FloorMeta, FloorScene, FloorTransition, OfficeSession, PetInputs,
+    project_floor_scene,
 };
 use pixtuoid_scene::layout::{SceneLayout, Size};
 use pixtuoid_scene::look::{FrameNote, Look, LookKind, Picture, Place, RenderInputs};
@@ -121,18 +122,19 @@ impl Chrome {
         self.frames.overlays(popup_scale, host_keys)
     }
 
-    /// Floor `floor` of `session`'s office in `scene`, whose projection is
-    /// `floor_scene`: its inputs as [`OfficeSession::floor_world`] gives
-    /// every painter's floors.
+    /// Floor `floor` of `session`'s office in `scene`, `floor_scene` its
+    /// projection: its inputs as [`OfficeSession::floor_world`] gives every
+    /// painter's floors.
     fn world<'a>(
         &'a self,
         session: &OfficeSession,
-        floor_scene: &'a SceneState,
+        scene: &'a SceneState,
+        floor_scene: &'a FloorScene,
         now: SystemTime,
         floor: usize,
     ) -> FloorInputs<'a> {
         session.floor_world(
-            self.office_world(floor_scene, now),
+            self.office_world(scene, now),
             floor_scene,
             floor,
             &self.pets,
@@ -799,7 +801,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             return self.draw_too_small(scene, now, true);
         };
         let current = self.session.nav().current();
-        let floor_scene = project_floor_scene(scene, current);
         let footer_scene = self.session.footer_scene(scene);
         let footer = pixtuoid_scene::footer::FooterInputs::new(
             &footer_scene,
@@ -807,7 +808,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         );
         let popup_scale = self.version_popup_scale(now);
         let mouse_pos = self.tooltip_pos();
-        let world = self.chrome.world(&self.session, &floor_scene, now, current);
+        let floor_scene = project_floor_scene(scene, current);
+        let world = self
+            .chrome
+            .world(&self.session, scene, &floor_scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -824,7 +828,9 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             footer: &footer,
             overlays: &overlays,
             theme: self.chrome.theme,
-            world: &world,
+            office: scene,
+            now,
+            pets: world.pets,
             mouse_pos,
         };
         crate::tui::renderer::flush_classic(&mut self.terminal, &frame, floor)?;
@@ -862,7 +868,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         };
         let term_size = self.terminal.size()?;
         let current = self.session.nav().current();
-        let floor_scene = project_floor_scene(scene, current);
         let footer_scene = self.session.footer_scene(scene);
         let footer = pixtuoid_scene::footer::FooterInputs::new(
             &footer_scene,
@@ -871,7 +876,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
         let mouse_pos = self.tooltip_pos();
-        let world = self.chrome.world(&self.session, &floor_scene, now, current);
+        let floor_scene = project_floor_scene(scene, current);
+        let world = self
+            .chrome
+            .world(&self.session, scene, &floor_scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -896,7 +904,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             _ => None,
         };
         let tooltip = mouse.and_then(|(mx, my, hit)| {
-            pixtuoid_scene::tooltip::for_hit(hit, &world).map(|tip| (mx, my, tip))
+            pixtuoid_scene::tooltip::for_hit(hit, scene, now, world.pets).map(|tip| (mx, my, tip))
         });
         cutaway.before_flush(now)?;
         let mut carves = Vec::new();

@@ -118,7 +118,10 @@ fn session_label(id: &str) -> String {
         .strip_prefix("session_")
         .and_then(|rest| rest.split_once('_'))
         .map_or(id, |(name, _)| name);
-    display_safe(&format!("{}·{name}", label_prefix_for(SOURCE_NAME)))
+    display_safe(&crate::state::SlotLabel::join(
+        label_prefix_for(SOURCE_NAME),
+        name,
+    ))
 }
 
 #[cfg(test)]

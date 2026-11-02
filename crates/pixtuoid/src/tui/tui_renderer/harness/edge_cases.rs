@@ -156,25 +156,6 @@ fn a_terminal_that_fits_shows_no_too_small_notice() {
 }
 
 #[test]
-fn colliding_labels_with_multibyte_session_ids_do_not_panic() {
-    let mut scene = SceneState::uniform(16);
-    // In `/naïveté/app` the `ï` occupies bytes 3..5, so a `&session_id[..4]` slice
-    // splits it; the shared label makes the disambiguation suffix fire.
-    let mut mk = |id: &str, desk: usize| {
-        let a = AgentId::from_transcript_path(id);
-        let mut s = slot(a, 0, desk, t0());
-        s.label = "rx\u{00b7}proj".into();
-        s.session_id = Arc::from("/na\u{00ef}vet\u{00e9}/app");
-        scene.agents.insert(a, s);
-    };
-    mk("/mb/0.jsonl", 0);
-    mk("/mb/1.jsonl", 1);
-    let mut r = build(120, 40, vec![]);
-    r.render(&scene, t0())
-        .expect("render must not panic on a multi-byte session_id");
-}
-
-#[test]
 fn no_layout_frame_paints_the_popup_at_its_clickable_scale() {
     // 100x16 → scene_rect 100x15 passes render()'s `MIN_SCENE_*` gate, but buf_h=30 is
     // below compute_with_seed's office minimum → draw_scene paints the footer-only frame.

@@ -12,10 +12,18 @@ reason = "the shim agent CLIs invoke"
 crate = "pixtuoid_core"
 module = "remote"
 level = "expect"
-reason = "the wire's one definition, read by an app outside this workspace"
+reason = "the wire's one definition, read by a device outside this workspace"
 
 [[exclude]]
 crate = "pixtuoid_core"
 module = "harness::fuzz"
 level = "expect"
 reason = "what the fuzz targets drive, a workspace of their own"
+
+[[override]]
+lint = "hawk::unnecessary_public"
+crate = "pixtuoid_scene"
+item = "nameplate::Nameplate::label"
+kind = "inherent_method"
+level = "expect"
+reason = "a name's label apart from its suffix, read by a device outside this workspace"

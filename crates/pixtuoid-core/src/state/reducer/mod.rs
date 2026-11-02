@@ -1243,13 +1243,12 @@ impl Reducer {
         if let Some(base) = backfill_identity(slot, ctx) {
             // `base` BYPASSES the `cwd_basename_label` chokepoint, so the
             // same decode-boundary cap is applied here.
-            let derived = crate::state::SlotLabel::cwd_derived(format!(
-                "{}·{}",
+            let derived = crate::state::SlotLabel::cwd_derived(crate::state::SlotLabel::join(
                 label_prefix_for(&slot.source),
-                crate::source::decoder::ellipsize(
+                &crate::source::decoder::ellipsize(
                     base,
                     crate::source::decoder::MAX_DECODED_FIELD_CHARS,
-                )
+                ),
             ));
             if slot.label.yields_to(&derived) {
                 slot.label = derived;

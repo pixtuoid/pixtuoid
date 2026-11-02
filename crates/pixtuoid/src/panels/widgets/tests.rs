@@ -333,7 +333,7 @@ fn marquee_or_truncate_selected_scrolls_unselected_ellipsizes() {
     assert_eq!(marquee_or_truncate(M, 5, false, at(0)), "ABCD\u{2026}");
 }
 
-fn slot_with(state: ActivityState, label: &str) -> AgentSlot {
+pub(super) fn slot_with(state: ActivityState, label: &str) -> AgentSlot {
     AgentSlot {
         agent_id: AgentId::from_transcript_path(&format!("/p/{label}.jsonl")),
         source: Arc::from("claude-code"),

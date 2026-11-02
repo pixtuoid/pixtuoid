@@ -216,7 +216,7 @@ mod tests {
     use pixtuoid_scene::tooltip::{DETAIL_CHARS, Tooltip, mascot_text as mascot_tooltip_text};
 
     /// Each tooltip the TUI shows, built by the shared model and painted by
-    /// [`paint_tooltip`], as `renderer::paint_scene_tooltip` does.
+    /// [`paint_tooltip`], as `renderer::flush_classic` does.
     fn paint_hover_tooltip(
         f: &mut ratatui::Frame<'_>,
         scene: &pixtuoid_core::SceneState,

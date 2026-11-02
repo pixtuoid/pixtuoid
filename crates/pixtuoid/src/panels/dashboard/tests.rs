@@ -67,7 +67,7 @@ fn rows_are_tree_ordered_roots_by_desk_index_children_following_parent() {
 
     let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
 
-    let labels: Vec<&str> = rows.iter().map(|r| r.label.as_ref()).collect();
+    let labels: Vec<String> = rows.iter().map(|r| r.name.to_string()).collect();
     assert_eq!(labels, ["cc·a", "explorer", "cc·b"]);
 
     let depths: Vec<u8> = rows.iter().map(|r| r.depth).collect();
@@ -322,6 +322,59 @@ fn build_rows_carries_requires_action_and_running_state() {
         RowState::RequiresAction(Some(Arc::from("permission")))
     );
     assert_eq!(rows[1].state, RowState::Running(Some(Arc::from("Edit x"))));
+}
+
+/// A row reads its agent's name as that floor's badges do: two namesakes on a
+/// floor carry their suffixes, and one upstairs, told apart by its floor,
+/// reads bare.
+#[test]
+fn namesake_rows_read_their_floors_nameplates() {
+    let (a, b, up) = (id("/p/a.jsonl"), id("/p/b.jsonl"), id("/p/up.jsonl"));
+    let mut scene = SceneState::uniform(2);
+    for (agent, desk, floor) in [(a, 0, 0), (b, 1, 0), (up, 2, 1)] {
+        let slot = mk_slot(agent, "cc·api", desk, floor, None, ActivityState::Idle);
+        scene.agents.insert(agent, slot);
+    }
+    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+    let row = |agent| {
+        rows.iter()
+            .find(|r| r.agent_id == agent)
+            .map(|r| r.name.clone())
+            .expect("a row per agent")
+    };
+    for (agent, floor) in [(a, 0), (b, 0), (up, 1)] {
+        let projection = pixtuoid_scene::floor::project_floor_scene(&scene, floor);
+        let namesakes =
+            pixtuoid_scene::nameplate::Namesakes::of(projection.scene().agents.values());
+        assert_eq!(row(agent), namesakes.nameplate(&scene.agents[&agent]));
+    }
+    assert_ne!(row(a), row(b));
+    assert_eq!(row(up).to_string(), "cc·api");
+}
+
+/// An agent left below floor 1's offset when floor 0 grew is drawn on no
+/// floor, so a namesake seated on floor 1 since reads its badge's bare name.
+#[test]
+fn a_row_counts_its_floor_as_the_floors_badges_do() {
+    let mut capacities = [0; pixtuoid_core::state::MAX_FLOORS];
+    capacities[..2].copy_from_slice(&[4, 4]);
+    let mut scene = SceneState::new(capacities);
+    let (left, seated) = (id("/p/left.jsonl"), id("/p/seated.jsonl"));
+    let slot = mk_slot(left, "cc·api", 4, 1, None, ActivityState::Idle);
+    scene.agents.insert(left, slot);
+    scene.floor_capacities[0] = 8;
+    let slot = mk_slot(seated, "cc·api", 8, 1, None, ActivityState::Idle);
+    scene.agents.insert(seated, slot);
+    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+    let row = rows
+        .iter()
+        .find(|r| r.agent_id == seated)
+        .expect("the seated agent's row");
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 1);
+    let projection = floor_scene.scene();
+    let badge = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values())
+        .nameplate(&projection.agents[&seated]);
+    assert_eq!(row.name, badge);
 }
 
 #[test]
