@@ -234,12 +234,14 @@ pub enum TailActivity {
 
 /// An [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339#section-5.6) stamp →
 /// epoch seconds; every caller treats `None` as "no information".
+#[cfg(any(feature = "native", test))]
 pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
     rfc3339_to_epoch(s).map(|d| d.as_secs())
 }
 
 /// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond, by
 /// [`DateTime::parse_from_rfc3339`](chrono::DateTime::parse_from_rfc3339).
+#[cfg(any(feature = "native", feature = "harness", test))]
 pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     let t = chrono::DateTime::parse_from_rfc3339(s).ok()?;
     Some(std::time::Duration::new(
@@ -1247,23 +1249,18 @@ mod tests {
         assert_eq!(cwd_basename_label("cc", Path::new("/")), None);
     }
 
+    #[cfg(feature = "native")]
     #[test]
     fn transcript_deriver_empty_cwd_fallback_equals_registry_prefix() {
-        use crate::source::{claude_code, omp, registry};
-        // `line_decoder().is_some()` == transcript-bearing == has a LabelDeriver.
-        // A source with a CUSTOM deriver must be routed through it here, or the
-        // empty-cwd floor it actually ships goes unchecked.
-        for d in registry::REGISTRY
-            .iter()
-            .filter(|d| d.line_decoder().is_some())
-        {
-            let got = if d.name == claude_code::SOURCE_NAME {
-                claude_code::cc_derive_label(Path::new(""), d.name, Path::new(""))
-            } else if d.name == omp::SOURCE_NAME {
-                omp::omp_derive_label(Path::new(""), d.name, Path::new(""))
-            } else {
-                derive_prefixed_label(d.name, Path::new(""))
+        use crate::source::registry;
+        for d in registry::REGISTRY {
+            let Some(row) = registry::transcript_for(d.name) else {
+                continue;
             };
+            let got = row.native.derive_label.map_or_else(
+                || derive_prefixed_label(d.name, Path::new("")),
+                |derive| derive(Path::new(""), d.name, Path::new("")),
+            );
             assert_eq!(
                 got, d.label_prefix,
                 "{} deriver empty-cwd fallback must equal its registry prefix",

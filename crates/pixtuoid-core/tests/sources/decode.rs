@@ -957,7 +957,6 @@ fn decode_hook_payload_missing_tool_name_still_succeeds() {
 #[tokio::test]
 async fn hook_and_watcher_keys_coalesce_for_one_file() {
     use pixtuoid_core::source::Transport;
-    use pixtuoid_core::source::claude_code::{cc_derive_label, cc_session_ended, decode_cc_line};
     use pixtuoid_core::source::jsonl::{JsonlWatcher, force_polling_backend_for_tests};
     use std::time::Duration;
     use tempfile::TempDir;
@@ -982,13 +981,8 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
     let hook_id = decode_single(hook_payload).agent_id();
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = JsonlWatcher::new(
-        projects_root.clone(),
-        "claude-code".to_string(),
-        decode_cc_line,
-        cc_session_ended,
-    )
-    .with_label_deriver(cc_derive_label);
+    let watcher = JsonlWatcher::new(projects_root.clone(), "claude-code".to_string())
+        .expect("a transcript source");
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;

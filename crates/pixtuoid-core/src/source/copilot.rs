@@ -49,6 +49,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             path_filter: accept_all_paths,
             cwd_extractor: extract_copilot_cwd,
             parent_extractor: None,
+            #[cfg(feature = "native")]
+            native: native::TRANSCRIPT,
         }),
         hook: None,
         caps: SourceCaps {

@@ -66,6 +66,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // does, applied via the watcher's cwd deriver.
             cwd_extractor: extract_grok_cwd,
             parent_extractor: None,
+            #[cfg(feature = "native")]
+            native: native::TRANSCRIPT,
         }),
         hook: Some(HookDecoding::ClaimsAll(decode_grok_hook_payload)),
         caps: SourceCaps {

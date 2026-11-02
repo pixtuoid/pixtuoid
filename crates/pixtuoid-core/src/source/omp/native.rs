@@ -7,12 +7,12 @@ use anyhow::Result;
 use notify::RecursiveMode;
 
 use super::{
-    SOURCE_NAME, decode_omp_line, omp_derive_label, omp_head_title, omp_id_from_path,
-    omp_profile_sessions_dirs, omp_profiles_dir, omp_sessions_dir,
+    SOURCE_NAME, omp_derive_label, omp_head_title, omp_id_from_path, omp_profile_sessions_dirs,
+    omp_profiles_dir, omp_sessions_dir,
 };
 use crate::source::decoder::parsed_tail_lines;
 use crate::source::jsonl::{JsonlWatcher, Nudge, ProbeSnapshot, RootWatch, Wake, absolute_root};
-use crate::source::registry::{FocusProbe, Native};
+use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{DEFAULT_POLL_INTERVAL, Source, TaggedSender};
 
 /// The profile-roots lister [`OmpSource::run`] re-invokes on each new profile
@@ -104,15 +104,10 @@ fn spawn_watcher(
     if !started.insert(root.clone()) {
         return;
     }
-    let watcher = JsonlWatcher::new(
-        root,
-        SOURCE_NAME.to_string(),
-        decode_omp_line,
-        omp_session_ended,
-    )
-    .with_label_deriver(omp_derive_label)
-    .with_head_label(omp_head_title)
-    .with_root_probe(live_omp_session_ids);
+    let Some(watcher) = JsonlWatcher::new(root, SOURCE_NAME.to_string()) else {
+        return;
+    };
+    let watcher = watcher.with_root_probe(live_omp_session_ids);
     set.spawn(watcher.run(tx));
 }
 
@@ -249,6 +244,14 @@ pub(crate) fn live_omp_session_ids(sessions_root: &Path) -> Option<ProbeSnapshot
 fn omp_recognize(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("jsonl")
 }
+
+pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
+    check_ended: omp_session_ended,
+    activity_recency: None,
+    head_label: Some(omp_head_title),
+    derive_label: Some(omp_derive_label),
+    cwd_derive: None,
+};
 
 /// Its probe is the fallback for a session its bridge never stamped
 /// (`--no-extensions`, or one predating the install).

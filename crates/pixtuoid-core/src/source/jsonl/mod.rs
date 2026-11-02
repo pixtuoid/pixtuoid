@@ -36,7 +36,7 @@ pub(crate) use root_watch::{Nudge, Reconciled, RootWatch, Wake, absolute_root};
 use unclaim::drain_child_end_unclaims;
 use walk::{scan_root, walk_jsonl};
 
-pub use crate::source::decoder::LineDecoder;
+use crate::source::decoder::LineDecoder;
 
 pub use crate::source::decoder::PathFilter;
 pub use crate::source::decoder::{IdDeriver, TailActivity};
@@ -44,7 +44,7 @@ pub use crate::source::decoder::{IdDeriver, TailActivity};
 /// Derives an agent's display label from its transcript `(path, source, cwd)`.
 /// The default is the source-prefixed cwd basename (`cx·dotfiles`); **CC**
 /// overrides it with `cc_derive_label` and **omp** with `omp_derive_label`.
-pub type LabelDeriver = fn(&Path, &str, &Path) -> String;
+pub(crate) type LabelDeriver = fn(&Path, &str, &Path) -> String;
 
 fn default_prefixed_label(_path: &Path, source: &str, cwd: &Path) -> String {
     crate::source::decoder::derive_prefixed_label(source, cwd)
@@ -52,7 +52,7 @@ fn default_prefixed_label(_path: &Path, source: &str, cwd: &Path) -> String {
 
 /// Predicate on a transcript's raw bytes: `true` when they carry a session-end
 /// marker, so the first-sight gate never seeds an already-ended transcript.
-pub type SessionEndChecker = fn(&[u8]) -> bool;
+pub(crate) type SessionEndChecker = fn(&[u8]) -> bool;
 
 /// Reads a transcript tail into a [`TailActivity`] verdict. Only **CC**
 /// supplies one (see `claude_code::cc_activity_recency` for the write that made
@@ -77,7 +77,7 @@ fn no_cwd_from_path(_p: &Path) -> Option<PathBuf> {
 
 /// Pulls a display label out of ONE decoded head line, for a source that names
 /// its session in the transcript HEAD rather than only in the tail stream.
-/// `None` on a source's decoder row means it has no such name — which is
+/// `None` on a source's registry row means it has no such name — which is
 /// load-bearing, not merely absent: it lets the head scan stop at the first
 /// `cwd` instead of reading on for a label that can never arrive. **omp** is
 /// the one override; see its `omp_head_title`.
@@ -181,14 +181,7 @@ pub struct JsonlWatcher {
     root: PathBuf,
     initial_window: Duration,
     source_name: String,
-    decode_line: LineDecoder,
-    derive_label: LabelDeriver,
-    check_session_ended: SessionEndChecker,
-    activity_recency: ActivityRecency,
-    id_derive: folded::FoldedDeriver,
-    path_filter: PathFilter,
-    cwd_derive: CwdDeriver,
-    head_label: Option<HeadLabel>,
+    decoders: SourceDecoders,
     liveness_probe: Option<LivenessProbe>,
     poll_interval: Duration,
     negative_vouch_min_span: Duration,
@@ -223,36 +216,34 @@ pub fn force_polling_backend_for_tests(interval: Duration) {
 static TEST_POLL_OVERRIDE: OnceLock<Duration> = OnceLock::new();
 
 impl JsonlWatcher {
-    /// A watcher over `root` for `source`, decoding each transcript line with
-    /// `decode_line` and gating ended sessions with `check_session_ended`. The
-    /// id derivation comes from `source`'s own registry row
-    /// ([`crate::source::registry::id_deriver_for`]), so there is no per-source
-    /// `run()` wiring to forget and the offline `harness::Drive` reads the same
-    /// row.
-    pub fn new(
-        root: PathBuf,
-        source: String,
-        decode_line: LineDecoder,
-        check_session_ended: SessionEndChecker,
-    ) -> Self {
-        Self {
-            id_derive: folded::FoldedDeriver::new(crate::source::registry::id_deriver_for(&source)),
-            path_filter: crate::source::registry::path_filter_for(&source),
+    /// A watcher over `root` reading `source`'s transcripts as its registry row
+    /// says, so there is no per-source `run()` wiring to forget and the offline
+    /// `harness::Drive` reads the same row. `None` when `source` has no
+    /// transcripts: a watcher that fell back to some other decoder would decode
+    /// nothing and say nothing.
+    pub fn new(root: PathBuf, source: String) -> Option<Self> {
+        let row = crate::source::registry::transcript_for(&source)?;
+        let native = row.native;
+        Some(Self {
+            decoders: SourceDecoders {
+                decode_line: row.line_decoder,
+                derive_label: native.derive_label.unwrap_or(default_prefixed_label),
+                check_ended: native.check_ended,
+                activity_recency: native.activity_recency.unwrap_or(no_activity_recency),
+                id_derive: folded::FoldedDeriver::new(row.id_from_path),
+                path_filter: row.path_filter,
+                cwd_derive: native.cwd_derive.unwrap_or(no_cwd_from_path),
+                head_label: native.head_label,
+            },
             root: absolute_root(root),
             initial_window: DEFAULT_INITIAL_WINDOW,
             source_name: source,
-            decode_line,
-            derive_label: default_prefixed_label,
-            check_session_ended,
-            activity_recency: no_activity_recency,
-            cwd_derive: no_cwd_from_path,
-            head_label: None,
             liveness_probe: None,
             poll_interval: DEFAULT_POLL_INTERVAL,
             negative_vouch_min_span: NEGATIVE_VOUCH_MIN_SPAN,
             child_end_unclaims: None,
             writer_holds_open: false,
-        }
+        })
     }
 
     /// Override the recency window a first-sight transcript must fall within to
@@ -260,13 +251,6 @@ impl JsonlWatcher {
     #[must_use]
     pub fn with_initial_window(mut self, window: Duration) -> Self {
         self.initial_window = window;
-        self
-    }
-
-    /// Supply this source's [`ActivityRecency`] — what the first-sight gate
-    /// measures the initial window against, in place of the file mtime.
-    pub(crate) fn with_activity_recency(mut self, recency: ActivityRecency) -> Self {
-        self.activity_recency = recency;
         self
     }
 
@@ -290,35 +274,11 @@ impl JsonlWatcher {
         self
     }
 
-    /// Override the display-label derivation (default: the source-prefixed cwd
-    /// basename via [`LabelDeriver`]). Needed by the sources whose transcript
-    /// PATH names the agent better than its cwd does — **CC** (subagents) and
-    /// **omp** (subagents, named by the task they were dispatched under).
-    #[must_use]
-    pub fn with_label_deriver(mut self, derive_label: LabelDeriver) -> Self {
-        self.derive_label = derive_label;
-        self
-    }
-
-    /// Derive a first-sight cwd from the transcript PATH when the content
-    /// head-scan yields none (default: never). See [`CwdDeriver`].
-    pub(crate) fn with_cwd_deriver(mut self, cwd_derive: CwdDeriver) -> Self {
-        self.cwd_derive = cwd_derive;
-        self
-    }
-
-    /// Name the session from ONE decoded head line, ahead of the cwd-basename
-    /// deriver (default: never). See [`HeadLabel`].
-    pub(crate) fn with_head_label(mut self, head_label: HeadLabel) -> Self {
-        self.head_label = Some(head_label);
-        self
-    }
-
     /// Override the [`PathFilter`] the source's registry row supplies; no
     /// in-tree source needs it.
     #[must_use]
     pub fn with_path_filter(mut self, path_filter: PathFilter) -> Self {
-        self.path_filter = path_filter;
+        self.decoders.path_filter = path_filter;
         self
     }
 
@@ -482,16 +442,7 @@ impl JsonlWatcher {
 
         let source_arc: Arc<str> = Arc::from(self.source_name.as_str());
         let unclaims = self.child_end_unclaims.clone();
-        let decoders = SourceDecoders {
-            decode_line: self.decode_line,
-            derive_label: self.derive_label,
-            check_ended: self.check_session_ended,
-            activity_recency: self.activity_recency,
-            id_derive: self.id_derive,
-            path_filter: self.path_filter,
-            cwd_derive: self.cwd_derive,
-            head_label: self.head_label,
-        };
+        let decoders = self.decoders;
 
         // The initial seed rides the same `scan_root` → `walk_jsonl` path every
         // later scan uses, so a file is gated identically (recency + session_end)

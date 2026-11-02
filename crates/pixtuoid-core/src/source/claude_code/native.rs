@@ -4,13 +4,13 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 
-use super::{SOURCE_NAME, cc_derive_label, cc_session_ended, claude_config_dir, decode_cc_line};
+use super::{SOURCE_NAME, cc_derive_label, cc_session_ended, claude_config_dir};
 use crate::source::cc_probe::cc_sessions_dir;
 pub use crate::source::cc_probe::live_cc_session_ids;
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher};
-use crate::source::registry::{FocusProbe, Native};
+use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
 
 /// A pure `~/.claude/projects` transcript watcher: no socket bind, no
@@ -76,30 +76,14 @@ impl ClaudeCodeSource {
     }
 }
 
-/// THE CC watcher wiring — the per-source decoder/deriver set, in one place.
-/// Production, the out-of-crate integration harness (`tests/watcher/`) and the
-/// `--live` snapshot example all need the SAME chain, and hand-mirroring it
-/// drifted three times (#203, #632, the activity clock), each time silently
-/// exercising a configuration production does not run. Callers add only what is
-/// genuinely theirs.
-pub fn cc_watcher(projects_root: std::path::PathBuf) -> JsonlWatcher {
-    JsonlWatcher::new(
-        projects_root,
-        SOURCE_NAME.to_string(),
-        decode_cc_line,
-        cc_session_ended,
-    )
-    .with_label_deriver(cc_derive_label)
-    .with_activity_recency(super::cc_activity_recency)
-}
-
 impl Source for ClaudeCodeSource {
     fn name(&self) -> &str {
         SOURCE_NAME
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        let mut watcher = cc_watcher(self.projects_root.clone());
+        let mut watcher = JsonlWatcher::new(self.projects_root.clone(), SOURCE_NAME.to_string())
+            .context("no transcript row")?;
         if let Some(sessions_dir) = cc_sessions_dir(&self.projects_root) {
             watcher = watcher.with_liveness_probe(std::sync::Arc::new(move || {
                 live_cc_session_ids(&sessions_dir)
@@ -111,6 +95,14 @@ impl Source for ClaudeCodeSource {
         watcher.run(tx).await
     }
 }
+
+pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
+    check_ended: cc_session_ended,
+    activity_recency: Some(super::cc_activity_recency),
+    head_label: None,
+    derive_label: Some(cc_derive_label),
+    cwd_derive: None,
+};
 
 pub(crate) const NATIVE: Native = Native {
     root: Some(projects_root),
