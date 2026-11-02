@@ -71,7 +71,7 @@ impl Screen {
 /// Paint `run`: its plate, if it has one, and the strip down the plate's
 /// left edge, then its spans end to end from its line's start, inside the
 /// plate's pad where it sits on one, each icon in `pack`'s art.
-fn paint_run(run: &TextRun, (pack, pen): (&OfficeArt, Pen), buf: &mut RgbBuffer) {
+pub(crate) fn paint_run(run: &TextRun, (pack, pen): (&OfficeArt, Pen), buf: &mut RgbBuffer) {
     let rect = run_rect(run, pen);
     if let Some(ground) = run.plate {
         pen.fill(buf, rect, ground);

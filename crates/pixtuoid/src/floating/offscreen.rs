@@ -88,7 +88,10 @@ impl OfficeRenderer {
         } = frame;
         let gap = theme.surface.bg_fallback;
         let drawn = self.session.render(
-            at.look(pixtuoid_scene::look::WorldText::Baked),
+            at.look(
+                pixtuoid_scene::look::LookKind::Cutaway,
+                pixtuoid_scene::look::WorldText::Baked,
+            ),
             RenderInputs {
                 world,
                 theme,

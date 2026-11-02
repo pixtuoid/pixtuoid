@@ -206,12 +206,17 @@ impl PixelFit {
         self.density
     }
 
-    /// The look a floor renders in under this fit: the cutaway at
-    /// [`Self::density`], its world text set by `text`.
-    pub fn look(self, text: crate::look::WorldText) -> crate::look::Look {
-        crate::look::Look::Cutaway {
-            scale: RenderScale::from(self.density),
-            text,
+    /// `kind` as a floor renders it under this fit: at [`Self::density`], its
+    /// world text set by `text`.
+    pub fn look(
+        self,
+        kind: crate::look::LookKind,
+        text: crate::look::WorldText,
+    ) -> crate::look::Look {
+        let scale = RenderScale::from(self.density);
+        match kind {
+            crate::look::LookKind::Classic => crate::look::Look::Classic { scale, text },
+            crate::look::LookKind::Cutaway => crate::look::Look::Cutaway { scale, text },
         }
     }
 
@@ -229,6 +234,30 @@ impl PixelFit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fit draws either look at its density, its world text as asked.
+    #[test]
+    fn a_fit_draws_either_look_at_its_density() {
+        use crate::look::{Look, LookKind, WorldText};
+        let density = crate::display::pen::test_density(4);
+        let px = crate::layout::Size { w: 640, h: 480 };
+        let fit = PixelFit::at_least_density(8, density, px);
+        let scale = RenderScale::from(density);
+        assert_eq!(
+            fit.look(LookKind::Classic, WorldText::Baked),
+            Look::Classic {
+                scale,
+                text: WorldText::Baked
+            }
+        );
+        assert_eq!(
+            fit.look(LookKind::Cutaway, WorldText::Host),
+            Look::Cutaway {
+                scale,
+                text: WorldText::Host
+            }
+        );
+    }
     use crate::display::pen::test_density;
     use crate::floor::{floor_capacity, floor_capacity_scaled, floor_seed};
     use crate::sprite::format::MAX_DENSITY_VARIANT;

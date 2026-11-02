@@ -13,7 +13,7 @@ use pixtuoid_scene::theme::Theme;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
-use crate::cutaway::{CutawayOffice, CutawaySession};
+use crate::pixel::{PixelOffice, PixelSession};
 use crate::{CELL_H, CELL_W, SnapshotArgs, due_navigations};
 
 /// Print a connectedness report for the walkable mask: a BFS from the door threshold,
@@ -230,24 +230,24 @@ pub(crate) fn save_backend_as_png(
     term: &Terminal<TestBackend>,
     path: &Path,
     area: ratatui::layout::Rect,
-    cutaway: Option<&CutawayOffice<FloorSession>>,
+    pixel: Option<&PixelOffice<FloorSession>>,
 ) -> Result<()> {
-    let frame = compose(term.backend().buffer(), area, cutaway);
+    let frame = compose(term.backend().buffer(), area, pixel);
     // Every pixel is opaque, so the PNG carries no alpha.
     image::DynamicImage::from(frame).into_rgb8().save(path)?;
     Ok(())
 }
 
-/// [`cells_to_rgba`], `cutaway`'s office over its scene cells where there is
+/// [`cells_to_rgba`], `pixel`'s office over its scene cells where there is
 /// one: the frame every still and `--gif` capture writes.
-pub(crate) fn compose<S: CutawaySession>(
+pub(crate) fn compose<S: PixelSession>(
     term_buf: &ratatui::buffer::Buffer,
     area: ratatui::layout::Rect,
-    cutaway: Option<&CutawayOffice<S>>,
+    pixel: Option<&PixelOffice<S>>,
 ) -> RgbaImage {
     let mut img = cells_to_rgba(term_buf, area);
-    if let Some(cutaway) = cutaway {
-        cutaway.paint(&mut img);
+    if let Some(pixel) = pixel {
+        pixel.paint(&mut img);
     }
     img
 }
@@ -426,18 +426,20 @@ impl AnimJob<'_> {
 }
 
 /// Drive the real TuiRenderer (slide transition, footer floor chip, pet motion) frame by
-/// frame and encode its TestBackend cell buffer; with `cutaway`, a second
+/// frame and encode its TestBackend cell buffer; with `pixel`, a second
 /// office navigated as the renderer's is painted over its office cells.
 pub(crate) fn save_renderer_animation(
     job: &AnimJob,
     term: Terminal<TestBackend>,
     navigations: &[(u64, usize)],
     pets: Vec<pixtuoid_scene::pet::Pet>,
-    cutaway: bool,
+    pixel: Option<pixtuoid_scene::look::LookKind>,
 ) -> Result<()> {
     let size = term.size()?;
-    let cutaway = cutaway
-        .then(|| CutawayOffice::of_renderer(job.pack, size.width, size.height, pets.clone()))
+    let pixel = pixel
+        .map(|look| {
+            PixelOffice::of_renderer(job.pack, (size.width, size.height), pets.clone(), look)
+        })
         .transpose()?;
     let mut r =
         pixtuoid::dev::TuiRenderer::new(term, job.theme, pets, std::sync::Arc::clone(job.pack));
@@ -448,40 +450,40 @@ pub(crate) fn save_renderer_animation(
     // --navigate-at schedule off the encoded clip's t=0.
     job.encode(
         0,
-        &mut (r, cutaway),
-        |(r, cutaway), now, elapsed_ms| {
+        &mut (r, pixel),
+        |(r, pixel), now, elapsed_ms| {
             for floor in due_navigations(navigations, &mut fired, elapsed_ms) {
                 r.navigate_floor(floor, now);
-                if let Some(cutaway) = cutaway {
-                    cutaway.navigate(floor, now);
+                if let Some(pixel) = pixel {
+                    pixel.navigate(floor, now);
                 }
             }
             r.render(job.scene, now)?;
-            if let Some(cutaway) = cutaway {
-                cutaway.render(r.office_world(job.scene, now), job.theme, None)?;
+            if let Some(pixel) = pixel {
+                pixel.render(r.office_world(job.scene, now), job.theme, None)?;
             }
             Ok(())
         },
-        |(r, cutaway)| {
+        |(r, pixel)| {
             let cells = r.terminal.backend().buffer();
-            compose(cells, cells.area, cutaway.as_ref())
+            compose(cells, cells.area, pixel.as_ref())
         },
     )
 }
 
-/// One frame of `ctx`'s floor: `draw_scene`'s, or `cutaway`'s office under
+/// One frame of `ctx`'s floor: `draw_scene`'s, or `pixel`'s office under
 /// the frame's text, as the TUI's cutaway draws it. What the classic frame
 /// answers a pointer with.
 pub(crate) fn draw_frame(
     term: &mut Terminal<TestBackend>,
     ctx: &mut DrawCtx<'_>,
-    cutaway: Option<&mut CutawayOffice<FloorSession>>,
+    pixel: Option<&mut PixelOffice<FloorSession>>,
 ) -> Result<Option<pixtuoid_scene::look::Hits>> {
-    let Some(cutaway) = cutaway else {
+    let Some(pixel) = pixel else {
         return draw_scene(term, ctx);
     };
     let under = draw_over_image(term, ctx)?;
-    cutaway.render(ctx.world, ctx.theme, Some(under))?;
+    pixel.render(ctx.world, ctx.theme, Some(under))?;
     Ok(None)
 }
 
@@ -494,23 +496,23 @@ pub(crate) fn save_animation(
     floor_meta: FloorMeta,
     skip_ms: u64,
     debug_walkable: bool,
-    cutaway: Option<CutawayOffice<FloorSession>>,
+    pixel: Option<PixelOffice<FloorSession>>,
 ) -> Result<()> {
     let scene = job.scene;
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     job.encode(
         skip_ms,
-        &mut (term, cutaway),
-        |(term, cutaway), now, _| {
+        &mut (term, pixel),
+        |(term, pixel), now, _| {
             let mut draw_ctx = DrawCtx {
                 debug_walkable,
                 ..DrawCtx::offscreen(floor, office.stores(), job.theme, scene, now, floor_meta)
             };
-            draw_frame(term, &mut draw_ctx, cutaway.as_mut()).map(drop)
+            draw_frame(term, &mut draw_ctx, pixel.as_mut()).map(drop)
         },
-        |(term, cutaway)| {
+        |(term, pixel)| {
             let cells = term.backend().buffer();
-            compose(cells, cells.area, cutaway.as_ref())
+            compose(cells, cells.area, pixel.as_ref())
         },
     )
 }

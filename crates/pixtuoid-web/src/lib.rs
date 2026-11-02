@@ -645,7 +645,8 @@ impl Office {
         // Too small to lay out: draws nothing, and `step` fills the frame; never panics.
         let floor_meta = self.floor_meta();
         self.session.render(
-            self.fit.look(WorldText::Host),
+            self.fit
+                .look(pixtuoid_scene::look::LookKind::Cutaway, WorldText::Host),
             RenderInputs {
                 world: FloorInputs {
                     scene: &self.scene,

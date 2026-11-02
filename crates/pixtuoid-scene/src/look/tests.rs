@@ -76,7 +76,7 @@ fn the_entry_runs_the_epilogue_every_frame() {
         render(
             &mut floor,
             office.stores(),
-            Look::Classic,
+            Look::HALF_BLOCKS,
             inputs(&scene, now),
         )
         .expect("lays out");
@@ -136,7 +136,7 @@ fn a_floor_switching_looks_repaints_whole_and_keeps_each_raster() {
     let classic_size = (SIZE.w, SIZE.h);
     let cutaway_size = (scale.to_buffer(SIZE.w), scale.to_buffer(SIZE.h));
     assert_eq!(
-        frame(&mut floor, Look::Classic, 0),
+        frame(&mut floor, Look::HALF_BLOCKS, 0),
         (Dirty::All, classic_size)
     );
     assert_eq!(frame(&mut floor, cutaway, 1), (Dirty::All, cutaway_size));
@@ -146,7 +146,7 @@ fn a_floor_switching_looks_repaints_whole_and_keeps_each_raster() {
         "an unchanged frame"
     );
     assert_eq!(
-        frame(&mut floor, Look::Classic, 2),
+        frame(&mut floor, Look::HALF_BLOCKS, 2),
         (Dirty::All, classic_size)
     );
     let canvas = floor.raster.cutaway.as_ref().map(std::ptr::from_ref);
@@ -192,7 +192,7 @@ fn a_cutaway_leaving_its_text_to_the_host_hands_over_the_classics() {
     render(
         &mut classic,
         office.stores(),
-        Look::Classic,
+        Look::HALF_BLOCKS,
         inputs(&scene, t0),
     )
     .expect("lays out");
@@ -243,7 +243,7 @@ fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
     render(
         &mut floor,
         office.stores(),
-        Look::Classic,
+        Look::HALF_BLOCKS,
         inputs(&scene, t0),
     )
     .expect("lays out");
@@ -262,7 +262,7 @@ fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
         size: Size { w: 1, h: 1 },
         ..inputs(&scene, t0)
     };
-    assert!(render(&mut floor, office.stores(), Look::Classic, refused).is_none());
+    assert!(render(&mut floor, office.stores(), Look::HALF_BLOCKS, refused).is_none());
     let text = floor.raster.host_text().expect("shown");
     assert!(text.badges.is_empty() && text.bubbles.is_empty() && text.signs.is_empty());
 }
@@ -350,10 +350,227 @@ fn a_dim_darkens_each_pixel_a_frame_may_write() {
 fn each_look_kind_has_its_own_id_and_every_look_has_a_kind() {
     let ids: HashSet<_> = LookKind::ALL.iter().map(|k| k.name()).collect();
     assert_eq!(ids.len(), LookKind::ALL.len());
-    assert_eq!(Look::Classic.kind(), LookKind::Classic);
+    assert_eq!(Look::HALF_BLOCKS.kind(), LookKind::Classic);
     let cutaway = Look::Cutaway {
         scale: RenderScale::ONE,
         text: WorldText::Baked,
     };
     assert_eq!(cutaway.kind(), LookKind::Cutaway);
+}
+
+/// The bundled pack, whose art a pixel painter's classic is drawn at the
+/// density of.
+fn bundled() -> (Arc<crate::pack::OfficeArt>, RenderScale) {
+    let pack = Arc::new(crate::pack::load_bundled_pack().expect("the bundled pack loads"));
+    let density = *pack
+        .inner()
+        .density_variants()
+        .first()
+        .expect("the bundled pack draws variants");
+    (pack, RenderScale::from(density))
+}
+
+fn scaled(scale: RenderScale, text: WorldText) -> Look {
+    Look::Classic { scale, text }
+}
+
+/// A screen that takes only each frame's dirt shows every frame whole.
+#[test]
+fn a_scaled_classic_shown_under_its_dirt_is_each_whole_frame() {
+    let (pack, scale) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let (mut floor, mut office) = (PerFloor::new(pack), PerOffice::new());
+    let mut screen: Option<RgbBuffer> = None;
+    let mut partial = 0;
+    for step in 0..300u64 {
+        let now = t0 + Duration::from_millis(step * 100);
+        let look = scaled(scale, WorldText::Baked);
+        let rendered =
+            render(&mut floor, office.stores(), look, inputs(&scene, now)).expect("lays out");
+        let pixels = floor.raster.pixels().expect("a frame");
+        match (&rendered.dirty, &mut screen) {
+            (Dirty::Rects(rects), Some(shown)) => {
+                partial += 1;
+                for b in rects.as_slice() {
+                    for y in b.y..b.y + b.height {
+                        for x in b.x..b.x + b.width {
+                            shown.put(x, y, pixels.get(x, y));
+                        }
+                    }
+                }
+            }
+            (Dirty::Unchanged, Some(_)) => {}
+            _ => screen = Some(pixels.clone()),
+        }
+        let shown = screen.as_ref().expect("a frame shown");
+        assert!(
+            shown.as_slice() == pixels.as_slice(),
+            "step {step}: the screen shows other than the frame ({:?})",
+            rendered.dirty
+        );
+    }
+    assert!(partial > 0, "some frame repaints in part");
+}
+
+/// The first frame in another look repaints whole, its own look's change of
+/// scale or text included.
+#[test]
+fn a_change_of_look_repaints_the_scaled_classic_whole() {
+    let (pack, scale) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let (mut floor, mut office) = (PerFloor::new(pack), PerOffice::new());
+    let double = RenderScale::new(scale.get() * 2).expect("a scale");
+    let mut dirty = |look: Look| {
+        render(&mut floor, office.stores(), look, inputs(&scene, t0))
+            .expect("lays out")
+            .dirty
+    };
+    let baked = scaled(scale, WorldText::Baked);
+    assert_eq!(dirty(baked), Dirty::All, "the first frame");
+    assert_ne!(dirty(baked), Dirty::All, "the same look");
+    for other in [
+        Look::HALF_BLOCKS,
+        Look::Cutaway {
+            scale,
+            text: WorldText::Baked,
+        },
+        scaled(double, WorldText::Baked),
+        scaled(scale, WorldText::Host),
+    ] {
+        dirty(other);
+        assert_eq!(dirty(baked), Dirty::All, "back from {other:?}");
+    }
+}
+
+/// With its text the host's, the scaled classic is the half-blocks' frame,
+/// each pixel a square of its scale.
+#[test]
+fn the_scaled_classic_is_the_half_blocks_blown_up() {
+    let (pack, scale) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let frame = |look: Look| {
+        let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+        render(&mut floor, office.stores(), look, inputs(&scene, t0)).expect("lays out");
+        let text = floor.raster.host_text().map(|t| t.badges.len());
+        (floor.raster.pixels().expect("a frame").clone(), text)
+    };
+    let (unit, unit_text) = frame(Look::HALF_BLOCKS);
+    let (big, big_text) = frame(scaled(scale, WorldText::Host));
+    let s = scale.get();
+    assert_eq!(
+        (big.width(), big.height()),
+        (unit.width() * s, unit.height() * s)
+    );
+    for y in 0..big.height() {
+        for x in 0..big.width() {
+            assert_eq!(big.get(x, y), unit.get(x / s, y / s), "({x}, {y})");
+        }
+    }
+    assert!(unit_text.is_some_and(|n| n > 0), "the scene has badges");
+    assert_eq!(big_text, unit_text, "its text is still the host's");
+}
+
+/// Baked, the classic's text is the cutaway's paint of its runs, in its
+/// host text's order, over its art, and no host sets any.
+#[test]
+fn baked_classic_text_is_the_cutaways_paint_of_its_runs() {
+    let (pack, scale) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let floor = |text: WorldText| {
+        let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+        render(
+            &mut floor,
+            office.stores(),
+            scaled(scale, text),
+            inputs(&scene, t0),
+        )
+        .expect("lays out");
+        floor
+    };
+    let (host, baked) = (floor(WorldText::Host), floor(WorldText::Baked));
+    let text = host.raster.host_text().expect("the host's text");
+    let mut expected = host.raster.pixels().expect("a frame").clone();
+    let pen = crate::display::pen::Pen::for_pack(scale, &pack);
+    let runs = text
+        .badges
+        .iter()
+        .map(crate::display::Badge::run)
+        .chain(text.bubbles.iter().cloned())
+        .chain(text.signs.iter().cloned());
+    for run in runs {
+        crate::cutaway::paint::paint_run(&run, (&pack, pen), &mut expected);
+    }
+    assert!(
+        baked.raster.host_text().is_none(),
+        "no host sets baked text"
+    );
+    assert!(
+        baked.raster.pixels().expect("a frame").as_slice() == expected.as_slice(),
+        "the baked frame is the art with its runs painted"
+    );
+}
+
+/// A pointer finds the board's star the baked classic drew, where the
+/// half-blocks leave its placing to their host.
+#[test]
+fn the_baked_classic_star_answers_a_pointer() {
+    let (pack, scale) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+    let rendered = render(
+        &mut floor,
+        office.stores(),
+        scaled(scale, WorldText::Baked),
+        inputs(&scene, t0),
+    )
+    .expect("lays out");
+    let star = floor.raster.star().expect("the board draws its star");
+    assert!(matches!(
+        rendered.hits.at(star, None),
+        Some(crate::hit::SceneHit::Star)
+    ));
+    render(
+        &mut floor,
+        office.stores(),
+        Look::HALF_BLOCKS,
+        inputs(&scene, t0),
+    )
+    .expect("lays out");
+    assert_eq!(floor.raster.star(), None);
+}
+
+/// A slide bakes every look's text but the half-blocks', which no glyph
+/// fits.
+#[test]
+fn a_slide_bakes_every_look_but_the_half_blocks() {
+    let (_, scale) = bundled();
+    assert_eq!(Look::HALF_BLOCKS.baked(), Look::HALF_BLOCKS);
+    for look in [
+        scaled(scale, WorldText::Host),
+        Look::Cutaway {
+            scale,
+            text: WorldText::Host,
+        },
+    ] {
+        let baked = look.baked();
+        assert_eq!(baked.kind(), look.kind());
+        assert!(
+            matches!(
+                baked,
+                Look::Classic {
+                    text: WorldText::Baked,
+                    ..
+                } | Look::Cutaway {
+                    text: WorldText::Baked,
+                    ..
+                }
+            ),
+            "{look:?} → {baked:?}"
+        );
+    }
 }

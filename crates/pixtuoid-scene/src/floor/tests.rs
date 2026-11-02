@@ -576,7 +576,7 @@ fn classic_frame(
     size: Size,
 ) -> Option<Arc<crate::layout::SceneLayout>> {
     session.render(
-        crate::look::Look::Classic,
+        crate::look::Look::HALF_BLOCKS,
         crate::look::RenderInputs {
             world: FloorInputs {
                 scene,
@@ -707,7 +707,7 @@ fn floor_session_render_owns_the_dual_eviction() {
 
     let scene = SceneState::new([8; MAX_FLOORS]);
     session.render(
-        crate::look::Look::Classic,
+        crate::look::Look::HALF_BLOCKS,
         crate::look::RenderInputs {
             world: FloorInputs {
                 scene: &scene,
@@ -757,7 +757,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
     for step in 0..600u64 {
         let now = now0 + Duration::from_secs(3 * step);
         session.render(
-            crate::look::Look::Classic,
+            crate::look::Look::HALF_BLOCKS,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
@@ -797,7 +797,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
         "occupancy never fell back to empty — last_occupied accumulates instead of tracking the frame"
     );
     session.render(
-        crate::look::Look::Classic,
+        crate::look::Look::HALF_BLOCKS,
         crate::look::RenderInputs {
             world: FloorInputs {
                 scene: &scene,
@@ -1556,7 +1556,7 @@ const PAINTED: crate::layout::Size = crate::layout::Size { w: 192, h: 80 };
 fn looks() -> [crate::look::Look; 2] {
     let scale = crate::render_scale::RenderScale::new(4).expect("nonzero");
     [
-        crate::look::Look::Classic,
+        crate::look::Look::HALF_BLOCKS,
         crate::look::Look::Cutaway {
             scale,
             text: crate::look::WorldText::Baked,
@@ -1739,7 +1739,7 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
     ];
     // the beat is the cutaway's at every scale, so the cheapest checks it
     let looks = [
-        crate::look::Look::Classic,
+        crate::look::Look::HALF_BLOCKS,
         crate::look::Look::Cutaway {
             scale: crate::render_scale::RenderScale::new(1).expect("nonzero"),
             text: crate::look::WorldText::Baked,
@@ -1947,7 +1947,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
     let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     let render = |office: &mut OfficeSession, now| {
         office.render(
-            crate::look::Look::Classic,
+            crate::look::Look::HALF_BLOCKS,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
@@ -2086,7 +2086,7 @@ fn a_slides_gap_dims_with_its_floors() {
     let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     let render = |office: &mut OfficeSession, now| {
         office.render(
-            Look::Classic,
+            Look::HALF_BLOCKS,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
@@ -2134,7 +2134,7 @@ fn a_frame_without_the_office_forgets_the_last() {
     // the assertion.
     let occupied = (0..600u64).any(|step| {
         let _ = office.render(
-            crate::look::Look::Classic,
+            crate::look::Look::HALF_BLOCKS,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
@@ -2181,7 +2181,7 @@ fn an_office_session_follows_its_floors_down() {
     let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     let render = |office: &mut OfficeSession, scene: &SceneState| {
         office.render(
-            crate::look::Look::Classic,
+            crate::look::Look::HALF_BLOCKS,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene,
@@ -2507,7 +2507,7 @@ fn a_lifted_creature_is_in_front_of_the_room() {
     };
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_060);
     let looks = [
-        crate::look::Look::Classic,
+        crate::look::Look::HALF_BLOCKS,
         crate::look::Look::Cutaway {
             scale: crate::render_scale::RenderScale::new(4).expect("nonzero"),
             text: crate::look::WorldText::Baked,

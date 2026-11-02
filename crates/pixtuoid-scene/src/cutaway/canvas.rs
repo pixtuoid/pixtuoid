@@ -110,7 +110,7 @@ impl Rects {
 /// The most passes one frame's rects are painted in: a pass has a fixed cost,
 /// so many small ones outrun the whole repaint, and one bounding box over
 /// rects far apart paints most of the frame.
-const MAX_PASSES: usize = 8;
+pub(crate) const MAX_PASSES: usize = 8;
 
 /// `rects` merged into at most `max` disjoint boxes that cover them all, each
 /// merge the pair whose box adds the least area: Mozilla's
@@ -119,7 +119,7 @@ const MAX_PASSES: usize = 8;
 /// Overlapping boxes merge first whatever the cap, so no pixel is painted, or
 /// lit, twice. The pairs wait in a heap whose stale ones are skipped as they
 /// surface: O(n² log n) in the rects, not a scan of every pair a merge.
-fn passes(rects: &[Bounds], max: usize) -> Vec<Bounds> {
+pub(crate) fn passes(rects: &[Bounds], max: usize) -> Vec<Bounds> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
     let area = |b: &Bounds| i64::from(b.width) * i64::from(b.height);
