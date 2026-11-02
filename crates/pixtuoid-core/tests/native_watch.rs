@@ -6,7 +6,6 @@
 use std::time::Duration;
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::source::codex::decode_codex_line;
 use pixtuoid_core::source::jsonl::JsonlWatcher;
 use pixtuoid_core::source::{AgentEvent, Transport};
 use tempfile::TempDir;
@@ -26,7 +25,8 @@ const POLL: Duration = Duration::from_secs(3600);
 const INITIAL_WINDOW: Duration = Duration::from_secs(60);
 
 fn codex_watcher(root: std::path::PathBuf) -> JsonlWatcher {
-    JsonlWatcher::new(root, "codex".to_string(), decode_codex_line, |_| false)
+    JsonlWatcher::new(root, "codex".to_string())
+        .expect("a transcript source")
         .with_initial_window(INITIAL_WINDOW)
         .with_poll_interval(POLL)
 }

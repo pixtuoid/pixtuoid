@@ -125,15 +125,11 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
 }
 
 /// The newest turn this file's SESSION wrote, epoch seconds — read with the
-/// source's own `ActivityRecency` over the raw bytes, exactly as the first-sight
-/// gate reads a tail. Only CC has a published answer today; every other source
-/// reports no stamp, which shows up as an empty provenance column rather than a
-/// wrong one.
+/// source's own reader over the raw bytes, exactly as the first-sight gate reads a
+/// tail. A source with none reports no stamp, which shows up as an empty
+/// provenance column rather than a wrong one.
 fn newest_activity(source: &str, body: &[u8]) -> Option<u64> {
-    if source != pixtuoid_core::source::claude_code::SOURCE_NAME {
-        return None;
-    }
-    match pixtuoid_core::source::claude_code::cc_activity_recency(body) {
+    match registry::tail_activity(source, body) {
         TailActivity::At(secs) => Some(secs),
         _ => None,
     }

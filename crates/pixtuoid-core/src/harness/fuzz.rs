@@ -1,6 +1,7 @@
 //! What a fuzz target (`fuzz/fuzz_targets/`) drives past [`Drive`] alone, and
 //! the mutator they share. Their one contract: a refusal is fine, a panic is not.
 
+use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -9,9 +10,10 @@ use serde_json::{Number, Value};
 
 use super::{DEFAULT_NOW_EPOCH_SECS, DRIVEN_DESKS, Drive, Driven};
 use crate::remote::{self, Hello, PairLink, RemoteOffice, Reply};
-use crate::source::admit::{lines, whole};
-use crate::source::claude_code::cc_activity_recency;
+use crate::source::admit::{is_transcript, lines, whole};
 use crate::source::registry;
+#[cfg(feature = "native")]
+use crate::source::registry::Transcript;
 use crate::state::MAX_FLOORS;
 
 /// A hook connection's bytes, framed as the listener frames them: a last line
@@ -22,28 +24,47 @@ pub fn hook(bytes: &[u8]) -> Driven {
     Drive::hooks().lines(lines)
 }
 
-/// `<source>\n<path>\n<transcript>`: the registry's cwd and parent extractors,
-/// Claude Code's tail scan, then [`Drive`]. A source by name, not by index, so a
-/// new row leaves every accumulated input meaning what it did, and a path because
-/// a nested transcript's parent is its path's. `None` when a header is missing or
-/// the first names no transcript source.
+/// `<source>\n<path>\n<transcript>`: everything `source`'s registry row reads of
+/// a transcript, then [`Drive`]. A source by name, not by index, so a new row
+/// leaves every accumulated input meaning what it did, and a path because a
+/// nested transcript's parent is its path's. `None` when a header is missing, the
+/// first names no transcript source, or the watcher wouldn't read the path.
 pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     let mut parts = bytes.splitn(3, |b| *b == b'\n');
     let source = std::str::from_utf8(parts.next()?).ok()?;
     let path = std::str::from_utf8(parts.next()?).ok()?;
     let body = parts.next()?;
-    let drive = Drive::transcript(source, path)?.seeded();
-    let cwd = registry::cwd_extractor_for(source);
-    let parent = registry::parent_extractor_for(source);
-    let parsed = lines(whole(body))
-        .filter_map(Result::ok)
-        .filter_map(|line| serde_json::from_str(line).ok());
-    for line in parsed {
-        let _ = cwd(&line);
-        let _ = parent.map(|extract| extract(&line));
+    let row = registry::transcript_for(source)?;
+    if !is_transcript(Path::new(path), &row.path_filter) {
+        return None;
     }
-    let _ = cc_activity_recency(body);
+    let drive = Drive::transcript_at(source, Path::new(path))?.seeded();
+    let parsed: Vec<Value> = lines(whole(body))
+        .filter_map(Result::ok)
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    for line in &parsed {
+        let _ = (row.cwd_extractor)(line);
+        let _ = row.parent_extractor.map(|extract| extract(line));
+    }
+    #[cfg(feature = "native")]
+    native_reads(row, source, Path::new(path), body, &parsed);
     Some(drive.body(body))
+}
+
+#[cfg(feature = "native")]
+fn native_reads(row: &Transcript, source: &str, path: &Path, body: &[u8], parsed: &[Value]) {
+    let native = row.native;
+    let _ = (native.check_ended)(body);
+    let _ = native.activity_recency.map(|recency| recency(body));
+    let head_cwd = parsed.iter().find_map(row.cwd_extractor);
+    let cwd = head_cwd.or_else(|| native.cwd_derive.and_then(|derive| derive(path)));
+    let _ = native.derive_label.map(|label| {
+        label(path, source, cwd.as_deref().unwrap_or(Path::new("")));
+    });
+    if let Some(label) = native.head_label {
+        parsed.iter().for_each(|line| drop(label(line)));
+    }
 }
 
 /// Each parser a peer's bytes or a scanned link reach: the whole input to the
@@ -224,8 +245,6 @@ impl Mutate<Value> for JsonMutator {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
 
     const LINE: &str = r#"{"type":"assistant","sessionId":"s","cwd":"/repo","message":{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"Write","input":{}}]}}"#;
@@ -263,6 +282,14 @@ mod tests {
             drive("/s/plain/task.jsonl"),
             "only a nesting the whole path shows tells these apart"
         );
+    }
+
+    #[test]
+    fn a_path_the_watcher_would_not_read_drives_nothing() {
+        assert!(transcript(b"grok\n/s/updates.jsonl\n{}\n").is_some());
+        assert!(transcript(b"grok\n/s/chat_history.jsonl\n{}\n").is_none());
+        assert!(transcript(b"omp\n/s/session.jsonl\n{}\n").is_some());
+        assert!(transcript(b"omp\n/s/session.txt\n{}\n").is_none());
     }
 
     #[test]

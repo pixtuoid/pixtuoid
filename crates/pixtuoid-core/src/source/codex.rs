@@ -47,6 +47,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             path_filter: accept_all_paths,
             cwd_extractor: extract_codex_cwd,
             parent_extractor: Some(extract_codex_parent),
+            #[cfg(feature = "native")]
+            native: native::TRANSCRIPT,
         }),
         hook: Some(HookDecoding::Shared {
             tool_id_key: ToolIdKey::ToolUse,
@@ -296,7 +298,7 @@ const CALL_ID: &str = "call_id";
 
 /// Decode one rollout line: the turns' brackets and the items, each keyed by
 /// the wire's own id.
-pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
+pub(crate) fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &codex_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
         return vec![];

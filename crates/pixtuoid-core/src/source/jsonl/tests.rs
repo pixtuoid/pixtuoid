@@ -4432,7 +4432,8 @@ mod follow {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("child.jsonl");
         std::fs::write(&path, "{}\n").unwrap();
-        let watcher = JsonlWatcher::new(dir.path().to_path_buf(), "test".into(), t_decode, t_ended)
+        let watcher = JsonlWatcher::new(dir.path().to_path_buf(), "codex".into())
+            .expect("a transcript source")
             .with_root_probe(vouch_child);
         let decoders = SourceDecoders {
             id_derive: super::folded::FoldedDeriver::new(stem_id),
