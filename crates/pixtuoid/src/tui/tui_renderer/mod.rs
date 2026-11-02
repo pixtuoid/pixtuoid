@@ -21,7 +21,7 @@ use pixtuoid_scene::floor::{
     FloorInputs, FloorMeta, FloorTransition, OfficeSession, PetInputs, project_floor_scene,
 };
 use pixtuoid_scene::layout::{SceneLayout, Size};
-use pixtuoid_scene::look::{FrameNote, Look, Picture, Place, RenderInputs};
+use pixtuoid_scene::look::{FrameNote, Look, LookKind, Picture, Place, RenderInputs};
 use pixtuoid_scene::screen::Screen;
 
 #[derive(Debug, Default)]
@@ -220,7 +220,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             && self
                 .session
                 .floor(self.session.nav().current())
-                .is_some_and(|f| f.raster.shown() == Some(Look::Classic))
+                .is_some_and(|f| f.raster.shown().map(Look::kind) == Some(LookKind::Classic))
     }
 
     /// Draw the first frame of `scene` unseen, in the look the first frame

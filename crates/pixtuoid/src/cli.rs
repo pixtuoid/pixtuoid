@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use pixtuoid_scene::look::LookKind;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -128,7 +129,7 @@ pub(crate) enum Cmd {
         /// The look the `graphics:` row plans, as `run --look` takes it.
         /// Defaults to `cutaway` whatever the `look` config key says: the row
         /// reports what this terminal can do.
-        #[arg(long, value_enum, default_value_t = crate::graphics::LookMode::Cutaway)]
+        #[arg(long, value_enum, default_value_t = crate::graphics::LookMode::Fixed(LookKind::Cutaway))]
         look: crate::graphics::LookMode,
         /// The protocol the row plans the cutaway in, as `run --protocol`
         /// takes it.
@@ -279,16 +280,19 @@ mod tests {
         };
         assert_eq!(
             doctor(&["pixtuoid", "doctor"]),
-            (LookMode::Cutaway, None),
+            (LookMode::Fixed(LookKind::Cutaway), None),
             "absent is what this terminal can do"
         );
         assert_eq!(
             doctor(&["pixtuoid", "doctor", "--look", "classic"]),
-            (LookMode::Classic, None)
+            (LookMode::Fixed(LookKind::Classic), None)
         );
         assert_eq!(
             doctor(&["pixtuoid", "doctor", "--protocol", "sixel"]),
-            (LookMode::Cutaway, Some(ImageProtocol::Sixel))
+            (
+                LookMode::Fixed(LookKind::Cutaway),
+                Some(ImageProtocol::Sixel)
+            )
         );
     }
 
@@ -304,8 +308,8 @@ mod tests {
         assert_eq!(look(&["pixtuoid", "run"]), (None, None));
         for (value, mode) in [
             ("auto", LookMode::Auto),
-            ("cutaway", LookMode::Cutaway),
-            ("classic", LookMode::Classic),
+            ("cutaway", LookMode::Fixed(LookKind::Cutaway)),
+            ("classic", LookMode::Fixed(LookKind::Classic)),
         ] {
             assert_eq!(
                 look(&["pixtuoid", "run", "--look", value]),
@@ -433,7 +437,7 @@ mod tests {
     fn cmd_or_default_preserves_explicit_subcommand() {
         let cli = Cli {
             cmd: Some(Cmd::Doctor {
-                look: crate::graphics::LookMode::Classic,
+                look: crate::graphics::LookMode::Fixed(LookKind::Classic),
                 protocol: None,
             }),
             log_level: LogLevel::Debug,

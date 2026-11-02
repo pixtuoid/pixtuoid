@@ -36,6 +36,52 @@ pub enum Look {
     },
 }
 
+impl Look {
+    /// The look a person picks it as.
+    pub const fn kind(self) -> LookKind {
+        match self {
+            Self::Classic => LookKind::Classic,
+            Self::Cutaway { .. } => LookKind::Cutaway,
+        }
+    }
+}
+
+/// A look as a person picks it, apart from the scale and text a painter draws
+/// it at: what every host's picker, command line and config name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LookKind {
+    /// The half-block office.
+    Classic,
+    /// The pixel-art office.
+    Cutaway,
+}
+
+impl LookKind {
+    /// Every look, in the order a picker lists them.
+    pub const ALL: [Self; 2] = [Self::Cutaway, Self::Classic];
+
+    /// Its id: the value a command line and a config take.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::Cutaway => "cutaway",
+        }
+    }
+
+    /// What a person reads for it.
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Classic => "Classic",
+            Self::Cutaway => "Cutaway",
+        }
+    }
+
+    /// The look whose [`Self::name`] is `name`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.name() == name)
+    }
+}
+
 /// Who sets a cutaway's world text: the badges, bubbles, wall board and floor
 /// indicator. The classic's is always the host's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
