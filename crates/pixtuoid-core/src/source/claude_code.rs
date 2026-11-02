@@ -319,7 +319,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                 agent_id,
                 fresh_tokens: fresh,
                 // A message writes one line per content block, each with its
-                // whole usage.
+                // whole usage since CC 2.1.310.
                 reading_id: non_empty(message, "id").map(str::to_owned),
             });
         }

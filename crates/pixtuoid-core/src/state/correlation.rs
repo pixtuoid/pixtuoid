@@ -211,9 +211,10 @@ pub(super) struct Correlation {
     /// it the cost is one HUD re-count.
     pub(super) counted_calls: Counted,
     /// Usage readings already counted into `tokens_used`, by the id a wire that
-    /// repeats one gives it. Swept with `counted_calls`, whose TTL far outlasts a
-    /// repeat's lag; a replay past it re-counts on the meter, never on
-    /// [`Today`](crate::state::Today).
+    /// Usage readings already counted into `tokens_used`, by the id a wire that
+    /// repeats one gives it. A slot's end forgets its ids, and they sweep with
+    /// `counted_calls`, whose TTL far outlasts a repeat's lag; a replay past either
+    /// re-counts on the meter, never on [`Today`](crate::state::Today).
     pub(super) counted_readings: Counted,
     /// Agents whose transcript events are live work, per
     /// [`AgentEvent::Backlog`](crate::AgentEvent::Backlog). Absent is closed: a

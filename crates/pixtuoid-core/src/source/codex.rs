@@ -361,7 +361,8 @@ pub(crate) fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -
             });
             if fresh > 0 {
                 // A `token_count` can resend its reading, and each new reading adds
-                // to the running total, so that total names it.
+                // to the running total (`codex-rs/protocol/src/protocol.rs:2534` at
+                // rust-v0.166.0), so that total names it.
                 let total = payload
                     .and_then(|p| p.get("info"))
                     .and_then(|i| i.get("total_token_usage"))
