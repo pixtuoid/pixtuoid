@@ -215,12 +215,13 @@ pub fn place(card: CellRect, pointer: (u16, u16), area: CellRect, anchor: TipAnc
 /// Cells from the pointer to a card opening right of it.
 const POINTER_GAP: u16 = 2;
 
-/// The tooltip for what `hit` names on `world`'s frame; `None` for the star,
-/// whose click is its whole story, and for an agent or gateway gone from the
-/// scene. `world.scene` is the whole office, as an [`agent`]'s card needs.
-pub fn for_hit(hit: SceneHit<'_>, world: &FloorInputs<'_>) -> Option<Tooltip> {
+/// The tooltip for what `hit` names; `None` for the star, whose click is its
+/// whole story, and for an agent or gateway gone from `office`. An agent's and
+/// a gateway's card read `office`, the whole office; `world` gives only the
+/// time and the shown floor's pet.
+pub fn for_hit(hit: SceneHit<'_>, office: &SceneState, world: &FloorInputs<'_>) -> Option<Tooltip> {
     match hit {
-        SceneHit::Figure(HoverTarget::Agent(id)) => agent(world.scene, *id, world.now),
+        SceneHit::Figure(HoverTarget::Agent(id)) => agent(office, *id, world.now),
         SceneHit::Figure(&HoverTarget::Pet(PetHover { kind, anim, .. })) => {
             let on_cooldown = world.pets.petting.is_some_and(|p| p.is_active(world.now));
             // The hover was drawn from `pets.pet`, so the kinds agree and the
@@ -232,7 +233,7 @@ pub fn for_hit(hit: SceneHit<'_>, world: &FloorInputs<'_>) -> Option<Tooltip> {
             Some(pet(kind, anim, on_cooldown, name))
         }
         SceneHit::Figure(HoverTarget::Mascot(key)) => {
-            GatewayCard::of(world.scene, key).map(|card| Tooltip::label(&mascot_text(&card)))
+            GatewayCard::of(office, key).map(|card| Tooltip::label(&mascot_text(&card)))
         }
         SceneHit::Coffee => Some(coffee()),
         SceneHit::Furniture(label) => Some(Tooltip::label(&format!(" {label} "))),
@@ -244,10 +245,12 @@ pub fn for_hit(hit: SceneHit<'_>, world: &FloorInputs<'_>) -> Option<Tooltip> {
 /// tool, what it works on, under whom, where, on which model, and its
 /// session's stats. An exiting agent shows none of the live affordances: the
 /// walking-out slot keeps its Running/RequiresAction payload, so the exiting-first
-/// kind gates them, not the raw state. `scene` is the whole office, not a floor's
-/// projection: a lead may work on another floor, and its name counts its own.
-pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip> {
-    let agent = scene.agents.get(&id)?;
+/// kind gates them, not the raw state. `office` is the whole office, not a
+/// floor's projection: a lead may work on another floor, and is named as
+/// that floor's badges name it, its namesakes counted on its own floor
+/// ([`FloorNamesakes`]).
+pub fn agent(office: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip> {
+    let agent = office.agents.get(&id)?;
     let kind = if agent.exiting_at.is_some() {
         RungKind::Exiting
     } else {
@@ -314,8 +317,8 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
             TipTone::Text,
         )]));
     }
-    if let Some(parent) = agent.parent_id.and_then(|p| scene.agents.get(&p)) {
-        let lead = FloorNamesakes::of(scene).nameplate(parent);
+    if let Some(parent) = agent.parent_id.and_then(|p| office.agents.get(&p)) {
+        let lead = FloorNamesakes::of(office).nameplate(parent);
         rows.push(dim(format!("\u{21b3} under {lead}")));
     }
     rows.push(dim(format!("\u{25a4} {}", short_cwd(&agent.cwd))));
@@ -495,9 +498,11 @@ mod tests {
         id
     }
 
-    /// `id`'s badge text on `floor`, as that floor's projection counts it.
-    fn badge_name(office: &SceneState, floor: usize, id: AgentId) -> String {
-        let projection = crate::floor::project_floor_scene(office, floor);
+    /// `id`'s whole nameplate on `floor`, as that floor's projection counts
+    /// it: the name its badge cuts to fit.
+    fn floor_nameplate(office: &SceneState, floor: usize, id: AgentId) -> String {
+        let floor_scene = crate::floor::project_floor_scene(office, floor);
+        let projection = floor_scene.scene();
         crate::nameplate::Namesakes::of(projection.agents.values())
             .nameplate(&projection.agents[&id])
             .to_string()
@@ -505,7 +510,10 @@ mod tests {
 
     /// The `↳ under` rows of `office`'s card for `id`.
     fn lineage(office: &SceneState, id: AgentId) -> Vec<String> {
-        let tip = agent(office, id, SystemTime::UNIX_EPOCH).expect("the agent's card");
+        lineage_of(&agent(office, id, SystemTime::UNIX_EPOCH).expect("the agent's card"))
+    }
+
+    fn lineage_of(tip: &Tooltip) -> Vec<String> {
         tip.rows
             .iter()
             .filter_map(|row| match row {
@@ -516,6 +524,33 @@ mod tests {
             .collect()
     }
 
+    /// A card reads `office` whichever world a painter hands it: the window's
+    /// is the office's, the TUI's a floor's projection, and a lead downstairs
+    /// is found from either.
+    #[test]
+    fn a_card_reads_its_office_whatever_world_it_is_handed() {
+        let mut office = two_floor_office();
+        let lead = seat(&mut office, ("lead", "cc\u{b7}api"), (0, 0), None);
+        let sub = seat(&mut office, ("sub", "subagent"), (4, 1), Some(lead));
+        seat(&mut office, ("namesake", "cc\u{b7}api"), (5, 1), None);
+        let want = [format!(
+            "\u{21b3} under {}",
+            floor_nameplate(&office, 0, lead)
+        )];
+        let upstairs = crate::floor::project_floor_scene(&office, 1);
+        for scene in [&office, upstairs.scene()] {
+            let world = FloorInputs {
+                scene,
+                now: SystemTime::UNIX_EPOCH,
+                floor: crate::floor::FloorMeta::ground(),
+                pets: crate::floor::PetInputs::default(),
+            };
+            let hit = SceneHit::Figure(&HoverTarget::Agent(sub));
+            let tip = for_hit(hit, &office, &world).expect("the subagent's card");
+            assert_eq!(lineage_of(&tip), want);
+        }
+    }
+
     /// A card names its subagent's lead as the lead's badge does, apart from
     /// another lead of that repo.
     #[test]
@@ -524,7 +559,7 @@ mod tests {
         let lead = seat(&mut office, ("lead", "cc\u{b7}api"), (0, 0), None);
         seat(&mut office, ("other-lead", "cc\u{b7}api"), (1, 0), None);
         let sub = seat(&mut office, ("sub", "subagent"), (2, 0), Some(lead));
-        let named = badge_name(&office, 0, lead);
+        let named = floor_nameplate(&office, 0, lead);
         assert!(named.len() > "cc\u{b7}api".len(), "premise: {named:?}");
         assert_eq!(lineage(&office, sub), [format!("\u{21b3} under {named}")]);
     }
@@ -536,7 +571,7 @@ mod tests {
         let lead = seat(&mut office, ("lead", "cc\u{b7}api"), (0, 0), None);
         let sub = seat(&mut office, ("sub", "subagent"), (1, 0), Some(lead));
         seat(&mut office, ("upstairs", "cc\u{b7}api"), (4, 1), None);
-        let named = badge_name(&office, 0, lead);
+        let named = floor_nameplate(&office, 0, lead);
         assert_eq!(lineage(&office, sub), [format!("\u{21b3} under {named}")]);
     }
 

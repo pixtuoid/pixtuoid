@@ -344,7 +344,8 @@ fn namesake_rows_read_their_floors_nameplates() {
     };
     for (agent, floor) in [(a, 0), (b, 0), (up, 1)] {
         let projection = pixtuoid_scene::floor::project_floor_scene(&scene, floor);
-        let namesakes = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values());
+        let namesakes =
+            pixtuoid_scene::nameplate::Namesakes::of(projection.scene().agents.values());
         assert_eq!(row(agent), namesakes.nameplate(&scene.agents[&agent]));
     }
     assert_ne!(row(a), row(b));
@@ -369,7 +370,8 @@ fn a_row_counts_its_floor_as_the_floors_badges_do() {
         .iter()
         .find(|r| r.agent_id == seated)
         .expect("the seated agent's row");
-    let projection = pixtuoid_scene::floor::project_floor_scene(&scene, 1);
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 1);
+    let projection = floor_scene.scene();
     let badge = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values())
         .nameplate(&projection.agents[&seated]);
     assert_eq!(row.name, badge);

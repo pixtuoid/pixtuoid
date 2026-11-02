@@ -17,7 +17,10 @@ use ratatui::backend::Backend;
 use ratatui::layout::{Position, Rect};
 
 use crate::tui::renderer::PetState;
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorTransition, OfficeSession, PetInputs};
+use pixtuoid_scene::floor::{
+    FloorInputs, FloorMeta, FloorScene, FloorTransition, OfficeSession, PetInputs,
+    project_floor_scene,
+};
 use pixtuoid_scene::layout::{SceneLayout, Size};
 use pixtuoid_scene::look::{FrameNote, Look, Picture, Place, RenderInputs};
 use pixtuoid_scene::screen::Screen;
@@ -119,17 +122,23 @@ impl Chrome {
         self.frames.overlays(popup_scale, host_keys)
     }
 
-    /// Floor `floor` of `session`'s office in `scene`: its inputs as
-    /// [`OfficeSession::floor_world`] gives every painter's floors, over the
-    /// whole office a tooltip reads.
+    /// Floor `floor` of `session`'s office in `scene`, `floor_scene` its
+    /// projection: its inputs as [`OfficeSession::floor_world`] gives every
+    /// painter's floors.
     fn world<'a>(
         &'a self,
         session: &OfficeSession,
         scene: &'a SceneState,
+        floor_scene: &'a FloorScene,
         now: SystemTime,
         floor: usize,
     ) -> FloorInputs<'a> {
-        session.floor_world(self.office_world(scene, now), scene, floor, &self.pets)
+        session.floor_world(
+            self.office_world(scene, now),
+            floor_scene,
+            floor,
+            &self.pets,
+        )
     }
 
     /// The office's inputs over `scene`, as [`OfficeSession::render`] takes
@@ -799,7 +808,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         );
         let popup_scale = self.version_popup_scale(now);
         let mouse_pos = self.tooltip_pos();
-        let world = self.chrome.world(&self.session, scene, now, current);
+        let floor_scene = project_floor_scene(scene, current);
+        let world = self
+            .chrome
+            .world(&self.session, scene, &floor_scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -816,6 +828,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             footer: &footer,
             overlays: &overlays,
             theme: self.chrome.theme,
+            office: scene,
             world: &world,
             mouse_pos,
         };
@@ -862,7 +875,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
         let mouse_pos = self.tooltip_pos();
-        let world = self.chrome.world(&self.session, scene, now, current);
+        let floor_scene = project_floor_scene(scene, current);
+        let world = self
+            .chrome
+            .world(&self.session, scene, &floor_scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -887,7 +903,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             _ => None,
         };
         let tooltip = mouse.and_then(|(mx, my, hit)| {
-            pixtuoid_scene::tooltip::for_hit(hit, &world).map(|tip| (mx, my, tip))
+            pixtuoid_scene::tooltip::for_hit(hit, scene, &world).map(|tip| (mx, my, tip))
         });
         cutaway.before_flush(now)?;
         let mut carves = Vec::new();

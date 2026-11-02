@@ -609,7 +609,8 @@ fn a_subagents_card_names_its_lead_from_any_floor() {
     let (here_id, there_id) = (here.agent_id, there.agent_id);
     let namesake = place("namesake", "cc\u{b7}api", (1, cap + 1), None);
     let scene = scene_with(vec![lead, here, there, namesake], cap);
-    let projection = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
+    let projection = floor_scene.scene();
     let badge = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values())
         .nameplate(&projection.agents[&lead_id])
         .to_string();
@@ -619,36 +620,6 @@ fn a_subagents_card_names_its_lead_from_any_floor() {
     r.navigate_floor(1, now);
     render_until_settled(&mut r, &scene, &mut now, 1);
     assert_eq!(card_lead(&mut r, &scene, there_id, now), Some(badge));
-}
-
-#[test]
-fn hovered_subagent_tooltip_shows_lineage() {
-    let parent = running(
-        "/lin/root.jsonl",
-        0,
-        "Read a",
-        t0() - Duration::from_secs(60),
-    );
-    let parent_id = parent.agent_id;
-    let mut child = running(
-        "/lin/child.jsonl",
-        1,
-        "Edit b",
-        t0() - Duration::from_secs(30),
-    );
-    child.label = "kid".into();
-    child.parent_id = Some(parent_id);
-    let child_id = child.agent_id;
-    let scene = scene_with(vec![parent, child], 16);
-    let mut r = build(120, 44, vec![]);
-    r.render(&scene, t0()).unwrap();
-    super::hover_agent(&mut r, child_id);
-    r.render(&scene, t0()).unwrap();
-    let text = frame_text(r.frame_buffer());
-    assert!(
-        text.contains("\u{21b3} under"),
-        "lineage line on the subagent: {text}"
-    );
 }
 
 #[test]

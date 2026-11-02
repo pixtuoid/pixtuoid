@@ -77,6 +77,18 @@ impl core::marker::Unpin for pixtuoid_scene::floor::FloorMeta
 impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorMeta
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorMeta
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorMeta
+pub struct pixtuoid_scene::floor::FloorScene(_)
+impl pixtuoid_scene::floor::FloorScene
+pub fn pixtuoid_scene::floor::FloorScene::scene(&self) -> &pixtuoid_core::state::SceneState
+impl core::fmt::Debug for pixtuoid_scene::floor::FloorScene
+pub fn pixtuoid_scene::floor::FloorScene::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for pixtuoid_scene::floor::FloorScene
+impl core::marker::Send for pixtuoid_scene::floor::FloorScene
+impl core::marker::Sync for pixtuoid_scene::floor::FloorScene
+impl core::marker::Unpin for pixtuoid_scene::floor::FloorScene
+impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorScene
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorScene
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorScene
 pub struct pixtuoid_scene::floor::FloorSession
 pub pixtuoid_scene::floor::FloorSession::office: pixtuoid_scene::floor::PerOffice
 impl pixtuoid_scene::floor::FloorSession
@@ -200,7 +212,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::VacancyDim
 pub fn pixtuoid_scene::floor::floor_capacity(u16, u16, u64) -> usize
 pub fn pixtuoid_scene::floor::floor_seed(usize) -> u64
 pub fn pixtuoid_scene::floor::num_floors(&pixtuoid_core::state::SceneState) -> usize
-pub fn pixtuoid_scene::floor::project_floor_scene(&pixtuoid_core::state::SceneState, usize) -> pixtuoid_core::state::SceneState
+pub fn pixtuoid_scene::floor::project_floor_scene(&pixtuoid_core::state::SceneState, usize) -> pixtuoid_scene::floor::FloorScene
 pub mod pixtuoid_scene::grid
 pub struct pixtuoid_scene::grid::Grid<T>
 impl pixtuoid_scene::grid::Grid<bool>

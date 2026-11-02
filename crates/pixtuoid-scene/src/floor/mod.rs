@@ -1124,10 +1124,23 @@ pub(crate) fn build_floor_scene(scene: &SceneState, floor_idx: usize) -> Vec<Pro
         .collect()
 }
 
+/// One floor's [projection](project_floor_scene), the scene that floor is drawn
+/// from: only the projection builds one, so an input that takes it can't be
+/// handed a whole office.
+#[derive(Debug)]
+pub struct FloorScene(SceneState);
+
+impl FloorScene {
+    /// The projected scene.
+    pub fn scene(&self) -> &SceneState {
+        &self.0
+    }
+}
+
 /// Build a self-contained `SceneState` for one floor: a `uniform(cap)` scene, so
 /// floor arithmetic stays self-consistent with the remapped desk indices in
 /// `[0..cap)`. A floor past the building's is an empty one.
-pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> SceneState {
+pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> FloorScene {
     let cap = scene.floor_capacities.get(floor_idx).copied().unwrap_or(0);
     let mut s = SceneState::uniform(cap);
     for p in build_floor_scene(scene, floor_idx) {
@@ -1145,7 +1158,7 @@ pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> SceneState {
         s.clone_daemons_from(scene);
     }
     s.today = scene.today;
-    s
+    FloorScene(s)
 }
 
 #[cfg(test)]

@@ -314,7 +314,7 @@ fn main() -> Result<()> {
         tooltip: hover.and_then(|cursor| {
             let tip = renderer
                 .drawn_hit_at(cursor, at)
-                .and_then(|hit| pixtuoid_scene::tooltip::for_hit(hit, &world))?;
+                .and_then(|hit| pixtuoid_scene::tooltip::for_hit(hit, &scene, &world))?;
             Some((tip, (cursor.0 as i32, cursor.1 as i32)))
         }),
         panels: match panel {

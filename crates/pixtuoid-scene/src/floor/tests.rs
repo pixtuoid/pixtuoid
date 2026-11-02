@@ -96,12 +96,12 @@ fn daemons_projects_onto_the_ground_floor_only() {
         );
     }
     assert_eq!(
-        project_floor_scene(&scene, 0).daemons().count(),
+        project_floor_scene(&scene, 0).scene().daemons().count(),
         2,
         "floor 0 carries EVERY gateway mascot"
     );
     assert_eq!(
-        project_floor_scene(&scene, 1).daemons().count(),
+        project_floor_scene(&scene, 1).scene().daemons().count(),
         0,
         "floor 1+ must NOT (render-once invariant)"
     );
@@ -115,7 +115,7 @@ fn every_floor_carries_the_days_count() {
     scene.today = Some(today);
     for floor in 0..2 {
         assert_eq!(
-            project_floor_scene(&scene, floor).today,
+            project_floor_scene(&scene, floor).scene().today,
             Some(today),
             "the sign upstairs reads it too, floor {floor}"
         );
@@ -131,8 +131,8 @@ fn a_floor_past_the_building_projects_empty() {
     assert!(scene.agents.values().any(|a| a.floor_idx == MAX_FLOORS - 1));
     assert!(build_floor_scene(&scene, MAX_FLOORS).is_empty());
     let past = project_floor_scene(&scene, MAX_FLOORS);
-    assert!(past.agents.is_empty());
-    assert_eq!(past.total_capacity(), 0);
+    assert!(past.scene().agents.is_empty());
+    assert_eq!(past.scene().total_capacity(), 0);
 }
 
 #[test]
@@ -250,7 +250,8 @@ fn build_floor_scene_remap_is_local_global_coincident() {
     // its only floor's local space — what makes `single_floor_local` an identity.
     let scene = make_scene(20, 16);
     for floor_idx in 0..num_floors(&scene) {
-        let projected = project_floor_scene(&scene, floor_idx);
+        let floor_scene = project_floor_scene(&scene, floor_idx);
+        let projected = floor_scene.scene();
         for slot in projected.agents.values() {
             assert_eq!(projected.floor_of(slot.desk_index), 0);
             assert_eq!(
@@ -913,7 +914,7 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
         &mut office.coffee,
         &mut office.chitchat,
         crate::floor::FloorInputs {
-            scene: &projected,
+            scene: projected.scene(),
             now: t0(),
             floor: FloorMeta::for_floor(1, num_floors(&scene)),
             pets: crate::floor::PetInputs::default(),
@@ -1863,7 +1864,7 @@ fn a_slides_footer_speaks_for_its_destination() {
     assert_eq!(office.footer_floor(&scene).map(|f| f.current), Some(2));
     assert_eq!(
         office.footer_scene(&scene).agents.len(),
-        project_floor_scene(&scene, 1).agents.len()
+        project_floor_scene(&scene, 1).scene().agents.len()
     );
 }
 
@@ -1892,7 +1893,12 @@ fn a_petting_plays_only_on_its_own_floor() {
     };
     let petted = |floor, now| {
         office
-            .floor_world(world(now), &scene, floor, &pets)
+            .floor_world(
+                world(now),
+                &project_floor_scene(&scene, floor),
+                floor,
+                &pets,
+            )
             .pets
             .petting
             .is_some()

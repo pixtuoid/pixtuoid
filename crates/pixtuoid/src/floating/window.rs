@@ -497,7 +497,7 @@ impl FloatingApp {
                         },
                         ..world
                     };
-                    pixtuoid_scene::tooltip::for_hit(hit, &shown)
+                    pixtuoid_scene::tooltip::for_hit(hit, &scene, &shown)
                 })
                 .map(|tip| (tip, (cursor.0 as i32, cursor.1 as i32))),
             panels: super::overlays::panels_grid(

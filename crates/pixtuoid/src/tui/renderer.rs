@@ -217,11 +217,12 @@ fn paint_too_small_notice(
 pub(crate) fn paint_scene_tooltip(
     f: &mut ratatui::Frame<'_>,
     hit: &SceneHit<'_>,
+    office: &SceneState,
     world: &FloorInputs<'_>,
     at: TooltipAt,
     theme: &pixtuoid_scene::theme::Theme,
 ) {
-    if let Some(tip) = pixtuoid_scene::tooltip::for_hit(*hit, world) {
+    if let Some(tip) = pixtuoid_scene::tooltip::for_hit(*hit, office, world) {
         paint_tooltip(f, &tip, at, theme);
     }
 }
@@ -280,6 +281,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
         footer: &footer,
         overlays: &overlays,
         theme,
+        office: scene,
         world: &world,
         mouse_pos: ctx.mouse_pos,
     };
@@ -367,7 +369,9 @@ pub(crate) struct ClassicFrame<'f> {
     pub(crate) footer: &'f FooterInputs<'f>,
     pub(crate) overlays: &'f crate::panels::OverlayFrame<'f>,
     pub(crate) theme: &'static pixtuoid_scene::theme::Theme,
-    /// The floor's inputs over the whole office, which a tooltip reads.
+    /// The whole office, whose agents and gateways a tooltip names.
+    pub(crate) office: &'f SceneState,
+    /// The floor's inputs: the time, and the pet a tooltip names.
     pub(crate) world: &'f FloorInputs<'f>,
     pub(crate) mouse_pos: Option<(u16, u16)>,
 }
@@ -387,6 +391,7 @@ pub(crate) fn flush_classic<B: Backend<Error: Send + Sync + 'static>>(
         footer,
         overlays,
         theme,
+        office,
         world,
         mouse_pos,
     } = frame;
@@ -416,7 +421,7 @@ pub(crate) fn flush_classic<B: Backend<Error: Send + Sync + 'static>>(
             scene_rect: actual_scene,
         });
         if let (Some(hit), Some(at)) = (&hit, at) {
-            paint_scene_tooltip(f, hit, world, at, theme);
+            paint_scene_tooltip(f, hit, office, world, at, theme);
         }
         crate::panels::paint_overlays(f, overlays, now, actual_full, theme);
     })?;
