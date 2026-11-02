@@ -37,7 +37,7 @@ pub enum Look {
 }
 
 impl Look {
-    /// The look a person picks it as.
+    /// Its [`LookKind`]: this look apart from any scale and text.
     pub const fn kind(self) -> LookKind {
         match self {
             Self::Classic => LookKind::Classic,
@@ -51,9 +51,9 @@ impl Look {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum LookKind {
-    /// The pixel-art office.
+    /// [`Look::Cutaway`], at any scale and text.
     Cutaway,
-    /// The half-block office.
+    /// [`Look::Classic`].
     Classic,
 }
 
