@@ -23,7 +23,7 @@ use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::{AgentEvent, AgentId, Transport};
 
 use crate::script::{
-    Beat, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
+    Beat, CAST_LEN, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
 };
 
 use pixtuoid_scene::audio::OneShotPool;
@@ -170,6 +170,14 @@ pub struct Office {
     audio: Option<audio::WebAudioDriver>,
 }
 
+/// How many units tall [`Office::fit`] aims the site's office: a closer camera
+/// than the app's, since its sprites are fixed-size.
+const FRAMING_UNITS_H: u32 = 130;
+
+/// The fewest whole device pixels [`Office::fit`] paints an art pixel as while
+/// the cast still seats (owner-delegated, #2029).
+const MIN_UPSCALE: u16 = 2;
+
 #[wasm_bindgen]
 impl Office {
     /// Build an office seeded with `seed` (drives the layout variant).
@@ -285,6 +293,39 @@ impl Office {
     /// Frame pixels per layout unit `step` takes.
     pub fn scale(&self) -> u32 {
         u32::from(self.fit.scale().get())
+    }
+
+    /// The office for a `px_w`×`px_h` device-pixel surface, as
+    /// `[units_w, units_h, px_per_unit, upscale]`: `px_per_unit` is `upscale` whole
+    /// times [`Office::scale`], so the page's upscale of the frame lands every art
+    /// pixel on whole device pixels, and the units cover the surface, cropping under one.
+    ///
+    /// The scale nearest [`FRAMING_UNITS_H`] tall, at least [`MIN_UPSCALE`] whole
+    /// pixels, then stepped down while the office cannot seat the cast, as the
+    /// floating window steps down until its office lays out.
+    pub fn fit(&self, px_w: u32, px_h: u32) -> Vec<u32> {
+        let density = self.fit.density();
+        let d = density.get();
+        let px = |n: u32| u16::try_from(n).unwrap_or(u16::MAX);
+        let surface = Size {
+            w: px(px_w),
+            h: px(px_h),
+        };
+        let natural = px(px_h.saturating_add(FRAMING_UNITS_H / 2) / FRAMING_UNITS_H)
+            .max(MIN_UPSCALE.saturating_mul(d));
+        let natural = PixelFit::at_least_density(natural, density, surface)
+            .scale()
+            .get();
+        let units = |s: u16| (px_w.div_ceil(u32::from(s)), px_h.div_ceil(u32::from(s)));
+        let seats = |s: u16| {
+            let (w, h) = units(s);
+            floor_capacity(px(w), px(h), self.seed) >= CAST_LEN
+        };
+        let scale = std::iter::successors(Some(natural), |&s| s.checked_sub(d).filter(|&s| s >= d))
+            .find(|&s| seats(s))
+            .unwrap_or(d);
+        let (w, h) = units(scale);
+        vec![w, h, u32::from(scale), u32::from(scale / d)]
     }
 
     /// Hire one more agent: a new coworker walks into the background office,
@@ -726,6 +767,98 @@ mod tests {
             .keys()
             .filter(|id| !(0..crate::script::CAST_LEN).map(cast_id).any(|c| c == **id))
             .count()
+    }
+
+    /// Device pixel surfaces the site meets: laptops at DPR 1, a Retina laptop,
+    /// 4K, and a phone held both ways.
+    const SURFACES: &[(u32, u32)] = &[
+        (1440, 900),
+        (1366, 768),
+        (1280, 800),
+        (1920, 1080),
+        (2560, 1440),
+        (2880, 1800),
+        (3024, 1964),
+        (1170, 2532),
+        (2532, 1170),
+        (844, 390),
+    ];
+
+    fn fit_of(o: &Office, (pw, ph): (u32, u32)) -> (u32, u32, u32) {
+        match o.fit(pw, ph)[..] {
+            [w, h, s, up] => {
+                assert_eq!(
+                    s,
+                    up * o.scale(),
+                    "px_per_unit is the upscale of the frame's"
+                );
+                (w, h, s)
+            }
+            ref other => panic!("fit is [units_w, units_h, px_per_unit, upscale], got {other:?}"),
+        }
+    }
+
+    fn seats(o: &Office, (uw, uh): (u32, u32)) -> usize {
+        let unit = |n: u32| u16::try_from(n).expect("a surface's units fit a u16");
+        floor_capacity(unit(uw), unit(uh), o.seed)
+    }
+
+    #[test]
+    fn every_art_pixel_lands_on_whole_device_pixels_and_the_cast_seats() {
+        let o = office();
+        let d = u32::from(o.fit.density().get());
+        let min = u32::from(MIN_UPSCALE) * d;
+        for &(pw, ph) in SURFACES {
+            let (uw, uh, s) = fit_of(&o, (pw, ph));
+            assert_eq!(
+                s % d,
+                0,
+                "{pw}x{ph}: {s} px per unit is no whole upscale of {d}x art"
+            );
+            assert!(
+                uw * s >= pw && (uw - 1) * s < pw,
+                "{pw}x{ph}: {uw} units across at {s}"
+            );
+            assert!(
+                uh * s >= ph && (uh - 1) * s < ph,
+                "{pw}x{ph}: {uh} units down at {s}"
+            );
+            assert!(
+                seats(&o, (uw, uh)) >= CAST_LEN,
+                "{pw}x{ph}: the cast stands"
+            );
+            if s < min {
+                let (w, h) = (pw.div_ceil(min), ph.div_ceil(min));
+                assert!(
+                    seats(&o, (w, h)) < CAST_LEN,
+                    "{pw}x{ph}: under {MIN_UPSCALE}x though it seats"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_laptop_frames_the_office_near_its_target_height() {
+        let o = office();
+        assert_eq!(fit_of(&o, (1440, 900)), (180, 113, 8));
+        // The nearest whole upscale keeps the framing within the √2 `PixelFit`'s
+        // ratio rule allows, wherever neither floor binds: a portrait surface is
+        // too narrow to seat the cast at it.
+        for &(pw, ph) in SURFACES.iter().filter(|(w, h)| w > h) {
+            let (_, uh, s) = fit_of(&o, (pw, ph));
+            if s >= u32::from(MIN_UPSCALE) * u32::from(o.fit.density().get()) {
+                let (lo, hi) = (uh.min(FRAMING_UNITS_H), uh.max(FRAMING_UNITS_H));
+                assert!(hi * hi <= 2 * lo * lo, "{pw}x{ph}: {uh} units tall");
+            }
+        }
+    }
+
+    #[test]
+    fn a_landscape_phone_drops_below_two_whole_pixels_to_seat_the_cast() {
+        let o = office();
+        let (uw, uh, s) = fit_of(&o, (844, 390));
+        assert!(s < u32::from(MIN_UPSCALE) * u32::from(o.fit.density().get()));
+        assert!(seats(&o, (uw, uh)) >= CAST_LEN);
     }
 
     #[test]

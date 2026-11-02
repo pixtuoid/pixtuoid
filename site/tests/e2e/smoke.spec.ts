@@ -275,18 +275,145 @@ test('the office goes live and the statusline truth-light agrees', async ({ page
   const errors = watchErrors(page);
   await gotoLive(page);
   await expect(page.locator('[data-sl-onair]')).toHaveText('● LIVE', { timeout: 10_000 });
-  // The office is 130 layout units tall: width = min(640, max(64, round(w/h · 130))) units,
-  // at the canvas's pixels per unit.
-  const unitsW = () =>
-    page.evaluate(() => {
-      const c = document.getElementById('office-live') as HTMLCanvasElement;
-      return (c.width * 130) / c.height;
-    });
-  await expect.poll(unitsW).toBe(231);
+  const units = () => page.locator('#office-live').getAttribute('data-units');
+  const before = await units();
   await page.setViewportSize({ width: 500, height: 900 });
-  await expect.poll(unitsW).toBe(72);
+  await expect.poll(units).not.toBe(before);
+  await expectWholeDevicePixels(page);
   expect(errors()).toEqual([]);
 });
+
+/** The canvas box measured in device pixels against the office the engine fitted it to. */
+async function officeBox(page: Page) {
+  return page.evaluate(() => {
+    const c = document.getElementById('office-live') as HTMLCanvasElement;
+    const r = c.getBoundingClientRect();
+    const [uw, uh] = c.dataset.units!.split('x').map(Number);
+    const dpr = devicePixelRatio;
+    return {
+      dpr,
+      left: r.left * dpr,
+      top: r.top * dpr,
+      width: r.width * dpr,
+      height: r.height * dpr,
+      viewW: innerWidth * dpr,
+      viewH: innerHeight * dpr,
+      bufW: c.width,
+      bufH: c.height,
+      uw,
+      uh,
+      upscale: Number(c.dataset.upscale),
+    };
+  });
+}
+
+/**
+ * Each frame pixel spans exactly `upscale` device pixels a side, on whole device pixels, and the box covers the
+ * backdrop. Within one of Chromium's layout units (1/64 CSS px), the grain a CSS box reports.
+ */
+async function expectWholeDevicePixels(page: Page) {
+  const grain = (b: { dpr: number }) => b.dpr / 64;
+  await expect
+    .poll(async () => {
+      const b = await officeBox(page);
+      const off = Math.abs(b.width - b.bufW * b.upscale) + Math.abs(b.height - b.bufH * b.upscale);
+      return off <= 2 * grain(b);
+    })
+    .toBe(true);
+  const b = await officeBox(page);
+  expect(b.upscale % 1).toBe(0);
+  for (const edge of [b.left, b.top]) {
+    expect(Math.abs(edge - Math.round(edge))).toBeLessThanOrEqual(grain(b));
+  }
+  const unit = b.width / b.uw;
+  expect(b.left).toBeLessThanOrEqual(grain(b));
+  expect(b.top).toBeLessThanOrEqual(grain(b));
+  expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain(b));
+  expect(b.top + b.height).toBeGreaterThanOrEqual(b.viewH - grain(b));
+  expect(b.width - b.viewW).toBeLessThan(unit);
+  expect(b.height - b.viewH).toBeLessThan(unit);
+}
+
+// One rule at every ratio (#2029): the nearest whole upscale, at least 2x while the cast seats.
+for (const [width, height, deviceScaleFactor] of [
+  [1440, 900, 1],
+  [1366, 768, 1],
+  [1440, 900, 2],
+  [390, 844, 3],
+] as const) {
+  test.describe(`the office at ${width}x${height}@${deviceScaleFactor}`, () => {
+    test.use({ viewport: { width, height }, deviceScaleFactor, isMobile: deviceScaleFactor === 3 });
+
+    test('paints each frame pixel as whole device pixels, its captions on its grid', async ({
+      page,
+    }) => {
+      const errors = watchErrors(page);
+      await gotoLive(page);
+      await expect(page.locator('#office-overlay.is-on')).toBeAttached({ timeout: 10_000 });
+      await expectWholeDevicePixels(page);
+      const b = await officeBox(page);
+      expect(b.upscale).toBeGreaterThanOrEqual(2);
+
+      // The board's caption box lies on whole office units from the canvas's own corner.
+      const board = page.locator('#office-overlay .ov-board');
+      await expect(board).toBeVisible({ timeout: 10_000 });
+      const rect = await board.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height].map((v) => v * devicePixelRatio);
+      });
+      const unit = b.width / b.uw;
+      for (const v of [rect[0] - b.left, rect[1] - b.top, rect[2], rect[3]]) {
+        expect(Math.abs(v / unit - Math.round(v / unit)), `${v / unit} units`).toBeLessThan(0.01);
+      }
+
+      // On screen, frozen and uncovered: every upscale x upscale block on the grid is one colour.
+      await page.locator('#office-pause').click();
+      await page.evaluate(() =>
+        document
+          .querySelectorAll<HTMLElement>('body > *:not(.backdrop), #office-overlay')
+          .forEach((el) => (el.style.visibility = 'hidden'))
+      );
+      await page.evaluate(
+        () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      );
+      const png = (await page.screenshot({ scale: 'device' })).toString('base64');
+      const split = await page.evaluate(
+        async ({ png, left, top, upscale }) => {
+          const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+          const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+          const ctx = new OffscreenCanvas(bmp.width, bmp.height).getContext('2d')!;
+          ctx.drawImage(bmp, 0, 0);
+          const { data, width, height } = ctx.getImageData(0, 0, bmp.width, bmp.height);
+          const pixels = new Uint32Array(data.buffer);
+          const at = (x: number, y: number) => pixels[y * width + x];
+          let blocks = 0;
+          let mixed = 0;
+          const x0 = ((Math.round(left) % upscale) + upscale) % upscale;
+          const y0 = ((Math.round(top) % upscale) + upscale) % upscale;
+          for (let by = y0; by + upscale <= height; by += upscale) {
+            for (let bx = x0; bx + upscale <= width; bx += upscale) {
+              blocks++;
+              const c = at(bx, by);
+              outer: for (let y = by; y < by + upscale; y++) {
+                for (let x = bx; x < bx + upscale; x++) {
+                  if (at(x, y) !== c) {
+                    mixed++;
+                    break outer;
+                  }
+                }
+              }
+            }
+          }
+          return { blocks, mixed };
+        },
+        { png, left: b.left, top: b.top, upscale: b.upscale }
+      );
+      expect(split.blocks).toBeGreaterThan(1000);
+      expect(split.mixed, `${split.mixed} of ${split.blocks} blocks split`).toBe(0);
+      expect(errors()).toEqual([]);
+    });
+  });
+}
 
 test('without OffscreenCanvas the page thread hosts the office, which goes live once drawn', async ({
   page,
@@ -439,11 +566,8 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   await expect(btn).toHaveAttribute('aria-pressed', 'false');
   const shot = () =>
     page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).toDataURL());
-  const unitsW = () =>
-    page.evaluate(() => {
-      const c = document.getElementById('office-live') as HTMLCanvasElement;
-      return (c.width * 130) / c.height;
-    });
+  const frameW = () =>
+    page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).width);
   await btn.click();
   await expect(btn).toHaveAttribute('aria-pressed', 'true');
   const frozen = await settledShot(shot);
@@ -452,8 +576,9 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   await expect(page.locator('[data-sl-onair]')).toHaveText('❚❚ PAUSED');
   // The host draws only when asked and no loop asks while paused, so the resize
   // handler must re-render the ONE frozen frame at the new units.
+  const frozenW = await frameW();
   await page.setViewportSize({ width: 500, height: 900 });
-  await expect.poll(unitsW).toBe(72);
+  await expect.poll(frameW).not.toBe(frozenW);
   expect(await btn.getAttribute('aria-pressed')).toBe('true');
   expect(await canvasPainted(page, '#office-live')).toBe(true);
   const frozen2 = await shot();
