@@ -20,7 +20,9 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::hermetic;
-use pixtuoid_core::harness::hermetic::tui::{Action, BUDGET, CommandLine, Driver, GAVE_UP, Key};
+use pixtuoid_core::harness::hermetic::tui::{
+    Action, BUDGET, CommandLine, Driver, GAVE_UP, Key, SceneLog,
+};
 use pixtuoid_core::harness::{DRIVER_DIR_ENV, GAVE_UP_NOTE};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
@@ -131,6 +133,7 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
     });
 
     let mut screen = parser();
+    let mut scene_log = SceneLog::new(line.scene_log);
     let mut quit_at: Option<Instant> = None;
     loop {
         if let Some(status) = child.try_wait()? {
@@ -161,8 +164,8 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
                 )?;
             }
         }
-        if let Ok(scene_log) = std::fs::read_to_string(&line.scene_log) {
-            driver.observe(&scene_log);
+        if let Ok(appended) = scene_log.appended() {
+            driver.observe(&appended);
         }
         let shown = shown(screen.screen());
         let action = driver.step(&shown, Instant::now());
@@ -296,35 +299,40 @@ mod tests {
         );
     }
 
-    /// kimi's composer, its gate once the prompt's Enter arrives, and an exit
-    /// once the gate is answered.
+    /// kimi's composer; once the prompt's Enter arrives, its gate, with the
+    /// roster `$2` appended to the scene log `$1`; an exit once it is answered.
     #[cfg(unix)]
     const GATED: &str = r#"stty raw -echo
 printf '\033[2J\033[H╭──╮\r\n │ > \r\n'
 until [ "$(dd bs=1 count=1 2>/dev/null)" = "$(printf '\r')" ]; do :; done
 printf '\033[2J\033[HRun this command?\r\n'
+printf '%s\n' "$2" >> "$1"
 dd bs=1 count=1 >/dev/null 2>&1"#;
 
     #[cfg(unix)]
     #[test]
     fn a_gate_is_answered_once_the_scene_log_shows_it() {
-        for (scene_log, answered) in [
-            ("agents=[km\u{b7}proj@0:requires_action] daemons=[]\n", true),
-            ("agents=[km\u{b7}proj@0:running] daemons=[]\n", false),
+        for (roster, answered) in [
+            ("agents=[km\u{b7}proj@0:requires_action] daemons=[]", true),
+            ("agents=[km\u{b7}proj@0:running] daemons=[]", false),
         ] {
             let dir = tempfile::tempdir().expect("dir");
+            let scene_log = dir.path().join("scene.log");
             let line = CommandLine {
                 source: "kimi".into(),
                 scenario: "permission".into(),
                 log: dir.path().join("tui.log"),
-                scene_log: dir.path().join("scene.log"),
+                scene_log: scene_log.clone(),
                 prompt: "hi".into(),
-                program: vec!["sh".into(), "-c".into(), GATED.into()],
+                program: ["sh", "-c", GATED, "sh"]
+                    .map(OsString::from)
+                    .into_iter()
+                    .chain([scene_log.into_os_string(), roster.into()])
+                    .collect(),
             };
-            std::fs::write(&line.scene_log, scene_log).expect("its scene log");
             // Short of the driver's patience, past which it answers unseen.
             let code = drive(line, Duration::from_secs(3)).expect("it drove");
-            assert_eq!(code == 0, answered, "{scene_log}");
+            assert_eq!(code == 0, answered, "{roster}");
         }
     }
 

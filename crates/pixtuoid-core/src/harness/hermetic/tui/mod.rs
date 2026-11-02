@@ -2,7 +2,7 @@
 //!
 //! Some wire exists only in a CLI's TUI: Claude Code's headless mode refuses a
 //! tool without firing `PermissionRequest`. The `tui_drive` example runs the CLI under a pty,
-//! hands [`Driver::observe`] its scene log, and asks
+//! hands [`Driver::observe`] what its [`SceneLog`] appends, and asks
 //! [`Driver::step`] what to do with the screen it now shows; everything
 //! that differs between CLIs is its [`Tui`] row, never code here. A new CLI's
 //! edge case is that row plus a test over a screen its run recorded
@@ -239,7 +239,8 @@ pub struct Driver<'a> {
     phase: Phase,
     screen: String,
     changed_at: Instant,
-    /// The scene's newest agents roster.
+    /// The scene's newest agents roster since the turn's prompt was entered:
+    /// one from before is an earlier turn's.
     roster: String,
     open: Option<Open>,
     answered: bool,
@@ -298,6 +299,7 @@ impl<'a> Driver<'a> {
             }
             Phase::Typed => {
                 self.phase = Phase::Submitted { enter_at: now };
+                self.roster.clear();
                 Action::Keys(&[Key::Enter])
             }
             // A turn already answered was submitted: a prompt shown after its
@@ -330,9 +332,10 @@ impl<'a> Driver<'a> {
         }
     }
 
-    /// Takes what the run's scene log ([`super::SCENE_LOG`]) now reads.
-    pub fn observe(&mut self, scene_log: &str) {
-        if let Some(roster) = super::verify::agent_rosters(scene_log).pop() {
+    /// Takes the lines appended to the run's scene log since the last call
+    /// ([`SceneLog::appended`]), the newest roster among them the scene's.
+    pub fn observe(&mut self, appended: &str) {
+        if let Some(roster) = super::verify::agent_rosters(appended).pop() {
             roster.clone_into(&mut self.roster);
         }
     }
@@ -494,6 +497,45 @@ fn is_choice(typed: &str) -> bool {
         .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// The run's scene log ([`super::SCENE_LOG`]) as the headless pixtuoid appends
+/// to it, read from where the last read stopped.
+#[derive(Debug)]
+pub struct SceneLog {
+    path: PathBuf,
+    file: Option<std::fs::File>,
+    /// Read but not yet whole: a line still being written.
+    pending: Vec<u8>,
+}
+
+impl SceneLog {
+    /// The log at `path`, opened on its first read.
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            file: None,
+            pending: Vec::new(),
+        }
+    }
+
+    /// The whole lines appended since the last call.
+    ///
+    /// # Errors
+    ///
+    /// Opening or reading the log failed; the next call tries again.
+    pub fn appended(&mut self) -> std::io::Result<String> {
+        use std::io::Read;
+        if self.file.is_none() {
+            self.file = Some(std::fs::File::open(&self.path)?);
+        }
+        if let Some(file) = self.file.as_mut() {
+            file.read_to_end(&mut self.pending)?;
+        }
+        let whole = crate::source::admit::whole(&self.pending).len();
+        let lines: Vec<u8> = self.pending.drain(..whole).collect();
+        Ok(String::from_utf8_lossy(&lines).into_owned())
+    }
+}
+
 /// `tui_drive`'s command line, which the recorder runs in place of the CLI.
 #[derive(Debug, PartialEq, Eq)]
 pub struct CommandLine {
@@ -503,7 +545,7 @@ pub struct CommandLine {
     pub scenario: String,
     /// Where the pty log goes.
     pub log: PathBuf,
-    /// The run's scene log, which [`Driver::observe`] reads.
+    /// The run's scene log, which a [`SceneLog`] reads.
     pub scene_log: PathBuf,
     /// What the driver types.
     pub prompt: String,
@@ -620,21 +662,20 @@ mod tests {
 
     const ASKING: &str = "agents=[x@0:requires_action] daemons=[]\n";
 
-    /// Claude Code's permission run, its scene already showing the dialog.
     fn driver(t0: Instant) -> Driver<'static> {
         let (tui, answer) = tui_scenario("claude-code", "permission");
-        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
-        d.observe(ASKING);
-        d
+        Driver::new(tui, answer, PROMPT.to_owned(), t0)
     }
 
-    /// Steps a booted driver to a submitted prompt.
+    /// Steps a booted driver to a submitted prompt, its scene then showing the
+    /// dialog.
     fn submitted(d: &mut Driver<'_>, t0: Instant) {
         assert_eq!(d.step(BOOT, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(
             d.step(&typed(READY, READY_INPUT), t0),
             Action::Keys(&[Key::Enter])
         );
+        d.observe(ASKING);
     }
 
     #[test]
@@ -735,10 +776,10 @@ mod tests {
         };
         let t0 = Instant::now();
         let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
-        d.observe(ASKING);
         let boot = screen!("hermes", "boot");
         assert_eq!(d.step(boot, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]));
+        d.observe(ASKING);
         let mut t = t0;
         let mut next = |screen| {
             t += ENTER_RETRY;
@@ -831,10 +872,7 @@ mod tests {
         assert_eq!(d.step(CODEX_BOOT, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(d.step(CODEX_BOOT, t0), Action::Keys(&[Key::Enter]));
         let mut t = t0;
-        let mut scene_log = String::new();
         for turn in ["first", "second"] {
-            scene_log.push_str("agents=[x@0:running] daemons=[]\n");
-            d.observe(&scene_log);
             t += Duration::from_millis(1);
             assert_eq!(
                 d.step(CODEX_GATE, t),
@@ -845,10 +883,9 @@ mod tests {
             assert_eq!(
                 d.step(CODEX_GATE, t),
                 Action::Wait,
-                "{turn}: the scene has not shown its own dialog"
+                "{turn}: the scene has not shown its own dialog, though the first's still stands"
             );
-            scene_log.push_str(ASKING);
-            d.observe(&scene_log);
+            d.observe(ASKING);
             assert_eq!(d.step(CODEX_GATE, t), Action::Keys(gate.keys), "{turn}");
             t += Duration::from_millis(1);
             assert_eq!(
@@ -1231,7 +1268,6 @@ mod tests {
             let mut d = scenario
                 .tui_driver(PROMPT.to_owned(), t0)
                 .expect("a TUI scenario's driver");
-            d.observe(ASKING);
             assert_eq!(
                 d.step(boot, t0),
                 Action::Type(PROMPT.to_owned()),
@@ -1242,6 +1278,7 @@ mod tests {
                 Action::Keys(&[Key::Enter]),
                 "{source}/{name}"
             );
+            d.observe(ASKING);
             let moved = t0 + Duration::from_millis(1);
             let (first, then) = match scenario.answer() {
                 Answer::Gate { .. } => {
@@ -1274,6 +1311,7 @@ mod tests {
                     t += SETTLE;
                     assert_eq!(d.step(after, t), Action::Type(second.to_owned()));
                     assert_eq!(d.step(after, t), Action::Keys(&[Key::Enter]));
+                    d.observe(ASKING);
                     t += Duration::from_millis(1);
                     assert_eq!(d.step(again, t), Action::Wait, "{source}/{name}: its dwell");
                     t += gate.dwell;
@@ -1383,6 +1421,30 @@ mod tests {
             d.step(gate, shown + SCENE_PATIENCE),
             Action::Keys(tui.gates[0].keys)
         );
+    }
+
+    #[test]
+    fn the_scene_log_yields_each_whole_line_once_and_holds_back_one_being_written() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("scene.log");
+        let mut log = SceneLog::new(path.clone());
+        assert!(log.appended().is_err(), "not yet created");
+        let mut writer = std::fs::File::create(&path).expect("the log");
+        let asking = "agents=[km\u{b7}proj@0:requires_action] daemons=[]\n";
+        let (head, tail) = asking
+            .as_bytes()
+            .split_at(asking.find('\u{b7}').expect("·") + 1);
+        writer.write_all(KM_RUNNING.as_bytes()).expect("write");
+        writer.write_all(head).expect("write");
+        assert_eq!(
+            log.appended().expect("read"),
+            KM_RUNNING,
+            "a torn line held back"
+        );
+        writer.write_all(tail).expect("write");
+        assert_eq!(log.appended().expect("read"), asking);
+        assert_eq!(log.appended().expect("read"), "", "each line once");
     }
 
     #[test]
