@@ -4536,7 +4536,7 @@ mod backlog {
         }
     }
 
-    /// What befalls a transcript ahead of a read.
+    /// What befalls a transcript, or the watcher's memory of it, ahead of a read.
     #[derive(Clone, Copy)]
     enum Change {
         Append(&'static str),
@@ -4560,7 +4560,7 @@ mod backlog {
     }
     use Pass::{Boot, Scan, Walk};
 
-    /// What befell the transcript, the pass that reads it, and what that sends.
+    /// What befell the transcript or its watcher, the pass that reads it, and what that sends.
     type Step = (Change, Pass, &'static [Sent]);
 
     /// One transcript and the watcher's memory of it, across reads.

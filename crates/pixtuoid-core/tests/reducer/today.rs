@@ -71,7 +71,7 @@ fn slot_of(scene: &SceneState, a: AgentId) -> (u64, u32) {
     (slot.tokens_used, slot.tool_call_count)
 }
 
-/// One thing agent `a` does, on its transcript unless it says hook, or a read of
+/// One thing agent `a` does, on its transcript unless it says hook, or a check of
 /// what its events left.
 #[derive(Clone, Copy)]
 enum Beat {
@@ -100,7 +100,7 @@ enum Beat {
     Both(u64, u32),
 }
 
-/// Plays each row against a fresh counting reducer, naming the row a read fails in.
+/// Plays each row against a fresh counting reducer, naming the row a check fails in.
 fn play(rows: &[(&str, &[Beat])]) {
     for (row, beats) in rows {
         let (mut r, mut scene) = counting();

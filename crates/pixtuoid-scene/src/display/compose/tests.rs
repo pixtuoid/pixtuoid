@@ -521,7 +521,7 @@ fn a_sitters_depth_holds_through_their_breath() {
     );
 }
 
-/// A badge `text` hanging from `anchor`.
+/// A "cc" badge hanging from `anchor`.
 fn badge_at(anchor: crate::layout::Point) -> TextRun {
     TextRun {
         at: anchor,
