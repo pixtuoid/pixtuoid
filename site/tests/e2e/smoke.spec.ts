@@ -72,14 +72,15 @@ async function settleAnimations(page: Page): Promise<void> {
 /**
  * The office moments anything graded against the REAL office composite must meet, in UTC. The office is lit by the sun (its
  * height follows local time, `body_at`) and by the weather (a hash of the absolute `WEATHER_CYCLE_MS` slot, `transmission`),
- * so the moments are chosen by those drivers, not by hour label: a Clear slot with the sun highest (the brightest), a Storm
- * slot in the deep night, a Clear slot mid-slope of the morning sun and one at low evening sun. Found by sweeping
- * `first_transition_into` over January 2026. `the office moments still span the light range` checks only that the sun-highest
- * moment is far brighter than the rest and the storm night is no brighter than the morning and evening ones.
+ * so the moments are chosen by those drivers, not by hour label: a Clear slot with the sun highest (the brightest), an
+ * Overcast slot in the deep night (not Storm: a pure non-Storm slot has no storm share for `strikes` to draw against, so
+ * no frame depends on a lightning phase), a Clear slot mid-slope of the morning sun and one at low evening sun. Found by
+ * sweeping `first_transition_into` over January 2026. `the office moments still span the light range` checks only that
+ * the sun-highest moment is far brighter than the rest and the overcast night is no brighter than morning and evening.
  */
 const OFFICE_MOMENTS = [
   { at: '2026-01-03T12:30:00Z', what: 'sun highest, Clear' },
-  { at: '2026-01-20T02:00:00Z', what: 'deep night, Storm' },
+  { at: '2026-01-04T02:00:00Z', what: 'deep night, Overcast' },
   { at: '2026-01-02T08:00:00Z', what: 'morning sun, Clear' },
   { at: '2026-01-02T19:30:00Z', what: 'low evening sun, Clear' },
 ] as const;
@@ -93,7 +94,7 @@ async function pinOfficeMoment(page: Page, at: string, theme: string): Promise<v
   }, theme);
 }
 
-/** One test per theme x office moment, each in UTC so the instant means the same everywhere. */
+/** One test per theme x office moment. `timezoneId: 'UTC'` fixes the browser's local hour, which chrono's `Local` reads for the sun's height. */
 function atOfficeMoments(
   title: string,
   themes: readonly string[],
@@ -2091,7 +2092,7 @@ test('text over the live office carries its own scrim (.text-scrim)', async ({ p
 
 test.describe('the office moments still span the light range', () => {
   test.use({ timezoneId: 'UTC' });
-  test('the sun-highest moment is far brighter than the rest, the storm night no brighter than morning and evening', async ({
+  test('the sun-highest moment is far brighter than the rest, the overcast night no brighter than morning and evening', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -2123,7 +2124,7 @@ test.describe('the office moments still span the light range', () => {
     expect(noon, 'sun-highest moment is not far brighter than the rest').toBeGreaterThan(
       1.2 * Math.max(night, morning, evening)
     );
-    expect(night, 'storm night is brighter than the morning or evening').toBeLessThanOrEqual(
+    expect(night, 'overcast night is brighter than the morning or evening').toBeLessThanOrEqual(
       Math.min(morning, evening)
     );
   });
