@@ -95,7 +95,7 @@ struct SnapshotArgs {
     #[arg(long, value_name = "LOOK", value_parser = pixel_look(), conflicts_with_all = [
         // `draw_over_image` hit-tests no pointer on the pixel office.
         "hover",
-        // Only the half-blocks draw the walkable layer (`TuiRenderer::offers_walkable_debug`).
+        // The pixel office is drawn without the walkable layer (`PixelOffice::render`).
         "debug_walkable",
         // A crop moves the frame the pixel office paints from its top-left.
         "crop_agent", "crop_furniture", "crop_mascot",
@@ -317,8 +317,15 @@ struct SnapshotArgs {
 /// `--pixel`'s values: the engine's look ids.
 fn pixel_look() -> impl clap::builder::TypedValueParser<Value = LookKind> {
     use clap::builder::TypedValueParser as _;
-    clap::builder::PossibleValuesParser::new(LookKind::ALL.iter().map(|look| look.name()))
-        .map(|name| name.parse().expect("each possible value is a look's id"))
+    clap::builder::PossibleValuesParser::new(LookKind::ALL.iter().map(|look| look.name())).map(
+        |name| {
+            LookKind::ALL
+                .iter()
+                .copied()
+                .find(|look| look.name() == name)
+                .expect("each possible value is a look's id")
+        },
+    )
 }
 
 fn default_projects_root() -> String {

@@ -842,7 +842,7 @@ mod tests {
             .count();
         assert!(
             changed * 2 > ours.len(),
-            "only {changed} of {} office pixels are the pixel's",
+            "only {changed} of {} office pixels are the cutaway's",
             ours.len()
         );
 
@@ -869,7 +869,7 @@ mod tests {
         assert_eq!(
             *cutaway.get_pixel(dot.0 as u32, dot.1 as u32),
             ANNOT,
-            "the callout is not on the pixel's desk 0"
+            "the callout is not on the cutaway's desk 0"
         );
     }
 }

@@ -872,16 +872,10 @@ impl core::cmp::PartialEq for pixtuoid_scene::look::LookKind
 pub fn pixtuoid_scene::look::LookKind::eq(&self, &Self) -> bool
 impl core::convert::From<pixtuoid_scene::look::LookKind> for &'static str
 pub fn &'static str::from(pixtuoid_scene::look::LookKind) -> &'static str
-impl core::convert::TryFrom<&str> for pixtuoid_scene::look::LookKind
-pub type pixtuoid_scene::look::LookKind::Error = strum::ParseError
-pub fn pixtuoid_scene::look::LookKind::try_from(&str) -> core::result::Result<pixtuoid_scene::look::LookKind, <Self as core::convert::TryFrom<&str>>::Error>
 impl core::fmt::Debug for pixtuoid_scene::look::LookKind
 pub fn pixtuoid_scene::look::LookKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::look::LookKind
 impl core::marker::StructuralPartialEq for pixtuoid_scene::look::LookKind
-impl core::str::traits::FromStr for pixtuoid_scene::look::LookKind
-pub type pixtuoid_scene::look::LookKind::Err = strum::ParseError
-pub fn pixtuoid_scene::look::LookKind::from_str(&str) -> core::result::Result<pixtuoid_scene::look::LookKind, <Self as core::str::traits::FromStr>::Err>
 impl strum::VariantArray for pixtuoid_scene::look::LookKind
 pub const pixtuoid_scene::look::LookKind::VARIANTS: &'static [Self]
 impl<'_derivative_strum> core::convert::From<&'_derivative_strum pixtuoid_scene::look::LookKind> for &'static str

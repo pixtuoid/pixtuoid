@@ -50,8 +50,8 @@ impl Look {
         text: WorldText::Host,
     };
 
-    /// It with its world text baked, as a slide that no host sets text on
-    /// draws it: the half-blocks, at a scale no glyph fits, unchanged.
+    /// It as a slide draws it, which no host sets text on: its world text
+    /// baked, but the half-blocks', whose slide shows none.
     pub(crate) fn baked(self) -> Self {
         match self {
             Self::Classic { scale, .. } if self != Self::HALF_BLOCKS => Self::Classic {
@@ -79,9 +79,7 @@ impl Look {
 /// it at: what a command line, a config and [`PixelFit::look`] name it by.
 ///
 /// [`PixelFit::look`]: crate::render_scale::PixelFit::look
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr, strum::EnumString,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum LookKind {
     /// [`Look::Cutaway`], at any scale and text.
@@ -232,7 +230,7 @@ pub mod spans {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameNote {
     /// Why the cutaway painted it whole, when it did; `None` for the classic,
-    /// which paints every frame whole.
+    /// whose whole repaints carry no reason.
     pub repaint: Option<crate::cutaway::canvas::Repaint>,
     /// The weather it shows: the slot's, the next slot's, and the next one's
     /// share of the clouds.
@@ -310,7 +308,8 @@ struct Classic {
     signs: Vec<crate::display::TextRun>,
     /// The dim the last frame was drawn under.
     dim: Dim,
-    /// The frame at a scale, where the last was drawn at one.
+    /// The classic blown up, for every classic look but the half-blocks;
+    /// `None` until one draws.
     scaled: Option<classic::Scaled>,
 }
 
@@ -498,7 +497,7 @@ impl Raster {
     }
 
     /// The world text the last frame left to its host, in either look;
-    /// `None` before the first and for a cutaway that baked its own.
+    /// `None` before the first and for a look that baked its own.
     pub(crate) fn host_text(&self) -> Option<crate::display::HostText<'_>> {
         match self.shown? {
             Look::Classic {
@@ -666,11 +665,11 @@ pub fn render(
             let flash = paint.flash(&stepped.frame);
             let drawn = paint_frame(&mut paint, &stepped.frame);
             classic.drew(drawn);
-            dim.apply(&mut classic.buf);
             classic.dim = dim;
             classic.signs =
                 crate::display::TextRun::signs(&board, stepped.layout.door, world.floor, theme);
             if look == Look::HALF_BLOCKS {
+                dim.apply(&mut classic.buf);
                 (Dirty::All, flash)
             } else {
                 let Classic {

@@ -18,7 +18,7 @@ use crate::sprite::format::Density;
 
 /// How many buffer pixels one layout unit paints as.
 ///
-/// `ONE` is the classic path: layout units ARE buffer pixels, byte-identical to
+/// `ONE` is the half-blocks' path: layout units ARE buffer pixels, byte-identical to
 /// the pre-seam behaviour. A larger scale paints the same office into a bigger
 /// buffer, which is the only thing that makes richer art expressible without
 /// silently changing floor capacity or desk assignment.
@@ -33,7 +33,7 @@ impl From<Density> for RenderScale {
 }
 
 impl RenderScale {
-    /// The classic path — one layout unit per buffer pixel.
+    /// The half-blocks' path — one layout unit per buffer pixel.
     pub(crate) const ONE: Self = Self(NonZeroU16::MIN);
 
     /// A scale of `n` buffer pixels per layout unit, or `None` for zero

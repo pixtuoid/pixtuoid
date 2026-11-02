@@ -574,3 +574,53 @@ fn a_slide_bakes_every_look_but_the_half_blocks() {
         );
     }
 }
+
+/// Under a dim, the baked classic is its undimmed frame dimmed, its text's
+/// icons with the rest, as the cutaway dims its own.
+#[test]
+fn a_dim_darkens_the_baked_classic_after_its_text() {
+    let (pack, scale) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let look = scaled(scale, WorldText::Baked);
+    let dim = Dim::from_brightness(0.5);
+    let frame = |dim: Dim| {
+        let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+        let inputs = RenderInputs {
+            dim,
+            ..inputs(&scene, t0)
+        };
+        render(&mut floor, office.stores(), look, inputs).expect("lays out");
+        floor.raster.pixels().expect("a frame").clone()
+    };
+    let mut expected = frame(Dim::NONE);
+    dim.apply(&mut expected);
+    assert!(frame(dim).as_slice() == expected.as_slice());
+}
+
+/// A frame most of whose squares changed is reported changed whole, not as
+/// a run a square.
+#[test]
+fn a_scaled_classic_changed_all_over_repaints_whole() {
+    let (pack, scale) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let (mut floor, mut office) = (PerFloor::new(pack), PerOffice::new());
+    let look = scaled(scale, WorldText::Baked);
+    let mut dirty = |dim: Dim| {
+        let inputs = RenderInputs {
+            dim,
+            ..inputs(&scene, t0)
+        };
+        render(&mut floor, office.stores(), look, inputs)
+            .expect("lays out")
+            .dirty
+    };
+    dirty(Dim::NONE);
+    assert_eq!(dirty(Dim::NONE), Dirty::Unchanged, "the same frame");
+    assert_eq!(
+        dirty(Dim::from_brightness(0.5)),
+        Dirty::All,
+        "every pixel darker"
+    );
+}

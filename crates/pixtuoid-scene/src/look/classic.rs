@@ -2,11 +2,12 @@
 //! world text baked in the cutaway's pixel font and plates where its look asks,
 //! and marked dirty only where it differs from the frame before.
 
-use crate::cutaway::canvas::{Dirty, MAX_PASSES, passes};
+use crate::composite::BLACK;
+use crate::cutaway::canvas::Dirty;
 use crate::display::pen::Pen;
 use crate::display::{HostText, TextRole, TextRun};
 use crate::layout::Bounds;
-use crate::look::{Dim, WorldText};
+use crate::look::WorldText;
 use crate::pack::OfficeArt;
 use crate::render_scale::RenderScale;
 use crate::sprite::{Rgb, RgbBuffer};
@@ -34,39 +35,39 @@ impl Scaled {
         }
     }
 
-    /// Draw `unit`, the classic's frame, at `scale`, with `text` baked over it
-    /// where `world` says; `fresh` where the frame before showed another look,
-    /// which the frame then repaints whole.
+    /// Draw `unit`, the classic's undimmed frame, at `scale`, with `host`'s
+    /// runs baked over it where `text` says, then dim it all as `host` is
+    /// dimmed; `fresh` where the frame before showed another look, which the
+    /// frame then repaints whole.
     pub(super) fn frame(
         &mut self,
         unit: &RgbBuffer,
-        text: HostText<'_>,
-        (scale, world): (RenderScale, WorldText),
+        host: HostText<'_>,
+        (scale, text): (RenderScale, WorldText),
         pack: &OfficeArt,
         fresh: bool,
     ) -> Dirty {
         std::mem::swap(&mut self.buf, &mut self.was);
         blow_up(unit, scale, &mut self.buf);
         self.star = None;
-        if world == WorldText::Baked {
+        if text == WorldText::Baked {
             let pen = Pen::for_pack(scale, pack);
-            for run in runs(text) {
+            for run in runs(host) {
                 if run.role == TextRole::Star {
                     self.star = Some(crate::display::compose::run_box(&run, pen));
                 }
                 crate::cutaway::paint::paint_run(&run, (pack, pen), &mut self.buf);
             }
         }
+        host.dim.apply(&mut self.buf);
         let reshaped =
             (self.was.width(), self.was.height()) != (self.buf.width(), self.buf.height());
         if fresh || reshaped {
             return Dirty::All;
         }
-        Dirty::within(passes(&changed(&self.was, &self.buf, scale), MAX_PASSES))
+        changed(&self.was, &self.buf, scale)
     }
 }
-
-const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
 
 /// `unit` at `scale` buffer pixels a pixel, into `out`.
 fn blow_up(unit: &RgbBuffer, scale: RenderScale, out: &mut RgbBuffer) {
@@ -90,49 +91,53 @@ fn blow_up(unit: &RgbBuffer, scale: RenderScale, out: &mut RgbBuffer) {
     }
 }
 
-/// The [`TILE`]-unit squares, in buffer pixels, where `now` differs from
-/// `was`, two frames `scale` buffer pixels a unit of one size.
-fn changed(was: &RgbBuffer, now: &RgbBuffer, scale: RenderScale) -> Vec<Bounds> {
+/// Where `now` differs from `was`, two frames `scale` buffer pixels a unit of
+/// one size: each row of [`TILE`]-unit squares' runs of changed ones, or the
+/// whole frame where most squares changed, which a run per square would cost a
+/// host more than.
+fn changed(was: &RgbBuffer, now: &RgbBuffer, scale: RenderScale) -> Dirty {
     let side = TILE.saturating_mul(scale.get());
     let (w, h) = (now.width(), now.height());
-    fn row(buf: &RgbBuffer, y: u16, x: u16, end: u16) -> &[Rgb] {
-        let at = usize::from(y) * usize::from(buf.width());
-        &buf.as_slice()[at + usize::from(x)..at + usize::from(end)]
-    }
-    let mut tiles = Vec::new();
+    let (mut runs, mut changed, mut squares) = (Vec::new(), 0usize, 0usize);
     for top in (0..h).step_by(usize::from(side)) {
         let bottom = top.saturating_add(side).min(h);
+        let mut run: Option<Bounds> = None;
         for left in (0..w).step_by(usize::from(side)) {
             let right = left.saturating_add(side).min(w);
-            if (top..bottom).any(|y| row(was, y, left, right) != row(now, y, left, right)) {
-                tiles.push(Bounds {
+            squares += 1;
+            if (top..bottom).any(|y| row(was, y, left..right) != row(now, y, left..right)) {
+                changed += 1;
+                let square = Bounds {
                     x: left,
                     y: top,
                     width: right - left,
                     height: bottom - top,
-                });
+                };
+                run = Some(run.map_or(square, |r| r.union(square)));
+            } else if let Some(r) = run.take() {
+                runs.push(r);
             }
         }
+        runs.extend(run);
     }
-    tiles
+    if changed * 2 > squares {
+        Dirty::All
+    } else {
+        Dirty::within(runs)
+    }
 }
 
-/// `text`'s runs in its paint order, in the dim it is set under.
-fn runs(text: HostText<'_>) -> impl Iterator<Item = TextRun> + '_ {
-    text.badges
+/// Row `y`'s pixels across `xs`.
+fn row(buf: &RgbBuffer, y: u16, xs: std::ops::Range<u16>) -> &[Rgb] {
+    let at = usize::from(y) * usize::from(buf.width());
+    &buf.as_slice()[at + usize::from(xs.start)..at + usize::from(xs.end)]
+}
+
+/// `host`'s runs in its paint order.
+fn runs(host: HostText<'_>) -> impl Iterator<Item = TextRun> + '_ {
+    host.badges
         .iter()
         .map(crate::display::Badge::run)
-        .chain(text.bubbles.iter().cloned())
-        .chain(text.signs.iter().cloned())
-        .map(move |run| dimmed(run, text.dim))
-}
-
-/// `run` under `dim`.
-fn dimmed(mut run: TextRun, dim: Dim) -> TextRun {
-    for span in &mut run.spans {
-        span.ink = dim.of(span.ink);
-    }
-    run.plate = run.plate.map(|rgb| dim.of(rgb));
-    run.strip = run.strip.map(|rgb| dim.of(rgb));
-    run
+        .chain(host.bubbles.iter().cloned())
+        .chain(host.signs.iter().cloned())
 }

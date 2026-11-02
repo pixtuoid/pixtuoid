@@ -173,7 +173,7 @@ impl<S: PixelSession> PixelOffice<S> {
         self.session
             .pixels()
             .map(drop)
-            .context("the cutaway does not lay out")
+            .context("the pixel office does not lay out")
     }
 
     /// The last frame over `img`'s scene cells, which start at its top-left,
@@ -436,7 +436,7 @@ mod tests {
         }
     }
 
-    /// `--cutaway --dashboard`: the panel's cells are the classic frame's, as
+    /// `--pixel cutaway --dashboard`: the panel's cells are the classic frame's, as
     /// the TUI draws a panel over its image, and the cutaway shows around them.
     #[test]
     fn a_panel_keeps_its_cells_over_the_cutaway() {
@@ -479,7 +479,7 @@ mod tests {
         }
     }
 
-    /// `--cutaway --onboarding`: the backdrop dims the cutaway around the
+    /// `--pixel cutaway --onboarding`: the backdrop dims the cutaway around the
     /// welcome card, as the TUI dims its own.
     #[test]
     fn the_onboarding_dims_the_cutaway_around_its_card() {
