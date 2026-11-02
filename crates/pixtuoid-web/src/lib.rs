@@ -300,7 +300,7 @@ impl Office {
     /// times [`Office::scale`], so the page's upscale of the frame lands every art
     /// pixel on whole device pixels, and the units cover the surface, cropping under one.
     ///
-    /// The scale nearest [`FRAMING_UNITS_H`] tall, at least [`MIN_UPSCALE`] whole
+    /// The scale nearest `FRAMING_UNITS_H` tall, at least `MIN_UPSCALE` whole
     /// pixels, then stepped down while the office would not lay out and so paint
     /// nothing, as the floating window steps down.
     pub fn fit(&self, px_w: u32, px_h: u32) -> Vec<u32> {
