@@ -658,7 +658,7 @@ const TOOL_ASK: &str = "ask";
 /// never hardcoded (invariant #3).
 fn omp_label(source: &str, text: &str) -> String {
     let prefix = crate::source::decoder::label_prefix_for(source);
-    format!("{prefix}·{}", ellipsize(text, MAX_DECODED_FIELD_CHARS))
+    crate::state::SlotLabel::join(prefix, &ellipsize(text, MAX_DECODED_FIELD_CHARS))
 }
 
 /// omp label: a NESTED transcript is a subagent, and its file STEM is the

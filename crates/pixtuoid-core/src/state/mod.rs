@@ -201,6 +201,16 @@ pub struct SlotLabel {
 }
 
 impl SlotLabel {
+    /// The separator between a label's source prefix and the rest of it
+    /// (`cc·repo`).
+    pub const SEP: char = '·';
+
+    /// A label's text: `prefix`, [`SEP`](Self::SEP), then `rest`, joined here
+    /// alone so every writer spells the separator one way.
+    pub(crate) fn join(prefix: &str, rest: &str) -> String {
+        format!("{prefix}{}{rest}", Self::SEP)
+    }
+
     pub(crate) fn new(text: impl Into<Arc<str>>, provenance: LabelProvenance) -> Self {
         Self {
             text: text.into(),

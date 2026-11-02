@@ -4,10 +4,10 @@
 
 use crate::sprite::Rgb;
 use pixtuoid_core::AgentSlot;
-use pixtuoid_core::state::ActivityState;
+use pixtuoid_core::state::{ActivityState, SlotLabel};
 
 use crate::layout::DESK_W;
-use crate::nameplate::{LABEL_SEP, Nameplate};
+use crate::nameplate::Nameplate;
 use crate::theme::Theme;
 
 /// Activity-derived label tone — backend-agnostic.
@@ -34,11 +34,11 @@ impl BadgeTone {
 }
 
 /// The source's badge hue for a name-badge label, or `None` when the label has
-/// no `LABEL_SEP` prefix (a bare-prefix / cwd-less label like `cx`) or the
-/// prefix is unregistered.
+/// no [`SlotLabel::SEP`] prefix (a bare-prefix / cwd-less label like `cx`) or
+/// the prefix is unregistered.
 pub(crate) fn badge_hue(label: &str, theme: &Theme) -> Option<Rgb> {
     label
-        .split_once(LABEL_SEP)
+        .split_once(SlotLabel::SEP)
         .and_then(|(prefix, _)| theme.source.by_prefix(prefix))
 }
 

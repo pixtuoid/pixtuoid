@@ -9,16 +9,8 @@ use std::fmt;
 use std::sync::Arc;
 
 use pixtuoid_core::id::splitmix64;
+use pixtuoid_core::state::SlotLabel;
 use pixtuoid_core::{AgentId, AgentSlot, SceneState};
-
-/// The separator between a label's source prefix and its cwd/disambiguation
-/// tail (`cc·repo`, `cc·repo·1a2b`). The label is WRITTEN core-side as a bare
-/// `·` at THREE sites — `decoder::cwd_basename_label` (the chokepoint),
-/// `claude_code::cc_derive_label`'s project-dir fallback, and the reducer's
-/// SessionStart back-fill, both of which document their bypass — and a crate
-/// boundary keeps this const out of reach of all three, so it must MATCH that
-/// char.
-pub(crate) const LABEL_SEP: char = '\u{b7}';
 
 /// What tells an agent from its namesakes: 16 bits of its [`AgentId`], which
 /// crosses the wire, so a device and its host show one. Displays as its 4 hex
@@ -35,9 +27,9 @@ impl Suffix {
         Self(u16::from_le_bytes([low, high]))
     }
 
-    /// The tail a name carries it as: the label's separator, then the digits.
+    /// The tail a name carries it as: [`SlotLabel::SEP`], then the digits.
     pub fn tail(self) -> String {
-        format!("{LABEL_SEP}{self}")
+        format!("{}{self}", SlotLabel::SEP)
     }
 }
 

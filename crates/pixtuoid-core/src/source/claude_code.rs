@@ -494,12 +494,12 @@ pub fn cc_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
         .and_then(|proj| proj.rsplit('-').find(|s| !s.is_empty()))
     {
         // This branch BYPASSES `cwd_basename_label`'s cap chokepoint.
-        return format!(
-            "{prefix}·{}",
-            crate::source::decoder::ellipsize(
+        return crate::state::SlotLabel::join(
+            prefix,
+            &crate::source::decoder::ellipsize(
                 base,
-                crate::source::decoder::MAX_DECODED_FIELD_CHARS
-            )
+                crate::source::decoder::MAX_DECODED_FIELD_CHARS,
+            ),
         );
     }
     prefix.to_string()

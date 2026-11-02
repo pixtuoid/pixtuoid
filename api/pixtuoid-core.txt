@@ -1513,6 +1513,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::SceneStat
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::SceneState
 pub struct pixtuoid_core::state::SlotLabel
 impl pixtuoid_core::state::SlotLabel
+pub const pixtuoid_core::state::SlotLabel::SEP: char
 pub fn pixtuoid_core::state::SlotLabel::text(&self) -> alloc::rcs::arc::Arc<str>
 impl core::clone::Clone for pixtuoid_core::state::SlotLabel
 pub fn pixtuoid_core::state::SlotLabel::clone(&self) -> Self
@@ -1971,6 +1972,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::SceneStat
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::SceneState
 pub struct pixtuoid_core::SlotLabel
 impl pixtuoid_core::state::SlotLabel
+pub const pixtuoid_core::state::SlotLabel::SEP: char
 pub fn pixtuoid_core::state::SlotLabel::text(&self) -> alloc::rcs::arc::Arc<str>
 impl core::clone::Clone for pixtuoid_core::state::SlotLabel
 pub fn pixtuoid_core::state::SlotLabel::clone(&self) -> Self
