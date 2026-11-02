@@ -3,7 +3,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::{AgentEvent, Transport};
-use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer};
+use pixtuoid_core::state::reducer::{
+    B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer, STALE_BLOCKED_TIMEOUT,
+};
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, SceneState};
 
 use crate::{
@@ -1336,6 +1338,29 @@ fn a_slots_end_forgets_its_reading_ids() {
         &mut scene,
         usage_of(id, 100, Some("msg_1")),
         t0,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].tokens_used, 100);
+}
+
+/// A rewritten transcript re-reads every reading in it, however old (omp's
+/// workspace-dir change, copilot's rewind).
+#[test]
+fn a_live_slot_keeps_its_reading_ids_past_every_sweep() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    r.apply(
+        &mut scene,
+        usage_of(id, 100, Some("msg_1")),
+        t0,
+        Transport::Jsonl,
+    );
+    let later = t0 + STALE_BLOCKED_TIMEOUT + Duration::from_secs(1);
+    r.tick(&mut scene, later);
+    assert!(scene.agents.contains_key(&id), "precondition: still live");
+    r.apply(
+        &mut scene,
+        usage_of(id, 100, Some("msg_1")),
+        later,
         Transport::Jsonl,
     );
     assert_eq!(scene.agents[&id].tokens_used, 100);

@@ -211,9 +211,8 @@ pub(super) struct Correlation {
     /// it the cost is one HUD re-count.
     pub(super) counted_calls: Counted,
     /// Usage readings already counted into `tokens_used`, by the id a wire that
-    /// repeats one gives it. A slot's removal forgets its ids, and they sweep with
-    /// `counted_calls`, whose TTL far outlasts a repeat's lag; a replay past either
-    /// re-counts on the meter, never on [`Today`](crate::state::Today).
+    /// repeats one gives it. Never swept, only forgotten with the slot: a
+    /// rewritten transcript re-reads readings of any age.
     pub(super) counted_readings: Counted,
     /// Agents whose transcript events are live work, per
     /// [`AgentEvent::Backlog`](crate::AgentEvent::Backlog). Absent is closed: a
@@ -394,7 +393,6 @@ impl Correlation {
         }
         self.counted_swept_at = Some(now);
         self.counted_calls.sweep(now);
-        self.counted_readings.sweep(now);
     }
 
     /// Whether `id` holds a FRESH probe vouch. The single freshness predicate
@@ -556,15 +554,12 @@ mod tests {
         let mut corr = Correlation::default();
         assert!(corr.counted_calls.first(old, Some("t1"), t0()));
         assert!(corr.counted_calls.first(young, Some("t2"), t0() + step));
-        assert!(corr.counted_readings.first(old, Some("m1"), t0()));
-        assert!(corr.counted_readings.first(young, Some("m2"), t0() + step));
         corr.gc_slow(t0() + crate::state::reducer::STALE_BLOCKED_TIMEOUT);
         assert!(
-            !corr.counted_calls.0.contains_key(&old) && !corr.counted_readings.0.contains_key(&old),
+            !corr.counted_calls.0.contains_key(&old),
             "the swept life's emptied submap is dropped with it"
         );
         assert!(corr.counted_calls.0[&young].contains_key("t2"));
-        assert!(corr.counted_readings.0[&young].contains_key("m2"));
     }
 
     #[test]
