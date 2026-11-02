@@ -6,6 +6,14 @@ const floor = floorById('lobby');
 // Same manifest + supported-filter SupportedTools.astro renders its tools table
 // from; a bridge e2e pins this chip count to that table's row count.
 const badges = sources.filter((s) => s.status === 'supported');
+// One rule per source: :has() ties a chip to its own name in the prompt row; a focused
+// default link keeps the row, so its focus ring never sits under a name.
+const nameRules = badges
+  .map(
+    (s) =>
+      `.hero__chips:not(:has(.hero__prompt-default:focus-visible)):has(#chip-${s.id}:hover) [data-for='${s.id}'] > span{clip-path:inset(0)}`
+  )
+  .join('\n');
 ---
 
 <section id={floor.id} class="hero" data-floor={floor.fl} data-floor-label={floor.label}>
@@ -23,21 +31,26 @@ const badges = sources.filter((s) => s.status === 'supported');
         Every session walks in, sits down, and gets to work — in a pixel office that lives in your
         terminal.
       </p>
-      <ul class="hero__badges" aria-label={`Works with ${badges.length} coding CLIs`}>
-        {badges.map((s) => <li
-          class="hero__badge"
-          style={`--badge:${s.badge_color}`}
-          aria-label={s.name}
-        >
-          <span class="hero__badge-code">{s.badge.replace('·', '')}</span>
-          <span class="hero__badge-name" aria-hidden="true">
-            <span>{s.name}</span>
-          </span>
-        </li>)}
-        <li class="hero__badge hero__badge--more">
-          <a href="#tools">{badges.length} CLIs <span aria-hidden="true">→</span></a>
-        </li>
-      </ul>
+      <div class="hero__chips">
+        <p class="hero__prompt">
+          <a class="hero__prompt-default" href="#tools">
+            <span aria-hidden="true">$ </span>works with {badges.length} coding CLIs
+            <span aria-hidden="true">→</span></a>
+          {badges.map((s) => <span class="hero__badge-name" data-for={s.id} aria-hidden="true">
+            <span>$ {s.name}</span>
+          </span>)}
+        </p>
+        <ul class="hero__badges" aria-label={`Works with ${badges.length} coding CLIs`}>
+          {badges.map((s) => <li
+            id={`chip-${s.id}`}
+            class="hero__badge"
+            style={`--badge:${s.badge_color}`}
+            aria-label={s.name}
+          >
+            <span class="hero__badge-code">{s.badge.replace('·', '')}</span>
+          </li>)}
+        </ul>
+      </div>
       <div class="hero__cta">
         <a class="btn btn-primary" href="#install">[ install <span aria-hidden="true">→</span> ]</a>
         <a class="hero__ghost" href="#showcase-vibing"
@@ -104,16 +117,44 @@ const badges = sources.filter((s) => s.status === 'supported');
        — the resting colour is the full --fg. Deliberate, not a bug to re-fix. */
     color: var(--coral);
   }
+  .hero__chips {
+    /* the 2px cancels .hero__badges' top padding, below */
+    margin-top: calc(1.15rem - 2px);
+  }
+  /* A fixed prompt row over the strip: the count link and every chip's name share ONE
+     grid cell, so hovering a chip swaps the text in place and nothing ever re-flows.
+     Bare over the live office, hence --office-ink for the names too: a per-CLI hue
+     can't clear AA there, so the hue stays on the hovered chip alone. */
+  .hero__prompt {
+    display: grid;
+    margin: 0 0 0.55rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--office-ink);
+  }
+  .hero__prompt > * {
+    grid-area: 1 / 1;
+  }
+  .hero__prompt-default {
+    justify-self: start;
+    color: inherit;
+    text-decoration: none;
+  }
+  .hero__prompt-default:hover {
+    color: var(--office-ink-accent);
+  }
   .hero__badges {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    /* 2px of margin moved INSIDE as padding on BOTH edges, net geometry identical:
+    /* 2px of margin moved INSIDE as padding on both edges (the top one cancelled by
+       .hero__chips' margin-top), net geometry identical:
        an edge row's 1px chip border sitting on the element's own paint edge gets
        shaved when Safari rasterizes at a fractional device-pixel offset. Keep the
        compensating negative margin — bare padding grows the page and reds the
        scroll-budget e2e pin. */
-    margin: calc(1.15rem - 2px) 0 -2px;
+    margin: 0 0 -2px;
     padding: 2px 0;
     list-style: none;
     /* Permanent compositing layer: Safari promotes/demotes elements around hover
@@ -127,9 +168,6 @@ const badges = sources.filter((s) => s.status === 'supported');
        glyph while sweeping the strip, and a drag would blue-select the codes. */
     cursor: default;
     user-select: none;
-    /* the gap lives in .hero__badge-name's inner padding instead, so a collapsed
-       name leaves no trailing space after the code */
-    gap: 0;
     white-space: nowrap;
     font-family: var(--font-mono);
     font-size: 0.8rem;
@@ -141,52 +179,32 @@ const badges = sources.filter((s) => s.status === 'supported');
     border: 1px solid color-mix(in srgb, var(--badge) 40%, var(--border-strong));
     color: var(--fg);
   }
-  /* The one non-source cell. Its --badge is the NEUTRAL border tone so the shared
-     tint formulas above apply unchanged — a per-chip background override would go
-     invalid-at-computed-value on their var(--badge) and fall to transparent. */
-  .hero__badge--more {
-    --badge: var(--border-strong);
-  }
-  .hero__badge--more a {
-    color: var(--fg);
-    text-decoration: none;
-    /* EXPLICIT pointer: the ancestor chips force cursor: default (inherited), and
-       only a UA special case (a:any-link) restores it — not spec-guaranteed. */
-    cursor: pointer;
-    transition: color 0.18s ease;
-  }
-  .hero__badge--more a:hover {
-    color: var(--coral);
-  }
   .hero__badge-code {
     font-weight: 700;
     /* the app's real per-CLI hue, darkened toward black so it clears WCAG AA on the
        TINTED day cell — same-hue text on a same-hue tint eats contrast. */
     color: color-mix(in srgb, var(--badge) 50%, black);
   }
-  /* Collapsed-by-default name: a 0fr grid track animates open on hover. The chip
-     grows RIGHTWARD — its left edge never moves, so the pointer stays inside and
-     the HOVERED chip can't jitter (a trailing sibling can still re-wrap; accepted).
-     Hover-only on purpose: chips carry no tabindex, and the names stay available
-     via aria-label and at the #tools matrix. */
+  /* The name types itself over the prompt (a clip is paint-only, so hover never
+     touches layout). It reveals only where :has() exists (MDN: Baseline widely
+     available since Dec 2023), because only :has() can also hide the default text
+     under it; elsewhere the prompt simply stays. Hover-only on purpose: chips carry
+     no tabindex, and the names stay available via aria-label and at the #tools matrix. */
   .hero__badge-name {
-    display: inline-grid;
-    grid-template-columns: 0fr;
-    opacity: 0;
-    /* steps(), not ease: the track opens in discrete increments, so the name reveals
-       glyph-chunk by glyph-chunk — a terminal TYPING it, not a drawer sliding. */
-    transition:
-      grid-template-columns 0.3s steps(12, end),
-      opacity 0.06s linear;
+    justify-self: start;
+    white-space: nowrap;
+    pointer-events: none;
   }
+  /* steps(), not ease: the name reveals glyph-chunk by glyph-chunk — a terminal TYPING it. */
   .hero__badge-name > span {
-    min-width: 0;
-    overflow: hidden;
-    padding-left: 0.4em;
+    display: block;
+    clip-path: inset(0 100% 0 0);
+    transition: clip-path 0.3s steps(12, end);
   }
-  .hero__badge:hover .hero__badge-name {
-    grid-template-columns: 1fr;
-    opacity: 1;
+  @supports selector(:has(a)) {
+    .hero__chips:has(.hero__badge:hover) .hero__prompt-default:not(:focus-visible) {
+      opacity: 0;
+    }
   }
   /* The typed name's blinking block caret is declared ENTIRELY in global.css's
      shared idiom (`.cursor, .hero__badge-name > span::after`) so it can't drift
@@ -201,7 +219,7 @@ const badges = sources.filter((s) => s.status === 'supported');
       background-color 0.15s ease,
       border-color 0.15s ease;
   }
-  /* No per-component reduced-motion arm for the name track: global.css's universal
+  /* No per-component reduced-motion arm for the name reveal: global.css's universal
      RM clamp already zeroes it, so a local `transition: none` is dead code. */
   :root[data-theme='night'] .hero__badge,
   :root[data-theme='dracula'] .hero__badge {
@@ -258,7 +276,7 @@ const badges = sources.filter((s) => s.status === 'supported');
        .lead sits over a deeper dimmer cap than this hero's and stays --fg-muted. */
     color: var(--office-ink);
   }
-  .hero__copy .hero__badges {
+  .hero__copy .hero__chips {
     animation-delay: 0.32s;
   }
   .hero__copy .hero__cta {
@@ -273,6 +291,7 @@ const badges = sources.filter((s) => s.status === 'supported');
     }
   }
 </style>
+<style is:global set:html={`@supports selector(:has(a)){${nameRules}}`}></style>
 
 <script is:inline>
   // Pixel-dust: warm motes drifting up through the hero, echoing the office's dust.

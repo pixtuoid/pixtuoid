@@ -4,6 +4,7 @@ use libfuzzer_sys::{fuzz_mutator, fuzz_target, fuzzer_mutate};
 use pixtuoid_core::harness::fuzz;
 
 fuzz_target!(|bytes: &[u8]| {
+    fuzz::endpoint(bytes);
     fuzz::hook(bytes);
 });
 

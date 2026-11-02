@@ -1,5 +1,6 @@
 //! The hook relay on Unix and Windows alike: routers sharing one endpoint.
 
+use std::collections::{BTreeSet, HashSet};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -9,7 +10,9 @@ use tokio::time::sleep;
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::tap::Endpoint;
 use pixtuoid_core::source::daemon::PresenceMsg;
-use pixtuoid_core::source::hook::{HookRouter, HookSocketListener};
+use pixtuoid_core::source::hook::{
+    ConnectedSources, EndpointStatus, HookRouter, HookSocketListener, OwnerStatus, endpoint_status,
+};
 use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::manager::{SourceDeath, SourceManager};
 use pixtuoid_core::source::{AgentEvent, Source, TaggedReceiver, Transport};
@@ -218,4 +221,142 @@ async fn a_router_that_cannot_subscribe_reports_a_death() {
     }
     let deaths = deaths_rx.borrow();
     assert_eq!(deaths.len(), 1, "got {deaths:?}");
+}
+
+async fn live(at: &Endpoint) -> OwnerStatus {
+    match endpoint_status(at.path()).await {
+        EndpointStatus::Live(status) => status,
+        other => panic!("the endpoint's owner must answer, got {other:?}"),
+    }
+}
+
+// Round trips on Windows too: a named pipe answering one line is the path only
+// `windows-test` reaches.
+#[tokio::test]
+async fn an_owner_answers_status_from_its_live_gate_and_last_hooks() {
+    let (_dir, at) = endpoint("status");
+    let (tx, mut rx) = mpsc::channel(64);
+    let connected = ConnectedSources::new(HashSet::from(["codex".to_string()]));
+    let router = HookRouter::new(at.path().to_path_buf()).with_connected(connected.clone());
+    let owner = tokio::spawn(Box::new(router).run(tx));
+    until_seen(&at, "owner-up", &mut [&mut rx]).await;
+
+    let status = live(&at).await;
+    assert_eq!(status.connected, BTreeSet::from(["codex".to_string()]));
+    assert_eq!(
+        status.last_hook_ago_ms.keys().collect::<Vec<_>>(),
+        ["claude-code"]
+    );
+
+    connected.set("cursor", true);
+    assert_eq!(
+        live(&at).await.connected,
+        BTreeSet::from(["codex".to_string(), "cursor".to_string()]),
+        "the gate is read when asked, so a panel toggle shows at once"
+    );
+
+    at.send(&session_start("after-status")).await.unwrap();
+    assert_eq!(next_session(&mut rx).await, "after-status");
+    owner.abort();
+}
+
+// A status is the owner's: "since this instance took the endpoint" has to stay
+// true across a takeover.
+#[tokio::test]
+async fn a_takeover_starts_its_last_hooks_from_nothing() {
+    let (_dir, at) = endpoint("takeover-status");
+    let (owner, mut owner_rx) = spawn_router(&at);
+    until_seen(&at, "owner-up", &mut [&mut owner_rx]).await;
+    let (next, mut next_rx) = spawn_router(&at);
+    until_seen(&at, "subscribed", &mut [&mut next_rx]).await;
+    let mut codex = serde_json::to_vec(&serde_json::json!({
+        "_pixtuoid_source": "codex",
+        "hook_event_name": "SessionStart",
+        "session_id": "before-the-takeover",
+        "cwd": "/repo",
+    }))
+    .unwrap();
+    codex.push(b'\n');
+    at.send(&codex).await.unwrap();
+    tokio::time::timeout(PATIENCE, async {
+        while next_session(&mut owner_rx).await != "before-the-takeover" {}
+    })
+    .await
+    .expect("the owner decodes it");
+    assert!(live(&at).await.last_hook_ago_ms.contains_key("codex"));
+
+    owner.abort();
+    let _ = owner.await;
+    // By delivery: `endpoint_status` binds a free endpoint, which would race this.
+    until_seen(&at, "taken-over", &mut [&mut next_rx]).await;
+    let taken = live(&at).await;
+    assert!(
+        !taken.last_hook_ago_ms.contains_key("codex"),
+        "got {taken:?}"
+    );
+    next.abort();
+}
+
+// Only a payload that did something is a sighting: grok and cursor cross-fire
+// claude-code's installed hook with their own envelope, and that must not read
+// as Claude Code firing.
+#[tokio::test]
+async fn only_a_payload_that_decoded_to_something_is_a_sighting() {
+    let (_dir, at) = endpoint("sighting");
+    let (tx, mut rx) = mpsc::channel(64);
+    let (presence_tx, mut presence_rx) = mpsc::unbounded_channel::<PresenceMsg>();
+    let router = HookRouter::new(at.path().to_path_buf()).with_presence_tx(Some(presence_tx));
+    let owner = tokio::spawn(Box::new(router).run(tx));
+
+    let unseen = |source: &str| {
+        let mut line = serde_json::to_vec(&serde_json::json!({
+            "_pixtuoid_source": source,
+            "hookEventName": "SessionStart",
+            "session_id": "cross-fired",
+        }))
+        .unwrap();
+        line.push(b'\n');
+        line
+    };
+    tokio::time::timeout(PATIENCE, async {
+        while at.send(&unseen("claude-code")).await.is_err() {
+            sleep(POLL).await;
+        }
+    })
+    .await
+    .expect("the router takes the endpoint");
+    at.send(&unseen("no-such-source")).await.unwrap();
+    at.send(
+        b"{\"_pixtuoid_source\":\"openclaw\",\"type\":\"gateway_start\",\
+               \"gatewayPort\":18789,\"_pid\":4242}\n",
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(PATIENCE, presence_rx.recv())
+        .await
+        .expect("the gateway's presence arrives")
+        .unwrap();
+    assert!(rx.try_recv().is_err(), "neither decoded to an event");
+    assert_eq!(
+        live(&at).await.last_hook_ago_ms.keys().collect::<Vec<_>>(),
+        ["openclaw"]
+    );
+    owner.abort();
+}
+
+#[tokio::test]
+async fn nothing_listening_is_absent_and_the_next_instance_still_binds() {
+    let (_dir, at) = endpoint("absent");
+    assert_eq!(endpoint_status(at.path()).await, EndpointStatus::Absent);
+    assert_eq!(endpoint_status(at.path()).await, EndpointStatus::Absent);
+    HookSocketListener::bind(at.path()).await.unwrap();
+}
+
+// Bound but not reading is what a saturated owner looks like: the connect lands
+// in its backlog, so only the query's own deadline ends the wait.
+#[tokio::test]
+async fn an_owner_that_never_reads_is_silent() {
+    let (_dir, at) = endpoint("silent");
+    let _owner = HookSocketListener::bind(at.path()).await.unwrap();
+    assert_eq!(endpoint_status(at.path()).await, EndpointStatus::Silent);
 }

@@ -122,7 +122,7 @@ pub(crate) enum Cmd {
         reset: bool,
     },
     /// Diagnose source health: connection, hooks, and decode drift recorded in
-    /// the log. Read-only.
+    /// the log. Changes no config.
     Doctor {
         /// The look the `graphics:` row plans, as `run --look` takes it.
         /// Defaults to `cutaway` whatever the `look` config key says: the row
@@ -255,6 +255,17 @@ fn parse_nonempty_path(s: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // It binds a free hook endpoint and leaves its lock, so "read-only" would lie.
+    #[test]
+    fn doctors_help_promises_only_what_it_keeps() {
+        let command = <Cli as clap::CommandFactory>::command();
+        let doctor = command.find_subcommand("doctor").expect("a subcommand");
+        let about = doctor.get_long_about().or(doctor.get_about());
+        let about = about.expect("documented").to_string();
+        assert!(about.contains("Changes no config"), "{about}");
+        assert!(!about.to_lowercase().contains("read-only"), "{about}");
+    }
 
     /// The flags have to REACH `doctor`, not merely parse: an accepted value
     /// that never arrives is the declared-but-unwired class.

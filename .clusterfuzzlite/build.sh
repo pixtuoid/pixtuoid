@@ -35,6 +35,9 @@ while IFS= read -r file; do
     esac
 done < <(find "$fixtures" -path '*/fixtures/*' -name '*.jsonl')
 
+# The endpoint's control line and the reply it gets.
+cp fuzz/seeds/hook/* "$seeds/hook"
+
 # A stream of two lines, the second keeping the first's desks, beside a seed for
 # each other parser `harness::fuzz::remote` drives.
 cp fuzz/seeds/remote/* "$seeds/remote"

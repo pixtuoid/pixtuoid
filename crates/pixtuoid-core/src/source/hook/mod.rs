@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
@@ -36,13 +38,68 @@ pub(crate) use pid_watch::HookPidWatch;
 
 mod relay;
 mod router;
+#[cfg(feature = "harness")]
+pub(crate) use relay::drive_wire;
+pub use relay::{EndpointStatus, OwnerStatus, endpoint_status};
 pub use router::HookRouter;
 
 /// The variable naming the hook endpoint: [`super::claude_code::ClaudeCodeSource::default_socket_path`]
 /// reads it, and so does the shim's parity-pinned twin (`tests/socket_path_parity.rs`).
-pub(crate) const SOCKET_ENV: &str = "PIXTUOID_SOCKET";
+pub const SOCKET_ENV: &str = "PIXTUOID_SOCKET";
 pub(crate) const MAX_CONCURRENT_CONNS: usize = 128;
 pub(crate) const CONN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The endpoint `name` private to `dir`: a socket inside it, or on Windows a pipe
+/// named after it, since the pipe namespace is machine-wide.
+pub fn private_endpoint(dir: &std::path::Path, name: &str) -> PathBuf {
+    if cfg!(windows) {
+        let tag = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        PathBuf::from(format!(r"\\.\pipe\pixtuoid-{tag}-{name}"))
+    } else {
+        dir.join(format!("{name}.sock"))
+    }
+}
+
+/// A live, shared set of connected source ids — the runtime mirror of the binary's
+/// `sources::connected`. On lock poison it recovers the set via `into_inner`: the data
+/// is always valid (insert/remove/contains never panic), and losing it would
+/// mass-evict the office.
+#[derive(Debug, Clone, Default)]
+pub struct ConnectedSources(Arc<Mutex<HashSet<String>>>);
+
+impl ConnectedSources {
+    /// A gate open to `initial`.
+    pub fn new(initial: HashSet<String>) -> Self {
+        Self(Arc::new(Mutex::new(initial)))
+    }
+
+    fn guard(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Whether `source_id` passes the gate.
+    pub fn is_connected(&self, source_id: &str) -> bool {
+        self.guard().contains(source_id)
+    }
+
+    /// The set as it stands.
+    pub fn snapshot(&self) -> HashSet<String> {
+        self.guard().clone()
+    }
+
+    /// Open or close the gate to `source_id`.
+    pub fn set(&self, source_id: &str, connected: bool) {
+        let mut g = self.guard();
+        if connected {
+            g.insert(source_id.to_string());
+        } else {
+            g.remove(source_id);
+        }
+    }
+}
 
 /// Typed marker for "another live instance owns the hook endpoint" — bind's ONE
 /// recoverable failure. `HookRouter::run` downcasts for it and subscribes to that
@@ -75,6 +132,7 @@ pub struct HookSocketListener {
     inner: imp::Listener,
     pid_watch: Option<HookPidWatch>,
     presence_tx: Option<PresenceSender>,
+    connected: ConnectedSources,
 }
 
 pub(crate) type PresenceSender = crate::source::daemon::PresenceSender;
@@ -93,6 +151,7 @@ impl HookSocketListener {
             inner,
             pid_watch: None,
             presence_tx: None,
+            connected: ConnectedSources::default(),
         })
     }
 
@@ -110,6 +169,12 @@ impl HookSocketListener {
         self
     }
 
+    /// Attach the connection gate a status reports.
+    pub(crate) fn with_connected(mut self, connected: ConnectedSources) -> Self {
+        self.connected = connected;
+        self
+    }
+
     /// Accept connections forever, decoding each hook payload onto `tx` (and, if
     /// wired, the pid-watch / presence side-channel) and relaying it.
     ///
@@ -118,12 +183,12 @@ impl HookSocketListener {
     /// If the connection semaphore closes unexpectedly or, on Windows, the next pipe instance cannot be created.
     pub async fn run(self, tx: TaggedSender) -> Result<()> {
         let (pid_watch, presence_tx) = (self.pid_watch.clone(), self.presence_tx.clone());
-        let relay = relay::Relay::new();
+        let relay = relay::Relay::new(self.connected.clone());
         self.serve(move |conn| {
             let (tx, pid_watch) = (tx.clone(), pid_watch.clone());
             let (presence_tx, relay) = (presence_tx.clone(), relay.clone());
             async move {
-                if let Some(payload) = relay.payload_or_subscribe(conn).await {
+                if let Some(payload) = relay.payload_of(conn).await {
                     handle_conn(payload, tx, pid_watch, presence_tx, Some(relay)).await;
                 }
             }
@@ -300,6 +365,11 @@ async fn handle_conn(
                 {
                     match decoded {
                         Ok(decoded) => {
+                            if let Some(relay) =
+                                relay.as_ref().filter(|_| !decoded.updates.is_empty())
+                            {
+                                relay.sighted(src);
+                            }
                             for msg in decoded.into_msgs(src) {
                                 let _ = ptx.send(msg);
                             }
@@ -322,6 +392,11 @@ async fn handle_conn(
                     // order on the same channel, so the reducer registers with
                     // real identity before the activity event applies.
                     Ok(evs) => {
+                        // Not beside the forward: an envelope that decodes to
+                        // nothing is a cross-fired duplicate, no sign of its CLI.
+                        if let Some(relay) = relay.as_ref().filter(|_| !evs.is_empty()) {
+                            relay.sighted(hook_source(obj));
+                        }
                         if let (Some(pid), Some(watch)) = (pid, pid_watch.as_ref()) {
                             for (agent_id, corroborate) in bind_targets(hook_source(obj), &evs) {
                                 watch.note(pid, agent_id, corroborate);

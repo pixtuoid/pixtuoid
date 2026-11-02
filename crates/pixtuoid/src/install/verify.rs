@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// How a managed hook command references the shim binary — extracted PURELY from
 /// the config content; the filesystem check is layered on by
 /// `install::verify_target`, the only part with I/O.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum ShimRef {
     Absolute(PathBuf),
     /// A bare name relying on PATH resolution → soft check only: a doctor-process
@@ -100,6 +100,8 @@ pub(crate) struct SchemaVerifyResult {
     pub issues: Vec<String>,
     /// Shown by `doctor`, never the boot warning.
     pub notes: Vec<String>,
+    /// The shim each of this install's files names, for `doctor` to run.
+    pub shims: Vec<ShimRef>,
 }
 
 impl SchemaVerifyResult {
@@ -173,9 +175,9 @@ pub(crate) fn flat_json_verify(content: &str, events: &[&str], sentinel: &str) -
     assemble(&missing, any, shim, vec![])
 }
 
-/// Extract the shim path from a shell-form managed command — the form
-/// `hook_cmd::shell_hook_command` writes: Unix `PIXTUOID_SOURCE=<source> '<abs>'`
-/// (single-quoted) and Windows `<abs> --source <source>` (bare), either with an
+/// The shim a shell-form managed command names, a path or the bare name. The
+/// form `hook_cmd::shell_hook_command` writes: Unix `PIXTUOID_SOURCE=<source> '<path>'`
+/// (single-quoted) and Windows `<path> --source <source>` (bare), either with an
 /// optional trailing ` --event <name>` (CodeWhale) or ` --hook-event <name>` (agy).
 pub(crate) fn shell_shim_ref(command: &str) -> ShimRef {
     use crate::install::hook_cmd::{EVENT_FLAG, HOOK_EVENT_FLAG, SOURCE_FLAG};
@@ -203,27 +205,27 @@ pub(crate) fn shell_shim_ref(command: &str) -> ShimRef {
     {
         let end = head.len() - 1; // the closing `'` (a 1-byte apostrophe)
         if start < end {
-            let p = posix_unquote(&head[start..=end]);
-            return if p.is_empty() {
-                ShimRef::Unknown
-            } else {
-                ShimRef::Absolute(PathBuf::from(p))
-            };
+            return named_shim(&posix_unquote(&head[start..=end]));
         }
     }
     if let Some((path, _)) = head.split_once(crate::install::hook_cmd::SOURCE_FLAG) {
-        let p = path.trim();
-        return if p.is_empty() {
-            ShimRef::Unknown
-        } else {
-            ShimRef::Absolute(PathBuf::from(p))
-        };
+        return named_shim(path.trim());
     }
     // Unquoted fallback (hand-edited configs): the last whitespace token —
     // `split_whitespace` never yields an empty one, so no emptiness guard.
     match head.split_whitespace().next_back() {
-        Some(tok) => ShimRef::Absolute(PathBuf::from(tok)),
+        Some(tok) => named_shim(tok),
         None => ShimRef::Unknown,
+    }
+}
+
+/// `shim` as a command names it: the installer writes the bare name where PATH is
+/// to resolve it, which no stat of a path can check.
+fn named_shim(shim: &str) -> ShimRef {
+    match shim {
+        "" => ShimRef::Unknown,
+        crate::install::io::HOOK_BIN => ShimRef::BareName,
+        path => ShimRef::Absolute(PathBuf::from(path)),
     }
 }
 
@@ -442,12 +444,23 @@ mod tests {
     }
 
     #[test]
+    fn a_command_naming_the_bare_shim_leaves_it_to_path() {
+        for command in [
+            "PIXTUOID_SOURCE=codex 'pixtuoid-hook'",
+            "pixtuoid-hook --source codex",
+            "PIXTUOID_SOURCE=codex pixtuoid-hook",
+        ] {
+            assert_eq!(shell_shim_ref(command), ShimRef::BareName, "{command}");
+        }
+    }
+
+    #[test]
     fn schema_verify_soundness_ignores_notes() {
         let clean = SchemaVerifyResult::default();
         assert!(clean.is_sound());
         let soft = SchemaVerifyResult {
-            issues: vec![],
             notes: vec!["pixtuoid-hook not on PATH".into()],
+            ..Default::default()
         };
         assert!(
             soft.is_sound(),
@@ -455,7 +468,7 @@ mod tests {
         );
         let hard = SchemaVerifyResult {
             issues: vec!["shim missing".into()],
-            notes: vec![],
+            ..Default::default()
         };
         assert!(!hard.is_sound());
     }

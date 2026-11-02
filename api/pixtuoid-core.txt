@@ -615,10 +615,51 @@ pub mod pixtuoid_core::source::hermes
 pub const pixtuoid_core::source::hermes::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::hermes::hermes_home() -> core::option::Option<std::path::PathBuf>
 pub mod pixtuoid_core::source::hook
+pub enum pixtuoid_core::source::hook::EndpointStatus
+pub pixtuoid_core::source::hook::EndpointStatus::Absent
+pub pixtuoid_core::source::hook::EndpointStatus::Denied
+pub pixtuoid_core::source::hook::EndpointStatus::Live(pixtuoid_core::source::hook::OwnerStatus)
+pub pixtuoid_core::source::hook::EndpointStatus::Silent
+pub pixtuoid_core::source::hook::EndpointStatus::Unbindable(alloc::string::String)
+impl core::clone::Clone for pixtuoid_core::source::hook::EndpointStatus
+pub fn pixtuoid_core::source::hook::EndpointStatus::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::source::hook::EndpointStatus
+impl core::cmp::PartialEq for pixtuoid_core::source::hook::EndpointStatus
+pub fn pixtuoid_core::source::hook::EndpointStatus::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::source::hook::EndpointStatus
+pub fn pixtuoid_core::source::hook::EndpointStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::source::hook::EndpointStatus
+impl core::marker::Freeze for pixtuoid_core::source::hook::EndpointStatus
+impl core::marker::Send for pixtuoid_core::source::hook::EndpointStatus
+impl core::marker::Sync for pixtuoid_core::source::hook::EndpointStatus
+impl core::marker::Unpin for pixtuoid_core::source::hook::EndpointStatus
+impl core::marker::UnsafeUnpin for pixtuoid_core::source::hook::EndpointStatus
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::hook::EndpointStatus
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::EndpointStatus
+pub struct pixtuoid_core::source::hook::ConnectedSources(_)
+impl pixtuoid_core::source::hook::ConnectedSources
+pub fn pixtuoid_core::source::hook::ConnectedSources::is_connected(&self, &str) -> bool
+pub fn pixtuoid_core::source::hook::ConnectedSources::new(std::collections::hash::set::HashSet<alloc::string::String>) -> Self
+pub fn pixtuoid_core::source::hook::ConnectedSources::set(&self, &str, bool)
+pub fn pixtuoid_core::source::hook::ConnectedSources::snapshot(&self) -> std::collections::hash::set::HashSet<alloc::string::String>
+impl core::clone::Clone for pixtuoid_core::source::hook::ConnectedSources
+pub fn pixtuoid_core::source::hook::ConnectedSources::clone(&self) -> Self
+impl core::default::Default for pixtuoid_core::source::hook::ConnectedSources
+pub fn pixtuoid_core::source::hook::ConnectedSources::default() -> Self
+impl core::fmt::Debug for pixtuoid_core::source::hook::ConnectedSources
+pub fn pixtuoid_core::source::hook::ConnectedSources::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for pixtuoid_core::source::hook::ConnectedSources
+impl core::marker::Send for pixtuoid_core::source::hook::ConnectedSources
+impl core::marker::Sync for pixtuoid_core::source::hook::ConnectedSources
+impl core::marker::Unpin for pixtuoid_core::source::hook::ConnectedSources
+impl core::marker::UnsafeUnpin for pixtuoid_core::source::hook::ConnectedSources
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::hook::ConnectedSources
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::ConnectedSources
 pub struct pixtuoid_core::source::hook::HookRouter
 impl pixtuoid_core::source::hook::HookRouter
 pub fn pixtuoid_core::source::hook::HookRouter::new(std::path::PathBuf) -> Self
 pub fn pixtuoid_core::source::hook::HookRouter::with_child_end_unclaims(self, core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>) -> Self
+pub fn pixtuoid_core::source::hook::HookRouter::with_connected(self, pixtuoid_core::source::hook::ConnectedSources) -> Self
 pub fn pixtuoid_core::source::hook::HookRouter::with_presence_tx(self, core::option::Option<pixtuoid_core::source::daemon::PresenceSender>) -> Self
 impl core::fmt::Debug for pixtuoid_core::source::hook::HookRouter
 pub fn pixtuoid_core::source::hook::HookRouter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -645,6 +686,29 @@ impl core::marker::Unpin for pixtuoid_core::source::hook::HookSocketListener
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::hook::HookSocketListener
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::hook::HookSocketListener
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::HookSocketListener
+pub struct pixtuoid_core::source::hook::OwnerStatus
+pub pixtuoid_core::source::hook::OwnerStatus::connected: alloc::collections::btree::set::BTreeSet<alloc::string::String>
+pub pixtuoid_core::source::hook::OwnerStatus::held_for_ms: u64
+pub pixtuoid_core::source::hook::OwnerStatus::last_hook_ago_ms: alloc::collections::btree::map::BTreeMap<alloc::string::String, u64>
+impl core::clone::Clone for pixtuoid_core::source::hook::OwnerStatus
+pub fn pixtuoid_core::source::hook::OwnerStatus::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::source::hook::OwnerStatus
+impl core::cmp::PartialEq for pixtuoid_core::source::hook::OwnerStatus
+pub fn pixtuoid_core::source::hook::OwnerStatus::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::source::hook::OwnerStatus
+pub fn pixtuoid_core::source::hook::OwnerStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::source::hook::OwnerStatus
+impl serde_core::ser::Serialize for pixtuoid_core::source::hook::OwnerStatus
+pub fn pixtuoid_core::source::hook::OwnerStatus::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::source::hook::OwnerStatus
+pub fn pixtuoid_core::source::hook::OwnerStatus::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::source::hook::OwnerStatus
+impl core::marker::Send for pixtuoid_core::source::hook::OwnerStatus
+impl core::marker::Sync for pixtuoid_core::source::hook::OwnerStatus
+impl core::marker::Unpin for pixtuoid_core::source::hook::OwnerStatus
+impl core::marker::UnsafeUnpin for pixtuoid_core::source::hook::OwnerStatus
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::hook::OwnerStatus
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::OwnerStatus
 pub struct pixtuoid_core::source::hook::SocketBusy
 impl core::error::Error for pixtuoid_core::source::hook::SocketBusy
 impl core::fmt::Debug for pixtuoid_core::source::hook::SocketBusy
@@ -658,6 +722,9 @@ impl core::marker::Unpin for pixtuoid_core::source::hook::SocketBusy
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::hook::SocketBusy
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::hook::SocketBusy
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::SocketBusy
+pub const pixtuoid_core::source::hook::SOCKET_ENV: &str
+pub async fn pixtuoid_core::source::hook::endpoint_status(&std::path::Path) -> pixtuoid_core::source::hook::EndpointStatus
+pub fn pixtuoid_core::source::hook::private_endpoint(&std::path::Path, &str) -> std::path::PathBuf
 pub mod pixtuoid_core::source::jcode
 pub const pixtuoid_core::source::jcode::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::jsonl

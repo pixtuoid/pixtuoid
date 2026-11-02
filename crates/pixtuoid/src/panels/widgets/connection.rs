@@ -227,7 +227,7 @@ fn connection_line(
     ])
 }
 
-fn fmt_age(d: Duration) -> String {
+pub(crate) fn fmt_age(d: Duration) -> String {
     let s = d.as_secs();
     if s < 60 {
         format!("{s}s")

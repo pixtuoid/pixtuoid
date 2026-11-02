@@ -8,11 +8,12 @@ pub(crate) mod pipeline;
 pub(crate) mod today;
 
 pub(crate) use driver::run;
+pub(crate) use pixtuoid_core::source::hook::ConnectedSources;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 use pixtuoid_core::SceneState;
 use pixtuoid_core::source::manager::SourceDeath;
@@ -61,36 +62,6 @@ pub(crate) struct RunConfig {
     /// Resolved by `config::resolve_motion`; `auto` is what the TUI's graphics
     /// plan affords, and Full in the floating window.
     pub(crate) motion: crate::config::MotionMode,
-}
-
-/// A live, shared set of connected source ids — the runtime mirror of
-/// `sources::connected`. On lock poison it recovers the set via `into_inner`: the data is
-/// always valid (insert/remove/contains never panic), and losing it would mass-evict
-/// the office.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ConnectedSources(Arc<Mutex<HashSet<String>>>);
-
-impl ConnectedSources {
-    pub(crate) fn new(initial: HashSet<String>) -> Self {
-        Self(Arc::new(Mutex::new(initial)))
-    }
-    fn guard(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
-    }
-    pub(crate) fn is_connected(&self, source_id: &str) -> bool {
-        self.guard().contains(source_id)
-    }
-    pub(crate) fn snapshot(&self) -> HashSet<String> {
-        self.guard().clone()
-    }
-    pub(crate) fn set(&self, source_id: &str, connected: bool) {
-        let mut g = self.guard();
-        if connected {
-            g.insert(source_id.to_string());
-        } else {
-            g.remove(source_id);
-        }
-    }
 }
 
 /// Each floor's desks in the office `plan` paints on a terminal `term` cells

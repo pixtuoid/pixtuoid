@@ -24,18 +24,9 @@ impl Endpoint {
     /// The variable a shim reads its endpoint from.
     pub const ENV: &str = crate::source::hook::SOCKET_ENV;
 
-    /// The endpoint `name` private to `dir`: a socket inside it, or on Windows a
-    /// pipe named after it, since the pipe namespace is machine-wide.
+    /// [`private_endpoint`](crate::source::hook::private_endpoint) as an [`Endpoint`].
     pub fn in_dir(dir: &Path, name: &str) -> Self {
-        if cfg!(windows) {
-            let tag = dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            Self(PathBuf::from(format!(r"\\.\pipe\pixtuoid-{tag}-{name}")))
-        } else {
-            Self(dir.join(format!("{name}.sock")))
-        }
+        Self(crate::source::hook::private_endpoint(dir, name))
     }
 
     /// The endpoint a caller already named.

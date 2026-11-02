@@ -83,7 +83,7 @@ pub(crate) fn verify_target(
         Err(_) => {
             return verify::SchemaVerifyResult {
                 issues: vec!["no config path resolves (no home dir)".into()],
-                notes: vec![],
+                ..Default::default()
             };
         }
     };
@@ -91,26 +91,27 @@ pub(crate) fn verify_target(
         Ok(c) if c.trim().is_empty() => {
             return verify::SchemaVerifyResult {
                 issues: vec!["config is empty — hooks are not installed".into()],
-                notes: vec![],
+                ..Default::default()
             };
         }
         Ok(c) => c,
         Err(_) => {
             return verify::SchemaVerifyResult {
                 issues: vec![format!("config unreadable: {}", crate::display_path(&path))],
-                notes: vec![],
+                ..Default::default()
             };
         }
     };
     let parse = (t.primary.verify())(&content);
     let mut issues = parse.issues;
     let mut notes = parse.notes;
+    let mut shims = vec![parse.shim.clone()];
     match parse.shim {
         ShimRef::Absolute(p) => check_shim_binary(&p, &mut issues),
         ShimRef::BareName => {
             // A doctor-process PATH miss is NOT proof the CLI can't resolve the bare
             // `pixtuoid-hook` → soft note only.
-            if !io::hook_on_path() {
+            if io::hook_on_path().is_none() {
                 notes.push(
                     "pixtuoid-hook not on this process's PATH (the CLI's PATH may differ)".into(),
                 );
@@ -127,7 +128,7 @@ pub(crate) fn verify_target(
         ..
     } = t.primary
     {
-        verify_beside(render, t.display_name, &mut issues, &mut notes);
+        verify_beside(render, t.display_name, &mut issues, &mut notes, &mut shims);
     }
     if let Some(files) = t.primary.owned_files() {
         verify_owned_drift(t, files, &path, &mut issues, &mut notes);
@@ -156,7 +157,11 @@ pub(crate) fn verify_target(
             )),
         }
     }
-    verify::SchemaVerifyResult { issues, notes }
+    verify::SchemaVerifyResult {
+        issues,
+        notes,
+        shims,
+    }
 }
 
 /// The silent-dead class `verify_schema` is blind to — the config merge reads clean while
@@ -169,6 +174,7 @@ fn verify_beside(
     display_name: &str,
     issues: &mut Vec<String>,
     notes: &mut Vec<String>,
+    shims: &mut Vec<verify::ShimRef>,
 ) {
     // A placeholder hook arg yields the real install locations WITHOUT resolving the
     // binary: a read-only check must not hard-error just because it isn't locatable.
@@ -190,32 +196,53 @@ fn verify_beside(
             notes.push(format!("could not read {}", crate::display_path(&p)));
             continue;
         };
-        check_beside_shim(&p, &installed, &intended, display_name, issues);
+        shims.extend(check_beside_shim(
+            &p,
+            &installed,
+            &intended,
+            display_name,
+            issues,
+        ));
     }
     issues.extend(missing_artifact_issue(&missing));
 }
 
-/// Stat the shim path a beside file bakes: existence misses a shim that MOVED — a green
-/// doctor over a plugin whose every forward fails.
+/// Stat the shim path a beside file bakes, and return it: existence misses a shim that
+/// MOVED — a green doctor over a plugin whose every forward fails.
 fn check_beside_shim(
     p: &std::path::Path,
     installed: &str,
     intended: &str,
     display_name: &str,
     issues: &mut Vec<String>,
-) {
+) -> Option<verify::ShimRef> {
     if !intended.contains(verify::BAKED_HOOK_MARKER) {
-        return;
+        return None;
     }
     // HARD, as an owned primary's unreadable `HOOK_PATH` is: no shim reads back, so
     // a launch cannot re-render it and the plugin forwards nothing.
-    match verify::baked_hook_path(installed) {
-        Some(baked) => check_shim_binary(&baked, issues),
-        None => issues.push(format!(
+    let Some(baked) = verify::baked_hook_path(installed) else {
+        issues.push(format!(
             "could not read the baked shim path from {} — reconnect {display_name}",
             crate::display_path(p)
-        )),
-    }
+        ));
+        return None;
+    };
+    check_shim_binary(&baked, issues);
+    Some(verify::ShimRef::Absolute(baked))
+}
+
+/// The shim an install would write here, by the installer's own order.
+pub(crate) fn located_shim() -> Result<PathBuf> {
+    pixtuoid_core::platform::path_env(io::HOOK_OVERRIDE_ENV)
+        .map_or_else(io::default_hook_binary, absolute_hook_override)
+}
+
+/// `shim`, about to run as `source`'s hook.
+pub(crate) fn shim_command(shim: &std::path::Path, source: &str) -> std::process::Command {
+    let mut command = std::process::Command::new(shim);
+    command.args([hook_cmd::SOURCE_FLAG.trim(), source]);
+    command
 }
 
 /// The HARD issue for owned files that differ from this binary's render. Each launch
@@ -424,6 +451,32 @@ fn is_drive_relative(p: &std::path::Path) -> bool {
     !p.has_root() && matches!(p.components().next(), Some(std::path::Component::Prefix(_)))
 }
 
+/// An EXPLICIT path gets EMBEDDED into the config, where a relative path would
+/// resolve against the CLI's cwd at hook time and hooks would never fire.
+fn absolute_hook_override(p: PathBuf) -> Result<PathBuf> {
+    let origin = io::HOOK_OVERRIDE_ENV;
+    if is_drive_relative(&p) {
+        bail!(
+            "{origin} {} is drive-relative (a drive prefix with no root, like C:foo.exe) \
+             and would resolve against a per-drive cwd at hook time; pass an absolute path",
+            p.display()
+        );
+    }
+    if !p.is_relative() {
+        return Ok(p);
+    }
+    // Plain join, not canonicalize — Windows canonicalize yields a \\?\ verbatim
+    // path that the cmd.exe bare form can't take. A failed cwd query must NOT fall
+    // back to embedding the relative path — that re-creates the never-fires bug
+    // absolutization exists to prevent.
+    let cwd = std::env::current_dir().with_context(|| {
+        format!(
+            "{origin} is relative and the current directory is unreadable; pass an absolute path"
+        )
+    })?;
+    Ok(cwd.join(&p))
+}
+
 /// The [`io::HOOK_OVERRIDE_ENV`] override always wins, and the returned bool reports
 /// that, so `install_target` EMBEDS it rather than discarding the user's choice for a
 /// bare PATH-resolved name. A `locate` failure is fatal only for targets that EMBED the
@@ -434,29 +487,9 @@ fn resolve_hook_binary_from(
     env_hook: Option<PathBuf>,
     locate: impl FnOnce() -> Result<PathBuf>,
 ) -> Result<(PathBuf, bool)> {
-    // An EXPLICIT path gets EMBEDDED into the config, where a relative path would
-    // resolve against the CLI's cwd at hook time and hooks would never fire.
     if let Some(p) = env_hook {
         let origin = io::HOOK_OVERRIDE_ENV;
-        if is_drive_relative(&p) {
-            bail!(
-                "{origin} {} is drive-relative (a drive prefix with no root, like C:foo.exe) \
-                 and would resolve against a per-drive cwd at hook time; pass an absolute path",
-                p.display()
-            );
-        }
-        // Plain join, not canonicalize — Windows canonicalize yields a \\?\ verbatim
-        // path that the cmd.exe bare form can't take.
-        let p = if p.is_relative() {
-            // A failed cwd query must NOT fall back to embedding the relative path —
-            // that re-creates the never-fires bug absolutization exists to prevent.
-            let cwd = std::env::current_dir().with_context(|| {
-                format!("{origin} is relative and the current directory is unreadable; pass an absolute path")
-            })?;
-            cwd.join(&p)
-        } else {
-            p
-        };
+        let p = absolute_hook_override(p)?;
         if !p.exists() {
             // tracing, not println!: install runs under the TUI alt-screen, where a stdout
             // write corrupts the frame. `?` escapes — `connect`/`setup` route to RAW stderr.
@@ -550,7 +583,7 @@ fn install_target_from(
     // pixtuoid-hook on PATH would otherwise warn nothing. Skipped for an embedded path.
     let path_warning = t.binary_strategy == BinaryStrategy::BareNameOnPath
         && !explicit_hook
-        && !io::hook_on_path();
+        && io::hook_on_path().is_none();
     if outcome.changed {
         lock.write_atomic(&outcome.content)?;
     }

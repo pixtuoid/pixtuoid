@@ -4,6 +4,11 @@
 //! the warn-floor log. Strictly READ-ONLY: it never writes config (re-connecting
 //! hooks stays the Sources panel's job) and never spawns the TUI.
 //! The PROBED CLI is not read-only about its own state — see `may_probe_version`.
+//! The shim an install names does run, against a throwaway endpoint, and a hook
+//! endpoint nothing holds is bound for a moment, as the next instance would — see
+//! [`pixtuoid_core::source::hook::endpoint_status`].
+
+mod delivery;
 
 use pixtuoid_core::source::registry::Hyphen;
 use pixtuoid_core::source::{drift, registry};
@@ -435,7 +440,7 @@ fn format_doctor_row(row: &DoctorSourceRow, ink: &Ink) -> String {
         .filter(|s| !s.is_empty());
     let version = version.map_or_else(|| ink.dim("unknown"), str::to_string);
     let mut out = format!(
-        "{DETAIL_INDENT}{} {}\u{b7}{:<13} {} {:<15} {}",
+        "{DETAIL_INDENT}{} {}\u{b7}{:<SOURCE_W$} {} {:<15} {}",
         verdict_glyph(row, ink),
         row.desc.label_prefix,
         row.desc.name,
@@ -641,6 +646,7 @@ struct DoctorReport {
     /// paints classic here unasked ([`crate::graphics::LookChoice::unasked_here`]).
     run_unasked: Option<crate::graphics::ClassicReason>,
     rows: Vec<DoctorSourceRow>,
+    delivery: delivery::Delivery,
     roots: Vec<RootStatus>,
     backend: &'static str,
     /// `false` = the focus backend itself can't work here (the Wayland /
@@ -778,12 +784,13 @@ fn shown_path(
 fn collect(
     log_at: &crate::run_log::LogLocation,
     look: crate::graphics::LookChoice,
+    delivery: impl FnOnce(&[DoctorSourceRow]) -> anyhow::Result<delivery::Delivery>,
 ) -> anyhow::Result<DoctorReport> {
     let mut config_warnings = Vec::new();
     let config_path = crate::config::config_path();
     let cfg = crate::config::load(&config_path, &mut config_warnings);
-    // A separate PROCESS from the TUI, so the live `ConnectedSources` is
-    // unreachable; it reads the same facts that gate does.
+    // What the disk says, which a running office's gate reflects only from its
+    // next launch: `delivery` compares the two.
     let connected = crate::sources::connected(&cfg);
     let (log, log_warning) = log_at.read();
 
@@ -833,6 +840,7 @@ fn collect(
             }
         })
         .collect();
+    let delivery = delivery(&rows)?;
 
     let roots = collect_roots();
 
@@ -861,6 +869,7 @@ fn collect(
         graphics_plan,
         run_unasked,
         rows,
+        delivery,
         roots,
         backend,
         backend_healthy,
@@ -890,6 +899,8 @@ struct Category {
 /// further. Shared so the report can't go ragged one site at a time.
 const DETAIL_INDENT: &str = "      ";
 const CONT_INDENT: &str = "          ";
+/// The column a source's registry name fills.
+const SOURCE_W: usize = 13;
 
 fn terminal_category(r: &DoctorReport) -> Category {
     let verdict = crate::term::truecolor_verdict(r.colorterm_env.as_deref(), r.truecolor_probe);
@@ -1095,7 +1106,7 @@ fn format_root_row(r: &RootStatus, ink: &Ink) -> String {
         Some((var, true)) => format!(" (via ${var})"),
         _ => String::new(),
     };
-    let mut line = format!("{DETAIL_INDENT}{:<13} {}{via}", r.source, r.root);
+    let mut line = format!("{DETAIL_INDENT}{:<SOURCE_W$} {}{via}", r.source, r.root);
     if !r.exists {
         match r.env {
             Some((var, true)) => {
@@ -1248,6 +1259,7 @@ fn render(r: &DoctorReport) -> String {
     let mut cats: Vec<Category> = vec![terminal_category(r)];
     cats.extend(config_category(r));
     cats.push(sources_category(&r.rows, &ink));
+    cats.push(delivery::hooks_category(&r.delivery, &r.rows, &ink));
     cats.push(versions_category(&r.rows));
     cats.push(drift_category(r, &ink));
     cats.extend(roots_category(&r.roots, &ink));
@@ -1304,12 +1316,12 @@ fn render(r: &DoctorReport) -> String {
 ///
 /// # Errors
 ///
-/// If the bundled pack does not load.
+/// If the bundled pack does not load, or no tokio runtime can be built.
 pub(crate) fn run(
     log_at: &crate::run_log::LogLocation,
     look: crate::graphics::LookChoice,
 ) -> anyhow::Result<String> {
-    Ok(render(&collect(log_at, look)?))
+    Ok(render(&collect(log_at, look, delivery::collect)?))
 }
 
 #[cfg(test)]
@@ -1317,6 +1329,17 @@ mod tests {
     use super::*;
     use crate::run_log::read_log;
     use crate::test_capture::capture;
+
+    /// [`run`], minus what reaches outside this process: the shim a developer has
+    /// on PATH, and their live office, whose endpoint is keyed by uid, not `HOME`.
+    fn run(
+        log_at: &crate::run_log::LogLocation,
+        look: crate::graphics::LookChoice,
+    ) -> anyhow::Result<String> {
+        Ok(render(&collect(log_at, look, |_| {
+            Ok(delivery::Delivery::idle())
+        })?))
+    }
 
     /// The plain-text plumbing: `Ink { on: false }` must be a byte-for-byte
     /// no-op (piped output stays clean), `on: true` must actually wrap in
@@ -1587,6 +1610,7 @@ mod tests {
             },
             run_unasked: None,
             rows,
+            delivery: delivery::Delivery::idle(),
             roots: vec![],
             backend: "NSRunningApplication (macOS)",
             backend_healthy: true,
@@ -1624,14 +1648,15 @@ mod tests {
         crate::install::check_shim_binary(std::path::Path::new(&evil()), &mut issues);
         row.diag.install = Some(crate::install::verify::SchemaVerifyResult {
             issues,
-            notes: vec![],
+            ..Default::default()
         });
         let mut noted = summary_row("codex");
         noted.diag.install = Some(crate::install::verify::SchemaVerifyResult {
-            issues: vec![],
             notes: vec![evil()],
+            ..Default::default()
         });
         let mut r = summary_report(vec![row, noted]);
+        r.delivery = delivery::Delivery::hostile(&evil());
         r.log_path = ShownPath::new(evil());
         r.config_path = ShownPath::new(evil());
         r.config_warnings = vec![evil()];
@@ -1838,6 +1863,7 @@ mod tests {
         broken.diag.install = Some(crate::install::verify::SchemaVerifyResult {
             issues: vec!["missing hook entries for: SessionEnd".into()],
             notes: vec![],
+            ..Default::default()
         });
         let out = render(&summary_report(vec![summary_row("claude-code"), broken]));
         assert!(
@@ -2031,6 +2057,7 @@ mod tests {
         broken.diag.install = Some(crate::install::verify::SchemaVerifyResult {
             issues: vec!["shim binary missing: /old".into()],
             notes: vec![],
+            ..Default::default()
         });
         let mut newer = summary_row("copilot");
         newer.installed_version = Some(skewed("copilot", |v| v.major += 1));
@@ -2371,6 +2398,7 @@ mod tests {
                 install: Some(crate::install::verify::SchemaVerifyResult {
                     issues: vec!["shim binary missing: /old/pixtuoid-hook".into()],
                     notes: vec![],
+                    ..Default::default()
                 }),
                 drift: LogScanResult::default(),
             },
@@ -2409,6 +2437,7 @@ mod tests {
             Some(crate::install::verify::SchemaVerifyResult {
                 issues: vec!["shim binary missing: /x".into()],
                 notes: vec![],
+                ..Default::default()
             }),
             LogScanResult {
                 unknown_event: 2,
@@ -2443,6 +2472,7 @@ mod tests {
             Some(crate::install::verify::SchemaVerifyResult {
                 issues: vec![],
                 notes: vec!["pixtuoid-hook not on PATH".into()],
+                ..Default::default()
             }),
             LogScanResult::default(),
         );
@@ -2689,6 +2719,7 @@ mod tests {
                 install: Some(crate::install::verify::SchemaVerifyResult {
                     issues: vec![],
                     notes: vec!["pixtuoid-hook not on PATH".into()],
+                    ..Default::default()
                 }),
                 drift: LogScanResult::default(),
             },

@@ -715,6 +715,12 @@ fn verify_target_is_sound_after_a_real_install_for_every_target() {
                         t.name,
                         v.issues
                     );
+                    assert!(
+                        v.shims.iter().any(|s| *s != verify::ShimRef::Unknown),
+                        "{}: doctor must learn which shim this install runs, got {:?}",
+                        t.name,
+                        v.shims
+                    );
                 }
             });
         },
