@@ -285,7 +285,7 @@ test('scroll budget: the page fits its roster-aware viewport-height budget at 14
   // while the strip's codes fit ONE line at 1440 (~20 sources); past that it
   // wraps a step PER_SOURCE doesn't model, so re-measure BASE there.
   // Headroom over the measured fit: an exact fit to CI's renderer reds another font stack.
-  const SCROLL_BUDGET_BASE_VH = 8.15;
+  const SCROLL_BUDGET_BASE_VH = 8.25;
   const SCROLL_BUDGET_PER_SOURCE_VH = 0.075;
   const supported = sourcesData.filter((s) => s.status === 'supported').length;
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });

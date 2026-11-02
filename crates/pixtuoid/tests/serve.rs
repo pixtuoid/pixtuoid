@@ -11,7 +11,9 @@ use std::time::{Duration, Instant, SystemTime};
 
 use pixtuoid_core::harness::host::SandboxEnv;
 use pixtuoid_core::harness::tap::Endpoint;
-use pixtuoid_core::remote::{Answer, Ask, Hello, PairLink, RemoteOffice, Reply, SourceState};
+use pixtuoid_core::remote::{
+    Answer, Ask, Hello, Outcome, PairLink, RemoteOffice, Reply, SourceState,
+};
 use pixtuoid_core::state::MAX_FLOORS;
 use ring::digest::{SHA256, digest};
 use serde::Serialize;
@@ -267,9 +269,13 @@ impl World {
         let args = ["pair", "--host", "127.0.0.1", "--port", &port.to_string()];
         let out = self.run(&args);
         assert!(out.status.success(), "{out:?}");
-        String::from_utf8(out.stdout)
-            .expect("UTF-8")
-            .lines()
+        let said = String::from_utf8(out.stdout).expect("UTF-8");
+        let consent = "can connect or disconnect agent CLIs here";
+        assert!(
+            said.contains(consent),
+            "pairing says what it allows: {said}"
+        );
+        said.lines()
             .find(|line| line.starts_with("pixtuoid://"))
             .expect("pair prints the link")
             .parse()
@@ -389,6 +395,44 @@ async fn a_device_pairs_and_reads_an_office_that_names_only_the_repo() {
         Reply::Refused,
         "a running server reads a reset made beside it"
     );
+}
+
+/// The device connects a flag-only CLI, which the live gate and the config both
+/// then hold.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_connects_a_cli_over_pinned_tls() {
+    let world = World::new();
+    let (_server, port) = world.serve();
+    let link = world.pair(port);
+    let mut device = Device::connect(&link).await;
+    let code = link.code.clone();
+    let reply = device.hello(&Hello::Pair { code }).await;
+    assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
+
+    let connect = Ask::Change {
+        source: "copilot".into(),
+        on: true,
+    };
+    let Answer::Changed(changed) = device.ask(&connect).await else {
+        panic!("a server knows this ask");
+    };
+    assert_eq!(changed.outcome(), Outcome::Connected);
+    assert_eq!(
+        changed.line("Copilot CLI"),
+        "\u{2713} Copilot CLI connected"
+    );
+
+    let Answer::Sources { rows } = device.ask(&Ask::Sources).await else {
+        panic!("a server knows this ask");
+    };
+    let copilot = rows.iter().find(|row| row.id() == "copilot");
+    assert_eq!(copilot.map(|row| row.state()), Some(SourceState::Connected));
+    let listed = world.run(&["sources", "--json"]);
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).expect("JSON");
+    let copilot = listed
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["id"] == "copilot"));
+    assert_eq!(copilot.map(|row| &row["connected"]), Some(&true.into()));
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -55,11 +55,18 @@ pub(crate) fn run(cfg: RunConfig, port: u16) -> Result<QuitSignal> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    run_then_quit(runtime, serve(cfg.socket, cfg.connected, cfg.drift, port))
+    let RunConfig {
+        socket,
+        config_path,
+        connected,
+        drift,
+        ..
+    } = cfg;
+    run_then_quit(runtime, serve(socket, config_path, connected, drift, port))
 }
 
-/// How long a quit waits on blocking work: past a store write, and short of a
-/// host CLI's read, which is left to end on its own.
+/// How long a quit waits on blocking work: past a store write, short of a CLI's
+/// run. A device's write it abandons leaves whole files for the next connect to heal.
 const QUIT_GRACE: Duration = Duration::from_secs(1);
 
 /// `work` on `runtime`, then at most [`QUIT_GRACE`] for its blocking work,
@@ -73,6 +80,7 @@ fn run_then_quit<F: Future>(runtime: tokio::runtime::Runtime, work: F) -> F::Out
 
 async fn serve(
     socket: Option<PathBuf>,
+    config_path: PathBuf,
     connected: std::collections::HashSet<String>,
     drift: crate::doctor::DriftSeen,
     port: u16,
@@ -105,12 +113,16 @@ async fn serve(
     )?;
 
     let deaths = health_rx.clone();
+    let live = connected.clone();
     let rows = Arc::new(move || {
         // Out of the watch first: reading files under its read lock holds the writer.
         let deaths = deaths.borrow().clone();
         crate::sources::device_rows(&connected.snapshot(), &deaths, &drift)
     });
-    let devices = Devices::new(store, scene, rows);
+    let change = Arc::new(move |who: &str, source: &str, on: bool| {
+        crate::sources::device_change(&config_path, &live, who, source, on)
+    });
+    let devices = Devices::new(store, scene, rows, change);
     let slots = Arc::new(Semaphore::new(MAX_CONNS));
     let mut deaths_seen = 0;
     let mut accept_failing = false;
@@ -207,8 +219,13 @@ pub(crate) fn pair(host: Option<String>, port: u16, reset: bool) -> Result<()> {
     let minutes = CODE_LIFETIME.as_secs() / 60;
     writeln!(out, "{}", qr(&link)?)?;
     writeln!(out, "Scan within {minutes} minutes, or enter:\n{link}")?;
+    writeln!(out, "{CONSENT}")?;
     Ok(())
 }
+
+/// What pairing lets a device do, said where the owner pairs it.
+const CONSENT: &str = "A paired device sees your agents and can connect or disconnect \
+                       agent CLIs here; `pixtuoid pair --reset` forgets every device.";
 
 /// `link` as a QR in dark-on-light whatever the terminal's theme, the polarity
 /// scanners expect. Level L: it is read off a screen, with nothing to damage it,

@@ -25,6 +25,10 @@ use crate::state::{
     ToolKind, ToolUse, TurnKey, UsageObservation,
 };
 
+mod change;
+
+pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_registered};
+
 /// The wire version this build writes and reads. Within a version the line only
 /// gains fields and tags, which `remote.v1.golden.json` holds it to; a reader
 /// ignores what it doesn't know and maps an unknown tag to its nearest state.
@@ -436,6 +440,14 @@ pub enum Reply {
 pub enum Ask {
     /// Every agent CLI the server knows, installed on its machine or not.
     Sources,
+    /// Connect `source` when `on`, else disconnect it: the state wanted, so a
+    /// retry changes nothing more.
+    Change {
+        /// Its [`SourceRow::id`].
+        source: String,
+        /// Whether it should be connected.
+        on: bool,
+    },
     /// An ask from a newer device, which keeps its stream.
     #[serde(other)]
     Unknown,
@@ -450,7 +462,9 @@ pub enum Answer {
         /// One per CLI.
         rows: Vec<SourceRow>,
     },
-    /// This server doesn't know the ask.
+    /// What an [`Ask::Change`] did.
+    Changed(Changed),
+    /// This server doesn't know the ask, or the source it names.
     Unsupported,
     /// An answer from a newer server.
     #[serde(other)]

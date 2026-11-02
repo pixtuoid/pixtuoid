@@ -378,6 +378,10 @@ mod tests {
         assert_eq!(ask, Ask::Sources);
         let answer = Answer::from_line(seed("answer").as_bytes()).expect("an answer");
         assert!(matches!(answer, Answer::Sources { rows } if !rows.is_empty()));
+        let change = serde_json::from_str::<Ask>(&seed("change")).expect("a change");
+        assert!(matches!(change, Ask::Change { .. }));
+        let changed = Answer::from_line(seed("changed").as_bytes()).expect("an answer");
+        assert!(matches!(changed, Answer::Changed(_)));
     }
 
     const MUTABLE: &str =
