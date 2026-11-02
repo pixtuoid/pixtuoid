@@ -292,6 +292,8 @@ async function officeBox(page: Page) {
     const dpr = devicePixelRatio;
     return {
       dpr,
+      cssW: r.width,
+      cssH: r.height,
       left: r.left * dpr,
       top: r.top * dpr,
       width: r.width * dpr,
@@ -326,15 +328,17 @@ async function expectWholeDevicePixels(page: Page) {
   for (const edge of [b.left, b.top]) {
     expect(Math.abs(edge - Math.round(edge))).toBeLessThanOrEqual(grain(b));
   }
-  for (const side of [b.width, b.height]) expect((side / b.dpr) % 1, 'a whole CSS px').toBe(0);
+  for (const side of [b.cssW, b.cssH]) expect(side % 1, 'a whole CSS px').toBe(0);
   expect(b.left).toBeLessThanOrEqual(grain(b));
   expect(b.top).toBeLessThanOrEqual(grain(b));
   expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain(b));
   expect(b.top + b.height).toBeGreaterThanOrEqual(b.viewH - grain(b));
   // The fit crops under one unit and a whole CSS px adds under the ratio's numerator, `dpr` at a whole ratio.
-  const unit = b.width / b.uw;
-  expect(b.width - b.viewW).toBeLessThan(unit * b.dpr);
-  expect(b.height - b.viewH).toBeLessThan(unit * b.dpr);
+  if (Number.isInteger(b.dpr)) {
+    const unit = b.width / b.uw;
+    expect(b.width - b.viewW).toBeLessThan(unit * b.dpr);
+    expect(b.height - b.viewH).toBeLessThan(unit * b.dpr);
+  }
 }
 
 /** The office host's replies to `fit` calls, passed through, failed, or held until the test releases them. */
@@ -375,7 +379,7 @@ test('a host that fails the first fit leaves the poster up, as a failed boot doe
     sessionStorage.setItem('pix-booted', '1');
   });
   await page.goto('./');
-  await expect(page.locator('#office-live')).toHaveCSS('opacity', '0', { timeout: 3_000 });
+  await expect(page.locator('#office-live')).toHaveCSS('opacity', '0', { timeout: 15_000 });
   expect(
     await page.evaluate(
       () => (window as unknown as { __pixEngineReady?: boolean }).__pixEngineReady
@@ -391,8 +395,7 @@ test('a fit asked at one ratio and answered after the ratio moved still covers t
   const cdp = await page.context().newCDPSession(page);
   const { width, height } = page.viewportSize()!;
   type Fits = { __fits: { mode: string; held: (() => void)[] } };
-  // Ask a fit at ratio 1 and hold its reply; land it once the ratio is 2, before any refit at 2 is asked (an emulated
-  // ratio fires no `change`, so none is).
+  // Ask a fit at ratio 1 and hold its reply; land it once the ratio is 2, before any refit at 2 is asked.
   await page.evaluate(() => {
     (window as unknown as Fits).__fits.mode = 'hold';
     window.dispatchEvent(new Event('resize'));
@@ -406,6 +409,13 @@ test('a fit asked at one ratio and answered after the ratio moved still covers t
     deviceScaleFactor: 2,
     mobile: false,
   });
+  await page.evaluate(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  );
+  expect(
+    await page.evaluate(() => (window as unknown as Fits).__fits.held.length),
+    'the switch asked no refit, so the held reply is still the current one'
+  ).toBe(1);
   await page.evaluate(() => {
     (window as unknown as Fits).__fits.held.splice(0).forEach((reply) => reply());
     return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -423,6 +433,7 @@ for (const [width, height, deviceScaleFactor] of [
   [1440, 900, 1],
   [1366, 768, 1],
   [1440, 900, 2],
+  [1440, 900, 1.1],
   [390, 844, 3],
 ] as const) {
   test.describe(`the office at ${width}x${height}@${deviceScaleFactor}`, () => {

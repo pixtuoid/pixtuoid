@@ -399,8 +399,9 @@ const officeDriverUrl = asset('office-driver.js');
     // that rasterizes a device pixel short and shifts every frame pixel past it: the office grows to a whole CSS
     // pixel, within as many units as the ratio's numerator (21 at 2.625).
     const WHOLE_CSS_TRIES = 32;
-    // Float error in `u * pxPerUnit / dpr`, far under one LayoutUnit.
-    const WHOLE_CSS_EPS = 1e-6;
+    // Half a LayoutUnit: layout snaps a size that near a whole CSS px onto it, and a ratio can carry float32 noise
+    // (110% reads 1.100000023841858).
+    const WHOLE_CSS_EPS = 1 / 128;
     function wholeCss(units, pxPerUnit, dpr) {
       for (let u = units; u < units + WHOLE_CSS_TRIES; u++) {
         const css = (u * pxPerUnit) / dpr;
