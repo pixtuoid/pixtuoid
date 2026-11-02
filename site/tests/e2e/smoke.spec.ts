@@ -40,8 +40,8 @@ function parseRgb(css: string): [number, number, number, number] {
   throw new Error(`unparseable color: ${css}`);
 }
 
-// The dimmer controller is IntersectionObserver-driven: its target opacity
-// lands a frame or two after the scroll.
+// The dimmer polls scrollY each animation frame: its target opacity lands a
+// frame or two after the scroll.
 const SCROLL_SETTLE_MS = 300;
 
 /** The observer adds `.in` once, then unobserves — `.in` IS the settled state. */
@@ -346,12 +346,15 @@ async function interceptFits(page: Page) {
   // Plain JS: it patches `Worker` before office-driver.js constructs the host.
   await page.addInitScript({
     content: `(() => {
-      const fits = (window.__fits = { mode: 'pass', held: [] });
+      const fits = (window.__fits = { mode: 'pass', held: [], asks: 0 });
       const Real = window.Worker;
       window.Worker = class extends Real {
         fitSeqs = new Set();
         postMessage(msg, transfer) {
-          if (msg && msg.op === 'call' && msg.method === 'fit') this.fitSeqs.add(msg.seq);
+          if (msg && msg.op === 'call' && msg.method === 'fit') {
+            this.fitSeqs.add(msg.seq);
+            fits.asks++;
+          }
           super.postMessage(msg, transfer || []);
         }
         set onmessage(handler) {
@@ -394,7 +397,7 @@ test('a fit asked at one ratio and answered after the ratio moved still covers t
   await gotoLive(page);
   const cdp = await page.context().newCDPSession(page);
   const { width, height } = page.viewportSize()!;
-  type Fits = { __fits: { mode: string; held: (() => void)[] } };
+  type Fits = { __fits: { mode: string; held: (() => void)[]; asks: number } };
   // Ask a fit at ratio 1 and hold its reply; land it once the ratio is 2, before any refit at 2 is asked.
   await page.evaluate(() => {
     (window as unknown as Fits).__fits.mode = 'hold';
@@ -403,6 +406,8 @@ test('a fit asked at one ratio and answered after the ratio moved still covers t
   await expect
     .poll(() => page.evaluate(() => (window as unknown as Fits).__fits.held.length))
     .toBe(1);
+  const asks = () => page.evaluate(() => (window as unknown as Fits).__fits.asks);
+  const asked = await asks();
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width,
     height,
@@ -413,9 +418,9 @@ test('a fit asked at one ratio and answered after the ratio moved still covers t
     () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
   );
   expect(
-    await page.evaluate(() => (window as unknown as Fits).__fits.held.length),
+    await asks(),
     'the switch asked no refit, so the held reply is still the current one'
-  ).toBe(1);
+  ).toBe(asked);
   await page.evaluate(() => {
     (window as unknown as Fits).__fits.held.splice(0).forEach((reply) => reply());
     return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -434,6 +439,7 @@ for (const [width, height, deviceScaleFactor] of [
   [1366, 768, 1],
   [1440, 900, 2],
   [1440, 900, 1.1],
+  [1140, 884, 129 / 128],
   [390, 844, 3],
 ] as const) {
   test.describe(`the office at ${width}x${height}@${deviceScaleFactor}`, () => {
