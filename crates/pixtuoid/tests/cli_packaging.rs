@@ -6,7 +6,7 @@
 //! talking over a real endpoint.
 
 use clap::ValueEnum;
-use pixtuoid_core::source::hook::{self, EndpointStatus, HookRouter};
+use pixtuoid_core::source::hook::{self, HookRouter};
 
 mod common;
 
@@ -312,12 +312,15 @@ async fn doctor_reads_what_the_built_shim_delivered_to_a_live_owner() {
         Box::new(HookRouter::new(endpoint.clone())),
         tx,
     ));
-    while !matches!(
-        hook::endpoint_status(&endpoint).await,
-        EndpointStatus::Live(_)
-    ) {
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
+    // Not `endpoint_status`: it binds a free endpoint, which would race this owner.
+    let at = pixtuoid_core::harness::tap::Endpoint::at(endpoint.clone());
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        while !at.accepting() {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("the owner takes the endpoint");
 
     let mut shim = std::process::Command::new(built_shim())
         .env(hook::SOCKET_ENV, &endpoint)

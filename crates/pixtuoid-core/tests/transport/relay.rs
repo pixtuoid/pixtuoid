@@ -261,7 +261,8 @@ async fn an_owner_answers_status_from_its_live_gate_and_last_hooks() {
 }
 
 // A status is the owner's: "since this instance took the endpoint" has to stay
-// true across a takeover.
+// true across a takeover. Waited on by delivery, since `endpoint_status` binds a
+// free endpoint and would race the takeover.
 #[tokio::test]
 async fn a_takeover_starts_its_last_hooks_from_nothing() {
     let (_dir, at) = endpoint("takeover-status");
@@ -269,21 +270,30 @@ async fn a_takeover_starts_its_last_hooks_from_nothing() {
     until_seen(&at, "owner-up", &mut [&mut owner_rx]).await;
     let (next, mut next_rx) = spawn_router(&at);
     until_seen(&at, "subscribed", &mut [&mut next_rx]).await;
-    assert!(!live(&at).await.last_hook_ago_ms.is_empty());
+    let mut codex = serde_json::to_vec(&serde_json::json!({
+        "_pixtuoid_source": "codex",
+        "hook_event_name": "SessionStart",
+        "session_id": "before-the-takeover",
+        "cwd": "/repo",
+    }))
+    .unwrap();
+    codex.push(b'\n');
+    at.send(&codex).await.unwrap();
+    tokio::time::timeout(PATIENCE, async {
+        while next_session(&mut owner_rx).await != "before-the-takeover" {}
+    })
+    .await
+    .expect("the owner decodes it");
+    assert!(live(&at).await.last_hook_ago_ms.contains_key("codex"));
 
     owner.abort();
     let _ = owner.await;
-    let taken = tokio::time::timeout(PATIENCE, async {
-        loop {
-            match endpoint_status(at.path()).await {
-                EndpointStatus::Live(status) => return status,
-                _ => sleep(POLL).await,
-            }
-        }
-    })
-    .await
-    .expect("the subscriber takes the endpoint");
-    assert!(taken.last_hook_ago_ms.is_empty(), "got {taken:?}");
+    until_seen(&at, "taken-over", &mut [&mut next_rx]).await;
+    let taken = live(&at).await;
+    assert!(
+        !taken.last_hook_ago_ms.contains_key("codex"),
+        "got {taken:?}"
+    );
     next.abort();
 }
 
