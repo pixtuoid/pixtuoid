@@ -430,7 +430,7 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
 }
 
 /// Hand `renderer` the painter `plan` names: the half-blocks' on this
-/// terminal, which the cutaway names its own from.
+/// terminal.
 fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
     plan: crate::graphics::Plan,
