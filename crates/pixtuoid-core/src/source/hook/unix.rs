@@ -164,7 +164,15 @@ fn bind_refusal_in(path: &Path, owned: &Path, uid: u32) -> Option<String> {
             .map(|e| format!("{e:#}"));
     }
     let parent = path.parent().filter(|p| !p.as_os_str().is_empty())?;
-    (!parent.is_dir()).then(|| format!("hook socket dir {} does not exist", parent.display()))
+    // `metadata`, so a symlink to a directory still passes.
+    match std::fs::metadata(parent) {
+        Ok(md) if md.is_dir() => None,
+        Ok(_) => Some(format!(
+            "hook socket dir {} exists but is not a directory",
+            parent.display()
+        )),
+        Err(e) => Some(format!("hook socket dir {}: {e}", parent.display())),
+    }
 }
 
 /// A sibling of the FINAL socket path, named `<sock>.<suffix>`. Both siblings

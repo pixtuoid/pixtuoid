@@ -468,6 +468,6 @@ async fn an_endpoint_under_a_file_is_unbindable() {
     std::fs::write(&file, "").unwrap();
     assert!(matches!(
         endpoint_status(&file.join("hook.sock")).await,
-        EndpointStatus::Unbindable(_)
+        EndpointStatus::Unbindable(why) if why.contains("not a directory")
     ));
 }

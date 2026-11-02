@@ -277,15 +277,15 @@ mod tests {
 
     #[cfg(feature = "native")]
     #[test]
-    fn the_hook_seeds_are_each_a_control_path_of_the_endpoint() {
+    fn the_hook_seeds_are_the_status_line_and_its_reply() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/seeds/hook");
-        for seed in ["status", "activity"] {
+        for seed in ["status", "reply"] {
             let bytes = std::fs::read(dir.join(seed)).unwrap();
             endpoint(&bytes);
             assert_eq!(hook(&bytes).registered(), 0, "{seed}");
         }
-        let status = std::fs::read(dir.join("activity")).unwrap();
-        serde_json::from_slice::<crate::source::hook::OwnerStatus>(&status).unwrap();
+        let reply = std::fs::read(dir.join("reply")).unwrap();
+        serde_json::from_slice::<crate::source::hook::OwnerStatus>(&reply).unwrap();
     }
 
     #[test]

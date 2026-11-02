@@ -263,7 +263,7 @@ async fn an_owner_answers_status_from_its_live_gate_and_last_hooks() {
 // A status is the owner's: "since this instance took the endpoint" has to stay
 // true across a takeover.
 #[tokio::test]
-async fn a_takeover_starts_its_activity_from_nothing() {
+async fn a_takeover_starts_its_last_hooks_from_nothing() {
     let (_dir, at) = endpoint("takeover-status");
     let (owner, mut owner_rx) = spawn_router(&at);
     until_seen(&at, "owner-up", &mut [&mut owner_rx]).await;
