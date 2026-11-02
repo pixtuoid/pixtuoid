@@ -36,6 +36,37 @@ pub enum Look {
     },
 }
 
+impl Look {
+    /// Its [`LookKind`]: this look apart from any scale and text.
+    pub const fn kind(self) -> LookKind {
+        match self {
+            Self::Classic => LookKind::Classic,
+            Self::Cutaway { .. } => LookKind::Cutaway,
+        }
+    }
+}
+
+/// A look as a person picks it, apart from the scale and text a painter draws
+/// it at: what a command line and a config name it by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum LookKind {
+    /// [`Look::Cutaway`], at any scale and text.
+    Cutaway,
+    /// [`Look::Classic`].
+    Classic,
+}
+
+impl LookKind {
+    /// Every look, in its declaration's order.
+    pub const ALL: &'static [Self] = <Self as strum::VariantArray>::VARIANTS;
+
+    /// Its id: the value a command line and a config take.
+    pub fn name(self) -> &'static str {
+        self.into()
+    }
+}
+
 /// Who sets a cutaway's world text: the badges, bubbles, wall board and floor
 /// indicator. The classic's is always the host's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

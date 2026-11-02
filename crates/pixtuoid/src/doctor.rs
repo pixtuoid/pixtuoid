@@ -1329,6 +1329,7 @@ mod tests {
     use super::*;
     use crate::run_log::read_log;
     use crate::test_capture::capture;
+    use pixtuoid_scene::look::LookKind;
 
     /// [`run`], minus what reaches outside this process: the shim a developer has
     /// on PATH, and their live office, whose endpoint is keyed by uid, not `HOME`.
@@ -1504,7 +1505,10 @@ mod tests {
         let out = temp_env::with_vars_unset(["CLICOLOR_FORCE", "NO_COLOR"], || {
             run(
                 &crate::run_log::LogLocation::File("/nonexistent-pixtuoid-doctor-log".into()),
-                crate::graphics::LookChoice::new(crate::graphics::LookMode::Cutaway, None),
+                crate::graphics::LookChoice::new(
+                    crate::graphics::LookMode::Named(LookKind::Cutaway),
+                    None,
+                ),
             )
         });
         let out = out.unwrap();
@@ -2087,7 +2091,10 @@ mod tests {
         // The report must not assert clean drift off a log it never read.
         let out = run(
             &crate::run_log::LogLocation::File(dir.path().to_path_buf()),
-            crate::graphics::LookChoice::new(crate::graphics::LookMode::Cutaway, None),
+            crate::graphics::LookChoice::new(
+                crate::graphics::LookMode::Named(LookKind::Cutaway),
+                None,
+            ),
         )
         .unwrap();
         assert!(out.contains("[!] decode drift — log unreadable"), "{out}");
@@ -2153,7 +2160,10 @@ mod tests {
             || {
                 run(
                     &crate::run_log::LogLocation::File("/nonexistent-pixtuoid-doctor-log".into()),
-                    crate::graphics::LookChoice::new(crate::graphics::LookMode::Cutaway, None),
+                    crate::graphics::LookChoice::new(
+                        crate::graphics::LookMode::Named(LookKind::Cutaway),
+                        None,
+                    ),
                 )
             },
         );

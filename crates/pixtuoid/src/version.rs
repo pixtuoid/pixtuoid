@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use pixtuoid_scene::look::LookKind;
 use semver::Version;
 
 use crate::install::target::{self, Target};
@@ -95,7 +96,7 @@ fn reconnect(hosts: &[&Target], facts: &Facts<'_>) -> Option<String> {
 /// A TUI that draws the cutaway, which an older pixtuoid drew only when asked,
 /// says how to keep the classic.
 fn cutaway_default(facts: &Facts<'_>) -> Option<String> {
-    let classic = crate::graphics::LookMode::Classic;
+    let classic = crate::graphics::LookMode::Named(LookKind::Classic);
     facts.terminal_cutaway.then(|| {
         format!(
             "The cutaway office is now the default where this terminal draws it: \
@@ -510,7 +511,7 @@ mod tests {
             panic!("a command and a config line: {said}");
         };
         use crate::graphics::{LookChoice, LookMode};
-        let classic = LookChoice::new(LookMode::Classic, None);
+        let classic = LookChoice::new(LookMode::Named(LookKind::Classic), None);
         let args = command.split(' ');
         let Some(crate::cli::Cmd::Run { look, .. }) =
             crate::cli::Cli::try_parse_from(args).expect("parses").cmd

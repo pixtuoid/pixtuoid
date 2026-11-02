@@ -456,7 +456,7 @@ fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
         }
         _ => {
             renderer.painted_by(crate::jank::Painter {
-                look: "classic",
+                look: pixtuoid_scene::look::LookKind::Classic.name(),
                 scale: 1,
                 tmux: tmux_env,
                 terminal,
