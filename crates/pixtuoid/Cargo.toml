@@ -65,6 +65,9 @@ anyhow             = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 which              = "8"
+# A host CLI killed past its limit, its pipes drained meanwhile, over std's own
+# `Child`, so a Windows batch file's arguments keep std's escaping.
+process_control    = "5.2"
 # clock feature gives us Local::now() w/ system timezone for the wall clock.
 chrono             = { workspace = true, features = ["clock"] }
 open               = "5"
