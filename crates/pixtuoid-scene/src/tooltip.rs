@@ -12,7 +12,7 @@ use pixtuoid_core::{AgentId, SceneState};
 use crate::display::cells::{CellGrid, CellRect};
 use crate::display::text::cells;
 use crate::display::{GatewayCard, HoverTarget, PetHover};
-use crate::floor::FloorInputs;
+use crate::floor::PetInputs;
 use crate::footer::{FooterTone, RungKind};
 use crate::hit::SceneHit;
 use crate::nameplate::{FloorNamesakes, Suffix};
@@ -215,19 +215,22 @@ pub fn place(card: CellRect, pointer: (u16, u16), area: CellRect, anchor: TipAnc
 /// Cells from the pointer to a card opening right of it.
 const POINTER_GAP: u16 = 2;
 
-/// The tooltip for what `hit` names; `None` for the star, whose click is its
-/// whole story, and for an agent or gateway gone from `office`. An agent's and
-/// a gateway's card read `office`, the whole office; `world` gives only the
-/// time and the shown floor's pet.
-pub fn for_hit(hit: SceneHit<'_>, office: &SceneState, world: &FloorInputs<'_>) -> Option<Tooltip> {
+/// The tooltip for what `hit` names at `now`; `None` for the star, whose click
+/// is its whole story, and for an agent or gateway gone from `office`, the whole
+/// office. `pets` is the shown floor's.
+pub fn for_hit(
+    hit: SceneHit<'_>,
+    office: &SceneState,
+    now: SystemTime,
+    pets: PetInputs<'_>,
+) -> Option<Tooltip> {
     match hit {
-        SceneHit::Figure(HoverTarget::Agent(id)) => agent(office, *id, world.now),
+        SceneHit::Figure(HoverTarget::Agent(id)) => agent(office, *id, now),
         SceneHit::Figure(&HoverTarget::Pet(PetHover { kind, anim, .. })) => {
-            let on_cooldown = world.pets.petting.is_some_and(|p| p.is_active(world.now));
+            let on_cooldown = pets.petting.is_some_and(|p| p.is_active(now));
             // The hover was drawn from `pets.pet`, so the kinds agree and the
             // `default_name` arm is not a live path.
-            let name = world
-                .pets
+            let name = pets
                 .pet
                 .map_or_else(|| kind.default_name(), |p| p.name.as_str());
             Some(pet(kind, anim, on_cooldown, name))
@@ -510,10 +513,7 @@ mod tests {
 
     /// The `↳ under` rows of `office`'s card for `id`.
     fn lineage(office: &SceneState, id: AgentId) -> Vec<String> {
-        lineage_of(&agent(office, id, SystemTime::UNIX_EPOCH).expect("the agent's card"))
-    }
-
-    fn lineage_of(tip: &Tooltip) -> Vec<String> {
+        let tip = agent(office, id, SystemTime::UNIX_EPOCH).expect("the agent's card");
         tip.rows
             .iter()
             .filter_map(|row| match row {
@@ -522,33 +522,6 @@ mod tests {
             })
             .filter(|text| text.contains("under"))
             .collect()
-    }
-
-    /// A card reads `office` whichever world a painter hands it: the window's
-    /// is the office's, the TUI's a floor's projection, and a lead downstairs
-    /// is found from either.
-    #[test]
-    fn a_card_reads_its_office_whatever_world_it_is_handed() {
-        let mut office = two_floor_office();
-        let lead = seat(&mut office, ("lead", "cc\u{b7}api"), (0, 0), None);
-        let sub = seat(&mut office, ("sub", "subagent"), (4, 1), Some(lead));
-        seat(&mut office, ("namesake", "cc\u{b7}api"), (5, 1), None);
-        let want = [format!(
-            "\u{21b3} under {}",
-            floor_nameplate(&office, 0, lead)
-        )];
-        let upstairs = crate::floor::project_floor_scene(&office, 1);
-        for scene in [&office, upstairs.scene()] {
-            let world = FloorInputs {
-                scene,
-                now: SystemTime::UNIX_EPOCH,
-                floor: crate::floor::FloorMeta::ground(),
-                pets: crate::floor::PetInputs::default(),
-            };
-            let hit = SceneHit::Figure(&HoverTarget::Agent(sub));
-            let tip = for_hit(hit, &office, &world).expect("the subagent's card");
-            assert_eq!(lineage_of(&tip), want);
-        }
     }
 
     /// A card names its subagent's lead as the lead's badge does, apart from

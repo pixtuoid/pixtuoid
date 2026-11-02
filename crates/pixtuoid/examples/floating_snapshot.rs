@@ -312,9 +312,9 @@ fn main() -> Result<()> {
             None,
         ),
         tooltip: hover.and_then(|cursor| {
-            let tip = renderer
-                .drawn_hit_at(cursor, at)
-                .and_then(|hit| pixtuoid_scene::tooltip::for_hit(hit, &scene, &world))?;
+            let tip = renderer.drawn_hit_at(cursor, at).and_then(|hit| {
+                pixtuoid_scene::tooltip::for_hit(hit, &scene, world.now, world.pets)
+            })?;
             Some((tip, (cursor.0 as i32, cursor.1 as i32)))
         }),
         panels: match panel {

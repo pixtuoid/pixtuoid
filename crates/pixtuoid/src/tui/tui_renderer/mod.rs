@@ -829,7 +829,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             overlays: &overlays,
             theme: self.chrome.theme,
             office: scene,
-            world: &world,
+            now,
+            pets: world.pets,
             mouse_pos,
         };
         crate::tui::renderer::flush_classic(&mut self.terminal, &frame, floor)?;
@@ -903,7 +904,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             _ => None,
         };
         let tooltip = mouse.and_then(|(mx, my, hit)| {
-            pixtuoid_scene::tooltip::for_hit(hit, scene, &world).map(|tip| (mx, my, tip))
+            pixtuoid_scene::tooltip::for_hit(hit, scene, now, world.pets).map(|tip| (mx, my, tip))
         });
         cutaway.before_flush(now)?;
         let mut carves = Vec::new();
