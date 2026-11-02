@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, non_empty};
 use crate::source::registry::{
     ChildEndInference, FocusChannel, Hyphen, SourceCaps, SourceDescriptor, SourceKind, Transcript,
 };
@@ -314,7 +314,7 @@ pub(crate) fn decode_copilot_line(
         // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
         // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
         SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root)],
-        // Each call's receipt (1.0.105's `schemas/session-events.schema.json`,
+        // Each call's own usage record (1.0.105's `schemas/session-events.schema.json`,
         // `UsageAccountingRecordData`), since a shutdown's `modelMetrics` totals
         // every lifetime of a resumed session. `inputTokens` counts cache reads.
         SESSION_USAGE_RECORD => {
@@ -332,7 +332,9 @@ pub(crate) fn decode_copilot_line(
             vec![AgentEvent::Usage {
                 agent_id: acting,
                 fresh_tokens: fresh,
-                reading_id: None,
+                // A rewind (`session.snapshot_rewind`) removes events from the
+                // file, and the watcher then re-reads it from the top.
+                reading_id: non_empty(obj, "id").map(str::to_owned),
             }]
         }
         SESSION_SHUTDOWN => vec![AgentEvent::SessionEnd {
@@ -773,7 +775,7 @@ mod tests {
     }
 
     #[test]
-    fn a_receipt_with_no_fresh_usage_reads_nothing() {
+    fn a_usage_record_with_no_fresh_tokens_reads_nothing() {
         // A reading of zero would be pushed into a monotone accumulator.
         for data in [
             r#"{"usage":{"model":"m"}}"#,

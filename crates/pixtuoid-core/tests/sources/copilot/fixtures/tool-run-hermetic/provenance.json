@@ -6,7 +6,7 @@
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 99
+    "blanked": 97
   },
   "aimock": "1.47.0",
   "script": "tests/sources/copilot/hermetic/tool-run.json",
@@ -23,7 +23,7 @@
     }
   },
   "sentinel_reads": {
-    "0f885da3-069c-4acb-a89a-31cced15ec17/events.jsonl": [
+    "4393fddb-5e41-4e8c-9beb-473cc4b234ce/events.jsonl": [
       "5:/data/usage/cacheReadTokens"
     ]
   }

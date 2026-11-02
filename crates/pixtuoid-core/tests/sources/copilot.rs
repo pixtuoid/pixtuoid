@@ -3,6 +3,9 @@
 //! the call, each one call that resolves its wait; a child whose request errs,
 //! which its own failure ends; and a resumed session's meter.
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
 use pixtuoid_core::harness::{Drive, Driven, Reach};
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::state::{ActivityState, ToolUse};
@@ -118,30 +121,38 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
     );
 }
 
-/// A resumed session's second `session.shutdown` totals both lifetimes, so the
-/// meter is each call's own receipt, never a shutdown.
-#[test]
-fn a_resumed_run_counts_each_call_once() {
-    let t = super::captures::transcript_in(
-        &super::captures::sources_root().join("copilot/fixtures/resume-hermetic"),
-    );
+/// A recording's lines, and the fresh tokens of its `session.usage_record`s by
+/// the child each names in its envelope `agentId`, `None` for the root.
+fn usage_records(scenario: &str) -> (PathBuf, Vec<String>, BTreeMap<Option<String>, u64>) {
+    let t = super::captures::transcript_in(&super::captures::sources_root().join(scenario));
     let lines = super::captures::fixture_lines(&t);
-    let (mut shutdowns, mut receipts) = (0, 0);
+    let mut by_agent = BTreeMap::new();
     for line in &lines {
         let v: serde_json::Value = serde_json::from_str(line).expect("recorded JSON");
-        match v["type"].as_str() {
-            Some("session.shutdown") => shutdowns += 1,
-            Some("session.usage_record") => {
-                let usage = &v["data"]["usage"];
-                let count = |k: &str| usage[k].as_u64().expect("a recorded count");
-                receipts += count("inputTokens") - count("cacheReadTokens") + count("outputTokens");
-            }
-            _ => {}
+        if v["type"] != "session.usage_record" {
+            continue;
         }
+        let usage = &v["data"]["usage"];
+        let count = |k: &str| usage[k].as_u64().expect("a recorded count");
+        let agent = v["agentId"].as_str().map(str::to_owned);
+        *by_agent.entry(agent).or_default() +=
+            count("inputTokens") - count("cacheReadTokens") + count("outputTokens");
     }
+    (t, lines, by_agent)
+}
+
+/// A resumed session's second `session.shutdown` totals both lifetimes, so the
+/// meter is each call's own usage record.
+#[test]
+fn a_resumed_run_counts_each_call_once() {
+    let (t, lines, records) = usage_records("copilot/fixtures/resume-hermetic");
+    let shutdowns = (lines.iter())
+        .filter(|l| l.contains(r#""type":"session.shutdown""#))
+        .count();
+    let expected: u64 = records.values().sum();
     assert!(
-        shutdowns > 1 && receipts > 0,
-        "no resumed lifetime or no receipt here, so this recording proves nothing"
+        shutdowns > 1 && expected > 0,
+        "no resumed lifetime or no usage record here, so this recording proves nothing"
     );
     let d = Drive::transcript_at("copilot", &t)
         .expect("copilot has a line decoder")
@@ -149,5 +160,40 @@ fn a_resumed_run_counts_each_call_once() {
         .lines(lines);
     d.assert_clean("resume");
     let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
-    assert_eq!(meter, receipts);
+    assert_eq!(meter, expected);
+}
+
+/// A live session's rewind leaves a shorter file the watcher re-reads from its
+/// top, and the usage records it had read count nothing again.
+#[test]
+fn a_rewinds_re_read_counts_no_call_twice() {
+    let (t, lines, records) = usage_records("copilot/fixtures/tool-run-hermetic");
+    let live: Vec<_> = (lines.iter())
+        .filter(|l| !l.contains(r#""type":"session.shutdown""#))
+        .collect();
+    let d = Drive::transcript_at("copilot", &t)
+        .expect("copilot has a line decoder")
+        .seeded()
+        .lines(live.iter().chain(&live));
+    let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
+    assert_eq!(meter, records.values().sum::<u64>());
+}
+
+/// A child's usage records name it, so its spend lands on its own slot.
+#[test]
+fn a_childs_usage_is_its_own() {
+    let (t, lines, records) = usage_records("copilot/fixtures/subagent-hermetic");
+    assert!(
+        records.len() > 1,
+        "no child usage record here, so this recording proves nothing"
+    );
+    let d = Drive::transcript_at("copilot", &t)
+        .expect("copilot has a line decoder")
+        .seeded()
+        .lines(lines);
+    d.assert_clean("subagent");
+    let meters: BTreeMap<Option<String>, u64> = (d.scene.agents.values())
+        .map(|a| (a.parent_id.map(|_| a.session_id.to_string()), a.tokens_used))
+        .collect();
+    assert_eq!(meters, records);
 }
