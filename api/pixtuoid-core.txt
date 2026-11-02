@@ -206,6 +206,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::SourceSt
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::SourceState
 pub struct pixtuoid_core::remote::Changed
 impl pixtuoid_core::remote::Changed
+pub fn pixtuoid_core::remote::Changed::absent_cli(&'static str) -> Self
 pub fn pixtuoid_core::remote::Changed::line(&self, &str) -> alloc::string::String
 pub fn pixtuoid_core::remote::Changed::new(&'static str, bool, pixtuoid_core::remote::Outcome, bool, core::option::Option<&'static str>, core::option::Option<&'static str>) -> Self
 pub fn pixtuoid_core::remote::Changed::on(&self) -> bool
@@ -311,6 +312,8 @@ pub const pixtuoid_core::remote::VERSION: u32
 pub fn pixtuoid_core::remote::cwd_basename(&std::path::Path) -> core::option::Option<alloc::string::String>
 pub fn pixtuoid_core::remote::encode(&pixtuoid_core::state::SceneState, std::time::SystemTime) -> serde_json::error::Result<alloc::string::String>
 pub fn pixtuoid_core::remote::is_host(&str) -> bool
+pub fn pixtuoid_core::remote::not_detected(&str) -> alloc::string::String
+pub fn pixtuoid_core::remote::nothing_to_do(&str) -> alloc::string::String
 pub fn pixtuoid_core::remote::plugin_left_registered(&str) -> alloc::string::String
 pub mod pixtuoid_core::source
 pub mod pixtuoid_core::source::antigravity

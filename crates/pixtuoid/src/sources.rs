@@ -2,8 +2,7 @@
 //!
 //! A source is connected by ONE fact, [`is_on`]'s. The mutating ops here change
 //! that fact, and a running instance's live `ConnectedSources` only through
-//! [`connect_source`] and [`disconnect_source`]; otherwise it reflects the
-//! change on its next launch.
+//! [`refresh_gate`]; otherwise it reflects the change on its next launch.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -651,7 +650,7 @@ fn disconnected_change(sid: &'static str, done: DisconnectOutcome) -> Changed {
 /// a paired device's change alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToggleIntent {
-    /// Its hooks are in, so it disconnects; the panel asks first.
+    /// It is connected, so it disconnects; the panel asks first.
     Disconnect,
     Connect,
     /// Absent CLI that was never connected — an inert "not detected" hint.
@@ -680,11 +679,24 @@ pub(crate) fn device_change(
     source: &str,
     on: bool,
 ) -> Option<Changed> {
+    device_change_with(cfg, connected, who, source, on, by_source)
+}
+
+/// [`device_change`] with the lookup of the target whose CLI it looks for injected.
+#[cfg(feature = "serve")]
+fn device_change_with(
+    cfg: &Path,
+    connected: &ConnectedSources,
+    who: &str,
+    source: &str,
+    on: bool,
+    target_of: impl Fn(&str) -> Option<&'static Target>,
+) -> Option<Changed> {
     let Ok(sid) = registered_id(source) else {
         tracing::info!(device = ?who, source = ?source, on, outcome = %"unsupported", "a device changed a source");
         return None;
     };
-    let absent_cli = by_source(sid).is_some_and(|t| !(t.presence_probe)());
+    let absent_cli = !cli_present(target_of(sid));
     let state = conn_state(absent_cli, connected.is_connected(sid));
     let (changed, outcome) = change_from(cfg, connected, sid, on, state);
     tracing::info!(device = ?who, source = ?source, on, outcome = %outcome, "a device changed a source");
@@ -700,17 +712,17 @@ fn change_from(
     on: bool,
     state: ConnState,
 ) -> (Changed, WireOutcome) {
-    let wanted = match toggle_intent(state) {
-        ToggleIntent::Connect => on,
-        ToggleIntent::Disconnect => !on,
-        ToggleIntent::Hint => false,
+    let nothing = match toggle_intent(state) {
+        ToggleIntent::Connect if on => None,
+        ToggleIntent::Disconnect if !on => None,
+        ToggleIntent::Hint if on => Some(Changed::absent_cli(sid)),
+        _ => {
+            let outcome = WireOutcome::NoOp.into();
+            Some(Changed::new(sid, on, outcome, false, None, None))
+        }
     };
-    if !wanted {
-        let outcome = WireOutcome::NoOp;
-        return (
-            Changed::new(sid, on, outcome.into(), false, None, None),
-            outcome,
-        );
+    if let Some(changed) = nothing {
+        return (changed, WireOutcome::NoOp);
     }
     let done = if on {
         connect_source(cfg, connected, sid)
@@ -801,6 +813,12 @@ fn display_name_for(source_id: &'static str) -> &'static str {
     }
 }
 
+/// Whether `target`'s CLI is on this machine, which a source with no install
+/// target has none to miss.
+fn cli_present(target: Option<&Target>) -> bool {
+    target.is_none_or(|t| (t.presence_probe)())
+}
+
 /// A row's state: an absent CLI's before its connection.
 fn conn_state(absent_cli: bool, connected: bool) -> ConnState {
     if absent_cli {
@@ -845,8 +863,9 @@ pub(crate) fn build_rows(connected: &HashSet<String>, log: &str) -> Vec<Connecti
             // Join on the SOURCE id via `core_source`, NOT `by_name`: Claude's
             // target is "claude" but its source is "claude-code".
             let target = by_source(d.name);
+            let present = cli_present(target);
             let facts = target.map(|t| RowFacts {
-                present: (t.presence_probe)(),
+                present,
                 config_path: (t.default_config_path)().ok(),
             });
             let connected = connected.contains(d.name);
@@ -1481,24 +1500,38 @@ mod tests {
         );
     }
 
-    /// The panel's rules: an absent CLI never connected can't connect, and one
-    /// still connected can disconnect.
+    /// The panel's rules and words: an absent CLI never connected can't connect,
+    /// and one still connected can disconnect.
     #[cfg(feature = "serve")]
     #[test]
     fn a_device_cant_connect_a_missing_cli_but_can_disconnect_one() {
+        const ABSENT: Target = Target {
+            presence_probe: || false,
+            ..FAIL_TARGET
+        };
+        const PRESENT: Target = Target {
+            presence_probe: || true,
+            ..FAIL_TARGET
+        };
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
         let connected = ConnectedSources::default();
-        let missing = ConnState::NoCli { connected: false };
-        let (refused, _) = change_from(&cfg, &connected, "copilot", true, missing);
+        // Copilot is flag-only: a fake lends it a probe, never an install.
+        let change = |target: &'static Target, on| {
+            device_change_with(&cfg, &connected, "dev", "copilot", on, |_| Some(target)).unwrap()
+        };
+
+        let refused = change(&ABSENT, true);
         assert_eq!(refused.outcome(), Outcome::NoOp);
+        let line = refused.line("Copilot CLI");
+        assert_eq!(line, "Copilot CLI not detected on this machine");
         assert!(!cfg.exists(), "nothing was written");
         assert!(!connected.is_connected("copilot"));
 
-        std::fs::write(&cfg, "[sources]\ncopilot = true\n").unwrap();
-        let gone = ConnState::NoCli { connected: true };
-        let (off, _) = change_from(&cfg, &connected, "copilot", false, gone);
-        assert_eq!(off.outcome(), Outcome::Disconnected);
+        assert_eq!(change(&PRESENT, true).outcome(), Outcome::Connected);
+        assert!(is_connected(&cfg, "copilot"));
+
+        assert_eq!(change(&ABSENT, false).outcome(), Outcome::Disconnected);
         assert!(!is_connected(&cfg, "copilot"));
     }
 

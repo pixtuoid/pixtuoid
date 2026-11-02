@@ -14,7 +14,7 @@ use tokio::io::{
 use tokio::net::TcpStream;
 use tokio::sync::{Semaphore, oneshot};
 use tokio::task::JoinSet;
-use tokio::time::{Instant, interval_at, sleep, timeout, timeout_at};
+use tokio::time::{Instant, interval_at, sleep, sleep_until, timeout, timeout_at};
 use tokio_rustls::TlsAcceptor;
 
 use super::store::{Hashed, Store};
@@ -34,8 +34,8 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 /// A device renders a scene, not each event of a busy reducer.
 const MIN_FRAME_GAP: Duration = Duration::from_millis(250);
 
-/// The least time between two writes, across every device; a chosen value. A
-/// device waits for each write's answer, so only a misbehaving one comes sooner.
+/// The least time between two writes' starts, across every device; a chosen
+/// value. A write sooner waits it out, holding [`Devices::gate`].
 const MIN_WRITE_GAP: Duration = Duration::from_secs(1);
 
 /// What an [`Ask::Sources`] reads: blocking, as it reads files and may run a CLI.
@@ -221,9 +221,9 @@ impl Devices {
         }
     }
 
-    /// [`Ask::Change`]'s answer, its write run under [`Self::gate`] and
-    /// [`MIN_WRITE_GAP`] after the last, for a device the store still knows. A
-    /// write too soon, or by a device a reset forgot, ends the connection.
+    /// [`Ask::Change`]'s answer, its write run under [`Self::gate`] once
+    /// [`MIN_WRITE_GAP`] has passed since the last began, for a device the store
+    /// still knows. A forgotten device's write ends the connection and spends no gap.
     fn change(
         &self,
         device: Hashed,
@@ -234,17 +234,15 @@ impl Devices {
         let (store, change) = (self.store.clone(), Arc::clone(&self.change));
         async move {
             let held = gate.acquire_owned().await?;
-            {
-                let mut last = last_write.lock().unwrap_or_else(|e| e.into_inner());
-                let now = Instant::now();
-                let spaced = last.is_none_or(|at| now.duration_since(at) >= MIN_WRITE_GAP);
-                ensure!(spaced, "a write inside the gap");
-                *last = Some(now);
+            let last = *last_write.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(at) = last {
+                sleep_until(at + MIN_WRITE_GAP).await;
             }
             let changed = tokio::task::spawn_blocking(move || {
                 let _held = held;
                 // Here, not per beat, so a `pair --reset` stops the next write.
                 ensure!(store.knows(&device)?, "a write by a forgotten device");
+                *last_write.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
                 Ok(change(device.short(), &source, on))
             })
             .await??;
@@ -320,7 +318,11 @@ mod tests {
         fixture_reading(Arc::new(Vec::new))
     }
 
-    /// Its changes are recorded, and only `copilot` is a source it knows.
+    /// A source the fixture knows that is already as asked.
+    const ALREADY_SO: &str = "codex";
+
+    /// Its changes are recorded: `copilot` changes, [`ALREADY_SO`] doesn't, and it
+    /// knows no other source.
     fn fixture_reading(rows: ReadRows) -> Fixture {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = Store::at(dir.path().join("remote.json"));
@@ -330,12 +332,13 @@ mod tests {
         let change: MakeChange = Arc::new(move |who, source, on| {
             let entry = (who.to_owned(), source.to_owned(), on);
             making.lock().expect("not poisoned").push(entry);
-            let outcome = if on {
-                Outcome::Connected
-            } else {
-                Outcome::Disconnected
+            let (id, outcome) = match source {
+                "copilot" if on => ("copilot", Outcome::Connected),
+                "copilot" => ("copilot", Outcome::Disconnected),
+                ALREADY_SO => (ALREADY_SO, Outcome::NoOp),
+                _ => return None,
             };
-            (source == "copilot").then(|| Changed::new("copilot", on, outcome, false, None, None))
+            Some(Changed::new(id, on, outcome, false, None, None))
         });
         Fixture {
             devices: Devices::new(store.clone(), scene_rx, rows, change),
@@ -852,36 +855,68 @@ mod tests {
         assert_eq!(who, Hashed::of(&token).short());
         assert!(who.len() < token.len() && !token.contains(&who), "{who}");
 
-        sleep(MIN_WRITE_GAP).await;
         peer.ask(&change("no-such-cli", false)).await;
         assert_eq!(peer.answer().await, Answer::Unsupported);
     }
 
-    #[tokio::test]
+    /// It spends none of the gap, which a device still paired would wait out.
+    #[tokio::test(start_paused = true)]
     async fn a_forgotten_devices_write_is_refused() {
         let fixture = fixture();
-        let mut peer = streaming(&fixture).await;
+        let mut forgotten = streaming(&fixture).await;
         fixture.store.reset().expect("it resets");
 
-        peer.ask(&change("copilot", true)).await;
-        assert!(peer.ended().await.is_err());
+        forgotten.ask(&change("copilot", true)).await;
+        assert!(forgotten.ended().await.is_err());
         assert!(made(&fixture).is_empty(), "{:?}", made(&fixture));
+
+        let mut paired = streaming(&fixture).await;
+        let asked = Instant::now();
+        paired.ask(&change("copilot", true)).await;
+        assert!(matches!(paired.answer().await, Answer::Changed(_)));
+        assert!(asked.elapsed() < MIN_WRITE_GAP, "{:?}", asked.elapsed());
     }
 
-    /// The clock pauses, so the gap's edge is exact.
-    #[tokio::test(start_paused = true)]
-    async fn a_write_inside_the_gap_ends_the_connection_and_one_past_it_does_not() {
+    /// `first`'s answer, once a write asked as soon as it came has waited out the
+    /// gap. The clock pauses, so no wait but the gap's reaches its edge.
+    async fn a_second_write_waits_after(first: &Ask) -> Answer {
         let fixture = fixture();
         let mut peer = streaming(&fixture).await;
-        peer.ask(&change("copilot", true)).await;
-        assert!(matches!(peer.answer().await, Answer::Changed(_)));
-        sleep(MIN_WRITE_GAP).await;
-        peer.ask(&change("copilot", false)).await;
-        assert!(matches!(peer.answer().await, Answer::Changed(_)));
+        let first_asked = Instant::now();
+        peer.ask(first).await;
+        let answer = peer.answer().await;
 
         peer.ask(&change("copilot", true)).await;
-        assert!(peer.ended().await.is_err());
+        sleep_until(first_asked + MIN_WRITE_GAP - Duration::from_millis(1)).await;
+        assert_eq!(
+            made(&fixture).len(),
+            1,
+            "the second write ran inside the gap"
+        );
+        assert!(matches!(peer.answer().await, Answer::Changed(_)));
         assert_eq!(made(&fixture).len(), 2);
+        answer
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_write_inside_the_gap_waits_it_out() {
+        let first = a_second_write_waits_after(&change("copilot", true)).await;
+        assert!(matches!(first, Answer::Changed(_)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_write_to_a_source_this_build_doesnt_know_spends_the_gap() {
+        let first = a_second_write_waits_after(&change("no-such-cli", true)).await;
+        assert_eq!(first, Answer::Unsupported);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_write_that_changes_nothing_spends_the_gap() {
+        let first = a_second_write_waits_after(&change(ALREADY_SO, true)).await;
+        let Answer::Changed(first) = first else {
+            panic!("a change's answer");
+        };
+        assert_eq!(first.outcome(), Outcome::NoOp);
     }
 
     /// A write waits for a read on another connection, which can hold a CLI.

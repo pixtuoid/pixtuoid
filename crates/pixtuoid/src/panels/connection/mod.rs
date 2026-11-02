@@ -161,8 +161,8 @@ pub(crate) fn move_selection(rows: &[ConnectionRow], sel: usize, delta: i32) -> 
 
 pub(crate) fn no_action_hint(row: &ConnectionRow) -> String {
     match row.state {
-        ConnState::NoCli { .. } => format!("{} not detected on this machine", row.display_name),
-        _ => format!("nothing to do for {}", row.display_name),
+        ConnState::NoCli { .. } => pixtuoid_core::remote::not_detected(row.display_name),
+        _ => pixtuoid_core::remote::nothing_to_do(row.display_name),
     }
 }
 

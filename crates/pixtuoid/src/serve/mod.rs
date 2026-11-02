@@ -65,8 +65,8 @@ pub(crate) fn run(cfg: RunConfig, port: u16) -> Result<QuitSignal> {
     run_then_quit(runtime, serve(socket, config_path, connected, drift, port))
 }
 
-/// How long a quit waits on blocking work: past a store write, and short of a
-/// host CLI's read, which is left to end on its own.
+/// How long a quit waits on blocking work: past a store write, short of a CLI's
+/// run. A device's write it abandons leaves whole files for the next connect to heal.
 const QUIT_GRACE: Duration = Duration::from_secs(1);
 
 /// `work` on `runtime`, then at most [`QUIT_GRACE`] for its blocking work,
@@ -113,14 +113,14 @@ async fn serve(
     )?;
 
     let deaths = health_rx.clone();
-    let gate = connected.clone();
+    let live = connected.clone();
     let rows = Arc::new(move || {
         // Out of the watch first: reading files under its read lock holds the writer.
         let deaths = deaths.borrow().clone();
         crate::sources::device_rows(&connected.snapshot(), &deaths, &drift)
     });
     let change = Arc::new(move |who: &str, source: &str, on: bool| {
-        crate::sources::device_change(&config_path, &gate, who, source, on)
+        crate::sources::device_change(&config_path, &live, who, source, on)
     });
     let devices = Devices::new(store, scene, rows, change);
     let slots = Arc::new(Semaphore::new(MAX_CONNS));
