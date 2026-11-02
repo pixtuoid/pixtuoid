@@ -153,6 +153,28 @@
     - |
       .jobs.triage.if = "${{ always() && github.ref == 'refs/heads/main' && needs.drift.result == 'failure' }}"
 
+- id: hermetic-nightly-reads-only-the-legs-verdicts
+  file:
+    - .github/workflows/hermetic.yml
+    - .github/workflows/hermetic-nightly.yml
+  expected: hermetic-verdicts-${{ github.run_id }}-
+  why: >-
+    A failing leg's runs artifact holds its verdicts.json too, so a triage
+    download wider than the verdicts artifacts files that leg Lost in place
+    of its findings. Both files spell the stem rather than read it from
+    drift's outputs: on a night one leg was never acquired, triage logged
+    `DRIFT: {}` and `pattern: *` (github.com/pixtuoid/pixtuoid/actions/runs/41488302417).
+  assert: |
+    [(.jobs.run.steps[]? | select(.with.path == "target/hermetic/runs/verdicts.json")
+      | .with.name == $expected + "${{ matrix.os }}-${{ matrix.shard }}"),
+     (.jobs.triage.steps[]? | select((.uses // "") | startswith("actions/download-artifact"))
+      | .with.pattern == $expected + "*")]
+    == [true]
+  break:
+    - '(.jobs[].steps[]?.with | objects | (.name, .pattern) | strings) |= sub("^hermetic-verdicts-"; "hermetic-verdict-")'
+    - '.jobs.triage.steps += [{"uses": "actions/download-artifact@v8", "with": {"pattern": "hermetic-verdicts-${{ github.run_id }}-*"}}]'
+    - '(.jobs[].steps[]?.with | objects | (.name, .pattern) | strings | select(startswith("hermetic-verdicts-"))) |= "hermetic-verdicts-${{ github.run_id }}-${{ github.run_attempt }}-" + ltrimstr("hermetic-verdicts-${{ github.run_id }}-")'
+
 - id: only-main-saves-the-rust-cache
   covers: Swatinem/rust-cache@
   file:

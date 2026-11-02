@@ -15,9 +15,6 @@ on:
         type: string
         default: pinned
     outputs:
-      verdicts-stem:
-        description: 'The stem every leg uploads its verdicts under, as `<verdicts-stem><os>-<shard>`, empty when its run wrote none; a re-run leg replaces its own'
-        value: ${{ jobs.run.outputs.verdicts-stem }}
       moved_macos_1:
         description: 'The macOS shard 1 leg''s `bump::MOVED` rows: each source whose latest passed above its pin'
         value: ${{ jobs.run.outputs.moved_macos_1 }}
@@ -69,15 +66,7 @@ jobs:
       run:
         # Windows' default is pwsh.
         shell: bash
-    # A matrix job's output is the last leg's to finish (docs.github.com
-    # workflow-syntax, "Using job outputs in a matrix job"), so it comes from
-    # job-level env, which `jobs.<id>.outputs` can read (docs.github.com
-    # contexts, "Context availability") and no step has to reach.
-    env:
-      RUNS_STEM: hermetic-runs-${{ github.run_id }}-${{ github.run_attempt }}-
-      VERDICTS_STEM: hermetic-verdicts-${{ github.run_id }}-
     outputs:
-      verdicts-stem: ${{ env.VERDICTS_STEM }}
       # Each leg sets only its own, and a matrix combines its legs' outputs.
       moved_macos_1: ${{ steps.moved.outputs.moved_macos_1 }}
       moved_macos_2: ${{ steps.moved.outputs.moved_macos_2 }}
@@ -130,7 +119,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ env.RUNS_STEM }}${{ matrix.os }}-${{ matrix.shard }}
+          name: hermetic-runs-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.os }}-${{ matrix.shard }}
           path: target/hermetic/runs
           retention-days: 7
           if-no-files-found: error
@@ -141,7 +130,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ env.VERDICTS_STEM }}${{ matrix.os }}-${{ matrix.shard }}
+          name: hermetic-verdicts-${{ github.run_id }}-${{ matrix.os }}-${{ matrix.shard }}
           path: target/hermetic/runs/verdicts.json
           retention-days: 1
           overwrite: true
