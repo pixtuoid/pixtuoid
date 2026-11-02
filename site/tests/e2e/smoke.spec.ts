@@ -56,6 +56,19 @@ async function settleReveals(page: Page): Promise<void> {
   );
 }
 
+/** Every finite CSS animation/transition has ended (the hero's `rise` entrance, a typed reveal); a cancelled one counts as ended. */
+async function settleAnimations(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await new Promise((r) => requestAnimationFrame(r));
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished.catch(() => undefined))
+    );
+  });
+}
+
 /**
  * Brightest and darkest office pixel under an element's box, each composited with the live dimmer; `null` with no live office.
  * Both extremes, never an average: day's dimmer lightens the composite toward `--paper`, night's darkens it toward `--bg`.
@@ -2223,7 +2236,7 @@ for (const { width, rootPx } of [
   test(`hero badge hover swaps the prompt text and moves nothing at ${width}px, root ${rootPx}px`, async ({
     page,
   }) => {
-    // Every chip, each waiting out the 0.3s typed reveal.
+    // Every chip, each waiting out the typed reveal.
     test.setTimeout(90_000);
     // Raw mouse.move, NOT page.hover(): the page's html { scroll-behavior: smooth } lets hover()'s actionability pass
     // queue a smooth CDP scroll that slides the page out from under the pointer.
@@ -2233,17 +2246,7 @@ for (const { width, rootPx } of [
         const r = document.querySelector(s)!.getBoundingClientRect();
         return [r.x, r.y, r.width, r.height];
       }, sel);
-    // Mechanism-neutral: whatever the entrance or the reveal animates, measure after it ends.
-    const settle = () =>
-      page.evaluate(async () => {
-        await new Promise((r) => requestAnimationFrame(r));
-        await Promise.all(
-          document
-            .getAnimations()
-            .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
-            .map((a) => a.finished.catch(() => undefined))
-        );
-      });
+    const settle = () => settleAnimations(page);
     await page.setViewportSize({ width, height: 900 });
     await page.goto('./');
     // Let the hero's `rise` entrance settle first — a one-shot mouse.move to a mid-animation center lands off the settled chip.
@@ -2327,6 +2330,7 @@ test('hero prompt ink (default and every chip name) clears WCAG AA at the real o
     await page.goto('./');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await settleReveals(page);
+    await settleAnimations(page);
     const ratios = [await paintedContrast(page, '.hero__prompt-default')];
     for (let i = 0; i < supportedSources.length; i++) {
       ratios.push(await paintedContrast(page, '.hero__badge-name', i));
@@ -2337,7 +2341,44 @@ test('hero prompt ink (default and every chip name) clears WCAG AA at the real o
         `${theme} ${k === 0 ? 'default prompt' : supportedSources[k - 1].name}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5)
     );
+    // The link's own hover ink is a state of a new element, so it clears AA too.
+    const link = (await page.locator('.hero__prompt-default').boundingBox())!;
+    await page.mouse.move(link.x + 8, link.y + link.height / 2);
+    const hovered = await paintedContrast(page, '.hero__prompt-default');
+    expect(
+      hovered,
+      `${theme} default prompt hover: WCAG AA floor is 4.5:1; measured ${hovered.toFixed(2)}:1`
+    ).toBeGreaterThanOrEqual(4.5);
   }
+});
+
+test('a keyboard-focused default prompt link stays visible over a hovered chip, and the name stays off', async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  await page.waitForLoadState('networkidle');
+  await settleAnimations(page);
+  const link = page.locator('.hero__prompt-default');
+  const names = page.locator('.hero__badge-name > span');
+  const rect = () =>
+    page.evaluate(() => {
+      const r = document.querySelector('.hero__prompt')!.getBoundingClientRect();
+      return [r.x, r.y, r.width, r.height];
+    });
+  const rest = await rect();
+  const chip = page.locator('.hero__badges .hero__badge').nth(3);
+  const box = (await chip.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await link.focus();
+  expect(await link.evaluate((el) => el.matches(':focus-visible')), 'link not focus-visible').toBe(
+    true
+  );
+  await expect(link).toHaveCSS('opacity', '1');
+  for (let i = 0; i < supportedSources.length; i++) {
+    await expect(names.nth(i)).toHaveCSS('clip-path', 'inset(0px 100% 0px 0px)');
+  }
+  expect(await rect()).toEqual(rest);
 });
 
 test('hero badge hues clear WCAG AA against their theme-aware chip surface (day + night)', async ({

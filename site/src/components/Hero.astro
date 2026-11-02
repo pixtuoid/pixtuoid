@@ -6,10 +6,12 @@ const floor = floorById('lobby');
 // Same manifest + supported-filter SupportedTools.astro renders its tools table
 // from; a bridge e2e pins this chip count to that table's row count.
 const badges = sources.filter((s) => s.status === 'supported');
-// One rule per source: :has() ties a chip to its own name in the prompt row.
+// One rule per source: :has() ties a chip to its own name in the prompt row; a focused
+// default link keeps the row, so its focus ring never sits under a name.
 const nameRules = badges
   .map(
-    (s) => `.hero__chips:has(#chip-${s.id}:hover) [data-for='${s.id}'] > span{clip-path:inset(0)}`
+    (s) =>
+      `.hero__chips:not(:has(.hero__prompt-default:focus-visible)):has(#chip-${s.id}:hover) [data-for='${s.id}'] > span{clip-path:inset(0)}`
   )
   .join('\n');
 ---
@@ -31,9 +33,9 @@ const nameRules = badges
       </p>
       <div class="hero__chips">
         <p class="hero__prompt">
-          <a class="hero__prompt-default" href="#tools"
-            >$ works with {badges.length} coding CLIs <span aria-hidden="true">→</span></a
-          >
+          <a class="hero__prompt-default" href="#tools">
+            <span aria-hidden="true">$ </span>works with {badges.length} coding CLIs
+            <span aria-hidden="true">→</span></a>
           {badges.map((s) => <span class="hero__badge-name" data-for={s.id} aria-hidden="true">
             <span>$ {s.name}</span>
           </span>)}
@@ -116,12 +118,13 @@ const nameRules = badges
     color: var(--coral);
   }
   .hero__chips {
+    /* the 2px cancels .hero__badges' top padding, below */
     margin-top: calc(1.15rem - 2px);
   }
   /* A fixed prompt row over the strip: the count link and every chip's name share ONE
      grid cell, so hovering a chip swaps the text in place and nothing ever re-flows.
      Bare over the live office, hence --office-ink for the names too: a per-CLI hue
-     there measured 3.8:1 (day), so the hue stays on the hovered chip alone. */
+     can't clear AA there, so the hue stays on the hovered chip alone. */
   .hero__prompt {
     display: grid;
     margin: 0 0 0.55rem;
@@ -139,13 +142,14 @@ const nameRules = badges
     text-decoration: none;
   }
   .hero__prompt-default:hover {
-    color: var(--coral);
+    color: var(--office-ink-accent);
   }
   .hero__badges {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    /* 2px of margin moved INSIDE as padding on BOTH edges, net geometry identical:
+    /* 2px of margin moved INSIDE as padding on both edges (the top one cancelled by
+       .hero__chips' margin-top), net geometry identical:
        an edge row's 1px chip border sitting on the element's own paint edge gets
        shaved when Safari rasterizes at a fractional device-pixel offset. Keep the
        compensating negative margin — bare padding grows the page and reds the
@@ -198,7 +202,7 @@ const nameRules = badges
     transition: clip-path 0.3s steps(12, end);
   }
   @supports selector(:has(a)) {
-    .hero__chips:has(.hero__badge:hover) .hero__prompt-default {
+    .hero__chips:has(.hero__badge:hover) .hero__prompt-default:not(:focus-visible) {
       opacity: 0;
     }
   }
@@ -272,7 +276,7 @@ const nameRules = badges
        .lead sits over a deeper dimmer cap than this hero's and stays --fg-muted. */
     color: var(--office-ink);
   }
-  .hero__copy .hero__badges {
+  .hero__copy .hero__chips {
     animation-delay: 0.32s;
   }
   .hero__copy .hero__cta {
