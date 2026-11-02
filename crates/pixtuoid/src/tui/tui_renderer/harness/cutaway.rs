@@ -1630,15 +1630,24 @@ fn the_pacing_label_follows_what_drew_each_frame() {
     let (mut r, _wire) = kitty(140, 60);
     let scene = office();
     let cadence = ImageProtocol::Kitty.cadence();
-    r.painted_by(crate::jank::Painter {
+    let half_blocks = crate::jank::Painter {
         look: "classic",
         scale: 1,
-        ..Default::default()
-    });
+        tmux: true,
+        terminal: Some("ghostty".into()),
+        sync: true,
+    };
+    r.painted_by(half_blocks.clone());
     let label = |r: &TuiRenderer<Window>| (r.jank.painter().look, r.jank.painter().scale);
     r.render(&scene, t0()).expect("render");
     let (look, scale) = label(&r);
     assert_eq!(look, "kitty");
+    let cutaway = r.jank.painter();
+    assert_eq!(
+        (cutaway.terminal.as_deref(), cutaway.sync, cutaway.tmux),
+        (Some("ghostty"), true, false),
+        "the terminal's, over the route's tmux"
+    );
     r.terminal.backend_mut().zoom(CellSize {
         w: CELL.w * 2,
         h: CELL.h * 2,
@@ -1655,7 +1664,7 @@ fn the_pacing_label_follows_what_drew_each_frame() {
         h: CELL.h / 2,
     });
     r.render(&scene, t0() + cadence * 2).expect("render");
-    assert_eq!(label(&r), ("classic", 1), "the fall back draws");
+    assert_eq!(*r.jank.painter(), half_blocks, "the fall back draws");
 }
 
 /// The frame a font zoom falls back on opens the half-blocks' pacing
