@@ -205,27 +205,27 @@ pub(crate) fn shell_shim_ref(command: &str) -> ShimRef {
     {
         let end = head.len() - 1; // the closing `'` (a 1-byte apostrophe)
         if start < end {
-            let p = posix_unquote(&head[start..=end]);
-            return if p.is_empty() {
-                ShimRef::Unknown
-            } else {
-                ShimRef::Absolute(PathBuf::from(p))
-            };
+            return named_shim(&posix_unquote(&head[start..=end]));
         }
     }
     if let Some((path, _)) = head.split_once(crate::install::hook_cmd::SOURCE_FLAG) {
-        let p = path.trim();
-        return if p.is_empty() {
-            ShimRef::Unknown
-        } else {
-            ShimRef::Absolute(PathBuf::from(p))
-        };
+        return named_shim(path.trim());
     }
     // Unquoted fallback (hand-edited configs): the last whitespace token —
     // `split_whitespace` never yields an empty one, so no emptiness guard.
     match head.split_whitespace().next_back() {
-        Some(tok) => ShimRef::Absolute(PathBuf::from(tok)),
+        Some(tok) => named_shim(tok),
         None => ShimRef::Unknown,
+    }
+}
+
+/// `shim` as a command names it: the installer writes the bare name where PATH is
+/// to resolve it, which no stat of a path can check.
+fn named_shim(shim: &str) -> ShimRef {
+    match shim {
+        "" => ShimRef::Unknown,
+        crate::install::io::HOOK_BIN => ShimRef::BareName,
+        path => ShimRef::Absolute(PathBuf::from(path)),
     }
 }
 
@@ -441,6 +441,17 @@ mod tests {
             p.shim,
             ShimRef::Absolute(PathBuf::from("/opt/pixtuoid-hook"))
         );
+    }
+
+    #[test]
+    fn a_command_naming_the_bare_shim_leaves_it_to_path() {
+        for command in [
+            "PIXTUOID_SOURCE=codex 'pixtuoid-hook'",
+            "pixtuoid-hook --source codex",
+            "PIXTUOID_SOURCE=codex pixtuoid-hook",
+        ] {
+            assert_eq!(shell_shim_ref(command), ShimRef::BareName, "{command}");
+        }
     }
 
     #[test]

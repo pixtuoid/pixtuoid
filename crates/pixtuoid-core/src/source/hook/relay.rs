@@ -80,7 +80,8 @@ pub enum EndpointStatus {
     /// This user may not connect: another user's endpoint, or one whose owner
     /// could not be proved.
     Denied,
-    /// No status came back: an older pixtuoid, or an owner too busy to read.
+    /// No status came back: an older pixtuoid, an owner too busy to read, or one
+    /// whose socket file is gone.
     Silent,
     /// The owner answered.
     Live(OwnerStatus),
