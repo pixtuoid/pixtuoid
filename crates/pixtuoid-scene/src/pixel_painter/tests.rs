@@ -2508,17 +2508,9 @@ fn furniture_corner_clip_does_not_panic() {
 
 #[test]
 fn weather_gallery_manifest_matches_the_weather_enum() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/src/weather.json");
-    let json = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        // crates.io-packaged test runs don't ship the repo's site/ tree.
-        Err(_) => {
-            eprintln!("skipping: {path} not present (packaged build)");
-            return;
-        }
+    let Some(manifest) = crate::site::manifest("weather.json") else {
+        return;
     };
-    let manifest: Vec<serde_json::Value> =
-        serde_json::from_str(&json).expect("weather.json parses");
     let ids: Vec<&str> = manifest
         .iter()
         .map(|w| {

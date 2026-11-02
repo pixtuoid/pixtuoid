@@ -79,6 +79,8 @@ pub mod neon_sign;
 pub(crate) mod outside;
 #[doc(hidden)]
 pub mod screen;
+#[cfg(test)]
+mod site;
 #[doc(hidden)]
 pub use outside::OutsideCache;
 pub mod pack;
