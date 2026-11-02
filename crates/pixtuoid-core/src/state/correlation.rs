@@ -128,6 +128,48 @@ pub(super) enum ToolEventKind {
     End,
 }
 
+/// Per agent, the wire ids already counted and when each first was. Nested (not
+/// `(AgentId, String)`-keyed) so a membership probe borrows `&str` without
+/// allocating and a life's eviction is one `remove`.
+#[derive(Debug, Default)]
+pub(super) struct Counted(HashMap<AgentId, HashMap<String, SystemTime>>);
+
+impl Counted {
+    /// Whether what `id` names counts for `agent`: an id once, which this then
+    /// holds, and no id every time.
+    pub(super) fn first(&mut self, agent: AgentId, id: Option<&str>, now: SystemTime) -> bool {
+        let Some(id) = id else {
+            return true;
+        };
+        let ids = self.0.entry(agent).or_default();
+        let new = !ids.contains_key(id);
+        if new {
+            ids.insert(id.to_string(), now);
+        }
+        new
+    }
+
+    /// Only from [`Correlation::gc_slow`], never the per-event [`Correlation::gc`]:
+    /// with the longest TTL of the maps this is the retain that does real work.
+    fn sweep(&mut self, now: SystemTime) {
+        self.0.retain(|_, ids| {
+            ids.retain(|_, ts| is_fresh(now, *ts, super::reducer::STALE_BLOCKED_TIMEOUT));
+            !ids.is_empty()
+        });
+    }
+
+    /// `agent`'s life ended, and its ids with it.
+    pub(super) fn forget(&mut self, agent: &AgentId) {
+        self.0.remove(agent);
+    }
+
+    /// How many ids it holds.
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.0.values().map(HashMap::len).sum()
+    }
+}
+
 /// The reducer-private correlation maps. In/out criterion for a future
 /// map: PASSIVE cross-event memory (consulted to interpret a later event)
 /// lives here; ARMED actions that mutate the scene on a schedule
@@ -166,19 +208,19 @@ pub(super) struct Correlation {
     /// approval request goes out, so the two Starts are separated by HUMAN
     /// approval latency and no dedup window can span them. The backstop TTL is
     /// [`STALE_BLOCKED_TIMEOUT`](crate::state::reducer::STALE_BLOCKED_TIMEOUT) because that bounds how long they can straddle; past
-    /// it the cost is one HUD re-count. Nested (not `(AgentId, String)`-keyed)
-    /// so the per-Start membership probe borrows `&str` without allocating and
-    /// a life's eviction is one `remove`; swept in [`Self::gc_slow`], never the
-    /// per-event [`Self::gc`] — with the longest TTL of the maps it is the one
-    /// whose retain does real per-event work.
-    pub(super) counted_calls: HashMap<AgentId, HashMap<String, SystemTime>>,
+    /// it the cost is one HUD re-count.
+    pub(super) counted_calls: Counted,
+    /// Usage readings already counted into `tokens_used`, by the id a wire that
+    /// repeats one gives it. Swept with `counted_calls`, whose TTL far outlasts a
+    /// repeat's lag; a replay past it re-counts on the meter.
+    pub(super) counted_readings: Counted,
     /// When [`Self::gc_slow`] last swept, so its cost is once per
     /// [`COUNTED_SWEEP_INTERVAL`] no matter how often the caller runs — the
     /// bench harness ticks per EVENT, and production ticks per frame.
     counted_swept_at: Option<SystemTime>,
 }
 
-/// How often `counted_calls` is TTL-swept. Minutes of slack against an
+/// How often the [`Counted`] maps are TTL-swept. Minutes of slack against an
 /// hour-scale ceiling cost nothing; sweeping on every tick re-created the
 /// per-event scan `gc_slow` exists to avoid.
 const COUNTED_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
@@ -333,7 +375,7 @@ impl Correlation {
         });
     }
 
-    /// The sweeps too costly for the per-event [`Self::gc`]: `counted_calls`
+    /// The sweeps too costly for the per-event [`Self::gc`]: a [`Counted`] map
     /// keeps entries for up to [`STALE_BLOCKED_TIMEOUT`](crate::state::reducer::STALE_BLOCKED_TIMEOUT), so its retain scans real
     /// state. Self-amortized to [`COUNTED_SWEEP_INTERVAL`] — callers may run
     /// this as often as they like.
@@ -345,10 +387,8 @@ impl Correlation {
             return;
         }
         self.counted_swept_at = Some(now);
-        self.counted_calls.retain(|_, calls| {
-            calls.retain(|_, ts| is_fresh(now, *ts, super::reducer::STALE_BLOCKED_TIMEOUT));
-            !calls.is_empty()
-        });
+        self.counted_calls.sweep(now);
+        self.counted_readings.sweep(now);
     }
 
     /// Whether `id` holds a FRESH probe vouch. The single freshness predicate
@@ -508,20 +548,40 @@ mod tests {
         );
 
         let mut corr = Correlation::default();
-        corr.counted_calls
-            .entry(old)
-            .or_default()
-            .insert("t1".into(), t0());
-        corr.counted_calls
-            .entry(young)
-            .or_default()
-            .insert("t2".into(), t0() + step);
+        assert!(corr.counted_calls.first(old, Some("t1"), t0()));
+        assert!(corr.counted_calls.first(young, Some("t2"), t0() + step));
+        assert!(corr.counted_readings.first(old, Some("m1"), t0()));
+        assert!(corr.counted_readings.first(young, Some("m2"), t0() + step));
         corr.gc_slow(t0() + crate::state::reducer::STALE_BLOCKED_TIMEOUT);
         assert!(
-            !corr.counted_calls.contains_key(&old),
+            !corr.counted_calls.0.contains_key(&old) && !corr.counted_readings.0.contains_key(&old),
             "the swept life's emptied submap is dropped with it"
         );
-        assert!(corr.counted_calls[&young].contains_key("t2"));
+        assert!(corr.counted_calls.0[&young].contains_key("t2"));
+        assert!(corr.counted_readings.0[&young].contains_key("m2"));
+    }
+
+    #[test]
+    fn an_id_counts_once_per_agent_and_keeps_its_first_time() {
+        let (a, b) = (
+            AgentId::from_parts("claude-code", "a"),
+            AgentId::from_parts("claude-code", "b"),
+        );
+        let later = t0() + Duration::from_secs(1);
+        let mut counted = Counted::default();
+        assert!(counted.first(a, Some("m"), t0()));
+        assert!(!counted.first(a, Some("m"), later));
+        assert!(counted.first(b, Some("m"), later), "another agent's");
+        assert_eq!(counted.0[&a]["m"], t0(), "a repeat refreshes no TTL");
+    }
+
+    #[test]
+    fn no_id_counts_every_time_and_holds_nothing() {
+        let a = AgentId::from_parts("claude-code", "a");
+        let mut counted = Counted::default();
+        assert!(counted.first(a, None, t0()));
+        assert!(counted.first(a, None, t0()));
+        assert_eq!(counted.len(), 0);
     }
 
     #[test]

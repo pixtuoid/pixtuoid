@@ -471,7 +471,8 @@ impl Reducer {
             AgentEvent::Usage {
                 agent_id,
                 fresh_tokens,
-            } => Self::apply_usage(scene, agent_id, fresh_tokens, now),
+                reading_id,
+            } => self.apply_usage(scene, agent_id, fresh_tokens, reading_id.as_deref(), now),
         }
     }
 
@@ -640,15 +641,8 @@ impl Reducer {
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        match tool_use_id {
-            Some(t) => {
-                let calls = self.corr.counted_calls.entry(agent_id).or_default();
-                if !calls.contains_key(t) {
-                    calls.insert(t.to_string(), now);
-                    slot.tool_call_count += 1;
-                }
-            }
-            None => slot.tool_call_count += 1,
+        if self.corr.counted_calls.first(agent_id, tool_use_id, now) {
+            slot.tool_call_count += 1;
         }
     }
 
@@ -993,9 +987,20 @@ impl Reducer {
     }
 
     /// The `Usage` arm — updates an EXISTING slot only, the `ModelInfo`
-    /// posture. Saturating so a hostile/corrupt transcript can't overflow it.
-    fn apply_usage(scene: &mut SceneState, agent_id: AgentId, fresh_tokens: u64, now: SystemTime) {
-        if let Some(slot) = scene.agents.get_mut(&agent_id) {
+    /// posture, once per named reading. Saturating so a hostile/corrupt
+    /// transcript can't overflow it.
+    fn apply_usage(
+        &mut self,
+        scene: &mut SceneState,
+        agent_id: AgentId,
+        fresh_tokens: u64,
+        reading_id: Option<&str>,
+        now: SystemTime,
+    ) {
+        let Some(slot) = scene.agents.get_mut(&agent_id) else {
+            return;
+        };
+        if self.corr.counted_readings.first(agent_id, reading_id, now) {
             slot.tokens_used = slot.tokens_used.saturating_add(fresh_tokens);
             slot.last_usage = Some(crate::state::UsageObservation::new(fresh_tokens, now));
         }
@@ -1617,7 +1622,8 @@ impl Reducer {
         self.corr.action_requests.forget(id);
         self.corr.turns.forget(id);
         self.corr.item_started_on.remove(id);
-        self.corr.counted_calls.remove(id);
+        self.corr.counted_calls.forget(id);
+        self.corr.counted_readings.forget(id);
         self.pending_b1_cascades.remove(id);
     }
 

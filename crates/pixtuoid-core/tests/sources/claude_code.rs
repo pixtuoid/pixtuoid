@@ -411,3 +411,47 @@ fn a_recorded_background_childs_tools_land_on_the_child() {
         "the root's SessionStart and SessionEnd keep the session's own id"
     );
 }
+
+/// One message writes a line per content block, each with the whole message's
+/// usage: in this recording, the thinking and the tool call of one reply.
+#[test]
+fn the_meter_is_the_sum_per_message_of_a_recorded_run() {
+    let dir = super::captures::sources_root().join("claude_code/fixtures/tool-run-hermetic");
+    let transcript = pixtuoid_core::harness::transcript_in("claude-code", &dir)
+        .unwrap_or_else(|found| panic!("one recorded transcript, found {found:?}"));
+    let body = std::fs::read_to_string(&transcript).expect("a committed recording");
+
+    let mut per_line = 0;
+    let mut per_message = std::collections::BTreeMap::new();
+    for line in body.lines() {
+        let v: serde_json::Value = serde_json::from_str(line).expect("recorded JSON");
+        if v["type"] != "assistant" {
+            continue;
+        }
+        let fresh: u64 = [
+            "input_tokens",
+            "cache_creation_input_tokens",
+            "output_tokens",
+        ]
+        .iter()
+        .filter_map(|field| v["message"]["usage"][field].as_u64())
+        .sum();
+        let id = v["message"]["id"].as_str().expect("a recorded message id");
+        assert!(!id.is_empty(), "the strip keeps what a decoder reads");
+        per_line += fresh;
+        per_message.insert(id.to_owned(), fresh);
+    }
+    let per_message: u64 = per_message.values().sum();
+    assert!(
+        per_message < per_line,
+        "no message spans two lines here, so this recording proves nothing"
+    );
+
+    let driven = pixtuoid_core::harness::Drive::transcript_at("claude-code", &transcript)
+        .expect("a transcript source")
+        .seeded()
+        .body(body.as_bytes());
+    driven.assert_clean("claude-code tool run");
+    let meter: u64 = driven.scene.agents.values().map(|a| a.tokens_used).sum();
+    assert_eq!(meter, per_message);
+}

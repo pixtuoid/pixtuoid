@@ -753,6 +753,7 @@ pub pixtuoid_core::source::AgentEvent::TurnStart::turn: pixtuoid_core::state::Tu
 pub pixtuoid_core::source::AgentEvent::Usage
 pub pixtuoid_core::source::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Usage::fresh_tokens: u64
+pub pixtuoid_core::source::AgentEvent::Usage::reading_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::UserActionRequest
 pub pixtuoid_core::source::AgentEvent::UserActionRequest::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::UserActionRequest::reason: core::option::Option<alloc::string::String>
@@ -1435,6 +1436,7 @@ pub pixtuoid_core::AgentEvent::TurnStart::turn: pixtuoid_core::state::TurnKey
 pub pixtuoid_core::AgentEvent::Usage
 pub pixtuoid_core::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Usage::fresh_tokens: u64
+pub pixtuoid_core::AgentEvent::Usage::reading_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::UserActionRequest
 pub pixtuoid_core::AgentEvent::UserActionRequest::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::UserActionRequest::reason: core::option::Option<alloc::string::String>

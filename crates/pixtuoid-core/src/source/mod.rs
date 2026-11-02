@@ -249,13 +249,19 @@ pub enum AgentEvent {
     /// A FRESH-token spend observation from a source's wire — cache READS are
     /// re-served context, not new spend, and are excluded. Each event is that
     /// reading's DELTA; the reducer accumulates onto an EXISTING slot only
-    /// (unknown id = no-op — usage never registers a session). JSONL-only (no
-    /// hook carries usage), so it never enters hook-wins dedup.
+    /// (unknown id = no-op — usage never registers a session). It names no call,
+    /// so it never enters hook-wins dedup.
     Usage {
         /// The agent whose token spend this reading records.
         agent_id: AgentId,
         /// Fresh tokens this reading: new input + cache writes + output.
         fresh_tokens: u64,
+        /// The id a wire that repeats readings gives this one: an agent counts it
+        /// once, until the reducer's sweep lets it go, and a replay past that
+        /// re-counts on the meter. `None` counts every time, since an id is the
+        /// only thing that tells a repeat from an equal new reading.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reading_id: Option<String>,
     },
 }
 

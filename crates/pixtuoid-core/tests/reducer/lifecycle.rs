@@ -1,9 +1,9 @@
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::{AgentEvent, Transport};
-use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, Reducer};
+use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer};
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, SceneState};
 
 use crate::{
@@ -1223,6 +1223,7 @@ fn usage_accumulates_saturating_and_stamps_the_last_reading() {
     let usage = |fresh_tokens: u64| AgentEvent::Usage {
         agent_id: id,
         fresh_tokens,
+        reading_id: None,
     };
     r.apply(&mut scene, usage(56_500), t0, Transport::Jsonl);
     let t1 = t0 + Duration::from_secs(30);
@@ -1236,6 +1237,110 @@ fn usage_accumulates_saturating_and_stamps_the_last_reading() {
     assert_eq!(scene.agents[&id].tokens_used, u64::MAX);
 }
 
+fn usage_of(agent_id: AgentId, fresh_tokens: u64, reading_id: Option<&str>) -> AgentEvent {
+    AgentEvent::Usage {
+        agent_id,
+        fresh_tokens,
+        reading_id: reading_id.map(Into::into),
+    }
+}
+
+fn usage_scene() -> (Reducer, SceneState, AgentId, SystemTime) {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts("claude-code", "ses_m");
+    start(&mut r, &mut scene, id);
+    (r, scene, id, UNIX_EPOCH + Duration::from_secs(1_000_000))
+}
+
+#[test]
+fn a_named_reading_counts_once_and_leaves_the_last_reading_alone() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    let t1 = t0 + Duration::from_secs(1);
+    r.apply(
+        &mut scene,
+        usage_of(id, 100, Some("msg_1")),
+        t0,
+        Transport::Jsonl,
+    );
+    r.apply(
+        &mut scene,
+        usage_of(id, 100, Some("msg_1")),
+        t1,
+        Transport::Jsonl,
+    );
+    let slot = &scene.agents[&id];
+    assert_eq!(slot.tokens_used, 100);
+    assert_eq!(
+        slot.last_usage.expect("stamped").seen_at,
+        t0,
+        "no second sheet"
+    );
+
+    r.apply(
+        &mut scene,
+        usage_of(id, 100, Some("msg_2")),
+        t1,
+        Transport::Jsonl,
+    );
+    assert_eq!(
+        scene.agents[&id].tokens_used, 200,
+        "equal, but its own reading"
+    );
+}
+
+#[test]
+fn an_unnamed_reading_counts_every_time() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    r.apply(&mut scene, usage_of(id, 100, None), t0, Transport::Jsonl);
+    r.apply(&mut scene, usage_of(id, 100, None), t0, Transport::Jsonl);
+    assert_eq!(scene.agents[&id].tokens_used, 200);
+}
+
+#[test]
+fn a_reading_id_is_its_own_agents() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    let other = AgentId::from_parts("claude-code", "ses_n");
+    start(&mut r, &mut scene, other);
+    for agent in [id, other] {
+        r.apply(
+            &mut scene,
+            usage_of(agent, 100, Some("msg_1")),
+            t0,
+            Transport::Jsonl,
+        );
+    }
+    assert_eq!(scene.agents[&id].tokens_used, 100);
+    assert_eq!(scene.agents[&other].tokens_used, 100);
+}
+
+/// A slot gone takes its ids, as `counted_calls` goes: its next life's readings
+/// are new.
+#[test]
+fn a_slots_end_forgets_its_reading_ids() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    r.apply(
+        &mut scene,
+        usage_of(id, 100, Some("msg_1")),
+        t0,
+        Transport::Jsonl,
+    );
+    sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
+    r.tick(
+        &mut scene,
+        t0 + EXIT_GRACE_WINDOW + Duration::from_millis(1),
+    );
+    assert!(!scene.agents.contains_key(&id));
+    start(&mut r, &mut scene, id);
+    r.apply(
+        &mut scene,
+        usage_of(id, 100, Some("msg_1")),
+        t0,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].tokens_used, 100);
+}
+
 #[test]
 fn usage_for_an_unknown_agent_never_registers() {
     let mut scene = SceneState::uniform(4);
@@ -1247,6 +1352,7 @@ fn usage_for_an_unknown_agent_never_registers() {
             AgentEvent::Usage {
                 agent_id: ghost,
                 fresh_tokens: 1_000_000,
+                reading_id: None,
             },
             SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000),
             transport,

@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, cwd_basename_label, ellipsize, extract_top_level_cwd,
-    make_tool_detail, parsed_tail_lines,
+    make_tool_detail, non_empty, parsed_tail_lines,
 };
 
 use crate::AgentId;
@@ -318,6 +318,9 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
             out.push(AgentEvent::Usage {
                 agent_id,
                 fresh_tokens: fresh,
+                // A message writes one line per content block, each with its
+                // whole usage.
+                reading_id: non_empty(message, "id").map(str::to_owned),
             });
         }
     }
@@ -786,6 +789,32 @@ mod tests {
             )),
             "expected fresh=1200+50000+5300 (cache reads excluded), got {evs:?}"
         );
+    }
+
+    /// Every line of a message carries that one id; a line that lost it reads as
+    /// a reading with no id.
+    #[test]
+    fn a_usage_reading_is_named_by_its_message_id_where_it_has_one() {
+        let reading_id = |message: Value| {
+            let v = json!({"type": "assistant", "message": message});
+            decode_cc_line("/p/ses-1.jsonl", "claude-code", v)
+                .into_iter()
+                .find_map(|e| match e {
+                    AgentEvent::Usage { reading_id, .. } => Some(reading_id),
+                    _ => None,
+                })
+                .expect("a usage event")
+        };
+        let usage = json!({"input_tokens": 1, "output_tokens": 1});
+        assert_eq!(
+            reading_id(json!({"id": "msg_1", "content": [], "usage": usage})),
+            Some("msg_1".to_string())
+        );
+        assert_eq!(
+            reading_id(json!({"id": "", "content": [], "usage": usage})),
+            None
+        );
+        assert_eq!(reading_id(json!({"content": [], "usage": usage})), None);
     }
 
     #[test]
