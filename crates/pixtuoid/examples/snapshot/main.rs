@@ -3,8 +3,8 @@
 //! `--proof` frame sequences — so the visual output is verifiable without a real
 //! terminal.
 
-mod cutaway;
 mod encode;
+mod pixel;
 mod proof;
 
 /// The bundled pack the cell text draws its icons from, read once.
@@ -22,15 +22,16 @@ use anyhow::{Context as _, Result};
 use clap::Parser;
 use pixtuoid::dev::DrawCtx;
 use pixtuoid_core::SceneState;
+use pixtuoid_scene::look::LookKind;
 use pixtuoid_scene::pack::load_bundled_pack;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
-use crate::cutaway::CutawayOffice;
 use crate::encode::{
     AnimJob, Timeline, centered_crop, compute_crop_rect, draw_frame, print_walkability_report,
     save_animation, save_backend_as_png, save_renderer_animation,
 };
+use crate::pixel::PixelOffice;
 use crate::scenes::{
     GatewayState, anim_scene, capture_live_scene, dashboard_scene, inject_openclaw_presence,
     meeting_scene, sample_scene,
@@ -87,18 +88,19 @@ struct SnapshotArgs {
     #[arg(long)]
     gif: bool,
 
-    /// Draw the office as the cutaway the TUI fits to this terminal of
-    /// `CELL_W`×`CELL_H` cells, in place of the classic office, above its footer
-    /// and under its panels.
-    #[arg(long, conflicts_with_all = [
-        // `draw_over_image` hit-tests no pointer on the cutaway.
+    /// Draw the office in LOOK as a pixel painter does, at the fit the TUI's
+    /// cutaway takes on this terminal of `CELL_W`×`CELL_H` cells, its world
+    /// text baked, in place of the half-blocks, above their footer and under
+    /// their panels.
+    #[arg(long, value_name = "LOOK", value_parser = pixel_look(), conflicts_with_all = [
+        // `draw_over_image` hit-tests no pointer on the pixel office.
         "hover",
-        // The cutaway never draws the walkable layer (`TuiRenderer::offers_walkable_debug`).
+        // The pixel office is drawn without the walkable layer (`PixelOffice::render`).
         "debug_walkable",
-        // A crop moves the frame the cutaway paints from its top-left.
+        // A crop moves the frame the pixel office paints from its top-left.
         "crop_agent", "crop_furniture", "crop_mascot",
     ])]
-    cutaway: bool,
+    pixel: Option<LookKind>,
 
     /// GIF duration in seconds (only with --gif, which --anim implies).
     #[arg(long, default_value_t = 5)]
@@ -312,6 +314,20 @@ struct SnapshotArgs {
     proof_secs: u64,
 }
 
+/// `--pixel`'s values: the engine's look ids.
+fn pixel_look() -> impl clap::builder::TypedValueParser<Value = LookKind> {
+    use clap::builder::TypedValueParser as _;
+    clap::builder::PossibleValuesParser::new(LookKind::ALL.iter().map(|look| look.name())).map(
+        |name| {
+            LookKind::ALL
+                .iter()
+                .copied()
+                .find(|look| look.name() == name)
+                .expect("each possible value is a look's id")
+        },
+    )
+}
+
 fn default_projects_root() -> String {
     // Honor CLAUDE_CONFIG_DIR via the same resolver the runtime uses, rather
     // than re-hardcoding the ~/.claude shape.
@@ -481,7 +497,7 @@ fn main() -> Result<()> {
             theme,
             pack: &pack,
             weather,
-            cutaway: args.cutaway,
+            pixel: args.pixel,
         })?;
         println!("wrote proof frames → {}", frames_dir.display());
         return Ok(());
@@ -525,14 +541,14 @@ fn main() -> Result<()> {
     };
     let anim_dest = args.frames_dir.as_deref().unwrap_or(&args.out);
     if !navigations.is_empty() || !pet_vec.is_empty() {
-        save_renderer_animation(&anim_job, term, &navigations, pet_vec, args.cutaway)?;
+        save_renderer_animation(&anim_job, term, &navigations, pet_vec, args.pixel)?;
         println!("wrote {}", anim_dest.display());
         return Ok(());
     }
 
-    let mut cutaway = args
-        .cutaway
-        .then(|| CutawayOffice::of_draw_frame(&pack, cols, rows))
+    let mut pixel = args
+        .pixel
+        .map(|look| PixelOffice::of_draw_frame(&pack, (cols, rows), look))
         .transpose()?;
     let mut floor_meta = pixtuoid_scene::floor::FloorMeta::ground().with_weather(weather);
     floor_meta.floor_seed = args.floor_seed;
@@ -544,7 +560,7 @@ fn main() -> Result<()> {
             floor_meta,
             skip_ms,
             args.debug_walkable,
-            cutaway,
+            pixel,
         )?;
         println!("wrote {}", anim_dest.display());
         return Ok(());
@@ -571,7 +587,7 @@ fn main() -> Result<()> {
     let warning_text = pixtuoid::dev::footer_warning(&deaths, &drifted);
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     if args.empty {
-        settle_empty(&mut floor, cutaway.as_mut());
+        settle_empty(&mut floor, pixel.as_mut());
     }
     let (dash_rows, dash_selected) = if args.dashboard {
         let folds = pixtuoid::dev::DashboardFolds::default();
@@ -750,7 +766,7 @@ fn main() -> Result<()> {
         overlays: frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]),
         ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, floor_meta)
     };
-    let drawn = draw_frame(&mut term, &mut draw_ctx, cutaway.as_mut())?;
+    let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
 
     if args.debug_walkable {
         print_walkability_report(&term, args.floor_seed)?;
@@ -769,7 +785,7 @@ fn main() -> Result<()> {
     };
     let area = crop_rect.unwrap_or(ratatui::layout::Rect::new(0, 0, cols, rows));
 
-    save_backend_as_png(&term, &args.out, area, cutaway.as_ref())?;
+    save_backend_as_png(&term, &args.out, area, pixel.as_ref())?;
     println!("wrote {}", args.out.display());
 
     println!("\n--- text preview (symbols only) ---");
@@ -783,13 +799,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// An empty office's still: `floor`, and `cutaway`'s where there is one, at
+/// An empty office's still: `floor`, and `pixel`'s where there is one, at
 /// the light they fade to. A still has no time to animate the fade.
 fn settle_empty(
     floor: &mut pixtuoid_scene::floor::PerFloor,
-    cutaway: Option<&mut CutawayOffice<pixtuoid_scene::floor::FloorSession>>,
+    pixel: Option<&mut PixelOffice<pixtuoid_scene::floor::FloorSession>>,
 ) {
-    for floor in std::iter::once(floor).chain(cutaway.map(CutawayOffice::floor_mut)) {
+    for floor in std::iter::once(floor).chain(pixel.map(PixelOffice::floor_mut)) {
         floor.ctx.vacancy_dim.snap_to_empty();
     }
 }
@@ -1097,7 +1113,7 @@ mod tests {
     }
 
     #[test]
-    fn cutaway_conflicts_with_what_it_cannot_draw() {
+    fn the_pixel_office_conflicts_with_what_it_cannot_draw() {
         let parses = |argv: &[&str]| SnapshotArgs::try_parse_from(argv).is_ok();
         for flags in [
             &["--hover", "1,1"][..],
@@ -1108,23 +1124,38 @@ mod tests {
         ] {
             let alone = [&["snapshot"][..], flags].concat();
             assert!(parses(&alone), "rejected {alone:?}");
-            let with = [&alone[..], &["--cutaway"]].concat();
+            let with = [&alone[..], &["--pixel", "cutaway"]].concat();
             assert!(!parses(&with), "accepted {with:?}");
         }
         for argv in [
-            &["snapshot", "--cutaway"][..],
-            &["snapshot", "--cutaway", "--gif"],
-            &["snapshot", "--cutaway", "--gif", "--warmup-secs", "1"],
-            &["snapshot", "--cutaway", "--gif", "--pets", "cat"],
-            &["snapshot", "--cutaway", "--gif", "--navigate-at", "3:1"],
-            &["snapshot", "--cutaway", "--empty"],
-            &["snapshot", "--cutaway", "--proof", "session.jsonl"],
-            &["snapshot", "--cutaway", "--dashboard"],
-            &["snapshot", "--cutaway", "--connection"],
-            &["snapshot", "--cutaway", "--onboarding"],
-            &["snapshot", "--cutaway", "--help-open"],
-            &["snapshot", "--cutaway", "--theme-picker", "0"],
-            &["snapshot", "--cutaway", "--popup"],
+            &["snapshot", "--pixel", "cutaway"][..],
+            &["snapshot", "--pixel", "classic"],
+            &["snapshot", "--pixel", "cutaway", "--gif"],
+            &[
+                "snapshot",
+                "--pixel",
+                "cutaway",
+                "--gif",
+                "--warmup-secs",
+                "1",
+            ],
+            &["snapshot", "--pixel", "cutaway", "--gif", "--pets", "cat"],
+            &[
+                "snapshot",
+                "--pixel",
+                "cutaway",
+                "--gif",
+                "--navigate-at",
+                "3:1",
+            ],
+            &["snapshot", "--pixel", "cutaway", "--empty"],
+            &["snapshot", "--pixel", "cutaway", "--proof", "session.jsonl"],
+            &["snapshot", "--pixel", "cutaway", "--dashboard"],
+            &["snapshot", "--pixel", "cutaway", "--connection"],
+            &["snapshot", "--pixel", "cutaway", "--onboarding"],
+            &["snapshot", "--pixel", "cutaway", "--help-open"],
+            &["snapshot", "--pixel", "cutaway", "--theme-picker", "0"],
+            &["snapshot", "--pixel", "cutaway", "--popup"],
         ] {
             assert!(parses(argv), "rejected {argv:?}");
         }

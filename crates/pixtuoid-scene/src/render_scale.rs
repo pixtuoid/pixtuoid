@@ -18,7 +18,7 @@ use crate::sprite::format::Density;
 
 /// How many buffer pixels one layout unit paints as.
 ///
-/// `ONE` is the classic path: layout units ARE buffer pixels, byte-identical to
+/// `ONE` is the half-blocks' path: layout units ARE buffer pixels, byte-identical to
 /// the pre-seam behaviour. A larger scale paints the same office into a bigger
 /// buffer, which is the only thing that makes richer art expressible without
 /// silently changing floor capacity or desk assignment.
@@ -33,7 +33,7 @@ impl From<Density> for RenderScale {
 }
 
 impl RenderScale {
-    /// The classic path — one layout unit per buffer pixel.
+    /// The half-blocks' path — one layout unit per buffer pixel.
     pub(crate) const ONE: Self = Self(NonZeroU16::MIN);
 
     /// A scale of `n` buffer pixels per layout unit, or `None` for zero
@@ -137,16 +137,18 @@ impl Default for RenderScale {
     }
 }
 
-/// A cutaway on a surface of real pixels, whatever the painter: the office
-/// renders at the pack's densest art and the image is that render upscaled a
+/// A pixel painter's fit on a surface of real pixels: the office renders at
+/// [`Self::density`] (the cutaway its densest art, the classic its base art
+/// with its text on that grid) and the image is that render upscaled a
 /// whole number of times to [`Self::scale`], so every art pixel lands as an
 /// equal square (integer scaling, as pixel-art engines draw:
 /// <https://docs.godotengine.org/en/stable/tutorials/rendering/multiple_resolutions.html>),
 /// pixel-identical to a render at the scale itself (pinned by
-/// `the_cutaway_paints_whole_art_pixels`). The office takes the surface's
+/// `the_cutaway_paints_whole_art_pixels` and
+/// `the_baked_classic_upscales_whole`). The office takes the surface's
 /// shape; the sub-unit remainder is the painter's margin.
 ///
-/// The densest art, not whichever density the surface lands nearest: the one
+/// The cutaway's densest art, not whichever density the surface lands nearest: the one
 /// render draws every piece at one density, and a scale only a coarser density
 /// divides would draw the densest art from coarser stand-ins.
 #[doc(hidden)]
@@ -206,12 +208,17 @@ impl PixelFit {
         self.density
     }
 
-    /// The look a floor renders in under this fit: the cutaway at
-    /// [`Self::density`], its world text set by `text`.
-    pub fn look(self, text: crate::look::WorldText) -> crate::look::Look {
-        crate::look::Look::Cutaway {
-            scale: RenderScale::from(self.density),
-            text,
+    /// `kind` as a floor renders it under this fit: at [`Self::density`], its
+    /// world text set by `text`.
+    pub fn look(
+        self,
+        kind: crate::look::LookKind,
+        text: crate::look::WorldText,
+    ) -> crate::look::Look {
+        let scale = RenderScale::from(self.density);
+        match kind {
+            crate::look::LookKind::Classic => crate::look::Look::Classic { scale, text },
+            crate::look::LookKind::Cutaway => crate::look::Look::Cutaway { scale, text },
         }
     }
 
@@ -229,6 +236,30 @@ impl PixelFit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fit draws either look at its density, its world text as asked.
+    #[test]
+    fn a_fit_draws_either_look_at_its_density() {
+        use crate::look::{Look, LookKind, WorldText};
+        let density = crate::display::pen::test_density(4);
+        let px = crate::layout::Size { w: 640, h: 480 };
+        let fit = PixelFit::at_least_density(8, density, px);
+        let scale = RenderScale::from(density);
+        assert_eq!(
+            fit.look(LookKind::Classic, WorldText::Baked),
+            Look::Classic {
+                scale,
+                text: WorldText::Baked
+            }
+        );
+        assert_eq!(
+            fit.look(LookKind::Cutaway, WorldText::Host),
+            Look::Cutaway {
+                scale,
+                text: WorldText::Host
+            }
+        );
+    }
     use crate::display::pen::test_density;
     use crate::floor::{floor_capacity, floor_capacity_scaled, floor_seed};
     use crate::sprite::format::MAX_DENSITY_VARIANT;

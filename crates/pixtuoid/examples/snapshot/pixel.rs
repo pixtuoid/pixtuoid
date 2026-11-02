@@ -1,6 +1,8 @@
-//! `--cutaway`: the office a graphics terminal of [`terminal_cell`]s shows,
-//! in place of the classic frame's office, above its footer and under its panels. Its world text is the scene's pixel font
-//! (the floating window's), where the terminal sets it in its own.
+//! `--pixel`: the office a pixel painter draws in a look, at the fit the TUI's
+//! cutaway takes on a terminal of [`terminal_cell`]s, in place of the
+//! half-blocks' office, above their footer and under their panels. Its world
+//! text is the scene's pixel font (the floating window's), where the terminal
+//! sets the half-blocks' in its own.
 
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -10,7 +12,7 @@ use pixtuoid::dev::ImageCells;
 use pixtuoid_scene::cutaway::Canvas as _;
 use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
 use pixtuoid_scene::layout::{Point, SceneLayout};
-use pixtuoid_scene::look::{Dim, Look, Place, RenderInputs, WorldText};
+use pixtuoid_scene::look::{Dim, Look, LookKind, Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pet::Pet;
 use pixtuoid_scene::render_scale::PixelFit;
@@ -19,19 +21,20 @@ use pixtuoid_scene::theme::Theme;
 
 use crate::encode::{ImageCanvas, terminal_cell};
 
-/// The TUI's cutaway on one terminal: a session of its own, stepped on the
-/// inputs of the classic frame whose office it takes.
-pub(crate) struct CutawayOffice<S> {
+/// A pixel painter's office on one terminal's fit: a session of its own,
+/// stepped on the inputs of the half-block frame whose office it takes.
+pub(crate) struct PixelOffice<S> {
     session: S,
     fit: PixelFit,
+    look: LookKind,
     /// The cells its last frame shows under that frame's text; all of them
     /// where none was drawn over it.
     under: Option<ImageCells>,
 }
 
-/// What a cutaway steps, on the inputs a classic frame of the same office
-/// steps on.
-pub(crate) trait CutawaySession {
+/// What a pixel office steps, on the inputs a half-block frame of the same
+/// office steps on.
+pub(crate) trait PixelSession {
     /// Step and draw one frame of `inputs` in `look`.
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_>);
 
@@ -42,7 +45,7 @@ pub(crate) trait CutawaySession {
 
 /// [`crate::encode::draw_frame`]'s one floor, under the `FloorMeta` it is
 /// handed (`--floor-seed`).
-impl CutawaySession for FloorSession {
+impl PixelSession for FloorSession {
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
         self.render(look, inputs);
     }
@@ -59,7 +62,7 @@ pub(crate) struct RendererOffice {
     pets: Vec<Pet>,
 }
 
-impl CutawaySession for RendererOffice {
+impl PixelSession for RendererOffice {
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
         // Nothing here plays its audio or reports its pacing.
         let _ = self
@@ -72,11 +75,20 @@ impl CutawaySession for RendererOffice {
     }
 }
 
-impl CutawayOffice<FloorSession> {
-    /// The cutaway [`crate::encode::draw_frame`] draws on a `cols`×`rows`
+impl PixelOffice<FloorSession> {
+    /// [`crate::encode::draw_frame`]'s office in `look` on a `cols`×`rows`
     /// terminal.
-    pub(crate) fn of_draw_frame(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
-        Self::fitted(FloorSession::new(Arc::clone(pack)), pack, cols, rows)
+    pub(crate) fn of_draw_frame(
+        pack: &Arc<OfficeArt>,
+        (cols, rows): (u16, u16),
+        look: LookKind,
+    ) -> Result<Self> {
+        Self::fitted(
+            FloorSession::new(Arc::clone(pack)),
+            pack,
+            (cols, rows),
+            look,
+        )
     }
 
     /// Its floor's stores, to seed as the classic floor is seeded.
@@ -92,19 +104,20 @@ impl CutawayOffice<FloorSession> {
     }
 }
 
-impl CutawayOffice<RendererOffice> {
-    /// The cutaway of a `TuiRenderer` with `pets` on a `cols`×`rows` terminal.
+impl PixelOffice<RendererOffice> {
+    /// A `TuiRenderer`'s office with `pets` in `look` on a `cols`×`rows`
+    /// terminal.
     pub(crate) fn of_renderer(
         pack: &Arc<OfficeArt>,
-        cols: u16,
-        rows: u16,
+        (cols, rows): (u16, u16),
         pets: Vec<Pet>,
+        look: LookKind,
     ) -> Result<Self> {
         let office = RendererOffice {
             session: OfficeSession::new(Arc::clone(pack)),
             pets,
         };
-        Self::fitted(office, pack, cols, rows)
+        Self::fitted(office, pack, (cols, rows), look)
     }
 
     /// Slide to floor `target` at `now`, as the renderer beside it does.
@@ -113,15 +126,22 @@ impl CutawayOffice<RendererOffice> {
     }
 }
 
-impl<S: CutawaySession> CutawayOffice<S> {
-    /// `session`, drawn as the cutaway the TUI fits to a `cols`×`rows` terminal.
-    fn fitted(session: S, pack: &OfficeArt, cols: u16, rows: u16) -> Result<Self> {
+impl<S: PixelSession> PixelOffice<S> {
+    /// `session` in `look`, at the fit the TUI's cutaway takes on a
+    /// `cols`×`rows` terminal.
+    fn fitted(
+        session: S,
+        pack: &OfficeArt,
+        (cols, rows): (u16, u16),
+        look: LookKind,
+    ) -> Result<Self> {
         let cell = terminal_cell();
         let fit = pixtuoid::dev::cutaway_office(cols, rows, (cell.w, cell.h), pack)
             .with_context(|| format!("a {}x{} px cell fits no cutaway", cell.w, cell.h))?;
         Ok(Self {
             session,
             fit,
+            look,
             under: None,
         })
     }
@@ -136,7 +156,7 @@ impl<S: CutawaySession> CutawayOffice<S> {
         under: Option<ImageCells>,
     ) -> Result<()> {
         self.session.draw(
-            self.fit.look(WorldText::Baked),
+            self.fit.look(self.look, WorldText::Baked),
             RenderInputs {
                 world,
                 theme,
@@ -153,7 +173,7 @@ impl<S: CutawaySession> CutawayOffice<S> {
         self.session
             .pixels()
             .map(drop)
-            .context("the cutaway does not lay out")
+            .context("the pixel office does not lay out")
     }
 
     /// The last frame over `img`'s scene cells, which start at its top-left,
@@ -257,7 +277,7 @@ mod tests {
     fn stills(
         scene: &SceneState,
         frames: &RenderFrames,
-    ) -> (RgbaImage, RgbaImage, CutawayOffice<FloorSession>) {
+    ) -> (RgbaImage, RgbaImage, PixelOffice<FloorSession>) {
         let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let mut floor = PerFloor::new(Arc::clone(&pack));
         let mut office = PerOffice::new();
@@ -276,7 +296,8 @@ mod tests {
         draw_frame(&mut term, &mut ctx, None).unwrap();
         let cells = term.backend().buffer();
         let classic = cells_to_rgba(cells, cells.area);
-        let mut cutaway = CutawayOffice::of_draw_frame(&pack, COLS, ROWS).unwrap();
+        let mut cutaway =
+            PixelOffice::of_draw_frame(&pack, (COLS, ROWS), LookKind::Cutaway).unwrap();
         let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
         draw_frame(&mut term, &mut ctx, Some(&mut cutaway)).unwrap();
         let cells = term.backend().buffer();
@@ -294,10 +315,10 @@ mod tests {
     }
 
     /// The last frame `save_renderer_animation` writes of `scene` with `pets`
-    /// and `navigations`, the cutaway over it when `cutaway`.
+    /// and `navigations`, the pixel office in `pixel` over it.
     fn renderer_frame(
         scene: &SceneState,
-        cutaway: bool,
+        pixel: Option<LookKind>,
         pets: &[Pet],
         navigations: &[(u64, usize)],
     ) -> RgbaImage {
@@ -319,7 +340,7 @@ mod tests {
             weather: Default::default(),
         };
         let term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
-        save_renderer_animation(&job, term, navigations, pets.to_vec(), cutaway).unwrap();
+        save_renderer_animation(&job, term, navigations, pets.to_vec(), pixel).unwrap();
         let last = FrameSink::frame_path(frames.path(), timeline.frame_count());
         image::open(last).unwrap().to_rgba8()
     }
@@ -332,14 +353,16 @@ mod tests {
         let scene = sample_scene(epoch(), 4, 6);
         let cat = [Pet::defaulted(PetKind::Cat)];
         let up = [(0, 1)];
-        let frame = renderer_frame(&scene, true, &cat, &up);
-        assert_cutaway_over(&frame, &renderer_frame(&scene, false, &cat, &up));
+        let frame = renderer_frame(&scene, Some(LookKind::Cutaway), &cat, &up);
+        assert_cutaway_over(&frame, &renderer_frame(&scene, None, &cat, &up));
         assert!(
-            office_band(&frame) != office_band(&renderer_frame(&scene, true, &[], &up)),
+            office_band(&frame)
+                != office_band(&renderer_frame(&scene, Some(LookKind::Cutaway), &[], &up)),
             "the cutaway drew no pet"
         );
         assert!(
-            office_band(&frame) != office_band(&renderer_frame(&scene, true, &cat, &[])),
+            office_band(&frame)
+                != office_band(&renderer_frame(&scene, Some(LookKind::Cutaway), &cat, &[])),
             "the cutaway stayed on its floor"
         );
     }
@@ -357,15 +380,16 @@ mod tests {
             pets: Default::default(),
         };
         let blank = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, COLS, ROWS));
-        let mut lit = CutawayOffice::of_draw_frame(&pack, COLS, ROWS).unwrap();
-        let mut settled = CutawayOffice::of_draw_frame(&pack, COLS, ROWS).unwrap();
+        let mut lit = PixelOffice::of_draw_frame(&pack, (COLS, ROWS), LookKind::Cutaway).unwrap();
+        let mut settled =
+            PixelOffice::of_draw_frame(&pack, (COLS, ROWS), LookKind::Cutaway).unwrap();
         let mut classic = PerFloor::new(Arc::clone(&pack));
         crate::settle_empty(&mut classic, Some(&mut settled));
         let level = |floor: &PerFloor| floor.ctx.vacancy_dim.level();
         assert!(level(&classic) < 1.0, "the classic floor stayed lit");
         assert_eq!(level(settled.session.floor()), level(&classic));
 
-        let brightness = |cutaway: &mut CutawayOffice<FloorSession>| -> u64 {
+        let brightness = |cutaway: &mut PixelOffice<FloorSession>| -> u64 {
             cutaway.render(world, &NORMAL, None).unwrap();
             let frame = compose(&blank, blank.area, Some(&*cutaway));
             office_band(&frame)
@@ -379,12 +403,55 @@ mod tests {
         );
     }
 
+    /// `--pixel classic` draws the engine's baked classic at the fit's density.
+    #[test]
+    fn the_pixel_classic_is_the_baked_classic_at_the_fits_density() {
+        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let scene = sample_scene(epoch(), 12, 6);
+        let world = FloorInputs {
+            scene: &scene,
+            now: epoch(),
+            floor: FloorMeta::ground(),
+            pets: Default::default(),
+        };
+        let drawn = |look| {
+            let mut office = PixelOffice::of_draw_frame(&pack, (COLS, ROWS), look).unwrap();
+            office.render(world, &NORMAL, None).unwrap();
+            office
+        };
+        let (classic, cutaway) = (drawn(LookKind::Classic), drawn(LookKind::Cutaway));
+        let mut engine = FloorSession::new(Arc::clone(&pack));
+        engine.draw(
+            Look::Classic {
+                scale: pixtuoid_scene::render_scale::RenderScale::from(classic.fit.density()),
+                text: WorldText::Baked,
+            },
+            RenderInputs {
+                world,
+                theme: &NORMAL,
+                size: classic.fit.logical(),
+                place: Place {
+                    gateway: pixtuoid_scene::tally::office_gateway(&scene),
+                    floor: None,
+                },
+                debug_walkable: false,
+                dim: Dim::NONE,
+            },
+        );
+        let pixels = |office: &PixelOffice<FloorSession>| {
+            office.session.pixels().unwrap().as_slice().to_vec()
+        };
+        assert!(pixels(&classic) == engine.pixels().unwrap().as_slice());
+        assert!(pixels(&classic) != pixels(&cutaway));
+    }
+
     /// `frame_px` puts a point of the layout where `paint` puts its pixel.
     #[test]
     fn frame_px_lands_where_paint_puts_the_point() {
         let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let scene = sample_scene(epoch(), 12, 6);
-        let mut cutaway = CutawayOffice::of_draw_frame(&pack, COLS, ROWS).unwrap();
+        let mut cutaway =
+            PixelOffice::of_draw_frame(&pack, (COLS, ROWS), LookKind::Cutaway).unwrap();
         let world = FloorInputs {
             scene: &scene,
             now: epoch(),
@@ -411,7 +478,7 @@ mod tests {
         }
     }
 
-    /// `--cutaway --dashboard`: the panel's cells are the classic frame's, as
+    /// `--pixel cutaway --dashboard`: the panel's cells are the classic frame's, as
     /// the TUI draws a panel over its image, and the cutaway shows around them.
     #[test]
     fn a_panel_keeps_its_cells_over_the_cutaway() {
@@ -454,7 +521,7 @@ mod tests {
         }
     }
 
-    /// `--cutaway --onboarding`: the backdrop dims the cutaway around the
+    /// `--pixel cutaway --onboarding`: the backdrop dims the cutaway around the
     /// welcome card, as the TUI dims its own.
     #[test]
     fn the_onboarding_dims_the_cutaway_around_its_card() {

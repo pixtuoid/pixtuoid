@@ -847,10 +847,13 @@ pub fn pixtuoid_scene::layout::min_layout_size() -> pixtuoid_scene::layout::Size
 pub mod pixtuoid_scene::look
 pub enum pixtuoid_scene::look::Look
 pub pixtuoid_scene::look::Look::Classic
+pub pixtuoid_scene::look::Look::Classic::scale: pixtuoid_scene::render_scale::RenderScale
+pub pixtuoid_scene::look::Look::Classic::text: pixtuoid_scene::look::WorldText
 pub pixtuoid_scene::look::Look::Cutaway
 pub pixtuoid_scene::look::Look::Cutaway::scale: pixtuoid_scene::render_scale::RenderScale
 pub pixtuoid_scene::look::Look::Cutaway::text: pixtuoid_scene::look::WorldText
 impl pixtuoid_scene::look::Look
+pub const pixtuoid_scene::look::Look::HALF_BLOCKS: Self
 pub const fn pixtuoid_scene::look::Look::kind(self) -> pixtuoid_scene::look::LookKind
 impl core::clone::Clone for pixtuoid_scene::look::Look
 pub fn pixtuoid_scene::look::Look::clone(&self) -> Self

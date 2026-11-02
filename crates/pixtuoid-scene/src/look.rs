@@ -25,8 +25,14 @@ use crate::theme::Theme;
 /// How a floor is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Look {
-    /// The half-block office: one buffer pixel per layout unit.
-    Classic,
+    /// The office in its pack's base art, `scale` buffer pixels per layout
+    /// unit.
+    Classic {
+        /// Buffer pixels per layout unit.
+        scale: RenderScale,
+        /// Who sets its world text.
+        text: WorldText,
+    },
     /// The cutaway, `scale` buffer pixels per layout unit.
     Cutaway {
         /// Buffer pixels per layout unit.
@@ -37,23 +43,48 @@ pub enum Look {
 }
 
 impl Look {
+    /// The terminal's classic: a buffer pixel a layout unit, two to a cell,
+    /// its world text set by its host.
+    pub const HALF_BLOCKS: Self = Self::Classic {
+        scale: RenderScale::ONE,
+        text: WorldText::Host,
+    };
+
+    /// It as a slide draws it, which no host sets text on: its world text
+    /// baked, but the half-blocks', whose slide shows none.
+    pub(crate) fn baked(self) -> Self {
+        match self {
+            Self::Classic { scale, .. } if self != Self::HALF_BLOCKS => Self::Classic {
+                scale,
+                text: WorldText::Baked,
+            },
+            Self::Cutaway { scale, .. } => Self::Cutaway {
+                scale,
+                text: WorldText::Baked,
+            },
+            unchanged @ Self::Classic { .. } => unchanged,
+        }
+    }
+
     /// Its [`LookKind`]: this look apart from any scale and text.
     pub const fn kind(self) -> LookKind {
         match self {
-            Self::Classic => LookKind::Classic,
+            Self::Classic { .. } => LookKind::Classic,
             Self::Cutaway { .. } => LookKind::Cutaway,
         }
     }
 }
 
 /// A look as a person picks it, apart from the scale and text a painter draws
-/// it at: what a command line and a config name it by.
+/// it at: what a command line, a config and [`PixelFit::look`] name it by.
+///
+/// [`PixelFit::look`]: crate::render_scale::PixelFit::look
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum LookKind {
     /// [`Look::Cutaway`], at any scale and text.
     Cutaway,
-    /// [`Look::Classic`].
+    /// [`Look::Classic`], at any scale and text.
     Classic,
 }
 
@@ -67,8 +98,8 @@ impl LookKind {
     }
 }
 
-/// Who sets a cutaway's world text: the badges, bubbles, wall board and floor
-/// indicator. The classic's is always the host's.
+/// Who sets a look's world text: the badges, bubbles, wall board and floor
+/// indicator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorldText {
     /// The image, in the scene's pixel font.
@@ -199,7 +230,7 @@ pub mod spans {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameNote {
     /// Why the cutaway painted it whole, when it did; `None` for the classic,
-    /// which paints every frame whole.
+    /// whose whole repaints carry no reason.
     pub repaint: Option<crate::cutaway::canvas::Repaint>,
     /// The weather it shows: the slot's, the next slot's, and the next one's
     /// share of the clouds.
@@ -277,6 +308,9 @@ struct Classic {
     signs: Vec<crate::display::TextRun>,
     /// The dim the last frame was drawn under.
     dim: Dim,
+    /// The classic blown up, for every classic look but the half-blocks;
+    /// `None` until one draws.
+    scaled: Option<classic::Scaled>,
 }
 
 impl Classic {
@@ -438,6 +472,7 @@ impl Raster {
             hovers: Arc::default(),
             signs: Vec::new(),
             dim: Dim::NONE,
+            scaled: None,
         })
     }
 
@@ -462,10 +497,14 @@ impl Raster {
     }
 
     /// The world text the last frame left to its host, in either look;
-    /// `None` before the first and for a cutaway that baked its own.
+    /// `None` before the first and for a look that baked its own.
     pub(crate) fn host_text(&self) -> Option<crate::display::HostText<'_>> {
         match self.shown? {
-            Look::Classic => self.classic.as_ref().map(Classic::host_text),
+            Look::Classic {
+                text: WorldText::Host,
+                ..
+            } => self.classic.as_ref().map(Classic::host_text),
+            Look::Classic { .. } => None,
             Look::Cutaway { .. } => self.cutaway.as_ref()?.host_text(),
         }
     }
@@ -474,7 +513,7 @@ impl Raster {
     /// `None` before the first.
     pub(crate) fn hovers(&self) -> Option<&Arc<Hovers>> {
         match self.shown? {
-            Look::Classic => self.classic.as_ref().map(|c| &c.hovers),
+            Look::Classic { .. } => self.classic.as_ref().map(|c| &c.hovers),
             Look::Cutaway { .. } => self.cutaway.as_ref()?.hovers(),
         }
     }
@@ -484,7 +523,11 @@ impl Raster {
     /// sets it ([`Self::host_text`]), which then places it.
     pub(crate) fn star(&self) -> Option<crate::layout::Bounds> {
         match self.shown? {
-            Look::Classic => None,
+            Look::Classic {
+                text: WorldText::Baked,
+                ..
+            } => self.classic.as_ref()?.scaled.as_ref()?.star,
+            Look::Classic { .. } => None,
             Look::Cutaway { .. } => self.cutaway.as_ref()?.star(),
         }
     }
@@ -521,7 +564,14 @@ impl Raster {
     /// The pixels of the last frame drawn, `None` before the first.
     pub fn pixels(&self) -> Option<&RgbBuffer> {
         match self.shown? {
-            Look::Classic => self.classic.as_ref().map(|c| &c.buf),
+            look @ Look::Classic { .. } => {
+                let classic = self.classic.as_ref()?;
+                if look == Look::HALF_BLOCKS {
+                    Some(&classic.buf)
+                } else {
+                    classic.scaled.as_ref().map(|scaled| &scaled.buf)
+                }
+            }
             Look::Cutaway { .. } => self.cutaway.as_ref().map(CutawayCanvas::buf),
         }
     }
@@ -549,21 +599,36 @@ pub fn render(
     let PerFloor { ctx, raster } = floor;
     let pack = Arc::clone(&raster.pack);
     let Some(stepped) = stepped else {
-        if look == Look::Classic {
+        if let Look::Classic { scale, text } = look {
             let classic = raster.classic();
             classic
                 .buf
                 .resize_fill(size.w, size.h, theme.surface.bg_fallback);
             classic.drew(Drawn::default());
             classic.signs.clear();
+            if look != Look::HALF_BLOCKS {
+                let Classic { buf, scaled, .. } = classic;
+                let empty = crate::display::HostText {
+                    badges: &[],
+                    bubbles: &[],
+                    signs: &[],
+                    dim: Dim::NONE,
+                };
+                scaled.get_or_insert_with(classic::Scaled::new).frame(
+                    buf,
+                    empty,
+                    (scale, text),
+                    &pack,
+                    true,
+                );
+            }
             raster.shown = Some(look);
         }
         return None;
     };
-    let switched = raster
-        .shown
-        .replace(look)
-        .is_none_or(|was| std::mem::discriminant(&was) != std::mem::discriminant(&look));
+    let was = raster.shown.replace(look);
+    let switched =
+        was.is_none_or(|was| std::mem::discriminant(&was) != std::mem::discriminant(&look));
     let _rasterize = tracing::trace_span!(spans::RASTERIZE).entered();
     let board = crate::neon_sign::wall_board(
         world.scene,
@@ -583,7 +648,7 @@ pub fn render(
         strike: sky.strike().is_some(),
     });
     let (dirty, flash) = match look {
-        Look::Classic => {
+        Look::Classic { scale, text } => {
             let classic = raster.classic();
             classic
                 .buf
@@ -600,11 +665,37 @@ pub fn render(
             let flash = paint.flash(&stepped.frame);
             let drawn = paint_frame(&mut paint, &stepped.frame);
             classic.drew(drawn);
-            dim.apply(&mut classic.buf);
             classic.dim = dim;
             classic.signs =
                 crate::display::TextRun::signs(&board, stepped.layout.door, world.floor, theme);
-            (Dirty::All, flash)
+            if look == Look::HALF_BLOCKS {
+                dim.apply(&mut classic.buf);
+                (Dirty::All, flash)
+            } else {
+                let Classic {
+                    buf,
+                    badges,
+                    bubbles,
+                    signs,
+                    dim,
+                    scaled,
+                    ..
+                } = classic;
+                let host_text = crate::display::HostText {
+                    badges,
+                    bubbles,
+                    signs,
+                    dim: *dim,
+                };
+                let dirty = scaled.get_or_insert_with(classic::Scaled::new).frame(
+                    buf,
+                    host_text,
+                    (scale, text),
+                    &pack,
+                    was != Some(look),
+                );
+                (dirty, flash)
+            }
         }
         Look::Cutaway { scale, text } => {
             let canvas = raster
@@ -644,5 +735,6 @@ pub fn render(
     })
 }
 
+mod classic;
 #[cfg(test)]
 mod tests;

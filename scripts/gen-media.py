@@ -54,7 +54,7 @@ NOT_GENERATED = {"screenshot-real.png"}
 # The snapshot's `--frames-dir` naming (its `FrameSink::Pngs`).
 FRAME_PATTERN = "f%04d.png"
 # A job's `look` (the TUI's `--look` names), as the snapshot's flags.
-LOOK_ARGS = {"classic": [], "cutaway": ["--cutaway"]}
+LOOK_ARGS = {"classic": [], "cutaway": ["--pixel", "cutaway"]}
 # The look a job renders in unless it names one: the site's own live office.
 DEFAULT_LOOK = "cutaway"
 

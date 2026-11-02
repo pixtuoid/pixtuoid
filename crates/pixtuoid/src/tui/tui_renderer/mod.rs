@@ -238,7 +238,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             return;
         }
         let (buf_w, buf_h) = crate::tui::renderer::scene_buf_size(size.width, size.height);
-        let classic = (Look::Classic, Size { w: buf_w, h: buf_h });
+        let classic = (Look::HALF_BLOCKS, Size { w: buf_w, h: buf_h });
         let look = self.cutaway_look(scene_area).unwrap_or(classic);
         self.session.office_mut().raster.warm();
         let _ = self.render_office(scene, now, look.0, look.1, false);
@@ -787,7 +787,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let drawn = self.render_office(
             scene,
             now,
-            Look::Classic,
+            Look::HALF_BLOCKS,
             Size { w: buf_w, h: buf_h },
             self.debug_walkable,
         );

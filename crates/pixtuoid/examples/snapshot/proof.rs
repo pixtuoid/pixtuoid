@@ -18,10 +18,10 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
 
-use crate::cutaway::CutawayOffice;
 use crate::encode::{
     FrameSink, ImageCanvas, Timeline, compose, draw_frame, fill_rect, terminal_cell,
 };
+use crate::pixel::PixelOffice;
 use crate::{CELL_H, CELL_W};
 use pixtuoid_scene::cutaway::{GridInk, paint_grid};
 use pixtuoid_scene::display::cells::CellGrid;
@@ -567,7 +567,7 @@ pub(crate) struct ProofJob<'a> {
     pub(crate) theme: &'static pixtuoid_scene::theme::Theme,
     pub(crate) pack: &'a std::sync::Arc<pixtuoid_scene::pack::OfficeArt>,
     pub(crate) weather: pixtuoid_scene::sky::WeatherPolicy,
-    pub(crate) cutaway: bool,
+    pub(crate) pixel: Option<pixtuoid_scene::look::LookKind>,
 }
 
 pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
@@ -577,9 +577,9 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
     let backend = TestBackend::new(job.cols, job.rows);
     let mut term = Terminal::new(backend)?;
     let mut floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone(job.pack));
-    let mut cutaway = job
-        .cutaway
-        .then(|| CutawayOffice::of_draw_frame(job.pack, job.cols, job.rows))
+    let mut pixel = job
+        .pixel
+        .map(|look| PixelOffice::of_draw_frame(job.pack, (job.cols, job.rows), look))
         .transpose()?;
     let mut scene = SceneState::uniform(job.max_desks);
     let mut reducer = Reducer::new();
@@ -610,13 +610,13 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
             now,
             pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
         );
-        let hits = draw_frame(&mut term, &mut draw_ctx, cutaway.as_mut())?;
+        let hits = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
         // The burned callout's anchor: home_desks[0] of the layout the office
         // side was drawn on.
-        let desk_px = match &cutaway {
-            Some(cutaway) => {
-                let desk = cutaway.layout().and_then(|l| l.home_desks.first());
-                desk.map(|desk| cutaway.frame_px(desk.at))
+        let desk_px = match &pixel {
+            Some(pixel) => {
+                let desk = pixel.layout().and_then(|l| l.home_desks.first());
+                desk.map(|desk| pixel.frame_px(desk.at))
             }
             None => {
                 let desk = hits.as_ref().and_then(|h| h.layout().home_desks.first());
@@ -628,7 +628,7 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
         }
         .context("the office drew no home desk")?;
         let cells = term.backend().buffer();
-        let office = compose(cells, cells.area, cutaway.as_ref());
+        let office = compose(cells, cells.area, pixel.as_ref());
         for (kind, sink) in [
             (ProofLayout::Wide, &mut wide),
             (ProofLayout::Tall, &mut tall),
@@ -777,8 +777,13 @@ mod tests {
     }
 
     /// The last wide frame of a short `--proof` of the committed session at
-    /// `cols`×`rows`, its office the cutaway's when `cutaway`.
-    fn last_wide_frame(cols: u16, rows: u16, cutaway: bool) -> RgbaImage {
+    /// `cols`×`rows`, its office the pixel office in `pixel`'s look where
+    /// there is one.
+    fn last_wide_frame(
+        cols: u16,
+        rows: u16,
+        pixel: Option<pixtuoid_scene::look::LookKind>,
+    ) -> RgbaImage {
         let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let frames = tempfile::tempdir().unwrap();
         // Its last frame is inside the first callout's window.
@@ -797,22 +802,22 @@ mod tests {
             theme: &pixtuoid_scene::theme::NORMAL,
             pack: &pack,
             weather: Default::default(),
-            cutaway,
+            pixel,
         })
         .unwrap();
         let last = FrameSink::frame_path(&frames.path().join("wide"), timeline.frame_count());
         image::open(last).unwrap().to_rgba8()
     }
 
-    /// `--proof --cutaway`: the office side is the cutaway's, its callout on
+    /// `--proof --pixel cutaway`: the office side is the cutaway's, its callout on
     /// the cutaway's desk 0, and the typed panel beside it is the classic
     /// proof's, pixel for pixel.
     #[test]
     fn the_proof_draws_its_office_side_in_the_cutaway() {
         let (cols, rows) = (120, 52);
         let (classic, cutaway) = (
-            last_wide_frame(cols, rows, false),
-            last_wide_frame(cols, rows, true),
+            last_wide_frame(cols, rows, None),
+            last_wide_frame(cols, rows, Some(pixtuoid_scene::look::LookKind::Cutaway)),
         );
         let region = |img: &RgbaImage, xs: std::ops::Range<u32>, ys: std::ops::Range<u32>| {
             ys.flat_map(|y| xs.clone().map(move |x| *img.get_pixel(x, y)))
@@ -842,7 +847,12 @@ mod tests {
         );
 
         let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
-        let mut office = crate::cutaway::CutawayOffice::of_draw_frame(&pack, cols, rows).unwrap();
+        let mut office = crate::pixel::PixelOffice::of_draw_frame(
+            &pack,
+            (cols, rows),
+            pixtuoid_scene::look::LookKind::Cutaway,
+        )
+        .unwrap();
         let scene = SceneState::uniform(12);
         let world = pixtuoid_scene::floor::FloorInputs {
             scene: &scene,

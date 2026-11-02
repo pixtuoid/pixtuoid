@@ -245,7 +245,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
     let rendered = pixtuoid_scene::look::render(
         ctx.floor,
         ctx.office.reborrow(),
-        Look::Classic,
+        Look::HALF_BLOCKS,
         RenderInputs {
             world,
             theme,

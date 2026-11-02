@@ -323,7 +323,7 @@ pub(crate) mod test_flash {
     fn rendered_flash(session: &mut FloorSession, floor: FloorMeta, at: SystemTime) -> Flashes {
         let scene = SceneState::new([8; MAX_FLOORS]);
         session.render(
-            Look::Classic,
+            Look::HALF_BLOCKS,
             RenderInputs {
                 world: FloorInputs {
                     scene: &scene,

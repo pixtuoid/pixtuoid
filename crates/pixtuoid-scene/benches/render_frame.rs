@@ -162,7 +162,7 @@ fn floor_frames<'a>(
         pixtuoid_scene::look::render(
             &mut floor,
             office.stores(),
-            Look::Classic,
+            Look::HALF_BLOCKS,
             RenderInputs {
                 world: FloorInputs {
                     scene,

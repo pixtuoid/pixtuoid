@@ -54,7 +54,10 @@ impl Fitted {
     /// The look the office renders in: the cutaway, its world text left to
     /// the terminal, which sets it in its own font.
     pub(crate) fn look(self) -> pixtuoid_scene::look::Look {
-        self.fit.look(pixtuoid_scene::look::WorldText::Host)
+        self.fit.look(
+            pixtuoid_scene::look::LookKind::Cutaway,
+            pixtuoid_scene::look::WorldText::Host,
+        )
     }
 
     /// The image's cells, its top-left on the scene's.

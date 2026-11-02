@@ -474,13 +474,7 @@ impl OfficeSession {
         if let Some(tr) = self.nav.transition() {
             self.shown = None;
             // A slide has no one layout for a host to set text on.
-            let look = match look {
-                crate::look::Look::Cutaway { scale, .. } => crate::look::Look::Cutaway {
-                    scale,
-                    text: crate::look::WorldText::Baked,
-                },
-                classic @ crate::look::Look::Classic => classic,
-            };
+            let look = look.baked();
             let (from, to, t) = (tr.from_floor, tr.to_floor, tr.t(now));
             draw(&mut self.views, &mut self.office, from, look);
             draw(&mut self.views, &mut self.office, to, look);
