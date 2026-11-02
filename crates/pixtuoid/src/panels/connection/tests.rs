@@ -329,42 +329,6 @@ fn every_no_target_row_has_an_explicit_display_name_not_the_raw_id() {
 }
 
 #[test]
-fn format_connect_result_renders_connected_plus_path_note() {
-    use crate::install::{InstallOutcome, InstallReport};
-    let base = |outcome, path_warning| InstallReport {
-        outcome,
-        path_warning,
-        post_install_hint: None,
-    };
-    // Both outcomes read as "connected" (the flag flip is the real action).
-    let plain = format_connect_result(&base(InstallOutcome::Installed, false), "Claude Code");
-    assert_eq!(plain, "\u{2713} Claude Code connected");
-    assert_eq!(
-        format_connect_result(&base(InstallOutcome::AlreadyUpToDate, false), "Claude Code"),
-        "\u{2713} Claude Code connected"
-    );
-    let noted = format_connect_result(&base(InstallOutcome::Installed, true), "Claude Code");
-    assert!(noted.contains("connected"), "{noted}");
-    assert!(noted.contains("PATH"), "{noted}");
-
-    let hinted = format_connect_result(
-        &InstallReport {
-            outcome: InstallOutcome::Installed,
-            path_warning: false,
-            post_install_hint: Some("restart the gateway to load it"),
-        },
-        "OpenClaw",
-    );
-    assert!(hinted.contains("connected"), "{hinted}");
-    assert!(
-        hinted.contains("restart the gateway"),
-        "a post-install step must ride the connect line: {hinted}"
-    );
-    // …and a target with no such step is byte-unchanged.
-    assert_eq!(plain, "\u{2713} Claude Code connected");
-}
-
-#[test]
 fn only_restart_bound_targets_declare_a_post_install_step_naming_it() {
     // A hint exists only where the write does not take effect on the CLI's next
     // run; each target's own row says why.
@@ -389,34 +353,6 @@ fn only_restart_bound_targets_declare_a_post_install_step_naming_it() {
         ],
         "only codex, openclaw, omp and dsh need a post-install step today"
     );
-}
-
-#[test]
-fn format_disconnect_result_renders_disconnected_plus_registration_note() {
-    use crate::install::{UninstallOutcome, UninstallReport};
-    let removed = UninstallReport {
-        outcome: UninstallOutcome::Removed,
-        plugin_left_registered: None,
-    };
-    let s = format_disconnect_result(&removed, "Claude Code");
-    assert_eq!(s, "\u{2713} Claude Code disconnected");
-
-    let stranded = UninstallReport {
-        plugin_left_registered: crate::install::target::CODEX.host.map(|h| h.cli),
-        ..removed
-    };
-    let s = format_disconnect_result(&stranded, "Codex");
-    assert!(
-        s.contains("plugin left registered (codex not on PATH)"),
-        "the CLI it could not reach, by name: {s}"
-    );
-
-    let nothing = UninstallReport {
-        outcome: UninstallOutcome::NothingToRemove,
-        plugin_left_registered: None,
-    };
-    let s2 = format_disconnect_result(&nothing, "Codex");
-    assert_eq!(s2, "\u{2713} Codex disconnected");
 }
 
 #[test]

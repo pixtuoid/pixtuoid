@@ -13,8 +13,6 @@ use std::time::{Duration, SystemTime};
 use pixtuoid_core::source::manager::SourceDeath;
 use pixtuoid_core::state::SceneState;
 
-use crate::install::{InstallOutcome, InstallReport, UninstallOutcome, UninstallReport};
-
 // Re-exported so this module, the painter and the harness keep their
 // `connection::…` paths; the model itself lives in `crate::sources`.
 pub(crate) use crate::sources::{ConnState, ConnectionRow, build_rows};
@@ -163,41 +161,9 @@ pub(crate) fn move_selection(rows: &[ConnectionRow], sel: usize, delta: i32) -> 
 
 pub(crate) fn no_action_hint(row: &ConnectionRow) -> String {
     match row.state {
-        ConnState::NoCli { .. } => format!("{} not detected on this machine", row.display_name),
-        _ => format!("nothing to do for {}", row.display_name),
+        ConnState::NoCli { .. } => pixtuoid_core::remote::not_detected(row.display_name),
+        _ => pixtuoid_core::remote::nothing_to_do(row.display_name),
     }
-}
-
-pub(crate) fn format_connect_result(r: &InstallReport, display_name: &str) -> String {
-    let mut s = match r.outcome {
-        InstallOutcome::AlreadyUpToDate | InstallOutcome::Installed => {
-            format!("\u{2713} {display_name} connected")
-        }
-    };
-    if r.path_warning {
-        s.push_str(" \u{00b7} \u{26a0} pixtuoid-hook not on PATH");
-    }
-    // Connecting is not always the last step: OpenClaw's `plugins.load` is
-    // `kind: "restart"` upstream, so a RUNNING gateway keeps serving without our
-    // plugin until it restarts.
-    if let Some(hint) = r.post_install_hint {
-        s.push_str(" \u{00b7} ");
-        s.push_str(hint);
-    }
-    s
-}
-
-pub(crate) fn format_disconnect_result(r: &UninstallReport, display_name: &str) -> String {
-    let mut s = match r.outcome {
-        UninstallOutcome::NothingToRemove | UninstallOutcome::Removed => {
-            format!("\u{2713} {display_name} disconnected")
-        }
-    };
-    if let Some(cli) = r.plugin_left_registered {
-        s.push_str(" \u{00b7} \u{26a0} ");
-        s.push_str(&crate::sources::plugin_left_registered(cli));
-    }
-    s
 }
 
 /// WHICH operation a panel failure line reports.
