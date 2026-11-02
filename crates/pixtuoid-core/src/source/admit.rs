@@ -53,6 +53,7 @@ pub(crate) fn classify(
 }
 
 /// Whether a file at `path` is a transcript of the source whose filter is `admits`.
+#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn is_transcript(path: &Path, admits: &dyn Fn(&Path) -> bool) -> bool {
     path.extension().and_then(|s| s.to_str()) == Some("jsonl") && admits(path)
 }
