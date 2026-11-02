@@ -806,13 +806,7 @@ fn judge(
     if p.descriptor().caps().brackets_turns {
         bracketed(p, scenario, &events, &reached, findings);
     }
-    let shown = match scenario.shape {
-        // An item, not a bare open turn: the live pipeline delivered its start.
-        Shape::ToolRun | Shape::Subagent | Shape::ChildError => "running(",
-        Shape::Permission => "requires_action",
-        Shape::ModelError | Shape::Succession | Shape::Cancel => "idle",
-    };
-    judge_scene(p, scene, shown, findings);
+    judge_scene(p, scene, scenario.shape.shown(), findings);
     new_types(
         p,
         dir,
@@ -1347,7 +1341,7 @@ fn judge_presence(p: &Profile, scene: &str, settled: &str, findings: &mut Vec<(L
 }
 
 /// Each line's `key=[…]` roster, in the scene's order.
-fn rosters<'a>(scene: &'a str, key: &str) -> Vec<&'a str> {
+pub(super) fn rosters<'a>(scene: &'a str, key: &str) -> Vec<&'a str> {
     let key = format!("{key}=[");
     scene
         .lines()
@@ -1356,7 +1350,7 @@ fn rosters<'a>(scene: &'a str, key: &str) -> Vec<&'a str> {
 }
 
 /// Whether `roster` holds an entry of `who`'s in `state`.
-fn holds(roster: &str, who: &str, state: &str) -> bool {
+pub(super) fn holds(roster: &str, who: &str, state: &str) -> bool {
     let state = format!(":{state}");
     roster
         .split(", ")

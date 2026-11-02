@@ -1,10 +1,11 @@
 //! Drive a CLI's interactive TUI under a pty for one hermetic scenario: the
 //! command `just hermetic` hands the recorder in place of the CLI's headless
 //! invocation. What to send comes from `harness::hermetic::tui::Driver`, reading
-//! the profile's `Tui` row; this shell only moves bytes and renders the screen.
+//! the profile's `Tui` row; this shell only moves bytes, renders the screen and
+//! reads the scene's log.
 //!
 //! ```text
-//! tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]
+//! tui_drive <source> <scenario> <log> <scene> <prompt> -- <program> [args...]
 //! ```
 //!
 //! Exits with the CLI's status; when the driver gave up or the [`BUDGET`] ran
@@ -48,7 +49,8 @@ const CURSOR_QUERY: &[u8] = b"\x1b[6n";
 const TERM: &str = "xterm-256color";
 
 const USAGE_ERROR: i32 = 2;
-const USAGE: &str = "usage: tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]";
+const USAGE: &str =
+    "usage: tui_drive <source> <scenario> <log> <scene> <prompt> -- <program> [args...]";
 
 fn main() {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -158,6 +160,9 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
                     format!("\x1b[{};{}R", row + 1, col + 1).as_bytes(),
                 )?;
             }
+        }
+        if let Ok(scene) = std::fs::read_to_string(&line.scene) {
+            driver.scene(&scene);
         }
         let shown = shown(screen.screen());
         let action = driver.step(&shown, Instant::now());
@@ -270,6 +275,7 @@ mod tests {
             source: "claude-code".into(),
             scenario: "permission".into(),
             log: dir.path().join("tui.log"),
+            scene: dir.path().join("scene.log"),
             prompt: "hi".into(),
             program: vec!["sh".into(), "-c".into(), "sleep 600".into()],
         };
