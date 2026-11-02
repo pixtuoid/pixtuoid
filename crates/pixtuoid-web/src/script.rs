@@ -109,7 +109,7 @@ fn spell(beats: &mut Vec<Beat>, i: usize, at_ms: u64, n: u64, tools: &[&str]) {
 /// A token-usage reading: the desk paper tower's wire. HONESTY RULE — only
 /// cast members whose REAL CLI carries a per-turn usage wire (cc, cx) get
 /// these; the hero must never show a tower the product can't produce for that
-/// CLI. Jsonl transport, matching production (usage is JSONL-only).
+/// CLI. Jsonl transport, matching production for these two.
 fn usage(i: usize, at_ms: u64, fresh_tokens: u64) -> Beat {
     Beat {
         at_ms,
@@ -118,6 +118,19 @@ fn usage(i: usize, at_ms: u64, fresh_tokens: u64) -> Beat {
             agent_id: cast_id(i),
             fresh_tokens,
             reading_id: None,
+        },
+    }
+}
+
+/// What the tailer sends as a session registers, without which `usage` shows on
+/// the tower and never on the sign.
+fn caught_up(i: usize, at_ms: u64) -> Beat {
+    Beat {
+        at_ms,
+        transport: Transport::Jsonl,
+        event: AgentEvent::Backlog {
+            agent_id: cast_id(i),
+            replaying: false,
         },
     }
 }
@@ -249,6 +262,7 @@ pub(crate) fn hero_script() -> Vec<Beat> {
             transport: Transport::Jsonl,
             event: session_start(i),
         });
+        b.push(caught_up(i, *delay));
     }
     // The rush's tail: gk and rx trail the first seven, keeping the door busy
     // without delaying the ≥4-monitors-by-3s pin.

@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use crate::id::AgentId;
@@ -404,6 +405,31 @@ impl UsageObservation {
     }
 }
 
+/// What every agent did on one local day, counted as it happened while pixtuoid
+/// ran: the increases of [`AgentSlot::tokens_used`] and
+/// [`AgentSlot::tool_call_count`], never a replayed transcript's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct Today {
+    /// The date the count is for, on the counting reducer's own calendar.
+    pub day: NaiveDate,
+    /// Fresh tokens, the [`AgentSlot::tokens_used`] measure.
+    pub tokens: u64,
+    /// Tool calls, the only number a CLI with no [`Usage`](crate::AgentEvent::Usage) has.
+    pub tool_calls: u64,
+}
+
+impl Today {
+    /// A count for `day`.
+    pub fn new(day: NaiveDate, tokens: u64, tool_calls: u64) -> Self {
+        Self {
+            day,
+            tokens,
+            tool_calls,
+        }
+    }
+}
+
 /// Liveness of a daemon-style source (the OpenClaw gateway), driving the
 /// wandering lobster mascot. PER-INSTANCE (see [`DaemonInstanceId`]) — one
 /// gateway going Down says nothing about its siblings. `Down` is distinct from
@@ -574,6 +600,10 @@ pub struct SceneState {
     /// so nothing else can invent presence.
     #[serde(default)]
     pub(crate) daemons: DaemonRoster,
+    /// The day's count, from a [`Reducer`](reducer::Reducer) built
+    /// [`counting`](reducer::Reducer::counting); `None` while its day has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub today: Option<Today>,
 }
 
 impl SceneState {
@@ -699,6 +729,7 @@ impl SceneState {
             agents: BTreeMap::new(),
             floor_capacities,
             daemons: DaemonRoster::default(),
+            today: None,
         }
     }
 

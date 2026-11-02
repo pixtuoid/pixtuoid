@@ -258,10 +258,22 @@ pub enum AgentEvent {
         fresh_tokens: u64,
         /// The id a wire that repeats readings gives this one: an agent counts it
         /// once, until the reducer's sweep lets it go, and a replay past that
-        /// re-counts on the meter. `None` counts every time, since an id is the
-        /// only thing that tells a repeat from an equal new reading.
+        /// re-counts on the meter, never on [`Today`](crate::state::Today). `None`
+        /// counts every time, since an id is the only thing that tells a repeat
+        /// from an equal new reading.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reading_id: Option<String>,
+    },
+    /// Whether a transcript reader is replaying what `agent_id`'s transcript
+    /// already held. An event carries no time, and not every CLI stamps its
+    /// lines, so no clock can tell a replay from live work: a JSONL event counts
+    /// toward [`Today`](crate::state::Today) only once this has said `false`.
+    /// Never registers a session.
+    Backlog {
+        /// The agent whose events the reader is reading.
+        agent_id: AgentId,
+        /// `true` while what follows is a replay, `false` from its last event on.
+        replaying: bool,
     },
 }
 
@@ -395,14 +407,16 @@ impl AgentEvent {
             AgentEvent::Identity { agent_id, .. } => *agent_id,
             AgentEvent::ModelInfo { agent_id, .. } => *agent_id,
             AgentEvent::Usage { agent_id, .. } => *agent_id,
+            AgentEvent::Backlog { agent_id, .. } => *agent_id,
         }
     }
 
     /// Whether this event shows its session working now: the creation
     /// polarity's evidence for a slot no start announced. A session start
     /// carries its own authority, and a session end, a model, usage or title
-    /// line shows nothing, nor does [`ProofOfLife`](Self::ProofOfLife), which
-    /// vouches a visible slot past the sweeps and must never create one.
+    /// line shows nothing, nor does [`Backlog`](Self::Backlog), the reader's own
+    /// word, or [`ProofOfLife`](Self::ProofOfLife), which vouches a visible slot
+    /// past the sweeps and must never create one.
     pub(crate) fn shows_activity(&self) -> bool {
         match self {
             AgentEvent::ToolUseStart { .. }
@@ -418,7 +432,8 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
-            | AgentEvent::Usage { .. } => false,
+            | AgentEvent::Usage { .. }
+            | AgentEvent::Backlog { .. } => false,
         }
     }
 
@@ -439,7 +454,8 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
-            | AgentEvent::Usage { .. } => false,
+            | AgentEvent::Usage { .. }
+            | AgentEvent::Backlog { .. } => false,
         }
     }
 }

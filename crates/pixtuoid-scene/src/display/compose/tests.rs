@@ -14,6 +14,7 @@ pub(crate) fn quiet_board() -> &'static crate::neon_sign::BoardModel {
                 0,
                 None,
                 None,
+                None,
                 crate::anim::Motion::Full,
                 std::time::UNIX_EPOCH,
             )
@@ -679,27 +680,38 @@ fn the_board_writes_inside_the_signs_interior() {
         total: 102,
     };
     let gateway = Some(pixtuoid_core::state::DaemonState::Degraded);
-    for ms in (0..16_000).step_by(100) {
-        let now = std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms);
-        let board = crate::neon_sign::build_board(
-            counts,
-            99 * 3_600,
-            Some((12, 12)),
-            gateway,
-            crate::anim::Motion::Full,
-            now,
-        );
-        let pen = Pen::for_pack(scale, &pack);
-        for run in board.runs(&crate::theme::NORMAL) {
-            let span = topmost_span(run_rect(&run, pen), pen);
-            assert!(
-                span.x0 >= NEON_PANEL_INNER_X
-                    && span.x1 < NEON_PANEL_INNER_X + NEON_PANEL_INNER_W
-                    && span.y0 >= NEON_PANEL_INNER_Y
-                    && span.y1 < NEON_PANEL_INNER_Y + NEON_PANEL_INNER_H,
-                "{:?} {span:?} at +{ms}ms",
-                run.role
+    let rows = [
+        (99 * 3_600, None, gateway),
+        (60, Some("888.8M tokens"), None),
+    ];
+    for (uptime, today, gateway) in rows {
+        for ms in (0..16_000).step_by(100) {
+            let now = std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms);
+            let board = crate::neon_sign::build_board(
+                counts,
+                uptime,
+                Some((12, 12)),
+                today,
+                gateway,
+                crate::anim::Motion::Full,
+                now,
             );
+            assert!(
+                today.is_none_or(|t| board.context.iter().any(|s| s.text().contains(t))),
+                "{today:?} must fit, or this row proves nothing"
+            );
+            let pen = Pen::for_pack(scale, &pack);
+            for run in board.runs(&crate::theme::NORMAL) {
+                let span = topmost_span(run_rect(&run, pen), pen);
+                assert!(
+                    span.x0 >= NEON_PANEL_INNER_X
+                        && span.x1 < NEON_PANEL_INNER_X + NEON_PANEL_INNER_W
+                        && span.y0 >= NEON_PANEL_INNER_Y
+                        && span.y1 < NEON_PANEL_INNER_Y + NEON_PANEL_INNER_H,
+                    "{:?} {span:?} at +{ms}ms",
+                    run.role
+                );
+            }
         }
     }
 }

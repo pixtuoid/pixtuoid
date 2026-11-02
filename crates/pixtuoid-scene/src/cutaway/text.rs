@@ -340,7 +340,15 @@ mod tests {
         for (counts, gateway) in moods.into_iter().zip(gateways.into_iter().cycle()) {
             for ms in (0..32_000).step_by(20) {
                 let now = std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms);
-                let board = build_board(counts, 3_700, Some((2, 3)), gateway, Motion::Full, now);
+                let board = build_board(
+                    counts,
+                    3_700,
+                    Some((2, 3)),
+                    None,
+                    gateway,
+                    Motion::Full,
+                    now,
+                );
                 for seg in std::iter::once(&board.brand)
                     .chain(&board.star)
                     .chain(&board.mood)
@@ -349,6 +357,11 @@ mod tests {
                     text.push_str(&written(&seg.content));
                 }
             }
+        }
+        let day = chrono::NaiveDate::MIN;
+        for (tokens, tool_calls) in [(1_234_567, 0), (9_500, 0), (0, 80)] {
+            let today = pixtuoid_core::state::Today::new(day, tokens, tool_calls);
+            text.extend(crate::tally::today_headline(today));
         }
         text.chars().collect()
     }

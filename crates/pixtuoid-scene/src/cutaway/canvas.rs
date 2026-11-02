@@ -1173,8 +1173,15 @@ mod tests {
             total: 3,
             ..crate::tally::StateCounts::default()
         };
-        let busy =
-            crate::neon_sign::build_board(counts, 60, None, None, Motion::Full, Hovering::now());
+        let busy = crate::neon_sign::build_board(
+            counts,
+            60,
+            None,
+            None,
+            None,
+            Motion::Full,
+            Hovering::now(),
+        );
         let busy = Showing {
             board: &busy,
             ..quiet

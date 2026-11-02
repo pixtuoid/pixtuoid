@@ -195,7 +195,7 @@ impl Office {
             theme: &NORMAL,
             fit,
             seed: u64::from(seed),
-            reducer: Reducer::new(),
+            reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
             beats: hero_script(),
             cursor: 0,
             presence_beats: lobster_beats(),
@@ -1044,6 +1044,33 @@ mod tests {
                 .unwrap(),
             "a\"b\\c\n\td"
         );
+    }
+
+    #[test]
+    fn the_sign_counts_the_cast_through_the_real_reducer() {
+        let mut o = office();
+        o.step(T0_MS, 288, 180);
+        o.step(T0_MS + 1_000.0, 288, 180);
+        let overlay: serde_json::Value =
+            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+        let context = overlay["board"]["context"].as_array().expect("a row");
+        let row: String = (context.iter())
+            .map(|segment| segment["text"].as_str().expect("text"))
+            .collect();
+        assert!(row.contains("1.2M tokens"), "{row:?}");
+    }
+
+    /// A page left open past midnight: the frame's tick is the writer's.
+    #[test]
+    fn a_step_retires_a_day_that_has_passed() {
+        let mut o = office();
+        o.step(T0_MS, 288, 180);
+        let yesterday = pixtuoid_scene::tally::local_day(o.last_now.expect("a step"))
+            .pred_opt()
+            .expect("a date");
+        o.scene.today = Some(pixtuoid_core::state::Today::new(yesterday, 1, 1));
+        o.step(T0_MS + 16.0, 288, 180);
+        assert_eq!(o.scene.today, None);
     }
 
     #[test]

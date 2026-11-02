@@ -154,6 +154,9 @@ struct WatchCtx<'a> {
     /// What an event-driven walk follows a first sight with; `scan_root`
     /// drops it.
     follower: Option<&'a Follower>,
+    /// This pass reads what predates the watch, so a first read here replays
+    /// where any other's is a session just begun.
+    replaying: bool,
 }
 
 struct ScanState {
@@ -456,6 +459,7 @@ impl JsonlWatcher {
                 window: self.initial_window,
                 live: &live,
                 follower: follower.as_ref(),
+                replaying: true,
             };
             self.run_scan_pass(
                 &ctx,
@@ -487,13 +491,14 @@ impl JsonlWatcher {
                 window: self.initial_window,
                 live: &live,
                 follower: follower.as_ref(),
+                replaying: false,
             };
             tokio::select! {
                 Some(()) = nudges.recv() => {
                     if root_watch.reconcile_logged(Wake::Nudge).await == Reconciled::Attached {
                         // What was written before the watch existed.
                         self.run_scan_pass(
-                            &ctx, &mut scan_state,
+                            &WatchCtx { replaying: true, ..ctx }, &mut scan_state,
                             exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
                         ).await;
                     }
@@ -507,9 +512,10 @@ impl JsonlWatcher {
                     walk_jsonl(&path, decoders, &ctx).await;
                 }
                 _ = poll.tick() => {
-                    root_watch.reconcile_logged(Wake::Poll).await;
+                    let attached =
+                        root_watch.reconcile_logged(Wake::Poll).await == Reconciled::Attached;
                     self.run_scan_pass(
-                        &ctx, &mut scan_state,
+                        &WatchCtx { replaying: attached, ..ctx }, &mut scan_state,
                         exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
                     ).await;
                 }

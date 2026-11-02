@@ -234,6 +234,117 @@ mod tests {
         assert_eq!(event_source(&scene, &empty), Some("claude-code"));
     }
 
+    fn utc_day(now: SystemTime) -> chrono::NaiveDate {
+        chrono::DateTime::<chrono::Utc>::from(now).date_naive()
+    }
+
+    /// Through the gate as the tailer sends it: declared at its own read, whether
+    /// or not its agent has a slot yet.
+    #[test]
+    fn a_backlog_ahead_of_its_agents_slot_reaches_the_reducer() {
+        use pixtuoid_core::AgentId;
+        use std::path::PathBuf;
+
+        let id = AgentId::from_parts("claude-code", "s");
+        let cs = ConnectedSources::new(["claude-code".to_string()].into());
+        let mut scene = SceneState::uniform(8);
+        let mut reducer = Reducer::new().counting(utc_day);
+        let mut gate_logged = HashSet::new();
+        let events = [
+            AgentEvent::Backlog {
+                agent_id: id,
+                replaying: false,
+            },
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id: None,
+            },
+            AgentEvent::Usage {
+                agent_id: id,
+                fresh_tokens: 7,
+                reading_id: None,
+            },
+        ];
+        for ev in events {
+            apply_gated_event(
+                &mut reducer,
+                &mut scene,
+                ev,
+                Transport::Jsonl,
+                &cs,
+                SystemTime::now(),
+                &mut gate_logged,
+            );
+        }
+        assert_eq!(scene.today.map(|today| today.tokens), Some(7));
+    }
+
+    /// The gate's own arm: a slot names its source, and a disconnected source's
+    /// agent goes uncounted until its next read declares it again.
+    #[test]
+    fn a_disconnected_sources_backlog_is_dropped() {
+        use pixtuoid_core::AgentId;
+        use std::path::PathBuf;
+
+        let id = AgentId::from_parts("claude-code", "s");
+        let on = ConnectedSources::new(["claude-code".to_string()].into());
+        let off = ConnectedSources::new(HashSet::new());
+        let mut scene = SceneState::uniform(8);
+        let mut reducer = Reducer::new().counting(utc_day);
+        let mut gate_logged = HashSet::new();
+        let now = SystemTime::now();
+        let mut through = |scene: &mut SceneState, ev, connected: &ConnectedSources| {
+            apply_gated_event(
+                &mut reducer,
+                scene,
+                ev,
+                Transport::Jsonl,
+                connected,
+                now,
+                &mut gate_logged,
+            )
+        };
+        let start = AgentEvent::SessionStart {
+            agent_id: id,
+            source: "claude-code".into(),
+            session_id: "s".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        };
+        assert!(through(&mut scene, start, &on), "the slot is seeded");
+
+        let opens = AgentEvent::Backlog {
+            agent_id: id,
+            replaying: false,
+        };
+        assert!(!through(&mut scene, opens, &off), "dropped at the gate");
+
+        let usage = AgentEvent::Usage {
+            agent_id: id,
+            fresh_tokens: 7,
+            reading_id: None,
+        };
+        assert!(through(&mut scene, usage, &on));
+        assert_eq!(scene.today, None, "so the agent stayed closed");
+    }
+
+    /// The driver's one tick is the reducer's, so a quiet midnight retires the
+    /// day in a live run too.
+    #[test]
+    fn the_sweep_tick_retires_a_day_that_has_passed() {
+        let cs = ConnectedSources::new(HashSet::new());
+        let mut scene = SceneState::uniform(8);
+        let mut reducer = Reducer::new().counting(utc_day);
+        let now = SystemTime::now();
+        let yesterday = utc_day(now).pred_opt().expect("a date");
+        scene.today = Some(pixtuoid_core::state::Today::new(yesterday, 1, 1));
+        reconcile_sweep_tick(&mut reducer, &mut scene, &cs, now);
+        assert_eq!(scene.today, None);
+    }
+
     fn daemon_key(source: &str, instance: &str) -> daemon::DaemonInstanceKey {
         daemon::DaemonInstanceKey::new(
             source,

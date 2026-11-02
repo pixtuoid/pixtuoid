@@ -27,6 +27,7 @@ use pixtuoid_core::{AgentEvent, SceneState, Transport};
 use tokio::sync::{mpsc, watch};
 
 use super::driver::{build_source_set, reducer_task};
+use super::today::TodayFile;
 use super::{ConnectedSources, LogQueue, SceneRx, TransitionLog};
 
 /// Where [`reducer_task`] publishes the scene after each change it applies.
@@ -109,6 +110,7 @@ pub(crate) fn spawn_pipeline(
         connected,
         presence_rx,
         presence_exit_watch,
+        TodayFile::in_state_dir(),
     ));
 
     // Source-health side channel: a fatal source exit must reach the painter's

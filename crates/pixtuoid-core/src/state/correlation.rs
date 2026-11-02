@@ -212,8 +212,14 @@ pub(super) struct Correlation {
     pub(super) counted_calls: Counted,
     /// Usage readings already counted into `tokens_used`, by the id a wire that
     /// repeats one gives it. Swept with `counted_calls`, whose TTL far outlasts a
-    /// repeat's lag; a replay past it re-counts on the meter.
+    /// repeat's lag; a replay past it re-counts on the meter, never on
+    /// [`Today`](crate::state::Today).
     pub(super) counted_readings: Counted,
+    /// Agents whose transcript events are live work, per
+    /// [`AgentEvent::Backlog`](crate::AgentEvent::Backlog). Absent is closed: a
+    /// reader that fails to declare costs its agent the count, and never counts
+    /// a replay.
+    pub(super) caught_up: HashSet<AgentId>,
     /// When [`Self::gc_slow`] last swept, so its cost is once per
     /// [`COUNTED_SWEEP_INTERVAL`] no matter how often the caller runs — the
     /// bench harness ticks per EVENT, and production ticks per frame.
