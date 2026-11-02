@@ -1,7 +1,10 @@
-//! copilot's recorded endings at 1.0.98: two refusals, the `-p` auto-deny, whose
-//! call then ends, and Esc at an interactive prompt, which aborts the turn with
-//! no end for the call, each one call that resolves its wait; and a child whose
-//! request errs, which its own failure ends.
+//! copilot's recorded runs: two refusals, the `-p` auto-deny, whose call then
+//! ends, and Esc at an interactive prompt, which aborts the turn with no end for
+//! the call, each one call that resolves its wait; a child whose request errs,
+//! which its own failure ends; and the meter of a resume, a re-read and a child.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use pixtuoid_core::harness::{Drive, Driven, Reach};
 use pixtuoid_core::source::AgentEvent;
@@ -116,4 +119,82 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
         "the parent still delegates: {:?}",
         parent.state
     );
+}
+
+/// A recording's lines, and the fresh tokens of its `session.usage_record`s by
+/// the child each names in its envelope `agentId`, `None` for the root.
+fn usage_records(scenario: &str) -> (PathBuf, Vec<String>, BTreeMap<Option<String>, u64>) {
+    let t = super::captures::transcript_in(&super::captures::sources_root().join(scenario));
+    let lines = super::captures::fixture_lines(&t);
+    let mut by_agent = BTreeMap::new();
+    for line in &lines {
+        let v: serde_json::Value = serde_json::from_str(line).expect("recorded JSON");
+        if v["type"] != "session.usage_record" {
+            continue;
+        }
+        let usage = &v["data"]["usage"];
+        let count = |k: &str| usage[k].as_u64().expect("a recorded count");
+        let agent = v["agentId"].as_str().map(str::to_owned);
+        *by_agent.entry(agent).or_default() +=
+            count("inputTokens") - count("cacheReadTokens") + count("outputTokens");
+    }
+    (t, lines, by_agent)
+}
+
+/// A resumed session's second `session.shutdown` totals both lifetimes, so the
+/// meter is each call's own usage record.
+#[test]
+fn a_resumed_run_counts_each_call_once() {
+    let (t, lines, records) = usage_records("copilot/fixtures/resume-hermetic");
+    let shutdowns = (lines.iter())
+        .filter(|l| l.contains(r#""type":"session.shutdown""#))
+        .count();
+    let expected: u64 = records.values().sum();
+    assert!(
+        shutdowns > 1 && expected > 0,
+        "no resumed lifetime or no usage record here, so this recording proves nothing"
+    );
+    let d = Drive::transcript_at("copilot", &t)
+        .expect("copilot has a line decoder")
+        .seeded()
+        .lines(lines);
+    d.assert_clean("resume");
+    let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
+    assert_eq!(meter, expected);
+}
+
+/// A re-read from the top (`walk_jsonl`'s truncation reset) of a live, resumed
+/// session counts no usage record twice, its earlier lifetime's included.
+#[test]
+fn a_rewinds_re_read_counts_no_call_twice() {
+    let (t, lines, records) = usage_records("copilot/fixtures/resume-hermetic");
+    let last_end = (lines.iter())
+        .rposition(|l| l.contains(r#""type":"session.shutdown""#))
+        .expect("a recorded shutdown");
+    let live = &lines[..last_end];
+    let d = Drive::transcript_at("copilot", &t)
+        .expect("copilot has a line decoder")
+        .seeded()
+        .lines(live.iter().chain(live));
+    let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
+    assert_eq!(meter, records.values().sum::<u64>());
+}
+
+/// A child's usage records name it, so its spend lands on its own slot.
+#[test]
+fn a_childs_usage_is_its_own() {
+    let (t, lines, records) = usage_records("copilot/fixtures/subagent-hermetic");
+    assert!(
+        records.len() > 1,
+        "no child usage record here, so this recording proves nothing"
+    );
+    let d = Drive::transcript_at("copilot", &t)
+        .expect("copilot has a line decoder")
+        .seeded()
+        .lines(lines);
+    d.assert_clean("subagent");
+    let meters: BTreeMap<Option<String>, u64> = (d.scene.agents.values())
+        .map(|a| (a.parent_id.map(|_| a.session_id.to_string()), a.tokens_used))
+        .collect();
+    assert_eq!(meters, records);
 }

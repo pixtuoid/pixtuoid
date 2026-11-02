@@ -1685,15 +1685,14 @@ impl Reducer {
 
     /// Drop the per-slot correlation a departing agent id owns, reclaimed on
     /// BOTH a resurrect-in-place and a slot removal. Death-only teardown
-    /// (`recent_proof_of_life`, [`Correlation::note_removed`]) deliberately stays at
-    /// the sweep site — it must NOT run on a resurrect.
+    /// (`recent_proof_of_life`, `counted_readings`, [`Correlation::note_removed`])
+    /// deliberately stays at the sweep site — it must NOT run on a resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.tasks_in_flight.remove(id);
         self.corr.action_requests.forget(id);
         self.corr.turns.forget(id);
         self.corr.item_started_on.remove(id);
         self.corr.counted_calls.forget(id);
-        self.corr.counted_readings.forget(id);
         self.corr.caught_up.remove(id);
         self.pending_b1_cascades.remove(id);
     }
@@ -1718,6 +1717,8 @@ impl Reducer {
             self.remove_agent_correlation(&id);
             // Evict with the slot, else a same-id ghost inherits the vouch.
             self.corr.recent_proof_of_life.remove(&id);
+            // A resurrect keeps `tokens_used`, so it keeps the ids that built it.
+            self.corr.counted_readings.forget(&id);
             self.corr.note_removed(id, now);
         }
     }
