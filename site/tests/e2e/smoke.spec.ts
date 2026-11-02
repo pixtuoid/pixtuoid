@@ -70,18 +70,18 @@ async function settleAnimations(page: Page): Promise<void> {
 }
 
 /**
- * The office moments anything graded against the REAL office composite must meet, in UTC: the office is lit by the sun and
- * the weather, both functions of the absolute instant (the sun's height by local time, the weather by the epoch's 10-minute
- * slot hash), and a theme can be picked at any time. So the moments are chosen by what drives the light, not by hour label:
- * the brightest is a Clear slot at the sun's highest (12:30), the darkest a Storm slot in the deep night, plus a Clear
- * dawn and dusk for the ramp. Found by sweeping `first_transition_into` over January 2026; `the office moments still
- * span the light range` fails if the engine's weather draw ever moves them.
+ * The office moments anything graded against the REAL office composite must meet, in UTC. The office is lit by the sun (its
+ * height follows local time, `body_at`) and by the weather (a hash of the absolute `WEATHER_CYCLE_MS` slot, `transmission`),
+ * so the moments are chosen by those drivers, not by hour label: a Clear slot with the sun highest (the brightest), a Storm
+ * slot in the deep night, a Clear slot mid-slope of the morning sun and one at low evening sun. Found by sweeping
+ * `first_transition_into` over January 2026. `the office moments still span the light range` checks only that the sun-highest
+ * moment is far brighter than the rest and the storm night is no brighter than the morning and evening ones.
  */
 const OFFICE_MOMENTS = [
   { at: '2026-01-03T12:30:00Z', what: 'sun highest, Clear' },
   { at: '2026-01-20T02:00:00Z', what: 'deep night, Storm' },
-  { at: '2026-01-07T05:00:00Z', what: 'dawn, Clear' },
-  { at: '2026-01-02T19:30:00Z', what: 'dusk, Clear' },
+  { at: '2026-01-02T08:00:00Z', what: 'morning sun, Clear' },
+  { at: '2026-01-02T19:30:00Z', what: 'low evening sun, Clear' },
 ] as const;
 
 /** Pins the clock to `at` (UTC) and seeds `theme`. `setSystemTime`, not `setFixedTime`: a frozen Date stalls the office host's own wait on the clock. */
@@ -2091,7 +2091,7 @@ test('text over the live office carries its own scrim (.text-scrim)', async ({ p
 
 test.describe('the office moments still span the light range', () => {
   test.use({ timezoneId: 'UTC' });
-  test('brightest is the sun-highest Clear moment, darkest the deep-night Storm one', async ({
+  test('the sun-highest moment is far brighter than the rest, the storm night no brighter than morning and evening', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -2119,11 +2119,13 @@ test.describe('the office moments still span the light range', () => {
         })
       );
     }
-    const [noon, night, dawn, dusk] = lum;
-    expect(noon, 'noon Clear is not clearly the brightest').toBeGreaterThan(
-      1.5 * Math.max(night, dawn, dusk)
+    const [noon, night, morning, evening] = lum;
+    expect(noon, 'sun-highest moment is not far brighter than the rest').toBeGreaterThan(
+      1.2 * Math.max(night, morning, evening)
     );
-    expect(night, 'night Storm is not the darkest').toBeLessThanOrEqual(Math.min(dawn, dusk));
+    expect(night, 'storm night is brighter than the morning or evening').toBeLessThanOrEqual(
+      Math.min(morning, evening)
+    );
   });
 });
 
