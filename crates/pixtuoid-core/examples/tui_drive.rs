@@ -2,10 +2,10 @@
 //! command `just hermetic` hands the recorder in place of the CLI's headless
 //! invocation. What to send comes from `harness::hermetic::tui::Driver`, reading
 //! the profile's `Tui` row; this shell only moves bytes, renders the screen and
-//! reads the scene's log.
+//! reads the run's scene log.
 //!
 //! ```text
-//! tui_drive <source> <scenario> <log> <scene> <prompt> -- <program> [args...]
+//! tui_drive <source> <scenario> <log> <scene-log> <prompt> -- <program> [args...]
 //! ```
 //!
 //! Exits with the CLI's status; when the driver gave up or the [`BUDGET`] ran
@@ -50,7 +50,7 @@ const TERM: &str = "xterm-256color";
 
 const USAGE_ERROR: i32 = 2;
 const USAGE: &str =
-    "usage: tui_drive <source> <scenario> <log> <scene> <prompt> -- <program> [args...]";
+    "usage: tui_drive <source> <scenario> <log> <scene-log> <prompt> -- <program> [args...]";
 
 fn main() {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -161,8 +161,8 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
                 )?;
             }
         }
-        if let Ok(scene) = std::fs::read_to_string(&line.scene) {
-            driver.scene(&scene);
+        if let Ok(scene_log) = std::fs::read_to_string(&line.scene_log) {
+            driver.observe(&scene_log);
         }
         let shown = shown(screen.screen());
         let action = driver.step(&shown, Instant::now());
@@ -275,7 +275,7 @@ mod tests {
             source: "claude-code".into(),
             scenario: "permission".into(),
             log: dir.path().join("tui.log"),
-            scene: dir.path().join("scene.log"),
+            scene_log: dir.path().join("scene.log"),
             prompt: "hi".into(),
             program: vec!["sh".into(), "-c".into(), "sleep 600".into()],
         };
@@ -294,6 +294,38 @@ mod tests {
             std::fs::read_to_string(dir.path().join(GAVE_UP_NOTE)).expect("its note"),
             format!("the {budget:?} budget ran out")
         );
+    }
+
+    /// kimi's composer, its gate once the prompt's Enter arrives, and an exit
+    /// once the gate is answered.
+    #[cfg(unix)]
+    const GATED: &str = r#"stty raw -echo
+printf '\033[2J\033[H╭──╮\r\n │ > \r\n'
+until [ "$(dd bs=1 count=1 2>/dev/null)" = "$(printf '\r')" ]; do :; done
+printf '\033[2J\033[HRun this command?\r\n'
+dd bs=1 count=1 >/dev/null 2>&1"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_gate_is_answered_once_the_scene_log_shows_it() {
+        for (scene_log, answered) in [
+            ("agents=[km\u{b7}proj@0:requires_action] daemons=[]\n", true),
+            ("agents=[km\u{b7}proj@0:running] daemons=[]\n", false),
+        ] {
+            let dir = tempfile::tempdir().expect("dir");
+            let line = CommandLine {
+                source: "kimi".into(),
+                scenario: "permission".into(),
+                log: dir.path().join("tui.log"),
+                scene_log: dir.path().join("scene.log"),
+                prompt: "hi".into(),
+                program: vec!["sh".into(), "-c".into(), GATED.into()],
+            };
+            std::fs::write(&line.scene_log, scene_log).expect("its scene log");
+            // Short of the driver's patience, past which it answers unseen.
+            let code = drive(line, Duration::from_secs(3)).expect("it drove");
+            assert_eq!(code == 0, answered, "{scene_log}");
+        }
     }
 
     #[test]

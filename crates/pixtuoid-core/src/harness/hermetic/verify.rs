@@ -1283,7 +1283,7 @@ fn succession(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
 /// standing is a session pixtuoid lost track of.
 fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label, String)>) {
     let prefix = format!("{}\u{b7}", p.descriptor().label_prefix);
-    let frames = rosters(scene, "agents");
+    let frames = agent_rosters(scene);
     if !frames.iter().any(|f| holds(f, &prefix, shown)) {
         findings.push((
             Label::Fail,
@@ -1340,8 +1340,13 @@ fn judge_presence(p: &Profile, scene: &str, settled: &str, findings: &mut Vec<(L
     breadcrumbs(scene, findings);
 }
 
+/// Each line's agents roster, in the scene's order.
+pub(super) fn agent_rosters(scene: &str) -> Vec<&str> {
+    rosters(scene, "agents")
+}
+
 /// Each line's `key=[…]` roster, in the scene's order.
-pub(super) fn rosters<'a>(scene: &'a str, key: &str) -> Vec<&'a str> {
+fn rosters<'a>(scene: &'a str, key: &str) -> Vec<&'a str> {
     let key = format!("{key}=[");
     scene
         .lines()

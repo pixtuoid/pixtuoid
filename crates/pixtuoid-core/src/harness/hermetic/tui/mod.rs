@@ -2,7 +2,7 @@
 //!
 //! Some wire exists only in a CLI's TUI: Claude Code's headless mode refuses a
 //! tool without firing `PermissionRequest`. The `tui_drive` example runs the CLI under a pty,
-//! hands [`Driver::scene`] what the scene now shows, and asks
+//! hands [`Driver::observe`] its scene log, and asks
 //! [`Driver::step`] what to do with the screen it now shows; everything
 //! that differs between CLIs is its [`Tui`] row, never code here. A new CLI's
 //! edge case is that row plus a test over a screen its run recorded
@@ -23,7 +23,8 @@ const SETTLE: Duration = Duration::from_secs(3);
 const STALL: Duration = Duration::from_secs(20);
 /// How long a gate waits for the scene to show it before it is answered
 /// anyway, so the run ends and the scene's verdict names the miss: inside
-/// [`STALL`], which would otherwise end the run as a gate never shown.
+/// [`STALL`], which would otherwise end the run as one that never showed its
+/// gate.
 const SCENE_PATIENCE: Duration = Duration::from_secs(10);
 const _: () = assert!(SCENE_PATIENCE.as_millis() < STALL.as_millis());
 /// How long one run may take, end to end, before `tui_drive` kills the CLI:
@@ -216,7 +217,7 @@ struct Cue {
     /// As [`Gate::dwell`].
     dwell: Duration,
     /// As [`Answer::Gate`]'s `shown`.
-    scene: Option<&'static str>,
+    shown: Option<&'static str>,
 }
 
 /// A cue on screen, and when it appeared.
@@ -329,9 +330,9 @@ impl<'a> Driver<'a> {
         }
     }
 
-    /// What the scene's transition log ([`super::SCENE_LOG`]) now reads.
-    pub fn scene(&mut self, scene: &str) {
-        if let Some(roster) = super::verify::rosters(scene, "agents").pop() {
+    /// Takes what the run's scene log ([`super::SCENE_LOG`]) now reads.
+    pub fn observe(&mut self, scene_log: &str) {
+        if let Some(roster) = super::verify::agent_rosters(scene_log).pop() {
             roster.clone_into(&mut self.roster);
         }
     }
@@ -362,13 +363,13 @@ impl<'a> Driver<'a> {
                     shows: g.shows,
                     keys: g.keys,
                     dwell: g.dwell,
-                    scene: Some(shown),
+                    shown: Some(shown),
                 }),
             Answer::Cancel => self.screen.contains(super::STREAM_CUE).then_some(Cue {
                 shows: super::STREAM_CUE,
                 keys: self.tui.cancel,
                 dwell: Duration::ZERO,
-                scene: None,
+                shown: None,
             }),
             Answer::Nothing => None,
         }
@@ -400,7 +401,7 @@ impl<'a> Driver<'a> {
         self.open = Some(open);
         let stood = now.duration_since(open.since);
         let unseen = cue
-            .scene
+            .shown
             .is_some_and(|state| !super::verify::holds(&self.roster, "", state));
         if stood < cue.dwell || (unseen && stood < SCENE_PATIENCE) {
             return Some(Action::Wait);
@@ -502,8 +503,8 @@ pub struct CommandLine {
     pub scenario: String,
     /// Where the pty log goes.
     pub log: PathBuf,
-    /// The scene's transition log, which [`Driver::scene`] reads.
-    pub scene: PathBuf,
+    /// The run's scene log, which [`Driver::observe`] reads.
+    pub scene_log: PathBuf,
     /// What the driver types.
     pub prompt: String,
     /// The CLI's launch and interactive arguments.
@@ -521,7 +522,7 @@ impl CommandLine {
             .into_iter()
             .chain([
                 self.log.clone().into_os_string(),
-                self.scene.clone().into_os_string(),
+                self.scene_log.clone().into_os_string(),
             ])
             .chain([OsString::from(&self.prompt), OsString::from(PROGRAM)])
             .chain(self.program.iter().cloned())
@@ -531,7 +532,7 @@ impl CommandLine {
     /// The command line `args` spells, or `None` when it spells none.
     pub fn parse(args: &[OsString]) -> Option<Self> {
         let split = args.iter().position(|a| a == PROGRAM)?;
-        let [source, scenario, log, scene, prompt] = &args[..split] else {
+        let [source, scenario, log, scene_log, prompt] = &args[..split] else {
             return None;
         };
         let program = args[split + 1..].to_vec();
@@ -542,7 +543,7 @@ impl CommandLine {
             source: source.to_str()?.to_owned(),
             scenario: scenario.to_str()?.to_owned(),
             log: PathBuf::from(log),
-            scene: PathBuf::from(scene),
+            scene_log: PathBuf::from(scene_log),
             prompt: prompt.to_str()?.to_owned(),
             program,
         })
@@ -617,14 +618,13 @@ mod tests {
         typed
     }
 
-    /// A scene showing a run's dialog.
     const ASKING: &str = "agents=[x@0:requires_action] daemons=[]\n";
 
     /// Claude Code's permission run, its scene already showing the dialog.
     fn driver(t0: Instant) -> Driver<'static> {
         let (tui, answer) = tui_scenario("claude-code", "permission");
         let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
-        d.scene(ASKING);
+        d.observe(ASKING);
         d
     }
 
@@ -735,7 +735,7 @@ mod tests {
         };
         let t0 = Instant::now();
         let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
-        d.scene(ASKING);
+        d.observe(ASKING);
         let boot = screen!("hermes", "boot");
         assert_eq!(d.step(boot, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]));
@@ -831,10 +831,10 @@ mod tests {
         assert_eq!(d.step(CODEX_BOOT, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(d.step(CODEX_BOOT, t0), Action::Keys(&[Key::Enter]));
         let mut t = t0;
-        let mut scene = String::new();
+        let mut scene_log = String::new();
         for turn in ["first", "second"] {
-            scene.push_str("agents=[x@0:running] daemons=[]\n");
-            d.scene(&scene);
+            scene_log.push_str("agents=[x@0:running] daemons=[]\n");
+            d.observe(&scene_log);
             t += Duration::from_millis(1);
             assert_eq!(
                 d.step(CODEX_GATE, t),
@@ -847,8 +847,8 @@ mod tests {
                 Action::Wait,
                 "{turn}: the scene has not shown its own dialog"
             );
-            scene.push_str(ASKING);
-            d.scene(&scene);
+            scene_log.push_str(ASKING);
+            d.observe(&scene_log);
             assert_eq!(d.step(CODEX_GATE, t), Action::Keys(gate.keys), "{turn}");
             t += Duration::from_millis(1);
             assert_eq!(
@@ -1231,7 +1231,7 @@ mod tests {
             let mut d = scenario
                 .tui_driver(PROMPT.to_owned(), t0)
                 .expect("a TUI scenario's driver");
-            d.scene(ASKING);
+            d.observe(ASKING);
             assert_eq!(
                 d.step(boot, t0),
                 Action::Type(PROMPT.to_owned()),
@@ -1336,7 +1336,7 @@ mod tests {
         let boot = screen!("kimi", "boot");
         assert_eq!(d.step(boot, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]));
-        d.scene(KM_RUNNING);
+        d.observe(KM_RUNNING);
         (d, tui, screen!("kimi", "gate"))
     }
 
@@ -1353,7 +1353,7 @@ mod tests {
             Action::Wait,
             "its scene shows the call"
         );
-        d.scene(&format!(
+        d.observe(&format!(
             "{KM_RUNNING}agents=[km\u{b7}proj@0:requires_action] daemons=[]\n"
         ));
         assert_eq!(d.step(gate, shown), Action::Keys(tui.gates[0].keys));
@@ -1363,19 +1363,22 @@ mod tests {
     fn an_earlier_dialog_in_the_scene_answers_no_gate() {
         let t0 = Instant::now();
         let (mut d, _, gate) = kimi_at_its_gate(t0);
-        d.scene(&format!(
+        d.observe(&format!(
             "agents=[km\u{b7}proj@0:requires_action] daemons=[]\n{KM_RUNNING}"
         ));
         assert_eq!(d.step(gate, t0 + Duration::from_millis(1)), Action::Wait);
     }
 
-    /// The run then ends, and its verdict names what the scene missed.
     #[test]
     fn a_gate_the_scene_never_shows_is_answered_past_its_patience() {
         let t0 = Instant::now();
         let (mut d, tui, gate) = kimi_at_its_gate(t0);
         let shown = t0 + Duration::from_millis(1);
         assert_eq!(d.step(gate, shown), Action::Wait);
+        assert_eq!(
+            d.step(gate, shown + SCENE_PATIENCE - Duration::from_millis(1)),
+            Action::Wait
+        );
         assert_eq!(
             d.step(gate, shown + SCENE_PATIENCE),
             Action::Keys(tui.gates[0].keys)
@@ -1388,7 +1391,7 @@ mod tests {
             source: "claude-code".into(),
             scenario: "permission".into(),
             log: PathBuf::from("/runs/x/tui.log"),
-            scene: PathBuf::from("/runs/x/scene.log"),
+            scene_log: PathBuf::from("/runs/x/scene.log"),
             prompt: "hi".into(),
             program: vec!["/cli/claude".into(), "--permission-mode".into()],
         };
