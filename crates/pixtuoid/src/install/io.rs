@@ -455,31 +455,65 @@ impl HostCli {
 /// own words first.
 const HOST_CLI_LIMIT: Duration = Duration::from_secs(300);
 
+/// How often a run asks whether its host CLI has exited.
+const EXIT_POLL: Duration = Duration::from_millis(20);
+
 /// `command`'s output with stdin null, or `None` past `limit`, which kills the
 /// child, though not a grandchild.
 fn output_within(
     command: &mut std::process::Command,
     limit: Duration,
-) -> std::io::Result<Option<process_control::Output>> {
-    use process_control::{ChildExt, Control};
+) -> std::io::Result<Option<std::process::Output>> {
     use std::process::Stdio;
-    let child = command
+    let deadline = std::time::Instant::now() + limit;
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    let (done, finished) = std::sync::mpsc::channel();
-    // Waited for here and not on that thread: once the child exits, `wait` reads
-    // its pipes to their end, which a grandchild holding one can put off past
-    // any limit.
+    let stdout = drain(child.stdout.take())?;
+    let stderr = drain(child.stderr.take())?;
+    // Polled: `try_wait` answers an exit and never a stop, so a stopped child
+    // still meets the kill.
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill()?;
+            // Reaped, so no zombie outlives the run.
+            child.wait()?;
+            return Ok(None);
+        }
+        std::thread::sleep(EXIT_POLL);
+    };
+    // A grandchild holding a pipe can keep it open past the child's exit.
+    let left = || deadline.saturating_duration_since(std::time::Instant::now());
+    match (stdout.recv_timeout(left()), stderr.recv_timeout(left())) {
+        (Ok(stdout), Ok(stderr)) => Ok(Some(std::process::Output {
+            status,
+            stdout: stdout?,
+            stderr: stderr?,
+        })),
+        _ => Ok(None),
+    }
+}
+
+/// What `pipe` holds, read to its end on a thread of its own, so neither pipe
+/// fills while the other is read or the child is waited on.
+fn drain(
+    pipe: Option<impl Read + Send + 'static>,
+) -> std::io::Result<std::sync::mpsc::Receiver<std::io::Result<Vec<u8>>>> {
+    let (done, read) = std::sync::mpsc::channel();
     std::thread::Builder::new().spawn(move || {
-        let output = (child.controlled_with_output())
-            .time_limit(limit)
-            .terminate_for_timeout()
-            .wait();
-        let _ = done.send(output);
+        let mut bytes = Vec::new();
+        let outcome = match pipe {
+            Some(mut pipe) => pipe.read_to_end(&mut bytes).map(|_| bytes),
+            None => Ok(bytes),
+        };
+        let _ = done.send(outcome);
     })?;
-    finished.recv_timeout(limit).unwrap_or(Ok(None))
+    Ok(read)
 }
 
 /// Whether the bare `pixtuoid-hook` name resolves on PATH: a bare-name target's
@@ -1013,24 +1047,10 @@ mod tests {
     /// [`FAKE`] first on PATH, as `unix` under `sh` or `windows` under `cmd`.
     fn with_fake<R>(unix: &str, windows: &str, f: impl FnOnce() -> R) -> R {
         let dir = TempDir::new().unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = windows;
-            let bin = dir.path().join(FAKE.command);
-            std::fs::write(&bin, format!("#!/bin/sh\n{unix}\n")).unwrap();
-            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        #[cfg(windows)]
-        {
-            let _ = unix;
-            let bin = dir.path().join(format!("{}.cmd", FAKE.command));
-            std::fs::write(&bin, format!("@echo off\r\n{windows}\r\n")).unwrap();
-        }
-        let path = std::env::join_paths(std::iter::once(dir.path().to_path_buf()).chain(
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-        ))
-        .unwrap();
+        let unix = format!("#!/bin/sh\n{unix}\n");
+        let windows = format!("@echo off\r\n{windows}\r\n");
+        let fake = [(FAKE.command, unix.as_str(), windows.as_str())];
+        let path = crate::install::tests::fake_on_path(dir.path(), &fake);
         temp_env::with_var("PATH", Some(path), f)
     }
 
@@ -1061,6 +1081,54 @@ mod tests {
             err.contains("`pixtuoid-fake-cli hang` did not finish within"),
             "{err}"
         );
+    }
+
+    /// Whether `pid` is gone, reaped included, within [`SLACK`]: `kill -0` asks.
+    #[cfg(unix)]
+    fn gone(pid: &str) -> bool {
+        let deadline = std::time::Instant::now() + SLACK;
+        let lives = || {
+            std::process::Command::new("kill")
+                .args(["-0", pid])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        };
+        while lives() {
+            if std::time::Instant::now() > deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        true
+    }
+
+    /// The child, which writes its pid where its argument says, ends with the
+    /// run whether it hangs or stops, and a stop panics nothing. `$$` and
+    /// `kill -0` are unix's; Windows has the test above.
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_or_stopped_cli_is_killed_and_reaped() {
+        for then in [
+            format!("exec sleep {}", HANG.as_secs()),
+            "kill -STOP $$".into(),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let pid_file = dir.path().join("pid");
+            let started = std::time::Instant::now();
+            let err = with_fake(&format!("echo $$ > \"$1\"\n{then}"), "", || {
+                FAKE.run_within(&[pid_file.as_os_str()], LIMIT)
+            })
+            .unwrap_err();
+            assert!(started.elapsed() < LIMIT + SLACK, "{then}");
+            assert!(
+                format!("{err:#}").contains("did not finish within"),
+                "{then}"
+            );
+            let pid = std::fs::read_to_string(&pid_file).unwrap();
+            assert!(gone(pid.trim()), "{then}: the child outlived the run");
+        }
     }
 
     /// A `sh` fake hands a pipe to a background job as POSIX `&` does; `cmd`'s

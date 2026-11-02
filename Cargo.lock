@@ -251,12 +251,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "attr_alias"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f648697f71a7eddd152c1ae26151f580c69635bfcb747574886317877ccf1a5a"
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2974,7 +2968,6 @@ dependencies = [
  "png",
  "pollster",
  "proc-macro2",
- "process_control",
  "qrcode",
  "ratatui",
  "rcgen",
@@ -3233,18 +3226,6 @@ dependencies = [
  "indexmap",
  "nix 0.31.3",
  "windows",
-]
-
-[[package]]
-name = "process_control"
-version = "5.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21ed1a985a1edcf511a65a9927151fab108e72206a2ee3c62f8946ab73dfc33d"
-dependencies = [
- "attr_alias",
- "libc",
- "signal-hook 0.3.18",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

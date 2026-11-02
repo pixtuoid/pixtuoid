@@ -144,8 +144,8 @@ pixtuoid learns what each agent is doing from a tiny hook it installs, which nev
 
 pixtuoid is **telemetry-free and local by default**: it makes no outbound connections, and
 accepts none unless you run `pixtuoid serve`, which sends agent status, model, usage, repo names and
-which agent CLIs you have, never paths, prompts or transcripts, to devices you paired on your local
-network. Details: **[SECURITY.md](SECURITY.md)**.
+which agent CLIs you have and how each is connected, never paths, prompts or transcripts, to devices
+you paired on your local network. Details: **[SECURITY.md](SECURITY.md)**.
 
 ## Contributing
 

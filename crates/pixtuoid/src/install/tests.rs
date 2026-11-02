@@ -1309,21 +1309,7 @@ pub(crate) fn with_fake_hosts<R>(f: impl FnOnce(&std::path::Path) -> R) -> R {
 /// [`with_fake_hosts`], whose fakes exit 1 on the exact call `fail` (`<cli> <args>`).
 fn with_fake_hosts_failing<R>(fail: Option<&str>, f: impl FnOnce(&std::path::Path) -> R) -> R {
     let dir = tempfile::TempDir::new().unwrap();
-    for (cli, _unix, _windows) in FAKE_HOSTS {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let bin = dir.path().join(cli);
-            std::fs::write(&bin, _unix).unwrap();
-            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        #[cfg(windows)]
-        std::fs::write(dir.path().join(format!("{cli}.cmd")), _windows).unwrap();
-    }
-    let path = std::env::join_paths(std::iter::once(dir.path().to_path_buf()).chain(
-        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-    ))
-    .unwrap();
+    let path = fake_on_path(dir.path(), FAKE_HOSTS);
     let claude = dir.path().join("claude-config");
     let codex = dir.path().join("codex-home");
     let reasonix = dir.path().join("reasonix-home");
@@ -1345,6 +1331,31 @@ fn with_fake_hosts_failing<R>(fail: Option<&str>, f: impl FnOnce(&std::path::Pat
         ],
         || f(dir.path()),
     )
+}
+
+/// Each of `fakes` (its command, then its sh and cmd scripts) as a CLI in
+/// `dir`, and PATH with `dir` first.
+pub(crate) fn fake_on_path(
+    dir: &std::path::Path,
+    fakes: &[(&str, &str, &str)],
+) -> std::ffi::OsString {
+    for (cli, _unix, _windows) in fakes {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let bin = dir.join(cli);
+            std::fs::write(&bin, _unix).unwrap();
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        #[cfg(windows)]
+        std::fs::write(dir.join(format!("{cli}.cmd")), _windows).unwrap();
+    }
+    std::env::join_paths(
+        std::iter::once(dir.to_path_buf()).chain(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        )),
+    )
+    .unwrap()
 }
 
 /// Each fake: its command, then its sh and cmd scripts.

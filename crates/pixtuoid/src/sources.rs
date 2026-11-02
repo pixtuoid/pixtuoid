@@ -720,10 +720,10 @@ pub(crate) fn died(source_id: &str, deaths: &[SourceDeath]) -> bool {
 /// a connected absent CLI from a disconnected one. No `..`: a field added to
 /// [`ConnectionRow`] must be ruled in or out here.
 #[cfg(feature = "serve")]
-fn device_row(row: &ConnectionRow, dead: bool) -> SourceRow {
+fn device_row(row: &ConnectionRow, deaths: &[SourceDeath], drifted: &[&str]) -> SourceRow {
     let ConnectionRow {
         source_id,
-        label_prefix: _,
+        label_prefix,
         display_name,
         state,
         config_path: _,
@@ -735,17 +735,25 @@ fn device_row(row: &ConnectionRow, dead: bool) -> SourceRow {
         ConnState::Disconnected => SourceState::Disconnected,
         ConnState::NoCli { connected } => SourceState::NoCli { connected },
     };
-    SourceRow::new(source_id, display_name, state, health.is_some() || dead)
+    let attention = health.is_some() || died(source_id, deaths) || drifted.contains(label_prefix);
+    SourceRow::new(source_id, display_name, state, attention)
 }
 
-/// [`device_row`] for every source, `deaths` being a running server's.
+/// [`device_row`] for every source: its `attention` is a connected source's
+/// broken install, or a decoder that drifted or a watcher that died in this
+/// server's run, of which `drift` and `deaths` keep the record. `serve` keeps
+/// no run log, so `build_rows` reads none.
 #[cfg(feature = "serve")]
-pub(crate) fn device_rows(connected: &HashSet<String>, deaths: &[SourceDeath]) -> Vec<SourceRow> {
-    // `serve` logs to stderr, so no run log holds its decode drift.
+pub(crate) fn device_rows(
+    connected: &HashSet<String>,
+    deaths: &[SourceDeath],
+    drift: &crate::doctor::DriftSeen,
+) -> Vec<SourceRow> {
     const NO_LOG: &str = "";
+    let drifted = drift.prefixes();
     build_rows(connected, NO_LOG)
         .iter()
-        .map(|row| device_row(row, died(row.source_id, deaths)))
+        .map(|row| device_row(row, deaths, &drifted))
         .collect()
 }
 
@@ -1130,7 +1138,7 @@ mod tests {
                 SourceState::NoCli { connected: false },
             ),
         ] {
-            let device = device_row(&plain_row(state), false);
+            let device = device_row(&plain_row(state), &[], &[]);
             assert_eq!(device.state(), wire);
             assert_eq!(device.id(), "claude-code");
             assert_eq!(device.name(), "Claude Code");
@@ -1139,31 +1147,44 @@ mod tests {
 
     #[cfg(feature = "serve")]
     #[test]
-    fn a_devices_row_needs_attention_for_a_health_line_or_a_death() {
-        for (health, died, attention) in [
-            (None, false, false),
-            (Some("⚠ install broken".to_owned()), false, true),
-            (None, true, true),
+    fn a_devices_row_needs_attention_for_a_health_line_a_death_or_drift() {
+        let death = [SourceDeath::new("claude-code", "boom")];
+        let another_death = [SourceDeath::new("codex", "boom")];
+        for (health, deaths, drifted, attention) in [
+            (None, &[][..], &[][..], false),
+            (Some("⚠ install broken".to_owned()), &[], &[], true),
+            (None, &death, &[], true),
+            (None, &another_death, &[], false),
+            (None, &[], &["cc"], true),
+            (None, &[], &["cx"], false),
         ] {
             let row = ConnectionRow {
                 health,
                 ..plain_row(ConnState::Connected)
             };
-            assert_eq!(device_row(&row, died).attention(), attention);
+            let flagged = device_row(&row, deaths, drifted).attention();
+            assert_eq!(flagged, attention, "{deaths:?} {drifted:?}");
         }
     }
 
     /// Nothing is connected, so no row reads the machine for a health line.
     #[cfg(feature = "serve")]
     #[test]
-    fn a_death_marks_only_the_source_that_died() {
+    fn this_runs_drift_and_deaths_mark_only_their_own_sources() {
+        use tracing_subscriber::layer::SubscriberExt;
+        let drift = crate::doctor::DriftSeen::default();
+        tracing::subscriber::with_default(
+            tracing_subscriber::registry().with(drift.layer()),
+            || pixtuoid_core::source::drift::unknown_event("cursor", "NewHook"),
+        );
         let deaths = [SourceDeath::new("codex", "boom")];
-        let rows = device_rows(&HashSet::new(), &deaths);
-        let marked: Vec<_> = (rows.iter())
+        let rows = device_rows(&HashSet::new(), &deaths, &drift);
+        let mut marked: Vec<_> = (rows.iter())
             .filter(|row| row.attention())
             .map(SourceRow::id)
             .collect();
-        assert_eq!(marked, ["codex"]);
+        marked.sort_unstable();
+        assert_eq!(marked, ["codex", "cursor"]);
     }
 
     /// `health` can quote another CLI's config, and `config_path` is the user's.
@@ -1177,7 +1198,7 @@ mod tests {
             health: Some(format!("⚠ install broken: {SENTINEL}")),
             ..plain_row(ConnState::Connected)
         };
-        let rows = vec![device_row(&row, false)];
+        let rows = vec![device_row(&row, &[], &[])];
         let line = serde_json::to_string(&Answer::Sources { rows }).unwrap();
         assert!(line.contains(r#""attention":true"#), "{line}");
         assert!(!line.contains("sentinel"), "{line}");

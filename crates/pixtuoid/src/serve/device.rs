@@ -12,7 +12,7 @@ use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
 use tokio::net::TcpStream;
-use tokio::sync::oneshot;
+use tokio::sync::{Semaphore, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::{Instant, interval_at, sleep, timeout, timeout_at};
 use tokio_rustls::TlsAcceptor;
@@ -43,6 +43,10 @@ pub(super) struct Devices {
     store: Store,
     scene: SceneRx,
     rows: ReadRows,
+    /// One permit, held through an ask's blocking work across every device:
+    /// that work can run a host CLI, which a hang holds until its limit, and a
+    /// device that reconnects and asks again must not start a second.
+    gate: Arc<Semaphore>,
     /// Each device's live stream, ended by dropping its sender. A phone that
     /// lost its Wi-Fi sends no FIN, so its old connection would hold a slot until
     /// TCP gave up on it.
@@ -55,6 +59,7 @@ impl Devices {
             store,
             scene,
             rows,
+            gate: Arc::new(Semaphore::new(1)),
             streams: Arc::default(),
         }
     }
@@ -86,20 +91,17 @@ impl Devices {
         }
     }
 
-    /// Read the hello and answer it. Anything but an answer ends the connection
+    /// Read the hello and answer it. Anything but a verdict ends the connection
     /// with no reply: that's a retry, where a refusal is a re-pair.
     async fn greet<S>(&self, stream: &mut S) -> Result<(Reply, Option<Hashed>)>
     where
         S: AsyncBufRead + Unpin,
     {
-        let mut line = String::new();
-        (&mut *stream)
-            .take(MAX_LINE_BYTES as u64)
-            .read_line(&mut line)
-            .await?;
+        let mut line = Vec::new();
+        ensure!(next_line(stream, &mut line).await?, "no hello");
         // No reply, as when the store can't answer: a newer device's tag is no
         // reason for it to re-pair.
-        let hello: Hello = serde_json::from_str(&line).context("an unreadable hello")?;
+        let hello: Hello = serde_json::from_slice(&line).context("an unreadable hello")?;
         let store = self.store.clone();
         tokio::task::spawn_blocking(move || match hello {
             Hello::Pair { code } => Ok(store.redeem(&code, SystemTime::now())?.map_or(
@@ -125,39 +127,35 @@ impl Devices {
     /// answer to each ask between those lines, all from this one loop.
     async fn stream<S>(&self, stream: &mut S, device: Hashed) -> Result<()>
     where
-        S: AsyncRead + AsyncWrite + Unpin,
+        S: AsyncBufRead + AsyncWrite + Unpin,
     {
         let mut replaced = self.take_over(device.clone());
         let mut scene = self.scene.clone();
         scene.mark_changed();
         let mut heartbeat = interval_at(Instant::now() + HEARTBEAT, HEARTBEAT);
-        let mut inbox = Inbox::new();
+        let mut line = Vec::new();
         let mut asked = JoinSet::new();
         loop {
-            if asked.is_empty()
-                && let Some(ask) = inbox.next_ask()?
-            {
-                match ask {
-                    Ask::Sources => {
-                        let rows = Arc::clone(&self.rows);
-                        asked.spawn_blocking(move || Answer::Sources { rows: rows() });
-                    }
-                    Ask::Unknown => write_line(stream, &json_line(&Answer::Unsupported)?).await?,
-                }
-                continue;
-            }
             tokio::select! {
                 _ = &mut replaced => return Ok(()),
-                // One ask at a time: what follows it waits in the socket.
-                read = stream.read(inbox.room()), if asked.is_empty() => match read? {
-                    0 => return Ok(()),
-                    read => {
-                        inbox.filled(read);
-                        continue;
+                // One ask at a time, so answers, which name no ask, come back in
+                // the order asked; what follows waits in the socket.
+                read = next_line(stream, &mut line), if asked.is_empty() => {
+                    if !read? {
+                        return Ok(());
                     }
-                },
+                    let ask = serde_json::from_slice(&line).context("an unreadable ask")?;
+                    line.clear();
+                    match ask {
+                        Ask::Sources => {
+                            asked.spawn(self.sources());
+                        }
+                        Ask::Unknown => write_line(stream, &json_line(&Answer::Unsupported)?).await?,
+                    }
+                    continue;
+                }
                 Some(answer) = asked.join_next() => {
-                    write_line(stream, &json_line(&answer?)?).await?;
+                    write_line(stream, &json_line(&answer??)?).await?;
                     continue;
                 }
                 changed = scene.changed() => changed?,
@@ -188,49 +186,47 @@ impl Devices {
             .insert(device, end);
         ended
     }
-}
 
-/// What a device has written past its last whole line, read by hand because
-/// [`select!`](https://docs.rs/tokio/latest/tokio/macro.select.html#cancellation-safety)
-/// lists `read` as cancellation safe and not `read_line`.
-struct Inbox {
-    bytes: [u8; MAX_LINE_BYTES],
-    held: usize,
-}
-
-impl Inbox {
-    fn new() -> Self {
-        Self {
-            bytes: [0; MAX_LINE_BYTES],
-            held: 0,
+    /// [`Ask::Sources`]'s answer, its blocking read run under [`Self::gate`].
+    fn sources(&self) -> impl Future<Output = Result<Answer>> + Send + 'static {
+        let (gate, rows) = (Arc::clone(&self.gate), Arc::clone(&self.rows));
+        async move {
+            let held = gate.acquire_owned().await?;
+            // Moved in, so it is held until the read returns, though the
+            // connection that asked has ended.
+            let rows = tokio::task::spawn_blocking(move || {
+                let _held = held;
+                rows()
+            })
+            .await?;
+            Ok(Answer::Sources { rows })
         }
     }
+}
 
-    /// Where the next read lands, which [`Self::next_ask`] keeps from being empty.
-    fn room(&mut self) -> &mut [u8] {
-        &mut self.bytes[self.held..]
+/// Read on toward the end of a device's line, appending to `line`: `true` once
+/// it holds a whole one, `false` at the stream's end. Cancel safe, as
+/// [`read_until`](https://docs.rs/tokio/latest/tokio/io/trait.AsyncBufReadExt.html#method.read_until)
+/// is and `read_line` is not, so a hello and an ask are framed alike.
+///
+/// # Errors
+///
+/// If the stream fails, or no newline comes within [`MAX_LINE_BYTES`].
+async fn next_line<S>(stream: &mut S, line: &mut Vec<u8>) -> Result<bool>
+where
+    S: AsyncBufRead + Unpin,
+{
+    let room = MAX_LINE_BYTES - line.len();
+    (&mut *stream)
+        .take(room as u64)
+        .read_until(b'\n', line)
+        .await?;
+    if line.ends_with(b"\n") {
+        return Ok(true);
     }
-
-    /// `read` bytes landed in [`Self::room`].
-    fn filled(&mut self, read: usize) {
-        self.held += read;
-    }
-
-    /// The ask on the next whole line, if one has arrived.
-    ///
-    /// # Errors
-    ///
-    /// If that line isn't one, or none ends within [`MAX_LINE_BYTES`].
-    fn next_ask(&mut self) -> Result<Option<Ask>> {
-        let Some(end) = self.bytes[..self.held].iter().position(|b| *b == b'\n') else {
-            ensure!(self.held < MAX_LINE_BYTES, "a line past the cap");
-            return Ok(None);
-        };
-        let ask = serde_json::from_slice(&self.bytes[..end]).context("an unreadable ask")?;
-        self.bytes.copy_within(end + 1..self.held, 0);
-        self.held -= end + 1;
-        Ok(Some(ask))
-    }
+    // Short of the cap, `read_until` stops only at the end.
+    ensure!(line.len() < MAX_LINE_BYTES, "a line past the cap");
+    Ok(false)
 }
 
 fn json_line(value: &impl Serialize) -> serde_json::Result<String> {
@@ -696,5 +692,63 @@ mod tests {
         held.started.recv().await.expect("the second starts");
         held.release.send(()).expect("it waits");
         assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+    }
+
+    /// An answer names no ask, so a device matches it by order: an ask the
+    /// server could answer at once still waits its turn, and asks past a line's
+    /// cap wait in the socket.
+    #[tokio::test]
+    async fn answers_come_back_in_the_order_asked() {
+        let mut held = held();
+        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let mut peer = streaming(&fixture).await;
+        let ask = serde_json::to_string(&Ask::Sources).expect("it encodes");
+        let behind = MAX_LINE_BYTES / ask.len() + 1;
+
+        peer.ask(&Ask::Sources).await;
+        held.started.recv().await.expect("it starts");
+        let unknown = r#"{"ask":"from_the_future"}"#;
+        peer.say(&(format!("{ask}\n").repeat(behind) + unknown))
+            .await;
+        peer.sees_a_change(&fixture).await;
+
+        for _ in 0..=behind {
+            held.release.send(()).expect("it waits");
+            assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+        }
+        assert_eq!(peer.answer().await, Answer::Unsupported);
+    }
+
+    /// A device that reconnects while its read runs can't start a second, which
+    /// gets this long to show it would.
+    #[tokio::test]
+    async fn one_read_runs_at_a_time_across_connections() {
+        const A_SECOND_WOULD_START: Duration = Duration::from_millis(500);
+        let mut held = held();
+        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let hello = Hello::Resume {
+            token: paired(&fixture),
+        };
+        let mut old = Peer::connect(&fixture.devices);
+        old.hello(&hello).await;
+        assert_eq!(old.reply().await, Reply::Resumed);
+        old.line().await;
+        old.ask(&Ask::Sources).await;
+        held.started.recv().await.expect("it starts");
+
+        let mut new = Peer::connect(&fixture.devices);
+        new.hello(&hello).await;
+        assert_eq!(new.reply().await, Reply::Resumed);
+        new.line().await;
+        old.ended().await.expect("replaced is a clean end");
+        new.ask(&Ask::Sources).await;
+        new.sees_a_change(&fixture).await;
+        let second = timeout(A_SECOND_WOULD_START, held.started.recv()).await;
+        assert!(second.is_err(), "a second read started");
+
+        held.release.send(()).expect("it waits");
+        held.started.recv().await.expect("the new read starts");
+        held.release.send(()).expect("it waits");
+        assert!(matches!(new.answer().await, Answer::Sources { .. }));
     }
 }

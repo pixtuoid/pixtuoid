@@ -411,7 +411,7 @@ pub enum Hello {
     },
 }
 
-/// The server's answer to a [`Hello`]. Its [`encode`] lines follow an acceptance.
+/// The server's reply to a [`Hello`]. Its [`encode`] lines follow an acceptance.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "reply", rename_all = "snake_case")]
 pub enum Reply {
@@ -429,8 +429,8 @@ pub enum Reply {
     Unknown,
 }
 
-/// A line a device may write after an accepted [`Hello`], answered by one
-/// [`Answer`] among the server's [`encode`] lines.
+/// A line a device may write after an accepted [`Hello`], answered in the order
+/// asked by one [`Answer`] among the server's [`encode`] lines.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "ask", rename_all = "snake_case")]
 pub enum Ask {
@@ -507,10 +507,7 @@ impl SourceRow {
         self.state
     }
 
-    /// Whether this source's hooks are installed wrong, which only a connected
-    /// source is checked for, or its own watcher died on this server. The shared
-    /// hook socket's death names no row, and decode drift shows on none: `serve`
-    /// logs to stderr, so it leaves no run log to scan.
+    /// Whether the server says this source wants a look there.
     pub fn attention(&self) -> bool {
         self.attention
     }
