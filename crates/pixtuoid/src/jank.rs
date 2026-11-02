@@ -1,9 +1,9 @@
 //! Frame-time telemetry, after Android's JankStats
 //! (<https://developer.android.com/topic/performance/jankstats>): a frame past
 //! the loop's scheduled interval is a debug `frame slow`, one past twice it a
-//! debug `frame jank`, each with what it was drawn under; once a minute, and
-//! at exit, a `frame pacing` summary gives the spread, at warn when a frame
-//! janked.
+//! debug `frame jank`, each with what it was drawn under; once a minute, at a
+//! change of painter and at exit, a `frame pacing` summary gives the spread,
+//! at warn when a frame janked.
 
 use std::time::{Duration, Instant};
 
@@ -15,7 +15,7 @@ use pixtuoid_scene::look::FrameNote;
 /// (`pace_check_filters_the_reports_target`).
 const TARGET: &str = "pixtuoid::jank";
 
-/// How often the spread is reported.
+/// How often the spread is reported, a change of painter aside.
 const WINDOW: Duration = Duration::from_secs(60);
 /// A window's frames twice over, room for a loop that runs hot: past it the
 /// oldest are overwritten.
@@ -129,7 +129,7 @@ pub(crate) struct Jank {
 }
 
 /// What draws the frames a summary spreads: one matrix cell of a run.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Painter {
     /// The image protocol, or `classic` for the half-blocks.
     pub(crate) look: &'static str,
@@ -185,9 +185,23 @@ impl Jank {
         self.due = None;
     }
 
-    /// Name what draws the frames from now on.
-    pub(crate) fn painted_by(&mut self, painter: Painter) {
-        self.painter = painter;
+    /// Name what draws the frames from now on: a window another painter
+    /// drew closes at `now`, so no summary spreads two painters' frames.
+    pub(crate) fn painted_by(&mut self, painter: &Painter, now: Instant) {
+        if *painter == self.painter {
+            return;
+        }
+        if self.len > 0 {
+            self.summarize(now);
+            self.open_window(now);
+        }
+        self.painter.clone_from(painter);
+    }
+
+    /// What draws the frames now.
+    #[cfg(test)]
+    pub(crate) fn painter(&self) -> &Painter {
+        &self.painter
     }
 
     /// Count a frame that took `total`, `present` of it writing the held frame
@@ -228,14 +242,19 @@ impl Jank {
             .get_or_insert_with(|| now.checked_sub(total).unwrap_or(now));
         if now.duration_since(since) >= WINDOW {
             self.summarize(now);
-            self.len = 0;
-            self.next = 0;
-            self.janks = 0;
-            self.over = 0;
-            self.hitch = Duration::ZERO;
-            self.scheduled = 0;
-            self.since = Some(now);
+            self.open_window(now);
         }
+    }
+
+    /// Start a window at `now`, with no frames.
+    fn open_window(&mut self, now: Instant) {
+        self.len = 0;
+        self.next = 0;
+        self.janks = 0;
+        self.over = 0;
+        self.hitch = Duration::ZERO;
+        self.scheduled = 0;
+        self.since = Some(now);
     }
 
     /// Report the window so far, at exit `now`: a run shorter than [`WINDOW`]
@@ -402,13 +421,16 @@ mod tests {
         let t0 = Instant::now();
         let logged = crate::test_capture::capture(|| {
             let mut jank = Jank::new();
-            jank.painted_by(Painter {
-                look: "kitty",
-                scale: 16,
-                tmux: true,
-                terminal: Some("ghostty".into()),
-                sync: true,
-            });
+            jank.painted_by(
+                &Painter {
+                    look: "kitty",
+                    scale: 16,
+                    tmux: true,
+                    terminal: Some("ghostty".into()),
+                    sync: true,
+                },
+                t0,
+            );
             for _ in 0..99 {
                 jank.record(Duration::from_millis(10), Duration::ZERO, None, None, t0);
             }
@@ -438,6 +460,64 @@ mod tests {
             line.contains(" WARN "),
             "a window with a jank warns: {line}"
         );
+    }
+
+    /// A change of painter closes the window the last one drew, each summary
+    /// naming its own; naming the same painter again closes nothing.
+    #[test]
+    fn a_new_painter_closes_the_window_the_last_one_drew() {
+        let t0 = Instant::now();
+        let painter = |look| Painter {
+            look,
+            scale: 1,
+            ..Painter::default()
+        };
+        let logged = crate::test_capture::capture(|| {
+            let mut jank = Jank::new();
+            jank.painted_by(&painter("kitty"), t0);
+            for _ in 0..3 {
+                jank.record(Duration::from_millis(10), Duration::ZERO, None, None, t0);
+            }
+            jank.painted_by(&painter("kitty"), t0);
+            jank.record(Duration::from_millis(10), Duration::ZERO, None, None, t0);
+            jank.painted_by(&painter("classic"), t0);
+            jank.record(Duration::from_millis(10), Duration::ZERO, None, None, t0);
+            jank.finish(t0);
+        });
+        let summaries: Vec<&str> = logged
+            .lines()
+            .filter(|l| l.contains("frame pacing"))
+            .collect();
+        assert_eq!(summaries.len(), 2, "{logged}");
+        assert!(summaries[0].contains("look=\"kitty\"") && summaries[0].contains("frames=4"));
+        assert!(summaries[1].contains("look=\"classic\"") && summaries[1].contains("frames=1"));
+    }
+
+    /// The frame that changes painter is the new window's, its time
+    /// included: the old window's span ends where that frame began.
+    #[test]
+    fn the_frame_that_changes_painter_spans_the_new_window() {
+        let t0 = Instant::now();
+        let painter = |look| Painter {
+            look,
+            ..Painter::default()
+        };
+        let ms = Duration::from_millis;
+        let logged = crate::test_capture::capture(|| {
+            let mut jank = Jank::new();
+            jank.painted_by(&painter("kitty"), t0);
+            jank.record(ms(10), Duration::ZERO, None, None, t0 + ms(10));
+            jank.painted_by(&painter("classic"), t0 + ms(10));
+            jank.record(ms(50), Duration::ZERO, None, None, t0 + ms(60));
+            jank.finish(t0 + ms(60));
+        });
+        let spans: Vec<&str> = logged
+            .lines()
+            .filter(|l| l.contains("frame pacing"))
+            .collect();
+        assert_eq!(spans.len(), 2, "{logged}");
+        assert!(spans[0].contains("span_ms=10.0"), "{}", spans[0]);
+        assert!(spans[1].contains("span_ms=50.0"), "{}", spans[1]);
     }
 
     /// A run that ends inside a window still reports it.

@@ -103,10 +103,12 @@ impl<S: Copy + PartialEq> FlashHold<S> {
         })
     }
 
-    /// Whether a write showing `phases` changes the screen's: it goes out at
-    /// once, whatever the painter's cadence.
-    pub(crate) fn changes(&self, phases: Flashes) -> bool {
-        self.shown.is_none_or(|(on, ..)| on != phases)
+    /// Whether a write showing `phases` on a screen shaped `shape` changes
+    /// the screen's: it goes out at once, whatever the painter's cadence. A
+    /// new shape is a cleared screen, which shows nothing.
+    pub(crate) fn changes(&self, phases: Flashes, shape: S) -> bool {
+        self.shown
+            .is_none_or(|(on, on_shape, _)| on != phases || on_shape != shape)
     }
 
     /// A write showing `phases` to a screen shaped `shape` is under way.
@@ -119,6 +121,12 @@ impl<S: Copy + PartialEq> FlashHold<S> {
         if let Some((phases, shape)) = self.staged.take() {
             self.shown(phases, shape);
         }
+    }
+
+    /// The screen was cleared: no phase shows on it to hold.
+    pub(crate) fn wiped(&mut self) {
+        self.shown = None;
+        self.staged = None;
     }
 
     /// A write showing `phases` finished reaching a screen shaped `shape` just
@@ -209,7 +217,7 @@ impl<S: Copy + PartialEq, G> Screen<S, G> {
         if self.hold.holds(flashes, shape) {
             return Admit::Held;
         }
-        let admit = if self.hold.changes(flashes) {
+        let admit = if self.hold.changes(flashes, shape) {
             Admit::Changed
         } else {
             Admit::Same
@@ -235,6 +243,14 @@ impl<S: Copy + PartialEq, G> Screen<S, G> {
     /// a pointer hits nothing now, and once it lands nothing flashes.
     pub fn blank(&mut self, shape: S) {
         self.hold.stage(Flashes::default(), shape);
+        self.staged = None;
+        self.shown = None;
+    }
+
+    /// The screen was cleared: it shows nothing, so the next write holds
+    /// back for no flash and the pointer hits nothing until it lands.
+    pub fn wiped(&mut self) {
+        self.hold.wiped();
         self.staged = None;
         self.shown = None;
     }
@@ -317,7 +333,7 @@ mod tests {
         let mut hold = FlashHold::on(screen.clock());
         screen.at(at(0));
         assert!(!hold.holds(one, SHAPE), "an empty screen holds nothing");
-        assert!(hold.changes(one));
+        assert!(hold.changes(one, SHAPE));
         hold.shown(one, SHAPE);
         screen.at(at(50));
         hold.shown(one, SHAPE);
@@ -325,7 +341,7 @@ mod tests {
         screen.at(at(floor - 1));
         assert!(hold.holds(two, SHAPE), "timed from the first showing");
         assert!(!hold.holds(one, SHAPE), "the phases on screen never wait");
-        assert!(!hold.changes(one) && hold.changes(two));
+        assert!(!hold.changes(one, SHAPE) && hold.changes(two, SHAPE));
         screen.at(at(floor));
         assert!(!hold.holds(two, SHAPE));
         screen.at(at(0) - Duration::from_millis(1));
@@ -361,6 +377,10 @@ mod tests {
         hold.shown(one, SHAPE);
         screen.at(at(10));
         assert!(!hold.holds(two, (SHAPE.0 + 1, SHAPE.1)), "resized");
+        assert!(
+            hold.changes(one, (SHAPE.0 + 1, SHAPE.1)),
+            "a cleared screen"
+        );
         hold.shown(one, (SHAPE.0 + 1, SHAPE.1));
         assert!(
             hold.holds(two, (SHAPE.0 + 1, SHAPE.1)),
@@ -371,6 +391,28 @@ mod tests {
             !hold.holds(two, (SHAPE.0 + 1, SHAPE.1)),
             "timed from the phase's first showing, not the reshape"
         );
+    }
+
+    /// A cleared screen shows no phase to hold: its next write goes out at
+    /// once, on the same shape inside the floor.
+    #[test]
+    fn a_wiped_screen_is_never_held() {
+        let [one, two] = two_pictures();
+        let screen = ManualClock::default();
+        let mut hold = FlashHold::on(screen.clock());
+        screen.at(at(0));
+        hold.shown(one, SHAPE);
+        hold.stage(one, SHAPE);
+        screen.at(at(10));
+        assert!(hold.holds(two, SHAPE), "premise: held");
+        hold.wiped();
+        assert!(!hold.holds(two, SHAPE));
+        assert!(
+            hold.changes(two, SHAPE) && hold.changes(one, SHAPE),
+            "every phase is news"
+        );
+        hold.landed();
+        assert!(!hold.holds(two, SHAPE), "the staged write was wiped too");
     }
 
     /// The phase is the composed frame's own: its sky's strike level, each a
@@ -458,6 +500,27 @@ mod tests {
         assert!(is(&first, &screen), "a held picture never shows");
         let same = screen.admit(&floor_picture(&pixels, &second_hits, one), SHAPE, (), None);
         assert_eq!(same, Admit::Same);
+    }
+
+    /// A wiped screen shows nothing for a pointer to hit, and its next write
+    /// is news on the same shape inside the floor.
+    #[test]
+    fn a_wiped_screen_shows_nothing_and_takes_its_next_write_at_once() {
+        let [one, two] = two_pictures();
+        let [first, _] = two_layouts();
+        let first_hits = hits(&first);
+        let pixels = crate::sprite::RgbBuffer::filled(1, 1, crate::composite::BLACK);
+        let screen_clock = ManualClock::default();
+        let mut screen = Screen::on(screen_clock.clock());
+        screen_clock.at(at(0));
+        screen.admit(&floor_picture(&pixels, &first_hits, one), SHAPE, (), None);
+        screen.landed();
+        assert!(screen.shown().is_some(), "premise: shown");
+        screen.wiped();
+        assert!(screen.shown().is_none(), "the pointer hits nothing");
+        screen_clock.at(at(10));
+        let next = screen.admit(&floor_picture(&pixels, &first_hits, two), SHAPE, (), None);
+        assert_eq!(next, Admit::Changed);
     }
 
     /// A slide on screen hits nothing, and a blank screen shows nothing.
