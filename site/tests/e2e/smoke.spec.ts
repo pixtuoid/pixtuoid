@@ -325,13 +325,11 @@ async function expectWholeDevicePixels(page: Page) {
   for (const edge of [b.left, b.top]) {
     expect(Math.abs(edge - Math.round(edge))).toBeLessThanOrEqual(grain(b));
   }
-  const unit = b.width / b.uw;
+  for (const side of [b.width, b.height]) expect((side / b.dpr) % 1, 'a whole CSS px').toBe(0);
   expect(b.left).toBeLessThanOrEqual(grain(b));
   expect(b.top).toBeLessThanOrEqual(grain(b));
   expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain(b));
   expect(b.top + b.height).toBeGreaterThanOrEqual(b.viewH - grain(b));
-  expect(b.width - b.viewW).toBeLessThan(unit);
-  expect(b.height - b.viewH).toBeLessThan(unit);
 }
 
 // One rule at every ratio (#2029): the nearest whole upscale, at least 2x while the cast seats.

@@ -395,10 +395,21 @@ const officeDriverUrl = asset('office-driver.js');
     let pausedAt = 0;
 
     // The office the engine fits to the backdrop's device pixels, and the canvas box that shows its frame at that
-    // whole upscale: the units cover the backdrop, their crop of under one unit split either side on whole device
-    // pixels. CSS pixels times the ratio, not the device-pixel box: Chromium reports that box unscaled under an
-    // emulated ratio, which then disagrees with the raster the e2e suite reads.
+    // whole upscale from the backdrop's corner, its crop at the far edges. CSS pixels times the ratio, not the
+    // device-pixel box: Chromium reports that box unscaled under an emulated ratio, which then disagrees with the
+    // raster the e2e suite reads.
     let fitSeq = 0;
+    // Chromium lays a box out in 64ths of a CSS px (`LayoutUnit`, blink's layout_unit.h:473), so a box finer than
+    // that rasterizes a device pixel short and shifts every frame pixel past it: the office grows to a whole CSS
+    // pixel, within as many units as a common ratio's denominator.
+    const WHOLE_CSS_TRIES = 32;
+    function wholeCss(units, pxPerUnit, dpr) {
+      for (let u = units; u < units + WHOLE_CSS_TRIES; u++) {
+        const css = (u * pxPerUnit) / dpr;
+        if (Math.abs(css - Math.round(css)) < 1e-6) return u;
+      }
+      return units;
+    }
     function refit() {
       const r = wrap.getBoundingClientRect();
       const devW = Math.round(r.width * devicePixelRatio);
@@ -407,15 +418,13 @@ const officeDriverUrl = asset('office-driver.js');
       const seq = ++fitSeq;
       hero.call('fit', devW, devH).then(function (fit) {
         if (seq !== fitSeq) return;
-        unitsW = fit[0];
-        unitsH = fit[1];
         const dpr = devicePixelRatio;
-        const w = unitsW * fit[2];
-        const h = unitsH * fit[2];
-        canvas.style.left = Math.floor((devW - w) / 2) / dpr + 'px';
-        canvas.style.top = Math.floor((devH - h) / 2) / dpr + 'px';
-        canvas.style.width = w / dpr + 'px';
-        canvas.style.height = h / dpr + 'px';
+        unitsW = wholeCss(fit[0], fit[2], dpr);
+        unitsH = wholeCss(fit[1], fit[2], dpr);
+        canvas.style.left = '0';
+        canvas.style.top = '0';
+        canvas.style.width = (unitsW * fit[2]) / dpr + 'px';
+        canvas.style.height = (unitsH * fit[2]) / dpr + 'px';
         canvas.dataset.units = unitsW + 'x' + unitsH;
         canvas.dataset.upscale = String(fit[3]);
         // While paused no loop draws the new units, so re-render the ONE frozen frame at its frozen time.

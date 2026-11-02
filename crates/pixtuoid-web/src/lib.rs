@@ -23,7 +23,7 @@ use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::{AgentEvent, AgentId, Transport};
 
 use crate::script::{
-    Beat, CAST_LEN, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
+    Beat, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
 };
 
 use pixtuoid_scene::audio::OneShotPool;
@@ -174,8 +174,8 @@ pub struct Office {
 /// than the app's, since its sprites are fixed-size.
 const FRAMING_UNITS_H: u32 = 130;
 
-/// The fewest whole device pixels [`Office::fit`] paints an art pixel as while
-/// the cast still seats (owner-delegated, #2029).
+/// The fewest whole device pixels [`Office::fit`] paints an art pixel as where
+/// the office still lays out (owner-delegated, #2029).
 const MIN_UPSCALE: u16 = 2;
 
 #[wasm_bindgen]
@@ -301,8 +301,8 @@ impl Office {
     /// pixel on whole device pixels, and the units cover the surface, cropping under one.
     ///
     /// The scale nearest [`FRAMING_UNITS_H`] tall, at least [`MIN_UPSCALE`] whole
-    /// pixels, then stepped down while the office cannot seat the cast, as the
-    /// floating window steps down until its office lays out.
+    /// pixels, then stepped down while the office would not lay out and so paint
+    /// nothing, as the floating window steps down.
     pub fn fit(&self, px_w: u32, px_h: u32) -> Vec<u32> {
         let density = self.fit.density();
         let d = density.get();
@@ -317,12 +317,13 @@ impl Office {
             .scale()
             .get();
         let units = |s: u16| (px_w.div_ceil(u32::from(s)), px_h.div_ceil(u32::from(s)));
-        let seats = |s: u16| {
+        let min = pixtuoid_scene::layout::min_layout_size();
+        let lays_out = |s: u16| {
             let (w, h) = units(s);
-            floor_capacity(px(w), px(h), self.seed) >= CAST_LEN
+            w >= u32::from(min.w) && h >= u32::from(min.h)
         };
         let scale = std::iter::successors(Some(natural), |&s| s.checked_sub(d).filter(|&s| s >= d))
-            .find(|&s| seats(s))
+            .find(|&s| lays_out(s))
             .unwrap_or(d);
         let (w, h) = units(scale);
         vec![w, h, u32::from(scale), u32::from(scale / d)]
@@ -770,7 +771,7 @@ mod tests {
     }
 
     /// Device pixel surfaces the site meets: laptops at DPR 1, a Retina laptop,
-    /// 4K, and a phone held both ways.
+    /// 4K, a phone held both ways, and narrow DPR 1 windows.
     const SURFACES: &[(u32, u32)] = &[
         (1440, 900),
         (1366, 768),
@@ -782,6 +783,8 @@ mod tests {
         (1170, 2532),
         (2532, 1170),
         (844, 390),
+        (390, 844),
+        (568, 320),
     ];
 
     fn fit_of(o: &Office, (pw, ph): (u32, u32)) -> (u32, u32, u32) {
@@ -798,13 +801,13 @@ mod tests {
         }
     }
 
-    fn seats(o: &Office, (uw, uh): (u32, u32)) -> usize {
-        let unit = |n: u32| u16::try_from(n).expect("a surface's units fit a u16");
-        floor_capacity(unit(uw), unit(uh), o.seed)
+    fn lays_out((uw, uh): (u32, u32)) -> bool {
+        let min = pixtuoid_scene::layout::min_layout_size();
+        uw >= u32::from(min.w) && uh >= u32::from(min.h)
     }
 
     #[test]
-    fn every_art_pixel_lands_on_whole_device_pixels_and_the_cast_seats() {
+    fn every_art_pixel_lands_on_whole_device_pixels_and_the_office_lays_out() {
         let o = office();
         let d = u32::from(o.fit.density().get());
         let min = u32::from(MIN_UPSCALE) * d;
@@ -823,15 +826,12 @@ mod tests {
                 uh * s >= ph && (uh - 1) * s < ph,
                 "{pw}x{ph}: {uh} units down at {s}"
             );
-            assert!(
-                seats(&o, (uw, uh)) >= CAST_LEN,
-                "{pw}x{ph}: the cast stands"
-            );
+            assert!(lays_out((uw, uh)), "{pw}x{ph}: {uw}x{uh} lays nothing out");
             if s < min {
-                let (w, h) = (pw.div_ceil(min), ph.div_ceil(min));
+                let at_min = (pw.div_ceil(min), ph.div_ceil(min));
                 assert!(
-                    seats(&o, (w, h)) < CAST_LEN,
-                    "{pw}x{ph}: under {MIN_UPSCALE}x though it seats"
+                    !lays_out(at_min),
+                    "{pw}x{ph}: under {MIN_UPSCALE}x though it lays out there"
                 );
             }
         }
@@ -842,11 +842,10 @@ mod tests {
         let o = office();
         assert_eq!(fit_of(&o, (1440, 900)), (180, 113, 8));
         // The nearest whole upscale keeps the framing within the √2 `PixelFit`'s
-        // ratio rule allows, wherever neither floor binds: a portrait surface is
-        // too narrow to seat the cast at it.
-        for &(pw, ph) in SURFACES.iter().filter(|(w, h)| w > h) {
+        // ratio rule allows, wherever neither floor binds.
+        for &(pw, ph) in SURFACES {
             let (_, uh, s) = fit_of(&o, (pw, ph));
-            if s >= u32::from(MIN_UPSCALE) * u32::from(o.fit.density().get()) {
+            if s > u32::from(MIN_UPSCALE) * u32::from(o.fit.density().get()) {
                 let (lo, hi) = (uh.min(FRAMING_UNITS_H), uh.max(FRAMING_UNITS_H));
                 assert!(hi * hi <= 2 * lo * lo, "{pw}x{ph}: {uh} units tall");
             }
@@ -854,11 +853,11 @@ mod tests {
     }
 
     #[test]
-    fn a_landscape_phone_drops_below_two_whole_pixels_to_seat_the_cast() {
+    fn a_narrow_window_drops_below_two_whole_pixels_to_lay_out() {
         let o = office();
-        let (uw, uh, s) = fit_of(&o, (844, 390));
+        let (uw, uh, s) = fit_of(&o, (390, 844));
         assert!(s < u32::from(MIN_UPSCALE) * u32::from(o.fit.density().get()));
-        assert!(seats(&o, (uw, uh)) >= CAST_LEN);
+        assert!(lays_out((uw, uh)));
     }
 
     #[test]

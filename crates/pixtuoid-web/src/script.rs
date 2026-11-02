@@ -50,6 +50,7 @@ const _: () = assert!(
     "a cast member without a repo"
 );
 
+#[cfg(test)]
 pub(crate) const CAST_LEN: usize = CAST.len();
 
 pub(crate) fn cast_id(i: usize) -> AgentId {
