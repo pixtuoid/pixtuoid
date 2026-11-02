@@ -295,12 +295,6 @@ fn main() -> Result<()> {
     let buf = renderer.buf().context("a frame")?;
     let (bw, bh) = (buf.width(), buf.height());
     let cell = chrome_cell(at);
-    let world = FloorInputs {
-        scene: &scene,
-        now,
-        floor: FloorMeta::ground(),
-        pets: PetInputs::default(),
-    };
     let next = pixtuoid::dev::Overlays {
         window: (win_w, win_h),
         // Audible so the ♩ suffix shows; no transient flash in a static snapshot.
@@ -313,7 +307,7 @@ fn main() -> Result<()> {
         ),
         tooltip: hover.and_then(|cursor| {
             let tip = renderer.drawn_hit_at(cursor, at).and_then(|hit| {
-                pixtuoid_scene::tooltip::for_hit(hit, &scene, world.now, world.pets)
+                pixtuoid_scene::tooltip::for_hit(hit, &scene, now, PetInputs::default())
             })?;
             Some((tip, (cursor.0 as i32, cursor.1 as i32)))
         }),
