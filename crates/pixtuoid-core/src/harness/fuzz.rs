@@ -25,6 +25,10 @@ pub fn hook(bytes: &[u8]) -> Driven {
 }
 
 /// What [`hook`] never reaches of the endpoint's wire.
+///
+/// # Panics
+///
+/// If the demux changes a payload, which is what the target hunts.
 #[cfg(feature = "native")]
 pub fn endpoint(bytes: &[u8]) {
     tokio::runtime::Builder::new_current_thread()
