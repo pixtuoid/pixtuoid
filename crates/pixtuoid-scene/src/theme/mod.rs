@@ -25,7 +25,8 @@ pub(crate) enum ThemeKind {
     Dark,
 }
 
-/// A complete office color palette: nine role groups plus name/kind.
+/// A complete office color palette: nine role groups, plus the names it goes by
+/// and its kind.
 #[derive(Debug, Clone)]
 pub struct Theme {
     /// Theme id — the `--theme` value and the registry lookup key.
@@ -473,8 +474,7 @@ mod tests {
         assert_eq!(
             rows, themes,
             "site/src/themes.json (id, name) rows must match ALL_THEMES (name, \
-             display_name) — update the manifest + run `just gen-media` when the \
-             registry changes"
+             display_name)"
         );
     }
 

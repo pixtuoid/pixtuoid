@@ -1607,6 +1607,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::theme::SurfaceColors
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::theme::SurfaceColors
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::theme::SurfaceColors
 pub struct pixtuoid_scene::theme::Theme
+pub pixtuoid_scene::theme::Theme::display_name: &'static str
 pub pixtuoid_scene::theme::Theme::lighting: pixtuoid_scene::theme::LightingColors
 pub pixtuoid_scene::theme::Theme::name: &'static str
 pub pixtuoid_scene::theme::Theme::office: pixtuoid_scene::theme::OfficeColors

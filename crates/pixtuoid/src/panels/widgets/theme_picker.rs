@@ -82,6 +82,45 @@ mod tests {
     }
 
     #[test]
+    fn every_swatch_sits_one_cell_past_the_longest_display_name() {
+        use pixtuoid_scene::theme::ALL_THEMES;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let mut term = Terminal::new(TestBackend::new(60, 30)).unwrap();
+        term.draw(|f| {
+            paint_theme_picker(
+                f,
+                0,
+                Rect::new(0, 0, 60, 30),
+                &pixtuoid_scene::theme::NORMAL,
+            );
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let rows: Vec<String> = (0..buf.area.height)
+            .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect())
+            .collect();
+        let column = |row: &str, text: &str| row[..row.find(text).expect("drawn")].chars().count();
+        let longest = ALL_THEMES
+            .iter()
+            .map(|t| t.display_name.chars().count())
+            .max()
+            .expect("a theme");
+        for t in ALL_THEMES {
+            let row = rows
+                .iter()
+                .find(|r| r.contains(t.display_name))
+                .expect("listed");
+            assert_eq!(
+                column(row, "\u{2588}"),
+                column(row, t.display_name) + longest + 1,
+                "{}",
+                t.display_name
+            );
+        }
+    }
+
+    #[test]
     fn theme_swatch_distinguishes_themes() {
         use pixtuoid_scene::theme;
         let cyber = theme_swatch(&theme::CYBERPUNK);
