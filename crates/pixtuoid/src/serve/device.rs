@@ -35,9 +35,9 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const MIN_FRAME_GAP: Duration = Duration::from_millis(250);
 
 /// The least time between two writes' starts, across every device; a chosen
-/// value. Each write rewrites another CLI's config, which can race that CLI's own
-/// unlocked write, and may run the CLI: the gap bounds how often a device can.
-/// A write sooner waits it out, holding [`Devices::gate`].
+/// value. A write can rewrite another CLI's config, racing that CLI's own unlocked
+/// write, and can run the CLI: the gap bounds how often devices, together, start
+/// one. One sooner waits it out, holding [`Devices::gate`].
 const MIN_WRITE_GAP: Duration = Duration::from_secs(1);
 
 /// What an [`Ask::Sources`] reads: blocking, as it reads files and may run a CLI.
