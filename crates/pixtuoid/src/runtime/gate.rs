@@ -238,97 +238,61 @@ mod tests {
         chrono::DateTime::<chrono::Utc>::from(now).date_naive()
     }
 
-    /// Through the gate as the tailer sends it: declared at its own read, whether
-    /// or not its agent has a slot yet.
+    /// Through the gate as the tailer sends it, a declaration passing or falling
+    /// by its slot's source as any event does.
     #[test]
-    fn a_backlog_ahead_of_its_agents_slot_reaches_the_reducer() {
+    fn a_backlog_passes_the_gate_as_its_agents_events_do() {
         use pixtuoid_core::AgentId;
         use std::path::PathBuf;
 
         let id = AgentId::from_parts("claude-code", "s");
-        let cs = ConnectedSources::new(["claude-code".to_string()].into());
-        let mut scene = SceneState::uniform(8);
-        let mut reducer = Reducer::new().counting(utc_day);
-        let mut gate_logged = HashSet::new();
-        let events = [
-            AgentEvent::Backlog {
-                agent_id: id,
-                replaying: false,
-            },
-            AgentEvent::SessionStart {
-                agent_id: id,
-                source: "claude-code".into(),
-                session_id: "s".into(),
-                cwd: PathBuf::from("/repo"),
-                parent_id: None,
-            },
-            AgentEvent::Usage {
-                agent_id: id,
-                fresh_tokens: 7,
-                reading_id: None,
-            },
-        ];
-        for ev in events {
-            apply_gated_event(
-                &mut reducer,
-                &mut scene,
-                ev,
-                Transport::Jsonl,
-                &cs,
-                SystemTime::now(),
-                &mut gate_logged,
-            );
-        }
-        assert_eq!(scene.today.map(|today| today.tokens), Some(7));
-    }
-
-    /// The gate's own arm: a slot names its source, and a disconnected source's
-    /// agent goes uncounted until its next read declares it again.
-    #[test]
-    fn a_disconnected_sources_backlog_is_dropped() {
-        use pixtuoid_core::AgentId;
-        use std::path::PathBuf;
-
-        let id = AgentId::from_parts("claude-code", "s");
-        let on = ConnectedSources::new(["claude-code".to_string()].into());
-        let off = ConnectedSources::new(HashSet::new());
-        let mut scene = SceneState::uniform(8);
-        let mut reducer = Reducer::new().counting(utc_day);
-        let mut gate_logged = HashSet::new();
-        let now = SystemTime::now();
-        let mut through = |scene: &mut SceneState, ev, connected: &ConnectedSources| {
-            apply_gated_event(
-                &mut reducer,
-                scene,
-                ev,
-                Transport::Jsonl,
-                connected,
-                now,
-                &mut gate_logged,
-            )
-        };
-        let start = AgentEvent::SessionStart {
+        let start = || AgentEvent::SessionStart {
             agent_id: id,
             source: "claude-code".into(),
             session_id: "s".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
         };
-        assert!(through(&mut scene, start, &on), "the slot is seeded");
-
-        let opens = AgentEvent::Backlog {
+        let opens = || AgentEvent::Backlog {
             agent_id: id,
             replaying: false,
         };
-        assert!(!through(&mut scene, opens, &off), "dropped at the gate");
-
-        let usage = AgentEvent::Usage {
+        let usage = || AgentEvent::Usage {
             agent_id: id,
             fresh_tokens: 7,
             reading_id: None,
         };
-        assert!(through(&mut scene, usage, &on));
-        assert_eq!(scene.today, None, "so the agent stayed closed");
+        let on = ConnectedSources::new(["claude-code".to_string()].into());
+        let off = ConnectedSources::new(HashSet::new());
+        let rows = [
+            (
+                "ahead of its agent's slot it names no source, and reaches the reducer",
+                [(opens(), &on), (start(), &on), (usage(), &on)],
+                Some(7),
+            ),
+            (
+                "a disconnected source's agent stays closed until its next read",
+                [(start(), &on), (opens(), &off), (usage(), &on)],
+                None,
+            ),
+        ];
+        for (row, events, tokens) in rows {
+            let mut scene = SceneState::uniform(8);
+            let mut reducer = Reducer::new().counting(utc_day);
+            let mut gate_logged = HashSet::new();
+            for (ev, connected) in events {
+                apply_gated_event(
+                    &mut reducer,
+                    &mut scene,
+                    ev,
+                    Transport::Jsonl,
+                    connected,
+                    SystemTime::now(),
+                    &mut gate_logged,
+                );
+            }
+            assert_eq!(scene.today.map(|today| today.tokens), tokens, "{row}");
+        }
     }
 
     /// The driver's one tick is the reducer's, so a quiet midnight retires the

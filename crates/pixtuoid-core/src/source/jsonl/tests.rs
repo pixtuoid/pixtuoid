@@ -4497,6 +4497,7 @@ mod backlog {
     const WINDOW: Duration = Duration::from_secs(60);
     const USAGE: &str = "{\"type\":\"usage\",\"cwd\":\"/repo\"}\n";
     const TOOL: &str = "{\"type\":\"tool_use\"}\n";
+    const WORK: &str = "{\"type\":\"usage\",\"cwd\":\"/repo\"}\n{\"type\":\"tool_use\"}\n";
     const END: &str = "{\"type\":\"system\",\"subtype\":\"session_end\"}\n";
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4535,6 +4536,30 @@ mod backlog {
         }
     }
 
+    /// What befalls a transcript ahead of a read.
+    #[derive(Clone, Copy)]
+    enum Change {
+        Append(&'static str),
+        Rewrite(&'static str),
+        /// `USAGE`, past the window: history to a first read.
+        History,
+        /// A line past the walk's pending cap.
+        Oversized,
+        /// A hook vouches for the session.
+        Vouch,
+    }
+    use Change::{Append, History, Oversized, Rewrite, Vouch};
+
+    /// The pass that reads it.
+    #[derive(Clone, Copy)]
+    enum Pass {
+        /// Over what predates the watch, a boot's or an attach's.
+        Boot,
+        Walk,
+        Scan,
+    }
+    use Pass::{Boot, Scan, Walk};
+
     /// One transcript and the watcher's memory of it, across reads.
     struct Tail {
         dir: tempfile::TempDir,
@@ -4566,8 +4591,24 @@ mod backlog {
             file.write_all(body.as_bytes()).unwrap();
         }
 
-        fn rewrite(&self, body: &str) {
-            std::fs::write(&self.path, body).unwrap();
+        async fn suffer(&self, change: Change) {
+            match change {
+                Append(body) => self.append(body),
+                Rewrite(body) => std::fs::write(&self.path, body).unwrap(),
+                History => {
+                    self.append(USAGE);
+                    backdate_one_hour(&self.path);
+                }
+                Oversized => {
+                    let cap = super::super::walk::MAX_PENDING_BYTES;
+                    let pad = "x".repeat(usize::try_from(cap).unwrap());
+                    self.append(&format!("{{\"cwd\":\"/repo\",\"pad\":\"{pad}\"}}\n"));
+                }
+                Vouch => {
+                    let id = decoders().id_derive.id_for(&self.path);
+                    self.live.lock().await.insert(id);
+                }
+            }
         }
 
         /// What `pass` sent through a context of this tail's, `replaying` or not.
@@ -4597,7 +4638,7 @@ mod backlog {
             events
         }
 
-        async fn walk_with(&self, replaying: bool, decoders: SourceDecoders) -> Vec<AgentEvent> {
+        async fn walk(&self, replaying: bool, decoders: SourceDecoders) -> Vec<AgentEvent> {
             let path = self.path.clone();
             self.sends(replaying, async move |ctx: &WatchCtx<'_>| {
                 walk_jsonl(&path, decoders, ctx).await;
@@ -4605,113 +4646,95 @@ mod backlog {
             .await
         }
 
-        async fn walk(&self, replaying: bool) -> Vec<Sent> {
-            let events = self.walk_with(replaying, decoders()).await;
+        async fn read(&self, pass: Pass) -> Vec<Sent> {
+            let events = match pass {
+                Boot => self.walk(true, decoders()).await,
+                Walk => self.walk(false, decoders()).await,
+                Scan => {
+                    let root = self.dir.path().to_path_buf();
+                    (self.sends(false, async move |ctx: &WatchCtx<'_>| {
+                        let mut health = FailureLatch::default();
+                        scan_root(&root, decoders(), ctx, &mut health).await;
+                    }))
+                    .await
+                }
+            };
             events.iter().map(sent).collect()
         }
+    }
 
-        async fn scan(&self) -> Vec<Sent> {
-            let root = self.dir.path().to_path_buf();
-            let events = (self.sends(false, async move |ctx: &WatchCtx<'_>| {
-                let mut health = FailureLatch::default();
-                scan_root(&root, decoders(), ctx, &mut health).await;
-            }))
-            .await;
-            events.iter().map(sent).collect()
+    #[tokio::test]
+    async fn a_read_declares_around_what_it_replays() {
+        let rows: [(&str, &[(Change, Pass, &[Sent])]); 8] = [
+            (
+                "what predates the watch opens after its last event, and the next read is live",
+                &[
+                    (
+                        Append(WORK),
+                        Boot,
+                        &[Start, Rename, Closes, Usage, Tool, Opens],
+                    ),
+                    (Append(TOOL), Walk, &[Opens, Tool]),
+                ],
+            ),
+            (
+                "a session first seen later opens before its events",
+                &[(Append(WORK), Walk, &[Start, Rename, Opens, Usage, Tool])],
+            ),
+            (
+                "a file gated as history declares nothing at its seed, which would fill the \
+                 set with every transcript on disk, and opens at its first later read",
+                &[
+                    (History, Boot, &[]),
+                    (Append(TOOL), Walk, &[Start, Rename, Opens, Tool]),
+                ],
+            ),
+            (
+                "a truncation replays between a close and an open",
+                &[
+                    (Append(WORK), Walk, &[Start, Rename, Opens, Usage, Tool]),
+                    (Rewrite(TOOL), Walk, &[Closes, Tool, Opens]),
+                    (Append(TOOL), Walk, &[Opens, Tool]),
+                ],
+            ),
+            (
+                "a rewrite read after its truncation still replays",
+                &[
+                    (Append(USAGE), Walk, &[Start, Rename, Opens, Usage]),
+                    (Rewrite(""), Walk, &[]),
+                    (Rewrite(USAGE), Walk, &[Closes, Usage, Opens]),
+                ],
+            ),
+            (
+                "a revouch replays between a close and an open",
+                &[
+                    (History, Scan, &[]),
+                    (Vouch, Scan, &[Start, Rename, Closes, Usage, Opens]),
+                ],
+            ),
+            (
+                "an ended session opens again on the append that revives it",
+                &[
+                    (Append(USAGE), Walk, &[Start, Rename, Opens, Usage]),
+                    (Append(END), Walk, &[Opens, End]),
+                    (Append(TOOL), Walk, &[Start, Rename, Opens, Tool]),
+                ],
+            ),
+            (
+                "an oversized skip replays nothing and its next read opens",
+                &[
+                    (Oversized, Boot, &[Start, Rename]),
+                    (Append(TOOL), Walk, &[Opens, Tool]),
+                ],
+            ),
+        ];
+        for (row, reads) in rows {
+            let tail = Tail::new("");
+            for (read, (change, pass, want)) in reads.iter().enumerate() {
+                tail.suffer(*change).await;
+                assert_eq!(tail.read(*pass).await, *want, "{row}, read {read}");
+            }
         }
-    }
-
-    #[tokio::test]
-    async fn a_first_read_of_what_predates_the_watch_opens_after_its_last_event() {
-        let tail = Tail::new(&format!("{USAGE}{TOOL}"));
-        assert_eq!(
-            tail.walk(true).await,
-            [Start, Rename, Closes, Usage, Tool, Opens]
-        );
-    }
-
-    #[tokio::test]
-    async fn a_session_first_seen_later_opens_before_its_events() {
-        let tail = Tail::new(&format!("{USAGE}{TOOL}"));
-        assert_eq!(tail.walk(false).await, [Start, Rename, Opens, Usage, Tool]);
-    }
-
-    #[tokio::test]
-    async fn the_read_after_a_replay_is_live() {
-        let tail = Tail::new(USAGE);
-        tail.walk(true).await;
-        tail.append(TOOL);
-        assert_eq!(tail.walk(false).await, [Opens, Tool]);
-    }
-
-    /// Declaring at the seed would fill the set with every transcript on disk.
-    #[tokio::test]
-    async fn a_file_gated_as_history_opens_at_its_first_later_read() {
-        let tail = Tail::new(USAGE);
-        backdate_one_hour(&tail.path);
-        assert_eq!(tail.walk(true).await, [], "the seed declares nothing");
-        tail.append(TOOL);
-        assert_eq!(tail.walk(false).await, [Start, Rename, Opens, Tool]);
-    }
-
-    #[tokio::test]
-    async fn a_truncation_replays_between_a_close_and_an_open() {
-        let tail = Tail::new(&format!("{USAGE}{USAGE}{TOOL}"));
-        tail.walk(false).await;
-        tail.rewrite(TOOL);
-        assert_eq!(tail.walk(false).await, [Closes, Tool, Opens]);
-        tail.append(TOOL);
-        assert_eq!(tail.walk(false).await, [Opens, Tool]);
-    }
-
-    #[tokio::test]
-    async fn a_rewrite_read_after_its_truncation_still_replays() {
-        let tail = Tail::new(USAGE);
-        tail.walk(false).await;
-        tail.rewrite("");
-        assert_eq!(tail.walk(false).await, []);
-        tail.rewrite(USAGE);
-        assert_eq!(tail.walk(false).await, [Closes, Usage, Opens]);
-    }
-
-    #[tokio::test]
-    async fn a_revouch_replays_between_a_close_and_an_open() {
-        let tail = Tail::new(USAGE);
-        backdate_one_hour(&tail.path);
-        assert_eq!(tail.scan().await, [], "gated");
-        let id = decoders().id_derive.id_for(&tail.path);
-        tail.live.lock().await.insert(id);
-        assert_eq!(tail.scan().await, [Start, Rename, Closes, Usage, Opens]);
-    }
-
-    #[tokio::test]
-    async fn an_ended_session_opens_again_on_the_append_that_revives_it() {
-        let tail = Tail::new(USAGE);
-        tail.walk(false).await;
-        tail.append(END);
-        assert_eq!(tail.walk(false).await, [Opens, End]);
-        assert_eq!(tail.seen.lock().await[&tail.path], Sight::Ended);
-        tail.append(TOOL);
-        assert_eq!(tail.walk(false).await, [Start, Rename, Opens, Tool]);
-    }
-
-    #[tokio::test]
-    async fn an_oversized_skip_replays_nothing_and_its_next_read_opens() {
-        let padding = "x".repeat(usize::try_from(walk_pending_cap()).unwrap());
-        let tail = Tail::new(&format!("{{\"cwd\":\"/repo\",\"pad\":\"{padding}\"}}\n"));
-        assert_eq!(tail.walk(true).await, [Start, Rename]);
-        tail.append(TOOL);
-        assert_eq!(tail.walk(false).await, [Opens, Tool]);
-    }
-
-    fn walk_pending_cap() -> u64 {
-        super::super::walk::MAX_PENDING_BYTES
-    }
-
-    #[tokio::test]
-    async fn a_read_with_no_events_declares_nothing() {
-        let tail = Tail::new("{\"type\":\"noise\"}\n");
-        assert_eq!(tail.walk(true).await, [Start, Rename]);
     }
 
     fn parent_and_child(_t: &str, s: &str, _v: serde_json::Value) -> Vec<AgentEvent> {
@@ -4733,24 +4756,13 @@ mod backlog {
             decode_line: parent_and_child,
             ..t_decoders()
         };
-        let opened = |events: &[AgentEvent]| -> Vec<AgentId> {
-            let mut ids: Vec<AgentId> = (events.iter())
-                .filter(|e| {
-                    matches!(
-                        e,
-                        AgentEvent::Backlog {
-                            replaying: false,
-                            ..
-                        }
-                    )
-                })
-                .map(AgentEvent::agent_id)
-                .collect();
-            ids.sort();
-            ids
-        };
+        let events = tail.walk(false, decoders).await;
+        let opened: Vec<AgentId> = (events.iter())
+            .filter(|e| matches!(e, AgentEvent::Backlog { .. }))
+            .map(AgentEvent::agent_id)
+            .collect();
         let mut both = ["parent", "child"].map(|key| AgentId::from_parts("test", key));
         both.sort();
-        assert_eq!(opened(&tail.walk_with(false, decoders).await), both);
+        assert_eq!(opened, both);
     }
 }

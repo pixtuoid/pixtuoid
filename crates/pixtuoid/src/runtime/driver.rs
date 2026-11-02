@@ -456,7 +456,6 @@ mod tests {
     /// earlier run saved, and a replay stays out of it.
     #[tokio::test]
     async fn every_front_end_counts_on_from_the_saved_day() {
-        use pixtuoid_core::source::{AgentEvent, Transport};
         use pixtuoid_core::state::Today;
 
         let dir = tempfile::tempdir().expect("tempdir");
@@ -470,13 +469,7 @@ mod tests {
         while let Ok(queued) = events.try_recv() {
             tx.send(queued).await.expect("it queues");
         }
-        let id = pixtuoid_core::AgentId::from_parts("claude-code", "s");
-        let call = AgentEvent::ToolUseStart {
-            agent_id: id,
-            tool_use_id: Some("live".into()),
-            detail: Some("Bash".into()),
-        };
-        tx.send((Transport::Hook, call)).await.expect("it queues");
+        tx.send(hook_call("live")).await.expect("it queues");
         drop(tx);
 
         let (sink, scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
@@ -509,32 +502,6 @@ mod tests {
         )
     }
 
-    /// A session start and a hook's call: a change a live run's next tick saves.
-    async fn one_call(tx: &pixtuoid_core::TaggedSender) {
-        let start = pixtuoid_core::AgentEvent::SessionStart {
-            agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
-            source: "claude-code".into(),
-            session_id: "s".into(),
-            cwd: PathBuf::from("/proj"),
-            parent_id: None,
-        };
-        tx.send((pixtuoid_core::Transport::Hook, start))
-            .await
-            .expect("it queues");
-        tx.send(hook_call("t")).await.expect("it queues");
-    }
-
-    /// Until a tick has written `path`.
-    async fn until_saved(path: &std::path::Path) {
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while saved_at(path).is_none() {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
-        .await
-        .expect("a tick writes the count while the run goes on");
-    }
-
     /// The reader gone, the event that finds it so ends the loop before its top
     /// notes the count.
     #[tokio::test]
@@ -554,20 +521,6 @@ mod tests {
         assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
     }
 
-    #[tokio::test]
-    async fn a_running_reducer_writes_the_file_from_its_sweep_tick() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("today.json");
-        let (tx, rx) = tokio::sync::mpsc::channel(8);
-        let (sink, _scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
-        let run = tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
-        one_call(&tx).await;
-        until_saved(&path).await;
-        assert!(!run.is_finished(), "no end of the run wrote this");
-        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
-        drop(tx);
-    }
-
     /// `run` drops its runtime as `run_async` returns, cancelling the reducer's
     /// task where it parks, with no line after its loop to reach. A tick's write
     /// comes first, so the throttle leaves the last count to that drop.
@@ -584,8 +537,25 @@ mod tests {
             let (tx, rx) = tokio::sync::mpsc::channel(8);
             let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
             tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
-            one_call(&tx).await;
-            until_saved(&path).await;
+            // The slot's source: on a hook's blank one the gate drops the next call.
+            let start = pixtuoid_core::AgentEvent::SessionStart {
+                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/proj"),
+                parent_id: None,
+            };
+            tx.send((pixtuoid_core::Transport::Hook, start))
+                .await
+                .expect("it queues");
+            tx.send(hook_call("first")).await.expect("it queues");
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while saved_at(&path).is_none() {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("a tick writes the count while the run goes on");
             tx.send(hook_call("last")).await.expect("it queues");
             scene
                 .wait_for(|scene| scene.today.is_some_and(|today| today.tool_calls == 2))

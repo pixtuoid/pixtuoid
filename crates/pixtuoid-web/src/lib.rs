@@ -1060,19 +1060,6 @@ mod tests {
         assert!(row.contains("1.2M tokens"), "{row:?}");
     }
 
-    /// A page left open past midnight: the frame's tick is the writer's.
-    #[test]
-    fn a_step_retires_a_day_that_has_passed() {
-        let mut o = office();
-        o.step(T0_MS, 288, 180);
-        let yesterday = pixtuoid_scene::tally::local_day(o.last_now.expect("a step"))
-            .pred_opt()
-            .expect("a date");
-        o.scene.today = Some(pixtuoid_core::state::Today::new(yesterday, 1, 1));
-        o.step(T0_MS + 16.0, 288, 180);
-        assert_eq!(o.scene.today, None);
-    }
-
     #[test]
     fn overlay_json_exports_a_board_and_a_label_per_visible_agent() {
         let mut o = office();

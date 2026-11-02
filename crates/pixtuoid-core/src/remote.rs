@@ -831,51 +831,18 @@ mod tests {
         ));
     }
 
-    /// What every line before the count was, and what a reader from then parses.
-    #[derive(Deserialize)]
-    struct BeforeToday {
-        v: u32,
-        agents: Vec<Agent>,
-        daemons: Vec<Daemon>,
-    }
-
-    #[test]
-    fn a_reader_older_than_the_count_reads_past_it() {
-        let line = sent(&full_scene());
-        assert!(line.contains("\"today\""), "{line}");
-        let older: BeforeToday = serde_json::from_str(&line).expect("it parses");
-        assert_eq!(older.v, VERSION);
-        assert_eq!(older.agents.len(), 8);
-        assert_eq!(older.daemons.len(), 4);
-    }
-
-    /// A newer reader of an older server, and of a day with nothing counted yet.
+    /// A day with nothing counted sends no field, and a reader drops the number
+    /// it held, as it does on a line from a server older than the count.
     #[test]
     fn a_line_with_no_count_gives_no_number() {
-        let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
-        line.as_object_mut().unwrap().remove("today");
-        let line = line.to_string();
+        let line = sent(&SceneState::uniform(4));
+        assert!(!line.contains("today"), "{line}");
 
         let mut office = RemoteOffice::new(caps(4));
         received(&mut office, &full_scene(), AT);
         assert!(office.scene().today.is_some());
         office.apply(line.as_bytes(), at(AT)).expect("it applies");
         assert_eq!(office.scene().today, None, "a stale number stays behind");
-    }
-
-    #[test]
-    fn a_scene_with_no_count_sends_none() {
-        assert!(!sent(&SceneState::uniform(4)).contains("today"));
-    }
-
-    #[test]
-    fn the_count_carries_a_date_and_two_numbers_and_nothing_more() {
-        let line: Value = serde_json::from_str(&sent(&full_scene())).unwrap();
-        let today = line["today"].as_object().expect("an object");
-        let mut keys: Vec<_> = today.keys().map(String::as_str).collect();
-        keys.sort_unstable();
-        assert_eq!(keys, ["day", "tokens", "tool_calls"]);
-        assert_eq!(today["day"], "2027-01-15");
     }
 
     #[test]

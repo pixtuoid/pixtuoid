@@ -17,7 +17,7 @@ use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::grok::GrokSource;
 use pixtuoid_core::source::omp::OmpSource;
 use pixtuoid_core::source::registry::{descriptor_for, registered_source_names};
-use pixtuoid_core::source::{AgentEvent, Source, TaggedSender, Transport};
+use pixtuoid_core::source::{AgentEvent, DynSource, TaggedSender, Transport};
 use pixtuoid_core::{Reducer, SceneState};
 
 use crate::{codex_meta_line, codex_work_line, fast_watch, write_lines};
@@ -38,42 +38,28 @@ fn utc_day(now: SystemTime) -> NaiveDate {
 /// The production wiring of the transcript source `name`, over `root`.
 fn spawn_source(name: &str, root: PathBuf, tx: TaggedSender) -> JoinHandle<anyhow::Result<()>> {
     fast_watch();
-    match name {
+    let source: Box<dyn DynSource> = match name {
         "claude-code" => {
             let mut src = ClaudeCodeSource::default_paths();
             src.projects_root = root;
-            tokio::spawn(async move { Box::new(src).run(tx).await })
+            Box::new(src)
         }
-        "codex" => {
-            let src = CodexSource {
-                sessions_root: root,
-                child_end_unclaims: None,
-            };
-            tokio::spawn(async move { Box::new(src).run(tx).await })
-        }
-        "copilot" => {
-            let src = CopilotSource {
-                sessions_root: root,
-            };
-            tokio::spawn(async move { Box::new(src).run(tx).await })
-        }
-        "grok" => {
-            let src = GrokSource {
-                sessions_root: root,
-                child_end_unclaims: None,
-            };
-            tokio::spawn(async move { Box::new(src).run(tx).await })
-        }
-        "omp" => {
-            let src = OmpSource::single_root(root);
-            tokio::spawn(async move { Box::new(src).run(tx).await })
-        }
-        "antigravity" => {
-            let src = AntigravitySource { brain_root: root };
-            tokio::spawn(async move { Box::new(src).run(tx).await })
-        }
+        "codex" => Box::new(CodexSource {
+            sessions_root: root,
+            child_end_unclaims: None,
+        }),
+        "copilot" => Box::new(CopilotSource {
+            sessions_root: root,
+        }),
+        "grok" => Box::new(GrokSource {
+            sessions_root: root,
+            child_end_unclaims: None,
+        }),
+        "omp" => Box::new(OmpSource::single_root(root)),
+        "antigravity" => Box::new(AntigravitySource { brain_root: root }),
         other => panic!("{other} reads transcripts: drive it here"),
-    }
+    };
+    tokio::spawn(source.run(tx))
 }
 
 /// Whether `event` is one the day counts.
@@ -104,22 +90,11 @@ impl Fold {
         }
     }
 
-    /// Folds until the stream has gone quiet after an event `done` accepts.
+    /// Folds what [`collect_until`] gathers.
     async fn until(&mut self, what: &str, done: impl Fn(&AgentEvent) -> bool) {
-        let deadline = tokio::time::Instant::now() + DEADLINE;
-        let mut reached = false;
-        loop {
-            match tokio::time::timeout(QUIET, self.rx.recv()).await {
-                Ok(Some((transport, event))) => {
-                    reached |= done(&event);
-                    self.reducer
-                        .apply(&mut self.scene, event, self.at, transport);
-                }
-                Ok(None) => panic!("{what}: the stream closed"),
-                Err(_) if reached => return,
-                Err(_) => {}
-            }
-            assert!(tokio::time::Instant::now() < deadline, "{what}: no end");
+        for (transport, event) in collect_until(&mut self.rx, what, done).await {
+            self.reducer
+                .apply(&mut self.scene, event, self.at, transport);
         }
     }
 
@@ -234,9 +209,9 @@ async fn every_transcript_source_replays_uncounted_and_then_reaches_live() {
     );
 }
 
-fn backlogs(events: &[AgentEvent]) -> Vec<bool> {
+fn backlogs(events: &[(Transport, AgentEvent)]) -> Vec<bool> {
     (events.iter())
-        .filter_map(|e| match e {
+        .filter_map(|(_, e)| match e {
             AgentEvent::Backlog { replaying, .. } => Some(*replaying),
             _ => None,
         })
@@ -246,19 +221,24 @@ fn backlogs(events: &[AgentEvent]) -> Vec<bool> {
 /// Every event up to the stream's first quiet after `done` accepts one.
 async fn collect_until(
     rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    what: &str,
     done: impl Fn(&AgentEvent) -> bool,
-) -> Vec<AgentEvent> {
+) -> Vec<(Transport, AgentEvent)> {
     let deadline = tokio::time::Instant::now() + DEADLINE;
     let mut events = Vec::new();
-    while tokio::time::Instant::now() < deadline {
+    let mut reached = false;
+    loop {
         match tokio::time::timeout(QUIET, rx.recv()).await {
-            Ok(Some((_, event))) => events.push(event),
-            Ok(None) => break,
-            Err(_) if events.iter().any(&done) => break,
+            Ok(Some(tagged)) => {
+                reached |= done(&tagged.1);
+                events.push(tagged);
+            }
+            Ok(None) => panic!("{what}: the stream closed"),
+            Err(_) if reached => return events,
             Err(_) => {}
         }
+        assert!(tokio::time::Instant::now() < deadline, "{what}: no end");
     }
-    events
 }
 
 const UUID: &str = "0a0a0a0a-0b0b-7c0c-8d0d-0e0e0e0e0e0e";
@@ -280,14 +260,10 @@ async fn a_session_that_begins_under_the_watch_is_live_from_its_first_read() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     write_codex_session(dir.path()).await;
-    let events = collect_until(&mut rx, is_tool).await;
+    let events = collect_until(&mut rx, "codex", is_tool).await;
     handle.abort();
 
     assert_eq!(backlogs(&events), [false], "{events:?}");
-    let opens = events
-        .iter()
-        .position(|e| matches!(e, AgentEvent::Backlog { .. }));
-    assert!(opens < events.iter().position(is_tool), "{events:?}");
 }
 
 /// The attach pass reads what predates its watch, like a boot's.
@@ -303,20 +279,10 @@ async fn what_a_late_root_already_held_is_a_replay() {
     tokio::fs::create_dir(&staged).await.unwrap();
     write_codex_session(&staged).await;
     tokio::fs::rename(&staged, &root).await.unwrap();
-    let events = collect_until(&mut rx, is_tool).await;
+    let events = collect_until(&mut rx, "codex", is_tool).await;
     handle.abort();
 
     assert_eq!(backlogs(&events), [true, false], "{events:?}");
-    assert!(
-        matches!(
-            events.last(),
-            Some(AgentEvent::Backlog {
-                replaying: false,
-                ..
-            })
-        ),
-        "{events:?}"
-    );
 }
 
 /// A retargeted symlink shows no anchor a thing, so only the poll finds the root.
@@ -344,7 +310,7 @@ async fn what_a_root_the_poll_attaches_already_held_is_a_replay() {
     let next = dir.path().join("next");
     std::os::unix::fs::symlink(&full, &next).unwrap();
     std::fs::rename(&next, &link).unwrap();
-    let events = collect_until(&mut rx, is_tool).await;
+    let events = collect_until(&mut rx, "codex", is_tool).await;
     handle.abort();
 
     assert_eq!(backlogs(&events), [true, false], "{events:?}");

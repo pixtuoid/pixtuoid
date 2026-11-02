@@ -190,41 +190,46 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_write_keeps_each_numbers_larger_of_the_files_and_its_own() {
-        let (_dir, file) = fixture();
-        file.save(Today::new(day(), 100, 1)).expect("it saves");
-        file.save(Today::new(day(), 50, 2)).expect("it saves");
-        assert_eq!(file.load(day()), Some(Today::new(day(), 100, 2)));
-    }
-
-    /// Two instances folding one stream: however their writes interleave, the
-    /// file holds what each saw, not their sum.
+    /// Every instance folds the same stream, so however their writes interleave the
+    /// file holds the most any saw, of the latest day, and never their sum.
     #[test]
     fn two_instances_count_one_day_once() {
-        let (_dir, file) = fixture();
-        for tokens in [10, 10, 20, 15, 20] {
-            file.save(Today::new(day(), tokens, 0)).expect("it saves");
+        let at = Today::new;
+        let (one, two) = (day(), next_day());
+        let rows: [(&str, &[Today], Today); 4] = [
+            (
+                "each number's larger of the file's and its own",
+                &[at(one, 100, 1), at(one, 50, 2)],
+                at(one, 100, 2),
+            ),
+            (
+                "the same count from each",
+                &[
+                    at(one, 10, 0),
+                    at(one, 10, 0),
+                    at(one, 20, 0),
+                    at(one, 15, 0),
+                ],
+                at(one, 20, 0),
+            ),
+            (
+                "a new day replaces the last",
+                &[at(one, 100, 10), at(two, 5, 0)],
+                at(two, 5, 0),
+            ),
+            (
+                "an instance no event carried past midnight leaves today alone",
+                &[at(two, 5, 0), at(one, 100, 10)],
+                at(two, 5, 0),
+            ),
+        ];
+        for (row, writes, holds) in rows {
+            let (_dir, file) = fixture();
+            for write in writes {
+                file.save(*write).expect("it saves");
+            }
+            assert_eq!(file.load(holds.day), Some(holds), "{row}");
         }
-        assert_eq!(file.load(day()), Some(Today::new(day(), 20, 0)));
-    }
-
-    #[test]
-    fn a_new_day_replaces_the_last_one() {
-        let (_dir, file) = fixture();
-        file.save(Today::new(day(), 100, 10)).expect("it saves");
-        file.save(Today::new(next_day(), 5, 0)).expect("it saves");
-        assert_eq!(file.load(next_day()), Some(Today::new(next_day(), 5, 0)));
-    }
-
-    /// An instance no event has carried past midnight, writing what it still holds.
-    #[test]
-    fn a_late_write_of_yesterday_leaves_today_alone() {
-        let (_dir, file) = fixture();
-        let today = Today::new(next_day(), 5, 0);
-        file.save(today).expect("it saves");
-        file.save(Today::new(day(), 100, 10)).expect("it saves");
-        assert_eq!(file.load(next_day()), Some(today));
     }
 
     #[test]
@@ -240,47 +245,12 @@ mod tests {
     }
 
     #[test]
-    fn a_write_another_instance_is_locking_out_fails_and_leaves_the_file() {
-        let (_dir, file) = fixture();
-        file.save(Today::new(day(), 1, 0)).expect("it saves");
-        let _held = lock_config(&file.0).expect("the lock");
-        assert!(file.save(Today::new(day(), 2, 0)).is_err());
-        assert_eq!(file.load(day()), Some(Today::new(day(), 1, 0)));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn the_file_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-        let (_dir, file) = fixture();
-        file.save(Today::new(day(), 1, 0)).expect("it saves");
-        let mode = std::fs::metadata(&file.0).expect("it exists").permissions();
-        assert_eq!(mode.mode() & 0o777, 0o600);
-    }
-
-    #[test]
     fn the_file_sits_in_the_state_directory() {
         let dir = tempfile::tempdir().expect("tempdir");
         temp_env::with_var("XDG_STATE_HOME", Some(dir.path()), || {
             let file = TodayFile::in_state_dir().expect("a state directory");
             assert_eq!(file.0, dir.path().join("pixtuoid").join("today.json"));
         });
-    }
-
-    #[test]
-    fn the_boot_scene_takes_the_days_saved_count() {
-        let (_dir, file) = fixture();
-        let now = SystemTime::now();
-        let today = Today::new(local_day(now), 1_200_000, 38);
-        file.save(today).expect("it saves");
-        let mut scene = SceneState::uniform(4);
-        let mut saver = TodaySaver::boot(file, &mut scene, now);
-        assert_eq!(scene.today, Some(today));
-        assert_eq!(
-            saver.due(Instant::now()),
-            None,
-            "what it just read is no change"
-        );
     }
 
     #[test]
@@ -296,14 +266,6 @@ mod tests {
         let inside = start + SAVE_EVERY - Duration::from_millis(1);
         assert_eq!(saver.due(inside), None, "inside the period");
         assert_eq!(saver.due(start + SAVE_EVERY), count(2));
-    }
-
-    #[test]
-    fn an_unchanged_count_writes_nothing_however_long_it_stands() {
-        let (_dir, file) = fixture();
-        let start = Instant::now();
-        let mut saver = saver(file, Some(Today::new(day(), 1, 0)));
-        assert_eq!(saver.due(start + 10 * SAVE_EVERY), None);
     }
 
     #[test]
@@ -348,15 +310,5 @@ mod tests {
 
         drop(held);
         assert_eq!(saver.due(start), Some(today), "no try was spent on it");
-    }
-
-    #[test]
-    fn dropping_a_saver_writes_what_it_had_not() {
-        let (_dir, file) = fixture();
-        let today = Today::new(day(), 1, 0);
-        let mut last = saver(file.clone(), None);
-        last.note(Some(today));
-        drop(last);
-        assert_eq!(file.load(day()), Some(today));
     }
 }

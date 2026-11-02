@@ -105,26 +105,19 @@ pub(crate) fn today_headline(today: Today) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn headline(tokens: u64, tool_calls: u64) -> Option<String> {
-        let day = NaiveDate::from_ymd_opt(2027, 1, 15).expect("a date");
-        today_headline(Today::new(day, tokens, tool_calls))
-    }
-
     #[test]
     fn the_headline_is_the_tokens_else_the_calls_else_nothing() {
-        assert_eq!(headline(1_200_000, 38).as_deref(), Some("1.2M tokens"));
-        assert_eq!(headline(0, 38).as_deref(), Some("38 tool calls"));
-        assert_eq!(headline(0, 0), None, "nobody sees 0");
-    }
-
-    #[test]
-    fn one_of_anything_is_never_pluralised() {
-        assert_eq!(headline(1, 38).as_deref(), Some("1 token"));
-        assert_eq!(headline(0, 1).as_deref(), Some("1 tool call"));
-    }
-
-    #[test]
-    fn a_big_count_of_calls_reads_compactly_too() {
-        assert_eq!(headline(0, 1_500).as_deref(), Some("1.5K tool calls"));
+        let rows = [
+            (1_200_000, 38, Some("1.2M tokens")),
+            (0, 38, Some("38 tool calls")),
+            (0, 0, None),
+            (1, 38, Some("1 token")),
+            (0, 1, Some("1 tool call")),
+            (0, 1_500, Some("1.5K tool calls")),
+        ];
+        for (tokens, tool_calls, words) in rows {
+            let today = Today::new(NaiveDate::MIN, tokens, tool_calls);
+            assert_eq!(today_headline(today).as_deref(), words);
+        }
     }
 }
