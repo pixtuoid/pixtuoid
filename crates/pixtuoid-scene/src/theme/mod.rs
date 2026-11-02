@@ -448,17 +448,9 @@ mod tests {
         // Site CI never runs the binary, so this test is the only bridge between
         // themes.json and ALL_THEMES. Set equality, not order: the manifest's
         // order is a site presentation choice.
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/src/themes.json");
-        let json = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            // crates.io-packaged test runs don't ship the repo's site/ tree.
-            Err(_) => {
-                eprintln!("skipping: {path} not present (packaged build)");
-                return;
-            }
+        let Some(manifest) = crate::site::manifest("themes.json") else {
+            return;
         };
-        let manifest: Vec<serde_json::Value> =
-            serde_json::from_str(&json).expect("themes.json parses");
         let mut ids: Vec<&str> = manifest
             .iter()
             .map(|t| t["id"].as_str().expect("themes.json entry has a string id"))

@@ -1,5 +1,5 @@
 ---
-source: crates/pixtuoid/src/tui/widgets/mod.rs
+source: crates/pixtuoid/src/panels/widgets/tests.rs
 expression: line
 ---
  6 · ●6 R · Bash×1 Edit×1 Glob×1 Grep×1                                                                                                                                  [?]help [p]ause [t]heme [q]uit

@@ -1,5 +1,5 @@
 ---
-source: crates/pixtuoid/src/tui/widgets/mod.rs
+source: crates/pixtuoid/src/panels/widgets/tests.rs
 expression: line
 ---
  ⚠ claude-code source died — its agents are frozen; restart pixtuoid (see log)               [q]uit

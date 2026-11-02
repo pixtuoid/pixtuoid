@@ -5,6 +5,7 @@ use std::time::SystemTime;
 
 use anyhow::Result;
 use pixtuoid_core::SceneState;
+use pixtuoid_scene::layout::CELL_ROWS;
 use pixtuoid_scene::sprite::RgbBuffer;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
@@ -87,7 +88,7 @@ pub(crate) fn scene_too_small(scene: Rect) -> bool {
 #[doc(hidden)]
 pub fn scene_buf_size(cols: u16, rows: u16) -> (u16, u16) {
     let scene = scene_rect(Rect::new(0, 0, cols, rows));
-    (scene.width, scene.height.saturating_mul(2))
+    (scene.width, scene.height.saturating_mul(CELL_ROWS))
 }
 
 /// Paint the footer-only frame shown when the terminal is too small to render the
@@ -157,7 +158,7 @@ mod min_size_tests {
                 rows.saturating_sub(FOOTER_ROWS)
             );
             assert!(
-                rows.saturating_sub(FOOTER_ROWS) * 2 >= layout_h,
+                rows.saturating_sub(FOOTER_ROWS) * CELL_ROWS >= layout_h,
                 "layout_h {layout_h} advertises {rows} rows, whose buffer is under it"
             );
         }
@@ -427,7 +428,7 @@ pub(crate) fn flush_buffer_to_term(f: &mut ratatui::Frame<'_>, buf: &RgbBuffer, 
     let term_buf = f.buffer_mut();
     let term_area = term_buf.area;
     let w = buf.width() as usize;
-    let cell_rows = usize::from(buf.height() / 2).min(usize::from(scene_rect.height));
+    let cell_rows = usize::from(buf.height() / CELL_ROWS).min(usize::from(scene_rect.height));
     for cy in 0..cell_rows {
         for cx in 0..(buf.width() as usize) {
             let x = scene_rect.x + cx as u16;
@@ -438,8 +439,8 @@ pub(crate) fn flush_buffer_to_term(f: &mut ratatui::Frame<'_>, buf: &RgbBuffer, 
             if x >= term_area.width || y >= term_area.height {
                 continue;
             }
-            let py_top = cy * 2;
-            let py_bot = cy * 2 + 1;
+            let py_top = cy * usize::from(CELL_ROWS);
+            let py_bot = py_top + 1;
             let fg = buf.as_slice()[py_top * w + cx];
             let bg = buf.as_slice()[py_bot * w + cx];
             set_half_block(&mut term_buf[(x, y)], fg, bg);
