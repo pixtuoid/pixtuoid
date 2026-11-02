@@ -334,62 +334,26 @@ pub(crate) enum KeyAction {
     Redraw,
 }
 
-/// Re-read `source_id`'s connection into the live gate after a change, whatever its
-/// outcome: a failed install or uninstall can still have moved the hooks.
-fn refresh_gate(
+/// The panel's line for connecting `source_id` when `on`, else disconnecting it:
+/// [`Changed::line`](pixtuoid_core::remote::Changed::line)'s, which a paired device
+/// shows too, or on a failure its reason.
+fn change_line(
     config_path: &std::path::Path,
     connected: &crate::runtime::ConnectedSources,
-    source_id: &str,
-) {
-    connected.set(
-        source_id,
-        crate::sources::is_connected(config_path, source_id),
-    );
-}
-
-fn connect_source(
-    config_path: &std::path::Path,
-    connected: &crate::runtime::ConnectedSources,
-    source_id: &str,
+    source_id: &'static str,
     display_name: &str,
+    on: bool,
 ) -> String {
-    let done = crate::sources::connect(config_path, source_id);
-    refresh_gate(config_path, connected, source_id);
+    let (done, op) = if on {
+        let done = crate::sources::connect_source(config_path, connected, source_id);
+        (done, connection::FailedOp::Connect)
+    } else {
+        let done = crate::sources::disconnect_source(config_path, connected, source_id);
+        (done, connection::FailedOp::Disconnect)
+    };
     match done {
-        Ok(crate::sources::ConnectOutcome::Installed(r)) => {
-            connection::format_connect_result(&r, display_name)
-        }
-        Ok(crate::sources::ConnectOutcome::FlagOnly) => {
-            format!("\u{2713} {display_name} connected")
-        }
-        Err(e) => connection::format_failure(
-            connection::FailedOp::Connect,
-            display_name,
-            &format!("{e:#}"),
-        ),
-    }
-}
-
-fn disconnect_source(
-    config_path: &std::path::Path,
-    connected: &crate::runtime::ConnectedSources,
-    source_id: &str,
-    display_name: &str,
-) -> String {
-    let done = crate::sources::disconnect(config_path, source_id);
-    refresh_gate(config_path, connected, source_id);
-    match done {
-        Ok(crate::sources::DisconnectOutcome::Uninstalled(r)) => {
-            connection::format_disconnect_result(&r, display_name)
-        }
-        Ok(crate::sources::DisconnectOutcome::FlagOnly) => {
-            format!("\u{2713} {display_name} disconnected")
-        }
-        Err(e) => connection::format_failure(
-            connection::FailedOp::Disconnect,
-            display_name,
-            &format!("{e:#}"),
-        ),
+        Ok(changed) => changed.line(display_name),
+        Err(e) => connection::format_failure(op, display_name, &format!("{e:#}")),
     }
 }
 
@@ -449,28 +413,6 @@ pub(crate) fn is_quit_chord(code: KeyCode, mods: KeyModifiers) -> bool {
         (code, mods),
         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL)
     )
-}
-
-/// What pressing `t` on a Sources-panel row does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ToggleIntent {
-    ArmConfirm,
-    Connect,
-    /// Absent CLI that was never connected — an inert "not detected" hint.
-    Hint,
-}
-
-/// The load-bearing arm is `NoCli { connected: true }` → `ArmConfirm`: a source whose
-/// CLI vanished is still disconnectable, since its hooks live in the config, not in the
-/// missing binary.
-fn toggle_intent(state: connection::ConnState) -> ToggleIntent {
-    match state {
-        connection::ConnState::Connected | connection::ConnState::NoCli { connected: true } => {
-            ToggleIntent::ArmConfirm
-        }
-        connection::ConnState::Disconnected => ToggleIntent::Connect,
-        connection::ConnState::NoCli { connected: false } => ToggleIntent::Hint,
-    }
 }
 
 /// The key that opens and closes the Sources panel.
@@ -711,16 +653,18 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
                     )
                 });
             if let Some((state, source_id, name, hint)) = action {
+                use crate::sources::{ToggleIntent, toggle_intent};
                 match toggle_intent(state) {
-                    ToggleIntent::ArmConfirm => {
+                    ToggleIntent::Disconnect => {
                         cx.ui.connection.confirm = Some(cx.ui.connection.selected);
                     }
                     ToggleIntent::Connect => {
-                        cx.ui.connection.last_result = Some(connect_source(
+                        cx.ui.connection.last_result = Some(change_line(
                             cx.config_path,
                             cx.connected,
                             source_id,
                             name,
+                            true,
                         ));
                         cx.ui.connection.rows = connection::build_rows(
                             &cx.connected.snapshot(),
@@ -742,11 +686,12 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
                     .get(idx)
                     .map(|r| (r.source_id, r.display_name));
                 if let Some((source_id, name)) = action {
-                    cx.ui.connection.last_result = Some(disconnect_source(
+                    cx.ui.connection.last_result = Some(change_line(
                         cx.config_path,
                         cx.connected,
                         source_id,
                         name,
+                        false,
                     ));
                     cx.ui.connection.rows =
                         connection::build_rows(&cx.connected.snapshot(), &cx.ui.read_conn_log());
@@ -763,7 +708,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
             let checked = cx.ui.onboarding_ui.checked();
             let outcomes = crate::sources::connect_each(cx.config_path, &checked);
             for (id, _) in &outcomes {
-                refresh_gate(cx.config_path, cx.connected, id);
+                crate::sources::refresh_gate(cx.config_path, cx.connected, id);
             }
             let failed = onboarding_failures(&outcomes);
             cx.ui.close_onboarding();
@@ -781,10 +726,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
 
 #[cfg(test)]
 mod dispatch_tests {
-    use super::{
-        FloorNav, KeyAction, ModalState, connect_source, connection, disconnect_source,
-        dispatch_key,
-    };
+    use super::{FloorNav, KeyAction, ModalState, change_line, connection, dispatch_key};
     use crossterm::event::{KeyCode, KeyModifiers};
 
     const NONE: KeyModifiers = KeyModifiers::NONE;
@@ -800,28 +742,6 @@ mod dispatch_tests {
             current_floor: 1,
             in_transition: false,
         }
-    }
-
-    #[test]
-    fn toggle_intent_covers_the_four_arms() {
-        use super::connection::ConnState;
-        use super::{ToggleIntent, toggle_intent};
-        assert_eq!(
-            toggle_intent(ConnState::Connected),
-            ToggleIntent::ArmConfirm
-        );
-        assert_eq!(
-            toggle_intent(ConnState::Disconnected),
-            ToggleIntent::Connect
-        );
-        assert_eq!(
-            toggle_intent(ConnState::NoCli { connected: true }),
-            ToggleIntent::ArmConfirm
-        );
-        assert_eq!(
-            toggle_intent(ConnState::NoCli { connected: false }),
-            ToggleIntent::Hint
-        );
     }
 
     #[test]
@@ -1434,13 +1354,27 @@ mod dispatch_tests {
         assert_eq!(dispatch_key(KeyCode::Tab, NONE, s, nav()), KeyAction::None);
     }
 
+    /// The panel and a paired device show one sentence for a change.
+    #[test]
+    fn the_panels_line_for_a_change_is_a_devices() {
+        use pixtuoid_core::remote::{Changed, Outcome};
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp.path().join("config.toml");
+        let connected = crate::runtime::ConnectedSources::default();
+        for (on, outcome) in [(true, Outcome::Connected), (false, Outcome::Disconnected)] {
+            let device = Changed::new("copilot", on, outcome, false, None, None);
+            let panel = change_line(&cfg, &connected, "copilot", "Copilot CLI", on);
+            assert_eq!(panel, device.line("Copilot CLI"));
+        }
+    }
+
     #[test]
     fn connect_source_persists_then_flips_the_gate() {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp.path().join("config.toml");
         let connected = crate::runtime::ConnectedSources::default();
 
-        let res = connect_source(&cfg, &connected, "copilot", "Copilot CLI");
+        let res = change_line(&cfg, &connected, "copilot", "Copilot CLI", true);
         assert!(res.contains("connected"), "result: {res}");
         assert!(connected.is_connected("copilot"), "gate opened");
         let written = std::fs::read_to_string(&cfg).unwrap();
@@ -1457,7 +1391,7 @@ mod dispatch_tests {
         let connected =
             crate::runtime::ConnectedSources::new(std::iter::once("copilot".to_string()).collect());
 
-        let res = disconnect_source(&cfg, &connected, "copilot", "Copilot CLI");
+        let res = change_line(&cfg, &connected, "copilot", "Copilot CLI", false);
         assert!(res.contains("disconnected"), "result: {res}");
         assert!(!connected.is_connected("copilot"), "gate closed");
         let written = std::fs::read_to_string(&cfg).unwrap();
@@ -1477,7 +1411,7 @@ mod dispatch_tests {
         let cfg = blocker.join("config.toml");
         let connected = crate::runtime::ConnectedSources::default();
 
-        let res = connect_source(&cfg, &connected, "copilot", "Copilot CLI");
+        let res = change_line(&cfg, &connected, "copilot", "Copilot CLI", true);
         assert!(res.contains("failed"), "must report the failure: {res}");
         assert!(
             !connected.is_connected("copilot"),
@@ -1497,7 +1431,7 @@ mod dispatch_tests {
         // A held lock refuses the rewrite (`lock_config` fails on contention)
         // while the flag still reads back.
         let held = crate::install::io::lock_config(&cfg).unwrap();
-        let res = disconnect_source(&cfg, &connected, "copilot", "Copilot CLI");
+        let res = change_line(&cfg, &connected, "copilot", "Copilot CLI", false);
         drop(held);
         assert!(res.contains("disconnect failed"), "result: {res}");
         assert!(

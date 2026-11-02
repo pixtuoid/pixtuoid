@@ -24,6 +24,7 @@ on:
       - crates/pixtuoid-core/src/harness/fuzz.rs
       - crates/pixtuoid-core/src/harness/mod.rs
       - crates/pixtuoid-core/src/remote.rs
+      - crates/pixtuoid-core/src/remote/**
       - crates/pixtuoid-core/src/source/**
       - crates/pixtuoid-core/src/state/**
       - fuzz/**

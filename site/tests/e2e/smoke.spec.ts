@@ -70,6 +70,50 @@ async function settleAnimations(page: Page): Promise<void> {
 }
 
 /**
+ * The office moments anything graded against the REAL office composite must meet, in UTC. The office is lit by the sun (its
+ * height follows local time, `body_at`) and by the weather (a hash of the absolute `WEATHER_CYCLE_MS` slot, `transmission`),
+ * so the moments are chosen by those drivers, not by hour label: a Clear slot with the sun highest (the brightest), an
+ * Overcast slot in the deep night (not Storm: a pure non-Storm slot has no storm share for `strikes` to draw against, so
+ * no frame depends on a lightning phase), a Clear slot mid-slope of the morning sun and one at low evening sun. Found by
+ * sweeping `first_transition_into` over January 2026. `the office moments still span the light range` checks only that
+ * the sun-highest moment is far brighter than the rest and the overcast night is no brighter than morning and evening.
+ */
+const OFFICE_MOMENTS = [
+  { at: '2026-01-03T12:30:00Z', what: 'sun highest, Clear' },
+  { at: '2026-01-04T02:00:00Z', what: 'deep night, Overcast' },
+  { at: '2026-01-02T08:00:00Z', what: 'morning sun, Clear' },
+  { at: '2026-01-02T19:30:00Z', what: 'low evening sun, Clear' },
+] as const;
+
+/** Pins the clock to `at` (UTC) and seeds `theme`. `setSystemTime`, not `setFixedTime`: a frozen Date stalls the office host's own wait on the clock. */
+async function pinOfficeMoment(page: Page, at: string, theme: string): Promise<void> {
+  await page.clock.setSystemTime(new Date(at));
+  await page.addInitScript((t) => {
+    sessionStorage.setItem('pix-booted', '1');
+    localStorage.setItem('pix-theme', t);
+  }, theme);
+}
+
+/** One test per theme x office moment. `timezoneId: 'UTC'` fixes the browser's local hour, which chrono's `Local` reads for the sun's height. */
+function atOfficeMoments(
+  title: string,
+  themes: readonly string[],
+  run: (..._args: [page: Page, theme: string, moment: string]) => Promise<void>
+): void {
+  for (const theme of themes) {
+    for (const { at, what } of OFFICE_MOMENTS) {
+      test.describe(`${title}: ${theme} at ${at} (${what})`, () => {
+        test.use({ timezoneId: 'UTC' });
+        test('grades', async ({ page }) => {
+          await pinOfficeMoment(page, at, theme);
+          await run(page, theme, `${at} (${what})`);
+        });
+      });
+    }
+  }
+}
+
+/**
  * Brightest and darkest office pixel under an element's box, each composited with the live dimmer; `null` with no live office.
  * Both extremes, never an average: day's dimmer lightens the composite toward `--paper`, night's darkens it toward `--bg`.
  * The scroll is load-bearing — the canvas is a viewport-fixed backdrop, so an off-screen box indexes past its buffer and `getImageData` hands back ZEROED pixels.
@@ -2272,19 +2316,56 @@ test('text over the live office carries its own scrim (.text-scrim)', async ({ p
   expect(Math.abs(noteX - tabsX)).toBeLessThan(1);
 });
 
-test('bare hero text clears WCAG AA at the real office composite (day + night)', async ({
-  page,
-}) => {
-  // The hero copy has no plate, so legibility rests entirely on the ink token clearing contrast against what the office
-  // ACTUALLY renders behind it — hence `paintedContrast` over real canvas pixels, not a --screen proxy.
-  for (const theme of ['day', 'night'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
+test.describe('the office moments still span the light range', () => {
+  test.use({ timezoneId: 'UTC' });
+  test('the sun-highest moment is far brighter than the rest, the overcast night no brighter than morning and evening', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const lum: number[] = [];
+    for (const { at } of OFFICE_MOMENTS) {
+      await pinOfficeMoment(page, at, 'night');
+      await page.goto('./');
+      await settleReveals(page);
+      await settleAnimations(page);
+      // The canvas's own mean, before any page dimmer: what the sun and weather drew.
+      await officeGrounds(page, '.hero .statement-sub');
+      lum.push(
+        await page.evaluate(() => {
+          const c = document.getElementById('office-live') as HTMLCanvasElement;
+          const copy = document.createElement('canvas');
+          copy.width = c.width;
+          copy.height = c.height;
+          const ctx = copy.getContext('2d')!;
+          ctx.drawImage(c, 0, 0);
+          const px = ctx.getImageData(0, 0, copy.width, copy.height).data;
+          let sum = 0;
+          for (let i = 0; i < px.length; i += 4)
+            sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+          return sum / (px.length / 4);
+        })
+      );
+    }
+    const [noon, night, morning, evening] = lum;
+    expect(noon, 'sun-highest moment is not far brighter than the rest').toBeGreaterThan(
+      1.2 * Math.max(night, morning, evening)
+    );
+    expect(night, 'overcast night is brighter than the morning or evening').toBeLessThanOrEqual(
+      Math.min(morning, evening)
+    );
+  });
+});
+
+atOfficeMoments(
+  'bare hero text clears WCAG AA at the real office composite',
+  ['day', 'night', 'dracula'],
+  async (page, theme, moment) => {
+    // The hero copy has no plate, so legibility rests entirely on the ink token clearing contrast against what the office
+    // ACTUALLY renders behind it — hence `paintedContrast` over real canvas pixels, not a --screen proxy.
     await page.goto('./');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await settleReveals(page);
+    await settleAnimations(page);
 
     for (const selector of [
       '.hero .eyebrow',
@@ -2308,41 +2389,38 @@ test('bare hero text clears WCAG AA at the real office composite (day + night)',
       const ratio = await paintedContrast(page, selector);
       expect(
         ratio,
-        `${theme} ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+        `${theme} ${moment} ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5);
     }
   }
-});
+);
 
-test('plate and chip text clears WCAG AA in every theme (day + night + dracula)', async ({
-  page,
-}) => {
-  // Two DOM-plate populations: the page's OPAQUE plates, and the TRANSLUCENT --screen chips whose ground is the office pixel behind them.
-  // DRACULA is the point — visitor-reachable via `?theme=dracula`, yet the office sweep runs day+night and Lighthouse scores one pinned theme.
-  const PLATE_SURFACES: Record<string, string[]> = {
-    './': [
-      '.terminal__title',
-      '.osd__chip',
-      '.stage__caption',
-      '.vibing__ticks span',
-      '.footer__line a.footer__coffee',
-      '.footer__sep',
-      '.nav__version',
-    ],
-    './404': ['.terminal__title'],
-    './architecture': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
-  };
+atOfficeMoments(
+  'plate and chip text clears WCAG AA',
+  ['day', 'night', 'dracula'],
+  async (page, theme, moment) => {
+    // Two DOM-plate populations: the page's OPAQUE plates, and the TRANSLUCENT --screen chips whose ground is the office pixel behind them.
+    // DRACULA is visitor-reachable via `?theme=dracula`, yet Lighthouse scores one pinned theme.
+    const PLATE_SURFACES: Record<string, string[]> = {
+      './': [
+        '.terminal__title',
+        '.osd__chip',
+        '.stage__caption',
+        '.vibing__ticks span',
+        '.footer__line a.footer__coffee',
+        '.footer__sep',
+        '.nav__version',
+      ],
+      './404': ['.terminal__title'],
+      './architecture': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
+    };
 
-  for (const theme of ['day', 'night', 'dracula'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
     let swept = 0;
     for (const [route, selectors] of Object.entries(PLATE_SURFACES)) {
       await page.goto(route);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await settleReveals(page);
+      await settleAnimations(page);
       for (const selector of selectors) {
         const count = await page.locator(selector).count();
         expect(count, `${theme} ${route}: no ${selector} to sweep`).toBeGreaterThan(0);
@@ -2350,7 +2428,7 @@ test('plate and chip text clears WCAG AA in every theme (day + night + dracula)'
           const ratio = await paintedContrast(page, selector, i);
           expect(
             ratio,
-            `${theme} ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+            `${theme} ${moment} ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
           ).toBeGreaterThanOrEqual(4.5);
           swept++;
         }
@@ -2358,7 +2436,7 @@ test('plate and chip text clears WCAG AA in every theme (day + night + dracula)'
     }
     expect(swept, `${theme}: swept nothing`).toBeGreaterThan(0);
   }
-});
+);
 
 test('the architecture diagram: every SVG text clears WCAG AA and every box has a 3:1 boundary, in every theme', async ({
   page,
@@ -2545,37 +2623,31 @@ test('reduced motion: the prompt reveals the hovered name instantly', async ({ b
   await context.close();
 });
 
-test('hero prompt ink (default and every chip name) clears WCAG AA at the real office composite (day + night + dracula)', async ({
-  page,
-}) => {
-  for (const theme of ['day', 'night', 'dracula'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
+atOfficeMoments(
+  'hero prompt ink (default, hover, every chip name) clears WCAG AA at the real office composite',
+  ['day', 'night', 'dracula'],
+  async (page, theme, moment) => {
     await page.goto('./');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await settleReveals(page);
     await settleAnimations(page);
-    const ratios = [await paintedContrast(page, '.hero__prompt-default')];
+    const ratios: [string, number][] = [
+      ['default prompt', await paintedContrast(page, '.hero__prompt-default')],
+    ];
     for (let i = 0; i < supportedSources.length; i++) {
-      ratios.push(await paintedContrast(page, '.hero__badge-name', i));
+      ratios.push([supportedSources[i].name, await paintedContrast(page, '.hero__badge-name', i)]);
     }
-    ratios.forEach((ratio, k) =>
-      expect(
-        ratio,
-        `${theme} ${k === 0 ? 'default prompt' : supportedSources[k - 1].name}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5)
-    );
     const link = (await page.locator('.hero__prompt-default').boundingBox())!;
     await page.mouse.move(link.x + 8, link.y + link.height / 2);
-    const hovered = await paintedContrast(page, '.hero__prompt-default');
-    expect(
-      hovered,
-      `${theme} default prompt hover: WCAG AA floor is 4.5:1; measured ${hovered.toFixed(2)}:1`
-    ).toBeGreaterThanOrEqual(4.5);
+    ratios.push(['default prompt hover', await paintedContrast(page, '.hero__prompt-default')]);
+    for (const [what, ratio] of ratios) {
+      expect(
+        ratio,
+        `${theme} ${moment} ${what}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   }
-});
+);
 
 test('a keyboard-focused default prompt link stays visible over a hovered chip, and the name stays off', async ({
   page,

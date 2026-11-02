@@ -26,10 +26,10 @@ pixtuoid is **telemetry-free and local by default**:
 - **Your session data stays on your machine unless you run `pixtuoid serve`.**
   pixtuoid reads your agent CLIs'
   transcripts (e.g. `~/.claude/projects`, `~/.codex/sessions`) **read-only**, to
-  derive what each sprite is doing. Only `pixtuoid serve` sends anything: agent
-  status, model, usage and repo names (a project directory's last component) to
-  paired devices. No path, prompt, tool input or transcript leaves; the wire is the
-  allowlist in [`remote.rs`](crates/pixtuoid-core/src/remote.rs).
+  derive what each sprite is doing. Only `pixtuoid serve` sends anything, to paired
+  devices: agent status, model, usage, repo names (a project directory's last
+  component), and which agent CLIs you have and how each is connected. No path,
+  prompt, tool input or transcript leaves; the wire is the allowlist in [`remote.rs`](crates/pixtuoid-core/src/remote.rs).
 
 ## Trust boundaries / attack surface
 
@@ -90,9 +90,13 @@ The components that handle untrusted or privileged input, and how they're bounde
    (`CODE_LIFETIME`) and is redeemed for a device token. The key and the hashes of
    the code and tokens sit in one owner-only file in the state directory, never
    in a dotfiles-prone `~/.config`. `pair --reset` forgets every device, ending
-   its stream. A device is read-only: anything past its one hello line ends the
-   connection. Connections are capped (`MAX_CONNS`), and one that hasn't said
-   hello in time (`HELLO_TIMEOUT`) is dropped.
+   its stream. Past its hello a device can only ask, and a line past
+   `MAX_LINE_BYTES` or not an ask ends the connection. Its one write connects or
+   disconnects an agent CLI, as the Sources panel would and through the same
+   install path; writes run one at a time server-wide, each waiting out
+   `MIN_WRITE_GAP` since the last, re-checked against the pairing before it
+   starts and logged with a short hash of the device. Connections are capped
+   (`MAX_CONNS`), and one that hasn't said hello in time (`HELLO_TIMEOUT`) is dropped.
 
 If you find a way to cross one of these boundaries (e.g. a transcript or hook
 payload that escapes the terminal, a non-owner socket connect, an install path

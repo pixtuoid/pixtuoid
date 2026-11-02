@@ -28,6 +28,10 @@ const WORLD_WRITERS: [&str; 6] = [
     "../pixtuoid-scene/src/layout",
 ];
 
+/// What [`WORLD_WRITERS`] holds that the office never draws: a change's line,
+/// which a panel shows (the window test covers it) and a device.
+const OFF_THE_OFFICE: [&str; 1] = ["../pixtuoid-core/src/remote/change.rs"];
+
 /// The pack's palette keys, which name art colours and never show.
 const PALETTE_KEYS: &str = "../pixtuoid-scene/src/pack/lookup.rs";
 
@@ -249,9 +253,11 @@ fn the_window_draws_every_character_the_office_writes() {
 fn the_office_draws_every_character_its_signs_and_names_write() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let writers: Vec<PathBuf> = WORLD_WRITERS.iter().map(|w| root.join(w)).collect();
+    let off: Vec<PathBuf> = OFF_THE_OFFICE.iter().map(|p| root.join(p)).collect();
     let world: Vec<(PathBuf, Vec<char>)> = written()
         .into_iter()
         .filter(|(file, _)| writers.iter().any(|w| file.starts_with(w)))
+        .filter(|(file, _)| !off.contains(file))
         .collect();
     let missing = tofu(&world, |c, _| pixtuoid_scene::cutaway::office_text_draws(c));
     assert!(

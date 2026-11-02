@@ -11,9 +11,12 @@ use std::time::{Duration, Instant, SystemTime};
 
 use pixtuoid_core::harness::host::SandboxEnv;
 use pixtuoid_core::harness::tap::Endpoint;
-use pixtuoid_core::remote::{Hello, PairLink, RemoteOffice, Reply};
+use pixtuoid_core::remote::{
+    Answer, Ask, Hello, Outcome, PairLink, RemoteOffice, Reply, SourceState,
+};
 use pixtuoid_core::state::MAX_FLOORS;
 use ring::digest::{SHA256, digest};
+use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
@@ -127,12 +130,33 @@ impl Device {
         }
     }
 
-    async fn hello(&mut self, hello: &Hello) -> Reply {
-        let line = serde_json::to_string(hello).expect("it encodes") + "\n";
+    async fn say(&mut self, value: &impl Serialize) {
+        let line = serde_json::to_string(value).expect("it encodes") + "\n";
         let stream = self.stream.get_mut();
         stream.write_all(line.as_bytes()).await.expect("sent");
         stream.flush().await.expect("sent");
+    }
+
+    async fn hello(&mut self, hello: &Hello) -> Reply {
+        self.say(hello).await;
         serde_json::from_str(&self.line().await).expect("a reply")
+    }
+
+    /// Ask, and read past the office lines to the answer.
+    async fn ask(&mut self, ask: &Ask) -> Answer {
+        self.say(ask).await;
+        let wait = async {
+            loop {
+                let line = self.line().await;
+                assert!(!line.is_empty(), "the stream ended, awaiting an answer");
+                if let Some(answer) = Answer::from_line(line.as_bytes()) {
+                    return answer;
+                }
+            }
+        };
+        tokio::time::timeout(PATIENCE, wait)
+            .await
+            .expect("an answer in time")
     }
 
     async fn line(&mut self) -> String {
@@ -165,7 +189,7 @@ impl Device {
 
 /// A HOME of its own, where cursor is connected, and one hook endpoint.
 struct World {
-    _home: tempfile::TempDir,
+    home: tempfile::TempDir,
     env: SandboxEnv,
     endpoint: Endpoint,
 }
@@ -180,7 +204,7 @@ impl World {
             env.set("LLVM_PROFILE_FILE", profile);
         }
         let world = Self {
-            _home: home,
+            home,
             env,
             endpoint,
         };
@@ -245,9 +269,13 @@ impl World {
         let args = ["pair", "--host", "127.0.0.1", "--port", &port.to_string()];
         let out = self.run(&args);
         assert!(out.status.success(), "{out:?}");
-        String::from_utf8(out.stdout)
-            .expect("UTF-8")
-            .lines()
+        let said = String::from_utf8(out.stdout).expect("UTF-8");
+        let consent = "can connect or disconnect agent CLIs here";
+        assert!(
+            said.contains(consent),
+            "pairing says what it allows: {said}"
+        );
+        said.lines()
             .find(|line| line.starts_with("pixtuoid://"))
             .expect("pair prints the link")
             .parse()
@@ -367,6 +395,67 @@ async fn a_device_pairs_and_reads_an_office_that_names_only_the_repo() {
         Reply::Refused,
         "a running server reads a reset made beside it"
     );
+}
+
+/// The device connects a flag-only CLI, which the live gate and the config both
+/// then hold.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_connects_a_cli_over_pinned_tls() {
+    let world = World::new();
+    let (_server, port) = world.serve();
+    let link = world.pair(port);
+    let mut device = Device::connect(&link).await;
+    let code = link.code.clone();
+    let reply = device.hello(&Hello::Pair { code }).await;
+    assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
+
+    let connect = Ask::Change {
+        source: "copilot".into(),
+        on: true,
+    };
+    let Answer::Changed(changed) = device.ask(&connect).await else {
+        panic!("a server knows this ask");
+    };
+    assert_eq!(changed.outcome(), Outcome::Connected);
+    assert_eq!(
+        changed.line("Copilot CLI"),
+        "\u{2713} Copilot CLI connected"
+    );
+
+    let Answer::Sources { rows } = device.ask(&Ask::Sources).await else {
+        panic!("a server knows this ask");
+    };
+    let copilot = rows.iter().find(|row| row.id() == "copilot");
+    assert_eq!(copilot.map(|row| row.state()), Some(SourceState::Connected));
+    let listed = world.run(&["sources", "--json"]);
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).expect("JSON");
+    let copilot = listed
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["id"] == "copilot"));
+    assert_eq!(copilot.map(|row| &row["connected"]), Some(&true.into()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_lists_the_agent_clis_with_no_path_and_keeps_its_stream() {
+    let world = World::new();
+    let (_server, port) = world.serve();
+    let link = world.pair(port);
+    let mut device = Device::connect(&link).await;
+    let code = link.code.clone();
+    let reply = device.hello(&Hello::Pair { code }).await;
+    assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
+
+    let Answer::Sources { rows } = device.ask(&Ask::Sources).await else {
+        panic!("a server knows this ask");
+    };
+    let cursor = rows.iter().find(|row| row.id() == "cursor");
+    let cursor = cursor.expect("every registered source has a row");
+    assert_eq!(cursor.display_name(), "Cursor CLI");
+    assert_eq!(cursor.state(), SourceState::Connected);
+
+    world.start_session("canary", device.sees("canary")).await;
+    let home = world.home.path().to_str().expect("a UTF-8 path");
+    assert!(!device.received.contains(home), "{}", device.received);
 }
 
 /// No TUI is needed: the server owns the plane alone, and either instance can

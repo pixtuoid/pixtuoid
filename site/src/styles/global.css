@@ -847,12 +847,11 @@ code {
   --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.4), 0 24px 60px rgba(0, 0, 0, 0.6);
   --glow: color-mix(in srgb, var(--coral) 26%, transparent);
   --chrome-halo: 0 1px 8px rgba(0, 0, 0, 0.45);
-  /* dracula's --bg is dark too (same darkening direction as night) — not
-     independently contrast-measured (outside the matrix sweep's scope), but
-     the SAME reasoning applies: reuse --chip-ink, and keep the eyebrow on its
-     own existing --coral-deep rather than day's dark accent. */
-  --office-ink: var(--chip-ink);
-  --office-ink-accent: var(--coral-deep);
+  /* dracula's --bg is dark too, so its dimmer DARKENS the office like night's, but
+     less (its --bg is lighter), so at midday --chip-ink and --coral-deep alone
+     measured under AA (smoke.spec's office moments): both are lifted, keeping the eyebrow purple. */
+  --office-ink: var(--chip-bright);
+  --office-ink-accent: color-mix(in srgb, var(--coral-deep) 35%, white);
   /* dark office composite, same as night — raw LED stays legible (7.52:1). */
   --led-ink: var(--led);
 }
