@@ -19,11 +19,10 @@ const RENDERERS: [&str; 4] = [
 
 /// What world text (the badges, the board, the bubbles, the floor sign) is
 /// written by: core's labels and the scene's signs.
-const WORLD_WRITERS: [&str; 6] = [
+const WORLD_WRITERS: [&str; 5] = [
     "../pixtuoid-core/src",
     "../pixtuoid-scene/src/neon_sign.rs",
     "../pixtuoid-scene/src/chitchat.rs",
-    "../pixtuoid-scene/src/badge.rs",
     "../pixtuoid-scene/src/display/text.rs",
     "../pixtuoid-scene/src/layout",
 ];

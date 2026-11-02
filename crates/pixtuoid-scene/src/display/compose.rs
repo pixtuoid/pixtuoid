@@ -1136,7 +1136,7 @@ fn push_characters(
         scale,
     } = office;
     let pen = Pen::for_pack(scale, pack);
-    let namesakes = crate::badge::Namesakes::of(&frame.agents);
+    let namesakes = crate::nameplate::Namesakes::of(&frame.agents);
     let mut carried = Vec::new();
     for c in &frame.characters {
         let agent = &frame.agents[c.agent_idx];

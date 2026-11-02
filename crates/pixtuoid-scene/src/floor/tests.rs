@@ -96,12 +96,12 @@ fn daemons_projects_onto_the_ground_floor_only() {
         );
     }
     assert_eq!(
-        project_floor_scene(&scene, 0).daemons().count(),
+        project_floor_scene(&scene, 0).scene().daemons().count(),
         2,
         "floor 0 carries EVERY gateway mascot"
     );
     assert_eq!(
-        project_floor_scene(&scene, 1).daemons().count(),
+        project_floor_scene(&scene, 1).scene().daemons().count(),
         0,
         "floor 1+ must NOT (render-once invariant)"
     );
@@ -115,7 +115,7 @@ fn every_floor_carries_the_days_count() {
     scene.today = Some(today);
     for floor in 0..2 {
         assert_eq!(
-            project_floor_scene(&scene, floor).today,
+            project_floor_scene(&scene, floor).scene().today,
             Some(today),
             "the sign upstairs reads it too, floor {floor}"
         );
@@ -131,8 +131,8 @@ fn a_floor_past_the_building_projects_empty() {
     assert!(scene.agents.values().any(|a| a.floor_idx == MAX_FLOORS - 1));
     assert!(build_floor_scene(&scene, MAX_FLOORS).is_empty());
     let past = project_floor_scene(&scene, MAX_FLOORS);
-    assert!(past.agents.is_empty());
-    assert_eq!(past.total_capacity(), 0);
+    assert!(past.scene().agents.is_empty());
+    assert_eq!(past.scene().total_capacity(), 0);
 }
 
 #[test]
@@ -250,7 +250,8 @@ fn build_floor_scene_remap_is_local_global_coincident() {
     // its only floor's local space — what makes `single_floor_local` an identity.
     let scene = make_scene(20, 16);
     for floor_idx in 0..num_floors(&scene) {
-        let projected = project_floor_scene(&scene, floor_idx);
+        let floor_scene = project_floor_scene(&scene, floor_idx);
+        let projected = floor_scene.scene();
         for slot in projected.agents.values() {
             assert_eq!(projected.floor_of(slot.desk_index), 0);
             assert_eq!(
@@ -913,7 +914,7 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
         &mut office.coffee,
         &mut office.chitchat,
         crate::floor::FloorInputs {
-            scene: &projected,
+            scene: projected.scene(),
             now: t0(),
             floor: FloorMeta::for_floor(1, num_floors(&scene)),
             pets: crate::floor::PetInputs::default(),
@@ -1863,7 +1864,7 @@ fn a_slides_footer_speaks_for_its_destination() {
     assert_eq!(office.footer_floor(&scene).map(|f| f.current), Some(2));
     assert_eq!(
         office.footer_scene(&scene).agents.len(),
-        project_floor_scene(&scene, 1).agents.len()
+        project_floor_scene(&scene, 1).scene().agents.len()
     );
 }
 
@@ -1892,7 +1893,12 @@ fn a_petting_plays_only_on_its_own_floor() {
     };
     let petted = |floor, now| {
         office
-            .floor_world(world(now), &scene, floor, &pets)
+            .floor_world(
+                world(now),
+                &project_floor_scene(&scene, floor),
+                floor,
+                &pets,
+            )
             .pets
             .petting
             .is_some()
@@ -1999,6 +2005,66 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         crate::pet::select_pet_for_floor(FloorMeta::for_floor(1, 2).floor_seed, &pets)
             .map(|p| p.name.as_str()),
         "the floor showing's pet"
+    );
+}
+
+/// The whole office's [`FloorNamesakes`](crate::nameplate::FloorNamesakes)
+/// name each agent as its floor's badge does, so a namesake upstairs leaves a
+/// label bare.
+#[test]
+fn every_floors_badges_read_the_offices_floor_nameplates() {
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+    let mut scene = make_scene(4, 2);
+    let labels = ["cc\u{b7}api", "cc\u{b7}api", "cc\u{b7}web", "cc\u{b7}api"];
+    for (i, label) in labels.into_iter().enumerate() {
+        let id = AgentId::from_transcript_path(&format!("/p/{i}.jsonl"));
+        let agent = scene.agents.get_mut(&id).expect("make_scene's agent");
+        agent.label = label.into();
+    }
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    let namesakes = crate::nameplate::FloorNamesakes::of(&scene);
+    let mut badged = 0;
+    for (floor, now) in [(0, t0), (1, t0 + Duration::from_secs(2))] {
+        if floor > 0 {
+            assert!(office.navigate(floor, t0));
+        }
+        let _ = office.render(
+            crate::look::Look::Classic,
+            crate::look::RenderInputs {
+                world: FloorInputs {
+                    scene: &scene,
+                    now,
+                    floor: FloorMeta::ground(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                size: Size { w: 160, h: 96 },
+                place: crate::look::Place::default(),
+                debug_walkable: false,
+                dim: crate::look::Dim::NONE,
+            },
+            &[],
+            theme.surface.bg_fallback,
+        );
+        let Some(crate::look::Picture::Floor(picture)) = office.picture() else {
+            panic!("floor {floor} lays out");
+        };
+        let text = picture.text.expect("a classic floor hands its text over");
+        for badge in text.badges {
+            let whole = namesakes.nameplate(&scene.agents[&badge.agent]);
+            assert_eq!(badge.name.text(), whole.to_string(), "floor {floor}");
+            badged += 1;
+        }
+    }
+    assert_eq!(badged, labels.len(), "premise: every agent wears a badge");
+    let upstairs = &scene.agents[&AgentId::from_transcript_path("/p/3.jsonl")];
+    assert!(
+        crate::nameplate::Namesakes::of(scene.agents.values())
+            .nameplate(upstairs)
+            .suffix()
+            .is_some(),
+        "premise: one count over the whole office would suffix the namesake upstairs"
     );
 }
 

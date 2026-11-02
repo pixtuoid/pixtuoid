@@ -87,10 +87,20 @@ fn dashboard_line(
         (0, false, _) => "▾ ".to_string(),
         _ => "  └ ".to_string(),
     };
-    let mut name = format!("{prefix}{}", row.label);
-    if row.collapsed && row.child_count > 0 {
-        name.push_str(&format!(" ({})", row.child_count));
-    }
+    let count = if row.collapsed && row.child_count > 0 {
+        format!(" ({})", row.child_count)
+    } else {
+        String::new()
+    };
+    // A row the marquee doesn't scroll is cut as a badge is, so a namesake
+    // keeps the suffix that tells it apart.
+    let shown = if is_selected {
+        std::borrow::Cow::Owned(row.name.to_string())
+    } else {
+        let room = LABEL_W.saturating_sub(prefix.chars().count() + count.chars().count());
+        row.name.fit(u16::try_from(room).unwrap_or(u16::MAX))
+    };
+    let name = format!("{prefix}{shown}{count}");
     let label_cell = format!(
         "{:<LABEL_W$}",
         marquee_or_truncate(&name, LABEL_W, is_selected, now)
@@ -136,23 +146,71 @@ fn dashboard_line(
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::slot_with;
     use super::*;
     use pixtuoid_core::AgentId;
+    use pixtuoid_core::state::ActivityState;
+    use pixtuoid_scene::nameplate::{Nameplate, Namesakes};
     use pixtuoid_scene::theme::NORMAL;
     use std::sync::Arc;
 
+    /// The row of a lone agent labelled `label`.
     fn make_row(source: &str, state: RowState, label: &str) -> DashboardRow {
+        let slot = slot_with(ActivityState::Idle, label);
+        row_named(source, state, Namesakes::of([&slot]).nameplate(&slot))
+    }
+
+    fn row_named(source: &str, state: RowState, name: Nameplate) -> DashboardRow {
         DashboardRow {
             agent_id: AgentId::from_transcript_path("/x.jsonl"),
             parent_id: None,
             depth: 0,
-            label: label.into(),
+            name,
             source: Arc::from(source),
             floor_idx: 0,
             state,
             child_count: 0,
             collapsed: false,
         }
+    }
+
+    /// A lone label one char past the column keeps its source prefix: only a
+    /// namesake's suffix is kept by cutting the label.
+    #[test]
+    fn a_lone_label_just_past_the_column_keeps_its_source_prefix() {
+        let label = format!("cc\u{b7}{}", "r".repeat(28));
+        let row = make_row("cc", RowState::Idle, &label);
+        let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
+        let cell = line.spans[2].content.to_string();
+        let room = LABEL_W - 2;
+        assert_eq!(
+            cell.trim_start(),
+            label.chars().take(room).collect::<String>()
+        );
+    }
+
+    /// Two namesakes too long for the column keep their suffixes, cut as a
+    /// badge is, so their rows stay apart.
+    #[test]
+    fn long_namesake_rows_keep_their_suffixes() {
+        let label = "cc\u{b7}a-very-long-project-name-xyz";
+        let a = slot_with(ActivityState::Idle, label);
+        let mut b = slot_with(ActivityState::Idle, label);
+        b.agent_id = AgentId::from_transcript_path("/p/namesake.jsonl");
+        let namesakes = Namesakes::of([&a, &b]);
+        let mut cells = Vec::new();
+        for agent in [&a, &b] {
+            let name = namesakes.nameplate(agent);
+            let tail = name.suffix().expect("a namesake's suffix").tail();
+            let row = row_named("cc", RowState::Idle, name);
+            let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
+            let cell = line.spans[2].content.to_string();
+            assert_eq!(cell.chars().count(), LABEL_W, "{cell:?}");
+            assert!(cell.ends_with(&tail), "{cell:?}");
+            assert!(cell.trim_start().starts_with("cc\u{b7}a-very"), "{cell:?}");
+            cells.push(cell);
+        }
+        assert_ne!(cells[0], cells[1]);
     }
 
     #[test]
@@ -253,9 +311,10 @@ mod tests {
         let row = make_row("cc", RowState::Running(Some(Arc::from(detail))), long);
         let unsel = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
         let name_unsel = unsel.spans[2].content.to_string();
+        assert_eq!(name_unsel.chars().count(), LABEL_W, "{name_unsel:?}");
         assert!(
-            name_unsel.contains('\u{2026}'),
-            "unselected long name must ellipsize: {name_unsel:?}"
+            long.starts_with(name_unsel.trim()),
+            "unselected long name must be cut to the column: {name_unsel:?}"
         );
         let t0 = SystemTime::UNIX_EPOCH;
         let t1 = SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(3000);

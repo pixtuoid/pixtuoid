@@ -208,14 +208,14 @@ fn floor_pet(floor: usize, n_floors: usize, pets: &[crate::pet::Pet]) -> Option<
 /// petting playing only on its own floor while it lasts.
 fn floor_world<'a>(
     world: FloorInputs<'a>,
-    floor_scene: &'a SceneState,
+    floor_scene: &'a super::FloorScene,
     floor: usize,
     n_floors: usize,
     pets: &'a [crate::pet::Pet],
 ) -> FloorInputs<'a> {
     let now = world.now;
     FloorInputs {
-        scene: floor_scene,
+        scene: floor_scene.scene(),
         floor: floor_meta(world.floor, floor, n_floors),
         pets: super::PetInputs {
             pet: floor_pet(floor, n_floors, pets),
@@ -394,7 +394,7 @@ impl OfficeSession {
     pub fn floor_world<'a>(
         &self,
         world: FloorInputs<'a>,
-        floor_scene: &'a SceneState,
+        floor_scene: &'a super::FloorScene,
         floor: usize,
         pets: &'a [crate::pet::Pet],
     ) -> FloorInputs<'a> {
@@ -573,7 +573,7 @@ impl OfficeSession {
     /// The scene the footer counts and tallies: its floor's, as
     /// [`FooterInputs::new`](crate::footer::FooterInputs::new) asks.
     pub fn footer_scene(&self, scene: &SceneState) -> SceneState {
-        super::project_floor_scene(scene, self.footer_floor_index())
+        super::project_floor_scene(scene, self.footer_floor_index()).0
     }
 
     /// Whether the floor showing's last frame changes between beats: someone

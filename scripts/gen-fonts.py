@@ -56,7 +56,7 @@ FUSION_LICENSES = {
 }
 SITE_URL = FUSION_URL.replace("bdf", "otf.woff2")
 SITE_SHA256 = "5a2e0c345d83124a962772ecc7f04748bea14978f02ac1474d5fd38a00f3de56"
-# Latin, for the half-width `·` a badge's `cc·<id4>` writes.
+# Latin, for the half-width `·` a badge's `cc·repo·xxxx` writes.
 SITE_MEMBER = "fusion-pixel-8px-monospaced-latin.otf.woff2"
 SITE_OUT = SITE_FONTS / "fusion-pixel-8px.woff2"
 # What the captions write: Latin, as the site's other faces load, and the

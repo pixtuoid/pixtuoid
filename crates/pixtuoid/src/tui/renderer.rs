@@ -14,7 +14,7 @@ use ratatui::style::Color;
 
 use pixtuoid_scene::display::HoverTarget;
 use pixtuoid_scene::display::cells::CellMap;
-use pixtuoid_scene::floor::{FloorInputs, OfficeStores, PerFloor};
+use pixtuoid_scene::floor::{FloorInputs, OfficeStores, PerFloor, PetInputs};
 use pixtuoid_scene::footer::{FooterContext, FooterInputs};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{FloorPicture, Hits, Look, Place, RenderInputs};
@@ -212,20 +212,6 @@ fn paint_too_small_notice(
     }
 }
 
-/// The tooltip for what `hit` names on `world`'s frame, whichever painter
-/// drew it.
-pub(crate) fn paint_scene_tooltip(
-    f: &mut ratatui::Frame<'_>,
-    hit: &SceneHit<'_>,
-    world: &FloorInputs<'_>,
-    at: TooltipAt,
-    theme: &pixtuoid_scene::theme::Theme,
-) {
-    if let Some(tip) = pixtuoid_scene::tooltip::for_hit(*hit, world) {
-        paint_tooltip(f, &tip, at, theme);
-    }
-}
-
 /// Draw one classic-look frame (scene, footer, overlays): what it answers a
 /// pointer with, `None` for a footer-only frame.
 ///
@@ -280,7 +266,9 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
         footer: &footer,
         overlays: &overlays,
         theme,
-        world: &world,
+        office: scene,
+        now,
+        pets: world.pets,
         mouse_pos: ctx.mouse_pos,
     };
     flush_classic(term, &frame, &picture)?;
@@ -367,8 +355,11 @@ pub(crate) struct ClassicFrame<'f> {
     pub(crate) footer: &'f FooterInputs<'f>,
     pub(crate) overlays: &'f crate::panels::OverlayFrame<'f>,
     pub(crate) theme: &'static pixtuoid_scene::theme::Theme,
-    /// The floor's inputs, which a tooltip reads.
-    pub(crate) world: &'f FloorInputs<'f>,
+    /// The whole office, whose agents and gateways a tooltip names.
+    pub(crate) office: &'f SceneState,
+    pub(crate) now: SystemTime,
+    /// The floor's pet, which a tooltip names.
+    pub(crate) pets: PetInputs<'f>,
     pub(crate) mouse_pos: Option<(u16, u16)>,
 }
 
@@ -387,10 +378,11 @@ pub(crate) fn flush_classic<B: Backend<Error: Send + Sync + 'static>>(
         footer,
         overlays,
         theme,
-        world,
+        office,
+        now,
+        pets,
         mouse_pos,
     } = frame;
-    let now = world.now;
     let pixels = picture.pixels;
     let (geometry, star) = classic_placement(term.size()?, picture);
     let hit =
@@ -415,8 +407,10 @@ pub(crate) fn flush_classic<B: Backend<Error: Send + Sync + 'static>>(
             my,
             scene_rect: actual_scene,
         });
-        if let (Some(hit), Some(at)) = (&hit, at) {
-            paint_scene_tooltip(f, hit, world, at, theme);
+        if let (Some(hit), Some(at)) = (hit, at)
+            && let Some(tip) = pixtuoid_scene::tooltip::for_hit(hit, office, now, pets)
+        {
+            paint_tooltip(f, &tip, at, theme);
         }
         crate::panels::paint_overlays(f, overlays, now, actual_full, theme);
     })?;

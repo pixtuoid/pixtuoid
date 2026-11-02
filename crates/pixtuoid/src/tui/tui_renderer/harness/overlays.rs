@@ -568,42 +568,58 @@ fn hovered_agent_tooltip_shows_source_badge() {
     r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(text.contains("[cc]"), "source badge on the tooltip: {text}");
-    // The fixtures' session_id is "s"; `disambig_suffix` is deterministic.
-    let id4 = pixtuoid_scene::badge::disambig_suffix("s");
-    assert!(
-        text.contains(&format!("\u{b7}{id4}")),
-        "id4 disambiguation suffix ·{id4}: {text}"
-    );
+    let tail = pixtuoid_scene::nameplate::Suffix::of(id).tail();
+    assert!(text.contains(&tail), "the suffix {tail}: {text}");
 }
 
-#[test]
-fn hovered_subagent_tooltip_shows_lineage() {
-    let parent = running(
-        "/lin/root.jsonl",
-        0,
-        "Read a",
-        t0() - Duration::from_secs(60),
-    );
-    let parent_id = parent.agent_id;
-    let mut child = running(
-        "/lin/child.jsonl",
-        1,
-        "Edit b",
-        t0() - Duration::from_secs(30),
-    );
-    child.label = "kid".into();
-    child.parent_id = Some(parent_id);
-    let child_id = child.agent_id;
-    let scene = scene_with(vec![parent, child], 16);
-    let mut r = build(120, 44, vec![]);
-    r.render(&scene, t0()).unwrap();
-    super::hover_agent(&mut r, child_id);
-    r.render(&scene, t0()).unwrap();
+/// The lead the card shown over `id` names, once hovered.
+fn card_lead(
+    r: &mut TuiRenderer<TestBackend>,
+    scene: &SceneState,
+    id: AgentId,
+    now: SystemTime,
+) -> Option<String> {
+    r.render(scene, now).unwrap();
+    super::hover_agent(r, id);
+    r.render(scene, now).unwrap();
     let text = frame_text(r.frame_buffer());
-    assert!(
-        text.contains("\u{21b3} under"),
-        "lineage line on the subagent: {text}"
-    );
+    text.lines()
+        .find_map(|line| line.split("\u{21b3} under ").nth(1))
+        .and_then(|rest| rest.split_whitespace().next())
+        .map(str::to_owned)
+}
+
+/// A subagent's card names its lead as the lead's floor's badge does, from
+/// the lead's floor or another, a namesake upstairs notwithstanding.
+#[test]
+fn a_subagents_card_names_its_lead_from_any_floor() {
+    let cap = 16;
+    let started = t0() - Duration::from_secs(120);
+    let place = |key: &str, label: &str, (floor, desk): (usize, usize), lead| {
+        let id = AgentId::from_transcript_path(&format!("/u/{key}.jsonl"));
+        let mut a = slot(id, floor, desk, started);
+        a.label = label.into();
+        a.parent_id = lead;
+        a
+    };
+    let lead = place("lead", "cc\u{b7}api", (0, 0), None);
+    let lead_id = lead.agent_id;
+    let here = place("here", "subagent", (0, 1), Some(lead_id));
+    let there = place("there", "subagent", (1, cap), Some(lead_id));
+    let (here_id, there_id) = (here.agent_id, there.agent_id);
+    let namesake = place("namesake", "cc\u{b7}api", (1, cap + 1), None);
+    let scene = scene_with(vec![lead, here, there, namesake], cap);
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
+    let projection = floor_scene.scene();
+    let badge = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values())
+        .nameplate(&projection.agents[&lead_id])
+        .to_string();
+    let mut r = build(120, 44, vec![]);
+    let mut now = t0();
+    assert_eq!(card_lead(&mut r, &scene, here_id, now), Some(badge.clone()));
+    r.navigate_floor(1, now);
+    render_until_settled(&mut r, &scene, &mut now, 1);
+    assert_eq!(card_lead(&mut r, &scene, there_id, now), Some(badge));
 }
 
 #[test]

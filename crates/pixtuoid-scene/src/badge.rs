@@ -2,23 +2,13 @@
 //! name, its activity tone, its inks and its plate, which
 //! [`Badge`](crate::display::Badge) puts together for every painter.
 
-use std::collections::HashMap;
-
 use crate::sprite::Rgb;
 use pixtuoid_core::AgentSlot;
-use pixtuoid_core::state::ActivityState;
+use pixtuoid_core::state::{ActivityState, SlotLabel};
 
 use crate::layout::DESK_W;
+use crate::nameplate::Nameplate;
 use crate::theme::Theme;
-
-/// The separator between a label's source prefix and its cwd/disambiguation
-/// tail (`cc·repo`, `cc·repo·1a2b`). The label is WRITTEN core-side as a bare
-/// `·` at THREE sites — `decoder::cwd_basename_label` (the chokepoint),
-/// `claude_code::cc_derive_label`'s project-dir fallback, and the reducer's
-/// SessionStart back-fill, both of which document their bypass — and a crate
-/// boundary keeps this const out of reach of all three, so it must MATCH that
-/// char.
-const LABEL_SEP: char = '\u{b7}';
 
 /// Activity-derived label tone — backend-agnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -44,10 +34,11 @@ impl BadgeTone {
 }
 
 /// The source's badge hue for a name-badge label, or `None` when the label has
-/// no `LABEL_SEP` prefix (a bare-prefix / cwd-less label like `cx`) or the
-/// prefix is unregistered.
-pub(crate) fn badge_hue(text: &str, theme: &Theme) -> Option<Rgb> {
-    text.split_once(LABEL_SEP)
+/// no [`SlotLabel::SEP`] prefix (a bare-prefix / cwd-less label like `cx`) or
+/// the prefix is unregistered.
+pub(crate) fn badge_hue(label: &str, theme: &Theme) -> Option<Rgb> {
+    label
+        .split_once(SlotLabel::SEP)
         .and_then(|(prefix, _)| theme.source.by_prefix(prefix))
 }
 
@@ -67,7 +58,7 @@ pub struct BadgeInk {
 pub use crate::display::BADGE_MARKER;
 
 // A decoded label ends in core's ELLIPSIS only past this many chars, and a
-// badge keeps no more chars than cells (`truncate_label`), so it never shows
+// badge keeps no more chars than cells (`Nameplate::fit`), so it never shows
 // the mark.
 const _: () =
     assert!((BADGE_CELLS as usize) < pixtuoid_core::source::decoder::MAX_DECODED_FIELD_CHARS);
@@ -79,41 +70,22 @@ pub const BADGE_CELLS: u16 = DESK_W + BADGE_OVERHANG;
 /// The cells a badge may run past its desk's width.
 const BADGE_OVERHANG: u16 = 4;
 
-/// The [`BadgeInk`] of a badge reading `text` in `tone`.
-pub fn badge_ink(text: &str, tone: BadgeTone, theme: &Theme) -> BadgeInk {
+/// The [`BadgeInk`] of a badge in `tone` for an agent's
+/// [label](Nameplate::label): its shown name would not do, as a bare `cx`
+/// shown as `cx·ab12` reads as the `cx` source.
+pub fn badge_ink(label: &str, tone: BadgeTone, theme: &Theme) -> BadgeInk {
     let name = tone.rgb(theme);
     BadgeInk {
-        marker: badge_hue(text, theme).unwrap_or(name),
+        marker: badge_hue(label, theme).unwrap_or(name),
         name,
     }
 }
 
-/// How many agents wear each label: an agent sharing its label carries its
-/// session's suffix, even where the namesake is not drawn.
-pub(crate) struct Namesakes<'a>(HashMap<&'a str, usize>);
-
-impl<'a> Namesakes<'a> {
-    pub(crate) fn of(agents: impl IntoIterator<Item = &'a AgentSlot>) -> Self {
-        let mut counts: HashMap<&str, usize> = HashMap::new();
-        for agent in agents {
-            *counts.entry(&*agent.label).or_insert(0) += 1;
-        }
-        Self(counts)
-    }
-
-    /// `agent`'s badge text, disambiguated and truncated, with no marker.
-    pub(crate) fn text(&self, agent: &AgentSlot) -> String {
-        let needs_disambig = self.0.get(&*agent.label).copied().unwrap_or(0) > 1
-            && agent.session_id.chars().count() >= 4;
-        let raw: std::borrow::Cow<'_, str> = if needs_disambig {
-            let id4 = disambig_suffix(&agent.session_id);
-            std::borrow::Cow::Owned(format!("{}{LABEL_SEP}{id4}", agent.label))
-        } else {
-            std::borrow::Cow::Borrowed(&*agent.label)
-        };
-        let marker = crate::display::text::cells(BADGE_MARKER.encode_utf8(&mut [0; 4]));
-        truncate_label(&raw, BADGE_CELLS.saturating_sub(marker)).into_owned()
-    }
+/// `name` as a badge shows it, with no marker: [fit](Nameplate::fit) to the
+/// cells the marker leaves.
+pub(crate) fn badge_text(name: &Nameplate) -> String {
+    let marker = crate::display::text::cells(BADGE_MARKER.encode_utf8(&mut [0; 4]));
+    name.fit(BADGE_CELLS.saturating_sub(marker)).into_owned()
 }
 
 /// `agent`'s badge tone: exiting over whatever it last did.
@@ -135,60 +107,10 @@ pub(crate) fn badge_plate_colour(theme: &Theme) -> Rgb {
     theme.ui.tooltip_bg
 }
 
-/// Fit a label into `budget` terminal cells, and as many chars, without
-/// losing the `·xxxx` session-id disambiguation suffix. Truncates from the
-/// base (left of the `·`), not the suffix — otherwise the disambig becomes
-/// useless ("TikTok-Android·a" tells us nothing the base alone wouldn't).
-pub(crate) fn truncate_label(label: &str, budget: u16) -> std::borrow::Cow<'_, str> {
-    use std::borrow::Cow;
-    if span(label) <= budget {
-        return Cow::Borrowed(label);
-    }
-    if let Some(sep_byte) = label.rfind(LABEL_SEP) {
-        let suffix = &label[sep_byte..];
-        let suffix_span = span(suffix);
-        if suffix_span < budget {
-            let base = take_span(&label[..sep_byte], budget - suffix_span);
-            return Cow::Owned(format!("{base}{suffix}"));
-        }
-    }
-    Cow::Borrowed(take_span(label, budget))
-}
-
-/// What a label spends of a badge's budget: its cells, or its chars where a
-/// run of zero-width marks has more.
-fn span(text: &str) -> u16 {
-    let chars = u16::try_from(text.chars().count()).unwrap_or(u16::MAX);
-    crate::display::text::cells(text).max(chars)
-}
-
-/// The longest start of `text` whose [`span`] fits `budget`, its clusters
-/// whole.
-fn take_span(text: &str, budget: u16) -> &str {
-    use unicode_segmentation::UnicodeSegmentation;
-    let end = text
-        .grapheme_indices(true)
-        .map(|(i, cluster)| i + cluster.len())
-        .take_while(|&end| span(&text[..end]) <= budget)
-        .last()
-        .unwrap_or(0);
-    &text[..end]
-}
-
-/// 4-hex-char disambiguation suffix, hashed from the WHOLE `session_id` —
-/// shape-agnostic where any slice of the id is not (a raw-cwd id collides on
-/// both head and tail: `/x/app` vs `/y/app`), and multi-byte-safe by
-/// construction. `DefaultHasher` is per-process: a display aid, not an id.
-pub fn disambig_suffix(session_id: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    session_id.hash(&mut h);
-    format!("{:04x}", h.finish() & 0xffff)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BadgeTone, Namesakes, badge_hue, disambig_suffix, tone_of, truncate_label};
+    use super::{BadgeTone, badge_hue, badge_text, tone_of};
+    use crate::nameplate::{Namesakes, Suffix};
     use pixtuoid_core::AgentId;
     use pixtuoid_core::state::{
         ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
@@ -245,11 +167,15 @@ mod tests {
         s
     }
 
+    /// `agent`'s badge text among `slots`.
+    fn shown(slots: &[AgentSlot], agent: &AgentSlot) -> String {
+        badge_text(&Namesakes::of(slots).nameplate(agent))
+    }
+
     #[test]
     fn a_lone_running_agent_reads_its_bare_label_in_the_running_tone() {
         let a = slot("cc", "sess-abcd", 0, running());
-        let s = scene_of(vec![a.clone()]);
-        assert_eq!(Namesakes::of(s.agents.values()).text(&a), "cc");
+        assert_eq!(shown(std::slice::from_ref(&a), &a), "cc");
         assert_eq!(tone_of(&a), BadgeTone::Running);
     }
 
@@ -270,17 +196,43 @@ mod tests {
         assert_eq!(badge_hue("zz·repo", &crate::theme::NORMAL), None);
     }
 
+    /// A bare-prefix label's marker takes no source hue ([`badge_hue`]), and a
+    /// namesake's suffix doesn't lend it one.
     #[test]
-    fn colliding_labels_get_disambig_suffixes() {
-        let a = slot("cc", "session-aaaa", 0, running());
-        let b = slot("cc", "session-bbbb", 1, running());
-        let s = scene_of(vec![a.clone(), b.clone()]);
+    fn a_bare_prefix_namesakes_marker_matches_a_lone_ones() {
+        let marker = |slots: Vec<AgentSlot>| {
+            let s = scene_of(slots.clone());
+            let namesakes = Namesakes::of(s.agents.values());
+            let anchor = crate::layout::Point { x: 0, y: 0 };
+            crate::display::Badge::new(anchor, &slots[0], &namesakes, &crate::theme::NORMAL).marker
+        };
+        let lone = marker(vec![slot("cx", "session-aaaa", 0, running())]);
+        let shared = marker(vec![
+            slot("cx", "session-aaaa", 0, running()),
+            slot("cx", "session-bbbb", 1, running()),
+        ]);
+        assert_eq!(shared, lone);
+    }
+
+    /// A namesake's badge, as every painter builds it, is its whole nameplate
+    /// truncated, the suffix kept.
+    #[test]
+    fn a_long_namesakes_badge_is_its_nameplate_truncated() {
+        let label = "cc\u{b7}a-very-long-project-name";
+        let a = slot(label, "session-aaaa", 0, running());
+        let b = slot(label, "session-bbbb", 1, running());
+        let s = scene_of(vec![a.clone(), b]);
         let namesakes = Namesakes::of(s.agents.values());
-        let want_a = format!("cc\u{00b7}{}", disambig_suffix(&a.session_id));
-        let want_b = format!("cc\u{00b7}{}", disambig_suffix(&b.session_id));
-        assert_eq!(namesakes.text(&a), want_a);
-        assert_eq!(namesakes.text(&b), want_b);
-        assert_ne!(want_a, want_b);
+        let anchor = crate::layout::Point { x: 0, y: 0 };
+        let badge = crate::display::Badge::new(anchor, &a, &namesakes, &crate::theme::NORMAL);
+        let (shown, whole) = (badge.name.text(), namesakes.nameplate(&a));
+        let marker = crate::display::text::cells(super::BADGE_MARKER.encode_utf8(&mut [0; 4]));
+        assert!(
+            shown.len() < whole.to_string().len(),
+            "premise: {whole} is cut"
+        );
+        assert_eq!(shown, whole.fit(super::BADGE_CELLS - marker));
+        assert!(shown.ends_with(&Suffix::of(a.agent_id).tail()), "{shown:?}");
     }
 
     /// The snapshot casts share each team's label, so every team badge is suffixed.
@@ -292,9 +244,8 @@ mod tests {
             let label = cc_derive_label(std::path::Path::new(""), SOURCE_NAME, &cwd);
             let a = slot(&label, "session-aaaa", 0, running());
             let b = slot(&label, "session-bbbb", 1, running());
-            let s = scene_of(vec![a.clone(), b]);
-            let want = format!("{label}\u{00b7}{}", disambig_suffix(&a.session_id));
-            assert_eq!(Namesakes::of(s.agents.values()).text(&a), want, "{repo}");
+            let want = format!("{label}{}", Suffix::of(a.agent_id).tail());
+            assert_eq!(shown(&[a.clone(), b], &a), want, "{repo}");
         }
     }
 
@@ -317,25 +268,6 @@ mod tests {
         assert_eq!(tone_of(&exiting), BadgeTone::Exiting);
     }
 
-    /// A budget never splits a grapheme cluster: a ZWJ sequence is kept whole
-    /// or dropped whole.
-    #[test]
-    fn a_take_keeps_clusters_whole() {
-        let coder = "\u{1f469}\u{200d}\u{1f4bb}";
-        let text = format!("a{coder}b");
-        // The sequence is three chars in two cells, so it takes three.
-        assert_eq!(super::take_span(&text, 4), format!("a{coder}"));
-        assert_eq!(super::take_span(&text, 3), "a");
-        assert_eq!(super::take_span(&text, u16::MAX), text);
-    }
-
-    /// A first cluster wider than the budget takes nothing, as a terminal
-    /// can't draw half of it.
-    #[test]
-    fn a_cluster_wider_than_the_budget_is_dropped() {
-        assert_eq!(super::take_span("\u{65e5}x", 1), "");
-    }
-
     #[test]
     fn a_label_of_zero_width_marks_never_shows_the_cap_mark() {
         use pixtuoid_core::source::decoder::{ELLIPSIS, MAX_DECODED_FIELD_CHARS};
@@ -343,34 +275,21 @@ mod tests {
             "a{}{ELLIPSIS}",
             "\u{301}".repeat(MAX_DECODED_FIELD_CHARS - 1)
         );
-        let shown = truncate_label(&capped, super::BADGE_CELLS);
-        assert!(!shown.contains(ELLIPSIS), "{shown:?}");
+        let a = slot(&capped, "sess-abcd", 0, running());
+        let text = shown(std::slice::from_ref(&a), &a);
+        assert!(!text.contains(ELLIPSIS), "{text:?}");
     }
 
+    /// A lone agent's label one char past its badge keeps its source prefix:
+    /// only a namesake's suffix is kept by cutting the label.
     #[test]
-    fn truncate_label_passes_short_labels_through() {
-        assert_eq!(truncate_label("hello", 16), "hello");
-    }
-
-    #[test]
-    fn truncate_label_preserves_disambig_suffix() {
-        let out = truncate_label("TikTok-Android\u{00b7}a09a", 16);
-        assert_eq!(out.chars().count(), 16);
-        assert!(out.ends_with("\u{00b7}a09a"), "suffix lost: {out}");
-        assert!(out.starts_with("TikTok"), "base over-truncated: {out}");
-    }
-
-    #[test]
-    fn truncate_label_falls_back_to_plain_truncate_when_no_separator() {
-        let out = truncate_label("a-very-long-project-name", 8);
-        assert_eq!(out, "a-very-l");
-    }
-
-    #[test]
-    fn truncate_label_plain_take_when_suffix_exceeds_budget() {
-        let out = truncate_label("x\u{00b7}abcdefgh", 4);
-        assert_eq!(out.chars().count(), 4);
-        assert_eq!(out, "x\u{00b7}ab");
+    fn a_lone_label_just_past_its_badge_keeps_its_source_prefix() {
+        let marker = crate::display::text::cells(super::BADGE_MARKER.encode_utf8(&mut [0; 4]));
+        let budget = usize::from(super::BADGE_CELLS - marker);
+        let label = format!("cc\u{b7}{}", "r".repeat(budget - 2));
+        let a = slot(&label, "sess-abcd", 0, running());
+        let text = shown(std::slice::from_ref(&a), &a);
+        assert_eq!(text, label.chars().take(budget).collect::<String>());
     }
 
     /// A long name's badge, marker and all, fills [`BADGE_CELLS`] and no
@@ -386,8 +305,7 @@ mod tests {
             "cc\u{b7}a日本語プロジェクト管理",
         ] {
             let a = slot(label, "sess-abcd", 0, running());
-            let s = scene_of(vec![a.clone()]);
-            let name = Namesakes::of(s.agents.values()).text(&a);
+            let name = shown(std::slice::from_ref(&a), &a);
             let badge = format!("{}{name}", super::BADGE_MARKER);
             let n = cells(&badge);
             assert!(
@@ -395,39 +313,6 @@ mod tests {
                 "{badge:?} takes {n} cells"
             );
         }
-    }
-
-    /// The budget is in cells, which a CJK character takes two of: a wide name
-    /// gets half the characters, the suffix kept as for any other.
-    #[test]
-    fn truncate_label_budgets_cells_not_chars() {
-        assert_eq!(truncate_label("日本語プロジェクト", 8), "日本語プ");
-        assert_eq!(
-            truncate_label("日本語プロジェクト\u{00b7}a09a", 12),
-            "日本語\u{00b7}a09a"
-        );
-    }
-
-    #[test]
-    fn uuid_ids_get_distinct_suffixes() {
-        let a = disambig_suffix("c0f7fb3f-dc9c-47c3-840d-f775dd2855a3");
-        let b = disambig_suffix("019ea57d-7fa7-7812-b864-bdcb9b6c7e17");
-        assert_ne!(a, b);
-        assert_eq!(a.len(), 4);
-    }
-
-    #[test]
-    fn ag_full_path_ids_get_distinct_suffixes() {
-        let a = disambig_suffix("/users/me/.gravity/sessions/proj/alpha-01.jsonl");
-        let b = disambig_suffix("/users/me/.gravity/sessions/proj/beta-02.jsonl");
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn rx_cwd_ids_with_colliding_basenames_get_distinct_suffixes() {
-        let a = disambig_suffix("/work/client-x/app");
-        let b = disambig_suffix("/work/client-y/app");
-        assert_ne!(a, b);
     }
 
     /// WCAG 2.2's relative luminance
@@ -483,12 +368,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn multibyte_ids_are_safe_and_deterministic() {
-        let a = disambig_suffix("/naïveté/app");
-        assert_eq!(a, disambig_suffix("/naïveté/app"));
-        assert_eq!(a.len(), 4);
     }
 }
