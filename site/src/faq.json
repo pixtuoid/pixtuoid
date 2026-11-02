@@ -6,7 +6,7 @@
   },
   {
     "q": "is anything uploaded?",
-    "a": "nothing — read-only local logs, no telemetry. only pixtuoid serve, if you start it, sends agent status, model, usage and repo names to devices you paired on your LAN.",
+    "a": "nothing — read-only local logs, no telemetry. only pixtuoid serve, if you start it, sends agent status, model, usage, repo names and which agent CLIs you have to devices you paired on your LAN.",
     "cite": "the privacy posture (SECURITY.md)"
   }
 ]

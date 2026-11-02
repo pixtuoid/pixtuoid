@@ -121,8 +121,8 @@ gateway route to distinct mascots; a daemon has no per-session pid, so
 
 **Off the machine.** `pixtuoid serve` is this pipeline with no painter, the one
 listener on a network: paired devices on the LAN read the scene over pinned TLS
-as `pixtuoid_core::remote` lines. A line carries no desk, since a device gives
-everyone one for its own screen and renders with the same engine.
+as `pixtuoid_core::remote` lines, and may ask which agent CLIs are here. A line
+carries no desk: a device seats everyone itself and renders with the same engine.
 
 ## Seams & invariants
 

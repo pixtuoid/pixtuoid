@@ -75,9 +75,10 @@ async fn serve(
 
     let capacities = [FALLBACK_DESKS; MAX_FLOORS];
     let (sink, scene) = SceneSink::latest(capacities);
+    let connected = ConnectedSources::new(connected);
     let Pipeline { mut health_rx, .. } = spawn_pipeline(
         socket.unwrap_or_else(ClaudeCodeSource::default_socket_path),
-        ConnectedSources::new(connected),
+        connected.clone(),
         capacities,
         sink,
     );
@@ -89,7 +90,13 @@ async fn serve(
         listener.local_addr()?
     )?;
 
-    let devices = Devices::new(store, scene);
+    let deaths = health_rx.clone();
+    let rows = Arc::new(move || {
+        // Out of the watch first: reading files under its read lock holds the writer.
+        let deaths = deaths.borrow().clone();
+        crate::sources::device_rows(&connected.snapshot(), &deaths)
+    });
+    let devices = Devices::new(store, scene, rows);
     let slots = Arc::new(Semaphore::new(MAX_CONNS));
     let mut deaths_seen = 0;
     let mut accept_failing = false;

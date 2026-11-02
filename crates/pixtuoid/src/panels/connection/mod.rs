@@ -107,7 +107,7 @@ pub(crate) fn live_for(
     scene: &SceneState,
     health: &[SourceDeath],
 ) -> LiveInfo {
-    let dead = health.iter().any(|d| d.source == source_id);
+    let dead = crate::sources::died(source_id, health);
     // Registry-driven, so a second daemon source inherits this the day its row
     // lands — no name match here.
     let is_daemon =

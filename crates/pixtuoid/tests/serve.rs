@@ -11,9 +11,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use pixtuoid_core::harness::host::SandboxEnv;
 use pixtuoid_core::harness::tap::Endpoint;
-use pixtuoid_core::remote::{Hello, PairLink, RemoteOffice, Reply};
+use pixtuoid_core::remote::{Answer, Ask, Hello, PairLink, RemoteOffice, Reply, SourceState};
 use pixtuoid_core::state::MAX_FLOORS;
 use ring::digest::{SHA256, digest};
+use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
@@ -127,12 +128,33 @@ impl Device {
         }
     }
 
-    async fn hello(&mut self, hello: &Hello) -> Reply {
-        let line = serde_json::to_string(hello).expect("it encodes") + "\n";
+    async fn say(&mut self, value: &impl Serialize) {
+        let line = serde_json::to_string(value).expect("it encodes") + "\n";
         let stream = self.stream.get_mut();
         stream.write_all(line.as_bytes()).await.expect("sent");
         stream.flush().await.expect("sent");
+    }
+
+    async fn hello(&mut self, hello: &Hello) -> Reply {
+        self.say(hello).await;
         serde_json::from_str(&self.line().await).expect("a reply")
+    }
+
+    /// Ask, and read past the office lines to the answer.
+    async fn ask(&mut self, ask: &Ask) -> Answer {
+        self.say(ask).await;
+        let wait = async {
+            loop {
+                let line = self.line().await;
+                assert!(!line.is_empty(), "the stream ended, awaiting an answer");
+                if let Some(answer) = Answer::from_line(line.as_bytes()) {
+                    return answer;
+                }
+            }
+        };
+        tokio::time::timeout(PATIENCE, wait)
+            .await
+            .expect("an answer in time")
     }
 
     async fn line(&mut self) -> String {
@@ -165,7 +187,7 @@ impl Device {
 
 /// A HOME of its own, where cursor is connected, and one hook endpoint.
 struct World {
-    _home: tempfile::TempDir,
+    home: tempfile::TempDir,
     env: SandboxEnv,
     endpoint: Endpoint,
 }
@@ -180,7 +202,7 @@ impl World {
             env.set("LLVM_PROFILE_FILE", profile);
         }
         let world = Self {
-            _home: home,
+            home,
             env,
             endpoint,
         };
@@ -367,6 +389,29 @@ async fn a_device_pairs_and_reads_an_office_that_names_only_the_repo() {
         Reply::Refused,
         "a running server reads a reset made beside it"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_lists_the_agent_clis_with_no_path_and_keeps_its_stream() {
+    let world = World::new();
+    let (_server, port) = world.serve();
+    let link = world.pair(port);
+    let mut device = Device::connect(&link).await;
+    let code = link.code.clone();
+    let reply = device.hello(&Hello::Pair { code }).await;
+    assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
+
+    let Answer::Sources { rows } = device.ask(&Ask::Sources).await else {
+        panic!("a server knows this ask");
+    };
+    let cursor = rows.iter().find(|row| row.id() == "cursor");
+    let cursor = cursor.expect("every registered source has a row");
+    assert_eq!(cursor.name(), "Cursor CLI");
+    assert_eq!(cursor.state(), SourceState::Connected);
+
+    world.start_session("canary", device.sees("canary")).await;
+    let home = world.home.path().to_str().expect("a UTF-8 path");
+    assert!(!device.received.contains(home), "{}", device.received);
 }
 
 /// No TUI is needed: the server owns the plane alone, and either instance can

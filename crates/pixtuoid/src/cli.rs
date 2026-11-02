@@ -91,9 +91,9 @@ pub(crate) enum Cmd {
         source: SourceArgs,
     },
     /// Serve the office to paired devices on your local network, with no TUI
-    /// needed. Agent status, model, usage and repo names leave this machine;
-    /// paths, prompts, tool input and transcripts never do. Nothing listens on a
-    /// network unless this is running.
+    /// needed. Agent status, model, usage, repo names and which agent CLIs you
+    /// have leave this machine; paths, prompts, tool input and transcripts never
+    /// do. Nothing listens on a network unless this is running.
     #[cfg(feature = "serve")]
     Serve {
         #[command(flatten)]

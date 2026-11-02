@@ -1,17 +1,19 @@
 //! One device's connection: the TLS handshake, its hello, then the office line
-//! by line until it leaves.
+//! by line, with an answer to whatever it asks, until it leaves.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use anyhow::{Context, Result};
-use pixtuoid_core::remote::{self, HEARTBEAT, Hello, Reply};
+use anyhow::{Context, Result, ensure};
+use pixtuoid_core::remote::{self, Answer, Ask, HEARTBEAT, Hello, Reply, SourceRow};
+use serde::Serialize;
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
+use tokio::task::JoinSet;
 use tokio::time::{Instant, interval_at, sleep, timeout, timeout_at};
 use tokio_rustls::TlsAcceptor;
 
@@ -22,8 +24,9 @@ use crate::runtime::SceneRx;
 /// proved anything and while it holds a [`super::MAX_CONNS`] slot.
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// A hello is a token and a little JSON; a longer line fails to parse.
-const MAX_HELLO_BYTES: u64 = 256;
+/// The longest line a device may write, its newline included: a hello is a token
+/// and a little JSON, an ask less.
+const MAX_LINE_BYTES: usize = 256;
 
 /// A device whose socket takes longer than this to drain has stalled.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -31,11 +34,15 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 /// A device renders a scene, not each event of a busy reducer.
 const MIN_FRAME_GAP: Duration = Duration::from_millis(250);
 
+/// What an [`Ask::Sources`] reads: blocking, as it reads files and may run a CLI.
+pub(super) type ReadRows = Arc<dyn Fn() -> Vec<SourceRow> + Send + Sync>;
+
 /// What a device's connection reads from.
 #[derive(Clone)]
 pub(super) struct Devices {
     store: Store,
     scene: SceneRx,
+    rows: ReadRows,
     /// Each device's live stream, ended by dropping its sender. A phone that
     /// lost its Wi-Fi sends no FIN, so its old connection would hold a slot until
     /// TCP gave up on it.
@@ -43,10 +50,11 @@ pub(super) struct Devices {
 }
 
 impl Devices {
-    pub(super) fn new(store: Store, scene: SceneRx) -> Self {
+    pub(super) fn new(store: Store, scene: SceneRx, rows: ReadRows) -> Self {
         Self {
             store,
             scene,
+            rows,
             streams: Arc::default(),
         }
     }
@@ -71,9 +79,7 @@ impl Devices {
         let (reply, device) = timeout_at(deadline, self.greet(stream))
             .await
             .context("no hello in time")??;
-        let mut line = serde_json::to_string(&reply)?;
-        line.push('\n');
-        write_line(stream, &line).await?;
+        write_line(stream, &json_line(&reply)?).await?;
         match device {
             Some(device) => self.stream(stream, device).await,
             None => Ok(()),
@@ -88,7 +94,7 @@ impl Devices {
     {
         let mut line = String::new();
         (&mut *stream)
-            .take(MAX_HELLO_BYTES)
+            .take(MAX_LINE_BYTES as u64)
             .read_line(&mut line)
             .await?;
         // No reply, as when the store can't answer: a newer device's tag is no
@@ -115,7 +121,8 @@ impl Devices {
         .await?
     }
 
-    /// Write the office to `stream` on each change and each [`HEARTBEAT`].
+    /// Write the office to `stream` on each change and each [`HEARTBEAT`], and an
+    /// answer to each ask between those lines, all from this one loop.
     async fn stream<S>(&self, stream: &mut S, device: Hashed) -> Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin,
@@ -124,12 +131,35 @@ impl Devices {
         let mut scene = self.scene.clone();
         scene.mark_changed();
         let mut heartbeat = interval_at(Instant::now() + HEARTBEAT, HEARTBEAT);
-        let mut unread = [0; 1];
+        let mut inbox = Inbox::new();
+        let mut asked = JoinSet::new();
         loop {
+            if asked.is_empty()
+                && let Some(ask) = inbox.next_ask()?
+            {
+                match ask {
+                    Ask::Sources => {
+                        let rows = Arc::clone(&self.rows);
+                        asked.spawn_blocking(move || Answer::Sources { rows: rows() });
+                    }
+                    Ask::Unknown => write_line(stream, &json_line(&Answer::Unsupported)?).await?,
+                }
+                continue;
+            }
             tokio::select! {
                 _ = &mut replaced => return Ok(()),
-                // A hello is all a device has to say, so this is its end.
-                _ = stream.read(&mut unread) => return Ok(()),
+                // One ask at a time: what follows it waits in the socket.
+                read = stream.read(inbox.room()), if asked.is_empty() => match read? {
+                    0 => return Ok(()),
+                    read => {
+                        inbox.filled(read);
+                        continue;
+                    }
+                },
+                Some(answer) = asked.join_next() => {
+                    write_line(stream, &json_line(&answer?)?).await?;
+                    continue;
+                }
                 changed = scene.changed() => changed?,
                 // Per beat, so `pair --reset` reaches a live stream.
                 _ = heartbeat.tick() => {
@@ -160,6 +190,55 @@ impl Devices {
     }
 }
 
+/// What a device has written past its last whole line, read by hand because
+/// [`select!`](https://docs.rs/tokio/latest/tokio/macro.select.html#cancellation-safety)
+/// lists `read` as cancellation safe and not `read_line`.
+struct Inbox {
+    bytes: [u8; MAX_LINE_BYTES],
+    held: usize,
+}
+
+impl Inbox {
+    fn new() -> Self {
+        Self {
+            bytes: [0; MAX_LINE_BYTES],
+            held: 0,
+        }
+    }
+
+    /// Where the next read lands, which [`Self::next_ask`] keeps from being empty.
+    fn room(&mut self) -> &mut [u8] {
+        &mut self.bytes[self.held..]
+    }
+
+    /// `read` bytes landed in [`Self::room`].
+    fn filled(&mut self, read: usize) {
+        self.held += read;
+    }
+
+    /// The ask on the next whole line, if one has arrived.
+    ///
+    /// # Errors
+    ///
+    /// If that line isn't one, or none ends within [`MAX_LINE_BYTES`].
+    fn next_ask(&mut self) -> Result<Option<Ask>> {
+        let Some(end) = self.bytes[..self.held].iter().position(|b| *b == b'\n') else {
+            ensure!(self.held < MAX_LINE_BYTES, "a line past the cap");
+            return Ok(None);
+        };
+        let ask = serde_json::from_slice(&self.bytes[..end]).context("an unreadable ask")?;
+        self.bytes.copy_within(end + 1..self.held, 0);
+        self.held -= end + 1;
+        Ok(Some(ask))
+    }
+}
+
+fn json_line(value: &impl Serialize) -> serde_json::Result<String> {
+    let mut line = serde_json::to_string(value)?;
+    line.push('\n');
+    Ok(line)
+}
+
 async fn write_line(stream: &mut (impl AsyncWrite + Unpin), line: &str) -> Result<()> {
     timeout(WRITE_TIMEOUT, async {
         stream.write_all(line.as_bytes()).await?;
@@ -175,7 +254,7 @@ mod tests {
     use std::sync::Arc;
 
     use pixtuoid_core::SceneState;
-    use pixtuoid_core::remote::RemoteOffice;
+    use pixtuoid_core::remote::{RemoteOffice, SourceState};
     use tokio::io::{BufReader, DuplexStream, ReadHalf, WriteHalf, duplex, split};
     use tokio::sync::watch;
 
@@ -189,15 +268,49 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
+        fixture_reading(Arc::new(Vec::new))
+    }
+
+    fn fixture_reading(rows: ReadRows) -> Fixture {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = Store::at(dir.path().join("remote.json"));
         let (scene, scene_rx) = watch::channel(Arc::new(SceneState::uniform(4)));
         Fixture {
-            devices: Devices::new(store.clone(), scene_rx),
+            devices: Devices::new(store.clone(), scene_rx, rows),
             store,
             scene,
             _dir: dir,
         }
+    }
+
+    /// Past any test's wait: a read on the runtime's own thread then fails its
+    /// test instead of hanging it.
+    const HOLD: Duration = Duration::from_secs(5);
+
+    /// Rows that each wait on `release`, to show what goes on during an ask.
+    struct Held {
+        rows: ReadRows,
+        started: tokio::sync::mpsc::UnboundedReceiver<()>,
+        release: std::sync::mpsc::Sender<()>,
+    }
+
+    fn held() -> Held {
+        let (start, started) = tokio::sync::mpsc::unbounded_channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let released = Mutex::new(released);
+        Held {
+            rows: Arc::new(move || {
+                start.send(()).expect("the test waits on it");
+                let _ = released.lock().expect("not poisoned").recv_timeout(HOLD);
+                vec![one_row()]
+            }),
+            started,
+            release,
+        }
+    }
+
+    fn one_row() -> SourceRow {
+        SourceRow::new("codex", "Codex", SourceState::Connected, false)
     }
 
     /// The device's end of a connection `fixture` is serving.
@@ -244,9 +357,46 @@ mod tests {
             serde_json::from_str(&self.line().await).expect("a reply")
         }
 
+        async fn ask(&mut self, ask: &Ask) {
+            self.say(&serde_json::to_string(ask).expect("it encodes"))
+                .await;
+        }
+
+        /// The next answer, past any office lines.
+        async fn answer(&mut self) -> Answer {
+            loop {
+                let line = self.line().await;
+                assert!(!line.is_empty(), "the stream ended");
+                if let Some(answer) = Answer::from_line(line.as_bytes()) {
+                    return answer;
+                }
+            }
+        }
+
+        /// Prove the stream's loop live: a change comes back as an office line.
+        async fn sees_a_change(&mut self, fixture: &Fixture) {
+            fixture
+                .scene
+                .send(Arc::new(SceneState::uniform(4)))
+                .expect("the office is live");
+            let line = self.line().await;
+            assert!(!line.is_empty(), "the stream ended");
+            assert_eq!(Answer::from_line(line.as_bytes()), None, "{line}");
+        }
+
         async fn ended(self) -> Result<()> {
             self.served.await.expect("the task finishes")
         }
+    }
+
+    /// A device past its hello and its first office line.
+    async fn streaming(fixture: &Fixture) -> Peer {
+        let token = paired(fixture);
+        let mut peer = Peer::connect(&fixture.devices);
+        peer.hello(&Hello::Resume { token }).await;
+        assert_eq!(peer.reply().await, Reply::Resumed);
+        peer.line().await;
+        peer
     }
 
     fn paired(fixture: &Fixture) -> String {
@@ -299,7 +449,7 @@ mod tests {
     async fn a_hello_this_build_cant_read_gets_no_reply() {
         let fixture = fixture();
         let past_the_cap = Hello::Resume {
-            token: "t".repeat(usize::try_from(MAX_HELLO_BYTES).expect("small")),
+            token: "t".repeat(MAX_LINE_BYTES),
         };
         let past_the_cap = serde_json::to_string(&past_the_cap).expect("it encodes");
         for hello in [
@@ -425,23 +575,126 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_device_that_leaves_or_speaks_again_ends_its_stream() {
+    async fn a_device_that_leaves_ends_its_stream() {
         let fixture = fixture();
-        let token = paired(&fixture);
-        let hello = Hello::Resume { token };
-
-        let mut leaves = Peer::connect(&fixture.devices);
-        leaves.hello(&hello).await;
-        leaves.reply().await;
-        leaves.line().await;
+        let mut leaves = streaming(&fixture).await;
         leaves.writer.shutdown().await.expect("it closes");
         leaves.ended().await.expect("leaving is a clean end");
 
-        let mut speaks = Peer::connect(&fixture.devices);
-        speaks.hello(&hello).await;
-        speaks.reply().await;
-        speaks.line().await;
-        speaks.say("anything").await;
-        speaks.ended().await.expect("a read-only stream ends");
+        let mut mid_line = streaming(&fixture).await;
+        let half_an_ask = br#"{"ask":"#;
+        mid_line.writer.write_all(half_an_ask).await.expect("sent");
+        mid_line.writer.shutdown().await.expect("it closes");
+        mid_line.ended().await.expect("a cut line is a clean end");
+    }
+
+    #[tokio::test]
+    async fn an_ask_is_answered_and_the_stream_goes_on() {
+        let fixture = fixture_reading(Arc::new(|| vec![one_row()]));
+        let mut peer = streaming(&fixture).await;
+
+        peer.ask(&Ask::Sources).await;
+        assert_eq!(
+            peer.answer().await,
+            Answer::Sources {
+                rows: vec![one_row()]
+            }
+        );
+
+        peer.sees_a_change(&fixture).await;
+        peer.ask(&Ask::Sources).await;
+        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+    }
+
+    /// A newer device's ask costs it nothing here.
+    #[tokio::test]
+    async fn an_ask_this_build_doesnt_know_is_unsupported_and_keeps_the_stream() {
+        let fixture = fixture();
+        let mut peer = streaming(&fixture).await;
+
+        peer.say(r#"{"ask":"from_the_future","x":1}"#).await;
+        assert_eq!(peer.answer().await, Answer::Unsupported);
+
+        peer.sees_a_change(&fixture).await;
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_line_ends_the_stream() {
+        let fixture = fixture();
+        for line in ["junk", "", "{}"] {
+            let mut peer = streaming(&fixture).await;
+            peer.say(line).await;
+            assert!(peer.ended().await.is_err(), "{line}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_line_may_fill_the_cap_and_not_pass_it() {
+        let padded = |bytes: usize| format!("{:<bytes$}", r#"{"ask":"sources"}"#);
+        let newline = 1;
+        let fixture = fixture();
+
+        let mut peer = streaming(&fixture).await;
+        peer.say(&padded(MAX_LINE_BYTES - newline)).await;
+        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+
+        let mut peer = streaming(&fixture).await;
+        peer.say(&padded(MAX_LINE_BYTES)).await;
+        assert!(peer.ended().await.is_err());
+    }
+
+    /// Reads end anywhere: two lines in one, or one across two.
+    #[tokio::test]
+    async fn an_ask_may_share_a_write_or_span_two() {
+        let fixture = fixture();
+        let token = paired(&fixture);
+        let hello = serde_json::to_string(&Hello::Resume { token }).expect("it encodes");
+        let ask = serde_json::to_string(&Ask::Sources).expect("it encodes");
+
+        let mut peer = Peer::connect(&fixture.devices);
+        peer.say(&format!("{hello}\n{ask}\n{ask}")).await;
+        assert_eq!(peer.reply().await, Reply::Resumed);
+        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+
+        let (head, tail) = ask.split_at(ask.len() / 2);
+        let head = head.as_bytes();
+        peer.writer.write_all(head).await.expect("sent");
+        peer.sees_a_change(&fixture).await;
+        peer.say(tail).await;
+        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+    }
+
+    #[tokio::test]
+    async fn the_office_keeps_streaming_while_an_ask_runs() {
+        let mut held = held();
+        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let mut peer = streaming(&fixture).await;
+
+        peer.ask(&Ask::Sources).await;
+        held.started.recv().await.expect("it starts");
+        peer.sees_a_change(&fixture).await;
+
+        held.release.send(()).expect("it waits");
+        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+    }
+
+    #[tokio::test]
+    async fn a_second_ask_waits_for_the_first() {
+        let mut held = held();
+        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let mut peer = streaming(&fixture).await;
+        let ask = serde_json::to_string(&Ask::Sources).expect("it encodes");
+
+        peer.say(&format!("{ask}\n{ask}")).await;
+        held.started.recv().await.expect("the first starts");
+        peer.sees_a_change(&fixture).await;
+        assert!(held.started.try_recv().is_err(), "the second started");
+
+        held.release.send(()).expect("it waits");
+        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+        held.started.recv().await.expect("the second starts");
+        held.release.send(()).expect("it waits");
+        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
     }
 }

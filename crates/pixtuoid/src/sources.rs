@@ -8,6 +8,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+#[cfg(feature = "serve")]
+use pixtuoid_core::remote::{SourceRow, SourceState};
+use pixtuoid_core::source::manager::SourceDeath;
 use pixtuoid_core::source::registry;
 
 use crate::config;
@@ -708,6 +711,44 @@ fn status_from_row(r: &ConnectionRow) -> SourceStatus {
     }
 }
 
+/// Whether `source_id`'s own transport is among `deaths`.
+pub(crate) fn died(source_id: &str, deaths: &[SourceDeath]) -> bool {
+    deaths.iter().any(|death| death.source == source_id)
+}
+
+/// What a paired device learns of `row`, not [`SourceStatus`], which can't tell
+/// a connected absent CLI from a disconnected one. No `..`: a field added to
+/// [`ConnectionRow`] must be ruled in or out here.
+#[cfg(feature = "serve")]
+fn device_row(row: &ConnectionRow, dead: bool) -> SourceRow {
+    let ConnectionRow {
+        source_id,
+        label_prefix: _,
+        display_name,
+        state,
+        config_path: _,
+        target: _,
+        health,
+    } = row;
+    let state = match *state {
+        ConnState::Connected => SourceState::Connected,
+        ConnState::Disconnected => SourceState::Disconnected,
+        ConnState::NoCli { connected } => SourceState::NoCli { connected },
+    };
+    SourceRow::new(source_id, display_name, state, health.is_some() || dead)
+}
+
+/// [`device_row`] for every source, `deaths` being a running server's.
+#[cfg(feature = "serve")]
+pub(crate) fn device_rows(connected: &HashSet<String>, deaths: &[SourceDeath]) -> Vec<SourceRow> {
+    // `serve` logs to stderr, so no run log holds its decode drift.
+    const NO_LOG: &str = "";
+    build_rows(connected, NO_LOG)
+        .iter()
+        .map(|row| device_row(row, died(row.source_id, deaths)))
+        .collect()
+}
+
 pub(crate) fn status(cfg: &Path, log: &str) -> Vec<SourceStatus> {
     let connected = connected(&config::load(cfg, &mut Vec::new()));
     build_rows(&connected, log)
@@ -1059,6 +1100,87 @@ mod tests {
             "NoCli persisted-intent true must NOT leak as wire connected (present-and-bound is false)"
         );
         assert!(!nocli_intent_on.cli_present, "an absent CLI is not present");
+    }
+
+    #[cfg(feature = "serve")]
+    fn plain_row(state: ConnState) -> ConnectionRow {
+        ConnectionRow {
+            source_id: "claude-code",
+            label_prefix: "cc",
+            display_name: "Claude Code",
+            state,
+            config_path: None,
+            target: None,
+            health: None,
+        }
+    }
+
+    #[cfg(feature = "serve")]
+    #[test]
+    fn a_devices_row_keeps_the_state_a_disconnect_turns_on() {
+        for (state, wire) in [
+            (ConnState::Connected, SourceState::Connected),
+            (ConnState::Disconnected, SourceState::Disconnected),
+            (
+                ConnState::NoCli { connected: true },
+                SourceState::NoCli { connected: true },
+            ),
+            (
+                ConnState::NoCli { connected: false },
+                SourceState::NoCli { connected: false },
+            ),
+        ] {
+            let device = device_row(&plain_row(state), false);
+            assert_eq!(device.state(), wire);
+            assert_eq!(device.id(), "claude-code");
+            assert_eq!(device.name(), "Claude Code");
+        }
+    }
+
+    #[cfg(feature = "serve")]
+    #[test]
+    fn a_devices_row_needs_attention_for_a_health_line_or_a_death() {
+        for (health, died, attention) in [
+            (None, false, false),
+            (Some("⚠ install broken".to_owned()), false, true),
+            (None, true, true),
+        ] {
+            let row = ConnectionRow {
+                health,
+                ..plain_row(ConnState::Connected)
+            };
+            assert_eq!(device_row(&row, died).attention(), attention);
+        }
+    }
+
+    /// Nothing is connected, so no row reads the machine for a health line.
+    #[cfg(feature = "serve")]
+    #[test]
+    fn a_death_marks_only_the_source_that_died() {
+        let deaths = [SourceDeath::new("codex", "boom")];
+        let rows = device_rows(&HashSet::new(), &deaths);
+        let marked: Vec<_> = (rows.iter())
+            .filter(|row| row.attention())
+            .map(SourceRow::id)
+            .collect();
+        assert_eq!(marked, ["codex"]);
+    }
+
+    /// `health` can quote another CLI's config, and `config_path` is the user's.
+    #[cfg(feature = "serve")]
+    #[test]
+    fn neither_a_path_nor_a_health_line_reaches_a_device() {
+        use pixtuoid_core::remote::Answer;
+        const SENTINEL: &str = "/Users/someone/.sentinel/settings.json";
+        let row = ConnectionRow {
+            config_path: Some(PathBuf::from(SENTINEL)),
+            health: Some(format!("⚠ install broken: {SENTINEL}")),
+            ..plain_row(ConnState::Connected)
+        };
+        let rows = vec![device_row(&row, false)];
+        let line = serde_json::to_string(&Answer::Sources { rows }).unwrap();
+        assert!(line.contains(r#""attention":true"#), "{line}");
+        assert!(!line.contains("sentinel"), "{line}");
     }
 
     #[test]
