@@ -104,41 +104,64 @@ fn is_owned_fallback_in(path: &Path, owned: &Path) -> bool {
 /// validate it IS one, else error.
 #[cfg(unix)]
 fn ensure_private_dir(dir: &Path, uid: u32) -> Result<()> {
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+    use std::os::unix::fs::DirBuilderExt;
     match std::fs::DirBuilder::new().mode(0o700).create(dir) {
         Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            // lstat (never follow): a planted symlink is caught as non-dir.
-            let md = std::fs::symlink_metadata(dir)
-                .with_context(|| format!("stat-ing hook socket dir {}", dir.display()))?;
-            if !md.file_type().is_dir() {
-                anyhow::bail!(
-                    "hook socket dir {} exists but is not a directory (hostile squat) — \
-                     refusing to bind",
-                    dir.display()
-                );
-            }
-            if md.uid() != uid {
-                anyhow::bail!(
-                    "hook socket dir {} is owned by uid {} not {} (hostile squat) — \
-                     refusing to bind",
-                    dir.display(),
-                    md.uid(),
-                    uid
-                );
-            }
-            if md.mode() & 0o077 != 0 {
-                anyhow::bail!(
-                    "hook socket dir {} is group/other-accessible (mode {:o}) — \
-                     refusing to bind",
-                    dir.display(),
-                    md.mode() & 0o7777
-                );
-            }
-            Ok(())
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => check_private_dir(dir, uid),
         Err(e) => Err(e).with_context(|| format!("creating hook socket dir {}", dir.display())),
     }
+}
+
+/// Whether the existing `dir` is a `0700` directory owned by `uid`.
+#[cfg(unix)]
+fn check_private_dir(dir: &Path, uid: u32) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    // lstat (never follow): a planted symlink is caught as non-dir.
+    let md = std::fs::symlink_metadata(dir)
+        .with_context(|| format!("stat-ing hook socket dir {}", dir.display()))?;
+    if !md.file_type().is_dir() {
+        anyhow::bail!(
+            "hook socket dir {} exists but is not a directory (hostile squat) — \
+             refusing to bind",
+            dir.display()
+        );
+    }
+    if md.uid() != uid {
+        anyhow::bail!(
+            "hook socket dir {} is owned by uid {} not {} (hostile squat) — \
+             refusing to bind",
+            dir.display(),
+            md.uid(),
+            uid
+        );
+    }
+    if md.mode() & 0o077 != 0 {
+        anyhow::bail!(
+            "hook socket dir {} is group/other-accessible (mode {:o}) — \
+             refusing to bind",
+            dir.display(),
+            md.mode() & 0o7777
+        );
+    }
+    Ok(())
+}
+
+/// Why a bind at `path` would refuse, creating nothing to find out: an office
+/// whose bind refused is open with no socket, which reads as no office at all.
+pub(super) fn bind_refusal(path: &Path) -> Option<String> {
+    bind_refusal_in(
+        path,
+        &owned_socket_dir(),
+        rustix::process::getuid().as_raw(),
+    )
+}
+
+fn bind_refusal_in(path: &Path, owned: &Path, uid: u32) -> Option<String> {
+    let created = is_owned_fallback_in(path, owned) && owned.symlink_metadata().is_ok();
+    created
+        .then(|| check_private_dir(owned, uid).err())
+        .flatten()
+        .map(|e| format!("{e:#}"))
 }
 
 /// A sibling of the FINAL socket path, named `<sock>.<suffix>`. Both siblings
@@ -365,6 +388,27 @@ mod tests {
 
     fn my_uid() -> u32 {
         rustix::process::getuid().as_raw()
+    }
+
+    #[test]
+    fn bind_refusal_names_a_dir_the_bind_would_refuse_and_creates_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let owned = tmp.path().join("owned");
+        let sock = owned.join(SOCKET_FILE_NAME);
+        assert_eq!(bind_refusal_in(&sock, &owned, my_uid()), None);
+        assert!(!owned.exists(), "a read-only check made the dir");
+
+        ensure_private_dir(&owned, my_uid()).unwrap();
+        assert_eq!(bind_refusal_in(&sock, &owned, my_uid()), None);
+
+        std::fs::set_permissions(&owned, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let why = bind_refusal_in(&sock, &owned, my_uid()).expect("a shared dir refuses");
+        assert!(why.contains("group/other-accessible"), "got {why:?}");
+        assert_eq!(
+            bind_refusal_in(&tmp.path().join("elsewhere.sock"), &owned, my_uid()),
+            None,
+            "only the fallback's dir is ours to police"
+        );
     }
 
     #[test]

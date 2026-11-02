@@ -5,45 +5,172 @@
 //! Lines cross, not decoded events: a line is the shim's wire, which every
 //! installed version already reads, and an `AgentEvent` is an internal type two
 //! versions need not agree on.
+//!
+//! The same instance answers `pixtuoid doctor`, from memory, so what it reports
+//! dies with it and there is no file to go stale.
 
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use super::{CONN_TIMEOUT, Client, HookConn, connect};
+use super::{CONN_TIMEOUT, Client, HookConn, connect, imp};
 
 /// A subscriber's first line. Not JSON: an owner older than the relay skips it
 /// as malformed, where an object would raise that owner's decode-drift nudge.
 const SUBSCRIBE_LINE: &str = "pixtuoid-subscribe\n";
 const SUBSCRIBED_LINE: &str = "pixtuoid-subscribed\n";
+/// Not JSON, for [`SUBSCRIBE_LINE`]'s reason, and no longer than it, which bounds
+/// the read of a connection's first line.
+const STATUS_LINE: &str = "pixtuoid-status\n";
 
 /// Payload lines a subscriber can fall behind before it loses the oldest.
 const BACKLOG: usize = 1024;
 
+/// A status reply's ceiling, far past what the registry's rows can fill.
+const MAX_STATUS_BYTES: u64 = 64 * 1024;
+
+/// What a connection's first line makes it. A control line matches whole, and
+/// the shim serializes a JSON value, which starts no line like either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Opening {
+    Subscribe,
+    Status,
+    Payload,
+}
+
+impl Opening {
+    pub(crate) fn of(head: &[u8]) -> Self {
+        if head == SUBSCRIBE_LINE.as_bytes() {
+            Self::Subscribe
+        } else if head == STATUS_LINE.as_bytes() {
+            Self::Status
+        } else {
+            Self::Payload
+        }
+    }
+}
+
+/// The set an instance's connection gate reads, shared so the owner reports the
+/// gate as it stands rather than as it booted.
+pub type LiveConnected = Arc<Mutex<HashSet<String>>>;
+
+/// What the instance holding a hook endpoint reports. On the wire, between two
+/// versions: a later field needs a `#[serde(default)]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookActivity {
+    /// How long this instance has held the endpoint, and so how far back
+    /// [`Self::last_hook_ago_ms`] reaches.
+    pub held_for_ms: u64,
+    /// `None` when this instance runs no connection gate.
+    #[serde(default)]
+    pub connected: Option<BTreeSet<String>>,
+    /// Each source's latest payload that decoded to something.
+    pub last_hook_ago_ms: BTreeMap<String, u64>,
+}
+
+/// What asking a hook endpoint found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EndpointStatus {
+    /// Nothing listens there.
+    Absent,
+    /// Nothing listens there and a bind would refuse, for this reason.
+    Unbindable(String),
+    /// Another user holds it.
+    Foreign,
+    /// Something took the connection and gave no status: an older pixtuoid, or
+    /// an owner too busy to read.
+    Silent,
+    Live(HookActivity),
+}
+
+#[derive(Debug)]
+struct Activity {
+    held_since: Instant,
+    /// Keyed by the registry, never the wire: `_pixtuoid_source` arrives
+    /// unchecked, so its names would grow this for the life of the instance.
+    last_hook: Mutex<BTreeMap<&'static str, Instant>>,
+    connected: Option<LiveConnected>,
+}
+
+/// A poisoned table is still a table: these hold no invariant a panic can break.
+fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn ms_since(at: Instant) -> u64 {
+    u64::try_from(at.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
 /// The owner's half: fans each payload line out to its subscribers.
 #[derive(Debug, Clone)]
-pub(super) struct Relay(broadcast::Sender<Arc<str>>);
+pub(super) struct Relay {
+    lines: broadcast::Sender<Arc<str>>,
+    activity: Arc<Activity>,
+}
 
 impl Relay {
-    pub(super) fn new() -> Self {
-        Self(broadcast::channel(BACKLOG).0)
+    pub(super) fn new(connected: Option<LiveConnected>) -> Self {
+        Self {
+            lines: broadcast::channel(BACKLOG).0,
+            activity: Arc::new(Activity {
+                held_since: Instant::now(),
+                last_hook: Mutex::default(),
+                connected,
+            }),
+        }
     }
 
     /// Never blocks: the shim's connection is waiting on this reader.
     pub(super) fn forward(&self, line: &str) {
-        if self.0.receiver_count() > 0 {
+        if self.lines.receiver_count() > 0 {
             // Fails only if the last subscriber left since the count.
-            let _ = self.0.send(Arc::from(format!("{line}\n")));
+            let _ = self.lines.send(Arc::from(format!("{line}\n")));
         }
     }
 
-    /// `conn`'s payload, or `None` once a subscribing `conn` is attached. The
+    /// A payload of `source` did something.
+    pub(super) fn sighted(&self, source: &str) {
+        if let Some(row) = crate::source::registry::descriptor_for(source) {
+            locked(&self.activity.last_hook).insert(row.name, Instant::now());
+        }
+    }
+
+    fn status(&self) -> HookActivity {
+        let Activity {
+            held_since,
+            last_hook,
+            connected,
+        } = &*self.activity;
+        HookActivity {
+            held_for_ms: ms_since(*held_since),
+            connected: connected
+                .as_ref()
+                .map(|set| locked(set).iter().cloned().collect()),
+            last_hook_ago_ms: locked(last_hook)
+                .iter()
+                .map(|(source, at)| ((*source).to_string(), ms_since(*at)))
+                .collect(),
+        }
+    }
+
+    /// Answered here, inside the listener's budget and permit, unlike a feed.
+    async fn answer(&self, mut conn: impl AsyncWrite + Unpin) {
+        if let Ok(mut reply) = serde_json::to_string(&self.status()) {
+            reply.push('\n');
+            let _ = write_line(&mut conn, &reply).await;
+        }
+    }
+
+    /// `conn`'s payload, or `None` once a control line has claimed `conn`. The
     /// spawned feed is what leaves the listener's budget and permit behind.
-    pub(super) async fn payload_or_subscribe(
+    pub(super) async fn payload_of(
         &self,
         conn: HookConn,
     ) -> Option<impl AsyncRead + Unpin + Send + use<>> {
@@ -53,11 +180,18 @@ impl Relay {
             .take(SUBSCRIBE_LINE.len() as u64)
             .read_until(b'\n', &mut head)
             .await;
-        if read.is_ok() && head == SUBSCRIBE_LINE.as_bytes() {
-            tokio::spawn(feed(conn.into_inner().into_inner(), self.0.subscribe()));
-            return None;
+        match read.map(|_| Opening::of(&head)) {
+            Ok(Opening::Subscribe) => {
+                let lines = self.lines.subscribe();
+                tokio::spawn(feed(conn.into_inner().into_inner(), lines));
+                None
+            }
+            Ok(Opening::Status) => {
+                self.answer(conn.into_inner().into_inner()).await;
+                None
+            }
+            Ok(Opening::Payload) | Err(_) => Some(std::io::Cursor::new(head).chain(conn)),
         }
-        Some(std::io::Cursor::new(head).chain(conn))
     }
 }
 
@@ -112,6 +246,43 @@ pub(super) async fn subscribe(path: &Path) -> Result<Payloads> {
     Ok(conn)
 }
 
+/// Ask `path`'s owner what it knows, changing nothing there.
+pub async fn endpoint_status(path: &Path) -> EndpointStatus {
+    use std::io::ErrorKind::{ConnectionRefused, NotFound, PermissionDenied};
+    let query = async {
+        match connect(path).await {
+            Ok(conn) => status_over(conn).await,
+            Err(e) if matches!(e.kind(), NotFound | ConnectionRefused) => {
+                imp::bind_refusal(path).map_or(EndpointStatus::Absent, EndpointStatus::Unbindable)
+            }
+            Err(e) if e.kind() == PermissionDenied => EndpointStatus::Foreign,
+            Err(_) => EndpointStatus::Silent,
+        }
+    };
+    // Past the budget that ends a served connection: a saturated owner lets the
+    // connect land in its backlog and never reads it.
+    tokio::time::timeout(2 * CONN_TIMEOUT, query)
+        .await
+        .unwrap_or(EndpointStatus::Silent)
+}
+
+/// No half-close after the line: `NamedPipeClient::poll_shutdown` is a no-op, so
+/// an older owner, which skips the line and waits for more, holds a pipe to its
+/// budget, and one path costs both OSes that second.
+async fn status_over(mut conn: impl AsyncRead + AsyncWrite + Unpin) -> EndpointStatus {
+    if conn.write_all(STATUS_LINE.as_bytes()).await.is_err() {
+        return EndpointStatus::Silent;
+    }
+    let mut reply = String::new();
+    let read = BufReader::new(conn.take(MAX_STATUS_BYTES))
+        .read_line(&mut reply)
+        .await;
+    match read.map(|_| serde_json::from_str(&reply)) {
+        Ok(Ok(activity)) => EndpointStatus::Live(activity),
+        _ => EndpointStatus::Silent,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{HookPidWatch, HookRouter, HookSocketListener};
@@ -144,8 +315,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_forward_keeps_every_line_whole_and_in_order() {
-        let relay = Relay::new();
-        let rx = relay.0.subscribe();
+        let relay = Relay::new(None);
+        let rx = relay.lines.subscribe();
         for line in ["one", "two"] {
             relay.forward(line);
         }
@@ -181,6 +352,82 @@ mod tests {
         let out = logs.contents();
         assert!(out.contains("malformed hook line skipped"), "got {out:?}");
         assert!(!out.contains("hook decode error"), "got {out:?}");
+    }
+
+    // An owner older than this line skips it the same way, and that reads as
+    // Silent, never as a drift nudge on its office.
+    #[tokio::test]
+    async fn an_owner_without_a_status_answer_reads_as_silent() {
+        let (logs, _guard) = crate::test_capture::capture_warns();
+        let (client, server) = tokio::io::duplex(64);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        // It waits for more lines, so only the listener's budget hangs up.
+        let older = tokio::spawn(tokio::time::timeout(
+            CONN_TIMEOUT,
+            super::super::handle_conn(server, tx, None, None, None),
+        ));
+        let status = tokio::spawn(status_over(client));
+        let _ = older.await.unwrap();
+        assert_eq!(status.await.unwrap(), EndpointStatus::Silent);
+        assert!(rx.recv().await.is_none());
+        let out = logs.contents();
+        assert!(out.contains("malformed hook line skipped"), "got {out:?}");
+        assert!(!out.contains("hook decode error"), "got {out:?}");
+    }
+
+    #[tokio::test]
+    async fn a_reply_that_is_no_status_reads_as_silent() {
+        for reply in [&b"not json\n"[..], b"{\"held_for_ms\":1}\n", b"\n", b"{"] {
+            let (client, mut owner) = tokio::io::duplex(1024);
+            let status = tokio::spawn(status_over(client));
+            let mut line = vec![0; STATUS_LINE.len()];
+            owner.read_exact(&mut line).await.unwrap();
+            assert_eq!(line, STATUS_LINE.as_bytes());
+            owner.write_all(reply).await.unwrap();
+            drop(owner);
+            assert_eq!(status.await.unwrap(), EndpointStatus::Silent, "{reply:?}");
+        }
+    }
+
+    // The ONE demux of a connection: a hook line must never reach the reply path.
+    #[test]
+    fn only_a_whole_control_line_opens_anything_but_a_payload() {
+        assert_eq!(Opening::of(SUBSCRIBE_LINE.as_bytes()), Opening::Subscribe);
+        assert_eq!(Opening::of(STATUS_LINE.as_bytes()), Opening::Status);
+        for head in [
+            &b""[..],
+            b"\n",
+            b"pixtuoid-status",
+            b"pixtuoid-status \n",
+            b"PIXTUOID-STATUS\n",
+            b"\"pixtuoid-status\"\n",
+            b"{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\"}\n",
+            b"{\"_pixtuoid_source\":\"pixtuoid-status\"}\n",
+        ] {
+            assert_eq!(Opening::of(head), Opening::Payload, "{head:?}");
+        }
+    }
+
+    #[test]
+    fn a_status_line_fits_the_read_of_a_first_line() {
+        assert!(STATUS_LINE.len() <= SUBSCRIBE_LINE.len());
+    }
+
+    #[test]
+    fn only_a_registered_source_is_a_sighting() {
+        let relay = Relay::new(None);
+        relay.sighted("codex");
+        relay.sighted("not-a-source");
+        let seen = relay.status().last_hook_ago_ms;
+        assert_eq!(seen.keys().collect::<Vec<_>>(), ["codex"]);
+    }
+
+    #[test]
+    fn a_later_field_does_not_break_a_status() {
+        let parsed: HookActivity =
+            serde_json::from_str(r#"{"held_for_ms":1,"last_hook_ago_ms":{},"later":true}"#)
+                .unwrap();
+        assert_eq!(parsed.connected, None);
     }
 
     #[tokio::test]

@@ -15,7 +15,9 @@ use anyhow::{Context, Result};
 use crate::source::jsonl::ChildEndUnclaims;
 use crate::source::{AgentEvent, Source, TaggedReceiver, TaggedSender, Transport};
 
-use super::{HookPidWatch, HookSocketListener, PresenceSender, SocketBusy, handle_conn, relay};
+use super::{
+    HookPidWatch, HookSocketListener, LiveConnected, PresenceSender, SocketBusy, handle_conn, relay,
+};
 
 /// Infrastructure name — NOT a registered source (no descriptor/badge). Names
 /// the footer attribution `spawn_with_health` publishes when the plane dies.
@@ -65,6 +67,8 @@ pub struct HookRouter {
     /// The daemon-presence side channel (the gateway mascots): daemon payloads
     /// decode to presence deltas, not `AgentEvent`s. `None` disables it.
     presence_tx: Option<PresenceSender>,
+    /// The gate a status reports while this instance owns the endpoint.
+    connected: Option<LiveConnected>,
 }
 
 impl HookRouter {
@@ -75,6 +79,7 @@ impl HookRouter {
             socket_path,
             child_end_unclaims: None,
             presence_tx: None,
+            connected: None,
         }
     }
 
@@ -89,6 +94,13 @@ impl HookRouter {
     #[must_use]
     pub fn with_presence_tx(mut self, presence_tx: Option<PresenceSender>) -> Self {
         self.presence_tx = presence_tx;
+        self
+    }
+
+    /// Wire the connection gate a status reports.
+    #[must_use]
+    pub fn with_connected(mut self, connected: Option<LiveConnected>) -> Self {
+        self.connected = connected;
         self
     }
 }
@@ -150,6 +162,7 @@ impl Source for HookRouter {
                     return socket
                         .with_pid_watch(pid_watch)
                         .with_presence(self.presence_tx.clone())
+                        .with_connected(self.connected.clone())
                         .run(tx_hook)
                         .await;
                 }

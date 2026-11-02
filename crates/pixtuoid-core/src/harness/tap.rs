@@ -27,15 +27,7 @@ impl Endpoint {
     /// The endpoint `name` private to `dir`: a socket inside it, or on Windows a
     /// pipe named after it, since the pipe namespace is machine-wide.
     pub fn in_dir(dir: &Path, name: &str) -> Self {
-        if cfg!(windows) {
-            let tag = dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            Self(PathBuf::from(format!(r"\\.\pipe\pixtuoid-{tag}-{name}")))
-        } else {
-            Self(dir.join(format!("{name}.sock")))
-        }
+        Self(crate::source::hook::private_endpoint(dir, name))
     }
 
     /// The endpoint a caller already named.

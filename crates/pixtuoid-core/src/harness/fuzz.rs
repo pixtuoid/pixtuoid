@@ -20,8 +20,26 @@ use crate::state::MAX_FLOORS;
 /// needs no `\n`, unlike a transcript's, and one that isn't UTF-8 ends the
 /// connection.
 pub fn hook(bytes: &[u8]) -> Driven {
+    #[cfg(feature = "native")]
+    control(bytes);
     let lines = (bytes.split(|b| *b == b'\n')).map_while(|line| std::str::from_utf8(line).ok());
     Drive::hooks().lines(lines)
+}
+
+/// The rest of the endpoint's wire: a line a shim can write must never open the
+/// reply path, and a reply from whatever holds the endpoint is only parsed.
+#[cfg(feature = "native")]
+fn control(bytes: &[u8]) {
+    use crate::source::hook::{HookActivity, Opening};
+    let head = bytes
+        .split_inclusive(|b| *b == b'\n')
+        .next()
+        .unwrap_or(bytes);
+    assert!(
+        Opening::of(head) == Opening::Payload || serde_json::from_slice::<Value>(head).is_err(),
+        "a JSON line opened a control path: {head:?}"
+    );
+    let _ = serde_json::from_slice::<HookActivity>(bytes);
 }
 
 /// `<source>\n<path>\n<transcript>`: everything `source`'s registry row reads of
@@ -259,6 +277,20 @@ mod tests {
         );
         let past_a_bad_line = [b"\xff\n".as_slice(), payload].concat();
         assert_eq!(hook(&past_a_bad_line).registered(), 0);
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn the_hook_seeds_reach_the_endpoints_control_paths() {
+        use crate::source::hook::{HookActivity, Opening};
+        let seed = |name: &str| {
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/seeds/hook");
+            std::fs::read(dir.join(name)).unwrap()
+        };
+        let status = seed("status");
+        assert_eq!(Opening::of(&status), Opening::Status);
+        assert_eq!(hook(&status).registered(), 0);
+        serde_json::from_slice::<HookActivity>(&seed("activity")).unwrap();
     }
 
     #[test]
