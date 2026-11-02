@@ -176,7 +176,7 @@ pub fn run() -> Result<()> {
                     let _ = writeln!(
                         std::io::stderr(),
                         "{i}: {}",
-                        sources::plugin_left_registered(cli)
+                        pixtuoid_core::remote::plugin_left_registered(cli.command)
                     );
                     Ok(sources::ChangeOutcome::Disconnected)
                 }

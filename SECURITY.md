@@ -90,9 +90,13 @@ The components that handle untrusted or privileged input, and how they're bounde
    (`CODE_LIFETIME`) and is redeemed for a device token. The key and the hashes of
    the code and tokens sit in one owner-only file in the state directory, never
    in a dotfiles-prone `~/.config`. `pair --reset` forgets every device, ending
-   its stream. A device is read-only: past its hello it can only ask, and a line
-   past `MAX_LINE_BYTES` or not an ask ends the connection. Connections are capped
-   (`MAX_CONNS`), and one that hasn't said hello in time (`HELLO_TIMEOUT`) is dropped.
+   its stream. Past its hello a device can only ask, and a line past
+   `MAX_LINE_BYTES` or not an ask ends the connection. Its one write connects or
+   disconnects an agent CLI, as the Sources panel would and through the same
+   install path; writes run one at a time server-wide, `MIN_WRITE_GAP` apart,
+   each re-checked against the pairing and logged with a short hash of the device.
+   Connections are capped (`MAX_CONNS`), and one that hasn't said hello in time
+   (`HELLO_TIMEOUT`) is dropped.
 
 If you find a way to cross one of these boundaries (e.g. a transcript or hook
 payload that escapes the terminal, a non-owner socket connect, an install path

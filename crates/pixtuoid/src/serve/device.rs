@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, ensure};
-use pixtuoid_core::remote::{self, Answer, Ask, HEARTBEAT, Hello, Reply, SourceRow};
+use pixtuoid_core::remote::{self, Answer, Ask, Changed, HEARTBEAT, Hello, Reply, SourceRow};
 use serde::Serialize;
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
@@ -34,8 +34,17 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 /// A device renders a scene, not each event of a busy reducer.
 const MIN_FRAME_GAP: Duration = Duration::from_millis(250);
 
+/// The least time between two writes, across every device; a chosen value. A
+/// device waits for each write's answer, so only a misbehaving one comes sooner.
+const MIN_WRITE_GAP: Duration = Duration::from_secs(1);
+
 /// What an [`Ask::Sources`] reads: blocking, as it reads files and may run a CLI.
 pub(super) type ReadRows = Arc<dyn Fn() -> Vec<SourceRow> + Send + Sync>;
+
+/// What an [`Ask::Change`] does, given the device's [`Hashed::short`], the source
+/// and `on`: blocking, as it writes another CLI's config and may run it. `None`
+/// for a source this build doesn't know.
+pub(super) type MakeChange = Arc<dyn Fn(&str, &str, bool) -> Option<Changed> + Send + Sync>;
 
 /// What a device's connection reads from.
 #[derive(Clone)]
@@ -43,10 +52,14 @@ pub(super) struct Devices {
     store: Store,
     scene: SceneRx,
     rows: ReadRows,
-    /// One permit, held through an ask's blocking work across every device:
-    /// that work can run a host CLI, which a hang holds until its limit, and a
-    /// device that reconnects and asks again must not start a second.
+    change: MakeChange,
+    /// One permit, held through an ask's blocking work across every device, a
+    /// read's or a write's: that work can run a host CLI, which a hang holds
+    /// until its limit, and a device that reconnects and asks again must not
+    /// start a second.
     gate: Arc<Semaphore>,
+    /// When the last write began, for [`MIN_WRITE_GAP`].
+    last_write: Arc<Mutex<Option<Instant>>>,
     /// Each device's live stream, ended by dropping its sender. A phone that
     /// lost its Wi-Fi sends no FIN, so its old connection would hold a slot until
     /// TCP gave up on it.
@@ -54,12 +67,14 @@ pub(super) struct Devices {
 }
 
 impl Devices {
-    pub(super) fn new(store: Store, scene: SceneRx, rows: ReadRows) -> Self {
+    pub(super) fn new(store: Store, scene: SceneRx, rows: ReadRows, change: MakeChange) -> Self {
         Self {
             store,
             scene,
             rows,
+            change,
             gate: Arc::new(Semaphore::new(1)),
+            last_write: Arc::default(),
             streams: Arc::default(),
         }
     }
@@ -150,6 +165,9 @@ impl Devices {
                         Ask::Sources => {
                             asked.spawn(self.sources());
                         }
+                        Ask::Change { source, on } => {
+                            asked.spawn(self.change(device.clone(), source, on));
+                        }
                         Ask::Unknown => write_line(stream, &json_line(&Answer::Unsupported)?).await?,
                     }
                     continue;
@@ -202,6 +220,37 @@ impl Devices {
             Ok(Answer::Sources { rows })
         }
     }
+
+    /// [`Ask::Change`]'s answer, its write run under [`Self::gate`] and
+    /// [`MIN_WRITE_GAP`] after the last, for a device the store still knows. A
+    /// write too soon, or by a device a reset forgot, ends the connection.
+    fn change(
+        &self,
+        device: Hashed,
+        source: String,
+        on: bool,
+    ) -> impl Future<Output = Result<Answer>> + Send + 'static {
+        let (gate, last_write) = (Arc::clone(&self.gate), Arc::clone(&self.last_write));
+        let (store, change) = (self.store.clone(), Arc::clone(&self.change));
+        async move {
+            let held = gate.acquire_owned().await?;
+            {
+                let mut last = last_write.lock().unwrap_or_else(|e| e.into_inner());
+                let now = Instant::now();
+                let spaced = last.is_none_or(|at| now.duration_since(at) >= MIN_WRITE_GAP);
+                ensure!(spaced, "a write inside the gap");
+                *last = Some(now);
+            }
+            let changed = tokio::task::spawn_blocking(move || {
+                let _held = held;
+                // Here, not per beat, so a `pair --reset` stops the next write.
+                ensure!(store.knows(&device)?, "a write by a forgotten device");
+                Ok(change(device.short(), &source, on))
+            })
+            .await??;
+            Ok(changed.map_or(Answer::Unsupported, Answer::Changed))
+        }
+    }
 }
 
 /// Read on toward the end of a device's line, appending to `line`: `true` once
@@ -250,16 +299,20 @@ mod tests {
     use std::sync::Arc;
 
     use pixtuoid_core::SceneState;
-    use pixtuoid_core::remote::{RemoteOffice, SourceState};
+    use pixtuoid_core::remote::{Outcome, RemoteOffice, SourceState};
     use tokio::io::{BufReader, DuplexStream, ReadHalf, WriteHalf, duplex, split};
     use tokio::sync::watch;
 
     use super::*;
 
+    /// Each change the fixture's devices made: the device, the source and `on`.
+    type Made = Arc<Mutex<Vec<(String, String, bool)>>>;
+
     struct Fixture {
         store: Store,
         devices: Devices,
         scene: watch::Sender<Arc<SceneState>>,
+        made: Made,
         _dir: tempfile::TempDir,
     }
 
@@ -267,16 +320,41 @@ mod tests {
         fixture_reading(Arc::new(Vec::new))
     }
 
+    /// Its changes are recorded, and only `copilot` is a source it knows.
     fn fixture_reading(rows: ReadRows) -> Fixture {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = Store::at(dir.path().join("remote.json"));
         let (scene, scene_rx) = watch::channel(Arc::new(SceneState::uniform(4)));
+        let made = Made::default();
+        let making = Arc::clone(&made);
+        let change: MakeChange = Arc::new(move |who, source, on| {
+            let entry = (who.to_owned(), source.to_owned(), on);
+            making.lock().expect("not poisoned").push(entry);
+            let outcome = if on {
+                Outcome::Connected
+            } else {
+                Outcome::Disconnected
+            };
+            (source == "copilot").then(|| Changed::new("copilot", on, outcome, false, None, None))
+        });
         Fixture {
-            devices: Devices::new(store.clone(), scene_rx, rows),
+            devices: Devices::new(store.clone(), scene_rx, rows, change),
             store,
             scene,
+            made,
             _dir: dir,
         }
+    }
+
+    fn change(source: &str, on: bool) -> Ask {
+        Ask::Change {
+            source: source.to_owned(),
+            on,
+        }
+    }
+
+    fn made(fixture: &Fixture) -> Vec<(String, String, bool)> {
+        fixture.made.lock().expect("not poisoned").clone()
     }
 
     /// Past any test's wait: a read on the runtime's own thread then fails its
@@ -750,5 +828,81 @@ mod tests {
         held.started.recv().await.expect("the new read starts");
         held.release.send(()).expect("it waits");
         assert!(matches!(new.answer().await, Answer::Sources { .. }));
+    }
+
+    /// The device reaches the change, and so its audit line, by a short hash.
+    #[tokio::test(start_paused = true)]
+    async fn a_change_is_answered_and_made_for_a_short_hash_never_the_token() {
+        let fixture = fixture();
+        let token = paired(&fixture);
+        let mut peer = Peer::connect(&fixture.devices);
+        peer.hello(&Hello::Resume {
+            token: token.clone(),
+        })
+        .await;
+        assert_eq!(peer.reply().await, Reply::Resumed);
+
+        peer.ask(&change("copilot", true)).await;
+        let Answer::Changed(changed) = peer.answer().await else {
+            panic!("a change's answer");
+        };
+        assert_eq!(changed.outcome(), Outcome::Connected);
+        let [(who, source, on)] = made(&fixture).try_into().expect("one change");
+        assert_eq!((source.as_str(), on), ("copilot", true));
+        assert_eq!(who, Hashed::of(&token).short());
+        assert!(who.len() < token.len() && !token.contains(&who), "{who}");
+
+        sleep(MIN_WRITE_GAP).await;
+        peer.ask(&change("no-such-cli", false)).await;
+        assert_eq!(peer.answer().await, Answer::Unsupported);
+    }
+
+    #[tokio::test]
+    async fn a_forgotten_devices_write_is_refused() {
+        let fixture = fixture();
+        let mut peer = streaming(&fixture).await;
+        fixture.store.reset().expect("it resets");
+
+        peer.ask(&change("copilot", true)).await;
+        assert!(peer.ended().await.is_err());
+        assert!(made(&fixture).is_empty(), "{:?}", made(&fixture));
+    }
+
+    /// The clock pauses, so the gap's edge is exact.
+    #[tokio::test(start_paused = true)]
+    async fn a_write_inside_the_gap_ends_the_connection_and_one_past_it_does_not() {
+        let fixture = fixture();
+        let mut peer = streaming(&fixture).await;
+        peer.ask(&change("copilot", true)).await;
+        assert!(matches!(peer.answer().await, Answer::Changed(_)));
+        sleep(MIN_WRITE_GAP).await;
+        peer.ask(&change("copilot", false)).await;
+        assert!(matches!(peer.answer().await, Answer::Changed(_)));
+
+        peer.ask(&change("copilot", true)).await;
+        assert!(peer.ended().await.is_err());
+        assert_eq!(made(&fixture).len(), 2);
+    }
+
+    /// A write waits for a read on another connection, which can hold a CLI.
+    #[tokio::test]
+    async fn a_write_waits_for_a_read_on_the_gate() {
+        const A_WRITE_WOULD_START: Duration = Duration::from_millis(500);
+        let mut held = held();
+        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let mut reader = streaming(&fixture).await;
+        reader.ask(&Ask::Sources).await;
+        held.started.recv().await.expect("the read starts");
+
+        let mut writer = streaming(&fixture).await;
+        writer.ask(&change("copilot", true)).await;
+        writer.sees_a_change(&fixture).await;
+        sleep(A_WRITE_WOULD_START).await;
+        assert!(made(&fixture).is_empty(), "the write ran beside the read");
+
+        held.release.send(()).expect("it waits");
+        assert!(matches!(reader.answer().await, Answer::Sources { .. }));
+        assert!(matches!(writer.answer().await, Answer::Changed(_)));
+        assert_eq!(made(&fixture).len(), 1);
     }
 }

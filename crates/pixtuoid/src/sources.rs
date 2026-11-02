@@ -1,13 +1,15 @@
 //! The source-control CORE: detect / connect / disconnect / reconcile, TUI-free.
 //!
 //! A source is connected by ONE fact, [`is_on`]'s. The mutating ops here change
-//! that fact but not a running instance's live `ConnectedSources`, which
-//! reflects the change on its next launch.
+//! that fact, and a running instance's live `ConnectedSources` only through
+//! [`connect_source`] and [`disconnect_source`]; otherwise it reflects the
+//! change on its next launch.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use pixtuoid_core::remote::{Changed, Outcome};
 #[cfg(feature = "serve")]
 use pixtuoid_core::remote::{SourceRow, SourceState};
 use pixtuoid_core::source::manager::SourceDeath;
@@ -15,9 +17,10 @@ use pixtuoid_core::source::registry;
 
 use crate::config;
 use crate::install::{
-    self, InstallReport, UninstallReport,
+    self, InstallOutcome, InstallReport, UninstallOutcome, UninstallReport,
     target::{HostRegistration, Pickup, PluginCopy, Target, by_source},
 };
+use crate::runtime::ConnectedSources;
 
 /// The wire-facing outcome token — a CLOSED set, published in the JSON schema
 /// as an `enum` so the generated Raycast type is a string-literal UNION.
@@ -40,6 +43,19 @@ impl WireOutcome {
             WireOutcome::Disconnected => "disconnected",
             WireOutcome::NoOp => "no_op",
             WireOutcome::Failed => "failed",
+        }
+    }
+}
+
+/// The same tokens on a device's wire, which
+/// `wire_outcomes_are_a_devices_outcomes` pins.
+impl From<WireOutcome> for Outcome {
+    fn from(outcome: WireOutcome) -> Self {
+        match outcome {
+            WireOutcome::Connected => Outcome::Connected,
+            WireOutcome::Disconnected => Outcome::Disconnected,
+            WireOutcome::NoOp => Outcome::NoOp,
+            WireOutcome::Failed => Outcome::Failed,
         }
     }
 }
@@ -566,10 +582,159 @@ fn apply_want(cfg: &Path, sid: &'static str, want: bool) -> AppliedChange {
     done.unwrap_or_else(|e| AppliedChange::Failed(format!("{e:#}")))
 }
 
-/// How both presenters word a disconnect that couldn't reach `cli` to deregister
-/// the plugin, which stays registered with the CLI.
-pub(crate) fn plugin_left_registered(cli: install::io::HostCli) -> String {
-    format!("plugin left registered ({} not on PATH)", cli.command)
+/// Re-read `source_id`'s connection into the live gate after a change, whatever its
+/// outcome: a failed install or uninstall can still have moved the hooks.
+pub(crate) fn refresh_gate(config_path: &Path, connected: &ConnectedSources, source_id: &str) {
+    connected.set(source_id, is_connected(config_path, source_id));
+}
+
+/// Connect `sid` and re-read the live gate: what that did, which the Sources panel
+/// and a paired device word alike.
+///
+/// # Errors
+///
+/// If the connect fails, its reason.
+pub(crate) fn connect_source(
+    cfg: &Path,
+    connected: &ConnectedSources,
+    sid: &'static str,
+) -> Result<Changed> {
+    let done = connect(cfg, sid);
+    refresh_gate(cfg, connected, sid);
+    Ok(connected_change(sid, done?))
+}
+
+/// Both install outcomes read as connected, the flag flip being the real action;
+/// matched whole, so a new one must be ruled on here.
+fn connected_change(sid: &'static str, done: ConnectOutcome) -> Changed {
+    let (hook_off_path, step) = match done {
+        ConnectOutcome::Installed(InstallReport {
+            outcome: InstallOutcome::Installed | InstallOutcome::AlreadyUpToDate,
+            path_warning,
+            post_install_hint,
+        }) => (path_warning, post_install_hint),
+        ConnectOutcome::FlagOnly => (false, None),
+    };
+    let outcome = WireOutcome::Connected.into();
+    Changed::new(sid, true, outcome, hook_off_path, step, None)
+}
+
+/// [`connect_source`]'s disconnect.
+///
+/// # Errors
+///
+/// If the disconnect fails, its reason.
+pub(crate) fn disconnect_source(
+    cfg: &Path,
+    connected: &ConnectedSources,
+    sid: &'static str,
+) -> Result<Changed> {
+    let done = disconnect(cfg, sid);
+    refresh_gate(cfg, connected, sid);
+    Ok(disconnected_change(sid, done?))
+}
+
+/// [`connected_change`]'s disconnect.
+fn disconnected_change(sid: &'static str, done: DisconnectOutcome) -> Changed {
+    let plugin_left = match done {
+        DisconnectOutcome::Uninstalled(UninstallReport {
+            outcome: UninstallOutcome::Removed | UninstallOutcome::NothingToRemove,
+            plugin_left_registered,
+        }) => plugin_left_registered.map(|cli| cli.command),
+        DisconnectOutcome::FlagOnly => None,
+    };
+    let outcome = WireOutcome::Disconnected.into();
+    Changed::new(sid, false, outcome, false, None, plugin_left)
+}
+
+/// What a toggle of a source in a [`ConnState`] does, the Sources panel's `t` and
+/// a paired device's change alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToggleIntent {
+    /// Its hooks are in, so it disconnects; the panel asks first.
+    Disconnect,
+    Connect,
+    /// Absent CLI that was never connected — an inert "not detected" hint.
+    Hint,
+}
+
+/// The load-bearing arm is `NoCli { connected: true }` → `Disconnect`: a source whose
+/// CLI vanished is still disconnectable, since its hooks live in the config, not in the
+/// missing binary.
+pub(crate) fn toggle_intent(state: ConnState) -> ToggleIntent {
+    match state {
+        ConnState::Connected | ConnState::NoCli { connected: true } => ToggleIntent::Disconnect,
+        ConnState::Disconnected => ToggleIntent::Connect,
+        ConnState::NoCli { connected: false } => ToggleIntent::Hint,
+    }
+}
+
+/// A paired device's change of `source` to `on`, by the Sources panel's rules, made
+/// and audited for the device `who`: what it did, or `None` for a source this
+/// build doesn't know.
+#[cfg(feature = "serve")]
+pub(crate) fn device_change(
+    cfg: &Path,
+    connected: &ConnectedSources,
+    who: &str,
+    source: &str,
+    on: bool,
+) -> Option<Changed> {
+    let Ok(sid) = registered_id(source) else {
+        tracing::info!(device = ?who, source = ?source, on, outcome = %"unsupported", "a device changed a source");
+        return None;
+    };
+    let absent_cli = by_source(sid).is_some_and(|t| !(t.presence_probe)());
+    let state = conn_state(absent_cli, connected.is_connected(sid));
+    let (changed, outcome) = change_from(cfg, connected, sid, on, state);
+    tracing::info!(device = ?who, source = ?source, on, outcome = %outcome, "a device changed a source");
+    Some(changed)
+}
+
+/// [`device_change`] of `sid` in `state`, and its token.
+#[cfg(feature = "serve")]
+fn change_from(
+    cfg: &Path,
+    connected: &ConnectedSources,
+    sid: &'static str,
+    on: bool,
+    state: ConnState,
+) -> (Changed, WireOutcome) {
+    let wanted = match toggle_intent(state) {
+        ToggleIntent::Connect => on,
+        ToggleIntent::Disconnect => !on,
+        ToggleIntent::Hint => false,
+    };
+    if !wanted {
+        let outcome = WireOutcome::NoOp;
+        return (
+            Changed::new(sid, on, outcome.into(), false, None, None),
+            outcome,
+        );
+    }
+    let done = if on {
+        connect_source(cfg, connected, sid)
+    } else {
+        disconnect_source(cfg, connected, sid)
+    };
+    match done {
+        Ok(changed) => {
+            let outcome = if on {
+                WireOutcome::Connected
+            } else {
+                WireOutcome::Disconnected
+            };
+            (changed, outcome)
+        }
+        Err(e) => {
+            tracing::warn!(source = sid, error = ?e, "a device's change failed");
+            let outcome = WireOutcome::Failed;
+            (
+                Changed::new(sid, on, outcome.into(), false, None, None),
+                outcome,
+            )
+        }
+    }
 }
 
 /// Connect each of `ids` — onboarding's confirm and `setup --yes`. Nothing is
@@ -636,6 +801,17 @@ fn display_name_for(source_id: &'static str) -> &'static str {
     }
 }
 
+/// A row's state: an absent CLI's before its connection.
+fn conn_state(absent_cli: bool, connected: bool) -> ConnState {
+    if absent_cli {
+        ConnState::NoCli { connected }
+    } else if connected {
+        ConnState::Connected
+    } else {
+        ConnState::Disconnected
+    }
+}
+
 pub(crate) fn build_rows_from(inputs: Vec<RowInput>) -> Vec<ConnectionRow> {
     inputs
         .into_iter()
@@ -644,15 +820,7 @@ pub(crate) fn build_rows_from(inputs: Vec<RowInput>) -> Vec<ConnectionRow> {
                 (&input.target, &input.facts),
                 (Some(_), Some(f)) if !f.present
             );
-            let state = if absent_cli {
-                ConnState::NoCli {
-                    connected: input.connected,
-                }
-            } else if input.connected {
-                ConnState::Connected
-            } else {
-                ConnState::Disconnected
-            };
+            let state = conn_state(absent_cli, input.connected);
             ConnectionRow {
                 source_id: input.source_id,
                 label_prefix: input.label_prefix,
@@ -1202,6 +1370,184 @@ mod tests {
         let line = serde_json::to_string(&Answer::Sources { rows }).unwrap();
         assert!(line.contains(r#""attention":true"#), "{line}");
         assert!(!line.contains("sentinel"), "{line}");
+    }
+
+    /// Both install outcomes read as connected: the flag flip is the real action.
+    #[test]
+    fn a_connects_report_rides_its_line() {
+        use crate::install::{InstallOutcome, InstallReport};
+        let line = |outcome, path_warning, post_install_hint| {
+            let report = InstallReport {
+                outcome,
+                path_warning,
+                post_install_hint,
+            };
+            connected_change("openclaw", ConnectOutcome::Installed(report)).line("OpenClaw")
+        };
+        let plain = "\u{2713} OpenClaw connected";
+        assert_eq!(line(InstallOutcome::Installed, false, None), plain);
+        assert_eq!(line(InstallOutcome::AlreadyUpToDate, false, None), plain);
+        let noted = line(InstallOutcome::Installed, true, None);
+        let hook = crate::install::io::HOOK_BIN;
+        assert!(noted.contains(&format!("{hook} not on PATH")), "{noted}");
+        let hinted = line(
+            InstallOutcome::Installed,
+            false,
+            Some("restart the gateway"),
+        );
+        assert_eq!(hinted, format!("{plain} \u{b7} restart the gateway"));
+        let flag = connected_change("copilot", ConnectOutcome::FlagOnly).line("Copilot CLI");
+        assert_eq!(flag, "\u{2713} Copilot CLI connected");
+    }
+
+    #[test]
+    fn a_disconnects_report_rides_its_line() {
+        use crate::install::{UninstallOutcome, UninstallReport};
+        let line = |outcome, plugin_left_registered| {
+            let report = UninstallReport {
+                outcome,
+                plugin_left_registered,
+            };
+            disconnected_change("codex", DisconnectOutcome::Uninstalled(report)).line("Codex")
+        };
+        let plain = "\u{2713} Codex disconnected";
+        assert_eq!(line(UninstallOutcome::Removed, None), plain);
+        assert_eq!(line(UninstallOutcome::NothingToRemove, None), plain);
+        let codex = crate::install::target::CODEX.host.map(|h| h.cli);
+        let stranded = line(UninstallOutcome::Removed, codex);
+        assert!(
+            stranded.contains("plugin left registered (codex not on PATH)"),
+            "the CLI it could not reach, by name: {stranded}"
+        );
+    }
+
+    #[test]
+    fn toggle_intent_covers_the_four_arms() {
+        assert_eq!(
+            toggle_intent(ConnState::Connected),
+            ToggleIntent::Disconnect
+        );
+        assert_eq!(
+            toggle_intent(ConnState::Disconnected),
+            ToggleIntent::Connect
+        );
+        assert_eq!(
+            toggle_intent(ConnState::NoCli { connected: true }),
+            ToggleIntent::Disconnect
+        );
+        assert_eq!(
+            toggle_intent(ConnState::NoCli { connected: false }),
+            ToggleIntent::Hint
+        );
+    }
+
+    /// A device reads the tokens the `--json` contract publishes.
+    #[test]
+    fn wire_outcomes_are_a_devices_outcomes() {
+        for outcome in [
+            WireOutcome::Connected,
+            WireOutcome::Disconnected,
+            WireOutcome::NoOp,
+            WireOutcome::Failed,
+        ] {
+            let device = serde_json::to_value(Outcome::from(outcome)).unwrap();
+            assert_eq!(device, serde_json::json!(outcome.token()));
+        }
+    }
+
+    #[cfg(feature = "serve")]
+    #[test]
+    fn a_devices_change_applies_and_the_live_gate_follows() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        let connected = ConnectedSources::default();
+
+        let on = device_change(&cfg, &connected, "dev", "copilot", true).unwrap();
+        assert_eq!(on.outcome(), Outcome::Connected);
+        assert!(connected.is_connected("copilot"));
+        assert!(is_connected(&cfg, "copilot"));
+
+        let again = device_change(&cfg, &connected, "dev", "copilot", true).unwrap();
+        assert_eq!(again.outcome(), Outcome::NoOp, "a retry changes nothing");
+
+        let off = device_change(&cfg, &connected, "dev", "copilot", false).unwrap();
+        assert_eq!(off.outcome(), Outcome::Disconnected);
+        assert!(!connected.is_connected("copilot"));
+        assert!(!is_connected(&cfg, "copilot"));
+
+        assert_eq!(
+            device_change(&cfg, &connected, "dev", "no-such-cli", true),
+            None
+        );
+    }
+
+    /// The panel's rules: an absent CLI never connected can't connect, and one
+    /// still connected can disconnect.
+    #[cfg(feature = "serve")]
+    #[test]
+    fn a_device_cant_connect_a_missing_cli_but_can_disconnect_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        let connected = ConnectedSources::default();
+        let missing = ConnState::NoCli { connected: false };
+        let (refused, _) = change_from(&cfg, &connected, "copilot", true, missing);
+        assert_eq!(refused.outcome(), Outcome::NoOp);
+        assert!(!cfg.exists(), "nothing was written");
+        assert!(!connected.is_connected("copilot"));
+
+        std::fs::write(&cfg, "[sources]\ncopilot = true\n").unwrap();
+        let gone = ConnState::NoCli { connected: true };
+        let (off, _) = change_from(&cfg, &connected, "copilot", false, gone);
+        assert_eq!(off.outcome(), Outcome::Disconnected);
+        assert!(!is_connected(&cfg, "copilot"));
+    }
+
+    /// A failure's reason can quote a path or another CLI's config.
+    #[cfg(feature = "serve")]
+    #[test]
+    fn a_failed_changes_reason_never_reaches_the_wire() {
+        use pixtuoid_core::remote::Answer;
+        let dir = tempfile::tempdir().unwrap();
+        // A config that isn't TOML refuses the write, naming its path.
+        let cfg = dir.path().join("sentinel-dir").join("config.toml");
+        std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        std::fs::write(&cfg, "not = [valid").unwrap();
+        let connected = ConnectedSources::default();
+        let reason = connect_source(&cfg, &connected, "copilot").unwrap_err();
+        assert!(format!("{reason:#}").contains("sentinel"), "{reason:#}");
+
+        let failed = device_change(&cfg, &connected, "dev", "copilot", true).unwrap();
+        assert_eq!(failed.outcome(), Outcome::Failed);
+        let line = serde_json::to_string(&Answer::Changed(failed)).unwrap();
+        assert!(!line.contains("sentinel"), "{line}");
+    }
+
+    #[cfg(feature = "serve")]
+    #[test]
+    fn a_devices_change_is_audited_field_by_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        let connected = ConnectedSources::default();
+        let out = crate::test_capture::capture(|| {
+            device_change(&cfg, &connected, "a1b2c3d4", "copilot", true);
+            device_change(&cfg, &connected, "a1b2c3d4", "no-such-cli", false);
+        });
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "{out}");
+        for (line, source, on, outcome) in [
+            (lines[0], "copilot", true, "connected"),
+            (lines[1], "no-such-cli", false, "unsupported"),
+        ] {
+            assert!(line.contains("a device changed a source"), "{line}");
+            for field in [
+                "device=\"a1b2c3d4\"".to_owned(),
+                format!("source=\"{source}\""),
+                format!("on={on}"),
+                format!("outcome={outcome}"),
+            ] {
+                assert!(line.contains(&field), "{field} not in {line}");
+            }
+        }
     }
 
     #[test]

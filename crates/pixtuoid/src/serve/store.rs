@@ -52,7 +52,15 @@ impl Hashed {
     pub(super) fn of(token: &str) -> Self {
         Self(hex(digest(&SHA256, token.as_bytes()).as_ref()))
     }
+
+    /// Enough of it to tell a log's devices apart, and no more.
+    pub(super) fn short(&self) -> &str {
+        self.0.get(..SHORT_HEX).unwrap_or(&self.0)
+    }
 }
+
+/// [`Hashed::short`]'s length, a chosen value: a git-style short id.
+const SHORT_HEX: usize = 8;
 
 /// The file behind [`Stored`]. A running server reads it per hello, so `pair`
 /// works beside one, from another process.
