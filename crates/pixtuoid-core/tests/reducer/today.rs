@@ -71,8 +71,8 @@ fn slot_of(scene: &SceneState, a: AgentId) -> (u64, u32) {
     (slot.tokens_used, slot.tool_call_count)
 }
 
-/// An event of agent `a`'s, on its transcript unless it says hook, a tick of the
-/// reducer's clock, or a check of what came before.
+/// A step of a row: an event of agent `a`'s, a tick of the reducer's clock, or a
+/// check of what came before.
 #[derive(Clone, Copy)]
 enum Beat {
     Start,
