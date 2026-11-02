@@ -786,12 +786,26 @@ fn the_protocols_cadence_gates_its_transmits() {
     let scene = office();
     r.render(&scene, t0()).expect("render");
     wire.take();
-    r.redraw().expect("redraw");
+    r.forget_frame();
     let cadence = ImageProtocol::Sixel.cadence();
     r.render(&scene, t0() + cadence / 2).expect("render");
     assert_eq!(wire.take(), "", "inside the cadence, the tiles stay owed");
     r.render(&scene, t0() + cadence).expect("render");
     assert!(wire.take().contains(SIXEL));
+}
+
+/// A cleared screen shows nothing to wait for: the frame after a redraw
+/// sends every tile at once, inside the cadence.
+#[test]
+fn a_redraw_sends_at_once_inside_the_cadence() {
+    let (mut r, wire) = painter(120, 40, ImageProtocol::Sixel);
+    let scene = office();
+    r.render(&scene, t0()).expect("render");
+    let tiles = wire.take().matches(SIXEL).count();
+    r.redraw().expect("redraw");
+    r.render(&scene, t0() + ImageProtocol::Sixel.cadence() / 2)
+        .expect("render");
+    assert_eq!(wire.take().matches(SIXEL).count(), tiles);
 }
 
 /// How `protocol`'s transmit of one tile opens.
@@ -1565,4 +1579,59 @@ fn w_follows_the_look_the_frame_drew() {
     r.terminal.backend_mut().zoom(CELL);
     r.render(&scene, t0() + cadence * 6).expect("render");
     assert!(!r.offers_walkable_debug(), "the cutaway is back");
+}
+
+/// A redraw inside a strike's hold paints its first frame at once: the
+/// screen it cleared shows no phase to wait for, so it is never left blank.
+#[test]
+fn a_redraw_is_never_held() {
+    use crate::test_flash::{held_frames, storm_strike};
+    let strike = storm_strike();
+    let [dark, late, held, _] = held_frames(&strike);
+    let (mut r, wire, screen) = on_screen(140, 60, ImageProtocol::Kitty);
+    r.set_weather(strike.weather);
+    r.set_motion(pixtuoid_scene::anim::Motion::Full);
+    let scene = office();
+    for at in [dark, late] {
+        screen.at(at);
+        r.render(&scene, at).expect("render");
+    }
+    wire.take();
+    r.redraw().expect("redraw");
+    screen.at(held);
+    r.render(&scene, held).expect("render");
+    let cells = r.terminal.backend().inner.buffer();
+    assert!(
+        cells.content().iter().any(|c| c.symbol() != " "),
+        "painted, not left blank"
+    );
+    assert!(wire.take().contains(TRANSMIT), "its tiles sent");
+}
+
+/// The pacing reports name the look each frame drew: a font zoom that
+/// leaves the cutaway no fit reports the half-blocks' frames as theirs.
+#[test]
+fn the_pacing_label_follows_the_drawn_look() {
+    let (mut r, _wire) = kitty(140, 60);
+    let scene = office();
+    let cadence = ImageProtocol::Kitty.cadence();
+    let painter = |look| crate::jank::Painter {
+        look,
+        ..Default::default()
+    };
+    r.set_painters(enum_map::enum_map! {
+        LookKind::Cutaway => painter("kitty"),
+        LookKind::Classic => painter("classic"),
+    });
+    r.render(&scene, t0()).expect("render");
+    assert_eq!(r.jank.painter().look, "kitty");
+    r.terminal.backend_mut().zoom(CellSize {
+        w: CELL.w / 2,
+        h: CELL.h / 2,
+    });
+    r.render(&scene, t0() + cadence).expect("render");
+    assert_eq!(r.jank.painter().look, "classic", "the fall back draws");
+    r.terminal.backend_mut().zoom(CELL);
+    r.render(&scene, t0() + cadence * 2).expect("render");
+    assert_eq!(r.jank.painter().look, "kitty", "and back");
 }

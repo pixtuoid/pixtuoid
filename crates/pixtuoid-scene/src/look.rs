@@ -79,7 +79,9 @@ impl Look {
 /// it at: what a command line, a config and [`PixelFit::look`] name it by.
 ///
 /// [`PixelFit::look`]: crate::render_scale::PixelFit::look
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr, enum_map::Enum,
+)]
 #[strum(serialize_all = "snake_case")]
 pub enum LookKind {
     /// [`Look::Cutaway`], at any scale and text.

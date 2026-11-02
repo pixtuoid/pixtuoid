@@ -63,6 +63,8 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     screen: Screen<ratatui::layout::Size, crate::tui::geometry::SceneGeometry>,
     /// The cutaway, painted as terminal images in place of the half-blocks.
     cutaway: Option<crate::tui::cutaway::TileCutaway>,
+    /// What each look's frames' pacing is reported under.
+    painters: enum_map::EnumMap<LookKind, crate::jank::Painter>,
 }
 
 /// Everything a frame shows besides the floors: kept apart from `session` so a
@@ -204,6 +206,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             },
             screen: Screen::on(pixtuoid_scene::screen::monotonic()),
             cutaway: None,
+            painters: enum_map::EnumMap::default(),
         }
     }
 
@@ -314,9 +317,26 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.frame_out = Some(out);
     }
 
-    /// Name what draws the frames, for their pacing summaries.
-    pub(crate) fn painted_by(&mut self, painter: crate::jank::Painter) {
-        self.jank.painted_by(painter);
+    /// Name what draws each look's frames, for their pacing summaries.
+    pub(crate) fn set_painters(
+        &mut self,
+        painters: enum_map::EnumMap<LookKind, crate::jank::Painter>,
+    ) {
+        self.painters = painters;
+    }
+
+    /// The look the last frame drew: the cutaway where it fit.
+    fn drawn_look(&self) -> LookKind {
+        if self
+            .cutaway
+            .as_ref()
+            .and_then(crate::tui::cutaway::TileCutaway::office)
+            .is_some()
+        {
+            LookKind::Cutaway
+        } else {
+            LookKind::Classic
+        }
     }
 
     /// Paint and send the next frame whole, for the pacing bench's worst case.
@@ -334,6 +354,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         if let Some(cutaway) = &mut self.cutaway {
             cutaway.forget();
         }
+        self.screen.wiped();
         let size = self.terminal.size()?;
         self.terminal.resize(Rect::from((Position::ORIGIN, size)))?;
         Ok(())
@@ -732,6 +753,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         presented?;
         self.screen.landed();
         let note = drawn?;
+        self.jank
+            .painted_by(&self.painters[self.drawn_look()], std::time::Instant::now());
         let send = self
             .cutaway
             .as_ref()
