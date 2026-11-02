@@ -560,9 +560,14 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "omp-entry",
-        pattern: r#""id":"([0-9a-f]{8})""#,
+        // The line's own id: a nested `"id"` keeps its pairing with whatever
+        // references it.
+        pattern: r#"(?m)^\{"type":"[a-z_]+","id":"([0-9a-f]{8})""#,
         seen_in: "omp/fixtures/tool-run-hermetic",
-        renamed: &[(r#"{"id":"192c3137"}"#, r#"{"id":"a891de2d"}"#)],
+        renamed: &[(
+            r#"{"type":"message","id":"192c3137"}"#,
+            r#"{"type":"message","id":"a891de2d"}"#,
+        )],
     },
     IdFamily {
         name: "recorder-sandbox",

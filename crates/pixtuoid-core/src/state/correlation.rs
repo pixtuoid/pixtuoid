@@ -225,7 +225,7 @@ pub(super) struct Correlation {
     counted_swept_at: Option<SystemTime>,
 }
 
-/// How often the [`Counted`] maps are TTL-swept. Minutes of slack against an
+/// How often `counted_calls` is TTL-swept. Minutes of slack against an
 /// hour-scale ceiling cost nothing; sweeping on every tick re-created the
 /// per-event scan `gc_slow` exists to avoid.
 const COUNTED_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
@@ -380,7 +380,7 @@ impl Correlation {
         });
     }
 
-    /// The sweeps too costly for the per-event [`Self::gc`]: a [`Counted`] map
+    /// The sweeps too costly for the per-event [`Self::gc`]: `counted_calls`
     /// keeps entries for up to [`STALE_BLOCKED_TIMEOUT`](crate::state::reducer::STALE_BLOCKED_TIMEOUT), so its retain scans real
     /// state. Self-amortized to [`COUNTED_SWEEP_INTERVAL`] — callers may run
     /// this as often as they like.
