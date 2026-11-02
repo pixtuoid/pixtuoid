@@ -23,7 +23,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd,
+    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd, non_empty,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -753,7 +753,10 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                             out.push(AgentEvent::Usage {
                                 agent_id: acting,
                                 fresh_tokens: fresh,
-                                reading_id: None,
+                                // A prune or compaction rewrites the file whole with
+                                // each entry's own id (v18.15.0 `session-manager.ts`
+                                // `#serializeBody`), and the watcher re-reads it.
+                                reading_id: non_empty(obj, "id").map(str::to_owned),
                             });
                         }
                     }
