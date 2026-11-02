@@ -324,6 +324,34 @@ fn build_rows_carries_requires_action_and_running_state() {
     assert_eq!(rows[1].state, RowState::Running(Some(Arc::from("Edit x"))));
 }
 
+/// A row reads its agent's name as that floor's badges do: two namesakes on a
+/// floor carry their suffixes, and one upstairs, told apart by its floor,
+/// reads bare.
+#[test]
+fn namesake_rows_read_their_floors_nameplates() {
+    let (a, b, up) = (id("/p/a.jsonl"), id("/p/b.jsonl"), id("/p/up.jsonl"));
+    let mut scene = SceneState::uniform(2);
+    for (agent, desk, floor) in [(a, 0, 0), (b, 1, 0), (up, 2, 1)] {
+        let mut slot = mk_slot(agent, "cc·api", desk, floor, None, ActivityState::Idle);
+        slot.session_id = Arc::from(format!("session-{desk}").as_str());
+        scene.agents.insert(agent, slot);
+    }
+    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+    let row = |agent| {
+        rows.iter()
+            .find(|r| r.agent_id == agent)
+            .map(|r| r.label.to_string())
+            .expect("a row per agent")
+    };
+    for (agent, floor) in [(a, 0), (b, 0), (up, 1)] {
+        let projection = pixtuoid_scene::floor::project_floor_scene(&scene, floor);
+        let namesakes = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values());
+        assert_eq!(row(agent), namesakes.label(&scene.agents[&agent]));
+    }
+    assert_ne!(row(a), row(b));
+    assert_eq!(row(up), "cc·api");
+}
+
 #[test]
 fn build_dashboard_rows_empty_scene_is_empty() {
     let scene = SceneState::uniform(8);

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ToolUse};
+use pixtuoid_scene::nameplate::Namesakes;
 
 /// Roots with more than this many direct subagents render collapsed by default,
 /// so a large workflow doesn't flood the board.
@@ -101,16 +102,29 @@ pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<D
         .collect();
     roots.sort_by_key(|s| s.desk_index);
 
+    // Counted per floor, as each floor's badges are, so a row reads its badge.
+    let mut floors: HashMap<usize, Vec<&AgentSlot>> = HashMap::new();
+    for slot in scene.agents.values() {
+        floors.entry(slot.floor_idx).or_default().push(slot);
+    }
+    let namesakes: FloorNamesakes<'_> = floors
+        .into_iter()
+        .map(|(floor, agents)| (floor, Namesakes::of(agents)))
+        .collect();
+
     let mut rows = Vec::new();
     for root in roots {
-        push_subtree(&children, folds, root, 0, None, &mut rows);
+        push_subtree(&children, folds, &namesakes, root, 0, None, &mut rows);
     }
     rows
 }
 
+type FloorNamesakes<'a> = HashMap<usize, Namesakes<'a>>;
+
 fn push_subtree(
     children: &HashMap<AgentId, Vec<&AgentSlot>>,
     folds: &DashboardFolds,
+    namesakes: &FloorNamesakes<'_>,
     node: &AgentSlot,
     depth: u8,
     parent_id: Option<AgentId>,
@@ -119,19 +133,35 @@ fn push_subtree(
     let mut kids = children.get(&node.agent_id).cloned().unwrap_or_default();
     let child_count = kids.len();
     let collapsed = depth == 0 && folds.is_collapsed(node.agent_id, child_count);
-    rows.push(row_for(node, parent_id, depth, child_count, collapsed));
+    rows.push(row_for(
+        node,
+        namesakes,
+        parent_id,
+        depth,
+        child_count,
+        collapsed,
+    ));
     if collapsed {
         return;
     }
 
     kids.sort_by_key(|s| s.desk_index);
     for kid in kids {
-        push_subtree(children, folds, kid, depth + 1, Some(node.agent_id), rows);
+        push_subtree(
+            children,
+            folds,
+            namesakes,
+            kid,
+            depth + 1,
+            Some(node.agent_id),
+            rows,
+        );
     }
 }
 
 fn row_for(
     slot: &AgentSlot,
+    namesakes: &FloorNamesakes<'_>,
     parent_id: Option<AgentId>,
     depth: u8,
     child_count: usize,
@@ -141,7 +171,9 @@ fn row_for(
         agent_id: slot.agent_id,
         parent_id,
         depth,
-        label: slot.label.text(),
+        label: namesakes
+            .get(&slot.floor_idx)
+            .map_or_else(|| slot.label.text(), |n| Arc::from(&*n.label(slot))),
         source: slot.source.clone(),
         floor_idx: slot.floor_idx,
         state: row_state(&slot.state),
