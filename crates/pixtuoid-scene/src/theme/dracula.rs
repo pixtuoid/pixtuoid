@@ -5,6 +5,7 @@ use super::*;
 /// The `dracula` dark theme.
 pub(crate) static DRACULA: Theme = Theme {
     name: "dracula",
+    display_name: "Dracula",
     kind: ThemeKind::Dark,
     surface: SurfaceColors {
         wall: Rgb {

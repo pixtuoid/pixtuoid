@@ -30,6 +30,8 @@ pub(crate) enum ThemeKind {
 pub struct Theme {
     /// Theme id — the `--theme` value and the registry lookup key.
     pub name: &'static str,
+    /// What a person reads for it: every picker, and the site's gallery row.
+    pub display_name: &'static str,
     /// Light vs dark classification.
     pub(crate) kind: ThemeKind,
     /// Room-shell colors (walls, carpet, window frame).
@@ -451,17 +453,28 @@ mod tests {
         let Some(manifest) = crate::site::manifest("themes.json") else {
             return;
         };
-        let mut ids: Vec<&str> = manifest
+        let mut rows: Vec<(&str, &str)> = manifest
             .iter()
-            .map(|t| t["id"].as_str().expect("themes.json entry has a string id"))
+            .map(|t| {
+                let field = |key| {
+                    t[key]
+                        .as_str()
+                        .unwrap_or_else(|| panic!("themes.json entry has a string {key}"))
+                };
+                (field("id"), field("name"))
+            })
             .collect();
-        let mut names: Vec<&str> = ALL_THEMES.iter().map(|t| t.name).collect();
-        ids.sort_unstable();
-        names.sort_unstable();
+        let mut themes: Vec<(&str, &str)> = ALL_THEMES
+            .iter()
+            .map(|t| (t.name, t.display_name))
+            .collect();
+        rows.sort_unstable();
+        themes.sort_unstable();
         assert_eq!(
-            ids, names,
-            "site/src/themes.json ids must match ALL_THEMES names — update the \
-             manifest + run `just gen-media` when the registry changes"
+            rows, themes,
+            "site/src/themes.json (id, name) rows must match ALL_THEMES (name, \
+             display_name) — update the manifest + run `just gen-media` when the \
+             registry changes"
         );
     }
 

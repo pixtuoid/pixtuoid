@@ -454,7 +454,9 @@ fn theme_picker_renders_during_floor_transition() {
     assert!(r.transition().is_some(), "still mid-transition");
     let text = frame_text(r.frame_buffer());
     assert!(
-        text.contains("cyberpunk") || text.contains("normal"),
+        pixtuoid_scene::theme::ALL_THEMES
+            .iter()
+            .any(|t| text.contains(t.display_name)),
         "theme picker must paint over a floor transition; frame:\n{text}"
     );
 }

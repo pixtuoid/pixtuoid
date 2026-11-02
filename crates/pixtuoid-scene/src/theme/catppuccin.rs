@@ -6,6 +6,7 @@ use super::*;
 /// Based on <https://github.com/catppuccin/catppuccin>
 pub(crate) static CATPPUCCIN: Theme = Theme {
     name: "catppuccin",
+    display_name: "Catppuccin",
     kind: ThemeKind::Dark,
     surface: SurfaceColors {
         wall: Rgb {

@@ -5,6 +5,7 @@ use super::*;
 /// The `tokyo-night` dark theme.
 pub(crate) static TOKYO_NIGHT: Theme = Theme {
     name: "tokyo-night",
+    display_name: "Tokyo Night",
     kind: ThemeKind::Dark,
     surface: SurfaceColors {
         wall: Rgb {
