@@ -82,6 +82,9 @@ pub(crate) struct TileCutaway {
     base: u32,
     /// `None` while classic paints.
     fitted: Option<Fitted>,
+    /// The office its last fit laid out, the boot fit's before any: what a
+    /// floor's seats are held to while it has no fit.
+    seats: Size,
     tiles: Tiles,
     /// What the tiles are cut from when sent: the last frame, or a slide's
     /// two composed.
@@ -152,6 +155,7 @@ impl TileCutaway {
             route,
             base: kitty::process_base(),
             fitted: None,
+            seats: fit.logical(),
             tiles: Tiles::new(route.protocol(), cell, fit),
             image: RgbBuffer::filled(0, 0, Rgb { r: 0, g: 0, b: 0 }),
             image_behind: false,
@@ -195,10 +199,25 @@ impl TileCutaway {
     /// window's cell from what it read on the first frame.
     fn cell_under(&mut self, window: Option<CellSize>) -> CellSize {
         self.saw_window(window);
+        self.cell_at(window)
+    }
+
+    /// [`Self::cell_under`] once its baseline is read.
+    fn cell_at(&self, window: Option<CellSize>) -> CellSize {
         match window {
             Some(cell) if Some(cell) != self.first_window => cell,
             _ => self.planned,
         }
+    }
+
+    /// The office it lays out over `scene` under a window whose cell reads
+    /// `window`, or, where that cell has no fit, the last office it fit.
+    pub(crate) fn seat_office(&mut self, scene: Rect, window: Option<CellSize>) -> Size {
+        self.saw_window(window);
+        if let Some(fit) = cutaway_fit(self.cell_at(window), scene.as_size(), self.density) {
+            self.seats = fit.logical();
+        }
+        self.seats
     }
 
     /// The window's cell this frame: the first one read is the baseline a

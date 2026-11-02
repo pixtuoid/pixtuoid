@@ -445,7 +445,7 @@ fn theme_picker_renders_during_floor_transition() {
         RenderFrames {
             appearance: crate::panels::ui_state::AppearanceFrame {
                 open: true,
-                shown: crate::panels::ui_state::Appearance::default(),
+                shown: crate::panels::ui_state::AppearancePick::default(),
             },
             ..Default::default()
         },

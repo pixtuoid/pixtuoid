@@ -541,7 +541,10 @@ fn the_plans_cell_holds_until_the_windows_moves() {
         cell: CELL,
         chosen: crate::graphics::Chosen::Answer,
     });
-    let office = plan.office_extent(ratatui::layout::Size::new(cols, rows));
+    let office = plan
+        .cutaway()
+        .expect("a cutaway")
+        .office_extent(ratatui::layout::Size::new(cols, rows));
     assert_eq!(
         r.office_extent(),
         (office.w, office.h),
@@ -607,7 +610,10 @@ fn a_first_frame_with_no_pixels_does_not_pose_as_the_windows_baseline() {
         cell: CELL,
         chosen: crate::graphics::Chosen::Answer,
     });
-    let office = plan.office_extent(ratatui::layout::Size::new(cols, rows));
+    let office = plan
+        .cutaway()
+        .expect("a cutaway")
+        .office_extent(ratatui::layout::Size::new(cols, rows));
     assert_eq!(
         r.office_extent(),
         (office.w, office.h),
@@ -2069,4 +2075,73 @@ fn a_named_classic_boots_in_the_classic_with_the_cutaway_at_hand() {
     let mut r = r;
     r.set_looks(motions, None, LookKind::Cutaway);
     assert_eq!(r.look, LookKind::Classic, "no cutaway to start in");
+}
+
+/// A floor's seats, which only grow, never outnumber the desks a look the
+/// run can return to draws: on a cell whose cutaway seats fewer than the
+/// classic, neither a classic preview nor a zoom that leaves the cutaway no
+/// fit publishes more than the cutaway holds, so the zoom back shows every
+/// agent seated.
+#[test]
+fn seats_never_outnumber_the_desks_of_a_look_to_return_to() {
+    use std::sync::atomic::AtomicUsize;
+    let cell = CellSize { w: 6, h: 12 };
+    let (cols, rows) = (120, 40);
+    let mut r = TuiRenderer::new(
+        Terminal::new(Window::new(cols, rows)).expect("terminal"),
+        normal_theme(),
+        vec![],
+        pack_arc(),
+    );
+    r.terminal.backend_mut().zoom(cell);
+    let area = crate::tui::renderer::scene_rect(Rect::new(0, 0, cols, rows)).as_size();
+    let fit = cutaway_fit(cell, area, pack_arc().max_density_variant()).expect("fits");
+    let out = crate::tui::FrameOut::new(Wire::default(), false);
+    r.present_through(out.clone());
+    r.set_looks(
+        enum_map::EnumMap::default(),
+        Some(TileCutaway::new(
+            fit,
+            cell,
+            crate::graphics::Route::direct(ImageProtocol::Kitty, false),
+            Box::new(out),
+        )),
+        LookKind::Cutaway,
+    );
+    let only = |look, office| {
+        let mut offices = enum_map::EnumMap::default();
+        offices[look] = Some(office);
+        crate::runtime::floor_capacities(&offices)
+    };
+    let cutaway = only(LookKind::Cutaway, fit.logical());
+    let (w, h) = crate::tui::renderer::scene_buf_size(cols, rows);
+    let classic = only(LookKind::Classic, pixtuoid_scene::layout::Size { w, h });
+    assert!(
+        classic.iter().zip(&cutaway).any(|(c, k)| c > k),
+        "premise: the classic seats more here"
+    );
+    let caps: [AtomicUsize; pixtuoid_core::state::MAX_FLOORS] =
+        std::array::from_fn(|_| AtomicUsize::new(0));
+    let mut sweep = crate::tui::FloorCapacitySweep::new();
+    let scene = office();
+    let cadence = ImageProtocol::Kitty.cadence();
+    let mut frame = |r: &mut TuiRenderer<Window>, n: u32, note: &str| {
+        r.render(&scene, t0() + cadence * n).expect("render");
+        sweep.publish(r.seat_extents(), None, &caps);
+        for (i, (slot, &desks)) in caps.iter().zip(&cutaway).enumerate() {
+            let seats = slot.load(std::sync::atomic::Ordering::Relaxed);
+            assert!(seats <= desks, "{note}: floor {i} seats {seats} of {desks}");
+        }
+    };
+    frame(&mut r, 0, "the cutaway");
+    r.set_look(LookKind::Classic).expect("preview");
+    frame(&mut r, 1, "the classic previewed");
+    r.set_look(LookKind::Cutaway).expect("cancel");
+    frame(&mut r, 2, "back");
+    r.terminal.backend_mut().zoom(CellSize { w: 2, h: 4 });
+    frame(&mut r, 3, "a zoom with no fit");
+    assert_eq!(r.drawn_look(), LookKind::Classic, "premise: no fit");
+    r.terminal.backend_mut().zoom(cell);
+    frame(&mut r, 4, "the zoom back");
+    assert_eq!(r.drawn_look(), LookKind::Cutaway);
 }

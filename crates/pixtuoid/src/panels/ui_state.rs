@@ -37,7 +37,7 @@ pub struct RenderFrames {
 /// What the appearance picker sets: a theme, and the look where the run can
 /// switch looks.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Appearance {
+pub struct AppearancePick {
     /// Its index in [`theme::ALL_THEMES`].
     pub theme: usize,
     /// `None` where the run draws one look only, whose picker has no look row.
@@ -48,7 +48,7 @@ pub struct Appearance {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AppearanceFrame {
     pub open: bool,
-    pub shown: Appearance,
+    pub shown: AppearancePick,
 }
 
 /// The version popup: whether it is open, and what it last opened with,
@@ -112,9 +112,9 @@ pub(crate) struct UiState {
     /// nowhere else.
     fake_now: Option<(Instant, SystemTime)>,
     /// The appearance picker's preview while it is open.
-    pub(crate) appearance: Option<Appearance>,
+    pub(crate) appearance: Option<AppearancePick>,
     /// The committed appearance, which a cancel reverts to.
-    pub(crate) saved: Appearance,
+    pub(crate) saved: AppearancePick,
     pub(crate) dashboard: DashboardUi,
     pub(crate) connection: ConnectionUi,
     drift: crate::doctor::DriftSeen,
@@ -239,7 +239,7 @@ impl UiState {
             pause: pixtuoid_scene::anim::PauseClock::default(),
             fake_now: fake_now(),
             appearance: None,
-            saved: Appearance { theme, look: None },
+            saved: AppearancePick { theme, look: None },
             dashboard: DashboardUi::default(),
             connection: ConnectionUi::default(),
             drift,
@@ -334,14 +334,14 @@ impl UiState {
     }
 
     /// Enter in the picker: close, keeping what it showed, which it returns.
-    pub(crate) fn commit_appearance(&mut self) -> Option<Appearance> {
+    pub(crate) fn commit_appearance(&mut self) -> Option<AppearancePick> {
         let committed = self.appearance.take()?;
         self.saved = committed;
         Some(committed)
     }
 
     /// Esc in the picker: close and return the saved appearance to revert to.
-    pub(crate) fn cancel_appearance(&mut self) -> Appearance {
+    pub(crate) fn cancel_appearance(&mut self) -> AppearancePick {
         self.appearance = None;
         self.saved
     }

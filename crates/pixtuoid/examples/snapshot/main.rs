@@ -751,7 +751,7 @@ fn main() -> Result<()> {
     let frames = pixtuoid::dev::RenderFrames {
         appearance: pixtuoid::dev::AppearanceFrame {
             open: args.theme_picker.is_some(),
-            shown: pixtuoid::dev::Appearance {
+            shown: pixtuoid::dev::AppearancePick {
                 theme: args.theme_picker.unwrap_or_default(),
                 look: args.picker_look,
             },

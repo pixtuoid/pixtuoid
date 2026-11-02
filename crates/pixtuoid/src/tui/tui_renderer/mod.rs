@@ -253,6 +253,25 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.redraw()
     }
 
+    /// The office each look this run can return to lays out on the terminal
+    /// now, the cutaway at its last fit where this cell has none: a floor's
+    /// seats only grow, so they are held to the fewest any of them holds.
+    pub(crate) fn seat_extents(
+        &mut self,
+    ) -> enum_map::EnumMap<LookKind, Option<pixtuoid_scene::layout::Size>> {
+        let Ok(size) = self.terminal.size() else {
+            return enum_map::EnumMap::default();
+        };
+        let (w, h) = crate::tui::renderer::scene_buf_size(size.width, size.height);
+        let scene = crate::tui::renderer::scene_rect(Rect::new(0, 0, size.width, size.height));
+        let window = self.window_cell();
+        let cutaway = self.cutaway.as_mut().map(|c| c.seat_office(scene, window));
+        enum_map::enum_map! {
+            LookKind::Classic => Some(Size { w, h }),
+            LookKind::Cutaway => cutaway,
+        }
+    }
+
     /// The window's cell, which the cutaway takes as its baseline whatever
     /// look draws, so a font zoom before its first frame still reads as one.
     fn window_cell(&mut self) -> Option<crate::graphics::CellSize> {

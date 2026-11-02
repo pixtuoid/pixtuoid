@@ -335,7 +335,7 @@ fn theme_picker_renders_theme_names() {
         RenderFrames {
             appearance: crate::panels::ui_state::AppearanceFrame {
                 open: true,
-                shown: crate::panels::ui_state::Appearance::default(),
+                shown: crate::panels::ui_state::AppearancePick::default(),
             },
             ..Default::default()
         },

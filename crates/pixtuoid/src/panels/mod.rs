@@ -169,7 +169,7 @@ pub(crate) struct ModalState {
     pub(crate) onboarding_open: bool,
     pub(crate) help_open: bool,
     pub(crate) version_popup_open: bool,
-    pub(crate) appearance: Option<ui_state::Appearance>,
+    pub(crate) appearance: Option<ui_state::AppearancePick>,
     pub(crate) dashboard_open: bool,
     pub(crate) connection_open: bool,
     /// A disconnect is armed on the Sources panel, awaiting y/n.
@@ -1136,8 +1136,8 @@ mod dispatch_tests {
     }
 
     /// The theme picker at row `theme`, with no look row.
-    fn theme_at(theme: usize) -> ui_state::Appearance {
-        ui_state::Appearance { theme, look: None }
+    fn theme_at(theme: usize) -> ui_state::AppearancePick {
+        ui_state::AppearancePick { theme, look: None }
     }
 
     /// With a look row, ←→/hl cycle the look round its ends, and ↑↓/jk stay
@@ -1147,7 +1147,7 @@ mod dispatch_tests {
         use pixtuoid_scene::look::LookKind;
         for look in LookKind::ALL.iter().copied() {
             let c = ModalState {
-                appearance: Some(ui_state::Appearance {
+                appearance: Some(ui_state::AppearancePick {
                     theme: 2,
                     look: Some(look),
                 }),

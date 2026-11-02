@@ -1,5 +1,5 @@
 use super::{Overflow, Panel, to_color};
-use crate::panels::ui_state::Appearance;
+use crate::panels::ui_state::AppearancePick;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span as TSpan};
@@ -12,7 +12,7 @@ fn theme_swatch(t: &pixtuoid_scene::theme::Theme) -> (Color, Color) {
 /// look: the look on its own axis, ←→/hl, as the themes are on ↑↓/jk.
 pub(crate) fn paint_appearance(
     f: &mut ratatui::Frame<'_>,
-    shown: Appearance,
+    shown: AppearancePick,
     bounds: Rect,
     theme: &pixtuoid_scene::theme::Theme,
 ) {
@@ -48,7 +48,7 @@ pub(crate) fn paint_appearance(
     let (title, above) = match shown.look {
         None => ("Theme [\u{2191}\u{2193}/jk] Enter/Esc", vec![]),
         Some(look) => (
-            "Appearance [\u{2191}\u{2193}/jk \u{2190}\u{2192}/hl] Enter/Esc",
+            "AppearancePick [\u{2191}\u{2193}/jk \u{2190}\u{2192}/hl] Enter/Esc",
             vec![
                 Line::from(vec![
                     TSpan::styled("  Look  \u{2039} ", idle),
@@ -89,7 +89,7 @@ mod tests {
         term.draw(|f| {
             paint_appearance(
                 f,
-                Appearance::default(),
+                AppearancePick::default(),
                 Rect::new(0, 0, 24, 30),
                 &pixtuoid_scene::theme::NORMAL,
             );
@@ -106,7 +106,7 @@ mod tests {
         term.draw(|f| {
             paint_appearance(
                 f,
-                Appearance::default(),
+                AppearancePick::default(),
                 Rect::new(0, 0, 60, 30),
                 &pixtuoid_scene::theme::NORMAL,
             );
@@ -137,7 +137,7 @@ mod tests {
     }
 
     /// The picker's rows as text, drawn over a `w`×`h` screen.
-    fn picker_text(shown: Appearance, w: u16, h: u16) -> Vec<String> {
+    fn picker_text(shown: AppearancePick, w: u16, h: u16) -> Vec<String> {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
@@ -157,18 +157,18 @@ mod tests {
     }
 
     /// With no look, the picker is the theme picker, every row of it; with
-    /// one, it says Appearance and shows the look on its row over the
+    /// one, it says AppearancePick and shows the look on its row over the
     /// themes, which keep their rows below it.
     #[test]
     fn a_look_row_sits_over_the_themes_only_where_there_is_a_look() {
         use pixtuoid_scene::look::LookKind;
         use pixtuoid_scene::theme::ALL_THEMES;
-        let theme_only = picker_text(Appearance::default(), 80, 40);
+        let theme_only = picker_text(AppearancePick::default(), 80, 40);
         assert!(theme_only.iter().any(|r| r.contains("Theme [")));
         assert!(!theme_only.iter().any(|r| r.contains("Look")));
         for look in LookKind::ALL.iter().copied() {
             let rows = picker_text(
-                Appearance {
+                AppearancePick {
                     theme: 0,
                     look: Some(look),
                 },
@@ -176,7 +176,7 @@ mod tests {
                 40,
             );
             let at = |text: &str| rows.iter().position(|r| r.contains(text));
-            let title = at("Appearance [").expect("titled");
+            let title = at("AppearancePick [").expect("titled");
             let row = at(&format!("Look  \u{2039} {} \u{203a}", look.display_name()))
                 .expect("the look row");
             let first = at(ALL_THEMES[0].display_name).expect("the themes");

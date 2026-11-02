@@ -70,9 +70,9 @@ fn boot_tui(cfg: &RunConfig) -> Result<Boot> {
     let plan = crate::graphics::plan_this_terminal(cfg.look, pack.max_density_variant(), true);
     tracing::info!(look = ?cfg.look, plan = ?plan, "graphics plan");
     let link = crate::graphics::Link::of_env();
-    let motion = enum_map::EnumMap::from_fn(|look| cfg.motion.or(plan.motion(look, link)));
-    tracing::info!(mode = ?cfg.motion, motion = ?motion, "motion");
-    Ok((pack, plan, motion))
+    let motions = enum_map::EnumMap::from_fn(|look| cfg.motion.or(plan.motion(look, link)));
+    tracing::info!(mode = ?cfg.motion, motions = ?motions, "motion");
+    Ok((pack, plan, motions))
 }
 
 async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSignal>> {
@@ -110,7 +110,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
             let pipeline = super::pipeline::spawn_pipeline(socket_path, connected, boot_caps, sink);
             headless_loop(log, pipeline.health_rx).await
         }
-        Some((pack, plan, motion)) => {
+        Some((pack, plan, motions)) => {
             let (sink, scene_rx) = SceneSink::latest(boot_caps);
             let super::pipeline::Pipeline {
                 health_rx,
@@ -125,7 +125,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
                 scene_rx,
                 pack,
                 plan,
-                motion,
+                motions,
                 floor_caps,
                 theme,
                 config_path,

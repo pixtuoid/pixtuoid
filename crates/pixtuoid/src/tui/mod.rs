@@ -85,8 +85,12 @@ pub(crate) fn route_key<B: ratatui::backend::Backend<Error: Send + Sync + 'stati
 /// publish is a monotone `fetch_max`, so a repeat with identical inputs could only
 /// rewrite the same values.
 struct FloorCapacitySweep {
-    last: Option<(u16, u16, Option<usize>)>,
+    last: Option<(Offices, Option<usize>)>,
 }
+
+/// The office each look a run can draw lays out, where it has one.
+type Offices =
+    enum_map::EnumMap<pixtuoid_scene::look::LookKind, Option<pixtuoid_scene::layout::Size>>;
 
 impl FloorCapacitySweep {
     fn new() -> Self {
@@ -96,18 +100,16 @@ impl FloorCapacitySweep {
     /// Returns whether it actually recomputed (`false` = served from the memo).
     fn publish(
         &mut self,
-        buf_w: u16,
-        buf_h: u16,
+        offices: Offices,
         desk_cap: Option<usize>,
         caps: &[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS],
     ) -> bool {
-        if self.last == Some((buf_w, buf_h, desk_cap)) {
+        if self.last == Some((offices, desk_cap)) {
             return false;
         }
-        self.last = Some((buf_w, buf_h, desk_cap));
-        for (floor_idx, cap_slot) in caps.iter().enumerate() {
-            let seed = pixtuoid_scene::floor::floor_seed(floor_idx);
-            let mut capacity = pixtuoid_scene::floor::floor_capacity(buf_w, buf_h, seed);
+        self.last = Some((offices, desk_cap));
+        let seats = crate::runtime::floor_capacities(&offices);
+        for (cap_slot, mut capacity) in caps.iter().zip(seats) {
             if let Some(cap) = desk_cap {
                 capacity = capacity.min(cap);
             }
@@ -356,7 +358,7 @@ pub(crate) struct TuiSession {
     pub plan: crate::graphics::Plan,
     /// How the office moves in each look, which `boot_tui` resolved beside
     /// the plan.
-    pub motion: enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
+    pub motions: enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
     pub floor_caps: Arc<[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS]>,
     pub theme: &'static theme::Theme,
     pub config_path: std::path::PathBuf,
@@ -435,10 +437,10 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
 }
 
 /// Hand `renderer` the half-blocks' painter on this terminal and the cutaway
-/// `plan` names, each look moving as `motion` says, starting in the plan's.
+/// `plan` names, each look moving as `motions` says, starting in the plan's.
 fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
-    (plan, motion): (
+    (plan, motions): (
         crate::graphics::Plan,
         enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
     ),
@@ -456,7 +458,7 @@ fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     let tiles = plan
         .cutaway()
         .map(|c| cutaway::TileCutaway::new(c.fit, c.cell, c.route, Box::new(out.clone())));
-    renderer.set_looks(motion, tiles, plan.start());
+    renderer.set_looks(motions, tiles, plan.start());
     if plan.start() == LookKind::Classic {
         tracing::info!(plan = ?plan, "painting classic");
     }
@@ -475,7 +477,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         mut scene_rx,
         pack,
         plan,
-        motion,
+        motions,
         floor_caps,
         theme,
         config_path,
@@ -500,7 +502,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     let quit = arms.signalled();
     tokio::pin!(quit);
     let mut renderer = TuiRenderer::new(term, theme, pets, pack);
-    paint_plan(&mut renderer, (plan, motion), &out);
+    paint_plan(&mut renderer, (plan, motions), &out);
     renderer.present_through(out);
     // A LOCAL so EVERY exit (q / Ctrl-C / terminate / error) drops it and joins
     // the device thread it owns.
@@ -540,8 +542,8 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     renderer.set_volume_flash(audio_ctl.volume_flash(audio_now));
                     renderer.render(&snapshot, now)?;
 
-                    if let Some(layout) = renderer.cached_layout() {
-                        cap_sweep.publish(layout.buf_w, layout.buf_h, desk_cap, &floor_caps);
+                    if renderer.cached_layout().is_some() {
+                        cap_sweep.publish(renderer.seat_extents(), desk_cap, &floor_caps);
                     }
                 }
                 event = events.next() => match event.context("terminal input closed")?? {
@@ -779,14 +781,44 @@ mod capacity_sweep_tests {
     const W: u16 = 192;
     const H: u16 = 158;
 
+    /// A run whose only office is the classic's, `w`×`h`.
+    fn classic(w: u16, h: u16) -> super::Offices {
+        enum_map::enum_map! {
+            pixtuoid_scene::look::LookKind::Classic => Some(pixtuoid_scene::layout::Size { w, h }),
+            pixtuoid_scene::look::LookKind::Cutaway => None,
+        }
+    }
+
+    /// A run that can draw two offices seats each floor at the fewest desks
+    /// either holds.
+    #[test]
+    fn two_offices_seat_each_floor_at_the_fewer_desks() {
+        use pixtuoid_scene::look::LookKind;
+        let small = pixtuoid_scene::layout::Size { w: W / 2, h: H / 2 };
+        let mut offices = classic(W, H);
+        offices[LookKind::Cutaway] = Some(small);
+        let caps = caps();
+        FloorCapacitySweep::new().publish(offices, None, &caps);
+        for (i, slot) in caps.iter().enumerate() {
+            let seed = pixtuoid_scene::floor::floor_seed(i);
+            let want = pixtuoid_scene::floor::floor_capacity(W, H, seed).min(
+                pixtuoid_scene::floor::floor_capacity(small.w, small.h, seed),
+            );
+            assert_eq!(slot.load(Ordering::Relaxed), want, "floor {i}");
+        }
+    }
+
     #[test]
     fn a_repeat_frame_serves_the_memo_instead_of_recomputing() {
         let caps = caps();
         let mut sweep = FloorCapacitySweep::new();
-        assert!(sweep.publish(W, H, None, &caps), "first frame computes");
+        assert!(
+            sweep.publish(classic(W, H), None, &caps),
+            "first frame computes"
+        );
         let published: Vec<usize> = caps.iter().map(|c| c.load(Ordering::Relaxed)).collect();
         assert!(
-            !sweep.publish(W, H, None, &caps),
+            !sweep.publish(classic(W, H), None, &caps),
             "an unchanged frame must skip the whole MAX_FLOORS layout sweep"
         );
         let after: Vec<usize> = caps.iter().map(|c| c.load(Ordering::Relaxed)).collect();
@@ -800,10 +832,13 @@ mod capacity_sweep_tests {
     fn a_resize_or_a_new_cap_recomputes() {
         let caps = caps();
         let mut sweep = FloorCapacitySweep::new();
-        sweep.publish(W, H, None, &caps);
-        assert!(sweep.publish(W, H - 2, None, &caps), "a resize recomputes");
+        sweep.publish(classic(W, H), None, &caps);
         assert!(
-            sweep.publish(W, H - 2, Some(4), &caps),
+            sweep.publish(classic(W, H - 2), None, &caps),
+            "a resize recomputes"
+        );
+        assert!(
+            sweep.publish(classic(W, H - 2), Some(4), &caps),
             "a different desk cap recomputes"
         );
     }
@@ -812,7 +847,7 @@ mod capacity_sweep_tests {
     fn published_capacities_are_the_per_floor_auto_capacity_clamped_by_the_cap() {
         let caps = caps();
         let mut sweep = FloorCapacitySweep::new();
-        sweep.publish(W, H, None, &caps);
+        sweep.publish(classic(W, H), None, &caps);
         for (i, slot) in caps.iter().enumerate() {
             let want =
                 pixtuoid_scene::floor::floor_capacity(W, H, pixtuoid_scene::floor::floor_seed(i));
@@ -821,7 +856,7 @@ mod capacity_sweep_tests {
         }
         let capped: [AtomicUsize; MAX_FLOORS] = std::array::from_fn(|_| AtomicUsize::new(0));
         let mut sweep = FloorCapacitySweep::new();
-        sweep.publish(W, H, Some(3), &capped);
+        sweep.publish(classic(W, H), Some(3), &capped);
         for (i, slot) in capped.iter().enumerate() {
             assert_eq!(
                 slot.load(Ordering::Relaxed),

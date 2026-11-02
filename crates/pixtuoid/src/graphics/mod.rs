@@ -264,9 +264,9 @@ impl clap::ValueEnum for LookMode {
 }
 
 impl LookMode {
-    /// The mode that starts a run in `picked`: the classic is `classic`, and
-    /// the cutaway keeps the asking of the mode it is picked over, `auto`'s
-    /// for the classic, which asks where `auto` does.
+    /// The mode that starts a run in `picked`: `classic` for the classic; for
+    /// the cutaway, `self`, which probes the terminal as it did, except that
+    /// `classic` becomes `auto`, which probes it where `classic` does.
     pub(crate) fn picking(self, picked: LookKind) -> Self {
         match (picked, self) {
             (LookKind::Classic, _) => Self::Named(LookKind::Classic),
@@ -832,17 +832,14 @@ pub(crate) fn probe(_ask: bool) -> Probe {
 }
 
 impl Plan {
-    /// The office's logical extent on a terminal `term` cells big: what the
-    /// plan's painter lays out there.
-    pub(crate) fn office_extent(self, term: TermSize) -> Size {
-        match self {
-            Plan::Cutaway(CutawayPlan { fit, cell, .. }) => {
-                fit.over(image_px(cell, image_area(term))).logical()
-            }
-            Plan::ClassicNamed { .. } | Plan::Classic { .. } => {
-                let (w, h) = crate::tui::renderer::scene_buf_size(term.width, term.height);
-                Size { w, h }
-            }
+    /// The office each look a run of this plan can draw lays out on a
+    /// terminal `term` cells big: a floor seats no more desks than the fewest
+    /// any of them holds.
+    pub(crate) fn seat_extents(self, term: TermSize) -> enum_map::EnumMap<LookKind, Option<Size>> {
+        let (w, h) = crate::tui::renderer::scene_buf_size(term.width, term.height);
+        enum_map::enum_map! {
+            LookKind::Classic => Some(Size { w, h }),
+            LookKind::Cutaway => self.cutaway().map(|c| c.office_extent(term)),
         }
     }
 
@@ -915,6 +912,15 @@ impl Plan {
             Plan::ClassicNamed { cutaway } => Some(named_why(cutaway)),
             Plan::Classic { reason } => Some(reason.describe()),
         }
+    }
+}
+
+impl CutawayPlan {
+    /// Its office's logical extent on a terminal `term` cells big.
+    pub(crate) fn office_extent(self, term: TermSize) -> Size {
+        self.fit
+            .over(image_px(self.cell, image_area(term)))
+            .logical()
     }
 }
 
@@ -1429,13 +1435,19 @@ mod tests {
             capable(CELL_8X16),
         );
         assert!(plan.cutaway().is_some(), "a local terminal draws one");
+        let seats = plan.seat_extents(AREA);
         assert_eq!(
-            plan.office_extent(AREA),
+            seats[LookKind::Classic],
             Plan::Classic {
                 reason: ClassicReason::NoAnswer
             }
-            .office_extent(AREA),
-            "the run lays out the office it starts in"
+            .seat_extents(AREA)[LookKind::Classic],
+            "the office it starts in"
+        );
+        assert_eq!(
+            seats[LookKind::Cutaway],
+            plan.cutaway().map(|c| c.office_extent(AREA)),
+            "and the one it can switch to"
         );
     }
 

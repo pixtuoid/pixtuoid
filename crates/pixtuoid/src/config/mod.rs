@@ -288,7 +288,7 @@ where
 /// Save the appearance picker's commit: `theme`, and the look `picked`
 /// where the picker offered one. The look is written as the mode
 /// [`LookMode::picking`](crate::graphics::LookMode::picking) makes of the
-/// one the file holds, a `--look` this run took aside, and only where that
+/// `look` the file holds (never this run's `--look`), and only where that
 /// changes it.
 pub(crate) fn save_appearance(
     path: &Path,
