@@ -1628,12 +1628,20 @@ fn a_redraw_is_never_held() {
 #[test]
 fn the_pacing_label_follows_what_drew_each_frame() {
     let (mut r, _wire) = kitty(140, 60);
+    let out = crate::tui::FrameOut::new(Wire::default(), false);
+    r.present_through(out.clone());
+    r.set_cutaway(TileCutaway::new(
+        fit(140, 60),
+        CELL,
+        crate::graphics::Route::direct(ImageProtocol::Kitty, true),
+        Box::new(out),
+    ));
     let scene = office();
     let cadence = ImageProtocol::Kitty.cadence();
     let half_blocks = crate::jank::Painter {
         look: "classic",
         scale: 1,
-        tmux: true,
+        tmux: false,
         terminal: Some("ghostty".into()),
         sync: true,
     };
@@ -1645,8 +1653,8 @@ fn the_pacing_label_follows_what_drew_each_frame() {
     let cutaway = r.jank.painter();
     assert_eq!(
         (cutaway.terminal.as_deref(), cutaway.sync, cutaway.tmux),
-        (Some("ghostty"), true, false),
-        "the terminal's, over the route's tmux"
+        (Some("ghostty"), true, true),
+        "the half-blocks' terminal and sync, the route's tmux"
     );
     r.terminal.backend_mut().zoom(CellSize {
         w: CELL.w * 2,
