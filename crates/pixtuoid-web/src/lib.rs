@@ -771,7 +771,7 @@ mod tests {
     }
 
     /// Device pixel surfaces the site meets: laptops at DPR 1, a Retina laptop,
-    /// 4K, a phone held both ways, and narrow DPR 1 windows.
+    /// 4K, a phone held both ways, and short or narrow DPR 1 windows.
     const SURFACES: &[(u32, u32)] = &[
         (1440, 900),
         (1366, 768),
@@ -785,6 +785,7 @@ mod tests {
         (844, 390),
         (390, 844),
         (568, 320),
+        (1366, 650),
     ];
 
     fn fit_of(o: &Office, (pw, ph): (u32, u32)) -> (u32, u32, u32) {
@@ -1425,10 +1426,10 @@ mod tests {
     #[test]
     fn capacity_tracks_the_canvas_layout_so_no_agent_is_stranded_unpainted() {
         use pixtuoid_scene::layout::SceneLayout;
-        // The site renders `UNITS_H` units tall; this width seats the full cast
-        // plus at least one spare. The free-desk count is DERIVED, not a size
+        // This width at the site's target height seats the full cast plus at
+        // least one spare. The free-desk count is DERIVED, not a size
         // literal — the density pass re-tunes desks-per-floor out from under a literal.
-        let (w, h) = (192u32, 130u32);
+        let (w, h) = (192u32, FRAMING_UNITS_H);
         let mut o = office();
         let mut t = 0u64;
         while t <= 30_000 {

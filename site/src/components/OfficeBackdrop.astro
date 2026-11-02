@@ -395,9 +395,9 @@ const officeDriverUrl = asset('office-driver.js');
     let pausedAt = 0;
 
     // The office the engine fits to the backdrop's device pixels, and the canvas box that shows its frame at that
-    // whole upscale from the backdrop's corner, its crop at the far edges. CSS pixels times the ratio, not the
-    // device-pixel box: Chromium reports that box unscaled under an emulated ratio, which then disagrees with the
-    // raster the e2e suite reads.
+    // whole upscale from the backdrop's corner, its crop at the far edges. CSS pixels times the ratio, the one
+    // measure every engine has: Safari has no device-pixel content box (MDN browser-compat-data,
+    // api/ResizeObserverEntry.json).
     let fitSeq = 0;
     // Chromium lays a box out in 64ths of a CSS px (`LayoutUnit`, blink's layout_unit.h:473), so a box finer than
     // that rasterizes a device pixel short and shifts every frame pixel past it: the office grows to a whole CSS

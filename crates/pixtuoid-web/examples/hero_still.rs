@@ -1,7 +1,6 @@
 //! Render ONE deterministic frame of the live-office hero to a PNG — the site
 //! backdrop's poster and the VIBING-playground poster. It renders the ACTUAL
-//! wasm hero (same `Office`, same layout, same looped script) so the
-//! poster→canvas crossfade dissolves in place rather than reframing.
+//! wasm hero (same `Office`, same layout, same looped script).
 //!
 //! Determinism: a FIXED `--t0-ms` (or `--hour`, which maps onto a FIXED
 //! reference calendar date rather than "now") plus a fixed `--advance-ms` give
@@ -46,7 +45,7 @@ fn positional_out(args: &[String]) -> Option<&str> {
     None
 }
 
-// The wasm hero's layout extent for a 16:9 viewport; the PNG is `Office::scale` times it.
+// A 16:9 office at the height the live canvas's `Office::fit` aims for; the PNG is `Office::scale` times it.
 const DEFAULT_WIDTH: u32 = 231;
 const DEFAULT_HEIGHT: u32 = 130;
 // Far enough into the loop that the cast has walked in and seated, rather than

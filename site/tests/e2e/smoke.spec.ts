@@ -309,7 +309,8 @@ async function officeBox(page: Page) {
 
 /**
  * Each frame pixel spans exactly `upscale` device pixels a side, on whole device pixels, and the box covers the
- * backdrop. Within one of Chromium's layout units (1/64 CSS px), the grain a CSS box reports.
+ * backdrop. Within one layout unit, the grain a CSS box reports (`LayoutUnit = FixedPoint<6, int32_t>`, 1/64 CSS px,
+ * blink's layout_unit.h:473).
  */
 async function expectWholeDevicePixels(page: Page) {
   const grain = (b: { dpr: number }) => b.dpr / 64;
