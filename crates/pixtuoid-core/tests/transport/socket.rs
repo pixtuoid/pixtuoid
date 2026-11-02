@@ -447,3 +447,15 @@ async fn hook_router_tee_captures_child_ends_from_the_shared_socket() {
     );
     task.abort();
 }
+
+// Nothing can listen there, so it must not read as a listener gone quiet.
+#[tokio::test]
+async fn an_endpoint_too_long_to_bind_is_unbindable() {
+    use pixtuoid_core::source::hook::{EndpointStatus, endpoint_status};
+    let path = std::path::PathBuf::from(format!("/tmp/{}.sock", "x".repeat(200)));
+    assert!(matches!(
+        endpoint_status(&path).await,
+        EndpointStatus::Unbindable(_)
+    ));
+    assert!(HookSocketListener::bind(path).await.is_err());
+}

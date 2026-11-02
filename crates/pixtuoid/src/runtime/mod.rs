@@ -82,6 +82,10 @@ impl ConnectedSources {
     pub(crate) fn snapshot(&self) -> HashSet<String> {
         self.guard().clone()
     }
+    /// The set itself, for the hook owner's status to read at answer time.
+    pub(crate) fn shared(&self) -> pixtuoid_core::source::hook::LiveConnected {
+        Arc::clone(&self.0)
+    }
     pub(crate) fn set(&self, source_id: &str, connected: bool) {
         let mut g = self.guard();
         if connected {

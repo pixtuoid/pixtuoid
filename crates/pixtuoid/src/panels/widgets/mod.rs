@@ -10,7 +10,7 @@ mod tooltip;
 mod version_popup;
 mod welcome;
 
-pub(crate) use connection::paint_connection_panel;
+pub(crate) use connection::{fmt_age, paint_connection_panel};
 pub(crate) use dashboard::paint_dashboard;
 pub use footer::footer_context;
 pub(crate) use footer::paint_footer;

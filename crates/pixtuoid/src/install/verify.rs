@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// How a managed hook command references the shim binary — extracted PURELY from
 /// the config content; the filesystem check is layered on by
 /// `install::verify_target`, the only part with I/O.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum ShimRef {
     Absolute(PathBuf),
     /// A bare name relying on PATH resolution → soft check only: a doctor-process
@@ -100,6 +100,8 @@ pub(crate) struct SchemaVerifyResult {
     pub issues: Vec<String>,
     /// Shown by `doctor`, never the boot warning.
     pub notes: Vec<String>,
+    /// Every shim this install's hooks run, for `doctor` to run.
+    pub shims: Vec<ShimRef>,
 }
 
 impl SchemaVerifyResult {
@@ -446,8 +448,8 @@ mod tests {
         let clean = SchemaVerifyResult::default();
         assert!(clean.is_sound());
         let soft = SchemaVerifyResult {
-            issues: vec![],
             notes: vec!["pixtuoid-hook not on PATH".into()],
+            ..Default::default()
         };
         assert!(
             soft.is_sound(),
@@ -455,7 +457,7 @@ mod tests {
         );
         let hard = SchemaVerifyResult {
             issues: vec!["shim missing".into()],
-            notes: vec![],
+            ..Default::default()
         };
         assert!(!hard.is_sound());
     }

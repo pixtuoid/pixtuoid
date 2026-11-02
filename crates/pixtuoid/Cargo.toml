@@ -65,6 +65,8 @@ anyhow             = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 which              = "8"
+# The throwaway hook endpoint `doctor` proves the shim against.
+tempfile           = { workspace = true }
 # clock feature gives us Local::now() w/ system timezone for the wall clock.
 chrono             = { workspace = true, features = ["clock"] }
 open               = "5"
@@ -172,7 +174,6 @@ windows-sys = { workspace = true, features = [
 # `tests/wire_to_pixels.rs` drives real fixture bytes through the shared
 # `pixtuoid_core::harness` pipeline, which is behind core's dev-only feature.
 pixtuoid-core = { path = "../pixtuoid-core", version = "0.21.0", features = ["harness"] }
-tempfile = { workspace = true }
 temp-env = { workspace = true }
 # tests/text_coverage.rs parses the source of everything that renders text.
 syn         = { workspace = true }

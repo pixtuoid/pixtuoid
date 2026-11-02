@@ -96,7 +96,7 @@ pub(crate) fn spawn_pipeline(
     // gateway-pid deaths into the SAME channel; the reducer task merges both.
     let (presence_tx, presence_rx) = mpsc::unbounded_channel();
     let presence_exit_watch = daemon::spawn_presence_exit_watch(presence_tx.clone());
-    let sources = build_source_set(socket_path, Some(presence_tx));
+    let sources = build_source_set(socket_path, Some(presence_tx), Some(connected.shared()));
 
     let (tx, rx) =
         mpsc::channel::<(Transport, AgentEvent)>(pixtuoid_core::source::EVENT_CHANNEL_CAPACITY);

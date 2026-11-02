@@ -87,6 +87,7 @@ pub enum EndpointStatus {
     /// Something took the connection and gave no status: an older pixtuoid, or
     /// an owner too busy to read.
     Silent,
+    /// The owner answered.
     Live(HookActivity),
 }
 
@@ -248,13 +249,15 @@ pub(super) async fn subscribe(path: &Path) -> Result<Payloads> {
 
 /// Ask `path`'s owner what it knows, changing nothing there.
 pub async fn endpoint_status(path: &Path) -> EndpointStatus {
-    use std::io::ErrorKind::{ConnectionRefused, NotFound, PermissionDenied};
+    use std::io::ErrorKind::{ConnectionRefused, InvalidInput, NotFound, PermissionDenied};
     let query = async {
         match connect(path).await {
             Ok(conn) => status_over(conn).await,
             Err(e) if matches!(e.kind(), NotFound | ConnectionRefused) => {
                 imp::bind_refusal(path).map_or(EndpointStatus::Absent, EndpointStatus::Unbindable)
             }
+            // A path past `sun_path`'s limit, which a bind can't take either.
+            Err(e) if e.kind() == InvalidInput => EndpointStatus::Unbindable(e.to_string()),
             Err(e) if e.kind() == PermissionDenied => EndpointStatus::Foreign,
             Err(_) => EndpointStatus::Silent,
         }
