@@ -27,16 +27,18 @@ pub fn hook(bytes: &[u8]) -> Driven {
 /// `<source>\n<path>\n<transcript>`: everything `source`'s registry row reads of
 /// a transcript, then [`Drive`]. A source by name, not by index, so a new row
 /// leaves every accumulated input meaning what it did, and a path because a
-/// nested transcript's parent is its path's. `None` when a header is missing or
-/// the first names no transcript source.
+/// nested transcript's parent is its path's. `None` when a header is missing, the
+/// first names no transcript source, or the watcher wouldn't read the path.
 pub fn transcript(bytes: &[u8]) -> Option<Driven> {
     let mut parts = bytes.splitn(3, |b| *b == b'\n');
     let source = std::str::from_utf8(parts.next()?).ok()?;
     let path = std::str::from_utf8(parts.next()?).ok()?;
     let body = parts.next()?;
     let row = registry::transcript_for(source)?;
+    if !(row.path_filter)(Path::new(path)) {
+        return None;
+    }
     let drive = Drive::transcript(source, path)?.seeded();
-    let _ = (row.path_filter)(Path::new(path));
     let parsed: Vec<Value> = lines(whole(body))
         .filter_map(Result::ok)
         .filter_map(|line| serde_json::from_str(line).ok())
@@ -280,6 +282,12 @@ mod tests {
             drive("/s/plain/task.jsonl"),
             "only a nesting the whole path shows tells these apart"
         );
+    }
+
+    #[test]
+    fn a_path_the_watcher_would_not_read_drives_nothing() {
+        assert!(transcript(b"grok\n/s/updates.jsonl\n{}\n").is_some());
+        assert!(transcript(b"grok\n/s/chat_history.jsonl\n{}\n").is_none());
     }
 
     #[test]
