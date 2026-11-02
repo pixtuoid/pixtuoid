@@ -470,6 +470,36 @@ fn the_scaled_classic_is_the_half_blocks_blown_up() {
     assert_eq!(big_text, unit_text, "its text is still the host's");
 }
 
+/// Baked, the classic at a whole multiple of its density is its render at
+/// the density upscaled, every pixel a square of the multiple: what a pixel
+/// painter's fit shows.
+#[test]
+fn the_baked_classic_upscales_whole() {
+    let (pack, density) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let frame = |scale| {
+        let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+        let look = scaled(scale, WorldText::Baked);
+        render(&mut floor, office.stores(), look, inputs(&scene, t0)).expect("lays out");
+        floor.raster.pixels().expect("a frame").clone()
+    };
+    let k = 2;
+    let (small, big) = (
+        frame(density),
+        frame(RenderScale::new(density.get() * k).expect("nonzero")),
+    );
+    assert_eq!(
+        (big.width(), big.height()),
+        (small.width() * k, small.height() * k)
+    );
+    for y in 0..big.height() {
+        for x in 0..big.width() {
+            assert_eq!(big.get(x, y), small.get(x / k, y / k), "({x}, {y})");
+        }
+    }
+}
+
 /// Baked, the classic's text is the cutaway's paint of its runs, in its
 /// host text's order, over its art, and no host sets any.
 #[test]

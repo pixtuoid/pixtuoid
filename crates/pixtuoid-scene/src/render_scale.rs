@@ -145,8 +145,8 @@ impl Default for RenderScale {
 /// <https://docs.godotengine.org/en/stable/tutorials/rendering/multiple_resolutions.html>),
 /// pixel-identical to a render at the scale itself (pinned by
 /// `the_cutaway_paints_whole_art_pixels` and
-/// `the_scaled_classic_is_the_half_blocks_blown_up`). The office takes the
-/// surface's shape; the sub-unit remainder is the painter's margin.
+/// `the_baked_classic_upscales_whole`). The office takes the surface's
+/// shape; the sub-unit remainder is the painter's margin.
 ///
 /// The cutaway's densest art, not whichever density the surface lands nearest: the one
 /// render draws every piece at one density, and a scale only a coarser density
