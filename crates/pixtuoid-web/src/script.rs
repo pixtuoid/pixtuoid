@@ -117,6 +117,7 @@ fn usage(i: usize, at_ms: u64, fresh_tokens: u64) -> Beat {
         event: AgentEvent::Usage {
             agent_id: cast_id(i),
             fresh_tokens,
+            reading_id: None,
         },
     }
 }

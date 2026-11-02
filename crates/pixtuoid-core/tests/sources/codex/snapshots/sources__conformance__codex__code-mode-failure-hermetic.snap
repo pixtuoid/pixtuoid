@@ -3,73 +3,75 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - TurnStart:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     turn:
-      Id: 01a18d51-bc51-7e93-89c7-cc0c4c6c3158
+      Id: 01a199b7-6df2-7ac0-9d36-1720d5cbad03
 - ModelInfo:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     model: gpt-5.5
     effort: high
 - ToolUseStart:
-    agent_id: 7320214934558936792
-    tool_use_id: call_fRA7V6bO5qcRxN6x
+    agent_id: 12391018448378321406
+    tool_use_id: call_Q5w5fS_7hyhzGauH
     detail:
       Generic:
         display: "exec: exec_command"
 - ToolUseEnd:
-    agent_id: 7320214934558936792
-    tool_use_id: call_fRA7V6bO5qcRxN6x
+    agent_id: 12391018448378321406
+    tool_use_id: call_Q5w5fS_7hyhzGauH
 - Usage:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     fresh_tokens: 19
+    reading_id: "19"
 - Usage:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     fresh_tokens: 19
+    reading_id: "38"
 - TurnEnd:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     turn:
-      Id: 01a18d51-bc51-7e93-89c7-cc0c4c6c3158
+      Id: 01a199b7-6df2-7ac0-9d36-1720d5cbad03
 - SessionStart:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     source: codex
-    session_id: 01a18d51-bc09-70a1-b1a3-51d2c9f22ef9
+    session_id: 01a199b7-6dc1-7753-b101-8cd4982d048e
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     model: gpt-5.5
     effort: ~
 - SessionStart:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     source: codex
-    session_id: 01a18d51-bc09-70a1-b1a3-51d2c9f22ef9
+    session_id: 01a199b7-6dc1-7753-b101-8cd4982d048e
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     source: codex
-    session_id: 01a18d51-bc09-70a1-b1a3-51d2c9f22ef9
+    session_id: 01a199b7-6dc1-7753-b101-8cd4982d048e
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 7320214934558936792
-    tool_use_id: exec-18385af7-0784-41f1-970f-1215b6f85d00
+    agent_id: 12391018448378321406
+    tool_use_id: exec-2d86ac76-f5b2-4eae-b622-d48543f59620
     tool_name: Bash
     turn:
-      Id: 01a18d51-bc51-7e93-89c7-cc0c4c6c3158
+      Id: 01a199b7-6df2-7ac0-9d36-1720d5cbad03
 - Identity:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     source: codex
-    session_id: 01a18d51-bc09-70a1-b1a3-51d2c9f22ef9
+    session_id: 01a199b7-6dc1-7753-b101-8cd4982d048e
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionResolved:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     by:
-      Call: exec-18385af7-0784-41f1-970f-1215b6f85d00
+      Call: exec-2d86ac76-f5b2-4eae-b622-d48543f59620
 - UserActionResolved:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     by:
       Turn:
-        Id: 01a18d51-bc51-7e93-89c7-cc0c4c6c3158
+        Id: 01a199b7-6df2-7ac0-9d36-1720d5cbad03
 - SessionEnd:
-    agent_id: 7320214934558936792
+    agent_id: 12391018448378321406
     as_child: false

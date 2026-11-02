@@ -341,9 +341,9 @@ pub(crate) fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -
             Some(turn) => AgentEvent::keyed_turn_end(agent_id, turn),
             None => AgentEvent::turn_end(agent_id),
         }],
-        // `last_token_usage` is that turn's reading; the cumulative twin
-        // `total_token_usage` must NOT be read — the reducer accumulates
-        // deltas, so summing a running total would double-count. codex's
+        // `last_token_usage` is the reading; the cumulative twin
+        // `total_token_usage` only names it, since the reducer accumulates
+        // deltas and summing a running total would double-count. codex's
         // `input_tokens` INCLUDES the cached share (verified), so fresh input
         // = input − cached, saturating because upstream reporting quirks must
         // not wrap. `output_tokens` already holds `reasoning_output_tokens`
@@ -360,9 +360,19 @@ pub(crate) fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -
                     .saturating_add(field("output_tokens"))
             });
             if fresh > 0 {
+                // A `token_count` can resend its reading, and each new reading adds
+                // to the running total (`codex-rs/protocol/src/protocol.rs:2534` at
+                // rust-v0.166.0), so that total names it.
+                let total = payload
+                    .and_then(|p| p.get("info"))
+                    .and_then(|i| i.get("total_token_usage"))
+                    .and_then(|u| u.get("total_tokens"))
+                    .and_then(Value::as_u64)
+                    .filter(|total| *total > 0);
                 vec![AgentEvent::Usage {
                     agent_id,
                     fresh_tokens: fresh,
+                    reading_id: total.map(|total| total.to_string()),
                 }]
             } else {
                 vec![]
@@ -1034,6 +1044,28 @@ mod tests {
             ),
             "expected fresh=2479 from last_token_usage (never the totals), got {out:?}"
         );
+    }
+
+    /// A resend writes the same running total, and each new reading adds to it.
+    #[test]
+    fn a_token_count_is_named_by_its_running_total() {
+        let reading_id = |total: Value| {
+            let out = ev(
+                json!({"type":"event_msg","payload":{"type":"token_count","info":{
+                "total_token_usage": total,
+                "last_token_usage":{"input_tokens":10,"output_tokens":7}}}}),
+            );
+            match out.as_slice() {
+                [AgentEvent::Usage { reading_id, .. }] => reading_id.clone(),
+                other => panic!("one reading, got {other:?}"),
+            }
+        };
+        assert_eq!(
+            reading_id(json!({"total_tokens": 42})),
+            Some("42".to_string())
+        );
+        assert_eq!(reading_id(json!({"total_tokens": 0})), None);
+        assert_eq!(reading_id(json!({})), None);
     }
 
     #[test]

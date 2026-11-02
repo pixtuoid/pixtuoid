@@ -366,6 +366,7 @@ fn t_decode_lifecycle(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent>
         Some("usage") => vec![AgentEvent::Usage {
             agent_id,
             fresh_tokens: 1,
+            reading_id: None,
         }],
         _ => vec![],
     }
