@@ -2341,7 +2341,6 @@ test('hero prompt ink (default and every chip name) clears WCAG AA at the real o
         `${theme} ${k === 0 ? 'default prompt' : supportedSources[k - 1].name}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5)
     );
-    // The link's own hover ink is a state of a new element, so it clears AA too.
     const link = (await page.locator('.hero__prompt-default').boundingBox())!;
     await page.mouse.move(link.x + 8, link.y + link.height / 2);
     const hovered = await paintedContrast(page, '.hero__prompt-default');
