@@ -431,17 +431,10 @@ fn step_look(
     look: pixtuoid_scene::look::LookKind,
     forward: bool,
 ) -> pixtuoid_scene::look::LookKind {
+    use enum_map::Enum;
     use pixtuoid_scene::look::LookKind;
     let n = LookKind::ALL.len();
-    let at = LookKind::ALL
-        .iter()
-        .position(|&l| l == look)
-        .unwrap_or_default();
-    LookKind::ALL[if forward {
-        (at + 1) % n
-    } else {
-        (at + n - 1) % n
-    }]
+    LookKind::from_usize((look.into_usize() + if forward { 1 } else { n - 1 }) % n)
 }
 
 /// [`Host::set_look`], a failure logged: the frame after repaints anyway.

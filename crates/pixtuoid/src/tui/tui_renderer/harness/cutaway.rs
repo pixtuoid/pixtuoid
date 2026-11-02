@@ -1985,3 +1985,67 @@ fn a_fall_back_frame_is_inside_the_window_it_opens() {
         "{classic}"
     );
 }
+
+/// The renderer the TUI's boot hands `plan`, each look moving as `motions`
+/// says, its transmits on the returned wire.
+fn booted(
+    plan: crate::graphics::Plan,
+    motions: enum_map::EnumMap<LookKind, pixtuoid_scene::anim::Motion>,
+) -> (TuiRenderer<Window>, Wire) {
+    let mut r = TuiRenderer::new(
+        Terminal::new(Window::new(140, 60)).expect("terminal"),
+        normal_theme(),
+        vec![],
+        pack_arc(),
+    );
+    let wire = Wire::default();
+    let out = crate::tui::FrameOut::new(wire.clone(), false);
+    r.present_through(out.clone());
+    crate::tui::paint_plan(&mut r, (plan, motions), &out);
+    (r, wire)
+}
+
+/// A run that names the classic over a terminal that draws the cutaway
+/// boots in the classic, moving as the classic does and sending nothing,
+/// and keeps the cutaway it can switch to; a terminal with no cutaway boots
+/// in the classic whatever the plan starts in.
+#[test]
+fn a_named_classic_boots_in_the_classic_with_the_cutaway_at_hand() {
+    use pixtuoid_scene::anim::Motion;
+    let motions = enum_map::enum_map! {
+        LookKind::Cutaway => Motion::Calm,
+        LookKind::Classic => Motion::Full,
+    };
+    let cutaway = crate::graphics::CutawayPlan {
+        fit: fit(140, 60),
+        route: crate::graphics::Route::direct(ImageProtocol::Kitty, false),
+        cell: CELL,
+        chosen: crate::graphics::Chosen::Answer,
+    };
+    let scene = office();
+    let cadence = ImageProtocol::Kitty.cadence();
+    let (mut r, wire) = booted(
+        crate::graphics::Plan::ClassicNamed {
+            cutaway: Some(cutaway),
+        },
+        motions,
+    );
+    assert_eq!((r.look, r.chrome.motion), (LookKind::Classic, Motion::Full));
+    r.render(&scene, t0()).expect("render");
+    assert_eq!(wire.take(), "", "the classic sends nothing");
+    r.set_look(LookKind::Cutaway).expect("switch");
+    r.render(&scene, t0() + cadence).expect("render");
+    assert!(wire.take().contains(TRANSMIT), "the cutaway at hand");
+    assert_eq!(r.chrome.motion, Motion::Calm);
+
+    let (r, _) = booted(
+        crate::graphics::Plan::Classic {
+            reason: crate::graphics::ClassicReason::NoAnswer,
+        },
+        motions,
+    );
+    assert_eq!(r.look, LookKind::Classic);
+    let mut r = r;
+    r.set_looks(motions, None, LookKind::Cutaway);
+    assert_eq!(r.look, LookKind::Classic, "no cutaway to start in");
+}
