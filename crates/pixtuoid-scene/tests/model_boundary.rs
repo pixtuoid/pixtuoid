@@ -362,7 +362,6 @@ fn the_cutaway_draws_only_its_list() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cutaway");
     let mut files = Vec::new();
     rust_files(&dir, &mut files);
-    assert!(!files.is_empty(), "the cutaway has sources");
     let tests: Vec<PathBuf> = files
         .iter()
         .flat_map(|file| test_modules(file, &std::fs::read_to_string(file).expect("source reads")))
@@ -372,6 +371,10 @@ fn the_cutaway_draws_only_its_list() {
             .iter()
             .any(|t| file.with_extension("") == *t || file.starts_with(t))
     });
+    assert!(
+        files.iter().any(|file| file.ends_with("paint.rs")),
+        "the cutaway's sources survive: {files:?}"
+    );
     let mut reads = Vec::new();
     for file in files {
         let name = file
