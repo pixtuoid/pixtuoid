@@ -160,7 +160,8 @@ impl SourceCaps {
 pub struct SourceDescriptor {
     /// Stable lowercase id — MUST equal the module's `SOURCE_NAME`.
     pub name: &'static str,
-    /// Its name on Sources and onboarding rows, notices, remedies, mascot card, site and a device.
+    /// Its name on Sources and onboarding rows, notices, install remedies, mascot card, site and a
+    /// device; doctor names a CLI by [`Self::name`].
     pub display_name: &'static str,
     /// Exactly 2 chars; applied at `SessionStart` and reinforced idempotently by
     /// the JSONL label derivers.
