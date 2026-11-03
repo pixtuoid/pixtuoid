@@ -1366,6 +1366,75 @@ fn a_live_slot_keeps_its_reading_ids_past_every_sweep() {
     assert_eq!(scene.agents[&id].tokens_used, 100);
 }
 
+/// A slot's call ids last its life, as its reading ids do: a rewrite re-reads
+/// calls of any age (omp's `moveTo`, its header-growing rewrites).
+#[test]
+fn a_live_slot_keeps_its_call_ids_past_every_sweep() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t1"),
+        Some("Bash"),
+        t0,
+        Transport::Jsonl,
+    );
+    let later = t0 + STALE_BLOCKED_TIMEOUT + Duration::from_secs(1);
+    r.tick(&mut scene, later);
+    assert!(scene.agents.contains_key(&id), "precondition: still live");
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t1"),
+        Some("Bash"),
+        later,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].tool_call_count, 1);
+}
+
+/// A resurrect keeps `tool_call_count`, so it keeps the call ids that built it.
+#[test]
+fn a_resurrect_keeps_its_call_ids() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t1"),
+        Some("Bash"),
+        t0,
+        Transport::Jsonl,
+    );
+    sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
+    let revived = t0 + EXIT_GRACE_WINDOW / 2;
+    let restart = AgentEvent::SessionStart {
+        agent_id: id,
+        source: "claude-code".into(),
+        session_id: "abc".into(),
+        cwd: PathBuf::from("/"),
+        parent_id: None,
+    };
+    r.apply(&mut scene, restart, revived, Transport::Hook);
+    let slot = &scene.agents[&id];
+    assert!(
+        slot.exiting_at.is_none() && slot.tool_call_count == 1,
+        "precondition: resurrected in place"
+    );
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t1"),
+        Some("Bash"),
+        revived,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].tool_call_count, 1);
+}
+
 #[test]
 fn usage_for_an_unknown_agent_never_registers() {
     let mut scene = SceneState::uniform(4);
