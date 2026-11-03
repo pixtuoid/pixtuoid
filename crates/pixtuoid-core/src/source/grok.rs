@@ -193,6 +193,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                     agent_id,
                     tool_use_id: tool_use_id(),
                     detail: Some(grok_tool_detail(tool, obj.get("toolInput"))),
+                    copy_id: None,
                 },
             ])
         }
@@ -1020,6 +1021,7 @@ mod tests {
                 agent_id,
                 tool_use_id,
                 detail,
+                ..
             } => {
                 assert_eq!(
                     *agent_id,

@@ -78,13 +78,13 @@ fn tool(i: usize, at_ms: u64, tuid: &str, display: &str) -> [Beat; 2] {
         Beat {
             at_ms,
             transport: Transport::Hook,
-            event: AgentEvent::ToolUseStart {
-                agent_id: cast_id(i),
-                tool_use_id: Some(format!("hero-{i}-{tuid}")),
-                detail: Some(ToolDetail::Generic {
+            event: AgentEvent::tool_use_start(
+                cast_id(i),
+                Some(format!("hero-{i}-{tuid}")),
+                Some(ToolDetail::Generic {
                     display: display.to_string(),
                 }),
-            },
+            ),
         },
         Beat {
             at_ms: at_ms + BURST_MS,
@@ -114,11 +114,7 @@ fn usage(i: usize, at_ms: u64, fresh_tokens: u64) -> Beat {
     Beat {
         at_ms,
         transport: Transport::Jsonl,
-        event: AgentEvent::Usage {
-            agent_id: cast_id(i),
-            fresh_tokens,
-            reading_id: None,
-        },
+        event: AgentEvent::usage(cast_id(i), fresh_tokens, None),
     }
 }
 
@@ -160,13 +156,13 @@ pub(crate) fn hire_beats(id: AgentId, session: String) -> Vec<(u64, AgentEvent)>
             let tuid = format!("hire-{k}-{b}");
             out.push((
                 at,
-                AgentEvent::ToolUseStart {
-                    agent_id: id,
-                    tool_use_id: Some(tuid.clone()),
-                    detail: Some(ToolDetail::Generic {
+                AgentEvent::tool_use_start(
+                    id,
+                    Some(tuid.clone()),
+                    Some(ToolDetail::Generic {
                         display: "Edit".to_string(),
                     }),
-                },
+                ),
             ));
             out.push((
                 at + BURST_MS,
@@ -379,13 +375,13 @@ pub(crate) fn hero_script() -> Vec<Beat> {
     b.push(Beat {
         at_ms: 58_000,
         transport: Transport::Hook,
-        event: AgentEvent::ToolUseStart {
-            agent_id: cast_id(6),
-            tool_use_id: Some("hero-6-gated".to_string()),
-            detail: Some(ToolDetail::Generic {
+        event: AgentEvent::tool_use_start(
+            cast_id(6),
+            Some("hero-6-gated".to_string()),
+            Some(ToolDetail::Generic {
                 display: "Bash: rm -rf dist".to_string(),
             }),
-        },
+        ),
     });
     b.push(Beat {
         at_ms: 58_400,

@@ -10,6 +10,7 @@ expression: events
     agent_id: 810195606182451085
     fresh_tokens: 19
     reading_id: msg_0j52Kuc1lga-VWuW
+    copy_id: msg_0j52Kuc1lga-VWuW
 - ModelInfo:
     agent_id: 810195606182451085
     model: claude-opus-5-5
@@ -18,12 +19,14 @@ expression: events
     agent_id: 810195606182451085
     fresh_tokens: 19
     reading_id: msg_0j52Kuc1lga-VWuW
+    copy_id: msg_0j52Kuc1lga-VWuW
 - ToolUseStart:
     agent_id: 810195606182451085
     tool_use_id: toolu_6C9CchR62Xk_bn64
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
+    copy_id: toolu_6C9CchR62Xk_bn64
 - ToolUseEnd:
     agent_id: 810195606182451085
     tool_use_id: toolu_6C9CchR62Xk_bn64
@@ -35,6 +38,7 @@ expression: events
     agent_id: 810195606182451085
     fresh_tokens: 241
     reading_id: msg_jmrFOtUYJo6-JXkP
+    copy_id: msg_jmrFOtUYJo6-JXkP
 - SessionStart:
     agent_id: 810195606182451085
     source: claude-code

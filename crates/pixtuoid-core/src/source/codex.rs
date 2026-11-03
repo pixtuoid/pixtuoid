@@ -373,6 +373,7 @@ pub(crate) fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -
                     agent_id,
                     fresh_tokens: fresh,
                     reading_id: total.map(|total| total.to_string()),
+                    copy_id: None,
                 }]
             } else {
                 vec![]
@@ -439,6 +440,7 @@ fn codex_tool_start(
             CODE_MODE_TOOL => generic_tool_display(name, field("input").and_then(cell_tool)),
             _ => make_tool_detail(SOURCE_NAME, name, None),
         }),
+        copy_id: None,
     }
 }
 

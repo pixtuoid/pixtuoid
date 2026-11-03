@@ -99,6 +99,7 @@ pub enum AgentEvent {
         parent_id: Option<AgentId>,
     },
     /// A tool call started — the slot goes Running.
+    #[non_exhaustive]
     ToolUseStart {
         /// The acting agent.
         agent_id: AgentId,
@@ -106,6 +107,9 @@ pub enum AgentEvent {
         tool_use_id: Option<String>,
         /// Structured tool detail (e.g. a subagent-dispatch `Task`), when known.
         detail: Option<ToolDetail>,
+        /// Its id across its source's transcripts, where its wire names one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        copy_id: Option<CopyId>,
     },
     /// A tool call finished.
     ToolUseEnd {
@@ -251,6 +255,7 @@ pub enum AgentEvent {
     /// reading's DELTA; the reducer accumulates onto an EXISTING slot only
     /// (unknown id = no-op — usage never registers a session). It names no call,
     /// so it never enters hook-wins dedup.
+    #[non_exhaustive]
     Usage {
         /// The agent whose token spend this reading records.
         agent_id: AgentId,
@@ -261,6 +266,9 @@ pub enum AgentEvent {
         /// tells a repeat from an equal new reading.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reading_id: Option<String>,
+        /// Its id across its source's transcripts, where its wire names one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        copy_id: Option<CopyId>,
     },
     /// Whether a transcript reader is replaying what `agent_id`'s transcript
     /// already held. An event carries no time, and not every CLI stamps its
@@ -302,6 +310,23 @@ pub enum Resolution {
     Turn(TurnKey),
 }
 
+/// An id unique across every transcript of its source, so a line repeating it
+/// in another transcript repeats the same work: a [`AgentEvent::Usage`] or
+/// [`AgentEvent::ToolUseStart`] under one counts for the first of its source's
+/// agents to read it, while any of them holds it and for `COPY_RETENTION`
+/// after. An id unique in one transcript alone stays a `reading_id` or
+/// `tool_use_id`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct CopyId(String);
+
+impl CopyId {
+    /// The id `id`, which the caller vouches is unique across its source.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+}
+
 /// A cached agent pid PLUS the kernel start marker read when it was stamped
 /// ([`pid_start_marker`]) — together they name ONE process incarnation, so a
 /// focus click can refuse a RECYCLED pid: re-read the marker, and a mismatch
@@ -329,6 +354,46 @@ impl PidIdentity {
 }
 
 impl AgentEvent {
+    /// A token reading with no copy id ([`with_copy_id`](Self::with_copy_id)
+    /// sets one). THE constructor outside this crate, so a field it gains is a
+    /// non-breaking add.
+    pub fn usage(agent_id: AgentId, fresh_tokens: u64, reading_id: Option<String>) -> Self {
+        AgentEvent::Usage {
+            agent_id,
+            fresh_tokens,
+            reading_id,
+            copy_id: None,
+        }
+    }
+
+    /// A tool call's start with no copy id ([`with_copy_id`](Self::with_copy_id)
+    /// sets one). THE constructor outside this crate, so a field it gains is a
+    /// non-breaking add.
+    pub fn tool_use_start(
+        agent_id: AgentId,
+        tool_use_id: Option<String>,
+        detail: Option<ToolDetail>,
+    ) -> Self {
+        AgentEvent::ToolUseStart {
+            agent_id,
+            tool_use_id,
+            detail,
+            copy_id: None,
+        }
+    }
+
+    /// This reading or call, under `id`; any other event as it was.
+    #[must_use]
+    pub fn with_copy_id(mut self, id: CopyId) -> Self {
+        match &mut self {
+            AgentEvent::Usage { copy_id, .. } | AgentEvent::ToolUseStart { copy_id, .. } => {
+                *copy_id = Some(id);
+            }
+            _ => {}
+        }
+        self
+    }
+
     /// A hook `Identity` event with `pid: None` — the pid is stamped LATER by
     /// the daemon's `_pid` peek (`patch_identity_pids`), never at decode. THE
     /// constructor every source's custom decoder mints its `Identity` through,

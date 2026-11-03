@@ -5,8 +5,10 @@ use std::time::{Duration, SystemTime};
 use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
-use crate::source::{AgentEvent, Resolution, Transport};
-use crate::state::correlation::{Correlation, ToolEventKind, elapsed_at_least, elapsed_past};
+use crate::source::{AgentEvent, CopyId, Resolution, ToolDetail, Transport};
+use crate::state::correlation::{
+    CopyHolders, Correlation, Counted, ToolEventKind, elapsed_at_least, elapsed_past,
+};
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{End, Start};
@@ -16,7 +18,8 @@ use crate::state::{
 
 #[doc(hidden)]
 pub use crate::state::correlation::{
-    CHILD_END_GATE_TTL, CHILD_END_RELINK_TTL, HOOK_WINS_WINDOW, PROOF_OF_LIFE_TTL, STRAGGLER_TTL,
+    CHILD_END_GATE_TTL, CHILD_END_RELINK_TTL, COPY_RETENTION, HOOK_WINS_WINDOW, PROOF_OF_LIFE_TTL,
+    STRAGGLER_TTL,
 };
 
 /// How long to keep an exiting agent's slot alive after `SessionEnd` so the
@@ -386,7 +389,14 @@ impl Reducer {
                 agent_id,
                 tool_use_id,
                 detail,
-            } => self.apply_tool_use_start(scene, agent_id, tool_use_id, detail, from, now),
+                copy_id,
+            } => {
+                let ids = WireIds {
+                    own: tool_use_id.as_deref(),
+                    copy: copy_id.as_ref(),
+                };
+                self.apply_tool_use_start(scene, agent_id, ids, detail.as_ref(), from, now);
+            }
             // The pre-pass tracker already drained a tracked Task with this End:
             // the drain applied the transition itself, so re-running it would
             // restart Delegating — resetting `state_started_at` — whenever
@@ -494,14 +504,14 @@ impl Reducer {
                 agent_id,
                 fresh_tokens,
                 reading_id,
-            } => self.apply_usage(
-                scene,
-                agent_id,
-                fresh_tokens,
-                reading_id.as_deref(),
-                from,
-                now,
-            ),
+                copy_id,
+            } => {
+                let ids = WireIds {
+                    own: reading_id.as_deref(),
+                    copy: copy_id.as_ref(),
+                };
+                self.apply_usage(scene, agent_id, fresh_tokens, ids, from, now);
+            }
             AgentEvent::Backlog {
                 agent_id,
                 replaying,
@@ -559,6 +569,15 @@ impl Reducer {
             // Kind-ASYMMETRIC (#150): a hook Start never eats a JSONL
             // End, the only completion signal left if PostToolUse drops.
             if !(*recorded == ToolEventKind::Start && kind == ToolEventKind::End) {
+                // The hook counted the call, and a hook names no copy id.
+                if let AgentEvent::ToolUseStart {
+                    copy_id: Some(copy),
+                    ..
+                } = event
+                    && let Some(slot) = scene.agents.get(&id)
+                {
+                    self.corr.call_holders.claim(&slot.source, id, Some(copy));
+                }
                 return Preprocessed::Drop;
             }
         }
@@ -569,6 +588,7 @@ impl Reducer {
             && let AgentEvent::ToolUseStart {
                 tool_use_id: Some(tuid),
                 detail,
+                copy_id,
                 ..
             } = event
             && self
@@ -578,7 +598,11 @@ impl Reducer {
                 .is_some_and(|(_, kind)| *kind == ToolEventKind::End)
         {
             // The call did run.
-            self.count_call(scene, id, Some(tuid), detail, from, now);
+            let ids = WireIds {
+                own: Some(tuid),
+                copy: copy_id.as_ref(),
+            };
+            self.count_call(scene, id, ids, detail.as_ref(), from, now);
             return Preprocessed::Drop;
         }
 
@@ -629,32 +653,31 @@ impl Reducer {
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
-        tool_use_id: Option<String>,
-        detail: Option<crate::source::ToolDetail>,
+        ids: WireIds<'_>,
+        detail: Option<&ToolDetail>,
         from: Transport,
         now: SystemTime,
     ) {
+        let tool_use_id = ids.own;
         // Derive the category from the typed detail BEFORE it is erased to
         // the HUD display string.
         let item = ToolUse {
-            tool_use_id: tool_use_id.as_deref().map(Arc::from),
-            detail: detail.as_ref().map(|d| Arc::<str>::from(d.display())),
-            kind: detail
-                .as_ref()
-                .map_or(ToolKind::Other, ToolKind::from_detail),
+            tool_use_id: tool_use_id.map(Arc::from),
+            detail: detail.map(|d| Arc::<str>::from(d.display())),
+            kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
         };
-        if let Some(call) = tool_use_id.as_deref()
+        if let Some(call) = tool_use_id
             && scene.agents.contains_key(&agent_id)
         {
             self.register_pending(agent_id, call, None, None, from, Some(item.clone()));
         }
         let runs = self.corr.action_requests.start(
             agent_id,
-            tool_use_id.as_deref(),
+            tool_use_id,
             from,
             is_requires_action(scene, agent_id),
         );
-        self.count_call(scene, agent_id, tool_use_id.as_deref(), &detail, from, now);
+        self.count_call(scene, agent_id, ids, detail, from, now);
         if !runs {
             return;
         }
@@ -665,23 +688,25 @@ impl Reducer {
     }
 
     /// Count a tool call ONCE per call id for as long as its slot exists,
-    /// resurrects included; the id-less path counts every time.
+    /// resurrects included, and under a copy id only for the agent that counts
+    /// it ([`CopyHolders::claim`]); the id-less path counts every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
-        tool_use_id: Option<&str>,
-        detail: &Option<crate::source::ToolDetail>,
+        ids: WireIds<'_>,
+        detail: Option<&ToolDetail>,
         from: Transport,
         now: SystemTime,
     ) {
-        if detail.as_ref().is_some_and(|d| d.is_task()) {
+        if detail.is_some_and(ToolDetail::is_task) {
             return;
         }
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        if self.corr.counted_calls.first(agent_id, tool_use_id) {
+        let (counted, holders) = (&mut self.corr.counted_calls, &mut self.corr.call_holders);
+        if is_new_work(counted, holders, &slot.source, agent_id, ids) {
             slot.tool_call_count += 1;
             if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
                 today.tool_calls = today.tool_calls.saturating_add(1);
@@ -1059,14 +1084,18 @@ impl Reducer {
         scene: &mut SceneState,
         agent_id: AgentId,
         fresh_tokens: u64,
-        reading_id: Option<&str>,
+        ids: WireIds<'_>,
         from: Transport,
         now: SystemTime,
     ) {
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        if self.corr.counted_readings.first(agent_id, reading_id) {
+        let (counted, holders) = (
+            &mut self.corr.counted_readings,
+            &mut self.corr.reading_holders,
+        );
+        if is_new_work(counted, holders, &slot.source, agent_id, ids) {
             slot.tokens_used = slot.tokens_used.saturating_add(fresh_tokens);
             slot.last_usage = Some(crate::state::UsageObservation::new(fresh_tokens, now));
             if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
@@ -1684,7 +1713,8 @@ impl Reducer {
     /// Drop the per-slot correlation a departing agent id owns, reclaimed on
     /// BOTH a resurrect-in-place and a slot removal. Death-only teardown
     /// (`recent_proof_of_life`, the counted ids, [`Correlation::note_removed`])
-    /// deliberately stays at the sweep site — it must NOT run on a resurrect.
+    /// and the copy-id holders' release deliberately stay at the sweep site —
+    /// they must NOT run on a resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.tasks_in_flight.remove(id);
         self.corr.action_requests.forget(id);
@@ -1718,9 +1748,35 @@ impl Reducer {
             // the ids that built them.
             self.corr.counted_readings.forget(&id);
             self.corr.counted_calls.forget(&id);
+            self.corr.reading_holders.release(id, now);
+            self.corr.call_holders.release(id, now);
             self.corr.note_removed(id, now);
         }
     }
+}
+
+/// What a call or a reading is counted by: the id it has in its own agent's
+/// transcript, and the copy id it keeps across its source's.
+#[derive(Clone, Copy)]
+struct WireIds<'a> {
+    own: Option<&'a str>,
+    copy: Option<&'a CopyId>,
+}
+
+/// Whether work under `ids` is new: its own id is new for `agent_id`, and its
+/// copy id is `agent_id`'s to count ([`CopyHolders::claim`]). Both are recorded whatever
+/// the answer, so a call a hook counted claims its copy id when its transcript
+/// line arrives.
+fn is_new_work(
+    counted: &mut Counted,
+    holders: &mut CopyHolders,
+    source: &Arc<str>,
+    agent_id: AgentId,
+    ids: WireIds<'_>,
+) -> bool {
+    let first_holder = holders.claim(source, agent_id, ids.copy);
+    let new = counted.first(agent_id, ids.own);
+    first_holder && new
 }
 
 fn is_requires_action(scene: &SceneState, id: AgentId) -> bool {

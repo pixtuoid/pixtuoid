@@ -146,6 +146,7 @@ async fn delegating_parent_attach_registers_parent_and_links_subagent() {
                     agent_id,
                     tool_use_id,
                     detail,
+                    ..
                 },
             ))) if agent_id == expected_parent && tool_use_id.as_deref() == Some("tu_task") => {
                 dispatch_is_task = Some(detail.as_ref().is_some_and(|d| d.is_task()));
@@ -203,7 +204,8 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
             if *agent_id == expected_parent)
     };
     let is_task_start = |e: &AgentEvent| {
-        matches!(e, AgentEvent::ToolUseStart { agent_id, tool_use_id, detail }
+        matches!(e, AgentEvent::ToolUseStart { agent_id, tool_use_id, detail,
+ .. }
             if *agent_id == expected_parent
                 && tool_use_id.as_deref() == Some("tu_task")
                 && detail.as_ref().is_some_and(|d| d.is_task()))

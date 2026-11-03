@@ -415,11 +415,11 @@ mod tests {
             parent_id: None,
         }];
         for n in 0..calls {
-            events.push(AgentEvent::ToolUseStart {
-                agent_id: id,
-                tool_use_id: Some(format!("t{n}")),
-                detail: Some("Bash".into()),
-            });
+            events.push(AgentEvent::tool_use_start(
+                id,
+                Some(format!("t{n}")),
+                Some("Bash".into()),
+            ));
             events.push(AgentEvent::ToolUseEnd {
                 agent_id: id,
                 tool_use_id: Some(format!("t{n}")),
@@ -507,11 +507,11 @@ mod tests {
     fn hook_call(tool_use_id: &str) -> (pixtuoid_core::Transport, pixtuoid_core::AgentEvent) {
         (
             pixtuoid_core::Transport::Hook,
-            pixtuoid_core::AgentEvent::ToolUseStart {
-                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
-                tool_use_id: Some(tool_use_id.into()),
-                detail: Some("Bash".into()),
-            },
+            pixtuoid_core::AgentEvent::tool_use_start(
+                pixtuoid_core::AgentId::from_parts("claude-code", "s"),
+                Some(tool_use_id.into()),
+                Some("Bash".into()),
+            ),
         )
     }
 

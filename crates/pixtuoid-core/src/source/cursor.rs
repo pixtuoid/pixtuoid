@@ -154,6 +154,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                     agent_id,
                     tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
                     detail: Some(cursor_tool_detail(tool, obj.get("tool_input"))),
+                    copy_id: None,
                 },
             ])
         }

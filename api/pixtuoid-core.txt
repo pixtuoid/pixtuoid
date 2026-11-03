@@ -962,8 +962,9 @@ pub pixtuoid_core::source::AgentEvent::ToolUsePending::agent_id: pixtuoid_core::
 pub pixtuoid_core::source::AgentEvent::ToolUsePending::tool_name: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::ToolUsePending::tool_use_id: alloc::string::String
 pub pixtuoid_core::source::AgentEvent::ToolUsePending::turn: core::option::Option<pixtuoid_core::state::TurnKey>
-pub pixtuoid_core::source::AgentEvent::ToolUseStart
+#[non_exhaustive] pub pixtuoid_core::source::AgentEvent::ToolUseStart
 pub pixtuoid_core::source::AgentEvent::ToolUseStart::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::ToolUseStart::copy_id: core::option::Option<pixtuoid_core::source::CopyId>
 pub pixtuoid_core::source::AgentEvent::ToolUseStart::detail: core::option::Option<pixtuoid_core::source::ToolDetail>
 pub pixtuoid_core::source::AgentEvent::ToolUseStart::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::TurnEnd
@@ -972,8 +973,9 @@ pub pixtuoid_core::source::AgentEvent::TurnEnd::turn: core::option::Option<pixtu
 pub pixtuoid_core::source::AgentEvent::TurnStart
 pub pixtuoid_core::source::AgentEvent::TurnStart::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::TurnStart::turn: pixtuoid_core::state::TurnKey
-pub pixtuoid_core::source::AgentEvent::Usage
+#[non_exhaustive] pub pixtuoid_core::source::AgentEvent::Usage
 pub pixtuoid_core::source::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::Usage::copy_id: core::option::Option<pixtuoid_core::source::CopyId>
 pub pixtuoid_core::source::AgentEvent::Usage::fresh_tokens: u64
 pub pixtuoid_core::source::AgentEvent::Usage::reading_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::UserActionRequest
@@ -987,7 +989,10 @@ pub pixtuoid_core::source::AgentEvent::UserActionResolved::agent_id: pixtuoid_co
 pub pixtuoid_core::source::AgentEvent::UserActionResolved::by: pixtuoid_core::source::Resolution
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
+pub fn pixtuoid_core::source::AgentEvent::tool_use_start(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, core::option::Option<pixtuoid_core::source::ToolDetail>) -> Self
+pub fn pixtuoid_core::source::AgentEvent::usage(pixtuoid_core::id::AgentId, u64, core::option::Option<alloc::string::String>) -> Self
 pub fn pixtuoid_core::source::AgentEvent::user_action_request(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, pixtuoid_core::source::RequestKeys) -> Self
+pub fn pixtuoid_core::source::AgentEvent::with_copy_id(self, pixtuoid_core::source::CopyId) -> Self
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent
@@ -1076,6 +1081,30 @@ impl core::marker::Unpin for pixtuoid_core::source::Transport
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::Transport
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::Transport
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::Transport
+pub struct pixtuoid_core::source::CopyId(_)
+impl pixtuoid_core::source::CopyId
+pub fn pixtuoid_core::source::CopyId::new(impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for pixtuoid_core::source::CopyId
+pub fn pixtuoid_core::source::CopyId::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::source::CopyId
+impl core::cmp::PartialEq for pixtuoid_core::source::CopyId
+pub fn pixtuoid_core::source::CopyId::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::source::CopyId
+pub fn pixtuoid_core::source::CopyId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_core::source::CopyId
+pub fn pixtuoid_core::source::CopyId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for pixtuoid_core::source::CopyId
+impl serde_core::ser::Serialize for pixtuoid_core::source::CopyId
+pub fn pixtuoid_core::source::CopyId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::source::CopyId
+pub fn pixtuoid_core::source::CopyId::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::source::CopyId
+impl core::marker::Send for pixtuoid_core::source::CopyId
+impl core::marker::Sync for pixtuoid_core::source::CopyId
+impl core::marker::Unpin for pixtuoid_core::source::CopyId
+impl core::marker::UnsafeUnpin for pixtuoid_core::source::CopyId
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::CopyId
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::CopyId
 #[non_exhaustive] pub struct pixtuoid_core::source::PidIdentity
 pub pixtuoid_core::source::PidIdentity::pid: i32
 pub pixtuoid_core::source::PidIdentity::started: core::option::Option<u64>
@@ -1677,8 +1706,9 @@ pub pixtuoid_core::AgentEvent::ToolUsePending::agent_id: pixtuoid_core::id::Agen
 pub pixtuoid_core::AgentEvent::ToolUsePending::tool_name: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::ToolUsePending::tool_use_id: alloc::string::String
 pub pixtuoid_core::AgentEvent::ToolUsePending::turn: core::option::Option<pixtuoid_core::state::TurnKey>
-pub pixtuoid_core::AgentEvent::ToolUseStart
+#[non_exhaustive] pub pixtuoid_core::AgentEvent::ToolUseStart
 pub pixtuoid_core::AgentEvent::ToolUseStart::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::ToolUseStart::copy_id: core::option::Option<pixtuoid_core::source::CopyId>
 pub pixtuoid_core::AgentEvent::ToolUseStart::detail: core::option::Option<pixtuoid_core::source::ToolDetail>
 pub pixtuoid_core::AgentEvent::ToolUseStart::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::TurnEnd
@@ -1687,8 +1717,9 @@ pub pixtuoid_core::AgentEvent::TurnEnd::turn: core::option::Option<pixtuoid_core
 pub pixtuoid_core::AgentEvent::TurnStart
 pub pixtuoid_core::AgentEvent::TurnStart::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::TurnStart::turn: pixtuoid_core::state::TurnKey
-pub pixtuoid_core::AgentEvent::Usage
+#[non_exhaustive] pub pixtuoid_core::AgentEvent::Usage
 pub pixtuoid_core::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::Usage::copy_id: core::option::Option<pixtuoid_core::source::CopyId>
 pub pixtuoid_core::AgentEvent::Usage::fresh_tokens: u64
 pub pixtuoid_core::AgentEvent::Usage::reading_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::UserActionRequest
@@ -1702,7 +1733,10 @@ pub pixtuoid_core::AgentEvent::UserActionResolved::agent_id: pixtuoid_core::id::
 pub pixtuoid_core::AgentEvent::UserActionResolved::by: pixtuoid_core::source::Resolution
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
+pub fn pixtuoid_core::source::AgentEvent::tool_use_start(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, core::option::Option<pixtuoid_core::source::ToolDetail>) -> Self
+pub fn pixtuoid_core::source::AgentEvent::usage(pixtuoid_core::id::AgentId, u64, core::option::Option<alloc::string::String>) -> Self
 pub fn pixtuoid_core::source::AgentEvent::user_action_request(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, pixtuoid_core::source::RequestKeys) -> Self
+pub fn pixtuoid_core::source::AgentEvent::with_copy_id(self, pixtuoid_core::source::CopyId) -> Self
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent

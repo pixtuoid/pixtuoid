@@ -184,6 +184,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 agent_id,
                 tool_use_id: call_id(),
                 detail: Some(ToolDetail::Task),
+                copy_id: None,
             },
         ]),
         "SubagentStop" => Ok(vec![AgentEvent::ToolUseEnd {
@@ -204,6 +205,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                     agent_id,
                     tool_use_id: None,
                     detail: Some(rx_tool_detail(tool, obj.get("toolArgs"))),
+                    copy_id: None,
                 },
             ])
         }
@@ -222,6 +224,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                     agent_id,
                     tool_use_id: None,
                     detail: Some(ToolDetail::Task),
+                    copy_id: None,
                 });
             }
             events.push(AgentEvent::ToolUseEnd {
@@ -643,7 +646,8 @@ mod tests {
             "toolArgs": {"prompt": "read the note"}
         }));
         assert!(
-            matches!(&start, AgentEvent::ToolUseStart { agent_id, tool_use_id, detail: Some(d) }
+            matches!(&start, AgentEvent::ToolUseStart { agent_id, tool_use_id, detail: Some(d),
+ .. }
                 if *agent_id == parent && *tool_use_id == call && d.is_task()),
             "{start:?}"
         );

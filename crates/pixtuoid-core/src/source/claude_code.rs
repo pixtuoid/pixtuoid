@@ -11,11 +11,11 @@ use crate::source::decoder::{
 };
 
 use crate::AgentId;
-use crate::source::AgentEvent;
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind, ToolIdKey, Transcript,
 };
+use crate::source::{AgentEvent, CopyId};
 
 #[cfg(feature = "native")]
 mod native;
@@ -315,12 +315,16 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
         }
         let fresh = fresh_spend(message);
         if fresh > 0 {
+            let reading_id = non_empty(message, "id");
             out.push(AgentEvent::Usage {
                 agent_id,
                 fresh_tokens: fresh,
                 // A message writes one line per content block, each with its
                 // whole usage since CC 2.1.310.
-                reading_id: non_empty(message, "id").map(str::to_owned),
+                reading_id: reading_id.map(str::to_owned),
+                copy_id: reading_id
+                    .filter(|id| id.strip_prefix("msg_").is_some_and(looks_random))
+                    .map(CopyId::new),
             });
         }
     }
@@ -345,6 +349,9 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                     });
                 out.push(AgentEvent::ToolUseStart {
                     agent_id,
+                    copy_id: (id.as_deref())
+                        .filter(|id| id.strip_prefix("toolu_").is_some_and(looks_random))
+                        .map(CopyId::new),
                     tool_use_id: id,
                     detail: Some(make_tool_detail(SOURCE_NAME, name, bobj.get("input"))),
                 });
@@ -389,6 +396,19 @@ const ACTIVITY_TYPES: &[&str] = &[
     "system",
     "user",
 ];
+
+/// The fewest url-safe characters an id's suffix carries for [`looks_random`]:
+/// 96 bits of a random one, where two sessions drawing the same is negligible.
+const MIN_RANDOM_SUFFIX: usize = 16;
+
+/// Whether an id's `suffix` after its `msg_`/`toolu_` prefix has a random
+/// mint's shape, which this takes as unique across the source and so makes the
+/// id a [`CopyId`]. An id of any other shape is taken as unique in its own
+/// transcript alone.
+fn looks_random(suffix: &str) -> bool {
+    suffix.len() >= MIN_RANDOM_SUFFIX
+        && (suffix.bytes()).all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
 
 /// The workflow/skills orchestrator writes a `journal.jsonl` sidecar under
 /// `<uuid>/subagents/workflows/wf_*/` — a FOREIGN schema (top-level
@@ -815,6 +835,48 @@ mod tests {
             None
         );
         assert_eq!(reading_id(json!({"content": [], "usage": usage})), None);
+    }
+
+    /// Only a random-shaped id is unique across sessions, so only it is a copy
+    /// id.
+    #[test]
+    fn a_random_shaped_id_is_its_lines_copy_id() {
+        let copies = |id: &str| {
+            let message = json!({
+                "id": id,
+                "content": [{"type": "tool_use", "id": id.replace("msg_", "toolu_"), "name": "Read"}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            });
+            let v = json!({"type": "assistant", "message": message});
+            decode_cc_line("/p/ses-1.jsonl", "claude-code", v)
+                .into_iter()
+                .filter_map(|e| match e {
+                    AgentEvent::Usage { copy_id, .. }
+                    | AgentEvent::ToolUseStart { copy_id, .. } => Some(copy_id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let anthropic = "msg_011CfxAKLW9QL1ahs7J9nLab";
+        assert_eq!(
+            copies(anthropic),
+            [
+                Some(CopyId::new(anthropic)),
+                Some(CopyId::new(anthropic.replace("msg_", "toolu_")))
+            ]
+        );
+        let scripted = "msg_0j52Kuc1lga-VWuW";
+        assert!(copies(scripted).iter().all(Option::is_some), "{scripted}");
+        let short = format!("msg_{}", "a".repeat(MIN_RANDOM_SUFFIX - 1));
+        let unsafe_byte = format!("msg_{}.", "a".repeat(MIN_RANDOM_SUFFIX));
+        for scoped in [
+            "msg_1",
+            "gw-msg_011CfxAKLW9QL1ahs7J9nLab",
+            &short,
+            &unsafe_byte,
+        ] {
+            assert_eq!(copies(scoped), [None, None], "{scoped}");
+        }
     }
 
     #[test]

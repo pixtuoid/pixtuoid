@@ -449,6 +449,7 @@ mod tests {
                 agent_id: id,
                 tool_use_id: None,
                 detail: None,
+                copy_id: None,
             },
         ];
         patch_identity_pids(&mut evs, Some(i32::MAX));
@@ -646,6 +647,7 @@ mod tests {
                 agent_id: id,
                 tool_use_id: None,
                 detail: None,
+                copy_id: None,
             },
             AgentEvent::ToolUseEnd {
                 agent_id: id,

@@ -206,6 +206,7 @@ pub(crate) fn decode_copilot_line(
                 agent_id: acting,
                 tool_use_id: Some(tool_call_id.to_string()),
                 detail: Some(detail),
+                copy_id: None,
             }]
         }
         TOOL_EXECUTION_COMPLETE => {
@@ -337,6 +338,7 @@ pub(crate) fn decode_copilot_line(
                 // `runtime.node` ("persisted history truncation", "read back …
                 // after the rewrite", `src/runtime/src/shared_api/history.rs`).
                 reading_id: non_empty(obj, "id").map(str::to_owned),
+                copy_id: None,
             }]
         }
         SESSION_SHUTDOWN => vec![AgentEvent::SessionEnd {
@@ -885,6 +887,7 @@ mod tests {
                     agent_id,
                     tool_use_id,
                     detail: Some(d),
+                    ..
                 },
             ] => {
                 assert_eq!(*agent_id, root());

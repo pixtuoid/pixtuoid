@@ -206,6 +206,7 @@ mod tests {
                     agent_id: root,
                     tool_use_id: Some("tu_1".into()),
                     detail: None,
+                    copy_id: None,
                 },
             ),
             // Copilot's transcript decode really does emit Jsonl-tagged child

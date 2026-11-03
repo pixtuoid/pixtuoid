@@ -362,11 +362,13 @@ fn t_decode_lifecycle(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent>
             agent_id,
             tool_use_id: None,
             detail: None,
+            copy_id: None,
         }],
         Some("usage") => vec![AgentEvent::Usage {
             agent_id,
             fresh_tokens: 1,
             reading_id: None,
+            copy_id: None,
         }],
         _ => vec![],
     }
@@ -4640,6 +4642,7 @@ mod backlog {
                 agent_id: AgentId::from_parts(s, key),
                 fresh_tokens: 1,
                 reading_id: None,
+                copy_id: None,
             })
             .into()
     }

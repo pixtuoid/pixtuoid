@@ -194,6 +194,7 @@ fn decode_ag_tool_call(
         agent_id,
         tool_use_id,
         detail: Some(generic_tool_display(name, target.as_deref())),
+        copy_id: None,
     }
 }
 

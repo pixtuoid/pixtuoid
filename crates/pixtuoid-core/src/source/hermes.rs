@@ -345,6 +345,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                     agent_id,
                     tool_use_id: tool_use_id(),
                     detail: Some(generic_keyed_detail(tool, obj.get("args"), KEYS)),
+                    copy_id: None,
                 },
             ]
         }

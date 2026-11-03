@@ -186,6 +186,7 @@ pub fn decode_dsh_payload(
                     agent_id,
                     tool_use_id: call_id(),
                     detail: Some(tool_detail()),
+                    copy_id: None,
                 },
             ])
         }
@@ -243,6 +244,7 @@ pub fn decode_dsh_payload(
                     detail: Some(ToolDetail::Generic {
                         display: tool_display(),
                     }),
+                    copy_id: None,
                 }
             } else {
                 // rejected | cancelled | unavailable: the call never runs.
@@ -274,6 +276,7 @@ pub fn decode_dsh_payload(
                         .saturating_add(n("outputTokens"))
                         .saturating_add(n("cacheWriteTokens")),
                     reading_id: None,
+                    copy_id: None,
                 },
             ])
         }
