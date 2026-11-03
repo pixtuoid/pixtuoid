@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0](https://github.com/pixtuoid/pixtuoid/compare/v0.21.0...v0.22.0) - 2026-11-03
+
+### Bug Fixes
+
+- *(core)* a forked transcript's copied lines count once, for their reader ([#2084](https://github.com/pixtuoid/pixtuoid/pull/2084))
+- *(tui)* a zoom's fallback reports as the half-blocks, a cleared screen waits on nothing ([#2075](https://github.com/pixtuoid/pixtuoid/pull/2075))
+- *(core)* a slot keeps its call ids for its life, as its reading ids ([#2082](https://github.com/pixtuoid/pixtuoid/pull/2082))
+- *(hermetic)* a quit the CLI hands back is entered again ([#2078](https://github.com/pixtuoid/pixtuoid/pull/2078))
+- *(hermetic)* a TUI gate is answered once the scene shows it ([#2066](https://github.com/pixtuoid/pixtuoid/pull/2066))
+- *(core)* an omp usage reading counts once, by its entry's id ([#2064](https://github.com/pixtuoid/pixtuoid/pull/2064))
+- *(core)* copilot counts each call's receipt, not a shutdown's total ([#2052](https://github.com/pixtuoid/pixtuoid/pull/2052))
+- *(core)* a usage reading a wire repeats counts once ([#2046](https://github.com/pixtuoid/pixtuoid/pull/2046))
+
+### Documentation
+
+- *(readme)* lead with the cutaway in plain words, every image and protocol single-sourced ([#1981](https://github.com/pixtuoid/pixtuoid/pull/1981))
+- *(media)* render the README's media in the cutaway ([#1963](https://github.com/pixtuoid/pixtuoid/pull/1963))
+- *(contributing)* make add-a-CLI's judgement calls a gate ([#2015](https://github.com/pixtuoid/pixtuoid/pull/2015))
+
+### Features
+
+- *(scene)* a badge's marker reads its agent's source and rings its plate ([#2083](https://github.com/pixtuoid/pixtuoid/pull/2083))
+- *(tui)* `t` picks the look beside the theme, switching it live ([#2073](https://github.com/pixtuoid/pixtuoid/pull/2073))
+- *(scene)* a pixel painter draws the classic, its world text baked ([#2070](https://github.com/pixtuoid/pixtuoid/pull/2070))
+- *(scene)* a device can name each agent as its badge does ([#2068](https://github.com/pixtuoid/pixtuoid/pull/2068))
+- *(scene)* a look as a person picks it is one engine type, LookKind ([#2069](https://github.com/pixtuoid/pixtuoid/pull/2069))
+- *(scene)* a theme's display name is one field, every picker reads it ([#2065](https://github.com/pixtuoid/pixtuoid/pull/2065))
+- *(serve)* a paired device can connect and disconnect agent CLIs ([#2057](https://github.com/pixtuoid/pixtuoid/pull/2057))
+- *(serve)* a paired device can list the agent CLIs here ([#2053](https://github.com/pixtuoid/pixtuoid/pull/2053))
+- *(doctor)* prove a hook can reach the office ([#2048](https://github.com/pixtuoid/pixtuoid/pull/2048))
+- *(core)* count today's work and show it on the sign ([#2047](https://github.com/pixtuoid/pixtuoid/pull/2047))
+- *(serve)* the office over the LAN, with no painter ([#2018](https://github.com/pixtuoid/pixtuoid/pull/2018))
+- *(source)* add Jcode ([#1664](https://github.com/pixtuoid/pixtuoid/pull/1664))
+- *(hook)* relay the hook plane to every instance ([#2007](https://github.com/pixtuoid/pixtuoid/pull/2007))
+- *(snapshot)* panels over the cutaway, drawn in the TUI's one frame order ([#1987](https://github.com/pixtuoid/pixtuoid/pull/1987))
+- *(snapshot)* --proof draws its office side in the cutaway ([#1983](https://github.com/pixtuoid/pixtuoid/pull/1983))
+- *(snapshot)* paint --cutaway on the renderer path and --empty stills ([#1980](https://github.com/pixtuoid/pixtuoid/pull/1980))
+- *(scene)* dress agents by their cwd's basename ([#2016](https://github.com/pixtuoid/pixtuoid/pull/2016))
+- *(core)* the handshake that opens a device's stream ([#2017](https://github.com/pixtuoid/pixtuoid/pull/2017))
+- *(core)* the office as a versioned wire line ([#2011](https://github.com/pixtuoid/pixtuoid/pull/2011))
+- *(scene)* a device shows today's words as the sign does ([#2080](https://github.com/pixtuoid/pixtuoid/pull/2080))
+- *(scene)* a device can export a piece's art as the office draws it ([#2079](https://github.com/pixtuoid/pixtuoid/pull/2079))
+- *(site)* [**breaking**] draw the live office in the cutaway ([#1978](https://github.com/pixtuoid/pixtuoid/pull/1978))
+
+### Miscellaneous
+
+- clear three of #2029's small items ([#2039](https://github.com/pixtuoid/pixtuoid/pull/2039))
+- *(hermetic)* pin omp at 18.15.0 ([#2020](https://github.com/pixtuoid/pixtuoid/pull/2020))
+- *(hermetic)* pin reasonix at 2.56.1 ([#2019](https://github.com/pixtuoid/pixtuoid/pull/2019))
+- *(hermetic)* pin omp at 18.14.2 ([#2006](https://github.com/pixtuoid/pixtuoid/pull/2006))
+- *(hermetic)* pin openclaw at 2026.10.9 ([#2005](https://github.com/pixtuoid/pixtuoid/pull/2005))
+- *(hermetic)* pin omp at 18.14.1 ([#2003](https://github.com/pixtuoid/pixtuoid/pull/2003))
+- *(hermetic)* pin opencode at 2.2.5 ([#2002](https://github.com/pixtuoid/pixtuoid/pull/2002))
+- *(hermetic)* pin claude-code at 2.1.316 ([#2001](https://github.com/pixtuoid/pixtuoid/pull/2001))
+- *(hermetic)* pin antigravity at 1.4.12 ([#2000](https://github.com/pixtuoid/pixtuoid/pull/2000))
+- *(hermetic)* pin claude-code at 2.1.314 ([#1995](https://github.com/pixtuoid/pixtuoid/pull/1995))
+- *(hermetic)* pin dsh at 0.2.1-rc.5 ([#1994](https://github.com/pixtuoid/pixtuoid/pull/1994))
+- *(hermetic)* pin reasonix at 2.56.0 ([#1996](https://github.com/pixtuoid/pixtuoid/pull/1996))
+- *(hermetic)* pin codex at 0.166.0 ([#1999](https://github.com/pixtuoid/pixtuoid/pull/1999))
+- *(hermetic)* pin opencode at 2.2.3 ([#1997](https://github.com/pixtuoid/pixtuoid/pull/1997))
+- *(hermetic)* pin kimi at 2.4.1 ([#1993](https://github.com/pixtuoid/pixtuoid/pull/1993))
+- *(hermetic)* pin omp at 18.14.0 ([#1998](https://github.com/pixtuoid/pixtuoid/pull/1998))
+- *(hermetic)* pin antigravity at 1.4.11 ([#1992](https://github.com/pixtuoid/pixtuoid/pull/1992))
+- *(hermetic)* pin opencode at 2.2.1 ([#1990](https://github.com/pixtuoid/pixtuoid/pull/1990))
+- *(hermetic)* pin antigravity at 1.4.10 ([#1989](https://github.com/pixtuoid/pixtuoid/pull/1989))
+- *(hermetic)* pin reasonix at 2.54.0 ([#1968](https://github.com/pixtuoid/pixtuoid/pull/1968))
+- *(hermetic)* pin antigravity at 1.4.9 ([#1966](https://github.com/pixtuoid/pixtuoid/pull/1966))
+- *(hermetic)* pin copilot at 1.0.105 ([#1969](https://github.com/pixtuoid/pixtuoid/pull/1969))
+- *(hermetic)* pin omp at 18.13.3 ([#1971](https://github.com/pixtuoid/pixtuoid/pull/1971))
+- *(hermetic)* pin claude-code at 2.1.312 ([#1970](https://github.com/pixtuoid/pixtuoid/pull/1970))
+- *(hermetic)* pin codex at 0.165.0 ([#1972](https://github.com/pixtuoid/pixtuoid/pull/1972))
+- *(hermetic)* pin kimi at 2.4.0 ([#1967](https://github.com/pixtuoid/pixtuoid/pull/1967))
+
+### Performance
+
+- *(core)* [**breaking**] load the bundled pack's manifest as JSON, not TOML ([#1965](https://github.com/pixtuoid/pixtuoid/pull/1965))
+- *(site)* run the live offices in a worker, off the page's thread ([#1986](https://github.com/pixtuoid/pixtuoid/pull/1986))
+- *(web)* stream the site's lofi from a wasm of its own ([#1974](https://github.com/pixtuoid/pixtuoid/pull/1974))
+
+### Refactoring
+
+- *(core)* [**breaking**] a transcript's parsers live on its registry row ([#2035](https://github.com/pixtuoid/pixtuoid/pull/2035))
+- *(scene)* [**breaking**] the pack module holds the pack, and `PackError` is opaque ([#2031](https://github.com/pixtuoid/pixtuoid/pull/2031))
+- *(scene)* [**breaking**] scene owns the sprite format, the grid and the walkable mask ([#2030](https://github.com/pixtuoid/pixtuoid/pull/2030))
+- *(install)* a config merge cites why no owned route runs unattended ([#2024](https://github.com/pixtuoid/pixtuoid/pull/2024))
+- *(install)* load Antigravity's hooks from a plugin of ours ([#2014](https://github.com/pixtuoid/pixtuoid/pull/2014))
+- *(install)* edit TOML through toml_edit directly ([#2013](https://github.com/pixtuoid/pixtuoid/pull/2013))
+
+### Testing
+
+- *(scene)* cutaway's painter tests move to their own file ([#2040](https://github.com/pixtuoid/pixtuoid/pull/2040))
+
+### Build
+
+- *(deps)* bump notify, saphyr and rtrb, with notify's new macOS crates allowed ([#2049](https://github.com/pixtuoid/pixtuoid/pull/2049))
+
+### Ci
+
+- fuzz the hook, transcript and remote parsers on ClusterFuzzLite ([#2032](https://github.com/pixtuoid/pixtuoid/pull/2032))
+
 ## [0.21.0](https://github.com/pixtuoid/pixtuoid/compare/v0.20.0...v0.21.0) - 2026-10-28
 
 ### Bug Fixes
