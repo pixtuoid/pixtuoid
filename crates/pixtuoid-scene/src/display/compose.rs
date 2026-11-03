@@ -1234,14 +1234,16 @@ fn push_characters(
         let badge_ceiling = seat.map(|d| desk_span(pack, Desk::facing(d.facing), d.at, scale).y0);
         let at = cutaway_top_left(c);
         let shadow = !c.seated;
-        // The drawn box reaches up over the hair its style dresses it in.
+        // The drawn box reaches up over the hair its style dresses it in, as
+        // far as the canvas's top, where `paint_figure` cuts it.
         let hair = key
             .dress
             .as_ref()
-            .map_or(0, |d| d.rise().div_ceil(key.frame.density.get()));
+            .map_or(0, |d| d.rise().div_ceil(key.frame.density.get()))
+            .min(at.y);
         let top = crate::layout::Point {
             x: at.x,
-            y: at.y.saturating_sub(hair),
+            y: at.y - hair,
         };
         let span = occupant_span(
             piece_span(crate::layout::Pivot::TopLeft, top, w, h + hair, 0),

@@ -69,14 +69,13 @@ impl Hovers {
         self.0.push(hover);
     }
 
-    #[cfg(test)]
     pub(crate) fn listed(&self) -> &[Hover] {
         &self.0
     }
 
     /// Who the topmost hover meeting `area` names: the last painted. `area` is
     /// in logical units.
-    pub fn at(&self, area: Bounds) -> Option<&HoverTarget> {
+    pub(crate) fn at(&self, area: Bounds) -> Option<&HoverTarget> {
         self.0
             .iter()
             .rev()

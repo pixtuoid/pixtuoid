@@ -361,29 +361,15 @@ fn parse_navigations(specs: &[String]) -> Result<Vec<(u64, usize)>> {
         .collect()
 }
 
-/// The centre of the pixels a pointer finds the first mascot on.
+/// The centre of the first mascot's box.
 fn mascot_centre(hits: &pixtuoid_scene::look::Hits) -> Option<pixtuoid_scene::layout::Point> {
     use pixtuoid_scene::display::HoverTarget;
-    use pixtuoid_scene::layout::{Bounds, Point};
-    let layout = hits.layout();
-    let at = |(x, y)| {
-        hits.hovers().at(Bounds {
-            x,
-            y,
-            width: 1,
-            height: 1,
-        })
-    };
-    let pixels = || (0..layout.buf_h).flat_map(|y| (0..layout.buf_w).map(move |x| (x, y)));
-    let mascot = pixels().find_map(|p| at(p).filter(|t| matches!(t, HoverTarget::Mascot(_))))?;
-    let (x0, y0, x1, y1) = pixels()
-        .filter(|&p| at(p) == Some(mascot))
-        .fold((u16::MAX, u16::MAX, 0, 0), |(x0, y0, x1, y1), (x, y)| {
-            (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
-        });
-    Some(Point {
-        x: x0.midpoint(x1),
-        y: y0.midpoint(y1),
+    let (_, at) = hits
+        .figures()
+        .find(|(target, _)| matches!(target, HoverTarget::Mascot(_)))?;
+    Some(pixtuoid_scene::layout::Point {
+        x: at.x.midpoint(at.x + at.width - 1),
+        y: at.y.midpoint(at.y + at.height - 1),
     })
 }
 
