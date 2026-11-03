@@ -34,7 +34,7 @@ const EXTENSION: SentinelPlugin = SentinelPlugin {
     sentinel: SENTINEL,
     removed_stub: REMOVED_STUB,
     what: "the omp extension",
-    cli: "omp",
+    source: pixtuoid_core::source::omp::SOURCE_NAME,
 };
 
 /// The extensions root is core's [`omp_extensions_dir`], never a second copy of
@@ -140,7 +140,10 @@ mod tests {
         let foreign = verify_schema("export default function () {}\n");
         assert_eq!(foreign.shim, ShimRef::Unknown);
         assert!(
-            foreign.issues.iter().any(|i| i.contains("reconnect omp")),
+            foreign
+                .issues
+                .iter()
+                .any(|i| i.contains("reconnect Oh My Pi")),
             "a sentinel-less file must be a HARD issue naming the remedy — got {:?}",
             foreign.issues
         );

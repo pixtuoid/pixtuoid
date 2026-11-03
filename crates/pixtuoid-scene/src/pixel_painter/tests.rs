@@ -3023,7 +3023,10 @@ fn sim_step_walks_a_mascot_in_for_each_gateway_present() {
         panic!("one gateway, one mascot: {:?}", frame.mascots);
     };
     let card = crate::creatures::GatewayCard::of(&scene, &mascot.key).expect("its card");
-    assert_eq!(card.name, "OpenClaw");
+    assert_eq!(
+        Some(card.name),
+        pixtuoid_core::source::display_name(pixtuoid_core::source::openclaw::SOURCE_NAME)
+    );
     assert_eq!(card.instance, None, "a lone instance needs no port");
 }
 

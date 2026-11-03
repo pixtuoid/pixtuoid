@@ -49,9 +49,9 @@ pub(crate) fn sentinel_plugin_schema(
 ) -> SchemaParse {
     let what = plugin.what;
     if !content.contains(plugin.sentinel) {
+        let cli = pixtuoid_core::source::display_name(plugin.source).unwrap_or(plugin.source);
         return SchemaParse::broken(format!(
-            "{what} is missing or replaced (sentinel absent) — reconnect {}",
-            plugin.cli
+            "{what} is missing or replaced (sentinel absent) — reconnect {cli}"
         ));
     }
     if content.contains(crate::install::merge::HOOK_PLACEHOLDER) {

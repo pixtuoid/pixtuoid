@@ -626,8 +626,8 @@ mod proc_start;
 #[cfg(feature = "native")]
 pub use proc_start::pid_start_marker;
 pub mod reasonix;
-// `doc(hidden)`: an internal fact table, `pub` ONLY so the integration-test
-// crates can read it. Keeping it off the published API lets cargo-semver-checks
+// `doc(hidden)`: an internal fact table, `pub` only for this workspace's own
+// crates. Keeping it off the published API lets cargo-semver-checks
 // accept descriptor/caps field changes without a breaking-version bump.
 #[doc(hidden)]
 pub mod registry;
