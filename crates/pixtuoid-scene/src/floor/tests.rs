@@ -2620,9 +2620,10 @@ fn a_lifted_creature_is_in_front_of_the_room() {
 }
 
 /// A host crops and rings a person by the box its picture's own hits give:
-/// on every frame of a walk, in every look, the sprite draws inside it at the
-/// picture's scale and on its canvas, at the canvas's edges too, with every
-/// look's columns and feet; it leaves with its agent's floor and its agent.
+/// on every frame of a walk, in every look, at the canvas's edges too, the box
+/// lies on the canvas, holds what the person's outfit draws at the picture's
+/// scale, and stands on every look's columns and feet; it leaves with its
+/// agent's floor and its agent.
 #[test]
 fn a_figures_box_holds_its_sprite_every_frame_in_every_look() {
     use crate::display::HoverTarget;
@@ -2659,21 +2660,15 @@ fn a_figures_box_holds_its_sprite_every_frame_in_every_look() {
         scene
     });
     let densest = RenderScale::from(pack.max_density_variant());
-    let looks = [
-        Look::HALF_BLOCKS,
-        Look::Classic {
-            scale: densest,
-            text: WorldText::Host,
-        },
-        Look::Cutaway {
-            scale: RenderScale::ONE,
-            text: WorldText::Host,
-        },
-        Look::Cutaway {
-            scale: densest,
-            text: WorldText::Host,
-        },
-    ];
+    // Past its densest art a look blits each art pixel larger, and
+    // `paint_figure` cuts hair by whole art rows.
+    let past = RenderScale::new(2 * densest.get()).expect("nonzero");
+    let text = WorldText::Host;
+    let looks: Vec<Look> = [Look::HALF_BLOCKS]
+        .into_iter()
+        .chain([densest, past].map(|scale| Look::Classic { scale, text }))
+        .chain([RenderScale::ONE, densest, past].map(|scale| Look::Cutaway { scale, text }))
+        .collect();
     let mut offices: Vec<[OfficeSession; 2]> = looks
         .iter()
         .map(|_| [(); 2].map(|()| OfficeSession::new(Arc::clone(&pack))))

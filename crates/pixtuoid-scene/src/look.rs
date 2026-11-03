@@ -447,7 +447,12 @@ impl Hits {
         area: crate::layout::Bounds,
         host_star: Option<crate::layout::Bounds>,
     ) -> Option<crate::hit::SceneHit<'_>> {
-        crate::hit::scene_hit(&self.hovers, self.star.or(host_star), &self.layout, area)
+        crate::hit::scene_hit(
+            self.hovers.at(area),
+            self.star.or(host_star),
+            &self.layout,
+            area,
+        )
     }
 
     /// Each figure the frame drew and its box, in layout units, back to front:

@@ -28,7 +28,7 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 use crate::encode::{
-    AnimJob, Timeline, centered_crop, compute_crop_rect, draw_frame, print_walkability_report,
+    AnimJob, Timeline, centered_crop, draw_frame, furniture_crop, print_walkability_report,
     save_animation, save_backend_as_png, save_renderer_animation,
 };
 use crate::pixel::PixelOffice;
@@ -361,16 +361,32 @@ fn parse_navigations(specs: &[String]) -> Result<Vec<(u64, usize)>> {
         .collect()
 }
 
-/// The centre of the first mascot's box.
-fn mascot_centre(hits: &pixtuoid_scene::look::Hits) -> Option<pixtuoid_scene::layout::Point> {
+/// Where `--crop-agent` or `--crop-mascot` centres its crop: the middle of the
+/// box `drawn` shows the figure in, wherever it walked; `None` for neither.
+fn figure_target(
+    args: &SnapshotArgs,
+    scene: &SceneState,
+    drawn: Option<&pixtuoid_scene::look::Hits>,
+) -> Result<Option<pixtuoid_scene::layout::Point>> {
     use pixtuoid_scene::display::HoverTarget;
-    let (_, at) = hits
-        .figures()
-        .find(|(target, _)| matches!(target, HoverTarget::Mascot(_)))?;
-    Some(pixtuoid_scene::layout::Point {
-        x: at.x.midpoint(at.x + at.width - 1),
-        y: at.y.midpoint(at.y + at.height - 1),
-    })
+    let centre = |who: &dyn Fn(&HoverTarget) -> bool| {
+        let (_, at) = drawn?.figures().find(|(target, _)| who(target))?;
+        Some(pixtuoid_scene::layout::Point {
+            x: at.x.midpoint(at.x + at.width - 1),
+            y: at.y.midpoint(at.y + at.height - 1),
+        })
+    };
+    if let Some(key) = &args.crop_agent {
+        let id = scenes::agent_named(scene, "--crop-agent", key)?.agent_id;
+        let at = centre(&|who| *who == HoverTarget::Agent(id));
+        at.with_context(|| format!("--crop-agent {key:?} is not drawn on this floor"))
+            .map(Some)
+    } else if args.crop_mascot {
+        let at = centre(&|who| matches!(who, HoverTarget::Mascot(_)));
+        at.context("--crop-mascot needs a visible mascot").map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 fn main() -> Result<()> {
@@ -769,16 +785,9 @@ fn main() -> Result<()> {
         print_walkability_report(&term, args.floor_seed)?;
     }
 
-    let crop_rect = if args.crop_mascot {
-        // The mascot wanders to a time-derived cell, so we crop on the position
-        // the renderer actually resolved, not a precomputed layout point.
-        let at = drawn
-            .as_ref()
-            .and_then(mascot_centre)
-            .context("--crop-mascot needs a visible mascot")?;
-        Some(centered_crop(at, cols, rows))
-    } else {
-        compute_crop_rect(&args, &scene, &floor.ctx.history, cols, rows, now)?
+    let crop_rect = match figure_target(&args, &scene, drawn.as_ref())? {
+        Some(at) => Some(centered_crop(at, cols, rows)),
+        None => furniture_crop(&args, &scene, cols, rows)?,
     };
     let area = crop_rect.unwrap_or(ratatui::layout::Rect::new(0, 0, cols, rows));
 
@@ -901,9 +910,8 @@ mod tests {
     fn crop_rect_centers_on_the_pantry_waypoint() {
         let now = SystemTime::now();
         let scene = sample_scene(now, 12, 12);
-        let history = pixtuoid_scene::pose::PoseHistory::new();
         let args = crop_args(&["--crop-furniture", "pantry"]);
-        let rect = compute_crop_rect(&args, &scene, &history, 192, 64, now)
+        let rect = furniture_crop(&args, &scene, 192, 64)
             .unwrap()
             .expect("pantry crop");
         let layout =
@@ -921,58 +929,62 @@ mod tests {
         assert!(rect.y <= cy && cy < rect.y + rect.height, "y not in crop");
     }
 
-    /// The seated fallback resolves an agent on a floor ABOVE the ground one.
-    /// `desk_index` is GLOBAL, and every floor gets its own geometry and seed, so
-    /// reading floor 0's is how an agent at a real desk reports having none.
+    /// `--crop-agent` centres on the middle of the box the frame drew its agent
+    /// in, and an agent the frame did not draw fails loudly.
     #[test]
-    fn crop_rect_seats_an_agent_that_lives_on_an_upper_floor() {
+    fn crop_agent_centres_on_its_agents_drawn_box() {
+        use pixtuoid_scene::display::HoverTarget;
         let now = SystemTime::now();
-        // More agents than one floor holds, so the tail lands on floor 1+.
-        let scene = sample_scene(now, 4, 9);
-        let upper = scene
-            .agents
-            .values()
-            .find(|a| a.floor_idx > 0)
-            .expect("a scene with 9 agents over 4 desks must reach an upper floor");
-        let (floor, desk) = (upper.floor_idx, upper.desk_index.0);
-
-        let history = pixtuoid_scene::pose::PoseHistory::new();
-        let args = crop_args(&["--crop-agent", &upper.session_id]);
-        let rect = compute_crop_rect(&args, &scene, &history, 192, 64, now)
-            .unwrap_or_else(|e| panic!("floor {floor} agent at desk {desk} must crop: {e}"))
-            .expect("a seated agent crops");
-        assert!(
-            rect.width > 0 && rect.height > 0,
-            "empty crop for desk {desk}"
+        let scene = sample_scene(now, 12, 12);
+        let pack = std::sync::Arc::new(load_bundled_pack().unwrap());
+        let mut floor = pixtuoid_scene::floor::PerFloor::new(pack);
+        let mut office = pixtuoid_scene::floor::PerOffice::new();
+        let theme = pixtuoid_scene::theme::theme_by_name("normal").unwrap();
+        let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
+        let ground = pixtuoid_scene::floor::FloorMeta::ground();
+        let mut ctx = DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, ground);
+        let hits = draw_frame(&mut term, &mut ctx, None)
+            .unwrap()
+            .expect("a classic frame");
+        let agent = crate::scenes::agent_named(&scene, "test", "demo-turn").unwrap();
+        let (_, at) = hits
+            .figures()
+            .find(|(who, _)| **who == HoverTarget::Agent(agent.agent_id))
+            .expect("demo-turn is drawn");
+        let target = figure_target(
+            &crop_args(&["--crop-agent", "demo-turn"]),
+            &scene,
+            Some(&hits),
         );
+        assert_eq!(
+            target.unwrap(),
+            Some(pixtuoid_scene::layout::Point {
+                x: at.x + (at.width - 1) / 2,
+                y: at.y + (at.height - 1) / 2,
+            })
+        );
+        let ghost = figure_target(&crop_args(&["--crop-agent", "ghost"]), &scene, Some(&hits));
+        assert!(ghost.unwrap_err().to_string().contains("(demo-turn)"));
+        let undrawn = figure_target(&crop_args(&["--crop-agent", "demo-turn"]), &scene, None);
+        assert!(undrawn.unwrap_err().to_string().contains("not drawn"));
     }
 
     #[test]
     fn crop_rect_without_flags_is_none() {
         let now = SystemTime::now();
         let scene = sample_scene(now, 12, 12);
-        let history = pixtuoid_scene::pose::PoseHistory::new();
         let args = crop_args(&[]);
-        assert!(
-            compute_crop_rect(&args, &scene, &history, 192, 64, now)
-                .unwrap()
-                .is_none()
-        );
+        assert!(figure_target(&args, &scene, None).unwrap().is_none());
+        assert!(furniture_crop(&args, &scene, 192, 64).unwrap().is_none());
     }
 
     #[test]
-    fn crop_rect_fails_loudly_on_typos_and_unknown_agents() {
+    fn crop_rect_fails_loudly_on_a_typo() {
         let now = SystemTime::now();
         let scene = sample_scene(now, 12, 12);
-        let history = pixtuoid_scene::pose::PoseHistory::new();
-
         let typo = crop_args(&["--crop-furniture", "fridge"]);
-        let err = compute_crop_rect(&typo, &scene, &history, 192, 64, now).unwrap_err();
+        let err = furniture_crop(&typo, &scene, 192, 64).unwrap_err();
         assert!(err.to_string().contains("valid: pantry"), "{err}");
-
-        let ghost = crop_args(&["--crop-agent", "ghost"]);
-        let err = compute_crop_rect(&ghost, &scene, &history, 192, 64, now).unwrap_err();
-        assert!(err.to_string().contains("(demo-turn)"), "{err}");
     }
 
     #[test]

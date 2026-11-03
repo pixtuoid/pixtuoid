@@ -116,83 +116,47 @@ fn compute_reachable(layout: &pixtuoid_scene::layout::SceneLayout) -> Vec<bool> 
     visited
 }
 
-pub(crate) fn compute_crop_rect(
+/// The crop window centered on `--crop-furniture`'s piece; `None` without the
+/// flag.
+pub(crate) fn furniture_crop(
     args: &SnapshotArgs,
     scene: &SceneState,
-    history: &pixtuoid_scene::pose::PoseHistory,
     cols: u16,
     rows: u16,
-    now: SystemTime,
 ) -> Result<Option<ratatui::layout::Rect>> {
-    // Fail loudly, as an unknown --theme/--weather does: a typo'd crop target
-    // silently writing the full uncropped PNG defeats the point of the flag.
-    let target_pixel: pixtuoid_scene::layout::Point = if let Some(ref agent_label) = args.crop_agent
-    {
-        let slot = crate::scenes::agent_named(scene, "--crop-agent", agent_label)?;
-        // `PoseHistory` records only waypoint and walking poses, so every
-        // desk-seated agent — the majority, and every seated pose — has no entry.
-        // Fall back to the seat the painter would draw them on rather than widen
-        // a sim store for a dev tool (#909).
-        match history.recent(slot.agent_id, u64::MAX, now) {
-            Some(p) => p,
-            None => {
-                let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
-                // The agent's OWN floor: `desk_index` is global, and a scene with
-                // more agents than `--max-desks` puts them on floor 1+, whose
-                // geometry and seed both differ from floor 0's.
-                let layout = pixtuoid_scene::layout::SceneLayout::compute_with_seed(
-                    buf_w,
-                    buf_h,
-                    Some(
-                        scene.floor_capacities
-                            [slot.floor_idx.min(pixtuoid_core::state::MAX_FLOORS - 1)],
-                    ),
-                    pixtuoid_scene::floor::floor_seed(slot.floor_idx),
-                )
-                .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
-                let idx = scene.floor_local_desk(slot.desk_index);
-                let desk = layout.home_desk(idx).ok_or_else(|| {
-                    anyhow::anyhow!("agent {agent_label:?} is neither placed nor at a home desk")
-                })?;
-                pixtuoid_scene::sim::seated_top_left(
-                    desk.at,
-                    pixtuoid_scene::layout::CHARACTER_SPRITE_W,
-                    desk.facing,
-                )
-            }
-        }
-    } else if let Some(ref furniture_str) = args.crop_furniture {
-        let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
-        let layout = pixtuoid_scene::layout::SceneLayout::compute_with_seed(
-            buf_w,
-            buf_h,
-            Some(scene.floor_capacities[0]),
-            args.floor_seed,
-        )
-        .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
-        let found = match furniture_str.to_lowercase().as_str() {
-            "desk" => layout.home_desks.first().map(|d| d.at),
-            name => {
-                let kind = crate::scenes::waypoint_target(name).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "unknown --crop-furniture {name:?}; valid: pantry | couch | vending | printer | meeting | sofa | chair | island | snackshelf | desk"
-                    )
-                })?;
-                layout
-                    .waypoints
-                    .iter()
-                    .find(|w| w.kind == kind)
-                    .map(|w| w.pos)
-            }
-        };
-        found.ok_or_else(|| {
-            anyhow::anyhow!("no {furniture_str:?} waypoint in this layout (terminal too small?)")
-        })?
-    } else {
+    let Some(furniture_str) = &args.crop_furniture else {
         return Ok(None);
     };
-
-    Ok(Some(centered_crop(target_pixel, cols, rows)))
+    let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
+    let layout = pixtuoid_scene::layout::SceneLayout::compute_with_seed(
+        buf_w,
+        buf_h,
+        Some(scene.floor_capacities[0]),
+        args.floor_seed,
+    )
+    .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
+    let found = match furniture_str.to_lowercase().as_str() {
+        "desk" => layout.home_desks.first().map(|d| d.at),
+        name => {
+            // Fail loudly, as an unknown --theme/--weather does: a typo'd crop
+            // target silently writing the full uncropped PNG defeats the point
+            // of the flag.
+            let kind = crate::scenes::waypoint_target(name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "unknown --crop-furniture {name:?}; valid: pantry | couch | vending | printer | meeting | sofa | chair | island | snackshelf | desk"
+                )
+            })?;
+            layout
+                .waypoints
+                .iter()
+                .find(|w| w.kind == kind)
+                .map(|w| w.pos)
+        }
+    };
+    let target = found.ok_or_else(|| {
+        anyhow::anyhow!("no {furniture_str:?} waypoint in this layout (terminal too small?)")
+    })?;
+    Ok(Some(centered_crop(target, cols, rows)))
 }
 
 /// The `--crop-*` window, in cells.

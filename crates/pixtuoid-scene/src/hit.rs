@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use pixtuoid_core::AgentId;
 
-use crate::display::{HoverTarget, Hovers, PetHover};
+use crate::display::{HoverTarget, PetHover};
 use crate::layout::{Bounds, SceneLayout};
 use crate::pet::{PetKind, PetState};
 
@@ -58,20 +58,10 @@ impl SceneHit<'_> {
     }
 }
 
-/// The topmost of `hovers` at `area` (in layout units), else the board's
-/// `star`, else the coffee machine, else a labelled fixture of `layout`.
+/// What `area` (in layout units) shows: `figure`, the topmost hover there,
+/// else the board's `star`, else the coffee machine, else a labelled fixture
+/// of `layout`.
 pub fn scene_hit<'a>(
-    hovers: &'a Hovers,
-    star: Option<Bounds>,
-    layout: &SceneLayout,
-    area: Bounds,
-) -> Option<SceneHit<'a>> {
-    figure_or_fixture(hovers.at(area), star, layout, area)
-}
-
-/// [`scene_hit`]'s ladder, the topmost hover handed in, so a test places a
-/// figure without building [`Hovers`].
-fn figure_or_fixture<'a>(
     figure: Option<&'a HoverTarget>,
     star: Option<Bounds>,
     layout: &SceneLayout,
@@ -123,13 +113,10 @@ mod tests {
             anim: crate::pack::Piece::CatWalk,
         });
         assert!(matches!(
-            figure_or_fixture(Some(&cat), None, &layout, mid),
+            scene_hit(Some(&cat), None, &layout, mid),
             Some(SceneHit::Figure(t)) if *t == cat
         ));
-        assert_eq!(
-            figure_or_fixture(None, None, &layout, mid),
-            Some(SceneHit::Coffee)
-        );
+        assert_eq!(scene_hit(None, None, &layout, mid), Some(SceneHit::Coffee));
     }
 
     /// A press focuses an agent, pets a pet unless a petting plays, and opens

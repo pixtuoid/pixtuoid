@@ -55,7 +55,7 @@ pub struct PetHover {
 
 /// One frame's hovers, back to front.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Hovers(Vec<Hover>);
+pub(crate) struct Hovers(Vec<Hover>);
 
 impl FromIterator<Hover> for Hovers {
     fn from_iter<I: IntoIterator<Item = Hover>>(hovers: I) -> Self {

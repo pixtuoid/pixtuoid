@@ -95,7 +95,7 @@ pub struct PoseHistory {
 
 impl PoseHistory {
     /// A new, empty history.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
     /// Record where an agent was visually placed this frame.
@@ -112,7 +112,12 @@ impl PoseHistory {
         self.last.contains_key(&agent_id)
     }
     /// Latest recorded position if it's at most `max_age_ms` old.
-    pub fn recent(&self, agent_id: AgentId, max_age_ms: u64, now: SystemTime) -> Option<Point> {
+    pub(crate) fn recent(
+        &self,
+        agent_id: AgentId,
+        max_age_ms: u64,
+        now: SystemTime,
+    ) -> Option<Point> {
         let (pt, when) = self.last.get(&agent_id).copied()?;
         let age = now.duration_since(when).ok()?.as_millis() as u64;
         if age <= max_age_ms { Some(pt) } else { None }
