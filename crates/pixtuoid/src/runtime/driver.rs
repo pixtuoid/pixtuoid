@@ -419,7 +419,6 @@ mod tests {
                 id,
                 Some(format!("t{n}")),
                 Some("Bash".into()),
-                None,
             ));
             events.push(AgentEvent::ToolUseEnd {
                 agent_id: id,
@@ -512,7 +511,6 @@ mod tests {
                 pixtuoid_core::AgentId::from_parts("claude-code", "s"),
                 Some(tool_use_id.into()),
                 Some("Bash".into()),
-                None,
             ),
         )
     }

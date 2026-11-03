@@ -170,48 +170,58 @@ type SourceCopy = (Arc<str>, CopyId);
 #[doc(hidden)]
 pub const COPY_RETENTION: Duration = Duration::from_hours(24);
 
-/// The agents of a source holding each [`CopyId`] they read: the first counts
-/// what it names, and every later reader, its fork, holds it without counting
-/// it. An id stays held while any holder lives, and [`COPY_RETENTION`] past
-/// the last one's end.
+/// Every [`CopyId`] a source's agents read, with who read it: its first reader
+/// counts it, and a later one, its fork, reads it without counting it. An id
+/// is kept while any reader lives and for [`COPY_RETENTION`] past the last
+/// one's end, when it is released, never torn down with a slot.
 #[derive(Debug, Default)]
 pub(super) struct CopyHolders {
-    holders: HashMap<SourceCopy, HashSet<AgentId>>,
+    ids: HashMap<SourceCopy, Readers>,
     held: HashMap<AgentId, HashSet<SourceCopy>>,
-    /// Each id whose last holder ended, and when.
-    released: HashMap<SourceCopy, SystemTime>,
-    /// `released`, oldest end first.
+    /// Each id whose last live reader ended, oldest end first.
     expiry: VecDeque<(SystemTime, SourceCopy)>,
+}
+
+/// Who read one [`CopyId`].
+#[derive(Debug, Default)]
+struct Readers {
+    live: HashSet<AgentId>,
+    /// Readers whose slot went: a re-read of their own lines is theirs again.
+    gone: HashSet<AgentId>,
+    /// When the last live reader went, while none has read it since.
+    released: Option<SystemTime>,
 }
 
 impl CopyHolders {
     /// Whether `agent` may count what `id` names under `source`: no id, an id
-    /// it already holds, or one nobody holds or released within
-    /// [`COPY_RETENTION`]. `agent` holds `id` either way.
+    /// nobody read, or one `agent` itself read, in this life or an earlier
+    /// one. `agent` holds `id` either way.
     pub(super) fn claim(&mut self, source: &Arc<str>, agent: AgentId, id: Option<&CopyId>) -> bool {
         let Some(id) = id else {
             return true;
         };
         let key = (Arc::clone(source), id.clone());
-        let kept = self.released.remove(&key).is_some();
-        let holders = self.holders.entry(key.clone()).or_default();
-        let counts = holders.contains(&agent) || (holders.is_empty() && !kept);
-        holders.insert(agent);
+        let readers = self.ids.entry(key.clone()).or_default();
+        let first = readers.live.is_empty() && readers.gone.is_empty();
+        let counts = first || readers.live.contains(&agent) || readers.gone.remove(&agent);
+        readers.live.insert(agent);
+        readers.released = None;
         self.held.entry(agent).or_default().insert(key);
         counts
     }
 
-    /// `agent` is gone at `now`: an id it was the last to hold stays held
-    /// for [`COPY_RETENTION`].
+    /// `agent`'s slot went at `now`: an id it was the last live reader of is
+    /// kept for [`COPY_RETENTION`].
     pub(super) fn release(&mut self, agent: AgentId, now: SystemTime) {
         for key in self.held.remove(&agent).into_iter().flatten() {
-            if let Some(holders) = self.holders.get_mut(&key) {
-                holders.remove(&agent);
-                if holders.is_empty() {
-                    self.holders.remove(&key);
-                    self.released.insert(key.clone(), now);
-                    self.expiry.push_back((now, key));
-                }
+            let Some(readers) = self.ids.get_mut(&key) else {
+                continue;
+            };
+            readers.live.remove(&agent);
+            readers.gone.insert(agent);
+            if readers.live.is_empty() {
+                readers.released = Some(now);
+                self.expiry.push_back((now, key));
             }
         }
     }
@@ -225,17 +235,17 @@ impl CopyHolders {
             let Some((at, key)) = self.expiry.pop_front() else {
                 break;
             };
-            // A later read held it again, or a later end re-released it.
-            if self.released.get(&key) == Some(&at) {
-                self.released.remove(&key);
+            // A later read kept it, or a later end released it again.
+            if self.ids.get(&key).is_some_and(|r| r.released == Some(at)) {
+                self.ids.remove(&key);
             }
         }
     }
 
-    /// How many ids it holds or keeps.
+    /// How many ids it keeps.
     #[cfg(test)]
     pub(super) fn len(&self) -> usize {
-        self.holders.len() + self.released.len()
+        self.ids.len()
     }
 }
 

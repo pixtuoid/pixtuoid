@@ -989,9 +989,10 @@ pub pixtuoid_core::source::AgentEvent::UserActionResolved::agent_id: pixtuoid_co
 pub pixtuoid_core::source::AgentEvent::UserActionResolved::by: pixtuoid_core::source::Resolution
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::source::AgentEvent::tool_use_start(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, core::option::Option<pixtuoid_core::source::ToolDetail>, core::option::Option<pixtuoid_core::source::CopyId>) -> Self
-pub fn pixtuoid_core::source::AgentEvent::usage(pixtuoid_core::id::AgentId, u64, core::option::Option<alloc::string::String>, core::option::Option<pixtuoid_core::source::CopyId>) -> Self
+pub fn pixtuoid_core::source::AgentEvent::tool_use_start(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, core::option::Option<pixtuoid_core::source::ToolDetail>) -> Self
+pub fn pixtuoid_core::source::AgentEvent::usage(pixtuoid_core::id::AgentId, u64, core::option::Option<alloc::string::String>) -> Self
 pub fn pixtuoid_core::source::AgentEvent::user_action_request(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, pixtuoid_core::source::RequestKeys) -> Self
+pub fn pixtuoid_core::source::AgentEvent::with_copy_id(self, pixtuoid_core::source::CopyId) -> Self
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent
@@ -1732,9 +1733,10 @@ pub pixtuoid_core::AgentEvent::UserActionResolved::agent_id: pixtuoid_core::id::
 pub pixtuoid_core::AgentEvent::UserActionResolved::by: pixtuoid_core::source::Resolution
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::source::AgentEvent::tool_use_start(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, core::option::Option<pixtuoid_core::source::ToolDetail>, core::option::Option<pixtuoid_core::source::CopyId>) -> Self
-pub fn pixtuoid_core::source::AgentEvent::usage(pixtuoid_core::id::AgentId, u64, core::option::Option<alloc::string::String>, core::option::Option<pixtuoid_core::source::CopyId>) -> Self
+pub fn pixtuoid_core::source::AgentEvent::tool_use_start(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, core::option::Option<pixtuoid_core::source::ToolDetail>) -> Self
+pub fn pixtuoid_core::source::AgentEvent::usage(pixtuoid_core::id::AgentId, u64, core::option::Option<alloc::string::String>) -> Self
 pub fn pixtuoid_core::source::AgentEvent::user_action_request(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, pixtuoid_core::source::RequestKeys) -> Self
+pub fn pixtuoid_core::source::AgentEvent::with_copy_id(self, pixtuoid_core::source::CopyId) -> Self
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent

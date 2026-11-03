@@ -99,12 +99,7 @@ fn tool_use_start(
 ) {
     r.apply(
         scene,
-        AgentEvent::tool_use_start(
-            id,
-            tool_use_id.map(Into::into),
-            detail.map(Into::into),
-            None,
-        ),
+        AgentEvent::tool_use_start(id, tool_use_id.map(Into::into), detail.map(Into::into)),
         at,
         tp,
     );

@@ -43,7 +43,7 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::tool_use_start(parent, Some("task-1".into()), Some(ToolDetail::Task), None),
+        AgentEvent::tool_use_start(parent, Some("task-1".into()), Some(ToolDetail::Task)),
         at(1),
         Transport::Hook,
     );
@@ -67,7 +67,6 @@ fn full_scene_serialization_is_stable() {
             Some(ToolDetail::Generic {
                 display: "Read · src/main.rs".into(),
             }),
-            None,
         ),
         at(2),
         Transport::Hook,
@@ -126,7 +125,6 @@ fn full_scene_serialization_is_stable() {
             Some(ToolDetail::Generic {
                 display: "Bash · cargo test".into(),
             }),
-            None,
         ),
         at(6),
         Transport::Hook,

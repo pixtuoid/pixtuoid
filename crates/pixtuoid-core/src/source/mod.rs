@@ -354,36 +354,42 @@ impl PidIdentity {
 }
 
 impl AgentEvent {
-    /// A token reading. THE constructor outside this crate, so a field it
-    /// gains is a non-breaking add.
-    pub fn usage(
-        agent_id: AgentId,
-        fresh_tokens: u64,
-        reading_id: Option<String>,
-        copy_id: Option<CopyId>,
-    ) -> Self {
+    /// A token reading, its optional fields unset. THE constructor outside
+    /// this crate, so a field it gains is a non-breaking add.
+    pub fn usage(agent_id: AgentId, fresh_tokens: u64, reading_id: Option<String>) -> Self {
         AgentEvent::Usage {
             agent_id,
             fresh_tokens,
             reading_id,
-            copy_id,
+            copy_id: None,
         }
     }
 
-    /// A tool call's start. THE constructor outside this crate, so a field it
-    /// gains is a non-breaking add.
+    /// A tool call's start, its optional fields unset. THE constructor outside
+    /// this crate, so a field it gains is a non-breaking add.
     pub fn tool_use_start(
         agent_id: AgentId,
         tool_use_id: Option<String>,
         detail: Option<ToolDetail>,
-        copy_id: Option<CopyId>,
     ) -> Self {
         AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id,
             detail,
-            copy_id,
+            copy_id: None,
         }
+    }
+
+    /// This reading or call, under `id`; any other event as it was.
+    #[must_use]
+    pub fn with_copy_id(mut self, id: CopyId) -> Self {
+        match &mut self {
+            AgentEvent::Usage { copy_id, .. } | AgentEvent::ToolUseStart { copy_id, .. } => {
+                *copy_id = Some(id);
+            }
+            _ => debug_assert!(false, "only a reading or a call keeps a copy id"),
+        }
+        self
     }
 
     /// A hook `Identity` event with `pid: None` — the pid is stamped LATER by

@@ -84,7 +84,6 @@ fn tool(i: usize, at_ms: u64, tuid: &str, display: &str) -> [Beat; 2] {
                 Some(ToolDetail::Generic {
                     display: display.to_string(),
                 }),
-                None,
             ),
         },
         Beat {
@@ -115,7 +114,7 @@ fn usage(i: usize, at_ms: u64, fresh_tokens: u64) -> Beat {
     Beat {
         at_ms,
         transport: Transport::Jsonl,
-        event: AgentEvent::usage(cast_id(i), fresh_tokens, None, None),
+        event: AgentEvent::usage(cast_id(i), fresh_tokens, None),
     }
 }
 
@@ -163,7 +162,6 @@ pub(crate) fn hire_beats(id: AgentId, session: String) -> Vec<(u64, AgentEvent)>
                     Some(ToolDetail::Generic {
                         display: "Edit".to_string(),
                     }),
-                    None,
                 ),
             ));
             out.push((
@@ -383,7 +381,6 @@ pub(crate) fn hero_script() -> Vec<Beat> {
             Some(ToolDetail::Generic {
                 display: "Bash: rm -rf dist".to_string(),
             }),
-            None,
         ),
     });
     b.push(Beat {

@@ -39,12 +39,16 @@ fn id(name: &str) -> AgentId {
 }
 
 fn usage(agent_id: AgentId, fresh_tokens: u64, reading_id: Option<&str>) -> AgentEvent {
-    AgentEvent::usage(agent_id, fresh_tokens, reading_id.map(Into::into), None)
+    AgentEvent::usage(agent_id, fresh_tokens, reading_id.map(Into::into))
 }
 
 /// 100 tokens under reading `m1`, which a copy into another transcript keeps as `copy`.
 fn usage_with_copy(agent_id: AgentId, copy: Option<&str>) -> AgentEvent {
-    AgentEvent::usage(agent_id, 100, Some("m1".into()), copy.map(CopyId::new))
+    let usage = AgentEvent::usage(agent_id, 100, Some("m1".into()));
+    match copy {
+        Some(copy) => usage.with_copy_id(CopyId::new(copy)),
+        None => usage,
+    }
 }
 
 fn backlog(agent_id: AgentId, replaying: bool) -> AgentEvent {
@@ -55,17 +59,16 @@ fn backlog(agent_id: AgentId, replaying: bool) -> AgentEvent {
 }
 
 fn call(agent_id: AgentId, tool_use_id: &str, tool: &str) -> AgentEvent {
-    AgentEvent::tool_use_start(agent_id, Some(tool_use_id.into()), Some(tool.into()), None)
+    AgentEvent::tool_use_start(agent_id, Some(tool_use_id.into()), Some(tool.into()))
 }
 
 /// Call `t1`, which a copy into another transcript keeps as `copy`.
 fn call_with_copy(agent_id: AgentId, copy: Option<&str>) -> AgentEvent {
-    AgentEvent::tool_use_start(
-        agent_id,
-        Some("t1".into()),
-        Some("Bash".into()),
-        copy.map(CopyId::new),
-    )
+    let call = AgentEvent::tool_use_start(agent_id, Some("t1".into()), Some("Bash".into()));
+    match copy {
+        Some(copy) => call.with_copy_id(CopyId::new(copy)),
+        None => call,
+    }
 }
 
 /// Two agents seated and live: a parent and the fork that copied its transcript.
@@ -466,4 +469,33 @@ fn a_fork_of_a_fork_counts_nothing_its_grandparent_read() {
         TAIL,
     );
     assert_eq!(slot_of(&scene, grandchild), (0, 0));
+}
+
+/// A reaped agent's next life rebuilds its meter from a re-read of its own
+/// lines, copy ids included, as it does from its plain readings; a fork
+/// holding the same ids still counts none of them.
+#[test]
+fn a_reaped_agents_next_life_counts_its_own_copy_ids_again() {
+    let (mut r, mut scene) = counting();
+    let (parent, fork) = parent_and_fork(&mut r, &mut scene);
+    for a in [parent, fork] {
+        r.apply(&mut scene, usage_with_copy(a, Some("c1")), t0(), TAIL);
+        r.apply(&mut scene, call_with_copy(a, Some("k1")), t0(), TAIL);
+    }
+    let first_life = slot_of(&scene, parent);
+    let reaped = end_and_reap(&mut r, &mut scene, parent, &[fork], t0());
+    start(&mut r, &mut scene, parent);
+    r.apply(&mut scene, backlog(parent, true), reaped, TAIL);
+    r.apply(
+        &mut scene,
+        usage_with_copy(parent, Some("c1")),
+        reaped,
+        TAIL,
+    );
+    r.apply(&mut scene, call_with_copy(parent, Some("k1")), reaped, TAIL);
+    assert_eq!(slot_of(&scene, parent), first_life);
+    let late = id("late");
+    start(&mut r, &mut scene, late);
+    r.apply(&mut scene, usage_with_copy(late, Some("c1")), reaped, TAIL);
+    assert_eq!(slot_of(&scene, late), (0, 0));
 }

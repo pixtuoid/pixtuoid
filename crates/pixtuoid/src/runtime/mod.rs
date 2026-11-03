@@ -734,7 +734,7 @@ mod tests {
         seat(&mut reducer, &mut scene, a);
         reducer.apply(
             &mut scene,
-            AgentEvent::tool_use_start(a, Some("t1".into()), Some("Edit: foo.rs".into()), None),
+            AgentEvent::tool_use_start(a, Some("t1".into()), Some("Edit: foo.rs".into())),
             now,
             Transport::Hook,
         );
@@ -911,7 +911,7 @@ mod tests {
                 cwd: PathBuf::from("/r"),
                 parent_id: None,
             },
-            AgentEvent::tool_use_start(id, Some("t".into()), None, None),
+            AgentEvent::tool_use_start(id, Some("t".into()), None),
         ] {
             reducer.apply(&mut scene, event, now, Transport::Hook);
         }

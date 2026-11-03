@@ -1222,7 +1222,7 @@ fn usage_accumulates_saturating_and_stamps_the_last_reading() {
         t0,
         Transport::Hook,
     );
-    let usage = |fresh_tokens: u64| AgentEvent::usage(id, fresh_tokens, None, None);
+    let usage = |fresh_tokens: u64| AgentEvent::usage(id, fresh_tokens, None);
     r.apply(&mut scene, usage(56_500), t0, Transport::Jsonl);
     let t1 = t0 + Duration::from_secs(30);
     r.apply(&mut scene, usage(120_000), t1, Transport::Jsonl);
@@ -1236,7 +1236,7 @@ fn usage_accumulates_saturating_and_stamps_the_last_reading() {
 }
 
 fn usage_of(agent_id: AgentId, fresh_tokens: u64, reading_id: Option<&str>) -> AgentEvent {
-    AgentEvent::usage(agent_id, fresh_tokens, reading_id.map(Into::into), None)
+    AgentEvent::usage(agent_id, fresh_tokens, reading_id.map(Into::into))
 }
 
 fn usage_scene() -> (Reducer, SceneState, AgentId, SystemTime) {
@@ -1441,7 +1441,7 @@ fn usage_for_an_unknown_agent_never_registers() {
     for transport in [Transport::Jsonl, Transport::Hook] {
         r.apply(
             &mut scene,
-            AgentEvent::usage(ghost, 1_000_000, None, None),
+            AgentEvent::usage(ghost, 1_000_000, None),
             SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000),
             transport,
         );

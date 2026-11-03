@@ -402,11 +402,9 @@ const ACTIVITY_TYPES: &[&str] = &[
 const MIN_RANDOM_SUFFIX: usize = 16;
 
 /// Whether an id's `suffix` after its `msg_`/`toolu_` prefix has a random
-/// id's shape, which makes the id a [`CopyId`]: a fork (`--fork-session`,
-/// `/branch`, `/fork`) copies each line with only `sessionId` changed. A
-/// gateway behind `ANTHROPIC_BASE_URL` may mint a counter instead, which a
-/// shape alone cannot rule out, and an id of any other shape is unique in its
-/// own transcript alone.
+/// id's shape, unique across the source, which makes the id a [`CopyId`]: a
+/// line repeating it repeats the same work. An id of any other shape is
+/// unique in its own transcript alone.
 fn looks_random(suffix: &str) -> bool {
     suffix.len() >= MIN_RANDOM_SUFFIX
         && (suffix.bytes()).all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
