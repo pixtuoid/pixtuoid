@@ -415,7 +415,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
 /// are the two config-level facts only WE write: the enabled `entries.pixtuoid`
 /// entry + its `load.paths` dir registration.
 pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaParse {
-    use crate::install::verify::{SchemaParse, ShimRef};
+    use crate::install::verify::{SchemaParse, ShimRef, reconnect};
     let Ok(root) = serde_json::from_str::<Value>(content) else {
         // NOT "broken": OpenClaw reads this as JSON5, so a document our strict parser
         // rejects may be loading fine. Reporting a break told the user to "reconnect
@@ -431,9 +431,10 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
     };
     let entry = &root["plugins"]["entries"][PLUGIN_ID];
     if entry.is_null() {
-        return SchemaParse::broken(
-            "the pixtuoid plugin entry is missing from openclaw.json — reconnect openclaw",
-        );
+        return SchemaParse::broken(format!(
+            "the pixtuoid plugin entry is missing from openclaw.json — {}",
+            reconnect(pixtuoid_core::source::openclaw::SOURCE_NAME)
+        ));
     }
     let mut issues = Vec::new();
     let mut notes = Vec::new();
@@ -993,6 +994,16 @@ mod tests {
             assert!(
                 verdict.issues.is_empty(),
                 "a case-variant in deny is NOT us — must not report a break: {:?}",
+                verdict.issues
+            );
+
+            let verdict = with(&|v| v["plugins"]["entries"] = json!({}));
+            assert!(
+                verdict
+                    .issues
+                    .iter()
+                    .any(|i| i.ends_with("reconnect OpenClaw")),
+                "a missing entry names the Sources row to reconnect: {:?}",
                 verdict.issues
             );
 

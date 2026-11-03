@@ -15,12 +15,14 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 const CONNECTION_POPUP_W: u16 = 66;
+/// The name's cell: as much of the name as [`NAME_FIT`] holds, then its [`GAP`].
 const NAME_W: usize = 13;
-/// What follows the badge and the name, so a name that fills [`NAME_W`] still
-/// stands apart from its state glyph.
+/// What follows the badge and the name, so a cut name still stands apart from
+/// its state glyph.
 const GAP: &str = " ";
-/// The CLI column: the badge, its gap, the name and its gap.
-const CLI_W: usize = "[cc]".len() + GAP.len() + NAME_W + GAP.len();
+const NAME_FIT: usize = NAME_W - GAP.len();
+/// The CLI column: the badge, its gap and the name's cell.
+const CLI_W: usize = "[cc]".len() + GAP.len() + NAME_W;
 const CONN_W: usize = 15;
 
 /// The column header, kept as one fn so the "Live" position can't drift from the
@@ -200,8 +202,8 @@ fn connection_line(
     };
 
     let name_cell = format!(
-        "{:<NAME_W$}{GAP}",
-        marquee_or_truncate(row.display_name, NAME_W, is_selected, now)
+        "{:<NAME_FIT$}{GAP}",
+        marquee_or_truncate(row.display_name, NAME_FIT, is_selected, now)
     );
 
     // A fixed 2-col slot — blank rather than absent, to keep the Live column
@@ -321,9 +323,9 @@ mod tests {
         }
     }
 
-    /// The registry's longest name fills [`NAME_W`], scrolling when selected and
-    /// cut to an ellipsis when not, and still stands apart from its state glyph,
-    /// which sits under the header's Connection.
+    /// The registry's longest name overflows [`NAME_FIT`], scrolling when
+    /// selected and cut to an ellipsis when not, and still stands apart from its
+    /// state glyph, which sits under the header's Connection.
     #[test]
     fn the_longest_registered_name_stands_apart_from_its_state() {
         let longest = pixtuoid_core::source::registry::REGISTRY
@@ -331,8 +333,8 @@ mod tests {
             .max_by_key(|d| d.display_name.chars().count())
             .expect("a registered source");
         assert!(
-            longest.display_name.chars().count() >= NAME_W,
-            "{:?} no longer fills the name column, so this pins nothing",
+            longest.display_name.chars().count() > NAME_FIT,
+            "{:?} no longer overflows the name column, so this pins nothing",
             longest.display_name
         );
         let header_col = column_header()
@@ -363,6 +365,13 @@ mod tests {
             let shown: String = text.iter().collect();
             assert_eq!(glyph, header_col, "under its header: {shown:?}");
             assert_eq!(text[glyph - 1], ' ', "a gap before the state: {shown:?}");
+            if !selected {
+                assert_eq!(
+                    text[glyph - 2],
+                    '\u{2026}',
+                    "cut with an ellipsis: {shown:?}"
+                );
+            }
         }
     }
 

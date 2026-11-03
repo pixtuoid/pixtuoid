@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 use crate::install::io;
 use crate::install::target::MergeOutcome;
-use crate::install::verify::{SchemaParse, ShimRef};
+use crate::install::verify::{SchemaParse, ShimRef, reconnect};
 
 /// The KEY is the detection signal; the value is only a human note for anyone
 /// who opens the file.
@@ -187,10 +187,11 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
     let Ok(doc) = serde_json::from_str::<Value>(content.trim()) else {
         return SchemaParse::broken("~/.grok/hooks/pixtuoid.json does not parse as JSON");
     };
+    let reconnect = reconnect(pixtuoid_core::source::grok::SOURCE_NAME);
     if doc.get(SENTINEL_KEY).is_none() {
-        return SchemaParse::broken(
-            "the grok hooks file is missing or replaced (sentinel absent) — reconnect grok",
-        );
+        return SchemaParse::broken(format!(
+            "the grok hooks file is missing or replaced (sentinel absent) — {reconnect}"
+        ));
     }
     let mut issues = Vec::new();
     let mut shim = ShimRef::Unknown;
@@ -198,7 +199,7 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
     for event in GROK_EVENTS {
         let Some(groups) = hooks.and_then(|h| h.get(*event)).and_then(|g| g.as_array()) else {
             issues.push(format!(
-                "registered grok event {event} has no hook entry — an older install; reconnect grok"
+                "registered grok event {event} has no hook entry — an older install; {reconnect}"
             ));
             continue;
         };
@@ -206,7 +207,7 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
             if group.get("matcher").is_some() {
                 issues.push(format!(
                     "grok event {event} carries a matcher — upstream rejects the group \
-                     (that event's hook never fires); reconnect grok"
+                     (that event's hook never fires); {reconnect}"
                 ));
             }
             for handler in group
@@ -222,7 +223,7 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
                 {
                     issues.push(format!(
                         "grok event {event}'s handler lost its PIXTUOID_SOURCE env — events \
-                         would attribute to claude-code and be dropped; reconnect grok"
+                         would attribute to claude-code and be dropped; {reconnect}"
                     ));
                 }
                 if let Some(cmd) = handler.get("command").and_then(|c| c.as_str())
@@ -358,7 +359,12 @@ mod tests {
         let mut doc: Value = serde_json::from_str(&installed).unwrap();
         doc["hooks"].as_object_mut().unwrap().remove("SubagentStop");
         let half_dead = verify_schema(&doc.to_string());
-        assert!(half_dead.issues.iter().any(|i| i.contains("SubagentStop")));
+        assert!(
+            half_dead
+                .issues
+                .iter()
+                .any(|i| i.contains("SubagentStop") && i.ends_with("reconnect Grok Build"))
+        );
 
         let mut doc: Value = serde_json::from_str(&installed).unwrap();
         doc["hooks"]["Stop"][0]["hooks"][0]["env"] = json!({});
