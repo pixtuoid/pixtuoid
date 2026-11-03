@@ -369,15 +369,24 @@ impl Office {
     /// `image-rendering: pixelated`, so anti-aliased text CANNOT be baked into the
     /// pixels — the site lays crisp DOM spans over the canvas from this model
     /// instead. Coordinates are the LAYOUT units `step` takes (a label's `x` is the sprite
-    /// CENTER, `y` its head-top; the board `rect` is the neon-panel interior).
-    /// Colors are RESOLVED against the CURRENT theme. Call right after `step` (it
-    /// reads the step's clock).
+    /// CENTER, `y` its head-top; the board `rect` is the neon-panel interior), and
+    /// `badge_insets` is [`BADGE_INSETS`](pixtuoid_scene::display::BADGE_INSETS), in
+    /// the face's pixels. Colors are RESOLVED against the CURRENT theme. Call
+    /// right after `step` (it reads the step's clock).
     pub fn overlay_json(&mut self) -> String {
         use pixtuoid_scene::layout::{
             NEON_PANEL_INNER_H, NEON_PANEL_INNER_W, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y,
         };
+        let head = {
+            let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
+                pixtuoid_scene::display::BADGE_INSETS;
+            let [t, r, b, l] = gap;
+            format!(
+                "{{\"badge_insets\":{{\"rim\":{rim},\"ring_w\":{ring_w},\"gap\":[{t},{r},{b},{l}]}}"
+            )
+        };
         let Some(now) = self.last_now else {
-            return r#"{"labels":[],"board":null}"#.to_string();
+            return format!("{head},\"labels\":[],\"board\":null}}");
         };
         let theme = self.theme;
 
@@ -385,24 +394,25 @@ impl Office {
             .session
             .board(&self.scene, self.floor_meta().motion, now);
 
-        let mut out = String::from("{\"labels\":[");
+        let mut out = format!("{head},\"labels\":[");
         for (i, badge) in self.shown_badges.iter().enumerate() {
             let pixtuoid_scene::display::Badge {
-                at, marker, name, ..
+                at,
+                marker,
+                name,
+                plate,
+                ..
             } = badge;
             if i > 0 {
                 out.push(',');
             }
             out.push_str(&format!("{{\"x\":{},\"y\":{},\"text\":", at.x, at.y));
-            push_json_string(
-                &mut out,
-                &format!("{}{}", pixtuoid_scene::badge::BADGE_MARKER, name.text()),
-            );
-            // The site paints the ● in `color` and the name in `badge`.
+            push_json_string(&mut out, name.text());
             out.push_str(&format!(
-                ",\"color\":\"{}\",\"badge\":\"{}\"",
+                ",\"ring\":\"{}\",\"ink\":\"{}\",\"plate\":\"{}\"",
                 hex(*marker),
-                hex(name.ink)
+                hex(name.ink),
+                hex(*plate)
             ));
             out.push('}');
         }
@@ -863,13 +873,13 @@ mod tests {
     }
 
     #[test]
-    fn overlay_json_carries_the_cli_badge_hue_for_registered_prefixes() {
+    fn overlay_json_carries_the_cli_badge_hue_for_registered_sources() {
         let mut o = office();
         o.step(T0_MS, 320, 180);
         o.step(T0_MS + 10_000.0, 320, 180);
         let json = o.overlay_json();
         let cc = NORMAL.source.claude_code;
-        let expect = format!("\"color\":\"#{:02x}{:02x}{:02x}\"", cc.r, cc.g, cc.b);
+        let expect = format!("\"ring\":\"#{:02x}{:02x}{:02x}\"", cc.r, cc.g, cc.b);
         assert!(
             json.contains(&expect),
             "the markers carry the cc badge hue: {json}"
@@ -1271,16 +1281,22 @@ mod tests {
                 serde_json::json!({
                     "x": b.at.x,
                     "y": b.at.y,
-                    "text": format!("{}{}", pixtuoid_scene::badge::BADGE_MARKER, b.name.text()),
-                    "color": hex(b.marker),
-                    "badge": hex(b.name.ink),
+                    "text": b.name.text(),
+                    "ring": hex(b.marker),
+                    "ink": hex(b.name.ink),
+                    "plate": hex(b.plate),
                 })
             })
             .collect();
         assert!(!want.is_empty(), "premise: agents are drawn");
         assert_eq!(got, want);
-        // The site slices the marker off the label by one UTF-16 code unit.
-        assert_eq!(pixtuoid_scene::badge::BADGE_MARKER.len_utf16(), 1);
+        let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
+            pixtuoid_scene::display::BADGE_INSETS;
+        assert_eq!(
+            v["badge_insets"],
+            serde_json::json!({ "rim": rim, "ring_w": ring_w, "gap": gap }),
+            "the site frames each label as the office does"
+        );
     }
 
     #[test]

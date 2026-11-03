@@ -531,7 +531,7 @@ fn badge_at(anchor: crate::layout::Point) -> TextRun {
             crate::sprite::Rgb { r: 9, g: 9, b: 9 },
         )],
         plate: None,
-        strip: None,
+        ring: None,
         role: crate::display::TextRole::Badge(pixtuoid_core::AgentId::from_transcript_path(
             "/badge.jsonl",
         )),

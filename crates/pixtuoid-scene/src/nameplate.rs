@@ -56,11 +56,6 @@ impl Nameplate {
         }
     }
 
-    /// The agent's label.
-    pub fn label(&self) -> &str {
-        &self.label
-    }
-
     /// Its suffix, where a namesake shares the label.
     pub fn suffix(&self) -> Option<Suffix> {
         self.suffix

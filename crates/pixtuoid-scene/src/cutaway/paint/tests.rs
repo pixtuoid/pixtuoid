@@ -319,7 +319,7 @@ fn both_profiles_seat_an_occupant_on_the_side_the_layout_chose() {
 #[test]
 fn a_runs_spans_step_on_one_grid_on_a_plate_or_off_one() {
     use crate::display::text::advance;
-    use crate::display::{TextRole, TextSpan};
+    use crate::display::{Align, TextRole, TextSpan};
     use crate::sprite::Rgb;
     let pen =
         Pen::new(RenderScale::new(4).expect("nonzero"), test_density(4)).expect("4 divides 4");
@@ -338,7 +338,7 @@ fn a_runs_spans_step_on_one_grid_on_a_plate_or_off_one() {
             align,
             spans: vec![TextSpan::new(first, a), TextSpan::new(second, b)],
             plate,
-            strip: None,
+            ring: None,
             role,
         };
         let mut buf = RgbBuffer::filled(96, 16, Rgb { r: 0, g: 0, b: 0 });

@@ -1024,8 +1024,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
             scale.to_buffer(layout.buf_h),
             theme.surface.bg_fallback,
         );
-        let mut cache = crate::cutaway::paint::CutawayCache::default();
-        crate::cutaway::paint::render_cutaway(
+        let mut list = crate::display::compose(
             &unlit_room(frame),
             crate::display::Office {
                 layout: &layout,
@@ -1037,9 +1036,17 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
                 crate::floor::FloorMeta::ground(),
                 desk_foot_hour(),
             ),
-            (&mut cache, &mut crate::outside::OutsideCache::default()),
-            &mut buf,
+            (
+                &mut crate::display::compose::LightCache::default(),
+                &mut crate::outside::OutsideCache::default(),
+            ),
         );
+        // World text paints over every piece, so the sitter's badge may cover a
+        // neighbouring desk's foot, which is all this pins.
+        list.pieces_mut()
+            .retain(|p| !matches!(p.kind, crate::display::PieceKind::Text { .. }));
+        let mut cache = crate::cutaway::paint::CutawayCache::default();
+        crate::cutaway::paint::paint(&list, &mut cache, &mut buf);
         buf.as_slice().to_vec()
     };
 
@@ -3457,30 +3464,72 @@ fn both_looks_hang_a_badge_from_the_one_anchor() {
     }
 }
 
-/// A pixel painter's badge writes its name alone, the plate's strip standing
-/// in for the terminal's [`BADGE_MARKER`](crate::badge::BADGE_MARKER), so the
-/// office's font is never asked for that glyph.
+/// A pixel painter's badge writes its name alone, ringed in the marker's ink
+/// in place of the terminal's [`BADGE_MARKER`](crate::badge::BADGE_MARKER),
+/// so the office's font is never asked for that glyph: the rim, the ring, then
+/// the gap, even where a glyph inks its line's top row or last cell's last column.
 #[test]
-fn a_pixel_badge_writes_no_marker() {
+fn a_pixel_badge_rings_its_plate_and_writes_no_marker() {
+    use crate::display::pen::{ArtPx, Pen};
     let (layout, pack, frames, _) =
         crate::display::compose::tests::sit_down(crate::layout::Facing::North, 2);
     let theme = crate::theme::theme_by_name("normal").expect("normal theme");
+    let scale = crate::render_scale::RenderScale::from(pack.max_density_variant());
     let office = crate::display::Office {
         layout: &layout,
         pack: &pack,
         theme,
-        scale: crate::render_scale::RenderScale::ONE,
+        scale,
     };
-    let list = crate::display::compose::tests::list_at(&frames[0], office, 12);
-    let badges: Vec<_> = list.badges().collect();
-    assert!(!badges.is_empty(), "premise: the walker wears a badge");
-    for run in badges {
-        let marker = crate::badge::BADGE_MARKER;
-        assert!(
-            run.spans.iter().all(|s| !s.text().contains(marker)),
-            "{run:?}"
-        );
-        assert!(run.strip.is_some(), "the strip stands in: {run:?}");
+    let pen = Pen::for_pack(scale, &pack);
+    let room = Rgb {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    let size = |logical| pen.buffer(pen.art(logical)).0;
+    // `ñ`'s tilde inks the line's top row, and `ơ`'s horn its last cell's last column.
+    for label in [None, Some("cc\u{b7}a\u{f1}o"), Some("cc\u{b7}th\u{1a1}")] {
+        let mut frame = frames[0].clone();
+        if let Some(label) = label {
+            frame.agents[0].label = label.into();
+        }
+        let list = crate::display::compose::tests::list_at(&frame, office, 12);
+        let badges: Vec<_> = list.badges().collect();
+        assert!(!badges.is_empty(), "premise: the walker wears a badge");
+        if let Some(label) = label {
+            assert!(
+                badges.iter().any(|run| run.text() == label),
+                "premise: {label} is drawn whole"
+            );
+        }
+        for run in badges {
+            let marker = crate::badge::BADGE_MARKER;
+            assert!(
+                run.spans.iter().all(|s| !s.text().contains(marker)),
+                "{run:?}"
+            );
+            let (Some(plate), Some(ring)) = (run.plate, run.ring) else {
+                panic!("a ringed plate: {run:?}");
+            };
+            assert_ne!(plate, ring, "premise: the ring shows on its plate");
+            let mut buf = RgbBuffer::filled(size(layout.buf_w), size(layout.buf_h), room);
+            crate::cutaway::paint::paint_run(run, (&pack, pen), &mut buf);
+            let r = crate::display::run_rect(run, pen);
+            // The art pixels `n` in from the plate's edge, all the way round.
+            let round = |n: u16| {
+                let (x0, y0) = (r.x.0 + n, r.y.0 + n);
+                let (x1, y1) = (r.x.0 + r.w.0 - 1 - n, r.y.0 + r.h.0 - 1 - n);
+                (x0..=x1)
+                    .flat_map(move |x| [(x, y0), (x, y1)])
+                    .chain((y0..=y1).flat_map(move |y| [(x0, y), (x1, y)]))
+                    .map(|(x, y)| buf.get(pen.buffer(ArtPx(x)).0, pen.buffer(ArtPx(y)).0))
+                    .collect::<Vec<_>>()
+            };
+            for (n, ink, what) in [(0, plate, "rim"), (1, ring, "ring"), (2, plate, "gap")] {
+                assert!(round(n).iter().all(|&px| px == ink), "the {what}: {run:?}");
+            }
+        }
     }
 }
 
@@ -3532,6 +3581,89 @@ fn a_bubble_hangs_over_its_speakers_badge_in_both_looks() {
         find(&cutaway, TextRole::Bubble(speaker)),
         Some(bubble),
         "the same bubble"
+    );
+}
+
+/// Whichever chitchat spot its speaker stands at, in offices of every shape, a
+/// bubble's plate clears its speaker's ringed badge's by one gap on the pack's
+/// grid: no spot sits high enough for the frame's top to squeeze them together.
+#[test]
+fn a_bubble_clears_its_speakers_badge_at_every_chitchat_spot() {
+    use crate::display::TextRole;
+    use crate::display::pen::Pen;
+    use crate::pose::Pose;
+    let pack = crate::pack::test_office();
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme");
+    let scale = crate::render_scale::RenderScale::from(pack.max_density_variant());
+    let pen = Pen::for_pack(scale, &pack);
+    let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    let mut gaps = std::collections::BTreeMap::new();
+    for (w, h) in [(160, 96), (112, 100), (120, 60), (240, 144), (320, 180)] {
+        let layout = SceneLayout::compute_with_seed(w, h, None, 0).expect("lays out");
+        let spots: Vec<_> = (layout.waypoints.iter().enumerate())
+            .filter(|(_, wp)| crate::chitchat::supports_chitchat(wp.kind))
+            .map(|(i, wp)| (i, wp.kind))
+            .collect();
+        let mut scene = SceneState::uniform(16);
+        let mut poses = HashMap::new();
+        for (n, &(wp, kind)) in spots.iter().enumerate() {
+            let id = pixtuoid_core::AgentId::from_transcript_path(&format!("/chat/{n}.jsonl"));
+            let mut s = make_slot(id, ActivityState::Idle);
+            s.desk_index = GlobalDeskIndex(n % layout.home_desks.len());
+            (s.created_at, s.state_started_at, s.last_event_at) = (now, now, now);
+            scene.agents.insert(id, s);
+            poses.insert(id, Some(Pose::AtWaypoint { wp, kind }));
+        }
+        let (mut frame, _) = sim_and_paint(&mut OwnedSimStores::new(), &scene, &layout, &pack, now);
+        (frame.characters, ..) = crate::sim::resolve_characters(
+            &frame.agents,
+            &poses,
+            &layout,
+            &pack,
+            &HashMap::new(),
+            Motion::Full.timing(now),
+        );
+        frame.chitchat_bubbles = (frame.agents.iter())
+            .map(|a| crate::chitchat::ChitchatBubble {
+                text: "LGTM!",
+                speaker: a.agent_id,
+            })
+            .collect();
+        let office = crate::display::Office {
+            layout: &layout,
+            pack: &pack,
+            theme,
+            scale,
+        };
+        let list = crate::display::compose::tests::list_at(&frame, office, 12);
+        let mut spoke = 0;
+        for bubble in list.texts() {
+            let TextRole::Bubble(id) = bubble.role else {
+                continue;
+            };
+            let badge = (list.badges())
+                .find(|b| b.role == TextRole::Badge(id))
+                .expect("a bubble's speaker wears a badge");
+            let (above, below) = (
+                crate::display::run_rect(bubble, pen),
+                crate::display::run_rect(badge, pen),
+            );
+            let gap = i32::from(below.y.0) - i32::from(above.y.0 + above.h.0);
+            gaps.entry(gap).or_insert((w, h, badge.at));
+            spoke += 1;
+        }
+        assert_eq!(spoke, spots.len(), "{w}x{h}: every spot's speaker spoke");
+    }
+    let gap = |(&g, _): (&i32, _)| g;
+    let (least, most) = (gaps.first_key_value(), gaps.last_key_value());
+    assert!(
+        least.is_some_and(|g| gap(g) > 0),
+        "a bubble meets its badge: {gaps:?}"
+    );
+    assert_eq!(
+        least.map(gap),
+        most.map(gap),
+        "one gap everywhere: {gaps:?}"
     );
 }
 

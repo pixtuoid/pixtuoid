@@ -1180,16 +1180,31 @@ test('crisp AA captions overlay the live office (name badges + neon board)', asy
   // A glyph pixel lands on whole CSS pixels only at a multiple of the face's em.
   const labelPx = await label.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   expect(labelPx % 8).toBe(0);
-  const parts = await label.evaluate((el) =>
-    Array.from(el.children).map((c) => ({
-      text: c.textContent,
-      color: (c as HTMLElement).style.color,
-    }))
+  const badge = await label.evaluate((el) => {
+    const s = (el as HTMLElement).style;
+    const cs = getComputedStyle(el);
+    const sides = ['top', 'right', 'bottom', 'left'];
+    return {
+      text: el.textContent,
+      inks: [s.color, s.backgroundColor, s.getPropertyValue('--ring')],
+      rim: sides.map((side) => parseFloat(cs.getPropertyValue(`border-${side}-width`))),
+      padding: sides.map((side) => parseFloat(cs.getPropertyValue(`padding-${side}`))),
+      ring: cs.boxShadow,
+    };
+  });
+  expect(badge.text).toMatch(/^[a-z]{2}·/);
+  expect(badge.inks).not.toContain('');
+  // The engine's insets in the face's pixels: the rim a border, the ring an inset
+  // shadow over the padding, which holds the ring and then the gap.
+  const insets = await page.evaluate(
+    () =>
+      (window as unknown as { __pixBadgeInsets: { rim: number; ring_w: number; gap: number[] } })
+        .__pixBadgeInsets
   );
-  expect(parts).toHaveLength(2);
-  expect(parts[0].text).toBe('●');
-  expect(parts[1].text).toMatch(/^[a-z]{2}·/);
-  expect(parts[1].color).not.toEqual('');
+  const px = (n: number) => (n * labelPx) / 8;
+  expect(badge.rim).toEqual(insets.gap.map(() => px(insets.rim)));
+  expect(badge.padding).toEqual(insets.gap.map((gap) => px(insets.ring_w + gap)));
+  expect(badge.ring).toMatch(new RegExp(` ${px(insets.ring_w)}px inset$`));
   const brand = page.locator('#office-overlay .ov-board .ov-brow--top span').first();
   await expect(brand).toHaveText(/\S/, { timeout: 10_000 });
   const brandFont = await brand.evaluate((el) => getComputedStyle(el).fontFamily);

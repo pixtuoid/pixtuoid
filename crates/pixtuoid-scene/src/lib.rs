@@ -37,7 +37,6 @@ pub mod anim;
 pub(crate) mod atmosphere;
 #[doc(hidden)]
 pub mod audio;
-#[doc(hidden)]
 pub mod badge;
 #[doc(hidden)]
 pub mod burn;
