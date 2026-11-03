@@ -1167,13 +1167,13 @@ mod tests {
 
     /// The outfit seed a device rebuilds from its server's encoded line.
     fn seed_on_a_device(agent: &AgentSlot) -> u64 {
-        use pixtuoid_core::remote::{RemoteOffice, encode};
+        use pixtuoid_core::remote::{Os, RemoteOffice, Server, encode};
         use pixtuoid_core::state::MAX_FLOORS;
         use std::time::SystemTime;
         let mut scene = pixtuoid_core::SceneState::uniform(4);
         scene.agents.insert(agent.agent_id, agent.clone());
         let now = SystemTime::now();
-        let line = encode(&scene, now).expect("a scene encodes");
+        let line = encode(&scene, &Server::new("host", Os::here()), now).expect("a scene encodes");
         let mut office = RemoteOffice::new([4; MAX_FLOORS]);
         office.apply(line.as_bytes(), now).expect("it applies");
         outfit_seed_for(&office.scene().agents[&agent.agent_id])

@@ -98,7 +98,9 @@ pub fn remote(bytes: &[u8]) -> RemoteOffice {
             let _ = office.apply(line, now);
         }
     }
-    let _ = remote::encode(office.scene(), now);
+    let server =
+        (office.server().cloned()).unwrap_or_else(|| remote::Server::new("", remote::Os::Other));
+    let _ = remote::encode(office.scene(), &server, now);
     office.set_capacities([1; MAX_FLOORS]);
     office
 }

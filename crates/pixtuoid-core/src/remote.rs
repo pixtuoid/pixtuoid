@@ -46,10 +46,70 @@ const MAX_CLOCK_DRIFT: Duration = Duration::from_secs(2);
 struct Snapshot {
     v: u32,
     now_ms: u64,
+    server: Server,
     agents: Vec<Agent>,
     daemons: Vec<Daemon>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     today: Option<Day>,
+}
+
+/// The machine a server runs on, as a device names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Server {
+    /// What the machine's owner named it, display-safe.
+    #[serde(deserialize_with = "display_safe_text")]
+    name: String,
+    os: Os,
+}
+
+impl Server {
+    /// `name` made display-safe, running `os`.
+    pub fn new(name: &str, os: Os) -> Self {
+        Self {
+            name: display_safe(name),
+            os,
+        }
+    }
+
+    /// What the machine's owner named it.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// What it runs.
+    pub fn os(&self) -> Os {
+        self.os
+    }
+}
+
+/// The OS a server runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Os {
+    /// macOS.
+    Macos,
+    /// Linux.
+    Linux,
+    /// Windows.
+    Windows,
+    /// One this build doesn't name.
+    #[serde(other)]
+    Other,
+}
+
+impl Os {
+    /// The OS this build runs on.
+    pub const fn here() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(target_os = "linux") {
+            Self::Linux
+        } else if cfg!(windows) {
+            Self::Windows
+        } else {
+            Self::Other
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -288,15 +348,17 @@ fn project_today(today: &Today) -> Day {
     }
 }
 
-/// `scene` as one newline-terminated wire line, stamped with the server's `now`.
+/// `scene` as one newline-terminated wire line from `server`, stamped with its
+/// `now`.
 ///
 /// # Errors
 ///
 /// If JSON encoding fails.
-pub fn encode(scene: &SceneState, now: SystemTime) -> serde_json::Result<String> {
+pub fn encode(scene: &SceneState, server: &Server, now: SystemTime) -> serde_json::Result<String> {
     let mut line = serde_json::to_string(&Snapshot {
         v: VERSION,
         now_ms: epoch_ms(now),
+        server: server.clone(),
         agents: scene.agents.values().map(project_agent).collect(),
         daemons: scene
             .daemons()
@@ -316,6 +378,13 @@ const PIN_BYTES: usize = 32;
 
 const PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
 
+/// [`PairLink`]'s keys, each one spelling its text and its parse share.
+const HOST: &str = "host";
+const PORT: &str = "port";
+const SPKI: &str = "spki";
+const CODE: &str = "code";
+const EXPIRES: &str = "expires";
+
 /// What a device scans to reach a server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PairLink {
@@ -328,6 +397,8 @@ pub struct PairLink {
     pub spki: String,
     /// The one-time code a [`Hello::Pair`] redeems, in uppercase hex.
     pub code: String,
+    /// When [`Self::code`] stops redeeming, to the second.
+    pub expires: SystemTime,
 }
 
 impl fmt::Display for PairLink {
@@ -337,10 +408,14 @@ impl fmt::Display for PairLink {
             port,
             spki,
             code,
+            expires,
         } = self;
+        let expires = expires
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |at| at.as_secs());
         write!(
             f,
-            "{PAIR_LINK_PREFIX}host={host}&port={port}&spki={spki}&code={code}"
+            "{PAIR_LINK_PREFIX}{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{CODE}={code}&{EXPIRES}={expires}"
         )
     }
 }
@@ -377,19 +452,24 @@ impl FromStr for PairLink {
                 .then(|| value.to_owned())
                 .ok_or(PairLinkError)
         };
-        let host = field("host")?;
+        let host = field(HOST)?;
         if !is_host(host) {
             return Err(PairLinkError);
         }
         let link = Self {
             host: host.to_owned(),
-            port: field("port")?
+            port: field(PORT)?
                 .parse()
                 .ok()
                 .filter(|port| *port != 0)
                 .ok_or(PairLinkError)?,
-            spki: hex("spki", PIN_BYTES)?,
-            code: hex("code", SECRET_BYTES)?,
+            spki: hex(SPKI, PIN_BYTES)?,
+            code: hex(CODE, SECRET_BYTES)?,
+            expires: field(EXPIRES)?
+                .parse()
+                .ok()
+                .and_then(|secs| UNIX_EPOCH.checked_add(Duration::from_secs(secs)))
+                .ok_or(PairLinkError)?,
         };
         // A field read twice, or one a server never writes, reads as a forgery.
         (link.to_string() == text)
@@ -571,6 +651,8 @@ pub enum ApplyError {
 #[derive(Debug)]
 pub struct RemoteOffice {
     scene: SceneState,
+    /// Who sent the last line; `None` before the first.
+    server: Option<Server>,
     /// The device's clock minus the server's, in ms; held from line to line.
     skew_ms: Option<i64>,
 }
@@ -580,6 +662,7 @@ impl RemoteOffice {
     pub fn new(capacities: [usize; MAX_FLOORS]) -> Self {
         Self {
             scene: SceneState::new(capacities),
+            server: None,
             skew_ms: None,
         }
     }
@@ -587,6 +670,11 @@ impl RemoteOffice {
     /// The office to render, its times on the device's clock.
     pub fn scene(&self) -> &SceneState {
         &self.scene
+    }
+
+    /// The machine the last line came from; `None` before the first.
+    pub fn server(&self) -> Option<&Server> {
+        self.server.as_ref()
     }
 
     /// Take a new layout: everyone takes a new desk, oldest first, since the old
@@ -623,11 +711,13 @@ impl RemoteOffice {
         }
         let Snapshot {
             now_ms,
+            server,
             mut agents,
             daemons,
             today,
             ..
         } = serde_json::from_slice(line)?;
+        self.server = Some(server);
 
         let skew = self.skew_for(now_ms, now);
         // A time this far ahead means nothing, and near a clock's end it would
@@ -906,8 +996,12 @@ mod tests {
         scene
     }
 
+    fn server() -> Server {
+        Server::new("studio", Os::Macos)
+    }
+
     fn sent(scene: &SceneState) -> String {
-        encode(scene, at(AT)).expect("a scene encodes")
+        encode(scene, &server(), at(AT)).expect("a scene encodes")
     }
 
     fn received(office: &mut RemoteOffice, scene: &SceneState, device_now: u64) {
@@ -935,6 +1029,7 @@ mod tests {
     fn a_v1_line_still_applies() {
         let mut office = RemoteOffice::new(caps(4));
         office.apply(GOLDEN.as_bytes(), at(AT)).expect("v1 applies");
+        assert_eq!(office.server(), Some(&server()));
         let scene = office.scene();
         let exiting_unseen = 1;
         assert_eq!(scene.agents.len(), 8 - exiting_unseen);
@@ -1312,7 +1407,9 @@ mod tests {
     #[test]
     fn what_a_newer_server_adds_is_read_as_the_nearest_known_thing() {
         let line = format!(
-            "{{\"v\":{VERSION},\"now_ms\":{AT},\"new_field\":1,\"agents\":[\
+            "{{\"v\":{VERSION},\"now_ms\":{AT},\"new_field\":1,\
+             \"server\":{{\"name\":\"st\\u202eudio\\n\",\"os\":\"plan9\",\"new_field\":1}},\
+             \"agents\":[\
              {{\"id\":7,\"source\":\"a-new-cli\",\"activity\":{{\"state\":\"thinking\"}},\
              \"state_since_ms\":{AT},\"created_ms\":{AT},\"tool_calls\":0,\"running_ms\":0,\
              \"tokens\":0,\"new_field\":true}},\
@@ -1326,6 +1423,7 @@ mod tests {
         );
         let mut office = RemoteOffice::new(caps(4));
         office.apply(line.as_bytes(), at(AT)).expect("it applies");
+        assert_eq!(office.server(), Some(&Server::new("studio", Os::Other)));
         let agents: Vec<_> = office.scene().agents.values().collect();
         assert_eq!(agents.len(), 2);
         assert_eq!(agents[0].state, ActivityState::Idle);
@@ -1517,13 +1615,19 @@ mod tests {
             port: 47820,
             spki: EVERY_DIGIT.repeat(PIN_BYTES * 2 / EVERY_DIGIT.len()),
             code: EVERY_DIGIT.repeat(SECRET_BYTES * 2 / EVERY_DIGIT.len()),
+            expires: UNIX_EPOCH + Duration::from_secs(AT / 1000),
         }
     }
 
     #[test]
     fn a_pair_link_survives_its_text() {
-        for port in [1, 47820, u16::MAX] {
-            let link = PairLink { port, ..link() };
+        for (port, secs) in [(1, 0), (47820, AT / 1000), (u16::MAX, u64::from(u32::MAX))] {
+            let expires = UNIX_EPOCH + Duration::from_secs(secs);
+            let link = PairLink {
+                port,
+                expires,
+                ..link()
+            };
             let text = link.to_string();
             assert!(text.starts_with("pixtuoid://pair?"), "{text}");
             assert_eq!(text.parse::<PairLink>().expect("it parses"), link);
@@ -1536,10 +1640,11 @@ mod tests {
     fn a_pair_link_refuses_what_a_server_never_writes() {
         let with = |key: &str, value: &str| {
             let mut fields = [
-                ("host", "studio.local".to_owned()),
-                ("port", "47820".to_owned()),
-                ("spki", link().spki),
-                ("code", link().code),
+                (HOST, "studio.local".to_owned()),
+                (PORT, "47820".to_owned()),
+                (SPKI, link().spki),
+                (CODE, link().code),
+                (EXPIRES, (AT / 1000).to_string()),
             ];
             let field = fields.iter_mut().find(|(k, _)| *k == key).expect("a field");
             field.1 = value.to_owned();
@@ -1549,32 +1654,37 @@ mod tests {
         // One character past each edge of the digits' ranges, at full length.
         let edges = ['/', ':', '@', 'G'].into_iter().flat_map(|edge| {
             let bad = |value: String| value.replacen('0', &edge.to_string(), 1);
-            [
-                with("spki", &bad(link().spki)),
-                with("code", &bad(link().code)),
-            ]
+            [with(SPKI, &bad(link().spki)), with(CODE, &bad(link().code))]
         });
         for bad in edges.chain([
             "https://pair?host=a".to_owned(),
             "pixtuoid://pair?host=a".to_owned(),
-            with("host", ""),
-            with("host", "evil.example/path"),
-            with("host", "a@b"),
-            with("port", "0"),
-            with("port", "70000"),
-            with("spki", &"A".repeat(PIN_BYTES * 2 - 1)),
-            with("spki", &"A".repeat(PIN_BYTES * 2 + 1)),
-            with("spki", &"zz".repeat(PIN_BYTES)),
-            with("spki", &"ab".repeat(PIN_BYTES)),
-            with("code", ""),
-            with("code", &"C".repeat(SECRET_BYTES * 2 - 1)),
-            with("code", &"C".repeat(SECRET_BYTES * 2 + 1)),
-            with("code", &"cd".repeat(SECRET_BYTES)),
-            format!("{}&port=1", link()),
+            with(HOST, ""),
+            with(HOST, "evil.example/path"),
+            with(HOST, "a@b"),
+            with(PORT, "0"),
+            with(PORT, "70000"),
+            with(SPKI, &"A".repeat(PIN_BYTES * 2 - 1)),
+            with(SPKI, &"A".repeat(PIN_BYTES * 2 + 1)),
+            with(SPKI, &"zz".repeat(PIN_BYTES)),
+            with(SPKI, &"ab".repeat(PIN_BYTES)),
+            with(CODE, ""),
+            with(CODE, &"C".repeat(SECRET_BYTES * 2 - 1)),
+            with(CODE, &"C".repeat(SECRET_BYTES * 2 + 1)),
+            with(CODE, &"cd".repeat(SECRET_BYTES)),
+            with(EXPIRES, ""),
+            with(EXPIRES, "-1"),
+            with(EXPIRES, "1.5"),
+            with(EXPIRES, "01"),
+            with(EXPIRES, &u64::MAX.to_string()),
+            format!("{}&{PORT}=1", link()),
             format!("{}&extra=1", link()),
             link()
                 .to_string()
                 .replace("host=studio.local", "host=a&port=1&host=b"),
+            link()
+                .to_string()
+                .replace(&format!("&{EXPIRES}={}", AT / 1000), ""),
         ]) {
             assert!(bad.parse::<PairLink>().is_err(), "{bad}");
         }

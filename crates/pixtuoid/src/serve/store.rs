@@ -35,6 +35,12 @@ struct Pending {
     expires: SystemTime,
 }
 
+/// A code [`Store::issue_code`] minted, and when it stops redeeming.
+pub(super) struct Issued {
+    pub(super) code: String,
+    pub(super) expires: SystemTime,
+}
+
 impl Stored {
     fn outstanding(&self, code: &Hashed, now: SystemTime) -> bool {
         (self.code.as_ref()).is_some_and(|pending| pending.hash == *code && now < pending.expires)
@@ -117,16 +123,17 @@ impl Store {
     }
 
     /// A new code in place of any outstanding one.
-    pub(super) fn issue_code(&self, now: SystemTime) -> Result<String> {
+    pub(super) fn issue_code(&self, now: SystemTime) -> Result<Issued> {
         let code = secret()?;
+        let expires = now + CODE_LIFETIME;
         self.update(|stored| {
             stored.code = Some(Pending {
                 hash: Hashed::of(&code),
-                expires: now + CODE_LIFETIME,
+                expires,
             });
             Ok(())
         })?;
-        Ok(code)
+        Ok(Issued { code, expires })
     }
 
     /// Spend `code` on a new device, returning its token. A wrong code leaves the
@@ -230,7 +237,7 @@ mod tests {
     #[test]
     fn a_code_pairs_one_device_and_neither_secret_reaches_the_disk() {
         let (_dir, store) = fixture();
-        let code = store.issue_code(now()).expect("a code");
+        let code = store.issue_code(now()).expect("a code").code;
         assert!(!disk(&store).contains(&code), "the code stays hashed");
 
         let token = store
@@ -244,20 +251,21 @@ mod tests {
         assert_eq!(again, None, "a code is spent once");
     }
 
+    /// The expiry a link carries is the one a redemption keeps.
     #[test]
     fn a_code_is_good_until_its_lifetime_ends() {
         let (_dir, store) = fixture();
-        let code = store.issue_code(now()).expect("a code");
-        let end = now() + CODE_LIFETIME;
-        assert_eq!(store.redeem(&code, end).expect("it redeems"), None);
-        let in_time = end - Duration::from_millis(1);
+        let Issued { code, expires } = store.issue_code(now()).expect("a code");
+        assert_eq!(expires, now() + CODE_LIFETIME);
+        assert_eq!(store.redeem(&code, expires).expect("it redeems"), None);
+        let in_time = expires - Duration::from_millis(1);
         assert!(store.redeem(&code, in_time).expect("it redeems").is_some());
     }
 
     #[test]
     fn a_wrong_guess_leaves_the_owners_code_good() {
         let (_dir, store) = fixture();
-        let code = store.issue_code(now()).expect("a code");
+        let code = store.issue_code(now()).expect("a code").code;
         assert_eq!(store.redeem("guess", now()).expect("it redeems"), None);
         assert!(store.redeem(&code, now()).expect("it redeems").is_some());
     }
@@ -265,7 +273,7 @@ mod tests {
     #[test]
     fn a_new_code_replaces_the_outstanding_one() {
         let (_dir, store) = fixture();
-        let old = store.issue_code(now()).expect("a code");
+        let old = store.issue_code(now()).expect("a code").code;
         store.issue_code(now()).expect("a code");
         assert_eq!(store.redeem(&old, now()).expect("it redeems"), None);
     }
@@ -273,12 +281,12 @@ mod tests {
     #[test]
     fn a_reset_forgets_every_device_and_the_outstanding_code() {
         let (_dir, store) = fixture();
-        let code = store.issue_code(now()).expect("a code");
+        let code = store.issue_code(now()).expect("a code").code;
         let token = store
             .redeem(&code, now())
             .expect("it redeems")
             .expect("a good code");
-        let pending = store.issue_code(now()).expect("a code");
+        let pending = store.issue_code(now()).expect("a code").code;
 
         store.reset().expect("it resets");
 
