@@ -602,6 +602,9 @@ fn main() -> Result<()> {
     } else {
         (Vec::new(), None)
     };
+    let registered = |id: &str| {
+        pixtuoid_core::source::registry::descriptor_for(id).expect("a registered source")
+    };
 
     // Deterministic — no FS probes — so the demo image is reproducible across
     // machines.
@@ -609,14 +612,17 @@ fn main() -> Result<()> {
         use pixtuoid::dev::{ConnState, ConnectionRow, DaemonRollup, LiveFacet, LiveInfo};
         use std::path::PathBuf;
         use std::time::Duration;
-        let mk = |source_id, label_prefix, display_name, state, cfg: Option<&str>| ConnectionRow {
-            source_id,
-            label_prefix,
-            display_name,
-            state,
-            config_path: cfg.map(PathBuf::from),
-            target: None,
-            health: None,
+        let mk = |id: &str, state, cfg: Option<&str>| {
+            let d = registered(id);
+            ConnectionRow {
+                source_id: d.name,
+                label_prefix: d.label_prefix,
+                display_name: d.display_name,
+                state,
+                config_path: cfg.map(PathBuf::from),
+                target: None,
+                health: None,
+            }
         };
         let agents = |n: usize, age_s: u64| LiveInfo {
             facet: LiveFacet::Agents {
@@ -629,8 +635,6 @@ fn main() -> Result<()> {
             (
                 mk(
                     "claude-code",
-                    "cc",
-                    "Claude Code",
                     ConnState::Connected,
                     Some("~/.claude/settings.json"),
                 ),
@@ -639,28 +643,18 @@ fn main() -> Result<()> {
             (
                 mk(
                     "codex",
-                    "cx",
-                    "Codex",
                     ConnState::Disconnected,
                     Some("~/.codex/config.toml"),
                 ),
                 LiveInfo::default(),
             ),
             (
-                mk(
-                    "reasonix",
-                    "rx",
-                    "Reasonix",
-                    ConnState::NoCli { connected: false },
-                    None,
-                ),
+                mk("reasonix", ConnState::NoCli { connected: false }, None),
                 LiveInfo::default(),
             ),
             (
                 mk(
                     "codewhale",
-                    "cw",
-                    "CodeWhale",
                     ConnState::Connected,
                     Some("~/.codewhale/config.toml"),
                 ),
@@ -672,30 +666,17 @@ fn main() -> Result<()> {
             (
                 mk(
                     "opencode",
-                    "oc",
-                    "opencode",
                     ConnState::Disconnected,
                     Some("~/.config/opencode/plugins/pixtuoid.ts"),
                 ),
                 LiveInfo::default(),
             ),
-            (
-                mk(
-                    "antigravity",
-                    "ag",
-                    "Antigravity",
-                    ConnState::Connected,
-                    None,
-                ),
-                agents(1, 12),
-            ),
+            (mk("antigravity", ConnState::Connected, None), agents(1, 12)),
             // A DAEMON row, so the captured panel shows the daemon LIVE cell next
             // to the agent rows' N-agents form.
             (
                 mk(
                     "openclaw",
-                    "ok",
-                    "OpenClaw",
                     ConnState::Connected,
                     Some("~/.openclaw/openclaw.json"),
                 ),
@@ -714,18 +695,21 @@ fn main() -> Result<()> {
     };
     let onboarding_frame = if args.onboarding {
         use pixtuoid::dev::WelcomeRow;
-        let mk = |source_id, label_prefix, display_name: &str, checked| WelcomeRow {
-            source_id,
-            label_prefix,
-            display_name: display_name.to_string(),
-            checked,
+        let mk = |id: &str, checked| {
+            let d = registered(id);
+            WelcomeRow {
+                source_id: d.name,
+                label_prefix: d.label_prefix,
+                display_name: d.display_name.to_string(),
+                checked,
+            }
         };
         pixtuoid::dev::OnboardingFrame {
             open: true,
             rows: vec![
-                mk("claude-code", "cc", "Claude Code", true),
-                mk("codex", "cx", "Codex", true),
-                mk("cursor", "cu", "Cursor CLI", false),
+                mk("claude-code", true),
+                mk("codex", true),
+                mk("cursor", false),
             ],
             selected: 0,
             elapsed_ms: 100_000,
