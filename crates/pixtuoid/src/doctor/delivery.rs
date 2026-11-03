@@ -12,22 +12,18 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use anyhow::Context;
 use pixtuoid_core::source::claude_code::{ClaudeCodeSource, SOURCE_NAME};
 use pixtuoid_core::source::hook::{self, EndpointStatus, HookSocketListener, OwnerStatus};
 use tokio::io::AsyncWriteExt;
 
 use super::{
-    CONT_INDENT, Category, CategoryStatus, DETAIL_INDENT, DoctorSourceRow, Ink, SOURCE_W,
-    ShownPath, sanitize,
+    CONT_INDENT, Category, CategoryStatus, DETAIL_INDENT, DoctorSourceRow, EXIT_DEADLINE, Ink,
+    SOURCE_W, ShownPath, sanitize,
 };
 use crate::install::io::HOOK_BIN;
 use crate::install::verify::ShimRef;
 use crate::panels::widgets::fmt_age;
 
-/// Far past the shim's own send bound, whose clock starts only once it runs: a
-/// first launch can stall in the OS before that.
-const EXIT_DEADLINE: Duration = Duration::from_secs(5);
 /// The shim has exited, so the line already sits at the listener.
 const EVENT_WAIT: Duration = Duration::from_secs(1);
 /// The shim's watchdog can drop a send under load, which is no broken install.
@@ -108,10 +104,7 @@ fn shims_of(rows: &[DoctorSourceRow]) -> (BTreeSet<PathBuf>, bool) {
 ///
 /// If no tokio runtime can be built.
 pub(super) fn collect(rows: &[DoctorSourceRow]) -> anyhow::Result<Delivery> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .context("building doctor's tokio runtime")?;
+    let runtime = super::runtime()?;
     let (mut named, bare) = shims_of(rows);
     let mut unlocated = None;
     // A bare hook is whatever PATH finds, never the installer's override or sibling.
@@ -379,7 +372,7 @@ mod tests {
             connected,
             has_target: true,
             hooks_installed,
-            installed_version: None,
+            installed_version: crate::doctor::InstalledVersion::Unasked,
             diag: SourceDiagnostics::default(),
         }
     }

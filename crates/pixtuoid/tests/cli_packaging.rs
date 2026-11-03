@@ -248,7 +248,7 @@ fn built_shim() -> std::path::PathBuf {
 }
 
 /// `pixtuoid doctor` with `home` as every home the environment can name.
-fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::Output {
+fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::Command {
     let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_pixtuoid"));
     // Cleared: an install that a CLI's own home variable leads to would stand in
     // for the built shim. Windows starts no process and finds no temp dir without
@@ -272,9 +272,8 @@ fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::O
         .env("XDG_CONFIG_HOME", home)
         .env("XDG_STATE_HOME", home)
         .env(hook::SOCKET_ENV, endpoint)
-        .env("PIXTUOID_HOOK", built_shim())
-        .output()
-        .expect("run pixtuoid doctor")
+        .env("PIXTUOID_HOOK", built_shim());
+    command
 }
 
 /// By its path: on Windows Jcode's home ignores the environment, so an install
@@ -292,7 +291,9 @@ fn assert_the_built_shim_delivered(stdout: &str) {
 #[test]
 fn doctor_proves_the_built_shim_delivers_with_no_office_open() {
     let home = tempfile::TempDir::new().expect("tempdir");
-    let out = doctor(home.path(), &hook::private_endpoint(home.path(), "none"));
+    let out = doctor(home.path(), &hook::private_endpoint(home.path(), "none"))
+        .output()
+        .expect("run pixtuoid doctor");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "{out:?}");
     assert_the_built_shim_delivered(&stdout);
@@ -334,12 +335,166 @@ async fn doctor_reads_what_the_built_shim_delivered_to_a_live_owner() {
     rx.recv().await.expect("the hook reaches the owner");
 
     let (home_path, at) = (home.path().to_path_buf(), endpoint.clone());
-    let out = tokio::task::spawn_blocking(move || doctor(&home_path, &at))
+    let out = tokio::task::spawn_blocking(move || doctor(&home_path, &at).output())
         .await
-        .expect("doctor ran");
+        .expect("doctor ran")
+        .expect("run pixtuoid doctor");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_the_built_shim_delivered(&stdout);
     assert!(stdout.contains("instance live on"), "{stdout}");
     assert!(stdout.contains("last hook"), "{stdout}");
     owner.abort();
+}
+
+/// `doctor`'s stdout with no office open, `extra` added to its environment.
+fn doctor_stdout(home: &std::path::Path, extra: &[(&str, &std::ffi::OsStr)]) -> String {
+    let out = doctor(home, &hook::private_endpoint(home, "none"))
+        .envs(extra.iter().copied())
+        .output()
+        .expect("run pixtuoid doctor");
+    assert!(out.status.success(), "{out:?}");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// A stand-in CLI at `dir/name` running `body`.
+#[cfg(unix)]
+fn fake_cli(dir: &std::path::Path, name: &str, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(name);
+    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("fake CLI");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+}
+
+/// A `PATH` that finds `bin`'s stand-ins first, and `sleep` after them.
+#[cfg(unix)]
+fn path_to(bin: &std::path::Path) -> std::ffi::OsString {
+    format!("{}:/usr/bin:/bin", bin.display()).into()
+}
+
+#[test]
+fn doctor_renders_each_category_plain_when_piped() {
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let stdout = doctor_stdout(home.path(), &[]);
+    assert!(stdout.starts_with("pixtuoid doctor\n"), "{stdout}");
+    for row in [
+        "log    ",
+        "config ",
+        "] terminal — TERM=",
+        "COLORTERM=",
+        "] sources — ",
+        "] decode drift — ",
+        "] focus-jump — ",
+    ] {
+        assert!(stdout.contains(row), "{row:?} is missing:\n{stdout}");
+    }
+    assert!(
+        stdout.contains("\n\n["),
+        "categories are separated by a blank line: {stdout}"
+    );
+    assert!(
+        !stdout.contains('\u{1b}'),
+        "piped output stays plain: {stdout}"
+    );
+}
+
+/// The report never asserts clean drift off a log it could not read.
+#[test]
+fn doctor_reports_drift_unread_off_an_unreadable_log() {
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let stdout = doctor_stdout(home.path(), &[("PIXTUOID_LOG", home.path().as_os_str())]);
+    assert!(
+        stdout.contains("[!] decode drift — log unreadable"),
+        "{stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_never_spawns_a_version_probe_for_a_cli_it_has_no_evidence_of() {
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let bin = home.path().join(".fake-bin");
+    std::fs::create_dir_all(&bin).expect("fake bin dir");
+    let spawned = home.path().join("spawned");
+    fake_cli(
+        &bin,
+        "opencode",
+        &format!(": > '{}'\necho 1.0.0", spawned.display()),
+    );
+    doctor_stdout(home.path(), &[("PATH", &path_to(&bin))]);
+    assert!(
+        !spawned.exists(),
+        "doctor ran an undetected opencode's --version"
+    );
+}
+
+/// A CLI whose `--version` never exits costs doctor its deadline, and its row
+/// says why its version is unknown.
+#[cfg(unix)]
+#[test]
+fn doctor_gives_up_on_a_version_probe_that_never_exits() {
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let codex = home.path().join(".codex");
+    std::fs::create_dir_all(&codex).expect("codex home");
+    std::fs::write(codex.join("config.toml"), "").expect("codex config");
+    let bin = home.path().join(".fake-bin");
+    std::fs::create_dir_all(&bin).expect("fake bin dir");
+    fake_cli(&bin, "codex", "exec sleep 600");
+    let stdout = doctor_stdout(home.path(), &[("PATH", &path_to(&bin))]);
+    assert!(
+        stdout
+            .lines()
+            .any(|row| row.contains("codex") && row.contains("did not exit within")),
+        "{stdout}"
+    );
+}
+
+/// A probe leads its own process group, which a terminal's Ctrl-C never
+/// reaches: interrupted mid-probe, doctor takes the probe's group down with it
+/// and dies by the interrupt.
+#[cfg(unix)]
+#[test]
+fn an_interrupted_doctor_takes_its_hung_probes_down() {
+    use std::os::unix::process::ExitStatusExt;
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let codex = home.path().join(".codex");
+    std::fs::create_dir_all(&codex).expect("codex home");
+    std::fs::write(codex.join("config.toml"), "").expect("codex config");
+    let bin = home.path().join(".fake-bin");
+    std::fs::create_dir_all(&bin).expect("fake bin dir");
+    let child = home.path().join("child.pid");
+    fake_cli(
+        &bin,
+        "codex",
+        &format!("sleep 600 &\necho $! > '{}'\nwait", child.display()),
+    );
+    let mut doctor = doctor(home.path(), &hook::private_endpoint(home.path(), "none"))
+        .env("PATH", path_to(&bin))
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .expect("run pixtuoid doctor");
+    let started = pixtuoid_core::harness::wait_until(
+        "the probe's child",
+        pixtuoid_core::harness::BOOT,
+        || Ok(std::fs::read_to_string(&child).is_ok_and(|pid| !pid.trim().is_empty())),
+    );
+    let signal = |name: &str, pid: &str| {
+        std::process::Command::new("kill")
+            .args([name, pid])
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    assert!(signal("-INT", &doctor.id().to_string()), "interrupt doctor");
+    let status = doctor.wait().expect("doctor ends");
+    started.expect("the probe started its child");
+    assert_eq!(status.signal(), Some(libc::SIGINT), "{status:?}");
+    let pid = std::fs::read_to_string(&child).expect("its pid");
+    let gone =
+        pixtuoid_core::harness::wait_until("its reaping", pixtuoid_core::harness::BOOT, || {
+            Ok(!signal("-0", pid.trim()))
+        });
+    assert!(
+        gone.is_ok(),
+        "the probe's child {} outlived doctor",
+        pid.trim()
+    );
 }
