@@ -14,7 +14,6 @@ const CLAUDE_FILE: Target = Target {
 static FAKE: Target = Target {
     name: "fake",
     core_source: "fake",
-    display_name: "Fake",
     default_config_path: || Ok(std::path::PathBuf::from("/nonexistent/fake")),
     hook_command: |_, _| Ok("x".into()),
     primary: Primary::Config {
@@ -57,7 +56,6 @@ fn fake_dir_config_path() -> std::path::PathBuf {
 static FAKE2: Target = Target {
     name: "fake2",
     core_source: "fake2",
-    display_name: "Fake2",
     default_config_path: || Ok(fake2_config_path()),
     hook_command: |_, _| Ok("x".into()),
     primary: Primary::Config {
@@ -89,7 +87,6 @@ static FAKE2: Target = Target {
 static FAKE_DIR: Target = Target {
     name: "fakedir",
     core_source: "fakedir",
-    display_name: "FakeDir",
     default_config_path: || Ok(fake_dir_config_path()),
     hook_command: |_, _| Ok("x".into()),
     primary: Primary::Config {
@@ -121,7 +118,6 @@ static FAKE_DIR: Target = Target {
 static FAKE_NO_HOME: Target = Target {
     name: "fakenohome",
     core_source: "fakenohome",
-    display_name: "FakeNoHome",
     default_config_path: || Err(anyhow::anyhow!("no home dir")),
     hook_command: |_, _| Ok("x".into()),
     primary: Primary::Config {

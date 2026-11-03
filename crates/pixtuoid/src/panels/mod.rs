@@ -378,8 +378,8 @@ fn onboarding_failures(
     for (id, oc) in outcomes {
         if let crate::sources::AppliedChange::Failed(e) = oc {
             tracing::warn!(source = %id, error = ?e, "onboarding: connect failed");
-            let name =
-                crate::install::target::by_source(id).map_or(id.as_str(), |t| t.display_name);
+            let name = pixtuoid_core::source::registry::descriptor_for(id)
+                .map_or(id.as_str(), |d| d.display_name);
             failures.push(OnboardingFailure {
                 source_id: id.clone(),
                 line: connection::format_failure(connection::FailedOp::Connect, name, e),
@@ -1558,8 +1558,8 @@ mod dispatch_tests {
             line.contains("settings is valid JSON but not an object"),
             "the REASON must survive — it is the whole point: {line}"
         );
-        let display_name = crate::install::target::by_source("cursor")
-            .expect("cursor is a target-bearing source")
+        let display_name = pixtuoid_core::source::registry::descriptor_for("cursor")
+            .expect("cursor is a registered source")
             .display_name;
         assert!(
             line.contains(display_name),

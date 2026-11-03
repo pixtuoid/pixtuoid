@@ -22,6 +22,7 @@ pub const SOURCE_NAME: &str = "antigravity";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
+    display_name: "Antigravity CLI",
     label_prefix: "ag",
     verified_version: "1.4.12",
     version_probe: Some(&["agy", "--version"]),

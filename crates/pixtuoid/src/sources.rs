@@ -328,16 +328,14 @@ fn reload_failed(host: &HostRegistration, reload: fn() -> Result<()>, t: &Target
 /// The line a launch prints for a target [`converge_owned`] returned: its CLI now
 /// has a newer plugin to load.
 pub(crate) fn refreshed_notice(t: &Target) -> String {
+    let name = t.display_name();
     let step = match (t.post_install_hint, t.host.and_then(|h| h.pickup.as_ref())) {
         (Some(hint), _) => hint.to_string(),
         // A connect runs the reload.
-        (None, Some(Pickup::Reload(_))) => format!("reconnect {} to load it", t.display_name),
-        (None, _) => format!("restart {} to load it", t.display_name),
+        (None, Some(Pickup::Reload(_))) => format!("reconnect {name} to load it"),
+        (None, _) => format!("restart {name} to load it"),
     };
-    format!(
-        "pixtuoid: refreshed the {} plugin to this build — {step}",
-        t.display_name
-    )
+    format!("pixtuoid: refreshed the {name} plugin to this build — {step}")
 }
 
 /// Onboarding opens when nothing is connected — unless the config failed to
@@ -415,14 +413,11 @@ fn settle_flag(cfg: &Path, sid: &str) {
 
 /// The line a launch prints for one source [`adopt_flagged_targets`] adopted.
 pub(crate) fn adopted_notice(t: &Target, installed: &Result<()>) -> String {
+    let name = t.display_name();
     match installed {
-        Ok(()) => format!(
-            "pixtuoid: {} now connects through its own hooks — installed them",
-            t.display_name
-        ),
+        Ok(()) => format!("pixtuoid: {name} now connects through its own hooks — installed them"),
         Err(e) => format!(
-            "⚠ pixtuoid: could not install {}'s hooks ({e:#}); retrying at the next interactive launch",
-            t.display_name
+            "⚠ pixtuoid: could not install {name}'s hooks ({e:#}); retrying at the next interactive launch"
         ),
     }
 }
@@ -792,20 +787,11 @@ pub(crate) struct RowFacts {
 
 #[derive(Debug, Clone)]
 pub(crate) struct RowInput {
-    pub source_id: &'static str,
-    pub label_prefix: &'static str,
+    pub source: &'static registry::SourceDescriptor,
     pub target: Option<&'static Target>,
     pub facts: Option<RowFacts>,
     pub connected: bool,
     pub health: Option<String>,
-}
-
-/// Title-case the no-target sources — the registry omits their display names.
-fn display_name_for(source_id: &'static str) -> &'static str {
-    match source_id {
-        "copilot" => "Copilot CLI",
-        other => other,
-    }
 }
 
 /// Whether `target`'s CLI is on this machine, which a source with no install
@@ -835,11 +821,9 @@ pub(crate) fn build_rows_from(inputs: Vec<RowInput>) -> Vec<ConnectionRow> {
             );
             let state = conn_state(no_cli, input.connected);
             ConnectionRow {
-                source_id: input.source_id,
-                label_prefix: input.label_prefix,
-                display_name: input
-                    .target
-                    .map_or_else(|| display_name_for(input.source_id), |t| t.display_name),
+                source_id: input.source.name,
+                label_prefix: input.source.label_prefix,
+                display_name: input.source.display_name,
                 state,
                 config_path: input.facts.and_then(|f| f.config_path),
                 target: input.target,
@@ -865,8 +849,7 @@ pub(crate) fn build_rows(connected: &HashSet<String>, log: &str) -> Vec<Connecti
             });
             let connected = connected.contains(d.name);
             RowInput {
-                source_id: d.name,
-                label_prefix: d.label_prefix,
+                source: d,
                 target,
                 facts,
                 connected,
@@ -949,17 +932,16 @@ pub(crate) fn status(cfg: &Path, log: &str) -> Vec<SourceStatus> {
 
 /// Which agent CLIs are installed on this machine (target-bearing + probed
 /// present) — the "offer to connect these" set for first-run onboarding.
-pub(crate) fn detect_targets() -> Vec<(&'static registry::SourceDescriptor, &'static Target)> {
+pub(crate) fn detect_sources() -> Vec<&'static registry::SourceDescriptor> {
     registry::REGISTRY
         .iter()
-        .filter_map(|d| by_source(d.name).map(|t| (d, t)))
-        .filter(|(_, t)| (t.presence_probe)())
+        .filter(|d| by_source(d.name).is_some_and(|t| (t.presence_probe)()))
         .collect()
 }
 
-/// [`detect_targets`]'s source ids.
+/// [`detect_sources`]'s ids.
 pub(crate) fn detect() -> Vec<&'static str> {
-    detect_targets().into_iter().map(|(d, _)| d.name).collect()
+    detect_sources().into_iter().map(|d| d.name).collect()
 }
 
 #[cfg(test)]
@@ -1924,7 +1906,6 @@ mod tests {
     const FAIL_TARGET: Target = Target {
         name: "rollbacktest",
         core_source: "rollbacktest",
-        display_name: "RollbackTest",
         default_config_path: || Err(anyhow::anyhow!("forced install failure")),
         hook_command: |_, _| Ok(String::new()),
         primary: crate::install::target::Primary::Config {

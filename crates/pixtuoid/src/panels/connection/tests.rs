@@ -8,12 +8,17 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::manager::SourceDeath;
+use pixtuoid_core::source::registry::SourceDescriptor;
 use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex};
 
 use crate::install::target::Target;
 
 fn claude_target() -> &'static Target {
     crate::install::target::by_name("claude").expect("claude target registered")
+}
+
+fn registered(id: &str) -> &'static SourceDescriptor {
+    pixtuoid_core::source::registry::descriptor_for(id).expect("a registered source")
 }
 
 /// A slot with the fields `live_for` reads; the rest are inert.
@@ -47,8 +52,7 @@ fn mk_slot(id: AgentId, source: &str, last_event_at: SystemTime) -> AgentSlot {
 fn build_rows_from_state_follows_connected_set_with_nocli_override() {
     let cc = claude_target();
     let present = |connected| RowInput {
-        source_id: "claude",
-        label_prefix: "cc",
+        source: registered("claude-code"),
         target: Some(cc),
         facts: Some(RowFacts {
             present: true,
@@ -58,8 +62,7 @@ fn build_rows_from_state_follows_connected_set_with_nocli_override() {
         health: None,
     };
     let absent = |connected| RowInput {
-        source_id: "claude",
-        label_prefix: "cc",
+        source: registered("claude-code"),
         target: Some(cc),
         facts: Some(RowFacts {
             present: false,
@@ -69,8 +72,7 @@ fn build_rows_from_state_follows_connected_set_with_nocli_override() {
         health: None,
     };
     let no_target = |connected| RowInput {
-        source_id: "copilot",
-        label_prefix: "cp",
+        source: registered("copilot"),
         target: None,
         facts: None,
         connected,
@@ -213,8 +215,7 @@ fn move_selection_clamps_at_both_ends() {
     let cc = claude_target();
     let rows = build_rows_from(vec![
         RowInput {
-            source_id: "claude",
-            label_prefix: "cc",
+            source: registered("claude-code"),
             target: Some(cc),
             facts: Some(RowFacts {
                 present: true,
@@ -224,8 +225,7 @@ fn move_selection_clamps_at_both_ends() {
             health: None,
         },
         RowInput {
-            source_id: "copilot",
-            label_prefix: "cp",
+            source: registered("copilot"),
             target: None,
             facts: None,
             connected: false,
@@ -312,23 +312,6 @@ fn build_rows_makes_every_source_with_a_target_actionable() {
 }
 
 #[test]
-fn every_no_target_row_has_an_explicit_display_name_not_the_raw_id() {
-    // A NO-TARGET source's name comes from `display_name_for`, whose
-    // `other => other` fallthrough leaks the lowercase registry id into the
-    // panel. Target-bearing rows are exempt: they use `Target.display_name`,
-    // which may be a deliberate lowercase brand (e.g. "opencode").
-    for row in build_rows(&HashSet::new(), "") {
-        if row.target.is_none() {
-            assert_ne!(
-                row.display_name, row.source_id,
-                "no-target source {:?} shows its raw id — add a title-cased arm to display_name_for",
-                row.source_id
-            );
-        }
-    }
-}
-
-#[test]
 fn only_restart_bound_targets_declare_a_post_install_step_naming_it() {
     // A hint exists only where the write does not take effect on the CLI's next
     // run; each target's own row says why.
@@ -371,8 +354,7 @@ fn no_action_hint_distinguishes_nocli_from_actionable() {
     let cc = claude_target();
     let rows = build_rows_from(vec![
         RowInput {
-            source_id: "claude",
-            label_prefix: "cc",
+            source: registered("claude-code"),
             target: Some(cc),
             facts: Some(RowFacts {
                 present: false, // → NoCli
@@ -382,8 +364,7 @@ fn no_action_hint_distinguishes_nocli_from_actionable() {
             health: None,
         },
         RowInput {
-            source_id: "claude",
-            label_prefix: "cc",
+            source: registered("claude-code"),
             target: Some(cc),
             facts: Some(RowFacts {
                 present: true, // → Disconnected (actionable)

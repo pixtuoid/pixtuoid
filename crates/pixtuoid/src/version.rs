@@ -79,7 +79,7 @@ fn reconnect(hosts: &[&Target], facts: &Facts<'_>) -> Option<String> {
         .filter(|t| {
             facts.installed.contains(&t.core_source) && !facts.connected.contains(t.core_source)
         })
-        .map(|t| t.display_name)
+        .map(|t| t.display_name())
         .collect();
     let key = crate::panels::SOURCES_KEY;
     let ask = match names.as_slice() {
@@ -424,7 +424,7 @@ mod tests {
     fn every_legacy_host_is_named_by_a_notice() {
         let said = due(Some(&across_every_notice()), &all_hold()).join("\n");
         for t in legacy_hosts() {
-            assert!(said.contains(t.display_name), "{}: {said}", t.name);
+            assert!(said.contains(t.display_name()), "{}: {said}", t.name);
         }
     }
 

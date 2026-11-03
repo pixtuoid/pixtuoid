@@ -7,10 +7,7 @@ fn from_detected_pre_checks_every_row_and_resolves_badges() {
     let row = &ui.rows[0];
     assert_eq!(row.source_id, "codex");
     assert_eq!(row.label_prefix, "cx", "badge resolves from the registry");
-    assert_eq!(
-        row.display_name, "Codex",
-        "name resolves from the install target"
-    );
+    assert_eq!(row.display_name, "Codex", "name resolves from the registry");
     assert!(row.checked, "all rows pre-checked on first run");
     assert_eq!(ui.selected, 0);
 }

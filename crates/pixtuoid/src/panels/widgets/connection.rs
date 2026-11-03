@@ -505,8 +505,7 @@ mod tests {
         let inputs: Vec<RowInput> = REGISTRY
             .iter()
             .map(|d| RowInput {
-                source_id: d.name,
-                label_prefix: d.label_prefix,
+                source: d,
                 target: None,
                 health: None,
                 facts: Some(RowFacts {

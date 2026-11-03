@@ -3,7 +3,6 @@
 //! The typewriter/boot timing is elapsed-driven in the painter
 //! (`widgets/welcome.rs`), so this model holds no clock — only interactive state.
 
-use crate::install::target::Target;
 use pixtuoid_core::source::registry::SourceDescriptor;
 
 #[cfg(test)]
@@ -29,30 +28,25 @@ impl WelcomeUi {
     /// Build the roster from detected (present) CLIs, all PRE-CHECKED:
     /// the office is empty by definition on a first run, so "connect everything I
     /// have" is the friendly default and the user unchecks what they don't want.
-    pub(crate) fn from_detected(detected: &[(&'static SourceDescriptor, &'static Target)]) -> Self {
+    pub(crate) fn from_detected(detected: &[&'static SourceDescriptor]) -> Self {
         let rows = detected
             .iter()
-            .map(|&(desc, target)| WelcomeRow {
+            .map(|desc| WelcomeRow {
                 source_id: desc.name,
                 label_prefix: desc.label_prefix,
-                display_name: target.display_name.to_string(),
+                display_name: desc.display_name.to_string(),
                 checked: true,
             })
             .collect();
         Self { rows, selected: 0 }
     }
 
-    /// [`Self::from_detected`] of registered, target-bearing `ids`.
+    /// [`Self::from_detected`] of registered `ids`.
     #[cfg(test)]
     pub(crate) fn from_ids(ids: &[&str]) -> Self {
         let detected: Vec<_> = ids
             .iter()
-            .map(|id| {
-                (
-                    pixtuoid_core::source::registry::descriptor_for(id).expect("a registered id"),
-                    crate::install::target::by_source(id).expect("a target-bearing id"),
-                )
-            })
+            .map(|id| pixtuoid_core::source::registry::descriptor_for(id).expect("a registered id"))
             .collect();
         Self::from_detected(&detected)
     }

@@ -174,7 +174,7 @@ impl UiState {
     /// new to the config at `boot.config_path`.
     pub(crate) fn boot(boot: Boot<'_>) -> Self {
         let detected = if boot.first_run {
-            crate::sources::detect_targets()
+            crate::sources::detect_sources()
         } else {
             Vec::new()
         };
