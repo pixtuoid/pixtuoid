@@ -447,3 +447,54 @@ fn doctor_gives_up_on_a_version_probe_that_never_exits() {
         "{stdout}"
     );
 }
+
+/// A probe leads its own process group, which a terminal's Ctrl-C never
+/// reaches: interrupted mid-probe, doctor takes the probe's group down with it
+/// and dies by the interrupt.
+#[cfg(unix)]
+#[test]
+fn an_interrupted_doctor_takes_its_hung_probes_down() {
+    use std::os::unix::process::ExitStatusExt;
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let codex = home.path().join(".codex");
+    std::fs::create_dir_all(&codex).expect("codex home");
+    std::fs::write(codex.join("config.toml"), "").expect("codex config");
+    let bin = home.path().join(".fake-bin");
+    std::fs::create_dir_all(&bin).expect("fake bin dir");
+    let child = home.path().join("child.pid");
+    fake_cli(
+        &bin,
+        "codex",
+        &format!("sleep 600 &\necho $! > '{}'\nwait", child.display()),
+    );
+    let mut doctor = doctor(home.path(), &hook::private_endpoint(home.path(), "none"))
+        .env("PATH", path_to(&bin))
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .expect("run pixtuoid doctor");
+    let started = pixtuoid_core::harness::wait_until(
+        "the probe's child",
+        pixtuoid_core::harness::BOOT,
+        || Ok(std::fs::read_to_string(&child).is_ok_and(|pid| !pid.trim().is_empty())),
+    );
+    let signal = |name: &str, pid: &str| {
+        std::process::Command::new("kill")
+            .args([name, pid])
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    assert!(signal("-INT", &doctor.id().to_string()), "interrupt doctor");
+    let status = doctor.wait().expect("doctor ends");
+    started.expect("the probe started its child");
+    assert_eq!(status.signal(), Some(libc::SIGINT), "{status:?}");
+    let pid = std::fs::read_to_string(&child).expect("its pid");
+    let gone =
+        pixtuoid_core::harness::wait_until("its reaping", pixtuoid_core::harness::BOOT, || {
+            Ok(!signal("-0", pid.trim()))
+        });
+    assert!(
+        gone.is_ok(),
+        "the probe's child {} outlived doctor",
+        pid.trim()
+    );
+}
