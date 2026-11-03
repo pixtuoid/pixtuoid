@@ -1659,6 +1659,8 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::sprite::Sprite
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::sprite::Sprite
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::sprite::Sprite
 pub type pixtuoid_scene::sprite::Pixel = core::option::Option<pixtuoid_scene::sprite::Rgb>
+pub mod pixtuoid_scene::tally
+pub fn pixtuoid_scene::tally::today_headline(pixtuoid_core::state::Today) -> core::option::Option<alloc::string::String>
 pub mod pixtuoid_scene::theme
 pub struct pixtuoid_scene::theme::LightingColors
 pub pixtuoid_scene::theme::LightingColors::desk_lamp: pixtuoid_scene::sprite::Rgb

@@ -100,7 +100,6 @@ pub(crate) mod skyline;
 /// Sprite vocabulary: `Frame`/`Sprite`, the `RgbBuffer` blit target, and the
 /// `.sprite` decoder.
 pub mod sprite;
-#[doc(hidden)]
 pub mod tally;
 /// The color-theme MODEL: the `Theme` role palette and the bundled themes.
 pub mod theme;
