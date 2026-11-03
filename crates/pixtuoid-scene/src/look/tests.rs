@@ -350,6 +350,8 @@ fn a_dim_darkens_each_pixel_a_frame_may_write() {
 fn each_look_kind_has_its_own_id_and_every_look_has_a_kind() {
     let ids: HashSet<_> = LookKind::ALL.iter().map(|k| k.name()).collect();
     assert_eq!(ids.len(), LookKind::ALL.len());
+    let shown: HashSet<_> = LookKind::ALL.iter().map(|k| k.display_name()).collect();
+    assert_eq!(shown.len(), LookKind::ALL.len());
     assert_eq!(Look::HALF_BLOCKS.kind(), LookKind::Classic);
     let cutaway = Look::Cutaway {
         scale: RenderScale::ONE,

@@ -1,5 +1,5 @@
 //! The modal panels both painters show: the dashboard, the Sources panel, the
-//! help, the theme picker, the version popup and the onboarding, with the one
+//! help, the appearance picker, the version popup and the onboarding, with the one
 //! key dispatch that drives them ([`dispatch_key`] decodes, [`apply_key_action`]
 //! applies). A painter draws them through [`widgets`] into a ratatui frame and
 //! carries out what only it can through [`Host`].
@@ -57,7 +57,7 @@ pub(crate) fn clip_widget_rect(rect: Rect, bounds: Rect) -> Option<Rect> {
 /// One frame's open panels, as `paint_overlays` draws them.
 #[derive(Debug, Clone, Copy)]
 pub struct OverlayFrame<'a> {
-    pub(crate) theme_picker: Option<usize>,
+    pub(crate) appearance: ui_state::AppearanceFrame,
     pub(crate) dashboard: &'a crate::panels::dashboard::DashboardFrame,
     pub(crate) connection: &'a crate::panels::connection::ConnectionFrame,
     /// The version popup's scale: 0.0 hidden, 1.0 whole.
@@ -85,7 +85,7 @@ impl OverlayFrame<'_> {
     /// paint without counting here.
     pub(crate) fn any_open(&self) -> bool {
         let &Self {
-            theme_picker,
+            appearance,
             dashboard,
             connection,
             popup_scale,
@@ -94,7 +94,7 @@ impl OverlayFrame<'_> {
             host_keys: _,
             onboarding,
         } = self;
-        theme_picker.is_some()
+        appearance.open
             || dashboard.open
             || connection.open
             || popup_scale > 0.0
@@ -114,7 +114,7 @@ pub(crate) fn paint_overlays(
     theme: &pixtuoid_scene::theme::Theme,
 ) {
     let &OverlayFrame {
-        theme_picker,
+        appearance,
         dashboard,
         connection,
         popup_scale,
@@ -123,8 +123,8 @@ pub(crate) fn paint_overlays(
         host_keys,
         onboarding,
     } = ov;
-    if let Some(idx) = theme_picker {
-        widgets::paint_theme_picker(f, idx, bounds, theme);
+    if appearance.open {
+        widgets::paint_appearance(f, appearance.shown, bounds, theme);
     }
     if dashboard.open {
         widgets::paint_dashboard(f, dashboard, now, bounds, theme);
@@ -143,7 +143,7 @@ pub(crate) fn paint_overlays(
         );
     }
     if help_open {
-        widgets::paint_help_overlay(f, bounds, theme, host_keys);
+        widgets::paint_help_overlay(f, bounds, theme, host_keys, appearance.shown.look.is_some());
     }
     if onboarding.open {
         widgets::paint_welcome(f, onboarding, bounds, theme);
@@ -153,6 +153,8 @@ pub(crate) fn paint_overlays(
 /// What an applied key changes in the painter that shows the office.
 pub(crate) trait Host {
     fn set_theme(&mut self, theme: &'static theme::Theme);
+    /// Draw `look` from the next frame on, the screen cleared of the last.
+    fn set_look(&mut self, look: pixtuoid_scene::look::LookKind) -> anyhow::Result<()>;
     fn navigate_floor(&mut self, floor: usize, now: SystemTime);
     /// Repaint the whole surface.
     fn redraw(&mut self) -> anyhow::Result<()>;
@@ -167,7 +169,7 @@ pub(crate) struct ModalState {
     pub(crate) onboarding_open: bool,
     pub(crate) help_open: bool,
     pub(crate) version_popup_open: bool,
-    pub(crate) theme_picker: Option<usize>,
+    pub(crate) appearance: Option<ui_state::AppearancePick>,
     pub(crate) dashboard_open: bool,
     pub(crate) connection_open: bool,
     /// A disconnect is armed on the Sources panel, awaiting y/n.
@@ -182,7 +184,7 @@ impl ModalState {
             onboarding_open: false,
             help_open: false,
             version_popup_open: false,
-            theme_picker: None,
+            appearance: None,
             dashboard_open: false,
             connection_open: false,
             connection_confirm: false,
@@ -197,7 +199,7 @@ impl ModalState {
             onboarding_open,
             help_open,
             version_popup_open,
-            theme_picker,
+            appearance,
             dashboard_open,
             connection_open,
             connection_confirm: _,
@@ -205,7 +207,7 @@ impl ModalState {
         onboarding_open
             || help_open
             || version_popup_open
-            || theme_picker.is_some()
+            || appearance.is_some()
             || dashboard_open
             || connection_open
     }
@@ -258,7 +260,7 @@ pub(crate) fn modal_mouse(
         crate::open_url(&widgets::release_url(env!("CARGO_PKG_VERSION")));
         return ModalMouse::Took;
     }
-    if ui.theme_picker.is_some() || ui.dashboard.open || ui.connection.open {
+    if ui.appearance.is_some() || ui.dashboard.open || ui.connection.open {
         return ModalMouse::Inert;
     }
     ModalMouse::Office
@@ -296,11 +298,13 @@ pub(crate) enum KeyAction {
     DismissVersionPopup,
     /// Reopen the version popup, its notices due again.
     OpenVersionPopup,
-    OpenThemePicker,
+    OpenAppearance,
     /// The index is pre-clamped by the dispatch.
     ThemePreview(usize),
-    ThemeCommit(usize),
-    ThemeCancel,
+    /// Only where the picker has a look row.
+    LookPreview(pixtuoid_scene::look::LookKind),
+    AppearanceCommit,
+    AppearanceCancel,
     /// Already validated: in range, and no transition in flight.
     NavigateFloor(usize),
     ToggleAudioMute,
@@ -418,6 +422,28 @@ pub(crate) fn is_quit_chord(code: KeyCode, mods: KeyModifiers) -> bool {
 /// The key that opens and closes the Sources panel.
 pub(crate) const SOURCES_KEY: char = 's';
 
+/// The key that opens the appearance picker.
+pub(crate) const APPEARANCE_KEY: char = 't';
+
+/// The look after `look` in [`LookKind::ALL`](pixtuoid_scene::look::LookKind::ALL),
+/// or before it, round the ends: the picker's row cycles.
+fn step_look(
+    look: pixtuoid_scene::look::LookKind,
+    forward: bool,
+) -> pixtuoid_scene::look::LookKind {
+    use enum_map::Enum;
+    use pixtuoid_scene::look::LookKind;
+    let n = LookKind::ALL.len();
+    LookKind::from_usize((look.into_usize() + if forward { 1 } else { n - 1 }) % n)
+}
+
+/// [`Host::set_look`], a failure logged: the frame after repaints anyway.
+fn set_look<H: Host>(host: &mut H, look: pixtuoid_scene::look::LookKind) {
+    if let Err(e) = host.set_look(look) {
+        tracing::warn!(error = ?e, "look switch failed");
+    }
+}
+
 /// Modal precedence, highest first, is the body's early-return order.
 pub(crate) fn dispatch_key(
     code: KeyCode,
@@ -488,16 +514,24 @@ pub(crate) fn dispatch_key(
             _ => KeyAction::None,
         };
     }
-    if let Some(idx) = modal.theme_picker {
+    if let Some(open) = modal.appearance {
+        let idx = open.theme;
+        let look = |forward| {
+            open.look.map_or(KeyAction::None, |l| {
+                KeyAction::LookPreview(step_look(l, forward))
+            })
+        };
         return match (code, mods) {
-            // Safe to quit mid-preview: only a commit saves the theme.
+            // Safe to quit mid-preview: only a commit saves the appearance.
             _ if is_quit_chord(code, mods) => KeyAction::Quit,
             (KeyCode::Up | KeyCode::Char('k'), _) => KeyAction::ThemePreview(idx.saturating_sub(1)),
             (KeyCode::Down | KeyCode::Char('j'), _) => {
                 KeyAction::ThemePreview((idx + 1).min(theme::ALL_THEMES.len().saturating_sub(1)))
             }
-            (KeyCode::Enter, _) => KeyAction::ThemeCommit(idx),
-            (KeyCode::Esc, _) => KeyAction::ThemeCancel,
+            (KeyCode::Left | KeyCode::Char('h'), _) => look(false),
+            (KeyCode::Right | KeyCode::Char('l'), _) => look(true),
+            (KeyCode::Enter, _) => KeyAction::AppearanceCommit,
+            (KeyCode::Esc, _) => KeyAction::AppearanceCancel,
             _ => KeyAction::None,
         };
     }
@@ -509,7 +543,7 @@ pub(crate) fn dispatch_key(
         KeyCode::Char('m') => KeyAction::ToggleAudioMute,
         KeyCode::Char('+') | KeyCode::Char('=') => KeyAction::AdjustVolume(true),
         KeyCode::Char('-') | KeyCode::Char('_') => KeyAction::AdjustVolume(false),
-        KeyCode::Char('t') => KeyAction::OpenThemePicker,
+        KeyCode::Char(APPEARANCE_KEY) => KeyAction::OpenAppearance,
         KeyCode::Char('?') => KeyAction::ToggleHelp,
         KeyCode::Char('v') => KeyAction::OpenVersionPopup,
         KeyCode::Tab => KeyAction::ToggleDashboard,
@@ -569,21 +603,30 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::OpenVersionPopup => cx
             .ui
             .open_version_popup(&cx.connected.snapshot(), &(cx.installed)()),
-        KeyAction::OpenThemePicker => cx.ui.open_theme_picker(),
+        KeyAction::OpenAppearance => cx.ui.open_appearance(),
         KeyAction::ThemePreview(i) => {
             cx.ui.preview_theme(i);
             cx.host.set_theme(theme::ALL_THEMES[i]);
         }
-        KeyAction::ThemeCommit(i) => {
-            cx.ui.commit_theme(i);
-            let name = theme::ALL_THEMES[i].name;
-            if let Err(e) = crate::config::save(cx.config_path, name) {
-                tracing::warn!(error = ?e, "failed to persist theme");
+        KeyAction::LookPreview(look) => {
+            cx.ui.preview_look(look);
+            set_look(cx.host, look);
+        }
+        KeyAction::AppearanceCommit => {
+            if let Some(committed) = cx.ui.commit_appearance() {
+                let name = theme::ALL_THEMES[committed.theme].name;
+                if let Err(e) = crate::config::save_appearance(cx.config_path, name, committed.look)
+                {
+                    tracing::warn!(error = ?e, "failed to persist the appearance");
+                }
             }
         }
-        KeyAction::ThemeCancel => {
-            let saved = cx.ui.cancel_theme();
-            cx.host.set_theme(theme::ALL_THEMES[saved]);
+        KeyAction::AppearanceCancel => {
+            let saved = cx.ui.cancel_appearance();
+            cx.host.set_theme(theme::ALL_THEMES[saved.theme]);
+            if let Some(look) = saved.look {
+                set_look(cx.host, look);
+            }
         }
         KeyAction::NavigateFloor(target) => {
             cx.host.navigate_floor(target, cx.now);
@@ -726,7 +769,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
 
 #[cfg(test)]
 mod dispatch_tests {
-    use super::{FloorNav, KeyAction, ModalState, change_line, connection, dispatch_key};
+    use super::{FloorNav, KeyAction, ModalState, change_line, connection, dispatch_key, ui_state};
     use crossterm::event::{KeyCode, KeyModifiers};
 
     const NONE: KeyModifiers = KeyModifiers::NONE;
@@ -780,7 +823,7 @@ mod dispatch_tests {
         }
         assert_eq!(
             dispatch_key(KeyCode::Char('t'), NONE, modal(), nav()),
-            KeyAction::OpenThemePicker
+            KeyAction::OpenAppearance
         );
         assert_eq!(
             dispatch_key(KeyCode::Char('?'), NONE, modal(), nav()),
@@ -847,7 +890,7 @@ mod dispatch_tests {
         let c = ModalState {
             help_open: true,
             version_popup_open: true,
-            theme_picker: Some(2),
+            appearance: Some(theme_at(2)),
             ..modal()
         };
         assert_eq!(
@@ -987,7 +1030,7 @@ mod dispatch_tests {
                 ..modal()
             },
             ModalState {
-                theme_picker: Some(0),
+                appearance: Some(theme_at(0)),
                 ..modal()
             },
         ] {
@@ -1022,7 +1065,7 @@ mod dispatch_tests {
     #[test]
     fn theme_picker_preview_commit_cancel_and_clamps() {
         let c = ModalState {
-            theme_picker: Some(2),
+            appearance: Some(theme_at(2)),
             ..modal()
         };
         assert_eq!(
@@ -1043,12 +1086,24 @@ mod dispatch_tests {
         );
         assert_eq!(
             dispatch_key(KeyCode::Enter, NONE, c, nav()),
-            KeyAction::ThemeCommit(2)
+            KeyAction::AppearanceCommit
         );
         assert_eq!(
             dispatch_key(KeyCode::Esc, NONE, c, nav()),
-            KeyAction::ThemeCancel
+            KeyAction::AppearanceCancel
         );
+        for side in [
+            KeyCode::Left,
+            KeyCode::Right,
+            KeyCode::Char('h'),
+            KeyCode::Char('l'),
+        ] {
+            assert_eq!(
+                dispatch_key(side, NONE, c, nav()),
+                KeyAction::None,
+                "no look row: {side:?}"
+            );
+        }
         assert_eq!(
             dispatch_key(KeyCode::Char('q'), NONE, c, nav()),
             KeyAction::Quit
@@ -1063,7 +1118,7 @@ mod dispatch_tests {
         );
 
         let lo = ModalState {
-            theme_picker: Some(0),
+            appearance: Some(theme_at(0)),
             ..modal()
         };
         assert_eq!(
@@ -1071,13 +1126,55 @@ mod dispatch_tests {
             KeyAction::ThemePreview(0)
         );
         let hi = ModalState {
-            theme_picker: Some(pixtuoid_scene::theme::ALL_THEMES.len() - 1),
+            appearance: Some(theme_at(pixtuoid_scene::theme::ALL_THEMES.len() - 1)),
             ..modal()
         };
         assert_eq!(
             dispatch_key(KeyCode::Down, NONE, hi, nav()),
             KeyAction::ThemePreview(pixtuoid_scene::theme::ALL_THEMES.len() - 1)
         );
+    }
+
+    /// The theme picker at row `theme`, with no look row.
+    fn theme_at(theme: usize) -> ui_state::AppearancePick {
+        ui_state::AppearancePick { theme, look: None }
+    }
+
+    /// With a look row, ←→/hl cycle the look round its ends, and ↑↓/jk stay
+    /// the themes'.
+    #[test]
+    fn the_look_row_cycles_on_its_own_axis() {
+        use pixtuoid_scene::look::LookKind;
+        for look in LookKind::ALL.iter().copied() {
+            let c = ModalState {
+                appearance: Some(ui_state::AppearancePick {
+                    theme: 2,
+                    look: Some(look),
+                }),
+                ..modal()
+            };
+            let other = LookKind::ALL
+                .iter()
+                .copied()
+                .find(|&l| l != look)
+                .expect("two looks");
+            for side in [
+                KeyCode::Left,
+                KeyCode::Right,
+                KeyCode::Char('h'),
+                KeyCode::Char('l'),
+            ] {
+                assert_eq!(
+                    dispatch_key(side, NONE, c, nav()),
+                    KeyAction::LookPreview(other),
+                    "{look:?} {side:?}"
+                );
+            }
+            assert_eq!(
+                dispatch_key(KeyCode::Down, NONE, c, nav()),
+                KeyAction::ThemePreview(3)
+            );
+        }
     }
 
     #[test]
@@ -1210,7 +1307,7 @@ mod dispatch_tests {
         };
         assert_eq!(dispatch_key(KeyCode::Tab, NONE, v, nav()), KeyAction::None);
         let p = ModalState {
-            theme_picker: Some(0),
+            appearance: Some(theme_at(0)),
             ..modal()
         };
         assert_eq!(dispatch_key(KeyCode::Tab, NONE, p, nav()), KeyAction::None);
@@ -1554,12 +1651,12 @@ mod mouse_tests {
             modal_mouse(&mut ui, 0.0, Some((0, 0)), no_screen),
             ModalMouse::Office
         );
-        ui.open_theme_picker();
+        ui.open_appearance();
         assert_eq!(
             modal_mouse(&mut ui, 0.0, Some((0, 0)), no_screen),
             ModalMouse::Inert
         );
-        assert!(ui.theme_picker.is_some(), "a click never closes the picker");
+        assert!(ui.appearance.is_some(), "a click never closes the picker");
     }
 
     /// A left press closes the help; a move over it does not.

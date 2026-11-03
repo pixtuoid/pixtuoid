@@ -55,22 +55,24 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<QuitSignal>> {
     rt.block_on(async move { run_async(cfg, tui).await })
 }
 
-/// The TUI's pack, the plan for painting it, and how its office moves.
+/// The TUI's pack, the plan for painting it, and how its office moves in
+/// each look.
 type Boot = (
     Arc<pixtuoid_scene::pack::OfficeArt>,
     crate::graphics::Plan,
-    pixtuoid_scene::anim::Motion,
+    enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
 );
 
 /// Load the pack, whose densest art the plan fits, plan, and pick the motion
-/// the plan affords unless the config names one.
+/// each look affords on it unless the config names one.
 fn boot_tui(cfg: &RunConfig) -> Result<Boot> {
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack()?);
     let plan = crate::graphics::plan_this_terminal(cfg.look, pack.max_density_variant(), true);
     tracing::info!(look = ?cfg.look, plan = ?plan, "graphics plan");
-    let motion = cfg.motion.or(plan.motion(crate::graphics::Link::of_env()));
-    tracing::info!(mode = ?cfg.motion, motion = ?motion, "motion");
-    Ok((pack, plan, motion))
+    let link = crate::graphics::Link::of_env();
+    let motions = enum_map::EnumMap::from_fn(|look| cfg.motion.or(plan.motion(look, link)));
+    tracing::info!(mode = ?cfg.motion, motions = ?motions, "motion");
+    Ok((pack, plan, motions))
 }
 
 async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSignal>> {
@@ -108,7 +110,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
             let pipeline = super::pipeline::spawn_pipeline(socket_path, connected, boot_caps, sink);
             headless_loop(log, pipeline.health_rx).await
         }
-        Some((pack, plan, motion)) => {
+        Some((pack, plan, motions)) => {
             let (sink, scene_rx) = SceneSink::latest(boot_caps);
             let super::pipeline::Pipeline {
                 health_rx,
@@ -123,7 +125,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
                 scene_rx,
                 pack,
                 plan,
-                motion,
+                motions,
                 floor_caps,
                 theme,
                 config_path,

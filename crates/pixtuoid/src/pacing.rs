@@ -213,12 +213,16 @@ pub fn renderer(
         let area = crate::tui::renderer::scene_rect(Rect::new(0, 0, cols, rows)).as_size();
         let fit = cutaway_fit(cell, area, pack.max_density_variant())
             .context("the cell is too small for the cutaway")?;
-        r.set_cutaway(crate::tui::cutaway::TileCutaway::new(
-            fit,
-            cell,
-            crate::graphics::Route::direct(image, false),
-            Box::new(out.clone()),
-        ));
+        r.set_looks(
+            enum_map::EnumMap::default(),
+            Some(crate::tui::cutaway::TileCutaway::new(
+                fit,
+                cell,
+                crate::graphics::Route::direct(image, false),
+                Box::new(out.clone()),
+            )),
+            pixtuoid_scene::look::LookKind::Cutaway,
+        );
     }
     r.present_through(out);
     Ok((r, wire))

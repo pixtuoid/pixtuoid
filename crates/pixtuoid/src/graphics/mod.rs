@@ -244,19 +244,35 @@ impl clap::ValueEnum for LookMode {
         let (name, help) = match self {
             Self::Auto => (
                 "auto",
-                "The cutaway where the terminal draws it, else the classic, without asking the terminal over ssh or inside GNU screen",
+                "The cutaway where the terminal draws it, else the classic, without asking the terminal over ssh or inside GNU screen".to_string(),
             ),
             Self::Named(kind) => (
                 kind.name(),
                 match kind {
                     LookKind::Cutaway => {
-                        "The cutaway where the terminal draws it, else the classic, always asking the terminal"
+                        "The cutaway where the terminal draws it, else the classic, always asking the terminal".to_string()
                     }
-                    LookKind::Classic => "The classic, never asking the terminal",
+                    LookKind::Classic => format!(
+                        "The classic, asking the terminal where `auto` does for the cutaway `{}` switches to",
+                        crate::panels::APPEARANCE_KEY
+                    ),
                 },
             ),
         };
         Some(clap::builder::PossibleValue::new(name).help(help))
+    }
+}
+
+impl LookMode {
+    /// The mode that starts a run in `picked`: `classic` for the classic; for
+    /// the cutaway, `self`, which probes the terminal as it did, except that
+    /// `classic` becomes `auto`, which probes it where `classic` does.
+    pub(crate) fn picking(self, picked: LookKind) -> Self {
+        match (picked, self) {
+            (LookKind::Classic, _) => Self::Named(LookKind::Classic),
+            (LookKind::Cutaway, Self::Named(LookKind::Classic)) => Self::Auto,
+            (LookKind::Cutaway, mode) => mode,
+        }
     }
 }
 
@@ -291,27 +307,48 @@ impl LookChoice {
         }
     }
 
-    /// Why this choice paints classic in `env` before the terminal is asked;
-    /// `None` where it asks.
+    /// Why this choice leaves the terminal unasked in `env`, which then
+    /// draws no cutaway; `None` where it asks. The classic asks as `auto`
+    /// does, for the cutaway the run can switch to.
     fn unasked(self, env: &TermEnv) -> Option<ClassicReason> {
         match self.look {
-            LookMode::Named(LookKind::Classic) => Some(ClassicReason::Disabled),
             LookMode::Named(LookKind::Cutaway) => None,
             // Ours, not an upstream convention: every repaint would cross the
             // network.
-            LookMode::Auto if env.ssh => Some(ClassicReason::OverSsh),
+            LookMode::Auto | LookMode::Named(LookKind::Classic) if env.ssh => {
+                Some(ClassicReason::OverSsh)
+            }
             // Screen shows the query as the window's hardstatus ("ESC _ ...
             // Application Program Command (Hardstatus)",
             // https://www.gnu.org/software/screen/manual/html_node/Control-Sequences.html)
             // and answers no protocol.
-            LookMode::Auto if env.screen() => Some(ClassicReason::InsideScreen),
-            LookMode::Auto => None,
+            LookMode::Auto | LookMode::Named(LookKind::Classic) if env.screen() => {
+                Some(ClassicReason::InsideScreen)
+            }
+            LookMode::Auto | LookMode::Named(LookKind::Classic) => None,
         }
     }
 
-    /// [`Self::unasked`] where this process runs.
-    pub(crate) fn unasked_here(self) -> Option<ClassicReason> {
-        self.unasked(&TermEnv::read())
+    /// The plan this choice makes in `env` over `verdict`, the plan the
+    /// terminal's answer makes, which is asked for only where this choice
+    /// asks.
+    fn over(self, env: &TermEnv, verdict: impl FnOnce() -> Plan) -> Plan {
+        let verdict = match self.unasked(env) {
+            Some(reason) => Plan::Classic { reason },
+            None => verdict(),
+        };
+        match self.look {
+            LookMode::Named(LookKind::Classic) => Plan::ClassicNamed {
+                cutaway: verdict.cutaway(),
+            },
+            LookMode::Auto | LookMode::Named(LookKind::Cutaway) => verdict,
+        }
+    }
+
+    /// The plan this choice makes where this process runs, over a terminal
+    /// that draws `cutaway`: `run`'s, as `doctor` reports it.
+    pub(crate) fn over_here(self, cutaway: CutawayPlan) -> Plan {
+        self.over(&TermEnv::read(), || Plan::Cutaway(cutaway))
     }
 }
 
@@ -323,11 +360,9 @@ impl LookChoice {
 /// when the real cause was a pipe, or on the pipe when this build cannot ask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClassicReason {
-    /// [`LookMode::Named`]\([`LookKind::Classic`]\).
-    Disabled,
-    /// [`LookMode::Auto`] over ssh: the terminal was not asked.
+    /// `auto` or `classic` over ssh: the terminal was not asked.
     OverSsh,
-    /// [`LookMode::Auto`] inside GNU screen: the terminal was not asked.
+    /// `auto` or `classic` inside GNU screen: the terminal was not asked.
     InsideScreen,
     /// This build has no query to run ([`probe()`]).
     Unsupported,
@@ -371,21 +406,29 @@ pub(crate) enum ClassicReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Plan {
     /// The orthographic cutaway, handed to the terminal as an image.
-    Cutaway {
-        /// Its geometry on this terminal.
-        fit: PixelFit,
-        /// How the image reaches the terminal.
-        route: Route,
-        /// The cell the scale was fitted to.
-        cell: CellSize,
-        /// What named the protocol.
-        chosen: Chosen,
-    },
+    Cutaway(CutawayPlan),
+    /// The half-block office `--look classic` or `look = "classic"` chose,
+    /// over the cutaway the terminal draws, where it draws one, which the run
+    /// can switch to.
+    ClassicNamed { cutaway: Option<CutawayPlan> },
     /// The half-block office: one buffer pixel per half-block.
     Classic {
         /// Why this run is not painting the cutaway.
         reason: ClassicReason,
     },
+}
+
+/// The cutaway a terminal draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CutawayPlan {
+    /// Its geometry on this terminal.
+    pub(crate) fit: PixelFit,
+    /// How the image reaches the terminal.
+    pub(crate) route: Route,
+    /// The cell the scale was fitted to.
+    pub(crate) cell: CellSize,
+    /// What named the protocol.
+    pub(crate) chosen: Chosen,
 }
 
 /// What named a cutaway's protocol, as `doctor` reports it.
@@ -478,21 +521,35 @@ impl Link {
 }
 
 impl Plan {
-    /// The motion this plan affords: every loop on a local kitty image or
-    /// half-block grid, a calmer pace where a repaint costs more — SIXEL's or
-    /// iTerm2's heavier image, tmux, ssh.
-    pub(crate) fn motion(self, link: Link) -> pixtuoid_scene::anim::Motion {
+    /// The look this plan starts a run in.
+    pub(crate) fn start(self) -> LookKind {
+        match self {
+            Plan::Cutaway(_) => LookKind::Cutaway,
+            Plan::ClassicNamed { .. } | Plan::Classic { .. } => LookKind::Classic,
+        }
+    }
+
+    /// The cutaway the terminal draws, whether the run starts in it or not.
+    pub(crate) fn cutaway(self) -> Option<CutawayPlan> {
+        match self {
+            Plan::Cutaway(cutaway) => Some(cutaway),
+            Plan::ClassicNamed { cutaway } => cutaway,
+            Plan::Classic { .. } => None,
+        }
+    }
+
+    /// The motion `look` affords where this plan draws it: every loop on a
+    /// local kitty image or half-block grid, a calmer pace where a repaint
+    /// costs more — SIXEL's or iTerm2's heavier image, tmux, ssh.
+    pub(crate) fn motion(self, look: LookKind, link: Link) -> pixtuoid_scene::anim::Motion {
         use pixtuoid_scene::anim::Motion;
-        let heavy = matches!(
-            self,
-            Plan::Cutaway {
-                route: Route {
-                    protocol: ImageProtocol::Sixel | ImageProtocol::Iterm2,
-                    ..
-                },
-                ..
-            }
-        );
+        let heavy = look == LookKind::Cutaway
+            && self.cutaway().is_some_and(|c| {
+                matches!(
+                    c.route.protocol(),
+                    ImageProtocol::Sixel | ImageProtocol::Iterm2
+                )
+            });
         if heavy || link.tmux || link.ssh {
             Motion::Calm
         } else {
@@ -639,7 +696,7 @@ pub(crate) fn resolve(
     if d.tmux && protocol != ImageProtocol::Kitty {
         return classic(ClassicReason::TmuxNeedsKitty(protocol));
     }
-    Plan::Cutaway {
+    Plan::Cutaway(CutawayPlan {
         fit,
         route: Route::of(protocol, d.tmux, d.shm),
         cell,
@@ -650,17 +707,13 @@ pub(crate) fn resolve(
         } else {
             Chosen::Answer
         },
-    }
+    })
 }
 
 impl ClassicReason {
     /// One line for `doctor`, explaining the fallback.
     pub(crate) fn describe(self) -> String {
         match self {
-            Self::Disabled => {
-                let classic = LookMode::Named(LookKind::Classic);
-                format!("chosen by `--look {classic}` or `look = \"{classic}\"`")
-            }
             Self::OverSsh => format!(
                 "over ssh, where every repaint crosses the network — `--look {}` asks the \
                  terminal anyway",
@@ -747,10 +800,9 @@ fn detect(
     term: TermSize,
     ask: impl FnOnce() -> Probe,
 ) -> Plan {
-    if let Some(reason) = choice.unasked(env) {
-        return Plan::Classic { reason };
-    }
-    resolve(choice.protocol, ask(), max_density, image_area(term))
+    choice.over(env, || {
+        resolve(choice.protocol, ask(), max_density, image_area(term))
+    })
 }
 
 /// The cells the image covers: the scene, never the footer, since text and
@@ -780,29 +832,28 @@ pub(crate) fn probe(_ask: bool) -> Probe {
 }
 
 impl Plan {
-    /// The office's logical extent on a terminal `term` cells big: what the
-    /// plan's painter lays out there.
-    pub(crate) fn office_extent(self, term: TermSize) -> Size {
-        match self {
-            Plan::Cutaway { fit, cell, .. } => fit.over(image_px(cell, image_area(term))).logical(),
-            Plan::Classic { .. } => {
-                let (w, h) = crate::tui::renderer::scene_buf_size(term.width, term.height);
-                Size { w, h }
-            }
+    /// The office each look a run of this plan can draw lays out on a
+    /// terminal `term` cells big: a floor seats no more desks than the fewest
+    /// any of them holds.
+    pub(crate) fn seat_extents(self, term: TermSize) -> enum_map::EnumMap<LookKind, Option<Size>> {
+        let (w, h) = crate::tui::renderer::scene_buf_size(term.width, term.height);
+        enum_map::enum_map! {
+            LookKind::Classic => Some(Size { w, h }),
+            LookKind::Cutaway => self.cutaway().map(|c| c.office_extent(term)),
         }
     }
 
     /// The plan as `doctor`'s `graphics:` line: for a cutaway, everything a
-    /// tester reports back from a terminal, and why `run`'s own choice paints
-    /// classic unasked (`run_unasked`); for classic, why it fell back.
-    pub(crate) fn diagnostic_row(self, run_unasked: Option<ClassicReason>) -> String {
+    /// tester reports back from a terminal, and why `run`'s own plan over
+    /// that cutaway (`run`) starts in the classic; for classic, why.
+    pub(crate) fn diagnostic_row(self, run: Option<Plan>) -> String {
         match self {
-            Plan::Cutaway {
+            Plan::Cutaway(CutawayPlan {
                 fit,
                 route,
                 cell,
                 chosen,
-            } => {
+            }) => {
                 let (protocol, tmux, medium) = (route.protocol(), route.tmux(), route.medium());
                 let shape = protocol.tile();
                 let budget = protocol
@@ -813,8 +864,9 @@ impl Plan {
                     0 => "every frame".to_string(),
                     ms => format!("at most every {ms} ms"),
                 };
-                let why = run_unasked
-                    .map(|why| format!(" — `run` paints classic here: {}", why.describe()))
+                let why = run
+                    .and_then(Plan::classic_why)
+                    .map(|why| format!(" — `run` paints classic here: {why}"))
                     .unwrap_or_default();
                 format!(
                     "graphics: {} ({}) on a {}x{} cell, {} — the cutaway at {}x \
@@ -843,11 +895,48 @@ impl Plan {
                     shape.rows,
                 )
             }
+            Plan::ClassicNamed { cutaway } => {
+                format!("graphics: classic half-blocks — {}", named_why(cutaway))
+            }
             Plan::Classic { reason } => {
                 format!("graphics: classic half-blocks — {}", reason.describe())
             }
         }
     }
+
+    /// Why a run of this plan starts in the classic; `None` where it starts
+    /// in the cutaway.
+    fn classic_why(self) -> Option<String> {
+        match self {
+            Plan::Cutaway(_) => None,
+            Plan::ClassicNamed { cutaway } => Some(named_why(cutaway)),
+            Plan::Classic { reason } => Some(reason.describe()),
+        }
+    }
+}
+
+impl CutawayPlan {
+    /// Its office's logical extent on a terminal `term` cells big.
+    pub(crate) fn office_extent(self, term: TermSize) -> Size {
+        self.fit
+            .over(image_px(self.cell, image_area(term)))
+            .logical()
+    }
+}
+
+/// Why [`Plan::ClassicNamed`] starts in the classic, and the switch its
+/// `cutaway` offers.
+fn named_why(cutaway: Option<CutawayPlan>) -> String {
+    let classic = LookMode::Named(LookKind::Classic);
+    let switch = cutaway
+        .map(|_| {
+            format!(
+                " — `{}` switches to the cutaway",
+                crate::panels::APPEARANCE_KEY
+            )
+        })
+        .unwrap_or_default();
+    format!("chosen by `--look {classic}` or `look = \"{classic}\"`{switch}")
 }
 
 /// What the terminal unwind writes before it leaves the alt screen: our
@@ -939,17 +1028,15 @@ mod tests {
         height: 40,
     };
 
-    /// Each terminal kind's default motion: every loop on a local kitty image or
-    /// half-block grid, the calm pace for SIXEL, iTerm2, tmux or ssh.
+    /// Each look's default motion on each terminal kind: every loop on a
+    /// local kitty image or half-block grid, the calm pace for a SIXEL or
+    /// iTerm2 cutaway, and for anything inside tmux or over ssh.
     #[test]
-    fn each_terminal_kind_paints_at_its_affordable_motion() {
+    fn each_look_paints_at_its_affordable_motion_on_each_terminal_kind() {
         use pixtuoid_scene::anim::Motion;
         let plan = |protocol| {
             let probe = answered(Some(protocol), CELL_8X16, false);
             resolve(None, probe, BUNDLED, AREA)
-        };
-        let classic = Plan::Classic {
-            reason: ClassicReason::Disabled,
         };
         let local = Link::default();
         let tmux = Link {
@@ -957,19 +1044,39 @@ mod tests {
             ..local
         };
         let ssh = Link { ssh: true, ..local };
-        assert!(matches!(plan(ImageProtocol::Kitty), Plan::Cutaway { .. }));
-        assert_eq!(plan(ImageProtocol::Kitty).motion(local), Motion::Full);
-        assert_eq!(classic.motion(local), Motion::Full);
-        for heavy in [ImageProtocol::Sixel, ImageProtocol::Iterm2] {
-            assert_eq!(plan(heavy).motion(local), Motion::Calm, "{heavy:?}");
+        let none = Plan::Classic {
+            reason: ClassicReason::NoAnswer,
+        };
+        assert!(matches!(plan(ImageProtocol::Kitty), Plan::Cutaway(_)));
+        for look in LookKind::ALL.iter().copied() {
+            assert_eq!(plan(ImageProtocol::Kitty).motion(look, local), Motion::Full);
+            assert_eq!(none.motion(look, local), Motion::Full, "{look:?}");
+            for link in [tmux, ssh] {
+                assert_eq!(
+                    plan(ImageProtocol::Kitty).motion(look, link),
+                    Motion::Calm,
+                    "{look:?} {link:?}"
+                );
+            }
         }
-        for link in [tmux, ssh] {
-            assert_eq!(
-                plan(ImageProtocol::Kitty).motion(link),
-                Motion::Calm,
-                "{link:?}"
-            );
-            assert_eq!(classic.motion(link), Motion::Calm, "{link:?}");
+        for heavy in [ImageProtocol::Sixel, ImageProtocol::Iterm2] {
+            for over in [
+                plan(heavy),
+                Plan::ClassicNamed {
+                    cutaway: plan(heavy).cutaway(),
+                },
+            ] {
+                assert_eq!(
+                    over.motion(LookKind::Cutaway, local),
+                    Motion::Calm,
+                    "{heavy:?}"
+                );
+                assert_eq!(
+                    over.motion(LookKind::Classic, local),
+                    Motion::Full,
+                    "{heavy:?}: the half-blocks"
+                );
+            }
         }
     }
 
@@ -1161,7 +1268,7 @@ mod tests {
             let outside = cell(first - 1, 2 * (first - 1));
             assert_eq!(scale(inside, max), Some(max.get()), "{max}x at {first}");
             assert_eq!(scale(outside, max), None, "{max}x at {}", first - 1);
-            assert!(matches!(plan(capable(inside), max), Plan::Cutaway { .. }));
+            assert!(matches!(plan(capable(inside), max), Plan::Cutaway(_)));
             assert_eq!(plan(capable(outside), max), too_small(outside, max));
         }
     }
@@ -1213,12 +1320,12 @@ mod tests {
             ImageProtocol::Iterm2,
         ] {
             let got = plan(answered(Some(protocol), CELL_8X16, false), BUNDLED);
-            let Plan::Cutaway {
+            let Plan::Cutaway(CutawayPlan {
                 fit,
                 route,
                 cell,
                 chosen,
-            } = got
+            }) = got
             else {
                 panic!("{protocol:?}: {got:?}");
             };
@@ -1237,14 +1344,14 @@ mod tests {
         let plan = |p| plan(answered(Some(p), CELL_8X16, true), BUNDLED);
         assert!(matches!(
             plan(ImageProtocol::Kitty),
-            Plan::Cutaway {
+            Plan::Cutaway(CutawayPlan {
                 route: Route {
                     protocol: ImageProtocol::Kitty,
                     tmux: true,
                     ..
                 },
                 ..
-            }
+            })
         ));
         for p in [ImageProtocol::Sixel, ImageProtocol::Iterm2] {
             assert_eq!(
@@ -1275,7 +1382,7 @@ mod tests {
                     AREA,
                 );
                 assert!(
-                    matches!(got, Plan::Cutaway { route, chosen: Chosen::Forced, .. } if route.protocol() == want),
+                    matches!(got, Plan::Cutaway(CutawayPlan { route, chosen: Chosen::Forced, .. }) if route.protocol() == want),
                     "{want:?} over {answered_with:?}: {got:?}"
                 );
             }
@@ -1304,26 +1411,44 @@ mod tests {
         );
     }
 
-    /// Classic never reaches the terminal, wherever it runs, however capable
-    /// the terminal is: the probe is the seam that would.
+    /// The classic starts a run in the classic, asking the terminal where
+    /// `auto` asks, for the cutaway the run can switch to, which it keeps.
     #[test]
-    fn classic_plans_without_asking_the_terminal() {
+    fn the_classic_asks_where_auto_asks_and_keeps_the_cutaway() {
         for env in [LOCAL, OVER_SSH, IN_SCREEN] {
+            let classic = look(LookMode::Named(LookKind::Classic));
+            let (auto, asks) = asked(look(LookMode::Auto), &env, capable(CELL_8X16));
+            let (plan, n) = asked(classic, &env, capable(CELL_8X16));
+            assert_eq!(n, asks, "{env:?}");
             assert_eq!(
-                asked(
-                    look(LookMode::Named(LookKind::Classic)),
-                    &env,
-                    capable(CELL_8X16)
-                ),
-                (
-                    Plan::Classic {
-                        reason: ClassicReason::Disabled
-                    },
-                    0
-                ),
+                plan,
+                Plan::ClassicNamed {
+                    cutaway: auto.cutaway()
+                },
                 "{env:?}"
             );
+            assert_eq!(plan.start(), LookKind::Classic);
         }
+        let (plan, _) = asked(
+            look(LookMode::Named(LookKind::Classic)),
+            &LOCAL,
+            capable(CELL_8X16),
+        );
+        assert!(plan.cutaway().is_some(), "a local terminal draws one");
+        let seats = plan.seat_extents(AREA);
+        assert_eq!(
+            seats[LookKind::Classic],
+            Plan::Classic {
+                reason: ClassicReason::NoAnswer
+            }
+            .seat_extents(AREA)[LookKind::Classic],
+            "the office it starts in"
+        );
+        assert_eq!(
+            seats[LookKind::Cutaway],
+            plan.cutaway().map(|c| c.office_extent(AREA)),
+            "and the one it can switch to"
+        );
     }
 
     /// `auto` keeps classic over ssh and inside GNU screen without asking;
@@ -1402,7 +1527,7 @@ mod tests {
                 let (got, n) = asked(choice, &env, capable(CELL_8X16));
                 assert_eq!(n, 1, "{over:?} in {env:?}");
                 assert!(
-                    matches!(got, Plan::Cutaway { route, chosen: Chosen::Forced, .. } if route.protocol() == ImageProtocol::Sixel),
+                    matches!(got, Plan::Cutaway(CutawayPlan { route, chosen: Chosen::Forced, .. }) if route.protocol() == ImageProtocol::Sixel),
                     "{over:?} in {env:?}: {got:?}"
                 );
             }
@@ -1418,6 +1543,38 @@ mod tests {
                 <LookMode as clap::ValueEnum>::from_str(&mode.to_string(), false),
                 Ok(*mode)
             );
+        }
+    }
+
+    /// Picking a look starts a run in it, and picking the cutaway keeps the
+    /// asking of the mode it is picked over.
+    #[test]
+    fn picking_a_look_keeps_the_modes_asking() {
+        use LookKind::{Classic, Cutaway};
+        let cases = [
+            (LookMode::Auto, Cutaway, LookMode::Auto),
+            (LookMode::Auto, Classic, LookMode::Named(Classic)),
+            (LookMode::Named(Cutaway), Cutaway, LookMode::Named(Cutaway)),
+            (LookMode::Named(Cutaway), Classic, LookMode::Named(Classic)),
+            (LookMode::Named(Classic), Cutaway, LookMode::Auto),
+            (LookMode::Named(Classic), Classic, LookMode::Named(Classic)),
+        ];
+        for (mode, picked, want) in cases {
+            assert_eq!(mode.picking(picked), want, "{mode} picking {picked:?}");
+            let starts = |mode| {
+                LookChoice::new(mode, None)
+                    .over(&LOCAL, || plan(capable(CELL_8X16), BUNDLED))
+                    .start()
+            };
+            assert_eq!(starts(want), picked, "{mode} picking {picked:?}");
+            for env in [OVER_SSH, IN_SCREEN].iter().filter(|_| picked == Cutaway) {
+                let asks = |mode| asked(LookChoice::new(mode, None), env, capable(CELL_8X16)).1;
+                assert_eq!(
+                    asks(want),
+                    asks(mode),
+                    "{mode} picking {picked:?} in {env:?}"
+                );
+            }
         }
     }
 
@@ -1641,28 +1798,54 @@ mod tests {
         assert_eq!(distinct.len(), rows.len());
     }
 
-    /// A doctor that prints a cutaway where `run`'s own choice paints classic
-    /// unasked says why, or a bare `run` would show classic unexplained; a
-    /// `run` that asks, and every classic row, add nothing.
+    /// A doctor that prints a cutaway where `run`'s own plan starts in the
+    /// classic says why, or a bare `run` would show classic unexplained; a
+    /// `run` that starts in the cutaway, and every classic row, add nothing.
     #[test]
-    fn a_cutaway_row_says_why_run_paints_classic_unasked() {
+    fn a_cutaway_row_says_why_run_paints_classic() {
         let cutaway = plan(capable(CELL_8X16), BUNDLED);
         let painted = cutaway.diagnostic_row(None);
         assert!(!painted.contains("paints classic"), "{painted}");
-        for why in [
-            ClassicReason::Disabled,
-            ClassicReason::OverSsh,
-            ClassicReason::InsideScreen,
+        assert_eq!(cutaway.diagnostic_row(Some(cutaway)), painted);
+        let named = Plan::ClassicNamed {
+            cutaway: cutaway.cutaway(),
+        };
+        let unasked = Plan::Classic {
+            reason: ClassicReason::OverSsh,
+        };
+        for (run, why) in [
+            (
+                named,
+                "chosen by `--look classic` or `look = \"classic\"` — `t` switches to the cutaway"
+                    .to_string(),
+            ),
+            (unasked, ClassicReason::OverSsh.describe()),
         ] {
             assert_eq!(
-                cutaway.diagnostic_row(Some(why)),
-                format!("{painted} — `run` paints classic here: {}", why.describe())
+                cutaway.diagnostic_row(Some(run)),
+                format!("{painted} — `run` paints classic here: {why}")
             );
         }
         let classic = plan(Probe::NoAnswer, BUNDLED);
         assert_eq!(
-            classic.diagnostic_row(Some(ClassicReason::OverSsh)),
+            classic.diagnostic_row(Some(unasked)),
             classic.diagnostic_row(None)
+        );
+    }
+
+    /// The named classic says it was chosen, and names the switch only
+    /// where the terminal draws the cutaway.
+    #[test]
+    fn the_chosen_classic_names_the_switch_only_where_the_cutaway_draws() {
+        let classic = look(LookMode::Named(LookKind::Classic));
+        assert_eq!(
+            row(classic, capable(CELL_8X16), BUNDLED),
+            "graphics: classic half-blocks — chosen by `--look classic` or \
+             `look = \"classic\"` — `t` switches to the cutaway"
+        );
+        assert_eq!(
+            row(classic, Probe::NoAnswer, BUNDLED),
+            "graphics: classic half-blocks — chosen by `--look classic` or `look = \"classic\"`"
         );
     }
 
@@ -1673,13 +1856,6 @@ mod tests {
     #[test]
     fn every_classic_reason_prints_its_own_row() {
         let cases = [
-            (
-                LOCAL,
-                look(LookMode::Named(LookKind::Classic)),
-                capable(CELL_8X16),
-                BUNDLED,
-                "chosen by `--look classic` or `look = \"classic\"`",
-            ),
             (
                 OVER_SSH,
                 look(LookMode::Auto),
@@ -1796,7 +1972,6 @@ mod tests {
                 panic!("{probe:?} must fall back");
             };
             seen.insert(match reason {
-                ClassicReason::Disabled => 0,
                 ClassicReason::Unsupported => 1,
                 ClassicReason::NotQueried => 2,
                 ClassicReason::NoAnswer => 3,
@@ -1813,7 +1988,7 @@ mod tests {
             assert_eq!(row, format!("graphics: classic half-blocks — {want}"));
             rows.insert(row);
         }
-        assert_eq!(seen.len(), 12, "every reason has a pinned row");
+        assert_eq!(seen.len(), 11, "every reason has a pinned row");
         assert_eq!(rows.len(), n, "no two reasons print the same row");
     }
 
@@ -1831,7 +2006,7 @@ mod tests {
             })
         };
         let medium = |mode, probe| match resolve(mode, probe, BUNDLED, AREA) {
-            Plan::Cutaway { route, .. } => route.medium(),
+            Plan::Cutaway(CutawayPlan { route, .. }) => route.medium(),
             plan => panic!("no cutaway: {plan:?}"),
         };
         for mode in [None, Some(ImageProtocol::Kitty)] {
@@ -1874,7 +2049,7 @@ mod tests {
         ));
         assert!(matches!(
             resolve(Some(ImageProtocol::Kitty), probe, BUNDLED, AREA),
-            Plan::Cutaway { .. }
+            Plan::Cutaway(_)
         ));
     }
 
@@ -1899,7 +2074,7 @@ mod tests {
         assert!(
             matches!(
                 plan(capable(cell(2, 4)), BASE_ONLY),
-                Plan::Cutaway { fit, .. } if fit.scale().get() == 2
+                Plan::Cutaway(CutawayPlan { fit, .. }) if fit.scale().get() == 2
             ),
             "2px per unit is the first density worth an encode"
         );

@@ -74,7 +74,7 @@ Then:
 2. Press <kbd>s</kbd> and connect your agent CLI — pixtuoid sets it up for you, and `pixtuoid doctor` checks it if something's off.
 3. Start that agent in another terminal — a coworker walks in from the elevator within a second.
 
-<kbd>Tab</kbd> agent dashboard · <kbd>t</kbd> themes · <kbd>m</kbd> sound · click a coworker to bring its terminal to the front · <kbd>?</kbd> every other key
+<kbd>Tab</kbd> agent dashboard · <kbd>t</kbd> themes, and the look where the terminal draws the cutaway · <kbd>m</kbd> sound · click a coworker to bring its terminal to the front · <kbd>?</kbd> every other key
 
 **More ways to install** — Cargo, prebuilt binaries, and Debian packages (`.deb`) — are on the **[install guide ↗](https://pixtuoid.dev/#install)**.
 
@@ -126,7 +126,7 @@ _Windows support is experimental — limited testing, unsigned binaries._
 
 ## Configuration
 
-Press <kbd>t</kbd> to preview every theme live; your pick is saved.
+Press <kbd>t</kbd> to preview every theme live, and the look where the terminal draws the cutaway; your pick is saved.
 
 <!-- media:themes-composite:start · generated from scripts/media.json by `just gen-readme` — edit the JSON, not this block -->
 <p align="center"><img src="docs/images/themes-composite.png" alt="" width="768" /><br /><sub>Every built-in theme, one slice each.</sub></p>

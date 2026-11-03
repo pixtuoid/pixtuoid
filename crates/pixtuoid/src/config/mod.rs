@@ -285,9 +285,30 @@ where
     lock.write_atomic(&doc.to_string())
 }
 
-pub(crate) fn save(path: &Path, theme_name: &str) -> Result<()> {
+/// Save the appearance picker's commit: `theme`, and the look `picked`
+/// where the picker offered one. The look is written as the mode
+/// [`LookMode::picking`](crate::graphics::LookMode::picking) makes of the
+/// `look` the file holds (never this run's `--look`), and only where that
+/// changes it.
+pub(crate) fn save_appearance(
+    path: &Path,
+    theme: &str,
+    picked: Option<pixtuoid_scene::look::LookKind>,
+) -> Result<()> {
     update_config(path, |doc| {
-        doc["theme"] = toml_edit::value(theme_name);
+        doc["theme"] = toml_edit::value(theme);
+        let Some(picked) = picked else {
+            return;
+        };
+        let persisted = doc
+            .get("look")
+            .and_then(toml_edit::Item::as_str)
+            .and_then(parse_look)
+            .unwrap_or_default();
+        let target = persisted.picking(picked);
+        if target != persisted {
+            doc["look"] = toml_edit::value(target.to_string());
+        }
     })
 }
 
@@ -453,7 +474,7 @@ pub(crate) fn resolve_look(
     warnings: &mut Vec<String>,
 ) -> crate::graphics::LookMode {
     let configured = config.look.as_deref().and_then(|v| {
-        let mode = <crate::graphics::LookMode as clap::ValueEnum>::from_str(v, false).ok();
+        let mode = parse_look(v);
         if mode.is_none() {
             warn_user(
                 warnings,
@@ -463,6 +484,11 @@ pub(crate) fn resolve_look(
         mode
     });
     cli.or(configured).unwrap_or_default()
+}
+
+/// The `look` key's value as the mode it names, by the flag's own parser.
+fn parse_look(value: &str) -> Option<crate::graphics::LookMode> {
+    <crate::graphics::LookMode as clap::ValueEnum>::from_str(value, false).ok()
 }
 
 /// How much of the office's ambient life moves: the `motion` config key.

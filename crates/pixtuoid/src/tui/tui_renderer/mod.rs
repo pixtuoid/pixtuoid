@@ -63,9 +63,14 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     screen: Screen<ratatui::layout::Size, crate::tui::geometry::SceneGeometry>,
     /// The cutaway, painted as terminal images in place of the half-blocks.
     cutaway: Option<crate::tui::cutaway::TileCutaway>,
+    /// The look picked: the cutaway draws only where there is one and it
+    /// fits, the half-blocks everywhere else.
+    look: LookKind,
     /// What the half-blocks' frames' pacing is reported under, on this
     /// terminal.
     painter: crate::jank::Painter,
+    /// How the office moves in each look.
+    motions: enum_map::EnumMap<LookKind, pixtuoid_scene::anim::Motion>,
 }
 
 /// Everything a frame shows besides the floors: kept apart from `session` so a
@@ -207,13 +212,106 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             },
             screen: Screen::on(pixtuoid_scene::screen::monotonic()),
             cutaway: None,
+            look: LookKind::Classic,
             painter: crate::jank::Painter::default(),
+            motions: enum_map::EnumMap::default(),
         }
     }
 
-    /// Paint `cutaway` from the next frame on.
-    pub(crate) fn set_cutaway(&mut self, cutaway: crate::tui::cutaway::TileCutaway) {
-        self.cutaway = Some(cutaway);
+    /// Move each look's office as `motions` says, the cutaway painted as
+    /// `cutaway` where the run has one, from the next frame on, in `start`:
+    /// the classic where there is no cutaway.
+    pub(crate) fn set_looks(
+        &mut self,
+        motions: enum_map::EnumMap<LookKind, pixtuoid_scene::anim::Motion>,
+        cutaway: Option<crate::tui::cutaway::TileCutaway>,
+        start: LookKind,
+    ) {
+        self.cutaway = cutaway;
+        self.look = if self.cutaway.is_some() {
+            start
+        } else {
+            LookKind::Classic
+        };
+        self.chrome.motion = motions[self.look];
+        self.motions = motions;
+    }
+
+    /// Draw `look` from the next frame on, the screen cleared of the last:
+    /// leaving the cutaway deletes its images, and the first frame in either
+    /// look repaints whole. A cutaway the renderer has none of changes
+    /// nothing.
+    pub(crate) fn set_look(&mut self, look: LookKind) -> Result<()> {
+        if look == self.look || (look == LookKind::Cutaway && self.cutaway.is_none()) {
+            return Ok(());
+        }
+        if let Some(cutaway) = self.cutaway.as_mut().filter(|_| look == LookKind::Classic) {
+            cutaway.stand_aside()?;
+        }
+        self.look = look;
+        self.chrome.motion = self.motions[look];
+        self.redraw()
+    }
+
+    /// The office each look this run can return to lays out on the terminal
+    /// now, the cutaway at its last fit where this cell has none: a floor's
+    /// seats only grow, so they are held to the fewest any of them holds.
+    pub(crate) fn seat_extents(
+        &mut self,
+    ) -> enum_map::EnumMap<LookKind, Option<pixtuoid_scene::layout::Size>> {
+        let Ok(size) = self.terminal.size() else {
+            return enum_map::EnumMap::default();
+        };
+        let (w, h) = crate::tui::renderer::scene_buf_size(size.width, size.height);
+        let scene = crate::tui::renderer::scene_rect(Rect::new(0, 0, size.width, size.height));
+        let window = self.window_cell();
+        let cutaway = self.cutaway.as_mut().map(|c| c.seat_office(scene, window));
+        enum_map::enum_map! {
+            LookKind::Classic => Some(Size { w, h }),
+            LookKind::Cutaway => cutaway,
+        }
+    }
+
+    /// The window's cell, which the cutaway takes as its baseline whatever
+    /// look draws, so a font zoom before its first frame still reads as one.
+    fn window_cell(&mut self) -> Option<crate::graphics::CellSize> {
+        let window = self
+            .terminal
+            .backend_mut()
+            .window_size()
+            .ok()
+            .and_then(crate::graphics::CellSize::of_window);
+        if let Some(cutaway) = &mut self.cutaway {
+            cutaway.saw_window(window);
+        }
+        window
+    }
+
+    /// Name what draws the half-blocks' frames, for their pacing summaries:
+    /// the cutaway names its own, from its fit, on the same terminal.
+    pub(crate) fn painted_by(&mut self, painter: crate::jank::Painter) {
+        self.painter = painter;
+    }
+
+    /// The cutaway, where it is the look picked.
+    fn picked_cutaway(&self) -> Option<&crate::tui::cutaway::TileCutaway> {
+        self.cutaway
+            .as_ref()
+            .filter(|_| self.look == LookKind::Cutaway)
+    }
+
+    /// The look the last frame drew: the cutaway where it was picked and fit.
+    #[cfg(test)]
+    fn drawn_look(&self) -> LookKind {
+        if self
+            .picked_cutaway()
+            .and_then(crate::tui::cutaway::TileCutaway::office)
+            .is_some()
+        {
+            LookKind::Cutaway
+        } else {
+            LookKind::Classic
+        }
     }
 
     /// Whether the last office frame drawn was the half-blocks of a debug
@@ -284,13 +382,13 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     /// The cutaway's look and office extent over `scene_area`, as its next
     /// frame fits them; `None` while classic paints.
     fn cutaway_look(&mut self, scene_area: Rect) -> Option<(Look, Size)> {
-        let window = self
-            .terminal
-            .backend_mut()
-            .window_size()
-            .ok()
-            .and_then(crate::graphics::CellSize::of_window);
-        let fitted = self.cutaway.as_mut()?.fit_to(scene_area, window)?;
+        let window = self.window_cell();
+        let look = self.look;
+        let fitted = self
+            .cutaway
+            .as_mut()
+            .filter(|_| look == LookKind::Cutaway)?
+            .fit_to(scene_area, window)?;
         Some((fitted.look(), fitted.fit.logical()))
     }
 
@@ -318,12 +416,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.frame_out = Some(out);
     }
 
-    /// Name what draws the half-blocks' frames, for their pacing summaries:
-    /// the cutaway names its own, from its fit, on the same terminal.
-    pub(crate) fn painted_by(&mut self, painter: crate::jank::Painter) {
-        self.painter = painter;
-    }
-
     /// Paint and send the next frame whole, for the pacing bench's worst case.
     pub(crate) fn forget_frame(&mut self) {
         for floor in self.session.floors_mut() {
@@ -348,7 +440,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     /// The logical extent the current floor last laid out on: what a resize
     /// changes, and a slide does not.
     fn office_extent(&self) -> (u16, u16) {
-        if let Some(office) = self.cutaway.as_ref().and_then(|c| c.office()) {
+        if let Some(office) = self.picked_cutaway().and_then(|c| c.office()) {
             return (office.w, office.h);
         }
         self.buf().map_or((0, 0), |b| (b.width(), b.height()))
@@ -739,14 +831,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.screen.landed();
         let note = drawn?;
         let painter = self
-            .cutaway
-            .as_ref()
+            .picked_cutaway()
             .and_then(|c| c.painter(&self.painter))
             .unwrap_or_else(|| self.painter.clone());
         self.jank.painted_by(&painter, begun);
         let send = self
-            .cutaway
-            .as_ref()
+            .picked_cutaway()
             .map(crate::tui::cutaway::TileCutaway::last_send);
         self.jank.record(
             begun.elapsed(),
@@ -769,17 +859,13 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             self.chrome.active_pet = None;
         }
 
-        if let Some(mut cutaway) = self.cutaway.take() {
+        let window = self.window_cell();
+        let look = self.look;
+        if let Some(mut cutaway) = self.cutaway.take_if(|_| look == LookKind::Cutaway) {
             cutaway.begin_frame();
             let size = self.terminal.size()?;
             let scene_area =
                 crate::tui::renderer::scene_rect(Rect::new(0, 0, size.width, size.height));
-            let window = self
-                .terminal
-                .backend_mut()
-                .window_size()
-                .ok()
-                .and_then(crate::graphics::CellSize::of_window);
             let drawn = cutaway
                 .fit_to(scene_area, window)
                 .map(|fitted| self.render_cutaway(&mut cutaway, fitted, scene, now));

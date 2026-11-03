@@ -48,7 +48,9 @@ pub mod dev {
     pub use crate::panels::OverlayFrame;
     pub use crate::panels::connection::{ConnectionFrame, DaemonRollup, LiveFacet, LiveInfo};
     pub use crate::panels::dashboard::{DashboardFolds, DashboardFrame, build_dashboard_rows};
-    pub use crate::panels::ui_state::{RenderFrames, VersionPopupFrame, popup_whole};
+    pub use crate::panels::ui_state::{
+        AppearanceFrame, AppearancePick, RenderFrames, VersionPopupFrame, popup_whole,
+    };
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
     pub use crate::panels::widgets::{footer_context, grid_of};
     #[cfg(feature = "serve")]

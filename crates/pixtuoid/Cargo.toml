@@ -48,6 +48,7 @@ miniz_oxide        = "0.8"
 crossterm          = { workspace = true, features = ["event-stream"] }
 futures-util       = { version = "0.3", default-features = false }
 clap               = { workspace = true }
+enum-map           = { workspace = true }
 serde              = { workspace = true }
 # `preserve_order` is enabled HERE, not workspace-wide: config merges are a
 # READ→MERGE→WRITE round-trip and serde_json's default BTreeMap-backed `Map`

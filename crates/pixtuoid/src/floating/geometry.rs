@@ -389,7 +389,7 @@ mod tests {
         }
         let overseed = crate::runtime::boot_capacities_for(
             crate::graphics::Plan::Classic {
-                reason: crate::graphics::ClassicReason::Disabled,
+                reason: crate::graphics::ClassicReason::NoAnswer,
             },
             ratatui::layout::Size::new(w as u16, (h / 2) as u16),
         );

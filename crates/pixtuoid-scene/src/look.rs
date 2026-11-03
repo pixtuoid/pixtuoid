@@ -79,7 +79,9 @@ impl Look {
 /// it at: what a command line, a config and [`PixelFit::look`] name it by.
 ///
 /// [`PixelFit::look`]: crate::render_scale::PixelFit::look
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray, strum::IntoStaticStr, enum_map::Enum,
+)]
 #[strum(serialize_all = "snake_case")]
 pub enum LookKind {
     /// [`Look::Cutaway`], at any scale and text.
@@ -95,6 +97,14 @@ impl LookKind {
     /// Its id: the value a command line and a config take.
     pub fn name(self) -> &'static str {
         self.into()
+    }
+
+    /// Its name as a picker shows it, as a theme's `display_name` is.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Cutaway => "Cutaway",
+            Self::Classic => "Classic",
+        }
     }
 }
 

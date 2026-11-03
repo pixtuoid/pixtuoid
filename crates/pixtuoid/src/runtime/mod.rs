@@ -64,16 +64,25 @@ pub(crate) struct RunConfig {
     pub(crate) motion: crate::config::MotionMode,
 }
 
-/// Each floor's desks in the office `plan` paints on a terminal `term` cells
-/// big, each floor with its own seed; 0 where a floor's layout rejects it.
-fn floor_capacities(plan: Plan, term: TermSize) -> [usize; MAX_FLOORS] {
-    let office = plan.office_extent(term);
+/// Each floor's desks in the fewest that any of `offices` holds, each floor
+/// with its own seed; 0 where a floor's layout rejects one, or there is none.
+pub(crate) fn floor_capacities(
+    offices: &enum_map::EnumMap<
+        pixtuoid_scene::look::LookKind,
+        Option<pixtuoid_scene::layout::Size>,
+    >,
+) -> [usize; MAX_FLOORS] {
     std::array::from_fn(|i| {
         // The ONE seed derivation every call site shares — an inline copy of the
         // formula would silently drift the boot capacities from the rendered layout
         // (over-seeded atomics strand agents on unrendered desks).
         let seed = pixtuoid_scene::floor::floor_seed(i);
-        pixtuoid_scene::floor::floor_capacity(office.w, office.h, seed)
+        offices
+            .values()
+            .flatten()
+            .map(|office| pixtuoid_scene::floor::floor_capacity(office.w, office.h, seed))
+            .min()
+            .unwrap_or_default()
     })
 }
 
@@ -83,7 +92,8 @@ fn floor_capacities(plan: Plan, term: TermSize) -> [usize; MAX_FLOORS] {
 /// terminal, but won't be silently dropped during the boot race before the first
 /// TUI frame.
 pub(crate) fn boot_capacities_for(plan: Plan, term: TermSize) -> [usize; MAX_FLOORS] {
-    floor_capacities(plan, term).map(|cap| if cap == 0 { FALLBACK_DESKS } else { cap })
+    floor_capacities(&plan.seat_extents(term))
+        .map(|cap| if cap == 0 { FALLBACK_DESKS } else { cap })
 }
 
 /// Clamp each per-floor boot capacity to an optional `--max-desks` cap, so the boot
@@ -438,7 +448,7 @@ mod tests {
 
     fn classic() -> Plan {
         Plan::Classic {
-            reason: crate::graphics::ClassicReason::Disabled,
+            reason: crate::graphics::ClassicReason::NoAnswer,
         }
     }
 
@@ -448,7 +458,7 @@ mod tests {
 
     /// Floor 0's desks in classic's office on a `cols`×`rows` terminal.
     fn ground_floor(cols: u16, rows: u16) -> usize {
-        floor_capacities(classic(), term(cols, rows))[0]
+        floor_capacities(&classic().seat_extents(term(cols, rows)))[0]
     }
 
     #[test]
@@ -539,7 +549,7 @@ mod tests {
         'outer: for cols in [120u16, 140, 160, 180, 200, 220, 240] {
             for rows in [30u16, 36, 40, 48, 56, 64] {
                 let unique: std::collections::HashSet<usize> =
-                    floor_capacities(classic(), term(cols, rows))
+                    floor_capacities(&classic().seat_extents(term(cols, rows)))
                         .into_iter()
                         .collect();
                 if unique.len() > 1 {
@@ -589,12 +599,12 @@ mod tests {
         let density = pixtuoid_scene::sprite::format::Density::new(4).expect("nonzero");
         let fit = cutaway_fit(cell, area.as_size(), density).expect("fits");
         assert_eq!(fit.scale().get(), 8);
-        let cutaway = Plan::Cutaway {
+        let cutaway = Plan::Cutaway(crate::graphics::CutawayPlan {
             fit,
             route: crate::graphics::Route::direct(ImageProtocol::Kitty, false),
             cell,
             chosen: crate::graphics::Chosen::Answer,
-        };
+        });
         let seed = resolve_boot_caps(None, Some(cutaway), || term(cols, rows));
         let painted = fit.logical();
         for (i, &seeded) in seed.iter().enumerate() {
@@ -608,13 +618,46 @@ mod tests {
         );
     }
 
+    /// A run that names the classic over a terminal that draws the cutaway
+    /// can switch to it, so its boot seeds no desk either office lacks.
+    #[test]
+    fn a_switchable_boot_seeds_no_desk_either_look_lacks() {
+        use crate::graphics::{CellSize, ImageProtocol, cutaway_fit};
+        let (cols, rows) = (120, 40);
+        let cell = CellSize { w: 6, h: 12 };
+        let area = crate::tui::renderer::scene_rect(ratatui::layout::Rect::new(0, 0, cols, rows));
+        let density = pixtuoid_scene::sprite::format::Density::new(4).expect("nonzero");
+        let fit = cutaway_fit(cell, area.as_size(), density).expect("fits");
+        let named = Plan::ClassicNamed {
+            cutaway: Some(crate::graphics::CutawayPlan {
+                fit,
+                route: crate::graphics::Route::direct(ImageProtocol::Kitty, false),
+                cell,
+                chosen: crate::graphics::Chosen::Answer,
+            }),
+        };
+        let seed = resolve_boot_caps(None, Some(named), || term(cols, rows));
+        let painted = fit.logical();
+        for (i, &seeded) in seed.iter().enumerate() {
+            let desks = pixtuoid_scene::floor::floor_capacity(painted.w, painted.h, floor_seed(i));
+            assert!(
+                seeded <= desks,
+                "floor {i}: seeds {seeded} of the cutaway's {desks}"
+            );
+        }
+    }
+
     #[test]
     fn floor_capacities_uses_each_floor_seed() {
-        let office = classic().office_extent(term(192, 48));
+        let office = classic().seat_extents(term(192, 48))[pixtuoid_scene::look::LookKind::Classic]
+            .expect("the classic's office");
         let expected: [usize; MAX_FLOORS] = std::array::from_fn(|i| {
             pixtuoid_scene::floor::floor_capacity(office.w, office.h, floor_seed(i))
         });
-        assert_eq!(floor_capacities(classic(), term(192, 48)), expected);
+        assert_eq!(
+            floor_capacities(&classic().seat_extents(term(192, 48))),
+            expected
+        );
     }
 
     #[test]

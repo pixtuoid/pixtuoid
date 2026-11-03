@@ -443,7 +443,10 @@ fn theme_picker_renders_during_floor_transition() {
     r.render(&scene, now).unwrap();
     r.set_frames(
         RenderFrames {
-            theme_picker: Some(0),
+            appearance: crate::panels::ui_state::AppearanceFrame {
+                open: true,
+                shown: crate::panels::ui_state::AppearancePick::default(),
+            },
             ..Default::default()
         },
         now,

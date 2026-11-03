@@ -642,9 +642,10 @@ struct DoctorReport {
     truecolor_probe: Option<crate::term::Truecolor>,
     color_pf: crate::term::ColorPreflight,
     graphics_plan: crate::graphics::Plan,
-    /// Why `run`'s look without a flag — the config's, then the default —
-    /// paints classic here unasked ([`crate::graphics::LookChoice::unasked_here`]).
-    run_unasked: Option<crate::graphics::ClassicReason>,
+    /// The plan `run`'s look without a flag — the config's, then the default —
+    /// makes over the cutaway `graphics_plan` found, where it found one
+    /// ([`crate::graphics::LookChoice::over_here`]).
+    run_plan: Option<crate::graphics::Plan>,
     rows: Vec<DoctorSourceRow>,
     delivery: delivery::Delivery,
     roots: Vec<RootStatus>,
@@ -812,11 +813,11 @@ fn collect(
     }
     let max_density = pixtuoid_scene::pack::load_bundled_pack()?.max_density_variant();
     let (truecolor_probe, graphics_plan) = probe_terminal_caps(probe_ok, look, max_density);
-    let run_unasked = crate::graphics::LookChoice::new(
+    let run_look = crate::graphics::LookChoice::new(
         crate::config::resolve_look(&cfg, None, &mut config_warnings),
         None,
-    )
-    .unasked_here();
+    );
+    let run_plan = graphics_plan.cutaway().map(|c| run_look.over_here(c));
 
     let rows: Vec<DoctorSourceRow> = registry::REGISTRY
         .iter()
@@ -867,7 +868,7 @@ fn collect(
         truecolor_probe,
         color_pf,
         graphics_plan,
-        run_unasked,
+        run_plan,
         rows,
         delivery,
         roots,
@@ -912,7 +913,7 @@ fn terminal_category(r: &DoctorReport) -> Category {
     // classic, and a fallback must never go unexplained.
     let mut details = vec![format!(
         "{DETAIL_INDENT}{}",
-        r.graphics_plan.diagnostic_row(r.run_unasked)
+        r.graphics_plan.diagnostic_row(r.run_plan)
     )];
     // Whenever it has something to say — incl. the ForceColor note, so a
     // NO_COLOR+CLICOLOR_FORCE report still states that color is being forced.
@@ -1612,7 +1613,7 @@ mod tests {
             graphics_plan: crate::graphics::Plan::Classic {
                 reason: crate::graphics::ClassicReason::NotQueried,
             },
-            run_unasked: None,
+            run_plan: None,
             rows,
             delivery: delivery::Delivery::idle(),
             roots: vec![],
@@ -1777,28 +1778,33 @@ mod tests {
             height: 49,
         };
         let density = pixtuoid_scene::sprite::format::Density::new(4).expect("nonzero");
-        r.graphics_plan = Plan::Cutaway {
+        r.graphics_plan = Plan::Cutaway(crate::graphics::CutawayPlan {
             fit: cutaway_fit(cell, area, density).expect("fits"),
             route: crate::graphics::Route::direct(ImageProtocol::Kitty, false),
             cell,
             chosen: crate::graphics::Chosen::Answer,
-        };
+        });
+        r.run_plan = Some(r.graphics_plan);
         assert_eq!(
             terminal_category(&r).details[0],
-            format!("{DETAIL_INDENT}{}", r.graphics_plan.diagnostic_row(None))
+            format!(
+                "{DETAIL_INDENT}{}",
+                r.graphics_plan.diagnostic_row(r.run_plan)
+            )
         );
-        r.run_unasked = Some(ClassicReason::OverSsh);
+        r.run_plan = Some(Plan::Classic {
+            reason: ClassicReason::OverSsh,
+        });
         let row = terminal_category(&r).details.swap_remove(0);
         assert_eq!(
             row,
             format!(
                 "{DETAIL_INDENT}{}",
-                r.graphics_plan.diagnostic_row(r.run_unasked)
+                r.graphics_plan.diagnostic_row(r.run_plan)
             ),
-            "the row reads whether run asks"
+            "the row reads how run plans"
         );
         assert!(row.contains("`run` paints classic here: over ssh"), "{row}");
-        r.run_unasked = None;
 
         r.graphics_plan = Plan::Classic {
             reason: ClassicReason::TmuxNeedsKitty(ImageProtocol::Sixel),

@@ -80,13 +80,17 @@ pub(crate) fn route_key<B: ratatui::backend::Backend<Error: Send + Sync + 'stati
 /// The per-floor desk-capacity sweep, memoized on its own inputs.
 ///
 /// `floor_capacity` runs a FULL `SceneLayout::compute_with_seed` — walkable-mask stamp plus
-/// coarse BFS, quadratic in buffer area — once per floor, and keeps only
-/// `home_desks.len()`. It is a pure function of `(buf_w, buf_h, desk_cap)` and the
-/// publish is a monotone `fetch_max`, so a repeat with identical inputs could only
-/// rewrite the same values.
+/// coarse BFS, quadratic in buffer area — once per floor and office, and keeps the
+/// fewest `home_desks.len()`. It is a pure function of the run's [`Offices`] and
+/// `desk_cap`, and the publish is a monotone `fetch_max`, so a repeat with identical
+/// inputs could only rewrite the same values.
 struct FloorCapacitySweep {
-    last: Option<(u16, u16, Option<usize>)>,
+    last: Option<(Offices, Option<usize>)>,
 }
+
+/// The office each look a run can draw lays out, where it has one.
+type Offices =
+    enum_map::EnumMap<pixtuoid_scene::look::LookKind, Option<pixtuoid_scene::layout::Size>>;
 
 impl FloorCapacitySweep {
     fn new() -> Self {
@@ -96,18 +100,16 @@ impl FloorCapacitySweep {
     /// Returns whether it actually recomputed (`false` = served from the memo).
     fn publish(
         &mut self,
-        buf_w: u16,
-        buf_h: u16,
+        offices: Offices,
         desk_cap: Option<usize>,
         caps: &[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS],
     ) -> bool {
-        if self.last == Some((buf_w, buf_h, desk_cap)) {
+        if self.last == Some((offices, desk_cap)) {
             return false;
         }
-        self.last = Some((buf_w, buf_h, desk_cap));
-        for (floor_idx, cap_slot) in caps.iter().enumerate() {
-            let seed = pixtuoid_scene::floor::floor_seed(floor_idx);
-            let mut capacity = pixtuoid_scene::floor::floor_capacity(buf_w, buf_h, seed);
+        self.last = Some((offices, desk_cap));
+        let seats = crate::runtime::floor_capacities(&offices);
+        for (cap_slot, mut capacity) in caps.iter().zip(seats) {
             if let Some(cap) = desk_cap {
                 capacity = capacity.min(cap);
             }
@@ -125,6 +127,10 @@ impl<B: ratatui::backend::Backend<Error: Send + Sync + 'static>> crate::panels::
 {
     fn set_theme(&mut self, theme: &'static theme::Theme) {
         TuiRenderer::set_theme(self, theme);
+    }
+
+    fn set_look(&mut self, look: pixtuoid_scene::look::LookKind) -> anyhow::Result<()> {
+        TuiRenderer::set_look(self, look)
     }
 
     fn navigate_floor(&mut self, floor: usize, now: SystemTime) {
@@ -350,8 +356,9 @@ pub(crate) struct TuiSession {
     pub pack: Arc<pixtuoid_scene::pack::OfficeArt>,
     /// What `boot_tui` planned to paint.
     pub plan: crate::graphics::Plan,
-    /// How the office moves, which `boot_tui` resolved beside the plan.
-    pub motion: pixtuoid_scene::anim::Motion,
+    /// How the office moves in each look, which `boot_tui` resolved beside
+    /// the plan.
+    pub motions: enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
     pub floor_caps: Arc<[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS]>,
     pub theme: &'static theme::Theme,
     pub config_path: std::path::PathBuf,
@@ -429,31 +436,31 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     }
 }
 
-/// Hand `renderer` the painter `plan` names: the half-blocks' on this
-/// terminal.
+/// Hand `renderer` the half-blocks' painter on this terminal and the cutaway
+/// `plan` names, each look moving as `motions` says, starting in the plan's.
 fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
-    plan: crate::graphics::Plan,
+    (plan, motions): (
+        crate::graphics::Plan,
+        enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
+    ),
     out: &FrameOut,
 ) {
+    use pixtuoid_scene::look::LookKind;
     let (terminal, tmux) = crate::graphics::terminal_and_tmux();
     renderer.painted_by(crate::jank::Painter {
-        look: pixtuoid_scene::look::LookKind::Classic.name(),
+        look: LookKind::Classic.name(),
         scale: 1,
         tmux,
         terminal,
         sync: out.synchronized(),
     });
-    match plan {
-        crate::graphics::Plan::Cutaway {
-            fit, route, cell, ..
-        } => renderer.set_cutaway(cutaway::TileCutaway::new(
-            fit,
-            cell,
-            route,
-            Box::new(out.clone()),
-        )),
-        _ => tracing::info!(plan = ?plan, "painting classic"),
+    let tiles = plan
+        .cutaway()
+        .map(|c| cutaway::TileCutaway::new(c.fit, c.cell, c.route, Box::new(out.clone())));
+    renderer.set_looks(motions, tiles, plan.start());
+    if plan.start() == LookKind::Classic {
+        tracing::info!(plan = ?plan, "painting classic");
     }
 }
 
@@ -470,7 +477,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         mut scene_rx,
         pack,
         plan,
-        motion,
+        motions,
         floor_caps,
         theme,
         config_path,
@@ -495,8 +502,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     let quit = arms.signalled();
     tokio::pin!(quit);
     let mut renderer = TuiRenderer::new(term, theme, pets, pack);
-    renderer.set_motion(motion);
-    paint_plan(&mut renderer, plan, &out);
+    paint_plan(&mut renderer, (plan, motions), &out);
     renderer.present_through(out);
     // A LOCAL so EVERY exit (q / Ctrl-C / terminate / error) drops it and joins
     // the device thread it owns.
@@ -510,7 +516,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         log,
         drift,
         connected: &connected.snapshot(),
-        terminal_cutaway: matches!(plan, crate::graphics::Plan::Cutaway { .. }),
+        look: plan.cutaway().map(|_| plan.start()),
     });
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
@@ -536,8 +542,8 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     renderer.set_volume_flash(audio_ctl.volume_flash(audio_now));
                     renderer.render(&snapshot, now)?;
 
-                    if let Some(layout) = renderer.cached_layout() {
-                        cap_sweep.publish(layout.buf_w, layout.buf_h, desk_cap, &floor_caps);
+                    if renderer.cached_layout().is_some() {
+                        cap_sweep.publish(renderer.seat_extents(), desk_cap, &floor_caps);
                     }
                 }
                 event = events.next() => match event.context("terminal input closed")?? {
@@ -775,14 +781,44 @@ mod capacity_sweep_tests {
     const W: u16 = 192;
     const H: u16 = 158;
 
+    /// A run whose only office is the classic's, `w`×`h`.
+    fn classic(w: u16, h: u16) -> super::Offices {
+        enum_map::enum_map! {
+            pixtuoid_scene::look::LookKind::Classic => Some(pixtuoid_scene::layout::Size { w, h }),
+            pixtuoid_scene::look::LookKind::Cutaway => None,
+        }
+    }
+
+    /// A run that can draw two offices seats each floor at the fewest desks
+    /// either holds.
+    #[test]
+    fn two_offices_seat_each_floor_at_the_fewer_desks() {
+        use pixtuoid_scene::look::LookKind;
+        let small = pixtuoid_scene::layout::Size { w: W / 2, h: H / 2 };
+        let mut offices = classic(W, H);
+        offices[LookKind::Cutaway] = Some(small);
+        let caps = caps();
+        FloorCapacitySweep::new().publish(offices, None, &caps);
+        for (i, slot) in caps.iter().enumerate() {
+            let seed = pixtuoid_scene::floor::floor_seed(i);
+            let want = pixtuoid_scene::floor::floor_capacity(W, H, seed).min(
+                pixtuoid_scene::floor::floor_capacity(small.w, small.h, seed),
+            );
+            assert_eq!(slot.load(Ordering::Relaxed), want, "floor {i}");
+        }
+    }
+
     #[test]
     fn a_repeat_frame_serves_the_memo_instead_of_recomputing() {
         let caps = caps();
         let mut sweep = FloorCapacitySweep::new();
-        assert!(sweep.publish(W, H, None, &caps), "first frame computes");
+        assert!(
+            sweep.publish(classic(W, H), None, &caps),
+            "first frame computes"
+        );
         let published: Vec<usize> = caps.iter().map(|c| c.load(Ordering::Relaxed)).collect();
         assert!(
-            !sweep.publish(W, H, None, &caps),
+            !sweep.publish(classic(W, H), None, &caps),
             "an unchanged frame must skip the whole MAX_FLOORS layout sweep"
         );
         let after: Vec<usize> = caps.iter().map(|c| c.load(Ordering::Relaxed)).collect();
@@ -796,10 +832,13 @@ mod capacity_sweep_tests {
     fn a_resize_or_a_new_cap_recomputes() {
         let caps = caps();
         let mut sweep = FloorCapacitySweep::new();
-        sweep.publish(W, H, None, &caps);
-        assert!(sweep.publish(W, H - 2, None, &caps), "a resize recomputes");
+        sweep.publish(classic(W, H), None, &caps);
         assert!(
-            sweep.publish(W, H - 2, Some(4), &caps),
+            sweep.publish(classic(W, H - 2), None, &caps),
+            "a resize recomputes"
+        );
+        assert!(
+            sweep.publish(classic(W, H - 2), Some(4), &caps),
             "a different desk cap recomputes"
         );
     }
@@ -808,7 +847,7 @@ mod capacity_sweep_tests {
     fn published_capacities_are_the_per_floor_auto_capacity_clamped_by_the_cap() {
         let caps = caps();
         let mut sweep = FloorCapacitySweep::new();
-        sweep.publish(W, H, None, &caps);
+        sweep.publish(classic(W, H), None, &caps);
         for (i, slot) in caps.iter().enumerate() {
             let want =
                 pixtuoid_scene::floor::floor_capacity(W, H, pixtuoid_scene::floor::floor_seed(i));
@@ -817,7 +856,7 @@ mod capacity_sweep_tests {
         }
         let capped: [AtomicUsize; MAX_FLOORS] = std::array::from_fn(|_| AtomicUsize::new(0));
         let mut sweep = FloorCapacitySweep::new();
-        sweep.publish(W, H, Some(3), &capped);
+        sweep.publish(classic(W, H), Some(3), &capped);
         for (i, slot) in capped.iter().enumerate() {
             assert_eq!(
                 slot.load(Ordering::Relaxed),
@@ -1264,7 +1303,7 @@ mod apply_key_action_tests {
             KeyAction::CloseHelp,
             KeyAction::DismissVersionPopup,
             KeyAction::OpenVersionPopup,
-            KeyAction::OpenThemePicker,
+            KeyAction::OpenAppearance,
             KeyAction::ToggleDashboard,
             KeyAction::DashboardClose,
             KeyAction::ConnectionClose,
@@ -1343,24 +1382,27 @@ mod apply_key_action_tests {
         );
     }
 
-    /// `ThemeCommit` persists; `ThemeCancel` restores the last COMMITTED theme,
-    /// not merely the previewed one.
+    /// A commit persists the theme it showed, and no look where the picker
+    /// had no look row; a cancel restores the last COMMITTED theme, not
+    /// merely the previewed one.
     #[test]
-    fn theme_commit_persists_and_cancel_restores_the_saved_theme() {
+    fn a_commit_persists_and_a_cancel_restores_the_saved_theme() {
         let mut h = Harness::new();
-        h.apply(KeyAction::OpenThemePicker);
-        h.apply(KeyAction::ThemeCommit(1));
+        h.apply(KeyAction::OpenAppearance);
+        h.apply(KeyAction::ThemePreview(1));
+        h.apply(KeyAction::AppearanceCommit);
         let saved = std::fs::read_to_string(&h.config_path).expect("config written");
         assert!(
             saved.contains(theme::ALL_THEMES[1].name),
             "commit must persist the theme: {saved:?}"
         );
+        assert!(!saved.contains("look"), "no look row, no look: {saved:?}");
 
-        h.apply(KeyAction::OpenThemePicker);
+        h.apply(KeyAction::OpenAppearance);
         h.apply(KeyAction::ThemePreview(3));
-        h.apply(KeyAction::ThemeCancel);
+        h.apply(KeyAction::AppearanceCancel);
         assert_eq!(
-            h.ui.saved_theme_idx, 1,
+            h.ui.saved.theme, 1,
             "cancel must restore the COMMITTED theme, not the preview"
         );
     }
