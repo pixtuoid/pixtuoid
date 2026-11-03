@@ -48,7 +48,7 @@ pub(crate) fn paint_appearance(
     let (title, above) = match shown.look {
         None => ("Theme [\u{2191}\u{2193}/jk] Enter/Esc", vec![]),
         Some(look) => (
-            "AppearancePick [\u{2191}\u{2193}/jk \u{2190}\u{2192}/hl] Enter/Esc",
+            "Appearance [\u{2191}\u{2193}/jk \u{2190}\u{2192}/hl] Enter/Esc",
             vec![
                 Line::from(vec![
                     TSpan::styled("  Look  \u{2039} ", idle),
@@ -157,7 +157,7 @@ mod tests {
     }
 
     /// With no look, the picker is the theme picker, every row of it; with
-    /// one, it says AppearancePick and shows the look on its row over the
+    /// one, it says Appearance and shows the look on its row over the
     /// themes, which keep their rows below it.
     #[test]
     fn a_look_row_sits_over_the_themes_only_where_there_is_a_look() {
@@ -176,7 +176,7 @@ mod tests {
                 40,
             );
             let at = |text: &str| rows.iter().position(|r| r.contains(text));
-            let title = at("AppearancePick [").expect("titled");
+            let title = at("Appearance [").expect("titled");
             let row = at(&format!("Look  \u{2039} {} \u{203a}", look.display_name()))
                 .expect("the look row");
             let first = at(ALL_THEMES[0].display_name).expect("the themes");

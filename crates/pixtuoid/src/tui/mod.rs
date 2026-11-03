@@ -80,10 +80,10 @@ pub(crate) fn route_key<B: ratatui::backend::Backend<Error: Send + Sync + 'stati
 /// The per-floor desk-capacity sweep, memoized on its own inputs.
 ///
 /// `floor_capacity` runs a FULL `SceneLayout::compute_with_seed` — walkable-mask stamp plus
-/// coarse BFS, quadratic in buffer area — once per floor, and keeps only
-/// `home_desks.len()`. It is a pure function of `(buf_w, buf_h, desk_cap)` and the
-/// publish is a monotone `fetch_max`, so a repeat with identical inputs could only
-/// rewrite the same values.
+/// coarse BFS, quadratic in buffer area — once per floor and office, and keeps the
+/// fewest `home_desks.len()`. It is a pure function of the run's [`Offices`] and
+/// `desk_cap`, and the publish is a monotone `fetch_max`, so a repeat with identical
+/// inputs could only rewrite the same values.
 struct FloorCapacitySweep {
     last: Option<(Offices, Option<usize>)>,
 }

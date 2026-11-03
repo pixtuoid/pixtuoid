@@ -1166,6 +1166,15 @@ mod tests {
             &["snapshot", "--pixel", "cutaway", "--onboarding"],
             &["snapshot", "--pixel", "cutaway", "--help-open"],
             &["snapshot", "--pixel", "cutaway", "--theme-picker", "0"],
+            &[
+                "snapshot",
+                "--pixel",
+                "cutaway",
+                "--theme-picker",
+                "0",
+                "--picker-look",
+                "classic",
+            ],
             &["snapshot", "--pixel", "cutaway", "--popup"],
         ] {
             assert!(parses(argv), "rejected {argv:?}");
@@ -1179,6 +1188,7 @@ mod tests {
         for flag in [
             &["--help-open"][..],
             &["--theme-picker", "0"],
+            &["--picker-look", "cutaway"],
             &["--popup"],
             &["--hover", "1,1"],
             &["--source-warning", "claude-code"],
