@@ -930,43 +930,47 @@ mod tests {
     }
 
     /// `--crop-agent` centres on the middle of the box the frame drew its agent
-    /// in, and an agent the frame did not draw fails loudly.
+    /// in, and an agent of the scene the frame left out fails loudly.
     #[test]
     fn crop_agent_centres_on_its_agents_drawn_box() {
         use pixtuoid_scene::display::HoverTarget;
         let now = SystemTime::now();
         let scene = sample_scene(now, 12, 12);
-        let pack = std::sync::Arc::new(load_bundled_pack().unwrap());
-        let mut floor = pixtuoid_scene::floor::PerFloor::new(pack);
-        let mut office = pixtuoid_scene::floor::PerOffice::new();
-        let theme = pixtuoid_scene::theme::theme_by_name("normal").unwrap();
-        let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
-        let ground = pixtuoid_scene::floor::FloorMeta::ground();
-        let mut ctx = DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, ground);
-        let hits = draw_frame(&mut term, &mut ctx, None)
-            .unwrap()
-            .expect("a classic frame");
+        let drawn = |scene: &SceneState| {
+            let pack = std::sync::Arc::new(load_bundled_pack().unwrap());
+            let mut floor = pixtuoid_scene::floor::PerFloor::new(pack);
+            let mut office = pixtuoid_scene::floor::PerOffice::new();
+            let theme = pixtuoid_scene::theme::theme_by_name("normal").unwrap();
+            let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
+            let ground = pixtuoid_scene::floor::FloorMeta::ground();
+            let mut ctx =
+                DrawCtx::offscreen(&mut floor, office.stores(), theme, scene, now, ground);
+            draw_frame(&mut term, &mut ctx, None)
+                .unwrap()
+                .expect("a classic frame")
+        };
+        let crop =
+            |key: &str, hits| figure_target(&crop_args(&["--crop-agent", key]), &scene, Some(hits));
+        let hits = drawn(&scene);
         let agent = crate::scenes::agent_named(&scene, "test", "demo-turn").unwrap();
         let (_, at) = hits
             .figures()
             .find(|(who, _)| **who == HoverTarget::Agent(agent.agent_id))
             .expect("demo-turn is drawn");
-        let target = figure_target(
-            &crop_args(&["--crop-agent", "demo-turn"]),
-            &scene,
-            Some(&hits),
-        );
         assert_eq!(
-            target.unwrap(),
+            crop("demo-turn", &hits).unwrap(),
             Some(pixtuoid_scene::layout::Point {
                 x: at.x + (at.width - 1) / 2,
                 y: at.y + (at.height - 1) / 2,
             })
         );
-        let ghost = figure_target(&crop_args(&["--crop-agent", "ghost"]), &scene, Some(&hits));
-        assert!(ghost.unwrap_err().to_string().contains("(demo-turn)"));
-        let undrawn = figure_target(&crop_args(&["--crop-agent", "demo-turn"]), &scene, None);
-        assert!(undrawn.unwrap_err().to_string().contains("not drawn"));
+        let mut without = scene.clone();
+        without.agents.remove(&agent.agent_id);
+        let left_out = drawn(&without);
+        let err = crop("demo-turn", &left_out).unwrap_err().to_string();
+        assert!(err.contains("not drawn"), "{err}");
+        let err = crop("ghost", &hits).unwrap_err().to_string();
+        assert!(err.contains("(demo-turn)"), "{err}");
     }
 
     #[test]

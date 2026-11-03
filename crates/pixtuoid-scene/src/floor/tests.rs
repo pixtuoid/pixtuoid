@@ -2625,7 +2625,7 @@ fn a_lifted_creature_is_in_front_of_the_room() {
 /// scale, and stands on every look's columns and feet; it leaves with its
 /// agent's floor and its agent.
 #[test]
-fn a_figures_box_holds_its_sprite_every_frame_in_every_look() {
+fn a_figures_box_holds_its_outfit_every_frame_in_every_look() {
     use crate::display::HoverTarget;
     use crate::interact::{Figure, Gesture};
     use crate::layout::{Bounds, Point};
