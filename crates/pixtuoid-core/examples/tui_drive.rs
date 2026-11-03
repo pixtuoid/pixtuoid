@@ -336,6 +336,44 @@ dd bs=1 count=1 >/dev/null 2>&1"#;
         }
     }
 
+    /// After [`GATED`]'s answer, kimi's composer; the first `/exit` refused
+    /// mid-turn and handed back to it; an exit on the next Enter.
+    #[cfg(unix)]
+    const REFUSES_A_QUIT: &str = r#"printf '\033[2J\033[H╭──╮\r\n │ > \r\n'
+until [ "$(dd bs=1 count=1 2>/dev/null)" = "$(printf '\r')" ]; do :; done
+printf '\033[2J\033[HCannot /exit while streaming\r\n╭──╮\r\n │ > /exit\r\n'
+dd bs=1 count=1 >/dev/null 2>&1"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_run_whose_quit_the_cli_refused_once_still_ends() {
+        let dir = tempfile::tempdir().expect("dir");
+        let scene_log = dir.path().join("scene.log");
+        let line = CommandLine {
+            source: "kimi".into(),
+            scenario: "permission".into(),
+            log: dir.path().join("tui.log"),
+            scene_log: scene_log.clone(),
+            prompt: "hi".into(),
+            program: [
+                "sh".into(),
+                "-c".into(),
+                format!("{GATED}\n{REFUSES_A_QUIT}"),
+                "sh".into(),
+            ]
+            .map(OsString::from)
+            .into_iter()
+            .chain([
+                scene_log.into_os_string(),
+                "agents=[km\u{b7}proj@0:requires_action] daemons=[]".into(),
+            ])
+            .collect(),
+        };
+        // Past the quit's grace, which a refused quit otherwise runs out.
+        let code = drive(line, QUIT_GRACE * 2).expect("it drove");
+        assert_eq!(code, 0);
+    }
+
     #[test]
     fn the_cli_gets_exactly_the_drivers_environment() {
         let given = [("ONLY", "this"), ("PATH", "/sandbox/bin"), ("TERM", "dumb")];

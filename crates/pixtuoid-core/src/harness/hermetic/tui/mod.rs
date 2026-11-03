@@ -12,8 +12,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// How long the composer may still hold the prompt after an Enter before it is
-/// sent again: an Enter during startup is swallowed.
+/// How long the composer may still hold a submitted line after its Enter
+/// before [`enter_again`] sends it again.
 const ENTER_RETRY: Duration = Duration::from_secs(1);
 /// How long the screen must stay unchanged after the turn before the driver
 /// quits, short of the idle notifiers a CLI fires at an idle composer.
@@ -205,7 +205,7 @@ enum Phase {
     Boot,
     Typed,
     Submitted { enter_at: Instant },
-    Quit,
+    Quit { enter_at: Instant },
 }
 
 /// What a run's answer waits for on screen, and how it is given.
@@ -246,9 +246,9 @@ pub struct Driver<'a> {
     answered: bool,
 }
 
-/// How many leading characters of the prompt identify it in the composer: a
-/// long prompt wraps, and its first line is what the composer keeps.
-const PROMPT_HEAD: usize = 16;
+/// How many leading characters of a submitted line identify it in the
+/// composer: a long prompt wraps, and its first line is what the composer keeps.
+const LINE_HEAD: usize = 16;
 
 impl<'a> Driver<'a> {
     /// A run through `tui`, typing `prompt` and answering as `answer` says.
@@ -280,8 +280,21 @@ impl<'a> Driver<'a> {
             screen.clone_into(&mut self.screen);
             self.changed_at = now;
         }
-        if self.phase == Phase::Quit {
-            return Action::Wait;
+        if let Phase::Quit { mut enter_at } = self.phase {
+            // kimi refuses `/exit` mid-turn and hands it back
+            // (`apps/kimi-code/src/tui/commands/dispatch.ts:270-276` at
+            // `@moonshot-ai/kimi-code@2.4.1`).
+            let handed_back = self
+                .tui
+                .quit
+                .iter()
+                .any(|k| matches!(k, Key::Text(line) if self.composer_holds(line)));
+            if !handed_back {
+                return Action::Wait;
+            }
+            let action = enter_again(&mut enter_at, now);
+            self.phase = Phase::Quit { enter_at };
+            return action;
         }
         if now.duration_since(self.changed_at) >= STALL {
             return Action::Fail("the screen stood still with the turn unfinished");
@@ -304,12 +317,12 @@ impl<'a> Driver<'a> {
             }
             // A turn already answered was submitted: a prompt shown after its
             // answer is the conversation's echo.
-            Phase::Submitted { enter_at } if !self.answered && self.composer_holds_prompt() => {
-                if now.duration_since(enter_at) < ENTER_RETRY {
-                    return Action::Wait;
-                }
-                self.phase = Phase::Submitted { enter_at: now };
-                Action::Keys(&[Key::Enter])
+            Phase::Submitted { mut enter_at }
+                if !self.answered && self.composer_holds(&self.prompt) =>
+            {
+                let action = enter_again(&mut enter_at, now);
+                self.phase = Phase::Submitted { enter_at };
+                action
             }
             // The screen must move after the Enter: one standing since before
             // it may hold a prompt the CLI dropped, its command never run. A
@@ -325,7 +338,7 @@ impl<'a> Driver<'a> {
                     (self.answered, self.open) = (false, None);
                     return Action::Type(self.prompt.clone());
                 }
-                self.phase = Phase::Quit;
+                self.phase = Phase::Quit { enter_at: now };
                 Action::Quit(self.tui.quit)
             }
             _ => Action::Wait,
@@ -459,11 +472,22 @@ impl<'a> Driver<'a> {
         }
     }
 
-    fn composer_holds_prompt(&self) -> bool {
-        let head: String = self.prompt.chars().take(PROMPT_HEAD).collect();
+    fn composer_holds(&self, line: &str) -> bool {
+        let head: String = line.chars().take(LINE_HEAD).collect();
         self.composer()
             .is_some_and(|typed| typed.trim_start().starts_with(head.trim_end()))
     }
+}
+
+/// An Enter for the line the composer still holds, once the last, at
+/// `enter_at`, has stood [`ENTER_RETRY`]: the CLI dropped it, or refused it
+/// and handed the line back.
+fn enter_again(enter_at: &mut Instant, now: Instant) -> Action {
+    if now.duration_since(*enter_at) < ENTER_RETRY {
+        return Action::Wait;
+    }
+    *enter_at = now;
+    Action::Keys(&[Key::Enter])
 }
 
 /// Whether `line` is a rule of `glyph`, between `corners` when it has them.
@@ -692,13 +716,23 @@ mod tests {
         let mut d = driver(t0);
         submitted(&mut d, t0);
         let late = t0 + ENTER_RETRY;
+        let holding = typed(READY, READY_INPUT);
         assert_eq!(
-            d.step(&typed(READY, READY_INPUT), late),
+            d.step(&holding, late),
             Action::Keys(&[Key::Enter]),
             "a swallowed Enter"
         );
         assert_eq!(
-            d.step(DONE, late + ENTER_RETRY),
+            d.step(&holding, late + ENTER_RETRY - Duration::from_millis(1)),
+            Action::Wait,
+            "an Enter a retry apart"
+        );
+        assert_eq!(
+            d.step(&holding, late + ENTER_RETRY),
+            Action::Keys(&[Key::Enter])
+        );
+        assert_eq!(
+            d.step(DONE, late + ENTER_RETRY * 2),
             Action::Wait,
             "the conversation's echo of the prompt is not the composer"
         );
@@ -1420,6 +1454,37 @@ mod tests {
         assert_eq!(
             d.step(gate, shown + SCENE_PATIENCE),
             Action::Keys(tui.gates[0].keys)
+        );
+    }
+
+    /// `exit-refused` is the screen main's run 41550335031 gave up at.
+    #[test]
+    fn a_quit_handed_back_to_the_composer_is_entered_again() {
+        let t0 = Instant::now();
+        let (mut d, tui, gate) = kimi_at_its_gate(t0);
+        d.observe("agents=[km\u{b7}proj@0:requires_action] daemons=[]\n");
+        assert_eq!(d.step(gate, t0), Action::Keys(tui.gates[0].keys));
+        let boot = screen!("kimi", "boot");
+        let moved = t0 + Duration::from_millis(1);
+        assert_eq!(d.step(boot, moved), Action::Wait);
+        let quit = moved + SETTLE;
+        assert_eq!(d.step(boot, quit), Action::Quit(tui.quit));
+        let refused = screen!("kimi", "exit-refused");
+        let retry = quit + ENTER_RETRY;
+        assert_eq!(
+            d.step(refused, retry - Duration::from_millis(1)),
+            Action::Wait
+        );
+        assert_eq!(d.step(refused, retry), Action::Keys(&[Key::Enter]));
+        assert_eq!(
+            d.step(refused, retry + ENTER_RETRY - Duration::from_millis(1)),
+            Action::Wait,
+            "an Enter a retry apart"
+        );
+        assert_eq!(
+            d.step(boot, retry + ENTER_RETRY),
+            Action::Wait,
+            "a composer the quit left"
         );
     }
 
