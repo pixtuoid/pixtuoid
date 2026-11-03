@@ -1,4 +1,25 @@
 pub mod pixtuoid_scene
+pub mod pixtuoid_scene::badge
+#[non_exhaustive] pub struct pixtuoid_scene::badge::BadgeInk
+pub pixtuoid_scene::badge::BadgeInk::marker: pixtuoid_scene::sprite::Rgb
+pub pixtuoid_scene::badge::BadgeInk::name: pixtuoid_scene::sprite::Rgb
+impl core::clone::Clone for pixtuoid_scene::badge::BadgeInk
+pub fn pixtuoid_scene::badge::BadgeInk::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::badge::BadgeInk
+impl core::cmp::PartialEq for pixtuoid_scene::badge::BadgeInk
+pub fn pixtuoid_scene::badge::BadgeInk::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::badge::BadgeInk
+pub fn pixtuoid_scene::badge::BadgeInk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::badge::BadgeInk
+impl core::marker::StructuralPartialEq for pixtuoid_scene::badge::BadgeInk
+impl core::marker::Freeze for pixtuoid_scene::badge::BadgeInk
+impl core::marker::Send for pixtuoid_scene::badge::BadgeInk
+impl core::marker::Sync for pixtuoid_scene::badge::BadgeInk
+impl core::marker::Unpin for pixtuoid_scene::badge::BadgeInk
+impl core::marker::UnsafeUnpin for pixtuoid_scene::badge::BadgeInk
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::badge::BadgeInk
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::badge::BadgeInk
+pub fn pixtuoid_scene::badge::badge_ink(&pixtuoid_core::state::AgentSlot, &pixtuoid_scene::theme::Theme) -> pixtuoid_scene::badge::BadgeInk
 pub mod pixtuoid_scene::chitchat
 pub const pixtuoid_scene::chitchat::CHITCHAT_LINES: &[&str]
 pub mod pixtuoid_scene::floor
@@ -1103,7 +1124,6 @@ impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::nameplate::Flo
 pub struct pixtuoid_scene::nameplate::Nameplate
 impl pixtuoid_scene::nameplate::Nameplate
 pub fn pixtuoid_scene::nameplate::Nameplate::fit(&self, u16) -> alloc::borrow::Cow<'_, str>
-pub fn pixtuoid_scene::nameplate::Nameplate::label(&self) -> &str
 pub fn pixtuoid_scene::nameplate::Nameplate::suffix(&self) -> core::option::Option<pixtuoid_scene::nameplate::Suffix>
 impl core::clone::Clone for pixtuoid_scene::nameplate::Nameplate
 pub fn pixtuoid_scene::nameplate::Nameplate::clone(&self) -> Self

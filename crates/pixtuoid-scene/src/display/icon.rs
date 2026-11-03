@@ -4,7 +4,7 @@
 
 /// What a terminal leads a badge with, in
 /// [`BadgeInk::marker`](crate::badge::BadgeInk::marker); a pixel painter draws
-/// the plate's [`strip`](super::TextRun::strip) in its place.
+/// the plate's [`ring`](super::TextRun::ring) in its place.
 pub const BADGE_MARKER: char = '\u{25cf}';
 
 /// A symbol in a line of text, named by what it means.

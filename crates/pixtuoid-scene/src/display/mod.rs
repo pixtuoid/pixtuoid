@@ -16,8 +16,8 @@ pub mod text;
 
 pub use crate::creatures::GatewayCard;
 pub(crate) use backdrop::{Backdrop, Covering};
-pub use compose::{Office, Showing};
-pub(crate) use compose::{PLATE_PAD, compose, desk_span, face_rows, run_rect};
+pub use compose::{BADGE_INSETS, Office, PlateInsets, Showing};
+pub(crate) use compose::{compose, desk_span, face_rows, line_start, ring_insets, run_rect};
 pub(crate) use hover::Hover;
 pub use hover::{HoverTarget, Hovers, PetHover};
 pub use icon::{BADGE_MARKER, Icon};

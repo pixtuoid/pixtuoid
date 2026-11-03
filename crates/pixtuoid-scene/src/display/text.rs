@@ -125,8 +125,8 @@ pub struct TextRun {
     pub spans: Vec<TextSpan>,
     /// The fill behind it, if any.
     pub plate: Option<Rgb>,
-    /// A bar down its plate's left edge, in this ink.
-    pub strip: Option<Rgb>,
+    /// A ring round a badge's text, inside its plate, in this ink.
+    pub ring: Option<Rgb>,
     /// What it labels.
     pub role: TextRole,
 }
@@ -176,7 +176,7 @@ impl Content {
 /// An agent's name badge: its name in its tone on the badge plate, marked in
 /// the source's hue, centred `LABEL_GAP` rows over `at`. A terminal marks it
 /// with a [`BADGE_MARKER`](crate::badge::BADGE_MARKER) before the name, a
-/// pixel painter with a bar down the plate's left edge. Its parts are fields,
+/// pixel painter with a ring round it. Its parts are fields,
 /// so a painter reads them instead of a run's spans by position.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Badge {
@@ -201,7 +201,7 @@ impl Badge {
         theme: &Theme,
     ) -> Self {
         let name = namesakes.nameplate(agent);
-        let ink = crate::badge::badge_ink(name.label(), crate::badge::tone_of(agent), theme);
+        let ink = crate::badge::badge_ink(agent, theme);
         Self {
             agent: agent.agent_id,
             at: anchor,
@@ -212,14 +212,14 @@ impl Badge {
     }
 
     /// It as a pixel painter's run: the name on the plate, the marker its
-    /// [`strip`](TextRun::strip).
+    /// [`ring`](TextRun::ring).
     pub(crate) fn run(&self) -> TextRun {
         TextRun {
             at: self.at,
             align: Align::Over,
             spans: vec![self.name.clone()],
             plate: Some(self.plate),
-            strip: Some(self.marker),
+            ring: Some(self.marker),
             role: TextRole::Badge(self.agent),
         }
     }
@@ -337,7 +337,7 @@ impl TextRun {
                 })
                 .collect(),
             plate: Some(crate::badge::badge_plate_colour(theme)),
-            strip: None,
+            ring: None,
             role: TextRole::Indicator,
         }
     }
@@ -370,7 +370,7 @@ impl TextRun {
             align: Align::Over,
             spans: vec![TextSpan::new(bubble.text, theme.ui.tooltip_text)],
             plate: Some(theme.ui.tooltip_bg),
-            strip: None,
+            ring: None,
             role: TextRole::Bubble(bubble.speaker),
         }
     }

@@ -148,21 +148,11 @@ const officeDriverUrl = asset('office-driver.js');
     white-space: nowrap;
     font-size: var(--ov-label-px);
     line-height: 1;
-    text-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.9),
-      0 0 3px rgba(0, 0, 0, 0.75);
+    /* The office's badge plate: a rim the plate shows through, then the ring and gap inside it. */
+    border: var(--ov-rim) solid transparent;
+    padding: var(--ov-padding);
+    box-shadow: inset 0 0 0 var(--ov-ring-w) var(--ring);
     will-change: transform;
-  }
-  /* The office marks a badge with a bar in its source's hue, not a dot. */
-  .ov-strip {
-    display: inline-block;
-    width: 0.22em;
-    height: 1.05em;
-    margin-right: 0.25em;
-    vertical-align: -0.12em;
-    overflow: hidden;
-    color: transparent;
-    text-shadow: none;
   }
   /* A status lamp with a glint, glowing in its tone, where the glyph was:
      one column, though the face draws the glyph full-width. */
@@ -522,6 +512,13 @@ const officeDriverUrl = asset('office-driver.js');
       if (labelPx !== lastLabelPx) {
         lastLabelPx = labelPx;
         overlayEl.style.setProperty('--ov-label-px', labelPx + 'px');
+        // The engine's badge insets, its face pixels at this size; the polled
+        // global is e2e observability, as __pixLights is.
+        const f = (window.__pixBadgeInsets = data.badge_insets);
+        const px = (n) => (n * labelPx) / PIXEL_EM + 'px';
+        overlayEl.style.setProperty('--ov-rim', px(f.rim));
+        overlayEl.style.setProperty('--ov-ring-w', px(f.ring_w));
+        overlayEl.style.setProperty('--ov-padding', px(f.ring_w + f.gap));
       }
       const labels = data.labels;
       const lift = Math.max(2, map.s); // ~1 unit above the head-top
@@ -531,22 +528,17 @@ const officeDriverUrl = asset('office-driver.js');
         if (!el) {
           el = document.createElement('span');
           el.className = 'ov-label';
-          // Two fixed child spans (● dot, then the name): their textContent concatenates to
-          // the full label, so hit-tests and text assertions read it unchanged.
-          for (let k = 0; k < 2; k++) el.appendChild(document.createElement('span'));
           overlayEl.appendChild(el);
           labelPool[i] = el;
         }
         const L = labels[i];
-        const key = L.text + '\u0000' + L.color + '\u0000' + L.badge;
+        const key = L.text + '\u0000' + L.ring + '\u0000' + L.ink + '\u0000' + L.plate;
         if (el._k !== key) {
           el._k = key;
-          const parts = el.children;
-          parts[0].textContent = L.text.slice(0, 1); // ● dot, drawn as the plate's strip
-          parts[1].textContent = L.text.slice(1);
-          parts[0].className = 'ov-strip';
-          parts[0].style.backgroundColor = L.color;
-          parts[1].style.color = L.badge;
+          el.textContent = L.text;
+          el.style.color = L.ink;
+          el.style.backgroundColor = L.plate;
+          el.style.setProperty('--ring', L.ring);
         }
         const x = map.ox + L.x * map.s;
         const y = map.oy + L.y * map.s - lift;

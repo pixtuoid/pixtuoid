@@ -550,7 +550,7 @@ impl BoardModel {
             align,
             spans,
             plate: None,
-            strip: None,
+            ring: None,
             role,
         };
         vec![

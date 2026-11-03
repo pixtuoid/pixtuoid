@@ -211,6 +211,7 @@ pub(crate) fn paint_tooltip(
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::{idle, slot_with};
     use super::{Dim, TooltipAt, paint_tooltip};
     use pixtuoid_scene::display::GatewayCard;
     use pixtuoid_scene::tooltip::{DETAIL_CHARS, Tooltip, mascot_text as mascot_tooltip_text};
@@ -316,19 +317,18 @@ mod tests {
         }
     }
 
-    /// A badge reading `name` in `tone` under `theme`, hung from `at`.
+    /// `agent`'s badge under `theme`, reading its label, hung from `at`.
     fn badge(
         at: pixtuoid_scene::layout::Point,
-        name: &str,
-        tone: pixtuoid_scene::badge::BadgeTone,
+        agent: &pixtuoid_core::AgentSlot,
         theme: &pixtuoid_scene::theme::Theme,
     ) -> super::Badge {
-        let ink = pixtuoid_scene::badge::badge_ink(name, tone, theme);
+        let ink = pixtuoid_scene::badge::badge_ink(agent, theme);
         super::Badge {
-            agent: pixtuoid_core::AgentId::from_transcript_path("/badge/0.jsonl"),
+            agent: agent.agent_id,
             at,
             marker: ink.marker,
-            name: pixtuoid_scene::display::TextSpan::new(name, ink.name),
+            name: pixtuoid_scene::display::TextSpan::new(&*agent.label, ink.name),
             plate: theme.ui.tooltip_bg,
         }
     }
@@ -394,7 +394,6 @@ mod tests {
     #[test]
     fn world_text_paints_where_line_at_puts_it() {
         use pixtuoid_core::state::DaemonState;
-        use pixtuoid_scene::badge::BadgeTone;
         use pixtuoid_scene::layout::Point;
         let model = pixtuoid_scene::neon_sign::build_board(
             pixtuoid_scene::tally::StateCounts {
@@ -422,12 +421,7 @@ mod tests {
                 .collect()
         };
         for (y, row) in [(9, 3), (10, 4)] {
-            let badge = badge(
-                Point { x: 40, y },
-                "cc\u{b7}repo",
-                BadgeTone::Idle,
-                &theme::NORMAL,
-            );
+            let badge = badge(Point { x: 40, y }, &idle("cc\u{b7}repo"), &theme::NORMAL);
             // The marker and the name.
             let w = 1 + 7;
             assert_eq!(
@@ -489,14 +483,8 @@ mod tests {
     /// A hovered badge reads `▸name` in place of its marker.
     #[test]
     fn a_hovered_badge_reads_its_name_alone() {
-        use pixtuoid_scene::badge::BadgeTone;
         use pixtuoid_scene::layout::Point;
-        let badge = badge(
-            Point { x: 20, y: 9 },
-            "repo",
-            BadgeTone::Idle,
-            &theme::NORMAL,
-        );
+        let badge = badge(Point { x: 20, y: 9 }, &idle("repo"), &theme::NORMAL);
         let mut term = Terminal::new(TestBackend::new(40, 8)).unwrap();
         term.draw(|f| {
             super::paint_badges(
@@ -536,7 +524,7 @@ mod tests {
             })
             .collect(),
             plate: Some(theme.ui.tooltip_bg),
-            strip: None,
+            ring: None,
             role: super::TextRole::Indicator,
         };
         let text: String = run.spans.iter().map(|s| s.text()).collect();
@@ -572,17 +560,11 @@ mod tests {
     /// colour as its background, hovered or not.
     #[test]
     fn a_badge_sits_on_its_plate() {
-        use pixtuoid_scene::badge::BadgeTone;
         use pixtuoid_scene::layout::Point;
         let plate = pixtuoid_scene::sprite::Rgb { r: 1, g: 2, b: 3 };
         let badge = super::Badge {
             plate,
-            ..badge(
-                Point { x: 20, y: 8 },
-                "cc\u{b7}repo",
-                BadgeTone::Idle,
-                &theme::NORMAL,
-            )
+            ..badge(Point { x: 20, y: 8 }, &idle("cc\u{b7}repo"), &theme::NORMAL)
         };
         for hovered in [None, Some(badge.agent)] {
             let mut term = Terminal::new(TestBackend::new(40, 10)).unwrap();
@@ -613,7 +595,6 @@ mod tests {
     /// A badge's text centres on its anchor, the sprite's top-centre.
     #[test]
     fn a_badge_centres_its_text_on_the_anchor() {
-        use pixtuoid_scene::badge::BadgeTone;
         use pixtuoid_scene::layout::Point;
         let mut term = Terminal::new(TestBackend::new(40, 10)).unwrap();
         let scene_rect = Rect {
@@ -627,7 +608,7 @@ mod tests {
         term.draw(|f| {
             super::paint_badges(
                 f,
-                &[badge(anchor, text, BadgeTone::Idle, &theme::NORMAL)],
+                &[badge(anchor, &idle(text), &theme::NORMAL)],
                 (scene_rect, CellMap::HALF_BLOCK),
                 None,
                 Dim::NONE,
@@ -649,21 +630,28 @@ mod tests {
     /// the ● in the source's hue, the name in the tone, in every theme.
     #[test]
     fn a_badge_paints_the_models_ink() {
-        use pixtuoid_scene::badge::{BadgeTone, badge_ink};
+        use pixtuoid_core::AgentSlot;
+        use pixtuoid_core::state::ActivityState;
+        use pixtuoid_scene::badge::badge_ink;
         use pixtuoid_scene::layout::Point;
-        let text = "cc\u{b7}repo";
+        let label = "cc\u{b7}repo";
+        let exiting = AgentSlot {
+            exiting_at: Some(std::time::SystemTime::UNIX_EPOCH),
+            ..idle(label)
+        };
+        let agents = [
+            slot_with(ActivityState::Running { item: None }, label),
+            slot_with(ActivityState::RequiresAction { reason: None }, label),
+            idle(label),
+            exiting,
+        ];
         for theme in pixtuoid_scene::theme::ALL_THEMES {
-            for tone in [
-                BadgeTone::Running,
-                BadgeTone::RequiresAction,
-                BadgeTone::Idle,
-                BadgeTone::Exiting,
-            ] {
+            for agent in &agents {
                 let mut term = Terminal::new(TestBackend::new(40, 10)).unwrap();
                 term.draw(|f| {
                     super::paint_badges(
                         f,
-                        &[badge(Point { x: 20, y: 8 }, text, tone, theme)],
+                        &[badge(Point { x: 20, y: 8 }, agent, theme)],
                         (f.area(), CellMap::HALF_BLOCK),
                         None,
                         Dim::NONE,
@@ -677,8 +665,8 @@ mod tests {
                         .find(|&x| buf[(x, row)].symbol() == s)
                         .and_then(|x| buf[(x, row)].style().fg)
                 };
-                let ink = badge_ink(text, tone, theme);
-                let at = format!("{} {tone:?}", theme.name);
+                let ink = badge_ink(agent, theme);
+                let at = format!("{} {:?} {:?}", theme.name, agent.state, agent.exiting_at);
                 let marker = pixtuoid_scene::badge::BADGE_MARKER.to_string();
                 assert_eq!(fg(&marker), Some(super::to_color(ink.marker)), "{at}");
                 assert_eq!(fg("r"), Some(super::to_color(ink.name)), "{at}");
@@ -688,7 +676,6 @@ mod tests {
 
     #[test]
     fn a_chitchat_bubble_centres_over_its_speakers_badge() {
-        use pixtuoid_scene::badge::BadgeTone;
         use pixtuoid_scene::layout::Point;
         let mut term = Terminal::new(TestBackend::new(40, 12)).unwrap();
         let scene_rect = Rect {
@@ -698,12 +685,7 @@ mod tests {
             height: 10,
         };
         let (name, quip) = ("abcdefgh", "LGTM!");
-        let speaker = badge(
-            Point { x: 20, y: 14 },
-            name,
-            BadgeTone::Idle,
-            &theme::NORMAL,
-        );
+        let speaker = badge(Point { x: 20, y: 14 }, &idle(name), &theme::NORMAL);
         let id = speaker.agent;
         let bubble = super::TextRun {
             at: Point {
@@ -716,7 +698,7 @@ mod tests {
                 theme::NORMAL.ui.tooltip_text,
             )],
             plate: Some(theme::NORMAL.ui.tooltip_bg),
-            strip: None,
+            ring: None,
             role: super::TextRole::Bubble(id),
         };
         term.draw(|f| {

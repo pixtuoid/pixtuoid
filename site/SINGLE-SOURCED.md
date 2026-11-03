@@ -49,13 +49,13 @@ Notes no gate carries:
   e2e test). The stall is intermittent and invisible to Playwright — pin
   changes here with repeated interleaved trials, never a single A/B.
 - **The caption overlay (`#office-overlay`)** lays DOM spans over the
-  pixelated canvas from `Office.overlay_json()` (same badge/neon_sign model as
-  the TUI/floating painters; `badge` = per-CLI hue, dot = activity tone). The
-  engine re-derives the prefix by splitting on the FIRST `·` — a cross-crate
-  echo pinned by the web `labels == badges` test, not a shared const. Rules:
+  pixelated canvas from `Office.overlay_json()`, the painters' badge/neon_sign
+  model (the web `labels == badges` test): a badge's name in its activity tone
+  on its plate, ringed in its CLI's hue and framed by the engine's
+  `badge_insets`, never a copy of its numbers. Rules:
   captions fade in only after the roll settles; `JSON.parse` try/caught;
   `.textContent` never `innerHTML` (cwds are untrusted); reduced-motion is
-  `display:none`; caption legibility is HALO-carried by design (raw hues are
+  `display:none`; the board's legibility is HALO-carried by design (raw hues are
   deliberately not WCAG-gated against office pixels). Pinned by
   `smoke.spec.ts` "crisp AA captions overlay the live office".
 - **Contrast has FOUR populations**, each swept: bare-over-office

@@ -11,9 +11,9 @@ use crate::cutaway::shade::{Ramp, fill, slab};
 use crate::display::compose::{art_size, desk_front_h};
 use crate::display::pen::{ArtPx, ArtRect, BufferPx, Pen};
 use crate::display::{
-    Align, Art, Backdrop, Content, Covering, DisplayList, Emits, Figure, Flip, Office, PLATE_PAD,
-    PieceKind, Recolours, Screen, Showing, StoodProp, TextRun, compose, desk_span, face_rows,
-    run_rect,
+    Art, Backdrop, Content, Covering, DisplayList, Emits, Figure, Flip, Office, PieceKind,
+    Recolours, Screen, Showing, StoodProp, TextRun, compose, desk_span, face_rows, line_start,
+    ring_insets, run_rect,
 };
 use crate::dither::Dithered;
 use crate::layout::{Bounds, Point};
@@ -68,31 +68,21 @@ impl Screen {
     }
 }
 
-/// Paint `run`: its plate, if it has one, and the strip down the plate's
-/// left edge, then its spans end to end from its line's start, inside the
-/// plate's pad where it sits on one, each icon in `pack`'s art.
+/// Paint `run`: its plate, if it has one, and its ring, then its spans end to
+/// end from its [line's start](line_start), each icon in `pack`'s art.
 pub(crate) fn paint_run(run: &TextRun, (pack, pen): (&OfficeArt, Pen), buf: &mut RgbBuffer) {
     let rect = run_rect(run, pen);
     if let Some(ground) = run.plate {
         pen.fill(buf, rect, ground);
     }
-    if let Some(strip) = run.strip {
-        pen.fill(
-            buf,
-            ArtRect {
-                w: ArtPx(PLATE_PAD),
-                ..rect
-            },
-            strip,
-        );
+    if let (Some(insets), Some(ink)) = (ring_insets(run), run.ring) {
+        for edge in insets.ring(rect) {
+            pen.fill(buf, edge, ink);
+        }
     }
-    let inset = match run.align {
-        Align::Over | Align::Centre => PLATE_PAD,
-        Align::Left | Align::Right => 0,
-    };
-    let mut x = rect.x.0 + inset;
+    let (ArtPx(mut x), y) = line_start(run, rect);
     for span in &run.spans {
-        let at = (ArtPx(x), rect.y);
+        let at = (ArtPx(x), y);
         match &span.content {
             Content::Text(text) => crate::cutaway::text::paint(pen, buf, at, text, span.ink),
             Content::Icon(icon) => {

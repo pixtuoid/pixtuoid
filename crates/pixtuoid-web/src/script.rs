@@ -479,14 +479,11 @@ mod tests {
             "each agent has its own desk"
         );
         for a in scene.agents.values() {
-            let prefix = a.label.split('·').next().unwrap();
             assert!(
-                [
-                    "cc", "cx", "ag", "cw", "oc", "cp", "cu", "hm", "gk", "rx", "om"
-                ]
-                .contains(&prefix),
-                "label {:?} must carry a registered source prefix",
-                a.label
+                pixtuoid_core::source::registry::descriptor_for(&a.source).is_some(),
+                "{} works for an unregistered source, {:?}",
+                a.label,
+                a.source
             );
         }
     }

@@ -12,7 +12,7 @@ use super::{
 };
 use crate::atmosphere::Moment;
 use crate::display::pen::{ArtPx, ArtRect, Pen};
-use crate::display::text::{Align, LABEL_GAP, TextRun};
+use crate::display::text::{Align, LABEL_GAP, LINE_H, TextRun, advance, width};
 use crate::glass_weather::GlassWeather;
 use crate::layout::{
     Bounds, DESK_H, Depth, Fixture, FixtureKind, Point, SceneLayout, StationArt, Tie,
@@ -30,24 +30,93 @@ const DESK_FRONT_NUMER: u16 = 2;
 /// Denominator of [`DESK_FRONT_NUMER`].
 const DESK_FRONT_DENOM: u16 = 5;
 
-/// Art pixels between a plate's sides or bottom and its text ([`PLATE_H`] says why not the top).
+/// Art pixels between a plain plate's sides or bottom and its text ([`PLATE_H`] says why not the top).
 pub(crate) const PLATE_PAD: u16 = 1;
 
-/// A plate's height on the art grid: padded below only, since the line's
+/// A plain plate's height on the art grid: padded below only, since the line's
 /// accent rows already clear its capitals above.
-pub(crate) const PLATE_H: u16 = crate::display::text::LINE_H + PLATE_PAD;
+pub(crate) const PLATE_H: u16 = LINE_H + PLATE_PAD;
 
-/// A plate around `text` on the art grid, centred on column `centre`, its top
-/// at row `top`.
-fn plate_at(centre: ArtPx, top: ArtPx, text: &str) -> ArtRect {
-    let w = crate::display::text::width(text)
-        .0
-        .saturating_add(2 * PLATE_PAD);
+/// A ringed plate's bands round its line's cells on the art grid, from its edge
+/// in: the rim, the ring, then the gap, so the ring meets nothing but plate.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlateInsets {
+    /// The plate outside the ring.
+    pub rim: u16,
+    /// The ring's width.
+    pub ring_w: u16,
+    /// The plate between the ring and the line's cells.
+    pub gap: u16,
+}
+
+/// A badge's [`PlateInsets`]: a rim and a gap a plain plate's pad wide round a
+/// one-pixel ring, the gap counted from the line's whole cells, every row and
+/// column of which a glyph may ink.
+#[doc(hidden)]
+pub const BADGE_INSETS: PlateInsets = PlateInsets {
+    rim: PLATE_PAD,
+    ring_w: 1,
+    gap: PLATE_PAD,
+};
+
+impl PlateInsets {
+    /// How far in from its plate's edge its line's cells start, on every side.
+    const fn line(self) -> u16 {
+        self.rim + self.ring_w + self.gap
+    }
+
+    /// Its plate's size round a line `cells` wide.
+    const fn plate(self, cells: u16) -> (u16, u16) {
+        (cells + 2 * self.line(), LINE_H + 2 * self.line())
+    }
+
+    /// Its ring's four sides in `plate`.
+    pub(crate) fn ring(self, plate: ArtRect) -> [ArtRect; 4] {
+        let r = ArtRect {
+            x: ArtPx(plate.x.0 + self.rim),
+            y: ArtPx(plate.y.0 + self.rim),
+            w: ArtPx(plate.w.0.saturating_sub(2 * self.rim)),
+            h: ArtPx(plate.h.0.saturating_sub(2 * self.rim)),
+        };
+        let w = ArtPx(self.ring_w);
+        [
+            ArtRect { h: w, ..r },
+            ArtRect {
+                y: ArtPx((r.y.0 + r.h.0).saturating_sub(self.ring_w)),
+                h: w,
+                ..r
+            },
+            ArtRect { w, ..r },
+            ArtRect {
+                x: ArtPx((r.x.0 + r.w.0).saturating_sub(self.ring_w)),
+                w,
+                ..r
+            },
+        ]
+    }
+}
+
+/// `run`'s [`PlateInsets`]: a badge's, where it carries a [ring](TextRun::ring).
+pub(crate) fn ring_insets(run: &TextRun) -> Option<PlateInsets> {
+    (run.align == Align::Over && run.ring.is_some()).then_some(BADGE_INSETS)
+}
+
+/// A `w`×`h` rect on the art grid, centred on column `centre`, its top at row `top`.
+fn centred(centre: ArtPx, top: ArtPx, (w, h): (u16, u16)) -> ArtRect {
     ArtRect {
         x: ArtPx(centre.0.saturating_sub(w / 2)),
         y: top,
         w: ArtPx(w),
-        h: ArtPx(PLATE_H),
+        h: ArtPx(h),
+    }
+}
+
+/// The size of `run`'s plate round `text`: its ring's insets round the cells, else a plain plate.
+fn plate_size(run: &TextRun, text: &str) -> (u16, u16) {
+    match ring_insets(run) {
+        Some(insets) => insets.plate(advance(text).0),
+        None => (width(text).0.saturating_add(2 * PLATE_PAD), PLATE_H),
     }
 }
 
@@ -63,31 +132,30 @@ fn topmost_span(r: ArtRect, pen: Pen) -> Span {
     }
 }
 
-/// A badge `run`'s plate on the art grid: centred over its anchor,
-/// [`LABEL_GAP`] rows up.
+/// A badge `run`'s plate on the art grid: centred over its anchor, its bottom
+/// [`LABEL_GAP`] rows up, so a ring grows it up and out, never onto the head.
 pub(crate) fn badge_plate(run: &TextRun, pen: Pen) -> ArtRect {
     let bottom = pen.art(run.at.y.saturating_sub(LABEL_GAP));
-    plate_at(
-        pen.art(run.at.x),
-        ArtPx(bottom.0.saturating_sub(PLATE_H)),
-        &run.text(),
-    )
+    let plate = centred(pen.art(run.at.x), ArtPx(0), plate_size(run, &run.text()));
+    ArtRect {
+        y: ArtPx(bottom.0.saturating_sub(plate.h.0)),
+        ..plate
+    }
 }
 
 /// Where `run`'s line lands on the art grid: the plate a badge or the floor
 /// indicator sits on, else the box its glyphs ink. The indicator's plate fills
-/// the cell the classic writes it across, not a badge's [`PLATE_H`], which
-/// would run into the door below; under the pack's density the cell is
+/// the cell the classic writes it across, not a plain plate's [`PLATE_H`],
+/// which would run into the door below; under the pack's density the cell is
 /// shorter than a line, and the plate keeps the line.
 pub(crate) fn run_rect(run: &TextRun, pen: Pen) -> ArtRect {
-    use crate::display::text::{LINE_H, advance, width};
     let text = run.text();
     let cell = pen.art(crate::layout::CELL_ROWS).0;
     match run.align {
         Align::Over => badge_plate(run, pen),
         Align::Centre => ArtRect {
             h: ArtPx(cell.max(LINE_H)),
-            ..plate_at(pen.art(run.at.x), pen.art(run.at.y), &text)
+            ..centred(pen.art(run.at.x), pen.art(run.at.y), plate_size(run, &text))
         },
         Align::Left | Align::Right => {
             let x = pen.art(run.at.x).0;
@@ -103,6 +171,17 @@ pub(crate) fn run_rect(run: &TextRun, pen: Pen) -> ArtRect {
             }
         }
     }
+}
+
+/// Where `run`'s line starts in `rect`, its [`run_rect`]: inside its ring and
+/// gap, else a plate's pad in.
+pub(crate) fn line_start(run: &TextRun, rect: ArtRect) -> (ArtPx, ArtPx) {
+    let (dx, dy) = match (ring_insets(run), run.align) {
+        (Some(insets), _) => (insets.line(), insets.line()),
+        (None, Align::Over | Align::Centre) => (PLATE_PAD, 0),
+        (None, Align::Left | Align::Right) => (0, 0),
+    };
+    (ArtPx(rect.x.0 + dx), ArtPx(rect.y.0 + dy))
 }
 
 /// What a cutaway frame is drawn with and the next one is too: the office

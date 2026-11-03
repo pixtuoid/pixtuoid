@@ -379,7 +379,7 @@ fn requires_action(label: &str) -> AgentSlot {
         label,
     )
 }
-fn idle(label: &str) -> AgentSlot {
+pub(super) fn idle(label: &str) -> AgentSlot {
     slot_with(ActivityState::Idle, label)
 }
 fn running_kind(detail: &str, kind: pixtuoid_core::state::ToolKind, label: &str) -> AgentSlot {
