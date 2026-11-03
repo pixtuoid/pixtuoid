@@ -288,17 +288,26 @@ fn local_host() -> Result<String> {
 /// The default route's private or link-local IPv4, which a device reaches with
 /// no name service to answer for this machine: the source address of a
 /// datagram to TEST-NET-1, which no route but the default covers (RFC 5737 §4:
-/// "These blocks are not for local use"). A UDP `connect` sends nothing; it
-/// sets "the address to which datagrams are sent by default" (connect(2)).
+/// "These blocks are not for local use").
 #[cfg(not(target_os = "macos"))]
 fn local_host() -> Result<String> {
+    source_address_toward(TEST_NET_1)
+}
+
+#[cfg(any(test, not(target_os = "macos")))]
+const TEST_NET_1: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
+
+/// The private or link-local IPv4 this machine would send to `target` from. A
+/// UDP `connect` sends nothing; it sets "the address to which datagrams are
+/// sent by default" (connect(2)).
+#[cfg(any(test, not(target_os = "macos")))]
+fn source_address_toward(target: Ipv4Addr) -> Result<String> {
     const PASS_HOST: &str =
         "pass --host: the name or IPv4 address a device reaches this machine at";
-    const TEST_NET_1: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
     let probe = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).context(PASS_HOST)?;
     probe
-        .connect((TEST_NET_1, 1))
-        .with_context(|| format!("{PASS_HOST} (no default route)"))?;
+        .connect((target, 1))
+        .with_context(|| format!("{PASS_HOST} (no route)"))?;
     // Winsock may leave the address unset until I/O, which reads as 0.0.0.0
     // (`getsockname`) and fails the range check like any other non-LAN address.
     match probe.local_addr()?.ip() {
@@ -350,6 +359,16 @@ mod tests {
             "8.8.8.8",
         ] {
             assert!(!on_a_local_network(ip.parse().expect("an IP")), "{ip}");
+        }
+    }
+
+    /// A probe answers only with a local-network address: toward loopback with
+    /// none, toward TEST-NET-1 with one or none, whatever the runner's network.
+    #[test]
+    fn a_probed_host_is_only_ever_on_a_local_network() {
+        assert!(source_address_toward(Ipv4Addr::LOCALHOST).is_err());
+        if let Ok(host) = source_address_toward(TEST_NET_1) {
+            assert!(on_a_local_network(host.parse().expect("an IPv4")), "{host}");
         }
     }
 

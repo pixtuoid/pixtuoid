@@ -46,7 +46,8 @@ const MAX_CLOCK_DRIFT: Duration = Duration::from_secs(2);
 struct Snapshot {
     v: u32,
     now_ms: u64,
-    machine: Machine,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    machine: Option<Machine>,
     agents: Vec<Agent>,
     daemons: Vec<Daemon>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -362,7 +363,7 @@ pub fn encode(
     let mut line = serde_json::to_string(&Snapshot {
         v: VERSION,
         now_ms: epoch_ms(now),
-        machine: machine.clone(),
+        machine: Some(machine.clone()),
         agents: scene.agents.values().map(project_agent).collect(),
         daemons: scene
             .daemons()
@@ -720,7 +721,7 @@ impl RemoteOffice {
             today,
             ..
         } = serde_json::from_slice(line)?;
-        self.machine = Some(machine);
+        self.machine = machine;
 
         let skew = self.skew_for(now_ms, now);
         // A time this far ahead means nothing, and near a clock's end it would
@@ -1162,18 +1163,18 @@ mod tests {
         );
     }
 
-    /// No line is without its machine: the field is no newer server's to add.
+    /// A 0.22.0 server names no machine, and its line still applies: within a
+    /// version the line only gains fields.
     #[test]
-    fn a_line_without_its_machine_is_refused() {
+    fn a_line_from_before_the_machine_still_applies() {
         let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
         line.as_object_mut().unwrap().remove("machine");
         let mut office = RemoteOffice::new(caps(4));
-        let refused = office.apply(line.to_string().as_bytes(), at(AT));
-        assert!(
-            matches!(refused, Err(ApplyError::Malformed(_))),
-            "{refused:?}"
-        );
+        office
+            .apply(line.to_string().as_bytes(), at(AT))
+            .expect("it applies");
         assert_eq!(office.machine(), None);
+        assert!(!office.scene().agents.is_empty());
     }
 
     #[test]
