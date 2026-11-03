@@ -688,8 +688,8 @@ impl Reducer {
     }
 
     /// Count a tool call ONCE per call id for as long as its slot exists,
-    /// resurrects included, and only for the first of a source's agents to
-    /// read its copy id; the id-less path counts every time.
+    /// resurrects included, and under a copy id only for the agent that counts
+    /// it ([`CopyHolders::claim`]); the id-less path counts every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,
@@ -1763,8 +1763,8 @@ struct WireIds<'a> {
     copy: Option<&'a CopyId>,
 }
 
-/// Whether work under `ids` is new: its own id is new for `agent_id`, and no
-/// other agent of `source` read its copy id first. Both are recorded whatever
+/// Whether work under `ids` is new: its own id is new for `agent_id`, and its
+/// copy id is `agent_id`'s to count ([`CopyHolders::claim`]). Both are recorded whatever
 /// the answer, so a call a hook counted claims its copy id when its transcript
 /// line arrives.
 fn is_new_work(

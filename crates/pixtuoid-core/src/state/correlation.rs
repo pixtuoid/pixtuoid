@@ -165,16 +165,16 @@ impl Counted {
 type SourceCopy = (Arc<str>, CopyId);
 
 /// How long a [`CopyId`] outlives the last agent holding it: the span a
-/// [`Today`](crate::state::Today) counts, so a fork made that day of an ended
+/// [`Today`](crate::state::Today) counts, so a fork made within it of an ended
 /// session counts none of what it copied.
 #[doc(hidden)]
 pub const COPY_RETENTION: Duration = Duration::from_hours(24);
 
-/// Every [`CopyId`] a source's agents read, with who counts it and who holds
+/// The [`CopyId`]s a source's agents read, with who counts each and who holds
 /// it: its first reader counts it, and a later one, its fork, reads it without
-/// counting it. An id
-/// is kept while any reader lives and for [`COPY_RETENTION`] past the last
-/// one's end, when it is released, never torn down with a slot.
+/// counting it. An id is kept while any reader lives and for
+/// [`COPY_RETENTION`] after the last one's slot goes: a slot's end releases its
+/// ids rather than dropping them.
 #[derive(Debug, Default)]
 pub(super) struct CopyHolders {
     ids: HashMap<SourceCopy, Readers>,
@@ -195,8 +195,8 @@ struct Readers {
 
 impl CopyHolders {
     /// Whether `agent` may count what `id` names under `source`: no id, an id
-    /// nobody read, or one `agent` counted, in this life or an earlier one.
-    /// `agent` holds `id` either way.
+    /// no agent holds or is kept for, or one `agent` counted, in this life or
+    /// an earlier one. `agent` holds `id` either way.
     pub(super) fn claim(&mut self, source: &Arc<str>, agent: AgentId, id: Option<&CopyId>) -> bool {
         let Some(id) = id else {
             return true;

@@ -398,13 +398,13 @@ const ACTIVITY_TYPES: &[&str] = &[
 ];
 
 /// The fewest url-safe characters an id's suffix carries for [`looks_random`]:
-/// 96 bits of a random one, enough that two sessions never draw the same.
+/// 96 bits of a random one, where two sessions drawing the same is negligible.
 const MIN_RANDOM_SUFFIX: usize = 16;
 
 /// Whether an id's `suffix` after its `msg_`/`toolu_` prefix has a random
-/// id's shape, unique across the source, which makes the id a [`CopyId`]: a
-/// line repeating it repeats the same work. An id of any other shape is
-/// unique in its own transcript alone.
+/// mint's shape, which this takes as unique across the source and so makes the
+/// id a [`CopyId`]. An id of any other shape is taken as unique in its own
+/// transcript alone.
 fn looks_random(suffix: &str) -> bool {
     suffix.len() >= MIN_RANDOM_SUFFIX
         && (suffix.bytes()).all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')

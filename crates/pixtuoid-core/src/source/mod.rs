@@ -107,7 +107,7 @@ pub enum AgentEvent {
         tool_use_id: Option<String>,
         /// Structured tool detail (e.g. a subagent-dispatch `Task`), when known.
         detail: Option<ToolDetail>,
-        /// What a copy of this call into another transcript keeps.
+        /// Its id across its source's transcripts, where its wire names one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         copy_id: Option<CopyId>,
     },
@@ -266,7 +266,7 @@ pub enum AgentEvent {
         /// tells a repeat from an equal new reading.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reading_id: Option<String>,
-        /// What a copy of this reading into another transcript keeps.
+        /// Its id across its source's transcripts, where its wire names one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         copy_id: Option<CopyId>,
     },
@@ -312,10 +312,10 @@ pub enum Resolution {
 
 /// An id unique across every transcript of its source, so a line repeating it
 /// in another transcript repeats the same work: a [`AgentEvent::Usage`] or
-/// [`AgentEvent::ToolUseStart`] under one counts once in the office, for the
-/// agent that read it first. A decoder names one only where its wire makes the
-/// id unique across the source; an id unique in one transcript alone stays a
-/// `reading_id` or `tool_use_id`.
+/// [`AgentEvent::ToolUseStart`] under one counts for the first of its source's
+/// agents to read it, while any of them holds it and for `COPY_RETENTION`
+/// after. An id unique in one transcript alone stays a `reading_id` or
+/// `tool_use_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CopyId(String);
