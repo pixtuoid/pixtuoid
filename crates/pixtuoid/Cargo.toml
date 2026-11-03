@@ -48,6 +48,8 @@ miniz_oxide        = "0.8"
 crossterm          = { workspace = true, features = ["event-stream"] }
 # `alloc`: doctor runs its version probes at once through `join_all`.
 futures-util       = { version = "0.3", default-features = false, features = ["alloc"] }
+# `tokio1`: doctor kills a hung `--version` with the group or job it ran in.
+process-wrap       = { workspace = true, features = ["tokio1"] }
 clap               = { workspace = true }
 enum-map           = { workspace = true }
 serde              = { workspace = true }

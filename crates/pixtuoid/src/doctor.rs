@@ -541,36 +541,66 @@ fn probe_versions<'a, A: AsRef<[&'a str]>>(
 }
 
 /// A source's `<cli> --version` (argv from the static registry, never user
-/// input), killed once `deadline` passes. A NONZERO exit's text never shows as
-/// a version.
+/// input), killed with its whole process group (Unix) or Job Object (Windows)
+/// once `deadline` passes: a launcher can leave the hung work to a child of its
+/// own, as cursor-agent's bash script leaves it to node. A NONZERO exit's text
+/// never shows as a version.
 async fn probe_version(argv: &[&str], deadline: std::time::Duration) -> InstalledVersion {
+    use std::process::Stdio;
     let Some((cmd, args)) = argv.split_first() else {
         return InstalledVersion::Unknown("its probe names no command".into());
     };
-    let output = tokio::process::Command::new(cmd)
-        .args(args)
-        // Unlike std's, tokio's `output` inherits stdin, and a CLI reading the
-        // terminal would wait on it.
-        .stdin(std::process::Stdio::null())
-        // A dropped `output` future then kills the child (tokio's `Command::output`).
-        .kill_on_drop(true)
-        .output();
-    let output = match tokio::time::timeout(deadline, output).await {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => return InstalledVersion::Unknown(format!("it would not run: {e}")),
+    let mut command = process_wrap::tokio::CommandWrap::with_new(cmd, |command| {
+        command
+            .args(args)
+            // A CLI reading the terminal would wait on it.
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    });
+    #[cfg(unix)]
+    command.wrap(process_wrap::tokio::ProcessGroup::leader());
+    #[cfg(windows)]
+    command.wrap(process_wrap::tokio::JobObject);
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => return InstalledVersion::Unknown(format!("it would not run: {e}")),
+    };
+    let (stdout, stderr) = (child.stdout().take(), child.stderr().take());
+    let ran = tokio::time::timeout(deadline, async {
+        tokio::join!(child.wait(), read_all(stdout), read_all(stderr))
+    })
+    .await;
+    let (status, stdout, stderr) = match ran {
+        Ok((Ok(status), stdout, stderr)) => (status, stdout, stderr),
+        Ok((Err(e), ..)) => {
+            return InstalledVersion::Unknown(format!("could not wait for it: {e}"));
+        }
         Err(_) => {
+            // `kill` waits on what it killed, so nothing is left to reap.
+            let _ = Box::into_pin(child.kill()).await;
             return InstalledVersion::Unknown(format!("it did not exit within {deadline:?}"));
         }
     };
-    if !output.status.success() {
-        return InstalledVersion::Unknown(format!("it ended with {}", output.status));
+    if !status.success() {
+        return InstalledVersion::Unknown(format!("it ended with {status}"));
     }
-    first_sanitized_line(&output.stdout)
-        .or_else(|| first_sanitized_line(&output.stderr))
+    first_sanitized_line(&stdout)
+        .or_else(|| first_sanitized_line(&stderr))
         .map_or_else(
             || InstalledVersion::Unknown("it printed nothing".into()),
             InstalledVersion::Read,
         )
+}
+
+/// What `pipe` carries until it closes; a read error keeps what came before it.
+async fn read_all(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> Vec<u8> {
+    use tokio::io::AsyncReadExt as _;
+    let mut read = Vec::new();
+    if let Some(mut pipe) = pipe {
+        let _ = pipe.read_to_end(&mut read).await;
+    }
+    read
 }
 
 /// Whether `doctor` may spawn this source's `<cli> --version` probe: only with
@@ -1411,6 +1441,7 @@ mod tests {
     use super::*;
     use crate::run_log::read_log;
     use crate::test_capture::capture;
+    #[cfg(unix)]
     use std::time::Duration;
 
     /// The plain-text plumbing: `Ink { on: false }` must be a byte-for-byte
@@ -2206,6 +2237,45 @@ mod tests {
         assert!(why(&got[3]).contains("would not run"), "{got:?}");
         let got = probe_versions(&[Some([hung.as_str()])], SHORT).unwrap();
         assert!(why(&got[0]).contains("did not exit within"), "{got:?}");
+    }
+
+    /// A launcher that leaves the hung work to a child of its own, as
+    /// cursor-agent's bash script leaves it to node: the deadline's kill takes
+    /// the child too.
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_probes_kill_takes_what_its_launcher_started() {
+        // Long enough for the launcher to start its child under load.
+        const SHORT: Duration = Duration::from_secs(2);
+        let dir = tempfile::tempdir().unwrap();
+        let pid = dir.path().join("child.pid");
+        let launcher = fake_cli(
+            dir.path(),
+            "launcher",
+            &format!("sleep 600 &\necho $! > '{}'\nwait", pid.display()),
+        );
+        let got = probe_versions(&[Some([launcher.as_str()])], SHORT).unwrap();
+        assert!(
+            matches!(&got[0], InstalledVersion::Unknown(why) if why.contains("did not exit within")),
+            "{got:?}"
+        );
+        let pid = std::fs::read_to_string(&pid).unwrap();
+        let alive = || {
+            std::process::Command::new("kill")
+                .args(["-0", pid.trim()])
+                .status()
+                .is_ok_and(|status| status.success())
+        };
+        // Its reaping, once orphaned, is init's.
+        let gone =
+            pixtuoid_core::harness::wait_until("its reaping", Duration::from_secs(5), || {
+                Ok(!alive())
+            });
+        assert!(
+            gone.is_ok(),
+            "the launcher's child {} outlived the probe",
+            pid.trim()
+        );
     }
 
     /// Two CLIs that each answer only once the other has started: probed one
