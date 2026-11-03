@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// How long the composer may still hold a submitted line after its Enter
-/// before it is sent again: an Enter during startup is swallowed.
+/// before [`enter_again`] sends it again.
 const ENTER_RETRY: Duration = Duration::from_secs(1);
 /// How long the screen must stay unchanged after the turn before the driver
 /// quits, short of the idle notifiers a CLI fires at an idle composer.
@@ -280,7 +280,7 @@ impl<'a> Driver<'a> {
             screen.clone_into(&mut self.screen);
             self.changed_at = now;
         }
-        if let Phase::Quit { .. } = self.phase {
+        if let Phase::Quit { mut enter_at } = self.phase {
             // kimi refuses `/exit` mid-turn and hands it back
             // (`apps/kimi-code/src/tui/commands/dispatch.ts:270-276` at
             // `@moonshot-ai/kimi-code@2.4.1`).
@@ -289,11 +289,12 @@ impl<'a> Driver<'a> {
                 .quit
                 .iter()
                 .any(|k| matches!(k, Key::Text(line) if self.composer_holds(line)));
-            return if handed_back {
-                self.enter_again(now)
-            } else {
-                Action::Wait
-            };
+            if !handed_back {
+                return Action::Wait;
+            }
+            let action = enter_again(&mut enter_at, now);
+            self.phase = Phase::Quit { enter_at };
+            return action;
         }
         if now.duration_since(self.changed_at) >= STALL {
             return Action::Fail("the screen stood still with the turn unfinished");
@@ -316,8 +317,12 @@ impl<'a> Driver<'a> {
             }
             // A turn already answered was submitted: a prompt shown after its
             // answer is the conversation's echo.
-            Phase::Submitted { .. } if !self.answered && self.composer_holds(&self.prompt) => {
-                self.enter_again(now)
+            Phase::Submitted { mut enter_at }
+                if !self.answered && self.composer_holds(&self.prompt) =>
+            {
+                let action = enter_again(&mut enter_at, now);
+                self.phase = Phase::Submitted { enter_at };
+                action
             }
             // The screen must move after the Enter: one standing since before
             // it may hold a prompt the CLI dropped, its command never run. A
@@ -472,20 +477,17 @@ impl<'a> Driver<'a> {
         self.composer()
             .is_some_and(|typed| typed.trim_start().starts_with(head.trim_end()))
     }
+}
 
-    /// An Enter for the line its composer still holds, once the last has
-    /// stood [`ENTER_RETRY`]: the CLI dropped it, or refused it and handed
-    /// the line back.
-    fn enter_again(&mut self, now: Instant) -> Action {
-        let (Phase::Submitted { enter_at } | Phase::Quit { enter_at }) = &mut self.phase else {
-            return Action::Wait;
-        };
-        if now.duration_since(*enter_at) < ENTER_RETRY {
-            return Action::Wait;
-        }
-        *enter_at = now;
-        Action::Keys(&[Key::Enter])
+/// An Enter for the line the composer still holds, once the last, at
+/// `enter_at`, has stood [`ENTER_RETRY`]: the CLI dropped it, or refused it
+/// and handed the line back.
+fn enter_again(enter_at: &mut Instant, now: Instant) -> Action {
+    if now.duration_since(*enter_at) < ENTER_RETRY {
+        return Action::Wait;
     }
+    *enter_at = now;
+    Action::Keys(&[Key::Enter])
 }
 
 /// Whether `line` is a rule of `glyph`, between `corners` when it has them.
