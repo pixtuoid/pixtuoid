@@ -16,7 +16,7 @@ use anyhow::{Context, Result, bail};
 use saphyr::{LoadableYamlNode, MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
 
 use crate::install::target::MergeOutcome;
-use crate::install::verify::{SchemaParse, ShimRef};
+use crate::install::verify::{SchemaParse, ShimRef, reconnect};
 
 /// The mount entry's `id` — uninstall and the one-entry verify key on it.
 const PLUGIN_ID: &str = "pixtuoid";
@@ -336,9 +336,10 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
                     {
                         parse.issues.push(format!(
                             "the mount entry points at {}, not this home's \
-                                 plugin ({}) — reconnect dsh to re-mount",
+                                 plugin ({}) — {} to re-mount",
                             crate::display_path(Path::new(&n)),
-                            crate::display_path(&expected)
+                            crate::display_path(&expected),
+                            reconnect(pixtuoid_core::source::dsh::SOURCE_NAME)
                         ));
                     }
                 }
@@ -353,7 +354,8 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
             }
         }
         n => parse.issues.push(format!(
-            "{n} pixtuoid mount entries — duplicates are ours; reconnect dsh to collapse them"
+            "{n} pixtuoid mount entries — duplicates are ours; {} to collapse them",
+            reconnect(pixtuoid_core::source::dsh::SOURCE_NAME)
         )),
     }
     parse
@@ -581,7 +583,7 @@ mod tests {
                 verify_schema(&dup)
                     .issues
                     .iter()
-                    .any(|i| i.contains("reconnect dsh to collapse"))
+                    .any(|i| i.contains("reconnect DeepSeek Harness to collapse"))
             );
             let collapsed = merge_install(&dup, "/unused").unwrap();
             assert!(collapsed.changed);

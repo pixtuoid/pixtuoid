@@ -68,7 +68,7 @@ const PLUGIN: SentinelPlugin = SentinelPlugin {
     sentinel: SENTINEL,
     removed_stub: REMOVED_STUB,
     what: "the Hermes plugin",
-    cli: "Hermes Agent",
+    source: pixtuoid_core::source::hermes::SOURCE_NAME,
 };
 
 fn home() -> Result<PathBuf> {

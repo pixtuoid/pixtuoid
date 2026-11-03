@@ -50,6 +50,7 @@ pub const SOURCE_NAME: &str = "grok";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
+    display_name: "Grok Build",
     label_prefix: "gk",
     verified_version: "1.0.70",
     version_probe: Some(&["grok", "--version"]),

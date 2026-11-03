@@ -31,6 +31,7 @@ pub const SOURCE_NAME: &str = "openclaw";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
+    display_name: "OpenClaw",
     label_prefix: "ok",
     verified_version: "2026.10.9",
     version_probe: Some(&["openclaw", "--version"]),

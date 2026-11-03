@@ -50,6 +50,18 @@ body:
         - Claude Code
         - Codex CLI
         - Antigravity CLI
+        - Reasonix
+        - CodeWhale
+        - Copilot CLI
+        - opencode
+        - Cursor CLI
+        - Hermes Agent
+        - Oh My Pi
+        - OpenClaw
+        - Grok Build
+        - Kimi Code CLI
+        - Jcode
+        - DeepSeek Harness
         - Other (note it below)
         - Not applicable
     validations:

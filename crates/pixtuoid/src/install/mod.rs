@@ -123,12 +123,13 @@ pub(crate) fn verify_target(
             notes.push("could not read the shim path from the managed hook command".into());
         }
     }
+    let name = t.display_name();
     if let Primary::Config {
         beside: Some(render),
         ..
     } = t.primary
     {
-        verify_beside(render, t.display_name, &mut issues, &mut notes, &mut shims);
+        verify_beside(render, name, &mut issues, &mut notes, &mut shims);
     }
     if let Some(files) = t.primary.owned_files() {
         verify_owned_drift(t, files, &path, &mut issues, &mut notes);
@@ -137,23 +138,19 @@ pub(crate) fn verify_target(
         match (host.is_registered)() {
             Ok(true) => match host.copy().map(|c| (c.stale)(&path)) {
                 Some(Ok(true)) => issues.push(format!(
-                    "{} runs an older copy of the plugin (a launch re-copies it; the log \
-                     names a re-copy that failed)",
-                    t.display_name
+                    "{name} runs an older copy of the plugin (a launch re-copies it; the log \
+                     names a re-copy that failed)"
                 )),
                 Some(Err(e)) => notes.push(format!(
-                    "could not compare {}'s copy of the plugin with pixtuoid's: {e:#}",
-                    t.display_name
+                    "could not compare {name}'s copy of the plugin with pixtuoid's: {e:#}"
                 )),
                 Some(Ok(false)) | None => {}
             },
             Ok(false) => issues.push(format!(
-                "the pixtuoid plugin is not installed and enabled in {} — reconnect the source",
-                t.display_name
+                "the pixtuoid plugin is not installed and enabled in {name} — reconnect the source"
             )),
             Err(e) => notes.push(format!(
-                "could not ask {} which plugins are enabled: {e:#}",
-                t.display_name
+                "could not ask {name} which plugins are enabled: {e:#}"
             )),
         }
     }

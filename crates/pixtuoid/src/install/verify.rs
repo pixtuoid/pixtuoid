@@ -40,6 +40,13 @@ pub(crate) fn baked_shim(content: &str) -> ShimRef {
     baked_hook_path(content).map_or(ShimRef::Unknown, ShimRef::Absolute)
 }
 
+/// The remedy an issue names: reconnect `source`'s CLI, by the name its Sources
+/// row shows.
+pub(crate) fn reconnect(source: &'static str) -> String {
+    let cli = pixtuoid_core::source::display_name(source).unwrap_or(source);
+    format!("reconnect {cli}")
+}
+
 /// All there is to check of a code artifact: its sentinel, a substituted
 /// placeholder, and the `shim` read back from its baked `HOOK_PATH`.
 pub(crate) fn sentinel_plugin_schema(
@@ -50,8 +57,8 @@ pub(crate) fn sentinel_plugin_schema(
     let what = plugin.what;
     if !content.contains(plugin.sentinel) {
         return SchemaParse::broken(format!(
-            "{what} is missing or replaced (sentinel absent) — reconnect {}",
-            plugin.cli
+            "{what} is missing or replaced (sentinel absent) — {}",
+            reconnect(plugin.source)
         ));
     }
     if content.contains(crate::install::merge::HOOK_PLACEHOLDER) {

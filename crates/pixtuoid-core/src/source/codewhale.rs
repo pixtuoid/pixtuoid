@@ -44,6 +44,7 @@ pub const SOURCE_NAME: &str = "codewhale";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
+    display_name: "CodeWhale",
     label_prefix: "cw",
     verified_version: "0.10.2",
     version_probe: Some(&["codewhale", "--version"]),

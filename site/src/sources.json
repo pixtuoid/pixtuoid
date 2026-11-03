@@ -45,7 +45,7 @@
     "id": "reasonix",
     "badge": "rx·",
     "badge_color": "#9c3cc0",
-    "name": "DeepSeek-Reasonix",
+    "name": "Reasonix",
     "url": "https://github.com/esengine/DeepSeek-Reasonix",
     "status": "supported",
     "transport": "hooks only (a global Reasonix plugin)",

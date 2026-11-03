@@ -53,6 +53,7 @@ pub const SOURCE_NAME: &str = "cursor";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
+    display_name: "Cursor CLI",
     label_prefix: "cu",
     verified_version: "2026.10.22",
     version_probe: Some(&["cursor-agent", "--version"]),

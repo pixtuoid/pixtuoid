@@ -40,9 +40,10 @@ pub(crate) struct SentinelPlugin {
     pub(crate) sentinel: &'static str,
     /// What an uninstall leaves: loadable, inert, and no longer ours.
     pub(crate) removed_stub: &'static str,
-    /// How an issue names it ("the omp extension"), and the CLI a reconnect names.
+    /// How an issue names it ("the omp extension").
     pub(crate) what: &'static str,
-    pub(crate) cli: &'static str,
+    /// The source whose CLI an issue says to reconnect.
+    pub(crate) source: &'static str,
 }
 
 impl SentinelPlugin {

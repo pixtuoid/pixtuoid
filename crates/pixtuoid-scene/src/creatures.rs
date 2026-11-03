@@ -482,13 +482,12 @@ const fn longest_rest(rest_ms: u64) -> u64 {
     rest_ms / 2 + rest_ms
 }
 
-/// Per-source gateway mascot facts: its sprite (walk, rest) + the hover-tooltip
-/// display name. The ONE place a new gateway registers its creature — `None` for
-/// non-gateway sources gates the whole mascot in the sim's `mascot_placements`.
+/// Per-source gateway mascot facts: its sprite (walk, rest). The ONE place a new
+/// gateway registers its creature — `None` for non-gateway sources gates the
+/// whole mascot in the sim's `mascot_placements`.
 pub(crate) struct GatewayMascotDef {
     pub walk: crate::pack::Walk,
     pub rest: crate::pack::Piece,
-    pub display_name: &'static str,
 }
 
 pub(crate) fn gateway_mascot_def(source: &str) -> Option<GatewayMascotDef> {
@@ -496,7 +495,6 @@ pub(crate) fn gateway_mascot_def(source: &str) -> Option<GatewayMascotDef> {
         s if s == pixtuoid_core::source::openclaw::SOURCE_NAME => Some(GatewayMascotDef {
             walk: crate::pack::Walk::LobsterWalk,
             rest: crate::pack::Piece::LobsterRest,
-            display_name: "OpenClaw",
         }),
         _ => None,
     }
@@ -505,7 +503,7 @@ pub(crate) fn gateway_mascot_def(source: &str) -> Option<GatewayMascotDef> {
 /// What a gateway's mascot says about it when hovered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayCard {
-    /// Human-readable gateway name (e.g. "OpenClaw").
+    /// Its source's [`display_name`](pixtuoid_core::source::display_name).
     pub name: &'static str,
     /// WHICH instance of that gateway this is, so a hover over one of two
     /// concurrent lobsters names the one under the cursor. `None` when its
@@ -524,7 +522,8 @@ impl GatewayCard {
     /// `key`'s card in `scene`; `None` where it is absent or its source has no
     /// mascot.
     pub(crate) fn of(scene: &SceneState, key: &DaemonInstanceKey) -> Option<Self> {
-        let def = gateway_mascot_def(key.source())?;
+        gateway_mascot_def(key.source())?;
+        let name = pixtuoid_core::source::display_name(key.source())?;
         let presence = scene.daemon(key.source(), key.instance())?;
         let state = presence.display_state();
         // Per SOURCE: two gateways of ONE daemon need their ports, while two
@@ -534,7 +533,7 @@ impl GatewayCard {
             .filter(|&(s, _, _)| s == key.source())
             .count();
         Some(Self {
-            name: def.display_name,
+            name,
             instance: (siblings > 1).then(|| key.instance().as_str().to_string()),
             running: state == DaemonState::Running,
             degraded: state == DaemonState::Degraded,
@@ -1685,7 +1684,6 @@ mod tests {
             .expect("openclaw must have a mascot def");
         assert_eq!(def.walk, Walk::LobsterWalk);
         assert_eq!(def.rest, Piece::LobsterRest);
-        assert_eq!(def.display_name, "OpenClaw");
         assert!(
             gateway_mascot_def("codex").is_none(),
             "codex is not a gateway → no mascot"

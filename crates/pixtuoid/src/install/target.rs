@@ -76,7 +76,6 @@ pub struct Target {
     /// `name`, but Claude's target is "claude" while its source is "claude-code".
     /// The Sources panel joins its rows to targets on this via `by_source`.
     pub core_source: &'static str,
-    pub display_name: &'static str,
     /// The file the target is keyed on ([`Primary`] says whose; reads $HOME, hence a
     /// fn not a const). Errs when no home dir resolves — a CWD fallback would
     /// "succeed" with a file the CLI never reads.
@@ -111,6 +110,15 @@ pub struct Target {
     /// holds them.
     #[cfg(test)]
     pub(crate) consumes: &'static [&'static str],
+}
+
+impl Target {
+    /// Its source's [`display_name`](pixtuoid_core::source::display_name), or
+    /// `core_source` for an id with no row, which
+    /// `every_target_names_a_registered_source` keeps every shipped target off.
+    pub(crate) fn display_name(&self) -> &'static str {
+        pixtuoid_core::source::display_name(self.core_source).unwrap_or(self.core_source)
+    }
 }
 
 /// Whose the primary file is: the user's, with pixtuoid's entries merged in, or
@@ -277,7 +285,6 @@ pub enum Unregistered {
 pub(crate) const CLAUDE: Target = Target {
     name: "claude",
     core_source: pixtuoid_core::source::claude_code::SOURCE_NAME,
-    display_name: "Claude Code",
     default_config_path: crate::install::claude::default_config_path,
     hook_command: crate::install::claude::hook_command,
     primary: Primary::Owned {
@@ -307,7 +314,6 @@ pub(crate) const CLAUDE: Target = Target {
 pub(crate) const CODEX: Target = Target {
     name: "codex",
     core_source: pixtuoid_core::source::codex::SOURCE_NAME,
-    display_name: "Codex",
     default_config_path: crate::install::codex::default_config_path,
     hook_command: crate::install::codex::hook_command,
     primary: Primary::Owned {
@@ -323,7 +329,7 @@ pub(crate) const CODEX: Target = Target {
     // Untrusted hooks never run (`codex-rs/tui/src/startup_hooks_review.rs`
     // @ rust-v0.162.1), and a changed hook asks again.
     post_install_hint: Some(
-        "restart Codex and trust pixtuoid's hooks at its \"Hooks need review\" prompt",
+        "restart it and trust pixtuoid's hooks at its \"Hooks need review\" prompt",
     ),
     host: Some(&crate::install::codex::HOST),
     #[cfg(test)]
@@ -335,7 +341,6 @@ pub(crate) const CODEX: Target = Target {
 pub(crate) const REASONIX: Target = Target {
     name: "reasonix",
     core_source: pixtuoid_core::source::reasonix::SOURCE_NAME,
-    display_name: "Reasonix",
     default_config_path: crate::install::reasonix::default_config_path,
     hook_command: crate::install::reasonix::hook_command,
     primary: Primary::Owned {
@@ -359,7 +364,6 @@ pub(crate) const REASONIX: Target = Target {
 pub(crate) const CODEWHALE: Target = Target {
     name: "codewhale",
     core_source: pixtuoid_core::source::codewhale::SOURCE_NAME,
-    display_name: "CodeWhale",
     default_config_path: crate::install::codewhale::default_config_path,
     hook_command: crate::install::codewhale::hook_command,
     primary: Primary::Config {
@@ -388,7 +392,6 @@ pub(crate) const CODEWHALE: Target = Target {
 pub(crate) const OPENCODE: Target = Target {
     name: "opencode",
     core_source: pixtuoid_core::source::opencode::SOURCE_NAME,
-    display_name: "opencode",
     default_config_path: crate::install::opencode::default_config_path,
     hook_command: crate::install::opencode::hook_command,
     primary: Primary::Owned {
@@ -418,7 +421,6 @@ pub(crate) const OPENCODE: Target = Target {
 pub(crate) const GROK: Target = Target {
     name: "grok",
     core_source: pixtuoid_core::source::grok::SOURCE_NAME,
-    display_name: "Grok Build",
     default_config_path: crate::install::grok::default_config_path,
     hook_command: crate::install::grok::hook_command,
     primary: Primary::Owned {
@@ -442,7 +444,6 @@ pub(crate) const GROK: Target = Target {
 pub(crate) const CURSOR: Target = Target {
     name: "cursor",
     core_source: pixtuoid_core::source::cursor::SOURCE_NAME,
-    display_name: "Cursor CLI",
     default_config_path: crate::install::cursor::default_config_path,
     hook_command: crate::install::cursor::hook_command,
     primary: Primary::Config {
@@ -466,7 +467,6 @@ pub(crate) const CURSOR: Target = Target {
 pub(crate) const HERMES: Target = Target {
     name: "hermes",
     core_source: pixtuoid_core::source::hermes::SOURCE_NAME,
-    display_name: "Hermes Agent",
     default_config_path: crate::install::hermes::default_config_path,
     hook_command: crate::install::hermes::hook_command,
     primary: Primary::Owned {
@@ -493,7 +493,6 @@ pub(crate) const HERMES: Target = Target {
 pub(crate) const OPENCLAW: Target = Target {
     name: "openclaw",
     core_source: pixtuoid_core::source::openclaw::SOURCE_NAME,
-    display_name: "OpenClaw",
     default_config_path: crate::install::openclaw::default_config_path,
     hook_command: crate::install::openclaw::hook_command,
     primary: Primary::Config {
@@ -527,7 +526,6 @@ pub(crate) const OPENCLAW: Target = Target {
 pub(crate) const JCODE: Target = Target {
     name: "jcode",
     core_source: pixtuoid_core::source::jcode::SOURCE_NAME,
-    display_name: "Jcode",
     default_config_path: crate::install::jcode::default_config_path,
     hook_command: crate::install::jcode::hook_command,
     primary: Primary::Config {
@@ -551,7 +549,6 @@ pub(crate) const JCODE: Target = Target {
 pub(crate) const KIMI: Target = Target {
     name: "kimi",
     core_source: pixtuoid_core::source::kimi::SOURCE_NAME,
-    display_name: "Kimi Code CLI",
     default_config_path: crate::install::kimi::default_config_path,
     hook_command: crate::install::kimi::hook_command,
     primary: Primary::Config {
@@ -577,7 +574,6 @@ pub(crate) const KIMI: Target = Target {
 pub(crate) const DSH: Target = Target {
     name: "dsh",
     core_source: pixtuoid_core::source::dsh::SOURCE_NAME,
-    display_name: "DeepSeek Harness",
     default_config_path: crate::install::dsh::default_config_path,
     hook_command: crate::install::dsh::hook_command,
     primary: Primary::Config {
@@ -606,7 +602,6 @@ pub(crate) const DSH: Target = Target {
 pub(crate) const OMP: Target = Target {
     name: "omp",
     core_source: pixtuoid_core::source::omp::SOURCE_NAME,
-    display_name: "Oh My Pi",
     default_config_path: crate::install::omp::default_config_path,
     hook_command: crate::install::omp::hook_command,
     primary: Primary::Owned {
@@ -633,7 +628,6 @@ pub(crate) const OMP: Target = Target {
 pub(crate) const ANTIGRAVITY: Target = Target {
     name: "antigravity",
     core_source: pixtuoid_core::source::antigravity::SOURCE_NAME,
-    display_name: "Antigravity CLI",
     default_config_path: crate::install::antigravity::default_config_path,
     hook_command: crate::install::antigravity::hook_command,
     primary: Primary::Owned {

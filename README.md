@@ -110,7 +110,7 @@ Then:
 <!-- tools:start · generated from site/src/sources.json by `just gen-readme` — edit the JSON, not this table -->
 <table>
 <tr><td width="50%"><a href="https://code.claude.com">Claude Code</a></td><td width="50%"><a href="https://github.com/openai/codex">Codex CLI</a></td></tr>
-<tr><td width="50%"><a href="https://github.com/google-antigravity/antigravity-cli">Antigravity CLI</a></td><td width="50%"><a href="https://github.com/esengine/DeepSeek-Reasonix">DeepSeek-Reasonix</a></td></tr>
+<tr><td width="50%"><a href="https://github.com/google-antigravity/antigravity-cli">Antigravity CLI</a></td><td width="50%"><a href="https://github.com/esengine/DeepSeek-Reasonix">Reasonix</a></td></tr>
 <tr><td width="50%"><a href="https://github.com/codewhale-hq/Codewhale">CodeWhale</a></td><td width="50%"><a href="https://github.com/github/copilot-cli">Copilot CLI</a></td></tr>
 <tr><td width="50%"><a href="https://github.com/anomalyco/opencode">opencode</a></td><td width="50%"><a href="https://cursor.com/cli">Cursor CLI</a></td></tr>
 <tr><td width="50%"><a href="https://hermes-agent.nousresearch.com">Hermes Agent</a></td><td width="50%"><a href="https://omp.sh">Oh My Pi</a></td></tr>

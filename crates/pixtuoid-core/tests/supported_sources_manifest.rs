@@ -105,9 +105,9 @@ fn manifest_rows_are_well_formed() {
 }
 
 /// The badge chip the site renders is the SAME two-char prefix the office
-/// labels agents with (`cc·pixtuoid`).
+/// labels agents with (`cc·pixtuoid`), and its name the one the office shows.
 #[test]
-fn supported_badges_match_the_registry_label_prefixes() {
+fn supported_rows_badge_and_name_as_the_registry_does() {
     use pixtuoid_core::source::registry::descriptor_for;
     for s in manifest() {
         if str_field(&s, "status") != Some("supported") {
@@ -121,6 +121,11 @@ fn supported_badges_match_the_registry_label_prefixes() {
             badge,
             format!("{}·", descriptor.label_prefix),
             "{id}: badge must be the registry label_prefix + '·'"
+        );
+        assert_eq!(
+            str_field(&s, "name"),
+            Some(descriptor.display_name),
+            "{id}: `name` must be the registry display_name"
         );
     }
 }

@@ -4,7 +4,8 @@
 # it happens does not belong here: it gets noticed without a contract.
 #
 # check.sh parses each `file` with yq and evaluates `assert` over it with
-# `jq -e`, binding `$expected` to the entry's `expected` when there is one.
+# `jq -e`, binding `$expected` to the entry's `expected` when there is one and
+# `$against` to the file `against` names, parsed the same way.
 # false, null and a jq error all count as red, so a renamed job or a deleted
 # key fails its contract instead of slipping past it. Each `break` is a jq edit
 # of the same document that must turn `assert` red, and every run applies them
@@ -617,3 +618,22 @@
     all(.queue_rules[]; .merge_conditions == ["check-success = ci-gate"])
   break:
     - .queue_rules[0].merge_conditions = []
+
+# ── Copies of the source registry
+
+- id: bug-form-lists-every-supported-cli
+  file: .github/ISSUE_TEMPLATE/bug_report.yml
+  against: site/src/sources.json
+  why: >-
+    The bug form's CLI dropdown copies the supported roster and only a reporter
+    reads it. sources.json is pinned to the registry
+    (supported_sources_manifest.rs), so a CLI added or renamed there would leave
+    the form offering a stale list with nothing red.
+  assert: |
+    ([$against[] | select(.status == "supported") | .name]
+     + ["Other (note it below)", "Not applicable"] | sort) as $want
+    | [.body[] | select(.id == "agent-cli") | .attributes.options | sort] == [$want]
+  break:
+    - '(.body[] | select(.id == "agent-cli") | .attributes.options) |= .[1:]'
+    - '(.body[] | select(.id == "agent-cli") | .attributes.options) += ["Codex"]'
+    - '(.body[] | select(.id == "agent-cli") | .id) = "cli"'

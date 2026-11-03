@@ -15,7 +15,14 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 const CONNECTION_POPUP_W: u16 = 66;
+/// The name's cell: as much of the name as [`NAME_FIT`] holds, then its [`GAP`].
 const NAME_W: usize = 13;
+/// What follows the badge and the name, so a cut name still stands apart from
+/// its state glyph.
+const GAP: &str = " ";
+const NAME_FIT: usize = NAME_W - GAP.len();
+/// The CLI column: the badge, its gap and the name's cell.
+const CLI_W: usize = "[cc]".len() + GAP.len() + NAME_W;
 const CONN_W: usize = 15;
 
 /// The column header, kept as one fn so the "Live" position can't drift from the
@@ -23,12 +30,7 @@ const CONN_W: usize = 15;
 /// `health_flag` slot each data row carries — without them "Live" sits 2 cols
 /// left of its data.
 fn column_header() -> String {
-    format!(
-        "  {:<18}{:<width$}  Live",
-        "CLI",
-        "Connection",
-        width = CONN_W
-    )
+    format!("  {:<CLI_W$}{:<CONN_W$}  Live", "CLI", "Connection")
 }
 
 pub(crate) fn paint_connection_panel(
@@ -200,8 +202,8 @@ fn connection_line(
     };
 
     let name_cell = format!(
-        "{:<NAME_W$}",
-        marquee_or_truncate(row.display_name, NAME_W, is_selected, now)
+        "{:<NAME_FIT$}{GAP}",
+        marquee_or_truncate(row.display_name, NAME_FIT, is_selected, now)
     );
 
     // A fixed 2-col slot — blank rather than absent, to keep the Live column
@@ -216,7 +218,7 @@ fn connection_line(
     Line::from(vec![
         Span::raw(prefix),
         source_badge_span(badge_tag, theme),
-        Span::raw(" "),
+        Span::raw(GAP),
         Span::styled(name_cell, base.fg(to_color(theme.ui.tooltip_text))),
         Span::styled(conn_cell, base.fg(to_color(c_color))),
         Span::styled(
@@ -318,6 +320,58 @@ mod tests {
                 header_live_col, live_col,
                 "header Live col must match data live col; header={header:?}"
             );
+        }
+    }
+
+    /// The registry's longest name overflows [`NAME_FIT`], scrolling when
+    /// selected and cut to an ellipsis when not, and still stands apart from its
+    /// state glyph, which sits under the header's Connection.
+    #[test]
+    fn the_longest_registered_name_stands_apart_from_its_state() {
+        let longest = pixtuoid_core::source::registry::REGISTRY
+            .iter()
+            .max_by_key(|d| d.display_name.chars().count())
+            .expect("a registered source");
+        assert!(
+            longest.display_name.chars().count() > NAME_FIT,
+            "{:?} no longer overflows the name column, so this pins nothing",
+            longest.display_name
+        );
+        let header_col = column_header()
+            .find("Connection")
+            .expect("header has a Connection column");
+        let r = ConnectionRow {
+            source_id: longest.name,
+            label_prefix: longest.label_prefix,
+            display_name: longest.display_name,
+            state: ConnState::Connected,
+            config_path: None,
+            target: None,
+            health: None,
+        };
+        for selected in [false, true] {
+            let line = connection_line(
+                &r,
+                &LiveInfo::default(),
+                selected,
+                SystemTime::UNIX_EPOCH,
+                &NORMAL,
+            );
+            let text: Vec<char> = line.spans.iter().flat_map(|s| s.content.chars()).collect();
+            let glyph = text
+                .iter()
+                .position(|&c| c == '\u{25cf}')
+                .expect("the connected glyph");
+            let shown: String = text.iter().collect();
+            assert_eq!(glyph, header_col, "under its header: {shown:?}");
+            assert_eq!(text[glyph - 1], ' ', "a gap before the state: {shown:?}");
+            if !selected {
+                assert_eq!(
+                    text[glyph - 2],
+                    '\u{2026}',
+                    "cut with an ellipsis: {shown:?}"
+                );
+            }
         }
     }
 
@@ -505,8 +559,7 @@ mod tests {
         let inputs: Vec<RowInput> = REGISTRY
             .iter()
             .map(|d| RowInput {
-                source_id: d.name,
-                label_prefix: d.label_prefix,
+                source: d,
                 target: None,
                 health: None,
                 facts: Some(RowFacts {

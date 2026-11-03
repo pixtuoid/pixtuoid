@@ -332,7 +332,7 @@ pub(crate) fn diagnose(
 
 pub(crate) struct DoctorSourceRow {
     /// Its `name` is the registry source id (e.g. "claude-code"), distinct from
-    /// `install::Target.name`/`display_name`.
+    /// `install::Target.name`.
     pub desc: &'static registry::SourceDescriptor,
     pub connected: bool,
     pub has_target: bool,

@@ -32,7 +32,7 @@ const PLUGIN: SentinelPlugin = SentinelPlugin {
     sentinel: SENTINEL,
     removed_stub: REMOVED_STUB,
     what: "the opencode plugin",
-    cli: "opencode",
+    source: pixtuoid_core::source::opencode::SOURCE_NAME,
 };
 
 /// What pixtuoid's disconnect wrote before it supported opencode 2, which

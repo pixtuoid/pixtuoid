@@ -27,6 +27,7 @@ pub const SOURCE_NAME: &str = "dsh";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
+    display_name: "DeepSeek Harness",
     label_prefix: "ds",
     verified_version: "0.2.1-rc.5",
     version_probe: Some(&["dsh", "--version"]),

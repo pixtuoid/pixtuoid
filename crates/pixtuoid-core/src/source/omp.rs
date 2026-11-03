@@ -41,6 +41,7 @@ pub const SOURCE_NAME: &str = "omp";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
+    display_name: "Oh My Pi",
     label_prefix: "om",
     verified_version: "18.15.0",
     version_probe: Some(&["omp", "--version"]),

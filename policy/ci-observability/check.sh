@@ -19,7 +19,7 @@ fi
 shape=$(jq -r '
     def text: type == "string" and length > 0;
     .[] | (.id // "?") as $id
-    | ((keys - ["id", "file", "why", "assert", "break", "expected", "covers"])[] | "\($id): unknown key `\(.)`"),
+    | ((keys - ["id", "file", "why", "assert", "break", "expected", "covers", "against"])[] | "\($id): unknown key `\(.)`"),
       (select(.break | text or (type == "array" and length > 0 and all(.[]; text)) | not)
           | "\($id): break must be a jq edit or a non-empty list of them")' <<<"$contracts")
 if [[ -n $shape ]]; then
@@ -36,6 +36,14 @@ for ((i = 0; i < count; i++)); do
     # One JSON string per line: a break written as a YAML block spans lines.
     breaks=$(jq -c ".[$i].break | [.] | flatten | .[]" <<<"$contracts")
     expected=$(jq -r ".[$i].expected // \"\"" <<<"$contracts")
+    against_path=$(jq -r ".[$i].against // \"\"" <<<"$contracts")
+    against=null
+    if [[ -n $against_path ]] && { ! against=$(yq -o=json '.' "$against_path") ||
+        [[ $(jq -s 'length' <<<"$against") != 1 ]]; }; then
+        echo "error: $id cannot read $against_path as one document" >&2
+        failed=1
+        continue
+    fi
     files=$(jq -r ".[$i].file | [.] | flatten | .[]" <<<"$contracts")
     # A contract over every file holding `covers` must list each: a new file
     # holding it would otherwise go unchecked with the contract still green.
@@ -55,7 +63,7 @@ for ((i = 0; i < count; i++)); do
             failed=1
             continue
         fi
-        if ! jq -e --arg expected "$expected" "$assertion" <<<"$document" >/dev/null; then
+        if ! jq -e --arg expected "$expected" --argjson against "$against" "$assertion" <<<"$document" >/dev/null; then
             printf 'error: %s breaks contract %s\n  %s\n' "$file" "$id" "$(jq -r ".[$i].why" <<<"$contracts")" >&2
             failed=1
             continue
@@ -66,7 +74,7 @@ for ((i = 0; i < count; i++)); do
                 [[ $(jq -s 'length == 1 and (.[0] | type) == "object"' <<<"$broken") != true ]]; then
                 printf "error: %s's break does not yield one document from %s:\n%s\n" "$id" "$file" "$breakage" >&2
                 failed=1
-            elif jq -e --arg expected "$expected" "$assertion" <<<"$broken" >/dev/null 2>&1; then
+            elif jq -e --arg expected "$expected" --argjson against "$against" "$assertion" <<<"$broken" >/dev/null 2>&1; then
                 printf 'error: %s still passes on %s after this break, so that clause cannot fire:\n%s\n' "$id" "$file" "$breakage" >&2
                 failed=1
             fi

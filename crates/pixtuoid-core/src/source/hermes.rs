@@ -36,6 +36,7 @@ pub const SOURCE_NAME: &str = "hermes";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
+    display_name: "Hermes Agent",
     label_prefix: "hm",
     verified_version: "0.22.5",
     version_probe: Some(&["hermes", "--version"]),
