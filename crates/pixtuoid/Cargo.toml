@@ -46,7 +46,8 @@ itoa               = "1"
 miniz_oxide        = "0.8"
 # `event-stream`: the TUI loop awaits input beside its frame clock and signals.
 crossterm          = { workspace = true, features = ["event-stream"] }
-futures-util       = { version = "0.3", default-features = false }
+# `alloc`: doctor runs its version probes at once through `join_all`.
+futures-util       = { version = "0.3", default-features = false, features = ["alloc"] }
 clap               = { workspace = true }
 enum-map           = { workspace = true }
 serde              = { workspace = true }

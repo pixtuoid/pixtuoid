@@ -337,9 +337,7 @@ pub(crate) struct DoctorSourceRow {
     pub connected: bool,
     pub has_target: bool,
     pub hooks_installed: bool,
-    /// The probe's first output line, sanitized ([`first_sanitized_line`]), if
-    /// probeable.
-    pub installed_version: Option<String>,
+    pub installed_version: InstalledVersion,
     /// The SAME [`SourceDiagnostics`] the Sources panel + boot preflight read,
     /// embedded whole so `is_broken`/`drift` stay the ONE authority.
     pub diag: SourceDiagnostics,
@@ -433,12 +431,11 @@ fn format_doctor_row(row: &DoctorSourceRow, ink: &Ink) -> String {
     };
     // The RAW probe string, not a lossy reformat (cursor's `2026.06.04-5fd875e` isn't
     // semver); skew against the verified anchor is the `versions` category's job.
-    let version = row
-        .installed_version
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let version = version.map_or_else(|| ink.dim("unknown"), str::to_string);
+    let version = match &row.installed_version {
+        InstalledVersion::Read(line) => line.clone(),
+        InstalledVersion::Unasked => ink.dim("unknown"),
+        InstalledVersion::Unknown(why) => ink.dim(&format!("unknown ({why})")),
+    };
     let mut out = format!(
         "{DETAIL_INDENT}{} {}\u{b7}{:<SOURCE_W$} {} {:<15} {}",
         verdict_glyph(row, ink),
@@ -484,17 +481,96 @@ fn first_sanitized_line(bytes: &[u8]) -> Option<String> {
         .map(sanitize)
 }
 
-/// Probe a source's `<cli> --version` (argv from the static registry — never user input)
-/// → the first non-empty output line, sanitized. Best-effort: a spawn error or a NONZERO
-/// exit (whose error text must never show as a version) yields None. `output()` closes
-/// the child's stdin, so it can't block on the inherited TTY.
-fn probe_version(argv: &'static [&'static str]) -> Option<String> {
-    let (cmd, args) = argv.split_first()?;
-    let output = std::process::Command::new(cmd).args(args).output().ok()?;
-    if !output.status.success() {
-        return None;
+/// How long a child doctor runs, a shim or a CLI's `--version`, may take to
+/// exit: far past the shim's own send bound, whose clock starts only once it
+/// runs, since a first launch can stall in the OS before that.
+const EXIT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// What a source's `<cli> --version` said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum InstalledVersion {
+    /// Not asked: no probe, or no evidence the user runs the CLI
+    /// ([`may_probe_version`]).
+    Unasked,
+    /// Its first non-empty output line, sanitized ([`first_sanitized_line`]).
+    Read(String),
+    /// Why it told none.
+    Unknown(String),
+}
+
+impl InstalledVersion {
+    /// The line it read, if it read one.
+    fn read(&self) -> Option<&str> {
+        match self {
+            Self::Read(line) => Some(line),
+            Self::Unasked | Self::Unknown(_) => None,
+        }
     }
-    first_sanitized_line(&output.stdout).or_else(|| first_sanitized_line(&output.stderr))
+}
+
+/// The current-thread runtime doctor's child probes run on.
+///
+/// # Errors
+///
+/// If none can be built.
+fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
+    use anyhow::Context as _;
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("building doctor's tokio runtime")
+}
+
+/// Each of `probes`' `--version` at once, so k hung CLIs cost doctor one
+/// `deadline`, not k; a `None` is not asked.
+///
+/// # Errors
+///
+/// If no tokio runtime can be built.
+fn probe_versions<'a, A: AsRef<[&'a str]>>(
+    probes: &[Option<A>],
+    deadline: std::time::Duration,
+) -> anyhow::Result<Vec<InstalledVersion>> {
+    let asked = probes.iter().map(|argv| async move {
+        match argv {
+            Some(argv) => probe_version(argv.as_ref(), deadline).await,
+            None => InstalledVersion::Unasked,
+        }
+    });
+    Ok(runtime()?.block_on(futures_util::future::join_all(asked)))
+}
+
+/// A source's `<cli> --version` (argv from the static registry, never user
+/// input), killed once `deadline` passes. A NONZERO exit's text never shows as
+/// a version.
+async fn probe_version(argv: &[&str], deadline: std::time::Duration) -> InstalledVersion {
+    let Some((cmd, args)) = argv.split_first() else {
+        return InstalledVersion::Unknown("its probe names no command".into());
+    };
+    let output = tokio::process::Command::new(cmd)
+        .args(args)
+        // Unlike std's, tokio's `output` inherits stdin, and a CLI reading the
+        // terminal would wait on it.
+        .stdin(std::process::Stdio::null())
+        // A dropped `output` future then kills the child (tokio's `Command::output`).
+        .kill_on_drop(true)
+        .output();
+    let output = match tokio::time::timeout(deadline, output).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => return InstalledVersion::Unknown(format!("it would not run: {e}")),
+        Err(_) => {
+            return InstalledVersion::Unknown(format!("it did not exit within {deadline:?}"));
+        }
+    };
+    if !output.status.success() {
+        return InstalledVersion::Unknown(format!("it ended with {}", output.status));
+    }
+    first_sanitized_line(&output.stdout)
+        .or_else(|| first_sanitized_line(&output.stderr))
+        .map_or_else(
+            || InstalledVersion::Unknown("it printed nothing".into()),
+            InstalledVersion::Read,
+        )
 }
 
 /// Whether `doctor` may spawn this source's `<cli> --version` probe: only with
@@ -509,7 +585,7 @@ fn probe_version(argv: &'static [&'static str]) -> Option<String> {
 /// just declined to touch. Gating on presence removes the observer effect by
 /// construction: a CLI that has already written its own state cannot be
 /// perturbed into existence by one more `--version`. Pinned by
-/// `run_never_spawns_a_version_probe_for_a_cli_it_has_no_evidence_of`.
+/// `doctor_never_spawns_a_version_probe_for_a_cli_it_has_no_evidence_of`.
 fn may_probe_version(connected: bool, cli_detected: Option<bool>) -> bool {
     connected || cli_detected.unwrap_or(false)
 }
@@ -819,7 +895,7 @@ fn collect(
     );
     let run_plan = graphics_plan.cutaway().map(|c| run_look.over_here(c));
 
-    let rows: Vec<DoctorSourceRow> = registry::REGISTRY
+    let (mut rows, probes): (Vec<DoctorSourceRow>, Vec<_>) = registry::REGISTRY
         .iter()
         .map(|desc| {
             let src = desc.name;
@@ -829,18 +905,23 @@ fn collect(
                 .unwrap_or(false);
             let is_connected = connected.contains(src);
             let cli_detected = target.map(|t| (t.presence_probe)());
-            DoctorSourceRow {
+            let row = DoctorSourceRow {
                 desc,
                 connected: is_connected,
                 has_target: target.is_some(),
                 hooks_installed,
-                installed_version: may_probe_version(is_connected, cli_detected)
-                    .then(|| desc.version_probe.and_then(probe_version))
-                    .flatten(),
+                installed_version: InstalledVersion::Unasked,
                 diag: diagnose(src, &log, None),
-            }
+            };
+            let probe = desc
+                .version_probe
+                .filter(|_| may_probe_version(is_connected, cli_detected));
+            (row, probe)
         })
-        .collect();
+        .unzip();
+    for (row, version) in rows.iter_mut().zip(probe_versions(&probes, EXIT_DEADLINE)?) {
+        row.installed_version = version;
+    }
     let delivery = delivery(&rows)?;
 
     let roots = collect_roots();
@@ -1003,7 +1084,7 @@ fn versions_category(rows: &[DoctorSourceRow]) -> Category {
         .iter()
         .filter_map(|r| {
             let installed =
-                registry::parse_version(r.installed_version.as_deref()?, r.desc.version_hyphen)?;
+                registry::parse_version(r.installed_version.read()?, r.desc.version_hyphen)?;
             Some((r, installed))
         })
         .collect();
@@ -1330,18 +1411,7 @@ mod tests {
     use super::*;
     use crate::run_log::read_log;
     use crate::test_capture::capture;
-    use pixtuoid_scene::look::LookKind;
-
-    /// [`run`], minus what reaches outside this process: the shim a developer has
-    /// on PATH, and their live office, whose endpoint is keyed by uid, not `HOME`.
-    fn run(
-        log_at: &crate::run_log::LogLocation,
-        look: crate::graphics::LookChoice,
-    ) -> anyhow::Result<String> {
-        Ok(render(&collect(log_at, look, |_| {
-            Ok(delivery::Delivery::idle())
-        })?))
-    }
+    use std::time::Duration;
 
     /// The plain-text plumbing: `Ink { on: false }` must be a byte-for-byte
     /// no-op (piped output stays clean), `on: true` must actually wrap in
@@ -1499,37 +1569,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn run_renders_the_category_report() {
-        // A dev shell exporting CLICOLOR_FORCE would force escapes even under
-        // captured stdout — pin the env so the plain-text asserts hold anywhere.
-        let out = temp_env::with_vars_unset(["CLICOLOR_FORCE", "NO_COLOR"], || {
-            run(
-                &crate::run_log::LogLocation::File("/nonexistent-pixtuoid-doctor-log".into()),
-                crate::graphics::LookChoice::new(
-                    crate::graphics::LookMode::Named(LookKind::Cutaway),
-                    None,
-                ),
-            )
-        });
-        let out = out.unwrap();
-        assert!(out.starts_with("pixtuoid doctor\n"), "{out}");
-        assert!(out.contains("log    "), "{out}");
-        assert!(out.contains("config "), "{out}");
-        assert!(out.contains("] terminal — TERM="), "{out}");
-        assert!(out.contains("COLORTERM="), "{out}");
-        assert!(out.contains("] sources — "), "{out}");
-        assert!(out.contains("] decode drift — "), "{out}");
-        assert!(out.contains("] focus-jump — "), "{out}");
-        assert!(
-            out.contains("\n\n["),
-            "categories are separated by a blank line: {out}"
-        );
-        // Under `cargo test` stdout is captured (not a tty), so the report must
-        // carry no escape codes.
-        assert!(!out.contains('\u{1b}'), "piped output stays plain: {out}");
-    }
-
     fn registered(id: &str) -> &'static registry::SourceDescriptor {
         registry::descriptor_for(id).expect("a registered source")
     }
@@ -1559,7 +1598,7 @@ mod tests {
             connected: true,
             has_target: true,
             hooks_installed: true,
-            installed_version: Some(desc.verified_version.into()),
+            installed_version: InstalledVersion::Read(desc.verified_version.into()),
             diag: SourceDiagnostics {
                 install: Some(crate::install::verify::SchemaVerifyResult::default()),
                 drift: LogScanResult::default(),
@@ -1640,7 +1679,9 @@ mod tests {
         // the mint as well as the render; the rest are poisoned raw and pin the
         // render-side strip.
         let mut row = summary_row("claude-code");
-        row.installed_version = first_sanitized_line(format!("1.0.0 {EVIL}").as_bytes());
+        row.installed_version = InstalledVersion::Read(
+            first_sanitized_line(format!("1.0.0 {EVIL}").as_bytes()).expect("a line"),
+        );
         row.diag.drift = scan_log_for_source(
             &format!(
                 "{EVIL}ts  WARN {}: source=claude-code kind=unknown_event name={EVIL}Hook",
@@ -1900,10 +1941,10 @@ mod tests {
         let pin = registered("copilot").verified_version;
         let newer_v = skewed("copilot", |v| v.patch += 1);
         let mut newer = summary_row("copilot");
-        newer.installed_version = Some(format!("GitHub Copilot CLI {newer_v}."));
+        newer.installed_version = InstalledVersion::Read(format!("GitHub Copilot CLI {newer_v}."));
         let older_v = skewed("hermes", lowest_of_major);
         let mut older = summary_row("hermes");
-        older.installed_version = Some(format!("v{older_v}"));
+        older.installed_version = InstalledVersion::Read(format!("v{older_v}"));
         let out = render(&summary_report(vec![newer, older]));
         assert!(
             out.contains("[!] versions — 1 CLI newer than verified (drift possible)"),
@@ -1934,11 +1975,11 @@ mod tests {
     fn report_versions_category_flags_an_older_major_as_unsupported() {
         let v1_v = skewed("opencode", |v| v.major -= 1);
         let mut v1 = summary_row("opencode");
-        v1.installed_version = Some(v1_v.clone());
+        v1.installed_version = InstalledVersion::Read(v1_v.clone());
         let mut older_minor = summary_row("copilot");
-        older_minor.installed_version = Some(skewed("copilot", lowest_of_major));
+        older_minor.installed_version = InstalledVersion::Read(skewed("copilot", lowest_of_major));
         let mut calver = summary_row("openclaw");
-        calver.installed_version = Some("OpenClaw 2025.12.1".into());
+        calver.installed_version = InstalledVersion::Read("OpenClaw 2025.12.1".into());
         let out = render(&summary_report(vec![v1, older_minor, calver]));
         assert!(
             out.contains("[!] versions — 1 CLI unsupported (upgrade needed)\n"),
@@ -2070,7 +2111,7 @@ mod tests {
             ..Default::default()
         });
         let mut newer = summary_row("copilot");
-        newer.installed_version = Some(skewed("copilot", |v| v.major += 1));
+        newer.installed_version = InstalledVersion::Read(skewed("copilot", |v| v.major += 1));
         let out = render(&summary_report(vec![broken, newer]));
         assert!(out.ends_with("! issues in 2 categories\n"), "{out}");
     }
@@ -2093,17 +2134,6 @@ mod tests {
             warning.contains("log unreadable") && warning.contains("not meaningful"),
             "got: {warning}"
         );
-
-        // The report must not assert clean drift off a log it never read.
-        let out = run(
-            &crate::run_log::LogLocation::File(dir.path().to_path_buf()),
-            crate::graphics::LookChoice::new(
-                crate::graphics::LookMode::Named(LookKind::Cutaway),
-                None,
-            ),
-        )
-        .unwrap();
-        assert!(out.contains("[!] decode drift — log unreadable"), "{out}");
     }
 
     #[test]
@@ -2137,50 +2167,69 @@ mod tests {
         assert!(!may_probe_version(false, None));
     }
 
+    /// A stand-in CLI at `dir/name` running `body`.
+    #[cfg(unix)]
+    fn fake_cli(dir: &std::path::Path, name: &str, body: &str) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path.display().to_string()
+    }
+
     #[cfg(unix)]
     #[test]
-    fn run_never_spawns_a_version_probe_for_a_cli_it_has_no_evidence_of() {
-        use std::os::unix::fs::PermissionsExt;
+    fn a_version_probe_reads_its_cli_or_says_why_not() {
+        const SHORT: Duration = Duration::from_millis(100);
         let dir = tempfile::tempdir().unwrap();
-        let (home, bin) = (dir.path().join("home"), dir.path().join("bin"));
-        std::fs::create_dir_all(&home).unwrap();
-        std::fs::create_dir_all(&bin).unwrap();
-        // Spawning the stand-in CLI AT ALL leaves this trace.
-        let marker = dir.path().join("spawned");
-        let fake = bin.join("opencode");
-        std::fs::write(
-            &fake,
-            format!("#!/bin/sh\n: > '{}'\necho 1.0.0\n", marker.display()),
-        )
-        .unwrap();
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        let xdg_config = home.join(".config");
-        let out = temp_env::with_vars(
-            [
-                ("HOME", Some(home.as_path())),
-                ("XDG_CONFIG_HOME", Some(xdg_config.as_path())),
-                ("OPENCODE_CONFIG_DIR", None),
-                ("PATH", Some(bin.as_path())),
-            ],
-            || {
-                run(
-                    &crate::run_log::LogLocation::File("/nonexistent-pixtuoid-doctor-log".into()),
-                    crate::graphics::LookChoice::new(
-                        crate::graphics::LookMode::Named(LookKind::Cutaway),
-                        None,
-                    ),
-                )
-            },
+        let cli = |name, body| fake_cli(dir.path(), name, body);
+        let (read, failed, hung) = (
+            cli("read", "echo\necho '  1.2.3  '"),
+            cli("failed", "echo 9.9.9; exit 3"),
+            cli("hung", "exec sleep 600"),
         );
-        let spawned = marker.exists();
+        let missing = dir.path().join("missing").display().to_string();
+        let probes = [
+            None,
+            Some(vec![read.as_str(), "--version"]),
+            Some(vec![failed.as_str(), "--version"]),
+            Some(vec![missing.as_str(), "--version"]),
+        ];
+        let got = probe_versions(&probes, EXIT_DEADLINE).unwrap();
+        assert_eq!(got[0], InstalledVersion::Unasked);
+        assert_eq!(got[1], InstalledVersion::Read("1.2.3".into()));
+        let why = |v: &InstalledVersion| match v {
+            InstalledVersion::Unknown(why) => why.clone(),
+            other => panic!("{other:?} is no unknown"),
+        };
+        assert!(why(&got[2]).contains('3'), "{got:?}");
+        assert!(why(&got[3]).contains("would not run"), "{got:?}");
+        let got = probe_versions(&[Some([hung.as_str()])], SHORT).unwrap();
+        assert!(why(&got[0]).contains("did not exit within"), "{got:?}");
+    }
 
-        out.expect("the report still builds");
-        assert!(
-            !spawned,
-            "doctor spawned `opencode --version` in a pristine HOME where opencode \
-             is undetected — the probe must be gated on evidence the user runs it"
-        );
+    /// Two CLIs that each answer only once the other has started: probed one
+    /// after the other, the first waits out the deadline.
+    #[cfg(unix)]
+    #[test]
+    fn every_version_probe_runs_at_once() {
+        const LONG: Duration = Duration::from_secs(30);
+        let dir = tempfile::tempdir().unwrap();
+        let mark = |name: &str| dir.path().join(format!("{name}.up")).display().to_string();
+        let meets = |me: &str, other: &str| {
+            let (mine, theirs) = (mark(me), mark(other));
+            fake_cli(
+                dir.path(),
+                me,
+                &format!(
+                    ": > '{mine}'\nwhile [ ! -e '{theirs}' ]; do sleep 0.01; done\necho 1.0.0"
+                ),
+            )
+        };
+        let (a, b) = (meets("a", "b"), meets("b", "a"));
+        let probes = [Some(vec![a.as_str()]), Some(vec![b.as_str()])];
+        let got = probe_versions(&probes, LONG).unwrap();
+        assert_eq!(got, vec![InstalledVersion::Read("1.0.0".into()); 2]);
     }
 
     #[test]
@@ -2355,7 +2404,7 @@ mod tests {
             connected: true,
             has_target: true,
             hooks_installed: true,
-            installed_version: Some("2.0.0".into()),
+            installed_version: InstalledVersion::Read("2.0.0".into()),
             diag: SourceDiagnostics {
                 install: Some(crate::install::verify::SchemaVerifyResult::default()),
                 drift: LogScanResult::default(),
@@ -2380,7 +2429,7 @@ mod tests {
             connected: true,
             has_target: false, // transcript-only
             hooks_installed: false,
-            installed_version: Some("1.1.0".into()),
+            installed_version: InstalledVersion::Read("1.1.0".into()),
             diag: SourceDiagnostics {
                 install: None,
                 drift: LogScanResult {
@@ -2409,7 +2458,7 @@ mod tests {
             connected: true,
             has_target: true,
             hooks_installed: true,
-            installed_version: None,
+            installed_version: InstalledVersion::Unasked,
             diag: SourceDiagnostics {
                 install: Some(crate::install::verify::SchemaVerifyResult {
                     issues: vec!["shim binary missing: /old/pixtuoid-hook".into()],
@@ -2682,7 +2731,7 @@ mod tests {
             connected: true,
             has_target: false,
             hooks_installed: false,
-            installed_version: None,
+            installed_version: InstalledVersion::Unasked,
             diag: SourceDiagnostics {
                 install: None,
                 drift: LogScanResult::default(),
@@ -2704,7 +2753,7 @@ mod tests {
             connected: false,
             has_target: true,
             hooks_installed: false,
-            installed_version: None,
+            installed_version: InstalledVersion::Unasked,
             diag: SourceDiagnostics {
                 install: None,
                 drift: LogScanResult::default(),
@@ -2730,7 +2779,7 @@ mod tests {
             connected: true,
             has_target: true,
             hooks_installed: true,
-            installed_version: Some("1.0.0".into()),
+            installed_version: InstalledVersion::Read("1.0.0".into()),
             diag: SourceDiagnostics {
                 install: Some(crate::install::verify::SchemaVerifyResult {
                     issues: vec![],
@@ -2762,7 +2811,7 @@ mod tests {
             connected: true,
             has_target: false,
             hooks_installed: false,
-            installed_version: None,
+            installed_version: InstalledVersion::Unasked,
             diag: SourceDiagnostics {
                 install: None,
                 drift: LogScanResult {
