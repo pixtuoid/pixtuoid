@@ -63,6 +63,9 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     screen: Screen<ratatui::layout::Size, crate::tui::geometry::SceneGeometry>,
     /// The cutaway, painted as terminal images in place of the half-blocks.
     cutaway: Option<crate::tui::cutaway::TileCutaway>,
+    /// What the half-blocks' frames' pacing is reported under, on this
+    /// terminal.
+    painter: crate::jank::Painter,
 }
 
 /// Everything a frame shows besides the floors: kept apart from `session` so a
@@ -204,6 +207,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             },
             screen: Screen::on(pixtuoid_scene::screen::monotonic()),
             cutaway: None,
+            painter: crate::jank::Painter::default(),
         }
     }
 
@@ -314,9 +318,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.frame_out = Some(out);
     }
 
-    /// Name what draws the frames, for their pacing summaries.
+    /// Name what draws the half-blocks' frames, for their pacing summaries:
+    /// the cutaway names its own, from its fit, on the same terminal.
     pub(crate) fn painted_by(&mut self, painter: crate::jank::Painter) {
-        self.jank.painted_by(painter);
+        self.painter = painter;
     }
 
     /// Paint and send the next frame whole, for the pacing bench's worst case.
@@ -334,6 +339,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         if let Some(cutaway) = &mut self.cutaway {
             cutaway.forget();
         }
+        self.screen.wiped();
         let size = self.terminal.size()?;
         self.terminal.resize(Rect::from((Position::ORIGIN, size)))?;
         Ok(())
@@ -732,6 +738,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         presented?;
         self.screen.landed();
         let note = drawn?;
+        let painter = self
+            .cutaway
+            .as_ref()
+            .and_then(|c| c.painter(&self.painter))
+            .unwrap_or_else(|| self.painter.clone());
+        self.jank.painted_by(&painter, begun);
         let send = self
             .cutaway
             .as_ref()

@@ -429,41 +429,31 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     }
 }
 
-/// Hand `renderer` the painter `plan` names.
+/// Hand `renderer` the painter `plan` names: the half-blocks' on this
+/// terminal.
 fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
     plan: crate::graphics::Plan,
     out: &FrameOut,
 ) {
-    let (terminal, tmux_env) = crate::graphics::terminal_and_tmux();
+    let (terminal, tmux) = crate::graphics::terminal_and_tmux();
+    renderer.painted_by(crate::jank::Painter {
+        look: pixtuoid_scene::look::LookKind::Classic.name(),
+        scale: 1,
+        tmux,
+        terminal,
+        sync: out.synchronized(),
+    });
     match plan {
         crate::graphics::Plan::Cutaway {
             fit, route, cell, ..
-        } => {
-            renderer.painted_by(crate::jank::Painter {
-                look: route.protocol().name(),
-                scale: fit.scale().get(),
-                tmux: route.tmux(),
-                terminal,
-                sync: out.synchronized(),
-            });
-            renderer.set_cutaway(cutaway::TileCutaway::new(
-                fit,
-                cell,
-                route,
-                Box::new(out.clone()),
-            ));
-        }
-        _ => {
-            renderer.painted_by(crate::jank::Painter {
-                look: pixtuoid_scene::look::LookKind::Classic.name(),
-                scale: 1,
-                tmux: tmux_env,
-                terminal,
-                sync: out.synchronized(),
-            });
-            tracing::info!(plan = ?plan, "painting classic");
-        }
+        } => renderer.set_cutaway(cutaway::TileCutaway::new(
+            fit,
+            cell,
+            route,
+            Box::new(out.clone()),
+        )),
+        _ => tracing::info!(plan = ?plan, "painting classic"),
     }
 }
 

@@ -786,12 +786,26 @@ fn the_protocols_cadence_gates_its_transmits() {
     let scene = office();
     r.render(&scene, t0()).expect("render");
     wire.take();
-    r.redraw().expect("redraw");
+    r.forget_frame();
     let cadence = ImageProtocol::Sixel.cadence();
     r.render(&scene, t0() + cadence / 2).expect("render");
     assert_eq!(wire.take(), "", "inside the cadence, the tiles stay owed");
     r.render(&scene, t0() + cadence).expect("render");
     assert!(wire.take().contains(SIXEL));
+}
+
+/// A cleared screen shows nothing to wait for: the frame after a redraw
+/// sends every tile at once, inside the cadence.
+#[test]
+fn a_redraw_sends_at_once_inside_the_cadence() {
+    let (mut r, wire) = painter(120, 40, ImageProtocol::Sixel);
+    let scene = office();
+    r.render(&scene, t0()).expect("render");
+    let tiles = wire.take().matches(SIXEL).count();
+    r.redraw().expect("redraw");
+    r.render(&scene, t0() + ImageProtocol::Sixel.cadence() / 2)
+        .expect("render");
+    assert_eq!(wire.take().matches(SIXEL).count(), tiles);
 }
 
 /// How `protocol`'s transmit of one tile opens.
@@ -1565,4 +1579,138 @@ fn w_follows_the_look_the_frame_drew() {
     r.terminal.backend_mut().zoom(CELL);
     r.render(&scene, t0() + cadence * 6).expect("render");
     assert!(!r.offers_walkable_debug(), "the cutaway is back");
+}
+
+/// A resize clears the screen too: the frame after it sends every tile at
+/// once, inside the cadence.
+#[test]
+fn a_resize_sends_at_once_inside_the_cadence() {
+    let (mut r, wire) = painter(120, 40, ImageProtocol::Sixel);
+    let scene = office();
+    r.render(&scene, t0()).expect("render");
+    wire.take();
+    r.terminal.backend_mut().resize(128, 44);
+    r.render(&scene, t0() + ImageProtocol::Sixel.cadence() / 2)
+        .expect("render");
+    assert!(wire.take().contains(SIXEL));
+}
+
+/// A redraw inside a strike's hold paints its first frame at once: the
+/// screen it cleared shows no phase to wait for, so it is never left blank.
+#[test]
+fn a_redraw_is_never_held() {
+    use crate::test_flash::{held_frames, storm_strike};
+    let strike = storm_strike();
+    let [dark, late, held, _] = held_frames(&strike);
+    let (mut r, wire, screen) = on_screen(140, 60, ImageProtocol::Kitty);
+    r.set_weather(strike.weather);
+    r.set_motion(pixtuoid_scene::anim::Motion::Full);
+    let scene = office();
+    for at in [dark, late] {
+        screen.at(at);
+        r.render(&scene, at).expect("render");
+    }
+    wire.take();
+    r.redraw().expect("redraw");
+    screen.at(held);
+    r.render(&scene, held).expect("render");
+    let cells = r.terminal.backend().inner.buffer();
+    assert!(
+        cells.content().iter().any(|c| c.symbol() != " "),
+        "painted, not left blank"
+    );
+    assert!(wire.take().contains(TRANSMIT), "its tiles sent");
+}
+
+/// The pacing reports name what drew each frame: the cutaway's protocol at
+/// the scale it last fit, a font zoom's refit included, and the half-blocks
+/// where a zoom leaves the cutaway no fit.
+#[test]
+fn the_pacing_label_follows_what_drew_each_frame() {
+    let (mut r, _wire) = kitty(140, 60);
+    let out = crate::tui::FrameOut::new(Wire::default(), false);
+    r.present_through(out.clone());
+    r.set_cutaway(TileCutaway::new(
+        fit(140, 60),
+        CELL,
+        crate::graphics::Route::direct(ImageProtocol::Kitty, true),
+        Box::new(out),
+    ));
+    let scene = office();
+    let cadence = ImageProtocol::Kitty.cadence();
+    let half_blocks = crate::jank::Painter {
+        look: "classic",
+        scale: 1,
+        tmux: false,
+        terminal: Some("ghostty".into()),
+        sync: true,
+    };
+    r.painted_by(half_blocks.clone());
+    let label = |r: &TuiRenderer<Window>| (r.jank.painter().look, r.jank.painter().scale);
+    r.render(&scene, t0()).expect("render");
+    let (look, scale) = label(&r);
+    assert_eq!(look, "kitty");
+    let cutaway = r.jank.painter();
+    assert_eq!(
+        (cutaway.terminal.as_deref(), cutaway.sync, cutaway.tmux),
+        (Some("ghostty"), true, true),
+        "the half-blocks' terminal and sync, the route's tmux"
+    );
+    r.terminal.backend_mut().zoom(CellSize {
+        w: CELL.w * 2,
+        h: CELL.h * 2,
+    });
+    r.render(&scene, t0() + cadence).expect("render");
+    let (look, zoomed) = label(&r);
+    assert_eq!(look, "kitty");
+    assert!(
+        zoomed > scale,
+        "refit at the zoomed cell: {zoomed} after {scale}"
+    );
+    r.terminal.backend_mut().zoom(CellSize {
+        w: CELL.w / 2,
+        h: CELL.h / 2,
+    });
+    r.render(&scene, t0() + cadence * 2).expect("render");
+    assert_eq!(*r.jank.painter(), half_blocks, "the fall back draws");
+}
+
+/// The frame a font zoom falls back on opens the half-blocks' pacing
+/// window, its time included: that window spans at least its slowest frame.
+#[test]
+fn a_fall_back_frame_is_inside_the_window_it_opens() {
+    let scene = office();
+    let logged = crate::test_capture::capture(|| {
+        let (mut r, _wire) = kitty(140, 60);
+        r.painted_by(crate::jank::Painter {
+            look: "classic",
+            scale: 1,
+            ..Default::default()
+        });
+        r.render(&scene, t0()).expect("render");
+        r.terminal.backend_mut().zoom(CellSize {
+            w: CELL.w / 2,
+            h: CELL.h / 2,
+        });
+        r.render(&scene, t0() + ImageProtocol::Kitty.cadence())
+            .expect("render");
+        r.finish_pacing();
+    });
+    let field = |line: &str, key: &str| -> f64 {
+        let at = line.find(&format!(" {key}=")).expect("logged") + key.len() + 2;
+        line[at..]
+            .split_whitespace()
+            .next()
+            .and_then(|v| v.parse().ok())
+            .expect("a number")
+    };
+    let classic = logged
+        .lines()
+        .filter(|l| l.contains("frame pacing"))
+        .find(|l| l.contains("look=\"classic\""))
+        .expect("the half-blocks' window");
+    assert!(
+        field(classic, "span_ms") >= field(classic, "max"),
+        "{classic}"
+    );
 }

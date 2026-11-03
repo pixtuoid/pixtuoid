@@ -534,11 +534,14 @@ impl FloatingApp {
             self.renderer.presented();
         }
         let now = Instant::now();
-        self.jank.painted_by(crate::jank::Painter {
-            look: "floating",
-            scale: at.scale().get(),
-            ..crate::jank::Painter::default()
-        });
+        self.jank.painted_by(
+            &crate::jank::Painter {
+                look: "floating",
+                scale: at.scale().get(),
+                ..crate::jank::Painter::default()
+            },
+            started,
+        );
         self.renderer
             .record(&mut self.jank, now - started, now - presenting, now);
     }
