@@ -16,7 +16,7 @@ use std::num::NonZeroU16;
 #[cfg(test)]
 use crate::sprite::Palette;
 use crate::sprite::format::{Density, density_variant_name};
-use crate::sprite::{HeadView, Rgb, Sprite};
+use crate::sprite::{Frame, HeadView, Rgb, Sprite};
 use enum_map::EnumMap;
 pub use error::PackError;
 use error::Repr;
@@ -560,6 +560,37 @@ impl OfficeArt {
     /// none.
     pub fn max_density_variant(&self) -> Density {
         self.pack.max_density_variant()
+    }
+
+    /// The art a painter at `scale` draws `piece` from, in the pack's own
+    /// colours: its frames in play order and the [`Density`] they are drawn
+    /// at. A device's build-time art export reads it here.
+    ///
+    /// ```
+    /// use pixtuoid_scene::pack::{Piece, load_bundled_pack};
+    /// use pixtuoid_scene::render_scale::RenderScale;
+    ///
+    /// let art = load_bundled_pack()?;
+    /// let scale = RenderScale::from(art.max_density_variant());
+    /// let (frames, _) = art.frames_at(Piece::CatSit, scale);
+    /// for frame in frames {
+    ///     let rgba: Vec<[u8; 4]> = frame
+    ///         .as_slice()
+    ///         .iter()
+    ///         .map(|px| px.map_or([0; 4], |c| [c.r, c.g, c.b, u8::MAX]))
+    ///         .collect();
+    ///     assert_eq!(rgba.len(), usize::from(frame.width()) * usize::from(frame.height()));
+    /// }
+    /// # Ok::<(), pixtuoid_scene::pack::PackError>(())
+    /// ```
+    pub fn frames_at(
+        &self,
+        piece: Piece,
+        scale: RenderScale,
+    ) -> (impl ExactSizeIterator<Item = &Frame>, Density) {
+        let (art, density, _) =
+            densest(self.pack.piece(piece), self.pack.variants_of(piece), scale);
+        (art.frames().iter(), density)
     }
 
     /// `desk`'s art at each density.

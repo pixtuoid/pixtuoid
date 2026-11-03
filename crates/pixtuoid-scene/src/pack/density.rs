@@ -211,4 +211,31 @@ mod tests {
         let desk_w = pack.piece(Piece::Desk).first().width();
         assert_eq!(at(&pack, Piece::Desk, 0, 4), (desk_w, 1, 4));
     }
+
+    /// The same frames in the same order, at the same density, as a painter
+    /// at that scale draws.
+    #[test]
+    fn frames_at_hands_out_what_a_painter_draws() {
+        use strum::VariantArray as _;
+        for pack in [variant_pack(), crate::pack::test_office()] {
+            let max = pack.max_density_variant().get();
+            // past the densest, so a variant blits a remainder and a non-divisor falls back
+            for s in 1..=2 * max {
+                let scale = RenderScale::new(s).expect("nonzero");
+                for &piece in Piece::VARIANTS {
+                    let (frames, density) = pack.frames_at(piece, scale);
+                    assert_eq!(
+                        frames.len(),
+                        pack.piece(piece).frames().len(),
+                        "{piece:?} at {s}"
+                    );
+                    for (i, f) in frames.enumerate() {
+                        let painted = densest_frame(&pack, piece, i, scale);
+                        assert!(std::ptr::eq(f, painted.frame), "{piece:?} {i} at {s}");
+                        assert_eq!(density, painted.density, "{piece:?} at {s}");
+                    }
+                }
+            }
+        }
+    }
 }
