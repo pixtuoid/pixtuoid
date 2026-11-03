@@ -164,11 +164,11 @@ impl Counted {
 /// A [`CopyId`] keyed by the source whose transcripts it is unique across.
 type SourceCopy = (Arc<str>, CopyId);
 
-/// How long a [`CopyId`] outlives the last agent holding it: a day, the span
-/// [`Today`](crate::state::Today) counts. A fork made later than that of an
-/// ended session counts what it copied again.
+/// How long a [`CopyId`] outlives the last agent holding it: the span a
+/// [`Today`](crate::state::Today) counts, so a fork made that day of an ended
+/// session counts none of what it copied.
 #[doc(hidden)]
-pub const COPY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+pub const COPY_RETENTION: Duration = Duration::from_hours(24);
 
 /// The agents of a source holding each [`CopyId`] they read: the first counts
 /// what it names, and every later reader, its fork, holds it without counting
