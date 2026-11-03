@@ -1182,6 +1182,7 @@ pub async fn pixtuoid_core::source::hook::HookRouter::run(alloc::boxed::Box<Self
 impl pixtuoid_core::Source for pixtuoid_core::source::omp::OmpSource
 pub fn pixtuoid_core::source::omp::OmpSource::name(&self) -> &str
 pub async fn pixtuoid_core::source::omp::OmpSource::run(alloc::boxed::Box<Self>, pixtuoid_core::TaggedSender) -> anyhow::Result<()>
+pub fn pixtuoid_core::source::display_name(&str) -> core::option::Option<&'static str>
 pub fn pixtuoid_core::source::pid_start_marker(i32) -> core::option::Option<u64>
 pub type pixtuoid_core::source::TaggedReceiver = tokio::sync::mpsc::bounded::Receiver<(pixtuoid_core::source::Transport, pixtuoid_core::source::AgentEvent)>
 pub type pixtuoid_core::source::TaggedSender = tokio::sync::mpsc::bounded::Sender<(pixtuoid_core::source::Transport, pixtuoid_core::source::AgentEvent)>

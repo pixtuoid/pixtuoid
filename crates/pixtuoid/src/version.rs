@@ -396,14 +396,14 @@ mod tests {
         assert_eq!(
             says(&LEGACY_HOSTS, &[]).as_deref(),
             Some(
-                "pixtuoid now connects to Claude Code, Codex and Reasonix as a plugin: \
+                "pixtuoid now connects to Claude Code, Codex CLI and Reasonix as a plugin: \
                  reconnect the ones you use in Sources (s)."
             )
         );
         assert_eq!(
             says(&["codex", "opencode"], &["opencode"]).as_deref(),
             Some(
-                "pixtuoid now connects to Codex as a plugin: reconnect it in Sources (s) if you use it."
+                "pixtuoid now connects to Codex CLI as a plugin: reconnect it in Sources (s) if you use it."
             )
         );
         assert_eq!(says(&LEGACY_HOSTS, &LEGACY_HOSTS), None, "all reconnected");
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(
             says(&LEGACY_HOSTS, &["claude-code", "reasonix"]).as_deref(),
             Some(
-                "pixtuoid now connects to Codex as a plugin: reconnect it in Sources (s) if you use it."
+                "pixtuoid now connects to Codex CLI as a plugin: reconnect it in Sources (s) if you use it."
             )
         );
     }

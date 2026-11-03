@@ -8,7 +8,7 @@
   },
   {
     "id": "codex",
-    "display_name": "Codex",
+    "display_name": "Codex CLI",
     "connected": false,
     "cli_present": false,
     "health": null

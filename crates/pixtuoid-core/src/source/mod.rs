@@ -539,6 +539,22 @@ pub fn resolved_source_root(name: &str) -> Option<std::path::PathBuf> {
     registry::descriptor_for(name)?.native.root?()
 }
 
+/// The name the CLI behind a source id (an [`AgentSlot::source`]) goes by, or
+/// `None` for an id with no registry row. Public so a device names an agent's
+/// CLI as the office does, not from a second table.
+///
+/// ```
+/// use pixtuoid_core::source::{copilot, display_name};
+///
+/// assert_eq!(display_name(copilot::SOURCE_NAME), Some("Copilot CLI"));
+/// assert_eq!(display_name("not-a-source"), None);
+/// ```
+///
+/// [`AgentSlot::source`]: crate::state::AgentSlot::source
+pub fn display_name(source: &str) -> Option<&'static str> {
+    registry::descriptor_for(source).map(|d| d.display_name)
+}
+
 /// Shared ACP (Agent Client Protocol) wire-vocabulary decode — reused by any
 /// source whose transcript speaks ACP (grok today).
 pub(crate) mod acp;

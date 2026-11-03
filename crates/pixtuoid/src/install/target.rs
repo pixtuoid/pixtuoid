@@ -113,14 +113,11 @@ pub struct Target {
 }
 
 impl Target {
-    /// Its source's [`SourceDescriptor::display_name`], or `core_source` for an id
-    /// with no row, which `every_target_names_a_registered_source` keeps every
-    /// shipped target off.
-    ///
-    /// [`SourceDescriptor::display_name`]: pixtuoid_core::source::registry::SourceDescriptor::display_name
+    /// Its source's [`display_name`](pixtuoid_core::source::display_name), or
+    /// `core_source` for an id with no row, which
+    /// `every_target_names_a_registered_source` keeps every shipped target off.
     pub(crate) fn display_name(&self) -> &'static str {
-        pixtuoid_core::source::registry::descriptor_for(self.core_source)
-            .map_or(self.core_source, |d| d.display_name)
+        pixtuoid_core::source::display_name(self.core_source).unwrap_or(self.core_source)
     }
 }
 
