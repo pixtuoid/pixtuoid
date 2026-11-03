@@ -472,8 +472,8 @@ fn a_fork_of_a_fork_counts_nothing_its_grandparent_read() {
 }
 
 /// A reaped agent's next life rebuilds its meter from a re-read of its own
-/// lines, copy ids included, as it does from its plain readings; a fork
-/// holding the same ids still counts none of them.
+/// lines, copy ids included, as it does from its plain readings; another
+/// agent reading them still counts none of them.
 #[test]
 fn a_reaped_agents_next_life_counts_its_own_copy_ids_again() {
     let (mut r, mut scene) = counting();
@@ -494,8 +494,37 @@ fn a_reaped_agents_next_life_counts_its_own_copy_ids_again() {
     );
     r.apply(&mut scene, call_with_copy(parent, Some("k1")), reaped, TAIL);
     assert_eq!(slot_of(&scene, parent), first_life);
-    let late = id("late");
-    start(&mut r, &mut scene, late);
-    r.apply(&mut scene, usage_with_copy(late, Some("c1")), reaped, TAIL);
-    assert_eq!(slot_of(&scene, late), (0, 0));
+    let another = id("another");
+    start(&mut r, &mut scene, another);
+    r.apply(
+        &mut scene,
+        usage_with_copy(another, Some("c1")),
+        reaped,
+        TAIL,
+    );
+    r.apply(
+        &mut scene,
+        call_with_copy(another, Some("k1")),
+        reaped,
+        TAIL,
+    );
+    assert_eq!(slot_of(&scene, another), (0, 0));
+}
+
+/// The same with the roles swapped: a reaped fork's next life re-reading its
+/// copies counts none of them, while its parent lives.
+#[test]
+fn a_reaped_forks_next_life_counts_none_of_its_copies() {
+    let (mut r, mut scene) = counting();
+    let (parent, fork) = parent_and_fork(&mut r, &mut scene);
+    for a in [parent, fork] {
+        r.apply(&mut scene, usage_with_copy(a, Some("c1")), t0(), TAIL);
+        r.apply(&mut scene, call_with_copy(a, Some("k1")), t0(), TAIL);
+    }
+    let reaped = end_and_reap(&mut r, &mut scene, fork, &[parent], t0());
+    start(&mut r, &mut scene, fork);
+    r.apply(&mut scene, backlog(fork, true), reaped, TAIL);
+    r.apply(&mut scene, usage_with_copy(fork, Some("c1")), reaped, TAIL);
+    r.apply(&mut scene, call_with_copy(fork, Some("k1")), reaped, TAIL);
+    assert_eq!(slot_of(&scene, fork), (0, 0));
 }

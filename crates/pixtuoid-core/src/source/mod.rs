@@ -354,8 +354,9 @@ impl PidIdentity {
 }
 
 impl AgentEvent {
-    /// A token reading, its optional fields unset. THE constructor outside
-    /// this crate, so a field it gains is a non-breaking add.
+    /// A token reading with no copy id ([`with_copy_id`](Self::with_copy_id)
+    /// sets one). THE constructor outside this crate, so a field it gains is a
+    /// non-breaking add.
     pub fn usage(agent_id: AgentId, fresh_tokens: u64, reading_id: Option<String>) -> Self {
         AgentEvent::Usage {
             agent_id,
@@ -365,8 +366,9 @@ impl AgentEvent {
         }
     }
 
-    /// A tool call's start, its optional fields unset. THE constructor outside
-    /// this crate, so a field it gains is a non-breaking add.
+    /// A tool call's start with no copy id ([`with_copy_id`](Self::with_copy_id)
+    /// sets one). THE constructor outside this crate, so a field it gains is a
+    /// non-breaking add.
     pub fn tool_use_start(
         agent_id: AgentId,
         tool_use_id: Option<String>,
@@ -387,7 +389,7 @@ impl AgentEvent {
             AgentEvent::Usage { copy_id, .. } | AgentEvent::ToolUseStart { copy_id, .. } => {
                 *copy_id = Some(id);
             }
-            _ => debug_assert!(false, "only a reading or a call keeps a copy id"),
+            _ => {}
         }
         self
     }

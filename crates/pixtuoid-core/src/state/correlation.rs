@@ -183,27 +183,30 @@ pub(super) struct CopyHolders {
 }
 
 /// Who read one [`CopyId`].
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Readers {
+    /// The one that counted it, whose re-read in any life is its own again.
+    counter: AgentId,
     live: HashSet<AgentId>,
-    /// Readers whose slot went: a re-read of their own lines is theirs again.
-    gone: HashSet<AgentId>,
     /// When the last live reader went, while none has read it since.
     released: Option<SystemTime>,
 }
 
 impl CopyHolders {
     /// Whether `agent` may count what `id` names under `source`: no id, an id
-    /// nobody read, or one `agent` itself read, in this life or an earlier
-    /// one. `agent` holds `id` either way.
+    /// nobody read, or one `agent` counted, in this life or an earlier one.
+    /// `agent` holds `id` either way.
     pub(super) fn claim(&mut self, source: &Arc<str>, agent: AgentId, id: Option<&CopyId>) -> bool {
         let Some(id) = id else {
             return true;
         };
         let key = (Arc::clone(source), id.clone());
-        let readers = self.ids.entry(key.clone()).or_default();
-        let first = readers.live.is_empty() && readers.gone.is_empty();
-        let counts = first || readers.live.contains(&agent) || readers.gone.remove(&agent);
+        let readers = self.ids.entry(key.clone()).or_insert_with(|| Readers {
+            counter: agent,
+            live: HashSet::new(),
+            released: None,
+        });
+        let counts = readers.counter == agent;
         readers.live.insert(agent);
         readers.released = None;
         self.held.entry(agent).or_default().insert(key);
@@ -218,7 +221,6 @@ impl CopyHolders {
                 continue;
             };
             readers.live.remove(&agent);
-            readers.gone.insert(agent);
             if readers.live.is_empty() {
                 readers.released = Some(now);
                 self.expiry.push_back((now, key));
