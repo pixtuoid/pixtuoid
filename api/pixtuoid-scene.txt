@@ -1006,7 +1006,7 @@ impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::FloorPic
 pub struct pixtuoid_scene::look::Hits
 impl pixtuoid_scene::look::Hits
 pub fn pixtuoid_scene::look::Hits::at(&self, pixtuoid_scene::layout::Bounds, core::option::Option<pixtuoid_scene::layout::Bounds>) -> core::option::Option<crate::hit::SceneHit<'_>>
-pub fn pixtuoid_scene::look::Hits::hovers(&self) -> &Hovers
+pub fn pixtuoid_scene::look::Hits::figures(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&crate::display::HoverTarget, pixtuoid_scene::layout::Bounds)>
 pub fn pixtuoid_scene::look::Hits::layout(&self) -> &alloc::rcs::arc::Arc<pixtuoid_scene::layout::SceneLayout>
 impl core::clone::Clone for pixtuoid_scene::look::Hits
 pub fn pixtuoid_scene::look::Hits::clone(&self) -> Self
@@ -1434,8 +1434,6 @@ pub mod pixtuoid_scene::pose
 pub struct pixtuoid_scene::pose::PoseHistory
 impl pixtuoid_scene::pose::PoseHistory
 pub fn pixtuoid_scene::pose::PoseHistory::contains(&self, pixtuoid_core::id::AgentId) -> bool
-pub fn pixtuoid_scene::pose::PoseHistory::new() -> Self
-pub fn pixtuoid_scene::pose::PoseHistory::recent(&self, pixtuoid_core::id::AgentId, u64, std::time::SystemTime) -> core::option::Option<pixtuoid_scene::layout::Point>
 impl core::clone::Clone for pixtuoid_scene::pose::PoseHistory
 pub fn pixtuoid_scene::pose::PoseHistory::clone(&self) -> Self
 impl core::default::Default for pixtuoid_scene::pose::PoseHistory

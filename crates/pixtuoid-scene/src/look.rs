@@ -447,17 +447,25 @@ impl Hits {
         area: crate::layout::Bounds,
         host_star: Option<crate::layout::Bounds>,
     ) -> Option<crate::hit::SceneHit<'_>> {
-        crate::hit::scene_hit(&self.hovers, self.star.or(host_star), &self.layout, area)
+        crate::hit::scene_hit(
+            self.hovers.at(area),
+            self.star.or(host_star),
+            &self.layout,
+            area,
+        )
+    }
+
+    /// Each figure the frame drew and its box, in layout units, back to front:
+    /// the boxes [`Self::at`] finds them in.
+    pub fn figures(
+        &self,
+    ) -> impl Iterator<Item = (&crate::display::HoverTarget, crate::layout::Bounds)> {
+        self.hovers.listed().iter().map(|h| (&h.target, h.at))
     }
 
     /// The layout the frame was drawn on.
     pub fn layout(&self) -> &Arc<SceneLayout> {
         &self.layout
-    }
-
-    /// Its hovers, back to front.
-    pub fn hovers(&self) -> &Hovers {
-        &self.hovers
     }
 }
 

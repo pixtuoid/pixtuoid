@@ -2,8 +2,6 @@
 //! read a cell through.
 
 #[cfg(test)]
-use pixtuoid_scene::display::Hovers;
-#[cfg(test)]
 use pixtuoid_scene::layout::SceneLayout;
 
 #[cfg(test)]
@@ -15,8 +13,7 @@ pub(crate) use pixtuoid_scene::hit::SceneHit;
 /// probe the tests read the layout's fixtures through.
 #[cfg(test)]
 fn bare_hit(layout: &SceneLayout, cell: CellArea) -> Option<SceneHit<'static>> {
-    static NONE: std::sync::LazyLock<Hovers> = std::sync::LazyLock::new(Hovers::default);
-    pixtuoid_scene::hit::scene_hit(&NONE, None, layout, cell.bounds())
+    pixtuoid_scene::hit::scene_hit(None, None, layout, cell.bounds())
 }
 
 /// Whether the bare office shows the coffee machine at `cell`.

@@ -55,7 +55,7 @@ pub struct PetHover {
 
 /// One frame's hovers, back to front.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Hovers(Vec<Hover>);
+pub(crate) struct Hovers(Vec<Hover>);
 
 impl FromIterator<Hover> for Hovers {
     fn from_iter<I: IntoIterator<Item = Hover>>(hovers: I) -> Self {
@@ -69,14 +69,13 @@ impl Hovers {
         self.0.push(hover);
     }
 
-    #[cfg(test)]
     pub(crate) fn listed(&self) -> &[Hover] {
         &self.0
     }
 
     /// Who the topmost hover meeting `area` names: the last painted. `area` is
     /// in logical units.
-    pub fn at(&self, area: Bounds) -> Option<&HoverTarget> {
+    pub(crate) fn at(&self, area: Bounds) -> Option<&HoverTarget> {
         self.0
             .iter()
             .rev()
