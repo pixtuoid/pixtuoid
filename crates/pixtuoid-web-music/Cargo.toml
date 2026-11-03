@@ -18,5 +18,5 @@ workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.21.0", default-features = false }
+pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.22.0", default-features = false }
 wasm-bindgen   = { workspace = true }
