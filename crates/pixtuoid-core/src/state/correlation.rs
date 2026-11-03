@@ -170,8 +170,9 @@ type SourceCopy = (Arc<str>, CopyId);
 #[doc(hidden)]
 pub const COPY_RETENTION: Duration = Duration::from_hours(24);
 
-/// Every [`CopyId`] a source's agents read, with who read it: its first reader
-/// counts it, and a later one, its fork, reads it without counting it. An id
+/// Every [`CopyId`] a source's agents read, with who counts it and who holds
+/// it: its first reader counts it, and a later one, its fork, reads it without
+/// counting it. An id
 /// is kept while any reader lives and for [`COPY_RETENTION`] past the last
 /// one's end, when it is released, never torn down with a slot.
 #[derive(Debug, Default)]
@@ -182,7 +183,7 @@ pub(super) struct CopyHolders {
     expiry: VecDeque<(SystemTime, SourceCopy)>,
 }
 
-/// Who read one [`CopyId`].
+/// Who counts one [`CopyId`], and who holds it now.
 #[derive(Debug)]
 struct Readers {
     /// The one that counted it, whose re-read in any life is its own again.

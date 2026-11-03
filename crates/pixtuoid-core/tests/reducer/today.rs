@@ -438,7 +438,8 @@ fn an_ended_readers_copy_ids_outlive_it_by_the_retention() {
 
 /// A fork of a fork: the first fork, still live, holds what it copied after
 /// its parent ends, past any retention (omp's `fork()` closes the parent's
-/// writer, so the parent goes idle and is reaped first).
+/// writer, `session-manager.ts:2489-2494` at v18.16.0, so the parent goes idle
+/// and is reaped first).
 #[test]
 fn a_fork_of_a_fork_counts_nothing_its_grandparent_read() {
     let (mut r, mut scene) = counting();

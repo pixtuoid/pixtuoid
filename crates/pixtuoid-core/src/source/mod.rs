@@ -310,12 +310,12 @@ pub enum Resolution {
     Turn(TurnKey),
 }
 
-/// An id unique across every transcript of its source, which a CLI keeps when
-/// it copies the line into another session's transcript (a fork, a branch): a
-/// [`AgentEvent::Usage`] or [`AgentEvent::ToolUseStart`] under one counts once
-/// in the office, for the agent that read it first. A decoder names one only
-/// where its wire guarantees both halves; an id unique in one transcript alone
-/// stays a `reading_id` or `tool_use_id`.
+/// An id unique across every transcript of its source, so a line repeating it
+/// in another transcript repeats the same work: a [`AgentEvent::Usage`] or
+/// [`AgentEvent::ToolUseStart`] under one counts once in the office, for the
+/// agent that read it first. A decoder names one only where its wire makes the
+/// id unique across the source; an id unique in one transcript alone stays a
+/// `reading_id` or `tool_use_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CopyId(String);

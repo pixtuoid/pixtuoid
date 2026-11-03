@@ -837,8 +837,8 @@ mod tests {
         assert_eq!(reading_id(json!({"content": [], "usage": usage})), None);
     }
 
-    /// A fork copies a line with its ids, and only a random-shaped id is unique
-    /// across sessions.
+    /// Only a random-shaped id is unique across sessions, so only it is a copy
+    /// id.
     #[test]
     fn a_random_shaped_id_is_its_lines_copy_id() {
         let copies = |id: &str| {
