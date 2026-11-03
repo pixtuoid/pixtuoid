@@ -1292,6 +1292,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::Walk
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::Walk
 pub struct pixtuoid_scene::pack::OfficeArt
 impl pixtuoid_scene::pack::OfficeArt
+pub fn pixtuoid_scene::pack::OfficeArt::frames_at(&self, pixtuoid_scene::pack::Piece, pixtuoid_scene::render_scale::RenderScale) -> (impl core::iter::traits::exact_size::ExactSizeIterator<Item = &pixtuoid_scene::sprite::Frame>, pixtuoid_scene::sprite::format::Density)
 pub fn pixtuoid_scene::pack::OfficeArt::max_density_variant(&self) -> pixtuoid_scene::sprite::format::Density
 pub fn pixtuoid_scene::pack::OfficeArt::piece(&self, pixtuoid_scene::pack::Piece) -> &pixtuoid_scene::sprite::Sprite
 impl core::clone::Clone for pixtuoid_scene::pack::OfficeArt
