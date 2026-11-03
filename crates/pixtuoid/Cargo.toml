@@ -46,7 +46,12 @@ itoa               = "1"
 miniz_oxide        = "0.8"
 # `event-stream`: the TUI loop awaits input beside its frame clock and signals.
 crossterm          = { workspace = true, features = ["event-stream"] }
-futures-util       = { version = "0.3", default-features = false }
+# `alloc`: doctor runs its version probes at once through `join_all`.
+futures-util       = { version = "0.3", default-features = false, features = ["alloc"] }
+# `tokio1`: doctor kills a hung `--version` with the group or job it ran in,
+# awaited rather than polled; it brings the `futures` facade along.
+# `kill-on-drop`: the Job Object's kill on close.
+process-wrap       = { workspace = true, features = ["tokio1", "kill-on-drop"] }
 clap               = { workspace = true }
 enum-map           = { workspace = true }
 serde              = { workspace = true }
@@ -133,8 +138,9 @@ serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode"]
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 # The kitty `t=s` objects (graphics/shm.rs), whose `shm_open` libc types
-# differently on each Unix.
-rustix = { workspace = true, features = ["shm", "mm"] }
+# differently on each Unix; `process`: a quit signal's kill of doctor's probe
+# groups.
+rustix = { workspace = true, features = ["shm", "mm", "process"] }
 
 # Focus-jump activation (focus/macos.rs). Pinned to the SAME objc2 stack winit
 # already pulls so the bindings don't double-compile. This MUST track winit's

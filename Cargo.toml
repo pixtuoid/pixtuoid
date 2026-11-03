@@ -167,7 +167,8 @@ temp-env           = "0.3"
 # (ConPTY on Windows) and reads the screen it renders.
 portable-pty       = "0.9"
 vt100              = "0.18"
-# Dev-only: `crates/pixtuoid-core/examples/support/bounded.rs`.
+# What kills a child with its whole process group or Job Object: the recorder's
+# `crates/pixtuoid-core/examples/support/bounded.rs` and doctor's version probe.
 process-wrap       = { version = "10", default-features = false, features = ["std", "process-group", "job-object"] }
 # Not crossterm's copy: holding to it would freeze this dev-only crate behind
 # crossterm, a cost larger than its second compile.
