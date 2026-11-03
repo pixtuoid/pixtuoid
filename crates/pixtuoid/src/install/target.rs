@@ -329,7 +329,7 @@ pub(crate) const CODEX: Target = Target {
     // Untrusted hooks never run (`codex-rs/tui/src/startup_hooks_review.rs`
     // @ rust-v0.162.1), and a changed hook asks again.
     post_install_hint: Some(
-        "restart Codex and trust pixtuoid's hooks at its \"Hooks need review\" prompt",
+        "restart it and trust pixtuoid's hooks at its \"Hooks need review\" prompt",
     ),
     host: Some(&crate::install::codex::HOST),
     #[cfg(test)]

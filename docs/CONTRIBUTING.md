@@ -262,8 +262,8 @@ before re-litigating.
 ## Adding a new agent CLI
 
 The registration steps (4–7, 9) and step 11's roster literal are test-forced —
-skipping one fails `just test`. Step 8 is forced only for hook-only sources;
-step 10 by the theme guards; steps 1–3 are on you.
+skipping one fails `just test`, or step 9's dropdown `just ci-observability`. Step 8 is
+forced only for hook-only sources; step 10 by the theme guards; steps 1–3 are on you.
 
 1. **Verify the wire format against the CLI's actual source/releases first** —
    transcript location, line shape, hooks, session identity; pin every fact
@@ -294,10 +294,10 @@ step 10 by the theme guards; steps 1–3 are on you.
    decoding until the session universe ends). **Hook-only CLI?** Skip the
    decoder, trait, and step 7: `transcript: None` in the registry row, format
    knowledge in a `HookDecoding::ClaimsAll` decoder, and do step 8 instead.
-4. **Add the module's `DESCRIPTOR`**, listed in `source/registry.rs`'s `REGISTRY` — label prefix,
-   decoder, `HookDecoding` (a `Shared` row's `tool_id_key` verified against a
-   CAPTURED tool call — kimi's `ToolCall` cost a source its tool ids), truthful
-   capability flags, `verified_version` + `version_probe`. Lifecycle policy
+4. **Add the module's `DESCRIPTOR`**, listed in `source/registry.rs`'s `REGISTRY` — `display_name`
+   (as upstream's README writes it), label prefix, decoder, `HookDecoding` (a `Shared` row's
+   `tool_id_key` verified against a CAPTURED tool call — kimi's `ToolCall` cost a source its
+   tool ids), truthful capability flags, `verified_version` + `version_probe`. Lifecycle policy
    derives from the flags; you do **not** edit the reducer.
 5. The descriptor's `name` **is the roster** — `registered_source_names()`
    projects `REGISTRY`; the conformance suite then requires a fixture, and
@@ -314,8 +314,8 @@ step 10 by the theme guards; steps 1–3 are on you.
    runs unattended, the CLI's config (`merge_install`/`merge_uninstall` + a
    `verify_schema` fn mirroring its format), plus the registered-events↔decoder-arms
    guard.
-9. **Add a row to `site/src/sources.json`** (`status`, per-OS `platforms` as its neighbours'), then `just gen-readme`. Pinned to `registered_source_names()`
-   by `supported_sources_manifest.rs`.
+9. **Add a row to `site/src/sources.json`** (`status`, `name` = the `display_name`, per-OS `platforms` as its neighbours') and that name to the bug form's `agent-cli` dropdown, then `just gen-readme`.
+   The row is pinned to the registry by `supported_sources_manifest.rs`, the dropdown to the rows by the `bug-form-lists-every-supported-cli` contract.
 10. **Add the per-source badge hue** — a `SourceColors` field + value in EVERY
     theme file + `badge_color` in the manifest row; the coverage, legibility
     and site-bridge tests fail until it exists.

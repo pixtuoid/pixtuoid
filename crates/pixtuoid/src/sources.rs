@@ -1238,6 +1238,10 @@ mod tests {
             hint.contains("Hooks need review"),
             "untrusted hooks never run, so the step names Codex's own prompt — got {hint:?}"
         );
+        assert!(
+            !hint.contains("Codex"),
+            "every line it rides names the CLI first, so it doesn't again — got {hint:?}"
+        );
 
         for id in pixtuoid_core::source::registry::registered_source_names() {
             if id == "codex" || id == "openclaw" || id == "omp" || id == "dsh" {
