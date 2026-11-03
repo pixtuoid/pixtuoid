@@ -128,34 +128,25 @@ pub(super) enum ToolEventKind {
     End,
 }
 
-/// Per agent, the wire ids already counted and when each first was. Nested (not
-/// `(AgentId, String)`-keyed) so a membership probe borrows `&str` without
-/// allocating and a life's eviction is one `remove`.
+/// Per agent, the wire ids already counted. Nested (not `(AgentId, String)`-keyed)
+/// so a membership probe borrows `&str` without allocating and a life's eviction
+/// is one `remove`.
 #[derive(Debug, Default)]
-pub(super) struct Counted(HashMap<AgentId, HashMap<String, SystemTime>>);
+pub(super) struct Counted(HashMap<AgentId, HashSet<String>>);
 
 impl Counted {
     /// Whether what `id` names counts for `agent`: an id once, which this then
     /// holds, and no id every time.
-    pub(super) fn first(&mut self, agent: AgentId, id: Option<&str>, now: SystemTime) -> bool {
+    pub(super) fn first(&mut self, agent: AgentId, id: Option<&str>) -> bool {
         let Some(id) = id else {
             return true;
         };
         let ids = self.0.entry(agent).or_default();
-        let new = !ids.contains_key(id);
+        let new = !ids.contains(id);
         if new {
-            ids.insert(id.to_string(), now);
+            ids.insert(id.to_string());
         }
         new
-    }
-
-    /// Only from [`Correlation::gc_slow`], never the per-event [`Correlation::gc`]:
-    /// with the longest TTL of the maps this is the retain that does real work.
-    fn sweep(&mut self, now: SystemTime) {
-        self.0.retain(|_, ids| {
-            ids.retain(|_, ts| is_fresh(now, *ts, super::reducer::STALE_BLOCKED_TIMEOUT));
-            !ids.is_empty()
-        });
     }
 
     /// `agent`'s life ended, and its ids with it.
@@ -166,7 +157,7 @@ impl Counted {
     /// How many ids it holds.
     #[cfg(test)]
     pub(super) fn len(&self) -> usize {
-        self.0.values().map(HashMap::len).sum()
+        self.0.values().map(HashSet::len).sum()
     }
 }
 
@@ -206,9 +197,8 @@ pub(super) struct Correlation {
     /// call re-observed on the other transport counts once (#951). Not
     /// [`HOOK_WINS_WINDOW`]'s job: omp's transcript writes the call BEFORE the
     /// approval request goes out, so the two Starts are separated by HUMAN
-    /// approval latency and no dedup window can span them. The backstop TTL is
-    /// [`STALE_BLOCKED_TIMEOUT`](crate::state::reducer::STALE_BLOCKED_TIMEOUT) because that bounds how long they can straddle; past
-    /// it the cost is one HUD re-count.
+    /// approval latency and no dedup window can span them. Never swept, only
+    /// forgotten with the slot, as `counted_readings` is.
     pub(super) counted_calls: Counted,
     /// Usage readings already counted into `tokens_used`, by the id a wire that
     /// repeats one gives it. Never swept, only forgotten with the slot: a
@@ -219,16 +209,7 @@ pub(super) struct Correlation {
     /// reader that fails to declare costs its agent the count, and never counts
     /// a replay.
     pub(super) caught_up: HashSet<AgentId>,
-    /// When [`Self::gc_slow`] last swept, so its cost is once per
-    /// [`COUNTED_SWEEP_INTERVAL`] no matter how often the caller runs — the
-    /// bench harness ticks per EVENT, and production ticks per frame.
-    counted_swept_at: Option<SystemTime>,
 }
-
-/// How often `counted_calls` is TTL-swept. Minutes of slack against an
-/// hour-scale ceiling cost nothing; sweeping on every tick re-created the
-/// per-event scan `gc_slow` exists to avoid.
-const COUNTED_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Freshness under a TTL, clock-regression-safe: `duration_since` returns
 /// `Err` when `ts` is in the future, which folds to NOT-fresh. The ONE
@@ -378,21 +359,6 @@ impl Correlation {
                 || l.hook_ended_at
                     .is_some_and(|ts| is_fresh(now, ts, STRAGGLER_TTL))
         });
-    }
-
-    /// The sweeps too costly for the per-event [`Self::gc`]: `counted_calls`
-    /// keeps entries for up to [`STALE_BLOCKED_TIMEOUT`](crate::state::reducer::STALE_BLOCKED_TIMEOUT), so its retain scans real
-    /// state. Self-amortized to [`COUNTED_SWEEP_INTERVAL`] — callers may run
-    /// this as often as they like.
-    pub(super) fn gc_slow(&mut self, now: SystemTime) {
-        if self
-            .counted_swept_at
-            .is_some_and(|at| is_fresh(now, at, COUNTED_SWEEP_INTERVAL))
-        {
-            return;
-        }
-        self.counted_swept_at = Some(now);
-        self.counted_calls.sweep(now);
     }
 
     /// Whether `id` holds a FRESH probe vouch. The single freshness predicate
@@ -550,38 +516,26 @@ mod tests {
             corr.lifecycles.contains_key(&alive),
             "a linked live child keeps its memory"
         );
-
-        let mut corr = Correlation::default();
-        assert!(corr.counted_calls.first(old, Some("t1"), t0()));
-        assert!(corr.counted_calls.first(young, Some("t2"), t0() + step));
-        corr.gc_slow(t0() + crate::state::reducer::STALE_BLOCKED_TIMEOUT);
-        assert!(
-            !corr.counted_calls.0.contains_key(&old),
-            "the swept life's emptied submap is dropped with it"
-        );
-        assert!(corr.counted_calls.0[&young].contains_key("t2"));
     }
 
     #[test]
-    fn an_id_counts_once_per_agent_and_keeps_its_first_time() {
+    fn an_id_counts_once_per_agent() {
         let (a, b) = (
             AgentId::from_parts("claude-code", "a"),
             AgentId::from_parts("claude-code", "b"),
         );
-        let later = t0() + Duration::from_secs(1);
         let mut counted = Counted::default();
-        assert!(counted.first(a, Some("m"), t0()));
-        assert!(!counted.first(a, Some("m"), later));
-        assert!(counted.first(b, Some("m"), later), "another agent's");
-        assert_eq!(counted.0[&a]["m"], t0(), "a repeat refreshes no TTL");
+        assert!(counted.first(a, Some("m")));
+        assert!(!counted.first(a, Some("m")));
+        assert!(counted.first(b, Some("m")), "another agent's");
     }
 
     #[test]
     fn no_id_counts_every_time_and_holds_nothing() {
         let a = AgentId::from_parts("claude-code", "a");
         let mut counted = Counted::default();
-        assert!(counted.first(a, None, t0()));
-        assert!(counted.first(a, None, t0()));
+        assert!(counted.first(a, None));
+        assert!(counted.first(a, None));
         assert_eq!(counted.len(), 0);
     }
 

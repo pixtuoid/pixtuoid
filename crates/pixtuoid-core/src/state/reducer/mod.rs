@@ -294,7 +294,6 @@ impl Reducer {
     /// day that has passed is retired even when no event arrives to drive `apply`.
     pub fn tick(&mut self, scene: &mut SceneState, now: SystemTime) {
         self.corr.gc(now);
-        self.corr.gc_slow(now);
         self.sweep_exited(scene, now);
         self.fire_pending_b1_cascades(scene, now);
         self.sweep_stale(scene, now);
@@ -665,8 +664,8 @@ impl Reducer {
         }
     }
 
-    /// Count a tool call ONCE per (agent, call id) life; the id-less path
-    /// counts every time.
+    /// Count a tool call ONCE per call id for as long as its slot exists,
+    /// resurrects included; the id-less path counts every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,
@@ -682,7 +681,7 @@ impl Reducer {
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        if self.corr.counted_calls.first(agent_id, tool_use_id, now) {
+        if self.corr.counted_calls.first(agent_id, tool_use_id) {
             slot.tool_call_count += 1;
             if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
                 today.tool_calls = today.tool_calls.saturating_add(1);
@@ -1067,7 +1066,7 @@ impl Reducer {
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        if self.corr.counted_readings.first(agent_id, reading_id, now) {
+        if self.corr.counted_readings.first(agent_id, reading_id) {
             slot.tokens_used = slot.tokens_used.saturating_add(fresh_tokens);
             slot.last_usage = Some(crate::state::UsageObservation::new(fresh_tokens, now));
             if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
@@ -1684,14 +1683,13 @@ impl Reducer {
 
     /// Drop the per-slot correlation a departing agent id owns, reclaimed on
     /// BOTH a resurrect-in-place and a slot removal. Death-only teardown
-    /// (`recent_proof_of_life`, `counted_readings`, [`Correlation::note_removed`])
+    /// (`recent_proof_of_life`, the counted ids, [`Correlation::note_removed`])
     /// deliberately stays at the sweep site — it must NOT run on a resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.tasks_in_flight.remove(id);
         self.corr.action_requests.forget(id);
         self.corr.turns.forget(id);
         self.corr.item_started_on.remove(id);
-        self.corr.counted_calls.forget(id);
         self.corr.caught_up.remove(id);
         self.pending_b1_cascades.remove(id);
     }
@@ -1716,8 +1714,10 @@ impl Reducer {
             self.remove_agent_correlation(&id);
             // Evict with the slot, else a same-id ghost inherits the vouch.
             self.corr.recent_proof_of_life.remove(&id);
-            // A resurrect keeps `tokens_used`, so it keeps the ids that built it.
+            // A resurrect keeps `tokens_used` and `tool_call_count`, so it keeps
+            // the ids that built them.
             self.corr.counted_readings.forget(&id);
+            self.corr.counted_calls.forget(&id);
             self.corr.note_removed(id, now);
         }
     }
