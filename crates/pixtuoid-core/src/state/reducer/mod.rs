@@ -664,8 +664,8 @@ impl Reducer {
         }
     }
 
-    /// Count a tool call ONCE per (agent, call id) life; the id-less path
-    /// counts every time.
+    /// Count a tool call ONCE per call id for as long as its slot exists,
+    /// resurrects included; the id-less path counts every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,

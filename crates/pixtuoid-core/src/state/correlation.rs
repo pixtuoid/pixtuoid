@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn an_id_counts_once_per_agent_and_keeps_its_first_time() {
+    fn an_id_counts_once_per_agent() {
         let (a, b) = (
             AgentId::from_parts("claude-code", "a"),
             AgentId::from_parts("claude-code", "b"),

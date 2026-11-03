@@ -9,8 +9,8 @@ use pixtuoid_core::state::reducer::{
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, SceneState};
 
 use crate::{
-    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, sess_end, start, tool_use_end,
-    tool_use_start, user_action_request,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, proof_of_life, sess_end, start,
+    tool_use_end, tool_use_start, user_action_request,
 };
 
 #[test]
@@ -1381,8 +1381,14 @@ fn a_live_slot_keeps_its_call_ids_past_every_sweep() {
         Transport::Jsonl,
     );
     let later = t0 + STALE_BLOCKED_TIMEOUT + Duration::from_secs(1);
+    // A probe vouches for its process, or the running call's own stale sweep
+    // would end the slot first.
+    proof_of_life(&mut r, &mut scene, id, later, Transport::Jsonl);
     r.tick(&mut scene, later);
-    assert!(scene.agents.contains_key(&id), "precondition: still live");
+    assert!(
+        scene.agents[&id].exiting_at.is_none(),
+        "precondition: still live"
+    );
     tool_use_start(
         &mut r,
         &mut scene,
