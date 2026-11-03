@@ -89,8 +89,21 @@ pub fn local_day(now: SystemTime) -> NaiveDate {
 }
 
 /// What every reader shows of `today`: its tokens, else its tool calls, else
-/// nothing, so nobody sees `0`.
-pub(crate) fn today_headline(today: Today) -> Option<String> {
+/// nothing, so nobody sees `0`. Public so a device shows today's words as the
+/// sign does, not a second wording.
+///
+/// ```
+/// use pixtuoid_core::state::Today;
+/// use pixtuoid_scene::tally::{local_day, today_headline};
+///
+/// let day = local_day(std::time::SystemTime::now());
+/// assert_eq!(
+///     today_headline(Today::new(day, 1_200_000, 38)).as_deref(),
+///     Some("1.2M tokens"),
+/// );
+/// assert_eq!(today_headline(Today::new(day, 0, 0)), None);
+/// ```
+pub fn today_headline(today: Today) -> Option<String> {
     let (count, unit) = match (today.tokens, today.tool_calls) {
         (0, 0) => return None,
         (0, calls) => (calls, "tool call"),
