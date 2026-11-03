@@ -1198,12 +1198,12 @@ test('crisp AA captions overlay the live office (name badges + neon board)', asy
   // shadow over the padding, which holds the ring and then the gap.
   const insets = await page.evaluate(
     () =>
-      (window as unknown as { __pixBadgeInsets: { rim: number; ring_w: number; gap: number[] } })
+      (window as unknown as { __pixBadgeInsets: { rim: number; ring_w: number; gap: number } })
         .__pixBadgeInsets
   );
   const px = (n: number) => (n * labelPx) / 8;
-  expect(badge.rim).toEqual(insets.gap.map(() => px(insets.rim)));
-  expect(badge.padding).toEqual(insets.gap.map((gap) => px(insets.ring_w + gap)));
+  expect(badge.rim).toEqual(Array(4).fill(px(insets.rim)));
+  expect(badge.padding).toEqual(Array(4).fill(px(insets.ring_w + insets.gap)));
   expect(badge.ring).toMatch(new RegExp(` ${px(insets.ring_w)}px inset$`));
   const brand = page.locator('#office-overlay .ov-board .ov-brow--top span').first();
   await expect(brand).toHaveText(/\S/, { timeout: 10_000 });

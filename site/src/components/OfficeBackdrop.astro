@@ -518,7 +518,7 @@ const officeDriverUrl = asset('office-driver.js');
         const px = (n) => (n * labelPx) / PIXEL_EM + 'px';
         overlayEl.style.setProperty('--ov-rim', px(f.rim));
         overlayEl.style.setProperty('--ov-ring-w', px(f.ring_w));
-        overlayEl.style.setProperty('--ov-padding', f.gap.map((n) => px(f.ring_w + n)).join(' '));
+        overlayEl.style.setProperty('--ov-padding', px(f.ring_w + f.gap));
       }
       const labels = data.labels;
       const lift = Math.max(2, map.s); // ~1 unit above the head-top

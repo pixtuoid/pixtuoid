@@ -380,10 +380,7 @@ impl Office {
         let head = {
             let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
                 pixtuoid_scene::display::BADGE_INSETS;
-            let [t, r, b, l] = gap;
-            format!(
-                "{{\"badge_insets\":{{\"rim\":{rim},\"ring_w\":{ring_w},\"gap\":[{t},{r},{b},{l}]}}"
-            )
+            format!("{{\"badge_insets\":{{\"rim\":{rim},\"ring_w\":{ring_w},\"gap\":{gap}}}")
         };
         let Some(now) = self.last_now else {
             return format!("{head},\"labels\":[],\"board\":null}}");

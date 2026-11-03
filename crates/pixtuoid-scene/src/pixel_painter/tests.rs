@@ -3667,6 +3667,40 @@ fn a_bubble_clears_its_speakers_badge_at_every_chitchat_spot() {
     );
 }
 
+/// Whatever the surface and the look, a fit bakes world text on the bundled
+/// pack's densest grid, the one the bubble's clearance above is held on: on the
+/// base art's grid a badge's plate stands taller than a bubble's lift.
+#[test]
+fn a_fit_bakes_world_text_on_the_bundled_packs_densest_grid() {
+    use crate::display::pen::Pen;
+    use crate::look::{Look, LookKind, WorldText};
+    use crate::render_scale::PixelFit;
+    let pack = crate::pack::test_office();
+    let densest = pack.max_density_variant();
+    assert!(
+        densest.get() > 1,
+        "premise: the pack draws over its base grid"
+    );
+    let px = Size { w: 640, h: 480 };
+    for natural in 1..=4 * densest.get() {
+        let fits = [
+            PixelFit::new(natural, densest, px),
+            Some(PixelFit::at_least_density(natural, densest, px)),
+        ];
+        for fit in fits.into_iter().flatten() {
+            for &kind in LookKind::ALL {
+                let (Look::Classic { scale, .. } | Look::Cutaway { scale, .. }) =
+                    fit.look(kind, WorldText::Baked);
+                assert_eq!(
+                    Pen::for_pack(scale, &pack).density(),
+                    densest,
+                    "{kind:?} at a natural scale of {natural}"
+                );
+            }
+        }
+    }
+}
+
 /// A pet and an agent sharing a sort row paint the agent on top in both looks,
 /// so a pointer over both names the agent in both.
 #[test]

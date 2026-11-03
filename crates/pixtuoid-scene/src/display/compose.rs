@@ -46,8 +46,8 @@ pub struct PlateInsets {
     pub rim: u16,
     /// The ring's width.
     pub ring_w: u16,
-    /// The plate between the ring and the line's cells: top, right, bottom, left.
-    pub gap: [u16; 4],
+    /// The plate between the ring and the line's cells.
+    pub gap: u16,
 }
 
 /// A badge's [`PlateInsets`]: a rim and a gap a plain plate's pad wide round a
@@ -57,32 +57,21 @@ pub struct PlateInsets {
 pub const BADGE_INSETS: PlateInsets = PlateInsets {
     rim: PLATE_PAD,
     ring_w: 1,
-    gap: [PLATE_PAD; 4],
+    gap: PLATE_PAD,
 };
 
 impl PlateInsets {
-    /// The rim and the ring.
-    const fn band(self) -> u16 {
-        self.rim + self.ring_w
+    /// How far in from its plate's edge its line's cells start, on every side.
+    const fn line(self) -> u16 {
+        self.rim + self.ring_w + self.gap
     }
 
     /// Its plate's size round a line `cells` wide.
     const fn plate(self, cells: u16) -> (u16, u16) {
-        let [top, right, bottom, left] = self.gap;
-        let band = self.band();
-        (
-            cells + 2 * band + right + left,
-            LINE_H + 2 * band + top + bottom,
-        )
+        (cells + 2 * self.line(), LINE_H + 2 * self.line())
     }
 
-    /// Where its line's cells start in its plate.
-    const fn line(self) -> (u16, u16) {
-        let [top, _, _, left] = self.gap;
-        (self.band() + left, self.band() + top)
-    }
-
-    /// Its ring in `plate`: top, bottom, left, right.
+    /// Its ring's four sides in `plate`.
     pub(crate) fn ring(self, plate: ArtRect) -> [ArtRect; 4] {
         let r = ArtRect {
             x: ArtPx(plate.x.0 + self.rim),
@@ -188,7 +177,7 @@ pub(crate) fn run_rect(run: &TextRun, pen: Pen) -> ArtRect {
 /// gap, else a plate's pad in.
 pub(crate) fn line_start(run: &TextRun, rect: ArtRect) -> (ArtPx, ArtPx) {
     let (dx, dy) = match (ring_insets(run), run.align) {
-        (Some(insets), _) => insets.line(),
+        (Some(insets), _) => (insets.line(), insets.line()),
         (None, Align::Over | Align::Centre) => (PLATE_PAD, 0),
         (None, Align::Left | Align::Right) => (0, 0),
     };
