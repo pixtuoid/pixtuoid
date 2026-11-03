@@ -716,13 +716,23 @@ mod tests {
         let mut d = driver(t0);
         submitted(&mut d, t0);
         let late = t0 + ENTER_RETRY;
+        let holding = typed(READY, READY_INPUT);
         assert_eq!(
-            d.step(&typed(READY, READY_INPUT), late),
+            d.step(&holding, late),
             Action::Keys(&[Key::Enter]),
             "a swallowed Enter"
         );
         assert_eq!(
-            d.step(DONE, late + ENTER_RETRY),
+            d.step(&holding, late + ENTER_RETRY - Duration::from_millis(1)),
+            Action::Wait,
+            "an Enter a retry apart"
+        );
+        assert_eq!(
+            d.step(&holding, late + ENTER_RETRY),
+            Action::Keys(&[Key::Enter])
+        );
+        assert_eq!(
+            d.step(DONE, late + ENTER_RETRY * 2),
             Action::Wait,
             "the conversation's echo of the prompt is not the composer"
         );
