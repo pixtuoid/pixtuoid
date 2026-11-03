@@ -133,12 +133,7 @@ portable = ["serve"]
 audio = ["dep:rodio", "dep:rtrb"]
 # `pixtuoid serve` and `pixtuoid pair`. ring's build script compiles C for the
 # target, whose headers the cross-lints don't have, so they leave this out.
-serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami", "dep:netdev"]
-
-# `pair`'s default host off macOS: the default route's address, read from the
-# routing table.
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-netdev = { version = "0.47", default-features = false, features = ["gateway"], optional = true }
+serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami"]
 
 # termios/select for `term::query_tty` (the truecolor and graphics probes),
 # O_NOFOLLOW in install/io.rs, the stderr dup in audio/sink.rs.

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
-use pixtuoid_core::remote::{Os, PairLink, Server, is_host};
+use pixtuoid_core::remote::{Machine, Os, PairLink, is_host};
 use pixtuoid_core::source::claude_code::ClaudeCodeSource;
 use pixtuoid_core::state::MAX_FLOORS;
 use qrcode::render::unicode::Dense1x2;
@@ -122,8 +122,8 @@ async fn serve(
     let change = Arc::new(move |who: &str, source: &str, on: bool| {
         crate::sources::device_change(&config_path, &live, who, source, on)
     });
-    let server = Server::new(&machine_name(), Os::here());
-    let devices = Devices::new(store, server, scene, rows, change);
+    let machine = Machine::new(&machine_name(), Os::here());
+    let devices = Devices::new(store, machine, scene, rows, change);
     let slots = Arc::new(Semaphore::new(MAX_CONNS));
     let mut deaths_seen = 0;
     let mut accept_failing = false;
@@ -180,8 +180,7 @@ fn lan_peer(ip: IpAddr) -> bool {
     }
 }
 
-/// Whether another device on a local network can reach `ip`: private or
-/// link-local.
+/// Whether `ip` is in a private or link-local range.
 fn on_a_local_network(ip: Ipv4Addr) -> bool {
     ip.is_private() || ip.is_link_local()
 }
@@ -286,20 +285,26 @@ fn local_host() -> Result<String> {
     ))
 }
 
-/// The default route's local-network address, which a device reaches with no
-/// name service to answer for this machine.
+/// The default route's private or link-local IPv4, which a device reaches with
+/// no name service to answer for this machine: the source address of a
+/// datagram to TEST-NET-1, which no route but the default covers (RFC 5737 §4:
+/// "These blocks are not for local use"). A UDP `connect` sends nothing; it
+/// sets "the address to which datagrams are sent by default" (connect(2)).
 #[cfg(not(target_os = "macos"))]
 fn local_host() -> Result<String> {
     const PASS_HOST: &str =
         "pass --host: the name or IPv4 address a device reaches this machine at";
-    let route = netdev::get_default_interface()
-        .map_err(|why| anyhow::anyhow!("{PASS_HOST} (no default route: {why})"))?;
-    route
-        .ipv4_addrs()
-        .into_iter()
-        .find(|ip| on_a_local_network(*ip))
-        .map(|ip| ip.to_string())
-        .with_context(|| format!("{PASS_HOST} (the default route is not on a local network)"))
+    const TEST_NET_1: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
+    let probe = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).context(PASS_HOST)?;
+    probe
+        .connect((TEST_NET_1, 1))
+        .with_context(|| format!("{PASS_HOST} (no default route)"))?;
+    // Winsock may leave the address unset until I/O, which reads as 0.0.0.0
+    // (`getsockname`) and fails the range check like any other non-LAN address.
+    match probe.local_addr()?.ip() {
+        IpAddr::V4(ip) if on_a_local_network(ip) => Ok(ip.to_string()),
+        _ => anyhow::bail!("{PASS_HOST} (the default route has no local-network address)"),
+    }
 }
 
 #[cfg(test)]
@@ -327,6 +332,24 @@ mod tests {
             "fd00::1",
         ] {
             assert!(!lan_peer(ip.parse().expect("an IP")), "{ip}");
+        }
+    }
+
+    /// A default host is one a device on the same network can be sent to: no
+    /// loopback, which `lan_peer` still serves.
+    #[test]
+    fn a_default_host_is_private_or_link_local() {
+        for ip in ["10.0.0.2", "172.16.0.2", "192.168.1.2", "169.254.0.2"] {
+            assert!(on_a_local_network(ip.parse().expect("an IP")), "{ip}");
+        }
+        for ip in [
+            "127.0.0.1",
+            "0.0.0.0",
+            "100.64.0.1",
+            "172.32.0.2",
+            "8.8.8.8",
+        ] {
+            assert!(!on_a_local_network(ip.parse().expect("an IP")), "{ip}");
         }
     }
 

@@ -4,8 +4,8 @@
 //!
 //! Not [`SceneState`] itself, which is internal and moves with every release,
 //! while a server and a device update on their own schedules. A field crosses
-//! only where `project_agent`, `project_daemon` or `project_today` names it, and a
-//! desk never does: desks follow each device's layout, so it takes its own.
+//! only where `project_agent`, `project_daemon`, `project_today` or [`Machine`]
+//! names it, and a desk never does: desks follow each device's layout, so it takes its own.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -46,23 +46,23 @@ const MAX_CLOCK_DRIFT: Duration = Duration::from_secs(2);
 struct Snapshot {
     v: u32,
     now_ms: u64,
-    server: Server,
+    machine: Machine,
     agents: Vec<Agent>,
     daemons: Vec<Daemon>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     today: Option<Day>,
 }
 
-/// The machine a server runs on, as a device names it.
+/// The machine a server runs on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Server {
+pub struct Machine {
     /// What the machine's owner named it, display-safe.
     #[serde(deserialize_with = "display_safe_text")]
     name: String,
     os: Os,
 }
 
-impl Server {
+impl Machine {
     /// `name` made display-safe, running `os`.
     pub fn new(name: &str, os: Os) -> Self {
         Self {
@@ -82,9 +82,9 @@ impl Server {
     }
 }
 
-/// The OS a server runs.
+/// The OS a server runs. Tagged so `other` can take a newer server's OS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Os {
     /// macOS.
     Macos,
@@ -348,17 +348,21 @@ fn project_today(today: &Today) -> Day {
     }
 }
 
-/// `scene` as one newline-terminated wire line from `server`, stamped with its
-/// `now`.
+/// `scene` as one newline-terminated wire line from the server on `machine`,
+/// stamped with its `now`.
 ///
 /// # Errors
 ///
 /// If JSON encoding fails.
-pub fn encode(scene: &SceneState, server: &Server, now: SystemTime) -> serde_json::Result<String> {
+pub fn encode(
+    scene: &SceneState,
+    machine: &Machine,
+    now: SystemTime,
+) -> serde_json::Result<String> {
     let mut line = serde_json::to_string(&Snapshot {
         v: VERSION,
         now_ms: epoch_ms(now),
-        server: server.clone(),
+        machine: machine.clone(),
         agents: scene.agents.values().map(project_agent).collect(),
         daemons: scene
             .daemons()
@@ -378,7 +382,6 @@ const PIN_BYTES: usize = 32;
 
 const PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
 
-/// [`PairLink`]'s keys, each one spelling its text and its parse share.
 const HOST: &str = "host";
 const PORT: &str = "port";
 const SPKI: &str = "spki";
@@ -651,8 +654,8 @@ pub enum ApplyError {
 #[derive(Debug)]
 pub struct RemoteOffice {
     scene: SceneState,
-    /// Who sent the last line; `None` before the first.
-    server: Option<Server>,
+    /// The machine the last line came from; `None` before the first.
+    machine: Option<Machine>,
     /// The device's clock minus the server's, in ms; held from line to line.
     skew_ms: Option<i64>,
 }
@@ -662,7 +665,7 @@ impl RemoteOffice {
     pub fn new(capacities: [usize; MAX_FLOORS]) -> Self {
         Self {
             scene: SceneState::new(capacities),
-            server: None,
+            machine: None,
             skew_ms: None,
         }
     }
@@ -673,8 +676,8 @@ impl RemoteOffice {
     }
 
     /// The machine the last line came from; `None` before the first.
-    pub fn server(&self) -> Option<&Server> {
-        self.server.as_ref()
+    pub fn machine(&self) -> Option<&Machine> {
+        self.machine.as_ref()
     }
 
     /// Take a new layout: everyone takes a new desk, oldest first, since the old
@@ -711,13 +714,13 @@ impl RemoteOffice {
         }
         let Snapshot {
             now_ms,
-            server,
+            machine,
             mut agents,
             daemons,
             today,
             ..
         } = serde_json::from_slice(line)?;
-        self.server = Some(server);
+        self.machine = Some(machine);
 
         let skew = self.skew_for(now_ms, now);
         // A time this far ahead means nothing, and near a clock's end it would
@@ -996,12 +999,12 @@ mod tests {
         scene
     }
 
-    fn server() -> Server {
-        Server::new("studio", Os::Macos)
+    fn machine() -> Machine {
+        Machine::new("studio", Os::Macos)
     }
 
     fn sent(scene: &SceneState) -> String {
-        encode(scene, &server(), at(AT)).expect("a scene encodes")
+        encode(scene, &machine(), at(AT)).expect("a scene encodes")
     }
 
     fn received(office: &mut RemoteOffice, scene: &SceneState, device_now: u64) {
@@ -1029,7 +1032,7 @@ mod tests {
     fn a_v1_line_still_applies() {
         let mut office = RemoteOffice::new(caps(4));
         office.apply(GOLDEN.as_bytes(), at(AT)).expect("v1 applies");
-        assert_eq!(office.server(), Some(&server()));
+        assert_eq!(office.machine(), Some(&machine()));
         let scene = office.scene();
         let exiting_unseen = 1;
         assert_eq!(scene.agents.len(), 8 - exiting_unseen);
@@ -1141,6 +1144,36 @@ mod tests {
             name.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,
             "{name}"
         );
+    }
+
+    /// A machine's name is the server's own to send clean, as a basename is.
+    #[test]
+    fn a_server_sends_its_machines_name_clean() {
+        let dirty = format!("x\u{1b}\u{202e}{}", "y".repeat(MAX_DECODED_FIELD_CHARS * 2));
+        let line: Value = serde_json::from_str(
+            &encode(&crowd(&[]), &Machine::new(&dirty, Os::Linux), at(AT)).unwrap(),
+        )
+        .unwrap();
+        let name = line["machine"]["name"].as_str().unwrap();
+        assert!(!name.contains(['\u{1b}', '\u{202e}']), "{name}");
+        assert!(
+            name.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,
+            "{name}"
+        );
+    }
+
+    /// No line is without its machine: the field is no newer server's to add.
+    #[test]
+    fn a_line_without_its_machine_is_refused() {
+        let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
+        line.as_object_mut().unwrap().remove("machine");
+        let mut office = RemoteOffice::new(caps(4));
+        let refused = office.apply(line.to_string().as_bytes(), at(AT));
+        assert!(
+            matches!(refused, Err(ApplyError::Malformed(_))),
+            "{refused:?}"
+        );
+        assert_eq!(office.machine(), None);
     }
 
     #[test]
@@ -1408,7 +1441,7 @@ mod tests {
     fn what_a_newer_server_adds_is_read_as_the_nearest_known_thing() {
         let line = format!(
             "{{\"v\":{VERSION},\"now_ms\":{AT},\"new_field\":1,\
-             \"server\":{{\"name\":\"st\\u202eudio\\n\",\"os\":\"plan9\",\"new_field\":1}},\
+             \"machine\":{{\"name\":\"st\\u202eudio\\n\",\"os\":{{\"kind\":\"plan9\"}},\"new_field\":1}},\
              \"agents\":[\
              {{\"id\":7,\"source\":\"a-new-cli\",\"activity\":{{\"state\":\"thinking\"}},\
              \"state_since_ms\":{AT},\"created_ms\":{AT},\"tool_calls\":0,\"running_ms\":0,\
@@ -1423,7 +1456,7 @@ mod tests {
         );
         let mut office = RemoteOffice::new(caps(4));
         office.apply(line.as_bytes(), at(AT)).expect("it applies");
-        assert_eq!(office.server(), Some(&Server::new("studio", Os::Other)));
+        assert_eq!(office.machine(), Some(&Machine::new("studio", Os::Other)));
         let agents: Vec<_> = office.scene().agents.values().collect();
         assert_eq!(agents.len(), 2);
         assert_eq!(agents[0].state, ActivityState::Idle);

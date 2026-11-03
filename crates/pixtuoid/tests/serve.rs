@@ -552,6 +552,20 @@ fn a_second_server_on_a_port_says_so_and_leaves() {
     assert!(stderr.contains("already running"), "{stderr}");
 }
 
+/// Only a link by address says it can move: a name follows its machine.
+#[test]
+fn a_link_by_name_says_nothing_of_moving() {
+    let world = World::new();
+    let out = world.run(&["pair", "--host", "studio.local"]);
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8(out.stdout).expect("UTF-8");
+    assert!(
+        said.contains("pixtuoid://pair?"),
+        "premise: it paired: {said}"
+    );
+    assert!(!said.contains("This address can change"), "{said}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_that_cant_go_in_a_link_leaves_the_printed_code_good() {
     let world = World::new();

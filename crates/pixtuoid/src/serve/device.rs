@@ -52,8 +52,8 @@ pub(super) type MakeChange = Arc<dyn Fn(&str, &str, bool) -> Option<Changed> + S
 #[derive(Clone)]
 pub(super) struct Devices {
     store: Store,
-    /// The machine every line names as its sender.
-    server: Arc<remote::Server>,
+    /// The machine every line names.
+    machine: Arc<remote::Machine>,
     scene: SceneRx,
     rows: ReadRows,
     change: MakeChange,
@@ -73,14 +73,14 @@ pub(super) struct Devices {
 impl Devices {
     pub(super) fn new(
         store: Store,
-        server: remote::Server,
+        machine: remote::Machine,
         scene: SceneRx,
         rows: ReadRows,
         change: MakeChange,
     ) -> Self {
         Self {
             store,
-            server: Arc::new(server),
+            machine: Arc::new(machine),
             scene,
             rows,
             change,
@@ -200,7 +200,7 @@ impl Devices {
             }
             // Out of the watch first: encoding under its read lock holds the writer.
             let latest = Arc::clone(&scene.borrow_and_update());
-            let line = remote::encode(&latest, &self.server, SystemTime::now())?;
+            let line = remote::encode(&latest, &self.machine, SystemTime::now())?;
             write_line(stream, &line).await?;
             sleep(MIN_FRAME_GAP).await;
         }
@@ -362,7 +362,7 @@ mod tests {
         Fixture {
             devices: Devices::new(
                 store.clone(),
-                remote::Server::new("studio", remote::Os::here()),
+                remote::Machine::new("studio", remote::Os::here()),
                 scene_rx,
                 rows,
                 change,

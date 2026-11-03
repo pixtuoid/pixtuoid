@@ -1,9 +1,11 @@
 {
   "v": 1,
   "now_ms": 1800000000000,
-  "server": {
+  "machine": {
     "name": "studio",
-    "os": "macos"
+    "os": {
+      "kind": "macos"
+    }
   },
   "agents": [
     {
