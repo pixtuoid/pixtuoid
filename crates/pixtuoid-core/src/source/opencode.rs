@@ -284,6 +284,7 @@ fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<Agent
             } else {
                 generic_tool_display(name, None)
             }),
+            copy_id: None,
         },
     ])
 }
@@ -407,6 +408,7 @@ mod tests {
                 agent_id,
                 tool_use_id,
                 detail,
+                ..
             } => {
                 assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "ses_x"));
                 assert_eq!(tool_use_id.as_deref(), Some("call_abc"));

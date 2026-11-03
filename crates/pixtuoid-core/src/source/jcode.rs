@@ -100,6 +100,7 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
             detail: Some(ToolDetail::Generic {
                 display: display_safe(required("tool_name")?),
             }),
+            copy_id: None,
         }),
         "post_tool" => events.push(AgentEvent::ToolUseEnd {
             agent_id,

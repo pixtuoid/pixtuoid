@@ -214,11 +214,7 @@ mod tests {
         };
         assert_eq!(event_source(&scene, &idy), Some("codex"));
 
-        let act = AgentEvent::ToolUseStart {
-            agent_id: id,
-            tool_use_id: None,
-            detail: None,
-        };
+        let act = AgentEvent::tool_use_start(id, None, None, None);
         assert_eq!(event_source(&scene, &act), None);
 
         reducer.apply(&mut scene, ss, now, Transport::Jsonl);
@@ -257,11 +253,7 @@ mod tests {
             agent_id: id,
             replaying: false,
         };
-        let usage = || AgentEvent::Usage {
-            agent_id: id,
-            fresh_tokens: 7,
-            reading_id: None,
-        };
+        let usage = || AgentEvent::usage(id, 7, None, None);
         let on = ConnectedSources::new(["claude-code".to_string()].into());
         let off = ConnectedSources::new(HashSet::new());
         let rows = [

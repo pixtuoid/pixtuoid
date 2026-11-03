@@ -48,6 +48,7 @@ fn a_task_dispatch_ends_on_the_post_that_carries_its_id() {
                 agent_id,
                 tool_use_id,
                 detail: Some(ToolDetail::Task),
+                ..
             } => Some((*agent_id, tool_use_id.clone())),
             _ => None,
         })

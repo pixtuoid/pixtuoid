@@ -158,6 +158,7 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                     agent_id,
                     tool_use_id: tool_use_id(),
                     detail: Some(cw_tool_detail(tool, obj.get("tool_args"))),
+                    copy_id: None,
                 },
             ])
         }

@@ -2,8 +2,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
 use pixtuoid_core::AgentId;
-use pixtuoid_core::source::{AgentEvent, Transport};
-use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, Reducer};
+use pixtuoid_core::source::{AgentEvent, CopyId, Transport};
+use pixtuoid_core::state::reducer::{COPY_RETENTION, EXIT_GRACE_WINDOW, Reducer};
 use pixtuoid_core::state::{SceneState, Today};
 
 use crate::start;
@@ -39,12 +39,12 @@ fn id(name: &str) -> AgentId {
 }
 
 fn usage(agent_id: AgentId, fresh_tokens: u64, reading_id: Option<&str>) -> AgentEvent {
-    let reading_id = reading_id.map(Into::into);
-    AgentEvent::Usage {
-        agent_id,
-        fresh_tokens,
-        reading_id,
-    }
+    AgentEvent::usage(agent_id, fresh_tokens, reading_id.map(Into::into), None)
+}
+
+/// 100 tokens under reading `m1`, which a copy into another transcript keeps as `copy`.
+fn usage_with_copy(agent_id: AgentId, copy: Option<&str>) -> AgentEvent {
+    AgentEvent::usage(agent_id, 100, Some("m1".into()), copy.map(CopyId::new))
 }
 
 fn backlog(agent_id: AgentId, replaying: bool) -> AgentEvent {
@@ -55,11 +55,27 @@ fn backlog(agent_id: AgentId, replaying: bool) -> AgentEvent {
 }
 
 fn call(agent_id: AgentId, tool_use_id: &str, tool: &str) -> AgentEvent {
-    AgentEvent::ToolUseStart {
+    AgentEvent::tool_use_start(agent_id, Some(tool_use_id.into()), Some(tool.into()), None)
+}
+
+/// Call `t1`, which a copy into another transcript keeps as `copy`.
+fn call_with_copy(agent_id: AgentId, copy: Option<&str>) -> AgentEvent {
+    AgentEvent::tool_use_start(
         agent_id,
-        tool_use_id: Some(tool_use_id.into()),
-        detail: Some(tool.into()),
+        Some("t1".into()),
+        Some("Bash".into()),
+        copy.map(CopyId::new),
+    )
+}
+
+/// Two agents seated and live: a parent and the fork that copied its transcript.
+fn parent_and_fork(r: &mut Reducer, scene: &mut SceneState) -> (AgentId, AgentId) {
+    let (parent, fork) = (id("parent"), id("fork"));
+    for a in [parent, fork] {
+        start(r, scene, a);
+        r.apply(scene, backlog(a, false), t0(), TAIL);
     }
+    (parent, fork)
 }
 
 fn counted(scene: &SceneState) -> (u64, u64) {
@@ -330,4 +346,124 @@ fn a_plain_reducer_keeps_no_count_and_leaves_one_it_was_handed() {
     scene.today = Some(today);
     r.tick(&mut scene, t0() + A_DAY);
     assert_eq!(scene.today, Some(today));
+}
+
+/// A line a CLI copies into another session's transcript keeps its `copy_id`,
+/// so the copy is the same work: the agent that read it first owns it.
+#[test]
+fn a_copy_counts_once_across_agents() {
+    let (mut r, mut scene) = counting();
+    let (parent, fork) = parent_and_fork(&mut r, &mut scene);
+    for a in [parent, fork] {
+        r.apply(&mut scene, usage_with_copy(a, Some("c1")), t0(), TAIL);
+        r.apply(&mut scene, call_with_copy(a, Some("k1")), t0(), TAIL);
+    }
+    assert_eq!(counted(&scene), (100, 1));
+    assert_eq!(slot_of(&scene, parent), (100, 1));
+    assert_eq!(slot_of(&scene, fork), (0, 0));
+}
+
+/// An id with no `copy_id` is unique only in its own transcript, as codex's
+/// running total is, so two agents' equal ids are two pieces of work.
+#[test]
+fn ids_without_a_copy_id_are_each_agents_own() {
+    let (mut r, mut scene) = counting();
+    let (parent, fork) = parent_and_fork(&mut r, &mut scene);
+    for a in [parent, fork] {
+        r.apply(&mut scene, usage_with_copy(a, None), t0(), TAIL);
+        r.apply(&mut scene, call_with_copy(a, None), t0(), TAIL);
+    }
+    assert_eq!(counted(&scene), (200, 2));
+}
+
+/// A hook names no `copy_id`, so the call it counted claims one when its
+/// transcript line arrives, though that line counts nothing.
+#[test]
+fn a_hook_first_call_claims_its_copy_id_from_the_transcript() {
+    let (mut r, mut scene) = counting();
+    let (parent, fork) = parent_and_fork(&mut r, &mut scene);
+    r.apply(&mut scene, call(parent, "t1", "Bash"), t0(), HOOK);
+    r.apply(&mut scene, call_with_copy(parent, Some("k1")), t0(), TAIL);
+    r.apply(&mut scene, call_with_copy(fork, Some("k1")), t0(), TAIL);
+    assert_eq!(counted(&scene), (0, 1));
+    assert_eq!(slot_of(&scene, fork), (0, 0));
+}
+
+/// Ends `a` at `at` and ticks past its walkout, vouching for `live` so it
+/// isn't swept with it; returns the tick's time.
+fn end_and_reap(
+    r: &mut Reducer,
+    scene: &mut SceneState,
+    a: AgentId,
+    live: &[AgentId],
+    at: SystemTime,
+) -> SystemTime {
+    let end = AgentEvent::SessionEnd {
+        agent_id: a,
+        as_child: false,
+    };
+    r.apply(scene, end, at, TAIL);
+    let reaped = at + EXIT_GRACE_WINDOW + Duration::from_millis(1);
+    for &l in live {
+        r.apply(scene, AgentEvent::ProofOfLife { agent_id: l }, reaped, TAIL);
+    }
+    r.tick(scene, reaped);
+    assert!(!scene.agents.contains_key(&a), "precondition: reaped");
+    reaped
+}
+
+/// A copy id outlives the last agent holding it by [`COPY_RETENTION`]: a
+/// fork made within it of an ended session counts nothing it copied, and one
+/// made later counts it again.
+#[test]
+fn an_ended_readers_copy_ids_outlive_it_by_the_retention() {
+    let (mut r, mut scene) = counting();
+    let (parent, fork) = parent_and_fork(&mut r, &mut scene);
+    r.apply(&mut scene, usage_with_copy(parent, Some("c1")), t0(), TAIL);
+    let reaped = end_and_reap(&mut r, &mut scene, parent, &[fork], t0());
+    r.apply(&mut scene, usage_with_copy(fork, Some("c1")), reaped, TAIL);
+    assert_eq!(slot_of(&scene, fork), (0, 0), "within it");
+
+    let gone = end_and_reap(&mut r, &mut scene, fork, &[], reaped);
+    let later = gone + COPY_RETENTION;
+    let late = id("late");
+    start(&mut r, &mut scene, late);
+    r.apply(&mut scene, backlog(late, false), later, TAIL);
+    r.apply(&mut scene, usage_with_copy(late, Some("c1")), later, TAIL);
+    assert_eq!(slot_of(&scene, late), (100, 0), "past it");
+}
+
+/// A fork of a fork: the first fork, still live, holds what it copied after
+/// its parent ends, past any retention (omp's `fork()` closes the parent's
+/// writer, so the parent goes idle and is reaped first).
+#[test]
+fn a_fork_of_a_fork_counts_nothing_its_grandparent_read() {
+    let (mut r, mut scene) = counting();
+    let (parent, fork) = parent_and_fork(&mut r, &mut scene);
+    for a in [parent, fork] {
+        r.apply(&mut scene, usage_with_copy(a, Some("c1")), t0(), TAIL);
+    }
+    let reaped = end_and_reap(&mut r, &mut scene, parent, &[fork], t0());
+    let later = reaped + COPY_RETENTION;
+    r.apply(
+        &mut scene,
+        AgentEvent::ProofOfLife { agent_id: fork },
+        later,
+        TAIL,
+    );
+    r.tick(&mut scene, later);
+    assert!(
+        scene.agents[&fork].exiting_at.is_none(),
+        "precondition: the fork lives"
+    );
+    let grandchild = id("grandchild");
+    start(&mut r, &mut scene, grandchild);
+    r.apply(&mut scene, backlog(grandchild, false), later, TAIL);
+    r.apply(
+        &mut scene,
+        usage_with_copy(grandchild, Some("c1")),
+        later,
+        TAIL,
+    );
+    assert_eq!(slot_of(&scene, grandchild), (0, 0));
 }

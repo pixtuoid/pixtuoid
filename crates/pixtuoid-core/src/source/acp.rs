@@ -47,6 +47,7 @@ pub(crate) fn decode_session_update(
                 str_field("title").unwrap_or("?"),
                 update.get("rawInput"),
             )),
+            copy_id: None,
         }],
         TOOL_CALL_UPDATE => match str_field("status") {
             Some(STATUS_COMPLETED) | Some(STATUS_FAILED) => vec![AgentEvent::ToolUseEnd {

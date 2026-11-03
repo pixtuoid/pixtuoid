@@ -1113,6 +1113,7 @@ fn delegated(
                 agent_id,
                 tool_use_id: None,
                 detail: Some(d),
+                ..
             } if d.is_task() => {
                 standing.insert(*agent_id);
             }
@@ -1853,6 +1854,7 @@ mod tests {
                     agent_id,
                     tool_use_id: None,
                     detail: None,
+                    copy_id: None,
                 },
                 end(read_ends_as),
                 AgentEvent::user_action_request(
@@ -1889,6 +1891,7 @@ mod tests {
             agent_id,
             tool_use_id: None,
             detail: None,
+            copy_id: None,
         };
         let end = AgentEvent::ToolUseEnd {
             agent_id,
@@ -2184,6 +2187,7 @@ mod tests {
             agent_id,
             tool_use_id: None,
             detail: Some(detail),
+            copy_id: None,
         };
         let end = |agent_id| AgentEvent::ToolUseEnd {
             agent_id,
@@ -2243,6 +2247,7 @@ mod tests {
             agent_id,
             tool_use_id: Some(id.into()),
             detail: Some(detail),
+            copy_id: None,
         };
         let run = vec![
             session(parent, "root", None),
@@ -2290,6 +2295,7 @@ mod tests {
                 agent_id: parent,
                 tool_use_id: Some("call_1".into()),
                 detail: Some(ToolDetail::Task),
+                copy_id: None,
             },
             session(child, "call_1", Some(parent)),
             AgentEvent::SessionEnd {
@@ -2347,6 +2353,7 @@ mod tests {
             agent_id,
             tool_use_id: Some(id.into()),
             detail: Some(detail),
+            copy_id: None,
         };
         let turn_end = AgentEvent::turn_end;
         let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
@@ -2810,6 +2817,7 @@ mod tests {
             agent_id,
             tool_use_id: Some("call_1".into()),
             detail: Some("Bash: ls".into()),
+            copy_id: None,
         };
         let judged = |events: &[AgentEvent]| {
             let mut findings = Vec::new();

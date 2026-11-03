@@ -331,11 +331,7 @@ fn running_ms_preserved_when_task_arrives_during_running_tool() {
     let t1 = t0 + Duration::from_secs(2);
     r.apply(
         &mut scene,
-        AgentEvent::ToolUseStart {
-            agent_id: id,
-            tool_use_id: Some("task-1".into()),
-            detail: Some(ToolDetail::Task),
-        },
+        AgentEvent::tool_use_start(id, Some("task-1".into()), Some(ToolDetail::Task), None),
         t1,
         Transport::Hook,
     );

@@ -2,12 +2,12 @@
 //! Don't move these maps onto `AgentSlot`: they span slots and are
 //! deliberately not a semver surface.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::AgentId;
-use crate::source::{DEFAULT_POLL_INTERVAL, Transport};
+use crate::source::{CopyId, DEFAULT_POLL_INTERVAL, Transport};
 use crate::state::requests::ActionRequests;
 use crate::state::turns::TurnLedger;
 
@@ -161,6 +161,84 @@ impl Counted {
     }
 }
 
+/// A [`CopyId`] keyed by the source whose transcripts it is unique across.
+type SourceCopy = (Arc<str>, CopyId);
+
+/// How long a [`CopyId`] outlives the last agent holding it: a day, the span
+/// [`Today`](crate::state::Today) counts. A fork made later than that of an
+/// ended session counts what it copied again.
+#[doc(hidden)]
+pub const COPY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// The agents of a source holding each [`CopyId`] they read: the first counts
+/// what it names, and every later reader, its fork, holds it without counting
+/// it. An id stays held while any holder lives, and [`COPY_RETENTION`] past
+/// the last one's end.
+#[derive(Debug, Default)]
+pub(super) struct CopyHolders {
+    holders: HashMap<SourceCopy, HashSet<AgentId>>,
+    held: HashMap<AgentId, HashSet<SourceCopy>>,
+    /// Each id whose last holder ended, and when.
+    released: HashMap<SourceCopy, SystemTime>,
+    /// `released`, oldest end first.
+    expiry: VecDeque<(SystemTime, SourceCopy)>,
+}
+
+impl CopyHolders {
+    /// Whether `agent` may count what `id` names under `source`: no id, an id
+    /// it already holds, or one nobody holds or released within
+    /// [`COPY_RETENTION`]. `agent` holds `id` either way.
+    pub(super) fn claim(&mut self, source: &Arc<str>, agent: AgentId, id: Option<&CopyId>) -> bool {
+        let Some(id) = id else {
+            return true;
+        };
+        let key = (Arc::clone(source), id.clone());
+        let kept = self.released.remove(&key).is_some();
+        let holders = self.holders.entry(key.clone()).or_default();
+        let counts = holders.contains(&agent) || (holders.is_empty() && !kept);
+        holders.insert(agent);
+        self.held.entry(agent).or_default().insert(key);
+        counts
+    }
+
+    /// `agent` is gone at `now`: an id it was the last to hold stays held
+    /// for [`COPY_RETENTION`].
+    pub(super) fn release(&mut self, agent: AgentId, now: SystemTime) {
+        for key in self.held.remove(&agent).into_iter().flatten() {
+            if let Some(holders) = self.holders.get_mut(&key) {
+                holders.remove(&agent);
+                if holders.is_empty() {
+                    self.holders.remove(&key);
+                    self.released.insert(key.clone(), now);
+                    self.expiry.push_back((now, key));
+                }
+            }
+        }
+    }
+
+    /// Forget each id released [`COPY_RETENTION`] ago or more that no agent
+    /// has read since.
+    fn expire(&mut self, now: SystemTime) {
+        while let Some((at, _)) = self.expiry.front()
+            && elapsed_at_least(now, *at, COPY_RETENTION)
+        {
+            let Some((at, key)) = self.expiry.pop_front() else {
+                break;
+            };
+            // A later read held it again, or a later end re-released it.
+            if self.released.get(&key) == Some(&at) {
+                self.released.remove(&key);
+            }
+        }
+    }
+
+    /// How many ids it holds or keeps.
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.holders.len() + self.released.len()
+    }
+}
+
 /// The reducer-private correlation maps. In/out criterion for a future
 /// map: PASSIVE cross-event memory (consulted to interpret a later event)
 /// lives here; ARMED actions that mutate the scene on a schedule
@@ -204,6 +282,10 @@ pub(super) struct Correlation {
     /// repeats one gives it. Never swept, only forgotten with the slot: a
     /// rewritten transcript re-reads readings of any age.
     pub(super) counted_readings: Counted,
+    /// The holders of the calls' [`CopyId`]s.
+    pub(super) call_holders: CopyHolders,
+    /// The holders of the readings' [`CopyId`]s.
+    pub(super) reading_holders: CopyHolders,
     /// Agents whose transcript events are live work, per
     /// [`AgentEvent::Backlog`](crate::AgentEvent::Backlog). Absent is closed: a
     /// reader that fails to declare costs its agent the count, and never counts
@@ -350,6 +432,8 @@ impl Correlation {
         self.recent_task_drains
             .retain(|_, ts| is_fresh(now, *ts, DRAINED_TASK_TOMBSTONE_TTL));
         self.turns.gc(now);
+        self.call_holders.expire(now);
+        self.reading_holders.expire(now);
         self.lifecycles.retain(|_, l| {
             let child = match l.child_end {
                 None => l.parent_id.is_some(),
@@ -516,6 +600,20 @@ mod tests {
             corr.lifecycles.contains_key(&alive),
             "a linked live child keeps its memory"
         );
+
+        let mut corr = Correlation::default();
+        let source: Arc<str> = Arc::from("claude-code");
+        let (c1, c2) = (CopyId::new("c1"), CopyId::new("c2"));
+        assert!(corr.reading_holders.claim(&source, old, Some(&c1)));
+        assert!(corr.reading_holders.claim(&source, young, Some(&c2)));
+        corr.reading_holders.release(old, t0());
+        corr.reading_holders.release(young, t0() + step);
+        corr.gc(t0() + COPY_RETENTION);
+        assert_eq!(
+            corr.reading_holders.len(),
+            1,
+            "only the older release lapsed"
+        );
     }
 
     #[test]
@@ -531,12 +629,49 @@ mod tests {
     }
 
     #[test]
-    fn no_id_counts_every_time_and_holds_nothing() {
-        let a = AgentId::from_parts("claude-code", "a");
-        let mut counted = Counted::default();
-        assert!(counted.first(a, None));
-        assert!(counted.first(a, None));
-        assert_eq!(counted.len(), 0);
+    fn a_copy_id_counts_for_its_first_reader_across_a_sources_agents() {
+        let (a, b) = (
+            AgentId::from_parts("claude-code", "a"),
+            AgentId::from_parts("claude-code", "b"),
+        );
+        let (cc, omp): (Arc<str>, Arc<str>) = (Arc::from("claude-code"), Arc::from("omp"));
+        let c = CopyId::new("c");
+        let mut holders = CopyHolders::default();
+        assert!(holders.claim(&cc, a, Some(&c)));
+        assert!(holders.claim(&cc, a, Some(&c)), "its first reader's again");
+        assert!(!holders.claim(&cc, b, Some(&c)), "a copy");
+        assert!(holders.claim(&omp, b, Some(&c)), "another source's");
+        assert!(holders.claim(&cc, b, None), "no id");
+    }
+
+    /// A fork of a fork: the first fork still holds what it copied after the
+    /// parent ends, past any retention.
+    #[test]
+    fn a_live_holder_keeps_an_id_after_its_first_reader_ends() {
+        let [p, f, g] = ["p", "f", "g"].map(|s| AgentId::from_parts("omp", s));
+        let omp: Arc<str> = Arc::from("omp");
+        let c = CopyId::new("c");
+        let mut holders = CopyHolders::default();
+        holders.claim(&omp, p, Some(&c));
+        assert!(!holders.claim(&omp, f, Some(&c)));
+        holders.release(p, t0());
+        holders.expire(t0() + COPY_RETENTION);
+        assert!(!holders.claim(&omp, g, Some(&c)));
+    }
+
+    #[test]
+    fn a_released_id_is_kept_for_the_retention_then_forgotten() {
+        let [a, b, c] = ["a", "b", "c"].map(|s| AgentId::from_parts("omp", s));
+        let omp: Arc<str> = Arc::from("omp");
+        let id = CopyId::new("id");
+        let mut holders = CopyHolders::default();
+        holders.claim(&omp, a, Some(&id));
+        holders.release(a, t0());
+        holders.expire(t0() + COPY_RETENTION / 2);
+        assert!(!holders.claim(&omp, b, Some(&id)), "kept");
+        holders.release(b, t0() + COPY_RETENTION / 2);
+        holders.expire(t0() + COPY_RETENTION * 2);
+        assert!(holders.claim(&omp, c, Some(&id)), "forgotten");
     }
 
     #[test]

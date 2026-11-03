@@ -533,6 +533,7 @@ pub(crate) fn shared_hook_arms(
                     tool_name.as_deref().unwrap_or("?"),
                     obj.get("tool_input"),
                 )),
+                copy_id: None,
             });
             evs.extend(hook_effort(agent_id, obj));
             Ok(evs)

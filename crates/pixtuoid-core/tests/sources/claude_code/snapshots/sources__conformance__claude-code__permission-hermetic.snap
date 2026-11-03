@@ -10,12 +10,14 @@ expression: events
     agent_id: 10768255709980072140
     fresh_tokens: 19
     reading_id: msg_3qRx1VPX2I2ox8oC
+    copy_id: msg_3qRx1VPX2I2ox8oC
 - ToolUseStart:
     agent_id: 10768255709980072140
     tool_use_id: toolu_wLGe0mXLUYr_B9C8
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
+    copy_id: toolu_wLGe0mXLUYr_B9C8
 - ToolUseEnd:
     agent_id: 10768255709980072140
     tool_use_id: toolu_wLGe0mXLUYr_B9C8

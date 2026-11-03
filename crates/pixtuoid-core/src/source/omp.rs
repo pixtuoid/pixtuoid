@@ -29,7 +29,7 @@ use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
-use crate::source::{AgentEvent, RequestKeys, ToolDetail};
+use crate::source::{AgentEvent, CopyId, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -700,6 +700,18 @@ pub(crate) fn omp_head_title(v: &Value) -> Option<String> {
     let title = obj.get(TITLE_FIELD).and_then(|t| t.as_str())?;
     (!title.is_empty()).then(|| omp_label(SOURCE_NAME, title))
 }
+/// The entry's id and timestamp, then `tail`: unique across omp's
+/// transcripts, which an entry id alone is not (8 hex chars, checked against
+/// its own session: `session-migrations.ts:4-11` at v18.16.0), and kept by a
+/// fork, which copies each entry whole (`session-manager.ts:2486-2512`,
+/// `:4225-4261` at v18.16.0). omp's own stats key on the same pair
+/// (`packages/stats/src/db.ts:898-913` at v18.15.0).
+fn entry_copy(entry: &serde_json::Map<String, Value>, tail: &str) -> Option<String> {
+    let id = non_empty(entry, "id")?;
+    let stamp = non_empty(entry, "timestamp")?;
+    Some(format!("{id}@{stamp}{tail}"))
+}
+
 /// Decode one omp session JSONL line into zero or more `AgentEvent`s.
 /// Unknown entry types / roles and malformed shapes return `vec![]` — the
 /// upstream loader is itself lenient (`parseJsonlLenient`).
@@ -757,16 +769,16 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                                 // each entry's own id (v18.15.0 `session-manager.ts`
                                 // `#serializeBody`), and the watcher re-reads it.
                                 reading_id: non_empty(obj, "id").map(str::to_owned),
+                                copy_id: entry_copy(obj, "").map(CopyId::new),
                             });
                         }
                     }
                     let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
                         return out;
                     };
-                    for b in blocks
-                        .iter()
-                        .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some(BLOCK_TOOL_CALL))
-                    {
+                    for (index, b) in blocks.iter().enumerate().filter(|(_, b)| {
+                        b.get("type").and_then(|t| t.as_str()) == Some(BLOCK_TOOL_CALL)
+                    }) {
                         let Some(id) = b.get("id").and_then(|i| i.as_str()) else {
                             crate::source::drift::missing_field(source, BLOCK_TOOL_CALL, "id");
                             continue;
@@ -779,6 +791,9 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                             agent_id: acting,
                             tool_use_id: Some(id.to_string()),
                             detail: Some(omp_tool_detail(name, b.get("arguments"))),
+                            // The provider mints the call's id, and a local model's
+                            // need not be unique.
+                            copy_id: entry_copy(obj, &format!("#{index}")).map(CopyId::new),
                         });
                         if name == TOOL_ASK {
                             out.push(AgentEvent::user_action_request(
@@ -1006,6 +1021,7 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
                     agent_id,
                     tool_use_id: Some(tool_call_id.to_string()),
                     detail: Some(omp_tool_detail(tool, None)),
+                    copy_id: None,
                 }
             } else {
                 // Denial: resolves the gated wait now; the transcript's
@@ -1062,6 +1078,55 @@ fn omp_approval_reason(obj: &serde_json::Map<String, Value>, tool: &str) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fork copies each entry whole, and an 8-hex entry id is unique only in
+    /// its own session, so a copy is named by the entry's id and stamp.
+    #[test]
+    fn an_entry_names_its_copies_by_id_and_stamp() {
+        let line = json!({
+            "type": "message",
+            "id": "a1b2c3d4",
+            "timestamp": "2026-11-03T04:00:02.641Z",
+            "message": {
+                "role": "assistant",
+                "usage": {"input": 5, "output": 1},
+                "content": [
+                    {"type": "text", "text": "ok"},
+                    {"type": "toolCall", "id": "call_0", "name": "read", "arguments": {}},
+                ],
+            },
+        });
+        let copies: Vec<_> = decode_omp_line(ROOT, SOURCE_NAME, line.clone())
+            .into_iter()
+            .filter_map(|e| match e {
+                AgentEvent::Usage { copy_id, .. } | AgentEvent::ToolUseStart { copy_id, .. } => {
+                    Some(copy_id)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            copies,
+            [
+                Some(CopyId::new("a1b2c3d4@2026-11-03T04:00:02.641Z")),
+                Some(CopyId::new("a1b2c3d4@2026-11-03T04:00:02.641Z#1")),
+            ]
+        );
+        let mut stampless = line;
+        stampless["timestamp"] = json!("");
+        assert!(
+            decode_omp_line(ROOT, SOURCE_NAME, stampless)
+                .iter()
+                .all(|e| !matches!(
+                    e,
+                    AgentEvent::Usage {
+                        copy_id: Some(_),
+                        ..
+                    }
+                )),
+            "no stamp, no copy id"
+        );
+    }
     use crate::source::decoder::test_obj;
     use serde_json::json;
 
@@ -2588,6 +2653,7 @@ mod tests {
                     agent_id,
                     tool_use_id,
                     detail,
+                    ..
                 },
             ] => {
                 assert_eq!(*agent_id, hook_id(HOOK_ROOT));

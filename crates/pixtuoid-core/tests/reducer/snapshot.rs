@@ -43,11 +43,7 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ToolUseStart {
-            agent_id: parent,
-            tool_use_id: Some("task-1".into()),
-            detail: Some(ToolDetail::Task),
-        },
+        AgentEvent::tool_use_start(parent, Some("task-1".into()), Some(ToolDetail::Task), None),
         at(1),
         Transport::Hook,
     );
@@ -65,13 +61,14 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ToolUseStart {
-            agent_id: child,
-            tool_use_id: Some("tool-9".into()),
-            detail: Some(ToolDetail::Generic {
+        AgentEvent::tool_use_start(
+            child,
+            Some("tool-9".into()),
+            Some(ToolDetail::Generic {
                 display: "Read · src/main.rs".into(),
             }),
-        },
+            None,
+        ),
         at(2),
         Transport::Hook,
     );
@@ -123,13 +120,14 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ToolUseStart {
-            agent_id: winding,
-            tool_use_id: Some("w-1".into()),
-            detail: Some(ToolDetail::Generic {
+        AgentEvent::tool_use_start(
+            winding,
+            Some("w-1".into()),
+            Some(ToolDetail::Generic {
                 display: "Bash · cargo test".into(),
             }),
-        },
+            None,
+        ),
         at(6),
         Transport::Hook,
     );
