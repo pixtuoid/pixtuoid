@@ -3587,7 +3587,7 @@ fn a_bubble_hangs_over_its_speakers_badge_in_both_looks() {
 /// Whichever chitchat spot its speaker stands at, in offices of every shape, a
 /// bubble's plate clears its speaker's ringed badge's by one gap on the grid a
 /// fit bakes text on: no spot sits high enough for the frame's top to squeeze
-/// them together. On the base art's grid the plate stands taller than the lift.
+/// them together. On the base art's grid a badge's plate stands taller than `BUBBLE_LIFT`.
 #[test]
 fn a_bubble_clears_its_speakers_badge_at_every_chitchat_spot() {
     use crate::display::TextRole;
