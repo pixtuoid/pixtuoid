@@ -29,7 +29,9 @@ pixtuoid is **telemetry-free and local by default**:
   derive what each sprite is doing. Only `pixtuoid serve` sends anything, to paired
   devices: agent status, model, usage, repo names (a project directory's last
   component), which agent CLIs you have and how each is connected, and this
-  machine's name and OS. No path,
+  machine's name and OS. It also announces the machine's name and its key's
+  SPKI hash to everyone on the local network (DNS-SD, `_pixtuoid._tcp`), for a
+  device to find; neither pairs anyone. No path,
   prompt, tool input or transcript leaves; the wire is the allowlist in [`remote.rs`](crates/pixtuoid-core/src/remote.rs).
 
 ## Trust boundaries / attack surface

@@ -133,7 +133,7 @@ portable = ["serve"]
 audio = ["dep:rodio", "dep:rtrb"]
 # `pixtuoid serve` and `pixtuoid pair`. ring's build script compiles C for the
 # target, whose headers the cross-lints don't have, so they leave this out.
-serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami"]
+serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami", "dep:zbus"]
 
 # termios/select for `term::query_tty` (the truecolor and graphics probes),
 # O_NOFOLLOW in install/io.rs, the stderr dup in audio/sink.rs.
@@ -166,6 +166,11 @@ objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = "0.13"
 
+# `serve`'s DNS-SD announcement through Avahi (serve/advertise/avahi.rs), on the
+# caller's tokio runtime with no thread of its own.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+zbus = { version = "6.2", default-features = false, features = ["tokio", "proxy"], optional = true }
+
 # GetShortPathNameW for the Codex Windows hook path: a
 # space/metacharacter-bearing install path resolves to its DOS 8.3 short form so
 # cmd.exe /C can invoke it.
@@ -177,6 +182,9 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_WindowsAndMessaging",
     # focus/windows.rs: AttachThreadInput + GetCurrentThreadId, the foreground-lock retry
     "Win32_System_Threading",
+    # serve/advertise/windows.rs: DnsServiceRegister, DNS_REQUEST_PENDING
+    "Win32_NetworkManagement_Dns",
+    "Win32_Foundation",
 ] }
 
 [dev-dependencies]
