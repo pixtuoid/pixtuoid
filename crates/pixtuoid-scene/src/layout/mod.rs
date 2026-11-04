@@ -164,27 +164,28 @@ pub struct Size {
 }
 
 /// How far a painter's own chrome reaches in from each edge of the office:
-/// under it the layout lays nothing but its floor, walls and sky.
+/// under it the layout lays nothing but its floor, walls and sky, and no
+/// figure is drawn.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub(crate) struct Insets {
+pub struct Insets {
     /// From the north edge.
-    pub(crate) top: u16,
+    pub top: u16,
     /// From the east edge.
-    pub(crate) right: u16,
+    pub right: u16,
     /// From the south edge.
-    pub(crate) bottom: u16,
+    pub bottom: u16,
     /// From the west edge.
-    pub(crate) left: u16,
+    pub left: u16,
 }
 
-/// The office a painter draws: its whole extent, and the insets its chrome
+/// The office a painter draws: its whole extent, and the [`Insets`] its chrome
 /// covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Viewport {
     /// The whole extent, in layout units.
-    pub(crate) size: Size,
+    pub size: Size,
     /// What the painter's chrome covers, in layout units.
-    pub(crate) insets: Insets,
+    pub insets: Insets,
 }
 
 impl Viewport {
@@ -733,6 +734,6 @@ impl SceneLayout {
 #[cfg(test)]
 mod placement_sweep;
 #[cfg(test)]
-pub(crate) use placement_sweep::inset_viewport;
+pub(crate) use placement_sweep::{SWEEP_INSETS, inset_viewport};
 #[cfg(test)]
 mod tests;

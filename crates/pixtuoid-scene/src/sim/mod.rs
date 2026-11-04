@@ -36,7 +36,7 @@ use crate::walk::WalkState;
 use crate::layout::CHARACTER_SPRITE_W;
 use crate::pack::{desk_art, desk_art_top};
 use anchors::{
-    badge_anchor, on_canvas, walking_top_left, waypoint_rank_offset_x, waypoint_top_left,
+    badge_anchor, inside_insets, walking_top_left, waypoint_rank_offset_x, waypoint_top_left,
     with_breath,
 };
 use seat::{Seat, settle_seat};
@@ -126,7 +126,7 @@ fn creature_row(pos: Point, h: u16, in_hand: bool) -> u16 {
 pub(crate) struct PetPlacement {
     /// Which pet.
     pub(crate) kind: PetKind,
-    /// Its centre, in layout units, fitted so its frame lands on the canvas.
+    /// Its centre, in layout units, fitted so its frame lands inside the insets.
     pub(crate) pos: Point,
     /// The row it sorts on, both painters' ([`creature_row`]).
     pub(crate) sort_row: u16,
@@ -154,7 +154,7 @@ impl PetPlacement {
 /// One gateway mascot this tick.
 #[derive(Debug, Clone)]
 pub(crate) struct MascotPlacement {
-    /// Its centre, in layout units, fitted so its frame lands on the canvas.
+    /// Its centre, in layout units, fitted so its frame lands inside the insets.
     pub(crate) pos: Point,
     /// The row it sorts on, both painters' ([`creature_row`]).
     pub(crate) sort_row: u16,
@@ -561,7 +561,7 @@ fn pet_placement(
         }
     };
     let size = pack_frame_size(pack, anim_name, frame_idx);
-    let pos = on_canvas(layout, Pivot::Center, at, size);
+    let pos = inside_insets(layout, Pivot::Center, at, size);
     Some(PetPlacement {
         kind,
         pos,
@@ -740,7 +740,7 @@ fn mascot_placements(
                     ),
                 };
                 let size = pack_frame_size(pack, anim_name, frame_idx);
-                let pos = on_canvas(ground.layout, Pivot::Center, at, size);
+                let pos = inside_insets(ground.layout, Pivot::Center, at, size);
                 Some(MascotPlacement {
                     pos,
                     sort_row: creature_row(pos, size.h, carried),
@@ -1085,7 +1085,7 @@ pub(crate) fn resolve_characters(
     // both the sprite and its badge. The sort row keeps pre-fit geometry.
     for (p, cues) in &mut placements {
         let size = pack_frame_size(pack, p.anim_name, p.frame_idx);
-        let fitted = on_canvas(layout, Pivot::TopLeft, p.top_left, size);
+        let fitted = inside_insets(layout, Pivot::TopLeft, p.top_left, size);
         // The painter's own desk art: whatever it raises behind the sitter's
         // head, the badge clears.
         let ceiling = p

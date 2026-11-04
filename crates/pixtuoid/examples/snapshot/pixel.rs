@@ -11,7 +11,7 @@ use anyhow::{Context as _, Result};
 use pixtuoid::dev::ImageCells;
 use pixtuoid_scene::cutaway::Canvas as _;
 use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
-use pixtuoid_scene::layout::{Point, SceneLayout};
+use pixtuoid_scene::layout::{Insets, Point, SceneLayout, Viewport};
 use pixtuoid_scene::look::{Dim, Look, LookKind, Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pet::Pet;
@@ -27,6 +27,8 @@ pub(crate) struct PixelOffice<S> {
     session: S,
     fit: PixelFit,
     look: LookKind,
+    /// What the painter's chrome covers of its office.
+    insets: Insets,
     /// The cells its last frame shows under that frame's text; all of them
     /// where none was drawn over it.
     under: Option<ImageCells>,
@@ -142,8 +144,14 @@ impl<S: PixelSession> PixelOffice<S> {
             session,
             fit,
             look,
+            insets: Insets::default(),
             under: None,
         })
+    }
+
+    /// It under a painter's chrome covering `insets` of its office.
+    pub(crate) fn inset(self, insets: Insets) -> Self {
+        Self { insets, ..self }
     }
 
     /// Step and draw `world`'s office, dimmed as `under`'s backdrop is;
@@ -160,7 +168,10 @@ impl<S: PixelSession> PixelOffice<S> {
             RenderInputs {
                 world,
                 theme,
-                size: self.fit.logical(),
+                viewport: Viewport {
+                    size: self.fit.logical(),
+                    insets: self.insets,
+                },
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(world.scene),
                     floor: None,
@@ -429,7 +440,10 @@ mod tests {
             RenderInputs {
                 world,
                 theme: &NORMAL,
-                size: classic.fit.logical(),
+                viewport: Viewport {
+                    size: classic.fit.logical(),
+                    insets: Insets::default(),
+                },
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(&scene),
                     floor: None,

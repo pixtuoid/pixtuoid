@@ -205,6 +205,17 @@ impl LightView {
         self.rank.0 == rank_of(kind)
     }
 
+    /// Each art pixel it lifts a step or more.
+    #[cfg(test)]
+    pub(crate) fn lit(&self) -> impl Iterator<Item = (u16, u16)> + '_ {
+        let w = usize::from(self.w.max(1));
+        self.lift
+            .iter()
+            .enumerate()
+            .filter(|&(_, &l)| l > 0)
+            .map(move |(i, _)| (self.x + (i % w) as u16, self.y + (i / w) as u16))
+    }
+
     /// The colour it tints toward.
     pub(crate) fn tint(&self) -> Option<Rgb> {
         self.tint
@@ -312,6 +323,44 @@ pub(crate) mod tests {
         LightView::of(&inputs(*e, tint, ambient))
             .expect("it lifts")
             .1
+    }
+
+    /// Asserts the dark of `night` carries past `layout`'s insets as it falls
+    /// inside them: below the window wall, each margin pixel is at `night` what
+    /// some pixel inside of its tone at `day` is. Returns the pixels it judged.
+    pub(crate) fn assert_the_dark_carries_past_the_insets(
+        layout: &crate::layout::SceneLayout,
+        (day, night): (&crate::sprite::RgbBuffer, &crate::sprite::RgbBuffer),
+        what: &str,
+    ) -> usize {
+        let (w, inner) = (layout.buf_w, layout.inner);
+        let floor =
+            (layout.wall_band_h()..layout.buf_h).flat_map(move |y| (0..w).map(move |x| (x, y)));
+        let inside = |&(x, y): &(u16, u16)| {
+            (inner.x..inner.x + inner.width).contains(&x)
+                && (inner.y..inner.y + inner.height).contains(&y)
+        };
+        let mut darks: std::collections::HashMap<Rgb, std::collections::HashSet<Rgb>> =
+            std::collections::HashMap::new();
+        for (x, y) in floor.clone().filter(inside) {
+            darks
+                .entry(day.get(x, y))
+                .or_default()
+                .insert(night.get(x, y));
+        }
+        let mut judged = 0;
+        for (x, y) in floor.filter(|p| !inside(p)) {
+            let (tone, dark) = (day.get(x, y), night.get(x, y));
+            let inside_dark = darks.get(&tone).unwrap_or_else(|| {
+                panic!("{what}: ({x}, {y})'s {tone:?} is nowhere inside {inner:?}")
+            });
+            assert!(
+                inside_dark.contains(&dark),
+                "{what}: ({x}, {y}) darkens {tone:?} to {dark:?}, inside to {inside_dark:?}"
+            );
+            judged += 1;
+        }
+        judged
     }
 
     /// A light takes the night room back to its daylight tone at most, and the

@@ -87,6 +87,7 @@ impl OfficeRenderer {
             dim,
         } = frame;
         let gap = theme.surface.bg_fallback;
+        let office = at.logical();
         let drawn = self.session.render(
             at.look(
                 pixtuoid_scene::look::LookKind::Cutaway,
@@ -95,7 +96,7 @@ impl OfficeRenderer {
             RenderInputs {
                 world,
                 theme,
-                size: at.logical(),
+                viewport: pixtuoid_scene::layout::Viewport::full(office.w, office.h),
                 place,
                 debug_walkable: false,
                 dim,

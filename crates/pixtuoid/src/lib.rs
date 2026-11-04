@@ -334,7 +334,10 @@ pub(crate) mod test_flash {
                     pets: PetInputs::default(),
                 },
                 theme: pixtuoid_scene::theme::ALL_THEMES[0],
-                size: pixtuoid_scene::layout::min_layout_size(),
+                viewport: {
+                    let min = pixtuoid_scene::layout::min_layout_size();
+                    pixtuoid_scene::layout::Viewport::full(min.w, min.h)
+                },
                 place: Place::default(),
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,

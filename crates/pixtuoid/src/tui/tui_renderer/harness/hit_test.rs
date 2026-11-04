@@ -94,10 +94,7 @@ fn drawn(r: &TuiRenderer<TestBackend>, scene: &SceneState, id: AgentId, now: Sys
                 floor: pixtuoid_scene::floor::FloorMeta::for_floor(0, 1),
                 pets: pixtuoid_scene::floor::PetInputs::default(),
             },
-            pixtuoid_scene::layout::Size {
-                w: layout.buf_w,
-                h: layout.buf_h,
-            },
+            pixtuoid_scene::layout::Viewport::full(layout.buf_w, layout.buf_h),
         )
         .expect("steppable floor");
     let frame = &stepped.frame;

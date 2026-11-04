@@ -13,7 +13,7 @@ use crate::cutaway::canvas::{CanvasFrame, CutawayCanvas};
 use crate::display::Hovers;
 use crate::floor::{FloorInputs, OfficeStores, PerFloor, step_floor};
 use crate::footer::FooterFloor;
-use crate::layout::{Bounds, SceneLayout, Size};
+use crate::layout::{Bounds, SceneLayout, Viewport};
 use crate::pixel_painter::{ClassicCaches, Drawn, PaintCtx, paint_frame};
 use crate::render_scale::RenderScale;
 use crate::theme::Theme;
@@ -169,8 +169,9 @@ pub struct RenderInputs<'a> {
     pub world: FloorInputs<'a>,
     /// The active color theme.
     pub theme: &'static Theme,
-    /// The office's logical extent; a look's scale maps it to buffer pixels.
-    pub size: Size,
+    /// The office's logical extent and the insets the painter's chrome
+    /// covers; a look's scale maps it to buffer pixels.
+    pub viewport: Viewport,
     /// See [`Place`].
     pub place: Place,
     /// The classic's walkable/approach/route debug layer (the `w` toggle).
@@ -631,7 +632,7 @@ impl Raster {
 }
 
 /// Step `floor` one frame and draw it in `look` on its raster: the one frame
-/// entry every painter calls. `None` when `inputs.size` can't lay out.
+/// entry every painter calls. `None` when `inputs.viewport` can't lay out.
 pub fn render(
     floor: &mut PerFloor,
     office: OfficeStores<'_>,
@@ -641,14 +642,15 @@ pub fn render(
     let RenderInputs {
         world,
         theme,
-        size,
+        viewport,
         place,
         debug_walkable,
         dim,
     } = inputs;
+    let size = viewport.size;
     office.raster.serve(&floor.raster.pack, theme);
     let stepped = tracing::trace_span!(spans::COMPOSE)
-        .in_scope(|| step_floor(floor, office.coffee, office.chitchat, world, size));
+        .in_scope(|| step_floor(floor, office.coffee, office.chitchat, world, viewport));
     let PerFloor { ctx, raster } = floor;
     let pack = Arc::clone(&raster.pack);
     let Some(stepped) = stepped else {

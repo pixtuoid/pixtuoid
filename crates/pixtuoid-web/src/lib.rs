@@ -586,7 +586,10 @@ impl Office {
         }
         // The SAME (size, cap=None, seed) computation `render` lays out, so
         // reducer capacity and painted layout can't drift.
-        let cap = floor_capacity(units_w, units_h, self.seed);
+        let cap = floor_capacity(
+            pixtuoid_scene::layout::Viewport::full(units_w, units_h),
+            self.seed,
+        );
         self.scene.floor_capacities = std::array::from_fn(|i| if i == 0 { cap } else { 0 });
         self.caps_units = Some((units_w, units_h));
     }
@@ -667,10 +670,7 @@ impl Office {
                     pets: PetInputs::default(),
                 },
                 theme: self.theme,
-                size: Size {
-                    w: units_w,
-                    h: units_h,
-                },
+                viewport: pixtuoid_scene::layout::Viewport::full(units_w, units_h),
                 place: Place::default(),
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,

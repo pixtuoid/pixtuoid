@@ -1577,7 +1577,7 @@ impl Hand {
                     floor: crate::floor::FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),
                 },
-                crate::layout::Size { w: 160, h: 96 },
+                crate::layout::Viewport::full(160, 96),
             )
             .expect("lays out");
         self.now += Duration::from_millis(PAINT_FRAME_MS);

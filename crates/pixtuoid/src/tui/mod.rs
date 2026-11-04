@@ -801,9 +801,14 @@ mod capacity_sweep_tests {
         FloorCapacitySweep::new().publish(offices, None, &caps);
         for (i, slot) in caps.iter().enumerate() {
             let seed = pixtuoid_scene::floor::floor_seed(i);
-            let want = pixtuoid_scene::floor::floor_capacity(W, H, seed).min(
-                pixtuoid_scene::floor::floor_capacity(small.w, small.h, seed),
-            );
+            let want = pixtuoid_scene::floor::floor_capacity(
+                pixtuoid_scene::layout::Viewport::full(W, H),
+                seed,
+            )
+            .min(pixtuoid_scene::floor::floor_capacity(
+                pixtuoid_scene::layout::Viewport::full(small.w, small.h),
+                seed,
+            ));
             assert_eq!(slot.load(Ordering::Relaxed), want, "floor {i}");
         }
     }
@@ -849,8 +854,10 @@ mod capacity_sweep_tests {
         let mut sweep = FloorCapacitySweep::new();
         sweep.publish(classic(W, H), None, &caps);
         for (i, slot) in caps.iter().enumerate() {
-            let want =
-                pixtuoid_scene::floor::floor_capacity(W, H, pixtuoid_scene::floor::floor_seed(i));
+            let want = pixtuoid_scene::floor::floor_capacity(
+                pixtuoid_scene::layout::Viewport::full(W, H),
+                pixtuoid_scene::floor::floor_seed(i),
+            );
             assert_eq!(slot.load(Ordering::Relaxed), want, "floor {i}");
             assert!(want > 0, "floor {i} must seat someone at 192x80");
         }
