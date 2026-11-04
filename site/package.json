@@ -48,18 +48,19 @@
     "hast-util-from-html": "^2.0.3",
     "hast-util-to-text": "^4.0.2",
     "knip": "^6.41.0",
-    "lighthouse": "^13.5.0",
+    "lighthouse": "^13.6.0",
     "playwright": "^1.62.1",
     "prettier": "^3.9.10",
     "prettier-plugin-astro": "^1.1.1",
     "prismjs": "1.30.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.2",
+    "typescript-eslint": "^8.72.1",
     "unist-util-visit": "^5.1.0",
     "web-vitals": "6.2.3"
   },
   "overrides": {
     "esbuild": "0.28.1",
+    "glob": "^14.0.2",
     "minimatch": "^11.0.1",
     "uuid": "^11.1.1"
   },
