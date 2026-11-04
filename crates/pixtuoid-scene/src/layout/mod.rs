@@ -179,9 +179,10 @@ pub struct Viewport {
 }
 
 /// The narrowest office [`Viewport::fitted`] lays out, so a narrower surface
-/// scrolls across it: the App's (pixtuoid-apple `docs/design.md`), at which
-/// every meeting room keeps its furniture
-/// (`a_fitted_office_keeps_every_meeting_rooms_furniture`).
+/// scrolls across it. Every meeting room keeps its furniture this wide
+/// (`a_fitted_office_keeps_every_meeting_rooms_furniture`), and the value is
+/// the App's design margin over the narrowest that does (pixtuoid-apple
+/// `docs/design.md`).
 pub(crate) const FITTED_MIN_W: u16 = 150;
 
 /// The tallest office [`Viewport::fitted`] lays out, so a taller surface takes
@@ -220,9 +221,9 @@ fn fit(
 /// What a surface of device pixels fits an office as ([`Viewport::fitted`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Fitted {
-    /// The office in layout units: the surface's, never narrower than every
-    /// meeting room keeps its furniture at, its insets rounded up to whole
-    /// units.
+    /// The office in layout units: the surface's, never narrower than the
+    /// fitted width that keeps its meeting rooms furnished, its insets rounded
+    /// up to whole units.
     pub viewport: Viewport,
     /// Whole device pixels a frame pixel takes.
     pub upscale: u16,
