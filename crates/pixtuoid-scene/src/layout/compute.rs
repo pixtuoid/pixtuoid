@@ -396,13 +396,20 @@ pub(super) fn compute(
     // Dense's inter-meeting wall is deliberately solid (#557 door policy).
     let (mut room_walls, doorways) =
         super::rooms::walls::derive_room_walls(&plan.meeting_rooms, plan.pantry);
-    // The strip under the bottom inset is floor inside the rooms, so a wall
-    // that runs to the floor's south edge runs on to the canvas's.
+    // The strips under the insets are floor inside the rooms, so a wall that
+    // runs to the floor's edge runs on to the canvas's.
     for seg in &mut room_walls {
-        if let WallSegment::Vertical { y1, .. } = seg
-            && *y1 == plan.floor_end()
-        {
-            *y1 = buf_h;
+        match seg {
+            WallSegment::Vertical { y1, .. } if *y1 == plan.floor_end() => *y1 = buf_h,
+            WallSegment::Vertical { .. } => {}
+            WallSegment::Horizontal { x0, x1, .. } => {
+                if *x0 == inner.x {
+                    *x0 = 0;
+                }
+                if *x1 == inner.x + inner.width {
+                    *x1 = buf_w;
+                }
+            }
         }
     }
 

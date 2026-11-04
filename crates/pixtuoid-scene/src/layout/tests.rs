@@ -279,6 +279,40 @@ fn a_room_wall_to_the_floors_south_edge_runs_on_under_the_bottom_inset() {
     assert!(reached > 0, "no wall ran to the floor's south edge");
 }
 
+/// The strips under side insets are floor inside the rooms too: a room wall
+/// that runs to the floor's west or east edge runs on to the canvas's.
+#[test]
+fn a_room_wall_to_the_floors_side_edges_runs_on_under_the_side_insets() {
+    let viewport = Viewport {
+        size: Size { w: 240, h: 144 },
+        insets: Insets {
+            left: 9,
+            right: 7,
+            ..Insets::default()
+        },
+    };
+    let inner = viewport.inner().expect("an office inside");
+    let mut reached = 0;
+    for seed in 0..12 {
+        let l = SceneLayout::compute(viewport, None, seed).expect("lays out");
+        for seg in &l.room_walls {
+            if let WallSegment::Horizontal { x0, x1, .. } = *seg {
+                assert_ne!(
+                    x0, inner.x,
+                    "seed {seed}: {seg:?} stops at the floor's west edge"
+                );
+                assert_ne!(
+                    x1,
+                    inner.x + inner.width,
+                    "seed {seed}: {seg:?} stops at the floor's east edge"
+                );
+                reached += usize::from(x0 == 0);
+            }
+        }
+    }
+    assert!(reached > 0, "no wall ran to the floor's west edge");
+}
+
 #[test]
 fn dense_inter_meeting_wall_is_solid_with_a_corridor_door_each() {
     // #557 door policy (owner call): two stacked meeting rooms do NOT interconnect
