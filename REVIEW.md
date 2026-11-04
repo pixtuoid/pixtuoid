@@ -175,7 +175,8 @@ invariant-breaking sequence against:
 A maintenance defect's failure scenario is the edit that would leave a copy
 wrong.
 
-1. **One source** (the contract's lens), here: its search is weighted by
+1. **One source** (the contract's lens; AGENTS.md's
+   [DRY](AGENTS.md#conventions)), here: its search is weighted by
    divergence risk (#1042, #1155), and test fixtures stay inline.
 
 ## Must-run
