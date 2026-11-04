@@ -375,6 +375,8 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::SourceRo
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::SourceRow
 pub const pixtuoid_core::remote::HEARTBEAT: core::time::Duration
 pub const pixtuoid_core::remote::SECRET_BYTES: usize
+pub const pixtuoid_core::remote::SERVICE_TYPE: &str
+pub const pixtuoid_core::remote::SPKI_KEY: &str
 pub const pixtuoid_core::remote::VERSION: u32
 pub fn pixtuoid_core::remote::cwd_basename(&std::path::Path) -> core::option::Option<alloc::string::String>
 pub fn pixtuoid_core::remote::encode(&pixtuoid_core::state::SceneState, &pixtuoid_core::remote::Machine, std::time::SystemTime) -> serde_json::error::Result<alloc::string::String>

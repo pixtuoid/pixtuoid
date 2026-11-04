@@ -94,8 +94,10 @@ pub(crate) enum Cmd {
     /// Serve the office to paired devices on your local network, with no TUI
     /// needed. Agent status, model, usage, repo names, which agent CLIs you have
     /// and how each is connected, and the machine's name and OS leave it, never
-    /// paths, prompts, tool input or transcripts; a paired device can also connect
-    /// or disconnect those CLIs. Nothing listens on a network unless this runs.
+    /// paths, prompts, tool input or transcripts, and it announces the machine's
+    /// name and its key's SPKI hash on the network. A paired
+    /// device can also connect or disconnect those CLIs. Nothing listens on a
+    /// network unless this runs.
     #[cfg(feature = "serve")]
     Serve {
         #[command(flatten)]

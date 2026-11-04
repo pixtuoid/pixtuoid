@@ -374,7 +374,7 @@ mod tests {
             .into_iter()
             .filter(|&c| glyph(c).is_none())
             .collect();
-        assert_eq!(missing, []);
+        assert!(missing.is_empty(), "no glyph for {missing:?}");
     }
 
     /// Lines join their neighbours: a rule runs through every column of its

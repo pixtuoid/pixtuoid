@@ -431,7 +431,14 @@ const OLDER_PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
 const VERSION_KEY: &str = "v";
 const HOST: &str = "host";
 const PORT: &str = "port";
-const SPKI: &str = "spki";
+/// The key that carries the server's pin, in a pairing link and in the DNS-SD
+/// TXT record [`SERVICE_TYPE`] announces it with.
+pub const SPKI_KEY: &str = "spki";
+
+/// The DNS-SD service type a server announces itself as (RFC 6763 §7), and a
+/// device browses for: the instance it finds is one it already holds the pin of
+/// from a QR, matched by the TXT record's [`SPKI_KEY`] and checked again by TLS.
+pub const SERVICE_TYPE: &str = "_pixtuoid._tcp";
 const CODE: &str = "code";
 const EXPIRES: &str = "expires";
 
@@ -465,7 +472,7 @@ impl fmt::Display for PairLink {
             .map_or(0, |at| at.as_secs());
         write!(
             f,
-            "{PAIR_LINK_PREFIX}{VERSION_KEY}={VERSION}&{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{EXPIRES}={expires}&{CODE}={code}"
+            "{PAIR_LINK_PREFIX}{VERSION_KEY}={VERSION}&{HOST}={host}&{PORT}={port}&{SPKI_KEY}={spki}&{EXPIRES}={expires}&{CODE}={code}"
         )
     }
 }
@@ -538,7 +545,7 @@ impl FromStr for PairLink {
             .ok()
             .filter(|port| *port != 0)
             .ok_or(PairLinkError::NotALink)?;
-        let (spki, code) = (hex(SPKI, PIN_BYTES)?, hex(CODE, SECRET_BYTES)?);
+        let (spki, code) = (hex(SPKI_KEY, PIN_BYTES)?, hex(CODE, SECRET_BYTES)?);
         let link = Self {
             host: host.to_owned(),
             port,
@@ -1307,7 +1314,7 @@ mod tests {
     fn an_older_servers_link_is_told_apart() {
         let PairLink { spki, code, .. } = link();
         let older = format!(
-            "{OLDER_PAIR_LINK_PREFIX}{HOST}=studio.local&{PORT}=47820&{SPKI}={spki}&{CODE}={code}"
+            "{OLDER_PAIR_LINK_PREFIX}{HOST}=studio.local&{PORT}=47820&{SPKI_KEY}={spki}&{CODE}={code}"
         );
         for older in [
             older.as_str(),
@@ -1922,7 +1929,7 @@ mod tests {
                 (VERSION_KEY, VERSION.to_string()),
                 (HOST, "studio.local".to_owned()),
                 (PORT, "47820".to_owned()),
-                (SPKI, link().spki),
+                (SPKI_KEY, link().spki),
                 (EXPIRES, (AT / 1000).to_string()),
                 (CODE, link().code),
             ];
@@ -1934,7 +1941,10 @@ mod tests {
         // One character past each edge of the digits' ranges, at full length.
         let edges = ['/', ':', '@', 'G'].into_iter().flat_map(|edge| {
             let bad = |value: String| value.replacen('0', &edge.to_string(), 1);
-            [with(SPKI, &bad(link().spki)), with(CODE, &bad(link().code))]
+            [
+                with(SPKI_KEY, &bad(link().spki)),
+                with(CODE, &bad(link().code)),
+            ]
         });
         for bad in edges.chain([
             "https://pair?host=a".to_owned(),
@@ -1948,10 +1958,10 @@ mod tests {
             with(HOST, "a@b"),
             with(PORT, "0"),
             with(PORT, "70000"),
-            with(SPKI, &"A".repeat(PIN_BYTES * 2 - 1)),
-            with(SPKI, &"A".repeat(PIN_BYTES * 2 + 1)),
-            with(SPKI, &"zz".repeat(PIN_BYTES)),
-            with(SPKI, &"ab".repeat(PIN_BYTES)),
+            with(SPKI_KEY, &"A".repeat(PIN_BYTES * 2 - 1)),
+            with(SPKI_KEY, &"A".repeat(PIN_BYTES * 2 + 1)),
+            with(SPKI_KEY, &"zz".repeat(PIN_BYTES)),
+            with(SPKI_KEY, &"ab".repeat(PIN_BYTES)),
             with(CODE, ""),
             with(CODE, &"C".repeat(SECRET_BYTES * 2 - 1)),
             with(CODE, &"C".repeat(SECRET_BYTES * 2 + 1)),
