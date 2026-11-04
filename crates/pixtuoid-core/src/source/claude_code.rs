@@ -23,10 +23,6 @@ mod native;
 pub use native::{ClaudeCodeSource, live_cc_session_ids, registry_dir};
 
 /// The Claude Code source's registry name (its `SourceDescriptor.name`).
-///
-/// homebrew-core contract: the id the formula's `test do` connects, which fails
-/// with no agent CLI installed, so a rename owes a test update there right after
-/// the release that ships it (CONTRIBUTING.md#releasing).
 pub const SOURCE_NAME: &str = "claude-code";
 
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {

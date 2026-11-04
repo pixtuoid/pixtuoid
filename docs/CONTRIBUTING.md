@@ -110,12 +110,12 @@ our release never builds. Two consequences:
   adding a system-library dependency needs a matching `depends_on` in the core
   formula, in the same bump PR.
 - **Their `test do` block is a public contract** — see the "homebrew-core
-  contract" comments at `app/sources_cli.rs`, `source/claude_code.rs` and
-  `install/io.rs`; the packaging-build action replays the block. A dispatch
-  warns only when the block calls a subcommand this tree dropped, a connect's
-  exit differs from its `shell_output` status, or an expected failure prints
-  no `failed` row, because the owner, who sent a test update before its
-  release, was told to release first (no public record); step 4 sends it.
+  contract" comment at `doctor/delivery.rs`; the packaging-build action
+  replays the block. A dispatch warns only when the block calls a subcommand
+  this tree dropped, or a command an `assert_match` reads exits other than its
+  `shell_output` status or prints no match, because the owner, who sent a test
+  update before its release, was told to release first (no public record);
+  step 4 sends it.
 
 Do not try to preempt BrewTestBot: the formula is on homebrew-core's
 autobump list, so `brew bump-formula-pr pixtuoid` refuses by policy and the

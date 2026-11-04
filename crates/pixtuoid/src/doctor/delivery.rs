@@ -222,6 +222,11 @@ async fn run_once(shim: &Path, endpoint: &Path, exit_deadline: Duration) -> Resu
 
 fn shim_row((path, probed): &(ShownPath, ShimProbe), ink: &Ink) -> String {
     let outcome = match probed {
+        // homebrew-core contract: the formula's `test do` asserts this text in
+        // `pixtuoid doctor`'s stdout and its exit 0, with the shim beside the
+        // binary and no office (`doctor_proves_the_built_shim_delivers_with_no_office_open`),
+        // so a reword owes a test update there after the release that ships it
+        // (CONTRIBUTING.md#releasing).
         ShimProbe::Delivered => "delivered a test event".to_string(),
         ShimProbe::Failed(why) => ink.bad(&format!("failed: {}", sanitize(why))),
         ShimProbe::NotTested(why) => ink.warn(&format!("not tested: {}", sanitize(why))),

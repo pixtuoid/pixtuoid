@@ -93,31 +93,32 @@ jobs:
             owe "found no pixtuoid subcommand in homebrew-core's test block; its shape changed"
             exit 0
           fi
-          cargo build --locked -q -p pixtuoid --bin pixtuoid
+          cargo build --locked -q -p pixtuoid --bin pixtuoid -p pixtuoid-hook --bin pixtuoid-hook
           for sub in $subs; do
             ./target/debug/pixtuoid "$sub" --help >/dev/null 2>&1 \
               || owe "homebrew-core's test calls \`pixtuoid $sub\`, which this tree dropped"
           done
-          # Its sandbox has no agent CLI, which a plugin host's connect needs, so
-          # each connect must exit as its `shell_output(…, status)` expects (0 unset),
-          # and an expected failure must still print that source's `failed` row.
+          # Its sandbox has no agent CLI and no office, and `shell_output` keeps
+          # stdout alone (Homebrew/brew's formula_assertions.rb), so each
+          # `assert_match "<text>", shell_output("#{bin}/pixtuoid <args>"[, status])`
+          # must exit as its status expects (0 unset) and print its text there.
+          asserted='assert_match "([^"]*)", shell_output\("#\{bin\}/pixtuoid ([^"]*)"(, ([0-9]+))?\)'
           while IFS= read -r line; do
-            id="$(sed -E 's/.*connect("?, "| )([a-z][a-z0-9-]*).*/\2/' <<<"$line")"
-            want="$(sed -nE 's/.*",[[:space:]]*([0-9]+)\).*/\1/p' <<<"$line")"
-            want="${want:-0}"
+            [[ $line =~ $asserted ]] || continue
+            text="${BASH_REMATCH[1]}" args="${BASH_REMATCH[2]}" want="${BASH_REMATCH[4]:-0}"
+            read -r -a argv <<<"$args"
             got=0
             err="$(mktemp)"
-            row="$(env -i HOME="$(mktemp -d)" PATH=/usr/bin:/bin PIXTUOID_HOOK=/usr/bin/true \
-              ./target/debug/pixtuoid connect "$id" --json 2>"$err")" || got=$?
-            said="$(printf '%s\n' "$row"; cat "$err")"
-            said="${said//$'\n'/ }"
+            said="$(env -i HOME="$(mktemp -d)" PATH=/usr/bin:/bin \
+              ./target/debug/pixtuoid "${argv[@]}" 2>"$err")" || got=$?
+            seen="$(printf '%s\n' "$said"; cat "$err")"
+            seen="${seen//$'\n'/ }"
             if [ "$got" -ne "$want" ]; then
-              owe "homebrew-core's test expects \`connect $id\` to exit $want, and this tree exits $got: $said"
-            elif [ "$want" -ne 0 ] && ! jq -e --arg id "$id" '.[0] | .id == $id and .outcome == "failed"' \
-              <<<"$row" >/dev/null 2>&1; then
-              owe "homebrew-core's test expects \`connect $id\` to print its \`failed\` row, and this tree prints: $said"
+              owe "homebrew-core's test expects \`pixtuoid $args\` to exit $want, and this tree exits $got: $seen"
+            elif ! grep -qF -- "$text" <<<"$said"; then
+              owe "homebrew-core's test expects \`pixtuoid $args\` to print \"$text\", and this tree prints: $seen"
             fi
-          done < <(grep -E 'pixtuoid("?, "| )connect("?, "| )[a-z]' <<<"$block" || true)
+          done <<<"$block"
       # SHA-pinned: the step sees the PAT (release-plz's security.md), and the
       # SHA also pins the release-plz binary the action installs. Dependabot
       # moves the pin.

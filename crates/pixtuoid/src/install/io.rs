@@ -393,9 +393,6 @@ impl HostCli {
     }
 
     /// [`Self::locate`], or the error that names what to do about it.
-    ///
-    /// homebrew-core contract: the formula's `test do` connects `claude-code`
-    /// in a sandbox with no `claude`, and expects this error to fail it.
     pub(crate) fn require(self) -> Result<PathBuf> {
         let Self { command } = self;
         self.locate().with_context(|| {
