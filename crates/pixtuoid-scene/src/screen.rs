@@ -172,8 +172,7 @@ pub struct Screen<S, G> {
 /// The picture a [`Screen`] shows, as its painter's geometry maps onto it.
 #[derive(Debug)]
 pub struct Shown<G> {
-    /// How a pointer maps onto it.
-    pub geometry: G,
+    geometry: G,
     /// `None` for a slide, which shows no one floor's figures where they stand.
     hits: Option<crate::look::Hits>,
     /// The board's star where the painter set the text itself.
@@ -181,6 +180,11 @@ pub struct Shown<G> {
 }
 
 impl<G> Shown<G> {
+    /// How a pointer maps onto it.
+    pub fn geometry(&self) -> &G {
+        &self.geometry
+    }
+
     /// What it shows a pointer over `area`, in layout units: nothing on a
     /// slide.
     pub fn hit_at(&self, area: crate::layout::Bounds) -> Option<crate::hit::SceneHit<'_>> {

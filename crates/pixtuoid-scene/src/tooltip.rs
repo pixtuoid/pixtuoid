@@ -9,12 +9,13 @@ use pixtuoid_core::source::registry::descriptor_for;
 use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, SceneState};
 
+use crate::display::GatewayCard;
 use crate::display::cells::{CellGrid, CellRect};
 use crate::display::text::cells;
-use crate::display::{GatewayCard, HoverTarget, PetHover};
 use crate::floor::PetInputs;
 use crate::footer::{FooterTone, RungKind};
 use crate::hit::SceneHit;
+use crate::hit::{HoverTarget, PetHover};
 use crate::nameplate::{FloorNamesakes, Suffix};
 use crate::pet::PetKind;
 use crate::theme::Theme;

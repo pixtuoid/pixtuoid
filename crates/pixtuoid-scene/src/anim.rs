@@ -1,5 +1,6 @@
-//! Stateless easing curves for animations, and the wall-clock ms helpers every
-//! layer shares.
+//! How the office moves: its ambient [`Motion`] tiers, the rate a painter
+//! repaints at, and the floor under a flash's phases; and, hidden, the easing
+//! curves and wall-clock helpers every layer shares.
 //!
 //! Wall-clock `SystemTime`, not `Instant`: matches the rest of the animation
 //! state (FloorTransition, VacancyDim, PoseHistory) — serializable, no
@@ -7,6 +8,7 @@
 
 use std::time::{Duration, SystemTime};
 
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Easing {
     Linear,
@@ -61,6 +63,7 @@ pub(crate) fn epoch_ms(now: SystemTime) -> u64 {
 /// `epoch_ms`'s inverse for a host that hands its clock over as float
 /// milliseconds (a page's `Date.now()`). `f64 as u64` saturates (negatives and
 /// NaN to 0), so no input needs a pre-clamp.
+#[doc(hidden)]
 pub fn from_epoch_ms(ms: f64) -> SystemTime {
     SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ms as u64)
 }
@@ -70,7 +73,7 @@ pub fn from_epoch_ms(ms: f64) -> SystemTime {
 /// doing. Each tier steps those loops on its own clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Motion {
-    /// Every loop, stepped each [`FULL_TICK_MS`].
+    /// Every loop, stepped each `FULL_TICK_MS`.
     #[default]
     Full,
     /// Every loop at a quarter of Full's pace: each `CALM_TICK_MS` it steps
@@ -82,14 +85,16 @@ pub enum Motion {
 }
 
 /// How often a [`Motion::Full`] loop steps.
+#[doc(hidden)]
 pub const FULL_TICK_MS: u64 = 125;
 /// How often a [`Motion::Calm`] loop steps.
 pub(crate) const CALM_TICK_MS: u64 = 500;
-/// The rate the TUI and the floating window repaint an office with agents in
-/// it, on every tier: the sampling rate the walks' strides are sized for
+/// The rate a painter repaints an office with agents in it, on every tier: the
+/// sampling rate the walks' strides are sized for
 /// (`a_walking_person_never_slides`).
 pub const PAINT_FPS: u32 = 30;
 /// One [`PAINT_FPS`] frame, in whole ms.
+#[doc(hidden)]
 pub const PAINT_FRAME_MS: u64 = 1000 / PAINT_FPS as u64;
 
 /// The least any phase of a flash — a strike's level, a starved neon's catch,
@@ -181,6 +186,7 @@ impl Motion {
 
     /// How long after `wall` this tier's [`beat`](Self::beat) next turns, as
     /// [`loop_time`] steps; `None` at rest, which never turns.
+    #[doc(hidden)]
     pub fn until_next_beat(self, wall: SystemTime) -> Option<std::time::Duration> {
         let period = FULL_TICK_MS * self.pace()?;
         let turn = (epoch_ms(wall) / period + 1) * period;
@@ -303,6 +309,7 @@ impl Beat {
 
 /// Compute the eased progress of an animation `[0.0, 1.0]` given its
 /// `started_at` wall-clock time, total `duration_ms`, and `easing` curve.
+#[doc(hidden)]
 pub fn eased_progress(
     started_at: SystemTime,
     duration_ms: u32,

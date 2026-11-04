@@ -3,10 +3,10 @@
 //! and marked dirty only where it differs from the frame before.
 
 use crate::composite::BLACK;
-use crate::cutaway::canvas::Dirty;
 use crate::display::pen::Pen;
 use crate::display::{HostText, TextRole, TextRun};
 use crate::layout::Bounds;
+use crate::look::Dirty;
 use crate::look::WorldText;
 use crate::pack::OfficeArt;
 use crate::render_scale::RenderScale;

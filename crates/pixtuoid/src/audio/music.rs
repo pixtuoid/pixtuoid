@@ -4,7 +4,11 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::Relaxed};
 
-use pixtuoid_scene::audio::{Frame, MUSIC_AHEAD, MusicCmd, Performance, SAMPLE_RATE};
+use std::time::SystemTime;
+
+use pixtuoid_scene::audio::{
+    Frame, MUSIC_AHEAD, MusicCmd, Performance, SAMPLE_RATE, performance_at,
+};
 
 /// The ring's depth: [`MUSIC_AHEAD`] in frames.
 fn ahead_frames() -> usize {
@@ -12,14 +16,14 @@ fn ahead_frames() -> usize {
 }
 
 /// The stream's two ends: the audio thread's [`MusicProducer`] and the
-/// device's [`MusicReader`]. `seed` picks the run of songs.
-pub(crate) fn stream(seed: u64) -> (MusicProducer, MusicReader) {
+/// device's [`MusicReader`]. `started` picks the run of songs.
+pub(crate) fn stream(started: SystemTime) -> (MusicProducer, MusicReader) {
     let (frames, ring) = rtrb::RingBuffer::new(ahead_frames());
     let gain = Arc::new(AtomicU32::new(0.0f32.to_bits()));
     let underruns = Arc::new(AtomicU64::new(0));
     (
         MusicProducer {
-            seed,
+            started,
             performance: None,
             frames,
             gain: Arc::clone(&gain),
@@ -37,7 +41,7 @@ pub(crate) fn stream(seed: u64) -> (MusicProducer, MusicReader) {
 
 /// The audio thread's end: renders ahead and sets the gain.
 pub(crate) struct MusicProducer {
-    seed: u64,
+    started: SystemTime,
     /// `None` until the scene's first frame picks the first song.
     performance: Option<Performance>,
     frames: rtrb::Producer<Frame>,
@@ -69,7 +73,7 @@ impl MusicProducer {
         self.gain.store(gain.to_bits(), Relaxed);
         let performance = self
             .performance
-            .get_or_insert_with(|| Performance::new(self.seed, controls));
+            .get_or_insert_with(|| performance_at(self.started, controls));
         performance.set_controls(controls);
         if gain <= 0.0 {
             return heard;
@@ -148,7 +152,10 @@ mod tests {
     use super::*;
     use pixtuoid_scene::audio::Controls;
 
-    const SEED: u64 = 7;
+    /// A start off the epoch, whose seed a dropped start never gives.
+    fn started() -> SystemTime {
+        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(7)
+    }
 
     fn night() -> Controls {
         Controls::default().with_daylight(0.0)
@@ -167,13 +174,13 @@ mod tests {
 
     fn performed(controls: Controls, n: usize) -> Vec<Frame> {
         let mut frames = vec![Frame::default(); n];
-        Performance::new(SEED, controls).render(&mut frames);
+        performance_at(started(), controls).render(&mut frames);
         frames
     }
 
     #[test]
     fn nothing_renders_before_the_first_frame() {
-        let (mut producer, reader) = stream(SEED);
+        let (mut producer, reader) = stream(started());
         producer.tick(None);
         assert_eq!(reader.queued(), 0);
     }
@@ -182,7 +189,7 @@ mod tests {
     /// render, so the first frame's night plays a night song.
     #[test]
     fn the_first_frames_controls_pick_the_first_song() {
-        let (mut producer, mut reader) = stream(SEED);
+        let (mut producer, mut reader) = stream(started());
         producer.tick(at(1.0));
         let heard = drain(&mut reader);
         assert_eq!(heard.len(), ahead_frames(), "a full ring");
@@ -196,7 +203,7 @@ mod tests {
 
     #[test]
     fn each_tick_tops_the_ring_up_and_continues_the_stream() {
-        let (mut producer, mut reader) = stream(SEED);
+        let (mut producer, mut reader) = stream(started());
         producer.tick(at(1.0));
         let mut heard: Vec<Frame> = (0..1000).map(|_| reader.next_frame()).collect();
         producer.tick(at(1.0));
@@ -207,7 +214,7 @@ mod tests {
 
     #[test]
     fn a_zero_gain_renders_nothing_and_the_stream_resumes_where_it_was() {
-        let (mut producer, mut reader) = stream(SEED);
+        let (mut producer, mut reader) = stream(started());
         producer.tick(at(1.0));
         let mut heard = drain(&mut reader);
         producer.tick(at(0.0));
@@ -219,7 +226,7 @@ mod tests {
 
     #[test]
     fn the_reader_plays_the_mixers_gain() {
-        let (mut producer, mut reader) = stream(SEED);
+        let (mut producer, mut reader) = stream(started());
         producer.tick(at(0.25));
         let heard = drain(&mut reader);
         let full = performed(night(), heard.len());
@@ -231,7 +238,7 @@ mod tests {
 
     #[test]
     fn only_a_dropout_while_the_music_plays_is_reported() {
-        let (mut producer, mut reader) = stream(SEED);
+        let (mut producer, mut reader) = stream(started());
         reader.next_frame();
         assert_eq!(producer.tick(at(1.0)), 0, "silence before the first fill");
         drain(&mut reader);
@@ -245,7 +252,7 @@ mod tests {
 
     #[test]
     fn an_empty_ring_plays_silence_and_counts_it() {
-        let (_producer, mut reader) = stream(SEED);
+        let (_producer, mut reader) = stream(started());
         assert_eq!(reader.next_frame(), Frame::default());
         assert_eq!(reader.next_frame(), Frame::default());
         assert_eq!(reader.underruns.load(Relaxed), 2);

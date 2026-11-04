@@ -519,7 +519,7 @@ mod tests {
     use super::*;
     use crate::graphics::tiles::Tiles;
     use crate::graphics::{CellSize, ImageProtocol, cutaway_fit};
-    use pixtuoid_scene::cutaway::canvas::Dirty;
+    use pixtuoid_scene::look::Dirty;
     use pixtuoid_scene::sprite::format::Density;
     use pixtuoid_scene::sprite::{Rgb, RgbBuffer};
     use ratatui::layout::Size as TermSize;

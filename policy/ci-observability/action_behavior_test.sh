@@ -445,6 +445,39 @@ if grep -qF '::error::' "$test_dir/file.out"; then fail "a leg no runner took is
 file_plan '{"actions":[],"lost":[],"unacquired":[]}' '' || fail "the file step failed an empty plan: $(<"$test_dir/file.out")"
 [[ "$(<"$test_dir/gh.log")" == "$listed" ]] || fail "an empty plan made a gh call: $(<"$test_dir/gh.log")"
 
+# ── justfile api-surface: the leak check names each reference to a stripped
+# item, in a signature or a `pub use`, its own crate's or a published sibling's
+# (by path, or by name for a trait only `index` holds), and nothing a crate
+# keeps public, a non-local item names, or an auto trait's synthetic impl names.
+item() { # id, crate, name (or null), line, inner
+    printf '"%s":{"crate_id":%s,"name":%s,"span":{"filename":"src/lib.rs","begin":[%s,0]},"inner":%s}' "$1" "$2" "$3" "$4" "$5"
+}
+ret() { printf '{"function":{"sig":{"output":{"resolved_path":{"path":"%s","id":%s,"args":null}}}}}' "$1" "$2"; }
+dep() { # its own index items after its root
+    printf '{"root":1,"index":{"1":{"crate_id":0,"name":"dep","inner":{"module":{}}}%s},"paths":{"1":{"crate_id":0,"path":["dep"]},"10":{"crate_id":0,"path":["dep","Open"]}},"external_crates":{}}' "$1"
+}
+kept="$(item 5 0 '"fine"' 9 "$(ret dep::Open 93)"),$(item 8 0 '"trait_open"' 15 "$(ret dep::Open 96)"),$(item 9 0 '"local"' 17 "$(ret fine 5)")"
+kept+=",$(item 95 7 '"Hidden"' 1 '{"trait":{}}'),$(item 96 7 '"Open"' 1 "$(ret gone 97)")"
+kept+=',"6":{"crate_id":0,"name":null,"span":null,"inner":{"impl":{"is_synthetic":true,"for":{"resolved_path":{"path":"Private","id":94,"args":null}}}}}'
+paths='"paths":{"92":{"crate_id":7,"path":["dep","secret","Thing"]},"93":{"crate_id":7,"path":["dep","Open"]}}'
+crate() { printf '{"root":100,"index":{"100":{"crate_id":0,"name":"probe","inner":{"module":{}}},%s},%s,"external_crates":{"7":{"name":"dep"}}}' "$1" "$paths"; }
+leaks_of() { # dep's JSON, the crate's
+    printf '%s' "$1" >"$test_dir/dep.json"
+    printf '%s' "$2" >"$test_dir/probe.json"
+    jq -r -s -f policy/ci-observability/api-leaks.jq "$test_dir/dep.json" "$test_dir/probe.json"
+}
+leaky_dep="$(dep ",$(item 2 0 '"dep_leak"' 99 "$(ret crate::gone 98)")")"
+leaky="$(crate "$(item 2 0 '"leaky"' 3 "$(ret crate::hidden::Gone 90)"),$(item 3 0 null 5 '{"use":{"source":"crate::hidden::Also","name":"Also","id":91,"is_glob":false}}'),$(item 4 0 '"cross"' 7 "$(ret dep::secret::Thing 92)"),$(item 7 0 '"trait_hidden"' 13 "$(ret dep::Hidden 95)"),$kept")"
+# A substitution's failure would pass for no output, so each is checked.
+found="$(leaks_of "$leaky_dep" "$leaky")" || fail "api-leaks.jq failed on the leaking fixture"
+[[ "$found" == "src/lib.rs:99: dep_leak names crate::gone
+src/lib.rs:13: trait_hidden names dep::Hidden
+src/lib.rs:3: leaky names crate::hidden::Gone
+src/lib.rs:5: Also names crate::hidden::Also
+src/lib.rs:7: cross names dep::secret::Thing" ]] || fail "the leak check missed a stripped reference: $found"
+found="$(leaks_of "$(dep '')" "$(crate "$kept")")" || fail "api-leaks.jq failed on the clean fixture"
+[[ -z "$found" ]] || fail "the leak check flagged a kept reference: $found"
+
 # ── site.yml: Playwright's dry run hands apt-install exactly its missing
 # packages.
 pw_script="$(workflow_step_script .github/workflows/site.yml "Find Chromium's missing system packages")"

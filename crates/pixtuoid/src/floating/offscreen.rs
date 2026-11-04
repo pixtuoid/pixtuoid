@@ -154,7 +154,7 @@ impl OfficeRenderer {
 
     /// The fit the frame on screen was drawn at; `None` before one shows.
     pub(crate) fn shown_fit(&self) -> Option<PixelFit> {
-        self.screen.shown().map(|shown| shown.geometry)
+        self.screen.shown().map(|shown| *shown.geometry())
     }
 
     /// A left press at `cursor` (physical px) in a `window`-sized window, at
@@ -288,12 +288,10 @@ impl OfficeRenderer {
     }
 
     /// Where the last frame may differ from the one rendered before it.
-    pub(crate) fn dirty(&self) -> &pixtuoid_scene::cutaway::canvas::Dirty {
+    pub(crate) fn dirty(&self) -> &pixtuoid_scene::look::Dirty {
         self.session
             .picture()
-            .map_or(&pixtuoid_scene::cutaway::canvas::Dirty::All, |picture| {
-                picture.dirty()
-            })
+            .map_or(&pixtuoid_scene::look::Dirty::All, |picture| picture.dirty())
     }
 
     /// The status-footer model for the current scene, with the office's floor
@@ -350,7 +348,7 @@ fn hit_in(
     cursor: (f64, f64),
 ) -> Option<pixtuoid_scene::hit::SceneHit<'_>> {
     let shown = screen.shown()?;
-    shown.hit_at(unit_bounds(unit_at(cursor, shown.geometry)))
+    shown.hit_at(unit_bounds(unit_at(cursor, *shown.geometry())))
 }
 
 /// What a press on `under` affords, as its cursor, in CSS UI 3's names
@@ -622,7 +620,7 @@ mod tests {
     #[test]
     fn a_held_frame_leaves_the_pointer_hitting_the_one_on_screen() {
         use crate::test_flash::{held_frames, storm_strike};
-        use pixtuoid_scene::display::HoverTarget;
+        use pixtuoid_scene::hit::HoverTarget;
         use pixtuoid_scene::hit::{HitAction, SceneHit};
         let strike = storm_strike();
         let [dark, late, held, _] = held_frames(&strike);
@@ -667,7 +665,7 @@ mod tests {
     /// The tooltip set over a frame reads that frame: the one just rendered.
     #[test]
     fn the_tooltip_reads_the_frame_rendered() {
-        use pixtuoid_scene::display::HoverTarget;
+        use pixtuoid_scene::hit::HoverTarget;
         use pixtuoid_scene::hit::SceneHit;
         let (renderer, at, _, now, id) = one_agent_office();
         let on_agent = agent_point(&renderer, at, now);
@@ -1348,8 +1346,8 @@ mod tests {
     fn the_cursor_shows_what_a_press_there_does() {
         use pixtuoid_core::source::daemon::DaemonInstanceKey;
         use pixtuoid_core::state::DaemonInstanceId;
-        use pixtuoid_scene::display::{HoverTarget, PetHover};
         use pixtuoid_scene::hit::SceneHit;
+        use pixtuoid_scene::hit::{HoverTarget, PetHover};
         use pixtuoid_scene::pet::{PetKind, PetState};
         use winit::window::CursorIcon;
         let now = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);

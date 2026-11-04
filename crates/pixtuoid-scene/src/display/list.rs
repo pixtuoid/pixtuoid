@@ -138,9 +138,10 @@ impl Piece {
     /// one.
     pub(crate) fn hover(&self) -> Option<super::Hover> {
         let (at, target) = match &self.kind {
-            PieceKind::Character { figure, body, .. } => {
-                (*body, super::HoverTarget::Agent(figure.key.frame.agent_id))
-            }
+            PieceKind::Character { figure, body, .. } => (
+                *body,
+                crate::hit::HoverTarget::Agent(figure.key.frame.agent_id),
+            ),
             PieceKind::Creature { who, .. } => (self.span, who.clone()?),
             _ => return None,
         };
@@ -480,7 +481,7 @@ pub(crate) enum PieceKind {
         art: Art,
         degraded: bool,
         /// `None`: it hovers as nothing ([`MascotPlacement::on_roster`](crate::sim::MascotPlacement::on_roster)).
-        who: Option<super::HoverTarget>,
+        who: Option<crate::hit::HoverTarget>,
     },
     Character {
         figure: Figure,

@@ -1,11 +1,8 @@
 //! What a frame answers a pointer with: each figure's hit box, in paint order.
 //! Only a later hover covers one; nothing else a frame draws does.
 
-use pixtuoid_core::AgentId;
-use pixtuoid_core::source::daemon::DaemonInstanceKey;
-
+use crate::hit::HoverTarget;
 use crate::layout::{Bounds, Pivot, Point, Size, anchored_top_left};
-use crate::pet::PetKind;
 
 /// A figure's hit box, in LOGICAL units whatever the scale, and who it names.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,28 +26,6 @@ impl Hover {
             target,
         }
     }
-}
-
-/// Who a hover names.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HoverTarget {
-    /// An agent's character.
-    Agent(AgentId),
-    /// The floor's pet.
-    Pet(PetHover),
-    /// A gateway's mascot.
-    Mascot(DaemonInstanceKey),
-}
-
-/// The pet as hovered: what its tooltip says and where petting holds it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PetHover {
-    /// Which pet.
-    pub kind: PetKind,
-    /// Its centre, in logical units.
-    pub centre: Point,
-    /// The animation it shows.
-    pub anim: crate::pack::Piece,
 }
 
 /// One frame's hovers, back to front.
@@ -86,6 +61,8 @@ impl Hovers {
 
 #[cfg(test)]
 mod tests {
+    use pixtuoid_core::AgentId;
+
     use super::*;
 
     fn agent(n: u8) -> HoverTarget {

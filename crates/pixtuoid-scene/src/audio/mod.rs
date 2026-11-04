@@ -17,7 +17,9 @@ pub mod mixer;
 
 // The shared per-tick engine surface — both audio painters build on these, so
 // they can't drift.
+#[doc(hidden)]
 pub use bank::OneShotPool;
+#[doc(hidden)]
 pub use engine::{AudioEngine, MAX_DT_S, MusicCmd, PlayCmd, TickCommands};
 // The music, so a painter never names lofi.
 pub use pixtuoid_lofi::{Controls, Frame, Performance};
@@ -38,9 +40,11 @@ pub const SAMPLE_RATE: u32 = pixtuoid_lofi::dsp::SAMPLE_RATE;
 /// (<https://tech.ebu.ch/docs/r/r128.pdf>): "the True Peak Level of a programme
 /// shall not exceed −1 dBTP". Both sinks hold it on SAMPLE peaks, since a true
 /// peak needs oversampling, so a peak between two samples can still pass it.
+#[doc(hidden)]
 pub const CEILING_DBFS: f32 = -1.0;
 
 /// [`CEILING_DBFS`] as a linear amplitude: what each sink's clamp holds.
+#[doc(hidden)]
 #[must_use]
 pub fn ceiling_amplitude() -> f32 {
     10f32.powf(CEILING_DBFS / 20.0)
@@ -48,10 +52,12 @@ pub fn ceiling_amplitude() -> f32 {
 
 /// How fast each sink's limiter pulls its gain down: whatever rises faster
 /// reaches the clamp behind it, which hard-clips it.
+#[doc(hidden)]
 pub const LIMITER_ATTACK: std::time::Duration = std::time::Duration::from_millis(5);
 
 /// How fast each sink's limiter lets its gain back up, so one loud hit never
 /// ducks the next.
+#[doc(hidden)]
 pub const LIMITER_RELEASE: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// Running-agent count at which the office reads BUSY (full band, dense typing).
@@ -97,6 +103,7 @@ impl Tier {
 /// Target mix levels (0..=1) for the foley's stems, derived once per frame. `typing`
 /// is a PROCEDURAL stem: the consumer owns burst scheduling; the scene only says
 /// how much typing the office holds.
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct StemLevels {
     pub rain: f32,
@@ -104,6 +111,7 @@ pub struct StemLevels {
 }
 
 /// A fire-once audio event, emitted on state EDGES by the cue tracker.
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OneShot {
     DoorChime,
@@ -115,8 +123,11 @@ pub enum OneShot {
 /// what the music is asked.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AudioFrame {
+    #[doc(hidden)]
     pub stems: StemLevels,
+    #[doc(hidden)]
     pub events: Vec<OneShot>,
+    /// What the music is asked, which its next bar latches.
     pub music: Controls,
 }
 
@@ -195,6 +206,7 @@ fn tier(counts: &StateCounts) -> Tier {
 
 /// Map the office's activity + weather onto target stem levels, with rain
 /// scaling on the precipitation scalar (0 clear … 1 storm).
+#[doc(hidden)]
 pub fn stem_levels(counts: &StateCounts, precipitation: f32) -> StemLevels {
     let t = tier(counts);
     StemLevels {
@@ -211,6 +223,7 @@ pub const MUSIC_AHEAD: std::time::Duration = std::time::Duration::from_secs(1);
 /// What the music is asked under `counts`, the sun's `nightfall` (0 by day …
 /// 1 by night) and `rain` (0 dry … 1 storm). The sun's alone: a
 /// weather-dimmed light would flip a storm's songs to the night family.
+#[doc(hidden)]
 pub fn music_controls(counts: &StateCounts, nightfall: f32, rain: f32) -> Controls {
     Controls::default()
         .with_daylight(1.0 - nightfall)
@@ -221,18 +234,27 @@ pub fn music_controls(counts: &StateCounts, nightfall: f32, rain: f32) -> Contro
 /// The seed a music stream starting at `now` plays: whole seconds since the
 /// UNIX epoch, so each launch plays its own run of songs. Pre-epoch clocks
 /// read as 0.
-pub fn music_seed(now: std::time::SystemTime) -> u64 {
+fn music_seed(now: std::time::SystemTime) -> u64 {
     now.duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
 }
 
+/// The music a stream started at `started` plays, its first song picked by its
+/// first `controls`: every painter starts its stream here, so no painter seeds
+/// its music its own way.
+pub fn performance_at(started: std::time::SystemTime, controls: Controls) -> Performance {
+    Performance::new(music_seed(started), controls)
+}
+
 /// The music's controls as a page carries them from the office's tick to its
 /// music worker, which hands them back to [`controls_from_wire`] unread.
+#[doc(hidden)]
 pub fn controls_wire(c: Controls) -> [f32; 3] {
     [c.daylight, c.intensity, c.rain]
 }
 
 /// [`controls_wire`]'s inverse; `None` for anything but its three values.
+#[doc(hidden)]
 pub fn controls_from_wire(wire: &[f32]) -> Option<Controls> {
     let &[daylight, intensity, rain] = wire else {
         return None;
@@ -415,5 +437,20 @@ mod tests {
             1_234
         );
         assert_eq!(music_seed(UNIX_EPOCH - Duration::from_secs(10)), 0);
+    }
+
+    /// Each second's start plays its own run of songs: a stream's start is no
+    /// constant.
+    #[test]
+    fn a_stream_started_a_second_later_plays_its_own_songs() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let heard = |started| {
+            let second = usize::try_from(SAMPLE_RATE).expect("a rate fits");
+            let mut frames = vec![Frame::default(); second];
+            performance_at(started, Controls::default()).render(&mut frames);
+            frames
+        };
+        let started = UNIX_EPOCH + Duration::from_secs(1_753_000_000);
+        assert_ne!(heard(started), heard(started + Duration::from_secs(1)));
     }
 }

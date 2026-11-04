@@ -28,7 +28,6 @@ use crate::walk::WalkState;
 
 mod office;
 use office::FloorView;
-#[doc(hidden)]
 pub use office::{Feed, FloorNav, OfficeSession};
 
 pub use pixtuoid_core::state::MAX_FLOORS;
@@ -590,6 +589,7 @@ impl FloorSession {
     }
 
     /// The [`wall_board`](crate::neon_sign::wall_board) of `scene`, a one-floor office.
+    #[doc(hidden)]
     pub fn board(
         &self,
         scene: &SceneState,

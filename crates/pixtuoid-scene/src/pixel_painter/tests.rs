@@ -3679,7 +3679,8 @@ fn a_bubble_clears_its_speakers_badge_at_every_chitchat_spot() {
 /// so a pointer over both names the agent in both.
 #[test]
 fn a_pet_tied_with_an_agent_sorts_under_them_in_both_looks() {
-    use crate::display::{HoverTarget, PieceKind};
+    use crate::display::PieceKind;
+    use crate::hit::HoverTarget;
     use crate::layout::{Bounds, Pivot, Point};
     use crate::pack::Piece as PackPiece;
     let (layout, pack, frames, _) =

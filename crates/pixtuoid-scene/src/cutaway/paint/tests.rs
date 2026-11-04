@@ -3027,7 +3027,7 @@ fn the_cutaway_lists_the_pet_and_each_mascot_as_hovers() {
             .hovers()
             .listed()
             .iter()
-            .any(|h| h.target == crate::display::HoverTarget::Mascot(left.clone()))
+            .any(|h| h.target == crate::hit::HoverTarget::Mascot(left.clone()))
     );
 }
 
@@ -3091,8 +3091,7 @@ fn an_effect_never_blocks_its_figure() {
     for c in &mut frame.characters {
         c.effects = every_effect(c.top_left);
     }
-    let id =
-        crate::display::HoverTarget::Agent(frame.agents[frame.characters[0].agent_idx].agent_id);
+    let id = crate::hit::HoverTarget::Agent(frame.agents[frame.characters[0].agent_idx].agent_id);
     for s in [1, pack.max_density_variant().get()] {
         let office = Office {
             layout: &layout,
@@ -4102,7 +4101,7 @@ fn each_drawn_agent_hovers_inside_its_piece() {
             .listed()
             .iter()
             .map(|h| match h.target {
-                crate::display::HoverTarget::Agent(id) => {
+                crate::hit::HoverTarget::Agent(id) => {
                     let Bounds {
                         x,
                         y,
