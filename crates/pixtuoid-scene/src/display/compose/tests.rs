@@ -902,8 +902,6 @@ fn the_cutaway_steps_each_looping_stand_in_on_the_beat() {
     let pack = test_office();
     let now = crate::holiday::Occasion::christmas_noon();
     let occasion = crate::holiday::Occasion::at(now);
-    let step =
-        std::time::Duration::from_millis(pack.piece(PackPiece::ChristmasTree).frame_ms().into());
     let mut looping = 0;
     for layout in crate::layout::roster::tests::offices() {
         let frames = |at| {
@@ -918,17 +916,25 @@ fn the_cutaway_steps_each_looping_stand_in_on_the_beat() {
             )
             .into_iter()
             .filter_map(|(_, kind)| match kind {
-                PieceKind::Animated { art, .. } => Some(art.frame),
+                PieceKind::Animated { art, .. } => Some((art.sprite, art.frame)),
                 _ => None,
             })
             .collect::<Vec<_>>()
         };
-        let (then, next) = (frames(now), frames(now + step));
-        assert_eq!(then.len(), next.len());
-        assert!(
-            then.iter().zip(&next).all(|(a, b)| a != b),
-            "{then:?} -> {next:?}"
-        );
+        let then = frames(now);
+        for &(sprite, _) in &then {
+            let step = std::time::Duration::from_millis(pack.piece(sprite).frame_ms().into());
+            let next = frames(now + step);
+            assert_eq!(then.len(), next.len());
+            for (a, b) in then.iter().zip(&next).filter(|(a, _)| a.0 == sprite) {
+                assert_ne!(
+                    a.1,
+                    b.1,
+                    "{} steps a frame each of its frame_ms",
+                    sprite.name()
+                );
+            }
+        }
         looping += then.len();
     }
     assert!(looping > 0, "some office loops a stand-in");
