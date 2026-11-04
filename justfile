@@ -494,23 +494,12 @@ api-surface mode="": _api-toolchain
         fi
         jsons+=("$json")
     done
-    # Each published crate's public paths and their last names, by crate name:
-    # a crate's local `paths` holds only what rustdoc kept.
-    public="$(jq -s 'map([.paths[] | select(.crate_id == 0) | .path] as $kept
-        | {key: .index[.root | tostring].name,
-           value: {paths: ($kept | map({key: join("::"), value: true}) | from_entries),
-                   names: ($kept | map({key: last, value: true}) | from_entries)}})
-        | from_entries' "${jsons[@]}")"
-    for json in "${jsons[@]}"; do
-        leaks="$(jq -r --argjson public "$public" \
-            --argjson crates "$(jq '.external_crates | map_values(.name)' "$json")" \
-            -f policy/ci-observability/api-leaks.jq "$json")"
-        if [ -n "$leaks" ]; then
-            echo "error: a public item names an item outside the published API; make that item public or hide the one naming it:" >&2
-            echo "$leaks" >&2
-            fail=1
-        fi
-    done
+    leaks="$(jq -r -s -f policy/ci-observability/api-leaks.jq "${jsons[@]}")"
+    if [ -n "$leaks" ]; then
+        echo "error: a public item names an item outside the published API; make that item public or hide the one naming it:" >&2
+        echo "$leaks" >&2
+        fail=1
+    fi
     exit "$fail"
 
 [doc("Fail if a published crate's public API drifted from the api/ goldens (CI-only)")]

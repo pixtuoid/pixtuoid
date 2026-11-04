@@ -446,27 +446,31 @@ file_plan '{"actions":[],"lost":[],"unacquired":[]}' '' || fail "the file step f
 [[ "$(<"$test_dir/gh.log")" == "$listed" ]] || fail "an empty plan made a gh call: $(<"$test_dir/gh.log")"
 
 # ── justfile api-surface: the leak check names each reference to a stripped
-# item, in a signature or a `pub use`, its own crate's or a published sibling's,
-# and nothing a crate keeps public or an auto trait's synthetic impl names.
-leaks_public='{"dep":{"paths":{"dep::Open":true},"names":{"Open":true}}}'
-leaks_crates='{"7":"dep"}'
-leaks_of() {
-    jq -r --argjson public "$leaks_public" --argjson crates "$leaks_crates" \
-        -f policy/ci-observability/api-leaks.jq <<<"$1" || fail "api-leaks.jq failed on its fixture"
-}
-item() { # id, name (or null), line, inner
-    printf '"%s":{"crate_id":0,"name":%s,"span":{"filename":"src/lib.rs","begin":[%s,0]},"inner":%s}' "$1" "$2" "$3" "$4"
+# item, in a signature or a `pub use`, its own crate's or a published sibling's
+# (by path, or by name for a trait only `index` holds), and nothing a crate
+# keeps public, a non-local item names, or an auto trait's synthetic impl names.
+item() { # id, crate, name (or null), line, inner
+    printf '"%s":{"crate_id":%s,"name":%s,"span":{"filename":"src/lib.rs","begin":[%s,0]},"inner":%s}' "$1" "$2" "$3" "$4" "$5"
 }
 ret() { printf '{"function":{"sig":{"output":{"resolved_path":{"path":"%s","id":%s,"args":null}}}}}' "$1" "$2"; }
-fine="$(item 5 '"fine"' 9 "$(ret dep::Open 93)")"
-synthetic='"6":{"crate_id":0,"name":null,"span":null,"inner":{"impl":{"is_synthetic":true,"for":{"resolved_path":{"path":"Private","id":94,"args":null}}}}}'
+dep='{"root":1,"index":{"1":{"crate_id":0,"name":"dep","inner":{"module":{}}}},"paths":{"1":{"crate_id":0,"path":["dep"]},"10":{"crate_id":0,"path":["dep","Open"]}},"external_crates":{}}'
+kept="$(item 5 0 '"fine"' 9 "$(ret dep::Open 93)"),$(item 8 0 '"trait_open"' 15 "$(ret dep::Open 96)"),$(item 9 0 '"local"' 17 "$(ret fine 5)")"
+kept+=",$(item 95 7 '"Hidden"' 1 '{"trait":{}}'),$(item 96 7 '"Open"' 1 "$(ret gone 97)")"
+kept+=',"6":{"crate_id":0,"name":null,"span":null,"inner":{"impl":{"is_synthetic":true,"for":{"resolved_path":{"path":"Private","id":94,"args":null}}}}}'
 paths='"paths":{"92":{"crate_id":7,"path":["dep","secret","Thing"]},"93":{"crate_id":7,"path":["dep","Open"]}}'
-leaky="{\"index\":{$(item 2 '"leaky"' 3 "$(ret crate::hidden::Gone 90)"),$(item 3 null 5 '{"use":{"source":"crate::hidden::Also","name":"Also","id":91,"is_glob":false}}'),$(item 4 '"cross"' 7 "$(ret dep::secret::Thing 92)"),$fine,$synthetic},$paths}"
-[[ "$(leaks_of "$leaky")" == "src/lib.rs:3: leaky names crate::hidden::Gone
+crate() { printf '{"root":100,"index":{"100":{"crate_id":0,"name":"probe","inner":{"module":{}}},%s},%s,"external_crates":{"7":{"name":"dep"}}}' "$1" "$paths"; }
+printf '%s' "$dep" >"$test_dir/dep.json"
+leaks_of() {
+    printf '%s' "$1" >"$test_dir/probe.json"
+    jq -r -s -f policy/ci-observability/api-leaks.jq "$test_dir/dep.json" "$test_dir/probe.json" ||
+        fail "api-leaks.jq failed on its fixture"
+}
+leaky="$(crate "$(item 2 0 '"leaky"' 3 "$(ret crate::hidden::Gone 90)"),$(item 3 0 null 5 '{"use":{"source":"crate::hidden::Also","name":"Also","id":91,"is_glob":false}}'),$(item 4 0 '"cross"' 7 "$(ret dep::secret::Thing 92)"),$(item 7 0 '"trait_hidden"' 13 "$(ret dep::Hidden 95)"),$kept")"
+[[ "$(leaks_of "$leaky")" == "src/lib.rs:13: trait_hidden names dep::Hidden
+src/lib.rs:3: leaky names crate::hidden::Gone
 src/lib.rs:5: Also names crate::hidden::Also
 src/lib.rs:7: cross names dep::secret::Thing" ]] || fail "the leak check missed a stripped reference: $(leaks_of "$leaky")"
-[[ -z "$(leaks_of "{\"index\":{$fine,$synthetic},$paths}")" ]] ||
-    fail "the leak check flagged a crate that names only public items"
+[[ -z "$(leaks_of "$(crate "$kept")")" ]] || fail "the leak check flagged a kept reference: $(leaks_of "$(crate "$kept")")"
 
 # ── site.yml: Playwright's dry run hands apt-install exactly its missing
 # packages.
