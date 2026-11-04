@@ -178,7 +178,63 @@ pub struct Viewport {
     pub insets: Insets,
 }
 
+/// The narrowest office [`Viewport::fitted`] lays out, so a narrower surface
+/// scrolls across it: the App's (pixtuoid-apple `docs/design.md`), at which
+/// every meeting room keeps its furniture
+/// (`a_fitted_office_keeps_every_meeting_rooms_furniture`).
+pub(crate) const FITTED_MIN_W: u16 = 150;
+
+/// The tallest office [`Viewport::fitted`] lays out, so a taller surface takes
+/// bigger pixels instead: the App's (pixtuoid-apple `docs/design.md`), past
+/// which a layout stretches its rooms and shrinks its people.
+pub(crate) const FITTED_MAX_H: u16 = 240;
+
+/// What a surface of device pixels fits an office as ([`Viewport::fitted`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fitted {
+    /// The office in layout units: the surface's, never narrower than every
+    /// meeting room keeps its furniture at, its insets rounded up to whole
+    /// units.
+    pub viewport: Viewport,
+    /// Whole device pixels a frame pixel takes.
+    pub upscale: u16,
+}
+
 impl Viewport {
+    /// The office a surface `surface_px` device pixels big lays out, under
+    /// `insets_px` of them, drawn at `density` frame pixels a unit and
+    /// `per_point` device pixels at the least a frame pixel, so no frame pixel
+    /// is smaller than a point.
+    pub fn fitted(
+        surface_px: Size,
+        insets_px: Insets,
+        density: crate::sprite::format::Density,
+        per_point: std::num::NonZeroU16,
+    ) -> Fitted {
+        let fit = crate::render_scale::PixelFit::at_most_high(
+            FITTED_MAX_H,
+            (density, per_point),
+            surface_px,
+        );
+        let units = |px: u16| px.div_ceil(fit.scale().get());
+        let Size { w, h } = fit.logical();
+        Fitted {
+            viewport: Self {
+                size: Size {
+                    w: w.max(FITTED_MIN_W),
+                    h,
+                },
+                insets: Insets {
+                    top: units(insets_px.top),
+                    right: units(insets_px.right),
+                    bottom: units(insets_px.bottom),
+                    left: units(insets_px.left),
+                },
+            },
+            upscale: fit.upscale(),
+        }
+    }
+
     /// A `w`×`h` office no chrome covers.
     pub const fn full(w: u16, h: u16) -> Self {
         Self {

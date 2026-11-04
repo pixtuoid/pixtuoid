@@ -1458,3 +1458,119 @@ fn waypoint_depth_baseline_is_its_grounds_south_row() {
         );
     }
 }
+
+/// The App's office fit (pixtuoid-apple `App/Pixtuoid/OfficeScreen.swift`'s
+/// `OfficeFit`, at main `e5c7744`), moved: on each device, upright and turned,
+/// a fitted viewport is the office `OfficeFit` lays out on the App's 4-pixel
+/// art, at its whole device pixels a frame pixel, each pair the App's own run.
+/// The iPhone 18 Pro's 402×874 pt at 3× and the 13-inch iPad Pro's 1032×1376
+/// pt at 2× are the App's (`OfficeModelTests.swift`, `OfficeFitTests.swift`);
+/// the iPhone SE's 1334×750 px is Apple's (<https://support.apple.com/kb/SP867>)
+/// at the 4.7-inch display's 2× (Table 2-1's iPhone 8,
+/// <https://developer.apple.com/library/archive/documentation/DeviceInformation/Reference/iOSDeviceCompatibility/Displays/Displays.html>).
+#[test]
+fn a_fitted_viewport_is_the_apps_office_fit() {
+    let art = crate::sprite::format::Density::new(4).expect("nonzero");
+    let cases = [
+        ("iPhone 18 Pro", (1206, 2622), 3, (150, 218), 3),
+        ("iPhone 18 Pro turned", (2622, 1206), 3, (218, 100), 3),
+        ("iPhone SE", (750, 1334), 2, (150, 166), 2),
+        ("iPhone SE turned", (1334, 750), 2, (166, 93), 2),
+        ("iPad Pro 13", (2064, 2752), 2, (172, 229), 3),
+        ("iPad Pro 13 turned", (2752, 2064), 2, (229, 172), 3),
+    ];
+    for (device, (w, h), per_point, (units_w, units_h), upscale) in cases {
+        let fitted = Viewport::fitted(
+            Size { w, h },
+            Insets::default(),
+            art,
+            std::num::NonZeroU16::new(per_point).expect("nonzero"),
+        );
+        assert_eq!(
+            fitted,
+            Fitted {
+                viewport: Viewport::full(units_w, units_h),
+                upscale,
+            },
+            "{device}"
+        );
+    }
+}
+
+/// A fitted viewport's insets are the surface's, rounded up to whole units, so
+/// no unit the system's chrome covers any of is left inside them.
+#[test]
+fn a_fitted_inset_is_rounded_up_to_whole_units() {
+    let art = crate::sprite::format::Density::new(4).expect("nonzero");
+    let per_point = std::num::NonZeroU16::new(3).expect("nonzero");
+    // Twelve device pixels a unit: 3 a frame pixel, 4 frame pixels a unit.
+    let fitted = Viewport::fitted(
+        Size { w: 1206, h: 2622 },
+        Insets {
+            top: 186,
+            right: 12,
+            bottom: 102,
+            left: 0,
+        },
+        art,
+        per_point,
+    );
+    assert_eq!(
+        fitted.viewport.insets,
+        Insets {
+            top: 16,
+            right: 1,
+            bottom: 9,
+            left: 0,
+        }
+    );
+}
+
+/// A fitted office takes bigger pixels rather than grow past its cap: from the
+/// fewest device pixels a frame pixel the display allows, it adds whole ones
+/// only while the office would stand taller than the cap.
+#[test]
+fn a_fitted_office_takes_bigger_pixels_rather_than_grow_past_its_cap() {
+    let art = crate::sprite::format::Density::new(4).expect("nonzero");
+    for per_point in [1, 2, 3] {
+        let least = std::num::NonZeroU16::new(per_point).expect("nonzero");
+        for h in (400..6000).step_by(37) {
+            let fitted = Viewport::fitted(Size { w: 1000, h }, Insets::default(), art, least);
+            assert!(
+                fitted.viewport.size.h <= FITTED_MAX_H,
+                "{h} px at {per_point}x"
+            );
+            let one_less = fitted.upscale - 1;
+            assert!(
+                one_less < per_point || h > FITTED_MAX_H * one_less * art.get(),
+                "{h} px at {per_point}x: {one_less} a frame pixel already fits"
+            );
+        }
+    }
+}
+
+/// The fitted width keeps every meeting room's furniture: on every seed, at
+/// each height a fitted phone or tablet lays out, every meeting room of an
+/// office that narrow seats its sofa and table.
+#[test]
+fn a_fitted_office_keeps_every_meeting_rooms_furniture() {
+    let mut rooms = 0;
+    for h in [93, 100, 166, 172, 218, 229] {
+        for seed in 0..48 {
+            let layout = SceneLayout::compute(Viewport::full(FITTED_MIN_W, h), None, seed)
+                .expect("lays out");
+            for room in &layout.meeting_rooms {
+                assert!(
+                    room.trio.is_some(),
+                    "{h} units high, seed {seed}: a bare meeting room at {:?}",
+                    room.bounds
+                );
+                rooms += 1;
+            }
+        }
+    }
+    assert!(
+        rooms > 0,
+        "no meeting room was laid out, so none was checked"
+    );
+}
