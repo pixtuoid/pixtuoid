@@ -24,24 +24,20 @@ runs:
         # Capture before grep: pipefail must expose a crashing producer, while
         # grep -q on a live producer can induce EPIPE (notably on macOS).
         set -euo pipefail
-        # Resolve the binary before isolating HOME. `connect` writes config,
-        # and must never touch the runner user's real home directory.
         BIN="${RUNNER_TEMP}/pkg/bin/pixtuoid"
-        export HOME="${RUNNER_TEMP}/fakehome"
-        mkdir -p "${HOME}"
+        home="${RUNNER_TEMP}/fakehome"
+        mkdir -p "$home"
         out="${RUNNER_TEMP}/formula-test"
         mkdir -p "$out"
 
         "$BIN" --version                      > "$out/version"
         "$BIN" man                            > "$out/man.roff"
         "$BIN" completions bash               > "$out/completions.bash"
-        # As in Homebrew's sandbox, no agent CLI: Claude Code's connect needs one.
-        status=0
-        env PATH=/usr/bin:/bin "$BIN" connect claude-code --json > "$out/connect.json" || status=$?
+        # As in Homebrew's sandbox: a fresh HOME, no agent CLI or office, the shim beside it.
+        env -i HOME="$home" PATH=/usr/bin:/bin "$BIN" doctor > "$out/doctor"
 
         # Exit zero alone is not the formula's version-content assertion.
         grep -qF "$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)" "$out/version"
         grep -q '^\.TH' "$out/man.roff"
         grep -q pixtuoid "$out/completions.bash"
-        [ "$status" -eq 1 ]
-        python3 -c 'import json,sys; row = json.load(open(sys.argv[1]))[0]; assert (row["id"], row["outcome"]) == ("claude-code", "failed"), "connect --json envelope drifted from the homebrew-core contract"' "$out/connect.json"
+        grep -qF 'delivered a test event' "$out/doctor"

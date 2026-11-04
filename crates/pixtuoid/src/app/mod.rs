@@ -152,6 +152,8 @@ pub fn run() -> Result<()> {
         }
         #[cfg(feature = "serve")]
         Cmd::Pair { host, port, reset } => crate::serve::pair(host, port, reset),
+        // homebrew-core contract: it exits 0 whatever it reports, and the
+        // formula's `test do` reads its output only on that exit.
         Cmd::Doctor { look, protocol } => {
             let report = doctor::run(
                 &crate::run_log::LogLocation::from_env(),

@@ -195,17 +195,15 @@ cat >"$brew_bin/curl" <<'STUB'
 cat "$FAKE_FORMULA"
 STUB
 printf '#!/usr/bin/env bash\n' >"$brew_bin/cargo"
-# This tree dropped `gone-cmd` and the source `renamed`, and `connect needs-cli`
-# fails with its `failed` row and two lines of cause; `wrong-id` and
-# `wrong-outcome` fail with a row the formula's assertions refuse.
+# This tree dropped `gone-cmd`; `doctor` prints the delivered line, `loud` prints
+# it to stderr alone, and `broken` fails with two lines of cause.
 cat >"$brew_dir/target/debug/pixtuoid" <<'STUB'
 #!/usr/bin/env bash
 case "$1 ${2:-}" in
 "gone-cmd --help") exit 2 ;;
-"connect needs-cli") printf '[{"id":"needs-cli","outcome":"failed"}]\n' && printf 'line one\nline two\n' >&2 && exit 1 ;;
-"connect renamed") printf 'unknown source\n' >&2 && exit 1 ;;
-"connect wrong-id") printf '[{"id":"other","outcome":"failed"}]\n' && exit 1 ;;
-"connect wrong-outcome") printf '[{"id":"wrong-outcome","outcome":"connected"}]\n' && exit 1 ;;
+"doctor ") printf 'shim delivered a test event\n' ;;
+"loud ") printf 'delivered a test event\n' >&2 ;;
+"broken ") printf 'line one\nline two\n' >&2 && exit 1 ;;
 esac
 STUB
 chmod +x "$brew_bin/curl" "$brew_bin/cargo" "$brew_dir/target/debug/pixtuoid"
@@ -232,25 +230,40 @@ assert_brew() {
 assert_brew "a failed fetch" "" 1
 assert_brew "a test block with no subcommand" $'  test do\n    assert_match version.to_s, shell_output("#{bin}/pixtuoid --version")\n  end' 1
 grep -q 'shape changed' "$brew_dir/summary" || fail "the homebrew step didn't name an unrecognized test block"
-assert_brew "a dropped subcommand and a failing connect" \
-    $'  test do\n    system bin/"pixtuoid", "gone-cmd", testpath/"x"\n    shell_output("#{bin}/pixtuoid connect needs-cli --json")\n    shell_output("#{bin}/pixtuoid connect works --json")\n  end' 2
-{ grep -q 'gone-cmd' "$brew_dir/summary" && grep -q 'needs-cli.*line one line two' "$brew_dir/summary"; } ||
+delivered='assert_match "delivered a test event", shell_output("#{bin}/pixtuoid'
+assert_brew "a dropped subcommand and a failing command" \
+    $'  test do\n    system bin/"pixtuoid", "gone-cmd", testpath/"x"\n    '"$delivered"$' broken")\n    '"$delivered"$' doctor")\n  end' 2
+{ grep -q 'gone-cmd' "$brew_dir/summary" && grep -q 'broken.*exit 0.*exits 1: *line one line two' "$brew_dir/summary"; } ||
     fail "the homebrew step didn't name each miss with its cause: $(<"$brew_dir/summary")"
-assert_brew "a test block this tree runs" $'  test do\n    shell_output("#{bin}/pixtuoid connect works --json")\n  end' 0
-assert_brew "an expected failure this tree fails" $'  test do\n    shell_output("#{bin}/pixtuoid connect needs-cli --json", 1)\n  end' 0
-assert_brew "an expected failure this tree passes" $'  test do\n    shell_output("#{bin}/pixtuoid connect works --json", 1)\n  end' 1
+assert_brew "a test block this tree runs" $'  test do\n    assert_match version.to_s, shell_output("#{bin}/pixtuoid --version")\n    '"$delivered"$' doctor")\n  end' 0
+assert_brew "an expected failure this tree fails" $'  test do\n    assert_match "", shell_output("#{bin}/pixtuoid broken", 1)\n  end' 0
+assert_brew "an expected failure this tree passes" $'  test do\n    '"$delivered"$' doctor", 1)\n  end' 1
 grep -q 'exit 1, and this tree exits 0' "$brew_dir/summary" ||
     fail "the homebrew step didn't name the exit it expected: $(<"$brew_dir/summary")"
-assert_brew "an expected failure of a source this tree renamed" $'  test do\n    shell_output("#{bin}/pixtuoid connect renamed --json", 1)\n  end' 1
-grep -q 'renamed.*print its .failed. row.*unknown source' "$brew_dir/summary" ||
-    fail "the homebrew step didn't name the missing row: $(<"$brew_dir/summary")"
-for refused in wrong-id wrong-outcome; do
-    assert_brew "an expected failure printing $refused" "  test do
-    shell_output(\"#{bin}/pixtuoid connect $refused --json\", 1)
+assert_brew "text this tree no longer prints" $'  test do\n    assert_match "a reworded line", shell_output("#{bin}/pixtuoid doctor")\n  end' 1
+grep -q 'print "a reworded line".*shim delivered a test event' "$brew_dir/summary" ||
+    fail "the homebrew step didn't name the missing text: $(<"$brew_dir/summary")"
+assert_brew "a literal assertion split across lines" $'  test do\n    assert_match "delivered a test event",\n                 shell_output("#{bin}/pixtuoid doctor")\n  end' 1
+grep -q "can't read: assert_match \"delivered a test event\"," "$brew_dir/summary" ||
+    fail "the homebrew step passed an assertion it couldn't read: $(<"$brew_dir/summary")"
+for form in "assert_match('delivered a test event', shell_output(\"#{bin}/pixtuoid doctor\"))" \
+    "assert_match(/delivered/, shell_output(\"#{bin}/pixtuoid doctor\"))" \
+    "assert_match version.to_s, shell_output(\"#{bin}/pixtuoid doctor\")"; do
+    assert_brew "an assertion of another form: $form" "  test do
+    $form
   end" 1
-    grep -q "$refused.*print its .failed. row" "$brew_dir/summary" ||
-        fail "the homebrew step didn't refuse $refused's row: $(<"$brew_dir/summary")"
+    grep -q "can't read: assert_match" "$brew_dir/summary" ||
+        fail "the homebrew step passed an assertion it couldn't read: $(<"$brew_dir/summary")"
 done
+assert_brew "the version line, transformed" $'  test do\n    '"$delivered"$' doctor")\n    assert_match version.to_s, shell_output("#{bin}/pixtuoid --version").split.first\n  end' 1
+grep -q "can't read: assert_match version.to_s, .*split.first" "$brew_dir/summary" ||
+    fail "the homebrew step passed a version line it doesn't replay: $(<"$brew_dir/summary")"
+assert_brew "a literal assertion, transformed" $'  test do\n    '"$delivered"$' doctor").lines.first\n  end' 1
+grep -q "can't read: assert_match \"delivered a test event\", .*lines.first" "$brew_dir/summary" ||
+    fail "the homebrew step replayed a transformed assertion as plain: $(<"$brew_dir/summary")"
+assert_brew "text this tree prints to stderr alone" $'  test do\n    '"$delivered"$' loud")\n  end' 1
+grep -q 'loud.*print "delivered a test event"' "$brew_dir/summary" ||
+    fail "the homebrew step matched text off stdout: $(<"$brew_dir/summary")"
 
 # ── apt-install: a failed or stalled update or download retries under the
 # action's own bound, and the install never runs under it or after a failed
