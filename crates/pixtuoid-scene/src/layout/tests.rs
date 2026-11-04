@@ -1641,3 +1641,41 @@ fn a_short_split_view_fits_no_office() {
         None
     );
 }
+
+/// An office wider than its surface scrolls under the surface's chrome, so
+/// each side inset covers the end of the office the surface scrolls to: the
+/// office is [`FITTED_MIN_W`] wide, the left inset at its west end and the
+/// right at its east, each in whole units of the surface's.
+#[test]
+fn a_scrolling_office_keeps_the_side_insets_at_its_two_ends() {
+    let art = crate::sprite::format::Density::new(4).expect("nonzero");
+    let per_point = std::num::NonZeroU16::new(3).expect("nonzero");
+    // Twelve device pixels a unit: 3 a frame pixel, 4 frame pixels a unit;
+    // the iPhone 18 Pro's 1206 px are 100 units, under the fitted width.
+    let fitted = Viewport::fitted(
+        Size { w: 1206, h: 2622 },
+        Insets {
+            top: 0,
+            right: 18,
+            bottom: 0,
+            left: 36,
+        },
+        art,
+        per_point,
+    );
+    assert_eq!(
+        fitted.map(|f| f.viewport),
+        Some(Viewport {
+            size: Size {
+                w: FITTED_MIN_W,
+                h: 218,
+            },
+            insets: Insets {
+                top: 0,
+                right: 2,
+                bottom: 0,
+                left: 3,
+            },
+        })
+    );
+}
