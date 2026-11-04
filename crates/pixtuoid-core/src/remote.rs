@@ -415,10 +415,13 @@ const PIN_BYTES: usize = 32;
 /// A link on the site rather than a custom scheme, which "doesn't prevent other
 /// apps from registering the same scheme and handling the associated links"
 /// ([Apple](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app)).
-/// Once the site's `.well-known/apple-app-site-association` names the App it is a
-/// universal link that App alone opens; until then it opens the site's page. The
-/// fields ride the fragment, which a browser keeps: "the fragment identifier is
-/// separated from the rest of the URI prior to a dereference" (RFC 3986 §3.5).
+/// Once the site's `.well-known/apple-app-site-association` names the App
+/// ([Supporting associated domains](https://developer.apple.com/documentation/xcode/supporting-associated-domains)),
+/// tapping it "redirects the link directly to your app"
+/// ([universal links](https://developer.apple.com/documentation/xcode/allowing-apps-and-websites-to-link-to-your-content));
+/// until then, or with no App installed, it opens the site's page. The fields ride
+/// the fragment, which a browser keeps: "the fragment identifier is separated from
+/// the rest of the URI prior to a dereference" (RFC 3986 §3.5).
 const PAIR_LINK_PREFIX: &str = "https://pixtuoid.dev/pair/#";
 
 /// What every link began with before [`PAIR_LINK_PREFIX`], none of which a
@@ -502,11 +505,11 @@ impl FromStr for PairLink {
         if text.starts_with(OLDER_PAIR_LINK_PREFIX) {
             return Err(PairLinkError::Outdated);
         }
-        let query = text
+        let fragment = text
             .strip_prefix(PAIR_LINK_PREFIX)
             .ok_or(PairLinkError::NotALink)?;
         let field = |key: &str| {
-            query
+            fragment
                 .split('&')
                 .find_map(|pair| pair.strip_prefix(key)?.strip_prefix('='))
                 .ok_or(PairLinkError::NotALink)
@@ -1925,8 +1928,8 @@ mod tests {
             ];
             let field = fields.iter_mut().find(|(k, _)| *k == key).expect("a field");
             field.1 = value.to_owned();
-            let query: Vec<_> = fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
-            format!("{PAIR_LINK_PREFIX}{}", query.join("&"))
+            let fragment: Vec<_> = fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            format!("{PAIR_LINK_PREFIX}{}", fragment.join("&"))
         };
         // One character past each edge of the digits' ranges, at full length.
         let edges = ['/', ':', '@', 'G'].into_iter().flat_map(|edge| {
