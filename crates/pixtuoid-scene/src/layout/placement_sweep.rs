@@ -143,7 +143,7 @@ pub(crate) const SWEEP_INSETS: [Insets; 6] = [
     },
 ];
 
-/// The viewport whose `insets` leave a `w`×`h` office inside them.
+/// The viewport whose `insets` leave a `w`×`h` area inside them.
 pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
     Viewport {
         size: Size {
@@ -154,20 +154,46 @@ pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
     }
 }
 
-/// Run `f` over `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size
-/// the office left inside the insets, at production fill.
+/// `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size the area
+/// left inside the insets, with the seed it lays out at.
+fn inset_offices() -> impl Iterator<Item = (Viewport, u64)> {
+    SWEEP_SIZES.iter().flat_map(|&(w, h)| {
+        SWEEP_SEEDS.flat_map(move |seed| {
+            SWEEP_INSETS.map(move |insets| (inset_viewport(w, h, insets), seed))
+        })
+    })
+}
+
+/// `viewport`'s office at `seed`, at production fill.
+fn inset_layout(viewport: Viewport, seed: u64) -> SceneLayout {
+    SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
+        panic!("{viewport:?} seed {seed}: the area inside the insets fell under the floor")
+    })
+}
+
+/// Run `f` over [`inset_offices`], each laid out.
 fn sweep_insets(mut f: impl FnMut(Viewport, u64, &SceneLayout)) {
-    for &(w, h) in SWEEP_SIZES {
-        for seed in SWEEP_SEEDS {
-            for insets in SWEEP_INSETS {
-                let viewport = inset_viewport(w, h, insets);
-                let l = SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
-                    panic!("{viewport:?} seed {seed}: the office inside the insets fell under the floor")
-                });
-                f(viewport, seed, &l);
-            }
-        }
+    for (viewport, seed) in inset_offices() {
+        f(viewport, seed, &inset_layout(viewport, seed));
     }
+}
+
+/// Every swept office, on each seed a user's floors lay out with, shows some
+/// stand-in of each holiday: a holiday standing in only for pieces an office
+/// lacks would pass it by unseen.
+#[test]
+fn every_office_shows_each_holiday() {
+    let check = |w, h, seed, l: &SceneLayout| {
+        for occasion in crate::holiday::Occasion::of_each_holiday() {
+            let shows = l
+                .fixtures()
+                .filter_map(|f| f.kind.occasion_piece())
+                .any(|p| occasion.art(p) != p);
+            assert!(shows, "{w}x{h} seed {seed} shows nothing of {occasion:?}");
+        }
+    };
+    sweep(check);
+    sweep_production_floors(check);
 }
 
 /// Which Bounds a piece's rect must stay inside — one honest container per
@@ -956,8 +982,6 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
 /// no-valid-approach sentinel and every leg for the severed desks degrades to a
 /// straight `door→chair` line through furniture.
 fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &SceneLayout) {
-    // A free fn, not a closure: three sweeps share it — the placement seed axis,
-    // the production floor seeds, and the step-1 `NARROW_BAND` width scan.
     use crate::pathfind::find_path;
     let overlay = crate::walkable::OccupancyOverlay::new();
     let door = l.door_threshold;
@@ -1822,7 +1846,7 @@ fn point_seed_packing_is_frozen() {
 fn nothing_is_placed_under_an_inset() {
     let mut v = Vec::new();
     sweep_insets(|viewport, seed, l| {
-        let inner = viewport.inner().expect("the sweep leaves an office inside");
+        let inner = viewport.inner().expect("the sweep leaves an area inside");
         let mut outside = |what: String, b: Bounds| {
             let at = Point { x: b.x, y: b.y };
             let size = Size {
@@ -1890,7 +1914,7 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 9] {
             ..b
         }
     };
-    let (east, south) = (inner.x + inner.width, inner.y + inner.height);
+    let (east, south) = (inner.right(), inner.bottom());
     let walls: Vec<WallSegment> = l
         .room_walls
         .iter()
@@ -1973,7 +1997,7 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 9] {
 fn an_office_inside_insets_is_the_inner_sizes_moved() {
     let mut v = Vec::new();
     sweep_insets(|viewport, seed, l| {
-        let inner = viewport.inner().expect("the sweep leaves an office inside");
+        let inner = viewport.inner().expect("the sweep leaves an area inside");
         let bare = SceneLayout::compute(Viewport::full(inner.width, inner.height), None, seed)
             .expect("the inner size lays out bare");
         let fields = from_its_inner_corner(l).into_iter();
@@ -1996,17 +2020,9 @@ fn an_office_inside_insets_is_the_inner_sizes_moved() {
     ignore = "an exhaustive sweep outlasts its budget instrumented; the plain suite asserts it on every PR"
 )]
 fn the_route_sweeps_hold_inside_insets() {
-    let offices: Vec<(Viewport, u64)> = SWEEP_SIZES
-        .iter()
-        .flat_map(|&(w, h)| {
-            SWEEP_INSETS.into_iter().flat_map(move |insets| {
-                SWEEP_SEEDS.map(move |seed| (inset_viewport(w, h, insets), seed))
-            })
-        })
-        .collect();
+    let offices: Vec<(Viewport, u64)> = inset_offices().collect();
     let check = |&(viewport, seed): &(Viewport, u64)| {
-        let l = SceneLayout::compute(viewport, None, seed)
-            .unwrap_or_else(|| panic!("{viewport:?} seed {seed}: refused above the floor"));
+        let l = inset_layout(viewport, seed);
         let Size { w, h } = viewport.size;
         assert_walkable_connected(w, h, seed, &l);
         assert_spawn_stands_on_open_floor(w, h, seed, &l);

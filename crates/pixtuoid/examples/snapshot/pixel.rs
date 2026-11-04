@@ -149,7 +149,7 @@ impl<S: PixelSession> PixelOffice<S> {
         })
     }
 
-    /// It under a painter's chrome covering `insets` of its office.
+    /// It under a painter's chrome covering `insets` of its viewport.
     pub(crate) fn inset(self, insets: Insets) -> Self {
         Self { insets, ..self }
     }

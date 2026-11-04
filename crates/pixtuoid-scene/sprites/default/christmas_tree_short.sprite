@@ -1,0 +1,18 @@
+# 6x7 Christmas tree in the lobby ficus's pot: a warm star (`9`), fir tiers
+# (`l`/`L`), two strings of lights (`9` lit, `o` dark) that swap each frame.
+@frame 0
+. . 9 9 . .
+. . l L . .
+. l 9 L l .
+. L l o L .
+l o L l 9 L
+. . g g . .
+. . g g . .
+@frame 1
+. . 9 9 . .
+. . l L . .
+. l o L l .
+. L l 9 L .
+l 9 L l o L
+. . g g . .
+. . g g . .

@@ -13,7 +13,7 @@ pub(crate) use pixtuoid_scene::hit::SceneHit;
 /// probe the tests read the layout's fixtures through.
 #[cfg(test)]
 fn bare_hit(layout: &SceneLayout, cell: CellArea) -> Option<SceneHit<'static>> {
-    pixtuoid_scene::hit::scene_hit(None, None, layout, cell.bounds())
+    pixtuoid_scene::hit::scene_hit(None, None, layout, cell.bounds(), Default::default())
 }
 
 /// Whether the bare office shows the coffee machine at `cell`.

@@ -316,18 +316,18 @@ impl TextRun {
         set
     }
 
-    /// The floor indicator naming `floor` over the elevator at `door` of an
-    /// office whose north edge is `office_top`: centred on the door, in the
-    /// cell over it, on the badge plate, an arrow with no floor its way dim.
+    /// The floor indicator naming `floor` over the elevator at `door`, below
+    /// `inner_top`, the north edge inside the insets: centred on the door, in
+    /// the cell over it, on the badge plate, an arrow with no floor its way dim.
     pub(crate) fn indicator(
-        (door, office_top): (Point, u16),
+        (door, inner_top): (Point, u16),
         floor: crate::floor::FloorMeta,
         theme: &Theme,
     ) -> Self {
         Self {
             at: Point {
                 x: door.x + crate::layout::ELEVATOR_W / 2,
-                y: crate::layout::floor_indicator_rows(door.y, office_top).start,
+                y: crate::layout::floor_indicator_rows(door.y, inner_top).start,
             },
             align: Align::Centre,
             spans: crate::layout::floor_indicator(floor)

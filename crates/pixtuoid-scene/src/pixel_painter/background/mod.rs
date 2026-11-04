@@ -114,7 +114,6 @@ pub(super) fn paint_ground_and_walls(
     let (buf_w, buf_h) = (buf.width(), buf.height());
     let look = &moment.look;
     let window_frame = theme.surface.window_frame;
-    let wall_color = theme.surface.wall;
     let wall_trim_color = theme.surface.wall_trim;
 
     let carpet = look.carpet(theme).map(|c| [c.lit, c.dark, c.base]);
@@ -123,7 +122,7 @@ pub(super) fn paint_ground_and_walls(
         BaseFillKey {
             band_h: top_wall_h.min(buf_h),
             carpet,
-            wall: wall_color,
+            wall: theme.surface.wall,
         },
     );
 

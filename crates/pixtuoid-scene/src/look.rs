@@ -169,8 +169,8 @@ pub struct RenderInputs<'a> {
     pub world: FloorInputs<'a>,
     /// The active color theme.
     pub theme: &'static Theme,
-    /// The office's logical extent and the insets the painter's chrome
-    /// covers; a look's scale maps it to buffer pixels.
+    /// The logical extent a painter draws the office on, and the insets its
+    /// chrome covers; a look's scale maps it to buffer pixels.
     pub viewport: Viewport,
     /// See [`Place`].
     pub place: Place,
@@ -461,6 +461,8 @@ pub struct Hits {
     layout: Arc<SceneLayout>,
     /// The star the look drew; a host's text places its own.
     star: Option<crate::layout::Bounds>,
+    /// The holiday the frame's office keeps.
+    occasion: crate::holiday::Occasion,
 }
 
 impl Hits {
@@ -468,11 +470,13 @@ impl Hits {
         hovers: Arc<Hovers>,
         layout: Arc<SceneLayout>,
         star: Option<crate::layout::Bounds>,
+        occasion: crate::holiday::Occasion,
     ) -> Self {
         Self {
             hovers,
             layout,
             star,
+            occasion,
         }
     }
 
@@ -488,6 +492,7 @@ impl Hits {
             self.star.or(host_star),
             &self.layout,
             area,
+            self.occasion,
         )
     }
 
@@ -784,7 +789,12 @@ pub fn render(
     };
     Some(Rendered {
         dirty,
-        hits: Hits::new(Arc::clone(raster.hovers()?), stepped.layout, raster.star()),
+        hits: Hits::new(
+            Arc::clone(raster.hovers()?),
+            stepped.layout,
+            raster.star(),
+            stepped.frame.occasion,
+        ),
         occupied_waypoints: stepped.frame.occupied_waypoints,
         flash,
     })

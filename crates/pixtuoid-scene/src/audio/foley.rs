@@ -48,7 +48,7 @@ fn normalize(buf: &mut [f32], peak: f32) {
 
 const MIDI_A4: f32 = 440.0;
 fn midi_freq(m: f32) -> f32 {
-    MIDI_A4 * 2f32.powf((m - 69.0) / 12.0)
+    MIDI_A4 * libm::powf(2.0, (m - 69.0) / 12.0)
 }
 
 /// One mechanical-keyboard stroke — the BRIGHT office clack, most of its energy
@@ -77,14 +77,14 @@ pub(crate) fn keystroke(rng: &mut NoiseStream) -> Vec<f32> {
     let layers = click.iter().zip(&body).zip(&spice);
     for (i, (b, ((click, body), spice))) in buf.iter_mut().zip(layers).enumerate() {
         let t = i as f32 / SR;
-        *b = click * (-t * 330.0).exp()
-            + body * (-t * 280.0).exp() * 1.1
-            + spice * (-t * 500.0).exp() * 0.18;
+        *b = click * libm::expf(-t * 330.0)
+            + body * libm::expf(-t * 280.0) * 1.1
+            + spice * libm::expf(-t * 500.0) * 0.18;
     }
     let up_scaled: Vec<f32> = up
         .iter()
         .enumerate()
-        .map(|(i, &v)| v * (-(i as f32 / SR) * 520.0).exp())
+        .map(|(i, &v)| v * libm::expf(-(i as f32 / SR) * 520.0))
         .collect();
     place(&mut buf, &up_scaled, up_at, 0.35);
     normalize(&mut buf, 0.8);
@@ -102,9 +102,9 @@ pub(crate) fn door_chime() -> Vec<f32> {
         let note: Vec<f32> = (0..nn)
             .map(|i| {
                 let t = i as f32 / SR;
-                (tau * f * t).sin() * (-t * 2.6).exp()
-                    + 0.35 * (tau * 2.0 * f * t).sin() * (-t * 5.0).exp()
-                    + 0.10 * (tau * 3.0 * f * t).sin() * (-t * 9.0).exp()
+                libm::sinf(tau * f * t) * libm::expf(-t * 2.6)
+                    + 0.35 * libm::sinf(tau * 2.0 * f * t) * libm::expf(-t * 5.0)
+                    + 0.10 * libm::sinf(tau * 3.0 * f * t) * libm::expf(-t * 9.0)
             })
             .collect();
         place(&mut buf, &note, at, g * 0.7);
@@ -129,7 +129,8 @@ pub(crate) fn printer_whir(rng: &mut NoiseStream) -> Vec<f32> {
         let f =
             80.0 + 50.0 * (t / 0.25).clamp(0.0, 1.0) - 30.0 * ((t - 1.15) / 0.35).clamp(0.0, 1.0);
         phase += tau * f / SR;
-        let motor = phase.sin() + 0.45 * (2.0 * phase).sin() + 0.2 * (3.0 * phase).sin();
+        let motor =
+            libm::sinf(phase) + 0.45 * libm::sinf(2.0 * phase) + 0.2 * libm::sinf(3.0 * phase);
         *b = motor * env(i) * 0.5 + texture * env_tex(i) * 0.16;
     }
     let mut at = 0.28f32;
@@ -139,7 +140,7 @@ pub(crate) fn printer_whir(rng: &mut NoiseStream) -> Vec<f32> {
         let tick: Vec<f32> = bandpass(&raw_t, 1500.0, 4200.0)
             .iter()
             .enumerate()
-            .map(|(i, &v)| v * (-(i as f32 / SR) * 260.0).exp())
+            .map(|(i, &v)| v * libm::expf(-(i as f32 / SR) * 260.0))
             .collect();
         place(&mut buf, &tick, at, 0.5 + 0.2 * rng.unit());
         at += 0.09 + 0.02 * rng.unit();
@@ -150,7 +151,7 @@ pub(crate) fn printer_whir(rng: &mut NoiseStream) -> Vec<f32> {
         .iter()
         .enumerate()
         .map(|(i, &v)| {
-            let w = (std::f32::consts::PI * i as f32 / sw_n as f32).sin();
+            let w = libm::sinf(std::f32::consts::PI * i as f32 / sw_n as f32);
             v * w * w * 0.35
         })
         .collect();
@@ -168,7 +169,7 @@ pub(crate) fn vending_drop(rng: &mut NoiseStream) -> Vec<f32> {
     let click: Vec<f32> = bandpass(&raw_c, 800.0, 2000.0)
         .iter()
         .enumerate()
-        .map(|(i, &v)| v * (-(i as f32 / SR) * 200.0).exp())
+        .map(|(i, &v)| v * libm::expf(-(i as f32 / SR) * 200.0))
         .collect();
     place(&mut buf, &click, 0.0, 0.5);
     let tau = std::f32::consts::TAU;
@@ -181,7 +182,8 @@ pub(crate) fn vending_drop(rng: &mut NoiseStream) -> Vec<f32> {
             .enumerate()
             .map(|(i, rattle)| {
                 let t = i as f32 / SR;
-                (tau * 170.0 * t).sin() * (-t * 70.0).exp() + rattle * (-t * 150.0).exp() * 0.4
+                libm::sinf(tau * 170.0 * t) * libm::expf(-t * 70.0)
+                    + rattle * libm::expf(-t * 150.0) * 0.4
             })
             .collect()
     };
@@ -240,7 +242,7 @@ pub(crate) fn rain_drop(rng: &mut NoiseStream) -> Vec<f32> {
             let t = i as f32 / SR;
             let f = f0 * (1.0 + 0.12 * t / d); // the rising Minnaert chirp
             phase += tau * f / SR;
-            phase.sin() * (-t * decay).exp() + splash * (-t * 180.0).exp() * spl_gain
+            libm::sinf(phase) * libm::expf(-t * decay) + splash * libm::expf(-t * 180.0) * spl_gain
         })
         .collect();
     normalize(&mut buf, 1.0);
