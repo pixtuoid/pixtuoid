@@ -27,12 +27,16 @@ impl Easing {
         let t = t.clamp(0.0, 1.0);
         match self {
             Easing::Linear => t,
-            Easing::EaseOutCubic => 1.0 - (1.0 - t).powi(3),
+            Easing::EaseOutCubic => {
+                let u = 1.0 - t;
+                1.0 - u * u * u
+            }
             Easing::EaseInOutCubic => {
                 if t < 0.5 {
-                    4.0 * t.powi(3)
+                    4.0 * (t * t * t)
                 } else {
-                    1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+                    let u = -2.0 * t + 2.0;
+                    1.0 - u * u * u / 2.0
                 }
             }
             Easing::EaseInQuad => t * t,

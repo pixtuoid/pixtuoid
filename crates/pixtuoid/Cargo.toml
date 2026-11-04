@@ -192,6 +192,7 @@ windows-sys = { workspace = true, features = [
 # `pixtuoid_core::harness` pipeline, which is behind core's dev-only feature.
 pixtuoid-core = { path = "../pixtuoid-core", version = "0.22.0", features = ["harness"] }
 temp-env = { workspace = true }
+libm     = { workspace = true }
 # tests/text_coverage.rs parses the source of everything that renders text.
 syn         = { workspace = true }
 proc-macro2 = { workspace = true }
