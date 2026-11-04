@@ -29,12 +29,15 @@ mod change;
 
 pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_registered};
 
-/// The wire version this build writes and reads. Within a version the line only
-/// gains fields and tags, which `remote.v1.golden.json` holds it to; a reader
-/// ignores what it doesn't know and maps an unknown tag to its nearest state.
-/// The promise counts from the first release a device can pair with: an older
-/// server's link carries no expiry, which [`PairLink`]'s parse refuses
-/// ([`PairLinkError::Outdated`]).
+/// The wire version this build writes and reads, on every line and in every
+/// pairing link. Within a version the line only gains fields and tags, which
+/// `remote.v1.golden.json` holds it to; a reader ignores what it doesn't know and
+/// maps an unknown tag to its nearest state. Any break, in the line or the link,
+/// bumps it, and every pairing or reconnect across it ends in a precise "update"
+/// on the side that can act ([`PairLinkError::Version`],
+/// [`ApplyError::Incompatible`]). The promise counts from the first release a
+/// device can pair with: an older server's link carries no version, which
+/// [`PairLink`]'s parse refuses ([`PairLinkError::Outdated`]).
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office: a device takes
@@ -385,6 +388,7 @@ const PIN_BYTES: usize = 32;
 
 const PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
 
+const VERSION_KEY: &str = "v";
 const HOST: &str = "host";
 const PORT: &str = "port";
 const SPKI: &str = "spki";
@@ -421,7 +425,7 @@ impl fmt::Display for PairLink {
             .map_or(0, |at| at.as_secs());
         write!(
             f,
-            "{PAIR_LINK_PREFIX}{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{EXPIRES}={expires}&{CODE}={code}"
+            "{PAIR_LINK_PREFIX}{VERSION_KEY}={VERSION}&{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{EXPIRES}={expires}&{CODE}={code}"
         )
     }
 }
@@ -441,10 +445,17 @@ pub enum PairLinkError {
     /// No link a server writes.
     #[error("not a pixtuoid pairing link")]
     NotALink,
-    /// A link a server older than the expiry wrote: whole, but nothing a device
-    /// can pair with.
+    /// A link a server older than the link's version wrote: whole, but nothing
+    /// a device can pair with.
     #[error("a pairing link from an older pixtuoid: update it on the computer, then pair again")]
     Outdated,
+    /// A link a server speaking wire version `v` wrote, read no further: whichever
+    /// of it and [`VERSION`] is older names the side to update.
+    #[error("a pairing link for wire version {v}, where this build speaks {VERSION}")]
+    Version {
+        /// The link's version.
+        v: u32,
+    },
 }
 
 impl FromStr for PairLink {
@@ -467,6 +478,14 @@ impl FromStr for PairLink {
                 .then(|| value.to_owned())
                 .ok_or(PairLinkError::NotALink)
         };
+        // Read first, as a server of any version writes it: a format this build
+        // doesn't know still names who updates.
+        if let Ok(v) = field(VERSION_KEY) {
+            let v = v.parse().map_err(|_| PairLinkError::NotALink)?;
+            if v != VERSION {
+                return Err(PairLinkError::Version { v });
+            }
+        }
         let host = field(HOST)?;
         if !is_host(host) {
             return Err(PairLinkError::NotALink);
@@ -478,8 +497,8 @@ impl FromStr for PairLink {
             .ok_or(PairLinkError::NotALink)?;
         let (spki, code) = (hex(SPKI, PIN_BYTES)?, hex(CODE, SECRET_BYTES)?);
         let Ok(expires) = field(EXPIRES) else {
-            // The four fields an older server wrote, and no more: a newer link
-            // cut short loses its code, which it writes last.
+            // The four fields an older server wrote, and no more: a newer link,
+            // cut short or not, carries its version.
             let older = format!(
                 "{PAIR_LINK_PREFIX}{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{CODE}={code}"
             );
@@ -1203,8 +1222,8 @@ mod tests {
         assert_eq!(office.machine(), None);
     }
 
-    /// A link with every field but `expires` is an older server's, which says
-    /// so, so a device can ask for an update; a newer link cut short is no link.
+    /// A link with exactly an older server's four fields says so, so a device can
+    /// ask for an update; a newer link cut short is no link.
     #[test]
     fn an_older_servers_link_is_told_apart() {
         let PairLink { spki, code, .. } = link();
@@ -1212,17 +1231,35 @@ mod tests {
             format!("pixtuoid://pair?{HOST}=studio.local&{PORT}=47820&{SPKI}={spki}&{CODE}={code}");
         assert_eq!(older.parse::<PairLink>(), Err(PairLinkError::Outdated));
         let newer = link().to_string();
-        let after_expires = newer.find(&format!("&{CODE}=")).expect("a code");
+        let before_code = newer.find(&format!("&{CODE}=")).expect("a code");
+        let after = |key: &str| newer.find(&format!("{key}=")).expect("a key") + key.len() + 1;
         for cut in [
-            &newer[..after_expires],
-            &newer[..after_expires + CODE.len() + 2 + SECRET_BYTES],
-            &newer[..newer.find(&format!("{EXPIRES}=")).expect("an expiry") + EXPIRES.len() + 1],
+            &newer[..before_code],
+            &newer[..before_code + CODE.len() + 2 + SECRET_BYTES],
+            &newer[..after(EXPIRES)],
+            &newer[..after(VERSION_KEY)],
         ] {
             assert_eq!(
                 cut.parse::<PairLink>(),
                 Err(PairLinkError::NotALink),
                 "{cut}"
             );
+        }
+    }
+
+    /// A link of another version is read no further than its version, whatever
+    /// follows: a device names the side to update even for a format it can't read.
+    #[test]
+    fn a_link_of_another_version_names_it() {
+        for v in [0, VERSION + 1] {
+            for rest in [String::new(), "&a-format=to-come".to_owned()] {
+                let text = format!("pixtuoid://pair?{VERSION_KEY}={v}{rest}");
+                assert_eq!(
+                    text.parse::<PairLink>(),
+                    Err(PairLinkError::Version { v }),
+                    "{text}"
+                );
+            }
         }
     }
 
@@ -1723,6 +1760,7 @@ mod tests {
     fn a_pair_link_refuses_what_a_server_never_writes() {
         let with = |key: &str, value: &str| {
             let mut fields = [
+                (VERSION_KEY, VERSION.to_string()),
                 (HOST, "studio.local".to_owned()),
                 (PORT, "47820".to_owned()),
                 (SPKI, link().spki),
@@ -1742,6 +1780,9 @@ mod tests {
         for bad in edges.chain([
             "https://pair?host=a".to_owned(),
             "pixtuoid://pair?host=a".to_owned(),
+            with(VERSION_KEY, ""),
+            with(VERSION_KEY, "x"),
+            with(VERSION_KEY, "01"),
             with(HOST, ""),
             with(HOST, "evil.example/path"),
             with(HOST, "a@b"),
