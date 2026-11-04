@@ -56,6 +56,7 @@ pub mod display;
 pub(crate) mod dither;
 pub(crate) mod effects;
 pub mod floor;
+pub(crate) mod fmath_diag;
 #[doc(hidden)]
 pub mod footer;
 #[doc(hidden)]

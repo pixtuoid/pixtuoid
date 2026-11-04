@@ -251,11 +251,15 @@ impl Mass {
                 let h = l.r * l.r - (x - l.x).powi(2) - (y - l.y).powi(2);
                 (h > 0.0).then(|| {
                     let e = DOME_EASE * l.r;
-                    (SMOOTH * ((h + e * e).sqrt() - e)).exp()
+                    crate::fmath_diag::exp(SMOOTH * ((h + e * e).sqrt() - e))
                 })
             })
             .sum();
-        if acc > 0.0 { acc.ln() / SMOOTH } else { 0.0 }
+        if acc > 0.0 {
+            crate::fmath_diag::ln(acc) / SMOOTH
+        } else {
+            0.0
+        }
     }
 }
 
@@ -411,8 +415,8 @@ fn cauliflower(lobes: Vec<Lobe>, seed: u64) -> Vec<Lobe> {
             let a = std::f32::consts::PI * r.between(BUMP_ARC.0, BUMP_ARC.1);
             let b = l.r * r.between(BUMP_R.0, BUMP_R.1);
             out.push(Lobe {
-                x: l.x + a.cos() * (l.r - b * BUMP_INSET),
-                y: l.y + a.sin() * (l.r - b * BUMP_INSET),
+                x: l.x + crate::fmath_diag::cos(a) * (l.r - b * BUMP_INSET),
+                y: l.y + crate::fmath_diag::sin(a) * (l.r - b * BUMP_INSET),
                 r: b,
             });
         }
@@ -1411,7 +1415,7 @@ impl Clouds {
             } else {
                 BOLT_FLASH_ASPECT
             };
-        let mut dist = ((x - s.at.0) / s.radius).hypot((y - s.at.1) / ry);
+        let mut dist = crate::fmath_diag::hypot((x - s.at.0) / s.radius, (y - s.at.1) / ry);
         let (fx, fy) = RING_GRAIN;
         dist += RING_RAGGED * (noise(RING_SEED, x * fx + y * fy) - 0.5);
         let ring = if dist < INNER_RING {
@@ -2320,7 +2324,7 @@ mod tests {
                 continue;
             }
             let (lx, ly) = c.lighting.dir;
-            let l = lx.hypot(ly).max(f32::EPSILON);
+            let l = crate::fmath_diag::hypot(lx, ly).max(f32::EPSILON);
             for m in &c.masses {
                 let (west, east) = m.extent();
                 let (mut x, step) = (west, 0.25);

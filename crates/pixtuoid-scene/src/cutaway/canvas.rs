@@ -1415,6 +1415,53 @@ mod tests {
     #[cfg(feature = "pixel-font")]
     #[test]
     fn the_canvas_paints_the_pinned_frames() {
+        let digests = digest_lines(None);
+        let pinned = snapbox::Data::read_from(
+            std::path::Path::new(PINNED),
+            Some(snapbox::data::DataFormat::Text),
+        );
+        snapbox::assert_data_eq!(digests, pinned.raw());
+    }
+
+    #[cfg(feature = "pixel-font")]
+    #[test]
+    fn diag_windows_float_divergence() {
+        let key = "under-banner dracula storm 21h floor0 d1";
+        crate::fmath_diag::start();
+        let digests = digest_lines(Some(key));
+        let records = crate::fmath_diag::take();
+        let mut counts = std::collections::BTreeMap::<&str, usize>::new();
+        for r in &records {
+            *counts.entry(r.name).or_default() += 1;
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut lines = String::new();
+        for r in &records {
+            if seen.len() >= 300 {
+                break;
+            }
+            if seen.insert((r.name, r.input, r.input2)) {
+                lines.push_str(&format!(
+                    "{} in=0x{:08x} std=0x{:08x} libm=0x{:08x} (in={} std={} libm={}) in2={:?}\n",
+                    r.name,
+                    r.input,
+                    r.std,
+                    r.libm,
+                    r.show(r.input),
+                    r.show(r.std),
+                    r.show(r.libm),
+                    r.input2.map(|b| (format!("0x{b:x}"), r.show(b)))
+                ));
+            }
+        }
+        panic!(
+            "DIAG digest: {digests}\ncounts per fn: {counts:?}\ntotal records: {}\n{lines}",
+            records.len()
+        );
+    }
+
+    #[cfg(feature = "pixel-font")]
+    fn digest_lines(only: Option<&str>) -> String {
         use crate::layout::{FixtureKind, Insets, Viewport};
         use crate::sky::{Weather, WeatherPolicy};
         use std::fmt::Write as _;
@@ -1518,6 +1565,15 @@ mod tests {
                     .with_weather(WeatherPolicy::Forced(weather))
                     .with_motion(Motion::Still);
                 for d in densities {
+                    if let Some(key) = only {
+                        let name = weather.name();
+                        let floor_idx = floor.floor_idx;
+                        if format!("{scene} {theme_name} {name} {hour:02}h floor{floor_idx} d{d}")
+                            != key
+                        {
+                            continue;
+                        }
+                    }
                     let scale = RenderScale::new(d).expect("nonzero");
                     let mut canvas = CutawayCanvas::new(Arc::clone(&pack));
                     let stepped = SteppedFloor {
@@ -1557,10 +1613,6 @@ mod tests {
                 }
             }
         }
-        let pinned = snapbox::Data::read_from(
-            std::path::Path::new(PINNED),
-            Some(snapbox::data::DataFormat::Text),
-        );
-        snapbox::assert_data_eq!(digests, pinned.raw());
+        digests
     }
 }

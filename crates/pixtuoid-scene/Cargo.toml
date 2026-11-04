@@ -59,6 +59,7 @@ serde_json = { workspace = true }
 pixtuoid-core = { path = "../pixtuoid-core", version = "0.22.0", default-features = false, features = ["harness"] }
 anyhow     = { workspace = true }
 proptest   = { workspace = true }
+libm = "0.2"
 tempfile   = { workspace = true }
 snapbox    = { workspace = true }
 # tests/model_boundary.rs parses the source.

@@ -526,7 +526,7 @@ fn monitor_halos(layout: &SceneLayout, inputs: &LightInputs<'_>) -> Vec<Emitter>
 /// tell two frames apart (`neon_breath_advances_at_wall_clock_scale_and_stays_in_band`).
 fn neon_breath(elapsed_ms: u64, period_ms: u64, floor: f32) -> f32 {
     let phase = (elapsed_ms % period_ms) as f32 / period_ms as f32;
-    floor + (1.0 - floor) * ((std::f32::consts::TAU * phase).sin() * 0.5 + 0.5)
+    floor + (1.0 - floor) * (crate::fmath_diag::sin(std::f32::consts::TAU * phase) * 0.5 + 0.5)
 }
 
 /// The neon halo's strength at the tube: breathing, dimmed by daylight, and
