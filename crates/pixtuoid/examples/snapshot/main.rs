@@ -102,6 +102,11 @@ struct SnapshotArgs {
     ])]
     pixel: Option<LookKind>,
 
+    /// The layout units the pixel painter's chrome covers from each edge, as
+    /// `TOP,RIGHT,BOTTOM,LEFT`.
+    #[arg(long, value_name = "T,R,B,L", requires = "pixel", value_parser = parse_insets)]
+    insets: Option<pixtuoid_scene::layout::Insets>,
+
     /// GIF duration in seconds (only with --gif, which --anim implies).
     #[arg(long, default_value_t = 5)]
     gif_duration: u64,
@@ -317,6 +322,23 @@ struct SnapshotArgs {
     /// --proof clip length in seconds (the idle tail past the last event included).
     #[arg(long, default_value_t = 26, requires = "proof")]
     proof_secs: u64,
+}
+
+/// `--insets`' value: four comma-separated layout units, clockwise from the top.
+fn parse_insets(s: &str) -> Result<pixtuoid_scene::layout::Insets, String> {
+    let units: Vec<u16> = s
+        .split(',')
+        .map(|n| n.trim().parse::<u16>().map_err(|e| format!("{n:?}: {e}")))
+        .collect::<Result<_, _>>()?;
+    let [top, right, bottom, left] = units[..] else {
+        return Err(format!("{s:?}: want TOP,RIGHT,BOTTOM,LEFT"));
+    };
+    Ok(pixtuoid_scene::layout::Insets {
+        top,
+        right,
+        bottom,
+        left,
+    })
 }
 
 /// `--pixel`'s values: the engine's look ids.
@@ -555,7 +577,10 @@ fn main() -> Result<()> {
 
     let mut pixel = args
         .pixel
-        .map(|look| PixelOffice::of_draw_frame(&pack, (cols, rows), look))
+        .map(|look| {
+            PixelOffice::of_draw_frame(&pack, (cols, rows), look)
+                .map(|office| office.inset(args.insets.unwrap_or_default()))
+        })
         .transpose()?;
     let mut floor_meta = pixtuoid_scene::floor::FloorMeta::ground().with_weather(weather);
     floor_meta.floor_seed = args.floor_seed;

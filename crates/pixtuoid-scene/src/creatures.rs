@@ -667,7 +667,6 @@ mod tests {
     }
     use crate::anim::{Motion, PAINT_FPS};
     use crate::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs};
-    use crate::layout::Size;
     use crate::pathfind::{AStarRouter, point_in_walkable_cell};
     use crate::pet::{Pet, PetState};
     use crate::sim::SimFrame;
@@ -975,7 +974,7 @@ mod tests {
     /// a time.
     struct Office {
         session: FloorSession,
-        size: Size,
+        viewport: crate::layout::Viewport,
         floor: FloorMeta,
     }
 
@@ -983,7 +982,7 @@ mod tests {
         fn new(w: u16, h: u16) -> Self {
             Self {
                 session: FloorSession::new(std::sync::Arc::new(test_pack())),
-                size: Size { w, h },
+                viewport: crate::layout::Viewport::full(w, h),
                 floor: FloorMeta::ground(),
             }
         }
@@ -1003,7 +1002,7 @@ mod tests {
                         floor: self.floor,
                         pets: PetInputs { pet, petting },
                     },
-                    self.size,
+                    self.viewport,
                 )
                 .expect("the office lays out")
                 .frame
@@ -1313,7 +1312,7 @@ mod tests {
                 .session
                 .floor_mut()
                 .ctx
-                .frame_layout(192, 80, office.floor.floor_seed)
+                .frame_layout(office.viewport, office.floor.floor_seed)
                 .expect("lays out"),
         )
         .expect("an elevator");
@@ -1410,7 +1409,7 @@ mod tests {
                 .session
                 .floor_mut()
                 .ctx
-                .frame_layout(192, 80, office.floor.floor_seed)
+                .frame_layout(office.viewport, office.floor.floor_seed)
                 .expect("lays out"),
         )
         .expect("an elevator");
@@ -1447,7 +1446,7 @@ mod tests {
             .session
             .floor_mut()
             .ctx
-            .frame_layout(192, 80, office.floor.floor_seed)
+            .frame_layout(office.viewport, office.floor.floor_seed)
             .expect("lays out");
         // Over a desk, on ground no leg stands on.
         let (over, reach) = layout

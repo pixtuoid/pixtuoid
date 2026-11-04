@@ -4,7 +4,7 @@
 
 use std::time::SystemTime;
 
-use crate::layout::{Pivot, SEAT_RENDER_Y_OFF, SceneLayout, Size, WALKING_Y_OFF};
+use crate::layout::{Bounds, Pivot, SEAT_RENDER_Y_OFF, SceneLayout, Size, WALKING_Y_OFF};
 use pixtuoid_core::AgentSlot;
 
 use crate::layout::{Point, WaypointKind};
@@ -66,40 +66,36 @@ pub(crate) fn back_couch_top_left(wp: Point, sprite_w: u16) -> Point {
     }
 }
 
-/// Nudge a sprite so the whole frame lands inside the canvas, answering in the
+/// Nudge a sprite so the whole frame lands inside `canvas`, answering in the
 /// SAME pivot space `pos` came in.
 ///
 /// It moves a figure's paint top-left, never its sim position (invariant #6).
-pub(crate) fn keep_sprite_on_canvas(pivot: Pivot, pos: Point, size: Size, buf: Size) -> Point {
+pub(crate) fn keep_sprite_on_canvas(pivot: Pivot, pos: Point, size: Size, canvas: Bounds) -> Point {
+    let (east, south) = (canvas.x + canvas.width, canvas.y + canvas.height);
     match pivot {
-        // `min` before `max`: on a buffer narrower than the sprite the lower
+        // `min` before `max`: on a canvas narrower than the sprite the lower
         // bound wins instead of `clamp`'s inverted-range panic.
         Pivot::Center => Point {
             x: pos
                 .x
-                .min(buf.w.saturating_sub(size.w.div_ceil(2)))
-                .max(size.w / 2),
+                .min(east.saturating_sub(size.w.div_ceil(2)))
+                .max(canvas.x + size.w / 2),
             y: pos
                 .y
-                .min(buf.h.saturating_sub(size.h.div_ceil(2)))
-                .max(size.h / 2),
+                .min(south.saturating_sub(size.h.div_ceil(2)))
+                .max(canvas.y + size.h / 2),
         },
-        // No lower bound needed — `u16` already floors a top-left `pos` at 0.
         Pivot::TopLeft => Point {
-            x: pos.x.min(buf.w.saturating_sub(size.w)),
-            y: pos.y.min(buf.h.saturating_sub(size.h)),
+            x: pos.x.min(east.saturating_sub(size.w)).max(canvas.x),
+            y: pos.y.min(south.saturating_sub(size.h)).max(canvas.y),
         },
     }
 }
 
-/// `pos`, in `pivot` space, moved so a `size` frame lands on `layout`'s canvas:
-/// the one fit every figure's placement takes.
+/// `pos`, in `pivot` space, moved so a `size` frame lands on `layout`'s canvas
+/// inside its insets: the one fit every figure's placement takes.
 pub(crate) fn on_canvas(layout: &SceneLayout, pivot: Pivot, pos: Point, size: Size) -> Point {
-    let canvas = Size {
-        w: layout.buf_w,
-        h: layout.buf_h,
-    };
-    keep_sprite_on_canvas(pivot, pos, size, canvas)
+    keep_sprite_on_canvas(pivot, pos, size, layout.inner)
 }
 
 /// How far a later arrival steps aside along x so two agents at one

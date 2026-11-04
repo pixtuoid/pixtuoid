@@ -16,7 +16,7 @@ use pixtuoid_scene::display::cells::CellMap;
 use pixtuoid_scene::floor::{FloorInputs, OfficeStores, PerFloor, PetInputs};
 use pixtuoid_scene::footer::{FooterContext, FooterInputs};
 use pixtuoid_scene::hit::HoverTarget;
-use pixtuoid_scene::layout::Size;
+use pixtuoid_scene::layout::Viewport;
 use pixtuoid_scene::look::{FloorPicture, Hits, Look, Place, RenderInputs};
 
 pub(crate) use crate::panels::widgets::{TooltipAt, paint_tooltip};
@@ -249,7 +249,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
         RenderInputs {
             world,
             theme,
-            size: Size { w: buf_w, h: buf_h },
+            viewport: Viewport::full(buf_w, buf_h),
             place: Place {
                 gateway: footer.context.gateway,
                 floor: footer.context.floor,

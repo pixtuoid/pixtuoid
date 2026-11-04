@@ -5121,22 +5121,33 @@ fn a_roaming_creature_is_never_sliced_by_the_canvas_edge() {
 
 #[test]
 fn keep_sprite_on_canvas_bounds_differ_by_pivot() {
-    use crate::layout::{Pivot, Size};
+    use crate::layout::{Bounds, Pivot, Size};
     use crate::sim::anchors::keep_sprite_on_canvas;
-    let buf = Size { w: 100, h: 80 };
+    let canvas = Bounds {
+        x: 5,
+        y: 7,
+        width: 100,
+        height: 80,
+    };
     let size = Size { w: 8, h: 12 };
-    let at = |p, x, y| keep_sprite_on_canvas(p, Point { x, y }, size, buf);
+    let at = |p, x, y| keep_sprite_on_canvas(p, Point { x, y }, size, canvas);
 
     // Centre-anchored: `pos` is the middle, so BOTH bounds inset by half.
-    assert_eq!(at(Pivot::Center, 0, 0), Point { x: 4, y: 6 });
-    assert_eq!(at(Pivot::Center, 99, 79), Point { x: 96, y: 74 });
-    // Top-left-anchored: `u16` already floors the near edge, only the far one binds.
-    assert_eq!(at(Pivot::TopLeft, 0, 0), Point { x: 0, y: 0 });
-    assert_eq!(at(Pivot::TopLeft, 99, 79), Point { x: 92, y: 68 });
+    assert_eq!(at(Pivot::Center, 0, 0), Point { x: 9, y: 13 });
+    assert_eq!(at(Pivot::Center, 104, 86), Point { x: 101, y: 81 });
+    // Top-left-anchored: the near edge binds the top-left, the far one its
+    // far corner.
+    assert_eq!(at(Pivot::TopLeft, 0, 0), Point { x: 5, y: 7 });
+    assert_eq!(at(Pivot::TopLeft, 104, 86), Point { x: 97, y: 75 });
 
-    // A canvas smaller than the sprite: `Center` falls back to its lower bound
-    // rather than `clamp`'s inverted-range panic; `TopLeft` just floors at 0.
-    let tiny = Size { w: 4, h: 4 };
+    // A canvas smaller than the sprite: either pivot falls back to its lower
+    // bound rather than `clamp`'s inverted-range panic.
+    let tiny = Bounds {
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 4,
+    };
     assert_eq!(
         keep_sprite_on_canvas(Pivot::Center, Point { x: 2, y: 2 }, size, tiny),
         Point { x: 4, y: 6 }

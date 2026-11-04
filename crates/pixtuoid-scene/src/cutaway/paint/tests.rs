@@ -2196,7 +2196,7 @@ fn the_cutaway_paints_whole_art_pixels() {
                 floor: FloorMeta::ground(),
                 pets: crate::floor::PetInputs::default(),
             },
-            crate::layout::Size { w: 240, h: 144 },
+            crate::layout::Viewport::full(240, 144),
         )
         .expect("lays out");
     assert!(
@@ -2423,7 +2423,7 @@ fn the_outside_reaches_only_the_glass() {
                 floor: FloorMeta::ground(),
                 pets: crate::floor::PetInputs::default(),
             },
-            crate::layout::Size { w: 240, h: 144 },
+            crate::layout::Viewport::full(240, 144),
         )
         .expect("lays out");
     let layout = &office.layout;
@@ -2539,7 +2539,7 @@ fn a_window_is_drawn_before_whatever_hangs_over_it() {
                 floor: FloorMeta::ground(),
                 pets: crate::floor::PetInputs::default(),
             },
-            crate::layout::Size { w: 240, h: 144 },
+            crate::layout::Viewport::full(240, 144),
         )
         .expect("lays out");
     let at = Office {
@@ -2877,7 +2877,7 @@ fn every_piece_paints_only_inside_its_span() {
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),
                 },
-                crate::layout::Size { w, h },
+                crate::layout::Viewport::full(w, h),
             )
             .expect("lays out");
         check("default", &pack, &stepped.frame, &stepped.layout, false);

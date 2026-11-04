@@ -350,10 +350,7 @@ pub(crate) fn sit_down_as(
                     floor: meta,
                     pets: crate::floor::PetInputs::default(),
                 },
-                crate::layout::Size {
-                    w: LOGICAL.0,
-                    h: LOGICAL.1,
-                },
+                crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
             )
             .expect("lays out")
             .frame;

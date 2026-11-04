@@ -118,7 +118,7 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
                 floor: FloorMeta::ground(),
                 pets: pixtuoid_scene::floor::PetInputs::default(),
             },
-            pixtuoid_scene::layout::Size { w: 192, h: 80 },
+            pixtuoid_scene::layout::Viewport::full(192, 80),
         )
         .map_or(0, |stepped| stepped.frame.characters.len());
     v

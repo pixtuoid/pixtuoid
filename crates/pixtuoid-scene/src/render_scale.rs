@@ -424,14 +424,47 @@ mod tests {
     /// not change the office.
     #[test]
     fn floor_capacity_is_invariant_under_render_scale() {
+        use crate::layout::{Insets, Size, Viewport};
         let seed = floor_seed(0);
-        let base = floor_capacity_scaled(192, 160, RenderScale::ONE, seed);
-        assert!(base > 0, "the 1x baseline must lay out at all");
+        let inset = Viewport {
+            size: Size { w: 192, h: 160 },
+            insets: Insets {
+                top: 9,
+                right: 7,
+                bottom: 11,
+                left: 5,
+            },
+        };
+        for viewport in [Viewport::full(192, 160), inset] {
+            let base = floor_capacity_scaled(viewport, RenderScale::ONE, seed);
+            assert!(base > 0, "the 1x baseline must lay out at all");
 
-        for n in [2u16, 4, 8] {
-            let s = RenderScale::new(n).expect("nonzero");
-            let got = floor_capacity_scaled(s.to_buffer(192), s.to_buffer(160), s, seed);
-            assert_eq!(got, base, "render scale {n} changed the desk count");
+            for n in [2u16, 4, 8] {
+                let s = RenderScale::new(n).expect("nonzero");
+                let Insets {
+                    top,
+                    right,
+                    bottom,
+                    left,
+                } = viewport.insets;
+                let painted = Viewport {
+                    size: Size {
+                        w: s.to_buffer(viewport.size.w),
+                        h: s.to_buffer(viewport.size.h),
+                    },
+                    insets: Insets {
+                        top: s.to_buffer(top),
+                        right: s.to_buffer(right),
+                        bottom: s.to_buffer(bottom),
+                        left: s.to_buffer(left),
+                    },
+                };
+                let got = floor_capacity_scaled(painted, s, seed);
+                assert_eq!(
+                    got, base,
+                    "{viewport:?}: render scale {n} changed the desk count"
+                );
+            }
         }
     }
 
@@ -441,8 +474,8 @@ mod tests {
     #[test]
     fn without_the_seam_a_bigger_buffer_builds_a_bigger_office() {
         let seed = floor_seed(0);
-        let base = floor_capacity(192, 160, seed);
-        let unscaled = floor_capacity(192 * 8, 160 * 8, seed);
+        let base = floor_capacity(crate::layout::Viewport::full(192, 160), seed);
+        let unscaled = floor_capacity(crate::layout::Viewport::full(192 * 8, 160 * 8), seed);
         assert!(
             unscaled > base * 8,
             "expected the un-seamed call to balloon the desk count \

@@ -80,7 +80,12 @@ pub(crate) fn floor_capacities(
         offices
             .values()
             .flatten()
-            .map(|office| pixtuoid_scene::floor::floor_capacity(office.w, office.h, seed))
+            .map(|office| {
+                pixtuoid_scene::floor::floor_capacity(
+                    pixtuoid_scene::layout::Viewport::full(office.w, office.h),
+                    seed,
+                )
+            })
             .min()
             .unwrap_or_default()
     })
@@ -611,7 +616,10 @@ mod tests {
         let seed = resolve_boot_caps(None, Some(cutaway), || term(cols, rows));
         let painted = fit.logical();
         for (i, &seeded) in seed.iter().enumerate() {
-            let desks = pixtuoid_scene::floor::floor_capacity(painted.w, painted.h, floor_seed(i));
+            let desks = pixtuoid_scene::floor::floor_capacity(
+                pixtuoid_scene::layout::Viewport::full(painted.w, painted.h),
+                floor_seed(i),
+            );
             assert!(seeded <= desks, "floor {i}: seeds {seeded} of {desks}");
         }
         let classic = resolve_boot_caps(None, Some(classic()), || term(cols, rows));
@@ -642,7 +650,10 @@ mod tests {
         let seed = resolve_boot_caps(None, Some(named), || term(cols, rows));
         let painted = fit.logical();
         for (i, &seeded) in seed.iter().enumerate() {
-            let desks = pixtuoid_scene::floor::floor_capacity(painted.w, painted.h, floor_seed(i));
+            let desks = pixtuoid_scene::floor::floor_capacity(
+                pixtuoid_scene::layout::Viewport::full(painted.w, painted.h),
+                floor_seed(i),
+            );
             assert!(
                 seeded <= desks,
                 "floor {i}: seeds {seeded} of the cutaway's {desks}"
@@ -655,7 +666,10 @@ mod tests {
         let office = classic().seat_extents(term(192, 48))[pixtuoid_scene::look::LookKind::Classic]
             .expect("the classic's office");
         let expected: [usize; MAX_FLOORS] = std::array::from_fn(|i| {
-            pixtuoid_scene::floor::floor_capacity(office.w, office.h, floor_seed(i))
+            pixtuoid_scene::floor::floor_capacity(
+                pixtuoid_scene::layout::Viewport::full(office.w, office.h),
+                floor_seed(i),
+            )
         });
         assert_eq!(
             floor_capacities(&classic().seat_extents(term(192, 48))),

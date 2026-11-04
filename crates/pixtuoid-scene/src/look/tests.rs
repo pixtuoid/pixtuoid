@@ -8,8 +8,10 @@ use pixtuoid_core::{AgentId, AgentSlot, SceneState};
 
 use super::*;
 use crate::floor::{FloorMeta, PerOffice, PetInputs};
+use crate::layout::Size;
 
 const SIZE: Size = Size { w: 192, h: 160 };
+const VIEWPORT: Viewport = Viewport::full(SIZE.w, SIZE.h);
 
 fn theme() -> &'static Theme {
     crate::theme::theme_by_name("normal").expect("normal theme")
@@ -51,10 +53,127 @@ fn inputs(scene: &SceneState, now: SystemTime) -> RenderInputs<'_> {
             pets: PetInputs::default(),
         },
         theme: theme(),
-        size: SIZE,
+        viewport: VIEWPORT,
         place: Place::default(),
         debug_walkable: false,
         dim: crate::look::Dim::NONE,
+    }
+}
+
+/// No figure is drawn under an inset: in either look, frame after frame of
+/// agents walking in and wandering off, every box [`Hits::figures`] reports lies
+/// inside the insets.
+#[test]
+fn no_figure_is_drawn_under_an_inset() {
+    use crate::interact::{Figure, Gesture};
+    use crate::layout::{Insets, Point};
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let viewport = Viewport {
+        size: SIZE,
+        insets: Insets {
+            top: 9,
+            right: 7,
+            bottom: 11,
+            left: 5,
+        },
+    };
+    let inner = viewport.inner().expect("an office inside the insets");
+    let inside = |b: Bounds| {
+        b.x >= inner.x
+            && b.y >= inner.y
+            && b.x + b.width <= inner.x + inner.width
+            && b.y + b.height <= inner.y + inner.height
+    };
+    let looks = [
+        Look::HALF_BLOCKS,
+        Look::Cutaway {
+            scale: RenderScale::new(2).expect("nonzero"),
+            text: WorldText::Baked,
+        },
+    ];
+    for look in looks {
+        let (mut floor, mut office) = (
+            PerFloor::new(Arc::new(crate::pack::test_office())),
+            PerOffice::new(),
+        );
+        let mut last: Vec<(crate::hit::HoverTarget, Bounds)> = Vec::new();
+        let mut walking_frames = 0;
+        for step in 0..600u64 {
+            let now = t0 + Duration::from_millis(step * 250);
+            let rendered = render(
+                &mut floor,
+                office.stores(),
+                look,
+                RenderInputs {
+                    viewport,
+                    ..inputs(&scene, now)
+                },
+            )
+            .expect("lays out");
+            let figures: Vec<_> = rendered
+                .hits
+                .figures()
+                .map(|(target, at)| (target.clone(), at))
+                .collect();
+            for (target, at) in &figures {
+                assert!(
+                    inside(*at),
+                    "{look:?} step {step}: {target:?} drawn at {at:?}, under an inset of {inner:?}"
+                );
+            }
+            walking_frames += usize::from(
+                figures
+                    .iter()
+                    .any(|f| last.iter().any(|l| l.0 == f.0 && l.1 != f.1)),
+            );
+            last = figures;
+        }
+        assert!(
+            walking_frames > 0,
+            "{look:?}: no figure walked, so the insets went untested"
+        );
+        // Carried into each corner of the canvas, an agent is drawn inside.
+        let held = *scene.agents.keys().next().expect("an agent");
+        let now = t0 + Duration::from_secs(600);
+        let corners = [
+            (0, 0),
+            (SIZE.w - 1, 0),
+            (0, SIZE.h - 1),
+            (SIZE.w - 1, SIZE.h - 1),
+        ];
+        let lift = Gesture::Lift {
+            figure: Figure::Agent(held),
+            at: Point {
+                x: SIZE.w / 2,
+                y: SIZE.h / 2,
+            },
+        };
+        let gestures =
+            std::iter::once(lift).chain(corners.map(|(x, y)| Gesture::Carry(Point { x, y })));
+        for gesture in gestures {
+            floor.grip(&gesture);
+            let rendered = render(
+                &mut floor,
+                office.stores(),
+                look,
+                RenderInputs {
+                    viewport,
+                    ..inputs(&scene, now)
+                },
+            )
+            .expect("lays out");
+            let at = rendered
+                .hits
+                .figures()
+                .find(|(target, _)| **target == crate::hit::HoverTarget::Agent(held))
+                .map(|(_, at)| at)
+                .expect("the held agent is drawn");
+            assert!(
+                inside(at),
+                "{look:?} {gesture:?}: the held agent drawn at {at:?}, under an inset of {inner:?}"
+            );
+        }
     }
 }
 
@@ -259,7 +378,7 @@ fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
         "{signs:?}"
     );
     let refused = RenderInputs {
-        size: Size { w: 1, h: 1 },
+        viewport: Viewport::full(1, 1),
         ..inputs(&scene, t0)
     };
     assert!(render(&mut floor, office.stores(), Look::HALF_BLOCKS, refused).is_none());
