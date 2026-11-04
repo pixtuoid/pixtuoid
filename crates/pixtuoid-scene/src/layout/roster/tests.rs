@@ -896,3 +896,28 @@ fn a_desk_sorts_between_a_walker_behind_it_and_one_in_front() {
     assert!(walker(south) > desk_key, "in front of the desk");
     assert!(walker(south - 1) < desk_key, "behind the desk");
 }
+
+/// A plant a holiday dresses hovers as its dressing and, undressed, as itself;
+/// a piece no holiday dresses hovers as itself either way.
+#[test]
+fn a_dressed_plant_hovers_as_its_dressing() {
+    use crate::holiday::Dressing;
+    let christmas = Dressing::at(Dressing::christmas_noon());
+    let plant = |kind| FixtureKind::Plant { item: 0, kind };
+    let pod = |kind| FixtureKind::Pod { item: 0, kind };
+    for (fixture, dressed, bare) in [
+        (plant(PlantKind::Ficus), "Christmas Tree", "Ficus"),
+        (plant(PlantKind::Tall), "Christmas Tree", "Tall Plant"),
+        (plant(PlantKind::Flower), "Poinsettia", "Flower Pot"),
+        (plant(PlantKind::Succulent), "Presents", "Succulent"),
+        (pod(PodDecor::PlantTall), "Christmas Tree", "Tall Plant"),
+        (pod(PodDecor::Whiteboard), "Whiteboard", "Whiteboard"),
+    ] {
+        assert_eq!(fixture.hover_label(christmas), Some(dressed), "{fixture:?}");
+        assert_eq!(
+            fixture.hover_label(Dressing::default()),
+            Some(bare),
+            "{fixture:?}"
+        );
+    }
+}

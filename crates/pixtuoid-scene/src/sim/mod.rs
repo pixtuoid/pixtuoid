@@ -266,6 +266,8 @@ pub struct SimFrame {
     pub(crate) desks: Vec<DeskProps>,
     /// The elevator art's frame, shut to open.
     pub(crate) door_frame: usize,
+    /// What the office wears on the frame's local date.
+    pub(crate) dressing: crate::holiday::Dressing,
 }
 
 impl SimFrame {
@@ -438,6 +440,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         mascots,
         desks,
         door_frame,
+        dressing: crate::holiday::Dressing::at(now),
     }
 }
 

@@ -252,8 +252,17 @@ pub enum FixtureKind {
 }
 
 impl FixtureKind {
-    /// What hovering it says, or `None` where a tooltip would be noise.
-    pub(crate) fn hover_label(self) -> Option<&'static str> {
+    /// What hovering it says, worn as `dressing` puts it on, or `None` where
+    /// a tooltip would be noise.
+    pub(crate) fn hover_label(self, dressing: crate::holiday::Dressing) -> Option<&'static str> {
+        let worn = match self {
+            FixtureKind::Plant { kind, .. } => Some(kind.piece()),
+            FixtureKind::Pod { kind, .. } => Some(kind.piece()),
+            _ => None,
+        };
+        if let Some(label) = worn.and_then(|piece| dressing_label(dressing.piece(piece))) {
+            return Some(label);
+        }
         Some(match self {
             FixtureKind::Desk(_) => "Desk",
             FixtureKind::FilingCabinet(_) => "Filing Cabinet",
@@ -307,6 +316,17 @@ impl FixtureKind {
             // belongs to them.
             FixtureKind::NeonSign => return None,
         })
+    }
+}
+
+/// What hovering a holiday's dressing says, or `None` for any other piece.
+fn dressing_label(piece: crate::pack::Piece) -> Option<&'static str> {
+    use crate::pack::Piece;
+    match piece {
+        Piece::ChristmasTree | Piece::ChristmasTreeShort => Some("Christmas Tree"),
+        Piece::Poinsettia => Some("Poinsettia"),
+        Piece::Presents => Some("Presents"),
+        _ => None,
     }
 }
 

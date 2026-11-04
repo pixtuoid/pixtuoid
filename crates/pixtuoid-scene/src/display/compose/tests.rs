@@ -800,6 +800,7 @@ pub(crate) fn empty_frame(layout: &SceneLayout) -> SimFrame {
         mascots: Vec::new(),
         desks: vec![Default::default(); layout.home_desks.len()],
         door_frame: 0,
+        dressing: Default::default(),
     }
 }
 
@@ -826,7 +827,10 @@ fn queued_at(
     timing: crate::anim::Timing,
 ) -> Vec<(Span, PieceKind)> {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
-    let frame = empty_frame(layout);
+    let frame = SimFrame {
+        dressing: crate::holiday::Dressing::at(timing.now),
+        ..empty_frame(layout)
+    };
     let moment = Moment::resolve(crate::sky::Sky::clock(timing.now), theme, 0.0, timing);
     let inputs = ComposeInputs {
         frame: &frame,
@@ -843,6 +847,43 @@ fn queued_at(
         push_fixture(f, inputs, carried, &mut order);
     }
     order
+}
+
+/// The cutaway queues each plant and aisle piece as the day's dressing draws
+/// it, one with frames to loop looping on the beat and the rest held.
+#[test]
+fn the_cutaway_draws_each_plant_as_its_dressing() {
+    let pack = test_office();
+    let is_plant = |k| matches!(k, FixtureKind::Plant { .. } | FixtureKind::Pod { .. });
+    for now in [
+        std::time::UNIX_EPOCH,
+        crate::holiday::Dressing::christmas_noon(),
+    ] {
+        let dressing = crate::holiday::Dressing::at(now);
+        for layout in crate::layout::roster::tests::offices() {
+            let timing = Motion::Full.timing(now);
+            let drawn: Vec<(PackPiece, bool)> =
+                queued_at(&layout, &pack, RenderScale::ONE, &[], is_plant, timing)
+                    .into_iter()
+                    .map(|(_, kind)| match kind {
+                        PieceKind::Animated { art, .. } => (art.sprite, true),
+                        PieceKind::Prop { art, .. } => (art.sprite, false),
+                        other => panic!("a plant queued as {other:?}"),
+                    })
+                    .collect();
+            let worn: Vec<(PackPiece, bool)> = layout
+                .fixtures()
+                .filter_map(|f| match f.kind {
+                    FixtureKind::Plant { kind, .. } => Some(kind.piece()),
+                    FixtureKind::Pod { kind, .. } => Some(kind.piece()),
+                    _ => None,
+                })
+                .map(|p| dressing.piece(p))
+                .map(|p| (p, pack.piece(p).frames().len() > 1))
+                .collect();
+            assert_eq!(drawn, worn);
+        }
+    }
 }
 
 fn near_seat(desk: crate::layout::Point) -> crate::layout::Point {

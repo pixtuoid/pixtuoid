@@ -1650,6 +1650,7 @@ fn empty_frame(layout: &SceneLayout) -> SimFrame {
         mascots: Vec::new(),
         desks: vec![Default::default(); layout.home_desks.len()],
         door_frame: 0,
+        dressing: Default::default(),
     }
 }
 
@@ -4268,6 +4269,85 @@ fn chair_sitter_bottom_row_lands_on_its_sort_row_overlapping_the_chair_body() {
         bottom > chair_top,
         "sitter bottom ({bottom}) must overlap the chair body (top {chair_top})"
     );
+}
+
+/// Paint a plant drawn as `art` at `ms` past the epoch, moving as `motion`
+/// says.
+fn plant_at(art: Piece, motion: Motion, ms: u64) -> Vec<Rgb> {
+    let pack = crate::pack::test_office();
+    let mut cache = FrameCache::new();
+    let mut buf = RgbBuffer::filled(40, 40, Rgb { r: 1, g: 2, b: 3 });
+    paint_drawable(
+        &DrawableKind::Plant {
+            art,
+            pos: Point { x: 20, y: 20 },
+        },
+        &mut super::drawable::DrawableCtx {
+            buf: &mut buf,
+            pack: &pack,
+            cache: &mut cache,
+            timing: motion.timing(SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ms)),
+            theme: crate::theme::theme_by_name("normal").expect("theme"),
+        },
+    );
+    buf.as_slice().to_vec()
+}
+
+/// A dressing's loop steps on the beat, one frame each `frame_ms`, and holds
+/// its first frame at rest.
+#[test]
+fn a_dressed_plant_steps_its_loop_and_holds_still_at_rest() {
+    let step = u64::from(
+        crate::pack::test_office()
+            .piece(Piece::ChristmasTree)
+            .frame_ms(),
+    );
+    let tree = |motion, ms| plant_at(Piece::ChristmasTree, motion, ms);
+    assert_ne!(tree(Motion::Full, 0), tree(Motion::Full, step));
+    assert_eq!(tree(Motion::Full, 0), tree(Motion::Full, 2 * step));
+    assert_eq!(tree(Motion::Still, 0), tree(Motion::Still, step));
+}
+
+/// The classic queues each plant and aisle piece as the frame's dressing
+/// draws it: on Christmas some piece as a dressing, undressed each as itself.
+#[test]
+fn the_classic_draws_each_plant_as_its_dressing() {
+    use crate::layout::FixtureKind;
+    for layout in crate::layout::roster::tests::offices() {
+        for dressing in [
+            crate::holiday::Dressing::default(),
+            crate::holiday::Dressing::at(crate::holiday::Dressing::christmas_noon()),
+        ] {
+            let frame = SimFrame {
+                dressing,
+                ..empty_frame(&layout)
+            };
+            let drawn: Vec<Piece> = queued(&layout, &frame)
+                .sorted
+                .iter()
+                .filter_map(|d| match d.kind {
+                    DrawableKind::Plant { art, .. } | DrawableKind::PodDecorItem { art, .. } => {
+                        Some(art)
+                    }
+                    _ => None,
+                })
+                .collect();
+            let worn: Vec<Piece> = layout
+                .fixtures()
+                .filter_map(|f| match f.kind {
+                    FixtureKind::Plant { kind, .. } => Some(kind.piece()),
+                    FixtureKind::Pod { kind, .. } => Some(kind.piece()),
+                    _ => None,
+                })
+                .map(|p| dressing.piece(p))
+                .collect();
+            assert_eq!(drawn, worn);
+            assert_eq!(
+                drawn.iter().any(|p| p.dresses().is_some()),
+                dressing != crate::holiday::Dressing::default()
+            );
+        }
+    }
 }
 
 /// Paint the appliance `sprite` at `ms` past the epoch, `busy` or not.

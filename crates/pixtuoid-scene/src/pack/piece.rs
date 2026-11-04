@@ -47,6 +47,10 @@ pub enum Piece {
     PlantTall,
     PlantFlower,
     PlantSucculent,
+    ChristmasTree,
+    ChristmasTreeShort,
+    Poinsettia,
+    Presents,
     FloorLamp,
     Door,
     MeetingSofa,
@@ -115,8 +119,22 @@ impl Piece {
             | Piece::WalkingBack
             | Piece::CatWalk
             | Piece::DogWalk
-            | Piece::LobsterWalk => 2,
+            | Piece::LobsterWalk
+            | Piece::ChristmasTree
+            | Piece::ChristmasTreeShort => 2,
             _ => 1,
+        }
+    }
+
+    /// The piece it is drawn instead of on a holiday, on that piece's canvas
+    /// at every density, so the piece's footprint and box hold for it.
+    pub(crate) fn dresses(self) -> Option<Piece> {
+        match self {
+            Piece::ChristmasTree => Some(Piece::PlantTall),
+            Piece::ChristmasTreeShort => Some(Piece::Plant),
+            Piece::Poinsettia => Some(Piece::PlantFlower),
+            Piece::Presents => Some(Piece::PlantSucculent),
+            _ => None,
         }
     }
 
@@ -201,6 +219,8 @@ mod tests {
                 ("typing", 2),
                 ("walking", 2),
                 ("walking_back", 2),
+                ("christmas_tree", 2),
+                ("christmas_tree_short", 2),
                 ("door", 3),
                 ("cat_walk", 2),
                 ("dog_walk", 2),
@@ -216,6 +236,24 @@ mod tests {
                 .filter(|p| p.walk().is_some())
                 .count(),
             Walk::VARIANTS.len()
+        );
+    }
+
+    /// Pins [`Piece::dresses`].
+    #[test]
+    fn each_dressing_names_the_plant_it_is_drawn_instead_of() {
+        let dressed: Vec<_> = Piece::VARIANTS
+            .iter()
+            .filter_map(|&p| Some((p.name(), p.dresses()?.name())))
+            .collect();
+        assert_eq!(
+            dressed,
+            [
+                ("christmas_tree", "plant_tall"),
+                ("christmas_tree_short", "plant"),
+                ("poinsettia", "plant_flower"),
+                ("presents", "plant_succulent"),
+            ]
         );
     }
 

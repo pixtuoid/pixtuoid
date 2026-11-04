@@ -440,7 +440,7 @@ mod tests {
 
     /// What a floor laid out on `layout` answers a pointer with.
     fn hits(layout: &Arc<crate::layout::SceneLayout>) -> crate::look::Hits {
-        crate::look::Hits::new(Arc::default(), Arc::clone(layout), None)
+        crate::look::Hits::new(Arc::default(), Arc::clone(layout), None, Default::default())
     }
 
     /// A floor's picture flashing `flashes`, answering a pointer with `hits`.

@@ -91,6 +91,10 @@ pub(crate) struct ValidationReport {
     /// Each of the caller's loops whose frames don't hold whole beats: the
     /// beat skips or stretches one.
     pub(crate) off_beat_loops: Vec<OffBeatLoop>,
+    /// Each dressing ([`Piece::dresses`]) on a canvas other than its piece's,
+    /// which would stand it off the piece's footprint, and each density its
+    /// piece is drawn at and it is not, where it would show coarser.
+    pub(crate) misfit_dressings: Vec<String>,
 }
 
 /// A density variant's timing that differs from its base's, which is the
@@ -142,6 +146,7 @@ impl ValidationReport {
             orphan_hairstyles,
             unread_variant_timing,
             off_beat_loops,
+            misfit_dressings,
         } = self;
         unmarked_heads.len()
             + missing_hair_views.len()
@@ -149,6 +154,7 @@ impl ValidationReport {
             + orphan_hairstyles.len()
             + unread_variant_timing.len()
             + off_beat_loops.len()
+            + misfit_dressings.len()
     }
 }
 
@@ -194,6 +200,24 @@ fn validate_loops(pack: &Pack, loops: &[(Piece, usize)], beat_ms: u64) -> Valida
                     variant: stride,
                 },
             });
+        }
+    }
+
+    for dressing in Piece::VARIANTS.iter().copied() {
+        let Some(piece) = dressing.dresses() else {
+            continue;
+        };
+        let canvas = |s: &Sprite| s.frames().first().map(|f| (f.width(), f.height()));
+        if canvas(pack.piece(dressing)) != canvas(pack.piece(piece)) {
+            report.misfit_dressings.push(dressing.name().to_string());
+        }
+        let worn = pack.variants_of(dressing);
+        for &density in pack.variants_of(piece).keys() {
+            if !worn.contains_key(&density) {
+                report
+                    .misfit_dressings
+                    .push(density_variant_name(dressing.name(), density));
+            }
         }
     }
 
@@ -278,8 +302,8 @@ fn overhangs(layer: &Sprite, body: &Frame, head: HeadMark) -> bool {
 }
 /// Every piece the painters loop on the beat, each with the frame its loop
 /// starts at: the looping fixtures, the appliances' busy loops
-/// ([`appliance_frame_index`](super::lookup::appliance_frame_index)), the typists (`pose::typing_frame`), and every
-/// creature pose that is not a walk.
+/// ([`appliance_frame_index`](super::lookup::appliance_frame_index)), the typists (`pose::typing_frame`), every
+/// creature pose that is not a walk, and every holiday dressing.
 fn looped_animations() -> Vec<(Piece, usize)> {
     let appliances =
         [Piece::VendingMachine, Piece::Printer].map(|p| (p, lookup::APPLIANCE_IDLE_FRAMES));
@@ -287,6 +311,10 @@ fn looped_animations() -> Vec<(Piece, usize)> {
         .iter()
         .copied()
         .filter(|p| p.kind() == PieceKind::Creature);
+    let dressings = Piece::VARIANTS
+        .iter()
+        .copied()
+        .filter(|p| p.dresses().is_some());
     [
         Piece::FishTank,
         Piece::WaterCooler,
@@ -295,6 +323,7 @@ fn looped_animations() -> Vec<(Piece, usize)> {
     ]
     .into_iter()
     .chain(creatures)
+    .chain(dressings)
     .map(|p| (p, 0))
     .chain(appliances)
     .collect()
@@ -363,6 +392,34 @@ mod tests {
     fn hair_finding_count(report: &ValidationReport) -> usize {
         let bare = validate_loops(&dressed_pack(FRONT_BODY, "", &[]), &[], 0);
         report.finding_count() - bare.finding_count()
+    }
+
+    /// A dressing on a canvas other than its piece's, or missing a density its
+    /// piece is drawn at, is reported; one on its piece's canvas at each of
+    /// its piece's densities is not.
+    #[test]
+    fn a_dressing_off_its_pieces_canvas_is_reported() {
+        let fitted = pack_with_frames(
+            "[animations.plant_tall]\nframes=[\"two.sprite\"]\nframe_ms=100\n\
+             [animations.christmas_tree]\nframes=[\"two.sprite\", \"two.sprite\"]\nframe_ms=100\n\
+             [animations.\"plant_tall@2x\"]\nframes=[\"four.sprite\"]\nframe_ms=100\n\
+             [animations.\"christmas_tree@2x\"]\nframes=[\"four.sprite\", \"four.sprite\"]\nframe_ms=100\n",
+            SIZED_FRAMES,
+        );
+        assert_eq!(
+            validate_loops(&fitted, &[], 0).misfit_dressings,
+            Vec::<String>::new()
+        );
+        let misfit = pack_with_frames(
+            "[animations.plant_tall]\nframes=[\"two.sprite\"]\nframe_ms=100\n\
+             [animations.christmas_tree]\nframes=[\"one.sprite\", \"one.sprite\"]\nframe_ms=100\n\
+             [animations.\"plant_tall@2x\"]\nframes=[\"four.sprite\"]\nframe_ms=100\n",
+            SIZED_FRAMES,
+        );
+        assert_eq!(
+            validate_loops(&misfit, &[], 0).misfit_dressings,
+            ["christmas_tree", "christmas_tree@2x"]
+        );
     }
 
     /// A variant timed apart from its base is reported, each field its own
@@ -479,8 +536,9 @@ mod tests {
                 name: "typing".to_string(),
                 frame_ms: 400,
             }],
+            misfit_dressings: vec!["christmas_tree".to_string()],
         };
-        assert_eq!(report.finding_count(), 6);
+        assert_eq!(report.finding_count(), 7);
     }
 
     #[test]
