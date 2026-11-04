@@ -82,14 +82,14 @@ impl Disc {
             return None;
         }
         // Sweep across [first pane, last pane] inset by the radius. NOT the pane
-        // CENTERS (bit-identical to the mullion columns, so the span bisected the
+        // CENTERS (bit-identical to the mullion columns, so the sweep bisected the
         // disc at its most visible low-altitude moment and froze `cx` there on a
         // single-window buffer) and NOT a linear `buf_w - WINDOW_W` bound (that
         // only coincidentally lands inside a window).
         let run = window_run(span);
-        let span_left = f32::from(run.start) + DISC_RADIUS_PX;
-        let span_right = (f32::from(run.end) - DISC_RADIUS_PX).max(span_left);
-        let cx = span_left + e.azimuth * (span_right - span_left);
+        let sweep_left = f32::from(run.start) + DISC_RADIUS_PX;
+        let sweep_right = (f32::from(run.end) - DISC_RADIUS_PX).max(sweep_left);
+        let cx = sweep_left + e.azimuth * (sweep_right - sweep_left);
         let horizon_y = f32::from(top_wall_h) * HORIZON_FRAC;
         let cy = horizon_y - e.altitude * (f32::from(top_wall_h) * ARC_RISE_FRAC);
         let (lit_frac, lit_right) = match e.kind {

@@ -143,7 +143,7 @@ const SWEEP_INSETS: [Insets; 6] = [
     },
 ];
 
-/// The viewport whose `insets` leave a `w`×`h` office inside them.
+/// The viewport whose `insets` leave a `w`×`h` area inside them.
 pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
     Viewport {
         size: Size {
@@ -155,14 +155,16 @@ pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
 }
 
 /// Run `f` over `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size
-/// the office left inside the insets, at production fill.
+/// the area left inside the insets, at production fill.
 fn sweep_insets(mut f: impl FnMut(Viewport, u64, &SceneLayout)) {
     for &(w, h) in SWEEP_SIZES {
         for seed in SWEEP_SEEDS {
             for insets in SWEEP_INSETS {
                 let viewport = inset_viewport(w, h, insets);
                 let l = SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
-                    panic!("{viewport:?} seed {seed}: the office inside the insets fell under the floor")
+                    panic!(
+                        "{viewport:?} seed {seed}: the area inside the insets fell under the floor"
+                    )
                 });
                 f(viewport, seed, &l);
             }
@@ -1819,7 +1821,7 @@ fn point_seed_packing_is_frozen() {
 fn nothing_is_placed_under_an_inset() {
     let mut v = Vec::new();
     sweep_insets(|viewport, seed, l| {
-        let inner = viewport.inner().expect("the sweep leaves an office inside");
+        let inner = viewport.inner().expect("the sweep leaves an area inside");
         let mut outside = |what: String, b: Bounds| {
             let at = Point { x: b.x, y: b.y };
             let size = Size {
@@ -1878,7 +1880,7 @@ fn nothing_is_placed_under_an_inset() {
 fn the_floor_plan_inside_insets_is_the_inner_sizes_moved() {
     let mut v = Vec::new();
     sweep_insets(|viewport, seed, l| {
-        let inner = viewport.inner().expect("the sweep leaves an office inside");
+        let inner = viewport.inner().expect("the sweep leaves an area inside");
         let bare = SceneLayout::compute(Viewport::full(inner.width, inner.height), None, seed)
             .expect("the inner size lays out bare");
         let at = |p: Point| Point {

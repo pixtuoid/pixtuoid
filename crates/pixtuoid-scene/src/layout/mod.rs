@@ -406,7 +406,7 @@ pub struct SceneLayout {
 }
 
 /// Integer percentage of `v`, floor semantics. Computed in u32: a bare
-/// `buf_h * 30` overflows u16 once `buf_h > 2184`.
+/// `inner_h * WALL_DEPTH_PCT` overflows u16 past `u16::MAX / WALL_DEPTH_PCT`.
 pub(crate) const fn pct(v: u16, n: u16) -> u16 {
     ((v as u32 * n as u32) / 100) as u16
 }
@@ -530,9 +530,9 @@ pub(crate) const TEST_DEFAULT_DESKS: usize = CLASSIC_OFFICE_DESKS;
 /// tests reads it; the pod grid itself prices its own spacing.
 #[cfg(test)]
 pub(crate) const DESK_GAP_Y: u16 = 14;
-/// Floor (px) for the layout's `top_margin`: `compute::wall_depth`'s percent of the
-/// height inside the insets never shrinks the north wall band below this.
-pub(crate) const MIN_TOP_MARGIN: u16 = 20;
+/// Floor (px) for `compute::wall_depth`: its percent of the height inside the
+/// insets never shrinks the north wall band below this.
+pub(crate) const MIN_WALL_DEPTH: u16 = 20;
 const MIN_DUAL_MEETING_H: u16 = 80;
 
 /// Number of desks per side in a pod (`POD_SIDE * POD_SIDE` total).

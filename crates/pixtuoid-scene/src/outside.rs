@@ -248,7 +248,7 @@ impl Wall {
     }
 
     /// The run of glass its windows cut, in units, and the glass's height:
-    /// the span the clouds are drawn across.
+    /// the run the clouds are drawn across.
     pub(crate) fn glass(&self) -> (Range<u16>, u16) {
         let rows = window_rows(self.band_h);
         (

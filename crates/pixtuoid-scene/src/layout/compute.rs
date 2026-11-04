@@ -77,13 +77,13 @@ const fn pct_at_least(v: u16, n: u16, min: u16) -> u16 {
     if share > min { share } else { min }
 }
 
-const TOP_MARGIN_PCT: u16 = 30;
+const WALL_DEPTH_PCT: u16 = 30;
 
 /// The north wall band's depth below the north edge inside the insets —
-/// [`TOP_MARGIN_PCT`] percent of the `inner_h` inside them, never under
-/// [`MIN_TOP_MARGIN`].
+/// [`WALL_DEPTH_PCT`] percent of the `inner_h` inside them, never under
+/// [`MIN_WALL_DEPTH`].
 pub(super) const fn wall_depth(inner_h: u16) -> u16 {
-    pct_at_least(inner_h, TOP_MARGIN_PCT, MIN_TOP_MARGIN)
+    pct_at_least(inner_h, WALL_DEPTH_PCT, MIN_WALL_DEPTH)
 }
 
 const fn cubicle_aisle_h(usable_h: u16) -> u16 {
@@ -103,7 +103,7 @@ const _: () = assert!(MIN_LAYOUT_W >= super::NEON_DOOR_WALL_W);
 // The shortest wall band's windows stand as tall as the door, so every office
 // that lays out has one.
 const _: () = assert!(
-    super::wall_trim_row(super::wall_band_h(super::MIN_TOP_MARGIN)) - super::WINDOW_TOP
+    super::wall_trim_row(super::wall_band_h(super::MIN_WALL_DEPTH)) - super::WINDOW_TOP
         >= super::ELEVATOR_H
 );
 pub(super) const MIN_LAYOUT_H: u16 = min_layout_h();
@@ -1322,7 +1322,7 @@ impl FloorVariant {
         )
     }
 
-    /// Left-column split as a percent of buffer width, BEFORE the Dense-degrade.
+    /// Left-column split as a percent of the width inside the insets, BEFORE the Dense-degrade.
     const fn mid_x_pct(self) -> u16 {
         match self {
             FloorVariant::Standard => 28,
