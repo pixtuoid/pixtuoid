@@ -362,8 +362,8 @@ mod tests {
         assert_eq!(found, Some((port, txt)));
     }
 
-    /// A withdrawal, then the renamed name's Add, holds the service; only a
-    /// reply's error ends `run`, whether or not the socket stays open.
+    /// A withdrawal, then the renamed name's Add, leaves the service held; of
+    /// the replies, only an error refuses it.
     #[test]
     fn only_a_replys_error_refuses_the_service() {
         // `kDNSServiceErr_ServiceNotRunning`, a daemon's crash.
