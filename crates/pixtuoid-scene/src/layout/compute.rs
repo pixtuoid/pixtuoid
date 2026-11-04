@@ -2151,4 +2151,11 @@ mod tests {
         ];
         assert_eq!(compute_pod_decor(grid(3), 0, &narrow), free[1..]);
     }
+
+    /// `layout_golden.rs`'s `open_plan_seed11` checks a shape the lounge
+    /// shares, so only this tells its seed's open plan from a lounge.
+    #[test]
+    fn the_open_plan_goldens_seed_is_the_open_plan() {
+        assert_eq!(FloorVariant::from_seed(11), FloorVariant::OpenPlan);
+    }
 }
