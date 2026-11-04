@@ -232,7 +232,7 @@ jobs:
         run: |
           gh issue list --label "$HERMETIC_LABEL" --state all --limit "$HERMETIC_LIMIT" \
             --json number,state,body >"$RUNNER_TEMP/issues.json"
-          gh api --paginate --slurp "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+          gh api --paginate --slurp "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs" \
             >"$RUNNER_TEMP/jobs.json"
           printf '%s' "$DRIFT" >"$RUNNER_TEMP/drift.json"
           target/release/examples/issues plan "$RUNNER_TEMP/drift.json" "$RUNNER_TEMP/jobs.json" \

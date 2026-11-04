@@ -61,13 +61,14 @@ pub struct Freshness {
 
 /// One page of the run's jobs, as `gh api --paginate --slurp` lists
 /// [the REST API's](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct JobsPage {
     jobs: Vec<Job>,
 }
 
-/// A job of the run.
-#[derive(Debug, Clone, Deserialize)]
+/// A job of the run: its name is all that says which leg it ran, since a job
+/// carries no matrix values (`tests/sources/hermetic/jobs/`).
+#[derive(Debug, Deserialize)]
 struct Job {
     name: String,
     runner_id: Option<u64>,
@@ -77,7 +78,8 @@ struct Job {
 
 impl Job {
     /// Whether no runner ever took it, so it ran nothing: GitHub cancels a job
-    /// no runner acquires, with runner 0 and no step.
+    /// no runner acquires with runner 0 and no step, as it did run 41662052721's
+    /// macOS shard 2 leg (`tests/sources/hermetic/jobs/41662052721.json`).
     fn unacquired(&self) -> bool {
         self.runner_id.unwrap_or_default() == 0 && self.steps.is_empty()
     }
