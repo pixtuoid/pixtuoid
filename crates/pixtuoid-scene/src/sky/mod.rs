@@ -487,13 +487,9 @@ impl ClockReading {
     }
 }
 
-/// Its own decode, not [`local_hour_frac`]: the hands need the raw
-/// `hour % 12` and `minute`.
+/// Not [`local_hour_frac`]: the hands need the raw `hour % 12` and `minute`.
 pub(crate) fn clock_reading(now: SystemTime) -> ClockReading {
-    let unix_now = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let local = chrono::DateTime::<chrono::Local>::from(std::time::UNIX_EPOCH + unix_now);
+    let local = crate::localclock::local_time(now);
     use chrono::Timelike;
     ClockReading {
         hour: local.hour() % 12,
@@ -520,14 +516,10 @@ pub(crate) fn octant_offset(turn: f32) -> (i32, i32) {
     OCTANTS[oct as usize]
 }
 
-/// Fractional local hour (`hour + minute/60`, in `0.0..24.0`) for `now` — the
-/// sky's clock decode.
+/// Fractional local hour (`hour + minute/60`, in `0.0..24.0`) for `now`.
 pub(crate) fn local_hour_frac(now: SystemTime) -> f32 {
     use chrono::Timelike;
-    let unix_now = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let local = chrono::DateTime::<chrono::Local>::from(std::time::UNIX_EPOCH + unix_now);
+    let local = crate::localclock::local_time(now);
     local.hour() as f32 + local.minute() as f32 / 60.0
 }
 
@@ -563,7 +555,7 @@ fn moon_arc(h: f32, age: f32) -> Option<f32> {
 fn body_at(h: f32, nightfall: f32, moon_phase: f32, moon_age: f32) -> SkyBody {
     if hour_is_day(h) {
         let t = (h - SUN_RISE_H) / (SUN_SET_H - SUN_RISE_H);
-        let altitude = (std::f32::consts::PI * t).sin();
+        let altitude = libm::sinf(std::f32::consts::PI * t);
         return SkyBody {
             kind: BodyKind::Sun,
             altitude,
@@ -573,7 +565,7 @@ fn body_at(h: f32, nightfall: f32, moon_phase: f32, moon_age: f32) -> SkyBody {
         };
     }
     let t = moon_arc(h, moon_age).unwrap_or(0.0);
-    let altitude = (std::f32::consts::PI * t).sin();
+    let altitude = libm::sinf(std::f32::consts::PI * t);
     SkyBody {
         kind: BodyKind::Moon,
         altitude,
@@ -595,7 +587,7 @@ fn moon_age_at(now: SystemTime) -> f32 {
 
 /// Illuminated fraction of the moon (0 new .. 1 full), from the synodic month.
 fn moon_phase_at(now: SystemTime) -> f32 {
-    (1.0 - (std::f32::consts::TAU * moon_age_at(now) / SYNODIC_DAYS).cos()) / 2.0
+    (1.0 - libm::cosf(std::f32::consts::TAU * moon_age_at(now) / SYNODIC_DAYS)) / 2.0
 }
 
 /// Lightning cadence: one strike per bucket this long, at a hashed offset

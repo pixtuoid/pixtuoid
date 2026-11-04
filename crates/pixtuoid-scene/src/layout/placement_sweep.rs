@@ -172,6 +172,24 @@ fn sweep_insets(mut f: impl FnMut(Viewport, u64, &SceneLayout)) {
     }
 }
 
+/// Every swept office, on each seed a user's floors lay out with, shows some
+/// stand-in of each holiday: a holiday standing in only for pieces an office
+/// lacks would pass it by unseen.
+#[test]
+fn every_office_shows_each_holiday() {
+    let check = |w, h, seed, l: &SceneLayout| {
+        for occasion in crate::holiday::Occasion::of_each_holiday() {
+            let shows = l
+                .fixtures()
+                .filter_map(|f| f.kind.occasion_piece())
+                .any(|p| occasion.art(p) != p);
+            assert!(shows, "{w}x{h} seed {seed} shows nothing of {occasion:?}");
+        }
+    };
+    sweep(check);
+    sweep_production_floors(check);
+}
+
 /// Which Bounds a piece's rect must stay inside — one honest container per
 /// piece, NOT one rule for all.
 #[derive(Clone, Copy, Debug)]

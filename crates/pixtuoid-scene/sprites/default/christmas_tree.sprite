@@ -1,0 +1,24 @@
+# 6x10 Christmas tree in the tall plant's pot: a warm star (`9`), fir tiers
+# (`l`/`L`), two strings of lights (`9` lit, `o` dark) that swap each frame.
+@frame 0
+. . 9 9 . .
+. . l L . .
+. l 9 L o .
+. L l l L .
+l o L l 9 L
+L l 9 L o l
+. . z z . .
+n n n n n n
+n d d d d n
+n n n n n n
+@frame 1
+. . 9 9 . .
+. . l L . .
+. l o L 9 .
+. L l l L .
+l 9 L l o L
+L l o L 9 l
+. . z z . .
+n n n n n n
+n d d d d n
+n n n n n n

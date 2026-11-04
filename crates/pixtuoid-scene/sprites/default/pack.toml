@@ -307,6 +307,38 @@ frame_ms = 600
 frames   = ["plant_succulent@4x.sprite"]
 frame_ms = 600
 
+[animations.christmas_tree]
+frames   = ["christmas_tree.sprite"]
+frame_ms = 500
+
+[animations."christmas_tree@4x"]
+frames   = ["christmas_tree@4x.sprite"]
+frame_ms = 500
+
+[animations.christmas_tree_short]
+frames   = ["christmas_tree_short.sprite"]
+frame_ms = 500
+
+[animations."christmas_tree_short@4x"]
+frames   = ["christmas_tree_short@4x.sprite"]
+frame_ms = 500
+
+[animations.poinsettia]
+frames   = ["poinsettia.sprite"]
+frame_ms = 600
+
+[animations."poinsettia@4x"]
+frames   = ["poinsettia@4x.sprite"]
+frame_ms = 600
+
+[animations.presents]
+frames   = ["presents.sprite"]
+frame_ms = 600
+
+[animations."presents@4x"]
+frames   = ["presents@4x.sprite"]
+frame_ms = 600
+
 [animations.floor_lamp]
 frames   = ["floor_lamp.sprite"]
 frame_ms = 600

@@ -47,7 +47,7 @@ pub const CEILING_DBFS: f32 = -1.0;
 #[doc(hidden)]
 #[must_use]
 pub fn ceiling_amplitude() -> f32 {
-    10f32.powf(CEILING_DBFS / 20.0)
+    libm::powf(10.0, CEILING_DBFS / 20.0)
 }
 
 /// How fast each sink's limiter pulls its gain down: whatever rises faster

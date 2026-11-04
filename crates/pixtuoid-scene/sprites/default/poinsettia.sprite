@@ -1,0 +1,9 @@
+# 6x6 poinsettia in the flower's pot: red bracts (`o`/`r`) round a gold heart
+# (`y`), green leaves (`L`) under them.
+@frame 0
+. . o . . .
+. o r o r .
+o r y y r o
+. L r o L .
+. . g g . .
+. . g g . .

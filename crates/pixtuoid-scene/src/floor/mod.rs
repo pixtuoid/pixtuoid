@@ -771,7 +771,7 @@ impl VacancyDim {
             .unwrap_or(0);
         self.last_update = Some(now);
 
-        let alpha = 1.0 - (-(dt_ms as f32) / Self::FADE_TAU_MS as f32).exp();
+        let alpha = 1.0 - libm::expf(-(dt_ms as f32) / Self::FADE_TAU_MS as f32);
         self.level += (target - self.level) * alpha.clamp(0.0, 1.0);
         // The ease ends rather than stepping a stray channel forever.
         if (target - self.level).abs() < Self::SETTLED {

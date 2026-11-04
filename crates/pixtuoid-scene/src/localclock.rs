@@ -1,20 +1,27 @@
-//! Local wall-clock instants for tests, benches and the snapshot examples.
+//! The office's one bridge between an instant and the viewer's wall clock:
+//! `local_time` reads `now` for every reader of the local hour or date, and
+//! the helpers build instants from local times for tests, benches and the
+//! snapshot examples.
 //!
-//! The sky model decodes `now` back through `chrono::Local`, so a test building
-//! its instants as epoch offsets is really asking for whatever local hours the
+//! The office reads `now` through `chrono::Local`, so a test building its
+//! instants as epoch offsets is really asking for whatever local hours the
 //! runner's `$TZ` gives — how `the_foreground_layer_is_lit_by_the_clock` passed
 //! in CI (UTC) and failed on a clean checkout in UTC-6.
 //!
-//! Anything whose ASSERTION depends on the hour builds its instants here; a test
-//! needing only "some fixed moment" is TZ-independent already and keeps a plain
-//! epoch offset.
+//! Anything whose ASSERTION depends on the local hour or date builds its
+//! instants here; a test needing only "some fixed moment" is TZ-independent
+//! already and keeps a plain epoch offset.
 
 use std::time::SystemTime;
 
 use chrono::TimeZone;
 
-/// Day 0 for every helper. January, so the sun arc is the same short winter one
-/// in each call.
+/// `now` on the viewer's wall clock.
+pub(crate) fn local_time(now: SystemTime) -> chrono::NaiveDateTime {
+    chrono::DateTime::<chrono::Local>::from(now).naive_local()
+}
+
+/// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders.
 const BASE: (i32, u32, u32) = (2026, 1, 1);
 
 /// `day` counts FORWARD from the base date by calendar arithmetic, not as a
@@ -24,14 +31,16 @@ const BASE: (i32, u32, u32) = (2026, 1, 1);
 fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
     let date = chrono::NaiveDate::from_ymd_opt(BASE.0, BASE.1, BASE.2)?
         .checked_add_days(chrono::Days::new(u64::from(day)))?;
-    resolve(date, h, m)
+    local_instant(date, h, m)
 }
 
+/// The instant `date` reads `h:m` on the viewer's wall clock; `None` where
+/// that local time is skipped or ambiguous.
 #[expect(
     clippy::disallowed_methods,
     reason = "the one sanctioned TimeZone construction clippy.toml bans elsewhere"
 )]
-fn resolve(date: chrono::NaiveDate, h: u32, m: u32) -> Option<SystemTime> {
+pub(crate) fn local_instant(date: chrono::NaiveDate, h: u32, m: u32) -> Option<SystemTime> {
     let local = chrono::Local.from_local_datetime(&date.and_hms_opt(h, m, 0)?);
     local.single().map(Into::into)
 }
@@ -43,11 +52,7 @@ fn local(day: u32, h: u32, m: u32) -> SystemTime {
 /// Local `h:m` on `day`'s own local date, not the reference day: a run on
 /// today's sky. `None` where that local time doesn't exist.
 pub(crate) fn on_date_of(day: SystemTime, h: u32, m: u32) -> Option<SystemTime> {
-    resolve(
-        chrono::DateTime::<chrono::Local>::from(day).date_naive(),
-        h,
-        m,
-    )
+    local_instant(local_time(day).date(), h, m)
 }
 
 /// Local `h:00` on the reference day.

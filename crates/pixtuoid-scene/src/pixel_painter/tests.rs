@@ -1678,6 +1678,7 @@ fn empty_frame(layout: &SceneLayout) -> SimFrame {
         mascots: Vec::new(),
         desks: vec![Default::default(); layout.home_desks.len()],
         door_frame: 0,
+        occasion: Default::default(),
     }
 }
 
@@ -4312,6 +4313,99 @@ fn chair_sitter_bottom_row_lands_on_its_sort_row_overlapping_the_chair_body() {
         bottom > chair_top,
         "sitter bottom ({bottom}) must overlap the chair body (top {chair_top})"
     );
+}
+
+/// Paint `art` at `ms` past the epoch, moving as `motion` says, as a plant
+/// or as an aisle's decor.
+fn plant_at(art: Piece, motion: Motion, ms: u64, in_aisle: bool) -> Vec<Rgb> {
+    let pack = crate::pack::test_office();
+    let mut cache = FrameCache::new();
+    let mut buf = RgbBuffer::filled(40, 40, Rgb { r: 1, g: 2, b: 3 });
+    let pos = Point { x: 20, y: 20 };
+    paint_drawable(
+        &if in_aisle {
+            DrawableKind::PodDecorItem { art, pos }
+        } else {
+            DrawableKind::Plant { art, pos }
+        },
+        &mut super::drawable::DrawableCtx {
+            buf: &mut buf,
+            pack: &pack,
+            cache: &mut cache,
+            timing: motion.timing(SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ms)),
+            theme: crate::theme::theme_by_name("normal").expect("theme"),
+        },
+    );
+    buf.as_slice().to_vec()
+}
+
+/// A stand-in's loop steps on the beat, one frame each `frame_ms`, and holds
+/// its first frame at rest, as a plant and in an aisle.
+#[test]
+fn a_stand_in_steps_its_loop_and_holds_still_at_rest() {
+    let step = u64::from(
+        crate::pack::test_office()
+            .piece(Piece::ChristmasTree)
+            .frame_ms(),
+    );
+    for in_aisle in [false, true] {
+        let tree = |motion, ms| plant_at(Piece::ChristmasTree, motion, ms, in_aisle);
+        assert_ne!(
+            tree(Motion::Full, 0),
+            tree(Motion::Full, step),
+            "{in_aisle}"
+        );
+        assert_eq!(
+            tree(Motion::Full, 0),
+            tree(Motion::Full, 2 * step),
+            "{in_aisle}"
+        );
+        assert_eq!(
+            tree(Motion::Still, 0),
+            tree(Motion::Still, step),
+            "{in_aisle}"
+        );
+    }
+}
+
+/// The classic queues each plant and aisle piece in the art its frame's
+/// occasion draws it in: on Christmas some piece as a stand-in, with no
+/// holiday each as itself.
+#[test]
+fn the_classic_draws_each_plant_in_its_occasions_art() {
+    for layout in crate::layout::roster::tests::offices() {
+        for occasion in [
+            crate::holiday::Occasion::default(),
+            crate::holiday::Occasion::at(crate::holiday::Occasion::christmas_noon()),
+        ] {
+            let frame = SimFrame {
+                occasion,
+                ..empty_frame(&layout)
+            };
+            let drawn: Vec<Piece> = queued(&layout, &frame)
+                .sorted
+                .iter()
+                .filter_map(|d| match d.kind {
+                    DrawableKind::Plant { art, .. } | DrawableKind::PodDecorItem { art, .. } => {
+                        Some(art)
+                    }
+                    _ => None,
+                })
+                .collect();
+            let want: Vec<Piece> = layout
+                .fixtures()
+                .filter_map(|f| f.kind.occasion_piece())
+                .map(|p| occasion.art(p))
+                .collect();
+            assert_eq!(drawn, want);
+            assert_eq!(
+                drawn
+                    .iter()
+                    .any(|&p| crate::holiday::every_stand_in().any(|s| s.art == p)),
+                occasion != crate::holiday::Occasion::default()
+            );
+        }
+    }
 }
 
 /// Paint the appliance `sprite` at `ms` past the epoch, `busy` or not.
