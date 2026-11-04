@@ -2619,189 +2619,259 @@ fn a_lifted_creature_is_in_front_of_the_room() {
     }
 }
 
-/// A host crops and rings a person by the box its picture's own hits give:
-/// on every frame of a walk, in every look, at the canvas's edges too, the box
-/// lies on the canvas, holds what the person's outfit draws at the picture's
-/// scale, and stands on every look's columns and feet; it leaves with its
-/// agent's floor and its agent.
-#[test]
-fn a_figures_box_holds_its_outfit_every_frame_in_every_look() {
-    use crate::display::HoverTarget;
-    use crate::interact::{Figure, Gesture};
-    use crate::layout::{Bounds, Point};
-    use crate::look::{Look, WorldText};
+mod figure_box {
+    use super::*;
+    use crate::look::{Look, LookKind, WorldText};
     use crate::render_scale::RenderScale;
-    let pack = Arc::new(crate::pack::test_office());
-    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
-    let size = Size { w: 160, h: 96 };
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    // Long idle, their trips walk one to the canvas's west edge and one to its
-    // east; the third is held at its top.
-    let [west, east, held] =
-        ["/edge/9.jsonl", "/edge/22.jsonl", "/edge/held5.jsonl"].map(AgentId::from_transcript_path);
-    // Twins but for their cwd, so for their outfit: where their pictures
-    // differ, a sprite drew.
-    let mut twins = ["/alpha", "/omega"].map(|cwd| {
-        let mut scene = SceneState::uniform(16);
-        let idle = t0 - Duration::from_secs(900);
-        for (desk, id) in [(1, west), (6, east), (0, held)] {
-            scene.agents.insert(
-                id,
-                AgentSlot {
-                    cwd: Arc::from(Path::new(cwd)),
-                    state_started_at: idle,
-                    created_at: idle,
-                    last_event_at: idle,
-                    desk_index: GlobalDeskIndex(desk),
-                    ..make_slot(id, ActivityState::Idle)
-                },
+
+    /// A test per look, and the roster [`every_look_kind_has_a_figure_test`]
+    /// reads, from the one list: a look here is a look tested.
+    macro_rules! looks {
+        ($($test:ident: $look:expr,)+) => {
+            $(
+                #[test]
+                fn $test() {
+                    holds_its_outfit_every_frame_in($look);
+                }
+            )+
+            const LOOKS: &[fn(RenderScale) -> Look] = &[$($look),+];
+        };
+    }
+
+    looks! {
+        holds_its_outfit_every_frame_in_half_blocks: |_| Look::HALF_BLOCKS,
+        holds_its_outfit_every_frame_in_the_classic_at_its_densest_art: |densest| Look::Classic {
+            scale: densest,
+            text: WorldText::Host,
+        },
+        holds_its_outfit_every_frame_in_the_classic_past_its_densest_art: |densest| Look::Classic {
+            scale: past(densest),
+            text: WorldText::Host,
+        },
+        holds_its_outfit_every_frame_in_the_cutaway_at_one: |_| Look::Cutaway {
+            scale: RenderScale::ONE,
+            text: WorldText::Host,
+        },
+        holds_its_outfit_every_frame_in_the_cutaway_at_its_densest_art: |densest| Look::Cutaway {
+            scale: densest,
+            text: WorldText::Host,
+        },
+        holds_its_outfit_every_frame_in_the_cutaway_past_its_densest_art: |densest| Look::Cutaway {
+            scale: past(densest),
+            text: WorldText::Host,
+        },
+    }
+
+    /// A kind added to [`LookKind`] fails here until [`looks!`] tests a look of it.
+    #[test]
+    fn every_look_kind_has_a_figure_test() {
+        let densest = RenderScale::from(crate::pack::test_office().max_density_variant());
+        for kind in LookKind::ALL {
+            assert!(
+                LOOKS.iter().any(|at| at(densest).kind() == *kind),
+                "{kind:?}"
             );
         }
-        scene
-    });
-    let densest = RenderScale::from(pack.max_density_variant());
-    // Past its densest art a look blits each art pixel larger, and
-    // `paint_figure` cuts hair by whole art rows.
-    let past = RenderScale::new(2 * densest.get()).expect("nonzero");
-    let text = WorldText::Host;
-    let looks: Vec<Look> = [Look::HALF_BLOCKS]
-        .into_iter()
-        .chain([densest, past].map(|scale| Look::Classic { scale, text }))
-        .chain([RenderScale::ONE, densest, past].map(|scale| Look::Cutaway { scale, text }))
-        .collect();
-    let mut offices: Vec<[OfficeSession; 2]> = looks
-        .iter()
-        .map(|_| [(); 2].map(|()| OfficeSession::new(Arc::clone(&pack))))
-        .collect();
-    // Each look's agent boxes at `now`, the twins' alike, every pixel where
-    // the twins differ inside one of them, and whose outfit showed.
-    let frame = |offices: &mut [OfficeSession; 2], twins: &[SceneState; 2], look, now| {
-        let [a, b] = [0, 1].map(|i| {
-            let _feed = offices[i].render(
-                look,
-                crate::look::RenderInputs {
-                    world: FloorInputs {
-                        scene: &twins[i],
-                        now,
-                        floor: FloorMeta::ground(),
-                        pets: PetInputs::default(),
+    }
+
+    /// Past its densest art a look blits each art pixel larger, and
+    /// `paint_figure` cuts hair by whole art rows.
+    fn past(densest: RenderScale) -> RenderScale {
+        RenderScale::new(2 * densest.get()).expect("nonzero")
+    }
+
+    /// A host crops and rings a person by the box its picture's own hits give: on
+    /// every frame of a walk in the look `at` its pack's densest art gives, at the
+    /// canvas's edges too, the box lies on the canvas, holds what the person's
+    /// outfit draws at the picture's scale, and stands on the half blocks' columns
+    /// and feet; it leaves with its agent's floor and its agent. A test per look,
+    /// so the suite runs them side by side.
+    fn holds_its_outfit_every_frame_in(at: fn(RenderScale) -> Look) {
+        use crate::display::HoverTarget;
+        use crate::interact::{Figure, Gesture};
+        use crate::layout::{Bounds, Point};
+        let pack = Arc::new(crate::pack::test_office());
+        let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+        let size = Size { w: 160, h: 96 };
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        // Long idle, their trips walk one to the canvas's west edge and one to its
+        // east; the third is held at its top.
+        let [west, east, held] = ["/edge/9.jsonl", "/edge/22.jsonl", "/edge/held5.jsonl"]
+            .map(AgentId::from_transcript_path);
+        // Twins but for their cwd, so for their outfit: where their pictures
+        // differ, a sprite drew.
+        let mut twins = ["/alpha", "/omega"].map(|cwd| {
+            let mut scene = SceneState::uniform(16);
+            let idle = t0 - Duration::from_secs(900);
+            for (desk, id) in [(1, west), (6, east), (0, held)] {
+                scene.agents.insert(
+                    id,
+                    AgentSlot {
+                        cwd: Arc::from(Path::new(cwd)),
+                        state_started_at: idle,
+                        created_at: idle,
+                        last_event_at: idle,
+                        desk_index: GlobalDeskIndex(desk),
+                        ..make_slot(id, ActivityState::Idle)
                     },
-                    theme,
-                    size,
-                    place: crate::look::Place::default(),
-                    debug_walkable: false,
-                    dim: crate::look::Dim::NONE,
-                },
-                &[],
-                crate::sprite::Rgb { r: 0, g: 0, b: 0 },
-            );
-            let picture = offices[i].picture().expect("lays out");
-            let hits = picture.hits().expect("a floor, not a slide");
-            let boxes: Vec<(AgentId, Bounds)> = hits
-                .figures()
-                .filter_map(|(target, at)| match target {
-                    HoverTarget::Agent(id) => Some((*id, at)),
-                    _ => None,
-                })
-                .collect();
-            (picture.pixels().clone(), boxes, hits.layout().clone())
+                );
+            }
+            scene
         });
-        assert_eq!(a.1, b.1, "{look:?}: premise: the twins draw alike");
-        let (pixels, boxes, layout) = a;
-        let per_unit = match look {
-            Look::Classic { scale, .. } | Look::Cutaway { scale, .. } => scale.to_buffer(1),
+        let densest = RenderScale::from(pack.max_density_variant());
+        let look = at(densest);
+        let scale = |look| match look {
+            Look::Classic { scale, .. } | Look::Cutaway { scale, .. } => scale,
         };
-        let mut shown = vec![false; boxes.len()];
-        for y in 0..pixels.height() {
-            for x in 0..pixels.width() {
-                if pixels.get(x, y) == b.0.get(x, y) {
+        let looks: Vec<Look> = [Look::HALF_BLOCKS]
+            .into_iter()
+            .chain((look != Look::HALF_BLOCKS).then_some(look))
+            .collect();
+        let mut offices: Vec<[OfficeSession; 2]> = looks
+            .iter()
+            .map(|_| [(); 2].map(|()| OfficeSession::new(Arc::clone(&pack))))
+            .collect();
+        // Each look's agent boxes at `now`, the twins' alike, every pixel where
+        // the twins differ inside one of them, and whose outfit showed.
+        let frame = |offices: &mut [OfficeSession; 2], twins: &[SceneState; 2], look, now| {
+            let [a, b] = [0, 1].map(|i| {
+                let _feed = offices[i].render(
+                    look,
+                    crate::look::RenderInputs {
+                        world: FloorInputs {
+                            scene: &twins[i],
+                            now,
+                            floor: FloorMeta::ground(),
+                            pets: PetInputs::default(),
+                        },
+                        theme,
+                        size,
+                        place: crate::look::Place::default(),
+                        debug_walkable: false,
+                        dim: crate::look::Dim::NONE,
+                    },
+                    &[],
+                    crate::sprite::Rgb { r: 0, g: 0, b: 0 },
+                );
+                let picture = offices[i].picture().expect("lays out");
+                let hits = picture.hits().expect("a floor, not a slide");
+                let boxes: Vec<(AgentId, Bounds)> = hits
+                    .figures()
+                    .filter_map(|(target, at)| match target {
+                        HoverTarget::Agent(id) => Some((*id, at)),
+                        _ => None,
+                    })
+                    .collect();
+                (picture.pixels().clone(), boxes, hits.layout().clone())
+            });
+            assert_eq!(a.1, b.1, "{look:?}: premise: the twins draw alike");
+            let (pixels, boxes, layout) = a;
+            let per_unit = scale(look).to_buffer(1);
+            let mut shown = vec![false; boxes.len()];
+            let width = usize::from(pixels.width());
+            let rows = pixels
+                .as_slice()
+                .chunks(width)
+                .zip(b.0.as_slice().chunks(width));
+            for (y, (ours, theirs)) in (0..).zip(rows) {
+                if ours == theirs {
                     continue;
                 }
-                let (ux, uy) = (x / per_unit, y / per_unit);
-                let whose = boxes.iter().position(|(_, at)| {
-                    (at.x..at.x + at.width).contains(&ux) && (at.y..at.y + at.height).contains(&uy)
-                });
-                let whose = whose.unwrap_or_else(|| {
-                    panic!("{look:?} at {now:?}: ({x}, {y}) drawn outside {boxes:?}")
-                });
-                shown[whose] = true;
-            }
-        }
-        for (id, at) in &boxes {
-            assert!(
-                at.x + at.width <= layout.buf_w && at.y + at.height <= layout.buf_h,
-                "{look:?}: {id:?}'s {at:?} leaves the canvas"
-            );
-        }
-        let showed = boxes.iter().zip(shown).filter(|(_, s)| *s);
-        let showed: Vec<AgentId> = showed.map(|((id, _), _)| *id).collect();
-        (boxes, showed)
-    };
-    let (mut west_edge, mut east_edge, mut top_edge, mut rose) = (false, false, false, false);
-    let mut showed = std::collections::HashSet::new();
-    for step in 0..140 {
-        let now = t0 + Duration::from_millis(250) * step;
-        let mut flat = Vec::new();
-        for (look, offices) in looks.iter().zip(&mut offices) {
-            let (boxes, shown) = frame(offices, &twins, *look, now);
-            showed.extend(shown.into_iter().map(|id| (look.kind().name(), id)));
-            assert_eq!(boxes.len(), 3, "{look:?}: premise: all three are drawn");
-            if *look == Look::HALF_BLOCKS {
-                for &(_, at) in &boxes {
-                    west_edge |= at.x == 0;
-                    east_edge |= at.x + at.width == size.w;
-                    top_edge |= at.y == 0;
+                let differ = (0..)
+                    .zip(ours.iter().zip(theirs))
+                    .filter(|(_, (o, t))| o != t);
+                for (x, _) in differ {
+                    let (ux, uy) = (x / per_unit, y / per_unit);
+                    let whose = boxes.iter().position(|(_, at)| {
+                        (at.x..at.x + at.width).contains(&ux)
+                            && (at.y..at.y + at.height).contains(&uy)
+                    });
+                    let whose = whose.unwrap_or_else(|| {
+                        panic!("{look:?} at {now:?}: ({x}, {y}) drawn outside {boxes:?}")
+                    });
+                    shown[whose] = true;
                 }
-                flat = boxes;
-                continue;
             }
             for (id, at) in &boxes {
-                let (_, f) = flat.iter().find(|(f, _)| f == id).expect("drawn flat too");
-                assert_eq!(
-                    (at.x, at.width, at.y + at.height),
-                    (f.x, f.width, f.y + f.height),
-                    "{look:?}: {id:?} on other columns or feet than the classic's"
+                assert!(
+                    at.x + at.width <= layout.buf_w && at.y + at.height <= layout.buf_h,
+                    "{look:?}: {id:?}'s {at:?} leaves the canvas"
                 );
-                assert!(at.y <= f.y, "{look:?}: {id:?}'s {at:?} sinks below {f:?}");
-                rose |= at.y < f.y;
+            }
+            let showed = boxes.iter().zip(shown).filter(|(_, s)| *s);
+            let showed: Vec<AgentId> = showed.map(|((id, _), _)| *id).collect();
+            (boxes, showed)
+        };
+        let (mut west_edge, mut east_edge, mut top_edge, mut rose) = (false, false, false, false);
+        let mut showed = std::collections::HashSet::new();
+        for step in 0..140 {
+            let now = t0 + Duration::from_millis(250) * step;
+            let mut flat = Vec::new();
+            for (shown_in, offices) in looks.iter().zip(&mut offices) {
+                let (boxes, shown) = frame(offices, &twins, *shown_in, now);
+                if *shown_in == look {
+                    showed.extend(shown);
+                }
+                let look = shown_in;
+                assert_eq!(boxes.len(), 3, "{look:?}: premise: all three are drawn");
+                if *look == Look::HALF_BLOCKS {
+                    for &(_, at) in &boxes {
+                        west_edge |= at.x == 0;
+                        east_edge |= at.x + at.width == size.w;
+                        top_edge |= at.y == 0;
+                    }
+                    flat = boxes;
+                    continue;
+                }
+                for (id, at) in &boxes {
+                    let (_, f) = flat.iter().find(|(f, _)| f == id).expect("drawn flat too");
+                    assert_eq!(
+                        (at.x, at.width, at.y + at.height),
+                        (f.x, f.width, f.y + f.height),
+                        "{look:?}: {id:?} on other columns or feet than the classic's"
+                    );
+                    assert!(at.y <= f.y, "{look:?}: {id:?}'s {at:?} sinks below {f:?}");
+                    rose |= at.y < f.y;
+                }
+            }
+            // Lifted mid-room, where its hair rises over its frame, then carried
+            // to the top, where the canvas cuts it.
+            let x = size.w / 2;
+            let grip = match step {
+                0 => Gesture::Lift {
+                    figure: Figure::Agent(held),
+                    at: Point { x, y: size.h / 2 },
+                },
+                1 => Gesture::Carry(Point { x, y: 0 }),
+                _ => continue,
+            };
+            for office in offices.iter_mut().flatten() {
+                office.grip(&grip);
             }
         }
-        // Lifted mid-room, where its hair rises over its frame, then carried
-        // to the top, where the canvas cuts it.
-        let x = size.w / 2;
-        let grip = match step {
-            0 => Gesture::Lift {
-                figure: Figure::Agent(held),
-                at: Point { x, y: size.h / 2 },
-            },
-            1 => Gesture::Carry(Point { x, y: 0 }),
-            _ => continue,
-        };
-        for office in offices.iter_mut().flatten() {
-            office.grip(&grip);
-        }
-    }
-    assert!(west_edge && east_edge && top_edge, "premise: the edges");
-    assert!(rose, "premise: a dense look's hair rises over the frame");
-    assert_eq!(
-        showed.len(),
-        crate::look::LookKind::ALL.len() * 3,
-        "premise: every outfit shows in every kind"
-    );
-    let now = t0 + Duration::from_secs(60);
-    for twin in &mut twins {
-        let slot = twin.agents.get_mut(&west).expect("west");
-        slot.desk_index = GlobalDeskIndex(16);
-        slot.floor_idx = 1;
-        twin.agents.remove(&east);
-    }
-    for (look, offices) in looks.iter().zip(&mut offices) {
-        let (boxes, _) = frame(offices, &twins, *look, now);
+        assert!(west_edge && east_edge && top_edge, "premise: the edges");
+        let dense_cutaway =
+            matches!(look, Look::Cutaway { scale, .. } if scale.get() >= densest.get());
         assert_eq!(
-            boxes.iter().map(|&(id, _)| id).collect::<Vec<_>>(),
-            [held],
-            "{look:?}: one upstairs and one gone"
+            rose, dense_cutaway,
+            "premise: only the cutaway's dense art rises over the frame"
         );
+        assert_eq!(showed.len(), 3, "premise: every outfit shows");
+        let now = t0 + Duration::from_secs(60);
+        for twin in &mut twins {
+            let slot = twin.agents.get_mut(&west).expect("west");
+            slot.desk_index = GlobalDeskIndex(16);
+            slot.floor_idx = 1;
+            twin.agents.remove(&east);
+        }
+        for (look, offices) in looks.iter().zip(&mut offices) {
+            let (boxes, _) = frame(offices, &twins, *look, now);
+            assert_eq!(
+                boxes.iter().map(|&(id, _)| id).collect::<Vec<_>>(),
+                [held],
+                "{look:?}: one upstairs and one gone"
+            );
+        }
     }
 }
 
