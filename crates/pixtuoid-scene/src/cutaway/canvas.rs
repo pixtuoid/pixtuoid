@@ -1079,7 +1079,8 @@ mod tests {
         use crate::display::TextRole;
         let pack = Arc::new(test_office());
         let now = crate::localclock::at_hour(12);
-        let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+        let layout = SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0)
+            .expect("lays out");
         let stepped = SteppedFloor {
             frame: empty_frame(&layout),
             layout: Arc::new(layout),
@@ -1348,7 +1349,8 @@ mod tests {
         );
         let mut canvas = CutawayCanvas::new(Arc::clone(&pack));
         let stepped = |seed| {
-            let layout = SceneLayout::compute_with_seed(160, 96, None, seed).expect("lays out");
+            let layout = SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, seed)
+                .expect("lays out");
             SteppedFloor {
                 frame: empty_frame(&layout),
                 layout: Arc::new(layout),

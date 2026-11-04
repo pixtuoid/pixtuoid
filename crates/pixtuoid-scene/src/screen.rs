@@ -463,7 +463,8 @@ mod tests {
     fn two_layouts() -> [Arc<crate::layout::SceneLayout>; 2] {
         [160, 161].map(|w| {
             Arc::new(
-                crate::layout::SceneLayout::compute_with_seed(w, 96, None, 0).expect("lays out"),
+                crate::layout::SceneLayout::compute(crate::layout::Viewport::full(w, 96), None, 0)
+                    .expect("lays out"),
             )
         })
     }

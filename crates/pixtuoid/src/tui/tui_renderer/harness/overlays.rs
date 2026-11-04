@@ -752,14 +752,12 @@ fn hovered_then_removed_agent_is_a_safe_noop() {
 fn a_still_floor_holds_its_wall_board_flap() {
     use pixtuoid_scene::anim::{FULL_TICK_MS, Motion};
     let scene = scene_with(vec![running("/t/0.jsonl", 0, "Edit a.rs", t0())], 16);
-    let (cols, rows) = (
-        pixtuoid_scene::layout::NEON_PANEL_W + 2,
-        pixtuoid_scene::layout::NEON_PANEL_INNER_Y / 2 + 3,
-    );
     let board_at = |motion, at| {
         let mut r = build(120, 40, vec![]);
         r.set_motion(motion);
         r.render(&scene, at).expect("render");
+        let board = r.cached_layout().expect("lays out").board();
+        let (cols, rows) = (pixtuoid_scene::layout::NEON_PANEL_W + 2, board.y / 2 + 3);
         let buf = r.frame_buffer();
         (0..rows)
             .flat_map(|y| (0..cols).map(move |x| (x, y)))

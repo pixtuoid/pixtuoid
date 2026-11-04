@@ -4,7 +4,8 @@ use pixtuoid_scene::layout::{Point, Size};
 
 #[test]
 fn coffee_machine_hit_test_returns_false_for_origin() {
-    let layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let layout = SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+        .expect("layout");
     assert!(!hit_test_coffee_machine(
         &layout,
         CellArea::half_block(0, 0)
@@ -19,7 +20,8 @@ fn coffee_mid_cell(layout: &SceneLayout) -> (u16, u16) {
 
 #[test]
 fn coffee_machine_hit_test_returns_true_for_machine_area() {
-    let layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let layout = SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+        .expect("layout");
     let (mid_x, mid_cell_y) = coffee_mid_cell(&layout);
     assert!(
         hit_test_coffee_machine(&layout, CellArea::half_block(mid_x, mid_cell_y)),
@@ -29,7 +31,8 @@ fn coffee_machine_hit_test_returns_true_for_machine_area() {
 
 #[test]
 fn furniture_hit_test_returns_none_for_empty_space() {
-    let layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let layout = SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+        .expect("layout");
     // Scan for an empty cell rather than hardcoding one: which mid-floor cells
     // are open shifts whenever the pod aisle spacing is retuned.
     let empty = (0..(CellArea::row_of(layout.buf_h)))
@@ -44,7 +47,8 @@ fn furniture_hit_test_returns_none_for_empty_space() {
 
 #[test]
 fn furniture_hit_test_finds_desk() {
-    let layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let layout = SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+        .expect("layout");
     let desk = layout.home_desks.first().expect("desk");
     let cell_y = CellArea::row_of(desk.at.y + 2);
     assert_eq!(
@@ -63,7 +67,8 @@ fn furniture_hit_test_finds_desk() {
 
 #[test]
 fn furniture_hit_test_finds_elevator() {
-    let layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let layout = SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+        .expect("layout");
     let door = layout.door;
     let cell_y = CellArea::row_of(door.y + pixtuoid_scene::layout::ELEVATOR_H / 2);
     assert_eq!(
@@ -81,7 +86,12 @@ fn dense_room_1_has_coat_rack_and_doormat() {
     // ALL meeting_rooms, not just room 0.
     let mut saw_dual = false;
     for seed in 0..10u64 {
-        let layout = SceneLayout::compute_with_seed(192, 160, Some(8), seed).expect("layout");
+        let layout = SceneLayout::compute(
+            pixtuoid_scene::layout::Viewport::full(192, 160),
+            Some(8),
+            seed,
+        )
+        .expect("layout");
         if layout.meeting_rooms.len() < 2 {
             continue;
         }
@@ -111,7 +121,8 @@ fn dense_room_1_has_coat_rack_and_doormat() {
 
 #[test]
 fn furniture_hit_test_finds_meeting_table() {
-    let layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let layout = SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+        .expect("layout");
     let table = layout.meeting_rooms[0].trio.expect("trio").table;
     let cell_y = CellArea::row_of(table.y);
     assert_eq!(
@@ -123,9 +134,13 @@ fn furniture_hit_test_finds_meeting_table() {
 #[test]
 fn furniture_hit_test_respects_floor_seed() {
     // seed=1 → Lounge variant (no meeting room)
-    let layout1 = SceneLayout::compute_with_seed(160, 200, Some(4), 1).expect("layout");
+    let layout1 =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 1)
+            .expect("layout");
     assert!(layout1.meeting_rooms.is_empty());
-    let layout0 = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let layout0 =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+            .expect("layout");
     if let Some(trio) = layout0.meeting_rooms.first().and_then(|r| r.trio) {
         let table = trio.table;
         let cell_y = CellArea::row_of(table.y);
@@ -136,13 +151,15 @@ fn furniture_hit_test_respects_floor_seed() {
     }
 }
 
-// BulletinBoard is never emitted by compute_with_seed and Ficus only appears on
+// BulletinBoard is never emitted by `SceneLayout::compute` and Ficus only appears on
 // ROOMY-band floors, so both are placed synthetically below.
 
 #[test]
 fn furniture_hit_test_ficus_via_synthetic_plant() {
     use pixtuoid_scene::layout::Point;
-    let mut layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let mut layout =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+            .expect("layout");
     let pos = Point { x: 40, y: 40 };
     layout.plants.push(pixtuoid_scene::layout::PlantItem {
         kind: pixtuoid_scene::layout::PlantKind::Ficus,
@@ -161,7 +178,9 @@ fn furniture_hit_test_ficus_via_synthetic_plant() {
 #[test]
 fn furniture_hit_test_bulletin_board_via_synthetic_wall_decor() {
     use pixtuoid_scene::layout::Point;
-    let mut layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let mut layout =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+            .expect("layout");
     // Wall decor is TOP-LEFT anchored at `pos` (not centered). Place it in
     // open space so no earlier furniture arm shadows it.
     let pos = Point { x: 60, y: 30 };
@@ -182,7 +201,9 @@ fn furniture_hit_test_bulletin_board_via_synthetic_wall_decor() {
 
 #[test]
 fn coffee_machine_returns_false_without_a_pantry() {
-    let mut layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let mut layout =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+            .expect("layout");
     let (mid_x, mid_cell_y) = coffee_mid_cell(&layout);
     assert!(
         hit_test_coffee_machine(&layout, CellArea::half_block(mid_x, mid_cell_y)),
@@ -200,7 +221,7 @@ fn coffee_machine_returns_false_without_a_pantry() {
 }
 
 // The lounge and pod-decor arms below aren't all reachable from
-// `compute_with_seed` at the tested sizes, so each is placed synthetically.
+// `compute` at the tested sizes, so each is placed synthetically.
 
 /// `label` fires on exactly the cells that show some pixel — either half — of
 /// a `size` sprite centred on `pos`, swept half a sprite beyond it on every
@@ -227,7 +248,9 @@ fn assert_centered_hover_box(
 
 /// A layout whose lounge pieces sit where the caller puts them.
 fn layout_with_lounge(lounge: pixtuoid_scene::layout::Lounge) -> SceneLayout {
-    let mut layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let mut layout =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+            .expect("layout");
     layout.lounge = Some(lounge);
     // The probes stand the pieces where the real office has its plants and its
     // meeting room's band decor: either would be the topmost fixture there.
@@ -311,7 +334,12 @@ fn snack_shelf_hovers_across_its_whole_sprite_not_just_the_footprint() {
     // The shelf sprite is CENTRED on the waypoint while the walkable footprint
     // is its End-anchored south strip; hover must cover the sprite the user
     // sees, not that strip.
-    let layout = SceneLayout::compute(192, 160, Some(12)).expect("layout");
+    let layout = SceneLayout::compute(
+        pixtuoid_scene::layout::Viewport::full(192, 160),
+        Some(12),
+        0,
+    )
+    .expect("layout");
     let shelf = layout
         .waypoints
         .iter()
@@ -344,7 +372,12 @@ fn snack_shelf_hovers_across_its_whole_sprite_not_just_the_footprint() {
 
 #[test]
 fn furniture_hit_test_finds_meeting_chairs_on_a_real_layout() {
-    let layout = SceneLayout::compute(192, 160, Some(12)).expect("layout");
+    let layout = SceneLayout::compute(
+        pixtuoid_scene::layout::Viewport::full(192, 160),
+        Some(12),
+        0,
+    )
+    .expect("layout");
     let chairs: Vec<_> = layout
         .waypoints
         .iter()
@@ -363,7 +396,9 @@ fn furniture_hit_test_finds_meeting_chairs_on_a_real_layout() {
 #[test]
 fn furniture_hit_test_finds_tv_stand_via_synthetic_pod_decor() {
     use pixtuoid_scene::layout::{PodDecor, PodDecorItem, Point};
-    let mut layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+    let mut layout =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(160, 200), Some(4), 0)
+            .expect("layout");
     let p = Point { x: 50, y: 40 };
     layout.pod_decor.push(PodDecorItem {
         kind: PodDecor::Tv,
@@ -379,9 +414,14 @@ fn furniture_hit_test_finds_tv_stand_via_synthetic_pod_decor() {
 /// raise a furniture tooltip over it.
 #[test]
 fn the_neon_sign_raises_no_tooltip() {
-    use pixtuoid_scene::layout::{NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y};
-    let layout = SceneLayout::compute(160, 200, Some(16)).expect("layout");
-    let cell = CellArea::half_block(NEON_PANEL_INNER_X, CellArea::row_of(NEON_PANEL_INNER_Y));
+    let layout = SceneLayout::compute(
+        pixtuoid_scene::layout::Viewport::full(160, 200),
+        Some(16),
+        0,
+    )
+    .expect("layout");
+    let board = layout.board();
+    let cell = CellArea::half_block(board.x, CellArea::row_of(board.y));
     assert_eq!(
         layout.fixture_at(cell.bounds()),
         Some(pixtuoid_scene::layout::FixtureKind::NeonSign)

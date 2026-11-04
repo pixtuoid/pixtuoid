@@ -931,6 +931,31 @@ impl core::marker::Unpin for pixtuoid_scene::layout::HomeDesk
 impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::HomeDesk
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::HomeDesk
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::HomeDesk
+pub struct pixtuoid_scene::layout::Insets
+pub pixtuoid_scene::layout::Insets::bottom: u16
+pub pixtuoid_scene::layout::Insets::left: u16
+pub pixtuoid_scene::layout::Insets::right: u16
+pub pixtuoid_scene::layout::Insets::top: u16
+impl core::clone::Clone for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::layout::Insets
+impl core::cmp::PartialEq for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::eq(&self, &Self) -> bool
+impl core::default::Default for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::default() -> Self
+impl core::fmt::Debug for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_scene::layout::Insets
+impl core::marker::StructuralPartialEq for pixtuoid_scene::layout::Insets
+impl core::marker::Freeze for pixtuoid_scene::layout::Insets
+impl core::marker::Send for pixtuoid_scene::layout::Insets
+impl core::marker::Sync for pixtuoid_scene::layout::Insets
+impl core::marker::Unpin for pixtuoid_scene::layout::Insets
+impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::Insets
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::Insets
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::Insets
 pub struct pixtuoid_scene::layout::Lounge
 pub pixtuoid_scene::layout::Lounge::couch_center: pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::Lounge::fish_tank: core::option::Option<pixtuoid_scene::layout::Point>
@@ -1091,11 +1116,11 @@ pub pixtuoid_scene::layout::SceneLayout::walkable: pixtuoid_scene::walkable::Wal
 pub pixtuoid_scene::layout::SceneLayout::wall_decor: alloc::vec::Vec<pixtuoid_scene::layout::WallDecorItem>
 pub pixtuoid_scene::layout::SceneLayout::waypoints: alloc::vec::Vec<pixtuoid_scene::layout::Waypoint>
 impl pixtuoid_scene::layout::SceneLayout
+pub fn pixtuoid_scene::layout::SceneLayout::board(&self) -> pixtuoid_scene::layout::Bounds
 pub fn pixtuoid_scene::layout::SceneLayout::coffee_machine(&self) -> core::option::Option<pixtuoid_scene::layout::Bounds>
 pub fn pixtuoid_scene::layout::SceneLayout::fixture_at(&self, pixtuoid_scene::layout::Bounds) -> core::option::Option<pixtuoid_scene::layout::FixtureKind>
 impl pixtuoid_scene::layout::SceneLayout
-pub fn pixtuoid_scene::layout::SceneLayout::compute(u16, u16, core::option::Option<usize>) -> core::option::Option<Self>
-pub fn pixtuoid_scene::layout::SceneLayout::compute_with_seed(u16, u16, core::option::Option<usize>, u64) -> core::option::Option<Self>
+pub fn pixtuoid_scene::layout::SceneLayout::compute(pixtuoid_scene::layout::Viewport, core::option::Option<usize>, u64) -> core::option::Option<Self>
 pub fn pixtuoid_scene::layout::SceneLayout::home_desk(&self, pixtuoid_core::state::FloorLocalDeskIndex) -> core::option::Option<pixtuoid_scene::layout::HomeDesk>
 pub fn pixtuoid_scene::layout::SceneLayout::is_walkable(&self, u16, u16) -> bool
 pub fn pixtuoid_scene::layout::SceneLayout::meeting_room_bounds(&self, usize) -> core::option::Option<pixtuoid_scene::layout::Bounds>
@@ -1131,6 +1156,30 @@ impl core::marker::Unpin for pixtuoid_scene::layout::Size
 impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::Size
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::Size
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::Size
+pub struct pixtuoid_scene::layout::Viewport
+pub pixtuoid_scene::layout::Viewport::insets: pixtuoid_scene::layout::Insets
+pub pixtuoid_scene::layout::Viewport::size: pixtuoid_scene::layout::Size
+impl pixtuoid_scene::layout::Viewport
+pub const fn pixtuoid_scene::layout::Viewport::full(u16, u16) -> Self
+pub fn pixtuoid_scene::layout::Viewport::inner(&self) -> core::option::Option<pixtuoid_scene::layout::Bounds>
+impl core::clone::Clone for pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::layout::Viewport
+impl core::cmp::PartialEq for pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_scene::layout::Viewport
+impl core::marker::StructuralPartialEq for pixtuoid_scene::layout::Viewport
+impl core::marker::Freeze for pixtuoid_scene::layout::Viewport
+impl core::marker::Send for pixtuoid_scene::layout::Viewport
+impl core::marker::Sync for pixtuoid_scene::layout::Viewport
+impl core::marker::Unpin for pixtuoid_scene::layout::Viewport
+impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::Viewport
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::Viewport
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::Viewport
 pub struct pixtuoid_scene::layout::WallDecorItem
 pub pixtuoid_scene::layout::WallDecorItem::kind: pixtuoid_scene::layout::WallDecor
 pub pixtuoid_scene::layout::WallDecorItem::pos: pixtuoid_scene::layout::Point
@@ -1179,8 +1228,6 @@ pub const pixtuoid_scene::layout::ELEVATOR_H: u16
 pub const pixtuoid_scene::layout::ELEVATOR_W: u16
 pub const pixtuoid_scene::layout::NEON_PANEL_INNER_H: u16
 pub const pixtuoid_scene::layout::NEON_PANEL_INNER_W: u16
-pub const pixtuoid_scene::layout::NEON_PANEL_INNER_X: u16
-pub const pixtuoid_scene::layout::NEON_PANEL_INNER_Y: u16
 pub const pixtuoid_scene::layout::NEON_PANEL_W: u16
 pub const fn pixtuoid_scene::layout::furniture_def(pixtuoid_scene::layout::Furniture) -> pixtuoid_scene::layout::FurnitureDef
 pub fn pixtuoid_scene::layout::min_layout_size() -> pixtuoid_scene::layout::Size

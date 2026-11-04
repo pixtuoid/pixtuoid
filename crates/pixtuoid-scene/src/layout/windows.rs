@@ -4,7 +4,7 @@
 
 use std::ops::Range;
 
-use super::{Bounds, ELEVATOR_H, ELEVATOR_W, NEON_PANEL, SceneLayout, Size};
+use super::{Bounds, ELEVATOR_H, ELEVATOR_W, NEON_PANEL_W, NEON_PANEL_X, SceneLayout, Size};
 
 /// A window's narrowest width, frame included: the wall left over widens
 /// them all, so the skyline detail reads the same on every terminal.
@@ -20,7 +20,7 @@ const WINDOW_EDGE_MARGIN: u16 = 2;
 /// How far west of the wall's east end the door's slot starts.
 const DOOR_SLOT_EAST: u16 = WINDOW_W + WINDOW_EDGE_MARGIN;
 /// The narrowest wall whose door's slot stands clear of the neon.
-pub(crate) const NEON_DOOR_WALL_W: u16 = NEON_PANEL.x + NEON_PANEL.width + DOOR_SLOT_EAST;
+pub(crate) const NEON_DOOR_WALL_W: u16 = NEON_PANEL_X + NEON_PANEL_W + DOOR_SLOT_EAST;
 /// The windows' top frame row; one wall row stands above it.
 pub(crate) const WINDOW_TOP: u16 = 1;
 /// How thick a window's outer frame is, on every side.
@@ -70,23 +70,26 @@ impl WindowBay {
     }
 }
 
-/// The door's slot's left edge on a wall `buf_w` wide: flush with the east
-/// margin.
-fn door_slot_x(buf_w: u16) -> Option<u16> {
-    buf_w.checked_sub(DOOR_SLOT_EAST)
+/// The door's slot's left edge on a wall spanning the columns `wall`: flush
+/// with its east margin.
+fn door_slot_x(wall: Range<u16>) -> Option<u16> {
+    wall.end
+        .checked_sub(DOOR_SLOT_EAST)
+        .filter(|&x| x >= wall.start)
 }
 
-/// Every window slot a wall `buf_w` wide fits, left to right, ending in the
-/// door's, [`WINDOW_W`] wide: as many windows as fit west of it with a
-/// [`POST_W`] post east of each, widened evenly by the wall left over, the
-/// easternmost taking the columns that don't divide.
-pub(crate) fn window_slots(buf_w: u16) -> impl Iterator<Item = WindowBay> {
-    let door = door_slot_x(buf_w).filter(|&x| x >= FIRST_WINDOW_X);
-    let span = door.map_or(0, |x| x - FIRST_WINDOW_X);
+/// Every window slot a wall spanning the columns `wall` fits, left to right,
+/// ending in the door's, [`WINDOW_W`] wide: as many windows as fit west of it
+/// with a [`POST_W`] post east of each, widened evenly by the wall left over,
+/// the easternmost taking the columns that don't divide.
+pub(crate) fn window_slots(wall: Range<u16>) -> impl Iterator<Item = WindowBay> {
+    let first = wall.start + FIRST_WINDOW_X;
+    let door = door_slot_x(wall).filter(|&x| x >= first);
+    let span = door.map_or(0, |x| x - first);
     let windows = span / (WINDOW_W + POST_W);
     let spare = span - windows * (WINDOW_W + POST_W);
     let narrow = windows - spare % windows.max(1);
-    let mut x = FIRST_WINDOW_X;
+    let mut x = first;
     (0..windows)
         .map(move |idx| {
             let w = WINDOW_W + spare / windows + u16::from(idx >= narrow);
@@ -101,35 +104,43 @@ pub(crate) fn window_slots(buf_w: u16) -> impl Iterator<Item = WindowBay> {
         }))
 }
 
-/// The windows a wall `buf_w` wide shows, left to right: every slot less those
-/// `door` overlaps, whose glass would otherwise show through the elevator's
-/// frame.
-pub(crate) fn window_bays(buf_w: u16, door: Range<u16>) -> impl Iterator<Item = WindowBay> {
-    window_slots(buf_w).filter(move |b| !(b.x < door.end && b.span().end > door.start))
+/// The windows a wall spanning the columns `wall` shows, left to right: every
+/// slot less those `door` overlaps, whose glass would otherwise show through
+/// the elevator's frame.
+pub(crate) fn window_bays(wall: Range<u16>, door: Range<u16>) -> impl Iterator<Item = WindowBay> {
+    window_slots(wall).filter(move |b| !(b.x < door.end && b.span().end > door.start))
 }
 
 /// The columns from the first slot's left edge to the last one's right, the
 /// door's included; the first window alone when none fits.
-pub(crate) fn window_run(buf_w: u16) -> Range<u16> {
-    let mut slots = window_slots(buf_w);
+pub(crate) fn window_run(wall: Range<u16>) -> Range<u16> {
+    let first_x = wall.start + FIRST_WINDOW_X;
+    let mut slots = window_slots(wall);
     let first = slots
         .next()
-        .map_or(FIRST_WINDOW_X..FIRST_WINDOW_X + WINDOW_W, WindowBay::span);
+        .map_or(first_x..first_x + WINDOW_W, WindowBay::span);
     let end = slots.last().map_or(first.end, |s| s.span().end);
     first.start..end
 }
 
 /// The frame posts between neighbouring window slots, left to right.
-pub(crate) fn window_posts(buf_w: u16) -> impl Iterator<Item = Range<u16>> {
-    window_slots(buf_w)
-        .zip(window_slots(buf_w).skip(1))
+pub(crate) fn window_posts(wall: Range<u16>) -> impl Iterator<Item = Range<u16>> {
+    window_slots(wall.clone())
+        .zip(window_slots(wall).skip(1))
         .map(|(west, east)| west.span().end..east.x)
 }
 
-/// The elevator door's left column on a wall `buf_w` wide: centred in the
-/// door's slot, which stands even where no window run fits west of it.
-pub(crate) fn door_x(buf_w: u16) -> u16 {
-    door_slot_x(buf_w).expect("every wall that lays out holds the door's slot") + DOOR_INSET
+/// The columns the north wall's windows tile in an office whose area inside
+/// its insets is `inner`: its own, so its door stands there too.
+pub(crate) fn window_wall(inner: Bounds) -> Range<u16> {
+    inner.x..inner.x + inner.width
+}
+
+/// The elevator door's left column on a wall spanning the columns `wall`:
+/// centred in the door's slot, which stands even where no window run fits
+/// west of it.
+pub(crate) fn door_x(wall: Range<u16>) -> u16 {
+    door_slot_x(wall).expect("every wall that lays out holds the door's slot") + DOOR_INSET
 }
 
 /// The wall band's trim row, where the band meets the floor.
@@ -166,11 +177,16 @@ pub(crate) fn window_frame(dx: u16, dy: u16, size: Size) -> bool {
 }
 
 impl SceneLayout {
+    /// The columns the north wall's windows tile ([`window_wall`]).
+    pub(crate) fn window_wall(&self) -> Range<u16> {
+        window_wall(self.inner)
+    }
+
     /// The windows this office's north wall shows, left to right: every slot
     /// but the door's.
     pub(crate) fn window_bays(&self) -> impl Iterator<Item = WindowBay> + use<> {
         let door = self.door_rect();
-        window_bays(self.buf_w, door.x..door.x + door.width)
+        window_bays(self.window_wall(), door.x..door.x + door.width)
     }
 
     /// The box the elevator door's art covers.
@@ -204,17 +220,17 @@ mod tests {
     fn the_windows_share_the_wall_west_of_the_door_slot_evenly() {
         let mut walls_with_a_window = 0;
         for buf_w in 0..400 {
-            let slots: Vec<_> = window_slots(buf_w).collect();
+            let slots: Vec<_> = window_slots(0..buf_w).collect();
             let Some((door, windows)) = slots.split_last() else {
                 assert!(
-                    door_slot_x(buf_w).is_none_or(|x| x < FIRST_WINDOW_X),
+                    door_slot_x(0..buf_w).is_none_or(|x| x < FIRST_WINDOW_X),
                     "{buf_w}"
                 );
                 continue;
             };
             assert_eq!(
                 Some(door.x),
-                door_slot_x(buf_w),
+                door_slot_x(0..buf_w),
                 "{buf_w}: the door's slot ends it"
             );
             assert_eq!(door.w, WINDOW_W, "{buf_w}");
@@ -223,7 +239,7 @@ mod tests {
                 "{buf_w}"
             );
             assert!(
-                window_posts(buf_w).all(|p| p.len() == usize::from(POST_W)),
+                window_posts(0..buf_w).all(|p| p.len() == usize::from(POST_W)),
                 "{buf_w}: thin posts"
             );
             for (k, s) in slots.iter().enumerate() {
@@ -243,26 +259,47 @@ mod tests {
                 usize::from((door.x - FIRST_WINDOW_X) / (WINDOW_W + POST_W)),
                 "{buf_w}: as many windows as fit west of the door's slot"
             );
-            assert_eq!(window_run(buf_w), slots[0].x..door.span().end);
-            assert_eq!(door_x(buf_w), door.x + DOOR_INSET);
+            assert_eq!(window_run(0..buf_w), slots[0].x..door.span().end);
+            assert_eq!(door_x(0..buf_w), door.x + DOOR_INSET);
         }
         assert!(walls_with_a_window > 0);
     }
 
+    /// A wall that starts east of column 0 tiles the same windows, posts
+    /// and door, moved with it.
+    #[test]
+    fn a_wall_off_column_0_tiles_its_windows_moved_with_it() {
+        let x0 = 9;
+        for w in [NEON_DOOR_WALL_W, 120, 240] {
+            let moved = |b: WindowBay| WindowBay { x: b.x + x0, ..b };
+            assert!(
+                window_slots(x0..x0 + w).eq(window_slots(0..w).map(moved)),
+                "{w}"
+            );
+            assert!(
+                window_posts(x0..x0 + w).eq(window_posts(0..w).map(|p| p.start + x0..p.end + x0)),
+                "{w}"
+            );
+            let run = window_run(0..w);
+            assert_eq!(window_run(x0..x0 + w), run.start + x0..run.end + x0);
+            assert_eq!(door_x(x0..x0 + w), door_x(0..w) + x0);
+        }
+    }
+
     #[test]
     fn a_door_takes_exactly_the_window_it_overlaps() {
-        let all: Vec<_> = window_bays(240, 0..0).collect();
+        let all: Vec<_> = window_bays(0..240, 0..0).collect();
         let doomed = all[2];
-        let kept: Vec<_> = window_bays(240, doomed.span()).collect();
+        let kept: Vec<_> = window_bays(0..240, doomed.span()).collect();
         assert_eq!(kept.len() + 1, all.len());
         assert!(kept.iter().all(|b| b.idx != doomed.idx));
     }
 
     #[test]
     fn a_post_fills_each_gap_between_window_slots() {
-        let buf_w = 240;
-        let slots: Vec<_> = window_slots(buf_w).collect();
-        let posts: Vec<_> = window_posts(buf_w).collect();
+        let wall = 0..240;
+        let slots: Vec<_> = window_slots(wall.clone()).collect();
+        let posts: Vec<_> = window_posts(wall).collect();
         assert_eq!(posts.len() + 1, slots.len());
         for (post, pair) in posts.iter().zip(slots.windows(2)) {
             assert_eq!(*post, pair[0].span().end..pair[1].x);
@@ -284,9 +321,9 @@ mod tests {
 
     #[test]
     fn a_wall_too_narrow_for_a_window_runs_the_first_window_alone() {
-        assert_eq!(window_bays(WINDOW_W, 0..0).count(), 0);
+        assert_eq!(window_bays(0..WINDOW_W, 0..0).count(), 0);
         assert_eq!(
-            window_run(WINDOW_W),
+            window_run(0..WINDOW_W),
             FIRST_WINDOW_X..FIRST_WINDOW_X + WINDOW_W
         );
     }
@@ -304,8 +341,8 @@ mod tests {
     #[test]
     fn the_widest_wall_tiles_to_its_door_slot() {
         assert_eq!(
-            window_slots(u16::MAX).last().map(|s| s.x),
-            door_slot_x(u16::MAX)
+            window_slots(0..u16::MAX).last().map(|s| s.x),
+            door_slot_x(0..u16::MAX)
         );
     }
 
@@ -314,7 +351,8 @@ mod tests {
     #[test]
     fn the_door_stands_on_the_wall_trim() {
         for (w, h) in [(192, 80), (140, 60), (250, 90)] {
-            let layout = SceneLayout::compute(w, h, Some(4)).expect("layout fits");
+            let layout = SceneLayout::compute(crate::layout::Viewport::full(w, h), Some(4), 0)
+                .expect("layout fits");
             let door = layout.door;
             assert_eq!(
                 door.y + super::super::ELEVATOR_H - 1,
@@ -326,9 +364,12 @@ mod tests {
 
     #[test]
     fn glass_is_a_bays_cells_off_its_frame() {
-        let layout =
-            crate::layout::SceneLayout::compute(192, 160, Some(crate::layout::TEST_DEFAULT_DESKS))
-                .expect("192x160 fits");
+        let layout = crate::layout::SceneLayout::compute(
+            crate::layout::Viewport::full(192, 160),
+            Some(crate::layout::TEST_DEFAULT_DESKS),
+            0,
+        )
+        .expect("192x160 fits");
         let rows = window_rows(layout.wall_band_h());
         let h = rows.end - rows.start;
         for bay in layout.window_bays() {

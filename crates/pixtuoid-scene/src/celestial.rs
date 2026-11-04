@@ -4,6 +4,7 @@
 
 use crate::sprite::Rgb;
 use crate::sprite::format::Density;
+use std::ops::Range;
 
 use crate::composite::{blend, blend_rgb};
 use crate::dither::FALLOFF_TONES;
@@ -63,10 +64,10 @@ pub(crate) const MIN_DISC_VIS: f32 = 0.08;
 const HORIZON_FADE: f32 = 0.1;
 
 impl Disc {
-    /// This frame's disc over a wall band `top_wall_h` tall, or `None` while its
-    /// body is below the horizon or its visibility (cloud, nightfall, horizon
-    /// fade) is under [`MIN_DISC_VIS`].
-    pub(crate) fn of(sky: &Sky, buf_w: u16, top_wall_h: u16) -> Option<Self> {
+    /// This frame's disc over a wall band `top_wall_h` tall whose windows tile
+    /// the columns `wall`, or `None` while its body is below the horizon or its
+    /// visibility (cloud, nightfall, horizon fade) is under [`MIN_DISC_VIS`].
+    pub(crate) fn of(sky: &Sky, wall: Range<u16>, top_wall_h: u16) -> Option<Self> {
         let e = sky.body();
         if e.altitude <= 0.0 {
             return None;
@@ -85,7 +86,7 @@ impl Disc {
         // disc at its most visible low-altitude moment and froze `cx` there on a
         // single-window buffer) and NOT a linear `buf_w - WINDOW_W` bound (that
         // only coincidentally lands inside a window).
-        let run = window_run(buf_w);
+        let run = window_run(wall);
         let span_left = f32::from(run.start) + DISC_RADIUS_PX;
         let span_right = (f32::from(run.end) - DISC_RADIUS_PX).max(span_left);
         let cx = span_left + e.azimuth * (span_right - span_left);
@@ -243,10 +244,11 @@ pub(crate) struct SkyView {
 }
 
 impl SkyView {
-    /// `outlook`'s sky behind a wall band `top_wall_h` tall, in `theme`.
+    /// `outlook`'s sky behind a wall band `top_wall_h` tall whose windows tile
+    /// the columns `wall`, in `theme`.
     pub(crate) fn of(
         outlook: &crate::atmosphere::Outlook,
-        buf_w: u16,
+        wall: Range<u16>,
         top_wall_h: u16,
         theme: &Theme,
     ) -> Self {
@@ -255,7 +257,7 @@ impl SkyView {
             look.glass_zenith
                 .mix(look.glass_horizon, k as f32 / (SKY_BANDS - 1) as f32)
         });
-        let disc = Disc::of(outlook.sky(), buf_w, top_wall_h);
+        let disc = Disc::of(outlook.sky(), wall, top_wall_h);
         let core = match disc.map_or(BodyKind::Sun, |d| d.body) {
             BodyKind::Sun => theme.lighting.sun_core,
             BodyKind::Moon => theme.lighting.moon_core,
@@ -423,7 +425,7 @@ mod tests {
                         start + std::time::Duration::from_secs(m * 60),
                         weather,
                     );
-                    Disc::of(&s, 96, 40).map_or(0.0, |d| d.vis)
+                    Disc::of(&s, 0..96, 40).map_or(0.0, |d| d.vis)
                 };
                 let mut prev = vis(0);
                 for m in 1..24 * 60 {
@@ -448,7 +450,7 @@ mod tests {
         let vis = |h, m: u64| {
             let t = crate::localclock::on_day(0, h) + std::time::Duration::from_secs(m * 60);
             let s = crate::sky::Sky::at_with(t, Weather::Clear);
-            Disc::of(&s, 96, 40).map_or(0.0, |d| d.vis)
+            Disc::of(&s, 0..96, 40).map_or(0.0, |d| d.vis)
         };
         assert_eq!(vis(5, 0), 0.0);
         assert_eq!(vis(20, 0), 0.0);
@@ -469,7 +471,7 @@ mod tests {
     fn a_moon_shows_only_when_up_and_fades_in_after_dusk() {
         use crate::sky::Weather;
         let sky = |d, h| crate::sky::Sky::at_with(crate::localclock::on_day(d, h), Weather::Clear);
-        let disc = |s: &crate::sky::Sky| Disc::of(s, 96, 40);
+        let disc = |s: &crate::sky::Sky| Disc::of(s, 0..96, 40);
         let new_moon = (1..=31u32)
             .find(|&d| sky(d, 23).moon_phase() < 0.05)
             .expect("a new moon in January");
@@ -510,7 +512,7 @@ mod tests {
             0.0,
             crate::anim::Motion::Full.timing(now),
         );
-        SkyView::of(&moment.outlook(theme), 160, 40, theme)
+        SkyView::of(&moment.outlook(theme), 0..160, 40, theme)
     }
 
     /// The window sky lights its stars on a clear night and none under

@@ -153,7 +153,8 @@ fn an_aisle_prop_sorts_between_the_desk_and_its_occupant() {
 #[test]
 fn a_back_turned_sitter_carries_their_own_chair() {
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let north: Vec<crate::layout::Point> = layout
         .home_desks
         .iter()
@@ -304,8 +305,12 @@ pub(crate) fn sit_down_as(
     use std::time::{Duration, SystemTime};
     const LOGICAL: (u16, u16) = (160, 96);
     let meta = FloorMeta::ground();
-    let layout = SceneLayout::compute_with_seed(LOGICAL.0, LOGICAL.1, None, meta.floor_seed)
-        .expect("lays out");
+    let layout = SceneLayout::compute(
+        crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
+        None,
+        meta.floor_seed,
+    )
+    .expect("lays out");
     let home = layout
         .home_desks
         .iter()
@@ -561,7 +566,7 @@ fn a_badge_sits_above_the_head_and_centred_on_the_sprite() {
 fn the_floor_indicator_stays_in_its_cell() {
     use crate::display::text::LINE_H;
     let pack = crate::pack::test_office();
-    let door = SceneLayout::compute_with_seed(160, 96, None, 0)
+    let door = SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0)
         .expect("lays out")
         .door;
     let rows = crate::layout::floor_indicator_rows(door.y);
@@ -590,18 +595,20 @@ fn the_floor_indicator_stays_in_its_cell() {
 /// the pack draws, measured on the art grid, not in text cells.
 #[test]
 fn the_star_sits_flush_with_the_interior_at_every_scale() {
-    use crate::layout::{NEON_PANEL_INNER_W, NEON_PANEL_INNER_X};
     let pack = test_office();
+    let board = SceneLayout::compute(crate::layout::Viewport::full(240, 144), None, 0)
+        .expect("lays out")
+        .board();
     for s in [1, pack.max_density_variant().get()] {
         let pen = Pen::for_pack(RenderScale::new(s).expect("nonzero"), &pack);
         let star = quiet_board()
-            .runs(&crate::theme::NORMAL)
+            .runs(&crate::theme::NORMAL, board)
             .into_iter()
             .find(|run| run.role == crate::display::TextRole::Star)
             .expect("the star");
         assert_eq!(
             run_rect(&star, pen).x.0 + crate::display::text::advance(&star.text()).0,
-            pen.art(NEON_PANEL_INNER_X + NEON_PANEL_INNER_W).0,
+            pen.art(board.x + board.width).0,
             "at scale {s}"
         );
     }
@@ -613,7 +620,8 @@ fn the_star_sits_flush_with_the_interior_at_every_scale() {
 #[test]
 fn no_run_overprints_another_on_its_line() {
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(240, 144, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(240, 144), None, 0).expect("lays out");
     let d = pack.max_density_variant().get();
     for s in [1, d, 2 * d] {
         let scale = RenderScale::new(s).expect("nonzero");
@@ -628,7 +636,7 @@ fn no_run_overprints_another_on_its_line() {
             office,
             &TextRun::signs(
                 quiet_board(),
-                layout.door,
+                &layout,
                 crate::floor::FloorMeta::ground(),
                 &crate::theme::NORMAL,
             ),
@@ -667,10 +675,10 @@ fn no_run_overprints_another_on_its_line() {
 /// interior, as the classic's terminal board does, however full its lines.
 #[test]
 fn the_board_writes_inside_the_signs_interior() {
-    use crate::layout::{
-        NEON_PANEL_INNER_H, NEON_PANEL_INNER_W, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y,
-    };
     let pack = test_office();
+    let interior = SceneLayout::compute(crate::layout::Viewport::full(240, 144), None, 0)
+        .expect("lays out")
+        .board();
     let scale = RenderScale::from(pack.max_density_variant());
     let counts = crate::tally::StateCounts {
         requires_action: 12,
@@ -692,13 +700,13 @@ fn the_board_writes_inside_the_signs_interior() {
             now,
         );
         let pen = Pen::for_pack(scale, &pack);
-        for run in board.runs(&crate::theme::NORMAL) {
+        for run in board.runs(&crate::theme::NORMAL, interior) {
             let span = topmost_span(run_rect(&run, pen), pen);
             assert!(
-                span.x0 >= NEON_PANEL_INNER_X
-                    && span.x1 < NEON_PANEL_INNER_X + NEON_PANEL_INNER_W
-                    && span.y0 >= NEON_PANEL_INNER_Y
-                    && span.y1 < NEON_PANEL_INNER_Y + NEON_PANEL_INNER_H,
+                span.x0 >= interior.x
+                    && span.x1 < interior.x + interior.width
+                    && span.y0 >= interior.y
+                    && span.y1 < interior.y + interior.height,
                 "{:?} {span:?} at +{ms}ms",
                 run.role
             );
@@ -864,7 +872,8 @@ pub(crate) fn base_size(pack: &OfficeArt, piece: PackPiece) -> (u16, u16) {
 fn a_real_offices_display_list_satisfies_every_ordering_constraint() {
     let pack = test_office();
     for (w, h) in [(160u16, 96u16), (240, 144), (100, 60)] {
-        let layout = SceneLayout::compute_with_seed(w, h, None, 0).expect("lays out");
+        let layout =
+            SceneLayout::compute(crate::layout::Viewport::full(w, h), None, 0).expect("lays out");
         let mut order = queued(&layout, &pack, RenderScale::ONE, &[], |_| true);
         wall_segments(
             &layout,
@@ -932,7 +941,8 @@ pub(crate) fn kind_name(kind: &PieceKind) -> &'static str {
 fn no_wall_segment_is_taller_than_the_cast() {
     let pack = test_office();
     let (_, body_h) = base_size(&pack, PackPiece::Standing);
-    let layout = SceneLayout::compute_with_seed(240, 144, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(240, 144), None, 0).expect("lays out");
     let mut order: Vec<(Span, PieceKind)> = Vec::new();
     wall_segments(
         &layout,
@@ -994,7 +1004,9 @@ fn the_table_sorts_behind_the_back_view_sofas_seat_in_the_tightest_room() {
     let mut checked = 0;
     for (w, h) in [(110, 66), (130, 90)] {
         for seed in 0..4 {
-            let Some(layout) = SceneLayout::compute_with_seed(w, h, None, seed) else {
+            let Some(layout) =
+                SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+            else {
                 continue;
             };
             let order = queued(&layout, &pack, RenderScale::ONE, &[], |k| {
@@ -1043,7 +1055,8 @@ pub(crate) fn lively_office() -> SceneLayout {
 #[test]
 fn a_walker_just_south_of_a_desk_front_draws_over_it() {
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let desk = layout
         .fixtures()
         .find(|f| matches!(f.kind, FixtureKind::Desk(_)))
@@ -1263,7 +1276,9 @@ pub(crate) fn many_layouts() -> impl Iterator<Item = SceneLayout> {
     ]
     .into_iter()
     .flat_map(|(w, h)| {
-        (0..4).filter_map(move |seed| SceneLayout::compute_with_seed(w, h, None, seed))
+        (0..4).filter_map(move |seed| {
+            SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+        })
     })
 }
 
@@ -1571,7 +1586,8 @@ fn the_classic_lamp_pool_centres_on_the_1x_bulb() {
 fn a_frame_on_unchanged_inputs_reuses_the_last_frames_windows_and_lights() {
     use std::sync::Arc;
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let office = Office {
         layout: &layout,
         pack: &pack,

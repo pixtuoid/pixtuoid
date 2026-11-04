@@ -342,16 +342,16 @@ impl TextRun {
         }
     }
 
-    /// The room's signs: `board`'s lines, then the floor indicator naming
-    /// `floor` over the elevator at `door`.
+    /// The room's signs: `board`'s lines on `layout`'s, then the floor
+    /// indicator naming `floor` over its elevator.
     pub(crate) fn signs(
         board: &crate::neon_sign::BoardModel,
-        door: Point,
+        layout: &crate::layout::SceneLayout,
         floor: crate::floor::FloorMeta,
         theme: &Theme,
     ) -> Vec<Self> {
-        let mut runs = board.runs(theme);
-        runs.push(Self::indicator(door, floor, theme));
+        let mut runs = board.runs(theme, layout.board());
+        runs.push(Self::indicator(layout.door, floor, theme));
         runs
     }
 

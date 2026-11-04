@@ -41,9 +41,13 @@ pub fn floor_seed(floor_idx: usize) -> u64 {
 /// How many home desks a floor of buffer size `buf_w × buf_h` with `floor_seed`
 /// fits. Returns `0` when the buffer is too small for even one cubicle.
 pub fn floor_capacity(buf_w: u16, buf_h: u16, floor_seed: u64) -> usize {
-    crate::layout::SceneLayout::compute_with_seed(buf_w, buf_h, None, floor_seed)
-        .map(|l| l.home_desks.len())
-        .unwrap_or(0)
+    crate::layout::SceneLayout::compute(
+        crate::layout::Viewport::full(buf_w, buf_h),
+        None,
+        floor_seed,
+    )
+    .map(|l| l.home_desks.len())
+    .unwrap_or(0)
 }
 
 /// How many home desks a floor fits when `buf_w × buf_h` PIXELS are painted at
@@ -151,7 +155,7 @@ pub struct FloorCtx {
     /// [`OfficeSession::moves_off_beat`].
     off_beat: bool,
     /// Memo of the last per-frame layout, keyed by the ONLY inputs
-    /// `SceneLayout::compute_with_seed` reads on the frame path. Rebuilding it every
+    /// `SceneLayout::compute` reads on the frame path. Rebuilding it every
     /// frame re-allocs + re-stamps the walkable mask and re-runs the coarse BFS
     /// — the dominant fixed per-frame CPU, quadratic in buffer area.
     layout_memo: Option<((u16, u16, u64), Arc<crate::layout::SceneLayout>)>,
@@ -204,7 +208,7 @@ impl FloorCtx {
         }
     }
 
-    /// The per-frame layout — memoized `compute_with_seed(w, h, None, seed)` +
+    /// The per-frame layout — memoized `compute(viewport, None, seed)` +
     /// the router corridor re-point, the ONE frame prologue every painter rides.
     /// Returns a cheap `Arc` handle so callers can hold it across later
     /// `&mut self` uses without re-cloning the whole `SceneLayout` every frame. A
@@ -219,8 +223,10 @@ impl FloorCtx {
         let layout = match &self.layout_memo {
             Some((k, l)) if *k == key => Arc::clone(l),
             _ => {
-                let l = Arc::new(crate::layout::SceneLayout::compute_with_seed(
-                    buf_w, buf_h, None, floor_seed,
+                let l = Arc::new(crate::layout::SceneLayout::compute(
+                    crate::layout::Viewport::full(buf_w, buf_h),
+                    None,
+                    floor_seed,
                 )?);
                 self.layout_memo = Some((key, Arc::clone(&l)));
                 l

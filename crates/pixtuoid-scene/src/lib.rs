@@ -12,7 +12,7 @@
 //! assert_eq!(theme.name, "dracula");
 //!
 //! // `None` fills the buffer with as many desk pods as physically fit.
-//! let office = SceneLayout::compute_with_seed(192, 64, None, 0)
+//! let office = SceneLayout::compute(crate::layout::Viewport::full(192, 64), None, 0)
 //!     .expect("viewport is large enough for an office");
 //! assert!(!office.home_desks.is_empty());
 //! ```

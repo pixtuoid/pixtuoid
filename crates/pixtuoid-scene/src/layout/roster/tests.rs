@@ -85,7 +85,9 @@ pub(crate) fn offices() -> impl Iterator<Item = SceneLayout> {
     ]
     .into_iter()
     .flat_map(|(w, h)| {
-        (0..12).filter_map(move |seed| SceneLayout::compute_with_seed(w, h, None, seed))
+        (0..12).filter_map(move |seed| {
+            SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+        })
     })
 }
 
@@ -117,7 +119,7 @@ fn every_fixture_kind_is_placed_on_some_office() {
 
 #[test]
 fn backdrop_fixtures_come_first() {
-    let l = SceneLayout::compute(192, 158, None).expect("fits");
+    let l = SceneLayout::compute(crate::layout::Viewport::full(192, 158), None, 0).expect("fits");
     let depths: Vec<Depth> = l.fixtures().map(|f| f.depth).collect();
     let first_sorted = depths
         .iter()
@@ -131,7 +133,7 @@ fn backdrop_fixtures_come_first() {
 /// paints over it and one behind it is hidden.
 #[test]
 fn the_pantry_uprights_sort_at_their_south_row() {
-    let l = SceneLayout::compute(192, 158, None).expect("fits");
+    let l = SceneLayout::compute(crate::layout::Viewport::full(192, 158), None, 0).expect("fits");
     let p = l.pantry.expect("a pantry");
     let expect = [
         (FixtureKind::WaterCooler, p.water_cooler_rect()),
@@ -149,7 +151,8 @@ fn the_pantry_uprights_sort_at_their_south_row() {
 /// back-turned desk's chair sorts past the desk and covers its front edge.
 #[test]
 fn fixture_at_names_the_topmost() {
-    let l = SceneLayout::compute(160, 200, Some(16)).expect("fits");
+    let l =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 200), Some(16), 0).expect("fits");
     let chair = l
         .fixtures()
         .find(|f| matches!(f.kind, FixtureKind::DeskChair(_)))
@@ -187,7 +190,9 @@ fn fixture_at_reaches_every_fixture_not_painted_over() {
     };
     for l in [(160u16, 200u16, 0u64), (160, 200, 3), (240, 160, 5)]
         .into_iter()
-        .filter_map(|(w, h, seed)| SceneLayout::compute_with_seed(w, h, Some(16), seed))
+        .filter_map(|(w, h, seed)| {
+            SceneLayout::compute(crate::layout::Viewport::full(w, h), Some(16), seed)
+        })
     {
         let mut reached = std::collections::HashSet::new();
         for y in (0..l.buf_h).step_by(2) {
@@ -229,7 +234,7 @@ fn only_a_north_facing_desk_stands_a_chair() {
 
 #[test]
 fn the_floor_lamp_base_is_its_sprite_south_row() {
-    let l = SceneLayout::compute(192, 158, None).expect("fits");
+    let l = SceneLayout::compute(crate::layout::Viewport::full(192, 158), None, 0).expect("fits");
     let lamp = l.floor_lamp().expect("a lounge");
     let h = furniture_def(Furniture::FloorLamp).visual.h;
     let base = l.floor_lamp_base().expect("a lounge");
@@ -238,7 +243,8 @@ fn the_floor_lamp_base_is_its_sprite_south_row() {
 
 #[test]
 fn the_coffee_machine_follows_the_counter_size() {
-    let mut l = SceneLayout::compute(160, 200, Some(4)).expect("fits");
+    let mut l =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 200), Some(4), 0).expect("fits");
     for w in [super::super::PANTRY_COUNTER_LARGE_W, 20] {
         let p = l.pantry.as_mut().expect("a pantry");
         p.counter_size.w = w;
@@ -358,7 +364,8 @@ pub(crate) const CENSUS_SEEDS: std::ops::Range<u64> = 0..4;
 fn census() -> impl Iterator<Item = SceneLayout> {
     CENSUS_SIZES.iter().flat_map(|&(w, h)| {
         CENSUS_SEEDS.map(move |seed| {
-            SceneLayout::compute_with_seed(w, h, None, seed).expect("a census size lays out")
+            SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+                .expect("a census size lays out")
         })
     })
 }
@@ -394,7 +401,7 @@ fn census_grid() -> impl Iterator<Item = (u64, SceneLayout)> {
         })
         .flat_map(move |(w, h)| {
             seeds.clone().into_iter().map(move |seed| {
-                let l = SceneLayout::compute_with_seed(w, h, None, seed)
+                let l = SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
                     .unwrap_or_else(|| panic!("{w}x{h} seed {seed}: refused above the floors"));
                 (seed, l)
             })
@@ -418,9 +425,9 @@ fn the_door_is_centred_in_the_last_window_slot() {
         let door = l.door_rect();
         let roster = l.fixtures().find(|f| f.kind == FixtureKind::Door);
         assert_eq!(roster.map(|f| f.visual), Some(door), "{at}");
-        let slots: Vec<_> = super::super::window_slots(l.buf_w).collect();
+        let slots: Vec<_> = super::super::window_slots(l.window_wall()).collect();
         let Some(&slot) = slots.last() else {
-            assert_eq!(door.x, super::super::door_x(l.buf_w), "{at}");
+            assert_eq!(door.x, super::super::door_x(l.window_wall()), "{at}");
             continue;
         };
         assert!(
@@ -499,7 +506,8 @@ fn a_notice_board_hangs_within_one_pane() {
 #[test]
 fn snapping_to_a_pane_keeps_the_notice_board() {
     for (w, h) in [(160, 96), (192, 108), (200, 120), (240, 144), (320, 180)] {
-        let l = SceneLayout::compute_with_seed(w, h, None, 0).expect("lays out");
+        let l =
+            SceneLayout::compute(crate::layout::Viewport::full(w, h), None, 0).expect("lays out");
         assert!(
             l.fixtures()
                 .any(|f| matches!(f.kind, FixtureKind::NoticeBoard { .. })),
@@ -515,7 +523,7 @@ fn the_clock_hangs_centred_on_a_window_post() {
         let at = format!("{}x{}", l.buf_w, l.buf_h);
         let Some(clock) = l.fixtures().find(|f| f.kind == FixtureKind::Clock) else {
             assert!(
-                super::super::window_posts(l.buf_w).count() <= 1,
+                super::super::window_posts(l.window_wall()).count() <= 1,
                 "{at}: no clock, though a post stands clear of the neon"
             );
             continue;
@@ -524,7 +532,8 @@ fn the_clock_hangs_centred_on_a_window_post() {
         let clock = clock.visual;
         let centre = clock.x + clock.width / 2;
         assert!(
-            super::super::window_posts(l.buf_w).any(|p| u16::midpoint(p.start, p.end) == centre),
+            super::super::window_posts(l.window_wall())
+                .any(|p| u16::midpoint(p.start, p.end) == centre),
             "{at}: {clock:?} off every post"
         );
     }
@@ -704,7 +713,7 @@ fn corridor_appliance_art_never_lands_on_a_workstation() {
     const MID_WIDTH: u16 = 208;
     let rows_meet = |a: Bounds, b: Bounds| a.y < b.y + b.height && b.y < a.y + a.height;
     let lay_out = |w, h, seed| {
-        SceneLayout::compute_with_seed(w, h, None, seed)
+        SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
             .unwrap_or_else(|| panic!("{w}x{h} seed {seed} lays out"))
     };
     let pieces = |l: &SceneLayout| {
@@ -844,7 +853,7 @@ fn the_pantry_mat_keeps_to_the_pantrys_columns() {
     let narrow = (narrowest..narrowest + CENSUS_GRID_STEP as u16).flat_map(|w| {
         (super::super::compute::MIN_LAYOUT_H..=tallest).flat_map(move |h| {
             CENSUS_SEEDS.map(move |seed| {
-                let l = SceneLayout::compute_with_seed(w, h, None, seed)
+                let l = SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
                     .unwrap_or_else(|| panic!("{w}x{h} seed {seed}: refused above the floors"));
                 (seed, l)
             })

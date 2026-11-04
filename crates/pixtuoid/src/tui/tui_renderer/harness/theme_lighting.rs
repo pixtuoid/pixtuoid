@@ -301,9 +301,10 @@ fn each_stutter_phase_holds_the_floor_on_screen_in_half_blocks() {
             r.render(&scene, at).expect("render");
         }
         let cells = crate::tui::renderer::scene_rect(r.frame_buffer().area);
+        let in_tube = neon_tube();
         let tube: Vec<ratatui::layout::Position> = cells
             .positions()
-            .filter(|p| neon_tube(p.x - cells.x, 2 * (p.y - cells.y)))
+            .filter(|p| in_tube(p.x - cells.x, 2 * (p.y - cells.y)))
             .collect();
         let snapshot = |r: &TuiRenderer<TestBackend>| -> Vec<ratatui::buffer::Cell> {
             tube.iter().map(|&p| r.frame_buffer()[p].clone()).collect()
