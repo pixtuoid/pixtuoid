@@ -28,7 +28,8 @@ pixtuoid is **telemetry-free and local by default**:
   transcripts (e.g. `~/.claude/projects`, `~/.codex/sessions`) **read-only**, to
   derive what each sprite is doing. Only `pixtuoid serve` sends anything, to paired
   devices: agent status, model, usage, repo names (a project directory's last
-  component), and which agent CLIs you have and how each is connected. No path,
+  component), which agent CLIs you have and how each is connected, and this
+  machine's name and OS. No path,
   prompt, tool input or transcript leaves; the wire is the allowlist in [`remote.rs`](crates/pixtuoid-core/src/remote.rs).
 
 ## Trust boundaries / attack surface

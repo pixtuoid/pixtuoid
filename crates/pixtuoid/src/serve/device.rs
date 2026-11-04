@@ -52,6 +52,8 @@ pub(super) type MakeChange = Arc<dyn Fn(&str, &str, bool) -> Option<Changed> + S
 #[derive(Clone)]
 pub(super) struct Devices {
     store: Store,
+    /// The machine every line names.
+    machine: Arc<remote::Machine>,
     scene: SceneRx,
     rows: ReadRows,
     change: MakeChange,
@@ -69,9 +71,16 @@ pub(super) struct Devices {
 }
 
 impl Devices {
-    pub(super) fn new(store: Store, scene: SceneRx, rows: ReadRows, change: MakeChange) -> Self {
+    pub(super) fn new(
+        store: Store,
+        machine: remote::Machine,
+        scene: SceneRx,
+        rows: ReadRows,
+        change: MakeChange,
+    ) -> Self {
         Self {
             store,
+            machine: Arc::new(machine),
             scene,
             rows,
             change,
@@ -191,7 +200,7 @@ impl Devices {
             }
             // Out of the watch first: encoding under its read lock holds the writer.
             let latest = Arc::clone(&scene.borrow_and_update());
-            let line = remote::encode(&latest, SystemTime::now())?;
+            let line = remote::encode(&latest, &self.machine, SystemTime::now())?;
             write_line(stream, &line).await?;
             sleep(MIN_FRAME_GAP).await;
         }
@@ -351,7 +360,13 @@ mod tests {
             Some(Changed::new(id, on, outcome, false, None, None))
         });
         Fixture {
-            devices: Devices::new(store.clone(), scene_rx, rows, change),
+            devices: Devices::new(
+                store.clone(),
+                remote::Machine::new("studio", remote::Os::here()),
+                scene_rx,
+                rows,
+                change,
+            ),
             store,
             scene,
             made,
@@ -494,7 +509,11 @@ mod tests {
     }
 
     fn paired(fixture: &Fixture) -> String {
-        let code = fixture.store.issue_code(SystemTime::now()).expect("a code");
+        let code = fixture
+            .store
+            .issue_code(SystemTime::now())
+            .expect("a code")
+            .code;
         fixture
             .store
             .redeem(&code, SystemTime::now())
@@ -505,7 +524,11 @@ mod tests {
     #[tokio::test]
     async fn a_code_pairs_and_the_first_line_after_the_reply_is_the_office() {
         let fixture = fixture();
-        let code = fixture.store.issue_code(SystemTime::now()).expect("a code");
+        let code = fixture
+            .store
+            .issue_code(SystemTime::now())
+            .expect("a code")
+            .code;
         let mut peer = Peer::connect(&fixture.devices);
         peer.hello(&Hello::Pair { code }).await;
 

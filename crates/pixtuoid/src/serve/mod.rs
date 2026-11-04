@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
-use pixtuoid_core::remote::{PairLink, is_host};
+use pixtuoid_core::remote::{Machine, Os, PairLink, is_host};
 use pixtuoid_core::source::claude_code::ClaudeCodeSource;
 use pixtuoid_core::state::MAX_FLOORS;
 use qrcode::render::unicode::Dense1x2;
@@ -122,7 +122,8 @@ async fn serve(
     let change = Arc::new(move |who: &str, source: &str, on: bool| {
         crate::sources::device_change(&config_path, &live, who, source, on)
     });
-    let devices = Devices::new(store, scene, rows, change);
+    let machine = Machine::new(&machine_name(), Os::here());
+    let devices = Devices::new(store, machine, scene, rows, change);
     let slots = Arc::new(Semaphore::new(MAX_CONNS));
     let mut deaths_seen = 0;
     let mut accept_failing = false;
@@ -174,9 +175,23 @@ async fn serve(
 /// judge.
 fn lan_peer(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_loopback(),
+        IpAddr::V4(v4) => on_a_local_network(v4) || v4.is_loopback(),
         IpAddr::V6(_) => false,
     }
+}
+
+/// Whether `ip` is in a private or link-local range.
+fn on_a_local_network(ip: Ipv4Addr) -> bool {
+    ip.is_private() || ip.is_link_local()
+}
+
+/// What this machine's owner named it, the name a device shows: the OS's own
+/// (macOS's ComputerName, Linux's pretty hostname, Windows' DNS host name), else
+/// the hostname, as machine-info(5) has an application fall back.
+fn machine_name() -> String {
+    whoami::devicename()
+        .or_else(|_| whoami::hostname())
+        .unwrap_or_default()
 }
 
 /// A cert minted from `key` per run: its dates and name mean nothing to a device
@@ -209,19 +224,30 @@ pub(crate) fn pair(host: Option<String>, port: u16, reset: bool) -> Result<()> {
     let host = host.map_or_else(local_host, Ok)?;
     // Before the code: a typo mustn't cost the owner a code they already printed.
     anyhow::ensure!(is_host(&host), "--host takes a hostname or an IPv4 address");
+    let by_address = host.parse::<Ipv4Addr>().is_ok();
+    let issued = store.issue_code(SystemTime::now())?;
     let link = PairLink {
         host,
         port,
         spki: spki_pin(&store.key()?),
-        code: store.issue_code(SystemTime::now())?,
+        code: issued.code,
+        expires: issued.expires,
     }
     .to_string();
     let minutes = CODE_LIFETIME.as_secs() / 60;
     writeln!(out, "{}", qr(&link)?)?;
     writeln!(out, "Scan within {minutes} minutes, or enter:\n{link}")?;
+    if by_address {
+        writeln!(out, "{ADDRESS_CAN_MOVE}")?;
+    }
     writeln!(out, "{CONSENT}")?;
     Ok(())
 }
+
+/// Said when a link pairs by IPv4: a DHCP server only "attempts" to hand a
+/// client its address back (RFC 2131 §2.2), and a device can't follow it.
+const ADDRESS_CAN_MOVE: &str = "This address can change with your network: pass --host \
+                                with a name for one that doesn't.";
 
 /// What pairing lets a device do, said where the owner pairs it.
 const CONSENT: &str = "A paired device sees your agents and can connect or disconnect \
@@ -259,9 +285,32 @@ fn local_host() -> Result<String> {
     ))
 }
 
+/// The default route's private or link-local IPv4, which a device reaches with
+/// no name service to answer for this machine: the source address of a
+/// datagram to TEST-NET-1, which no route but the default covers (RFC 5737 §4:
+/// "These blocks are not for local use").
 #[cfg(not(target_os = "macos"))]
 fn local_host() -> Result<String> {
-    anyhow::bail!("pass --host: the name or IPv4 address a device reaches this machine at")
+    const PASS_HOST: &str =
+        "pass --host: the name or IPv4 address a device reaches this machine at";
+    const TEST_NET_1: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
+    let source = source_toward(TEST_NET_1).context(PASS_HOST)?;
+    // Winsock may leave the address unset until I/O, which reads as 0.0.0.0
+    // (`getsockname`) and fails the range check like any other non-LAN address.
+    match source {
+        IpAddr::V4(ip) if on_a_local_network(ip) => Ok(ip.to_string()),
+        _ => anyhow::bail!("{PASS_HOST} (the default route has no local-network address)"),
+    }
+}
+
+/// The address this machine would send to `target` from. A UDP `connect` sends
+/// nothing; it sets "the address to which datagrams are sent by default"
+/// (connect(2)).
+#[cfg(any(test, not(target_os = "macos")))]
+fn source_toward(target: Ipv4Addr) -> std::io::Result<IpAddr> {
+    let probe = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+    probe.connect((target, 1))?;
+    Ok(probe.local_addr()?.ip())
 }
 
 #[cfg(test)]
@@ -290,6 +339,34 @@ mod tests {
         ] {
             assert!(!lan_peer(ip.parse().expect("an IP")), "{ip}");
         }
+    }
+
+    /// A default host is one a device on the same network can be sent to: no
+    /// loopback, which `lan_peer` still serves.
+    #[test]
+    fn a_default_host_is_private_or_link_local() {
+        for ip in ["10.0.0.2", "172.16.0.2", "192.168.1.2", "169.254.0.2"] {
+            assert!(on_a_local_network(ip.parse().expect("an IP")), "{ip}");
+        }
+        for ip in [
+            "127.0.0.1",
+            "0.0.0.0",
+            "100.64.0.1",
+            "172.32.0.2",
+            "8.8.8.8",
+        ] {
+            assert!(!on_a_local_network(ip.parse().expect("an IP")), "{ip}");
+        }
+    }
+
+    /// Every runner routes to loopback, and only the `connect` turns the
+    /// probe's 0.0.0.0 into loopback's address. Not on Windows, whose
+    /// `getsockname` may not know an address before I/O.
+    #[cfg(unix)]
+    #[test]
+    fn a_probe_names_the_source_its_route_gives() {
+        let source = source_toward(Ipv4Addr::LOCALHOST).expect("loopback routes");
+        assert_eq!(source, IpAddr::V4(Ipv4Addr::LOCALHOST));
     }
 
     /// A read still running when a quit comes is left behind, not waited for.
@@ -326,6 +403,7 @@ mod tests {
             port: DEFAULT_PORT,
             spki: "AB".repeat(32),
             code: "CD".repeat(32),
+            expires: SystemTime::now() + CODE_LIFETIME,
         };
         let qr = qr(&link.to_string()).expect("it encodes");
         let rows = qr.lines().count();

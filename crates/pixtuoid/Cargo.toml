@@ -86,6 +86,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring"]
 rcgen        = { version = "0.14", default-features = false, features = ["ring", "pem"], optional = true }
 ring         = { version = "0.17", optional = true }
 qrcode       = { version = "0.14", default-features = false, optional = true }
+# The name a served line gives this machine, each OS's own friendly one.
+whoami       = { version = "2.1", default-features = false, features = ["std"], optional = true }
 # The `pixtuoid floating` desktop window (binary-only — pixtuoid-core stays
 # window-free): winit is the frameless always-on-top window + main-thread event
 # loop, wgpu draws each frame's layers into it (`floating/gpu.rs`).
@@ -131,7 +133,7 @@ portable = ["serve"]
 audio = ["dep:rodio", "dep:rtrb"]
 # `pixtuoid serve` and `pixtuoid pair`. ring's build script compiles C for the
 # target, whose headers the cross-lints don't have, so they leave this out.
-serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode"]
+serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami"]
 
 # termios/select for `term::query_tty` (the truecolor and graphics probes),
 # O_NOFOLLOW in install/io.rs, the stderr dup in audio/sink.rs.

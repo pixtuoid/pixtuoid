@@ -4,8 +4,8 @@
 //!
 //! Not [`SceneState`] itself, which is internal and moves with every release,
 //! while a server and a device update on their own schedules. A field crosses
-//! only where `project_agent`, `project_daemon` or `project_today` names it, and a
-//! desk never does: desks follow each device's layout, so it takes its own.
+//! only where `project_agent`, `project_daemon`, `project_today` or [`Machine`]
+//! names it, and a desk never does: desks follow each device's layout, so it takes its own.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -29,9 +29,15 @@ mod change;
 
 pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_registered};
 
-/// The wire version this build writes and reads. Within a version the line only
-/// gains fields and tags, which `remote.v1.golden.json` holds it to; a reader
-/// ignores what it doesn't know and maps an unknown tag to its nearest state.
+/// The wire version this build writes and reads, on every line and in every
+/// pairing link. Within a version the line only gains fields and tags, which
+/// `remote.v1.golden.json` holds it to; a reader ignores what it doesn't know and
+/// maps an unknown tag to its nearest state. Any break, in the line or the link,
+/// bumps it, and every pairing or reconnect across it ends in a precise "update"
+/// on the side that can act ([`PairLinkError::Incompatible`],
+/// [`ApplyError::Incompatible`]). The promise counts from the first release a
+/// device can pair with: an older server's link carries no version, which
+/// [`PairLink`]'s parse refuses ([`PairLinkError::Outdated`]).
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office: a device takes
@@ -46,10 +52,70 @@ const MAX_CLOCK_DRIFT: Duration = Duration::from_secs(2);
 struct Snapshot {
     v: u32,
     now_ms: u64,
+    machine: Machine,
     agents: Vec<Agent>,
     daemons: Vec<Daemon>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     today: Option<Day>,
+}
+
+/// The machine a server runs on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Machine {
+    /// What the machine's owner named it, display-safe.
+    #[serde(deserialize_with = "display_safe_text")]
+    name: String,
+    os: Os,
+}
+
+impl Machine {
+    /// `name` made display-safe, running `os`.
+    pub fn new(name: &str, os: Os) -> Self {
+        Self {
+            name: display_safe(name),
+            os,
+        }
+    }
+
+    /// What the machine's owner named it.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// What it runs.
+    pub fn os(&self) -> Os {
+        self.os
+    }
+}
+
+/// The OS a server runs. Tagged so `other` can take a newer server's OS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Os {
+    /// macOS.
+    Macos,
+    /// Linux.
+    Linux,
+    /// Windows.
+    Windows,
+    /// One this build doesn't name.
+    #[serde(other)]
+    Other,
+}
+
+impl Os {
+    /// The OS this build runs on.
+    pub const fn here() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(target_os = "linux") {
+            Self::Linux
+        } else if cfg!(windows) {
+            Self::Windows
+        } else {
+            Self::Other
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -288,15 +354,21 @@ fn project_today(today: &Today) -> Day {
     }
 }
 
-/// `scene` as one newline-terminated wire line, stamped with the server's `now`.
+/// `scene` as one newline-terminated wire line from the server on `machine`,
+/// stamped with its `now`.
 ///
 /// # Errors
 ///
 /// If JSON encoding fails.
-pub fn encode(scene: &SceneState, now: SystemTime) -> serde_json::Result<String> {
+pub fn encode(
+    scene: &SceneState,
+    machine: &Machine,
+    now: SystemTime,
+) -> serde_json::Result<String> {
     let mut line = serde_json::to_string(&Snapshot {
         v: VERSION,
         now_ms: epoch_ms(now),
+        machine: machine.clone(),
         agents: scene.agents.values().map(project_agent).collect(),
         daemons: scene
             .daemons()
@@ -316,6 +388,13 @@ const PIN_BYTES: usize = 32;
 
 const PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
 
+const VERSION_KEY: &str = "v";
+const HOST: &str = "host";
+const PORT: &str = "port";
+const SPKI: &str = "spki";
+const CODE: &str = "code";
+const EXPIRES: &str = "expires";
+
 /// What a device scans to reach a server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PairLink {
@@ -328,6 +407,8 @@ pub struct PairLink {
     pub spki: String,
     /// The one-time code a [`Hello::Pair`] redeems, in uppercase hex.
     pub code: String,
+    /// When [`Self::code`] stops redeeming, to the second.
+    pub expires: SystemTime,
 }
 
 impl fmt::Display for PairLink {
@@ -337,10 +418,14 @@ impl fmt::Display for PairLink {
             port,
             spki,
             code,
+            expires,
         } = self;
+        let expires = expires
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |at| at.as_secs());
         write!(
             f,
-            "{PAIR_LINK_PREFIX}host={host}&port={port}&spki={spki}&code={code}"
+            "{PAIR_LINK_PREFIX}{VERSION_KEY}={VERSION}&{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{EXPIRES}={expires}&{CODE}={code}"
         )
     }
 }
@@ -354,47 +439,90 @@ pub fn is_host(host: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
 }
 
-/// A string that isn't a [`PairLink`].
-#[derive(Debug, Error)]
-#[error("not a pixtuoid pairing link")]
-pub struct PairLinkError;
+/// A string that isn't a [`PairLink`] this build pairs with.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum PairLinkError {
+    /// No link a server writes.
+    #[error("not a pixtuoid pairing link")]
+    NotALink,
+    /// A link a server from before the link's `v` wrote: whole, but nothing a
+    /// device can pair with.
+    #[error("a pairing link from an older pixtuoid: update it on the computer, then pair again")]
+    Outdated,
+    /// A link a server speaking wire version `v` wrote, read no further: whichever
+    /// of it and [`VERSION`] is older names the side to update.
+    #[error("a pairing link for wire version {v}, where this build speaks {VERSION}")]
+    Incompatible {
+        /// The link's version.
+        v: u32,
+    },
+}
 
 impl FromStr for PairLink {
     type Err = PairLinkError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let query = text.strip_prefix(PAIR_LINK_PREFIX).ok_or(PairLinkError)?;
+        let query = text
+            .strip_prefix(PAIR_LINK_PREFIX)
+            .ok_or(PairLinkError::NotALink)?;
         let field = |key: &str| {
             query
                 .split('&')
                 .find_map(|pair| pair.strip_prefix(key)?.strip_prefix('='))
-                .ok_or(PairLinkError)
+                .ok_or(PairLinkError::NotALink)
         };
         let hex = |key: &str, bytes: usize| {
             let value = field(key)?;
             let uppercase_hex = |b: u8| matches!(b, b'0'..=b'9' | b'A'..=b'F');
             (value.len() == bytes * 2 && value.bytes().all(uppercase_hex))
                 .then(|| value.to_owned())
-                .ok_or(PairLinkError)
+                .ok_or(PairLinkError::NotALink)
         };
-        let host = field("host")?;
-        if !is_host(host) {
-            return Err(PairLinkError);
+        // Read first, as a server of any version writes it: a format this build
+        // doesn't know still names who updates.
+        if let Ok(v) = field(VERSION_KEY) {
+            let v = v.parse().map_err(|_| PairLinkError::NotALink)?;
+            if v != VERSION {
+                return Err(PairLinkError::Incompatible { v });
+            }
         }
+        let host = field(HOST)?;
+        if !is_host(host) {
+            return Err(PairLinkError::NotALink);
+        }
+        let port: u16 = field(PORT)?
+            .parse()
+            .ok()
+            .filter(|port| *port != 0)
+            .ok_or(PairLinkError::NotALink)?;
+        let (spki, code) = (hex(SPKI, PIN_BYTES)?, hex(CODE, SECRET_BYTES)?);
+        let Ok(expires) = field(EXPIRES) else {
+            // The four fields an older server wrote, and no more: a newer link,
+            // cut short or not, carries its version.
+            let older = format!(
+                "{PAIR_LINK_PREFIX}{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{CODE}={code}"
+            );
+            return Err(if older == text {
+                PairLinkError::Outdated
+            } else {
+                PairLinkError::NotALink
+            });
+        };
         let link = Self {
             host: host.to_owned(),
-            port: field("port")?
+            port,
+            spki,
+            code,
+            expires: expires
                 .parse()
                 .ok()
-                .filter(|port| *port != 0)
-                .ok_or(PairLinkError)?,
-            spki: hex("spki", PIN_BYTES)?,
-            code: hex("code", SECRET_BYTES)?,
+                .and_then(|secs| UNIX_EPOCH.checked_add(Duration::from_secs(secs)))
+                .ok_or(PairLinkError::NotALink)?,
         };
         // A field read twice, or one a server never writes, reads as a forgery.
         (link.to_string() == text)
             .then_some(link)
-            .ok_or(PairLinkError)
+            .ok_or(PairLinkError::NotALink)
     }
 }
 
@@ -571,6 +699,8 @@ pub enum ApplyError {
 #[derive(Debug)]
 pub struct RemoteOffice {
     scene: SceneState,
+    /// The machine the last line came from; `None` before the first.
+    machine: Option<Machine>,
     /// The device's clock minus the server's, in ms; held from line to line.
     skew_ms: Option<i64>,
 }
@@ -580,6 +710,7 @@ impl RemoteOffice {
     pub fn new(capacities: [usize; MAX_FLOORS]) -> Self {
         Self {
             scene: SceneState::new(capacities),
+            machine: None,
             skew_ms: None,
         }
     }
@@ -587,6 +718,11 @@ impl RemoteOffice {
     /// The office to render, its times on the device's clock.
     pub fn scene(&self) -> &SceneState {
         &self.scene
+    }
+
+    /// The machine the last line came from; `None` before the first.
+    pub fn machine(&self) -> Option<&Machine> {
+        self.machine.as_ref()
     }
 
     /// Take a new layout: everyone takes a new desk, oldest first, since the old
@@ -623,11 +759,13 @@ impl RemoteOffice {
         }
         let Snapshot {
             now_ms,
+            machine,
             mut agents,
             daemons,
             today,
             ..
         } = serde_json::from_slice(line)?;
+        self.machine = Some(machine);
 
         let skew = self.skew_for(now_ms, now);
         // A time this far ahead means nothing, and near a clock's end it would
@@ -906,8 +1044,12 @@ mod tests {
         scene
     }
 
+    fn machine() -> Machine {
+        Machine::new("studio", Os::Macos)
+    }
+
     fn sent(scene: &SceneState) -> String {
-        encode(scene, at(AT)).expect("a scene encodes")
+        encode(scene, &machine(), at(AT)).expect("a scene encodes")
     }
 
     fn received(office: &mut RemoteOffice, scene: &SceneState, device_now: u64) {
@@ -935,6 +1077,7 @@ mod tests {
     fn a_v1_line_still_applies() {
         let mut office = RemoteOffice::new(caps(4));
         office.apply(GOLDEN.as_bytes(), at(AT)).expect("v1 applies");
+        assert_eq!(office.machine(), Some(&machine()));
         let scene = office.scene();
         let exiting_unseen = 1;
         assert_eq!(scene.agents.len(), 8 - exiting_unseen);
@@ -1046,6 +1189,83 @@ mod tests {
             name.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,
             "{name}"
         );
+    }
+
+    /// A machine's name is the server's own to send clean, as a basename is.
+    #[test]
+    fn a_server_sends_its_machines_name_clean() {
+        let dirty = format!("x\u{1b}\u{202e}{}", "y".repeat(MAX_DECODED_FIELD_CHARS * 2));
+        let line: Value = serde_json::from_str(
+            &encode(&crowd(&[]), &Machine::new(&dirty, Os::Linux), at(AT)).unwrap(),
+        )
+        .unwrap();
+        let name = line["machine"]["name"].as_str().unwrap();
+        assert!(!name.contains(['\u{1b}', '\u{202e}']), "{name}");
+        assert!(
+            name.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,
+            "{name}"
+        );
+    }
+
+    /// No line a device can reach is without its machine: a server older than
+    /// the field wrote links no device pairs with ([`VERSION`]).
+    #[test]
+    fn a_line_without_its_machine_is_refused() {
+        let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
+        line.as_object_mut().unwrap().remove("machine");
+        let mut office = RemoteOffice::new(caps(4));
+        let refused = office.apply(line.to_string().as_bytes(), at(AT));
+        assert!(
+            matches!(refused, Err(ApplyError::Malformed(_))),
+            "{refused:?}"
+        );
+        assert_eq!(office.machine(), None);
+    }
+
+    /// A link with exactly an older server's four fields says so, so a device can
+    /// ask for an update; any other link a server never wrote is no link.
+    #[test]
+    fn an_older_servers_link_is_told_apart() {
+        let PairLink { spki, code, .. } = link();
+        let older =
+            format!("pixtuoid://pair?{HOST}=studio.local&{PORT}=47820&{SPKI}={spki}&{CODE}={code}");
+        assert_eq!(older.parse::<PairLink>(), Err(PairLinkError::Outdated));
+        let newer = link().to_string();
+        let expires = newer.find(&format!("&{EXPIRES}=")).expect("an expiry");
+        let to_code = newer[expires..].find(&format!("&{CODE}=")).expect("a code");
+        let without_expiry = format!("{}{}", &newer[..expires], &newer[expires + to_code..]);
+        let before_code = newer.find(&format!("&{CODE}=")).expect("a code");
+        let after = |key: &str| newer.find(&format!("{key}=")).expect("a key") + key.len() + 1;
+        for text in [
+            &newer[..before_code],
+            &newer[..before_code + CODE.len() + 2 + SECRET_BYTES],
+            &newer[..after(EXPIRES)],
+            &newer[..after(VERSION_KEY)],
+            &without_expiry,
+            &format!("{older}&extra=1"),
+        ] {
+            assert_eq!(
+                text.parse::<PairLink>(),
+                Err(PairLinkError::NotALink),
+                "{text}"
+            );
+        }
+    }
+
+    /// A link of another version is read no further than its version, whatever
+    /// follows: a device names the side to update even for a format it can't read.
+    #[test]
+    fn a_link_of_another_version_names_it() {
+        for v in [0, VERSION + 1] {
+            for rest in [String::new(), "&a-format=to-come".to_owned()] {
+                let text = format!("pixtuoid://pair?{VERSION_KEY}={v}{rest}");
+                assert_eq!(
+                    text.parse::<PairLink>(),
+                    Err(PairLinkError::Incompatible { v }),
+                    "{text}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1312,7 +1532,9 @@ mod tests {
     #[test]
     fn what_a_newer_server_adds_is_read_as_the_nearest_known_thing() {
         let line = format!(
-            "{{\"v\":{VERSION},\"now_ms\":{AT},\"new_field\":1,\"agents\":[\
+            "{{\"v\":{VERSION},\"now_ms\":{AT},\"new_field\":1,\
+             \"machine\":{{\"name\":\"st\\u202eudio\\n\",\"os\":{{\"kind\":\"plan9\"}},\"new_field\":1}},\
+             \"agents\":[\
              {{\"id\":7,\"source\":\"a-new-cli\",\"activity\":{{\"state\":\"thinking\"}},\
              \"state_since_ms\":{AT},\"created_ms\":{AT},\"tool_calls\":0,\"running_ms\":0,\
              \"tokens\":0,\"new_field\":true}},\
@@ -1326,6 +1548,7 @@ mod tests {
         );
         let mut office = RemoteOffice::new(caps(4));
         office.apply(line.as_bytes(), at(AT)).expect("it applies");
+        assert_eq!(office.machine(), Some(&Machine::new("studio", Os::Other)));
         let agents: Vec<_> = office.scene().agents.values().collect();
         assert_eq!(agents.len(), 2);
         assert_eq!(agents[0].state, ActivityState::Idle);
@@ -1517,13 +1740,19 @@ mod tests {
             port: 47820,
             spki: EVERY_DIGIT.repeat(PIN_BYTES * 2 / EVERY_DIGIT.len()),
             code: EVERY_DIGIT.repeat(SECRET_BYTES * 2 / EVERY_DIGIT.len()),
+            expires: UNIX_EPOCH + Duration::from_secs(AT / 1000),
         }
     }
 
     #[test]
     fn a_pair_link_survives_its_text() {
-        for port in [1, 47820, u16::MAX] {
-            let link = PairLink { port, ..link() };
+        for (port, secs) in [(1, 0), (47820, AT / 1000), (u16::MAX, u64::from(u32::MAX))] {
+            let expires = UNIX_EPOCH + Duration::from_secs(secs);
+            let link = PairLink {
+                port,
+                expires,
+                ..link()
+            };
             let text = link.to_string();
             assert!(text.starts_with("pixtuoid://pair?"), "{text}");
             assert_eq!(text.parse::<PairLink>().expect("it parses"), link);
@@ -1536,10 +1765,12 @@ mod tests {
     fn a_pair_link_refuses_what_a_server_never_writes() {
         let with = |key: &str, value: &str| {
             let mut fields = [
-                ("host", "studio.local".to_owned()),
-                ("port", "47820".to_owned()),
-                ("spki", link().spki),
-                ("code", link().code),
+                (VERSION_KEY, VERSION.to_string()),
+                (HOST, "studio.local".to_owned()),
+                (PORT, "47820".to_owned()),
+                (SPKI, link().spki),
+                (EXPIRES, (AT / 1000).to_string()),
+                (CODE, link().code),
             ];
             let field = fields.iter_mut().find(|(k, _)| *k == key).expect("a field");
             field.1 = value.to_owned();
@@ -1549,32 +1780,40 @@ mod tests {
         // One character past each edge of the digits' ranges, at full length.
         let edges = ['/', ':', '@', 'G'].into_iter().flat_map(|edge| {
             let bad = |value: String| value.replacen('0', &edge.to_string(), 1);
-            [
-                with("spki", &bad(link().spki)),
-                with("code", &bad(link().code)),
-            ]
+            [with(SPKI, &bad(link().spki)), with(CODE, &bad(link().code))]
         });
         for bad in edges.chain([
             "https://pair?host=a".to_owned(),
             "pixtuoid://pair?host=a".to_owned(),
-            with("host", ""),
-            with("host", "evil.example/path"),
-            with("host", "a@b"),
-            with("port", "0"),
-            with("port", "70000"),
-            with("spki", &"A".repeat(PIN_BYTES * 2 - 1)),
-            with("spki", &"A".repeat(PIN_BYTES * 2 + 1)),
-            with("spki", &"zz".repeat(PIN_BYTES)),
-            with("spki", &"ab".repeat(PIN_BYTES)),
-            with("code", ""),
-            with("code", &"C".repeat(SECRET_BYTES * 2 - 1)),
-            with("code", &"C".repeat(SECRET_BYTES * 2 + 1)),
-            with("code", &"cd".repeat(SECRET_BYTES)),
-            format!("{}&port=1", link()),
+            with(VERSION_KEY, ""),
+            with(VERSION_KEY, "x"),
+            with(VERSION_KEY, "01"),
+            with(HOST, ""),
+            with(HOST, "evil.example/path"),
+            with(HOST, "a@b"),
+            with(PORT, "0"),
+            with(PORT, "70000"),
+            with(SPKI, &"A".repeat(PIN_BYTES * 2 - 1)),
+            with(SPKI, &"A".repeat(PIN_BYTES * 2 + 1)),
+            with(SPKI, &"zz".repeat(PIN_BYTES)),
+            with(SPKI, &"ab".repeat(PIN_BYTES)),
+            with(CODE, ""),
+            with(CODE, &"C".repeat(SECRET_BYTES * 2 - 1)),
+            with(CODE, &"C".repeat(SECRET_BYTES * 2 + 1)),
+            with(CODE, &"cd".repeat(SECRET_BYTES)),
+            with(EXPIRES, ""),
+            with(EXPIRES, "-1"),
+            with(EXPIRES, "1.5"),
+            with(EXPIRES, "01"),
+            with(EXPIRES, &u64::MAX.to_string()),
+            format!("{}&{PORT}=1", link()),
             format!("{}&extra=1", link()),
             link()
                 .to_string()
                 .replace("host=studio.local", "host=a&port=1&host=b"),
+            link()
+                .to_string()
+                .replace(&format!("&{EXPIRES}={}", AT / 1000), ""),
         ]) {
             assert!(bad.parse::<PairLink>().is_err(), "{bad}");
         }

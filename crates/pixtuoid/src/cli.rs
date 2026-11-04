@@ -92,10 +92,10 @@ pub(crate) enum Cmd {
         source: SourceArgs,
     },
     /// Serve the office to paired devices on your local network, with no TUI
-    /// needed. Agent status, model, usage, repo names, and which agent CLIs you
-    /// have and how each is connected leave this machine, never paths, prompts,
-    /// tool input or transcripts; a paired device can also connect or disconnect
-    /// those CLIs. Nothing listens on a network unless this runs.
+    /// needed. Agent status, model, usage, repo names, which agent CLIs you have
+    /// and how each is connected, and the machine's name and OS leave it, never
+    /// paths, prompts, tool input or transcripts; a paired device can also connect
+    /// or disconnect those CLIs. Nothing listens on a network unless this runs.
     #[cfg(feature = "serve")]
     Serve {
         #[command(flatten)]
@@ -108,7 +108,8 @@ pub(crate) enum Cmd {
     #[cfg(feature = "serve")]
     Pair {
         /// The hostname or IPv4 address a device reaches this machine at.
-        /// Defaults to this Mac's `.local` name; required on other systems.
+        /// Defaults to this Mac's `.local` name, elsewhere to the default route's
+        /// local-network IPv4.
         #[arg(long)]
         host: Option<String>,
         /// The port `serve` listens on.
@@ -267,6 +268,22 @@ mod tests {
         let about = about.expect("documented").to_string();
         assert!(about.contains("Changes no config"), "{about}");
         assert!(!about.to_lowercase().contains("read-only"), "{about}");
+    }
+
+    /// `pair` finds a host on every OS it runs on, so `--host` is required on none.
+    #[cfg(feature = "serve")]
+    #[test]
+    fn pairs_host_help_names_a_default_on_every_os() {
+        let command = <Cli as clap::CommandFactory>::command();
+        let pair = command.find_subcommand("pair").expect("a subcommand");
+        let host = pair
+            .get_arguments()
+            .find(|arg| arg.get_id() == "host")
+            .and_then(|arg| arg.get_help())
+            .expect("documented")
+            .to_string();
+        assert!(host.contains("default route"), "{host}");
+        assert!(!host.contains("required"), "{host}");
     }
 
     /// The flags have to REACH `doctor`, not merely parse: an accepted value

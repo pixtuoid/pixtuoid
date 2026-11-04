@@ -256,7 +256,9 @@ mod tests {
             a.session_id = format!("host-session-{key}").into();
             host.agents.insert(a.agent_id, a);
         }
-        let line = encode(&host, now).expect("a scene encodes");
+        let machine =
+            pixtuoid_core::remote::Machine::new("host", pixtuoid_core::remote::Os::here());
+        let line = encode(&host, &machine, now).expect("a scene encodes");
         let mut device = RemoteOffice::new([4; MAX_FLOORS]);
         device.apply(line.as_bytes(), now).expect("it applies");
         let (on_host, on_device) = (

@@ -275,11 +275,18 @@ impl World {
             said.contains(consent),
             "pairing says what it allows: {said}"
         );
-        said.lines()
+        assert!(
+            said.contains("This address can change"),
+            "pairing by address says it can move: {said}"
+        );
+        let link: PairLink = said
+            .lines()
             .find(|line| line.starts_with("pixtuoid://"))
             .expect("pair prints the link")
             .parse()
-            .expect("a link")
+            .expect("a link");
+        assert!(link.expires > SystemTime::now(), "{link:?}");
+        link
     }
 
     /// Keep starting sessions until `sees` says one landed: an instance taking
@@ -360,6 +367,12 @@ async fn a_device_pairs_and_reads_an_office_that_names_only_the_repo() {
         .start_session("canary-repo", device.sees("canary-repo"))
         .await;
     assert!(device.received.contains("canary-repo"));
+    let os = serde_json::to_string(&pixtuoid_core::remote::Os::here()).expect("an OS");
+    assert!(
+        device.received.contains(&format!("\"os\":{os}")),
+        "a line names the machine: {}",
+        device.received
+    );
     for private in ["canary-parent", "s-canary-repo", "workspace_roots"] {
         assert!(
             !device.received.contains(private),
@@ -537,6 +550,20 @@ fn a_second_server_on_a_port_says_so_and_leaves() {
     assert!(!second.status.success());
     let stderr = String::from_utf8_lossy(&second.stderr);
     assert!(stderr.contains("already running"), "{stderr}");
+}
+
+/// Only a link by address says it can move: a name follows its machine.
+#[test]
+fn a_link_by_name_says_nothing_of_moving() {
+    let world = World::new();
+    let out = world.run(&["pair", "--host", "studio.local"]);
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8(out.stdout).expect("UTF-8");
+    assert!(
+        said.contains("pixtuoid://pair?"),
+        "premise: it paired: {said}"
+    );
+    assert!(!said.contains("This address can change"), "{said}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
