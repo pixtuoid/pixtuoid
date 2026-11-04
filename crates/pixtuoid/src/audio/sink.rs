@@ -287,7 +287,7 @@ mod tests {
             .map(|i| {
                 let t = i as f32 / SAMPLE_RATE as f32;
                 // cos, not sin: the burst starts at its crest
-                amplitude * (std::f32::consts::TAU * hz * t).cos()
+                amplitude * libm::cosf(std::f32::consts::TAU * hz * t)
             })
             .collect()
     }

@@ -491,7 +491,7 @@ const FULL_MOONS_2026: [(u32, u32, u32, u32); 13] = [
 /// [`MAX_MISS_DAYS`] miss leaves.
 #[test]
 fn the_moon_phase_lands_on_published_lunations() {
-    let tolerance = (1.0 - (std::f32::consts::TAU * MAX_MISS_DAYS / SYNODIC_DAYS).cos()) / 2.0;
+    let tolerance = (1.0 - libm::cosf(std::f32::consts::TAU * MAX_MISS_DAYS / SYNODIC_DAYS)) / 2.0;
     let new_moons = [
         (1, 18, 19, 52),
         (2, 17, 12, 1),
