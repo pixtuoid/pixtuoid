@@ -35,7 +35,7 @@ const _: () = assert!(
         .period_ms
         .is_multiple_of(BURSTS.phase_ms * LANES as u64)
 );
-/// How far in from either end of the wall's glass a burst's heart stands, as
+/// How far in from either end of the bays' span a burst's heart stands, as
 /// a share of it, so a burst opens over the city rather than at its edge.
 const X_MARGIN: f32 = 0.1;
 /// The band of the open sky a burst's heart stands in, as shares of it from
@@ -98,7 +98,7 @@ impl BurstPhase {
     }
 }
 
-/// One burst in the sky: its heart as shares of the wall's glass and of the
+/// One burst in the sky: its heart as shares of the bays' span and of the
 /// open sky's height, its phase and its hue.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Burst {
@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn a_finale_lane_fires_whole_bursts_that_start_inside_it() {
         use crate::anim::Motion;
-        const SPAN_MS: u64 = 30 * 1500;
+        const SPAN_MS: u64 = 30 * BURSTS.period_ms;
         let open = 10 * BURSTS.period_ms..20 * BURSTS.period_ms;
         let at = |wall| std::time::UNIX_EPOCH + std::time::Duration::from_millis(wall);
         for motion in [Motion::Full, Motion::Calm] {
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(bursts_at(still, &HUES, |_| true), [None; LANES]);
     }
 
-    /// A burst's heart stands within the glass's margins and the open sky's
+    /// A burst's heart stands within the bays' span's margins and the open sky's
     /// band, in one of the night's hues.
     #[test]
     fn a_burst_opens_over_the_city_in_a_hue_of_the_night() {
@@ -292,5 +292,24 @@ mod tests {
                 (0..BURSTS.starts()).map(|i| i * BURSTS.phase_ms).collect();
             assert_eq!(seen, want, "lane {lane}");
         }
+    }
+
+    /// Each lane draws its own bursts: no lane opens its bursts where
+    /// another's open, bucket for bucket.
+    #[test]
+    fn each_lane_draws_its_own_bursts() {
+        const BURSTS_A_LANE: usize = 5;
+        let places: std::collections::HashSet<Vec<(u32, u32)>> = (0..LANES)
+            .map(|lane| {
+                (0..(BURSTS_A_LANE as u64 + 1) * BURSTS.period_ms)
+                    .step_by(BURSTS.phase_ms as usize)
+                    .filter_map(|ms| bursts_at(Beat::at_ms(ms), &HUES, |_| true)[lane])
+                    .filter(|b| b.phase == BurstPhase::Kindle)
+                    .map(|b| (b.x.to_bits(), b.y.to_bits()))
+                    .take(BURSTS_A_LANE)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(places.len(), LANES, "{places:?}");
     }
 }

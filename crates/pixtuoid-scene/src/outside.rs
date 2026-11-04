@@ -256,14 +256,14 @@ impl Wall {
             crate::layout::glass_rows(rows.end - rows.start),
         )
     }
-}
 
-/// The columns, in units, `bays` span, frames included: unlike
-/// [`Wall::glass`]'s run, never the door's slot, which shows no glass.
-fn bays_span(bays: &[WindowBay]) -> Range<u16> {
-    match (bays.first(), bays.last()) {
-        (Some(first), Some(last)) => first.x..last.span().end,
-        _ => 0..0,
+    /// The columns, in units, its bays span, frames included: unlike
+    /// [`Wall::glass`]'s run, never the door's slot, which shows no glass.
+    pub(crate) fn bays_span(&self) -> Range<u16> {
+        match (self.bays.first(), self.bays.last()) {
+            (Some(first), Some(last)) => first.x..last.span().end,
+            _ => 0..0,
+        }
     }
 }
 
@@ -411,12 +411,7 @@ impl Outside {
             .map(|p| p.start - run.start..p.end - run.start)
             .collect();
         Self {
-            sky: SkyView::of(
-                &outlook,
-                (wall.span.clone(), bays_span(&bays)),
-                wall.band_h,
-                theme,
-            ),
+            sky: SkyView::of(&outlook, wall, theme),
             clouds: crate::clouds::Clouds::of(
                 &outlook,
                 (run.end - run.start, glass_h),
@@ -471,7 +466,7 @@ pub(crate) mod tests {
             crate::layout::SceneLayout::compute(crate::layout::Viewport::full(160, 96), Some(4), 0)
                 .expect("lays out");
         let wall = Wall::of(&layout);
-        let span = bays_span(&wall.bays);
+        let span = wall.bays_span();
         let (first, last) = (
             wall.bays.first().expect("a bay"),
             wall.bays.last().expect("a bay"),
@@ -479,7 +474,11 @@ pub(crate) mod tests {
         assert_eq!(span, first.x..last.span().end);
         assert!(span.end <= layout.door_rect().x, "{span:?}");
         assert!(span.end < wall.glass().0.end, "{span:?}");
-        assert_eq!(bays_span(&[]), 0..0);
+        let bare = Wall {
+            bays: Vec::new(),
+            ..wall
+        };
+        assert_eq!(bare.bays_span(), 0..0);
     }
     use crate::display::pen::test_density;
     use crate::sky::{Sky, Weather};

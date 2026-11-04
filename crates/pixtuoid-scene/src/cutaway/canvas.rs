@@ -1424,20 +1424,13 @@ mod tests {
             .step(
                 crate::floor::FloorInputs {
                     scene: &pixtuoid_core::SceneState::uniform(16),
-                    now: SystemTime::UNIX_EPOCH,
+                    now: crate::localclock::at_hour(12),
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),
                 },
                 crate::layout::Size { w: 240, h: 144 },
             )
             .expect("lays out");
-        // The goldens pin the office bare, the stand-ins pinned by their own
-        // tests: the epoch is New Year's Eve's last half hour in a zone at
-        // or west of UTC.
-        let bare_office = SimFrame {
-            occasion: Default::default(),
-            ..office.frame.clone()
-        };
         let lively = Arc::new(lively_office());
         let busy = SimFrame {
             door_frame: 2,
@@ -1455,7 +1448,7 @@ mod tests {
                 &walk_layout,
                 frames.last().expect("a seated frame"),
             ),
-            ("office", &office.layout, &bare_office),
+            ("office", &office.layout, &office.frame),
             ("lively", &lively, &busy),
         ];
         let moments = [

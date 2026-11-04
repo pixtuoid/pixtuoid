@@ -302,12 +302,10 @@ pub(crate) struct SkyView {
 }
 
 impl SkyView {
-    /// `outlook`'s sky behind a wall band `top_wall_h` tall whose windows tile
-    /// the columns `span`, its bays spanning `bays`, in `theme`.
+    /// `outlook`'s sky behind `wall`, in `theme`.
     pub(crate) fn of(
         outlook: &crate::atmosphere::Outlook,
-        (span, bays): (Range<u16>, Range<u16>),
-        top_wall_h: u16,
+        wall: &crate::outside::Wall,
         theme: &Theme,
     ) -> Self {
         let look = outlook.look();
@@ -315,7 +313,7 @@ impl SkyView {
             look.glass_zenith
                 .mix(look.glass_horizon, k as f32 / (SKY_BANDS - 1) as f32)
         });
-        let disc = Disc::of(outlook.sky(), span, top_wall_h);
+        let disc = Disc::of(outlook.sky(), wall.span.clone(), wall.band_h);
         let core = match disc.map_or(BodyKind::Sun, |d| d.body) {
             BodyKind::Sun => theme.lighting.sun_core,
             BodyKind::Moon => theme.lighting.moon_core,
@@ -326,7 +324,7 @@ impl SkyView {
         Self {
             disc,
             bursts: outlook.sky().bursts(),
-            bays,
+            bays: wall.bays_span(),
             stars: look.star_strength > 0.0,
             beat: outlook.beat(),
             sky,
@@ -613,7 +611,12 @@ mod tests {
             0.0,
             crate::anim::Motion::Full.timing(now),
         );
-        SkyView::of(&moment.outlook(theme), (0..160, 0..160), 40, theme)
+        let wall = crate::outside::Wall {
+            span: 0..160,
+            band_h: 40,
+            bays: Vec::new(),
+        };
+        SkyView::of(&moment.outlook(theme), &wall, theme)
     }
 
     /// A burst lays its sparks in its hue over the open sky, within its
@@ -639,8 +642,19 @@ mod tests {
                 ROWS.end - ROWS.start,
             ))),
         );
-        // A span off the wall's west end, so the heart's offset is read.
-        let bays = bay.x / 2..WALL_W;
+        // Bays from off the wall's west end, so the heart's offset is read.
+        let wall = crate::outside::Wall {
+            span: 0..WALL_W,
+            band_h: 40,
+            bays: vec![
+                WindowBay {
+                    x: bay.x / 2,
+                    ..bay
+                },
+                bay,
+            ],
+        };
+        let bays = wall.bays_span();
         let share = (heart.0 - f32::from(bays.start)) / f32::from(bays.end - bays.start);
         let now = crate::localclock::at_hour(2);
         let theme = crate::theme::theme_by_name("normal").expect("theme");
@@ -654,7 +668,7 @@ mod tests {
             });
             let sky = Sky::at_with(now, Weather::Clear).with_bursts(bursts);
             let moment = Moment::resolve(sky, theme, 0.0, crate::anim::Motion::Full.timing(now));
-            SkyView::of(&moment.outlook(theme), (0..WALL_W, bays.clone()), 40, theme)
+            SkyView::of(&moment.outlook(theme), &wall, theme)
         };
         let bare = view(None);
         for phase in [BurstPhase::Kindle, BurstPhase::Bloom, BurstPhase::Ember] {
