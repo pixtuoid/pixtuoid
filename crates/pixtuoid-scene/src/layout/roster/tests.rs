@@ -226,9 +226,13 @@ fn fixture_at_reaches_every_fixture_not_painted_over() {
 #[test]
 fn only_a_north_facing_desk_stands_a_chair() {
     let desk = Point { x: 40, y: 30 };
-    assert!(desk_chair_top_left(desk, Facing::North).is_some());
+    assert!(desk_chair_top_left(desk, Facing::North, crate::layout::BARE_OFFICE).is_some());
     for facing in [Facing::South, Facing::East, Facing::West] {
-        assert_eq!(desk_chair_top_left(desk, facing), None, "{facing:?}");
+        assert_eq!(
+            desk_chair_top_left(desk, facing, crate::layout::BARE_OFFICE),
+            None,
+            "{facing:?}"
+        );
     }
 }
 
@@ -740,7 +744,7 @@ fn corridor_appliance_art_never_lands_on_a_workstation() {
             .map(|f| f.visual)
             .collect();
         workstations.extend(l.home_desks.iter().map(|desk| {
-            let at = seated_top_left(desk.at, CHARACTER_SPRITE_W, desk.facing);
+            let at = seated_top_left(desk.at, CHARACTER_SPRITE_W, desk.facing, l.inner);
             Bounds {
                 x: at.x,
                 y: at.y,

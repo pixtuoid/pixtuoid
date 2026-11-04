@@ -290,7 +290,9 @@ fn every_aimless_wander_destination_is_routable_from_its_home_desk() {
                     for cycle in 0..8u64 {
                         let seed = aimless_wander_seed(id, cycle);
                         let dest = pick_aimless_dest(&l, seed, desk);
-                        if dest == crate::layout::desk_walk_anchor_facing(desk.at, desk.facing) {
+                        if dest
+                            == crate::layout::desk_walk_anchor_facing(desk.at, desk.facing, l.inner)
+                        {
                             continue; // `pick_aimless_dest`'s last resort: the agent's own seat
                         }
                         for &origin in &origins {

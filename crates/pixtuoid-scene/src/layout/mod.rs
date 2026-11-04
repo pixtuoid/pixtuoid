@@ -22,8 +22,8 @@ pub(crate) use approach::{approach_point, first_reachable_on_side, stand_point};
 pub(crate) use compute::PANTRY_COUNTER_LARGE_W;
 pub use compute::min_layout_size;
 pub(crate) use decor::{
-    DwellWindow, SEAT_RENDER_Y_OFF, WALKING_Y_OFF, desk_furniture_def, desk_walk_anchor_facing,
-    seated_foot_cell,
+    DwellWindow, SEAT_RENDER_Y_OFF, WALKING_Y_OFF, desk_furniture_def, desk_seat_row,
+    desk_walk_anchor_facing, seated_foot_cell,
 };
 pub use decor::{
     Facing, Furniture, FurnitureDef, PlantKind, PodDecor, WallDecor, WaypointKind, furniture_def,
@@ -351,7 +351,7 @@ pub struct SceneLayout {
     pub buf_h: u16,
     /// The area inside the viewport's insets, where everything stands: under
     /// them lie only the floor, the walls and the sky.
-    pub(crate) inner: Bounds,
+    pub inner: Bounds,
     /// The desk-pod quadrant — the bounds enclosing the cubicle grid.
     pub cubicle_band: Bounds,
     /// The cubicle-band-width horizontal aisle at the bottom of the desk pods —
@@ -522,6 +522,15 @@ pub(crate) fn exit_sign_pos(door: Point, office_top: u16) -> Option<Point> {
 /// reference, and the `snapshot` example that renders the docs/CI media
 /// baselines pins its scene to it.
 pub const CLASSIC_OFFICE_DESKS: usize = 16;
+/// The area inside the insets of an office no chrome covers, for a test that
+/// seats a desk no layout placed.
+#[cfg(test)]
+pub(crate) const BARE_OFFICE: Bounds = Bounds {
+    x: 0,
+    y: 0,
+    width: u16::MAX,
+    height: u16::MAX,
+};
 /// Test-facing alias for [`CLASSIC_OFFICE_DESKS`] — the named default
 /// deterministic tests/snapshots pass as `Some(TEST_DEFAULT_DESKS)`.
 #[cfg(test)]

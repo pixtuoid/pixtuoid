@@ -299,8 +299,18 @@ fn a_bundled_base_desks_face_is_its_shadow_wood() {
 fn both_profiles_seat_an_occupant_on_the_side_the_layout_chose() {
     use crate::layout::{CHARACTER_SPRITE_W, Facing};
     let desk = crate::layout::Point { x: 40, y: 30 };
-    let near = crate::sim::seated_top_left(desk, CHARACTER_SPRITE_W, Facing::North);
-    let far = crate::sim::seated_top_left(desk, CHARACTER_SPRITE_W, Facing::South);
+    let near = crate::sim::seated_top_left(
+        desk,
+        CHARACTER_SPRITE_W,
+        Facing::North,
+        crate::layout::BARE_OFFICE,
+    );
+    let far = crate::sim::seated_top_left(
+        desk,
+        CHARACTER_SPRITE_W,
+        Facing::South,
+        crate::layout::BARE_OFFICE,
+    );
     assert_eq!(
         near.y, desk.y,
         "a back-turned occupant's shared top-left lands on desk.y"

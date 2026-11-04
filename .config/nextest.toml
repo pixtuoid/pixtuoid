@@ -28,8 +28,8 @@ threads-required = "num-cpus"
 filter = 'test(connected_codex_rollout_becomes_a_sprite) | test(disconnected_codex_rollout_is_dropped_by_the_gate)'
 threads-required = "num-cpus"
 
-# A layout sweep that splits its floors across the cores, so it holds every
+# Layout sweeps that split their floors across the cores, so each holds every
 # test slot while it runs.
 [[profile.default.overrides]]
-filter = 'test(no_route_on_a_short_floor_passes_through_a_wall)'
+filter = 'test(no_route_on_a_short_floor_passes_through_a_wall) | test(the_route_sweeps_hold_inside_insets)'
 threads-required = "num-test-threads"

@@ -1080,6 +1080,7 @@ pub pixtuoid_scene::layout::SceneLayout::cubicle_band: pixtuoid_scene::layout::B
 pub pixtuoid_scene::layout::SceneLayout::door: pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::SceneLayout::door_threshold: pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::SceneLayout::home_desks: alloc::vec::Vec<pixtuoid_scene::layout::HomeDesk>
+pub pixtuoid_scene::layout::SceneLayout::inner: pixtuoid_scene::layout::Bounds
 pub pixtuoid_scene::layout::SceneLayout::lounge: core::option::Option<pixtuoid_scene::layout::Lounge>
 pub pixtuoid_scene::layout::SceneLayout::meeting_rooms: alloc::vec::Vec<pixtuoid_scene::layout::MeetingRoom>
 pub pixtuoid_scene::layout::SceneLayout::pantry: core::option::Option<pixtuoid_scene::layout::PantryRoom>
