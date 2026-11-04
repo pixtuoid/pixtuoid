@@ -291,29 +291,26 @@ fn local_host() -> Result<String> {
 /// "These blocks are not for local use").
 #[cfg(not(target_os = "macos"))]
 fn local_host() -> Result<String> {
-    source_address_toward(TEST_NET_1)
-}
-
-#[cfg(any(test, not(target_os = "macos")))]
-const TEST_NET_1: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
-
-/// The private or link-local IPv4 this machine would send to `target` from. A
-/// UDP `connect` sends nothing; it sets "the address to which datagrams are
-/// sent by default" (connect(2)).
-#[cfg(any(test, not(target_os = "macos")))]
-fn source_address_toward(target: Ipv4Addr) -> Result<String> {
     const PASS_HOST: &str =
         "pass --host: the name or IPv4 address a device reaches this machine at";
-    let probe = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).context(PASS_HOST)?;
-    probe
-        .connect((target, 1))
-        .with_context(|| format!("{PASS_HOST} (no route)"))?;
+    const TEST_NET_1: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
+    let source = source_toward(TEST_NET_1).context(PASS_HOST)?;
     // Winsock may leave the address unset until I/O, which reads as 0.0.0.0
     // (`getsockname`) and fails the range check like any other non-LAN address.
-    match probe.local_addr()?.ip() {
+    match source {
         IpAddr::V4(ip) if on_a_local_network(ip) => Ok(ip.to_string()),
         _ => anyhow::bail!("{PASS_HOST} (the default route has no local-network address)"),
     }
+}
+
+/// The address this machine would send to `target` from. A UDP `connect` sends
+/// nothing; it sets "the address to which datagrams are sent by default"
+/// (connect(2)).
+#[cfg(any(test, not(target_os = "macos")))]
+fn source_toward(target: Ipv4Addr) -> std::io::Result<IpAddr> {
+    let probe = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+    probe.connect((target, 1))?;
+    Ok(probe.local_addr()?.ip())
 }
 
 #[cfg(test)]
@@ -362,14 +359,14 @@ mod tests {
         }
     }
 
-    /// A probe answers only with a local-network address: toward loopback with
-    /// none, toward TEST-NET-1 with one or none, whatever the runner's network.
+    /// Every runner routes to loopback, and only the `connect` turns the
+    /// probe's 0.0.0.0 into loopback's address. Not on Windows, whose
+    /// `getsockname` may not know an address before I/O.
+    #[cfg(unix)]
     #[test]
-    fn a_probed_host_is_only_ever_on_a_local_network() {
-        assert!(source_address_toward(Ipv4Addr::LOCALHOST).is_err());
-        if let Ok(host) = source_address_toward(TEST_NET_1) {
-            assert!(on_a_local_network(host.parse().expect("an IPv4")), "{host}");
-        }
+    fn a_probe_names_the_source_its_route_gives() {
+        let source = source_toward(Ipv4Addr::LOCALHOST).expect("loopback routes");
+        assert_eq!(source, IpAddr::V4(Ipv4Addr::LOCALHOST));
     }
 
     /// A read still running when a quit comes is left behind, not waited for.

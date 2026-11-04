@@ -34,7 +34,7 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_regi
 /// `remote.v1.golden.json` holds it to; a reader ignores what it doesn't know and
 /// maps an unknown tag to its nearest state. Any break, in the line or the link,
 /// bumps it, and every pairing or reconnect across it ends in a precise "update"
-/// on the side that can act ([`PairLinkError::Version`],
+/// on the side that can act ([`PairLinkError::Incompatible`],
 /// [`ApplyError::Incompatible`]). The promise counts from the first release a
 /// device can pair with: an older server's link carries no version, which
 /// [`PairLink`]'s parse refuses ([`PairLinkError::Outdated`]).
@@ -445,14 +445,14 @@ pub enum PairLinkError {
     /// No link a server writes.
     #[error("not a pixtuoid pairing link")]
     NotALink,
-    /// A link a server older than the link's version wrote: whole, but nothing
-    /// a device can pair with.
+    /// A link a server from before the link's `v` wrote: whole, but nothing a
+    /// device can pair with.
     #[error("a pairing link from an older pixtuoid: update it on the computer, then pair again")]
     Outdated,
     /// A link a server speaking wire version `v` wrote, read no further: whichever
     /// of it and [`VERSION`] is older names the side to update.
     #[error("a pairing link for wire version {v}, where this build speaks {VERSION}")]
-    Version {
+    Incompatible {
         /// The link's version.
         v: u32,
     },
@@ -483,7 +483,7 @@ impl FromStr for PairLink {
         if let Ok(v) = field(VERSION_KEY) {
             let v = v.parse().map_err(|_| PairLinkError::NotALink)?;
             if v != VERSION {
-                return Err(PairLinkError::Version { v });
+                return Err(PairLinkError::Incompatible { v });
             }
         }
         let host = field(HOST)?;
@@ -1231,6 +1231,9 @@ mod tests {
             format!("pixtuoid://pair?{HOST}=studio.local&{PORT}=47820&{SPKI}={spki}&{CODE}={code}");
         assert_eq!(older.parse::<PairLink>(), Err(PairLinkError::Outdated));
         let newer = link().to_string();
+        let expires = newer.find(&format!("&{EXPIRES}=")).expect("an expiry");
+        let to_code = newer[expires..].find(&format!("&{CODE}=")).expect("a code");
+        let without_expiry = format!("{}{}", &newer[..expires], &newer[expires + to_code..]);
         let before_code = newer.find(&format!("&{CODE}=")).expect("a code");
         let after = |key: &str| newer.find(&format!("{key}=")).expect("a key") + key.len() + 1;
         for cut in [
@@ -1238,6 +1241,8 @@ mod tests {
             &newer[..before_code + CODE.len() + 2 + SECRET_BYTES],
             &newer[..after(EXPIRES)],
             &newer[..after(VERSION_KEY)],
+            &without_expiry,
+            &format!("{older}&extra=1"),
         ] {
             assert_eq!(
                 cut.parse::<PairLink>(),
@@ -1256,7 +1261,7 @@ mod tests {
                 let text = format!("pixtuoid://pair?{VERSION_KEY}={v}{rest}");
                 assert_eq!(
                     text.parse::<PairLink>(),
-                    Err(PairLinkError::Version { v }),
+                    Err(PairLinkError::Incompatible { v }),
                     "{text}"
                 );
             }
