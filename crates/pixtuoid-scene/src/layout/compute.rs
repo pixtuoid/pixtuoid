@@ -1675,8 +1675,8 @@ fn corridor_centre_y(aisle: &Bounds, h: u16) -> u16 {
     super::placement::centre_y_standing_on((aisle.y + aisle.height).saturating_sub(2), h)
 }
 
-/// Waypoints: couch, pantry, pod-decor-promoted (PhoneBooth/StandingDesk), corridor
-/// appliances (VendingMachine/Printer).
+/// Every waypoint the floor offers; a meeting room's sofa and chair slots are
+/// the only ones carrying a `room_id`, so they are pushed here and nowhere else.
 fn compute_waypoints(
     plan: &FloorPlan,
     pod_decor: &[PodDecorItem],
@@ -2152,8 +2152,8 @@ mod tests {
         assert_eq!(compute_pod_decor(grid(3), 0, &narrow), free[1..]);
     }
 
-    /// `layout_golden.rs`'s `open_plan_seed11` checks a shape the lounge
-    /// shares, so only this tells its seed's open plan from a lounge.
+    /// The open-plan goldens in `layout_golden.rs` and `walkable_golden.rs` check
+    /// a shape the lounge shares, so only this tells seed 11's open plan from a lounge.
     #[test]
     fn the_open_plan_goldens_seed_is_the_open_plan() {
         assert_eq!(FloorVariant::from_seed(11), FloorVariant::OpenPlan);
