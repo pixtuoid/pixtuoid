@@ -169,8 +169,8 @@ fn no_figure_is_drawn_under_an_inset() {
     let inside = |b: Bounds| {
         b.x >= inner.x
             && b.y >= inner.y
-            && b.x + b.width <= inner.x + inner.width
-            && b.y + b.height <= inner.y + inner.height
+            && b.right() <= inner.right()
+            && b.bottom() <= inner.bottom()
     };
     let looks = [
         Look::HALF_BLOCKS,

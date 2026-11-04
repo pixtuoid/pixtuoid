@@ -337,8 +337,7 @@ pub(crate) mod tests {
         let floor =
             (layout.wall_band_h()..layout.buf_h).flat_map(move |y| (0..w).map(move |x| (x, y)));
         let inside = |&(x, y): &(u16, u16)| {
-            (inner.x..inner.x + inner.width).contains(&x)
-                && (inner.y..inner.y + inner.height).contains(&y)
+            (inner.x..inner.right()).contains(&x) && (inner.y..inner.bottom()).contains(&y)
         };
         let mut darks: std::collections::HashMap<Rgb, std::collections::HashSet<Rgb>> =
             std::collections::HashMap::new();

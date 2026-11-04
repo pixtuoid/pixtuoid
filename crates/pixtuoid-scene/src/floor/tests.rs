@@ -2865,7 +2865,7 @@ mod figure_box {
                 if *look == Look::HALF_BLOCKS {
                     for &(_, at) in &boxes {
                         west_edge |= at.x == 0;
-                        east_edge |= at.x + at.width == viewport.size.w;
+                        east_edge |= at.right() == viewport.size.w;
                         top_edge |= at.y == 0;
                     }
                     flat = boxes;

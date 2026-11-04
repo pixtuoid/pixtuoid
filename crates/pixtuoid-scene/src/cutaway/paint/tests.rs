@@ -4364,7 +4364,7 @@ fn every_light_crossing_an_inset_edge_lifts_the_margin() {
         let (layout, frame) = full_office(viewport);
         let inner = layout.inner;
         let outside = |(x, y): (u16, u16)| {
-            x < inner.x || y < inner.y || x >= inner.x + inner.width || y >= inner.y + inner.height
+            x < inner.x || y < inner.y || x >= inner.right() || y >= inner.bottom()
         };
         for hour in [0, 8, 17] {
             let floor = crate::floor::FloorMeta::ground().with_weather(
