@@ -1049,7 +1049,6 @@ pub pixtuoid_scene::look::Look::Cutaway
 pub pixtuoid_scene::look::Look::Cutaway::scale: pixtuoid_scene::render_scale::RenderScale
 pub pixtuoid_scene::look::Look::Cutaway::text: pixtuoid_scene::look::WorldText
 impl pixtuoid_scene::look::Look
-pub const pixtuoid_scene::look::Look::HALF_BLOCKS: Self
 pub const fn pixtuoid_scene::look::Look::kind(self) -> pixtuoid_scene::look::LookKind
 impl core::clone::Clone for pixtuoid_scene::look::Look
 pub fn pixtuoid_scene::look::Look::clone(&self) -> Self
@@ -1731,8 +1730,8 @@ impl<S, G> core::marker::UnsafeUnpin for pixtuoid_scene::screen::Screen<S, G> wh
 impl<S, G> !core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::screen::Screen<S, G>
 impl<S, G> !core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::screen::Screen<S, G>
 pub struct pixtuoid_scene::screen::Shown<G>
-pub pixtuoid_scene::screen::Shown::geometry: G
 impl<G> pixtuoid_scene::screen::Shown<G>
+pub fn pixtuoid_scene::screen::Shown<G>::geometry(&self) -> &G
 pub fn pixtuoid_scene::screen::Shown<G>::hit_at(&self, pixtuoid_scene::layout::Bounds) -> core::option::Option<pixtuoid_scene::hit::SceneHit<'_>>
 pub fn pixtuoid_scene::screen::Shown<G>::hits(&self) -> core::option::Option<&pixtuoid_scene::look::Hits>
 impl<G: core::fmt::Debug> core::fmt::Debug for pixtuoid_scene::screen::Shown<G>

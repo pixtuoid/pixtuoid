@@ -154,7 +154,7 @@ impl OfficeRenderer {
 
     /// The fit the frame on screen was drawn at; `None` before one shows.
     pub(crate) fn shown_fit(&self) -> Option<PixelFit> {
-        self.screen.shown().map(|shown| shown.geometry)
+        self.screen.shown().map(|shown| *shown.geometry())
     }
 
     /// A left press at `cursor` (physical px) in a `window`-sized window, at
@@ -348,7 +348,7 @@ fn hit_in(
     cursor: (f64, f64),
 ) -> Option<pixtuoid_scene::hit::SceneHit<'_>> {
     let shown = screen.shown()?;
-    shown.hit_at(unit_bounds(unit_at(cursor, shown.geometry)))
+    shown.hit_at(unit_bounds(unit_at(cursor, *shown.geometry())))
 }
 
 /// What a press on `under` affords, as its cursor, in CSS UI 3's names

@@ -78,6 +78,7 @@ pub enum Look {
 impl Look {
     /// The terminal's classic: a buffer pixel a layout unit, two to a cell,
     /// its world text set by its host.
+    #[doc(hidden)]
     pub const HALF_BLOCKS: Self = Self::Classic {
         scale: RenderScale::ONE,
         text: WorldText::Host,

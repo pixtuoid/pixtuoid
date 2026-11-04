@@ -464,8 +464,9 @@ semver:
 # crate per call, so a golden file is regenerated per crate. rustdoc JSON is
 # nightly-only, so it PINS `API_NIGHTLY`. `check` diffs instead of writing; CI
 # runs it as `api-surface-check`. Either mode fails on a public item that names
-# a type rustdoc stripped (`#[doc(hidden)]`, private): the item is a contract
-# whose type is none, outside the golden and semver-checks alike.
+# a type rustdoc stripped (`#[doc(hidden)]`, private): such an item is public
+# while the type it names is not, so neither the golden nor semver-checks sees
+# that type change.
 [doc('Regenerate the api/<crate>.txt public-API goldens (cargo-public-api + pinned nightly); `check` diffs them')]
 [group('rust')]
 api-surface mode="": _api-toolchain
@@ -479,29 +480,47 @@ api-surface mode="": _api-toolchain
     esac
     fail=0
     docs="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/doc"
+    jsons=()
     for crate in {{ PUBLISHED_CRATES }}; do
         RUSTUP_TOOLCHAIN={{ API_NIGHTLY }} cargo public-api -p "$crate" -s > "$out/$crate.txt"
         if [ "$out" != api ] && ! diff -u "api/$crate.txt" "$out/$crate.txt"; then
             echo "error: public API of $crate drifted from api/$crate.txt — run 'just api-surface' and commit the update" >&2
             fail=1
         fi
-        # The rustdoc JSON cargo-public-api just wrote: a reference whose id is
-        # in neither `index` nor `paths` is to a local item rustdoc stripped. An
-        # auto trait's synthetic impl is skipped: its bounds name private fields.
         json="$docs/${crate//-/_}.json"
         if ! jq -e --argjson v {{ API_JSON_FORMAT }} '.format_version == $v' "$json" >/dev/null; then
             echo "error: $json is not rustdoc JSON format {{ API_JSON_FORMAT }}; move API_JSON_FORMAT with API_NIGHTLY" >&2
-            fail=1
-            continue
+            exit 1
         fi
-        leaks="$(jq -r '.index as $index | .paths as $paths
-            | [$index[] | select(.inner.impl.is_synthetic != true) | . as $item | .. | objects
-               | select(has("id") and has("path") and (.path | type) == "string")
-               | select($index[.id | tostring] == null and $paths[.id | tostring] == null)
-               | "\($item.span.filename):\($item.span.begin[0]): \($item.name // "an impl") names \(.path)"]
-            | unique[]' "$json")"
+        jsons+=("$json")
+    done
+    # Each published crate's public paths, by crate name: a crate's local
+    # `paths` holds only what rustdoc kept.
+    public="$(jq -s 'map({key: .index[.root | tostring].name,
+        value: ([.paths[] | select(.crate_id == 0) | .path | join("::") | {key: ., value: true}] | from_entries)})
+        | from_entries' "${jsons[@]}")"
+    for json in "${jsons[@]}"; do
+        # A reference, a signature's or a `pub use`'s, is to a stripped item
+        # when its id is in neither `index` nor `paths`, or `paths` names it in
+        # a published crate whose public paths lack it. An auto trait's
+        # synthetic impl is skipped: its bounds name private fields. rustdoc
+        # drops a `pub use` of an item itself hidden, which no check sees.
+        leaks="$(jq -r --argjson public "$public" '.index as $index | .paths as $paths
+            | def stripped: (.id | tostring) as $id
+                | if $index[$id] != null then false
+                  elif $paths[$id] == null then true
+                  else $public[.external_crate // ""] as $kept
+                    | $kept != null and $kept[$paths[$id].path | join("::")] == null
+                  end;
+            [$index[] | select(.inner.impl.is_synthetic != true) | . as $item
+               | ((.. | objects | select(has("id") and has("path") and (.path | type) == "string"))
+                  , (.inner.use // empty | select(.id != null) | {id, path: .source}))
+               | .external_crate = $crates[$paths[.id | tostring].crate_id | tostring]
+               | select(stripped)
+               | "\($item.span.filename):\($item.span.begin[0]): \($item.name // $item.inner.use.name // "an impl") names \(.path)"]
+            | unique[]' --argjson crates "$(jq '.external_crates | map_values(.name)' "$json")" "$json")"
         if [ -n "$leaks" ]; then
-            echo "error: a public item of $crate names a type outside its public API; make the type public or hide the item:" >&2
+            echo "error: a public item names an item outside the published API; make that item public or hide the one naming it:" >&2
             echo "$leaks" >&2
             fail=1
         fi

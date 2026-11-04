@@ -239,11 +239,11 @@ fn music_seed(now: std::time::SystemTime) -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// The music a stream starting at `now` plays, its first song picked by its
-/// first `controls`: every painter starts its stream here, so one office plays
-/// one music whichever painter plays it.
-pub fn performance_at(now: std::time::SystemTime, controls: Controls) -> Performance {
-    Performance::new(music_seed(now), controls)
+/// The music a stream started at `started` plays, its first song picked by its
+/// first `controls`: every painter starts its stream here, so no painter seeds
+/// its music its own way.
+pub fn performance_at(started: std::time::SystemTime, controls: Controls) -> Performance {
+    Performance::new(music_seed(started), controls)
 }
 
 /// The music's controls as a page carries them from the office's tick to its
@@ -437,5 +437,20 @@ mod tests {
             1_234
         );
         assert_eq!(music_seed(UNIX_EPOCH - Duration::from_secs(10)), 0);
+    }
+
+    /// Each second's start plays its own run of songs: a stream's start is no
+    /// constant.
+    #[test]
+    fn a_stream_started_a_second_later_plays_its_own_songs() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let heard = |started| {
+            let second = usize::try_from(SAMPLE_RATE).expect("a rate fits");
+            let mut frames = vec![Frame::default(); second];
+            performance_at(started, Controls::default()).render(&mut frames);
+            frames
+        };
+        let started = UNIX_EPOCH + Duration::from_secs(1_753_000_000);
+        assert_ne!(heard(started), heard(started + Duration::from_secs(1)));
     }
 }

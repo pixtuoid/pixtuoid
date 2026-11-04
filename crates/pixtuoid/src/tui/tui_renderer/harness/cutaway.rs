@@ -156,7 +156,7 @@ fn world_text(r: &TuiRenderer<Window>) -> ratatui::buffer::Buffer {
         _ => None,
     }
     .expect("the host sets the world's text");
-    let map = r.screen.shown().expect("a frame drawn").geometry.map();
+    let map = r.screen.shown().expect("a frame drawn").geometry().map();
     let mut term = Terminal::new(TestBackend::new(area.width, area.height)).expect("terminal");
     term.draw(|f| {
         let scene = crate::tui::renderer::scene_rect(f.area());

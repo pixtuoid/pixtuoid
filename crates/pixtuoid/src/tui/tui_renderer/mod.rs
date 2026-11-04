@@ -517,7 +517,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         row: u16,
     ) -> Option<crate::tui::geometry::CellArea> {
         let shown = self.screen.shown()?;
-        shown.hits().and(shown.geometry.area_at(col, row))
+        shown.hits().and(shown.geometry().area_at(col, row))
     }
 
     /// A left press at cell `(col, row)` at `now`: on what the terminal
@@ -596,7 +596,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         row: u16,
     ) -> Option<crate::tui::hit_test::SceneHit<'_>> {
         let shown = self.screen.shown()?;
-        shown.hit_at(shown.geometry.area_at(col, row)?.bounds())
+        shown.hit_at(shown.geometry().area_at(col, row)?.bounds())
     }
 
     /// The agent topmost at cell `(col, row)` in the frame the terminal
