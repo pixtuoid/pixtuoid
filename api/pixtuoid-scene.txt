@@ -1180,7 +1180,7 @@ pub struct pixtuoid_scene::layout::Viewport
 pub pixtuoid_scene::layout::Viewport::insets: pixtuoid_scene::layout::Insets
 pub pixtuoid_scene::layout::Viewport::size: pixtuoid_scene::layout::Size
 impl pixtuoid_scene::layout::Viewport
-pub fn pixtuoid_scene::layout::Viewport::fitted(pixtuoid_scene::layout::Size, pixtuoid_scene::layout::Insets, pixtuoid_scene::sprite::format::Density, core::num::nonzero::NonZeroU16) -> pixtuoid_scene::layout::Fitted
+pub fn pixtuoid_scene::layout::Viewport::fitted(pixtuoid_scene::layout::Size, pixtuoid_scene::layout::Insets, pixtuoid_scene::sprite::format::Density, core::num::nonzero::NonZeroU16) -> core::option::Option<pixtuoid_scene::layout::Fitted>
 pub const fn pixtuoid_scene::layout::Viewport::full(u16, u16) -> Self
 pub fn pixtuoid_scene::layout::Viewport::inner(&self) -> core::option::Option<pixtuoid_scene::layout::Bounds>
 impl core::clone::Clone for pixtuoid_scene::layout::Viewport

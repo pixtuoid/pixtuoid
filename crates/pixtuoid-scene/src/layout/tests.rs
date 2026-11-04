@@ -1488,10 +1488,10 @@ fn a_fitted_viewport_is_the_apps_office_fit() {
         );
         assert_eq!(
             fitted,
-            Fitted {
+            Some(Fitted {
                 viewport: Viewport::full(units_w, units_h),
                 upscale,
-            },
+            }),
             "{device}"
         );
     }
@@ -1514,7 +1514,8 @@ fn a_fitted_inset_is_rounded_up_to_whole_units() {
         },
         art,
         per_point,
-    );
+    )
+    .expect("an office fits");
     assert_eq!(
         fitted.viewport.insets,
         Insets {
@@ -1534,8 +1535,9 @@ fn a_fitted_office_takes_bigger_pixels_rather_than_grow_past_its_cap() {
     let art = crate::sprite::format::Density::new(4).expect("nonzero");
     for per_point in [1, 2, 3] {
         let least = std::num::NonZeroU16::new(per_point).expect("nonzero");
-        for h in (400..6000).step_by(37) {
-            let fitted = Viewport::fitted(Size { w: 1000, h }, Insets::default(), art, least);
+        for h in (1000..6000).step_by(37) {
+            let fitted = Viewport::fitted(Size { w: 1000, h }, Insets::default(), art, least)
+                .expect("an office fits");
             assert!(
                 fitted.viewport.size.h <= FITTED_MAX_H,
                 "{h} px at {per_point}x"
@@ -1572,5 +1574,70 @@ fn a_fitted_office_keeps_every_meeting_rooms_furniture() {
     assert!(
         rooms > 0,
         "no meeting room was laid out, so none was checked"
+    );
+}
+
+/// A surface fits an office exactly where the office's layout takes the
+/// fitted viewport: across surfaces about the smallest office, bare and under
+/// each inset of the sweep, `fitted` refuses what `SceneLayout::compute`
+/// refuses, and nothing else.
+#[test]
+fn a_surface_fits_an_office_exactly_where_its_layout_does() {
+    use super::compute::{MIN_LAYOUT_H, MIN_LAYOUT_W};
+    let art = crate::sprite::format::Density::new(4).expect("nonzero");
+    let per_point = std::num::NonZeroU16::new(2).expect("nonzero");
+    // Eight device pixels a unit on a surface this small: 2 a frame pixel.
+    let px = |units: u16| units * 8;
+    let (mut fits, mut refused) = (0, 0);
+    for w in [
+        MIN_LAYOUT_W - 1,
+        MIN_LAYOUT_W,
+        MIN_LAYOUT_W + 12,
+        FITTED_MIN_W,
+    ] {
+        for h in (MIN_LAYOUT_H - 2..=MIN_LAYOUT_H + 13).step_by(3) {
+            let surface = Size { w: px(w), h: px(h) };
+            for insets in std::iter::once(Insets::default()).chain(super::SWEEP_INSETS) {
+                let insets_px = Insets {
+                    top: px(insets.top),
+                    right: px(insets.right),
+                    bottom: px(insets.bottom),
+                    left: px(insets.left),
+                };
+                let unchecked = fit(surface, insets_px, art, per_point);
+                let laid_out = SceneLayout::compute(unchecked.viewport, None, 0).is_some();
+                let fitted = Viewport::fitted(surface, insets_px, art, per_point);
+                assert_eq!(
+                    fitted.is_some(),
+                    laid_out,
+                    "{surface:?} px under {insets_px:?}"
+                );
+                (fits, refused) = if laid_out {
+                    (fits + 1, refused)
+                } else {
+                    (fits, refused + 1)
+                };
+            }
+        }
+    }
+    assert!(fits > 0 && refused > 0, "{fits} fit, {refused} refused");
+}
+
+/// An iPad app in a short split view, a strip less than the smallest office
+/// high, fits no office.
+#[test]
+fn a_short_split_view_fits_no_office() {
+    let art = crate::sprite::format::Density::new(4).expect("nonzero");
+    let per_point = std::num::NonZeroU16::new(2).expect("nonzero");
+    // Eight device pixels a unit: 2 a frame pixel, 4 frame pixels a unit.
+    let short = (super::compute::MIN_LAYOUT_H - 1) * 8;
+    assert_eq!(
+        Viewport::fitted(
+            Size { w: 2064, h: short },
+            Insets::default(),
+            art,
+            per_point
+        ),
+        None
     );
 }

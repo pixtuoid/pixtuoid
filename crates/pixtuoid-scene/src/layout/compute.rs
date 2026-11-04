@@ -371,15 +371,20 @@ const _: () = {
     }
 };
 
+/// The area inside `viewport`'s insets an office lays out in: `None` where
+/// they leave less than the smallest office.
+pub(super) fn office_area(viewport: Viewport) -> Option<Bounds> {
+    viewport
+        .inner()
+        .filter(|inner| inner.width >= MIN_LAYOUT_W && inner.height >= MIN_LAYOUT_H)
+}
+
 pub(super) fn compute(
     viewport: Viewport,
     max_desks: Option<usize>,
     floor_seed: u64,
 ) -> Option<SceneLayout> {
-    let inner = viewport.inner()?;
-    if inner.width < MIN_LAYOUT_W || inner.height < MIN_LAYOUT_H {
-        return None;
-    }
+    let inner = office_area(viewport)?;
     let Size { w: buf_w, h: buf_h } = viewport.size;
 
     let plan = FloorPlan::new(inner, floor_seed);
