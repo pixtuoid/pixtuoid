@@ -494,31 +494,37 @@ api-surface mode="": _api-toolchain
         fi
         jsons+=("$json")
     done
-    # Each published crate's public paths, by crate name: a crate's local
-    # `paths` holds only what rustdoc kept.
-    public="$(jq -s 'map({key: .index[.root | tostring].name,
-        value: ([.paths[] | select(.crate_id == 0) | .path | join("::") | {key: ., value: true}] | from_entries)})
+    # Each published crate's public paths and their last names, by crate name:
+    # a crate's local `paths` holds only what rustdoc kept.
+    public="$(jq -s 'map([.paths[] | select(.crate_id == 0) | .path] as $kept
+        | {key: .index[.root | tostring].name,
+           value: {paths: ($kept | map({key: join("::"), value: true}) | from_entries),
+                   names: ($kept | map({key: last, value: true}) | from_entries)}})
         | from_entries' "${jsons[@]}")"
     for json in "${jsons[@]}"; do
         # A reference, a signature's or a `pub use`'s, is to a stripped item
-        # when its id is in neither `index` nor `paths`, or `paths` names it in
-        # a published crate whose public paths lack it. An auto trait's
-        # synthetic impl is skipped: its bounds name private fields. rustdoc
-        # drops a `pub use` of an item itself hidden, which no check sees.
-        leaks="$(jq -r --argjson public "$public" '.index as $index | .paths as $paths
+        # when its id is local but in neither `index` nor `paths`, or it is a
+        # published crate's item that crate's public paths lack. `index` also
+        # holds the external traits a crate references, by name only. An auto
+        # trait's synthetic impl is skipped: its bounds name private fields.
+        # rustdoc drops a `pub use` of an item itself hidden, which no check sees.
+        leaks="$(jq -r --argjson public "$public" --argjson crates "$(jq '.external_crates | map_values(.name)' "$json")" '
+            .index as $index | .paths as $paths
             | def stripped: (.id | tostring) as $id
-                | if $index[$id] != null then false
-                  elif $paths[$id] == null then true
-                  else $public[.external_crate // ""] as $kept
-                    | $kept != null and $kept[$paths[$id].path | join("::")] == null
+                | ($index[$id].crate_id // $paths[$id].crate_id) as $crate
+                | if $crate == null then true
+                  elif $crate == 0 then false
+                  else $public[$crates[$crate | tostring] // ""] as $kept
+                    | $kept != null and (if $paths[$id] != null
+                        then $kept.paths[$paths[$id].path | join("::")]
+                        else $kept.names[$index[$id].name] end) == null
                   end;
-            [$index[] | select(.inner.impl.is_synthetic != true) | . as $item
+            [$index[] | select(.crate_id == 0 and .inner.impl.is_synthetic != true) | . as $item
                | ((.. | objects | select(has("id") and has("path") and (.path | type) == "string"))
                   , (.inner.use // empty | select(.id != null) | {id, path: .source}))
-               | .external_crate = $crates[$paths[.id | tostring].crate_id | tostring]
                | select(stripped)
                | "\($item.span.filename):\($item.span.begin[0]): \($item.name // $item.inner.use.name // "an impl") names \(.path)"]
-            | unique[]' --argjson crates "$(jq '.external_crates | map_values(.name)' "$json")" "$json")"
+            | unique[]' "$json")"
         if [ -n "$leaks" ]; then
             echo "error: a public item names an item outside the published API; make that item public or hide the one naming it:" >&2
             echo "$leaks" >&2
