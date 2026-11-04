@@ -727,6 +727,15 @@ impl std::fmt::Display for Leg {
     }
 }
 
+impl Leg {
+    /// The matrix's leg on `os` and `shard`, as a job name or an issue's marker
+    /// spells them.
+    pub(crate) fn named(os: &str, shard: &str) -> Option<Self> {
+        let shard: usize = shard.parse().ok()?;
+        legs().find(|leg| leg.os == os && leg.shard == shard)
+    }
+}
+
 /// Every leg, each of [`OSES`] by each of [`SHARDS`].
 pub(crate) fn legs() -> impl Iterator<Item = Leg> {
     OSES.iter()

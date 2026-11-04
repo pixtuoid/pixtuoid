@@ -206,6 +206,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 20
     permissions:
+      actions: read # the legs' jobs, which say whether a runner took each
       contents: read
       issues: read
     steps:
@@ -231,9 +232,12 @@ jobs:
         run: |
           gh issue list --label "$HERMETIC_LABEL" --state all --limit "$HERMETIC_LIMIT" \
             --json number,state,body >"$RUNNER_TEMP/issues.json"
+          gh api --paginate --slurp "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs" \
+            >"$RUNNER_TEMP/jobs.json"
           printf '%s' "$DRIFT" >"$RUNNER_TEMP/drift.json"
-          target/release/examples/issues plan "$RUNNER_TEMP/drift.json" "$RUNNER_TEMP/issues.json" \
-            "$RUNNER_TEMP/verdicts" "$RUNNER_TEMP/freshness.json" "$RUN_URL" >"$RUNNER_TEMP/plan.json"
+          target/release/examples/issues plan "$RUNNER_TEMP/drift.json" "$RUNNER_TEMP/jobs.json" \
+            "$RUNNER_TEMP/issues.json" "$RUNNER_TEMP/verdicts" "$RUNNER_TEMP/freshness.json" "$RUN_URL" \
+            >"$RUNNER_TEMP/plan.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: hermetic-issues-${{ github.run_id }}-${{ github.run_attempt }}
@@ -299,4 +303,7 @@ jobs:
             echo "::error::$leg"
             failed=1
           done < <(jq -r '.lost[]' plan.json)
+          while IFS= read -r leg; do
+            echo "::warning::$leg"
+          done < <(jq -r '.unacquired[]' plan.json)
           exit "$failed"

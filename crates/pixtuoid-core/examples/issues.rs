@@ -1,27 +1,31 @@
 //! The nightly's hermetic issues; the rules are
 //! `pixtuoid_core::harness::hermetic::issues`'.
 //!
-//! `plan <drift.json> <issues.json> <verdicts> <freshness.json> <run-url>`: what
-//! to do with the issues `gh issue list --json number,state,body` names, as
-//! JSON, given the drift job's outputs, every leg's verdicts under the
-//! `verdicts` dir and `hermetic --freshness`'s releases.
+//! `plan <drift.json> <jobs.json> <issues.json> <verdicts> <freshness.json> <run-url>`:
+//! what to do with the issues `gh issue list --json number,state,body` names,
+//! as JSON, given the drift job's outputs, the run's jobs as `gh api --paginate
+//! --slurp` lists them, every leg's verdicts under the `verdicts` dir and
+//! `hermetic --freshness`'s releases.
 //!
-//! Exits 0 on success, 1 when the drift outputs or the issues can't be read,
-//! and 2 on a usage error.
+//! Exits 0 on success, 1 when the drift outputs, the jobs or the issues can't
+//! be read, and 2 on a usage error.
 
 use std::path::Path;
 
-use pixtuoid_core::harness::hermetic::issues::{self, Freshness, Issue, VERDICTS, Verdicts};
+use pixtuoid_core::harness::hermetic::issues::{
+    self, Freshness, Issue, JobsPage, VERDICTS, Verdicts,
+};
 use pixtuoid_core::harness::{files_under, read_json};
 
-const USAGE: &str =
-    "usage: issues plan <drift.json> <issues.json> <verdicts> <freshness.json> <run-url>";
+const USAGE: &str = "usage: issues plan <drift.json> <jobs.json> <issues.json> <verdicts> \
+                     <freshness.json> <run-url>";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let done = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
-        ["plan", drift, issues, verdicts, fresh, run] => plan(
+        ["plan", drift, jobs, issues, verdicts, fresh, run] => plan(
             Path::new(drift),
+            Path::new(jobs),
             Path::new(issues),
             Path::new(verdicts),
             Path::new(fresh),
@@ -40,6 +44,7 @@ fn main() {
 
 fn plan(
     drift: &Path,
+    jobs: &Path,
     issues: &Path,
     verdicts: &Path,
     fresh: &Path,
@@ -54,7 +59,8 @@ fn plan(
         .collect();
     let issues: Vec<Issue> = read_json(issues)?;
     let fresh: std::io::Result<Vec<Freshness>> = read_json(fresh);
-    let plan = issues::plan(&read_json(drift)?, &reported, &fresh, &issues, run);
+    let jobs: Vec<JobsPage> = read_json(jobs)?;
+    let plan = issues::plan(&read_json(drift)?, &jobs, &reported, &fresh, &issues, run);
     println!("{}", serde_json::to_string(&plan)?);
     Ok(())
 }
