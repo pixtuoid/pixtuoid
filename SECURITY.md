@@ -88,7 +88,10 @@ The components that handle untrusted or privileged input, and how they're bounde
    [`100.64.0.0/10`](https://tailscale.com/kb/1015/100.x-addresses) included. It speaks TLS 1.3 only.
    Its key is made on first use, and a device pins that key's SPKI hash from the
    QR code `pixtuoid pair` prints, beside a one-time code that expires
-   (`CODE_LIFETIME`) and is redeemed for a device token. The key and the hashes of
+   (`CODE_LIFETIME`) and is redeemed for a device token. The QR is a link on
+   pixtuoid.dev whose fields ride the fragment, which a browser keeps to
+   itself: a phone without the app opens a `/pair/` page there that runs no
+   script. The key and the hashes of
    the code and tokens sit in one owner-only file in the state directory, never
    in a dotfiles-prone `~/.config`. `pair --reset` forgets every device, ending
    its stream. Past its hello a device can only ask, and a line past

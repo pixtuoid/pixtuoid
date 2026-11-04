@@ -31,6 +31,9 @@ use tokio_rustls::rustls::{
     ClientConfig, DigitallySignedStruct, Error as TlsError, SignatureScheme, version::TLS13,
 };
 
+/// What every link `pair` prints begins with.
+const PAIR_LINK: &str = "https://pixtuoid.dev/pair/";
+
 const PATIENCE: Duration = Duration::from_secs(30);
 
 /// Well inside the hello deadline, which ends a connection that got a slot.
@@ -280,7 +283,7 @@ impl World {
         );
         let link: PairLink = said
             .lines()
-            .find(|line| line.starts_with("pixtuoid://"))
+            .find(|line| line.starts_with(PAIR_LINK))
             .expect("pair prints the link")
             .parse()
             .expect("a link");
@@ -558,10 +561,7 @@ fn a_link_by_name_says_nothing_of_moving() {
     let out = world.run(&["pair", "--host", "studio.local"]);
     assert!(out.status.success(), "{out:?}");
     let said = String::from_utf8(out.stdout).expect("UTF-8");
-    assert!(
-        said.contains("pixtuoid://pair?"),
-        "premise: it paired: {said}"
-    );
+    assert!(said.contains(PAIR_LINK), "premise: it paired: {said}");
     assert!(!said.contains("This address can change"), "{said}");
 }
 
