@@ -412,11 +412,13 @@ pub const SECRET_BYTES: usize = 32;
 /// SHA-256's output in bytes, which [`PairLink::spki`] carries as hex.
 const PIN_BYTES: usize = 32;
 
-/// A universal link on the site, whose `.well-known/apple-app-site-association`
-/// hands it to the App alone, where a custom scheme is any app's to claim. The
-/// fields ride the fragment, which a browser that opens the page instead keeps:
-/// "the fragment identifier is separated from the rest of the URI prior to a
-/// dereference" (RFC 3986 §3.5).
+/// A link on the site rather than a custom scheme, which "doesn't prevent other
+/// apps from registering the same scheme and handling the associated links"
+/// ([Apple](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app)).
+/// Once the site's `.well-known/apple-app-site-association` names the App it is a
+/// universal link that App alone opens; until then it opens the site's page. The
+/// fields ride the fragment, which a browser keeps: "the fragment identifier is
+/// separated from the rest of the URI prior to a dereference" (RFC 3986 §3.5).
 const PAIR_LINK_PREFIX: &str = "https://pixtuoid.dev/pair/#";
 
 /// What every link began with before [`PAIR_LINK_PREFIX`], none of which a
