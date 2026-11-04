@@ -2621,52 +2621,57 @@ fn a_lifted_creature_is_in_front_of_the_room() {
 
 mod figure_box {
     use super::*;
-    use crate::look::{Look, WorldText};
+    use crate::look::{Look, LookKind, WorldText};
     use crate::render_scale::RenderScale;
 
-    #[test]
-    fn holds_its_outfit_every_frame_in_half_blocks() {
-        holds_its_outfit_every_frame_in(|_| Look::HALF_BLOCKS);
+    /// A test per look, and the roster [`every_look_kind_has_a_figure_test`]
+    /// reads, from the one list: a look here is a look tested.
+    macro_rules! looks {
+        ($($test:ident: $look:expr,)+) => {
+            $(
+                #[test]
+                fn $test() {
+                    holds_its_outfit_every_frame_in($look);
+                }
+            )+
+            const LOOKS: &[fn(RenderScale) -> Look] = &[$($look),+];
+        };
     }
 
-    #[test]
-    fn holds_its_outfit_every_frame_in_the_classic_at_its_densest_art() {
-        holds_its_outfit_every_frame_in(|densest| Look::Classic {
+    looks! {
+        holds_its_outfit_every_frame_in_half_blocks: |_| Look::HALF_BLOCKS,
+        holds_its_outfit_every_frame_in_the_classic_at_its_densest_art: |densest| Look::Classic {
             scale: densest,
             text: WorldText::Host,
-        });
-    }
-
-    #[test]
-    fn holds_its_outfit_every_frame_in_the_classic_past_its_densest_art() {
-        holds_its_outfit_every_frame_in(|densest| Look::Classic {
+        },
+        holds_its_outfit_every_frame_in_the_classic_past_its_densest_art: |densest| Look::Classic {
             scale: past(densest),
             text: WorldText::Host,
-        });
-    }
-
-    #[test]
-    fn holds_its_outfit_every_frame_in_the_cutaway_at_one() {
-        holds_its_outfit_every_frame_in(|_| Look::Cutaway {
+        },
+        holds_its_outfit_every_frame_in_the_cutaway_at_one: |_| Look::Cutaway {
             scale: RenderScale::ONE,
             text: WorldText::Host,
-        });
-    }
-
-    #[test]
-    fn holds_its_outfit_every_frame_in_the_cutaway_at_its_densest_art() {
-        holds_its_outfit_every_frame_in(|densest| Look::Cutaway {
+        },
+        holds_its_outfit_every_frame_in_the_cutaway_at_its_densest_art: |densest| Look::Cutaway {
             scale: densest,
             text: WorldText::Host,
-        });
-    }
-
-    #[test]
-    fn holds_its_outfit_every_frame_in_the_cutaway_past_its_densest_art() {
-        holds_its_outfit_every_frame_in(|densest| Look::Cutaway {
+        },
+        holds_its_outfit_every_frame_in_the_cutaway_past_its_densest_art: |densest| Look::Cutaway {
             scale: past(densest),
             text: WorldText::Host,
-        });
+        },
+    }
+
+    /// A kind added to [`LookKind`] fails here until [`looks!`] tests a look of it.
+    #[test]
+    fn every_look_kind_has_a_figure_test() {
+        let densest = RenderScale::from(crate::pack::test_office().max_density_variant());
+        for kind in LookKind::ALL {
+            assert!(
+                LOOKS.iter().any(|at| at(densest).kind() == *kind),
+                "{kind:?}"
+            );
+        }
     }
 
     /// Past its densest art a look blits each art pixel larger, and
