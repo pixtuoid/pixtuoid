@@ -44,23 +44,29 @@ impl Drop for Announcement {
 pub(super) fn announce(name: &str, port: u16, spki: &str) -> Announcement {
     let instance = instance(name);
     let spki = spki.to_owned();
-    Announcement(tokio::spawn(async move {
-        let mut warned = false;
-        loop {
-            match imp::announce(&instance, port, &spki).await {
-                Ok(()) => {
-                    tracing::warn!("the mDNS responder dropped the office; announcing it again");
-                    warned = false;
-                }
-                Err(error) if !warned => {
-                    tracing::warn!(error = ?error, "could not announce the office on the local network");
-                    warned = true;
-                }
-                Err(_) => {}
+    Announcement(tokio::spawn(keep_up(async move || {
+        imp::announce(&instance, port, &spki).await
+    })))
+}
+
+/// Run `attempt` again a [`RETRY`] after each end, warning once per run of
+/// failures.
+async fn keep_up(mut attempt: impl AsyncFnMut() -> anyhow::Result<()>) {
+    let mut warned = false;
+    loop {
+        match attempt().await {
+            Ok(()) => {
+                tracing::warn!("the mDNS responder dropped the office; announcing it again");
+                warned = false;
             }
-            tokio::time::sleep(RETRY).await;
+            Err(error) if !warned => {
+                tracing::warn!(error = ?error, "could not announce the office on the local network");
+                warned = true;
+            }
+            Err(_) => {}
         }
-    }))
+        tokio::time::sleep(RETRY).await;
+    }
 }
 
 /// `name` cut to an instance label on a character boundary, or the crate's name
@@ -79,7 +85,31 @@ fn txt(spki: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use tokio::sync::mpsc;
+    use tokio::time::Instant;
+
     use super::*;
+
+    /// A lost announcement and a refused one are each asked for again a
+    /// [`RETRY`] later.
+    #[tokio::test(start_paused = true)]
+    async fn an_ended_attempt_is_tried_again_a_retry_later() {
+        let start = Instant::now();
+        let (tried, mut tries) = mpsc::unbounded_channel();
+        let mut ends = vec![Ok(()), Err(anyhow::anyhow!("refused"))].into_iter();
+        let task = tokio::spawn(keep_up(async move || {
+            tried.send(Instant::now()).expect("the test listens");
+            match ends.next() {
+                Some(end) => end,
+                None => std::future::pending().await,
+            }
+        }));
+        for n in 0..3 {
+            let at = tries.recv().await.expect("an attempt");
+            assert_eq!(at - start, RETRY * n);
+        }
+        task.abort();
+    }
 
     #[test]
     fn an_instance_is_one_label_cut_on_a_character() {

@@ -23,14 +23,14 @@ use windows_sys::Win32::NetworkManagement::Dns::{
 /// which appends ".local" to the DNS host name: ".local must be appended in
 /// order for mDNS to work".
 pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()> {
-    let (registered, mut completed) = register(instance, port, spki)?;
+    let (registration, mut completed) = register(instance, port, spki)?;
     let status = *completed.wait_for(Option::is_some).await?;
     if status != Some(ERROR_SUCCESS) {
         bail!("Windows refused the service (status {status:?})");
     }
     tracing::info!("announced on the local network");
     std::future::pending::<()>().await;
-    drop(registered);
+    drop(registration);
     Ok(())
 }
 

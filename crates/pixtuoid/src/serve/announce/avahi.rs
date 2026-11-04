@@ -23,6 +23,24 @@ const ESTABLISHED: i32 = 2;
 const COLLISION: i32 = 3;
 const FAILURE: i32 = 4;
 
+/// What an entry group's new state asks of `announce`.
+#[derive(Debug, PartialEq, Eq)]
+enum Step {
+    Announced,
+    Rename,
+    Dropped,
+    Wait,
+}
+
+fn step(state: i32) -> Step {
+    match state {
+        ESTABLISHED => Step::Announced,
+        COLLISION => Step::Rename,
+        FAILURE => Step::Dropped,
+        _ => Step::Wait,
+    }
+}
+
 #[zbus::proxy(
     interface = "org.freedesktop.Avahi.Server",
     default_service = "org.freedesktop.Avahi",
@@ -90,18 +108,18 @@ pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()
             change = states.next() => {
                 let Some(change) = change else { return Ok(()) };
                 let Ok(change) = change.args() else { continue };
-                match change.state {
-                    ESTABLISHED => tracing::info!(name = ?name, "announced on the local network"),
-                    COLLISION => {
+                match step(change.state) {
+                    Step::Announced => tracing::info!(name = ?name, "announced on the local network"),
+                    Step::Rename => {
                         name = server.get_alternative_service_name(&name).await?;
                         group.reset().await?;
                         add(&server, &group, &mut name, port, &txt).await?;
                     }
-                    FAILURE => {
+                    Step::Dropped => {
                         tracing::debug!(error = ?change.error, "Avahi dropped the service");
                         return Ok(());
                     }
-                    _ => {}
+                    Step::Wait => {}
                 }
             }
             owner = owners.next() => {
@@ -145,6 +163,26 @@ async fn add(
                 added?;
                 return Ok(group.commit().await?);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each `AvahiEntryGroupState` by its defs.h number, `UNCOMMITED` first.
+    #[test]
+    fn each_group_state_is_its_step() {
+        let steps = [
+            Step::Wait,
+            Step::Wait,
+            Step::Announced,
+            Step::Rename,
+            Step::Dropped,
+        ];
+        for (state, want) in (0..).zip(steps) {
+            assert_eq!(step(state), want, "state {state}");
         }
     }
 }

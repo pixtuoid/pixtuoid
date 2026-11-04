@@ -405,6 +405,8 @@ mod tests {
     #[test]
     fn a_txt_record_is_its_string_behind_a_length_byte() {
         assert_eq!(txt_record("spki=AB").expect("short"), b"\x07spki=AB");
-        assert!(txt_record(&"A".repeat(256)).is_err());
+        let max = usize::from(u8::MAX);
+        assert_eq!(txt_record(&"A".repeat(max)).expect("fits").len(), max + 1);
+        assert!(txt_record(&"A".repeat(max + 1)).is_err());
     }
 }

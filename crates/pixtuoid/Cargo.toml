@@ -166,7 +166,7 @@ objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = "0.13"
 
-# `serve`'s DNS-SD announcement through Avahi (serve/advertise/avahi.rs), on the
+# `serve`'s DNS-SD announcement through Avahi (serve/announce/avahi.rs), on the
 # caller's tokio runtime with no thread of its own.
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 zbus = { version = "6.2", default-features = false, features = ["tokio", "proxy"], optional = true }
@@ -182,7 +182,7 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_WindowsAndMessaging",
     # focus/windows.rs: AttachThreadInput + GetCurrentThreadId, the foreground-lock retry
     "Win32_System_Threading",
-    # serve/advertise/windows.rs: DnsServiceRegister, DNS_REQUEST_PENDING
+    # serve/announce/windows.rs: DnsServiceRegister, DNS_REQUEST_PENDING
     "Win32_NetworkManagement_Dns",
     "Win32_Foundation",
 ] }
