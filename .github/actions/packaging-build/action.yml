@@ -24,19 +24,17 @@ runs:
         # Capture before grep: pipefail must expose a crashing producer, while
         # grep -q on a live producer can induce EPIPE (notably on macOS).
         set -euo pipefail
-        # Resolve the binary before isolating HOME: doctor reads config from a
-        # fresh one, as in Homebrew's sandbox, never the runner user's.
         BIN="${RUNNER_TEMP}/pkg/bin/pixtuoid"
-        export HOME="${RUNNER_TEMP}/fakehome"
-        mkdir -p "${HOME}"
+        home="${RUNNER_TEMP}/fakehome"
+        mkdir -p "$home"
         out="${RUNNER_TEMP}/formula-test"
         mkdir -p "$out"
 
         "$BIN" --version                      > "$out/version"
         "$BIN" man                            > "$out/man.roff"
         "$BIN" completions bash               > "$out/completions.bash"
-        # As in Homebrew's sandbox: no agent CLI, no office, the shim beside the binary.
-        env PATH=/usr/bin:/bin "$BIN" doctor  > "$out/doctor"
+        # As in Homebrew's sandbox: a fresh HOME, no agent CLI or office, the shim beside it.
+        env -i HOME="$home" PATH=/usr/bin:/bin "$BIN" doctor > "$out/doctor"
 
         # Exit zero alone is not the formula's version-content assertion.
         grep -qF "$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)" "$out/version"
