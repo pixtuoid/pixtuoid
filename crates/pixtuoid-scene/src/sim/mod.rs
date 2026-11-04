@@ -266,7 +266,8 @@ pub struct SimFrame {
     pub(crate) desks: Vec<DeskProps>,
     /// The elevator art's frame, shut to open.
     pub(crate) door_frame: usize,
-    /// The holiday the office keeps on the frame's local date.
+    /// The holiday the office keeps on the frame's local date, its night
+    /// running past midnight.
     pub(crate) occasion: crate::holiday::Occasion,
 }
 

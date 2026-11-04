@@ -104,6 +104,58 @@ pub const PAINT_FRAME_MS: u64 = 1000 / PAINT_FPS as u64;
 /// [WCAG 2.3.1]: https://www.w3.org/TR/WCAG22/#three-flashes-or-below-threshold
 pub const PHOTOSENSITIVE_PHASE_MIN_MS: u64 = 100;
 
+/// When a flash that comes in buckets runs: one run of `phases` phases a
+/// bucket of `period_ms`, each phase `phase_ms`, starting at an offset drawn
+/// per bucket that leaves the run and `gap_ms` of dark after it inside the
+/// bucket, on a phase boundary so each phase holds whole beats. Lightning's
+/// strikes and the fireworks' bursts each keep one.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FlashSchedule {
+    pub(crate) period_ms: u64,
+    pub(crate) phase_ms: u64,
+    pub(crate) phases: u64,
+    pub(crate) gap_ms: u64,
+}
+
+impl FlashSchedule {
+    /// `self`, held to the photosensitive floor: each phase and the gap at
+    /// least [`PHOTOSENSITIVE_PHASE_MIN_MS`], and room in each bucket for its
+    /// run and gap. A schedule kept in a `const` fails to compile otherwise.
+    pub(crate) const fn floored(self) -> Self {
+        assert!(
+            self.phase_ms >= PHOTOSENSITIVE_PHASE_MIN_MS
+                && self.gap_ms >= PHOTOSENSITIVE_PHASE_MIN_MS
+                && self.run_ms() + self.gap_ms <= self.period_ms
+        );
+        self
+    }
+
+    /// How long a run's phases last together.
+    pub(crate) const fn run_ms(self) -> u64 {
+        self.phases * self.phase_ms
+    }
+
+    /// The bucket loop time `ms` falls in.
+    pub(crate) const fn bucket(self, ms: u64) -> u64 {
+        ms / self.period_ms
+    }
+
+    /// When `bucket`'s run starts, in loop ms: one of the phase boundaries
+    /// that leave the run and the gap inside the bucket, picked by `draw`,
+    /// each alike.
+    pub(crate) const fn start(self, bucket: u64, draw: u64) -> u64 {
+        let starts = (self.period_ms - self.run_ms() - self.gap_ms) / self.phase_ms + 1;
+        bucket * self.period_ms + draw % starts * self.phase_ms
+    }
+
+    /// Which of the run's phases loop time `ms` is in, its run starting at
+    /// `start`; `None` before or after it.
+    pub(crate) fn phase(self, ms: u64, start: u64) -> Option<usize> {
+        let i = ms.checked_sub(start)? / self.phase_ms;
+        (i < self.phases).then(|| usize::try_from(i).ok()).flatten()
+    }
+}
+
 /// The most flashes [WCAG 2.3.1] allows in any one second.
 ///
 /// [WCAG 2.3.1]: https://www.w3.org/TR/WCAG22/#three-flashes-or-below-threshold

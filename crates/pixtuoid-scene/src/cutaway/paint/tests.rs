@@ -766,7 +766,12 @@ fn the_windows_look_out_on_the_one_city_where_the_layout_tiles_them() {
             theme,
             &mut crate::clouds::CloudCache::default(),
         );
-        let sky = crate::celestial::SkyView::of(&moment.outlook(theme), band.0, band.1, theme);
+        let sky = crate::celestial::SkyView::of(
+            &moment.outlook(theme),
+            (band.0, 0..band.0),
+            band.1,
+            theme,
+        );
         let run = crate::layout::window_run(band.0);
         let city = crate::skyline::CityStrip::draw(
             &pack,

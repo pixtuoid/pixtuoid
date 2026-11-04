@@ -248,6 +248,14 @@ impl Wall {
     }
 }
 
+/// The columns, in units, that `bays`' glass runs across: none without a bay.
+fn glass_span(bays: &[WindowBay]) -> Range<u16> {
+    match (bays.first(), bays.last()) {
+        (Some(first), Some(last)) => first.x..last.span().end,
+        _ => 0..0,
+    }
+}
+
 /// The outside's state across frames, for one pack in one theme (the
 /// [`OfficeRaster`](crate::look::OfficeRaster) that holds it empties it for
 /// another): the clouds' masses, and the last frame's views beside what
@@ -393,7 +401,7 @@ impl Outside {
             .map(|p| p.start - run.start..p.end - run.start)
             .collect();
         Self {
-            sky: SkyView::of(&outlook, buf_w, band_h, theme),
+            sky: SkyView::of(&outlook, (buf_w, glass_span(&bays)), band_h, theme),
             clouds: crate::clouds::Clouds::of(
                 &outlook,
                 (run.end - run.start, glass_h),

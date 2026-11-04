@@ -1,5 +1,5 @@
-//! The sky as a MODEL: the weather, the sun and the moon, lightning timing, and
-//! the light they let into the office.
+//! The sky as a MODEL: the weather, the sun and the moon, lightning's and a
+//! fireworks night's timing, and the light they let into the office.
 //!
 //! Painters read it through one `Sky` sampled per frame, so no two of them can
 //! disagree about the hour, the weather or whether lightning is striking.
@@ -534,7 +534,7 @@ pub fn nightfall_on(day: SystemTime) -> Option<SystemTime> {
 
 /// The local time of day nightfall begins at.
 pub(crate) const DUSK: chrono::NaiveTime = {
-    const SECS_PER_HOUR: f32 = 3600.0;
+    const SECS_PER_HOUR: f32 = chrono::TimeDelta::hours(1).num_seconds() as f32;
     match chrono::NaiveTime::from_num_seconds_from_midnight_opt(
         (SUN_SET_H * SECS_PER_HOUR) as u32,
         0,
@@ -604,7 +604,7 @@ fn moon_phase_at(now: SystemTime) -> f32 {
 }
 
 /// Lightning cadence: one strike per bucket this long, at a hashed offset
-/// ([`strike_offset`]) — a much faster cadence reads as a hyperactive storm.
+/// ([`LIGHTNING`]) — a much faster cadence reads as a hyperactive storm.
 const LIGHTNING_PERIOD_MS: u64 = 15000;
 // A slot's start is a bucket's start on every moving tier's loop clock, so no
 // strike runs into the next slot's weather.
@@ -621,10 +621,6 @@ const _: () = {
 /// How long each of [`STRIKE`]'s phases holds: a whole Full beat, so the beat
 /// neither skips one nor stretches it.
 const STRIKE_PHASE_MS: u64 = crate::anim::FULL_TICK_MS;
-const _: () = assert!(
-    STRIKE_PHASE_MS >= crate::anim::PHOTOSENSITIVE_PHASE_MIN_MS
-        && STRIKE_GAP_MS >= crate::anim::PHOTOSENSITIVE_PHASE_MIN_MS
-);
 /// A strike's phases in order, each held [`STRIKE_PHASE_MS`]: the primary
 /// strike, a brief dim, an after-flash, so it reads as a flicker rather than a
 /// single blink.
@@ -648,17 +644,27 @@ impl StrikePhase {
         }
     }
 }
-/// How long one strike's [`STRIKE`] phases last together.
-const STRIKE_MS: u64 = STRIKE.len() as u64 * STRIKE_PHASE_MS;
 /// The least dark time between one strike's end and the next's start, so two
 /// strikes never put more than three flashes in a second.
 const STRIKE_GAP_MS: u64 = 1000;
+/// When each lightning bucket's strike runs.
+const LIGHTNING: crate::anim::FlashSchedule = crate::anim::FlashSchedule {
+    period_ms: LIGHTNING_PERIOD_MS,
+    phase_ms: STRIKE_PHASE_MS,
+    phases: STRIKE.len() as u64,
+    gap_ms: STRIKE_GAP_MS,
+}
+.floored();
+/// How long one strike's [`STRIKE`] phases last together.
+#[cfg(test)]
+const STRIKE_MS: u64 = LIGHTNING.run_ms();
 
 /// The phase of a strike `since_strike_ms` after it began: [`STRIKE`]'s in
 /// turn, then none.
+#[cfg(test)]
 fn strike_phase(since_strike_ms: u64) -> Option<StrikePhase> {
-    usize::try_from(since_strike_ms / STRIKE_PHASE_MS)
-        .ok()
+    LIGHTNING
+        .phase(since_strike_ms, 0)
         .and_then(|i| STRIKE.get(i).copied())
 }
 
@@ -667,16 +673,6 @@ fn strike_phase(since_strike_ms: u64) -> Option<StrikePhase> {
 #[cfg(test)]
 fn lightning_envelope(since_strike_ms: u64) -> f32 {
     strike_phase(since_strike_ms).map_or(0.0, StrikePhase::level)
-}
-
-/// Per-bucket strike offset (ms into the bucket) so strikes don't fire on a
-/// fixed metronome. Each `LIGHTNING_PERIOD_MS`-long bucket hashes to its own
-/// offset, leaving the flash and [`STRIKE_GAP_MS`] after it inside the
-/// bucket, so the next bucket's strike is never too close. It lands on a
-/// phase boundary, so each phase holds whole beats.
-fn strike_offset(bucket: u64) -> u64 {
-    let off = crate::splitmix_draw(bucket, 1) % (LIGHTNING_PERIOD_MS - STRIKE_MS - STRIKE_GAP_MS);
-    off / STRIKE_PHASE_MS * STRIKE_PHASE_MS
 }
 
 /// Whether `bucket`'s strike fires under a sky `storm` of storm, `0..=1`: a
@@ -738,13 +734,18 @@ const TRANSITIONS_SEARCHED: usize = 4096;
 
 /// The lightning bucket `beat` falls in: what seeds its strike's look.
 pub(crate) fn strike_bucket(beat: crate::anim::Beat) -> u64 {
-    beat.ms() / LIGHTNING_PERIOD_MS
+    LIGHTNING.bucket(beat.ms())
 }
 
 /// When the strike of the bucket `beat` falls in starts, in `beat`'s ms.
 pub(crate) fn strike_start_ms(beat: crate::anim::Beat) -> u64 {
-    let bucket = strike_bucket(beat);
-    bucket * LIGHTNING_PERIOD_MS + strike_offset(bucket)
+    strike_start(strike_bucket(beat))
+}
+
+/// When `bucket`'s strike starts, in loop ms: its offset is a hash of the
+/// bucket, so strikes don't fire on a metronome.
+fn strike_start(bucket: u64) -> u64 {
+    LIGHTNING.start(bucket, crate::splitmix_draw(bucket, 1))
 }
 
 /// The phase of the strike `beat` falls in under `policy`, or `None` when not
@@ -753,19 +754,16 @@ fn strike_phase_at(beat: crate::anim::Beat, policy: WeatherPolicy) -> Option<Str
     if beat.is_rest() {
         return None;
     }
-    let elapsed_ms = beat.ms();
     let bucket = strike_bucket(beat);
     let strike_ms = strike_start_ms(beat);
-    let since = elapsed_ms
-        .checked_sub(strike_ms)
-        .filter(|&since| since < STRIKE_MS)?;
+    let phase = LIGHTNING.phase(beat.ms(), strike_ms)?;
     // The storm's share at the strike's start: the share moving mid-strike
     // would otherwise cut its phases short of `STRIKE_PHASE_MS`.
     let storm = policy
         .weather_at_ms(beat.wall_ms(strike_ms))
         .share(Element::Lightning, Weather::Storm);
     strikes(bucket, storm)
-        .then(|| strike_phase(since))
+        .then(|| STRIKE.get(phase).copied())
         .flatten()
 }
 

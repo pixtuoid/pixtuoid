@@ -332,15 +332,17 @@ fn a_storm_flashes_at_most_three_times_a_second_on_every_tier() {
 fn strikes_are_at_least_a_second_apart() {
     const SECOND_MS: u64 = 1000;
     for bucket in 0..100_000u64 {
-        let end = bucket * LIGHTNING_PERIOD_MS + strike_offset(bucket) + STRIKE_MS;
-        let next = (bucket + 1) * LIGHTNING_PERIOD_MS + strike_offset(bucket + 1);
+        let end = strike_start(bucket) + STRIKE_MS;
+        let next = strike_start(bucket + 1);
         assert!(next - end >= SECOND_MS, "bucket {bucket}");
     }
 }
 
 #[test]
 fn lightning_strikes_are_jittered_not_metronomic() {
-    let offsets: Vec<u64> = (0..24u64).map(strike_offset).collect();
+    let offsets: Vec<u64> = (0..24u64)
+        .map(|b| strike_start(b) - b * LIGHTNING_PERIOD_MS)
+        .collect();
     let distinct = offsets
         .iter()
         .collect::<std::collections::HashSet<_>>()
@@ -356,10 +358,7 @@ fn lightning_strikes_are_jittered_not_metronomic() {
 #[test]
 fn no_strike_flashes_at_rest() {
     for bucket in 0..24u64 {
-        let strike = std::time::UNIX_EPOCH
-            + std::time::Duration::from_millis(
-                bucket * LIGHTNING_PERIOD_MS + strike_offset(bucket),
-            );
+        let strike = std::time::UNIX_EPOCH + std::time::Duration::from_millis(strike_start(bucket));
         let sky = Sky::at(
             crate::anim::Motion::Still.timing(strike),
             WeatherPolicy::Forced(Weather::Storm),
@@ -374,7 +373,7 @@ fn no_strike_flashes_at_rest() {
 #[test]
 fn a_strike_flashes_at_its_bucket_offset_and_ends_with_the_flash() {
     for bucket in 0..24u64 {
-        let off = strike_offset(bucket);
+        let off = strike_start(bucket) - bucket * LIGHTNING_PERIOD_MS;
         let at = |ms: u64| {
             std::time::UNIX_EPOCH
                 + std::time::Duration::from_millis(bucket * LIGHTNING_PERIOD_MS + ms)
@@ -882,7 +881,7 @@ fn a_changing_storm_fires_its_share_of_the_strikes() {
 
 /// Each bucket with its strike's first loop ms.
 fn strike_starts() -> impl Iterator<Item = (u64, u64)> {
-    (0..200_000u64).map(|bucket| (bucket, bucket * LIGHTNING_PERIOD_MS + strike_offset(bucket)))
+    (0..200_000u64).map(|bucket| (bucket, strike_start(bucket)))
 }
 
 /// The wall-clock instant a loop clock of `pace` reads `loop_ms` at.
@@ -1065,4 +1064,69 @@ fn nightfall_begins_when_nightfall_on_says() {
     let minute = Duration::from_secs(60);
     assert_eq!(nightfall(local_hour_frac(start - minute)), 0.0);
     assert!(nightfall(local_hour_frac(start + minute)) > 0.0);
+}
+
+/// New Year's Eve's bursts through [`Sky::at`], the one pin on the
+/// calendar-to-sky path (painter tests inject bursts with
+/// [`Sky::with_bursts`]): on a moving tier they fire and never flash past
+/// WCAG's three a second, Calm holding each phase a Calm tick; at rest, and
+/// on the night before, none fire.
+#[test]
+fn new_years_eve_bursts_through_the_sky_on_every_tier() {
+    use crate::anim::{
+        CALM_TICK_MS, FULL_TICK_MS, HOUR_MS, PHOTOSENSITIVE_FLASHES_PER_SECOND,
+        most_flashes_in_a_second,
+    };
+    const SAMPLED_MS: u64 = HOUR_MS / 2;
+    let eve = |day| {
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 12, day).expect("a date");
+        crate::localclock::local_instant(date, 23, 0).expect("a local time")
+    };
+    for motion in Motion::ALL {
+        let bursts = |night: SystemTime| {
+            (0..SAMPLED_MS)
+                .step_by(FULL_TICK_MS as usize)
+                .map(|ms| {
+                    let at = night + Duration::from_millis(ms);
+                    (
+                        ms,
+                        Sky::at(motion.timing(at), WeatherPolicy::Clock).bursts(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let lit = bursts(eve(31));
+        let fired = lit.iter().any(|(_, b)| b.iter().any(Option::is_some));
+        assert_eq!(fired, motion != Motion::Still, "{motion:?}");
+        let levels = lit.iter().map(|(ms, b)| {
+            let level = b
+                .iter()
+                .flatten()
+                .map(|b| b.phase.strength())
+                .fold(0.0, f32::max);
+            (*ms, level)
+        });
+        assert!(
+            most_flashes_in_a_second(levels) <= PHOTOSENSITIVE_FLASHES_PER_SECOND,
+            "{motion:?}"
+        );
+        assert!(
+            bursts(eve(30))
+                .iter()
+                .all(|(_, b)| b.iter().all(Option::is_none)),
+            "{motion:?}"
+        );
+        if motion == Motion::Calm {
+            let held = usize::try_from(CALM_TICK_MS / FULL_TICK_MS).expect("a count");
+            let phases: Vec<_> = lit.iter().map(|(_, b)| b[0].map(|b| b.phase)).collect();
+            let runs: Vec<_> = phases.chunk_by(|a, b| a == b).collect();
+            for run in &runs[1..runs.len() - 1] {
+                assert!(
+                    run[0].is_none() || run.len() >= held,
+                    "a Calm phase of {}",
+                    run.len()
+                );
+            }
+        }
+    }
 }

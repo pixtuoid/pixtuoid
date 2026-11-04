@@ -11,8 +11,8 @@ use std::time::{Duration, SystemTime};
 use crate::anim::PHOTOSENSITIVE_PHASE_MIN_MS;
 
 /// What of a floor's frame flashes: which of a strike's levels lights it,
-/// whether a starved neon tube is catching, and where each of the sky's
-/// fireworks bursts stands. Two frames flash alike iff equal.
+/// whether a starved neon tube is catching, and the phase each of the sky's
+/// fireworks bursts is in. Two frames flash alike iff equal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct FlashPhase {
     // The sky's flash level's bits: a strike's levels are exact constants.
@@ -442,7 +442,7 @@ mod tests {
             x: 0.5,
             y: 0.5,
             phase,
-            hue: crate::sprite::Rgb { r: 1, g: 2, b: 3 },
+            hue: crate::sky::fireworks::Hue::Gold,
         };
         let bursting = |phase| {
             let mut bursts = [None; crate::sky::fireworks::LANES];

@@ -1,6 +1,7 @@
-//! The holidays the office keeps, on the viewer's local date: each draws its
-//! stand-ins on the canvas of the plants they stand in for, so the layout, its
-//! footprints and its reachability never see a holiday.
+//! The holidays the office keeps, on the viewer's local date, each night
+//! running past midnight: each draws its stand-ins on the canvas of the plants
+//! they stand in for, so the layout, its footprints and its reachability never
+//! see a holiday, and lights its fireworks on its eve.
 
 use std::time::SystemTime;
 
@@ -9,7 +10,7 @@ use strum::VariantArray;
 
 use crate::layout::PlantKind;
 use crate::pack::Piece;
-use crate::sprite::Rgb;
+use crate::sky::fireworks::Hue;
 
 /// How far past midnight a holiday's night runs: New Year's countdown, and
 /// the fireworks after it, belong to the eve they began on.
@@ -20,38 +21,12 @@ fn festive_day(local: NaiveDateTime) -> NaiveDate {
     (local - NIGHT_RUNS_PAST_MIDNIGHT).date()
 }
 
-/// The hues New Year's fireworks burst in: gold, red, green, blue, violet.
-const NEW_YEAR_HUES: [Rgb; 5] = [
-    Rgb {
-        r: 255,
-        g: 214,
-        b: 102,
-    },
-    Rgb {
-        r: 255,
-        g: 96,
-        b: 96,
-    },
-    Rgb {
-        r: 112,
-        g: 232,
-        b: 136,
-    },
-    Rgb {
-        r: 112,
-        g: 176,
-        b: 255,
-    },
-    Rgb {
-        r: 214,
-        g: 144,
-        b: 255,
-    },
-];
+/// The hues New Year's fireworks burst in.
+const NEW_YEAR_HUES: [Hue; 5] = [Hue::Gold, Hue::Red, Hue::Green, Hue::Blue, Hue::Violet];
 
 /// The hues of the fireworks lit at `now`: after dusk on a holiday's eve, its
 /// night running past midnight; `None` on any other night or by day.
-pub(crate) fn fireworks_at(now: std::time::SystemTime) -> Option<&'static [Rgb]> {
+pub(crate) fn fireworks_at(now: std::time::SystemTime) -> Option<&'static [Hue]> {
     let local = crate::localclock::local_time(now);
     let day = festive_day(local);
     let hues = Holiday::on(day)?.fireworks(day)?;
@@ -78,7 +53,7 @@ impl Holiday {
     }
 
     /// The hues of its fireworks, if `day` is the eve it lights them on.
-    fn fireworks(self, day: NaiveDate) -> Option<&'static [Rgb]> {
+    fn fireworks(self, day: NaiveDate) -> Option<&'static [Hue]> {
         match self {
             Holiday::Christmas => {
                 let years_last = day.succ_opt().is_none_or(|next| next.year() != day.year());
@@ -170,6 +145,7 @@ impl Occasion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Timelike;
 
     fn on(y: i32, m: u32, d: u32) -> Option<Holiday> {
         Holiday::on(NaiveDate::from_ymd_opt(y, m, d).expect("a date"))
@@ -249,23 +225,31 @@ mod tests {
         }
     }
 
-    /// The local instant `y-m-d h:min` on the viewer's wall clock.
-    fn local(y: i32, m: u32, d: u32, h: u32, min: u32) -> SystemTime {
+    /// The local instant `time` on `y-m-d`.
+    fn local_at(y: i32, m: u32, d: u32, time: chrono::NaiveTime) -> SystemTime {
         let day = NaiveDate::from_ymd_opt(y, m, d).expect("a date");
-        crate::localclock::local_instant(day, h, min).expect("a local time")
+        crate::localclock::local_instant(day, time.hour(), time.minute()).expect("a local time")
     }
 
-    /// The occasion is the viewer's local date, its night running past
-    /// midnight: it turns half an hour after local midnight either side of
-    /// December, which, in the justfile's `TEST_TZ`, is the other month in
-    /// UTC.
+    /// The minute before and the minute `time` begins.
+    fn either_side(time: chrono::NaiveTime) -> (chrono::NaiveTime, chrono::NaiveTime) {
+        (time - TimeDelta::minutes(1), time)
+    }
+
+    /// The occasion is the viewer's local date, its night running
+    /// [`NIGHT_RUNS_PAST_MIDNIGHT`] past midnight either side of December,
+    /// which, in the justfile's `TEST_TZ`, is the other month in UTC.
     #[test]
     fn the_occasion_turns_as_the_night_ends() {
         let christmas = Occasion(Some(Holiday::Christmas));
-        assert_eq!(Occasion::at(local(2026, 12, 1, 0, 29)), Occasion::default());
-        assert_eq!(Occasion::at(local(2026, 12, 1, 0, 30)), christmas);
-        assert_eq!(Occasion::at(local(2027, 1, 1, 0, 29)), christmas);
-        assert_eq!(Occasion::at(local(2027, 1, 1, 0, 30)), Occasion::default());
+        let (before, at) = either_side(chrono::NaiveTime::MIN + NIGHT_RUNS_PAST_MIDNIGHT);
+        assert_eq!(
+            Occasion::at(local_at(2026, 12, 1, before)),
+            Occasion::default()
+        );
+        assert_eq!(Occasion::at(local_at(2026, 12, 1, at)), christmas);
+        assert_eq!(Occasion::at(local_at(2027, 1, 1, before)), christmas);
+        assert_eq!(Occasion::at(local_at(2027, 1, 1, at)), Occasion::default());
         assert_eq!(Occasion::at(Occasion::christmas_noon()), christmas);
     }
 
@@ -273,17 +257,17 @@ mod tests {
     /// ends past midnight, and on no other night.
     #[test]
     fn new_years_fireworks_light_the_eve_from_dusk_until_the_night_ends() {
-        use chrono::Timelike;
-        let dusk = crate::sky::DUSK;
         let lit = |now| fireworks_at(now).is_some();
-        assert!(!lit(local(2026, 12, 31, dusk.hour() - 1, 59)));
-        assert!(lit(local(2026, 12, 31, dusk.hour(), dusk.minute())));
-        assert!(lit(local(2027, 1, 1, 0, 29)));
-        assert!(!lit(local(2027, 1, 1, 0, 30)));
-        assert!(!lit(local(2026, 12, 30, 23, 0)));
-        assert!(!lit(local(2026, 12, 31, 0, 45)));
+        let (before_dusk, dusk) = either_side(crate::sky::DUSK);
+        let (last, ended) = either_side(chrono::NaiveTime::MIN + NIGHT_RUNS_PAST_MIDNIGHT);
+        assert!(!lit(local_at(2026, 12, 31, before_dusk)));
+        assert!(lit(local_at(2026, 12, 31, dusk)));
+        assert!(lit(local_at(2027, 1, 1, last)));
+        assert!(!lit(local_at(2027, 1, 1, ended)));
+        assert!(!lit(local_at(2026, 12, 30, dusk)));
+        assert!(!lit(local_at(2026, 12, 31, ended)));
         assert_eq!(
-            fireworks_at(local(2026, 12, 31, 23, 0)),
+            fireworks_at(local_at(2026, 12, 31, dusk)),
             Some(NEW_YEAR_HUES.as_slice())
         );
     }

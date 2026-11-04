@@ -15,29 +15,8 @@ use crate::sprite::Rgb;
 use crate::atmosphere::Moment;
 use crate::outside::{Cell, WindowView};
 
+use crate::Rng;
 use crate::sky::{Element, Sky, StrikePhase, Weather};
-
-/// A deterministic stream of `0..1` draws: [`crate::splitmix_draw`]'s.
-struct Rng {
-    seed: u64,
-    n: u64,
-}
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        Self { seed, n: 0 }
-    }
-
-    fn u(&mut self) -> f32 {
-        self.n += 1;
-        let draw = crate::splitmix_draw(self.seed, self.n);
-        (draw >> (u64::BITS - f32::MANTISSA_DIGITS)) as f32 / (1u64 << f32::MANTISSA_DIGITS) as f32
-    }
-
-    fn between(&mut self, a: f32, b: f32) -> f32 {
-        a + (b - a) * self.u()
-    }
-}
 
 /// `0..1` value noise along `x`, one lattice point per unit, smoothstepped.
 fn noise(seed: u64, x: f32) -> f32 {
