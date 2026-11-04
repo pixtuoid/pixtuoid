@@ -308,9 +308,13 @@ fn no_text_is_set_under_an_inset() {
                         .picture(raster)
                         .and_then(|p| p.text)
                         .expect("the host sets the text");
-                    badged += usize::from(text.badges.iter().any(|b| {
-                        b.agent == held && b.at.y < inner.y + crate::display::text::LABEL_GAP
-                    }));
+                    badged += usize::from(
+                        insets.top > 0
+                            && text.badges.iter().any(|b| {
+                                b.agent == held
+                                    && b.at.y < inner.y + crate::display::text::LABEL_GAP
+                            }),
+                    );
                     let bubbles = text.badges.iter().map(|badge| {
                         let bubble = crate::chitchat::ChitchatBubble {
                             text: "a quip as long as any",

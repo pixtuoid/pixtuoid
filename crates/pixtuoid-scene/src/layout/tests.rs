@@ -1467,9 +1467,9 @@ fn a_fitted_inset_is_rounded_up_to_whole_units() {
         Size { w: 1206, h: 2622 },
         Insets {
             top: 186,
-            right: 12,
+            right: 18,
             bottom: 102,
-            left: 0,
+            left: 30,
         },
         art,
         per_point,
@@ -1479,9 +1479,9 @@ fn a_fitted_inset_is_rounded_up_to_whole_units() {
         fitted.viewport.insets,
         Insets {
             top: 16,
-            right: 1,
+            right: 2,
             bottom: 9,
-            left: 0,
+            left: 3,
         }
     );
 }
@@ -1537,85 +1537,49 @@ fn a_fitted_office_keeps_every_meeting_rooms_furniture() {
 }
 
 /// A surface fits an office exactly where the office's layout takes the
-/// fitted viewport: across surfaces about the smallest office, bare and under
-/// each inset of the sweep, `fitted` refuses what `SceneLayout::compute`
-/// refuses, and nothing else.
+/// fitted viewport: across heights about the smallest office's, bare and under
+/// each inset of the sweep, the fit keeps the surface's height, and `fitted`
+/// refuses what `SceneLayout::compute` refuses, and nothing else, a bare
+/// surface too short among them.
 #[test]
 fn a_surface_fits_an_office_exactly_where_its_layout_does() {
-    use super::compute::{MIN_LAYOUT_H, MIN_LAYOUT_W};
+    use super::compute::MIN_LAYOUT_H;
     let art = crate::sprite::format::Density::new(4).expect("nonzero");
     let per_point = std::num::NonZeroU16::new(2).expect("nonzero");
     // Eight device pixels a unit on a surface this small: 2 a frame pixel.
     let px = |units: u16| units * 8;
-    let (mut fits, mut refused) = (0, 0);
-    for w in [
-        MIN_LAYOUT_W - 1,
-        MIN_LAYOUT_W,
-        MIN_LAYOUT_W + 12,
-        FITTED_MIN_W,
-    ] {
-        for h in (MIN_LAYOUT_H - 2..=MIN_LAYOUT_H + 13).step_by(3) {
-            let surface = Size { w: px(w), h: px(h) };
-            for insets in std::iter::once(Insets::default()).chain(super::SWEEP_INSETS) {
-                let insets_px = Insets {
-                    top: px(insets.top),
-                    right: px(insets.right),
-                    bottom: px(insets.bottom),
-                    left: px(insets.left),
-                };
-                let unchecked = fit(surface, insets_px, art, per_point);
-                let laid_out = SceneLayout::compute(unchecked.viewport, None, 0).is_some();
-                let fitted = Viewport::fitted(surface, insets_px, art, per_point);
-                assert_eq!(
-                    fitted.is_some(),
-                    laid_out,
-                    "{surface:?} px under {insets_px:?}"
-                );
-                (fits, refused) = if laid_out {
-                    (fits + 1, refused)
-                } else {
-                    (fits, refused + 1)
-                };
-            }
+    let (mut fits, mut refused, mut bare_refused) = (0, 0, 0);
+    for h in (MIN_LAYOUT_H - 2..=MIN_LAYOUT_H + 13).step_by(3) {
+        let surface = Size {
+            w: px(FITTED_MIN_W),
+            h: px(h),
+        };
+        for insets in std::iter::once(Insets::default()).chain(super::SWEEP_INSETS) {
+            let insets_px = Insets {
+                top: px(insets.top),
+                right: px(insets.right),
+                bottom: px(insets.bottom),
+                left: px(insets.left),
+            };
+            let unchecked = fit(surface, insets_px, art, per_point);
+            assert_eq!(unchecked.viewport.size.h, h, "{surface:?} px: its height");
+            let laid_out = SceneLayout::compute(unchecked.viewport, None, 0).is_some();
+            let fitted = Viewport::fitted(surface, insets_px, art, per_point);
+            assert_eq!(
+                fitted.is_some(),
+                laid_out,
+                "{surface:?} px under {insets_px:?}"
+            );
+            (fits, refused) = if laid_out {
+                (fits + 1, refused)
+            } else {
+                (fits, refused + 1)
+            };
+            bare_refused += usize::from(!laid_out && insets == Insets::default());
         }
     }
-    assert!(fits > 0 && refused > 0, "{fits} fit, {refused} refused");
-}
-
-/// An office wider than its surface scrolls under the surface's chrome, so
-/// each side inset covers the end of the office the surface scrolls to: the
-/// office is [`FITTED_MIN_W`] wide, the left inset at its west end and the
-/// right at its east, each in whole units of the surface's.
-#[test]
-fn a_scrolling_office_keeps_the_side_insets_at_its_two_ends() {
-    let art = crate::sprite::format::Density::new(4).expect("nonzero");
-    let per_point = std::num::NonZeroU16::new(3).expect("nonzero");
-    // Twelve device pixels a unit: 3 a frame pixel, 4 frame pixels a unit;
-    // the iPhone 18 Pro's 1206 px are 100 units, under the fitted width.
-    let fitted = Viewport::fitted(
-        Size { w: 1206, h: 2622 },
-        Insets {
-            top: 0,
-            right: 18,
-            bottom: 0,
-            left: 36,
-        },
-        art,
-        per_point,
-    );
-    assert_eq!(
-        fitted.map(|f| f.viewport),
-        Some(Viewport {
-            size: Size {
-                w: FITTED_MIN_W,
-                h: 218,
-            },
-            insets: Insets {
-                top: 0,
-                right: 2,
-                bottom: 0,
-                left: 3,
-            },
-        })
+    assert!(
+        fits > 0 && refused > 0 && bare_refused > 0,
+        "{fits} fit, {refused} refused, {bare_refused} of them bare"
     );
 }

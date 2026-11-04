@@ -440,6 +440,15 @@ fn line_at((at, align): (Point, Align), w: u16, map: CellMap, within: Bounds) ->
 mod tests {
     use super::*;
 
+    /// A run's box set before its area moves in whole, one running past the
+    /// area's far edge is cut there, and one wholly past it shows nothing.
+    #[test]
+    fn a_kept_box_moves_in_at_the_near_edge_and_is_cut_at_the_far() {
+        assert_eq!(kept(2, 4, 5..20), 5..9, "moved in, whole");
+        assert_eq!(kept(17, 6, 5..20), 17..20, "cut at the far edge");
+        assert_eq!(kept(25, 3, 5..20), 25..25, "wholly past");
+    }
+
     /// The indicator's arrow is hollow and dim where no floor is its way:
     /// both lit between floors, the down arrow out on the ground floor, the up
     /// one on the top.
