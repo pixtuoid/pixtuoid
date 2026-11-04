@@ -46,7 +46,6 @@ pub(crate) mod clouds;
 pub(crate) mod composite;
 pub(crate) mod creatures;
 pub mod hit;
-#[doc(hidden)]
 pub mod interact;
 #[doc(hidden)]
 pub use creatures::PET_LONGEST_REST_MS;

@@ -344,7 +344,6 @@ impl OfficeSession {
     /// the floor it lifted on, whatever shows since; that floor's next step
     /// carries it out. A lift during a slide, which shows no one floor, lifts
     /// nothing.
-    #[doc(hidden)]
     pub fn grip(&mut self, gesture: &crate::interact::Gesture) {
         let floor = self.gripped.of(gesture, &self.nav);
         if let Some(view) = floor.and_then(|f| self.views.get_mut(f)) {

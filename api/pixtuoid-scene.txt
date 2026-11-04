@@ -221,6 +221,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorTra
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorTransition
 pub struct pixtuoid_scene::floor::OfficeSession
 impl pixtuoid_scene::floor::OfficeSession
+pub fn pixtuoid_scene::floor::OfficeSession::grip(&mut self, &pixtuoid_scene::interact::Gesture)
 pub fn pixtuoid_scene::floor::OfficeSession::n_floors(&self) -> usize
 pub fn pixtuoid_scene::floor::OfficeSession::nav(&self) -> &pixtuoid_scene::floor::FloorNav
 pub fn pixtuoid_scene::floor::OfficeSession::navigate(&mut self, usize, std::time::SystemTime) -> bool
@@ -355,6 +356,26 @@ impl<T> core::marker::UnsafeUnpin for pixtuoid_scene::grid::Grid<T> where alloc:
 impl<T> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::grid::Grid<T> where alloc::vec::Vec<T>: core::panic::unwind_safe::RefUnwindSafe
 impl<T> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::grid::Grid<T> where alloc::vec::Vec<T>: core::panic::unwind_safe::UnwindSafe
 pub mod pixtuoid_scene::hit
+pub enum pixtuoid_scene::hit::HitAction
+pub pixtuoid_scene::hit::HitAction::Focus(pixtuoid_core::id::AgentId)
+pub pixtuoid_scene::hit::HitAction::Open(&'static str)
+pub pixtuoid_scene::hit::HitAction::Pet(pixtuoid_scene::pet::PetKind)
+impl core::clone::Clone for pixtuoid_scene::hit::HitAction
+pub fn pixtuoid_scene::hit::HitAction::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::hit::HitAction
+impl core::cmp::PartialEq for pixtuoid_scene::hit::HitAction
+pub fn pixtuoid_scene::hit::HitAction::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::hit::HitAction
+pub fn pixtuoid_scene::hit::HitAction::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::hit::HitAction
+impl core::marker::StructuralPartialEq for pixtuoid_scene::hit::HitAction
+impl core::marker::Freeze for pixtuoid_scene::hit::HitAction
+impl core::marker::Send for pixtuoid_scene::hit::HitAction
+impl core::marker::Sync for pixtuoid_scene::hit::HitAction
+impl core::marker::Unpin for pixtuoid_scene::hit::HitAction
+impl core::marker::UnsafeUnpin for pixtuoid_scene::hit::HitAction
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::hit::HitAction
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::hit::HitAction
 pub enum pixtuoid_scene::hit::HoverTarget
 pub pixtuoid_scene::hit::HoverTarget::Agent(pixtuoid_core::id::AgentId)
 pub pixtuoid_scene::hit::HoverTarget::Mascot(pixtuoid_core::source::daemon::DaemonInstanceKey)
@@ -379,6 +400,8 @@ pub pixtuoid_scene::hit::SceneHit::Coffee
 pub pixtuoid_scene::hit::SceneHit::Figure(&'a pixtuoid_scene::hit::HoverTarget)
 pub pixtuoid_scene::hit::SceneHit::Furniture(&'static str)
 pub pixtuoid_scene::hit::SceneHit::Star
+impl pixtuoid_scene::hit::SceneHit<'_>
+pub fn pixtuoid_scene::hit::SceneHit<'_>::action(self, core::option::Option<&pixtuoid_scene::pet::PetState>, std::time::SystemTime) -> core::option::Option<pixtuoid_scene::hit::HitAction>
 impl<'a> core::clone::Clone for pixtuoid_scene::hit::SceneHit<'a>
 pub fn pixtuoid_scene::hit::SceneHit<'a>::clone(&self) -> Self
 impl<'a> core::cmp::Eq for pixtuoid_scene::hit::SceneHit<'a>
@@ -415,6 +438,148 @@ impl core::marker::Unpin for pixtuoid_scene::hit::PetHover
 impl core::marker::UnsafeUnpin for pixtuoid_scene::hit::PetHover
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::hit::PetHover
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::hit::PetHover
+pub mod pixtuoid_scene::interact
+pub enum pixtuoid_scene::interact::Figure
+pub pixtuoid_scene::interact::Figure::Agent(pixtuoid_core::id::AgentId)
+pub pixtuoid_scene::interact::Figure::Mascot(pixtuoid_core::source::daemon::DaemonInstanceKey)
+pub pixtuoid_scene::interact::Figure::Pet(pixtuoid_scene::pet::PetKind)
+impl core::clone::Clone for pixtuoid_scene::interact::Figure
+pub fn pixtuoid_scene::interact::Figure::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::interact::Figure
+impl core::cmp::PartialEq for pixtuoid_scene::interact::Figure
+pub fn pixtuoid_scene::interact::Figure::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::interact::Figure
+pub fn pixtuoid_scene::interact::Figure::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::interact::Figure
+pub fn pixtuoid_scene::interact::Figure::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for pixtuoid_scene::interact::Figure
+impl core::marker::Freeze for pixtuoid_scene::interact::Figure
+impl core::marker::Send for pixtuoid_scene::interact::Figure
+impl core::marker::Sync for pixtuoid_scene::interact::Figure
+impl core::marker::Unpin for pixtuoid_scene::interact::Figure
+impl core::marker::UnsafeUnpin for pixtuoid_scene::interact::Figure
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::interact::Figure
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::interact::Figure
+pub enum pixtuoid_scene::interact::Gesture
+pub pixtuoid_scene::interact::Gesture::Carry(pixtuoid_scene::layout::Point)
+pub pixtuoid_scene::interact::Gesture::Click(pixtuoid_scene::hit::HitAction)
+pub pixtuoid_scene::interact::Gesture::Drop(pixtuoid_scene::layout::Point)
+pub pixtuoid_scene::interact::Gesture::Lift
+pub pixtuoid_scene::interact::Gesture::Lift::at: pixtuoid_scene::layout::Point
+pub pixtuoid_scene::interact::Gesture::Lift::figure: pixtuoid_scene::interact::Figure
+impl core::clone::Clone for pixtuoid_scene::interact::Gesture
+pub fn pixtuoid_scene::interact::Gesture::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::interact::Gesture
+impl core::cmp::PartialEq for pixtuoid_scene::interact::Gesture
+pub fn pixtuoid_scene::interact::Gesture::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::interact::Gesture
+pub fn pixtuoid_scene::interact::Gesture::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_scene::interact::Gesture
+impl core::marker::Freeze for pixtuoid_scene::interact::Gesture
+impl core::marker::Send for pixtuoid_scene::interact::Gesture
+impl core::marker::Sync for pixtuoid_scene::interact::Gesture
+impl core::marker::Unpin for pixtuoid_scene::interact::Gesture
+impl core::marker::UnsafeUnpin for pixtuoid_scene::interact::Gesture
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::interact::Gesture
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::interact::Gesture
+pub enum pixtuoid_scene::interact::Pressed
+pub pixtuoid_scene::interact::Pressed::Bare
+pub pixtuoid_scene::interact::Pressed::Something
+impl core::clone::Clone for pixtuoid_scene::interact::Pressed
+pub fn pixtuoid_scene::interact::Pressed::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::interact::Pressed
+impl core::cmp::PartialEq for pixtuoid_scene::interact::Pressed
+pub fn pixtuoid_scene::interact::Pressed::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::interact::Pressed
+pub fn pixtuoid_scene::interact::Pressed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::interact::Pressed
+impl core::marker::StructuralPartialEq for pixtuoid_scene::interact::Pressed
+impl core::marker::Freeze for pixtuoid_scene::interact::Pressed
+impl core::marker::Send for pixtuoid_scene::interact::Pressed
+impl core::marker::Sync for pixtuoid_scene::interact::Pressed
+impl core::marker::Unpin for pixtuoid_scene::interact::Pressed
+impl core::marker::UnsafeUnpin for pixtuoid_scene::interact::Pressed
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::interact::Pressed
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::interact::Pressed
+pub struct pixtuoid_scene::interact::Affordance
+pub pixtuoid_scene::interact::Affordance::click: core::option::Option<pixtuoid_scene::hit::HitAction>
+pub pixtuoid_scene::interact::Affordance::lift: core::option::Option<pixtuoid_scene::interact::Figure>
+impl pixtuoid_scene::interact::Affordance
+pub fn pixtuoid_scene::interact::Affordance::of(core::option::Option<pixtuoid_scene::hit::SceneHit<'_>>, core::option::Option<&pixtuoid_scene::pet::PetState>, std::time::SystemTime) -> Self
+impl core::clone::Clone for pixtuoid_scene::interact::Affordance
+pub fn pixtuoid_scene::interact::Affordance::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::interact::Affordance
+impl core::cmp::PartialEq for pixtuoid_scene::interact::Affordance
+pub fn pixtuoid_scene::interact::Affordance::eq(&self, &Self) -> bool
+impl core::default::Default for pixtuoid_scene::interact::Affordance
+pub fn pixtuoid_scene::interact::Affordance::default() -> Self
+impl core::fmt::Debug for pixtuoid_scene::interact::Affordance
+pub fn pixtuoid_scene::interact::Affordance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_scene::interact::Affordance
+impl core::marker::Freeze for pixtuoid_scene::interact::Affordance
+impl core::marker::Send for pixtuoid_scene::interact::Affordance
+impl core::marker::Sync for pixtuoid_scene::interact::Affordance
+impl core::marker::Unpin for pixtuoid_scene::interact::Affordance
+impl core::marker::UnsafeUnpin for pixtuoid_scene::interact::Affordance
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::interact::Affordance
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::interact::Affordance
+pub struct pixtuoid_scene::interact::Down
+pub pixtuoid_scene::interact::Down::ended: core::option::Option<pixtuoid_scene::interact::Gesture>
+pub pixtuoid_scene::interact::Down::pressed: pixtuoid_scene::interact::Pressed
+impl core::clone::Clone for pixtuoid_scene::interact::Down
+pub fn pixtuoid_scene::interact::Down::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::interact::Down
+impl core::cmp::PartialEq for pixtuoid_scene::interact::Down
+pub fn pixtuoid_scene::interact::Down::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::interact::Down
+pub fn pixtuoid_scene::interact::Down::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_scene::interact::Down
+impl core::marker::Freeze for pixtuoid_scene::interact::Down
+impl core::marker::Send for pixtuoid_scene::interact::Down
+impl core::marker::Sync for pixtuoid_scene::interact::Down
+impl core::marker::Unpin for pixtuoid_scene::interact::Down
+impl core::marker::UnsafeUnpin for pixtuoid_scene::interact::Down
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::interact::Down
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::interact::Down
+pub struct pixtuoid_scene::interact::Pointer
+impl pixtuoid_scene::interact::Pointer
+pub fn pixtuoid_scene::interact::Pointer::cancel(&mut self) -> core::option::Option<pixtuoid_scene::interact::Gesture>
+pub fn pixtuoid_scene::interact::Pointer::carrying(&self) -> bool
+pub fn pixtuoid_scene::interact::Pointer::down(&mut self, core::option::Option<pixtuoid_scene::hit::SceneHit<'_>>, pixtuoid_scene::layout::Point, pixtuoid_scene::interact::Slop, core::option::Option<&pixtuoid_scene::pet::PetState>, std::time::SystemTime) -> pixtuoid_scene::interact::Down
+pub fn pixtuoid_scene::interact::Pointer::moved(&mut self, pixtuoid_scene::layout::Point) -> core::option::Option<pixtuoid_scene::interact::Gesture>
+pub fn pixtuoid_scene::interact::Pointer::up(&mut self, core::option::Option<pixtuoid_scene::layout::Point>) -> core::option::Option<pixtuoid_scene::interact::Gesture>
+impl core::clone::Clone for pixtuoid_scene::interact::Pointer
+pub fn pixtuoid_scene::interact::Pointer::clone(&self) -> Self
+impl core::default::Default for pixtuoid_scene::interact::Pointer
+pub fn pixtuoid_scene::interact::Pointer::default() -> Self
+impl core::fmt::Debug for pixtuoid_scene::interact::Pointer
+pub fn pixtuoid_scene::interact::Pointer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for pixtuoid_scene::interact::Pointer
+impl core::marker::Send for pixtuoid_scene::interact::Pointer
+impl core::marker::Sync for pixtuoid_scene::interact::Pointer
+impl core::marker::Unpin for pixtuoid_scene::interact::Pointer
+impl core::marker::UnsafeUnpin for pixtuoid_scene::interact::Pointer
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::interact::Pointer
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::interact::Pointer
+pub struct pixtuoid_scene::interact::Slop
+pub pixtuoid_scene::interact::Slop::x: u16
+pub pixtuoid_scene::interact::Slop::y: u16
+impl core::clone::Clone for pixtuoid_scene::interact::Slop
+pub fn pixtuoid_scene::interact::Slop::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::interact::Slop
+impl core::cmp::PartialEq for pixtuoid_scene::interact::Slop
+pub fn pixtuoid_scene::interact::Slop::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::interact::Slop
+pub fn pixtuoid_scene::interact::Slop::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::interact::Slop
+impl core::marker::StructuralPartialEq for pixtuoid_scene::interact::Slop
+impl core::marker::Freeze for pixtuoid_scene::interact::Slop
+impl core::marker::Send for pixtuoid_scene::interact::Slop
+impl core::marker::Sync for pixtuoid_scene::interact::Slop
+impl core::marker::Unpin for pixtuoid_scene::interact::Slop
+impl core::marker::UnsafeUnpin for pixtuoid_scene::interact::Slop
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::interact::Slop
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::interact::Slop
 pub mod pixtuoid_scene::layout
 pub enum pixtuoid_scene::layout::Facing
 pub pixtuoid_scene::layout::Facing::East

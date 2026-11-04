@@ -19,7 +19,9 @@ use crate::pet::{PetKind, PetState};
 /// nothing. The painter's, whose pointer moves in its own steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Slop {
+    /// Across.
     pub x: u16,
+    /// Down.
     pub y: u16,
 }
 
@@ -32,8 +34,11 @@ impl Slop {
 /// A figure a pointer can lift.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Figure {
+    /// An agent's character.
     Agent(AgentId),
+    /// The floor's pet.
     Pet(PetKind),
+    /// A gateway's mascot.
     Mascot(DaemonInstanceKey),
 }
 
@@ -53,7 +58,9 @@ impl Figure {
 /// on it, and a painter's cursor shows it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Affordance {
+    /// What a click carries out.
     pub click: Option<HitAction>,
+    /// What a drag lifts.
     pub lift: Option<Figure>,
 }
 
@@ -93,7 +100,9 @@ pub enum Pressed {
 /// last carried, which the painter hands its floor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Down {
+    /// What it landed on.
     pub pressed: Pressed,
+    /// The carry it ended, if one was under way.
     pub ended: Option<Gesture>,
 }
 
@@ -103,7 +112,12 @@ pub enum Gesture {
     /// Released where it pressed: carry out the hit's action.
     Click(HitAction),
     /// Moved far enough on a figure to pick it up, the pointer at `at`.
-    Lift { figure: Figure, at: Point },
+    Lift {
+        /// What it picked up.
+        figure: Figure,
+        /// Where the pointer is.
+        at: Point,
+    },
     /// The lifted figure follows the pointer to `at`.
     Carry(Point),
     /// Released, carrying: set the figure down at `at`.

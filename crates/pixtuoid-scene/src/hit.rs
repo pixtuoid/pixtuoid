@@ -1,8 +1,8 @@
-//! What the last frame shows a pointer over an area of the office, for every
-//! painter: [`SceneHit`], and the figure it names ([`HoverTarget`],
-//! [`PetHover`]). Hidden, the painters' mechanism: a tooltip and a press both
-//! resolve an area through `scene_hit`, so a press acts on exactly what the
-//! tooltip names, and `SceneHit::action` is the one answer to what it does.
+//! What the last frame shows a pointer over an area of the office, and what a
+//! press on it does, for every painter: [`SceneHit`], the figure it names
+//! ([`HoverTarget`], [`PetHover`]), and [`SceneHit::action`], the one answer to
+//! what a press does. A tooltip and a press both resolve an area through the
+//! same hits, so a press acts on exactly what the tooltip names.
 
 use std::time::SystemTime;
 
@@ -56,10 +56,9 @@ pub enum SceneHit<'a> {
 }
 
 /// What a press does: what the painter carries out.
-#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HitAction {
-    /// Raise the agent's terminal.
+    /// Focus the agent: a desktop painter raises its terminal.
     Focus(AgentId),
     /// Pet the floor's pet.
     Pet(PetKind),
@@ -71,7 +70,6 @@ impl SceneHit<'_> {
     /// What a press on it does at `now`, with `petting` the last one; `None`
     /// where it does nothing — a fixture, a mascot, a pet mid-petting — and a
     /// painter treats the press as on the bare office.
-    #[doc(hidden)]
     pub fn action(self, petting: Option<&PetState>, now: SystemTime) -> Option<HitAction> {
         match self {
             Self::Figure(&HoverTarget::Agent(id)) => Some(HitAction::Focus(id)),
