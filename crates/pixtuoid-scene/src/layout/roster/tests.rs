@@ -903,8 +903,6 @@ fn a_desk_sorts_between_a_walker_behind_it_and_one_in_front() {
 #[test]
 fn a_plant_hovers_as_its_stand_in() {
     use crate::holiday::Occasion;
-    use crate::pack::Piece;
-    use strum::VariantArray;
     let christmas = Occasion::at(Occasion::christmas_noon());
     let plant = |kind| FixtureKind::Plant { item: 0, kind };
     let pod = |kind| FixtureKind::Pod { item: 0, kind };
@@ -927,10 +925,7 @@ fn a_plant_hovers_as_its_stand_in() {
             "{fixture:?}"
         );
     }
-    for &stand_in in Piece::VARIANTS
-        .iter()
-        .filter(|p| p.stands_in_for().is_some())
-    {
+    for stand_in in crate::holiday::every_stand_in().map(|s| s.art) {
         assert!(stand_in_label(stand_in).is_some(), "{}", stand_in.name());
     }
 }

@@ -4339,7 +4339,9 @@ fn the_classic_draws_each_plant_in_its_occasions_art() {
                 .collect();
             assert_eq!(drawn, want);
             assert_eq!(
-                drawn.iter().any(|p| p.stands_in_for().is_some()),
+                drawn
+                    .iter()
+                    .any(|&p| crate::holiday::every_stand_in().any(|s| s.art == p)),
                 occasion != crate::holiday::Occasion::default()
             );
         }

@@ -91,7 +91,7 @@ pub(crate) struct ValidationReport {
     /// Each of the caller's loops whose frames don't hold whole beats: the
     /// beat skips or stretches one.
     pub(crate) off_beat_loops: Vec<OffBeatLoop>,
-    /// Each holiday stand-in ([`Piece::stands_in_for`]) on a canvas other than
+    /// Each holiday stand-in (`holiday::every_stand_in`) on a canvas other than
     /// its plant's, which would stand it off the plant's footprint, and each
     /// density its plant is drawn at and it is not, where it would show
     /// coarser.
@@ -205,10 +205,11 @@ fn validate_loops(pack: &Pack, loops: &[(Piece, usize)], beat_ms: u64) -> Valida
         }
     }
 
-    for stand_in in Piece::VARIANTS.iter().copied() {
-        let Some(plant) = stand_in.stands_in_for() else {
-            continue;
-        };
+    for crate::holiday::StandIn {
+        art: stand_in,
+        plant,
+    } in crate::holiday::every_stand_in()
+    {
         let canvas = |s: &Sprite| s.frames().first().map(|f| (f.width(), f.height()));
         if canvas(pack.piece(stand_in)) != canvas(pack.piece(plant)) {
             report.misfit_stand_ins.push(stand_in.name().to_string());
@@ -313,10 +314,7 @@ fn looped_animations() -> Vec<(Piece, usize)> {
         .iter()
         .copied()
         .filter(|p| p.kind() == PieceKind::Creature);
-    let stand_ins = Piece::VARIANTS
-        .iter()
-        .copied()
-        .filter(|p| p.stands_in_for().is_some());
+    let stand_ins = crate::holiday::every_stand_in().map(|s| s.art);
     [
         Piece::FishTank,
         Piece::WaterCooler,
@@ -394,6 +392,16 @@ mod tests {
     fn hair_finding_count(report: &ValidationReport) -> usize {
         let bare = validate_loops(&dressed_pack(FRONT_BODY, "", &[]), &[], 0);
         report.finding_count() - bare.finding_count()
+    }
+
+    /// The painters loop every stand-in on the beat, so its loop is held to
+    /// whole beats.
+    #[test]
+    fn every_stand_in_is_a_looped_animation() {
+        let looped = looped_animations();
+        for s in crate::holiday::every_stand_in() {
+            assert!(looped.contains(&(s.art, 0)), "{}", s.art.name());
+        }
     }
 
     /// A stand-in on a canvas other than its plant's, or missing a density

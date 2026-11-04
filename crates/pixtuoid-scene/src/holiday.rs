@@ -1,7 +1,6 @@
 //! The holidays the office keeps, on the viewer's local date: each draws its
-//! stand-ins (`Piece::stands_in_for`) on the canvas of the pieces they stand
-//! in for, so the layout, its footprints and its reachability never see a
-//! holiday.
+//! stand-ins on the canvas of the plants they stand in for, so the layout, its
+//! footprints and its reachability never see a holiday.
 
 use std::time::SystemTime;
 
@@ -30,16 +29,49 @@ impl Holiday {
     }
 
     /// The stand-ins it draws.
-    fn stand_ins(self) -> &'static [Piece] {
+    fn stand_ins(self) -> &'static [StandIn] {
         match self {
-            Holiday::Christmas => &[
-                Piece::ChristmasTree,
-                Piece::ChristmasTreeShort,
-                Piece::Poinsettia,
-                Piece::Presents,
-            ],
+            Holiday::Christmas => &CHRISTMAS_STAND_INS,
         }
     }
+}
+
+/// A holiday's piece drawn instead of a plant, on that plant's canvas at
+/// every density, so the plant's footprint and box hold for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StandIn {
+    /// The piece drawn.
+    pub(crate) art: Piece,
+    /// The plant it is drawn instead of.
+    pub(crate) plant: Piece,
+}
+
+const CHRISTMAS_STAND_INS: [StandIn; 4] = [
+    StandIn {
+        art: Piece::ChristmasTree,
+        plant: Piece::PlantTall,
+    },
+    StandIn {
+        art: Piece::ChristmasTreeShort,
+        plant: Piece::Plant,
+    },
+    StandIn {
+        art: Piece::Poinsettia,
+        plant: Piece::PlantFlower,
+    },
+    StandIn {
+        art: Piece::Presents,
+        plant: Piece::PlantSucculent,
+    },
+];
+
+/// Every holiday's stand-ins, for the checks every one is held to.
+#[cfg(test)]
+pub(crate) fn every_stand_in() -> impl Iterator<Item = StandIn> {
+    Holiday::VARIANTS
+        .iter()
+        .flat_map(|h| h.stand_ins())
+        .copied()
 }
 
 /// The holiday a frame's office keeps, by default none.
@@ -69,13 +101,8 @@ impl Occasion {
     /// The art `piece` is drawn in: its holiday's stand-in for it, else itself.
     pub(crate) fn art(self, piece: Piece) -> Piece {
         self.0
-            .and_then(|h| {
-                h.stand_ins()
-                    .iter()
-                    .copied()
-                    .find(|s| s.stands_in_for() == Some(piece))
-            })
-            .unwrap_or(piece)
+            .and_then(|h| h.stand_ins().iter().find(|s| s.plant == piece))
+            .map_or(piece, |s| s.art)
     }
 }
 
@@ -102,12 +129,27 @@ mod tests {
     #[test]
     fn a_holiday_stands_in_for_its_pieces_and_leaves_the_rest() {
         let christmas = Occasion(Some(Holiday::Christmas));
-        for &stand_in in Holiday::Christmas.stand_ins() {
-            let piece = stand_in.stands_in_for().expect("a stand-in stands in");
-            assert_eq!(christmas.art(piece), stand_in);
-            assert_eq!(Occasion::default().art(piece), piece);
+        for &StandIn { art, plant } in Holiday::Christmas.stand_ins() {
+            assert_eq!(christmas.art(plant), art);
+            assert_eq!(Occasion::default().art(plant), plant);
         }
         assert_eq!(christmas.art(Piece::Desk), Piece::Desk);
+    }
+
+    /// Each stand-in replaces a plant: a plant's piece is drawn only by the
+    /// fixtures both painters draw in a holiday's art
+    /// (`FixtureKind::replaceable_piece`), where another piece, a whiteboard,
+    /// is drawn by a wall's decor too, which neither does.
+    #[test]
+    fn each_stand_in_replaces_a_plant() {
+        use crate::layout::PlantKind;
+        for s in every_stand_in() {
+            assert!(
+                PlantKind::ALL.iter().any(|k| k.piece() == s.plant),
+                "{}",
+                s.art.name()
+            );
+        }
     }
 
     /// Every stand-in a holiday draws that loops changes frames no faster than
@@ -123,7 +165,7 @@ mod tests {
         };
         const SAMPLED_MS: u64 = 3000;
         let pack = crate::pack::test_office();
-        for &stand_in in Holiday::VARIANTS.iter().flat_map(|h| h.stand_ins()) {
+        for stand_in in every_stand_in().map(|s| s.art) {
             let anim = pack.piece(stand_in);
             let (frames, step) = (anim.frames().len() as u64, u64::from(anim.frame_ms()));
             if frames < 2 {
@@ -139,31 +181,37 @@ mod tests {
         }
     }
 
-    /// Every looping stand-in is a string of lights: each of its frames, at
-    /// every density, draws the bulb key the cutaway lights after dark.
+    /// Every looping stand-in is strings of lights twinkling in the bulb key
+    /// the cutaway lights after dark: at every density, each frame lights
+    /// bulbs the next does not.
     #[test]
-    fn every_looping_stand_in_lights_up_after_dark() {
+    fn every_looping_stand_in_twinkles_in_the_bulb_key() {
         let pack = crate::pack::test_office();
-        for &stand_in in Holiday::VARIANTS.iter().flat_map(|h| h.stand_ins()) {
+        for stand_in in every_stand_in().map(|s| s.art) {
             let base = pack.piece(stand_in);
             if base.frames().len() < 2 {
                 continue;
             }
             let densities = pack.inner().variants_of(stand_in).values();
             for sprite in std::iter::once(base).chain(densities) {
-                for frame in 0..sprite.frames().len() {
-                    let bulbs = sprite
+                let lit = |frame| {
+                    sprite
                         .recolorable_at(frame)
-                        .drawn_in(&[crate::pack::DESK_BULB_KEY]);
-                    assert!(bulbs.contains(&true), "{} frame {frame}", stand_in.name());
+                        .drawn_in(&[crate::pack::DESK_BULB_KEY])
+                };
+                let frames = sprite.frames().len();
+                for frame in 0..frames {
+                    let (now, next) = (lit(frame), lit((frame + 1) % frames));
+                    let swapped = now.iter().zip(&next).any(|(&on, &then)| on && !then);
+                    assert!(swapped, "{} frame {frame}", stand_in.name());
                 }
             }
         }
     }
 
     /// The occasion is the viewer's local date: it turns at local midnight
-    /// either side of December, which, in the tests' +05:45 zone, is the other
-    /// month in UTC.
+    /// either side of December, which, in the justfile's `TEST_TZ`, is the
+    /// other month in UTC.
     #[test]
     fn the_occasion_turns_at_local_midnight() {
         let at = |y, m, d, h, min| {

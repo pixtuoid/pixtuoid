@@ -814,21 +814,28 @@ pub(crate) fn queued(
     keep: impl Fn(FixtureKind) -> bool,
 ) -> Vec<(Span, PieceKind)> {
     let timing = Motion::Full.timing(std::time::UNIX_EPOCH);
-    queued_at(layout, pack, scale, carried, keep, timing)
+    queued_at(
+        layout,
+        pack,
+        scale,
+        carried,
+        keep,
+        (timing, Default::default()),
+    )
 }
 
-/// [`queued`] on `timing`.
+/// [`queued`] on `timing`, keeping `occasion`.
 fn queued_at(
     layout: &SceneLayout,
     pack: &OfficeArt,
     scale: RenderScale,
     carried: &[crate::layout::Point],
     keep: impl Fn(FixtureKind) -> bool,
-    timing: crate::anim::Timing,
+    (timing, occasion): (crate::anim::Timing, crate::holiday::Occasion),
 ) -> Vec<(Span, PieceKind)> {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let frame = SimFrame {
-        occasion: crate::holiday::Occasion::at(timing.now),
+        occasion,
         ..empty_frame(layout)
     };
     let moment = Moment::resolve(crate::sky::Sky::clock(timing.now), theme, 0.0, timing);
@@ -855,7 +862,7 @@ fn queued_at(
 #[test]
 fn the_cutaway_draws_each_plant_in_its_occasions_art() {
     let pack = test_office();
-    let is_plant = |k: FixtureKind| k.replaceable_piece().is_some();
+    let replaceable = |k: FixtureKind| k.replaceable_piece().is_some();
     for now in [
         crate::localclock::at_hour(12),
         crate::holiday::Occasion::christmas_noon(),
@@ -863,15 +870,21 @@ fn the_cutaway_draws_each_plant_in_its_occasions_art() {
         let occasion = crate::holiday::Occasion::at(now);
         for layout in crate::layout::roster::tests::offices() {
             let timing = Motion::Full.timing(now);
-            let drawn: Vec<(PackPiece, bool)> =
-                queued_at(&layout, &pack, RenderScale::ONE, &[], is_plant, timing)
-                    .into_iter()
-                    .map(|(_, kind)| match kind {
-                        PieceKind::Animated { art, .. } => (art.sprite, true),
-                        PieceKind::Prop { art, .. } => (art.sprite, false),
-                        other => panic!("a plant queued as {other:?}"),
-                    })
-                    .collect();
+            let drawn: Vec<(PackPiece, bool)> = queued_at(
+                &layout,
+                &pack,
+                RenderScale::ONE,
+                &[],
+                replaceable,
+                (timing, occasion),
+            )
+            .into_iter()
+            .map(|(_, kind)| match kind {
+                PieceKind::Animated { art, .. } => (art.sprite, true),
+                PieceKind::Prop { art, .. } => (art.sprite, false),
+                other => panic!("a plant queued as {other:?}"),
+            })
+            .collect();
             let want: Vec<(PackPiece, bool)> = layout
                 .fixtures()
                 .filter_map(|f| f.kind.replaceable_piece())
@@ -1252,7 +1265,8 @@ fn a_looping_fixture_plays_on_the_floors_beat() {
         for ms in (0..=span_ms).step_by(FULL_TICK_MS as usize) {
             let timing =
                 motion.timing(std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms));
-            for (_, kind) in queued_at(&layout, &pack, RenderScale::ONE, &[], looping, timing) {
+            let on = (timing, Default::default());
+            for (_, kind) in queued_at(&layout, &pack, RenderScale::ONE, &[], looping, on) {
                 let PieceKind::Animated { art, .. } = kind else {
                     panic!("a looping fixture queues an animated piece: {kind:?}");
                 };

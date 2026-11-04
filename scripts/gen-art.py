@@ -2420,6 +2420,21 @@ def planter(g, cx, top, bot, half_top, half_bot, dark=False):
     rect(g, int(cx - half_top - 1), top, int(cx + half_top + 1) + 1, top + 1, rim)
 
 
+def bush_pot(g):
+    """The lobby ficus's terracotta pot, and its holiday stand-in's."""
+    planter(g, 12, 17, 27, 6.0, 4.5)
+
+
+def tall_pot(g):
+    """The tall plant's dark pot, and its holiday stand-in's."""
+    planter(g, 12, 30, 39, 6.0, 4.8, dark=True)
+
+
+def flower_pot(g):
+    """The flower's terracotta pot, and its holiday stand-in's."""
+    planter(g, 12, 15, 23, 4.5, 3.5)
+
+
 def plant_bush():
     """A leafy bush in terracotta: long pointed leaves fanning up and out from
     the pot, every tip clear of its neighbours."""
@@ -2436,7 +2451,7 @@ def plant_bush():
         (-1.57, 10.0, 2.4, 1),
     ):
         blade(g, 12, 18.5, ang, ln, wd, side)
-    planter(g, 12, 17, 27, 6.0, 4.5)
+    bush_pot(g)
     union_outline(g)
     return g
 
@@ -2458,7 +2473,7 @@ def plant_tall():
         (-1.25, 11.0, -1, 11),
     ):
         blade(g, 12, y, ang, ln, 2.4, side, rib=False)
-    planter(g, 12, 30, 39, 6.0, 4.8, dark=True)
+    tall_pot(g)
     union_outline(g)
     return g
 
@@ -2495,7 +2510,7 @@ def plant_flower():
         disc(g, bx, by, 2.4, col)
         put(g, int(bx) - 1, int(by) - 1, PETAL_HI)
         put(g, int(bx), int(by), GOLD if col == PETAL_R else DARK_RED)
-    planter(g, 12, 15, 23, 4.5, 3.5)
+    flower_pot(g)
     union_outline(g)
     return g
 
@@ -2586,7 +2601,7 @@ def christmas_tree():
             ((10, 9), (14, 16), (6, 22), (15, 25)),
             ((12, 12), (8, 17), (12, 21), (9, 26)),
         ),
-        lambda g: planter(g, 12, 30, 39, 6.0, 4.8, dark=True),
+        tall_pot,
     )
 
 
@@ -2602,7 +2617,7 @@ def christmas_tree_short():
             ((9, 8), (14, 13)),
             ((13, 9), (7, 14)),
         ),
-        lambda g: planter(g, 12, 17, 27, 6.0, 4.5),
+        bush_pot,
     )
 
 
@@ -2617,7 +2632,7 @@ def poinsettia():
         blade(g, 12, 8, ang, 7.0, 2.4, 1 if math.cos(ang) < 0 else -1, keys=BRACT_KEYS)
     disc(g, 12, 8, 1.6, GOLD)
     put(g, 11, 7, PETAL_HI)
-    planter(g, 12, 15, 23, 4.5, 3.5)
+    flower_pot(g)
     union_outline(g)
     return g
 
