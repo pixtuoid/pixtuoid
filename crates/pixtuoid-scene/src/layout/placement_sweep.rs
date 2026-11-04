@@ -1898,7 +1898,7 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 9] {
             WallSegment::Horizontal { y, x0, x1 } => WallSegment::Horizontal {
                 y: y - inner.y,
                 x0: x0.max(inner.x) - inner.x,
-                x1: x1.min(east) - inner.x,
+                x1: x1 - inner.x,
             },
             WallSegment::Vertical { x, y0, y1 } => WallSegment::Vertical {
                 x: x - inner.x,
