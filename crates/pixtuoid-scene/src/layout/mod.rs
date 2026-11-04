@@ -163,7 +163,7 @@ pub struct Size {
     pub h: u16,
 }
 
-/// How far a painter's own chrome reaches in from each edge of the office:
+/// How far a painter's own chrome reaches in from each edge of the viewport:
 /// under it the layout lays nothing but its floor, walls and sky.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) struct Insets {
@@ -177,8 +177,8 @@ pub(crate) struct Insets {
     pub(crate) left: u16,
 }
 
-/// The office a painter draws: its whole extent, and the insets its chrome
-/// covers.
+/// What a painter draws the office on: its whole extent, and the insets its
+/// chrome covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Viewport {
     /// The whole extent, in layout units.
@@ -188,7 +188,7 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    /// A `w`×`h` office no chrome covers.
+    /// A `w`×`h` viewport no chrome covers.
     pub const fn full(w: u16, h: u16) -> Self {
         Self {
             size: Size { w, h },
@@ -484,9 +484,9 @@ pub const CELL_ROWS: u16 = 2;
 
 /// The rows over a door whose top row is `door_y` that the terminal's floor
 /// indicator writes its text across: the whole cell above the door's, on the
-/// cells of an office whose north edge is `office_top`.
-pub(crate) fn floor_indicator_rows(door_y: u16, office_top: u16) -> std::ops::Range<u16> {
-    let top = ((door_y - office_top) / CELL_ROWS).saturating_sub(1) * CELL_ROWS + office_top;
+/// cells counted from `inner_top`, the north edge inside the insets.
+pub(crate) fn floor_indicator_rows(door_y: u16, inner_top: u16) -> std::ops::Range<u16> {
+    let top = ((door_y - inner_top) / CELL_ROWS).saturating_sub(1) * CELL_ROWS + inner_top;
     top..top + CELL_ROWS
 }
 
@@ -505,14 +505,14 @@ pub fn floor_indicator(floor: crate::floor::FloorMeta) -> [crate::display::Conte
 }
 
 /// Where the exit sign hangs over a door at `door`: centred above its floor
-/// indicator, or `None` where that would climb above the windows' head over
-/// an office whose north edge is `office_top`.
-pub(crate) fn exit_sign_pos(door: Point, office_top: u16) -> Option<Point> {
+/// indicator, or `None` where that would climb above the row [`WINDOW_TOP`]
+/// under `inner_top`, the north edge inside the insets.
+pub(crate) fn exit_sign_pos(door: Point, inner_top: u16) -> Option<Point> {
     let sign = furniture_def(WallDecor::ExitSign.furniture()).visual;
-    let y = floor_indicator_rows(door.y, office_top)
+    let y = floor_indicator_rows(door.y, inner_top)
         .start
         .checked_sub(sign.h)?;
-    (y >= office_top + WINDOW_TOP).then_some(Point {
+    (y >= inner_top + WINDOW_TOP).then_some(Point {
         x: door.x + (ELEVATOR_W - sign.w) / 2,
         y,
     })
@@ -531,7 +531,7 @@ pub(crate) const TEST_DEFAULT_DESKS: usize = CLASSIC_OFFICE_DESKS;
 #[cfg(test)]
 pub(crate) const DESK_GAP_Y: u16 = 14;
 /// Floor (px) for the layout's `top_margin`: `compute::wall_depth`'s percent of the
-/// office inside its insets never shrinks the north wall band below this.
+/// height inside the insets never shrinks the north wall band below this.
 pub(crate) const MIN_TOP_MARGIN: u16 = 20;
 const MIN_DUAL_MEETING_H: u16 = 80;
 

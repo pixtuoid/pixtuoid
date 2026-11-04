@@ -65,9 +65,9 @@ const HORIZON_FADE: f32 = 0.1;
 
 impl Disc {
     /// This frame's disc over a wall band `top_wall_h` tall whose windows tile
-    /// the columns `wall`, or `None` while its body is below the horizon or its
+    /// the columns `span`, or `None` while its body is below the horizon or its
     /// visibility (cloud, nightfall, horizon fade) is under [`MIN_DISC_VIS`].
-    pub(crate) fn of(sky: &Sky, wall: Range<u16>, top_wall_h: u16) -> Option<Self> {
+    pub(crate) fn of(sky: &Sky, span: Range<u16>, top_wall_h: u16) -> Option<Self> {
         let e = sky.body();
         if e.altitude <= 0.0 {
             return None;
@@ -86,7 +86,7 @@ impl Disc {
         // disc at its most visible low-altitude moment and froze `cx` there on a
         // single-window buffer) and NOT a linear `buf_w - WINDOW_W` bound (that
         // only coincidentally lands inside a window).
-        let run = window_run(wall);
+        let run = window_run(span);
         let span_left = f32::from(run.start) + DISC_RADIUS_PX;
         let span_right = (f32::from(run.end) - DISC_RADIUS_PX).max(span_left);
         let cx = span_left + e.azimuth * (span_right - span_left);
@@ -245,10 +245,10 @@ pub(crate) struct SkyView {
 
 impl SkyView {
     /// `outlook`'s sky behind a wall band `top_wall_h` tall whose windows tile
-    /// the columns `wall`, in `theme`.
+    /// the columns `span`, in `theme`.
     pub(crate) fn of(
         outlook: &crate::atmosphere::Outlook,
-        wall: Range<u16>,
+        span: Range<u16>,
         top_wall_h: u16,
         theme: &Theme,
     ) -> Self {
@@ -257,7 +257,7 @@ impl SkyView {
             look.glass_zenith
                 .mix(look.glass_horizon, k as f32 / (SKY_BANDS - 1) as f32)
         });
-        let disc = Disc::of(outlook.sky(), wall, top_wall_h);
+        let disc = Disc::of(outlook.sky(), span, top_wall_h);
         let core = match disc.map_or(BodyKind::Sun, |d| d.body) {
             BodyKind::Sun => theme.lighting.sun_core,
             BodyKind::Moon => theme.lighting.moon_core,

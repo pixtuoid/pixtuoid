@@ -53,21 +53,21 @@ pub(super) const DESK_BAND_MIN_H: u16 = INTER_POD_AISLE_Y / 2 + DESK_GROUND_H;
 /// over it and `band_w` subtracts it, so it is one const, not two literals.
 const MID_DIVIDER_W: u16 = 1;
 
-/// The cubicle band's WIDTH in an office `office_w` wide inside its insets —
+/// The cubicle band's WIDTH in an area `inner_w` wide inside the insets —
 /// everything east of the left column and its divider. THE formula `compute` and
 /// `min_layout_w` both step from.
-pub(super) const fn band_w(office_w: u16, mid_x_pct: u16) -> u16 {
-    office_w.saturating_sub(pct(office_w, mid_x_pct) + MID_DIVIDER_W)
+pub(super) const fn band_w(inner_w: u16, mid_x_pct: u16) -> u16 {
+    inner_w.saturating_sub(pct(inner_w, mid_x_pct) + MID_DIVIDER_W)
 }
 
-/// The band's HEIGHT in an office `office_h` tall inside its insets — everything below
+/// The band's HEIGHT in an area `inner_h` tall inside the insets — everything below
 /// the wall band, less the appliance aisle. THE formula `compute` and `min_layout_h`
-/// both step from, and it SATURATES: a sub-`wall_depth` office collapses to 0 rather
+/// both step from, and it SATURATES: a sub-`wall_depth` area collapses to 0 rather
 /// than wrapping to 58,974 and an office of garbage desks. Only observable below the
 /// size gate, so no test can hold it — the gate and the use site together are what
 /// keep it unobservable.
-pub(super) const fn band_h(office_h: u16) -> u16 {
-    let usable = office_h.saturating_sub(wall_depth(office_h));
+pub(super) const fn band_h(inner_h: u16) -> u16 {
+    let usable = inner_h.saturating_sub(wall_depth(inner_h));
     usable.saturating_sub(cubicle_aisle_h(usable))
 }
 
@@ -79,11 +79,11 @@ const fn pct_at_least(v: u16, n: u16, min: u16) -> u16 {
 
 const TOP_MARGIN_PCT: u16 = 30;
 
-/// The north wall band's depth below the office's north edge — [`TOP_MARGIN_PCT`]
-/// percent of the office's `office_h` inside its insets, never under
+/// The north wall band's depth below the north edge inside the insets —
+/// [`TOP_MARGIN_PCT`] percent of the `inner_h` inside them, never under
 /// [`MIN_TOP_MARGIN`].
-pub(super) const fn wall_depth(office_h: u16) -> u16 {
-    pct_at_least(office_h, TOP_MARGIN_PCT, MIN_TOP_MARGIN)
+pub(super) const fn wall_depth(inner_h: u16) -> u16 {
+    pct_at_least(inner_h, TOP_MARGIN_PCT, MIN_TOP_MARGIN)
 }
 
 const fn cubicle_aisle_h(usable_h: u16) -> u16 {
@@ -94,8 +94,8 @@ const fn cubicle_aisle_h(usable_h: u16) -> u16 {
 /// The appliance aisle south of the pods never shrinks below this.
 const MIN_CUBICLE_AISLE_H: u16 = 8;
 
-/// The smallest office `compute` lays out inside the insets; below either it returns
-/// `None` ("terminal too small"). BOTH axes are SOLVED against the band, not the office, and
+/// The smallest area inside the insets `compute` lays out; below either it returns
+/// `None` ("terminal too small"). BOTH axes are SOLVED against the band, not that area, and
 /// the width against the north wall too: no narrower wall hangs the door clear of
 /// the neon.
 pub(super) const MIN_LAYOUT_W: u16 = min_layout_w();
@@ -143,8 +143,8 @@ const fn min_layout_h() -> u16 {
     h
 }
 
-/// The smallest office that lays out inside a viewport's insets, for a painter
-/// that has to TELL the user why it is not drawing one. Layout units — each
+/// The smallest area inside a viewport's insets that lays out, for a painter
+/// that has to TELL the user why it draws no office. Layout units — each
 /// painter owns its own cell aspect, so only it can turn this into rows and
 /// columns.
 pub fn min_layout_size() -> Size {
@@ -158,12 +158,12 @@ pub fn min_layout_size() -> Size {
 /// that holds only while the growth base stays above it.
 const _: () = assert!(COUCH_GAP_GROWTH_BASE_H > MIN_LAYOUT_H);
 
-const fn couch_to_desk_extra(office_h: u16) -> u16 {
-    const OFFICE_ROWS_PER_GAP_ROW: u16 = 20;
-    office_h.saturating_sub(COUCH_GAP_GROWTH_BASE_H) / OFFICE_ROWS_PER_GAP_ROW
+const fn couch_to_desk_extra(inner_h: u16) -> u16 {
+    const INNER_ROWS_PER_GAP_ROW: u16 = 20;
+    inner_h.saturating_sub(COUCH_GAP_GROWTH_BASE_H) / INNER_ROWS_PER_GAP_ROW
 }
 
-/// Office height at which the couch-to-desk gap starts growing. It equalled the
+/// The inner height at which the couch-to-desk gap starts growing. It equalled the
 /// old hand-written `MIN_LAYOUT_H` by coincidence, not by derivation — re-tying it
 /// to the now-lower floor would widen the gap on most offices tall enough to render
 /// today, so it keeps its own name and its own number.
@@ -396,7 +396,7 @@ pub(super) fn compute(
     // that gate can check couch↔door clearance.
     let top_wall_h = super::wall_band_h(plan.top_margin);
     let door = Point {
-        x: super::door_x(super::windows::window_wall(inner)),
+        x: super::door_x(super::windows::wall_span(inner)),
         // Its bottom row is the band's trim row, so it stands on the floor
         // line instead of floating mid-wall.
         y: super::wall_trim_row(top_wall_h) + 1 - ELEVATOR_H,

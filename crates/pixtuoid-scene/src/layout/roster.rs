@@ -312,11 +312,11 @@ impl FixtureKind {
 
 /// The wall clock's face.
 pub(crate) const CLOCK: Size = Size { w: 7, h: 7 };
-/// The wall clock's top row, from the office's north edge.
+/// The wall clock's top row, from the north edge inside the insets.
 const CLOCK_Y: u16 = 1;
 
-/// The neon sign's outer box: its offset from the office's north-west corner,
-/// then its size with the frame included.
+/// The neon sign's outer box: its offset from the north-west corner inside the
+/// insets, then its size with the frame included.
 pub(crate) const NEON_PANEL_X: u16 = 1;
 pub(crate) const NEON_PANEL_Y: u16 = 1;
 /// The neon sign's outer width in pixels. A pixel column is a terminal cell
@@ -768,10 +768,10 @@ impl SceneLayout {
     /// wall's middle that the neon sign leaves clear, or `None` on a wall
     /// with none.
     pub(crate) fn clock_pos(&self) -> Option<Point> {
-        let wall = self.window_wall();
-        let middle = u16::midpoint(wall.start, wall.end);
+        let span = self.wall_span();
+        let middle = u16::midpoint(span.start, span.end);
         let panel = self.neon_panel();
-        super::window_posts(wall)
+        super::window_posts(span)
             .map(|post| u16::midpoint(post.start, post.end))
             .filter(|&centre| centre - CLOCK.w / 2 >= panel.x + panel.width)
             .min_by_key(|centre| centre.abs_diff(middle))

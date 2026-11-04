@@ -425,9 +425,9 @@ fn the_door_is_centred_in_the_last_window_slot() {
         let door = l.door_rect();
         let roster = l.fixtures().find(|f| f.kind == FixtureKind::Door);
         assert_eq!(roster.map(|f| f.visual), Some(door), "{at}");
-        let slots: Vec<_> = super::super::window_slots(l.window_wall()).collect();
+        let slots: Vec<_> = super::super::window_slots(l.wall_span()).collect();
         let Some(&slot) = slots.last() else {
-            assert_eq!(door.x, super::super::door_x(l.window_wall()), "{at}");
+            assert_eq!(door.x, super::super::door_x(l.wall_span()), "{at}");
             continue;
         };
         assert!(
@@ -523,7 +523,7 @@ fn the_clock_hangs_centred_on_a_window_post() {
         let at = format!("{}x{}", l.buf_w, l.buf_h);
         let Some(clock) = l.fixtures().find(|f| f.kind == FixtureKind::Clock) else {
             assert!(
-                super::super::window_posts(l.window_wall()).count() <= 1,
+                super::super::window_posts(l.wall_span()).count() <= 1,
                 "{at}: no clock, though a post stands clear of the neon"
             );
             continue;
@@ -532,12 +532,41 @@ fn the_clock_hangs_centred_on_a_window_post() {
         let clock = clock.visual;
         let centre = clock.x + clock.width / 2;
         assert!(
-            super::super::window_posts(l.window_wall())
+            super::super::window_posts(l.wall_span())
                 .any(|p| u16::midpoint(p.start, p.end) == centre),
             "{at}: {clock:?} off every post"
         );
     }
     assert!(met > 0, "the census met a clock");
+}
+
+/// The board is the sign the painter draws less the frame it lights,
+/// wherever the insets hang the sign.
+#[test]
+fn the_board_is_the_neon_signs_interior() {
+    let insets = crate::layout::Insets {
+        top: 7,
+        right: 3,
+        bottom: 5,
+        left: 9,
+    };
+    for viewport in [
+        crate::layout::Viewport::full(240, 144),
+        crate::layout::inset_viewport(240, 144, insets),
+    ] {
+        let l = SceneLayout::compute(viewport, None, 0).expect("lays out");
+        let sign = l
+            .fixtures()
+            .find(|f| f.kind == FixtureKind::NeonSign)
+            .expect("the office hangs its sign")
+            .visual;
+        let (board, b) = (l.board(), NEON_PANEL_BORDER);
+        assert_eq!(
+            (board.x, board.y, board.right(), board.bottom()),
+            (sign.x + b, sign.y + b, sign.right() - b, sign.bottom() - b),
+            "{viewport:?}"
+        );
+    }
 }
 
 /// [`kind_key`], with a pod decor by its own kind: a phone booth and a
