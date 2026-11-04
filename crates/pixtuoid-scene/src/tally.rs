@@ -94,7 +94,7 @@ pub fn office_gateway(scene: &SceneState) -> Option<DaemonState> {
 /// `now`'s local date, what a host's reducer dates [`Today::day`] by.
 #[doc(hidden)]
 pub fn local_day(now: SystemTime) -> NaiveDate {
-    chrono::DateTime::<chrono::Local>::from(now).date_naive()
+    crate::localclock::local_time(now).date()
 }
 
 /// What every reader shows of `today`: its tokens, else its tool calls, else

@@ -800,6 +800,7 @@ pub(crate) fn empty_frame(layout: &SceneLayout) -> SimFrame {
         mascots: Vec::new(),
         desks: vec![Default::default(); layout.home_desks.len()],
         door_frame: 0,
+        occasion: Default::default(),
     }
 }
 
@@ -813,20 +814,30 @@ pub(crate) fn queued(
     keep: impl Fn(FixtureKind) -> bool,
 ) -> Vec<(Span, PieceKind)> {
     let timing = Motion::Full.timing(std::time::UNIX_EPOCH);
-    queued_at(layout, pack, scale, carried, keep, timing)
+    queued_at(
+        layout,
+        pack,
+        scale,
+        carried,
+        keep,
+        (timing, Default::default()),
+    )
 }
 
-/// [`queued`] on `timing`.
+/// [`queued`] on `timing`, keeping `occasion`.
 fn queued_at(
     layout: &SceneLayout,
     pack: &OfficeArt,
     scale: RenderScale,
     carried: &[crate::layout::Point],
     keep: impl Fn(FixtureKind) -> bool,
-    timing: crate::anim::Timing,
+    (timing, occasion): (crate::anim::Timing, crate::holiday::Occasion),
 ) -> Vec<(Span, PieceKind)> {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
-    let frame = empty_frame(layout);
+    let frame = SimFrame {
+        occasion,
+        ..empty_frame(layout)
+    };
     let moment = Moment::resolve(crate::sky::Sky::clock(timing.now), theme, 0.0, timing);
     let inputs = ComposeInputs {
         frame: &frame,
@@ -843,6 +854,90 @@ fn queued_at(
         push_fixture(f, inputs, carried, &mut order);
     }
     order
+}
+
+/// The cutaway queues each plant and aisle piece in the art the day's
+/// occasion draws it in, one with frames to loop looping on the beat and the
+/// rest held.
+#[test]
+fn the_cutaway_draws_each_plant_in_its_occasions_art() {
+    let pack = test_office();
+    let drawn_on_occasion = |k: FixtureKind| k.occasion_piece().is_some();
+    for now in [
+        crate::localclock::at_hour(12),
+        crate::holiday::Occasion::christmas_noon(),
+    ] {
+        let occasion = crate::holiday::Occasion::at(now);
+        for layout in crate::layout::roster::tests::offices() {
+            let timing = Motion::Full.timing(now);
+            let drawn: Vec<(PackPiece, bool)> = queued_at(
+                &layout,
+                &pack,
+                RenderScale::ONE,
+                &[],
+                drawn_on_occasion,
+                (timing, occasion),
+            )
+            .into_iter()
+            .map(|(_, kind)| match kind {
+                PieceKind::Animated { art, .. } => (art.sprite, true),
+                PieceKind::Prop { art, .. } => (art.sprite, false),
+                other => panic!("a plant queued as {other:?}"),
+            })
+            .collect();
+            let want: Vec<(PackPiece, bool)> = layout
+                .fixtures()
+                .filter_map(|f| f.kind.occasion_piece())
+                .map(|p| occasion.art(p))
+                .map(|p| (p, pack.piece(p).frames().len() > 1))
+                .collect();
+            assert_eq!(drawn, want);
+        }
+    }
+}
+
+/// The cutaway steps each looping stand-in a frame each of its `frame_ms`.
+#[test]
+fn the_cutaway_steps_each_looping_stand_in_on_the_beat() {
+    let pack = test_office();
+    let now = crate::holiday::Occasion::christmas_noon();
+    let occasion = crate::holiday::Occasion::at(now);
+    let mut looping = 0;
+    for layout in crate::layout::roster::tests::offices() {
+        let frames = |at| {
+            let on = (Motion::Full.timing(at), occasion);
+            queued_at(
+                &layout,
+                &pack,
+                RenderScale::ONE,
+                &[],
+                |k| k.occasion_piece().is_some(),
+                on,
+            )
+            .into_iter()
+            .filter_map(|(_, kind)| match kind {
+                PieceKind::Animated { art, .. } => Some((art.sprite, art.frame)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+        };
+        let then = frames(now);
+        for &(sprite, _) in &then {
+            let step = std::time::Duration::from_millis(pack.piece(sprite).frame_ms().into());
+            let next = frames(now + step);
+            assert_eq!(then.len(), next.len());
+            for (a, b) in then.iter().zip(&next).filter(|(a, _)| a.0 == sprite) {
+                assert_ne!(
+                    a.1,
+                    b.1,
+                    "{} steps a frame each of its frame_ms",
+                    sprite.name()
+                );
+            }
+        }
+        looping += then.len();
+    }
+    assert!(looping > 0, "some office loops a stand-in");
 }
 
 fn near_seat(desk: crate::layout::Point) -> crate::layout::Point {
@@ -1214,7 +1309,8 @@ fn a_looping_fixture_plays_on_the_floors_beat() {
         for ms in (0..=span_ms).step_by(FULL_TICK_MS as usize) {
             let timing =
                 motion.timing(std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms));
-            for (_, kind) in queued_at(&layout, &pack, RenderScale::ONE, &[], looping, timing) {
+            let on = (timing, Default::default());
+            for (_, kind) in queued_at(&layout, &pack, RenderScale::ONE, &[], looping, on) {
                 let PieceKind::Animated { art, .. } = kind else {
                     panic!("a looping fixture queues an animated piece: {kind:?}");
                 };

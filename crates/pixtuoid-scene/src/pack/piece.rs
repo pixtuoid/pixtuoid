@@ -47,6 +47,10 @@ pub enum Piece {
     PlantTall,
     PlantFlower,
     PlantSucculent,
+    ChristmasTree,
+    ChristmasTreeShort,
+    Poinsettia,
+    Presents,
     FloorLamp,
     Door,
     MeetingSofa,
@@ -115,7 +119,9 @@ impl Piece {
             | Piece::WalkingBack
             | Piece::CatWalk
             | Piece::DogWalk
-            | Piece::LobsterWalk => 2,
+            | Piece::LobsterWalk
+            | Piece::ChristmasTree
+            | Piece::ChristmasTreeShort => 2,
             _ => 1,
         }
     }
@@ -201,6 +207,8 @@ mod tests {
                 ("typing", 2),
                 ("walking", 2),
                 ("walking_back", 2),
+                ("christmas_tree", 2),
+                ("christmas_tree_short", 2),
                 ("door", 3),
                 ("cat_walk", 2),
                 ("dog_walk", 2),

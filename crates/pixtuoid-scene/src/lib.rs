@@ -64,6 +64,8 @@ pub(crate) mod glass;
 pub(crate) mod glass_weather;
 pub mod grid;
 pub(crate) mod ground;
+#[doc(hidden)]
+pub mod holiday;
 pub mod layout;
 pub(crate) mod lighting;
 #[doc(hidden)]

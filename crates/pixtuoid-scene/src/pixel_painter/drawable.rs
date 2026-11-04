@@ -128,12 +128,15 @@ pub(super) enum DrawableKind<'a> {
     SnackShelf {
         pos: Point,
     },
+    /// A plant, drawn in `art`: its own piece or its occasion's stand-in.
     Plant {
-        kind: crate::layout::PlantKind,
+        art: Piece,
         pos: Point,
     },
+    /// An aisle's decor, drawn in `art`: its own piece or its occasion's
+    /// stand-in.
     PodDecorItem {
-        kind: crate::layout::PodDecor,
+        art: Piece,
         pos: Point,
     },
     FloorLamp {
@@ -229,6 +232,22 @@ fn blit_centered_first_frame(pack: &OfficeArt, anim_name: Piece, pos: Point, buf
     blit_centered(pack.piece(anim_name).first(), pos, buf);
 }
 
+/// [`blit_centered`] `anim_name`'s frame showing on `beat`.
+fn blit_centered_looping(
+    pack: &OfficeArt,
+    anim_name: Piece,
+    pos: Point,
+    beat: crate::anim::Beat,
+    buf: &mut RgbBuffer,
+) {
+    let anim = pack.piece(anim_name);
+    blit_centered(
+        anim.frame_at(crate::pack::looping_frame_index(anim, beat)),
+        pos,
+        buf,
+    );
+}
+
 /// The subset of `PaintCtx` a [`Drawable`] arm paints with.
 pub(super) struct DrawableCtx<'a> {
     pub buf: &'a mut RgbBuffer,
@@ -319,14 +338,14 @@ pub(super) fn paint_drawable(kind: &DrawableKind<'_>, c: &mut DrawableCtx<'_>) {
         DrawableKind::SnackShelf { pos } => {
             blit_centered_first_frame(pack, Piece::SnackShelf, *pos, buf);
         }
-        DrawableKind::Plant { kind, pos } => {
+        DrawableKind::Plant { art, pos } => {
             // Occlusion is the sprite's own job: the foliage overhangs north of
             // the mask's shallow south-anchored pot strip, so it hides a walker
             // parked behind it. No synthetic back-cap.
-            blit_centered_first_frame(pack, kind.piece(), *pos, buf);
+            blit_centered_looping(pack, *art, *pos, beat, buf);
         }
-        DrawableKind::PodDecorItem { kind, pos } => {
-            blit_centered_first_frame(pack, kind.piece(), *pos, buf);
+        DrawableKind::PodDecorItem { art, pos } => {
+            blit_centered_looping(pack, *art, *pos, beat, buf);
         }
         DrawableKind::FloorLamp { pos } => {
             blit_centered_first_frame(pack, Piece::FloorLamp, *pos, buf);
