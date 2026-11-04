@@ -440,10 +440,7 @@ mod tests {
             RenderInputs {
                 world,
                 theme: &NORMAL,
-                viewport: Viewport {
-                    size: classic.fit.logical(),
-                    insets: Insets::default(),
-                },
+                viewport: classic.fit.logical().into(),
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(&scene),
                     floor: None,

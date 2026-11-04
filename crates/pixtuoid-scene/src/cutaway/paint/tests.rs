@@ -2940,6 +2940,72 @@ fn every_piece_paints_only_inside_its_span() {
     }
 }
 
+/// A dressed figure at the top of the area under a top inset paints none of
+/// its hair over the inset: its box stops at the inset's edge, and so does
+/// every pixel it writes.
+#[test]
+fn a_dressed_figure_under_a_top_inset_keeps_its_hair_off_it() {
+    let base = test_office();
+    let scale = RenderScale::from(base.max_density_variant());
+    let walk = crate::pack::densest_frame(&base, PackPiece::Walking, 0, scale);
+    let id = (0..1000)
+        .map(|i| pixtuoid_core::AgentId::from_transcript_path(&format!("/style/{i}.jsonl")))
+        .find(|&id| {
+            crate::character::dress_for(&base, id, walk.frame, walk.head, walk.density)
+                .is_some_and(|d| d.rise() > 0)
+        })
+        .expect("a style whose hair rises over the frame");
+    let (_, pack, frames, _) = sit_down_as(base.clone(), crate::layout::Facing::South, 0, id);
+    let insets = crate::layout::Insets {
+        top: 9,
+        ..Default::default()
+    };
+    let layout = SceneLayout::compute(
+        crate::layout::inset_viewport(160, 96, insets),
+        None,
+        crate::floor::FloorMeta::ground().floor_seed,
+    )
+    .expect("lays out");
+    let mut frame = frames.first().expect("a walking frame").clone();
+    for c in &mut frame.characters {
+        c.top_left.y = layout.inner.y;
+    }
+    let theme = crate::theme::theme_by_name("normal").expect("theme");
+    let moment = Moment::resolve(
+        crate::sky::Sky::clock(std::time::UNIX_EPOCH),
+        theme,
+        0.0,
+        Motion::Full.timing(std::time::UNIX_EPOCH),
+    );
+    let list = compose_at(
+        &frame,
+        Office {
+            layout: &layout,
+            pack: &pack,
+            theme,
+            scale,
+        },
+        &moment,
+        crate::floor::FloorMeta::ground(),
+        quiet_board(),
+        (
+            &mut crate::display::compose::LightCache::default(),
+            &mut crate::outside::OutsideCache::default(),
+        ),
+    );
+    let (span, kind) = list
+        .pieces()
+        .iter()
+        .find_map(|p| matches!(p.kind, PieceKind::Character { .. }).then_some((p.span, &p.kind)))
+        .expect("the figure is drawn");
+    assert_eq!(span.y0, layout.inner.y, "{span:?}");
+    assert_eq!(
+        stray_pixel(kind, span, &layout, &pack, theme, scale),
+        None,
+        "{span:?}"
+    );
+}
+
 /// A cat and two gateways of one source, the second degraded and in hand,
 /// so it sorts last on a row no feet stand on.
 fn creatures() -> (SceneLayout, SimFrame) {

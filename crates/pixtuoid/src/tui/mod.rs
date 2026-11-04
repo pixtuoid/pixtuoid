@@ -806,7 +806,7 @@ mod capacity_sweep_tests {
                 seed,
             )
             .min(pixtuoid_scene::floor::floor_capacity(
-                pixtuoid_scene::layout::Viewport::full(small.w, small.h),
+                pixtuoid_scene::layout::Viewport::from(small),
                 seed,
             ));
             assert_eq!(slot.load(Ordering::Relaxed), want, "floor {i}");

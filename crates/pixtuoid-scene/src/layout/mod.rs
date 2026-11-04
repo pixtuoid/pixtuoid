@@ -221,6 +221,13 @@ impl Viewport {
     }
 }
 
+impl From<Size> for Viewport {
+    /// A `size` viewport no chrome covers ([`Viewport::full`]).
+    fn from(size: Size) -> Self {
+        Self::full(size.w, size.h)
+    }
+}
+
 /// An interior room wall's straight run, both ends inclusive and in order. It
 /// names its axis because a one-cell run, the post a door flush with its run's
 /// end leaves, could not say it with its ends alone.

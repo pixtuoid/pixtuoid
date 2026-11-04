@@ -381,7 +381,7 @@ mod tests {
         let boot = boot_capacities_for_window(PhysicalSize::new(w, h), density(), Zoom::default());
         for (i, &got) in boot.iter().enumerate() {
             let want = pixtuoid_scene::floor::floor_capacity(
-                pixtuoid_scene::layout::Viewport::full(office.w, office.h),
+                pixtuoid_scene::layout::Viewport::from(office),
                 pixtuoid_scene::floor::floor_seed(i),
             );
             assert_eq!(
@@ -463,7 +463,7 @@ mod tests {
         let office = window_geometry(tiny, density(), Zoom::default()).logical();
         assert_eq!(
             pixtuoid_scene::floor::floor_capacity(
-                pixtuoid_scene::layout::Viewport::full(office.w, office.h),
+                pixtuoid_scene::layout::Viewport::from(office),
                 pixtuoid_scene::floor::floor_seed(0)
             ),
             0,

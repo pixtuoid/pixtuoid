@@ -46,13 +46,13 @@ pub fn floor_capacity(viewport: Viewport, floor_seed: u64) -> usize {
         .unwrap_or(0)
 }
 
-/// How many home desks a floor fits when the PIXELS of `viewport` are painted
+/// How many home desks a floor fits when `buf_w × buf_h` PIXELS are painted
 /// at `scale` — i.e. the capacity of the logical office those pixels cover.
 ///
-/// [`floor_capacity`] is the `RenderScale::ONE` case. The two are separate
-/// functions rather than one defaulted parameter because every existing caller
-/// means "buffer pixels are layout units" and must keep meaning it; a painter
-/// that adopts a scale opts in at its own call site.
+/// [`floor_capacity`] over a [`Viewport::full`] is the `RenderScale::ONE` case.
+/// The two are separate functions rather than one defaulted parameter because
+/// every existing caller means "buffer pixels are layout units" and must keep
+/// meaning it; a painter that adopts a scale opts in at its own call site.
 ///
 /// `#[cfg(test)]` because no painter has opted in yet: this is the vehicle for
 /// `render_scale`'s scale-invariance proof, not shipped behaviour. Un-gate it
@@ -207,11 +207,11 @@ impl FloorCtx {
         }
     }
 
-    /// The per-frame layout — memoized `compute(viewport, None, seed)` +
-    /// the router corridor re-point, the ONE frame prologue every painter rides.
-    /// Returns a cheap `Arc` handle so callers can hold it across later
-    /// `&mut self` uses without re-cloning the whole `SceneLayout` every frame. A
-    /// too-small buffer returns `None` without poisoning the memo.
+    /// The per-frame layout — memoized `compute(viewport, None, seed)` + the router
+    /// corridor re-point, the ONE frame prologue every painter rides. Returns a cheap
+    /// `Arc` handle so callers can hold it across later `&mut self` uses without
+    /// re-cloning the whole `SceneLayout` every frame. A viewport leaving too small an
+    /// area inside its insets returns `None` without poisoning the memo.
     pub(crate) fn frame_layout(
         &mut self,
         viewport: Viewport,

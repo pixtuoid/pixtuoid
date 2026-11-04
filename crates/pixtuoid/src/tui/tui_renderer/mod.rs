@@ -362,7 +362,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             RenderInputs {
                 world: self.chrome.office_world(scene, now),
                 theme: self.chrome.theme,
-                viewport: pixtuoid_scene::layout::Viewport::full(size.w, size.h),
+                viewport: size.into(),
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(scene),
                     floor: None,

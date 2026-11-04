@@ -1144,6 +1144,8 @@ pub fn pixtuoid_scene::layout::Size::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Size
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Size
 pub fn pixtuoid_scene::layout::Size::eq(&self, &Self) -> bool
+impl core::convert::From<pixtuoid_scene::layout::Size> for pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::from(pixtuoid_scene::layout::Size) -> Self
 impl core::fmt::Debug for pixtuoid_scene::layout::Size
 pub fn pixtuoid_scene::layout::Size::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Size
@@ -1167,6 +1169,8 @@ pub fn pixtuoid_scene::layout::Viewport::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Viewport
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Viewport
 pub fn pixtuoid_scene::layout::Viewport::eq(&self, &Self) -> bool
+impl core::convert::From<pixtuoid_scene::layout::Size> for pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::from(pixtuoid_scene::layout::Size) -> Self
 impl core::fmt::Debug for pixtuoid_scene::layout::Viewport
 pub fn pixtuoid_scene::layout::Viewport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Viewport

@@ -577,7 +577,7 @@ fn floor_capacity_is_the_capacity_inside_the_insets() {
     }
     let under = inside(min_layout_size().w - 1, min_layout_size().h);
     assert_eq!(floor_capacity(under, 0), 0);
-    assert!(floor_capacity(Viewport::full(under.size.w, under.size.h), 0) > 0);
+    assert!(floor_capacity(Viewport::from(under.size), 0) > 0);
 }
 
 /// Insets alone re-lay the floor out: the memo keys on the whole viewport.

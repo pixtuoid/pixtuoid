@@ -172,10 +172,16 @@ fn no_figure_is_drawn_under_an_inset() {
             && b.right() <= inner.right()
             && b.bottom() <= inner.bottom()
     };
+    // The densest cutaway dresses its figures in hair that rises over them.
+    let dense = RenderScale::from(crate::pack::test_office().max_density_variant());
     let looks = [
         Look::HALF_BLOCKS,
         Look::Cutaway {
             scale: RenderScale::new(2).expect("nonzero"),
+            text: WorldText::Baked,
+        },
+        Look::Cutaway {
+            scale: dense,
             text: WorldText::Baked,
         },
     ];

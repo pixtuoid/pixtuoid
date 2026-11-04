@@ -5263,18 +5263,18 @@ fn keep_sprite_inside_bounds_differ_by_pivot() {
     // An area smaller than the sprite: either pivot falls back to its lower
     // bound rather than `clamp`'s inverted-range panic.
     let tiny = Bounds {
-        x: 0,
-        y: 0,
+        x: 5,
+        y: 7,
         width: 4,
         height: 4,
     };
     assert_eq!(
         keep_sprite_inside(Pivot::Center, Point { x: 2, y: 2 }, size, tiny),
-        Point { x: 4, y: 6 }
+        Point { x: 9, y: 13 }
     );
     assert_eq!(
         keep_sprite_inside(Pivot::TopLeft, Point { x: 2, y: 2 }, size, tiny),
-        Point { x: 0, y: 0 }
+        Point { x: 5, y: 7 }
     );
 }
 
