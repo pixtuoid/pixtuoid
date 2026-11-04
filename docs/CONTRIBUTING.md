@@ -111,11 +111,10 @@ our release never builds. Two consequences:
   formula, in the same bump PR.
 - **Their `test do` block is a public contract** — see the "homebrew-core
   contract" comment at `doctor/delivery.rs`; the packaging-build action
-  replays the block. A dispatch warns only when the block calls a subcommand
-  this tree dropped, or a command an `assert_match` of literal text reads exits
-  other than its `shell_output` status or prints no match, because the owner,
-  who sent a test update before its release, was told to release first (no
-  public record); step 4 sends it.
+  replays the block. A dispatch warns wherever `release-plz.yml`'s
+  homebrew-core step finds the block asking what this tree can't give, and
+  never fails, because the owner, who sent a test update before its release,
+  was told to release first (no public record); step 4 sends it.
 
 Do not try to preempt BrewTestBot: the formula is on homebrew-core's
 autobump list, so `brew bump-formula-pr pixtuoid` refuses by policy and the

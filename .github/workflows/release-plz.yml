@@ -103,10 +103,13 @@ jobs:
           # `assert_match "<text>", shell_output("#{bin}/pixtuoid <args>"[, status])`
           # must exit as its status expects (0 unset) and print its text there.
           asserted='assert_match "([^"]*)", shell_output\("#\{bin\}/pixtuoid ([^"]*)"(, ([0-9]+))?\)'
+          # A literal first argument it can't read (split across lines, quoted
+          # otherwise, parenthesized, a regex) is no pass; an expression such as
+          # `version.to_s` is packaging-build's to replay.
+          literal="assert_match[[:space:]]*[(]?[[:space:]]*[\"'/%]"
           while IFS= read -r line; do
             if ! [[ $line =~ $asserted ]]; then
-              # A literal it can't read, split across lines say, is no pass.
-              [[ $line == *'assert_match "'* ]] \
+              [[ $line =~ $literal ]] \
                 && owe "homebrew-core's test has an \`assert_match\` this check can't read: ${line#"${line%%[![:space:]]*}"}"
               continue
             fi
