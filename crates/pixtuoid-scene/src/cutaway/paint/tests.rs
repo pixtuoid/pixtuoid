@@ -2940,9 +2940,9 @@ fn every_piece_paints_only_inside_its_span() {
     }
 }
 
-/// A dressed figure at the top of the area under a top inset paints none of
-/// its hair over the inset: its box stops at the inset's edge, and so does
-/// every pixel it writes.
+/// A dressed figure carried to the top of the area under a top inset, at the
+/// pack's densest art, paints none of its hair over the inset, and the box
+/// [`Hits::figures`](crate::look::Hits::figures) reports stops at its edge.
 #[test]
 fn a_dressed_figure_under_a_top_inset_keeps_its_hair_off_it() {
     let base = test_office();
@@ -2993,16 +2993,25 @@ fn a_dressed_figure_under_a_top_inset_keeps_its_hair_off_it() {
             &mut crate::outside::OutsideCache::default(),
         ),
     );
-    let (span, kind) = list
+    let figure = list
         .pieces()
         .iter()
-        .find_map(|p| matches!(p.kind, PieceKind::Character { .. }).then_some((p.span, &p.kind)))
+        .find(|p| matches!(p.kind, PieceKind::Character { .. }))
         .expect("the figure is drawn");
-    assert_eq!(span.y0, layout.inner.y, "{span:?}");
+    let [a, b] = painted_over_two_fills(&figure.kind, &layout, &pack, &Recolours::of(theme), scale);
+    let w = usize::from(scale.to_buffer(layout.buf_w));
+    let over = usize::from(scale.to_buffer(layout.inner.y)) * w;
+    let written_over = a.as_slice()[..over]
+        .iter()
+        .zip(&b.as_slice()[..over])
+        .position(|(pa, pb)| pa == pb)
+        .map(|i| (i % w, i / w));
+    assert_eq!(written_over, None, "a pixel painted over the inset");
+    let boxes: Vec<_> = list.hovers().listed().iter().map(|h| h.at).collect();
     assert_eq!(
-        stray_pixel(kind, span, &layout, &pack, theme, scale),
-        None,
-        "{span:?}"
+        boxes.iter().map(|b| b.y).min(),
+        Some(layout.inner.y),
+        "the boxes stop at the inset's edge: {boxes:?}"
     );
 }
 
