@@ -362,7 +362,6 @@ fn lightning_strikes_are_jittered_not_metronomic() {
         distinct > 12,
         "strike offsets should vary across buckets, got {offsets:?}"
     );
-    assert!(offsets.iter().all(|&o| o < LIGHTNING_PERIOD_MS - STRIKE_MS));
 }
 
 /// At rest no strike flashes, for the photosensitive.

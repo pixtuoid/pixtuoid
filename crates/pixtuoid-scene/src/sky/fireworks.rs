@@ -211,8 +211,8 @@ mod tests {
         const SPAN_MS: u64 = 30 * BURSTS.period_ms;
         let open = 10 * BURSTS.period_ms..20 * BURSTS.period_ms;
         let at = |wall| std::time::UNIX_EPOCH + std::time::Duration::from_millis(wall);
-        for motion in [Motion::Full, Motion::Calm] {
-            let pace = motion.pace().expect("a moving tier");
+        for motion in Motion::ALL {
+            let Some(pace) = motion.pace() else { continue };
             for lane in (0..LANES).filter(|l| !l.is_multiple_of(ALL_NIGHT_LANE_STRIDE)) {
                 let samples: Vec<_> = (0..SPAN_MS * pace)
                     .step_by(BURSTS.phase_ms as usize)
@@ -294,22 +294,22 @@ mod tests {
         }
     }
 
-    /// Each lane draws its own bursts: no lane opens its bursts where
-    /// another's open, bucket for bucket.
+    /// Each lane draws its own bursts: no two of the lanes' first bursts open
+    /// at one place.
     #[test]
     fn each_lane_draws_its_own_bursts() {
         const BURSTS_A_LANE: usize = 5;
-        let places: std::collections::HashSet<Vec<(u32, u32)>> = (0..LANES)
-            .map(|lane| {
+        let places: std::collections::HashSet<(u32, u32)> = (0..LANES)
+            .flat_map(|lane| {
                 (0..(BURSTS_A_LANE as u64 + 1) * BURSTS.period_ms)
                     .step_by(BURSTS.phase_ms as usize)
                     .filter_map(|ms| bursts_at(Beat::at_ms(ms), &HUES, |_| true)[lane])
                     .filter(|b| b.phase == BurstPhase::Kindle)
                     .map(|b| (b.x.to_bits(), b.y.to_bits()))
                     .take(BURSTS_A_LANE)
-                    .collect()
+                    .collect::<Vec<_>>()
             })
             .collect();
-        assert_eq!(places.len(), LANES, "{places:?}");
+        assert_eq!(places.len(), LANES * BURSTS_A_LANE, "{places:?}");
     }
 }
