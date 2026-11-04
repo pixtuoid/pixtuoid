@@ -26,6 +26,27 @@ strings as goldens). The asserted rows carry a "homebrew-core contract"
 comment; release-side consequences
 in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#releasing).
 
+<!-- org-rules:begin -->
+## Org rules
+
+Shared by every pixtuoid repo. The source is pixtuoid/.github's `.github/actions/org-rules/org-rules.md`, and that action fails CI when a repo's copy differs: change the rules there, then sync each repo's copy.
+
+The owner's bar, in their words:
+
+> 反正一定要确保所有的改动是best pracitce + best arch design + best future proof + 符合业界标准做法 + 符合md 规则 如果existing codebase不符合规范就去refactor 不做低ROI 不over engineer 不向legacy/下兼容
+
+- **Evidence.** An external claim, "best practice" included, cites a doc URL or `path:line` fetched this session, or is labelled opinion.
+- **Refactor.** Existing code a change touches that breaks a written rule is refactored in that change. Any other code may be, in a commit of its own, when that removes a named defect, never on taste alone.
+- **Every mechanism earns its upkeep.** Code, config, a test, a CI job or a doc stays only if it names a failure it prevents that nothing else already does. A maintained library, the platform or the upstream tool's own mechanism is reused before one is built.
+- **TDD.** A failing test, then the minimal implementation, then the commit.
+- **Comments are WHY only**, doc prose and PR bodies included, and sit on the narrowest thing they constrain. Name the authority instead of restating its value. Measurements go in commit messages.
+- **No magic numbers.** Reuse the existing authority, else one named constant at the narrowest scope; when a copy of a value must cross a boundary, a test pins the pair. No `unwrap()` outside tests.
+- **Review findings.** A finding's premise is checked against the item it names before it is accepted. A refuted finding produces a mechanism (a test, a compile-time constraint, a CI gate) or nothing.
+- **Docs** change in the same commit as what they describe, and no new doc lands unless the owner asks.
+- **Git.** Never force-push and never skip hooks. How a change reaches `main` is each repo's own rule.
+- **The [Roadmap](https://github.com/orgs/pixtuoid/projects/1) is the plan of record**, the owner's rule ("每做一步都需要sync board"): every step (an item started or finished, a PR opened, merged or closed, a reorder) updates its item, the draft or the issue it tracks, in the same turn. Who may file an issue is each repo's own rule.
+<!-- org-rules:end -->
+
 ## What this is
 
 Terminal-native, multi-agent pixel-art visualizer for AI coding agents: each
@@ -104,20 +125,17 @@ Repo skills (committed): `local-review`, `beautify-decoration`,
 
 ## Conventions
 
-- **TDD first** — failing test → minimal impl → commit. **DRY.**
-- **Every mechanism earns its upkeep.** Code, config, a test, a CI job or a doc stays only if it names a failure it prevents that nothing else already does, or a need someone has. Extending a mechanism re-adds it: one you touch that can't name one is deleted, not polished. The load-bearing defenses [REVIEW.md](REVIEW.md#design)'s Proportion row lists have named theirs.
-- **Reuse before you build.** A need that a maintained library, the platform, or the upstream tool's own mechanism already meets is met by it (Claude Code's plugin install, `[workspace.dependencies]`); a hand-rolled copy is upkeep nothing else would cost. The exception is a reuse whose own cost is larger (wasm32, a version freeze), and the PR names that cost.
+- **Mechanism upkeep and reuse** (org rule): extending a mechanism re-adds it, so one you touch that can't name its failure is deleted, not polished; the load-bearing defenses [REVIEW.md](REVIEW.md#design)'s Proportion row lists have named theirs. A reuse is skipped only when its own cost is larger (wasm32, a version freeze), and the PR names that cost.
 - **Chibi figures and pets stay round**, the head flowing into the body.
 - **`#[allow(clippy::too_many_arguments)]` is a last resort** — group related parameters into a struct first.
-- **Comments: WHY only.** Only what the surrounding thing can't say (workaround, constraint, invariant). **Every comment the repo ships is in scope**, not just `//` and `#` in code: a `.md` doc's prose, a workflow or manifest comment, a justfile recipe header, a CI contract's `why` and a PR body are all held to the rules below — prose is where an assertion hides with no failure mode, so it earns its place the same way code does. Every sentence must add information the earlier ones don't — delete each after the first; if nothing is lost, cut it. First sentence is the whole answer. **A comment sits on the narrowest thing it constrains** — the declaration when it governs the whole item, the statement, struct-literal field or match arm when it governs only that one; hoisting a rationale to the declaration to shorten a body detaches it from the line it was pinned to, which is worse than the length it saved. The default is fewer: a comment is a cost the code must repay, and a link to the authority beats prose about it. A change leaves the net comment volume of what it touches no larger than it found it unless each added line earns its place — true of a PR that fixes comments too. Measurements belong in commit messages, not comments. **Name the authority, never restate its value** — `` × [`MAX_CONCURRENT_CONNS`] slots ``, not `× 128 slots`: a restated value drifts silently while a name greps, and an intra-doc link also turns a rename into a `doc-check` red, private items included (the magic-number rule, applied to prose).
-- **No magic numbers** — reuse the existing authority (a dep's const, our registry/theme/layout value), else ONE named `const` at the narrowest covering scope; prefer a type (enum/newtype) for a related set. Two copies of one value is a latent drift bug — if a copy must cross a boundary, pin the pair with a test. Self-evident `0`/`1`/`2`, indices, and test fixtures stay inline.
-- **Errors**: `anyhow::Result` in app code, `thiserror` in core; hook listener + JSONL watcher log-and-continue, never panic. **No `unwrap()` outside tests.**
+- **Comments** (org rule): a workflow or manifest comment, a justfile recipe header and a CI contract's `why` are in scope too. Every sentence adds what the earlier ones don't, the first being the whole answer. A rationale stays on the statement, struct-literal field or match arm it governs, never hoisted to the declaration to shorten a body. A change leaves the net comment volume of what it touches no larger unless each added line earns its place. An intra-doc link to the authority also turns a rename into a `doc-check` red, private items included.
+- **Magic numbers** (org rule): prefer a type (enum/newtype) for a related set; self-evident `0`/`1`/`2`, indices and test fixtures stay inline. **DRY**: two copies of one value is a latent drift bug.
+- **Errors**: `anyhow::Result` in app code, `thiserror` in core; hook listener + JSONL watcher log-and-continue, never panic.
 - **Visibility**: layer-internal stays `pub(crate)` (`unreachable_pub` misses a `pub` reachable through a `pub mod`; `just hawk`, a full-tier gate, fails on one no other workspace crate's code needs); `#[doc(hidden)] pub` is a mechanism-not-contract escape hatch. The binary's lib has one `pub mod`, the `#[doc(hidden)]` `pixtuoid::dev` facade its examples, tests and benches reach it through, so `unreachable_pub` reports any `pub` that list doesn't name.
 - **No scan-the-history** — keep state updated as events arrive; never derive it by scanning backward.
 - **Shell**: match the surrounding shell; macOS-first (BSD CLI, brew).
-- **Docs current in the same commit** as any structure/API/workflow change.
-- **External-surface claims are fetched, not remembered**, and so is "best practice": cite the `path:line` or doc URL you fetched THIS session or add a hermetic profile scenario that reaches it (`just hermetic`), and label anything unsourced opinion; the population is the whole upstream repo (`gh api .../git/trees/<ref>?recursive=1`), not one plausible file.
-- **A refuted review finding produces a MECHANISM, or nothing** — a test, a compile-time constraint, or a CI gate; refuting never produces prose, because prose has no failure mode. Only an EXTERNAL fact (another CLI's wire bytes, an OS semantic) earns a comment, on the narrowest thing it constrains. **A real finding ends FIXED, RE-SCOPED → #N or FOLLOW-UP → #N before the PR merges; which applies, the four terminal states and what #N may be are defined once in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#dispositions). Agents never file issues.**
+- **Evidence** (org rule): a hermetic profile scenario that reaches the surface (`just hermetic`) counts as a source too, and the population is the whole upstream repo (`gh api .../git/trees/<ref>?recursive=1`), not one plausible file.
+- **Review findings** (org rule): only an EXTERNAL fact (another CLI's wire bytes, an OS semantic) earns a comment, on the narrowest thing it constrains. **A real finding ends FIXED, RE-SCOPED → #N or FOLLOW-UP → #N before the PR merges; which applies, the four terminal states and what #N may be are defined once in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#dispositions). Agents never file issues.**
 - **Only the latest released version of each agent CLI is supported.** When upstream renames or reshapes a wire name, repoint the decoder and the plugin at the CURRENT declaration and DELETE the old one — no dual-listening beside a replacement, no legacy-format arm kept "just in case". Every superseded arm is a second copy of a wire contract that drifts silently. Two things this does NOT govern: OUR OWN upgrade path (an arm for an artifact an older pixtuoid wrote is ours to keep or drop, not upstream's — #457), and mirroring a resolver upstream itself still branches on.
 - **Path asserts compare `PathBuf` structurally**, never `to_string_lossy()` with a hardcoded separator — string asserts pass on Unix and fail only in `windows-test`. Resolution POLICY (HOME vs USERPROFILE, %APPDATA% vs `~/.config`) is per-CLI: mirror each CLI's own resolver (`platform::home_first_dir`).
 
@@ -148,10 +166,9 @@ taller-cell terminals; bundled base character sprites max at 8×12 px (their
 
 - No write to another CLI's config outside `install/io.rs` (`write_config_atomic` / `ConfigLock`).
 - No `println!`/`eprintln!` on production paths — a print macro panics when its reader leaves (`| head`), so CLI and headless output goes through a `CliOut` (a command's is `crate::cli_stdout()`) and a stderr notice is a `let _ = writeln!`. Diagnostics are `tracing`, with a constant message and every value as a field (`error = %e`, `path = ?path`, `pid`): the constant message is a stable grep key and a field is filterable; a value baked into the format string is neither. Every path, session id and cwd rides a `?` field, never `%`, whatever its provenance, and so does an error chain that can embed one (`SourceDeath.error`, `SocketBusy`): `str`'s `Debug` escapes control and bidi chars, while under the default `fmt` layer a Display field writes them raw and `EscapeGuard` covers the message and error text only (`test_capture`'s `debug_fields_escape_control_and_bidi_chars`). Core logs under whatever subscriber hosts it, so the rule is primary; the binary's `EscapedFields` (`app/logging.rs`) escapes every value only as a backstop. Only a whole-message relay re-emitting an already-sanitized user-facing string (`config::warn_user`, the `read_log` warning in `sources_cli`) interpolates.
-- Never add `--no-verify`/hook-skipping flags.
-- No new `.md` files, READMEs, CHANGELOGs, or docs unless the owner explicitly asks — the owner reviews every doc change directly, so propose the diff rather than adding a generator or a cap. A session pushes its own PR branches freely; never force-push or push to `main`.
+- No doc generator or cap in place of a proposed diff: the owner reviews every doc change. A session pushes its own PR branches freely, never `main`.
 - No stale `Closes #N` on a re-scope (fires from commit body or PR text, even conditional).
-- No merging past the review gate (PR #23 merged unreviewed with a path traversal), and no reviewer finding accepted before its premise is checked against the item it names.
+- No merging past the review gate (PR #23 merged unreviewed with a path traversal).
 
 ## Where to look
 
