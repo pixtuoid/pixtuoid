@@ -110,6 +110,7 @@ jobs:
       - run: just pyright
       - run: just tsc
       - run: just lang-census
+      - uses: pixtuoid/.github/.github/actions/org-rules@main
       # The host install is the cost, so a PR that leaves every input of the
       # verdict alone skips it; path-changed treats a push as unchanged. Each
       # host's pin sits in its source module, which a bump PR moves.

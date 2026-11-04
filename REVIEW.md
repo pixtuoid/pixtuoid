@@ -7,8 +7,8 @@ diff touches, first; these rules add to generic defect hunting.
 
 The org's [shared review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)
 runs a correctness and a design reviewer, each over this file but the other's
-section, so [Correctness](#correctness) and [Design](#design) keep those
-headings. Both read each changed file whole at the head (a removed file has
+section and with its contract's lenses, so [Correctness](#correctness) and
+[Design](#design) keep those headings. Both read each changed file whole at the head (a removed file has
 only its hunks), against the base tree: a defect anywhere in it is in scope,
 pre-existing when the diff did not introduce it. The review only reads, so it
 never attempts a [must-run](#must-run) item, and skipping one is not partial
@@ -150,41 +150,22 @@ invariant-breaking sequence against:
    seam, wire bytes through `harness::Drive`, logic in tested Rust rather than
    inline workflow shell, as #1660 showed); a second way is a finding naming
    the first.
-6. **Proportion**, each with the cheaper alternative, non-blocking
-   unless it breaches AGENTS.md: **over-engineering** (YAGNI), a branch,
-   helper, parameter, type, fallback arm or test machinery serving no
-   reachable case; **low ROI**, code, API change or coupling out of proportion
-   to its payoff (an API made `Option` across three painters for a width
-   almost never hit); **hard to maintain**, needless indirection or layers,
-   special-case branches, one change smeared across many files; an invariant
-   held by prose where a type or the one source of truth could make the
-   failure impossible (#1142); a check outside [its own
-   layer](docs/CONTRIBUTING.md#convergence-contract). A mechanism the diff
-   extends is judged as if new against AGENTS.md's [upkeep
-   rule](AGENTS.md#conventions); one that fails it draws "delete it".
-   A hand-rolled mechanism for a need a maintained library, the platform or
-   the upstream tool already meets (AGENTS.md's reuse rule) draws "reuse X",
-   citing a file of X read this run; one not read is marked unverified.
-   A defense [Traps](#traps-the-obvious-reading-is-wrong-here) or
-   [Security](#security) names, and the documented liveness ladders, stay.
-7. **Words**: list, one by one, every name the diff adds or changes
-   (`pub(crate)` and modules included), every comment and doc line in a
-   changed file, and every comment and doc elsewhere, `.github/` and `.claude/`
-   included, that names, counts or describes what the diff renames, moves or
-   changes; judge each on all three, and give the count judged. Each finding
-   cites what the word breaks or the edit that would leave it wrong;
-   non-blocking unless it breaches AGENTS.md.
-   - **Faithful**: it says what is true at head; a behavior change renames the
-     item and rewrites what describes it.
-   - **Clear**: a reader without this PR's context reads it right. One concept,
-     one name across crates and painters (`rg` before coining), and no name
-     for two concepts; compass words are [screen-space](crates/pixtuoid-scene/AGENTS.md).
-   - **Concise**: the shortest name that stays clear, in the domain's existing
-     word and Rust's [naming guidelines](https://rust-lang.github.io/api-guidelines/naming.html),
-     never a placeholder; a comment earns its place by AGENTS.md's comment
-     rules.
-8. **Sourced practice**: [AGENTS.md](AGENTS.md#conventions)'s fetched-claims
-   rule; a claim with no fetched source, or one that contradicts it, breaches it.
+6. **Proportion** (the contract's lens), here: an API made `Option` across
+   three painters for a width almost never hit is low ROI; an invariant held
+   by prose where a type could make the failure impossible (#1142), and a
+   check outside [its own layer](docs/CONTRIBUTING.md#convergence-contract),
+   are hard to maintain. A
+   mechanism the diff extends is judged as if new against AGENTS.md's [upkeep
+   rule](AGENTS.md#org-rules); one that fails it draws "delete it". A defense
+   [Traps](#traps-the-obvious-reading-is-wrong-here) or [Security](#security)
+   names, and the documented liveness ladders, stay.
+7. **Words** (the contract's lens), here: names include `pub(crate)` items and
+   modules, docs elsewhere include `.github/` and `.claude/`, one concept keeps
+   one name across crates and painters (`rg` before coining), compass words
+   are [screen-space](crates/pixtuoid-scene/AGENTS.md), and the naming
+   guidelines are [Rust's](https://rust-lang.github.io/api-guidelines/naming.html).
+8. **Sourced practice** (the contract's lens), here: AGENTS.md's
+   [Evidence](AGENTS.md#conventions) bullet.
 9. **A new dependency or workspace edge**: each crate it adds, transitive ones
    included, is justified, and a new workspace edge follows
    [AGENTS.md](AGENTS.md#layout)'s crate DAG.
@@ -194,10 +175,9 @@ invariant-breaking sequence against:
 A maintenance defect's failure scenario is the edit that would leave a copy
 wrong.
 
-1. **DRY** — every new fn/type/helper/const gets a whole-tree search for an
-   existing implementation, weighted by divergence risk; every value a new line
-   reads is the authority its consumer uses, not a sibling's (#1042, #1155).
-   Test fixtures stay inline.
+1. **One source** (the contract's lens; AGENTS.md's
+   [DRY](AGENTS.md#conventions)), here: its search is weighted by
+   divergence risk (#1042, #1155), and test fixtures stay inline.
 
 ## Must-run
 

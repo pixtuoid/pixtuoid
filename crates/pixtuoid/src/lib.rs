@@ -5,7 +5,7 @@
 // A print macro panics when its reader leaves (`| head`): CLI and headless
 // output goes through a `CliOut`, a stderr notice through a `let _ = writeln!`.
 #![cfg_attr(not(test), warn(clippy::print_stdout, clippy::print_stderr))]
-// AGENTS.md's Errors rule, as a lint: no `unwrap()` outside tests.
+// AGENTS.md's org rules, as a lint: no `unwrap()` outside tests.
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 mod app;

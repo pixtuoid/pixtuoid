@@ -29,7 +29,7 @@
 // The leak-direction twin of `unreachable_pub`: a `pub` item reachable through
 // a signature but not nameable outside the crate.
 #![warn(unnameable_types)]
-// AGENTS.md's Errors rule, as a lint: no `unwrap()` outside tests.
+// AGENTS.md's org rules, as a lint: no `unwrap()` outside tests.
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 #[doc(hidden)]
