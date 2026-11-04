@@ -38,7 +38,7 @@ impl Drop for Announcement {
     }
 }
 
-/// Announce the office on `port` as `name`, pinned by `spki`, and again each time
+/// Announce the office on `port` as `name`, with the pin `spki`, and again each time
 /// the responder drops it: a daemon's restart takes its services with it. The
 /// QR pairs whether or not this ever succeeds.
 pub(super) fn announce(name: &str, port: u16, spki: &str) -> Announcement {

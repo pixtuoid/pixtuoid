@@ -17,7 +17,7 @@ use windows_sys::Win32::NetworkManagement::Dns::{
     DnsServiceConstructInstance, DnsServiceDeRegister, DnsServiceFreeInstance, DnsServiceRegister,
 };
 
-/// Announce `instance` on `port`, pinned by `spki`, as `<instance>.<type>.local`
+/// Announce `instance` on `port`, with the pin `spki`, as `<instance>.<type>.local`
 /// on `<host>.local`, until dropped. The forms follow the DNS_SERVICE_INSTANCE
 /// page and Microsoft's [mDNS sample](https://github.com/microsoft/Xbox-GDK-Samples/blob/3acf5ffbe5cdb0d42db773a46bc083cc8b481233/Samples/Live/mDNS/mDNS.cpp),
 /// which appends ".local" to the DNS host name: ".local must be appended in

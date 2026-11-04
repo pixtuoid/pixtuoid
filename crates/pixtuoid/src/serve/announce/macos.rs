@@ -53,7 +53,7 @@ unsafe extern "C" {
     fn DNSServiceRefDeallocate(sd_ref: ServiceRef);
 }
 
-/// Announce `instance` on `port`, pinned by `spki`, until the responder lets the
+/// Announce `instance` on `port`, with the pin `spki`, until the responder lets the
 /// service go. The responder renames the instance on a conflict, which no flag
 /// here turns off.
 pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()> {

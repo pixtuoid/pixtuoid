@@ -78,7 +78,7 @@ trait EntryGroup {
     fn state_changed(&self, state: i32, error: String) -> zbus::Result<()>;
 }
 
-/// Announce `instance` on `port`, pinned by `spki`, until Avahi lets the service
+/// Announce `instance` on `port`, with the pin `spki`, until Avahi lets the service
 /// go or leaves the bus, which frees a client's groups with it. A taken name is
 /// renamed as avahi-common/defs.h asks: "add your services back to the entry
 /// group (but with new names …) and commit again".
