@@ -143,7 +143,7 @@ const SWEEP_INSETS: [Insets; 6] = [
     },
 ];
 
-/// The viewport whose `insets` leave a `w`×`h` office inside them.
+/// The viewport whose `insets` leave a `w`×`h` area inside them.
 pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
     Viewport {
         size: Size {
@@ -154,7 +154,7 @@ pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
     }
 }
 
-/// `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size the office
+/// `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size the area
 /// left inside the insets, with the seed it lays out at.
 fn inset_offices() -> impl Iterator<Item = (Viewport, u64)> {
     SWEEP_SIZES.iter().flat_map(|&(w, h)| {
@@ -167,7 +167,7 @@ fn inset_offices() -> impl Iterator<Item = (Viewport, u64)> {
 /// `viewport`'s office at `seed`, at production fill.
 fn inset_layout(viewport: Viewport, seed: u64) -> SceneLayout {
     SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
-        panic!("{viewport:?} seed {seed}: the office inside the insets fell under the floor")
+        panic!("{viewport:?} seed {seed}: the area inside the insets fell under the floor")
     })
 }
 
@@ -1846,7 +1846,7 @@ fn point_seed_packing_is_frozen() {
 fn nothing_is_placed_under_an_inset() {
     let mut v = Vec::new();
     sweep_insets(|viewport, seed, l| {
-        let inner = viewport.inner().expect("the sweep leaves an office inside");
+        let inner = viewport.inner().expect("the sweep leaves an area inside");
         let mut outside = |what: String, b: Bounds| {
             let at = Point { x: b.x, y: b.y };
             let size = Size {
@@ -1997,7 +1997,7 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 9] {
 fn an_office_inside_insets_is_the_inner_sizes_moved() {
     let mut v = Vec::new();
     sweep_insets(|viewport, seed, l| {
-        let inner = viewport.inner().expect("the sweep leaves an office inside");
+        let inner = viewport.inner().expect("the sweep leaves an area inside");
         let bare = SceneLayout::compute(Viewport::full(inner.width, inner.height), None, seed)
             .expect("the inner size lays out bare");
         let fields = from_its_inner_corner(l).into_iter();

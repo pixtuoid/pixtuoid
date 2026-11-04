@@ -241,14 +241,14 @@ impl Wall {
     /// `layout`'s north wall.
     pub(crate) fn of(layout: &crate::layout::SceneLayout) -> Self {
         Self {
-            span: layout.window_wall(),
+            span: layout.wall_span(),
             band_h: layout.wall_band_h(),
             bays: layout.window_bays().collect(),
         }
     }
 
     /// The run of glass its windows cut, in units, and the glass's height:
-    /// the span the clouds are drawn across.
+    /// the run the clouds are drawn across.
     pub(crate) fn glass(&self) -> (Range<u16>, u16) {
         let rows = window_rows(self.band_h);
         (

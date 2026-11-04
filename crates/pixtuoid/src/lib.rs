@@ -463,7 +463,7 @@ pub(crate) mod test_flash {
     }
 
     /// Whether a logical unit is the neon sign's tube on its west side or the
-    /// wall it lights, in an office no chrome covers: what a starved tube's
+    /// wall it lights, in a viewport no chrome covers: what a starved tube's
     /// catch changes and nothing else in an empty office does.
     pub(crate) fn neon_tube() -> impl Fn(u16, u16) -> bool {
         let min = pixtuoid_scene::layout::min_layout_size();

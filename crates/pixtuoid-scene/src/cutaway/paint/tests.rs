@@ -843,7 +843,7 @@ fn the_wall_between_two_windows_is_one_frame_post() {
     let k = scale.get() / pen.density().get();
     let rows = crate::layout::window_rows(layout.wall_band_h());
     let mut posts = 0;
-    for post in crate::layout::window_posts(layout.window_wall()) {
+    for post in crate::layout::window_posts(layout.wall_span()) {
         posts += 1;
         for x in post.clone() {
             for y in rows.clone() {
