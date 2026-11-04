@@ -1223,7 +1223,7 @@ mod tests {
     }
 
     /// A link with exactly an older server's four fields says so, so a device can
-    /// ask for an update; a newer link cut short is no link.
+    /// ask for an update; any other link a server never wrote is no link.
     #[test]
     fn an_older_servers_link_is_told_apart() {
         let PairLink { spki, code, .. } = link();
@@ -1236,7 +1236,7 @@ mod tests {
         let without_expiry = format!("{}{}", &newer[..expires], &newer[expires + to_code..]);
         let before_code = newer.find(&format!("&{CODE}=")).expect("a code");
         let after = |key: &str| newer.find(&format!("{key}=")).expect("a key") + key.len() + 1;
-        for cut in [
+        for text in [
             &newer[..before_code],
             &newer[..before_code + CODE.len() + 2 + SECRET_BYTES],
             &newer[..after(EXPIRES)],
@@ -1245,9 +1245,9 @@ mod tests {
             &format!("{older}&extra=1"),
         ] {
             assert_eq!(
-                cut.parse::<PairLink>(),
+                text.parse::<PairLink>(),
                 Err(PairLinkError::NotALink),
-                "{cut}"
+                "{text}"
             );
         }
     }
