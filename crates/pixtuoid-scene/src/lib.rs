@@ -5,14 +5,14 @@
 //! painters layered on top.
 //!
 //! ```
-//! use pixtuoid_scene::layout::SceneLayout;
+//! use pixtuoid_scene::layout::{SceneLayout, Viewport};
 //! use pixtuoid_scene::theme::theme_by_name;
 //!
 //! let theme = theme_by_name("dracula").expect("bundled theme");
 //! assert_eq!(theme.name, "dracula");
 //!
 //! // `None` fills the buffer with as many desk pods as physically fit.
-//! let office = SceneLayout::compute(crate::layout::Viewport::full(192, 64), None, 0)
+//! let office = SceneLayout::compute(Viewport::full(192, 64), None, 0)
 //!     .expect("viewport is large enough for an office");
 //! assert!(!office.home_desks.is_empty());
 //! ```
