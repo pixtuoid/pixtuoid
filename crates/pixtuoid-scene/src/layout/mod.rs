@@ -522,8 +522,8 @@ pub(crate) fn exit_sign_pos(door: Point, office_top: u16) -> Option<Point> {
 /// reference, and the `snapshot` example that renders the docs/CI media
 /// baselines pins its scene to it.
 pub const CLASSIC_OFFICE_DESKS: usize = 16;
-/// The area inside the insets of an office no chrome covers, for a test that
-/// seats a desk no layout placed.
+/// An `inner` no edge bounds, for a test that calls a function taking a
+/// layout's `inner` without a layout to take it from.
 #[cfg(test)]
 pub(crate) const BARE_OFFICE: Bounds = Bounds {
     x: 0,

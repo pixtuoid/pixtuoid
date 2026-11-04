@@ -269,7 +269,7 @@ fn a_room_wall_to_the_floors_south_edge_runs_on_under_the_bottom_inset() {
             if let WallSegment::Vertical { y1, .. } = *seg {
                 assert_ne!(
                     y1,
-                    inner.y + inner.height,
+                    inner.bottom(),
                     "seed {seed}: {seg:?} stops at the floor's south edge"
                 );
                 reached += usize::from(y1 == l.buf_h);

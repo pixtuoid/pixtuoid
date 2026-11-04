@@ -154,19 +154,27 @@ pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
     }
 }
 
-/// Run `f` over `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size
-/// the office left inside the insets, at production fill.
+/// `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size the office
+/// left inside the insets, with the seed it lays out at.
+fn inset_offices() -> impl Iterator<Item = (Viewport, u64)> {
+    SWEEP_SIZES.iter().flat_map(|&(w, h)| {
+        SWEEP_SEEDS.flat_map(move |seed| {
+            SWEEP_INSETS.map(move |insets| (inset_viewport(w, h, insets), seed))
+        })
+    })
+}
+
+/// `viewport`'s office at `seed`, at production fill.
+fn inset_layout(viewport: Viewport, seed: u64) -> SceneLayout {
+    SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
+        panic!("{viewport:?} seed {seed}: the office inside the insets fell under the floor")
+    })
+}
+
+/// Run `f` over [`inset_offices`], each laid out.
 fn sweep_insets(mut f: impl FnMut(Viewport, u64, &SceneLayout)) {
-    for &(w, h) in SWEEP_SIZES {
-        for seed in SWEEP_SEEDS {
-            for insets in SWEEP_INSETS {
-                let viewport = inset_viewport(w, h, insets);
-                let l = SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
-                    panic!("{viewport:?} seed {seed}: the office inside the insets fell under the floor")
-                });
-                f(viewport, seed, &l);
-            }
-        }
+    for (viewport, seed) in inset_offices() {
+        f(viewport, seed, &inset_layout(viewport, seed));
     }
 }
 
@@ -956,8 +964,6 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
 /// no-valid-approach sentinel and every leg for the severed desks degrades to a
 /// straight `door→chair` line through furniture.
 fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &SceneLayout) {
-    // A free fn, not a closure: three sweeps share it — the placement seed axis,
-    // the production floor seeds, and the step-1 `NARROW_BAND` width scan.
     use crate::pathfind::find_path;
     let overlay = crate::walkable::OccupancyOverlay::new();
     let door = l.door_threshold;
@@ -1890,7 +1896,7 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 9] {
             ..b
         }
     };
-    let (east, south) = (inner.x + inner.width, inner.y + inner.height);
+    let (east, south) = (inner.right(), inner.bottom());
     let walls: Vec<WallSegment> = l
         .room_walls
         .iter()
@@ -1996,17 +2002,9 @@ fn an_office_inside_insets_is_the_inner_sizes_moved() {
     ignore = "an exhaustive sweep outlasts its budget instrumented; the plain suite asserts it on every PR"
 )]
 fn the_route_sweeps_hold_inside_insets() {
-    let offices: Vec<(Viewport, u64)> = SWEEP_SIZES
-        .iter()
-        .flat_map(|&(w, h)| {
-            SWEEP_INSETS.into_iter().flat_map(move |insets| {
-                SWEEP_SEEDS.map(move |seed| (inset_viewport(w, h, insets), seed))
-            })
-        })
-        .collect();
+    let offices: Vec<(Viewport, u64)> = inset_offices().collect();
     let check = |&(viewport, seed): &(Viewport, u64)| {
-        let l = SceneLayout::compute(viewport, None, seed)
-            .unwrap_or_else(|| panic!("{viewport:?} seed {seed}: refused above the floor"));
+        let l = inset_layout(viewport, seed);
         let Size { w, h } = viewport.size;
         assert_walkable_connected(w, h, seed, &l);
         assert_spawn_stands_on_open_floor(w, h, seed, &l);
