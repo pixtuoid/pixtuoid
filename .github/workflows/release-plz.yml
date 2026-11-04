@@ -102,7 +102,7 @@ jobs:
           # stdout alone (Homebrew/brew's formula_assertions.rb), so each
           # `assert_match "<text>", shell_output("#{bin}/pixtuoid <args>"[, status])`
           # must exit as its status expects (0 unset) and print its text there.
-          asserted='assert_match "([^"]*)", shell_output\("#\{bin\}/pixtuoid ([^"]*)"(, ([0-9]+))?\)'
+          asserted='^[[:space:]]*assert_match "([^"]*)", shell_output\("#\{bin\}/pixtuoid ([^"]*)"(, ([0-9]+))?\)[[:space:]]*$'
           # Any other `assert_match` is no pass, but the one packaging-build's
           # Cargo.toml grep replays.
           versioned='^[[:space:]]*assert_match version\.to_s, shell_output\("#\{bin\}/pixtuoid --version"\)[[:space:]]*$'

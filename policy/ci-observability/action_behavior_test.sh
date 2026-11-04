@@ -258,6 +258,9 @@ done
 assert_brew "the version line, transformed" $'  test do\n    '"$delivered"$' doctor")\n    assert_match version.to_s, shell_output("#{bin}/pixtuoid --version").split.first\n  end' 1
 grep -q "can't read: assert_match version.to_s, .*split.first" "$brew_dir/summary" ||
     fail "the homebrew step passed a version line it doesn't replay: $(<"$brew_dir/summary")"
+assert_brew "a literal assertion, transformed" $'  test do\n    '"$delivered"$' doctor").lines.first\n  end' 1
+grep -q "can't read: assert_match \"delivered a test event\", .*lines.first" "$brew_dir/summary" ||
+    fail "the homebrew step replayed a transformed assertion as plain: $(<"$brew_dir/summary")"
 assert_brew "text this tree prints to stderr alone" $'  test do\n    '"$delivered"$' loud")\n  end' 1
 grep -q 'loud.*print "delivered a test event"' "$brew_dir/summary" ||
     fail "the homebrew step matched text off stdout: $(<"$brew_dir/summary")"
