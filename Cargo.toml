@@ -15,8 +15,7 @@ edition      = "2024"
 license      = "MIT"
 repository   = "https://github.com/pixtuoid/pixtuoid"
 authors      = ["Ivan Wang <ivanwng97@icloud.com>"]
-description  = "Terminal pixel-art office for AI coding agents"
-homepage     = "https://github.com/pixtuoid/pixtuoid"
+homepage     = "https://pixtuoid.dev"
 keywords     = ["terminal", "tui", "pixel-art", "ai-agents", "claude"]
 categories   = ["command-line-utilities", "visualization"]
 
