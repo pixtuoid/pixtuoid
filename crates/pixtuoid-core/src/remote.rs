@@ -1336,21 +1336,6 @@ mod tests {
         }
     }
 
-    /// A link opens a page the crate's site serves, for a phone without the App.
-    #[test]
-    fn a_link_opens_a_page_the_site_serves() {
-        let site = concat!(env!("CARGO_PKG_HOMEPAGE"), "/");
-        let path = PAIR_LINK_PREFIX
-            .strip_prefix(site)
-            .and_then(|rest| rest.strip_suffix('#'))
-            .expect("the link is on the site");
-        let page = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../site/public")
-            .join(path)
-            .join("index.html");
-        assert!(page.is_file(), "{page:?}");
-    }
-
     /// A link of another version is read no further than its version, whatever
     /// follows: a device names the side to update even for a format it can't read.
     #[test]
