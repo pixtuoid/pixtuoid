@@ -335,7 +335,7 @@ mod tests {
             if s <= 0.04045 {
                 s / 12.92
             } else {
-                ((s + 0.055) / 1.055).powf(2.4)
+                libm::pow((s + 0.055) / 1.055, 2.4)
             }
         };
         0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)

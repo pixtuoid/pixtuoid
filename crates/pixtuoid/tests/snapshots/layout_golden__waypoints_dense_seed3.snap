@@ -5,7 +5,7 @@ expression: l.waypoints
 [
     Waypoint {
         pos: Point {
-            x: 105,
+            x: 89,
             y: 51,
         },
         kind: Couch,
@@ -14,7 +14,7 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 111,
+            x: 95,
             y: 51,
         },
         kind: Couch,
@@ -23,7 +23,7 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 117,
+            x: 101,
             y: 51,
         },
         kind: Couch,
@@ -32,26 +32,8 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 33,
-            y: 140,
-        },
-        kind: Pantry,
-        facing: South,
-        room_id: None,
-    },
-    Waypoint {
-        pos: Point {
-            x: 120,
-            y: 68,
-        },
-        kind: PhoneBooth,
-        facing: South,
-        room_id: None,
-    },
-    Waypoint {
-        pos: Point {
-            x: 120,
-            y: 108,
+            x: 95,
+            y: 72,
         },
         kind: StandingDesk,
         facing: South,
@@ -59,7 +41,25 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 74,
+            x: 95,
+            y: 104,
+        },
+        kind: PhoneBooth,
+        facing: South,
+        room_id: None,
+    },
+    Waypoint {
+        pos: Point {
+            x: 121,
+            y: 122,
+        },
+        kind: PhoneBooth,
+        facing: South,
+        room_id: None,
+    },
+    Waypoint {
+        pos: Point {
+            x: 49,
             y: 152,
         },
         kind: VendingMachine,
@@ -77,7 +77,7 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 27,
+            x: 15,
             y: 59,
         },
         kind: MeetingSofa,
@@ -88,18 +88,7 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 33,
-            y: 59,
-        },
-        kind: MeetingSofa,
-        facing: South,
-        room_id: Some(
-            0,
-        ),
-    },
-    Waypoint {
-        pos: Point {
-            x: 39,
+            x: 21,
             y: 59,
         },
         kind: MeetingSofa,
@@ -111,6 +100,17 @@ expression: l.waypoints
     Waypoint {
         pos: Point {
             x: 27,
+            y: 59,
+        },
+        kind: MeetingSofa,
+        facing: South,
+        room_id: Some(
+            0,
+        ),
+    },
+    Waypoint {
+        pos: Point {
+            x: 15,
             y: 92,
         },
         kind: MeetingSofa,
@@ -121,7 +121,7 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 33,
+            x: 21,
             y: 92,
         },
         kind: MeetingSofa,
@@ -132,7 +132,7 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 39,
+            x: 27,
             y: 92,
         },
         kind: MeetingSofa,
@@ -143,7 +143,7 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 24,
+            x: 12,
             y: 75,
         },
         kind: MeetingChair,
@@ -154,7 +154,7 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 42,
+            x: 30,
             y: 75,
         },
         kind: MeetingChair,
@@ -165,47 +165,90 @@ expression: l.waypoints
     },
     Waypoint {
         pos: Point {
-            x: 20,
-            y: 126,
+            x: 15,
+            y: 115,
         },
-        kind: Island,
+        kind: MeetingSofa,
+        facing: South,
+        room_id: Some(
+            1,
+        ),
+    },
+    Waypoint {
+        pos: Point {
+            x: 21,
+            y: 115,
+        },
+        kind: MeetingSofa,
+        facing: South,
+        room_id: Some(
+            1,
+        ),
+    },
+    Waypoint {
+        pos: Point {
+            x: 27,
+            y: 115,
+        },
+        kind: MeetingSofa,
+        facing: South,
+        room_id: Some(
+            1,
+        ),
+    },
+    Waypoint {
+        pos: Point {
+            x: 15,
+            y: 148,
+        },
+        kind: MeetingSofa,
+        facing: North,
+        room_id: Some(
+            1,
+        ),
+    },
+    Waypoint {
+        pos: Point {
+            x: 21,
+            y: 148,
+        },
+        kind: MeetingSofa,
+        facing: North,
+        room_id: Some(
+            1,
+        ),
+    },
+    Waypoint {
+        pos: Point {
+            x: 27,
+            y: 148,
+        },
+        kind: MeetingSofa,
+        facing: North,
+        room_id: Some(
+            1,
+        ),
+    },
+    Waypoint {
+        pos: Point {
+            x: 12,
+            y: 131,
+        },
+        kind: MeetingChair,
         facing: East,
-        room_id: None,
+        room_id: Some(
+            1,
+        ),
     },
     Waypoint {
         pos: Point {
-            x: 46,
-            y: 126,
+            x: 30,
+            y: 131,
         },
-        kind: Island,
+        kind: MeetingChair,
         facing: West,
-        room_id: None,
-    },
-    Waypoint {
-        pos: Point {
-            x: 28,
-            y: 126,
-        },
-        kind: Island,
-        facing: South,
-        room_id: None,
-    },
-    Waypoint {
-        pos: Point {
-            x: 38,
-            y: 126,
-        },
-        kind: Island,
-        facing: South,
-        room_id: None,
-    },
-    Waypoint {
-        pos: Point {
-            x: 4,
-            y: 120,
-        },
-        kind: SnackShelf,
-        facing: West,
-        room_id: None,
+        room_id: Some(
+            1,
+        ),
     },
 ]

@@ -1,7 +1,6 @@
 //! The pre-rendered sample banks — the ONE place the office's sounds are
 //! synthesized into buffers, for the native rodio gateway and the wasm WebAudio
-//! painter alike: the same synthesis, not the same bits, as [`f32::sin`]'s and
-//! [`f32::exp`]'s precision varies by platform. Pure: no device deps.
+//! painter alike. Pure: no device deps.
 //!
 //! The `rng` DRAW ORDER is the sound — [`Synthesis`] draws the one-shot pools,
 //! then rain, from ONE stream in the ratified order, so every buffer matches the
