@@ -71,6 +71,10 @@ API_NIGHTLY := "nightly-2026-10-22"
 # a different version rewrites them all.
 API_PUBLIC_API := "0.52.0"
 
+# The rustdoc JSON `format_version` API_NIGHTLY writes, whose shape the
+# api-surface leak check reads: it moves with API_NIGHTLY.
+API_JSON_FORMAT := "61"
+
 # The cargo-hawk `hawk` runs, and the exact rustc it links (its
 # rust-toolchain.toml): hawk refuses any other, so a bump moves both, and the
 # installer's hash with them.
@@ -459,7 +463,9 @@ semver:
 # adding/removing a derive IS a public-API change). cargo-public-api takes one
 # crate per call, so a golden file is regenerated per crate. rustdoc JSON is
 # nightly-only, so it PINS `API_NIGHTLY`. `check` diffs instead of writing; CI
-# runs it as `api-surface-check`.
+# runs it as `api-surface-check`. Either mode fails on a public item that names
+# a type rustdoc stripped (`#[doc(hidden)]`, private): the item is a contract
+# whose type is none, outside the golden and semver-checks alike.
 [doc('Regenerate the api/<crate>.txt public-API goldens (cargo-public-api + pinned nightly); `check` diffs them')]
 [group('rust')]
 api-surface mode="": _api-toolchain
@@ -472,10 +478,30 @@ api-surface mode="": _api-toolchain
     *) echo "usage: just api-surface [check]" >&2; exit 2 ;;
     esac
     fail=0
+    docs="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/doc"
     for crate in {{ PUBLISHED_CRATES }}; do
         RUSTUP_TOOLCHAIN={{ API_NIGHTLY }} cargo public-api -p "$crate" -s > "$out/$crate.txt"
         if [ "$out" != api ] && ! diff -u "api/$crate.txt" "$out/$crate.txt"; then
             echo "error: public API of $crate drifted from api/$crate.txt — run 'just api-surface' and commit the update" >&2
+            fail=1
+        fi
+        # The rustdoc JSON cargo-public-api just wrote: a reference whose id is
+        # in neither `index` nor `paths` is to a local item rustdoc stripped.
+        json="$docs/${crate//-/_}.json"
+        if ! jq -e --argjson v {{ API_JSON_FORMAT }} '.format_version == $v' "$json" >/dev/null; then
+            echo "error: $json is not rustdoc JSON format {{ API_JSON_FORMAT }}; move API_JSON_FORMAT with API_NIGHTLY" >&2
+            fail=1
+            continue
+        fi
+        leaks="$(jq -r '.index as $index | .paths as $paths
+            | [$index[] | . as $item | .. | objects
+               | select(has("id") and has("path") and (.path | type) == "string")
+               | select($index[.id | tostring] == null and $paths[.id | tostring] == null)
+               | "\($item.span.filename):\($item.span.begin[0]): \($item.name // "an impl") names \(.path)"]
+            | unique[]' "$json")"
+        if [ -n "$leaks" ]; then
+            echo "error: a public item of $crate names a type outside its public API; make the type public or hide the item:" >&2
+            echo "$leaks" >&2
             fail=1
         fi
     done
