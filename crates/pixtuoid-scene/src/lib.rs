@@ -103,8 +103,7 @@ pub mod tooltip;
 pub mod walk;
 pub mod walkable;
 
-/// The repos (cwd basenames) every demo cast works in, so the site's hero, the
-/// App's demo and the snapshot examples show one office: pixtuoid-web's cast
+/// The repos (cwd basenames) every demo cast draws from: pixtuoid-web's cast
 /// takes one each, in order, and the examples' casts cycle the first `DEMO_TEAMS`.
 pub const DEMO_REPOS: &[&str] = &[
     "api", "web", "infra", "data", "cli", "docs", "etl", "tests", "ml", "research", "embedded",

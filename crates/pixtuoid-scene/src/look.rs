@@ -18,9 +18,7 @@ use crate::pixel_painter::{ClassicCaches, Drawn, PaintCtx, paint_frame};
 use crate::render_scale::RenderScale;
 use crate::theme::Theme;
 
-/// Where a [`Rendered`] frame's pixels may differ from the frame before: the
-/// frame entry's word for it, which the model reads without naming a
-/// rasterizer.
+/// Where a [`Rendered`] frame's pixels may differ from the frame before.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dirty {
     /// Anywhere.

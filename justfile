@@ -465,8 +465,8 @@ semver:
 # nightly-only, so it PINS `API_NIGHTLY`. `check` diffs instead of writing; CI
 # runs it as `api-surface-check`. Either mode fails on a public item that names
 # a type rustdoc stripped (`#[doc(hidden)]`, private): such an item is public
-# while the type it names is not, so neither the golden nor semver-checks sees
-# that type change.
+# while the type it names is not, so the golden never lists that type's
+# change.
 [doc('Regenerate the api/<crate>.txt public-API goldens (cargo-public-api + pinned nightly); `check` diffs them')]
 [group('rust')]
 api-surface mode="": _api-toolchain
@@ -502,29 +502,9 @@ api-surface mode="": _api-toolchain
                    names: ($kept | map({key: last, value: true}) | from_entries)}})
         | from_entries' "${jsons[@]}")"
     for json in "${jsons[@]}"; do
-        # A reference, a signature's or a `pub use`'s, is to a stripped item
-        # when its id is local but in neither `index` nor `paths`, or it is a
-        # published crate's item that crate's public paths lack. `index` also
-        # holds the external traits a crate references, by name only. An auto
-        # trait's synthetic impl is skipped: its bounds name private fields.
-        # rustdoc drops a `pub use` of an item itself hidden, which no check sees.
-        leaks="$(jq -r --argjson public "$public" --argjson crates "$(jq '.external_crates | map_values(.name)' "$json")" '
-            .index as $index | .paths as $paths
-            | def stripped: (.id | tostring) as $id
-                | ($index[$id].crate_id // $paths[$id].crate_id) as $crate
-                | if $crate == null then true
-                  elif $crate == 0 then false
-                  else $public[$crates[$crate | tostring] // ""] as $kept
-                    | $kept != null and (if $paths[$id] != null
-                        then $kept.paths[$paths[$id].path | join("::")]
-                        else $kept.names[$index[$id].name] end) == null
-                  end;
-            [$index[] | select(.crate_id == 0 and .inner.impl.is_synthetic != true) | . as $item
-               | ((.. | objects | select(has("id") and has("path") and (.path | type) == "string"))
-                  , (.inner.use // empty | select(.id != null) | {id, path: .source}))
-               | select(stripped)
-               | "\($item.span.filename):\($item.span.begin[0]): \($item.name // $item.inner.use.name // "an impl") names \(.path)"]
-            | unique[]' "$json")"
+        leaks="$(jq -r --argjson public "$public" \
+            --argjson crates "$(jq '.external_crates | map_values(.name)' "$json")" \
+            -f policy/ci-observability/api-leaks.jq "$json")"
         if [ -n "$leaks" ]; then
             echo "error: a public item names an item outside the published API; make that item public or hide the one naming it:" >&2
             echo "$leaks" >&2
