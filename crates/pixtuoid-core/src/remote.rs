@@ -32,6 +32,9 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_regi
 /// The wire version this build writes and reads. Within a version the line only
 /// gains fields and tags, which `remote.v1.golden.json` holds it to; a reader
 /// ignores what it doesn't know and maps an unknown tag to its nearest state.
+/// The promise counts from the first release a device can pair with: an older
+/// server's link carries no expiry, which [`PairLink`]'s parse refuses
+/// ([`PairLinkError::Outdated`]).
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office: a device takes
@@ -46,8 +49,7 @@ const MAX_CLOCK_DRIFT: Duration = Duration::from_secs(2);
 struct Snapshot {
     v: u32,
     now_ms: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    machine: Option<Machine>,
+    machine: Machine,
     agents: Vec<Agent>,
     daemons: Vec<Daemon>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -363,7 +365,7 @@ pub fn encode(
     let mut line = serde_json::to_string(&Snapshot {
         v: VERSION,
         now_ms: epoch_ms(now),
-        machine: Some(machine.clone()),
+        machine: machine.clone(),
         agents: scene.agents.values().map(project_agent).collect(),
         daemons: scene
             .daemons()
@@ -419,7 +421,7 @@ impl fmt::Display for PairLink {
             .map_or(0, |at| at.as_secs());
         write!(
             f,
-            "{PAIR_LINK_PREFIX}{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{CODE}={code}&{EXPIRES}={expires}"
+            "{PAIR_LINK_PREFIX}{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{EXPIRES}={expires}&{CODE}={code}"
         )
     }
 }
@@ -433,52 +435,75 @@ pub fn is_host(host: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
 }
 
-/// A string that isn't a [`PairLink`].
-#[derive(Debug, Error)]
-#[error("not a pixtuoid pairing link")]
-pub struct PairLinkError;
+/// A string that isn't a [`PairLink`] this build pairs with.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum PairLinkError {
+    /// No link a server writes.
+    #[error("not a pixtuoid pairing link")]
+    NotALink,
+    /// A link a server older than the expiry wrote: whole, but nothing a device
+    /// can pair with.
+    #[error("a pairing link from an older pixtuoid: update it on the computer, then pair again")]
+    Outdated,
+}
 
 impl FromStr for PairLink {
     type Err = PairLinkError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let query = text.strip_prefix(PAIR_LINK_PREFIX).ok_or(PairLinkError)?;
+        let query = text
+            .strip_prefix(PAIR_LINK_PREFIX)
+            .ok_or(PairLinkError::NotALink)?;
         let field = |key: &str| {
             query
                 .split('&')
                 .find_map(|pair| pair.strip_prefix(key)?.strip_prefix('='))
-                .ok_or(PairLinkError)
+                .ok_or(PairLinkError::NotALink)
         };
         let hex = |key: &str, bytes: usize| {
             let value = field(key)?;
             let uppercase_hex = |b: u8| matches!(b, b'0'..=b'9' | b'A'..=b'F');
             (value.len() == bytes * 2 && value.bytes().all(uppercase_hex))
                 .then(|| value.to_owned())
-                .ok_or(PairLinkError)
+                .ok_or(PairLinkError::NotALink)
         };
         let host = field(HOST)?;
         if !is_host(host) {
-            return Err(PairLinkError);
+            return Err(PairLinkError::NotALink);
         }
+        let port: u16 = field(PORT)?
+            .parse()
+            .ok()
+            .filter(|port| *port != 0)
+            .ok_or(PairLinkError::NotALink)?;
+        let (spki, code) = (hex(SPKI, PIN_BYTES)?, hex(CODE, SECRET_BYTES)?);
+        let Ok(expires) = field(EXPIRES) else {
+            // The four fields an older server wrote, and no more: a newer link
+            // cut short loses its code, which it writes last.
+            let older = format!(
+                "{PAIR_LINK_PREFIX}{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{CODE}={code}"
+            );
+            return Err(if older == text {
+                PairLinkError::Outdated
+            } else {
+                PairLinkError::NotALink
+            });
+        };
         let link = Self {
             host: host.to_owned(),
-            port: field(PORT)?
-                .parse()
-                .ok()
-                .filter(|port| *port != 0)
-                .ok_or(PairLinkError)?,
-            spki: hex(SPKI, PIN_BYTES)?,
-            code: hex(CODE, SECRET_BYTES)?,
-            expires: field(EXPIRES)?
+            port,
+            spki,
+            code,
+            expires: expires
                 .parse()
                 .ok()
                 .and_then(|secs| UNIX_EPOCH.checked_add(Duration::from_secs(secs)))
-                .ok_or(PairLinkError)?,
+                .ok_or(PairLinkError::NotALink)?,
         };
         // A field read twice, or one a server never writes, reads as a forgery.
         (link.to_string() == text)
             .then_some(link)
-            .ok_or(PairLinkError)
+            .ok_or(PairLinkError::NotALink)
     }
 }
 
@@ -721,7 +746,7 @@ impl RemoteOffice {
             today,
             ..
         } = serde_json::from_slice(line)?;
-        self.machine = machine;
+        self.machine = Some(machine);
 
         let skew = self.skew_for(now_ms, now);
         // A time this far ahead means nothing, and near a clock's end it would
@@ -1163,18 +1188,42 @@ mod tests {
         );
     }
 
-    /// A 0.22.0 server names no machine, and its line still applies: within a
-    /// version the line only gains fields.
+    /// No line a device can reach is without its machine: a server older than
+    /// the field wrote links no device pairs with ([`VERSION`]).
     #[test]
-    fn a_line_from_before_the_machine_still_applies() {
+    fn a_line_without_its_machine_is_refused() {
         let mut line: Value = serde_json::from_str(GOLDEN).unwrap();
         line.as_object_mut().unwrap().remove("machine");
         let mut office = RemoteOffice::new(caps(4));
-        office
-            .apply(line.to_string().as_bytes(), at(AT))
-            .expect("it applies");
+        let refused = office.apply(line.to_string().as_bytes(), at(AT));
+        assert!(
+            matches!(refused, Err(ApplyError::Malformed(_))),
+            "{refused:?}"
+        );
         assert_eq!(office.machine(), None);
-        assert!(!office.scene().agents.is_empty());
+    }
+
+    /// A link with every field but `expires` is an older server's, which says
+    /// so, so a device can ask for an update; a newer link cut short is no link.
+    #[test]
+    fn an_older_servers_link_is_told_apart() {
+        let PairLink { spki, code, .. } = link();
+        let older =
+            format!("pixtuoid://pair?{HOST}=studio.local&{PORT}=47820&{SPKI}={spki}&{CODE}={code}");
+        assert_eq!(older.parse::<PairLink>(), Err(PairLinkError::Outdated));
+        let newer = link().to_string();
+        let after_expires = newer.find(&format!("&{CODE}=")).expect("a code");
+        for cut in [
+            &newer[..after_expires],
+            &newer[..after_expires + CODE.len() + 2 + SECRET_BYTES],
+            &newer[..newer.find(&format!("{EXPIRES}=")).expect("an expiry") + EXPIRES.len() + 1],
+        ] {
+            assert_eq!(
+                cut.parse::<PairLink>(),
+                Err(PairLinkError::NotALink),
+                "{cut}"
+            );
+        }
     }
 
     #[test]
@@ -1677,8 +1726,8 @@ mod tests {
                 (HOST, "studio.local".to_owned()),
                 (PORT, "47820".to_owned()),
                 (SPKI, link().spki),
-                (CODE, link().code),
                 (EXPIRES, (AT / 1000).to_string()),
+                (CODE, link().code),
             ];
             let field = fields.iter_mut().find(|(k, _)| *k == key).expect("a field");
             field.1 = value.to_owned();

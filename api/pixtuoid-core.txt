@@ -182,6 +182,25 @@ impl core::marker::Unpin for pixtuoid_core::remote::Outcome
 impl core::marker::UnsafeUnpin for pixtuoid_core::remote::Outcome
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::Outcome
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::Outcome
+pub enum pixtuoid_core::remote::PairLinkError
+pub pixtuoid_core::remote::PairLinkError::NotALink
+pub pixtuoid_core::remote::PairLinkError::Outdated
+impl core::cmp::Eq for pixtuoid_core::remote::PairLinkError
+impl core::cmp::PartialEq for pixtuoid_core::remote::PairLinkError
+pub fn pixtuoid_core::remote::PairLinkError::eq(&self, &Self) -> bool
+impl core::error::Error for pixtuoid_core::remote::PairLinkError
+impl core::fmt::Debug for pixtuoid_core::remote::PairLinkError
+pub fn pixtuoid_core::remote::PairLinkError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for pixtuoid_core::remote::PairLinkError
+pub fn pixtuoid_core::remote::PairLinkError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::remote::PairLinkError
+impl core::marker::Freeze for pixtuoid_core::remote::PairLinkError
+impl core::marker::Send for pixtuoid_core::remote::PairLinkError
+impl core::marker::Sync for pixtuoid_core::remote::PairLinkError
+impl core::marker::Unpin for pixtuoid_core::remote::PairLinkError
+impl core::marker::UnsafeUnpin for pixtuoid_core::remote::PairLinkError
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::PairLinkError
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::PairLinkError
 pub enum pixtuoid_core::remote::Reply
 pub pixtuoid_core::remote::Reply::Paired
 pub pixtuoid_core::remote::Reply::Paired::token: alloc::string::String
@@ -306,19 +325,6 @@ impl core::marker::Unpin for pixtuoid_core::remote::PairLink
 impl core::marker::UnsafeUnpin for pixtuoid_core::remote::PairLink
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::PairLink
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::PairLink
-pub struct pixtuoid_core::remote::PairLinkError
-impl core::error::Error for pixtuoid_core::remote::PairLinkError
-impl core::fmt::Debug for pixtuoid_core::remote::PairLinkError
-pub fn pixtuoid_core::remote::PairLinkError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for pixtuoid_core::remote::PairLinkError
-pub fn pixtuoid_core::remote::PairLinkError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_core::remote::PairLinkError
-impl core::marker::Send for pixtuoid_core::remote::PairLinkError
-impl core::marker::Sync for pixtuoid_core::remote::PairLinkError
-impl core::marker::Unpin for pixtuoid_core::remote::PairLinkError
-impl core::marker::UnsafeUnpin for pixtuoid_core::remote::PairLinkError
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::PairLinkError
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::PairLinkError
 pub struct pixtuoid_core::remote::RemoteOffice
 impl pixtuoid_core::remote::RemoteOffice
 pub fn pixtuoid_core::remote::RemoteOffice::apply(&mut self, &[u8], std::time::SystemTime) -> core::result::Result<(), pixtuoid_core::remote::ApplyError>
