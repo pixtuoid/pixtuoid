@@ -536,10 +536,13 @@ mod tests {
         let cols: u16 = 160;
         let rows: u16 = 50;
         let (buf_w, buf_h) = crate::tui::renderer::scene_buf_size(cols, rows);
-        let expected =
-            pixtuoid_scene::layout::SceneLayout::compute_with_seed(buf_w, buf_h, None, 0)
-                .map(|l| l.home_desks.len())
-                .unwrap_or(0);
+        let expected = pixtuoid_scene::layout::SceneLayout::compute(
+            pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
+            None,
+            0,
+        )
+        .map(|l| l.home_desks.len())
+        .unwrap_or(0);
         assert_eq!(ground_floor(cols, rows), expected);
     }
 

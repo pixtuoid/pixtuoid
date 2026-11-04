@@ -66,7 +66,12 @@ fn neon_at(levels: NeonLevels, darkness: f32) -> f32 {
 
 /// The lights of a `w`×`h` office with nobody in it, at `hour` under a clear sky.
 fn lights_at(w: u16, h: u16, hour: u32) -> (SceneLayout, Lights) {
-    let layout = SceneLayout::compute(w, h, Some(crate::layout::TEST_DEFAULT_DESKS)).expect("fits");
+    let layout = SceneLayout::compute(
+        crate::layout::Viewport::full(w, h),
+        Some(crate::layout::TEST_DEFAULT_DESKS),
+        0,
+    )
+    .expect("fits");
     let sky = Sky::at_with(crate::localclock::at_hour(hour), Weather::Clear);
     let look = SkyTones::resolve(&sky, &crate::theme::NORMAL);
     let lights = Lights::of(
@@ -116,8 +121,12 @@ fn a_starved_tube_throws_no_halo_and_a_flash_does() {
 
 #[test]
 fn the_neon_halo_throws_the_signs_own_levels() {
-    let layout =
-        SceneLayout::compute(192, 80, Some(crate::layout::TEST_DEFAULT_DESKS)).expect("fits");
+    let layout = SceneLayout::compute(
+        crate::layout::Viewport::full(192, 80),
+        Some(crate::layout::TEST_DEFAULT_DESKS),
+        0,
+    )
+    .expect("fits");
     let sky = Sky::at_with(crate::localclock::at_hour(0), Weather::Clear);
     let look = SkyTones::resolve(&sky, &crate::theme::NORMAL);
     let beat = Beat::at_ms(WALL_CLOCK_MS);
@@ -185,8 +194,12 @@ fn a_spills_bounds_hold_every_row_whichever_way_it_leans() {
 
 #[test]
 fn a_monitor_halo_hangs_over_each_lit_screen_only() {
-    let layout =
-        SceneLayout::compute(192, 80, Some(crate::layout::TEST_DEFAULT_DESKS)).expect("fits");
+    let layout = SceneLayout::compute(
+        crate::layout::Viewport::full(192, 80),
+        Some(crate::layout::TEST_DEFAULT_DESKS),
+        0,
+    )
+    .expect("fits");
     let facing = |i: usize| layout.home_desks[i].facing;
     let north: Vec<usize> = (0..layout.home_desks.len())
         .filter(|&i| facing(i) == Facing::North)

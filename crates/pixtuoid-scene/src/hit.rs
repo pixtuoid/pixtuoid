@@ -123,7 +123,8 @@ mod tests {
     /// without one.
     #[test]
     fn a_figure_over_the_coffee_machine_is_the_hit() {
-        let layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
+        let layout = SceneLayout::compute(crate::layout::Viewport::full(160, 200), Some(4), 0)
+            .expect("layout");
         let coffee = layout
             .coffee_machine()
             .expect("a pantry with a coffee machine");

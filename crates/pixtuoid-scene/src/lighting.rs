@@ -345,14 +345,17 @@ impl Lights {
             monitor_halos: monitor_halos(layout, inputs),
             neon: Emitter {
                 kind: EmitterKind::NeonGlow,
-                light: Light::Glow {
-                    at: Point {
-                        x: crate::layout::NEON_PANEL.x,
-                        y: crate::layout::NEON_PANEL.y,
-                    },
-                    w: crate::layout::NEON_PANEL.width,
-                    h: crate::layout::NEON_PANEL.height,
-                    reach: NEON_HALO_RADIUS,
+                light: {
+                    let panel = layout.neon_panel();
+                    Light::Glow {
+                        at: Point {
+                            x: panel.x,
+                            y: panel.y,
+                        },
+                        w: panel.width,
+                        h: panel.height,
+                        reach: NEON_HALO_RADIUS,
+                    }
                 },
                 strength: neon_halo_strength(inputs.neon, inputs.beat, darkness),
             },

@@ -43,7 +43,7 @@ impl Router for StubRouter {
 }
 
 fn layout() -> SceneLayout {
-    SceneLayout::compute(120, 96, Some(4)).expect("fits")
+    SceneLayout::compute(crate::layout::Viewport::full(120, 96), Some(4), 0).expect("fits")
 }
 
 /// Returns a stable polyline (`first`) for its first few calls then a DIFFERENT
@@ -1435,7 +1435,8 @@ fn exit_while_wandering_does_not_teleport_to_desk() {
     // A real-sized floor, not the tiny 120×96 `layout()`: in the tiny room the
     // meeting sofas are boxed in to their backrest, so a trip agent skips them and
     // never wanders far — and this test needs the agent to genuinely walk out.
-    let l = SceneLayout::compute(160, 120, Some(4)).expect("fits");
+    let l =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 120), Some(4), 0).expect("fits");
     let trip_id = (0u64..1000)
         .map(|i| AgentId::from_transcript_path(&format!("/exitw/{i}.jsonl")))
         .find(|id| takes_trip(*id, 0))
@@ -1802,7 +1803,8 @@ fn an_agent_set_down_by_a_pocket_lands_on_the_floor_beside_it() {
     let mut checked = 0u32;
     for (w, h) in [(55, 45), (80, 46), (120, 46)] {
         for seed in 0..8 {
-            let Some(l) = SceneLayout::compute_with_seed(w, h, None, seed) else {
+            let Some(l) = SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+            else {
                 continue;
             };
             let near = |at: Point| {
@@ -1908,7 +1910,11 @@ fn wander_continuous_across_layouts_and_agents() {
     ];
 
     for (w, h, seed) in geometries {
-        let Some(l) = SceneLayout::compute_with_seed(w, h, Some(TEST_DEFAULT_DESKS), seed) else {
+        let Some(l) = SceneLayout::compute(
+            crate::layout::Viewport::full(w, h),
+            Some(TEST_DEFAULT_DESKS),
+            seed,
+        ) else {
             continue;
         };
         if l.home_desks.is_empty() || l.waypoints.is_empty() {

@@ -1137,6 +1137,7 @@ fn each_stutter_phase_holds_the_floor_on_screen_at_every_protocols_cadence() {
     let scene = scene_with(vec![], 16);
     let (cols, rows) = crate::tui::renderer::min_terminal_size();
     let area = crate::tui::renderer::scene_rect(Rect::new(0, 0, cols, rows));
+    let in_tube = neon_tube();
     for protocol in [
         ImageProtocol::Kitty,
         ImageProtocol::Sixel,
@@ -1154,7 +1155,7 @@ fn each_stutter_phase_holds_the_floor_on_screen_at_every_protocols_cadence() {
             let across = u32::from(area.width.div_ceil(shape.cols));
             let tiles: std::collections::BTreeSet<(u16, u16)> = area
                 .positions()
-                .filter(|p| neon_tube(p.x, 2 * p.y))
+                .filter(|p| in_tube(p.x, 2 * p.y))
                 .map(|p| (p.x / shape.cols, p.y / shape.rows))
                 .collect();
             let tube_sent = |wire: &str| match protocol {

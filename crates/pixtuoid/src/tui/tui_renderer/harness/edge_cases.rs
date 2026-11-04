@@ -158,7 +158,7 @@ fn a_terminal_that_fits_shows_no_too_small_notice() {
 #[test]
 fn no_layout_frame_paints_the_popup_at_its_clickable_scale() {
     // 100x16 → scene_rect 100x15 passes render()'s `MIN_SCENE_*` gate, but buf_h=30 is
-    // below compute_with_seed's office minimum → draw_scene paints the footer-only frame.
+    // below compute's office minimum → draw_scene paints the footer-only frame.
     let scene = scene_with(vec![idle("/nl/0.jsonl", 0, t0())], 16);
     let mut r = build(100, 16, vec![]);
     r.set_frames(

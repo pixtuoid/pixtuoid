@@ -254,8 +254,12 @@ mod tests {
         let mut met = 0;
         for &(w, h) in crate::layout::roster::tests::CENSUS_SIZES {
             for seed in 0..12 {
-                let l = crate::layout::SceneLayout::compute_with_seed(w, h, None, seed)
-                    .expect("lays out");
+                let l = crate::layout::SceneLayout::compute(
+                    crate::layout::Viewport::full(w, h),
+                    None,
+                    seed,
+                )
+                .expect("lays out");
                 for &piece in &l.wall_pieces {
                     let run = piece.clear_run();
                     for &post in

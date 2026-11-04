@@ -529,21 +529,24 @@ pub fn wall_board(
 }
 
 impl BoardModel {
-    /// Its lines as the frame shows them, on the neon sign's dark interior: the
-    /// brand at its top-left, the star flush to its right, then the mood and
-    /// the context a cell row each.
-    pub fn runs(&self, theme: &Theme) -> Vec<crate::display::TextRun> {
+    /// Its lines as the frame shows them on `board`, the neon sign's dark
+    /// interior ([`SceneLayout::board`](crate::layout::SceneLayout::board)):
+    /// the brand at its top-left, the star flush to its right, then the mood
+    /// and the context a cell row each.
+    pub fn runs(
+        &self,
+        theme: &Theme,
+        board: crate::layout::Bounds,
+    ) -> Vec<crate::display::TextRun> {
         use crate::display::{Align, TextRole, TextRun, TextSpan};
-        use crate::layout::{
-            CELL_ROWS, NEON_PANEL_INNER_W, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y,
-        };
+        use crate::layout::CELL_ROWS;
         let span = |s: &BoardSegment| TextSpan {
             content: s.content.clone(),
             ink: s.tone.rgb(theme),
         };
         let line = |n: u16| crate::layout::Point {
-            x: NEON_PANEL_INNER_X,
-            y: NEON_PANEL_INNER_Y + n * CELL_ROWS,
+            x: board.x,
+            y: board.y + n * CELL_ROWS,
         };
         let run = |at, align, spans, role| TextRun {
             at,
@@ -562,7 +565,7 @@ impl BoardModel {
             ),
             run(
                 crate::layout::Point {
-                    x: NEON_PANEL_INNER_X + NEON_PANEL_INNER_W,
+                    x: board.x + board.width,
                     ..line(0)
                 },
                 Align::Right,

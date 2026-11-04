@@ -893,7 +893,9 @@ mod tests {
         let mut desks = 0;
         for (w, h) in [(60, 40), (100, 60), (160, 96), (240, 144), (400, 240)] {
             for seed in 0..4 {
-                let Some(layout) = SceneLayout::compute_with_seed(w, h, None, seed) else {
+                let Some(layout) =
+                    SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+                else {
                     continue;
                 };
                 for &HomeDesk { at: desk, facing } in &layout.home_desks {
