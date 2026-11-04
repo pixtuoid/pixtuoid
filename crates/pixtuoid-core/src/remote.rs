@@ -38,8 +38,8 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_regi
 /// state. Any break, in a line or the link, bumps it, and every pairing or
 /// reconnect across it ends in a precise "update" on the side that can act
 /// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]). The promise counts
-/// from the first release a device can pair with: an older server's link
-/// carries no version, which [`PairLink`]'s parse refuses
+/// from the first release a device can pair with: an older server's
+/// `pixtuoid://` link is one [`PairLink`]'s parse refuses
 /// ([`PairLinkError::Outdated`]).
 pub const VERSION: u32 = 1;
 
@@ -412,7 +412,16 @@ pub const SECRET_BYTES: usize = 32;
 /// SHA-256's output in bytes, which [`PairLink::spki`] carries as hex.
 const PIN_BYTES: usize = 32;
 
-const PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
+/// A universal link on the site, whose `.well-known/apple-app-site-association`
+/// hands it to the App alone, where a custom scheme is any app's to claim. The
+/// fields ride the fragment, which a browser that opens the page instead keeps:
+/// "the fragment identifier is separated from the rest of the URI prior to a
+/// dereference" (RFC 3986 §3.5).
+const PAIR_LINK_PREFIX: &str = "https://pixtuoid.dev/pair/#";
+
+/// What every link began with before [`PAIR_LINK_PREFIX`], none of which a
+/// device can pair with.
+const OLDER_PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
 
 const VERSION_KEY: &str = "v";
 const HOST: &str = "host";
@@ -471,8 +480,8 @@ pub enum PairLinkError {
     /// No link a server writes.
     #[error("not a pixtuoid pairing link")]
     NotALink,
-    /// A link a server from before the link's `v` wrote: whole, but nothing a
-    /// device can pair with.
+    /// A `pixtuoid://` link, which only a server from before the first release a
+    /// device can pair with wrote.
     #[error("a pairing link from an older pixtuoid: update it on the computer, then pair again")]
     Outdated,
     /// A link a server speaking wire version `v` wrote, read no further: whichever
@@ -488,6 +497,9 @@ impl FromStr for PairLink {
     type Err = PairLinkError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
+        if text.starts_with(OLDER_PAIR_LINK_PREFIX) {
+            return Err(PairLinkError::Outdated);
+        }
         let query = text
             .strip_prefix(PAIR_LINK_PREFIX)
             .ok_or(PairLinkError::NotALink)?;
@@ -522,24 +534,12 @@ impl FromStr for PairLink {
             .filter(|port| *port != 0)
             .ok_or(PairLinkError::NotALink)?;
         let (spki, code) = (hex(SPKI, PIN_BYTES)?, hex(CODE, SECRET_BYTES)?);
-        let Ok(expires) = field(EXPIRES) else {
-            // The four fields an older server wrote, and no more: a newer link,
-            // cut short or not, carries its version.
-            let older = format!(
-                "{PAIR_LINK_PREFIX}{HOST}={host}&{PORT}={port}&{SPKI}={spki}&{CODE}={code}"
-            );
-            return Err(if older == text {
-                PairLinkError::Outdated
-            } else {
-                PairLinkError::NotALink
-            });
-        };
         let link = Self {
             host: host.to_owned(),
             port,
             spki,
             code,
-            expires: expires
+            expires: field(EXPIRES)?
                 .parse()
                 .ok()
                 .and_then(|secs| UNIX_EPOCH.checked_add(Duration::from_secs(secs)))
@@ -1296,14 +1296,25 @@ mod tests {
         assert_eq!(office.machine(), None);
     }
 
-    /// A link with exactly an older server's four fields says so, so a device can
-    /// ask for an update; any other link a server never wrote is no link.
+    /// Any link under an older server's scheme says so, whole or cut, so a
+    /// device can ask for an update; any other link a server never wrote is no link.
     #[test]
     fn an_older_servers_link_is_told_apart() {
         let PairLink { spki, code, .. } = link();
-        let older =
-            format!("pixtuoid://pair?{HOST}=studio.local&{PORT}=47820&{SPKI}={spki}&{CODE}={code}");
-        assert_eq!(older.parse::<PairLink>(), Err(PairLinkError::Outdated));
+        let older = format!(
+            "{OLDER_PAIR_LINK_PREFIX}{HOST}=studio.local&{PORT}=47820&{SPKI}={spki}&{CODE}={code}"
+        );
+        for older in [
+            older.as_str(),
+            &older[..OLDER_PAIR_LINK_PREFIX.len()],
+            &format!("{OLDER_PAIR_LINK_PREFIX}{VERSION_KEY}={VERSION}&{HOST}=studio.local"),
+        ] {
+            assert_eq!(
+                older.parse::<PairLink>(),
+                Err(PairLinkError::Outdated),
+                "{older}"
+            );
+        }
         let newer = link().to_string();
         let expires = newer.find(&format!("&{EXPIRES}=")).expect("an expiry");
         let to_code = newer[expires..].find(&format!("&{CODE}=")).expect("a code");
@@ -1316,7 +1327,6 @@ mod tests {
             &newer[..after(EXPIRES)],
             &newer[..after(VERSION_KEY)],
             &without_expiry,
-            &format!("{older}&extra=1"),
         ] {
             assert_eq!(
                 text.parse::<PairLink>(),
@@ -1326,13 +1336,28 @@ mod tests {
         }
     }
 
+    /// A link opens a page the crate's site serves, for a phone without the App.
+    #[test]
+    fn a_link_opens_a_page_the_site_serves() {
+        let site = concat!(env!("CARGO_PKG_HOMEPAGE"), "/");
+        let path = PAIR_LINK_PREFIX
+            .strip_prefix(site)
+            .and_then(|rest| rest.strip_suffix('#'))
+            .expect("the link is on the site");
+        let page = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../site/public")
+            .join(path)
+            .join("index.html");
+        assert!(page.is_file(), "{page:?}");
+    }
+
     /// A link of another version is read no further than its version, whatever
     /// follows: a device names the side to update even for a format it can't read.
     #[test]
     fn a_link_of_another_version_names_it() {
         for v in [0, VERSION + 1] {
             for rest in [String::new(), "&a-format=to-come".to_owned()] {
-                let text = format!("pixtuoid://pair?{VERSION_KEY}={v}{rest}");
+                let text = format!("{PAIR_LINK_PREFIX}{VERSION_KEY}={v}{rest}");
                 assert_eq!(
                     text.parse::<PairLink>(),
                     Err(PairLinkError::Incompatible { v }),
@@ -1893,7 +1918,7 @@ mod tests {
                 ..link()
             };
             let text = link.to_string();
-            assert!(text.starts_with("pixtuoid://pair?"), "{text}");
+            assert!(text.starts_with(PAIR_LINK_PREFIX), "{text}");
             assert_eq!(text.parse::<PairLink>().expect("it parses"), link);
         }
     }
@@ -1914,7 +1939,7 @@ mod tests {
             let field = fields.iter_mut().find(|(k, _)| *k == key).expect("a field");
             field.1 = value.to_owned();
             let query: Vec<_> = fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
-            format!("pixtuoid://pair?{}", query.join("&"))
+            format!("{PAIR_LINK_PREFIX}{}", query.join("&"))
         };
         // One character past each edge of the digits' ranges, at full length.
         let edges = ['/', ':', '@', 'G'].into_iter().flat_map(|edge| {
@@ -1923,7 +1948,8 @@ mod tests {
         });
         for bad in edges.chain([
             "https://pair?host=a".to_owned(),
-            "pixtuoid://pair?host=a".to_owned(),
+            format!("{PAIR_LINK_PREFIX}host=a"),
+            with(HOST, "studio.local").replacen('#', "?", 1),
             with(VERSION_KEY, ""),
             with(VERSION_KEY, "x"),
             with(VERSION_KEY, "01"),
