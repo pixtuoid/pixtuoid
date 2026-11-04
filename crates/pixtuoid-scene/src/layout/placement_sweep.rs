@@ -102,19 +102,18 @@ fn sweep_production_floors(f: impl FnMut(u16, u16, u64, &SceneLayout)) {
     );
 }
 
-/// Every swept office, on each seed a user's floors lay out with, wears some
-/// piece of each holiday's dressing: a holiday dressing only pieces an office
+/// Every swept office, on each seed a user's floors lay out with, shows some
+/// stand-in of each holiday: a holiday standing in only for pieces an office
 /// lacks would pass it by unseen.
 #[test]
-fn every_office_wears_each_holiday() {
+fn every_office_shows_each_holiday() {
     let check = |w, h, seed, l: &SceneLayout| {
-        for dressing in crate::holiday::Dressing::of_each_holiday() {
-            let wears = l.fixtures().any(|f| match f.kind {
-                FixtureKind::Plant { kind, .. } => dressing.piece(kind.piece()) != kind.piece(),
-                FixtureKind::Pod { kind, .. } => dressing.piece(kind.piece()) != kind.piece(),
-                _ => false,
-            });
-            assert!(wears, "{w}x{h} seed {seed} wears nothing of {dressing:?}");
+        for occasion in crate::holiday::Occasion::of_each_holiday() {
+            let shows = l
+                .fixtures()
+                .filter_map(|f| f.kind.replaceable_piece())
+                .any(|p| occasion.art(p) != p);
+            assert!(shows, "{w}x{h} seed {seed} shows nothing of {occasion:?}");
         }
     };
     sweep(check);

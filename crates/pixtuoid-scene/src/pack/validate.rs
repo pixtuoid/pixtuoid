@@ -91,10 +91,11 @@ pub(crate) struct ValidationReport {
     /// Each of the caller's loops whose frames don't hold whole beats: the
     /// beat skips or stretches one.
     pub(crate) off_beat_loops: Vec<OffBeatLoop>,
-    /// Each dressing ([`Piece::dresses`]) on a canvas other than its piece's,
-    /// which would stand it off the piece's footprint, and each density its
-    /// piece is drawn at and it is not, where it would show coarser.
-    pub(crate) misfit_dressings: Vec<String>,
+    /// Each holiday stand-in ([`Piece::stands_in_for`]) on a canvas other than
+    /// its plant's, which would stand it off the plant's footprint, and each
+    /// density its plant is drawn at and it is not, where it would show
+    /// coarser.
+    pub(crate) misfit_stand_ins: Vec<String>,
 }
 
 /// A density variant's timing that differs from its base's, which is the
@@ -146,7 +147,7 @@ impl ValidationReport {
             orphan_hairstyles,
             unread_variant_timing,
             off_beat_loops,
-            misfit_dressings,
+            misfit_stand_ins,
         } = self;
         unmarked_heads.len()
             + missing_hair_views.len()
@@ -154,12 +155,13 @@ impl ValidationReport {
             + orphan_hairstyles.len()
             + unread_variant_timing.len()
             + off_beat_loops.len()
-            + misfit_dressings.len()
+            + misfit_stand_ins.len()
     }
 }
 
-/// Check a loaded pack's variants' timing, its hairstyles against the
-/// characters they dress, and `loops` against `beat_ms`.
+/// Check a loaded pack's variants' timing, its holiday stand-ins against the
+/// plants they stand in for, its hairstyles against the characters they
+/// dress, and `loops` against `beat_ms`.
 fn validate_loops(pack: &Pack, loops: &[(Piece, usize)], beat_ms: u64) -> ValidationReport {
     let mut report = ValidationReport {
         off_beat_loops: loops
@@ -203,20 +205,20 @@ fn validate_loops(pack: &Pack, loops: &[(Piece, usize)], beat_ms: u64) -> Valida
         }
     }
 
-    for dressing in Piece::VARIANTS.iter().copied() {
-        let Some(piece) = dressing.dresses() else {
+    for stand_in in Piece::VARIANTS.iter().copied() {
+        let Some(plant) = stand_in.stands_in_for() else {
             continue;
         };
         let canvas = |s: &Sprite| s.frames().first().map(|f| (f.width(), f.height()));
-        if canvas(pack.piece(dressing)) != canvas(pack.piece(piece)) {
-            report.misfit_dressings.push(dressing.name().to_string());
+        if canvas(pack.piece(stand_in)) != canvas(pack.piece(plant)) {
+            report.misfit_stand_ins.push(stand_in.name().to_string());
         }
-        let worn = pack.variants_of(dressing);
-        for &density in pack.variants_of(piece).keys() {
-            if !worn.contains_key(&density) {
+        let drawn = pack.variants_of(stand_in);
+        for &density in pack.variants_of(plant).keys() {
+            if !drawn.contains_key(&density) {
                 report
-                    .misfit_dressings
-                    .push(density_variant_name(dressing.name(), density));
+                    .misfit_stand_ins
+                    .push(density_variant_name(stand_in.name(), density));
             }
         }
     }
@@ -303,7 +305,7 @@ fn overhangs(layer: &Sprite, body: &Frame, head: HeadMark) -> bool {
 /// Every piece the painters loop on the beat, each with the frame its loop
 /// starts at: the looping fixtures, the appliances' busy loops
 /// ([`appliance_frame_index`](super::lookup::appliance_frame_index)), the typists (`pose::typing_frame`), every
-/// creature pose that is not a walk, and every holiday dressing.
+/// creature pose that is not a walk, and every holiday stand-in.
 fn looped_animations() -> Vec<(Piece, usize)> {
     let appliances =
         [Piece::VendingMachine, Piece::Printer].map(|p| (p, lookup::APPLIANCE_IDLE_FRAMES));
@@ -311,10 +313,10 @@ fn looped_animations() -> Vec<(Piece, usize)> {
         .iter()
         .copied()
         .filter(|p| p.kind() == PieceKind::Creature);
-    let dressings = Piece::VARIANTS
+    let stand_ins = Piece::VARIANTS
         .iter()
         .copied()
-        .filter(|p| p.dresses().is_some());
+        .filter(|p| p.stands_in_for().is_some());
     [
         Piece::FishTank,
         Piece::WaterCooler,
@@ -323,7 +325,7 @@ fn looped_animations() -> Vec<(Piece, usize)> {
     ]
     .into_iter()
     .chain(creatures)
-    .chain(dressings)
+    .chain(stand_ins)
     .map(|p| (p, 0))
     .chain(appliances)
     .collect()
@@ -394,11 +396,11 @@ mod tests {
         report.finding_count() - bare.finding_count()
     }
 
-    /// A dressing on a canvas other than its piece's, or missing a density its
-    /// piece is drawn at, is reported; one on its piece's canvas at each of
-    /// its piece's densities is not.
+    /// A stand-in on a canvas other than its plant's, or missing a density
+    /// its plant is drawn at, is reported; one on its plant's canvas at each
+    /// of its plant's densities is not.
     #[test]
-    fn a_dressing_off_its_pieces_canvas_is_reported() {
+    fn a_stand_in_off_its_plants_canvas_is_reported() {
         let fitted = pack_with_frames(
             "[animations.plant_tall]\nframes=[\"two.sprite\"]\nframe_ms=100\n\
              [animations.christmas_tree]\nframes=[\"two.sprite\", \"two.sprite\"]\nframe_ms=100\n\
@@ -407,7 +409,7 @@ mod tests {
             SIZED_FRAMES,
         );
         assert_eq!(
-            validate_loops(&fitted, &[], 0).misfit_dressings,
+            validate_loops(&fitted, &[], 0).misfit_stand_ins,
             Vec::<String>::new()
         );
         let misfit = pack_with_frames(
@@ -417,7 +419,7 @@ mod tests {
             SIZED_FRAMES,
         );
         assert_eq!(
-            validate_loops(&misfit, &[], 0).misfit_dressings,
+            validate_loops(&misfit, &[], 0).misfit_stand_ins,
             ["christmas_tree", "christmas_tree@2x"]
         );
     }
@@ -536,7 +538,7 @@ mod tests {
                 name: "typing".to_string(),
                 frame_ms: 400,
             }],
-            misfit_dressings: vec!["christmas_tree".to_string()],
+            misfit_stand_ins: vec!["christmas_tree".to_string()],
         };
         assert_eq!(report.finding_count(), 7);
     }

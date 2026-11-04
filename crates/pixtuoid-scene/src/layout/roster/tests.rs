@@ -897,15 +897,18 @@ fn a_desk_sorts_between_a_walker_behind_it_and_one_in_front() {
     assert!(walker(south - 1) < desk_key, "behind the desk");
 }
 
-/// A plant a holiday dresses hovers as its dressing and, undressed, as itself;
-/// a piece no holiday dresses hovers as itself either way.
+/// A plant a holiday stands a piece in for hovers as its stand-in and, with
+/// no holiday, as itself; a piece no holiday replaces hovers as itself either
+/// way; and every stand-in names itself.
 #[test]
-fn a_dressed_plant_hovers_as_its_dressing() {
-    use crate::holiday::Dressing;
-    let christmas = Dressing::at(Dressing::christmas_noon());
+fn a_plant_hovers_as_its_stand_in() {
+    use crate::holiday::Occasion;
+    use crate::pack::Piece;
+    use strum::VariantArray;
+    let christmas = Occasion::at(Occasion::christmas_noon());
     let plant = |kind| FixtureKind::Plant { item: 0, kind };
     let pod = |kind| FixtureKind::Pod { item: 0, kind };
-    for (fixture, dressed, bare) in [
+    for (fixture, stood_in, bare) in [
         (plant(PlantKind::Ficus), "Christmas Tree", "Ficus"),
         (plant(PlantKind::Tall), "Christmas Tree", "Tall Plant"),
         (plant(PlantKind::Flower), "Poinsettia", "Flower Pot"),
@@ -913,11 +916,21 @@ fn a_dressed_plant_hovers_as_its_dressing() {
         (pod(PodDecor::PlantTall), "Christmas Tree", "Tall Plant"),
         (pod(PodDecor::Whiteboard), "Whiteboard", "Whiteboard"),
     ] {
-        assert_eq!(fixture.hover_label(christmas), Some(dressed), "{fixture:?}");
         assert_eq!(
-            fixture.hover_label(Dressing::default()),
+            fixture.hover_label(christmas),
+            Some(stood_in),
+            "{fixture:?}"
+        );
+        assert_eq!(
+            fixture.hover_label(Occasion::default()),
             Some(bare),
             "{fixture:?}"
         );
+    }
+    for &stand_in in Piece::VARIANTS
+        .iter()
+        .filter(|p| p.stands_in_for().is_some())
+    {
+        assert!(stand_in_label(stand_in).is_some(), "{}", stand_in.name());
     }
 }

@@ -508,11 +508,11 @@ fn queue_fixtures<'a>(
                 }
             }
             FixtureKind::Plant { kind, .. } => DrawableKind::Plant {
-                art: frame.dressing.piece(kind.piece()),
+                art: frame.occasion.art(kind.piece()),
                 pos: f.at,
             },
             FixtureKind::Pod { kind, .. } => DrawableKind::PodDecorItem {
-                art: frame.dressing.piece(kind.piece()),
+                art: frame.occasion.art(kind.piece()),
                 pos: f.at,
             },
             FixtureKind::Wall { kind, .. } => DrawableKind::WallDecor {

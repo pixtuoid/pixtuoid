@@ -126,9 +126,9 @@ impl Piece {
         }
     }
 
-    /// The piece it is drawn instead of on a holiday, on that piece's canvas
-    /// at every density, so the piece's footprint and box hold for it.
-    pub(crate) fn dresses(self) -> Option<Piece> {
+    /// The plant it stands in for on a holiday, drawn on that plant's canvas
+    /// at every density, so the plant's footprint and box hold for it.
+    pub(crate) fn stands_in_for(self) -> Option<Piece> {
         match self {
             Piece::ChristmasTree => Some(Piece::PlantTall),
             Piece::ChristmasTreeShort => Some(Piece::Plant),
@@ -239,15 +239,18 @@ mod tests {
         );
     }
 
-    /// Pins [`Piece::dresses`].
+    /// Pins [`Piece::stands_in_for`]: each stand-in replaces a plant, the
+    /// only pieces both painters draw in a holiday's art
+    /// (`FixtureKind::replaceable_piece`).
     #[test]
-    fn each_dressing_names_the_plant_it_is_drawn_instead_of() {
-        let dressed: Vec<_> = Piece::VARIANTS
+    fn each_stand_in_names_the_plant_it_replaces() {
+        use crate::layout::PlantKind;
+        let stood_in: Vec<_> = Piece::VARIANTS
             .iter()
-            .filter_map(|&p| Some((p.name(), p.dresses()?.name())))
+            .filter_map(|&p| Some((p.name(), p.stands_in_for()?.name())))
             .collect();
         assert_eq!(
-            dressed,
+            stood_in,
             [
                 ("christmas_tree", "plant_tall"),
                 ("christmas_tree_short", "plant"),
@@ -255,6 +258,15 @@ mod tests {
                 ("presents", "plant_succulent"),
             ]
         );
+        for &stand_in in Piece::VARIANTS {
+            if let Some(plant) = stand_in.stands_in_for() {
+                assert!(
+                    PlantKind::ALL.iter().any(|k| k.piece() == plant),
+                    "{}",
+                    stand_in.name()
+                );
+            }
+        }
     }
 
     /// Pins [`parse_key`].

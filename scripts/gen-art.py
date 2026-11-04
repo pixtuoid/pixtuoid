@@ -2514,17 +2514,17 @@ def plant_succulent():
     return g
 
 
-# ---- the holiday dressings ------------------------------------------------------
-# Each is drawn on its plant's canvas, its pot where the plant's stands, so the
-# plant's footprint holds. A tree's lights are two strings lit in turn, in
-# BULB, which glows of its own after dark.
+# ---- the holiday stand-ins -----------------------------------------------------
+# Each is drawn on the canvas of the plant it stands in for, its base where the
+# plant's pot stands, so the plant's footprint holds. A tree's lights are two
+# strings lit in turn, in BULB, which glows of its own after dark.
 BRACT_KEYS = (RED, DARK_RED, VERMILION, DARK_RED)
 
 
 def bough(g, cx, apex, base, half):
     """One tier of a fir: a triangle from `apex` down to `base`, `half` wide
-    there, lit west and shaded east, its hem a dark row scalloped into points
-    so it parts from the tier under it."""
+    there, lit west and shaded east, its hem two dark rows, the lower
+    scalloped into points, so it parts from the tier under it."""
     for y in range(apex, base + 1):
         w = half * (y - apex + 1) / (base - apex + 1)
         for x in range(len(g[0])):
@@ -2641,7 +2641,7 @@ def presents():
     for x0 in (4, 9):
         rect(g, x0, 3, x0 + 3, 6, GOLD)
         put(g, x0 + 1, 4, DARK_RED)
-    rect(g, 7, 4, 9, 6, BULB)
+    rect(g, 7, 4, 9, 6, GOLD)
     union_outline(g)
     return g
 

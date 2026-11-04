@@ -787,19 +787,19 @@ fn push_fixture(
                 StationArt::Appliance(sprite) => appliance(sprite),
             }
         }
-        K::Plant { kind, .. } => push_dressed(
+        K::Plant { kind, .. } => push_held_or_looping(
             order,
             pack,
             centre,
-            frame.dressing.piece(kind.piece()),
+            frame.occasion.art(kind.piece()),
             moment.timing.beat,
             depth,
         ),
-        K::Pod { kind, .. } => push_dressed(
+        K::Pod { kind, .. } => push_held_or_looping(
             order,
             pack,
             centre,
-            frame.dressing.piece(kind.piece()),
+            frame.occasion.art(kind.piece()),
             moment.timing.beat,
             depth,
         ),
@@ -998,8 +998,8 @@ fn push_looping(
 }
 
 /// Queue `sprite` centred on `at`, looping on `beat` when it has frames to
-/// loop: a piece as the frame's dressing draws it.
-fn push_dressed(
+/// loop: a plant or aisle piece in the art its occasion draws it in.
+fn push_held_or_looping(
     order: &mut Vec<(Span, PieceKind)>,
     pack: &OfficeArt,
     at: Point,

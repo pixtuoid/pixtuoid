@@ -460,8 +460,8 @@ pub struct Hits {
     layout: Arc<SceneLayout>,
     /// The star the look drew; a host's text places its own.
     star: Option<crate::layout::Bounds>,
-    /// What the frame's fixtures wear.
-    dressing: crate::holiday::Dressing,
+    /// The holiday the frame's office keeps.
+    occasion: crate::holiday::Occasion,
 }
 
 impl Hits {
@@ -469,13 +469,13 @@ impl Hits {
         hovers: Arc<Hovers>,
         layout: Arc<SceneLayout>,
         star: Option<crate::layout::Bounds>,
-        dressing: crate::holiday::Dressing,
+        occasion: crate::holiday::Occasion,
     ) -> Self {
         Self {
             hovers,
             layout,
             star,
-            dressing,
+            occasion,
         }
     }
 
@@ -491,7 +491,7 @@ impl Hits {
             self.star.or(host_star),
             &self.layout,
             area,
-            self.dressing,
+            self.occasion,
         )
     }
 
@@ -791,7 +791,7 @@ pub fn render(
             Arc::clone(raster.hovers()?),
             stepped.layout,
             raster.star(),
-            stepped.frame.dressing,
+            stepped.frame.occasion,
         ),
         occupied_waypoints: stepped.frame.occupied_waypoints,
         flash,

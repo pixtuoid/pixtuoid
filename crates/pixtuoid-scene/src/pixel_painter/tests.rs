@@ -1650,7 +1650,7 @@ fn empty_frame(layout: &SceneLayout) -> SimFrame {
         mascots: Vec::new(),
         desks: vec![Default::default(); layout.home_desks.len()],
         door_frame: 0,
-        dressing: Default::default(),
+        occasion: Default::default(),
     }
 }
 
@@ -4293,10 +4293,10 @@ fn plant_at(art: Piece, motion: Motion, ms: u64) -> Vec<Rgb> {
     buf.as_slice().to_vec()
 }
 
-/// A dressing's loop steps on the beat, one frame each `frame_ms`, and holds
+/// A stand-in's loop steps on the beat, one frame each `frame_ms`, and holds
 /// its first frame at rest.
 #[test]
-fn a_dressed_plant_steps_its_loop_and_holds_still_at_rest() {
+fn a_stand_in_steps_its_loop_and_holds_still_at_rest() {
     let step = u64::from(
         crate::pack::test_office()
             .piece(Piece::ChristmasTree)
@@ -4308,18 +4308,18 @@ fn a_dressed_plant_steps_its_loop_and_holds_still_at_rest() {
     assert_eq!(tree(Motion::Still, 0), tree(Motion::Still, step));
 }
 
-/// The classic queues each plant and aisle piece as the frame's dressing
-/// draws it: on Christmas some piece as a dressing, undressed each as itself.
+/// The classic queues each plant and aisle piece in the art its frame's
+/// occasion draws it in: on Christmas some piece as a stand-in, with no
+/// holiday each as itself.
 #[test]
-fn the_classic_draws_each_plant_as_its_dressing() {
-    use crate::layout::FixtureKind;
+fn the_classic_draws_each_plant_in_its_occasions_art() {
     for layout in crate::layout::roster::tests::offices() {
-        for dressing in [
-            crate::holiday::Dressing::default(),
-            crate::holiday::Dressing::at(crate::holiday::Dressing::christmas_noon()),
+        for occasion in [
+            crate::holiday::Occasion::default(),
+            crate::holiday::Occasion::at(crate::holiday::Occasion::christmas_noon()),
         ] {
             let frame = SimFrame {
-                dressing,
+                occasion,
                 ..empty_frame(&layout)
             };
             let drawn: Vec<Piece> = queued(&layout, &frame)
@@ -4332,19 +4332,15 @@ fn the_classic_draws_each_plant_as_its_dressing() {
                     _ => None,
                 })
                 .collect();
-            let worn: Vec<Piece> = layout
+            let want: Vec<Piece> = layout
                 .fixtures()
-                .filter_map(|f| match f.kind {
-                    FixtureKind::Plant { kind, .. } => Some(kind.piece()),
-                    FixtureKind::Pod { kind, .. } => Some(kind.piece()),
-                    _ => None,
-                })
-                .map(|p| dressing.piece(p))
+                .filter_map(|f| f.kind.replaceable_piece())
+                .map(|p| occasion.art(p))
                 .collect();
-            assert_eq!(drawn, worn);
+            assert_eq!(drawn, want);
             assert_eq!(
-                drawn.iter().any(|p| p.dresses().is_some()),
-                dressing != crate::holiday::Dressing::default()
+                drawn.iter().any(|p| p.stands_in_for().is_some()),
+                occasion != crate::holiday::Occasion::default()
             );
         }
     }

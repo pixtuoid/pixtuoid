@@ -128,13 +128,13 @@ pub(super) enum DrawableKind<'a> {
     SnackShelf {
         pos: Point,
     },
-    /// A plant, drawn as `art`: its own piece or the frame's dressing of it.
+    /// A plant, drawn in `art`: its own piece or its occasion's stand-in.
     Plant {
         art: Piece,
         pos: Point,
     },
-    /// An aisle's decor, drawn as `art`: its own piece or the frame's dressing
-    /// of it.
+    /// An aisle's decor, drawn in `art`: its own piece or its occasion's
+    /// stand-in.
     PodDecorItem {
         art: Piece,
         pos: Point,

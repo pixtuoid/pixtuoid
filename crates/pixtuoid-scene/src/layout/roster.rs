@@ -252,15 +252,24 @@ pub enum FixtureKind {
 }
 
 impl FixtureKind {
-    /// What hovering it says, worn as `dressing` puts it on, or `None` where
-    /// a tooltip would be noise.
-    pub(crate) fn hover_label(self, dressing: crate::holiday::Dressing) -> Option<&'static str> {
-        let worn = match self {
+    /// The piece a holiday's stand-in may replace, where it draws one: a
+    /// plant's or an aisle's, which both painters draw in
+    /// [`Occasion::art`](crate::holiday::Occasion::art).
+    pub(crate) fn replaceable_piece(self) -> Option<crate::pack::Piece> {
+        match self {
             FixtureKind::Plant { kind, .. } => Some(kind.piece()),
             FixtureKind::Pod { kind, .. } => Some(kind.piece()),
             _ => None,
-        };
-        if let Some(label) = worn.and_then(|piece| dressing_label(dressing.piece(piece))) {
+        }
+    }
+
+    /// What hovering it says on `occasion`, or `None` where a tooltip would
+    /// be noise.
+    pub(crate) fn hover_label(self, occasion: crate::holiday::Occasion) -> Option<&'static str> {
+        if let Some(label) = self
+            .replaceable_piece()
+            .and_then(|p| stand_in_label(occasion.art(p)))
+        {
             return Some(label);
         }
         Some(match self {
@@ -319,8 +328,8 @@ impl FixtureKind {
     }
 }
 
-/// What hovering a holiday's dressing says, or `None` for any other piece.
-fn dressing_label(piece: crate::pack::Piece) -> Option<&'static str> {
+/// What hovering a holiday's stand-in says, or `None` for any other piece.
+fn stand_in_label(piece: crate::pack::Piece) -> Option<&'static str> {
     use crate::pack::Piece;
     match piece {
         Piece::ChristmasTree | Piece::ChristmasTreeShort => Some("Christmas Tree"),

@@ -487,8 +487,7 @@ impl ClockReading {
     }
 }
 
-/// Its own decode, not [`local_hour_frac`]: the hands need the raw
-/// `hour % 12` and `minute`.
+/// Not [`local_hour_frac`]: the hands need the raw `hour % 12` and `minute`.
 pub(crate) fn clock_reading(now: SystemTime) -> ClockReading {
     let local = crate::localclock::local_time(now);
     use chrono::Timelike;
@@ -517,8 +516,7 @@ pub(crate) fn octant_offset(turn: f32) -> (i32, i32) {
     OCTANTS[oct as usize]
 }
 
-/// Fractional local hour (`hour + minute/60`, in `0.0..24.0`) for `now` — the
-/// sky's clock decode.
+/// Fractional local hour (`hour + minute/60`, in `0.0..24.0`) for `now`.
 pub(crate) fn local_hour_frac(now: SystemTime) -> f32 {
     use chrono::Timelike;
     let local = crate::localclock::local_time(now);

@@ -85,14 +85,14 @@ impl SceneHit<'_> {
 
 /// What `area` (in layout units) shows: `figure`, the topmost hover there,
 /// else the board's `star`, else the coffee machine, else a labelled fixture
-/// of `layout`, worn as `dressing` puts it on.
+/// of `layout` on `occasion`.
 #[doc(hidden)]
 pub fn scene_hit<'a>(
     figure: Option<&'a HoverTarget>,
     star: Option<Bounds>,
     layout: &SceneLayout,
     area: Bounds,
-    dressing: crate::holiday::Dressing,
+    occasion: crate::holiday::Occasion,
 ) -> Option<SceneHit<'a>> {
     if let Some(target) = figure {
         Some(SceneHit::Figure(target))
@@ -101,7 +101,7 @@ pub fn scene_hit<'a>(
     } else if coffee_at(layout, area) {
         Some(SceneHit::Coffee)
     } else {
-        fixture_label_at(layout, area, dressing).map(SceneHit::Furniture)
+        fixture_label_at(layout, area, occasion).map(SceneHit::Furniture)
     }
 }
 
@@ -115,15 +115,15 @@ fn coffee_at(layout: &SceneLayout, area: Bounds) -> bool {
 fn fixture_label_at(
     layout: &SceneLayout,
     area: Bounds,
-    dressing: crate::holiday::Dressing,
+    occasion: crate::holiday::Occasion,
 ) -> Option<&'static str> {
-    layout.fixture_at(area)?.hover_label(dressing)
+    layout.fixture_at(area)?.hover_label(occasion)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::holiday::Dressing;
+    use crate::holiday::Occasion;
 
     /// A figure over the coffee machine is the hit, and the machine is
     /// without one.
@@ -145,11 +145,11 @@ mod tests {
             anim: crate::pack::Piece::CatWalk,
         });
         assert!(matches!(
-            scene_hit(Some(&cat), None, &layout, mid, Dressing::default()),
+            scene_hit(Some(&cat), None, &layout, mid, Occasion::default()),
             Some(SceneHit::Figure(t)) if *t == cat
         ));
         assert_eq!(
-            scene_hit(None, None, &layout, mid, Dressing::default()),
+            scene_hit(None, None, &layout, mid, Occasion::default()),
             Some(SceneHit::Coffee)
         );
     }
