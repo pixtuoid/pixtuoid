@@ -236,7 +236,12 @@ mod tests {
         let s = scene_of(vec![a.clone(), b]);
         let namesakes = Namesakes::of(s.agents.values());
         let anchor = crate::layout::Point { x: 0, y: 0 };
-        let badge = crate::display::Badge::new(anchor, &a, &namesakes, &crate::theme::NORMAL);
+        let badge = crate::display::Badge::new(
+            (anchor, crate::layout::BARE_OFFICE),
+            &a,
+            &namesakes,
+            &crate::theme::NORMAL,
+        );
         let (shown, whole) = (badge.name.text(), namesakes.nameplate(&a));
         let marker = crate::display::text::cells(super::BADGE_MARKER.encode_utf8(&mut [0; 4]));
         assert!(

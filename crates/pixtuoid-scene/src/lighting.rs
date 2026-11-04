@@ -346,7 +346,7 @@ impl Lights {
             neon: Emitter {
                 kind: EmitterKind::NeonGlow,
                 light: {
-                    let panel = layout.neon_panel();
+                    let panel = layout.board_panel();
                     Light::Glow {
                         at: Point {
                             x: panel.x,

@@ -12,7 +12,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::display::Icon;
 use crate::display::cells::{CellMap, CellRect};
 use crate::display::pen::ArtPx;
-use crate::layout::Point;
+use crate::layout::{Bounds, Point};
 use crate::theme::Theme;
 
 /// A glyph's width in art pixels, its cell less the gap.
@@ -113,6 +113,14 @@ pub(crate) const LABEL_GAP: u16 = 2;
 /// cell row clear of the badge.
 const BUBBLE_LIFT: u16 = 2 * crate::layout::CELL_ROWS;
 
+/// What shows of a run's box `len` long on one axis, set to start at `start`
+/// and kept to `area` there: moved off the area's near edge, and cut at its
+/// far one, so it starts where the run is set and may end short, or empty.
+pub(crate) fn kept(start: u16, len: u16, area: std::ops::Range<u16>) -> std::ops::Range<u16> {
+    let start = start.max(area.start);
+    start..start.saturating_add(len).min(area.end).max(start)
+}
+
 /// One line of text a frame shows: its spans laid end to end, on `plate` if it
 /// has one. Its inks are resolved, so a painter reads no theme for it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -121,6 +129,8 @@ pub struct TextRun {
     pub at: Point,
     /// Where `at` lies on its line.
     pub align: Align,
+    /// The area it keeps to: inside the insets, open past a side none covers.
+    pub within: Bounds,
     /// Its spans, in reading order.
     pub spans: Vec<TextSpan>,
     /// The fill behind it, if any.
@@ -184,6 +194,8 @@ pub struct Badge {
     pub agent: AgentId,
     /// The point it hangs over, its sprite's top-centre.
     pub at: Point,
+    /// What it is kept to, as [`TextRun::within`].
+    pub within: Bounds,
     /// The marker's ink.
     pub marker: Rgb,
     /// The name, in its ink.
@@ -193,9 +205,9 @@ pub struct Badge {
 }
 
 impl Badge {
-    /// `agent`'s badge over `anchor`.
+    /// `agent`'s badge over `anchor`, kept to `within`.
     pub(crate) fn new(
-        anchor: Point,
+        (anchor, within): (Point, Bounds),
         agent: &AgentSlot,
         namesakes: &crate::nameplate::Namesakes<'_>,
         theme: &Theme,
@@ -205,6 +217,7 @@ impl Badge {
         Self {
             agent: agent.agent_id,
             at: anchor,
+            within,
             marker: ink.marker,
             name: TextSpan::new(crate::badge::badge_text(&name), ink.name),
             plate: crate::badge::badge_plate_colour(theme),
@@ -217,6 +230,7 @@ impl Badge {
         TextRun {
             at: self.at,
             align: Align::Over,
+            within: self.within,
             spans: vec![self.name.clone()],
             plate: Some(self.plate),
             ring: Some(self.marker),
@@ -226,7 +240,7 @@ impl Badge {
 
     /// The cells of `map` a line `w` cells wide takes over its anchor.
     pub fn line_at(&self, w: u16, map: CellMap) -> CellRect {
-        line_at(self.at, Align::Over, w, map)
+        line_at((self.at, Align::Over), w, map, self.within)
     }
 }
 
@@ -316,20 +330,22 @@ impl TextRun {
         set
     }
 
-    /// The floor indicator naming `floor` over the elevator at `door` of an
-    /// office whose north edge is `office_top`: centred on the door, in the
-    /// cell over it, on the badge plate, an arrow with no floor its way dim.
+    /// The floor indicator naming `floor` over `layout`'s elevator: centred on
+    /// the door, in the cell over it, on the badge plate, an arrow with no
+    /// floor its way dim.
     pub(crate) fn indicator(
-        (door, office_top): (Point, u16),
+        layout: &crate::layout::SceneLayout,
         floor: crate::floor::FloorMeta,
         theme: &Theme,
     ) -> Self {
+        let door = layout.door;
         Self {
             at: Point {
                 x: door.x + crate::layout::ELEVATOR_W / 2,
-                y: crate::layout::floor_indicator_rows(door.y, office_top).start,
+                y: crate::layout::floor_indicator_rows(door.y, layout.inner.y).start,
             },
             align: Align::Centre,
+            within: layout.text_area(),
             spans: crate::layout::floor_indicator(floor)
                 .into_iter()
                 .map(|content| TextSpan {
@@ -354,24 +370,25 @@ impl TextRun {
         floor: crate::floor::FloorMeta,
         theme: &Theme,
     ) -> Vec<Self> {
-        let mut runs = board.runs(theme, layout.board());
-        runs.push(Self::indicator((layout.door, layout.inner.y), floor, theme));
+        let mut runs = board.runs(theme, layout.board(), layout.text_area());
+        runs.push(Self::indicator(layout, floor, theme));
         runs
     }
 
-    /// `bubble` over its speaker's badge, which hangs over `badge_at`, in
-    /// the tooltip's ink on its plate.
+    /// `bubble` over its speaker's `badge`, in the tooltip's ink on its plate.
     pub(crate) fn bubble(
         bubble: &crate::chitchat::ChitchatBubble,
-        badge_at: Point,
+        badge: &Badge,
         theme: &Theme,
     ) -> Self {
+        let Badge { at, within, .. } = *badge;
         Self {
             at: Point {
-                x: badge_at.x,
-                y: badge_at.y.saturating_sub(BUBBLE_LIFT),
+                x: at.x,
+                y: at.y.saturating_sub(BUBBLE_LIFT),
             },
             align: Align::Over,
+            within,
             spans: vec![TextSpan::new(bubble.text, theme.ui.tooltip_text)],
             plate: Some(theme.ui.tooltip_bg),
             ring: None,
@@ -388,14 +405,14 @@ impl TextRun {
     /// it: the one placement every terminal painter and the star's hit test
     /// read.
     pub fn line_at(&self, w: u16, map: CellMap) -> CellRect {
-        line_at(self.at, self.align, w, map)
+        line_at((self.at, self.align), w, map, self.within)
     }
 }
 
 /// The cells of `map` a line `w` cells wide takes, placed by `at` as `align`
-/// says: the row `at`'s cell lies in, `LABEL_GAP` rows up for
-/// [`Align::Over`].
-fn line_at(at: Point, align: Align, w: u16, map: CellMap) -> CellRect {
+/// says, and [`kept`] to the cells that show `within`: the row `at`'s cell
+/// lies in, `LABEL_GAP` rows up for [`Align::Over`].
+fn line_at((at, align): (Point, Align), w: u16, map: CellMap, within: Bounds) -> CellRect {
     let anchor = match align {
         Align::Over => Point {
             y: at.y.saturating_sub(LABEL_GAP),
@@ -409,7 +426,14 @@ fn line_at(at: Point, align: Align, w: u16, map: CellMap) -> CellRect {
         Align::Right => col.saturating_sub(w),
         Align::Over | Align::Centre => col.saturating_sub(w / 2),
     };
-    CellRect { x, y: row, w, h: 1 }
+    let [cols, rows] = map.cells_showing(within);
+    let (cols, rows) = (kept(x, w, cols), kept(row, 1, rows));
+    CellRect {
+        x: cols.start,
+        y: rows.start,
+        w: cols.end - cols.start,
+        h: rows.end - rows.start,
+    }
 }
 
 #[cfg(test)]
@@ -422,9 +446,12 @@ mod tests {
     #[test]
     fn an_arrow_with_no_floor_its_way_is_dim() {
         let theme = &crate::theme::NORMAL;
+        let layout =
+            crate::layout::SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0)
+                .expect("lays out");
         let arrows = |floor, floors| -> Vec<(Icon, Rgb)> {
             let meta = crate::floor::FloorMeta::for_floor(floor, floors);
-            TextRun::indicator((Point { x: 0, y: 0 }, 0), meta, theme)
+            TextRun::indicator(&layout, meta, theme)
                 .spans
                 .into_iter()
                 .filter_map(|s| match s.content {

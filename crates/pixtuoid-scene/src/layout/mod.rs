@@ -6,6 +6,7 @@
 //! waypoints, decor positions, and a per-pixel walkability mask.
 
 mod approach;
+pub mod chrome;
 mod coarse;
 mod compute;
 mod decor;
@@ -164,8 +165,8 @@ pub struct Size {
 }
 
 /// How far a painter's own chrome reaches in from each edge of the office:
-/// under it the layout lays nothing but its floor, walls and sky, and no
-/// figure is drawn.
+/// under it the office paints only its floor, walls and sky, and places
+/// nothing that carries information or takes a press.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Insets {
     /// From the north edge.

@@ -581,6 +581,26 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::interact::Slop
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::interact::Slop
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::interact::Slop
 pub mod pixtuoid_scene::layout
+pub mod pixtuoid_scene::layout::chrome
+pub struct pixtuoid_scene::layout::chrome::Fitted
+pub pixtuoid_scene::layout::chrome::Fitted::upscale: u16
+pub pixtuoid_scene::layout::chrome::Fitted::viewport: pixtuoid_scene::layout::Viewport
+impl core::clone::Clone for pixtuoid_scene::layout::chrome::Fitted
+pub fn pixtuoid_scene::layout::chrome::Fitted::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::layout::chrome::Fitted
+impl core::cmp::PartialEq for pixtuoid_scene::layout::chrome::Fitted
+pub fn pixtuoid_scene::layout::chrome::Fitted::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::layout::chrome::Fitted
+pub fn pixtuoid_scene::layout::chrome::Fitted::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::layout::chrome::Fitted
+impl core::marker::StructuralPartialEq for pixtuoid_scene::layout::chrome::Fitted
+impl core::marker::Freeze for pixtuoid_scene::layout::chrome::Fitted
+impl core::marker::Send for pixtuoid_scene::layout::chrome::Fitted
+impl core::marker::Sync for pixtuoid_scene::layout::chrome::Fitted
+impl core::marker::Unpin for pixtuoid_scene::layout::chrome::Fitted
+impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::chrome::Fitted
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::chrome::Fitted
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::chrome::Fitted
 pub enum pixtuoid_scene::layout::Facing
 pub pixtuoid_scene::layout::Facing::East
 pub pixtuoid_scene::layout::Facing::North
@@ -1121,6 +1141,8 @@ pub fn pixtuoid_scene::layout::SceneLayout::board(&self) -> pixtuoid_scene::layo
 pub fn pixtuoid_scene::layout::SceneLayout::coffee_machine(&self) -> core::option::Option<pixtuoid_scene::layout::Bounds>
 pub fn pixtuoid_scene::layout::SceneLayout::fixture_at(&self, pixtuoid_scene::layout::Bounds) -> core::option::Option<pixtuoid_scene::layout::FixtureKind>
 impl pixtuoid_scene::layout::SceneLayout
+pub fn pixtuoid_scene::layout::SceneLayout::board_panel(&self) -> pixtuoid_scene::layout::Bounds
+impl pixtuoid_scene::layout::SceneLayout
 pub fn pixtuoid_scene::layout::SceneLayout::compute(pixtuoid_scene::layout::Viewport, core::option::Option<usize>, u64) -> core::option::Option<Self>
 pub fn pixtuoid_scene::layout::SceneLayout::home_desk(&self, pixtuoid_core::state::FloorLocalDeskIndex) -> core::option::Option<pixtuoid_scene::layout::HomeDesk>
 pub fn pixtuoid_scene::layout::SceneLayout::is_walkable(&self, u16, u16) -> bool
@@ -1160,6 +1182,8 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::Size
 pub struct pixtuoid_scene::layout::Viewport
 pub pixtuoid_scene::layout::Viewport::insets: pixtuoid_scene::layout::Insets
 pub pixtuoid_scene::layout::Viewport::size: pixtuoid_scene::layout::Size
+impl pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::fitted(pixtuoid_scene::layout::Size, pixtuoid_scene::layout::Insets, pixtuoid_scene::sprite::format::Density, core::num::nonzero::NonZeroU16) -> core::option::Option<pixtuoid_scene::layout::chrome::Fitted>
 impl pixtuoid_scene::layout::Viewport
 pub const fn pixtuoid_scene::layout::Viewport::full(u16, u16) -> Self
 impl core::clone::Clone for pixtuoid_scene::layout::Viewport

@@ -539,6 +539,7 @@ fn badge_at(anchor: crate::layout::Point) -> TextRun {
     TextRun {
         at: anchor,
         align: Align::Over,
+        within: crate::layout::BARE_OFFICE,
         spans: vec![crate::display::TextSpan::new(
             "cc",
             crate::sprite::Rgb { r: 9, g: 9, b: 9 },
@@ -574,17 +575,16 @@ fn a_badge_sits_above_the_head_and_centred_on_the_sprite() {
 fn the_floor_indicator_stays_in_its_cell() {
     use crate::display::text::LINE_H;
     let pack = crate::pack::test_office();
-    let door = SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0)
-        .expect("lays out")
-        .door;
-    let rows = crate::layout::floor_indicator_rows(door.y, 0);
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
+    let rows = crate::layout::floor_indicator_rows(layout.door.y, 0);
     let densities = pack.inner().density_variants();
     assert!(!densities.is_empty(), "the pack draws a density");
     for d in densities {
         let pen = Pen::new(RenderScale::from(*d), *d).expect("d divides itself");
         for (floor, floors) in [(0, 1), (11, 12), (98, 99)] {
             let floor = crate::floor::FloorMeta::for_floor(floor, floors);
-            let run = TextRun::indicator((door, 0), floor, &crate::theme::NORMAL);
+            let run = TextRun::indicator(&layout, floor, &crate::theme::NORMAL);
             let plate = run_rect(&run, pen);
             let span = topmost_span(plate, pen);
             assert!(
@@ -610,7 +610,7 @@ fn the_star_sits_flush_with_the_interior_at_every_scale() {
     for s in [1, pack.max_density_variant().get()] {
         let pen = Pen::for_pack(RenderScale::new(s).expect("nonzero"), &pack);
         let star = quiet_board()
-            .runs(&crate::theme::NORMAL, board)
+            .runs(&crate::theme::NORMAL, board, crate::layout::BARE_OFFICE)
             .into_iter()
             .find(|run| run.role == crate::display::TextRole::Star)
             .expect("the star");
@@ -708,7 +708,7 @@ fn the_board_writes_inside_the_signs_interior() {
             now,
         );
         let pen = Pen::for_pack(scale, &pack);
-        for run in board.runs(&crate::theme::NORMAL, interior) {
+        for run in board.runs(&crate::theme::NORMAL, interior, crate::layout::BARE_OFFICE) {
             let span = topmost_span(run_rect(&run, pen), pen);
             assert!(
                 span.x0 >= interior.x
@@ -1653,5 +1653,52 @@ fn a_frame_on_unchanged_inputs_reuses_the_last_frames_windows_and_lights() {
             .iter()
             .all(|v| windows.iter().all(|w| !Arc::ptr_eq(v, w))),
         "a beat later took the last beat's windows"
+    );
+}
+
+/// With no inset on the east, world text runs on past the office's east edge
+/// as it always has, into whatever margin the host's grid leaves there: a
+/// badge hung at that edge takes every cell its line asks, on a grid whose
+/// last column overhangs the office's last unit.
+#[test]
+fn a_badge_at_a_bare_east_edge_keeps_its_whole_line() {
+    use crate::display::cells::{CellMap, CellPx, CellRect};
+    let (layout, pack, frames, _) = sit_down(crate::layout::Facing::South, 0);
+    let mut frame = frames.last().expect("a frame").clone();
+    let sitter = frame.characters.first_mut().expect("the sitter");
+    let east = layout.buf_w - crate::layout::CHARACTER_SPRITE_W;
+    sitter.top_left.x = east;
+    sitter.label_anchor.x = east + crate::layout::CHARACTER_SPRITE_W / 2;
+    let mut badges = Vec::new();
+    push_characters(
+        &frame,
+        Office {
+            layout: &layout,
+            pack: &pack,
+            theme: &crate::theme::NORMAL,
+            scale: RenderScale::ONE,
+        },
+        std::time::UNIX_EPOCH,
+        (&mut Vec::new(), &mut badges),
+    );
+    let badge = badges.first().expect("the sitter's badge");
+    // A cutaway terminal's grid: 14×28-pixel cells at 16 pixels a unit.
+    let map = CellMap {
+        scale: 16,
+        cell: CellPx { w: 14, h: 28 },
+    };
+    const LINE: u16 = 12;
+    let (col, row) = map.cell_of(crate::layout::Point {
+        y: badge.at.y - LABEL_GAP,
+        ..badge.at
+    });
+    assert_eq!(
+        badge.line_at(LINE, map),
+        CellRect {
+            x: col - LINE / 2,
+            y: row,
+            w: LINE,
+            h: 1,
+        }
     );
 }

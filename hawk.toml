@@ -19,3 +19,9 @@ crate = "pixtuoid_core"
 module = "harness::fuzz"
 level = "expect"
 reason = "what the fuzz targets drive, a workspace of their own"
+
+[[exclude]]
+crate = "pixtuoid_scene"
+module = "layout::chrome"
+level = "expect"
+reason = "the chrome fit and sign box the App reads, a painter outside this workspace"

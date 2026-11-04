@@ -72,6 +72,24 @@ impl CellMap {
         )
     }
 
+    /// The columns and the rows of the cells that show any of `b`.
+    pub(crate) fn cells_showing(self, b: crate::layout::Bounds) -> [std::ops::Range<u16>; 2] {
+        let cells = |from: u16, len: u16, px: u16| {
+            let cell = |units: u16, round: fn(u32, u32) -> u32| {
+                u16::try_from(round(
+                    u32::from(units) * u32::from(self.scale),
+                    u32::from(px.max(1)),
+                ))
+                .unwrap_or(u16::MAX)
+            };
+            cell(from, |a, b| a / b)..cell(from.saturating_add(len), u32::div_ceil)
+        };
+        [
+            cells(b.x, b.width, self.cell.w),
+            cells(b.y, b.height, self.cell.h),
+        ]
+    }
+
     /// The logical units cell `(col, row)` shows any part of; past the far
     /// edge, units nothing paints.
     pub fn area(self, col: u16, row: u16) -> crate::layout::Bounds {

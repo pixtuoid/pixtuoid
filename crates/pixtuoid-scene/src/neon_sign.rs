@@ -530,13 +530,14 @@ pub fn wall_board(
 
 impl BoardModel {
     /// Its lines as the frame shows them on `board`, the neon sign's dark
-    /// interior ([`SceneLayout::board`](crate::layout::SceneLayout::board)):
-    /// the brand at its top-left, the star flush to its right, then the mood
-    /// and the context a cell row each.
+    /// interior ([`SceneLayout::board`](crate::layout::SceneLayout::board)),
+    /// each kept to `within`: the brand at its top-left, the star flush to
+    /// its right, then the mood and the context a cell row each.
     pub fn runs(
         &self,
         theme: &Theme,
         board: crate::layout::Bounds,
+        within: crate::layout::Bounds,
     ) -> Vec<crate::display::TextRun> {
         use crate::display::{Align, TextRole, TextRun, TextSpan};
         use crate::layout::CELL_ROWS;
@@ -551,6 +552,7 @@ impl BoardModel {
         let run = |at, align, spans, role| TextRun {
             at,
             align,
+            within,
             spans,
             plate: None,
             ring: None,
