@@ -46,9 +46,9 @@ impl Painted {
     }
 }
 
-impl From<&pixtuoid_scene::cutaway::canvas::Dirty> for Painted {
-    fn from(dirty: &pixtuoid_scene::cutaway::canvas::Dirty) -> Self {
-        use pixtuoid_scene::cutaway::canvas::Dirty;
+impl From<&pixtuoid_scene::look::Dirty> for Painted {
+    fn from(dirty: &pixtuoid_scene::look::Dirty) -> Self {
+        use pixtuoid_scene::look::Dirty;
         match dirty {
             Dirty::All => Self::All,
             Dirty::Rects(_) => Self::Rects,

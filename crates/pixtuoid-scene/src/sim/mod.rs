@@ -142,8 +142,8 @@ pub(crate) struct PetPlacement {
 
 impl PetPlacement {
     /// Who its hover names.
-    pub(crate) fn target(&self) -> crate::display::HoverTarget {
-        crate::display::HoverTarget::Pet(crate::display::PetHover {
+    pub(crate) fn target(&self) -> crate::hit::HoverTarget {
+        crate::hit::HoverTarget::Pet(crate::hit::PetHover {
             kind: self.kind,
             centre: self.pos,
             anim: self.anim_name,
@@ -176,9 +176,9 @@ pub(crate) struct MascotPlacement {
 
 impl MascotPlacement {
     /// Who its hover names, while its gateway is on the roster.
-    pub(crate) fn target(&self) -> Option<crate::display::HoverTarget> {
+    pub(crate) fn target(&self) -> Option<crate::hit::HoverTarget> {
         self.on_roster
-            .then(|| crate::display::HoverTarget::Mascot(self.key.clone()))
+            .then(|| crate::hit::HoverTarget::Mascot(self.key.clone()))
     }
 }
 

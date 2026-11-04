@@ -424,6 +424,7 @@ pub(crate) fn floor_indicator_rows(door_y: u16) -> std::ops::Range<u16> {
 
 /// What the floor indicator says on `floor`, every painter's: its number
 /// between the arrows up and down, each hollow where no floor is that way.
+#[doc(hidden)]
 pub fn floor_indicator(floor: crate::floor::FloorMeta) -> [crate::display::Content; 3] {
     use crate::display::{Content, Icon};
     let above = floor.floor_idx + 1 < floor.floors;

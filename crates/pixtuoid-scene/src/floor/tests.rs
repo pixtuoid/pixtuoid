@@ -2507,7 +2507,7 @@ fn a_lifted_agent_reserves_no_cell() {
 /// hand is: held over a sitter's head, it is what the pointer finds there.
 #[test]
 fn a_lifted_creature_is_in_front_of_the_room() {
-    use crate::display::HoverTarget;
+    use crate::hit::HoverTarget;
     use crate::hit::SceneHit;
     use crate::interact::{Figure, Gesture};
     use crate::layout::{Bounds, Point};
@@ -2687,7 +2687,7 @@ mod figure_box {
     /// and feet; it leaves with its agent's floor and its agent. A test per look,
     /// so the suite runs them side by side.
     fn holds_its_outfit_every_frame_in(at: fn(RenderScale) -> Look) {
-        use crate::display::HoverTarget;
+        use crate::hit::HoverTarget;
         use crate::interact::{Figure, Gesture};
         use crate::layout::{Bounds, Point};
         let pack = Arc::new(crate::pack::test_office());

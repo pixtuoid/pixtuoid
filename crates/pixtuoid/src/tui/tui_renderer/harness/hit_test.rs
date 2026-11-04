@@ -2,8 +2,8 @@ use super::*;
 use crate::tui::geometry::CellArea;
 use crate::tui::hit_test::SceneHit;
 use crate::tui::renderer::{DrawCtx, draw_scene};
-use pixtuoid_scene::display::HoverTarget;
 use pixtuoid_scene::floor::PerFloor;
+use pixtuoid_scene::hit::HoverTarget;
 
 #[test]
 fn pet_hit_test_resolves_at_pet_position() {

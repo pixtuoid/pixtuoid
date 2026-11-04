@@ -12,13 +12,17 @@ use pixtuoid_core::{AgentSlot, SceneState};
 /// by the footer and the board so the two surfaces can't disagree. `exiting` is a
 /// first-class bucket, NOT folded into idle, so the footer's `n/total` counts
 /// walkouts.
-#[doc(hidden)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StateCounts {
+    /// Agents at work.
     pub running: usize,
+    /// Agents waiting on their user.
     pub requires_action: usize,
+    /// Agents between turns.
     pub idle: usize,
+    /// Agents walking out, whatever they last did.
     pub exiting: usize,
+    /// Every agent: the other four's sum.
     pub total: usize,
 }
 
@@ -39,7 +43,6 @@ fn bucket_slot(c: &mut StateCounts, slot: &AgentSlot) {
 
 /// Bucket every agent in `scene` — the office-wide (or current-projected-floor)
 /// tally.
-#[doc(hidden)]
 pub fn scene_stats(scene: &SceneState) -> StateCounts {
     let mut c = StateCounts::default();
     for slot in scene.agents.values() {

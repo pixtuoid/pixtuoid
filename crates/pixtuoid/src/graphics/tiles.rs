@@ -5,8 +5,8 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Range;
 
 use crossterm::{Command, cursor::MoveTo};
-use pixtuoid_scene::cutaway::canvas::Dirty;
 use pixtuoid_scene::layout::Bounds;
+use pixtuoid_scene::look::Dirty;
 use pixtuoid_scene::sprite::RgbBuffer;
 use ratatui::layout::Position;
 

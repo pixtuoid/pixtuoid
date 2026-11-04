@@ -6,7 +6,7 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use pixtuoid_scene::anim::from_epoch_ms;
-use pixtuoid_scene::audio::{Frame, Performance, controls_from_wire, music_seed};
+use pixtuoid_scene::audio::{Frame, Performance, controls_from_wire, performance_at};
 use wasm_bindgen::prelude::*;
 
 /// The music worker's lofi `Performance`, rendered in the chunks the worklet
@@ -33,7 +33,7 @@ impl MusicStream {
         let controls =
             controls_from_wire(controls).ok_or_else(|| JsError::new("not the music's controls"))?;
         Ok(MusicStream {
-            performance: Performance::new(music_seed(from_epoch_ms(now_ms)), controls),
+            performance: performance_at(from_epoch_ms(now_ms), controls),
             frames: Vec::new(),
         })
     }
@@ -78,10 +78,9 @@ mod tests {
             assert_eq!(ptr, stream.frames.as_flattened().as_ptr());
             heard.extend_from_slice(&stream.frames);
         }
-        let seed = music_seed(from_epoch_ms(now_ms));
         let performed = |c| {
             let mut want = vec![Frame::default(); heard.len()];
-            Performance::new(seed, c).render(&mut want);
+            performance_at(from_epoch_ms(now_ms), c).render(&mut want);
             want
         };
         assert_eq!(heard, performed(night));

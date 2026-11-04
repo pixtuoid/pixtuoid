@@ -71,6 +71,10 @@ API_NIGHTLY := "nightly-2026-10-22"
 # a different version rewrites them all.
 API_PUBLIC_API := "0.52.0"
 
+# The rustdoc JSON `format_version` API_NIGHTLY writes, whose shape the
+# api-surface leak check reads: it moves with API_NIGHTLY.
+API_JSON_FORMAT := "61"
+
 # The cargo-hawk `hawk` runs, and the exact rustc it links (its
 # rust-toolchain.toml): hawk refuses any other, so a bump moves both, and the
 # installer's hash with them.
@@ -459,7 +463,10 @@ semver:
 # adding/removing a derive IS a public-API change). cargo-public-api takes one
 # crate per call, so a golden file is regenerated per crate. rustdoc JSON is
 # nightly-only, so it PINS `API_NIGHTLY`. `check` diffs instead of writing; CI
-# runs it as `api-surface-check`.
+# runs it as `api-surface-check`. Either mode fails on a public item that names
+# a type rustdoc stripped (`#[doc(hidden)]`, private): such an item is public
+# while the type it names is not, so the golden never lists that type's
+# change.
 [doc('Regenerate the api/<crate>.txt public-API goldens (cargo-public-api + pinned nightly); `check` diffs them')]
 [group('rust')]
 api-surface mode="": _api-toolchain
@@ -472,13 +479,27 @@ api-surface mode="": _api-toolchain
     *) echo "usage: just api-surface [check]" >&2; exit 2 ;;
     esac
     fail=0
+    docs="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/doc"
+    jsons=()
     for crate in {{ PUBLISHED_CRATES }}; do
         RUSTUP_TOOLCHAIN={{ API_NIGHTLY }} cargo public-api -p "$crate" -s > "$out/$crate.txt"
         if [ "$out" != api ] && ! diff -u "api/$crate.txt" "$out/$crate.txt"; then
             echo "error: public API of $crate drifted from api/$crate.txt — run 'just api-surface' and commit the update" >&2
             fail=1
         fi
+        json="$docs/${crate//-/_}.json"
+        if ! jq -e --argjson v {{ API_JSON_FORMAT }} '.format_version == $v' "$json" >/dev/null; then
+            echo "error: $json is not rustdoc JSON format {{ API_JSON_FORMAT }}; move API_JSON_FORMAT with API_NIGHTLY" >&2
+            exit 1
+        fi
+        jsons+=("$json")
     done
+    leaks="$(jq -r -s -f policy/ci-observability/api-leaks.jq "${jsons[@]}")"
+    if [ -n "$leaks" ]; then
+        echo "error: a public item names an item outside the published API; make that item public or hide the one naming it:" >&2
+        echo "$leaks" >&2
+        fail=1
+    fi
     exit "$fail"
 
 [doc("Fail if a published crate's public API drifted from the api/ goldens (CI-only)")]

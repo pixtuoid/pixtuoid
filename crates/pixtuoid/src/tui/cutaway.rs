@@ -14,8 +14,8 @@ use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Instant, SystemTime};
 
-use pixtuoid_scene::cutaway::canvas::Dirty;
 use pixtuoid_scene::layout::Size;
+use pixtuoid_scene::look::Dirty;
 use pixtuoid_scene::look::Picture;
 use pixtuoid_scene::screen::Admit;
 use pixtuoid_scene::sprite::format::Density;

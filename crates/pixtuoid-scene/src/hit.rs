@@ -1,21 +1,46 @@
 //! What the last frame shows a pointer over an area of the office, and what a
-//! press on it does, for every painter. A tooltip and a press both resolve an
-//! area through [`scene_hit`], so a press acts on exactly what the tooltip
-//! names, and [`SceneHit::action`] is the one answer to what it does.
+//! press on it does, for every painter: [`SceneHit`], the figure it names
+//! ([`HoverTarget`], [`PetHover`]), and [`SceneHit::action`], the one answer to
+//! what a press does. A tooltip and a press both resolve an area through the
+//! same hits, so a press acts on exactly what the tooltip names.
 
 use std::time::SystemTime;
 
 use pixtuoid_core::AgentId;
 
-use crate::display::{HoverTarget, PetHover};
-use crate::layout::{Bounds, SceneLayout};
+use pixtuoid_core::source::daemon::DaemonInstanceKey;
+
+use crate::layout::{Bounds, Point, SceneLayout};
 use crate::pet::{PetKind, PetState};
 
 /// The project repository: `Cargo.toml`'s `repository`, its one spelling.
+#[doc(hidden)]
 pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
 /// Where the coffee machine links.
 pub(crate) const COFFEE_URL: &str = "https://buymeacoffee.com/IvanWng97";
+
+/// Who a hover names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HoverTarget {
+    /// An agent's character.
+    Agent(AgentId),
+    /// The floor's pet.
+    Pet(PetHover),
+    /// A gateway's mascot.
+    Mascot(DaemonInstanceKey),
+}
+
+/// The pet as hovered: what its tooltip says and where petting holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PetHover {
+    /// Which pet.
+    pub kind: PetKind,
+    /// Its centre, in logical units.
+    pub centre: Point,
+    /// The animation it shows.
+    pub anim: crate::pack::Piece,
+}
 
 /// What an area shows the pointer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +58,7 @@ pub enum SceneHit<'a> {
 /// What a press does: what the painter carries out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HitAction {
-    /// Raise the agent's terminal.
+    /// Focus the agent: a desktop painter raises its terminal.
     Focus(AgentId),
     /// Pet the floor's pet.
     Pet(PetKind),
@@ -61,6 +86,7 @@ impl SceneHit<'_> {
 /// What `area` (in layout units) shows: `figure`, the topmost hover there,
 /// else the board's `star`, else the coffee machine, else a labelled fixture
 /// of `layout`.
+#[doc(hidden)]
 pub fn scene_hit<'a>(
     figure: Option<&'a HoverTarget>,
     star: Option<Bounds>,
@@ -107,7 +133,7 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let cat = HoverTarget::Pet(crate::display::PetHover {
+        let cat = HoverTarget::Pet(crate::hit::PetHover {
             kind: crate::pet::PetKind::Cat,
             centre: crate::layout::Point { x: mid.x, y: mid.y },
             anim: crate::pack::Piece::CatWalk,

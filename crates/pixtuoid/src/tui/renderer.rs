@@ -12,10 +12,10 @@ use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 
-use pixtuoid_scene::display::HoverTarget;
 use pixtuoid_scene::display::cells::CellMap;
 use pixtuoid_scene::floor::{FloorInputs, OfficeStores, PerFloor, PetInputs};
 use pixtuoid_scene::footer::{FooterContext, FooterInputs};
+use pixtuoid_scene::hit::HoverTarget;
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{FloorPicture, Hits, Look, Place, RenderInputs};
 
