@@ -77,6 +77,16 @@ pub struct Bounds {
 }
 
 impl Bounds {
+    /// The column past its east edge.
+    pub(crate) const fn right(self) -> u16 {
+        self.x + self.width
+    }
+
+    /// The row past its south edge.
+    pub(crate) const fn bottom(self) -> u16 {
+        self.y + self.height
+    }
+
     /// Whether the two half-open boxes share a pixel. A zero-sized box shares
     /// none.
     pub(crate) fn overlaps(self, other: Bounds) -> bool {
@@ -153,9 +163,9 @@ pub struct Size {
     pub h: u16,
 }
 
-/// How far a painter's own chrome reaches in from each edge of the office, in
-/// layout units: under it the office paints only its floor, walls and sky,
-/// and places nothing that carries information or takes a press.
+/// How far a painter's own chrome reaches in from each edge of the office:
+/// under it the office paints only its floor, walls and sky, and places
+/// nothing that carries information or takes a press.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Insets {
     /// From the north edge.
@@ -174,7 +184,7 @@ pub struct Insets {
 pub struct Viewport {
     /// The whole extent, in layout units.
     pub size: Size,
-    /// What the painter's chrome covers.
+    /// What the painter's chrome covers, in layout units.
     pub insets: Insets,
 }
 
@@ -596,7 +606,7 @@ pub(crate) const TEST_DEFAULT_DESKS: usize = CLASSIC_OFFICE_DESKS;
 /// tests reads it; the pod grid itself prices its own spacing.
 #[cfg(test)]
 pub(crate) const DESK_GAP_Y: u16 = 14;
-/// Floor (px) for the layout's `top_margin` — `compute::top_margin`'s
+/// Floor (px) for the layout's `top_margin` — `compute::wall_depth`'s
 /// percent-of-buffer derivation never shrinks the north wall band below this.
 pub(crate) const MIN_TOP_MARGIN: u16 = 20;
 const MIN_DUAL_MEETING_H: u16 = 80;

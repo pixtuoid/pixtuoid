@@ -159,7 +159,7 @@ pub(super) fn build_walkable_mask(obs: &MaskObstacles) -> WalkableMask {
     let mut mask = WalkableMask::new_open(buf_w, buf_h);
 
     // Nothing walks under an inset; the wall band below covers the north one.
-    let (east, south) = (inner.x + inner.width, inner.y + inner.height);
+    let (east, south) = (inner.right(), inner.bottom());
     mask.mark_blocked(0, 0, inner.x, buf_h, 0);
     mask.mark_blocked(east, 0, buf_w - east, buf_h, 0);
     mask.mark_blocked(0, south, buf_w, buf_h - south, 0);

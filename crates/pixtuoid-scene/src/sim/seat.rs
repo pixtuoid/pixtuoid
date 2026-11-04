@@ -93,9 +93,8 @@ impl Seat {
         }
     }
 
-    /// The seat at a home `desk` in the office `inner` is the area inside the
-    /// insets of. Its cell is the desk's walk anchor — the ONE value the chair
-    /// sprite, its occupant and the walk that ends there share.
+    /// The seat at a home `desk`. Its cell is the desk's walk anchor — the ONE
+    /// value the chair sprite, its occupant and the walk that ends there share.
     pub(crate) fn at_desk(desk: Point, facing: crate::layout::Facing, inner: Bounds) -> Self {
         Seat {
             kind: SeatKind::HomeDesk,

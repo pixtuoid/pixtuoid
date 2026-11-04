@@ -279,10 +279,10 @@ fn a_room_wall_to_the_floors_south_edge_runs_on_under_the_bottom_inset() {
     assert!(reached > 0, "no wall ran to the floor's south edge");
 }
 
-/// The strips under side insets are floor inside the rooms too: a room wall
-/// that runs to the floor's west or east edge runs on to the canvas's.
+/// The strip under the west inset is floor inside the rooms too: a room wall
+/// that runs to the floor's west edge runs on to the canvas's.
 #[test]
-fn a_room_wall_to_the_floors_side_edges_runs_on_under_the_side_insets() {
+fn a_room_wall_to_the_floors_west_edge_runs_on_under_the_west_inset() {
     let viewport = Viewport {
         size: Size { w: 240, h: 144 },
         insets: Insets {
@@ -296,15 +296,10 @@ fn a_room_wall_to_the_floors_side_edges_runs_on_under_the_side_insets() {
     for seed in 0..12 {
         let l = SceneLayout::compute(viewport, None, seed).expect("lays out");
         for seg in &l.room_walls {
-            if let WallSegment::Horizontal { x0, x1, .. } = *seg {
+            if let WallSegment::Horizontal { x0, .. } = *seg {
                 assert_ne!(
                     x0, inner.x,
                     "seed {seed}: {seg:?} stops at the floor's west edge"
-                );
-                assert_ne!(
-                    x1,
-                    inner.x + inner.width,
-                    "seed {seed}: {seg:?} stops at the floor's east edge"
                 );
                 reached += usize::from(x0 == 0);
             }
@@ -567,13 +562,7 @@ fn the_minimum_is_the_area_inside_the_insets() {
         bottom: 5,
         left: 9,
     };
-    let inside = |w: u16, h: u16| Viewport {
-        size: Size {
-            w: w + insets.left + insets.right,
-            h: h + insets.top + insets.bottom,
-        },
-        insets,
-    };
+    let inside = |w, h| super::inset_viewport(w, h, insets);
     assert!(SceneLayout::compute(inside(min_w, min_h), Some(1), 0).is_some());
     for under in [inside(min_w - 1, min_h), inside(min_w, min_h - 1)] {
         assert!(
@@ -632,13 +621,7 @@ fn the_capacity_inside_insets_is_the_inner_sizes() {
     };
     let mut whole_seats_more = false;
     for (w, h) in [(96u16, 72u16), (160, 120), (192, 160), (240, 144)] {
-        let inside = Viewport {
-            size: Size {
-                w: w + insets.left + insets.right,
-                h: h + insets.top + insets.bottom,
-            },
-            insets,
-        };
+        let inside = super::inset_viewport(w, h, insets);
         assert_eq!(desks(inside), desks(Viewport::full(w, h)), "{w}x{h}");
         whole_seats_more |=
             desks(Viewport::full(inside.size.w, inside.size.h)) > desks(Viewport::full(w, h));

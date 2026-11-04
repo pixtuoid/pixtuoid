@@ -129,8 +129,7 @@ pub struct TextRun {
     pub at: Point,
     /// Where `at` lies on its line.
     pub align: Align,
-    /// The office inside its viewport's insets, which it is kept to: moved off
-    /// their top and left edges, cut at their right and bottom ones.
+    /// The area it keeps to: inside the insets, open past a side none covers.
     pub within: Bounds,
     /// Its spans, in reading order.
     pub spans: Vec<TextSpan>,
@@ -331,21 +330,22 @@ impl TextRun {
         set
     }
 
-    /// The floor indicator naming `floor` over the elevator at `door` of the
-    /// office `inner` bounds: centred on the door, in the cell over it, on
-    /// the badge plate, an arrow with no floor its way dim.
+    /// The floor indicator naming `floor` over `layout`'s elevator: centred on
+    /// the door, in the cell over it, on the badge plate, an arrow with no
+    /// floor its way dim.
     pub(crate) fn indicator(
-        (door, inner): (Point, Bounds),
+        layout: &crate::layout::SceneLayout,
         floor: crate::floor::FloorMeta,
         theme: &Theme,
     ) -> Self {
+        let door = layout.door;
         Self {
             at: Point {
                 x: door.x + crate::layout::ELEVATOR_W / 2,
-                y: crate::layout::floor_indicator_rows(door.y, inner.y).start,
+                y: crate::layout::floor_indicator_rows(door.y, layout.inner.y).start,
             },
             align: Align::Centre,
-            within: inner,
+            within: layout.text_area(),
             spans: crate::layout::floor_indicator(floor)
                 .into_iter()
                 .map(|content| TextSpan {
@@ -370,8 +370,8 @@ impl TextRun {
         floor: crate::floor::FloorMeta,
         theme: &Theme,
     ) -> Vec<Self> {
-        let mut runs = board.runs(theme, layout.board(), layout.inner);
-        runs.push(Self::indicator((layout.door, layout.inner), floor, theme));
+        let mut runs = board.runs(theme, layout.board(), layout.text_area());
+        runs.push(Self::indicator(layout, floor, theme));
         runs
     }
 
@@ -382,11 +382,10 @@ impl TextRun {
         theme: &Theme,
     ) -> Self {
         let Badge { at, within, .. } = *badge;
-        let rows = within.y..within.y.saturating_add(within.height);
         Self {
             at: Point {
                 x: at.x,
-                y: kept(at.y.saturating_sub(BUBBLE_LIFT), 0, rows).start,
+                y: at.y.saturating_sub(BUBBLE_LIFT),
             },
             align: Align::Over,
             within,
@@ -447,20 +446,19 @@ mod tests {
     #[test]
     fn an_arrow_with_no_floor_its_way_is_dim() {
         let theme = &crate::theme::NORMAL;
+        let layout =
+            crate::layout::SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0)
+                .expect("lays out");
         let arrows = |floor, floors| -> Vec<(Icon, Rgb)> {
             let meta = crate::floor::FloorMeta::for_floor(floor, floors);
-            TextRun::indicator(
-                (Point { x: 0, y: 0 }, crate::layout::BARE_OFFICE),
-                meta,
-                theme,
-            )
-            .spans
-            .into_iter()
-            .filter_map(|s| match s.content {
-                Content::Icon(icon) => Some((icon, s.ink)),
-                Content::Text(_) => None,
-            })
-            .collect()
+            TextRun::indicator(&layout, meta, theme)
+                .spans
+                .into_iter()
+                .filter_map(|s| match s.content {
+                    Content::Icon(icon) => Some((icon, s.ink)),
+                    Content::Text(_) => None,
+                })
+                .collect()
         };
         let (lit, dim) = (theme.ui.neon_brand, theme.ui.tooltip_dim);
         assert_eq!(arrows(1, 3), [(Icon::Up, lit), (Icon::Down, lit)]);

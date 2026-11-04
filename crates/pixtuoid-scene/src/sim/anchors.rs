@@ -13,10 +13,9 @@ use crate::sim::seat::Seat;
 
 use crate::layout::CHARACTER_SPRITE_W;
 
-/// Where a desk's occupant RENDERS in the office `inner` is the area inside
-/// the insets of — the desk's seat cell put through the same `Seat` model every
-/// other seat uses, so the chair, its occupant and the walk that ends there
-/// cannot drift apart.
+/// Where a desk's occupant RENDERS — the desk's seat cell put through the same
+/// `Seat` model every other seat uses, so the chair, its occupant and the walk
+/// that ends there cannot drift apart.
 pub fn seated_top_left(
     desk: Point,
     sprite_w: u16,
@@ -72,34 +71,34 @@ pub(crate) fn back_couch_top_left(wp: Point, sprite_w: u16) -> Point {
     }
 }
 
-/// Nudge a sprite so the whole frame lands inside `canvas`, answering in the
+/// Nudge a sprite so the whole frame lands inside `area`, answering in the
 /// SAME pivot space `pos` came in.
 ///
 /// It moves a figure's paint top-left, never its sim position (invariant #6).
-pub(crate) fn keep_sprite_on_canvas(pivot: Pivot, pos: Point, size: Size, canvas: Bounds) -> Point {
-    let (east, south) = (canvas.x + canvas.width, canvas.y + canvas.height);
+pub(crate) fn keep_sprite_on_canvas(pivot: Pivot, pos: Point, size: Size, area: Bounds) -> Point {
+    let (east, south) = (area.right(), area.bottom());
     match pivot {
-        // `min` before `max`: on a canvas narrower than the sprite the lower
+        // `min` before `max`: on an area narrower than the sprite the lower
         // bound wins instead of `clamp`'s inverted-range panic.
         Pivot::Center => Point {
             x: pos
                 .x
                 .min(east.saturating_sub(size.w.div_ceil(2)))
-                .max(canvas.x + size.w / 2),
+                .max(area.x + size.w / 2),
             y: pos
                 .y
                 .min(south.saturating_sub(size.h.div_ceil(2)))
-                .max(canvas.y + size.h / 2),
+                .max(area.y + size.h / 2),
         },
         Pivot::TopLeft => Point {
-            x: pos.x.min(east.saturating_sub(size.w)).max(canvas.x),
-            y: pos.y.min(south.saturating_sub(size.h)).max(canvas.y),
+            x: pos.x.min(east.saturating_sub(size.w)).max(area.x),
+            y: pos.y.min(south.saturating_sub(size.h)).max(area.y),
         },
     }
 }
 
-/// `pos`, in `pivot` space, moved so a `size` frame lands on `layout`'s canvas
-/// inside its insets: the one fit every figure's placement takes.
+/// `pos`, in `pivot` space, moved so a `size` frame lands inside `layout`'s
+/// insets: the one fit every figure's placement takes.
 pub(crate) fn on_canvas(layout: &SceneLayout, pivot: Pivot, pos: Point, size: Size) -> Point {
     keep_sprite_on_canvas(pivot, pos, size, layout.inner)
 }

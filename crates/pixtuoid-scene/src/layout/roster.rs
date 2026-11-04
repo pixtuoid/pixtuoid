@@ -340,8 +340,7 @@ pub const NEON_PANEL_INNER_H: u16 = NEON_PANEL_H - 2 * NEON_PANEL_BORDER;
 const _: () = assert!(NEON_PANEL_INNER_W > 0 && NEON_PANEL_INNER_W < NEON_PANEL_W);
 const _: () = assert!(NEON_PANEL_INNER_H > 0 && NEON_PANEL_INNER_H < NEON_PANEL_H);
 
-/// The neon sign's outer box in an office whose area inside its insets is
-/// `inner`.
+/// The neon sign's outer box.
 pub(crate) const fn neon_panel(inner: Bounds) -> Bounds {
     Bounds {
         x: inner.x + NEON_PANEL_X,
@@ -393,8 +392,7 @@ pub(crate) fn desk_fixtures(
     })
 }
 
-/// Each home desk's task chair in the office `inner` is the area inside the
-/// insets of, where its facing turns it north.
+/// Each home desk's task chair, where its facing turns it north.
 pub(crate) fn desk_chair_fixtures(
     home_desks: &[HomeDesk],
     inner: Bounds,
@@ -800,14 +798,28 @@ impl SceneLayout {
         Bounds {
             x: panel.x + NEON_PANEL_BORDER,
             y: panel.y + NEON_PANEL_BORDER,
-            width: panel.width - 2 * NEON_PANEL_BORDER,
-            height: panel.height - 2 * NEON_PANEL_BORDER,
+            width: NEON_PANEL_INNER_W,
+            height: NEON_PANEL_INNER_H,
         }
     }
 
     /// The row past the office's last floor row, inside its insets.
     pub(crate) fn floor_end(&self) -> u16 {
-        self.inner.y + self.inner.height
+        self.inner.bottom()
+    }
+
+    /// The area its world text keeps to: [`Self::inner`], open past a side no
+    /// inset covers, where text runs on into the host's own margin.
+    pub(crate) fn text_area(&self) -> Bounds {
+        let inner = self.inner;
+        let open = |edge: u16, end: u16, from: u16, len: u16| {
+            if edge == end { u16::MAX - from } else { len }
+        };
+        Bounds {
+            width: open(inner.right(), self.buf_w, inner.x, inner.width),
+            height: open(inner.bottom(), self.buf_h, inner.y, inner.height),
+            ..inner
+        }
     }
 
     /// The mat outside meeting room `r`'s door, or `None` when the lounge's
@@ -953,9 +965,9 @@ fn filing_cabinet_top_left(desk: Point, i: FloorLocalDeskIndex, floor_end: u16) 
     })
 }
 
-/// Where the task chair stands at `desk` in the office `inner` is the area
-/// inside the insets of, or `None` for a desk that does not face north: a
-/// viewer-facing occupant sits behind their desk, in front of their chair.
+/// Where the task chair stands at `desk`, or `None` for a desk that does not
+/// face north: a viewer-facing occupant sits behind their desk, in front of
+/// their chair.
 pub(crate) fn desk_chair_top_left(desk: Point, facing: Facing, inner: Bounds) -> Option<Point> {
     /// The backrest crosses the occupant's lower torso deliberately — clearing
     /// the sprite would leave a detached slab at their feet.

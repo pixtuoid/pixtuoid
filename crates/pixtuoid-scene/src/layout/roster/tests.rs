@@ -910,8 +910,8 @@ fn a_desk_sorts_between_a_walker_behind_it_and_one_in_front() {
     assert!(walker(south - 1) < desk_key, "behind the desk");
 }
 
-/// The wall sign's outer box frames its board by [`NEON_PANEL_BORDER`] on
-/// every side and stands inside the insets, under every inset of the sweep.
+/// The wall sign's outer box holds its board's interior [`NEON_PANEL_BORDER`]
+/// in and stands inside the insets, under every inset of the sweep.
 #[test]
 fn the_board_panel_frames_the_board_inside_the_insets() {
     let b = NEON_PANEL_BORDER;
@@ -925,8 +925,8 @@ fn the_board_panel_frames_the_board_inside_the_insets() {
                 Bounds {
                     x: panel.x + b,
                     y: panel.y + b,
-                    width: panel.width - 2 * b,
-                    height: panel.height - 2 * b,
+                    width: NEON_PANEL_INNER_W,
+                    height: NEON_PANEL_INNER_H,
                 },
                 "{viewport:?}"
             );

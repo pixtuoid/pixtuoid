@@ -833,9 +833,9 @@ pub(crate) fn seated_sort_row(seat: Point) -> u16 {
 /// `desk_walk_anchor_settles_exactly_on_the_seat` still pins it.
 pub(crate) const DESK_WALK_Y_OFF: u16 = 4;
 
-/// A point of the office whose area inside its insets is `inner`, packed into
-/// one hash input from that area's corner, so a per-spot seed is derived the
-/// same way everywhere it is needed and insets move no seat or pot. The PACKING
+/// A point packed into one hash input from the corner of the office's
+/// [`super::SceneLayout::inner`], so a per-spot seed is derived the same way
+/// everywhere it is needed and insets move no seat or pot. The PACKING
 /// is load-bearing, not an implementation detail: every committed still was
 /// rendered against it, and swapping the halves re-seeds every seat and pot
 /// while every property test still passes — pinned by
@@ -866,9 +866,8 @@ pub(crate) const DESK_WALK_Y_OFF_BACK: u16 = WALKING_Y_OFF;
 // Below `WALKING_Y_OFF`, `seated_top_left`'s `saturating_sub` clamps and the sitter's sprite lands off its chair.
 const _: () = assert!(DESK_WALK_Y_OFF_BACK >= WALKING_Y_OFF);
 
-/// Where an agent walks to/from for its home `desk` in the office whose area
-/// inside its insets is `inner` (`East`/`West` never occur, and take the
-/// `South` arrangement).
+/// Where an agent walks to/from for its home `desk` (`East`/`West` never
+/// occur, and take the `South` arrangement).
 pub(crate) fn desk_walk_anchor_facing(desk: Point, facing: Facing, inner: Bounds) -> Point {
     Point {
         x: seat_center_x(desk, inner),
@@ -892,8 +891,7 @@ pub(crate) fn desk_seat_row(desk: Point, facing: Facing) -> u16 {
 /// AT the approach cell. The post-A\* settle walks `approach_point → S`, and a
 /// blocked `S` (meeting sofa, desk) makes that leg the "sit down" motion rather
 /// than pathfinding. The `Desk` arm hardcodes `Facing::South` — a future caller
-/// must pass the facing — and seats the desk in the office `inner` is the area
-/// inside the insets of.
+/// must pass the facing.
 pub(crate) fn seated_foot_cell(kind: Furniture, pos: Point, inner: Bounds) -> Option<Point> {
     if !furniture_def(kind).occupies_pos {
         return None;

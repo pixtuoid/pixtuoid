@@ -230,6 +230,20 @@ fn no_text_is_set_under_an_inset() {
     for insets in crate::layout::SWEEP_INSETS {
         let viewport = crate::layout::inset_viewport(SIZE.w, SIZE.h, insets);
         let (size, inner) = (viewport.size, viewport.inner().expect("an office inside"));
+        // Past a side no inset covers lies the host's own margin, never an inset.
+        let open = Bounds {
+            width: if insets.right == 0 {
+                u16::MAX - inner.x
+            } else {
+                inner.width
+            },
+            height: if insets.bottom == 0 {
+                u16::MAX - inner.y
+            } else {
+                inner.height
+            },
+            ..inner
+        };
         let inside = |x: u16, y: u16| {
             (inner.x * k..(inner.x + inner.width) * k).contains(&x)
                 && (inner.y * k..(inner.y + inner.height) * k).contains(&y)
@@ -304,7 +318,7 @@ fn no_text_is_set_under_an_inset() {
                             .flat_map(|c| (at.y..at.y + at.h).map(move |r| (c, r)))
                         {
                             assert!(
-                                CellMap::HALF_BLOCK.area(col, row).overlaps(inner),
+                                CellMap::HALF_BLOCK.area(col, row).overlaps(open),
                                 "{insets:?} {look:?} {gesture:?}: {:?} {:?} sets cell ({col}, {row}) under an inset of {inner:?}",
                                 run.role,
                                 run.text()

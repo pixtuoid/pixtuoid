@@ -286,7 +286,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
             && let Some(agent) = ctx.scene.agents.get(&agent.agent_id)
         {
             drawn.badges.push(Badge::new(
-                (label_anchor, ctx.layout.inner),
+                (label_anchor, ctx.layout.text_area()),
                 agent,
                 &namesakes,
                 ctx.theme,

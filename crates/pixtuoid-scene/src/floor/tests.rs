@@ -1,7 +1,7 @@
 use super::*;
 use crate::anim::Motion;
 use crate::character::test_support::make_slot;
-use crate::layout::{Size, Viewport};
+use crate::layout::Viewport;
 use pixtuoid_core::id::AgentId;
 use pixtuoid_core::state::{ActivityState, ToolUse};
 use std::path::Path;
@@ -568,13 +568,7 @@ fn floor_capacity_is_the_capacity_inside_the_insets() {
         bottom: 11,
         left: 5,
     };
-    let inside = |w: u16, h: u16| Viewport {
-        size: Size {
-            w: w + insets.left + insets.right,
-            h: h + insets.top + insets.bottom,
-        },
-        insets,
-    };
+    let inside = |w, h| crate::layout::inset_viewport(w, h, insets);
     for seed in (0..4).map(floor_seed) {
         assert_eq!(
             floor_capacity(inside(192, 160), seed),

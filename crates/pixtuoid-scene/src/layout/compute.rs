@@ -67,7 +67,7 @@ pub(super) const fn band_w(office_w: u16, mid_x_pct: u16) -> u16 {
 /// size gate, so no test can hold it — the gate and the use site together are what
 /// keep it unobservable.
 pub(super) const fn band_h(office_h: u16) -> u16 {
-    let usable = office_h.saturating_sub(top_margin(office_h));
+    let usable = office_h.saturating_sub(wall_depth(office_h));
     usable.saturating_sub(cubicle_aisle_h(usable))
 }
 
@@ -82,7 +82,7 @@ const TOP_MARGIN_PCT: u16 = 30;
 /// The north wall band's depth below the office's north edge — [`TOP_MARGIN_PCT`]
 /// percent of the office's `office_h` inside its insets, never under
 /// [`MIN_TOP_MARGIN`].
-pub(super) const fn top_margin(office_h: u16) -> u16 {
+pub(super) const fn wall_depth(office_h: u16) -> u16 {
     pct_at_least(office_h, TOP_MARGIN_PCT, MIN_TOP_MARGIN)
 }
 
@@ -204,8 +204,8 @@ struct FloorPlan {
 impl FloorPlan {
     /// The zones the area `inner` of a floor of `floor_seed`'s variant divides into.
     fn new(inner: Bounds, floor_seed: u64) -> Self {
-        let top_margin = inner.y + top_margin(inner.height);
-        let usable_h = inner.y + inner.height - top_margin;
+        let top_margin = inner.y + wall_depth(inner.height);
+        let usable_h = inner.bottom() - top_margin;
 
         let variant = FloorVariant::from_seed(floor_seed);
         let has_meeting = variant.has_meeting();
@@ -353,11 +353,6 @@ impl FloorPlan {
     fn first_meeting_room(&self) -> Option<&MeetingRoom> {
         self.meeting_rooms.first()
     }
-
-    /// The row past the floor's last, inside the insets.
-    fn floor_end(&self) -> u16 {
-        self.inner.y + self.inner.height
-    }
 }
 
 // Every variant stands a side room west of the divider, so the whiteboard, which
@@ -392,7 +387,7 @@ pub(super) fn compute(
     let pod_desks = compute_pod_desks(max_desks, plan.pod_grid);
     let desk_points: Vec<Point> = pod_desks.iter().map(|d| d.at).collect();
 
-    let desk_art: Vec<(Point, Size)> = desk_fixtures(desk_points.iter().copied(), plan.floor_end())
+    let desk_art: Vec<(Point, Size)> = desk_fixtures(desk_points.iter().copied(), inner.bottom())
         .chain(desk_chair_fixtures(&pod_desks, inner))
         .map(|f| art_rect(f.visual))
         .collect();
@@ -405,16 +400,9 @@ pub(super) fn compute(
     // runs to the floor's edge runs on to the canvas's.
     for seg in &mut room_walls {
         match seg {
-            WallSegment::Vertical { y1, .. } if *y1 == plan.floor_end() => *y1 = buf_h,
-            WallSegment::Vertical { .. } => {}
-            WallSegment::Horizontal { x0, x1, .. } => {
-                if *x0 == inner.x {
-                    *x0 = 0;
-                }
-                if *x1 == inner.x + inner.width {
-                    *x1 = buf_w;
-                }
-            }
+            WallSegment::Vertical { y1, .. } if *y1 == inner.bottom() => *y1 = buf_h,
+            WallSegment::Horizontal { x0, .. } if *x0 == inner.x => *x0 = 0,
+            WallSegment::Vertical { .. } | WallSegment::Horizontal { .. } => {}
         }
     }
 
@@ -862,9 +850,8 @@ fn place_wall_decor(
     wall_decor
 }
 
-/// The bookshelf's wall slot in the office `inner` — flush east of the meeting screen,
-/// spread further past the sofa's drain edge, or back to flush when that spread would
-/// pierce the divider.
+/// The bookshelf's wall slot — flush east of the meeting screen, spread further past
+/// the sofa's drain edge, or back to flush when that spread would pierce the divider.
 fn bookshelf_x(
     inner: Bounds,
     screen_w: u16,
@@ -1646,8 +1633,7 @@ pub(super) fn compute_pod_decor(
 /// Whether a corridor appliance centred at `pos` keeps its art off every home
 /// desk's workstation — the desk and its filing cabinet, and its sitter, since
 /// a south-row sitter hangs into the aisle, over the art's top. Both facings,
-/// since a narrow band demotes a back-turned desk after this runs, on the
-/// floor `inner` is the area inside the insets of.
+/// since a narrow band demotes a back-turned desk after this runs.
 fn clears_the_workstations(
     kind: Furniture,
     pos: Point,
@@ -1655,7 +1641,7 @@ fn clears_the_workstations(
     inner: Bounds,
 ) -> bool {
     let art = corridor_art(kind, pos);
-    super::roster::desk_fixtures(home_desks.iter().copied(), inner.y + inner.height)
+    super::roster::desk_fixtures(home_desks.iter().copied(), inner.bottom())
         .all(|f| !f.visual.overlaps(art))
         && home_desks.iter().all(|&desk| {
             [Facing::North, Facing::South].into_iter().all(|facing| {
@@ -1686,7 +1672,7 @@ fn corridor_art(kind: Furniture, pos: Point) -> Bounds {
 /// Where the corridor's vending machine stands: slid east from the band's
 /// `west` edge, a pod's `stride` at most, off a workstation standing over it;
 /// `None` in an aisle too small for it, so nothing keeps off a machine that
-/// isn't there, on the floor `inner` is the area inside the insets of.
+/// isn't there.
 fn vending_spot(
     aisle: &Bounds,
     west: u16,

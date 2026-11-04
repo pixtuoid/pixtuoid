@@ -130,10 +130,10 @@ pub(crate) fn window_posts(wall: Range<u16>) -> impl Iterator<Item = Range<u16>>
         .map(|(west, east)| west.span().end..east.x)
 }
 
-/// The columns the north wall's windows tile in an office whose area inside
-/// its insets is `inner`: its own, so its door stands there too.
+/// The columns the north wall's windows tile: the office's own, so its door
+/// stands there too.
 pub(crate) fn window_wall(inner: Bounds) -> Range<u16> {
-    inner.x..inner.x + inner.width
+    inner.x..inner.right()
 }
 
 /// The elevator door's left column on a wall spanning the columns `wall`:
