@@ -152,8 +152,9 @@ invariant-breaking sequence against:
    the first.
 6. **Proportion** (the contract's lens), here: an API made `Option` across
    three painters for a width almost never hit is low ROI; an invariant held
-   by prose is #1142's; a check outside [its own
-   layer](docs/CONTRIBUTING.md#convergence-contract) is hard to maintain. A
+   by prose where a type could make the failure impossible (#1142), and a
+   check outside [its own layer](docs/CONTRIBUTING.md#convergence-contract),
+   are hard to maintain. A
    mechanism the diff extends is judged as if new against AGENTS.md's [upkeep
    rule](AGENTS.md#org-rules); one that fails it draws "delete it". A defense
    [Traps](#traps-the-obvious-reading-is-wrong-here) or [Security](#security)
@@ -163,9 +164,8 @@ invariant-breaking sequence against:
    one name across crates and painters (`rg` before coining), compass words
    are [screen-space](crates/pixtuoid-scene/AGENTS.md), and the naming
    guidelines are [Rust's](https://rust-lang.github.io/api-guidelines/naming.html).
-8. **Sourced practice** (the contract's lens), here: AGENTS.md's [Evidence
-   add-on](AGENTS.md#conventions) counts a hermetic scenario as a source and
-   the whole upstream repo as the population.
+8. **Sourced practice** (the contract's lens), here: AGENTS.md's
+   [Evidence](AGENTS.md#conventions) bullet.
 9. **A new dependency or workspace edge**: each crate it adds, transitive ones
    included, is justified, and a new workspace edge follows
    [AGENTS.md](AGENTS.md#layout)'s crate DAG.
