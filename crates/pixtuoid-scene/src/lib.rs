@@ -130,7 +130,8 @@ pub(crate) fn splitmix_draw(seed: u64, n: u64) -> u64 {
     pixtuoid_core::id::splitmix64(seed.wrapping_add(n.wrapping_mul(GOLDEN_GAMMA)))
 }
 
-/// A deterministic stream of `0..1` draws: [`splitmix_draw`]'s, counting from 1.
+/// A deterministic stream of [`splitmix_draw`]'s draws, counting from 1: raw,
+/// or in `0..1`.
 pub(crate) struct Rng {
     seed: u64,
     n: u64,

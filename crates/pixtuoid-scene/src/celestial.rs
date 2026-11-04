@@ -287,9 +287,9 @@ impl Blaze {
 pub(crate) struct SkyView {
     disc: Option<Disc>,
     bursts: [Option<Burst>; LANES],
-    /// The columns, in units, the wall's glass runs across, which a burst's
-    /// heart is a share of: a burst opens where a window shows it.
-    glass: std::ops::Range<u16>,
+    /// The columns, in units, the wall's bays span, which a burst's heart is
+    /// a share of: a burst opens where a window shows it.
+    bays: std::ops::Range<u16>,
     stars: bool,
     beat: crate::anim::Beat,
     sky: Bands,
@@ -301,11 +301,11 @@ pub(crate) struct SkyView {
 }
 
 impl SkyView {
-    /// `outlook`'s sky behind a wall band `top_wall_h` tall, its windows'
-    /// glass across the columns `glass`, in `theme`.
+    /// `outlook`'s sky behind a wall band `top_wall_h` tall, its bays across
+    /// the columns `bays`, in `theme`.
     pub(crate) fn of(
         outlook: &crate::atmosphere::Outlook,
-        (buf_w, glass): (u16, std::ops::Range<u16>),
+        (buf_w, bays): (u16, std::ops::Range<u16>),
         top_wall_h: u16,
         theme: &Theme,
     ) -> Self {
@@ -325,7 +325,7 @@ impl SkyView {
         Self {
             disc,
             bursts: outlook.sky().bursts(),
-            glass,
+            bays,
             stars: look.star_strength > 0.0,
             beat: outlook.beat(),
             sky,
@@ -364,7 +364,7 @@ impl SkyView {
     /// The colour and strength of the burst whose spark, trail or heart
     /// stands at `x` units across the wall and `glass_dy` units down the
     /// glass, if one does: each fills the unit square it lands in, the
-    /// burst's heart a share of the glass's run and of the `clear_rows` of
+    /// burst's heart a share of the bays' span and of the `clear_rows` of
     /// open sky.
     fn spark_at(&self, x: f32, glass_dy: f32, clear_rows: u16) -> Option<(Rgb, f32)> {
         const HALF_UNIT: f32 = 0.5;
@@ -376,10 +376,10 @@ impl SkyView {
         let lands = |(px, py): (f32, f32)| {
             (x - px.round()).abs() < HALF_UNIT && (glass_dy - py.round()).abs() < HALF_UNIT
         };
-        let glass_x = f32::from(self.glass.start);
-        let glass_w = f32::from(self.glass.end - self.glass.start);
+        let bays_x = f32::from(self.bays.start);
+        let bays_w = f32::from(self.bays.end - self.bays.start);
         self.bursts.iter().flatten().find_map(|b| {
-            let heart = (glass_x + b.x * glass_w, b.y * f32::from(clear_rows));
+            let heart = (bays_x + b.x * bays_w, b.y * f32::from(clear_rows));
             let (r, sag, strength) = (b.phase.radius(), b.phase.sag(), b.phase.strength());
             let at = |reach: f32, (dx, dy): (f32, f32)| {
                 (heart.0 + reach * dx, heart.1 + reach * dy + sag)
@@ -638,19 +638,22 @@ mod tests {
                 ROWS.end - ROWS.start,
             ))),
         );
+        // A span off the wall's west end, so the heart's offset is read.
+        let bays = bay.x / 2..WALL_W;
+        let share = (heart.0 - f32::from(bays.start)) / f32::from(bays.end - bays.start);
         let now = crate::localclock::at_hour(2);
         let theme = crate::theme::theme_by_name("normal").expect("theme");
         let view = |phase: Option<BurstPhase>| {
             let mut bursts = [None; LANES];
             bursts[0] = phase.map(|phase| Burst {
-                x: heart.0 / f32::from(WALL_W),
+                x: share,
                 y: 0.5,
                 phase,
                 hue,
             });
             let sky = Sky::at_with(now, Weather::Clear).with_bursts(bursts);
             let moment = Moment::resolve(sky, theme, 0.0, crate::anim::Motion::Full.timing(now));
-            SkyView::of(&moment.outlook(theme), (WALL_W, 0..WALL_W), 40, theme)
+            SkyView::of(&moment.outlook(theme), (WALL_W, bays.clone()), 40, theme)
         };
         let bare = view(None);
         for phase in [BurstPhase::Kindle, BurstPhase::Bloom, BurstPhase::Ember] {

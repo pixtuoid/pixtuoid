@@ -226,7 +226,9 @@ fn render_office_themed(
         &mut buf,
         top_wall_h,
         &Moment::resolve(
-            Sky::at_with(now, weather),
+            // The weather's steady light: a strike landing on `now` is the
+            // instant's luck, and its flash is the strike tests'.
+            Sky::at_with(now, weather).with_strike(None),
             theme,
             0.0,
             Motion::Full.timing(now),

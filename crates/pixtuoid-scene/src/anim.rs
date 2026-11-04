@@ -144,12 +144,16 @@ impl FlashSchedule {
         ms / self.period_ms
     }
 
-    /// When `bucket`'s run starts, in loop ms: one of the phase boundaries
-    /// that leave the run and the gap inside the bucket, picked by `draw`,
-    /// each alike.
+    /// How many phase boundaries a run may start a bucket at, leaving the run
+    /// and the gap inside it.
+    pub(crate) const fn starts(self) -> u64 {
+        (self.period_ms - self.run_ms() - self.gap_ms) / self.phase_ms + 1
+    }
+
+    /// When `bucket`'s run starts, in loop ms: one of its
+    /// [`starts`](Self::starts), picked by `draw`, each alike.
     pub(crate) const fn start(self, bucket: u64, draw: u64) -> u64 {
-        let starts = (self.period_ms - self.run_ms() - self.gap_ms) / self.phase_ms + 1;
-        bucket * self.period_ms + draw % starts * self.phase_ms
+        bucket * self.period_ms + draw % self.starts() * self.phase_ms
     }
 
     /// Which of the run's phases loop time `ms` is in, its run starting at

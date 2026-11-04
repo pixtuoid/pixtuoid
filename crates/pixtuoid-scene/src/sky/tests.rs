@@ -326,6 +326,17 @@ fn a_storm_flashes_at_most_three_times_a_second_on_every_tier() {
     }
 }
 
+/// Every strike ends before its bucket's last [`STRIKE_GAP_MS`], which the
+/// site's scrubber lands its jumps in (`site/public/office-driver.js`'s
+/// `quietInstant`) so a scrub never shows a flash.
+#[test]
+fn every_strike_leaves_its_buckets_last_gap_dark() {
+    for (bucket, start) in strike_starts() {
+        let quiet = (bucket + 1) * LIGHTNING_PERIOD_MS - STRIKE_GAP_MS;
+        assert!(start + STRIKE_MS <= quiet, "bucket {bucket}");
+    }
+}
+
 /// Two strikes never fall within a second of each other, so their flashes
 /// never add up past three a second.
 #[test]
@@ -1070,7 +1081,7 @@ fn nightfall_begins_when_nightfall_on_says() {
 /// calendar-to-sky path (painter tests inject bursts with
 /// [`Sky::with_bursts`]): on a moving tier they fire and never flash past
 /// WCAG's three a second, the midnight finale included, which holds more
-/// bursts at once than the night before it; Calm holds each phase a Calm
+/// bursts at once than the rest of that night; Calm holds each phase a Calm
 /// tick; at rest, and on the night before, none fire.
 #[test]
 fn new_years_eve_bursts_through_the_sky_on_every_tier() {

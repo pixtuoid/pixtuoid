@@ -1,14 +1,17 @@
 //! A fireworks night's bursts over the city: each lane of buckets fires one
-//! burst at a hashed time, place and hue, as lightning strikes, so a frame's
-//! bursts are a function of its beat alone and every painter shows the same.
+//! burst at a hashed time, place and hue, as lightning strikes, though outside
+//! the night's finale only the lanes [`ALL_NIGHT_LANE_STRIDE`] picks fire, so
+//! a frame's bursts are a function of its beat alone and every painter shows
+//! the same.
 
 use crate::anim::{Beat, FlashSchedule};
 
 /// How many bursts the sky holds at once at most, each on its own lane of
 /// buckets: all of them in a night's finale.
 pub(crate) const LANES: usize = 6;
-/// Of every this many lanes, one fires outside a night's finale.
-const NIGHT_LANE_STRIDE: usize = 2;
+/// Of every this many lanes, one fires all night: the rest fire only in its
+/// finale.
+const ALL_NIGHT_LANE_STRIDE: usize = 2;
 /// A burst's phases in order: its sparks fly out, then fade where they stop.
 const BURST: [BurstPhase; 5] = [
     BurstPhase::Kindle,
@@ -116,15 +119,14 @@ pub(crate) fn bursts_at(
         if beat.is_rest() {
             return None;
         }
-        let in_night = lane.is_multiple_of(NIGHT_LANE_STRIDE);
+        let all_night = lane.is_multiple_of(ALL_NIGHT_LANE_STRIDE);
         let lane = lane as u64;
-        let ms = beat
-            .ms()
-            .checked_sub(lane * BURSTS.period_ms / LANES as u64)?;
+        let shift = lane * BURSTS.period_ms / LANES as u64;
+        let ms = beat.ms().checked_sub(shift)?;
         let bucket = BURSTS.bucket(ms);
         let mut draws = crate::Rng::new(bucket.wrapping_mul(LANES as u64).wrapping_add(lane));
         let start = BURSTS.start(bucket, draws.draw());
-        if !in_night && !finale(beat.wall_ms(start + lane * BURSTS.period_ms / LANES as u64)) {
+        if !all_night && !finale(beat.wall_ms(start + shift)) {
             return None;
         }
         let phase = *BURST.get(BURSTS.phase(ms, start)?)?;
@@ -177,9 +179,10 @@ mod tests {
         }
     }
 
-    /// Outside a finale only every other lane fires, and in one every lane.
+    /// Outside a finale one lane in every [`ALL_NIGHT_LANE_STRIDE`] fires,
+    /// and in one every lane.
     #[test]
-    fn a_finale_fires_every_lane_and_a_night_every_other() {
+    fn a_finale_fires_every_lane_and_the_rest_of_the_night_some() {
         let fired = |finale: bool| {
             let mut lanes = [false; LANES];
             for ms in (0..20 * BURSTS.period_ms).step_by(BURSTS.phase_ms as usize) {
@@ -195,8 +198,52 @@ mod tests {
         assert_eq!(fired(true), [true; LANES]);
         assert_eq!(
             fired(false),
-            std::array::from_fn(|l| l % NIGHT_LANE_STRIDE == 0)
+            std::array::from_fn(|l| l % ALL_NIGHT_LANE_STRIDE == 0)
         );
+    }
+
+    /// A lane that fires only in a finale asks about its burst's start, on
+    /// every moving tier: each of its runs is whole, its kindling inside the
+    /// finale, so no burst is cut in or out mid-run at the finale's edges.
+    #[test]
+    fn a_finale_lane_fires_whole_bursts_that_start_inside_it() {
+        use crate::anim::Motion;
+        const SPAN_MS: u64 = 30 * 1500;
+        let open = 10 * BURSTS.period_ms..20 * BURSTS.period_ms;
+        let at = |wall| std::time::UNIX_EPOCH + std::time::Duration::from_millis(wall);
+        for motion in [Motion::Full, Motion::Calm] {
+            let pace = motion.pace().expect("a moving tier");
+            for lane in (0..LANES).filter(|l| !l.is_multiple_of(ALL_NIGHT_LANE_STRIDE)) {
+                let samples: Vec<_> = (0..SPAN_MS * pace)
+                    .step_by(BURSTS.phase_ms as usize)
+                    .map(|wall| {
+                        (
+                            wall,
+                            bursts_at(motion.beat(at(wall)), &HUES, |w| open.contains(&w))[lane],
+                        )
+                    })
+                    .collect();
+                let runs: Vec<_> = samples
+                    .chunk_by(|a, b| a.1.is_some() == b.1.is_some())
+                    .collect();
+                let fired: Vec<_> = runs.iter().filter(|r| r[0].1.is_some()).collect();
+                assert!(!fired.is_empty(), "{motion:?} lane {lane}");
+                for run in fired {
+                    let phases: Vec<_> = run.iter().map(|(_, b)| b.map(|b| b.phase)).collect();
+                    let mut distinct = phases.clone();
+                    distinct.dedup();
+                    assert_eq!(
+                        distinct,
+                        BURST.map(Some),
+                        "{motion:?} lane {lane}: a whole run"
+                    );
+                    assert!(
+                        open.contains(&run[0].0),
+                        "{motion:?} lane {lane}: kindled inside"
+                    );
+                }
+            }
+        }
     }
 
     /// Nothing fires at rest.
@@ -224,18 +271,26 @@ mod tests {
         }
     }
 
-    /// Each of a lane's buckets starts its burst at any of its legal starts
-    /// alike: the latest as often as the earliest.
+    /// Each lane starts its bursts at every legal start alike, as
+    /// `bursts_at` places them: the latest as surely as the earliest.
     #[test]
     fn a_lane_starts_its_bursts_at_every_legal_offset() {
-        let starts = (BURSTS.period_ms - BURSTS.run_ms() - BURSTS.gap_ms) / BURSTS.phase_ms + 1;
-        let mut seen = std::collections::BTreeSet::new();
-        for bucket in 0..1000 {
-            let mut draws = crate::Rng::new(bucket * LANES as u64);
-            seen.insert(BURSTS.start(bucket, draws.draw()) - bucket * BURSTS.period_ms);
+        const BUCKETS: u64 = 400;
+        for lane in 0..LANES {
+            let shift = lane as u64 * BURSTS.period_ms / LANES as u64;
+            let mut seen = std::collections::BTreeSet::new();
+            let mut was = None;
+            for ms in (shift..shift + BUCKETS * BURSTS.period_ms).step_by(BURSTS.phase_ms as usize)
+            {
+                let phase = bursts_at(Beat::at_ms(ms), &HUES, |_| true)[lane].map(|b| b.phase);
+                if phase == Some(BurstPhase::Kindle) && was != phase {
+                    seen.insert((ms - shift) % BURSTS.period_ms);
+                }
+                was = phase;
+            }
+            let want: std::collections::BTreeSet<u64> =
+                (0..BURSTS.starts()).map(|i| i * BURSTS.phase_ms).collect();
+            assert_eq!(seen, want, "lane {lane}");
         }
-        let want: std::collections::BTreeSet<u64> =
-            (0..starts).map(|i| i * BURSTS.phase_ms).collect();
-        assert_eq!(seen, want);
     }
 }

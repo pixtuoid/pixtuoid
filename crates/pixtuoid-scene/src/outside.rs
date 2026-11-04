@@ -248,8 +248,9 @@ impl Wall {
     }
 }
 
-/// The columns, in units, that `bays`' glass runs across: none without a bay.
-fn glass_span(bays: &[WindowBay]) -> Range<u16> {
+/// The columns, in units, `bays` span, frames included: unlike
+/// [`Wall::glass`]'s run, never the door's slot, which shows no glass.
+fn bays_span(bays: &[WindowBay]) -> Range<u16> {
     match (bays.first(), bays.last()) {
         (Some(first), Some(last)) => first.x..last.span().end,
         _ => 0..0,
@@ -401,7 +402,7 @@ impl Outside {
             .map(|p| p.start - run.start..p.end - run.start)
             .collect();
         Self {
-            sky: SkyView::of(&outlook, (buf_w, glass_span(&bays)), band_h, theme),
+            sky: SkyView::of(&outlook, (buf_w, bays_span(&bays)), band_h, theme),
             clouds: crate::clouds::Clouds::of(
                 &outlook,
                 (run.end - run.start, glass_h),
@@ -446,6 +447,24 @@ impl Outside {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// The bays' span runs from the first shown bay's west edge to the last
+    /// one's east edge, short of the door's slot, which the wall's glass run
+    /// takes in.
+    #[test]
+    fn the_bays_span_ends_short_of_the_doors_slot() {
+        let layout = crate::layout::SceneLayout::compute(160, 96, Some(4)).expect("lays out");
+        let bays: Vec<WindowBay> = layout.window_bays().collect();
+        let span = bays_span(&bays);
+        let (first, last) = (bays.first().expect("a bay"), bays.last().expect("a bay"));
+        assert_eq!(span, first.x..last.span().end);
+        assert!(span.end <= layout.door_rect().x, "{span:?}");
+        assert!(
+            span.end < crate::layout::window_run(layout.buf_w).end,
+            "{span:?}"
+        );
+        assert_eq!(bays_span(&[]), 0..0);
+    }
     use crate::display::pen::test_density;
     use crate::sky::{Sky, Weather};
     use crate::sprite::RgbBuffer;

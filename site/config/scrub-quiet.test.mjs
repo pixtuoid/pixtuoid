@@ -20,11 +20,6 @@ for (const name of ['LIGHTNING_PERIOD_MS', 'STRIKE_GAP_MS']) {
   });
 }
 
-test('the engine keeps every strike out of a bucket\u2019s last STRIKE_GAP_MS', () => {
-  // the offset's modulus leaves the strike and the gap inside the bucket
-  assert.match(SKY, /% \(LIGHTNING_PERIOD_MS - STRIKE_MS - STRIKE_GAP_MS\)/);
-});
-
 test('quietInstant lands in its own bucket\u2019s strike-free tail', () => {
   const [period, gap] = [engine('LIGHTNING_PERIOD_MS'), engine('STRIKE_GAP_MS')];
   for (const t of [0, 1, period - 1, period, 1_767_000_123_456, 1_767_000_014_999]) {
