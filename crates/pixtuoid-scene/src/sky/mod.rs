@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use crate::anim::Motion;
 
+pub(crate) mod fireworks;
 #[cfg(test)]
 mod tests;
 
@@ -527,9 +528,21 @@ pub(crate) fn local_hour_frac(now: SystemTime) -> f32 {
 /// dusk` starts its clock. `None` where that local time doesn't exist.
 #[doc(hidden)]
 pub fn nightfall_on(day: SystemTime) -> Option<SystemTime> {
-    let minutes = (SUN_SET_H * 60.0).round() as u32;
-    crate::localclock::on_date_of(day, minutes / 60, minutes % 60)
+    use chrono::Timelike;
+    crate::localclock::on_date_of(day, DUSK.hour(), DUSK.minute())
 }
+
+/// The local time of day nightfall begins at.
+pub(crate) const DUSK: chrono::NaiveTime = {
+    const SECS_PER_HOUR: f32 = 3600.0;
+    match chrono::NaiveTime::from_num_seconds_from_midnight_opt(
+        (SUN_SET_H * SECS_PER_HOUR) as u32,
+        0,
+    ) {
+        Some(dusk) => dusk,
+        None => panic!("SUN_SET_H is an hour of the day"),
+    }
+};
 
 /// How far into the night hour `h` is, 0..=1: zero by day, rising over
 /// [`NIGHTFALL_H`] after dusk and falling over it before dawn.
@@ -776,6 +789,7 @@ pub(crate) struct Sky {
     moon_waxing: bool,
     nightfall: f32,
     strike: Option<StrikePhase>,
+    bursts: [Option<fireworks::Burst>; fireworks::LANES],
 }
 
 impl Sky {
@@ -786,6 +800,9 @@ impl Sky {
         let nightfall = nightfall(h);
         let weather = policy.weather_at(now);
         let strike = strike_phase_at(timing.beat, policy);
+        let bursts = crate::holiday::fireworks_at(now).map_or([None; fireworks::LANES], |hues| {
+            fireworks::bursts_at(timing.beat, hues)
+        });
         tracing::trace!(weather = ?weather, strike = ?strike, nightfall, "sky.at");
         Self {
             policy,
@@ -795,6 +812,7 @@ impl Sky {
             moon_waxing: moon_age < SYNODIC_DAYS / 2.0,
             nightfall,
             strike,
+            bursts,
         }
     }
 
@@ -869,6 +887,18 @@ impl Sky {
     /// The lightning envelope at this instant: its strike's level, or 0.
     pub(crate) fn flash(&self) -> f32 {
         self.strike.map_or(0.0, StrikePhase::level)
+    }
+
+    /// The fireworks bursting at this instant, one a lane.
+    pub(crate) fn bursts(&self) -> [Option<fireworks::Burst>; fireworks::LANES] {
+        self.bursts
+    }
+
+    /// This sky with `bursts` overhead — a painter test's fireworks without
+    /// the calendar that lights them.
+    #[cfg(test)]
+    pub(crate) fn with_bursts(self, bursts: [Option<fireworks::Burst>; fireworks::LANES]) -> Self {
+        Self { bursts, ..self }
     }
 
     /// The phase of the strike at this instant, if one is under way.
