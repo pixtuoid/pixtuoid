@@ -1,0 +1,69 @@
+---
+source: crates/pixtuoid/tests/layout_golden.rs
+expression: l.waypoints
+---
+[
+    Waypoint {
+        pos: Point {
+            x: 68,
+            y: 39,
+        },
+        kind: Couch,
+        facing: North,
+        room_id: None,
+    },
+    Waypoint {
+        pos: Point {
+            x: 74,
+            y: 39,
+        },
+        kind: Couch,
+        facing: North,
+        room_id: None,
+    },
+    Waypoint {
+        pos: Point {
+            x: 80,
+            y: 39,
+        },
+        kind: Couch,
+        facing: North,
+        room_id: None,
+    },
+    Waypoint {
+        pos: Point {
+            x: 16,
+            y: 86,
+        },
+        kind: Pantry,
+        facing: South,
+        room_id: None,
+    },
+    Waypoint {
+        pos: Point {
+            x: 55,
+            y: 76,
+        },
+        kind: StandingDesk,
+        facing: South,
+        room_id: None,
+    },
+    Waypoint {
+        pos: Point {
+            x: 107,
+            y: 72,
+        },
+        kind: PhoneBooth,
+        facing: South,
+        room_id: None,
+    },
+    Waypoint {
+        pos: Point {
+            x: 4,
+            y: 61,
+        },
+        kind: SnackShelf,
+        facing: West,
+        room_id: None,
+    },
+]

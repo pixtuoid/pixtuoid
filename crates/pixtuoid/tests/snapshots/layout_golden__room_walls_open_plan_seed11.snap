@@ -1,0 +1,5 @@
+---
+source: crates/pixtuoid/tests/layout_golden.rs
+expression: l.room_walls
+---
+[]
