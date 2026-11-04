@@ -161,9 +161,9 @@ invariant-breaking sequence against:
    failure impossible (#1142); a check outside [its own
    layer](docs/CONTRIBUTING.md#convergence-contract). A mechanism the diff
    extends is judged as if new against AGENTS.md's [upkeep
-   rule](AGENTS.md#conventions); one that fails it draws "delete it".
+   rule](AGENTS.md#org-rules); one that fails it draws "delete it".
    A hand-rolled mechanism for a need a maintained library, the platform or
-   the upstream tool already meets (AGENTS.md's reuse rule) draws "reuse X",
+   the upstream tool already meets ([AGENTS.md](AGENTS.md#org-rules)'s reuse rule) draws "reuse X",
    citing a file of X read this run; one not read is marked unverified.
    A defense [Traps](#traps-the-obvious-reading-is-wrong-here) or
    [Security](#security) names, and the documented liveness ladders, stay.
@@ -183,7 +183,7 @@ invariant-breaking sequence against:
      word and Rust's [naming guidelines](https://rust-lang.github.io/api-guidelines/naming.html),
      never a placeholder; a comment earns its place by AGENTS.md's comment
      rules.
-8. **Sourced practice**: [AGENTS.md](AGENTS.md#conventions)'s fetched-claims
+8. **Sourced practice**: [AGENTS.md](AGENTS.md#org-rules)'s Evidence
    rule; a claim with no fetched source, or one that contradicts it, breaches it.
 9. **A new dependency or workspace edge**: each crate it adds, transitive ones
    included, is justified, and a new workspace edge follows

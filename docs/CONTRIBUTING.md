@@ -223,8 +223,9 @@ change, and bigger than the PR: split it off into #N; a redesign that brings
 the finding into scope ends FIXED) · FOLLOW-UP → #N (real and PRE-EXISTING,
 and not FIXED in place
 — in place fits a small defect inside code this change already touches,
-pulling in no new must-run item — so it is fixed in #N; a defect in another session's
-tree cites that session's PR). A
+pulling in no new must-run item, and a breach of a written rule there is fixed
+in place whatever it pulls in (AGENTS.md's org rules: Refactor) — so it is
+fixed in #N; a defect in another session's tree cites that session's PR). A
 disposition is the reply that resolves the thread, STARTING with its state:
 `FIXED: …` · `REFUTED: … — <mechanism>` · `RE-SCOPED → #N: …` ·
 `FOLLOW-UP → #N: …`, where #N is a PR other than this one: open, merged, or

@@ -2,7 +2,7 @@
 //! it, once a visitor turns the ♩ on, so the office's wasm every visitor
 //! downloads carries no synthesizer for it.
 
-// AGENTS.md's Errors rule, as a lint: no `unwrap()` outside tests.
+// AGENTS.md's org rules, as a lint: no `unwrap()` outside tests.
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use pixtuoid_scene::anim::from_epoch_ms;
