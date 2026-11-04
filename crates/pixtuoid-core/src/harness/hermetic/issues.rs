@@ -1,5 +1,5 @@
 //! The nightly's hermetic issues: one per source a leg judged anything but
-//! Pass or whose feed released past its pin, one per leg that lost its
+//! Pass or whose feed released past its pin, one per leg that ran and lost its
 //! verdicts, and what each night does to them. The workflow only carries a
 //! [`Plan`] out with `gh`. Every input is untrusted, since the legs ran
 //! just-published CLIs: what one could forge is a `hermetic`-labelled issue's
@@ -57,6 +57,44 @@ pub struct Freshness {
     pub source: String,
     /// The release as its feed spells it, or why the feed named none.
     pub latest: Result<String, String>,
+}
+
+/// One page of the run's jobs, as `gh api --paginate --slurp` lists
+/// [the REST API's](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run).
+#[derive(Debug, Clone, Deserialize)]
+pub struct JobsPage {
+    jobs: Vec<Job>,
+}
+
+/// A job of the run.
+#[derive(Debug, Clone, Deserialize)]
+struct Job {
+    name: String,
+    runner_id: Option<u64>,
+    #[serde(default)]
+    steps: Vec<serde::de::IgnoredAny>,
+}
+
+impl Job {
+    /// Whether no runner ever took it, so it ran nothing: GitHub cancels a job
+    /// no runner acquires, with runner 0 and no step.
+    fn unacquired(&self) -> bool {
+        self.runner_id.unwrap_or_default() == 0 && self.steps.is_empty()
+    }
+}
+
+/// What opens a leg's job name before its `<cli>, <os>, <shard>)`, as
+/// `hermetic.yml` names it; a caller's job prefixes its own name to it.
+const LEG_JOB: &str = "hermetic (";
+
+/// The leg `job` names, if it is one of the matrix's.
+fn leg_of(job: &str) -> Option<Leg> {
+    let (_, args) = job.strip_suffix(')')?.rsplit_once(LEG_JOB)?;
+    let [_cli, os, shard] = args.split(", ").collect::<Vec<_>>()[..] else {
+        return None;
+    };
+    let shard: usize = shard.parse().ok()?;
+    legs().find(|leg| leg.os == os && leg.shard == shard)
 }
 
 /// A `hermetic`-labelled issue, as `gh issue list --json number,state,body`
@@ -120,6 +158,9 @@ pub struct Plan {
     pub(crate) actions: Vec<Action>,
     /// Why the night's verdicts are incomplete; any entry turns the filing red.
     pub(crate) lost: Vec<String>,
+    /// Each leg no runner took, a line the filing logs as a warning: an outage
+    /// of GitHub's, no issue of ours.
+    pub(crate) unacquired: Vec<String>,
 }
 
 /// The `hermetic.yml` output `leg` names its uploaded runs' URL in.
@@ -205,15 +246,17 @@ impl Night<'_> {
 }
 
 /// What to do with the `hermetic` issues `issues`, given the drift job's
-/// outputs, every verdicts file the legs uploaded, the unprofiled sources'
-/// `fresh` releases and the run's URL. A leg whose verdicts are missing, or
-/// name a leg or a source the matrix gives it no part in, is lost: it files an
-/// issue of its own, and no profiled source's issue closes that night. A
-/// profiled source's closes only on a night no leg is lost and every leg
-/// running it reported its runs, each Pass; an unprofiled one's, on a night its
-/// feed named its pin; a leg's, once it reported again.
+/// outputs, the run's `jobs`, every verdicts file the legs uploaded, the
+/// unprofiled sources' `fresh` releases and the run's URL. A leg whose verdicts
+/// are missing though a runner took its job, or name a leg or a source the
+/// matrix gives it no part in, is lost: it files an issue of its own, and no
+/// profiled source's issue closes that night. A profiled source's closes only
+/// on a night no leg is lost and every leg running it reported its runs, each
+/// Pass; an unprofiled one's, on a night its feed named its pin; a leg's, once
+/// it reported again.
 pub fn plan(
     drift: &Map<String, Value>,
+    jobs: &[JobsPage],
     reported: &[std::io::Result<Verdicts>],
     fresh: &std::io::Result<Vec<Freshness>>,
     issues: &[Issue],
@@ -267,6 +310,12 @@ pub fn plan(
             }
         };
     }
+    let no_runner: BTreeSet<Leg> = jobs
+        .iter()
+        .flat_map(|page| &page.jobs)
+        .filter(|job| job.unacquired())
+        .filter_map(|job| leg_of(&job.name))
+        .collect();
 
     let mut ours: BTreeMap<Subject, &Issue> = BTreeMap::new();
     for issue in issues {
@@ -295,8 +344,13 @@ pub fn plan(
             source_note(&rows, &nights, run_url),
         );
     }
+    let mut unacquired = Vec::new();
     for (leg, night) in &nights {
         let why = match &night.reported {
+            Reported::Missing if no_runner.contains(leg) => {
+                unacquired.push(format!("{leg} got no runner, so it ran nothing"));
+                continue;
+            }
             Reported::Missing => "reported no verdicts".to_owned(),
             Reported::Invalid(what) => format!("reported {what}"),
             Reported::Valid(_) => continue,
@@ -367,8 +421,7 @@ pub fn plan(
             continue;
         }
         let body = match subject {
-            // Not filed tonight, so it reported.
-            Subject::Leg(leg) => {
+            Subject::Leg(leg) if nights[leg].verdicts().is_some() => {
                 format!("{leg} reported its verdicts in {run_url}.")
             }
             Subject::Source(source) if at_pin.contains(source.as_str()) => {
@@ -387,7 +440,11 @@ pub fn plan(
         });
     }
     lost.extend(fresh_lost);
-    Plan { actions, lost }
+    Plan {
+        actions,
+        lost,
+        unacquired,
+    }
 }
 
 /// What an unprofiled source's feed naming `latest` files: nothing at its pin;
@@ -522,14 +579,26 @@ mod tests {
 
     const RUN: &str = "https://github.com/o/r/actions/runs/1";
 
-    /// The planner on a night every unprofiled source's feed named its pin.
+    /// The planner on a night every unprofiled source's feed named its pin and
+    /// a runner took every leg.
     fn plan(
         drift: &Map<String, Value>,
         reported: &[std::io::Result<Verdicts>],
         issues: &[Issue],
         run_url: &str,
     ) -> Plan {
-        super::plan(drift, reported, &current(), issues, run_url)
+        super::plan(drift, &[], reported, &current(), issues, run_url)
+    }
+
+    /// Run 41662052721's jobs, as `gh api --paginate --slurp
+    /// repos/pixtuoid/pixtuoid/actions/runs/41662052721/jobs` recorded them: no
+    /// runner took its macOS shard 2 leg, and a runner took each of the others.
+    fn unacquired_macos_2() -> Vec<JobsPage> {
+        serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/sources/hermetic/jobs/41662052721.json"
+        )))
+        .expect("the recorded jobs")
     }
 
     fn current() -> std::io::Result<Vec<Freshness>> {
@@ -818,6 +887,91 @@ mod tests {
     }
 
     #[test]
+    fn a_leg_no_runner_took_files_nothing_and_its_issue_stays_as_it_is() {
+        let source_on = |shard: usize| Subject::Source(SHARDS[shard - 1][0].into());
+        let leg = Subject::Leg(Leg {
+            os: "macos",
+            shard: 2,
+        });
+        for state in [State::Open, State::Closed] {
+            let issues = [
+                issue(1, state, &leg),
+                issue(2, State::Open, &source_on(1)),
+                issue(3, State::Open, &source_on(2)),
+            ];
+            let plan = super::plan(
+                &drift(&[]),
+                &unacquired_macos_2(),
+                &without(night(|_, _| {}), "macos", 2),
+                &current(),
+                &issues,
+                RUN,
+            );
+            assert!(plan.lost.is_empty(), "{:?}", plan.lost);
+            assert_eq!(
+                plan.unacquired,
+                ["macos, shard 2 got no runner, so it ran nothing"]
+            );
+            assert_eq!(
+                plan.actions,
+                [Action::Close {
+                    number: 2,
+                    body: format!(
+                        "Every leg that runs {} judged each of its runs Pass in {RUN}.",
+                        SHARDS[0][0]
+                    ),
+                }],
+                "only shard 1's source, which every leg running it reported, closes"
+            );
+        }
+    }
+
+    #[test]
+    fn a_leg_a_runner_took_that_reported_no_verdicts_is_lost() {
+        let plan = super::plan(
+            &drift(&[]),
+            &unacquired_macos_2(),
+            &without(night(|_, _| {}), "macos", 1),
+            &current(),
+            &[],
+            RUN,
+        );
+        assert_eq!(plan.lost, ["macos, shard 1 reported no verdicts"]);
+        assert!(plan.unacquired.is_empty());
+        assert!(matches!(
+            &plan.actions[..],
+            [Action::Open { title, .. }] if title == "hermetic: macos, shard 1 lost its verdicts"
+        ));
+    }
+
+    #[test]
+    fn a_job_names_its_leg_by_its_matrix_values() {
+        let yml = std::fs::read_to_string(repo_root().join(".github/workflows/hermetic.yml"))
+            .expect("hermetic.yml");
+        assert!(
+            yml.contains(&format!(
+                "name: {LEG_JOB}${{{{ inputs.cli }}}}, ${{{{ matrix.os }}}}, ${{{{ matrix.shard }}}})"
+            )),
+            "the name `leg_of` reads"
+        );
+        assert_eq!(
+            leg_of("drift / hermetic (latest, macos, 2)"),
+            Some(Leg {
+                os: "macos",
+                shard: 2,
+            })
+        );
+        for other in [
+            "hermetic build (macos-latest)",
+            "drift / required-hermetic-jobs",
+            "drift / hermetic (latest, macos, 9)",
+            "drift / hermetic (latest, linux, 1)",
+        ] {
+            assert_eq!(leg_of(other), None, "{other}");
+        }
+    }
+
+    #[test]
     fn an_unreadable_verdicts_file_is_lost_and_closes_no_source_issue() {
         let mut reported = without(night(|_, _| {}), "macos", 1);
         reported.push(Err(std::io::Error::other(
@@ -907,7 +1061,7 @@ mod tests {
 
     /// Freshness's plan alone: every leg reported its shard Pass.
     fn freshness(fresh: std::io::Result<Vec<Freshness>>, issues: &[Issue]) -> Plan {
-        super::plan(&drift(&[]), &night(|_, _| {}), &fresh, issues, RUN)
+        super::plan(&drift(&[]), &[], &night(|_, _| {}), &fresh, issues, RUN)
     }
 
     #[test]
@@ -1113,6 +1267,7 @@ mod tests {
                 },
             ],
             lost: vec!["macos, shard 1 reported no verdicts".into()],
+            unacquired: vec!["macos, shard 2 got no runner, so it ran nothing".into()],
         };
         let json = serde_json::to_value(&plan).expect("a plan");
         let step = file_step();
