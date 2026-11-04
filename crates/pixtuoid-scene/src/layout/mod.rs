@@ -406,7 +406,7 @@ pub struct SceneLayout {
 }
 
 /// Integer percentage of `v`, floor semantics. Computed in u32: a bare
-/// `inner_h * WALL_DEPTH_PCT` overflows u16 past `u16::MAX / WALL_DEPTH_PCT`.
+/// `v * n` overflows u16 once `v > u16::MAX / n`.
 pub(crate) const fn pct(v: u16, n: u16) -> u16 {
     ((v as u32 * n as u32) / 100) as u16
 }
