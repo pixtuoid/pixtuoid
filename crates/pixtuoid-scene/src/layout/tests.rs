@@ -249,6 +249,36 @@ fn snack_shelf_hugs_the_west_wall_and_refuses_narrow_rooms() {
     );
 }
 
+/// The strip under a bottom inset is floor inside the rooms: a room wall that
+/// runs to the floor's south edge runs on to the canvas's.
+#[test]
+fn a_room_wall_to_the_floors_south_edge_runs_on_under_the_bottom_inset() {
+    let insets = Insets {
+        bottom: 12,
+        ..Insets::default()
+    };
+    let mut reached = 0;
+    for seed in 0..12 {
+        let viewport = Viewport {
+            size: Size { w: 240, h: 144 },
+            insets,
+        };
+        let inner = viewport.inner().expect("an office inside");
+        let l = SceneLayout::compute(viewport, None, seed).expect("lays out");
+        for seg in &l.room_walls {
+            if let WallSegment::Vertical { y1, .. } = *seg {
+                assert_ne!(
+                    y1,
+                    inner.y + inner.height,
+                    "seed {seed}: {seg:?} stops at the floor's south edge"
+                );
+                reached += usize::from(y1 == l.buf_h);
+            }
+        }
+    }
+    assert!(reached > 0, "no wall ran to the floor's south edge");
+}
+
 #[test]
 fn dense_inter_meeting_wall_is_solid_with_a_corridor_door_each() {
     // #557 door policy (owner call): two stacked meeting rooms do NOT interconnect
