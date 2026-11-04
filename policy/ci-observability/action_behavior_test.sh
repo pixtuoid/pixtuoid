@@ -243,6 +243,9 @@ grep -q 'exit 1, and this tree exits 0' "$brew_dir/summary" ||
 assert_brew "text this tree no longer prints" $'  test do\n    assert_match "a reworded line", shell_output("#{bin}/pixtuoid doctor")\n  end' 1
 grep -q 'print "a reworded line".*shim delivered a test event' "$brew_dir/summary" ||
     fail "the homebrew step didn't name the missing text: $(<"$brew_dir/summary")"
+assert_brew "a literal assertion split across lines" $'  test do\n    assert_match "delivered a test event",\n                 shell_output("#{bin}/pixtuoid doctor")\n  end' 1
+grep -q "can't read: assert_match \"delivered a test event\"," "$brew_dir/summary" ||
+    fail "the homebrew step passed an assertion it couldn't read: $(<"$brew_dir/summary")"
 assert_brew "text this tree prints to stderr alone" $'  test do\n    '"$delivered"$' loud")\n  end' 1
 grep -q 'loud.*print "delivered a test event"' "$brew_dir/summary" ||
     fail "the homebrew step matched text off stdout: $(<"$brew_dir/summary")"

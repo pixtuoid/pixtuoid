@@ -104,7 +104,12 @@ jobs:
           # must exit as its status expects (0 unset) and print its text there.
           asserted='assert_match "([^"]*)", shell_output\("#\{bin\}/pixtuoid ([^"]*)"(, ([0-9]+))?\)'
           while IFS= read -r line; do
-            [[ $line =~ $asserted ]] || continue
+            if ! [[ $line =~ $asserted ]]; then
+              # A literal it can't read, split across lines say, is no pass.
+              [[ $line == *'assert_match "'* ]] \
+                && owe "homebrew-core's test has an \`assert_match\` this check can't read: ${line#"${line%%[![:space:]]*}"}"
+              continue
+            fi
             text="${BASH_REMATCH[1]}" args="${BASH_REMATCH[2]}" want="${BASH_REMATCH[4]:-0}"
             read -r -a argv <<<"$args"
             got=0
