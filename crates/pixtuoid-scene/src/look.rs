@@ -9,18 +9,51 @@ use crate::pack::OfficeArt;
 use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::state::DaemonState;
 
-/// Where a [`Rendered`] frame may differ from the last: the frame entry's
-/// word for it, which the model reads without naming a rasterizer.
-#[doc(hidden)]
-pub use crate::cutaway::canvas::Dirty;
 use crate::cutaway::canvas::{CanvasFrame, CutawayCanvas};
 use crate::display::Hovers;
 use crate::floor::{FloorInputs, OfficeStores, PerFloor, step_floor};
 use crate::footer::FooterFloor;
-use crate::layout::{SceneLayout, Size};
+use crate::layout::{Bounds, SceneLayout, Size};
 use crate::pixel_painter::{ClassicCaches, Drawn, PaintCtx, paint_frame};
 use crate::render_scale::RenderScale;
 use crate::theme::Theme;
+
+/// Where a [`Rendered`] frame's pixels may differ from the frame before: the
+/// frame entry's word for it, which the model reads without naming a
+/// rasterizer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Dirty {
+    /// Anywhere.
+    All,
+    /// Only inside these, in buffer pixels on whole layout cells.
+    Rects(Rects),
+    /// Nowhere: its pixels are the frame before's.
+    Unchanged,
+}
+
+/// The rects a frame may differ inside: never none, which is
+/// [`Dirty::Unchanged`], so a consumer that skips on it skips every unchanged
+/// frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rects(Vec<Bounds>);
+
+impl Rects {
+    /// Each rect, in buffer pixels on whole layout cells.
+    pub fn as_slice(&self) -> &[Bounds] {
+        &self.0
+    }
+}
+
+impl Dirty {
+    /// Only inside `rects`: [`Self::Unchanged`] when there are none.
+    pub fn within(rects: Vec<Bounds>) -> Self {
+        if rects.is_empty() {
+            Self::Unchanged
+        } else {
+            Self::Rects(Rects(rects))
+        }
+    }
+}
 
 /// How a floor is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,7 +147,8 @@ impl LookKind {
 pub enum WorldText {
     /// The image, in the scene's pixel font.
     Baked,
-    /// The host, in its own font over the image ([`FloorPicture::text`]).
+    /// The host, in its own font over the image (`FloorPicture::text`).
+    #[doc(hidden)]
     Host,
 }
 
@@ -125,6 +159,7 @@ pub struct Place {
     /// The office's [`office_gateway`](crate::tally::office_gateway).
     pub gateway: Option<DaemonState>,
     /// Where the floor sits, `None` in a one-floor office.
+    #[doc(hidden)]
     pub floor: Option<FooterFloor>,
 }
 
@@ -368,6 +403,7 @@ pub struct FloorPicture<'a> {
     /// What of it flashes.
     pub flashes: crate::screen::Flashes,
     /// The world text its host sets over it; `None` where the look baked it.
+    #[doc(hidden)]
     pub text: Option<crate::display::HostText<'a>>,
     /// What it answers a pointer with.
     pub hits: &'a Hits,
@@ -459,7 +495,7 @@ impl Hits {
     /// the boxes [`Self::at`] finds them in.
     pub fn figures(
         &self,
-    ) -> impl Iterator<Item = (&crate::display::HoverTarget, crate::layout::Bounds)> {
+    ) -> impl Iterator<Item = (&crate::hit::HoverTarget, crate::layout::Bounds)> {
         self.hovers.listed().iter().map(|h| (&h.target, h.at))
     }
 

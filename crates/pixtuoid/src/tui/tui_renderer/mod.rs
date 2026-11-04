@@ -604,9 +604,9 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     #[cfg(test)]
     pub(crate) fn hit_test_agent_at(&self, col: u16, row: u16) -> Option<pixtuoid_core::AgentId> {
         match self.scene_hit_at(col, row)? {
-            crate::tui::hit_test::SceneHit::Figure(
-                pixtuoid_scene::display::HoverTarget::Agent(id),
-            ) => Some(*id),
+            crate::tui::hit_test::SceneHit::Figure(pixtuoid_scene::hit::HoverTarget::Agent(id)) => {
+                Some(*id)
+            }
             _ => None,
         }
     }
@@ -691,10 +691,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     /// The pet the frame the terminal shows drew.
     #[cfg(test)]
-    pub(crate) fn drawn_pet(&self) -> Option<pixtuoid_scene::display::PetHover> {
+    pub(crate) fn drawn_pet(&self) -> Option<pixtuoid_scene::hit::PetHover> {
         let hits = self.screen.shown()?.hits()?;
         hits.figures().find_map(|(target, _)| match target {
-            pixtuoid_scene::display::HoverTarget::Pet(pet) => Some(*pet),
+            pixtuoid_scene::hit::HoverTarget::Pet(pet) => Some(*pet),
             _ => None,
         })
     }
@@ -944,7 +944,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         use crate::panels::widgets::{paint_host_text, star_area};
         use crate::tui::hit_test::SceneHit;
         use crate::tui::renderer::{TooltipAt, paint_over_image};
-        use pixtuoid_scene::display::HoverTarget;
+        use pixtuoid_scene::hit::HoverTarget;
         if crate::tui::renderer::scene_too_small(fitted.scene) {
             return self.draw_too_small(scene, now, false);
         }

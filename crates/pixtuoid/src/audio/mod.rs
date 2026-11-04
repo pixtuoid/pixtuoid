@@ -663,7 +663,7 @@ impl AudioHandle {
             let (tx, rx) = mpsc::sync_channel(64);
             let muted_for_loop = std::sync::Arc::clone(&self.muted);
             let vol_for_loop = std::sync::Arc::clone(&self.volume);
-            let seed = pixtuoid_scene::audio::music_seed(std::time::SystemTime::now());
+            let started = std::time::SystemTime::now();
             match std::thread::Builder::new()
                 .name("pixtuoid-audio".into())
                 .spawn(move || {
@@ -677,7 +677,7 @@ impl AudioHandle {
                     // The device plays on its output callback's own thread.
                     #[cfg(target_os = "macos")]
                     promote_to_user_initiated();
-                    run_loop(rx, Box::new(device), muted_for_loop, vol_for_loop, seed)
+                    run_loop(rx, Box::new(device), muted_for_loop, vol_for_loop, started)
                 }) {
                 Ok(join) => {
                     // Replacing the sole sender CLOSES a prior thread's channel — retire that
@@ -869,14 +869,14 @@ fn clamped_dt(prev: Instant, now: Instant) -> f32 {
 }
 
 /// The audio thread body — the DEVICE shell over the shared [`AudioEngine`],
-/// which owns all mixing/scheduling. `seed` picks the run of songs.
+/// which owns all mixing/scheduling. `started` picks the run of songs.
 #[cfg(feature = "audio")]
 fn run_loop(
     rx: mpsc::Receiver<AudioFrame>,
     mut device: Box<dyn AudioSink>,
     muted: std::sync::Arc<std::sync::atomic::AtomicBool>,
     volume: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    seed: u64,
+    started: std::time::SystemTime,
 ) {
     use std::sync::atomic::Ordering::Relaxed;
 
@@ -884,7 +884,7 @@ fn run_loop(
     let mut synthesis = Synthesis::new();
     let bank = synthesis.assets();
     device.start_loop(LoopStem::Rain, synthesis.rain());
-    let (mut music, reader) = music::stream(seed);
+    let (mut music, reader) = music::stream(started);
     device.start_music(reader);
     tracing::debug!(
         ms = built_at.elapsed().as_millis(),
@@ -985,7 +985,9 @@ mod tests {
         let muted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let muted_ctl = std::sync::Arc::clone(&muted);
         let vol = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(1.0f32.to_bits()));
-        let join = std::thread::spawn(move || run_loop(rx, Box::new(probe), muted, vol, 7));
+        let join = std::thread::spawn(move || {
+            run_loop(rx, Box::new(probe), muted, vol, std::time::UNIX_EPOCH)
+        });
 
         // Rain stays 0 so no scheduler one-shot can race the count — only the
         // two frame events are audible.
@@ -1163,8 +1165,8 @@ mod listen_gate {
         secs: f32,
     }
 
-    /// The seed every row plays, so the rows differ only in their office.
-    const SEED: u64 = 0;
+    /// When every row's music starts, so the rows differ only in their office.
+    const STARTED: std::time::SystemTime = std::time::UNIX_EPOCH;
 
     fn render(bank: &AssetBank, rain_bed: &Arc<Vec<f32>>, row: &Row) -> Vec<f32> {
         let counts = pixtuoid_scene::tally::StateCounts {
@@ -1176,7 +1178,7 @@ mod listen_gate {
         };
         let mut sink = OfflineSink::new(row.secs);
         sink.start_loop(LoopStem::Rain, Arc::clone(rain_bed));
-        let (mut music, reader) = music::stream(SEED);
+        let (mut music, reader) = music::stream(STARTED);
         sink.start_music(reader);
         // Drive the SAME shared `AudioEngine` the app runs, so the audition
         // mixes exactly what ships (incl. the production bus trim).

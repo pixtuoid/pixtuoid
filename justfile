@@ -486,7 +486,8 @@ api-surface mode="": _api-toolchain
             fail=1
         fi
         # The rustdoc JSON cargo-public-api just wrote: a reference whose id is
-        # in neither `index` nor `paths` is to a local item rustdoc stripped.
+        # in neither `index` nor `paths` is to a local item rustdoc stripped. An
+        # auto trait's synthetic impl is skipped: its bounds name private fields.
         json="$docs/${crate//-/_}.json"
         if ! jq -e --argjson v {{ API_JSON_FORMAT }} '.format_version == $v' "$json" >/dev/null; then
             echo "error: $json is not rustdoc JSON format {{ API_JSON_FORMAT }}; move API_JSON_FORMAT with API_NIGHTLY" >&2
@@ -494,7 +495,7 @@ api-surface mode="": _api-toolchain
             continue
         fi
         leaks="$(jq -r '.index as $index | .paths as $paths
-            | [$index[] | . as $item | .. | objects
+            | [$index[] | select(.inner.impl.is_synthetic != true) | . as $item | .. | objects
                | select(has("id") and has("path") and (.path | type) == "string")
                | select($index[.id | tostring] == null and $paths[.id | tostring] == null)
                | "\($item.span.filename):\($item.span.begin[0]): \($item.name // "an impl") names \(.path)"]

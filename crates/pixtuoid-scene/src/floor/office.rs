@@ -122,7 +122,6 @@ impl FloorView {
 
 /// What a frame of an office feeds besides its picture
 /// ([`OfficeSession::picture`]), whether or not a screen shows that.
-#[doc(hidden)]
 #[must_use]
 #[derive(Debug)]
 pub struct Feed {
@@ -136,7 +135,6 @@ pub struct Feed {
 /// Which floor an office shows, and the slide to another: what every painter's
 /// floor keys and frame loop share. Navigation never starts a slide during
 /// one, and a slide lands on its destination however it ends.
-#[doc(hidden)]
 #[derive(Debug, Default)]
 pub struct FloorNav {
     current: usize,
@@ -291,10 +289,9 @@ fn compose_slide(
 }
 
 /// A painter's office of up to [`MAX_FLOORS`](super::MAX_FLOORS) floors:
-/// each floor's [`FloorView`], the office-wide state they share (a cup of
+/// each floor's view, the office-wide state they share (a cup of
 /// coffee survives a floor switch), the [`FloorNav`], and the slide's
 /// composed frame.
-#[doc(hidden)]
 #[derive(Debug)]
 pub struct OfficeSession {
     pack: Arc<OfficeArt>,
@@ -347,6 +344,7 @@ impl OfficeSession {
     /// the floor it lifted on, whatever shows since; that floor's next step
     /// carries it out. A lift during a slide, which shows no one floor, lifts
     /// nothing.
+    #[doc(hidden)]
     pub fn grip(&mut self, gesture: &crate::interact::Gesture) {
         let floor = self.gripped.of(gesture, &self.nav);
         if let Some(view) = floor.and_then(|f| self.views.get_mut(f)) {
@@ -360,6 +358,7 @@ impl OfficeSession {
     }
 
     /// The pet of `pets` the floor showing picks, as its frames draw it.
+    #[doc(hidden)]
     pub fn showing_pet<'p>(&self, pets: &'p [crate::pet::Pet]) -> Option<&'p crate::pet::Pet> {
         floor_pet(self.nav.current(), self.n_floors, pets)
     }
@@ -369,6 +368,7 @@ impl OfficeSession {
     /// scene fills gets its view, and the navigation settles.
     /// [`Self::render`] does this itself; a painter drawing the floors on its
     /// own calls it first.
+    #[doc(hidden)]
     pub fn prepare(&mut self, scene: &SceneState, now: SystemTime) {
         self.evict_missing(scene);
         self.n_floors = super::num_floors(scene).clamp(1, super::MAX_FLOORS);
@@ -381,6 +381,7 @@ impl OfficeSession {
     /// Drop the agents gone from `scene` from every floor (an agent's floor
     /// need not be the one showing) and from the office's coffee and
     /// chitchat: one seam, so no frame path skips either half.
+    #[doc(hidden)]
     pub fn evict_missing(&mut self, scene: &SceneState) {
         for view in &mut self.views {
             view.floor.evict_missing(scene);
@@ -391,6 +392,7 @@ impl OfficeSession {
     /// `world` as floor `floor` sees it, `floor_scene` its projection: the
     /// inputs [`Self::render`] draws each floor with, for a painter drawing
     /// it on its own.
+    #[doc(hidden)]
     pub fn floor_world<'a>(
         &self,
         world: FloorInputs<'a>,
@@ -403,16 +405,19 @@ impl OfficeSession {
 
     /// End a slide at once on its destination: a cancel (a resize) must not
     /// silently revert a navigation.
+    #[doc(hidden)]
     pub fn cancel_slide(&mut self) {
         self.nav.cancel(self.n_floors);
     }
 
     /// Floor `floor`'s stores and raster, once a frame has grown it.
+    #[doc(hidden)]
     pub fn floor(&self, floor: usize) -> Option<&PerFloor> {
         self.views.get(floor).map(|view| &view.floor)
     }
 
     /// Floor `floor`, and the office-wide state a frame of it draws beside.
+    #[doc(hidden)]
     pub fn floor_mut(&mut self, floor: usize) -> Option<(&mut PerFloor, &mut PerOffice)> {
         let view = self.views.get_mut(floor)?;
         Some((&mut view.floor, &mut self.office))
@@ -420,16 +425,19 @@ impl OfficeSession {
 
     /// Every floor grown so far, for what reaches all of them at once (the
     /// pacing bench's whole repaint).
+    #[doc(hidden)]
     pub fn floors_mut(&mut self) -> impl Iterator<Item = &mut PerFloor> {
         self.views.iter_mut().map(|view| &mut view.floor)
     }
 
     /// The office-wide state: coffee, chitchat, audio, the shared raster.
+    #[doc(hidden)]
     pub fn office(&self) -> &PerOffice {
         &self.office
     }
 
     /// [`Self::office`], to step or record into.
+    #[doc(hidden)]
     pub fn office_mut(&mut self) -> &mut PerOffice {
         &mut self.office
     }
@@ -522,6 +530,7 @@ impl OfficeSession {
     /// showing keeps nothing of its last. Its audio, the empty floor's, is
     /// the caller's to feed.
     #[must_use]
+    #[doc(hidden)]
     pub fn drew_no_office(
         &mut self,
         scene: &SceneState,
@@ -566,12 +575,14 @@ impl OfficeSession {
     }
 
     /// The footer's floor breadcrumb, among `scene`'s agents.
+    #[doc(hidden)]
     pub fn footer_floor(&self, scene: &SceneState) -> Option<FooterFloor> {
         footer_floor(self.footer_floor_index(), self.n_floors, scene.agents.len())
     }
 
     /// The scene the footer counts and tallies: its floor's, as
     /// [`FooterInputs::new`](crate::footer::FooterInputs::new) asks.
+    #[doc(hidden)]
     pub fn footer_scene(&self, scene: &SceneState) -> SceneState {
         super::project_floor_scene(scene, self.footer_floor_index()).0
     }
@@ -581,6 +592,7 @@ impl OfficeSession {
     /// painter draws holds one frame per beat
     /// (`both_painters_paint_one_frame_per_beat`), so a painter may sleep to the
     /// next beat only while this is false.
+    #[doc(hidden)]
     pub fn moves_off_beat(&self) -> bool {
         self.views[self.nav.current()].moves_off_beat()
     }

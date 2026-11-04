@@ -7,15 +7,39 @@ use std::time::SystemTime;
 
 use pixtuoid_core::AgentId;
 
-use crate::display::{HoverTarget, PetHover};
-use crate::layout::{Bounds, SceneLayout};
+use pixtuoid_core::source::daemon::DaemonInstanceKey;
+
+use crate::layout::{Bounds, Point, SceneLayout};
 use crate::pet::{PetKind, PetState};
 
 /// The project repository: `Cargo.toml`'s `repository`, its one spelling.
+#[doc(hidden)]
 pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
 /// Where the coffee machine links.
 pub(crate) const COFFEE_URL: &str = "https://buymeacoffee.com/IvanWng97";
+
+/// Who a hover names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HoverTarget {
+    /// An agent's character.
+    Agent(AgentId),
+    /// The floor's pet.
+    Pet(PetHover),
+    /// A gateway's mascot.
+    Mascot(DaemonInstanceKey),
+}
+
+/// The pet as hovered: what its tooltip says and where petting holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PetHover {
+    /// Which pet.
+    pub kind: PetKind,
+    /// Its centre, in logical units.
+    pub centre: Point,
+    /// The animation it shows.
+    pub anim: crate::pack::Piece,
+}
 
 /// What an area shows the pointer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +55,7 @@ pub enum SceneHit<'a> {
 }
 
 /// What a press does: what the painter carries out.
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HitAction {
     /// Raise the agent's terminal.
@@ -45,6 +70,7 @@ impl SceneHit<'_> {
     /// What a press on it does at `now`, with `petting` the last one; `None`
     /// where it does nothing — a fixture, a mascot, a pet mid-petting — and a
     /// painter treats the press as on the bare office.
+    #[doc(hidden)]
     pub fn action(self, petting: Option<&PetState>, now: SystemTime) -> Option<HitAction> {
         match self {
             Self::Figure(&HoverTarget::Agent(id)) => Some(HitAction::Focus(id)),
@@ -61,6 +87,7 @@ impl SceneHit<'_> {
 /// What `area` (in layout units) shows: `figure`, the topmost hover there,
 /// else the board's `star`, else the coffee machine, else a labelled fixture
 /// of `layout`.
+#[doc(hidden)]
 pub fn scene_hit<'a>(
     figure: Option<&'a HoverTarget>,
     star: Option<Bounds>,
@@ -107,7 +134,7 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let cat = HoverTarget::Pet(crate::display::PetHover {
+        let cat = HoverTarget::Pet(crate::hit::PetHover {
             kind: crate::pet::PetKind::Cat,
             centre: crate::layout::Point { x: mid.x, y: mid.y },
             anim: crate::pack::Piece::CatWalk,

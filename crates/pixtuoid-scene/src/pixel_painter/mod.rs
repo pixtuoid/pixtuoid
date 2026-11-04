@@ -10,10 +10,11 @@ use crate::sprite::format::Density;
 use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::{AgentSlot, SceneState};
 
-use crate::display::{Badge, Hover, HoverTarget, Hovers, TextRun};
+use crate::display::{Badge, Hover, Hovers, TextRun};
 #[cfg(test)]
 use crate::floor::VacancyDim;
 use crate::frame_cache::FrameCache;
+use crate::hit::HoverTarget;
 use crate::layout::{Depth, Facing, FixtureKind, Pivot, SceneLayout, StationArt};
 use crate::sim::pack_frame_size;
 use crate::walk::WalkState;

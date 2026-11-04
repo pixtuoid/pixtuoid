@@ -2,8 +2,8 @@
 
 use pixtuoid_scene::sprite::{Rgb, RgbBuffer};
 
-use pixtuoid_scene::cutaway::canvas::Dirty;
 use pixtuoid_scene::layout::Bounds;
+use pixtuoid_scene::look::Dirty;
 use pixtuoid_scene::render_scale::PixelFit;
 
 use super::overlays::OverlayLayers;

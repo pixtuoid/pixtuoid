@@ -32,10 +32,8 @@
 // AGENTS.md's org rules, as a lint: no `unwrap()` outside tests.
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
-#[doc(hidden)]
 pub mod anim;
 pub(crate) mod atmosphere;
-#[doc(hidden)]
 pub mod audio;
 pub mod badge;
 #[doc(hidden)]
@@ -47,7 +45,6 @@ pub mod chitchat;
 pub(crate) mod clouds;
 pub(crate) mod composite;
 pub(crate) mod creatures;
-#[doc(hidden)]
 pub mod hit;
 #[doc(hidden)]
 pub mod interact;
@@ -77,7 +74,6 @@ pub mod nameplate;
 #[doc(hidden)]
 pub mod neon_sign;
 pub(crate) mod outside;
-#[doc(hidden)]
 pub mod screen;
 #[cfg(test)]
 mod site;
@@ -108,10 +104,9 @@ pub mod tooltip;
 pub mod walk;
 pub mod walkable;
 
-/// The repos (cwd basenames) the demo agents work in: pixtuoid-web's hero
-/// cast takes one each, in order, and the `snapshot` and `cutaway_snapshot`
-/// examples' casts cycle the first [`DEMO_TEAMS`].
-#[doc(hidden)]
+/// The repos (cwd basenames) every demo cast works in, so the site's hero, the
+/// App's demo and the snapshot examples show one office: pixtuoid-web's cast
+/// takes one each, in order, and the examples' casts cycle the first few.
 pub const DEMO_REPOS: &[&str] = &[
     "api", "web", "infra", "data", "cli", "docs", "etl", "tests", "ml", "research", "embedded",
 ];

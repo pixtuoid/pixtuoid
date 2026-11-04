@@ -14,6 +14,7 @@ use crate::display::light::Ambient;
 use crate::display::{Backdrop, Hovers, Office, Recolours, Showing, Span, compose};
 use crate::floor::SteppedFloor;
 use crate::layout::Bounds;
+use crate::look::Dirty;
 use crate::render_scale::RenderScale;
 
 /// A cutaway painter's frame buffer and what it shows, for one pack.
@@ -83,30 +84,6 @@ impl Repaint {
     }
 }
 
-/// Where a frame's pixels may differ from the frame before.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Dirty {
-    /// Anywhere.
-    All,
-    /// Only inside these, in buffer pixels on whole layout cells.
-    Rects(Rects),
-    /// Nowhere: its pixels are the frame before's.
-    Unchanged,
-}
-
-/// The rects a frame may differ inside: never none, which is
-/// [`Dirty::Unchanged`], so a consumer that skips on it skips every unchanged
-/// frame.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rects(Vec<Bounds>);
-
-impl Rects {
-    /// Each rect, in buffer pixels on whole layout cells.
-    pub fn as_slice(&self) -> &[Bounds] {
-        &self.0
-    }
-}
-
 /// The most passes one frame's rects are painted in: a pass has a fixed cost,
 /// so many small ones outrun the whole repaint, and one bounding box over
 /// rects far apart paints most of the frame.
@@ -155,17 +132,6 @@ fn passes(rects: &[Bounds], max: usize) -> Vec<Bounds> {
         alive -= 1;
     }
     boxes.into_iter().flatten().collect()
-}
-
-impl Dirty {
-    /// Only inside `rects`: [`Self::Unchanged`] when there are none.
-    pub fn within(rects: Vec<Bounds>) -> Self {
-        if rects.is_empty() {
-            Self::Unchanged
-        } else {
-            Self::Rects(Rects(rects))
-        }
-    }
 }
 
 /// What every pixel of a frame is painted under, beyond its pieces and the
@@ -383,9 +349,10 @@ mod tests {
     use super::*;
     use crate::anim::Motion;
     use crate::cutaway::paint::render_cutaway;
+    use crate::display::PieceKind;
     use crate::display::compose::tests::{empty_frame, lively_office, sit_down};
-    use crate::display::{HoverTarget, PieceKind};
     use crate::floor::FloorMeta;
+    use crate::hit::HoverTarget;
     use crate::layout::SceneLayout;
     use crate::pack::test_office;
     use crate::sim::SimFrame;

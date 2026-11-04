@@ -9,8 +9,8 @@ use std::time::SystemTime;
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::daemon::DaemonInstanceKey;
 
-use crate::display::{HoverTarget, PetHover};
 use crate::hit::{HitAction, SceneHit};
+use crate::hit::{HoverTarget, PetHover};
 use crate::layout::Point;
 use crate::pet::{PetKind, PetState};
 

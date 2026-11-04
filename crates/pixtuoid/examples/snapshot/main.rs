@@ -368,7 +368,7 @@ fn figure_target(
     scene: &SceneState,
     drawn: Option<&pixtuoid_scene::look::Hits>,
 ) -> Result<Option<pixtuoid_scene::layout::Point>> {
-    use pixtuoid_scene::display::HoverTarget;
+    use pixtuoid_scene::hit::HoverTarget;
     let centre = |who: &dyn Fn(&HoverTarget) -> bool| {
         let (_, at) = drawn?.figures().find(|(target, _)| who(target))?;
         Some(pixtuoid_scene::layout::Point {
@@ -917,7 +917,7 @@ mod tests {
     /// in, and an agent of the scene the frame left out fails loudly.
     #[test]
     fn crop_agent_centres_on_its_agents_drawn_box() {
-        use pixtuoid_scene::display::HoverTarget;
+        use pixtuoid_scene::hit::HoverTarget;
         let now = SystemTime::now();
         let scene = sample_scene(now, 12, 12);
         let drawn = |scene: &SceneState| {
