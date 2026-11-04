@@ -1397,7 +1397,7 @@ fn paint_clock(
         (hour, CLOCK_HOUR_HAND_SHARE),
         (minute, CLOCK_MINUTE_HAND_SHARE),
     ] {
-        let (sin, cos) = (turn * std::f32::consts::TAU).sin_cos();
+        let (sin, cos) = libm::sincosf(turn * std::f32::consts::TAU);
         for step in 1..=(face * share) as i32 {
             let t = step as f32;
             dot(
