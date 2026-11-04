@@ -132,7 +132,9 @@ unicode-segmentation = "1"
 syn                = { version = "3", default-features = false, features = ["full", "parsing", "visit"] }
 proc-macro2        = { version = "1", default-features = false }
 clap               = { version = "4", features = ["derive"] }
-palette            = { version = "0.7", default-features = false, features = ["std"] }
+# `libm`, not `std`, so its float math goes through the `libm` below.
+palette            = { version = "0.7", default-features = false, features = ["libm"] }
+libm               = "0.2"
 chrono             = { version = "0.4", default-features = false }
 foldhash           = { version = "0.2", default-features = false }
 image              = { version = "0.25", default-features = false, features = ["png"] }
