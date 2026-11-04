@@ -4,8 +4,11 @@
 
 use crate::anim::{Beat, FlashSchedule};
 
-/// How many bursts the sky holds at once, each on its own lane of buckets.
-pub(crate) const LANES: usize = 3;
+/// How many bursts the sky holds at once at most, each on its own lane of
+/// buckets: all of them in a night's finale.
+pub(crate) const LANES: usize = 6;
+/// Of every this many lanes, one fires outside a night's finale.
+const NIGHT_LANE_STRIDE: usize = 2;
 /// A burst's phases in order: its sparks fly out, then fade where they stop.
 const BURST: [BurstPhase; 5] = [
     BurstPhase::Kindle,
@@ -102,12 +105,18 @@ pub(crate) struct Burst {
     pub(crate) hue: Hue,
 }
 
-/// The bursts in the sky on `beat` of a night lit in `hues`; none at rest.
-pub(crate) fn bursts_at(beat: Beat, hues: &[Hue]) -> [Option<Burst>; LANES] {
+/// The bursts in the sky on `beat` of a night lit in `hues`, every lane firing
+/// a burst that starts while `finale` holds of its wall ms; none at rest.
+pub(crate) fn bursts_at(
+    beat: Beat,
+    hues: &[Hue],
+    finale: impl Fn(u64) -> bool,
+) -> [Option<Burst>; LANES] {
     std::array::from_fn(|lane| {
         if beat.is_rest() {
             return None;
         }
+        let in_night = lane.is_multiple_of(NIGHT_LANE_STRIDE);
         let lane = lane as u64;
         let ms = beat
             .ms()
@@ -115,6 +124,9 @@ pub(crate) fn bursts_at(beat: Beat, hues: &[Hue]) -> [Option<Burst>; LANES] {
         let bucket = BURSTS.bucket(ms);
         let mut draws = crate::Rng::new(bucket.wrapping_mul(LANES as u64).wrapping_add(lane));
         let start = BURSTS.start(bucket, draws.draw());
+        if !in_night && !finale(beat.wall_ms(start + lane * BURSTS.period_ms / LANES as u64)) {
+            return None;
+        }
         let phase = *BURST.get(BURSTS.phase(ms, start)?)?;
         Some(Burst {
             x: draws.between(X_MARGIN, 1.0 - X_MARGIN),
@@ -140,7 +152,7 @@ mod tests {
         for lane in 0..LANES {
             let phases: Vec<_> = (0..BUCKETS * BURSTS.period_ms)
                 .step_by(BURSTS.phase_ms as usize)
-                .map(|ms| bursts_at(Beat::at_ms(ms), &HUES)[lane].map(|b| b.phase))
+                .map(|ms| bursts_at(Beat::at_ms(ms), &HUES, |_| true)[lane].map(|b| b.phase))
                 .collect();
             let mut runs: Vec<&[Option<BurstPhase>]> =
                 phases.chunk_by(|a, b| a.is_some() == b.is_some()).collect();
@@ -165,12 +177,34 @@ mod tests {
         }
     }
 
+    /// Outside a finale only every other lane fires, and in one every lane.
+    #[test]
+    fn a_finale_fires_every_lane_and_a_night_every_other() {
+        let fired = |finale: bool| {
+            let mut lanes = [false; LANES];
+            for ms in (0..20 * BURSTS.period_ms).step_by(BURSTS.phase_ms as usize) {
+                for (lane, b) in bursts_at(Beat::at_ms(ms), &HUES, |_| finale)
+                    .iter()
+                    .enumerate()
+                {
+                    lanes[lane] |= b.is_some();
+                }
+            }
+            lanes
+        };
+        assert_eq!(fired(true), [true; LANES]);
+        assert_eq!(
+            fired(false),
+            std::array::from_fn(|l| l % NIGHT_LANE_STRIDE == 0)
+        );
+    }
+
     /// Nothing fires at rest.
     #[test]
     fn nothing_fires_at_rest() {
         let still = crate::anim::Motion::Still
             .beat(std::time::UNIX_EPOCH + std::time::Duration::from_secs(60));
-        assert_eq!(bursts_at(still, &HUES), [None; LANES]);
+        assert_eq!(bursts_at(still, &HUES, |_| true), [None; LANES]);
     }
 
     /// A burst's heart stands within the glass's margins and the open sky's
@@ -179,7 +213,10 @@ mod tests {
     fn a_burst_opens_over_the_city_in_a_hue_of_the_night() {
         const BUCKETS: u64 = 200;
         for ms in (0..BUCKETS * BURSTS.period_ms).step_by(BURSTS.phase_ms as usize) {
-            for burst in bursts_at(Beat::at_ms(ms), &HUES).into_iter().flatten() {
+            for burst in bursts_at(Beat::at_ms(ms), &HUES, |_| true)
+                .into_iter()
+                .flatten()
+            {
                 assert!((X_MARGIN..=1.0 - X_MARGIN).contains(&burst.x), "{burst:?}");
                 assert!((Y_BAND.0..=Y_BAND.1).contains(&burst.y), "{burst:?}");
                 assert!(HUES.contains(&burst.hue), "{burst:?}");

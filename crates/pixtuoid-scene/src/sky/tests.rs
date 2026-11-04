@@ -1069,8 +1069,9 @@ fn nightfall_begins_when_nightfall_on_says() {
 /// New Year's Eve's bursts through [`Sky::at`], the one pin on the
 /// calendar-to-sky path (painter tests inject bursts with
 /// [`Sky::with_bursts`]): on a moving tier they fire and never flash past
-/// WCAG's three a second, Calm holding each phase a Calm tick; at rest, and
-/// on the night before, none fire.
+/// WCAG's three a second, the midnight finale included, which holds more
+/// bursts at once than the night before it; Calm holds each phase a Calm
+/// tick; at rest, and on the night before, none fire.
 #[test]
 fn new_years_eve_bursts_through_the_sky_on_every_tier() {
     use crate::anim::{
@@ -1078,47 +1079,67 @@ fn new_years_eve_bursts_through_the_sky_on_every_tier() {
         most_flashes_in_a_second,
     };
     const SAMPLED_MS: u64 = HOUR_MS / 2;
-    let eve = |day| {
+    const MINUTE_MS: u64 = 60_000;
+    let at = |day, h, m| {
         let date = chrono::NaiveDate::from_ymd_opt(2026, 12, day).expect("a date");
-        crate::localclock::local_instant(date, 23, 0).expect("a local time")
+        crate::localclock::local_instant(date, h, m).expect("a local time")
     };
     for motion in Motion::ALL {
-        let bursts = |night: SystemTime| {
-            (0..SAMPLED_MS)
+        let bursts = |from: SystemTime, span_ms: u64| {
+            (0..span_ms)
                 .step_by(FULL_TICK_MS as usize)
                 .map(|ms| {
-                    let at = night + Duration::from_millis(ms);
+                    let now = from + Duration::from_millis(ms);
                     (
-                        ms,
-                        Sky::at(motion.timing(at), WeatherPolicy::Clock).bursts(),
+                        now,
+                        Sky::at(motion.timing(now), WeatherPolicy::Clock).bursts(),
                     )
                 })
                 .collect::<Vec<_>>()
         };
-        let lit = bursts(eve(31));
-        let fired = lit.iter().any(|(_, b)| b.iter().any(Option::is_some));
+        let floor = |samples: &[(SystemTime, [Option<fireworks::Burst>; fireworks::LANES])]| {
+            let levels = samples.iter().map(|(now, b)| {
+                let level = b
+                    .iter()
+                    .flatten()
+                    .map(|b| b.phase.strength())
+                    .fold(0.0, f32::max);
+                (crate::anim::epoch_ms(*now), level)
+            });
+            assert!(
+                most_flashes_in_a_second(levels) <= PHOTOSENSITIVE_FLASHES_PER_SECOND,
+                "{motion:?}"
+            );
+        };
+        let night = bursts(at(31, 23, 0), SAMPLED_MS);
+        let fired = night.iter().any(|(_, b)| b.iter().any(Option::is_some));
         assert_eq!(fired, motion != Motion::Still, "{motion:?}");
-        let levels = lit.iter().map(|(ms, b)| {
-            let level = b
+        floor(&night);
+        let midnight = bursts(at(31, 23, 59), 2 * MINUTE_MS);
+        floor(&midnight);
+        let most = |finale: bool| {
+            midnight
                 .iter()
-                .flatten()
-                .map(|b| b.phase.strength())
-                .fold(0.0, f32::max);
-            (*ms, level)
-        });
+                .filter(|(now, _)| crate::holiday::finale_at(*now) == finale)
+                .map(|(_, b)| b.iter().flatten().count())
+                .max()
+                .unwrap_or(0)
+        };
+        if motion != Motion::Still {
+            assert!(
+                most(true) > most(false),
+                "{motion:?}: the finale fills the sky"
+            );
+        }
         assert!(
-            most_flashes_in_a_second(levels) <= PHOTOSENSITIVE_FLASHES_PER_SECOND,
-            "{motion:?}"
-        );
-        assert!(
-            bursts(eve(30))
+            bursts(at(30, 23, 0), SAMPLED_MS)
                 .iter()
                 .all(|(_, b)| b.iter().all(Option::is_none)),
             "{motion:?}"
         );
         if motion == Motion::Calm {
             let held = usize::try_from(CALM_TICK_MS / FULL_TICK_MS).expect("a count");
-            let phases: Vec<_> = lit.iter().map(|(_, b)| b[0].map(|b| b.phase)).collect();
+            let phases: Vec<_> = night.iter().map(|(_, b)| b[0].map(|b| b.phase)).collect();
             let runs: Vec<_> = phases.chunk_by(|a, b| a == b).collect();
             for run in &runs[1..runs.len() - 1] {
                 assert!(

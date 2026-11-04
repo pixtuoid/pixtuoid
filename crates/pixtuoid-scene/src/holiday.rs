@@ -33,6 +33,25 @@ pub(crate) fn fireworks_at(now: std::time::SystemTime) -> Option<&'static [Hue]>
     (local.date() != day || local.time() >= crate::sky::DUSK).then_some(hues)
 }
 
+/// How long before a fireworks night's midnight its finale opens, and how
+/// long after that midnight it ends: the countdown, and the cheer after it.
+const FINALE: (TimeDelta, TimeDelta) = (TimeDelta::seconds(10), TimeDelta::seconds(20));
+
+/// Whether `now` is in a fireworks night's finale, round the midnight its
+/// eve turns at, when every lane of its fireworks fires.
+pub(crate) fn finale_at(now: std::time::SystemTime) -> bool {
+    let local = crate::localclock::local_time(now);
+    let day = festive_day(local);
+    let Some(midnight) = day
+        .succ_opt()
+        .map(|next| next.and_time(chrono::NaiveTime::MIN))
+    else {
+        return false;
+    };
+    Holiday::on(day).is_some_and(|h| h.fireworks(day).is_some())
+        && (midnight - FINALE.0..midnight + FINALE.1).contains(&local)
+}
+
 /// A holiday the office keeps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray)]
 enum Holiday {
@@ -251,6 +270,31 @@ mod tests {
         assert_eq!(Occasion::at(local_at(2027, 1, 1, before)), christmas);
         assert_eq!(Occasion::at(local_at(2027, 1, 1, at)), Occasion::default());
         assert_eq!(Occasion::at(Occasion::christmas_noon()), christmas);
+    }
+
+    /// The local instant `offset` from the midnight `y-m-d` turns at, to the
+    /// second.
+    fn round_midnight(y: i32, m: u32, d: u32, offset: TimeDelta) -> SystemTime {
+        let midnight = NaiveDate::from_ymd_opt(y, m, d)
+            .expect("a date")
+            .and_time(chrono::NaiveTime::MIN);
+        let at = midnight + offset;
+        let instant = crate::localclock::local_instant(at.date(), at.hour(), at.minute())
+            .expect("a local time");
+        instant + std::time::Duration::from_secs(u64::from(at.second()))
+    }
+
+    /// New Year's finale runs from [`FINALE`]'s lead before its midnight to
+    /// its tail after, and on no other night's midnight.
+    #[test]
+    fn new_years_finale_runs_round_its_midnight() {
+        let second = TimeDelta::seconds(1);
+        let at = |offset| finale_at(round_midnight(2027, 1, 1, offset));
+        assert!(!at(-FINALE.0 - second));
+        assert!(at(-FINALE.0));
+        assert!(at(FINALE.1 - second));
+        assert!(!at(FINALE.1));
+        assert!(!finale_at(round_midnight(2026, 12, 31, TimeDelta::zero())));
     }
 
     /// New Year's fireworks burst from local dusk on Dec 31 until the night

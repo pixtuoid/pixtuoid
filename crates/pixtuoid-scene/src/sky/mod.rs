@@ -799,7 +799,9 @@ impl Sky {
         let weather = policy.weather_at(now);
         let strike = strike_phase_at(timing.beat, policy);
         let bursts = crate::holiday::fireworks_at(now).map_or([None; fireworks::LANES], |hues| {
-            fireworks::bursts_at(timing.beat, hues)
+            fireworks::bursts_at(timing.beat, hues, |wall_ms| {
+                crate::holiday::finale_at(SystemTime::UNIX_EPOCH + Duration::from_millis(wall_ms))
+            })
         });
         tracing::trace!(weather = ?weather, strike = ?strike, nightfall, "sky.at");
         Self {
