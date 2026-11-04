@@ -210,8 +210,16 @@ fn validate_loops(pack: &Pack, loops: &[(Piece, usize)], beat_ms: u64) -> Valida
         plant,
     } in crate::holiday::every_stand_in()
     {
-        let canvas = |s: &Sprite| s.frames().first().map(|f| (f.width(), f.height()));
-        if canvas(pack.piece(stand_in)) != canvas(pack.piece(plant)) {
+        // A variant's frames are its base's times its density, which the
+        // load holds, so the base's frames are every density's.
+        let canvas = |f: &Frame| (f.width(), f.height());
+        let plant_canvas = canvas(pack.piece(plant).first());
+        if pack
+            .piece(stand_in)
+            .frames()
+            .iter()
+            .any(|f| canvas(f) != plant_canvas)
+        {
             report.misfit_stand_ins.push(stand_in.name().to_string());
         }
         let drawn = pack.variants_of(stand_in);
@@ -404,9 +412,9 @@ mod tests {
         }
     }
 
-    /// A stand-in on a canvas other than its plant's, or missing a density
-    /// its plant is drawn at, is reported; one on its plant's canvas at each
-    /// of its plant's densities is not.
+    /// A stand-in with any frame on a canvas other than its plant's, or
+    /// missing a density its plant is drawn at, is reported; one on its
+    /// plant's canvas in every frame at each of its plant's densities is not.
     #[test]
     fn a_stand_in_off_its_plants_canvas_is_reported() {
         let fitted = pack_with_frames(
@@ -429,6 +437,15 @@ mod tests {
         assert_eq!(
             validate_loops(&misfit, &[], 0).misfit_stand_ins,
             ["christmas_tree", "christmas_tree@2x"]
+        );
+        let second_off = pack_with_frames(
+            "[animations.plant_tall]\nframes=[\"two.sprite\"]\nframe_ms=100\n\
+             [animations.christmas_tree]\nframes=[\"two.sprite\", \"one.sprite\"]\nframe_ms=100\n",
+            SIZED_FRAMES,
+        );
+        assert_eq!(
+            validate_loops(&second_off, &[], 0).misfit_stand_ins,
+            ["christmas_tree"]
         );
     }
 
