@@ -4271,16 +4271,18 @@ fn chair_sitter_bottom_row_lands_on_its_sort_row_overlapping_the_chair_body() {
     );
 }
 
-/// Paint a plant drawn as `art` at `ms` past the epoch, moving as `motion`
-/// says.
-fn plant_at(art: Piece, motion: Motion, ms: u64) -> Vec<Rgb> {
+/// Paint `art` at `ms` past the epoch, moving as `motion` says, as a plant
+/// or as an aisle's decor.
+fn plant_at(art: Piece, motion: Motion, ms: u64, in_aisle: bool) -> Vec<Rgb> {
     let pack = crate::pack::test_office();
     let mut cache = FrameCache::new();
     let mut buf = RgbBuffer::filled(40, 40, Rgb { r: 1, g: 2, b: 3 });
+    let pos = Point { x: 20, y: 20 };
     paint_drawable(
-        &DrawableKind::Plant {
-            art,
-            pos: Point { x: 20, y: 20 },
+        &if in_aisle {
+            DrawableKind::PodDecorItem { art, pos }
+        } else {
+            DrawableKind::Plant { art, pos }
         },
         &mut super::drawable::DrawableCtx {
             buf: &mut buf,
@@ -4294,7 +4296,7 @@ fn plant_at(art: Piece, motion: Motion, ms: u64) -> Vec<Rgb> {
 }
 
 /// A stand-in's loop steps on the beat, one frame each `frame_ms`, and holds
-/// its first frame at rest.
+/// its first frame at rest, as a plant and in an aisle.
 #[test]
 fn a_stand_in_steps_its_loop_and_holds_still_at_rest() {
     let step = u64::from(
@@ -4302,10 +4304,24 @@ fn a_stand_in_steps_its_loop_and_holds_still_at_rest() {
             .piece(Piece::ChristmasTree)
             .frame_ms(),
     );
-    let tree = |motion, ms| plant_at(Piece::ChristmasTree, motion, ms);
-    assert_ne!(tree(Motion::Full, 0), tree(Motion::Full, step));
-    assert_eq!(tree(Motion::Full, 0), tree(Motion::Full, 2 * step));
-    assert_eq!(tree(Motion::Still, 0), tree(Motion::Still, step));
+    for in_aisle in [false, true] {
+        let tree = |motion, ms| plant_at(Piece::ChristmasTree, motion, ms, in_aisle);
+        assert_ne!(
+            tree(Motion::Full, 0),
+            tree(Motion::Full, step),
+            "{in_aisle}"
+        );
+        assert_eq!(
+            tree(Motion::Full, 0),
+            tree(Motion::Full, 2 * step),
+            "{in_aisle}"
+        );
+        assert_eq!(
+            tree(Motion::Still, 0),
+            tree(Motion::Still, step),
+            "{in_aisle}"
+        );
+    }
 }
 
 /// The classic queues each plant and aisle piece in the art its frame's
@@ -4334,7 +4350,7 @@ fn the_classic_draws_each_plant_in_its_occasions_art() {
                 .collect();
             let want: Vec<Piece> = layout
                 .fixtures()
-                .filter_map(|f| f.kind.replaceable_piece())
+                .filter_map(|f| f.kind.occasion_piece())
                 .map(|p| occasion.art(p))
                 .collect();
             assert_eq!(drawn, want);

@@ -862,7 +862,7 @@ fn queued_at(
 #[test]
 fn the_cutaway_draws_each_plant_in_its_occasions_art() {
     let pack = test_office();
-    let replaceable = |k: FixtureKind| k.replaceable_piece().is_some();
+    let drawn_on_occasion = |k: FixtureKind| k.occasion_piece().is_some();
     for now in [
         crate::localclock::at_hour(12),
         crate::holiday::Occasion::christmas_noon(),
@@ -875,7 +875,7 @@ fn the_cutaway_draws_each_plant_in_its_occasions_art() {
                 &pack,
                 RenderScale::ONE,
                 &[],
-                replaceable,
+                drawn_on_occasion,
                 (timing, occasion),
             )
             .into_iter()
@@ -887,13 +887,51 @@ fn the_cutaway_draws_each_plant_in_its_occasions_art() {
             .collect();
             let want: Vec<(PackPiece, bool)> = layout
                 .fixtures()
-                .filter_map(|f| f.kind.replaceable_piece())
+                .filter_map(|f| f.kind.occasion_piece())
                 .map(|p| occasion.art(p))
                 .map(|p| (p, pack.piece(p).frames().len() > 1))
                 .collect();
             assert_eq!(drawn, want);
         }
     }
+}
+
+/// The cutaway steps each looping stand-in a frame each of its `frame_ms`.
+#[test]
+fn the_cutaway_steps_each_looping_stand_in_on_the_beat() {
+    let pack = test_office();
+    let now = crate::holiday::Occasion::christmas_noon();
+    let occasion = crate::holiday::Occasion::at(now);
+    let step =
+        std::time::Duration::from_millis(pack.piece(PackPiece::ChristmasTree).frame_ms().into());
+    let mut looping = 0;
+    for layout in crate::layout::roster::tests::offices() {
+        let frames = |at| {
+            let on = (Motion::Full.timing(at), occasion);
+            queued_at(
+                &layout,
+                &pack,
+                RenderScale::ONE,
+                &[],
+                |k| k.occasion_piece().is_some(),
+                on,
+            )
+            .into_iter()
+            .filter_map(|(_, kind)| match kind {
+                PieceKind::Animated { art, .. } => Some(art.frame),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+        };
+        let (then, next) = (frames(now), frames(now + step));
+        assert_eq!(then.len(), next.len());
+        assert!(
+            then.iter().zip(&next).all(|(a, b)| a != b),
+            "{then:?} -> {next:?}"
+        );
+        looping += then.len();
+    }
+    assert!(looping > 0, "some office loops a stand-in");
 }
 
 fn near_seat(desk: crate::layout::Point) -> crate::layout::Point {

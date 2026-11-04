@@ -252,10 +252,9 @@ pub enum FixtureKind {
 }
 
 impl FixtureKind {
-    /// The piece a holiday's stand-in may replace, where it draws one: a
-    /// plant's or an aisle's, which both painters draw in
-    /// [`Occasion::art`](crate::holiday::Occasion::art).
-    pub(crate) fn replaceable_piece(self) -> Option<crate::pack::Piece> {
+    /// The piece it draws through [`Occasion::art`](crate::holiday::Occasion::art),
+    /// where it draws one: a plant's or an aisle's, in both painters.
+    pub(crate) fn occasion_piece(self) -> Option<crate::pack::Piece> {
         match self {
             FixtureKind::Plant { kind, .. } => Some(kind.piece()),
             FixtureKind::Pod { kind, .. } => Some(kind.piece()),
@@ -267,7 +266,7 @@ impl FixtureKind {
     /// be noise.
     pub(crate) fn hover_label(self, occasion: crate::holiday::Occasion) -> Option<&'static str> {
         if let Some(label) = self
-            .replaceable_piece()
+            .occasion_piece()
             .and_then(|p| stand_in_label(occasion.art(p)))
         {
             return Some(label);

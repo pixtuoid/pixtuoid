@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use chrono::{Datelike, Month, NaiveDate};
 use strum::VariantArray;
 
+use crate::layout::PlantKind;
 use crate::pack::Piece;
 
 /// A holiday the office keeps.
@@ -42,26 +43,28 @@ impl Holiday {
 pub(crate) struct StandIn {
     /// The piece drawn.
     pub(crate) art: Piece,
-    /// The plant it is drawn instead of.
-    pub(crate) plant: Piece,
+    /// The plant it is drawn instead of: a plant's piece is drawn only
+    /// through [`Occasion::art`], where another, a whiteboard's, is drawn by
+    /// a wall's decor too.
+    pub(crate) plant: PlantKind,
 }
 
 const CHRISTMAS_STAND_INS: [StandIn; 4] = [
     StandIn {
         art: Piece::ChristmasTree,
-        plant: Piece::PlantTall,
+        plant: PlantKind::Tall,
     },
     StandIn {
         art: Piece::ChristmasTreeShort,
-        plant: Piece::Plant,
+        plant: PlantKind::Ficus,
     },
     StandIn {
         art: Piece::Poinsettia,
-        plant: Piece::PlantFlower,
+        plant: PlantKind::Flower,
     },
     StandIn {
         art: Piece::Presents,
-        plant: Piece::PlantSucculent,
+        plant: PlantKind::Succulent,
     },
 ];
 
@@ -101,7 +104,7 @@ impl Occasion {
     /// The art `piece` is drawn in: its holiday's stand-in for it, else itself.
     pub(crate) fn art(self, piece: Piece) -> Piece {
         self.0
-            .and_then(|h| h.stand_ins().iter().find(|s| s.plant == piece))
+            .and_then(|h| h.stand_ins().iter().find(|s| s.plant.piece() == piece))
             .map_or(piece, |s| s.art)
     }
 }
@@ -130,33 +133,12 @@ mod tests {
     fn a_holiday_stands_in_for_its_pieces_and_leaves_the_rest() {
         let christmas = Occasion(Some(Holiday::Christmas));
         for &StandIn { art, plant } in Holiday::Christmas.stand_ins() {
-            assert_eq!(christmas.art(plant), art);
-            assert_eq!(Occasion::default().art(plant), plant);
+            assert_eq!(christmas.art(plant.piece()), art);
+            assert_eq!(Occasion::default().art(plant.piece()), plant.piece());
         }
         assert_eq!(christmas.art(Piece::Desk), Piece::Desk);
     }
 
-    /// Each stand-in replaces a plant: a plant's piece is drawn only by the
-    /// fixtures both painters draw in a holiday's art
-    /// (`FixtureKind::replaceable_piece`), where another piece, a whiteboard,
-    /// is drawn by a wall's decor too, which neither does.
-    #[test]
-    fn each_stand_in_replaces_a_plant() {
-        use crate::layout::PlantKind;
-        for s in every_stand_in() {
-            assert!(
-                PlantKind::ALL.iter().any(|k| k.piece() == s.plant),
-                "{}",
-                s.art.name()
-            );
-        }
-    }
-
-    /// Every stand-in a holiday draws that loops changes frames no faster than
-    /// the flash floor: each frame holds
-    /// [`PHOTOSENSITIVE_PHASE_MIN_MS`](crate::anim::PHOTOSENSITIVE_PHASE_MIN_MS),
-    /// and a second of its loop, each frame change a full swing, stays within
-    /// WCAG's three flashes.
     #[test]
     fn every_looping_stand_in_flashes_within_the_photosensitive_floor() {
         use crate::anim::{

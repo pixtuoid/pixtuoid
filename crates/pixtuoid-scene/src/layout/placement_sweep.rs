@@ -111,7 +111,7 @@ fn every_office_shows_each_holiday() {
         for occasion in crate::holiday::Occasion::of_each_holiday() {
             let shows = l
                 .fixtures()
-                .filter_map(|f| f.kind.replaceable_piece())
+                .filter_map(|f| f.kind.occasion_piece())
                 .any(|p| occasion.art(p) != p);
             assert!(shows, "{w}x{h} seed {seed} shows nothing of {occasion:?}");
         }

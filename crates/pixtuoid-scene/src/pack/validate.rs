@@ -213,6 +213,7 @@ fn validate_loops(pack: &Pack, loops: &[(Piece, usize)], beat_ms: u64) -> Valida
         // A variant's frames are its base's times its density, which the
         // load holds, so the base's frames are every density's.
         let canvas = |f: &Frame| (f.width(), f.height());
+        let plant = plant.piece();
         let plant_canvas = canvas(pack.piece(plant).first());
         if pack
             .piece(stand_in)
