@@ -383,14 +383,23 @@ pub(super) fn compute(
     let desk_points: Vec<Point> = pod_desks.iter().map(|d| d.at).collect();
 
     let desk_art: Vec<(Point, Size)> = desk_fixtures(desk_points.iter().copied(), inner.bottom())
-        .chain(desk_chair_fixtures(&pod_desks))
+        .chain(desk_chair_fixtures(&pod_desks, inner))
         .map(|f| art_rect(f.visual))
         .collect();
     let pod_decor = compute_pod_decor(plan.pod_grid, floor_seed, &desk_art);
 
     // Dense's inter-meeting wall is deliberately solid (#557 door policy).
-    let (room_walls, doorways) =
+    let (mut room_walls, doorways) =
         super::rooms::walls::derive_room_walls(&plan.meeting_rooms, plan.pantry);
+    // The strips under the insets are floor inside the rooms, so a wall that
+    // runs to the floor's edge runs on to the canvas's.
+    for seg in &mut room_walls {
+        match seg {
+            WallSegment::Vertical { y1, .. } if *y1 == inner.bottom() => *y1 = buf_h,
+            WallSegment::Horizontal { x0, .. } if *x0 == inner.x => *x0 = 0,
+            WallSegment::Vertical { .. } | WallSegment::Horizontal { .. } => {}
+        }
+    }
 
     // Elevator door — in the window wall's last slot; above the lounge gate so
     // that gate can check couch↔door clearance.
@@ -574,7 +583,7 @@ pub(super) fn compute(
             &desk_art,
             &waypoints,
             &obstacles,
-            &plan.pod_grid.band,
+            (&plan.pod_grid.band, plan.inner),
             floor_seed,
         ) {
             plants.push(settled);
@@ -616,7 +625,7 @@ pub(super) fn compute(
         // South is where the demotion pass below retreats, so a reachable south seat
         // proves no decor arrangement strands a desk.
         let stranded = desk_points.iter().any(|&d| {
-            let chair = desk_walk_anchor_facing(d, crate::layout::Facing::South);
+            let chair = desk_walk_anchor_facing(d, crate::layout::Facing::South, inner);
             approach_point(
                 Furniture::Desk,
                 chair,
@@ -665,7 +674,7 @@ pub(super) fn compute(
         .map(|&HomeDesk { at, facing }| {
             let facing = if facing == Facing::North && {
                 // `approach_point` returns the probed cell itself as its "no side" sentinel.
-                let chair = desk_walk_anchor_facing(at, facing);
+                let chair = desk_walk_anchor_facing(at, facing, inner);
                 approach_point(
                     Furniture::Desk,
                     chair,
@@ -1039,7 +1048,7 @@ fn settle_plant(
     desk_art: &[(Point, Size)],
     waypoints: &[Waypoint],
     singletons: &[(Point, Size)],
-    band: &Bounds,
+    (band, inner): (&Bounds, Bounds),
     floor_seed: u64,
 ) -> Option<PlantItem> {
     // Clears any single corner appliance without wandering out of the authored corner
@@ -1061,7 +1070,7 @@ fn settle_plant(
         x: p.pos.x.saturating_add_signed(dir * step as i16),
         y: p.pos.y,
     };
-    let seeded = pixtuoid_core::id::splitmix64(floor_seed ^ super::decor::point_seed(p.pos))
+    let seeded = pixtuoid_core::id::splitmix64(floor_seed ^ super::decor::point_seed(p.pos, inner))
         % (u64::from(PLANT_SCATTER_PX) + 1);
     let first = slide(seeded as u16);
     if clear(first) {
@@ -1624,14 +1633,14 @@ fn clears_the_workstations(
     kind: Furniture,
     pos: Point,
     home_desks: &[Point],
-    floor_end: u16,
+    inner: Bounds,
 ) -> bool {
     let art = corridor_art(kind, pos);
-    super::roster::desk_fixtures(home_desks.iter().copied(), floor_end)
+    super::roster::desk_fixtures(home_desks.iter().copied(), inner.bottom())
         .all(|f| !f.visual.overlaps(art))
         && home_desks.iter().all(|&desk| {
             [Facing::North, Facing::South].into_iter().all(|facing| {
-                let foot = desk_walk_anchor_facing(desk, facing);
+                let foot = desk_walk_anchor_facing(desk, facing, inner);
                 let sitter = Bounds {
                     x: foot.x.saturating_sub(CHARACTER_SPRITE_W / 2),
                     y: foot.y.saturating_sub(WALKING_Y_OFF),
@@ -1664,7 +1673,7 @@ fn vending_spot(
     west: u16,
     stride: u16,
     home_desks: &[Point],
-    floor_end: u16,
+    inner: Bounds,
 ) -> Option<Point> {
     let fits = aisle.height >= VENDING_MIN_AISLE_H && aisle.width > VENDING_MIN_AISLE_W;
     let art = furniture_def(Furniture::VendingMachine).visual;
@@ -1674,7 +1683,7 @@ fn vending_spot(
             x: west + VENDING_WEST_GAP + art.w / 2 + dx,
             y: corridor_centre_y(aisle, art.h),
         })
-        .find(|&p| clears_the_workstations(Furniture::VendingMachine, p, home_desks, floor_end))
+        .find(|&p| clears_the_workstations(Furniture::VendingMachine, p, home_desks, inner))
 }
 
 pub(super) const VENDING_MIN_AISLE_H: u16 = 10;
@@ -1746,13 +1755,12 @@ fn compute_waypoints(
         }
     }
 
-    let floor_end = plan.inner.bottom();
     let vending = vending_spot(
         cubicle_aisle,
         right_x,
         pod_grid.stride_x,
         home_desks,
-        floor_end,
+        plan.inner,
     );
     if let Some(vending) = vending {
         waypoints.push(Waypoint {
@@ -1772,7 +1780,7 @@ fn compute_waypoints(
             y: corridor_centre_y(cubicle_aisle, furniture_def(Furniture::Printer).visual.h),
         })
         .find(|&p| {
-            clears_the_workstations(Furniture::Printer, p, home_desks, floor_end)
+            clears_the_workstations(Furniture::Printer, p, home_desks, plan.inner)
                 && vending.is_none_or(|v| {
                     !corridor_art(Furniture::Printer, p)
                         .shares_columns(corridor_art(Furniture::VendingMachine, v))
@@ -1974,7 +1982,7 @@ mod tests {
             height,
         };
         let wide = VENDING_MIN_AISLE_W + 1;
-        let spot = |a| vending_spot(&a, 0, 0, &[], u16::MAX);
+        let spot = |a| vending_spot(&a, 0, 0, &[], crate::layout::BARE_OFFICE);
         assert!(spot(aisle(VENDING_MIN_AISLE_H, wide)).is_some());
         assert_eq!(spot(aisle(VENDING_MIN_AISLE_H - 1, wide)), None);
         assert_eq!(spot(aisle(VENDING_MIN_AISLE_H, VENDING_MIN_AISLE_W)), None);

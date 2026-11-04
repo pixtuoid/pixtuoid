@@ -895,7 +895,7 @@ pub(crate) fn resolve_characters(
         };
         let is_requires_action = matches!(agent.state, ActivityState::RequiresAction { .. });
         let seated = |base: Piece, glow: CharacterGlow, sleep_seed: Option<u64>| {
-            let seat = Seat::at_desk(desk.at, desk.facing);
+            let seat = Seat::at_desk(desk.at, desk.facing, layout.inner);
             let top_left = seat.render_top_left(CHARACTER_SPRITE_W);
             let (anim_name, flip_x) = seat.sprite_for(base);
             let placement = CharacterPlacement {

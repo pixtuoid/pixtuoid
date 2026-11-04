@@ -132,7 +132,7 @@ fn paint_approach(buf: &mut RgbBuffer, layout: &SceneLayout) {
     // can't clear the desk body.
     let desk_def = furniture_def(Furniture::Desk);
     for &crate::layout::HomeDesk { at, facing } in &layout.home_desks {
-        let chair = desk_walk_anchor_facing(at, facing);
+        let chair = desk_walk_anchor_facing(at, facing, layout.inner);
         // SEAT last: the 3x3 blobs overlap when the approach cell lands a pixel off the chair.
         for (dx, dy) in DIRS {
             // The desk's OWN facing, as production reads it — a fixed South here
@@ -237,7 +237,7 @@ mod tests {
         use crate::layout::{Facing, Furniture};
         let l = SceneLayout::compute(crate::layout::Viewport::full(200, 130), Some(8), 0).unwrap();
         let desk = *l.home_desks.first().expect("a home desk");
-        let chair = desk_walk_anchor_facing(desk.at, desk.facing);
+        let chair = desk_walk_anchor_facing(desk.at, desk.facing, l.inner);
         let mut buf = RgbBuffer::filled(l.buf_w, l.buf_h, Rgb { r: 0, g: 0, b: 0 });
         paint_approach(&mut buf, &l);
 

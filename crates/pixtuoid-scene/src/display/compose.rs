@@ -755,7 +755,7 @@ fn push_fixture(
             if carried.contains(&desk.at) {
                 return;
             }
-            if let Some((span, at)) = chair_span(pack, desk.facing, desk.at) {
+            if let Some((span, at)) = chair_span(pack, desk.facing, desk.at, layout.inner) {
                 order.push((span.with_depth(depth), PieceKind::Chair { at }));
             }
         }
@@ -1209,8 +1209,9 @@ fn chair_span(
     pack: &OfficeArt,
     facing: crate::layout::Facing,
     desk: crate::layout::Point,
+    inner: Bounds,
 ) -> Option<(Span, crate::layout::Point)> {
-    let at = crate::layout::desk_chair_top_left(desk, facing)?;
+    let at = crate::layout::desk_chair_top_left(desk, facing, inner)?;
     let (w, h) = art_size(pack, PackPiece::DeskChair);
     let span = piece_span(crate::layout::Pivot::TopLeft, at, w, h, 0)
         .with_depth(crate::layout::desk_chair_sort_row(desk, facing));
@@ -1226,7 +1227,7 @@ fn push_characters(
     (order, badges): (&mut Vec<(Span, PieceKind)>, &mut Vec<crate::display::Badge>),
 ) -> Vec<crate::layout::Point> {
     let Office {
-        layout: _,
+        layout,
         pack,
         theme,
         scale,
@@ -1244,7 +1245,7 @@ fn push_characters(
                 .logical;
         let key = crate::character::character_key(pose, agent, pack, scale, now);
         let seat = c.seat_desk;
-        let chair = seat.and_then(|d| chair_span(pack, d.facing, d.at));
+        let chair = seat.and_then(|d| chair_span(pack, d.facing, d.at, layout.inner));
         if let (Some(d), Some(_)) = (seat, chair) {
             carried.push(d.at);
         }

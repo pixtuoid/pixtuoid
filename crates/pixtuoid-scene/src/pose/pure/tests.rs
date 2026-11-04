@@ -358,7 +358,7 @@ fn exit_override_walks_desk_to_door_within_window() {
             let to = segment.to();
             assert_eq!(
                 from,
-                desk_walk_anchor_facing(desk.at, desk.facing),
+                desk_walk_anchor_facing(desk.at, desk.facing, l.inner),
                 "exit walk starts at desk anchor"
             );
             assert_eq!(to, l.door_threshold, "exit walk targets the door threshold");
@@ -643,7 +643,7 @@ fn aimless_fallback_on_a_fully_blocked_mask_returns_the_desk_anchor() {
             pick_aimless_dest(&l, seed, desk),
             // The desk's OWN facing, not South: the fallback is whatever anchor
             // production would use, and desk 0 is not guaranteed viewer-facing.
-            crate::layout::desk_walk_anchor_facing(desk.at, desk.facing),
+            crate::layout::desk_walk_anchor_facing(desk.at, desk.facing, l.inner),
             "seed {seed}: fully blocked corridor must fall back to the desk anchor"
         );
     }

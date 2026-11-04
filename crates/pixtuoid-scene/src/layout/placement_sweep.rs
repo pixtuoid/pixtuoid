@@ -154,21 +154,27 @@ pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
     }
 }
 
-/// Run `f` over `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size
-/// the area left inside the insets, at production fill.
+/// `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size the area
+/// left inside the insets, with the seed it lays out at.
+fn inset_offices() -> impl Iterator<Item = (Viewport, u64)> {
+    SWEEP_SIZES.iter().flat_map(|&(w, h)| {
+        SWEEP_SEEDS.flat_map(move |seed| {
+            SWEEP_INSETS.map(move |insets| (inset_viewport(w, h, insets), seed))
+        })
+    })
+}
+
+/// `viewport`'s office at `seed`, at production fill.
+fn inset_layout(viewport: Viewport, seed: u64) -> SceneLayout {
+    SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
+        panic!("{viewport:?} seed {seed}: the area inside the insets fell under the floor")
+    })
+}
+
+/// Run `f` over [`inset_offices`], each laid out.
 fn sweep_insets(mut f: impl FnMut(Viewport, u64, &SceneLayout)) {
-    for &(w, h) in SWEEP_SIZES {
-        for seed in SWEEP_SEEDS {
-            for insets in SWEEP_INSETS {
-                let viewport = inset_viewport(w, h, insets);
-                let l = SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
-                    panic!(
-                        "{viewport:?} seed {seed}: the area inside the insets fell under the floor"
-                    )
-                });
-                f(viewport, seed, &l);
-            }
-        }
+    for (viewport, seed) in inset_offices() {
+        f(viewport, seed, &inset_layout(viewport, seed));
     }
 }
 
@@ -976,8 +982,6 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
 /// no-valid-approach sentinel and every leg for the severed desks degrades to a
 /// straight `door→chair` line through furniture.
 fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &SceneLayout) {
-    // A free fn, not a closure: three sweeps share it — the placement seed axis,
-    // the production floor seeds, and the step-1 `NARROW_BAND` width scan.
     use crate::pathfind::find_path;
     let overlay = crate::walkable::OccupancyOverlay::new();
     let door = l.door_threshold;
@@ -1821,14 +1825,17 @@ fn no_two_adjacent_aisle_slots_share_a_kind() {
 #[test]
 fn point_seed_packing_is_frozen() {
     assert_eq!(
-        super::decor::point_seed(Point { x: 1, y: 2 }),
+        super::decor::point_seed(Point { x: 1, y: 2 }, crate::layout::BARE_OFFICE),
         (1u64 << 32) | 2,
         "x occupies the high word and y the low one"
     );
-    assert_eq!(super::decor::point_seed(Point { x: 0, y: 0 }), 0);
+    assert_eq!(
+        super::decor::point_seed(Point { x: 0, y: 0 }, crate::layout::BARE_OFFICE),
+        0
+    );
     assert_ne!(
-        super::decor::point_seed(Point { x: 3, y: 5 }),
-        super::decor::point_seed(Point { x: 5, y: 3 }),
+        super::decor::point_seed(Point { x: 3, y: 5 }, crate::layout::BARE_OFFICE),
+        super::decor::point_seed(Point { x: 5, y: 3 }, crate::layout::BARE_OFFICE),
         "the packing must not be symmetric in x and y"
     );
 }
@@ -1867,7 +1874,7 @@ fn nothing_is_placed_under_an_inset() {
         for (i, d) in l.home_desks.iter().enumerate() {
             outside(
                 format!("desk[{i}]'s seat"),
-                point(desk_walk_anchor_facing(d.at, d.facing)),
+                point(desk_walk_anchor_facing(d.at, d.facing, l.inner)),
             );
         }
         outside("the door's threshold".into(), point(l.door_threshold));
@@ -1891,70 +1898,153 @@ fn nothing_is_placed_under_an_inset() {
     assert_no_violations("inset", v);
 }
 
-/// The floor plan inside insets is the bare office's of the inner size, moved
-/// by them: its zones, rooms, door and its indicator's cell, desks and lounge,
-/// which nothing seeded by its spot moves.
+/// `l` as seen from the north-west corner of its area inside its insets:
+/// every field the layout places, its walls cut at that area's edges.
+fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 9] {
+    let inner = l.inner;
+    let p = |p: Point| Point {
+        x: p.x - inner.x,
+        y: p.y - inner.y,
+    };
+    let b = |b: Bounds| {
+        let tl = p(Point { x: b.x, y: b.y });
+        Bounds {
+            x: tl.x,
+            y: tl.y,
+            ..b
+        }
+    };
+    let (east, south) = (inner.right(), inner.bottom());
+    let walls: Vec<WallSegment> = l
+        .room_walls
+        .iter()
+        .map(|&w| match w {
+            WallSegment::Horizontal { y, x0, x1 } => WallSegment::Horizontal {
+                y: y - inner.y,
+                x0: x0.max(inner.x) - inner.x,
+                x1: x1 - inner.x,
+            },
+            WallSegment::Vertical { x, y0, y1 } => WallSegment::Vertical {
+                x: x - inner.x,
+                y0: y0 - inner.y,
+                y1: y1.min(south) - inner.y,
+            },
+        })
+        .collect();
+    let cells = |f: &dyn Fn(Point) -> bool| -> String {
+        (inner.y..south)
+            .flat_map(|y| (inner.x..east).map(move |x| Point { x, y }))
+            .map(|q| if f(q) { '.' } else { '#' })
+            .collect()
+    };
+    let fixtures: Vec<_> = l
+        .fixtures()
+        .map(|f| {
+            let depth = match f.depth {
+                Depth::Sorted { row, tie } => Depth::Sorted {
+                    row: row - inner.y,
+                    tie,
+                },
+                Depth::Backdrop => Depth::Backdrop,
+            };
+            (f.kind, b(f.visual), depth)
+        })
+        .collect();
+    let waypoints: Vec<_> = l
+        .waypoints
+        .iter()
+        .map(|w| Waypoint {
+            pos: p(w.pos),
+            ..*w
+        })
+        .collect();
+    let desks: Vec<_> = l
+        .home_desks
+        .iter()
+        .map(|d| HomeDesk { at: p(d.at), ..*d })
+        .collect();
+    let zones = (
+        b(l.cubicle_band),
+        b(l.cubicle_aisle),
+        b(l.corridor),
+        l.top_margin - inner.y,
+        p(l.door),
+        p(l.door_threshold),
+    );
+    let rooms: Vec<_> = l.meeting_rooms.iter().map(|r| b(r.bounds)).collect();
+    let pantry = l.pantry.map(|r| (b(r.bounds), r.counter_size));
+    let doorways: Vec<_> = l.doorways.iter().map(|d| (p(d.start), p(d.end))).collect();
+    [
+        ("fixtures", format!("{fixtures:?}")),
+        ("waypoints", format!("{waypoints:?}")),
+        ("desks", format!("{desks:?}")),
+        ("zones", format!("{zones:?}")),
+        ("rooms", format!("{rooms:?}")),
+        ("pantry", format!("{pantry:?}")),
+        ("walls", format!("{walls:?}")),
+        ("doorways", format!("{doorways:?}")),
+        ("walkable", cells(&|q| l.is_walkable(q.x, q.y))),
+    ]
+}
+
+/// An office inside insets is the bare office of the inner size, moved by
+/// them, but for the walls that run on under them: every field it places, so
+/// every placement sweep over a bare office holds for one inside insets too.
+/// Its reach is the coarse routing grid's, which runs from the canvas's corner
+/// whatever the insets, so the route sweeps run inside insets themselves
+/// ([`the_route_sweeps_hold_inside_insets`]).
 #[test]
-fn the_floor_plan_inside_insets_is_the_inner_sizes_moved() {
+fn an_office_inside_insets_is_the_inner_sizes_moved() {
     let mut v = Vec::new();
     sweep_insets(|viewport, seed, l| {
         let inner = viewport.inner().expect("the sweep leaves an area inside");
         let bare = SceneLayout::compute(Viewport::full(inner.width, inner.height), None, seed)
             .expect("the inner size lays out bare");
-        let at = |p: Point| Point {
-            x: p.x + inner.x,
-            y: p.y + inner.y,
-        };
-        let moved = |b: Bounds| {
-            let tl = at(Point { x: b.x, y: b.y });
-            Bounds {
-                x: tl.x,
-                y: tl.y,
-                ..b
-            }
-        };
-        let got = format!(
-            "{:?}",
-            (
-                (l.cubicle_band, l.cubicle_aisle, l.corridor),
-                l.meeting_rooms.iter().map(|r| r.bounds).collect::<Vec<_>>(),
-                l.pantry.map(|p| p.bounds),
-                (
-                    l.top_margin,
-                    l.door,
-                    l.door_threshold,
-                    super::floor_indicator_rows(l.door.y, inner.y).start,
-                ),
-                l.home_desks.iter().map(|d| d.at).collect::<Vec<_>>(),
-                l.lounge.map(|l| l.couch_center),
-            )
-        );
-        let want = format!(
-            "{:?}",
-            (
-                (
-                    moved(bare.cubicle_band),
-                    moved(bare.cubicle_aisle),
-                    moved(bare.corridor)
-                ),
-                bare.meeting_rooms
-                    .iter()
-                    .map(|r| moved(r.bounds))
-                    .collect::<Vec<_>>(),
-                bare.pantry.map(|p| moved(p.bounds)),
-                (
-                    bare.top_margin + inner.y,
-                    at(bare.door),
-                    at(bare.door_threshold),
-                    super::floor_indicator_rows(bare.door.y, 0).start + inner.y,
-                ),
-                bare.home_desks.iter().map(|d| at(d.at)).collect::<Vec<_>>(),
-                bare.lounge.map(|l| at(l.couch_center)),
-            )
-        );
-        if got != want {
-            v.push(format!("{viewport:?} seed {seed}: {got}\n  want {want}"));
+        let fields = from_its_inner_corner(l).into_iter();
+        if let Some(((field, _), _)) = fields
+            .zip(from_its_inner_corner(&bare))
+            .find(|(got, want)| got != want)
+        {
+            v.push(format!("{viewport:?} seed {seed}: its {field} moved off"));
         }
     });
-    assert_no_violations("moved-plan", v);
+    assert_no_violations("moved-office", v);
+}
+
+/// Inside insets, the office is one connected floor its entrant steps onto,
+/// every desk approach routes from the door, every wander leg routes from its
+/// desk, and no route cuts a wall corner.
+#[test]
+#[cfg_attr(
+    coverage,
+    ignore = "an exhaustive sweep outlasts its budget instrumented; the plain suite asserts it on every PR"
+)]
+fn the_route_sweeps_hold_inside_insets() {
+    let offices: Vec<(Viewport, u64)> = inset_offices().collect();
+    let check = |&(viewport, seed): &(Viewport, u64)| {
+        let l = inset_layout(viewport, seed);
+        let Size { w, h } = viewport.size;
+        assert_walkable_connected(w, h, seed, &l);
+        assert_spawn_stands_on_open_floor(w, h, seed, &l);
+        assert_home_desk_approaches_are_routable(w, h, seed, &l);
+        let mut v = corner_routes_through_walls(w, h, seed, &l);
+        v.extend(wander_legs(&l).into_iter().filter_map(|leg| {
+            let Some(path) = &leg.path else {
+                return Some(format!("{viewport:?} seed {seed}: {leg} is unroutable"));
+            };
+            let (p, wall) = route_through_wall(&l, path)?;
+            Some(format!(
+                "{viewport:?} seed {seed}: {leg} passes {p:?} inside {:?}",
+                wall.footprint()
+            ))
+        }));
+        v
+    };
+    // the offices are independent: across the cores nextest reserves for it
+    // (`threads-required` in .config/nextest.toml)
+    let v: Vec<String> = crate::par::map(&offices, crate::par::cores(), check)
+        .into_iter()
+        .flatten()
+        .collect();
+    assert_no_violations("inset-route", v);
 }

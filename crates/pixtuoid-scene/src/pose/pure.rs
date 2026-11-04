@@ -217,7 +217,7 @@ pub(crate) fn derive(slot: &AgentSlot, now: SystemTime, layout: &SceneLayout) ->
         if since_exit < ENTRY_ANIMATION_MS {
             return Some(linear_walk_pose(
                 since_exit,
-                desk_walk_anchor_facing(desk.at, desk.facing),
+                desk_walk_anchor_facing(desk.at, desk.facing, layout.inner),
                 target,
             ));
         }
@@ -236,7 +236,7 @@ pub(crate) fn derive(slot: &AgentSlot, now: SystemTime, layout: &SceneLayout) ->
         return Some(linear_walk_pose(
             since_spawn,
             from,
-            desk_walk_anchor_facing(desk.at, desk.facing),
+            desk_walk_anchor_facing(desk.at, desk.facing, layout.inner),
         ));
     }
 
@@ -374,7 +374,7 @@ pub(crate) fn pick_aimless_dest(layout: &SceneLayout, seed: u64, home_desk: Home
     // Whole midline blocked (degenerate layout): the agent's own desk anchor is
     // a destination every consumer already handles — return it rather than hand
     // out a cell inside furniture.
-    desk_walk_anchor_facing(home_desk.at, home_desk.facing)
+    desk_walk_anchor_facing(home_desk.at, home_desk.facing, layout.inner)
 }
 
 /// The EXCLUSIVE-spot waypoints already spoken for. An exclusive spot holds
@@ -454,7 +454,7 @@ pub(crate) fn resolve_wander_target(
     }
     // Seat foot cell: the walk SETTLES from `dest` onto it and the sprite renders
     // there. `None` for obstacles — the agent stands AT `dest`.
-    let seat = crate::layout::seated_foot_cell(wp.kind.furniture(), wp.pos);
+    let seat = crate::layout::seated_foot_cell(wp.kind.furniture(), wp.pos, layout.inner);
     WanderTarget {
         dest,
         kind: WanderKind::Named {

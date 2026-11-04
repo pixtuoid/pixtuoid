@@ -78,10 +78,10 @@ fn someone_just_south_of_a_variant_desk_sorts_in_front_of_it() {
 fn seated_back_span(pack: &OfficeArt, desk: crate::layout::Point) -> Span {
     use crate::layout::Facing;
     let (w, h) = base_size(pack, PackPiece::SeatedBack);
-    let chair = chair_span(pack, Facing::North, desk).map(|(s, _)| s);
+    let chair = chair_span(pack, Facing::North, desk, crate::layout::BARE_OFFICE).map(|(s, _)| s);
     occupant_span(
         piece_span(crate::layout::Pivot::TopLeft, near_seat(desk), w, h, 0),
-        crate::layout::desk_walk_anchor_facing(desk, Facing::North).y,
+        crate::layout::desk_walk_anchor_facing(desk, Facing::North, crate::layout::BARE_OFFICE).y,
         chair,
     )
 }
@@ -173,7 +173,8 @@ fn a_back_turned_sitter_carries_their_own_chair() {
     );
 
     let desk = north[0];
-    let (chair, _) = chair_span(&pack, crate::layout::Facing::North, desk).expect("a north chair");
+    let (chair, _) =
+        chair_span(&pack, crate::layout::Facing::North, desk, layout.inner).expect("a north chair");
     for anim in [PackPiece::TypingBack, PackPiece::SeatedBack] {
         let (w, h) = base_size(&pack, anim);
         for bob in [0, 1] {
@@ -188,8 +189,12 @@ fn a_back_turned_sitter_carries_their_own_chair() {
                 h,
                 0,
             );
-            let depth =
-                crate::layout::desk_walk_anchor_facing(desk, crate::layout::Facing::North).y;
+            let depth = crate::layout::desk_walk_anchor_facing(
+                desk,
+                crate::layout::Facing::North,
+                layout.inner,
+            )
+            .y;
             let piece = occupant_span(body, depth, Some(chair));
             assert!(
                 piece.depth >= chair.depth
@@ -204,7 +209,7 @@ fn a_back_turned_sitter_carries_their_own_chair() {
         }
     }
     assert!(
-        chair_span(&pack, crate::layout::Facing::South, desk).is_none(),
+        chair_span(&pack, crate::layout::Facing::South, desk, layout.inner).is_none(),
         "a viewer-facing occupant sits in front of their own chair"
     );
 
@@ -223,8 +228,13 @@ fn a_back_turned_sitter_carries_their_own_chair() {
 fn a_chair_sorts_on_the_classic_chair_key() {
     let pack = test_office();
     let desk = crate::layout::Point { x: 20, y: 30 };
-    let (span, _) = chair_span(&pack, crate::layout::Facing::North, desk)
-        .expect("a back-turned desk stands a chair");
+    let (span, _) = chair_span(
+        &pack,
+        crate::layout::Facing::North,
+        desk,
+        crate::layout::BARE_OFFICE,
+    )
+    .expect("a back-turned desk stands a chair");
     assert_eq!(
         span.depth,
         crate::layout::desk_chair_sort_row(desk, crate::layout::Facing::North)
@@ -432,8 +442,9 @@ fn chair_over_person(
         return Some(true);
     }
     let (at, chair_span) =
-        crate::layout::desk_chair_top_left(desk, crate::layout::Facing::North)
-            .zip(chair_span(pack, crate::layout::Facing::North, desk).map(|(s, _)| s))?;
+        crate::layout::desk_chair_top_left(desk, crate::layout::Facing::North, layout.inner).zip(
+            chair_span(pack, crate::layout::Facing::North, desk, layout.inner).map(|(s, _)| s),
+        )?;
     let chair = order
         .iter()
         .position(|(_, k)| matches!(k, PieceKind::Chair { at: a } if *a == at))?;
@@ -953,6 +964,7 @@ fn near_seat(desk: crate::layout::Point) -> crate::layout::Point {
         desk,
         crate::layout::CHARACTER_SPRITE_W,
         crate::layout::Facing::North,
+        crate::layout::BARE_OFFICE,
     )
 }
 

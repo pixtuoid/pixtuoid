@@ -249,6 +249,65 @@ fn snack_shelf_hugs_the_west_wall_and_refuses_narrow_rooms() {
     );
 }
 
+/// The strip under a bottom inset is floor inside the rooms: a room wall that
+/// runs to the floor's south edge runs on to the canvas's.
+#[test]
+fn a_room_wall_to_the_floors_south_edge_runs_on_under_the_bottom_inset() {
+    let insets = Insets {
+        bottom: 12,
+        ..Insets::default()
+    };
+    let mut reached = 0;
+    for seed in 0..12 {
+        let viewport = Viewport {
+            size: Size { w: 240, h: 144 },
+            insets,
+        };
+        let inner = viewport.inner().expect("an office inside");
+        let l = SceneLayout::compute(viewport, None, seed).expect("lays out");
+        for seg in &l.room_walls {
+            if let WallSegment::Vertical { y1, .. } = *seg {
+                assert_ne!(
+                    y1,
+                    inner.bottom(),
+                    "seed {seed}: {seg:?} stops at the floor's south edge"
+                );
+                reached += usize::from(y1 == l.buf_h);
+            }
+        }
+    }
+    assert!(reached > 0, "no wall ran to the floor's south edge");
+}
+
+/// The strip under the west inset is floor inside the rooms too: a room wall
+/// that runs to the floor's west edge runs on to the canvas's.
+#[test]
+fn a_room_wall_to_the_floors_west_edge_runs_on_under_the_west_inset() {
+    let viewport = Viewport {
+        size: Size { w: 240, h: 144 },
+        insets: Insets {
+            left: 9,
+            right: 7,
+            ..Insets::default()
+        },
+    };
+    let inner = viewport.inner().expect("an office inside");
+    let mut reached = 0;
+    for seed in 0..12 {
+        let l = SceneLayout::compute(viewport, None, seed).expect("lays out");
+        for seg in &l.room_walls {
+            if let WallSegment::Horizontal { x0, .. } = *seg {
+                assert_ne!(
+                    x0, inner.x,
+                    "seed {seed}: {seg:?} stops at the floor's west edge"
+                );
+                reached += usize::from(x0 == 0);
+            }
+        }
+    }
+    assert!(reached > 0, "no wall ran to the floor's west edge");
+}
+
 #[test]
 fn dense_inter_meeting_wall_is_solid_with_a_corridor_door_each() {
     // #557 door policy (owner call): two stacked meeting rooms do NOT interconnect
@@ -613,7 +672,7 @@ fn narrow_width_desks_stay_inside_the_band_with_anchors_on_buffer() {
                     "{w}x70 seed {seed}: desk x={} overflows the band's right edge {band_right}",
                     d.at.x
                 );
-                let a = desk_walk_anchor_facing(d.at, crate::layout::Facing::South);
+                let a = desk_walk_anchor_facing(d.at, crate::layout::Facing::South, l.inner);
                 assert!(
                     a.x < l.buf_w && a.y < l.buf_h,
                     "{w}x70 seed {seed}: desk_walk_anchor_facing {a:?} is off-buffer ({}x{})",
@@ -682,7 +741,7 @@ fn every_home_desk_has_a_reachable_approach_on_its_own_far_side() {
              so nothing below probes the gap-side approach"
         );
         for &crate::layout::HomeDesk { at: desk, facing } in &l.home_desks {
-            let chair = desk_walk_anchor_facing(desk, facing);
+            let chair = desk_walk_anchor_facing(desk, facing, l.inner);
             const PROBE_DIST: u16 = 40;
             let origin = match facing {
                 Facing::North => Point {
