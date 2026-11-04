@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, ensure};
-use pixtuoid_core::remote::{self, Answer, Ask, Changed, HEARTBEAT, Hello, Reply, SourceRow};
+use pixtuoid_core::remote::{
+    self, Answer, Ask, Changed, HEARTBEAT, Hello, Reply, SourceRow, VERSION, WireError,
+};
 use serde::Serialize;
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
@@ -110,43 +112,61 @@ impl Devices {
         let (reply, device) = timeout_at(deadline, self.greet(stream))
             .await
             .context("no hello in time")??;
-        write_line(stream, &json_line(&reply)?).await?;
+        write_line(stream, &reply).await?;
         match device {
             Some(device) => self.stream(stream, device).await,
             None => Ok(()),
         }
     }
 
-    /// Read the hello and reply to it. Anything but a verdict ends the connection
-    /// with no reply: that's a retry, where a refusal is a re-pair.
-    async fn greet<S>(&self, stream: &mut S) -> Result<(Reply, Option<Hashed>)>
+    /// Read the hello and return the line that answers it. Anything but a
+    /// verdict or another version ends the connection with no reply: that's a
+    /// retry, where a refusal is a re-pair.
+    async fn greet<S>(&self, stream: &mut S) -> Result<(String, Option<Hashed>)>
     where
         S: AsyncBufRead + Unpin,
     {
         let mut line = Vec::new();
         ensure!(next_line(stream, &mut line).await?, "no hello");
-        // No reply, as when the store can't answer: a newer device's tag is no
-        // reason for it to re-pair.
-        let hello: Hello = serde_json::from_slice(&line).context("an unreadable hello")?;
-        let store = self.store.clone();
-        tokio::task::spawn_blocking(move || match hello {
-            Hello::Pair { code } => Ok(store.redeem(&code, SystemTime::now())?.map_or(
-                (Reply::Refused, None),
-                |token| {
-                    let device = Hashed::of(&token);
-                    (Reply::Paired { token }, Some(device))
-                },
-            )),
-            Hello::Resume { token } => {
-                let device = Hashed::of(&token);
-                Ok(if store.knows(&device)? {
-                    (Reply::Resumed, Some(device))
-                } else {
-                    (Reply::Refused, None)
-                })
+        let hello = match Hello::from_line(&line) {
+            Ok(hello) => hello,
+            // An older device shows its own update line.
+            Err(WireError::Incompatible { v }) => {
+                if v > VERSION {
+                    tracing::warn!(
+                        device_version = v,
+                        server_version = VERSION,
+                        "a device speaks a newer wire version: update pixtuoid on this computer"
+                    );
+                }
+                return Ok((remote::version_reply()?, None));
             }
-        })
-        .await?
+            // No reply, as when the store can't answer: a newer device's tag is
+            // no reason for it to re-pair.
+            Err(error) => return Err(error).context("an unreadable hello"),
+        };
+        let store = self.store.clone();
+        let verdict = tokio::task::spawn_blocking(move || -> Result<_> {
+            Ok(match hello {
+                Hello::Pair { code } => store.redeem(&code, SystemTime::now())?.map_or(
+                    (Reply::Refused, None),
+                    |token| {
+                        let device = Hashed::of(&token);
+                        (Reply::Paired { token }, Some(device))
+                    },
+                ),
+                Hello::Resume { token } => {
+                    let device = Hashed::of(&token);
+                    if store.knows(&device)? {
+                        (Reply::Resumed, Some(device))
+                    } else {
+                        (Reply::Refused, None)
+                    }
+                }
+            })
+        });
+        let (reply, device) = verdict.await??;
+        Ok((reply.line()?, device))
     }
 
     /// Write the office to `stream` on each change and each [`HEARTBEAT`], and an
@@ -452,8 +472,8 @@ mod tests {
         }
 
         async fn hello(&mut self, hello: &Hello) {
-            self.say(&serde_json::to_string(hello).expect("it encodes"))
-                .await;
+            let line = hello.line().expect("it encodes");
+            self.writer.write_all(line.as_bytes()).await.expect("sent");
         }
 
         async fn line(&mut self) -> String {
@@ -463,7 +483,7 @@ mod tests {
         }
 
         async fn reply(&mut self) -> Reply {
-            serde_json::from_str(&self.line().await).expect("a reply")
+            Reply::from_line(self.line().await.as_bytes()).expect("a reply")
         }
 
         async fn ask(&mut self, ask: &Ask) {
@@ -560,6 +580,49 @@ mod tests {
         }
     }
 
+    /// No verdict, so the code waits for the device to update; and the older
+    /// side is the one told to.
+    #[test]
+    fn a_device_of_another_version_hears_this_ones_and_keeps_its_code() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime");
+        let fixture = fixture();
+        let code = fixture
+            .store
+            .issue_code(SystemTime::now())
+            .expect("a code")
+            .code;
+        let meet = |v: u32| {
+            crate::test_capture::capture(|| {
+                runtime.block_on(async {
+                    let mut peer = Peer::connect(&fixture.devices);
+                    let hello = format!(r#"{{"v":{v},"hello":"pair","code":"{code}"}}"#);
+                    peer.say(&hello).await;
+                    let version = remote::version_reply().expect("it encodes");
+                    assert_eq!(peer.line().await, version);
+                    assert_eq!(peer.line().await, "", "nothing follows");
+                    peer.ended().await.expect("a clean end");
+                });
+            })
+        };
+        let newer = meet(VERSION + 1);
+        assert!(newer.contains("WARN"), "{newer}");
+        assert!(
+            newer.contains("update pixtuoid on this computer"),
+            "{newer}"
+        );
+        let older = meet(VERSION - 1);
+        assert!(!older.contains("update pixtuoid"), "{older}");
+
+        runtime.block_on(async {
+            let mut peer = Peer::connect(&fixture.devices);
+            peer.hello(&Hello::Pair { code }).await;
+            assert!(matches!(peer.reply().await, Reply::Paired { .. }));
+        });
+    }
+
     /// A refusal would send a newer device back to a QR over a tag this build
     /// doesn't know.
     #[tokio::test]
@@ -568,11 +631,11 @@ mod tests {
         let past_the_cap = Hello::Resume {
             token: "t".repeat(MAX_LINE_BYTES),
         };
-        let past_the_cap = serde_json::to_string(&past_the_cap).expect("it encodes");
+        let past_the_cap = past_the_cap.line().expect("it encodes");
         for hello in [
-            r#"{"hello":"from_the_future"}"#,
+            r#"{"v":1,"hello":"from_the_future"}"#,
             "junk",
-            past_the_cap.as_str(),
+            past_the_cap.trim_end(),
         ] {
             let mut peer = Peer::connect(&fixture.devices);
             peer.say(hello).await;
@@ -765,7 +828,8 @@ mod tests {
     async fn an_ask_may_share_a_write_or_span_two() {
         let fixture = fixture();
         let token = paired(&fixture);
-        let hello = serde_json::to_string(&Hello::Resume { token }).expect("it encodes");
+        let hello = Hello::Resume { token }.line().expect("it encodes");
+        let hello = hello.trim_end();
         let ask = serde_json::to_string(&Ask::Sources).expect("it encodes");
 
         let mut peer = Peer::connect(&fixture.devices);

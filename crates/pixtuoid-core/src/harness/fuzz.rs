@@ -87,10 +87,10 @@ fn native_reads(row: &Transcript, source: &str, path: &Path, body: &[u8], parsed
 pub fn remote(bytes: &[u8]) -> RemoteOffice {
     if let Ok(text) = std::str::from_utf8(bytes) {
         let _ = PairLink::from_str(text);
-        let _ = serde_json::from_str::<Hello>(text);
-        let _ = serde_json::from_str::<Reply>(text);
         let _ = serde_json::from_str::<Ask>(text);
     }
+    let _ = Hello::from_line(bytes);
+    let _ = Reply::from_line(bytes);
     let now = UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS);
     let mut office = RemoteOffice::new([DRIVEN_DESKS; MAX_FLOORS]);
     for line in bytes.split(|b| *b == b'\n') {
@@ -373,8 +373,8 @@ mod tests {
             std::fs::read_to_string(seeds.join(name)).expect(name)
         };
         PairLink::from_str(&seed("link")).expect("a link");
-        serde_json::from_str::<Hello>(&seed("hello")).expect("a hello");
-        let reply = serde_json::from_str(&seed("reply")).expect("a reply");
+        Hello::from_line(seed("hello").as_bytes()).expect("a hello");
+        let reply = Reply::from_line(seed("reply").as_bytes()).expect("a reply");
         assert!(matches!(reply, Reply::Paired { .. }));
         let ask = serde_json::from_str::<Ask>(&seed("ask")).expect("an ask");
         assert_eq!(ask, Ask::Sources);

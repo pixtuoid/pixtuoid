@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
@@ -29,15 +30,17 @@ mod change;
 
 pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_registered};
 
-/// The wire version this build writes and reads, on every line and in every
-/// pairing link. Within a version the line only gains fields and tags, which
-/// `remote.v1.golden.json` holds it to; a reader ignores what it doesn't know and
-/// maps an unknown tag to its nearest state. Any break, in the line or the link,
-/// bumps it, and every pairing or reconnect across it ends in a precise "update"
-/// on the side that can act ([`PairLinkError::Incompatible`],
-/// [`ApplyError::Incompatible`]). The promise counts from the first release a
-/// device can pair with: an older server's link carries no version, which
-/// [`PairLink`]'s parse refuses ([`PairLinkError::Outdated`]).
+/// The wire version this build writes and reads, as `v` on every hello, reply
+/// and office line and in every pairing link: the one field no version may
+/// reshape, since a reader takes it before the rest. Within a version the line
+/// only gains fields and tags, which `remote.v1.golden.json` holds it to; a
+/// reader ignores what it doesn't know and maps an unknown tag to its nearest
+/// state. Any break, in a line or the link, bumps it, and every pairing or
+/// reconnect across it ends in a precise "update" on the side that can act
+/// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]). The promise counts
+/// from the first release a device can pair with: an older server's link
+/// carries no version, which [`PairLink`]'s parse refuses
+/// ([`PairLinkError::Outdated`]).
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office: a device takes
@@ -48,9 +51,35 @@ pub const HEARTBEAT: Duration = Duration::from_secs(15);
 /// taken for a clock change rather than delivery latency.
 const MAX_CLOCK_DRIFT: Duration = Duration::from_secs(2);
 
+#[derive(Serialize, Deserialize)]
+struct Version {
+    v: u32,
+}
+
+/// `body` after this build's [`VERSION`], as one newline-terminated line.
+fn versioned_line(body: &impl Serialize) -> serde_json::Result<String> {
+    #[derive(Serialize)]
+    struct Versioned<'a, T> {
+        v: u32,
+        #[serde(flatten)]
+        body: &'a T,
+    }
+    let mut line = serde_json::to_string(&Versioned { v: VERSION, body })?;
+    line.push('\n');
+    Ok(line)
+}
+
+/// `line` as a `T`, once its `v` proves it this build's [`VERSION`].
+fn read_versioned<T: DeserializeOwned>(line: &[u8]) -> Result<T, WireError> {
+    let Version { v } = serde_json::from_slice(line)?;
+    if v != VERSION {
+        return Err(WireError::Incompatible { v });
+    }
+    Ok(serde_json::from_slice(line)?)
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Snapshot {
-    v: u32,
     now_ms: u64,
     machine: Machine,
     agents: Vec<Agent>,
@@ -365,8 +394,7 @@ pub fn encode(
     machine: &Machine,
     now: SystemTime,
 ) -> serde_json::Result<String> {
-    let mut line = serde_json::to_string(&Snapshot {
-        v: VERSION,
+    versioned_line(&Snapshot {
         now_ms: epoch_ms(now),
         machine: machine.clone(),
         agents: scene.agents.values().map(project_agent).collect(),
@@ -375,9 +403,7 @@ pub fn encode(
             .map(|(source, instance, presence)| project_daemon(source, instance, presence))
             .collect(),
         today: scene.today.as_ref().map(project_today),
-    })?;
-    line.push('\n');
-    Ok(line)
+    })
 }
 
 /// The entropy of a pairing code and of a device token.
@@ -526,8 +552,8 @@ impl FromStr for PairLink {
     }
 }
 
-/// The first line a device writes, once the TLS handshake is done. All it may
-/// write after an acceptance is an [`Ask`].
+/// The first line a device writes, once the TLS handshake is done, as
+/// [`Hello::line`]. All it may write after an acceptance is an [`Ask`].
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "hello", rename_all = "snake_case")]
 pub enum Hello {
@@ -543,7 +569,29 @@ pub enum Hello {
     },
 }
 
-/// The server's reply to a [`Hello`]. Its [`encode`] lines follow an acceptance.
+impl Hello {
+    /// This hello as the line a device writes.
+    ///
+    /// # Errors
+    ///
+    /// If JSON encoding fails.
+    pub fn line(&self) -> serde_json::Result<String> {
+        versioned_line(self)
+    }
+
+    /// The hello `line` holds.
+    ///
+    /// # Errors
+    ///
+    /// If the device speaks another wire version, for which a server writes
+    /// [`version_reply`] and spends nothing; or if the line is malformed.
+    pub fn from_line(line: &[u8]) -> Result<Self, WireError> {
+        read_versioned(line)
+    }
+}
+
+/// The server's reply to a [`Hello`], as [`Reply::line`]. Its [`encode`] lines
+/// follow an acceptance.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "reply", rename_all = "snake_case")]
 pub enum Reply {
@@ -559,6 +607,39 @@ pub enum Reply {
     /// A reply from a newer server, which says nothing against the pairing.
     #[serde(other)]
     Unknown,
+}
+
+impl Reply {
+    /// This reply as the line a server writes.
+    ///
+    /// # Errors
+    ///
+    /// If JSON encoding fails.
+    pub fn line(&self) -> serde_json::Result<String> {
+        versioned_line(self)
+    }
+
+    /// The reply `line` holds.
+    ///
+    /// # Errors
+    ///
+    /// If the server speaks another wire version, which [`version_reply`]
+    /// names; or if the line is malformed.
+    pub fn from_line(line: &[u8]) -> Result<Self, WireError> {
+        read_versioned(line)
+    }
+}
+
+/// What a server writes in place of a [`Reply`] to a [`Hello`] of another wire
+/// version: its [`VERSION`] alone, which a device of any version reads.
+///
+/// # Errors
+///
+/// If JSON encoding fails.
+pub fn version_reply() -> serde_json::Result<String> {
+    let mut line = serde_json::to_string(&Version { v: VERSION })?;
+    line.push('\n');
+    Ok(line)
 }
 
 /// A line a device may write after an accepted [`Hello`], answered in the order
@@ -680,18 +761,20 @@ pub enum SourceState {
     Unknown,
 }
 
-/// Why [`RemoteOffice::apply`] refused a line. The office is unchanged.
+/// Why a hello, a reply or an office line was refused; [`RemoteOffice::apply`]
+/// leaves the office unchanged.
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum ApplyError {
-    /// The server writes a wire version this build doesn't read.
-    #[error("the server writes wire version {v}, this build reads {VERSION}")]
+pub enum WireError {
+    /// The other side speaks a wire version this build doesn't: the older side
+    /// updates.
+    #[error("the other side speaks wire version {v}, where this build speaks {VERSION}")]
     Incompatible {
         /// The version the line carries.
         v: u32,
     },
     /// The line isn't one of the version it claims.
-    #[error("malformed office line")]
+    #[error("malformed line")]
     Malformed(#[from] serde_json::Error),
 }
 
@@ -748,23 +831,14 @@ impl RemoteOffice {
     /// # Errors
     ///
     /// If the line is another wire version, or malformed.
-    pub fn apply(&mut self, line: &[u8], now: SystemTime) -> Result<(), ApplyError> {
-        #[derive(Deserialize)]
-        struct Version {
-            v: u32,
-        }
-        let Version { v } = serde_json::from_slice(line)?;
-        if v != VERSION {
-            return Err(ApplyError::Incompatible { v });
-        }
+    pub fn apply(&mut self, line: &[u8], now: SystemTime) -> Result<(), WireError> {
         let Snapshot {
             now_ms,
             machine,
             mut agents,
             daemons,
             today,
-            ..
-        } = serde_json::from_slice(line)?;
+        } = read_versioned(line)?;
         self.machine = Some(machine);
 
         let skew = self.skew_for(now_ms, now);
@@ -1216,7 +1290,7 @@ mod tests {
         let mut office = RemoteOffice::new(caps(4));
         let refused = office.apply(line.to_string().as_bytes(), at(AT));
         assert!(
-            matches!(refused, Err(ApplyError::Malformed(_))),
+            matches!(refused, Err(WireError::Malformed(_))),
             "{refused:?}"
         );
         assert_eq!(office.machine(), None);
@@ -1571,7 +1645,7 @@ mod tests {
         received(&mut office, &crowd(&["a"]), AT);
         let line = format!("{{\"v\":{},\"changed\":\"everything\"}}\n", VERSION + 1);
         let err = office.apply(line.as_bytes(), at(AT)).unwrap_err();
-        assert!(matches!(err, ApplyError::Incompatible { v } if v == VERSION + 1));
+        assert!(matches!(err, WireError::Incompatible { v } if v == VERSION + 1));
         assert_eq!(office.scene().agents.len(), 1);
     }
 
@@ -1581,7 +1655,7 @@ mod tests {
         received(&mut office, &crowd(&["a"]), AT);
         for line in ["", "not json", "{\"v\":1}"] {
             let err = office.apply(line.as_bytes(), at(AT)).unwrap_err();
-            assert!(matches!(err, ApplyError::Malformed(_)), "{line:?}");
+            assert!(matches!(err, WireError::Malformed(_)), "{line:?}");
         }
         assert_eq!(office.scene().agents.len(), 1);
     }
@@ -1589,30 +1663,95 @@ mod tests {
     /// The handshake's wire, frozen as the snapshot's golden freezes its own.
     #[test]
     fn handshake_lines_keep_their_shape() {
-        let wire = |hello: &Hello| serde_json::to_string(hello).expect("it encodes");
+        let wire = |hello: &Hello| hello.line().expect("it encodes");
         assert_eq!(
             wire(&Hello::Pair { code: "c".into() }),
-            r#"{"hello":"pair","code":"c"}"#
+            "{\"v\":1,\"hello\":\"pair\",\"code\":\"c\"}\n"
         );
         assert_eq!(
             wire(&Hello::Resume { token: "t".into() }),
-            r#"{"hello":"resume","token":"t"}"#
+            "{\"v\":1,\"hello\":\"resume\",\"token\":\"t\"}\n"
         );
-        let reply = |line: &str| serde_json::from_str::<Reply>(line).expect("it decodes");
+        let reply = |line: &str| Reply::from_line(line.as_bytes()).expect("it decodes");
         assert_eq!(
-            reply(r#"{"reply":"paired","token":"t"}"#),
+            reply(r#"{"v":1,"reply":"paired","token":"t"}"#),
             Reply::Paired { token: "t".into() }
         );
-        assert_eq!(reply(r#"{"reply":"resumed"}"#), Reply::Resumed);
-        assert_eq!(reply(r#"{"reply":"refused"}"#), Reply::Refused);
+        assert_eq!(reply(r#"{"v":1,"reply":"resumed"}"#), Reply::Resumed);
+        assert_eq!(reply(r#"{"v":1,"reply":"refused"}"#), Reply::Refused);
+        assert_eq!(version_reply().expect("it encodes"), "{\"v\":1}\n");
+    }
+
+    #[test]
+    fn a_hello_and_a_reply_survive_their_line() {
+        for hello in [
+            Hello::Pair { code: "c".into() },
+            Hello::Resume { token: "t".into() },
+        ] {
+            let line = hello.line().expect("it encodes");
+            assert_eq!(
+                Hello::from_line(line.as_bytes()).expect("it decodes"),
+                hello
+            );
+        }
+        for reply in [
+            Reply::Paired { token: "t".into() },
+            Reply::Resumed,
+            Reply::Refused,
+        ] {
+            let line = reply.line().expect("it encodes");
+            assert_eq!(
+                Reply::from_line(line.as_bytes()).expect("it decodes"),
+                reply
+            );
+        }
+    }
+
+    /// Whatever else a hello or reply of another version holds, its `v` is all
+    /// that is read: a mismatch is never a refusal, nor a hello that spends a code.
+    #[test]
+    fn a_peer_of_another_version_is_named_before_the_rest_is_read() {
+        for v in [0, VERSION + 1] {
+            let incompatible = |read: Result<(), WireError>| matches!(read, Err(WireError::Incompatible { v: named }) if named == v);
+            let hello = format!("{{\"v\":{v},\"hello\":\"pair\",\"code\":\"c\"}}\n");
+            assert!(incompatible(Hello::from_line(hello.as_bytes()).map(drop)));
+            for reply in [
+                format!("{{\"v\":{v}}}"),
+                format!("{{\"v\":{v},\"reply\":\"refused\"}}"),
+                format!("{{\"v\":{v},\"a-shape\":[\"to come\"]}}"),
+            ] {
+                let read = Reply::from_line(reply.as_bytes()).map(drop);
+                assert!(incompatible(read), "{reply}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_hello_or_reply_without_its_version_is_malformed() {
+        let malformed = |read: Result<(), WireError>| matches!(read, Err(WireError::Malformed(_)));
+        for line in [
+            r#"{"hello":"pair","code":"c"}"#,
+            r#"{"v":"1","hello":"pair","code":"c"}"#,
+            "not json",
+        ] {
+            assert!(
+                malformed(Hello::from_line(line.as_bytes()).map(drop)),
+                "{line}"
+            );
+        }
+        for line in [r#"{"reply":"refused"}"#, r#"{"v":-1,"reply":"refused"}"#] {
+            assert!(
+                malformed(Reply::from_line(line.as_bytes()).map(drop)),
+                "{line}"
+            );
+        }
     }
 
     /// A new tag must not send every older device back to a QR.
     #[test]
     fn a_reply_this_build_does_not_know_is_no_refusal() {
-        let reply: Reply =
-            serde_json::from_str(r#"{"reply":"from_the_future","extra":1}"#).expect("it decodes");
-        assert_eq!(reply, Reply::Unknown);
+        let line = br#"{"v":1,"reply":"from_the_future","extra":1}"#;
+        assert_eq!(Reply::from_line(line).expect("it decodes"), Reply::Unknown);
     }
 
     /// An ask's wire, frozen as the handshake's is.
@@ -1705,7 +1844,7 @@ mod tests {
         received(&mut office, &crowd(&["a"]), AT);
         let answer = serde_json::to_string(&Answer::Unsupported).unwrap();
         let err = office.apply(answer.as_bytes(), at(AT)).unwrap_err();
-        assert!(matches!(err, ApplyError::Malformed(_)));
+        assert!(matches!(err, WireError::Malformed(_)));
         assert_eq!(office.scene().agents.len(), 1);
     }
 

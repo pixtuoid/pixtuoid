@@ -123,6 +123,22 @@ bot opens the PR itself on its next scheduled run
 ([`autobump.yml`](https://github.com/Homebrew/homebrew-core/blob/main/.github/workflows/autobump.yml)).
 Watch THAT PR's CI and intervene only if it reds.
 
+**A release that bumps `remote::VERSION`** goes out with the iOS App in this order:
+
+1. Once the bump is on `main`, build the App against that rev through
+   [`[patch.crates-io]`](https://doc.rust-lang.org/cargo/reference/overriding-dependencies.html#working-with-an-unpublished-minor-version)
+   and submit it with ["Manually release this version"](https://developer.apple.com/help/app-store-connect/manage-your-apps-availability/select-an-app-store-version-release-option),
+   rebuilding it if `VERSION` moves again before the tag.
+2. Once it is Pending Developer Release, cut the release.
+3. Release the App once the tag's homebrew-core bump PR merges. App Store apps
+   on iPhone ["automatically update by default"](https://support.apple.com/en-us/HT202180),
+   so an App out sooner tells most of its users to update a CLI that
+   `brew upgrade` can't deliver until BrewTestBot's next run and that PR's CI.
+
+Two gaps remain, each leaving the App asking for its own update until that
+arrives: a CLI installed another way before the brew merge, and the "up to 24
+hours" Apple's release-option page gives a release to reach the App Store.
+
 Publishing uses **OIDC trusted publishing** — CI carries no registry tokens;
 the per-crate/per-package Trusted Publishers, each naming environment
 `release`, must exist before the tag

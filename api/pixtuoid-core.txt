@@ -65,25 +65,6 @@ impl core::marker::Unpin for pixtuoid_core::remote::Answer
 impl core::marker::UnsafeUnpin for pixtuoid_core::remote::Answer
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::Answer
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::Answer
-#[non_exhaustive] pub enum pixtuoid_core::remote::ApplyError
-pub pixtuoid_core::remote::ApplyError::Incompatible
-pub pixtuoid_core::remote::ApplyError::Incompatible::v: u32
-pub pixtuoid_core::remote::ApplyError::Malformed(serde_json::error::Error)
-impl core::convert::From<serde_json::error::Error> for pixtuoid_core::remote::ApplyError
-pub fn pixtuoid_core::remote::ApplyError::from(serde_json::error::Error) -> Self
-impl core::error::Error for pixtuoid_core::remote::ApplyError
-pub fn pixtuoid_core::remote::ApplyError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
-impl core::fmt::Debug for pixtuoid_core::remote::ApplyError
-pub fn pixtuoid_core::remote::ApplyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for pixtuoid_core::remote::ApplyError
-pub fn pixtuoid_core::remote::ApplyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_core::remote::ApplyError
-impl core::marker::Send for pixtuoid_core::remote::ApplyError
-impl core::marker::Sync for pixtuoid_core::remote::ApplyError
-impl core::marker::Unpin for pixtuoid_core::remote::ApplyError
-impl core::marker::UnsafeUnpin for pixtuoid_core::remote::ApplyError
-impl !core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::ApplyError
-impl !core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::ApplyError
 pub enum pixtuoid_core::remote::Ask
 pub pixtuoid_core::remote::Ask::Change
 pub pixtuoid_core::remote::Ask::Change::on: bool
@@ -112,6 +93,9 @@ pub pixtuoid_core::remote::Hello::Pair
 pub pixtuoid_core::remote::Hello::Pair::code: alloc::string::String
 pub pixtuoid_core::remote::Hello::Resume
 pub pixtuoid_core::remote::Hello::Resume::token: alloc::string::String
+impl pixtuoid_core::remote::Hello
+pub fn pixtuoid_core::remote::Hello::from_line(&[u8]) -> core::result::Result<Self, pixtuoid_core::remote::WireError>
+pub fn pixtuoid_core::remote::Hello::line(&self) -> serde_json::error::Result<alloc::string::String>
 impl core::cmp::Eq for pixtuoid_core::remote::Hello
 impl core::cmp::PartialEq for pixtuoid_core::remote::Hello
 pub fn pixtuoid_core::remote::Hello::eq(&self, &Self) -> bool
@@ -209,6 +193,9 @@ pub pixtuoid_core::remote::Reply::Paired::token: alloc::string::String
 pub pixtuoid_core::remote::Reply::Refused
 pub pixtuoid_core::remote::Reply::Resumed
 pub pixtuoid_core::remote::Reply::Unknown
+impl pixtuoid_core::remote::Reply
+pub fn pixtuoid_core::remote::Reply::from_line(&[u8]) -> core::result::Result<Self, pixtuoid_core::remote::WireError>
+pub fn pixtuoid_core::remote::Reply::line(&self) -> serde_json::error::Result<alloc::string::String>
 impl core::cmp::Eq for pixtuoid_core::remote::Reply
 impl core::cmp::PartialEq for pixtuoid_core::remote::Reply
 pub fn pixtuoid_core::remote::Reply::eq(&self, &Self) -> bool
@@ -252,6 +239,25 @@ impl core::marker::Unpin for pixtuoid_core::remote::SourceState
 impl core::marker::UnsafeUnpin for pixtuoid_core::remote::SourceState
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::SourceState
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::SourceState
+#[non_exhaustive] pub enum pixtuoid_core::remote::WireError
+pub pixtuoid_core::remote::WireError::Incompatible
+pub pixtuoid_core::remote::WireError::Incompatible::v: u32
+pub pixtuoid_core::remote::WireError::Malformed(serde_json::error::Error)
+impl core::convert::From<serde_json::error::Error> for pixtuoid_core::remote::WireError
+pub fn pixtuoid_core::remote::WireError::from(serde_json::error::Error) -> Self
+impl core::error::Error for pixtuoid_core::remote::WireError
+pub fn pixtuoid_core::remote::WireError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for pixtuoid_core::remote::WireError
+pub fn pixtuoid_core::remote::WireError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for pixtuoid_core::remote::WireError
+pub fn pixtuoid_core::remote::WireError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for pixtuoid_core::remote::WireError
+impl core::marker::Send for pixtuoid_core::remote::WireError
+impl core::marker::Sync for pixtuoid_core::remote::WireError
+impl core::marker::Unpin for pixtuoid_core::remote::WireError
+impl core::marker::UnsafeUnpin for pixtuoid_core::remote::WireError
+impl !core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::WireError
+impl !core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::WireError
 pub struct pixtuoid_core::remote::Changed
 impl pixtuoid_core::remote::Changed
 pub fn pixtuoid_core::remote::Changed::line(&self, &str) -> alloc::string::String
@@ -329,7 +335,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::remote::PairLink
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::remote::PairLink
 pub struct pixtuoid_core::remote::RemoteOffice
 impl pixtuoid_core::remote::RemoteOffice
-pub fn pixtuoid_core::remote::RemoteOffice::apply(&mut self, &[u8], std::time::SystemTime) -> core::result::Result<(), pixtuoid_core::remote::ApplyError>
+pub fn pixtuoid_core::remote::RemoteOffice::apply(&mut self, &[u8], std::time::SystemTime) -> core::result::Result<(), pixtuoid_core::remote::WireError>
 pub fn pixtuoid_core::remote::RemoteOffice::machine(&self) -> core::option::Option<&pixtuoid_core::remote::Machine>
 pub fn pixtuoid_core::remote::RemoteOffice::new([usize; 10]) -> Self
 pub fn pixtuoid_core::remote::RemoteOffice::scene(&self) -> &pixtuoid_core::state::SceneState
@@ -376,6 +382,7 @@ pub fn pixtuoid_core::remote::is_host(&str) -> bool
 pub fn pixtuoid_core::remote::not_detected(&str) -> alloc::string::String
 pub fn pixtuoid_core::remote::nothing_to_do(&str) -> alloc::string::String
 pub fn pixtuoid_core::remote::plugin_left_registered(&str) -> alloc::string::String
+pub fn pixtuoid_core::remote::version_reply() -> serde_json::error::Result<alloc::string::String>
 pub mod pixtuoid_core::source
 pub mod pixtuoid_core::source::antigravity
 pub struct pixtuoid_core::source::antigravity::AntigravitySource

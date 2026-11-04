@@ -16,7 +16,6 @@ use pixtuoid_core::remote::{
 };
 use pixtuoid_core::state::MAX_FLOORS;
 use ring::digest::{SHA256, digest};
-use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
@@ -130,21 +129,21 @@ impl Device {
         }
     }
 
-    async fn say(&mut self, value: &impl Serialize) {
-        let line = serde_json::to_string(value).expect("it encodes") + "\n";
+    async fn say(&mut self, line: &str) {
         let stream = self.stream.get_mut();
         stream.write_all(line.as_bytes()).await.expect("sent");
         stream.flush().await.expect("sent");
     }
 
     async fn hello(&mut self, hello: &Hello) -> Reply {
-        self.say(hello).await;
-        serde_json::from_str(&self.line().await).expect("a reply")
+        self.say(&hello.line().expect("it encodes")).await;
+        Reply::from_line(self.line().await.as_bytes()).expect("a reply")
     }
 
     /// Ask, and read past the office lines to the answer.
     async fn ask(&mut self, ask: &Ask) -> Answer {
-        self.say(ask).await;
+        self.say(&(serde_json::to_string(ask).expect("it encodes") + "\n"))
+            .await;
         let wait = async {
             loop {
                 let line = self.line().await;
