@@ -787,21 +787,21 @@ fn push_fixture(
                 StationArt::Appliance(sprite) => appliance(sprite),
             }
         }
-        K::Plant { kind, .. } => push_art(
+        K::Plant { kind, .. } => push_held_or_looping(
             order,
             pack,
             centre,
-            Art::still(kind.piece()),
+            frame.occasion.art(kind.piece()),
+            moment.timing.beat,
             depth,
-            Playback::Held,
         ),
-        K::Pod { kind, .. } => push_art(
+        K::Pod { kind, .. } => push_held_or_looping(
             order,
             pack,
             centre,
-            Art::still(kind.piece()),
+            frame.occasion.art(kind.piece()),
+            moment.timing.beat,
             depth,
-            Playback::Held,
         ),
         K::Wall { kind, .. } if kind.stands_on_floor() => push_art(
             order,
@@ -995,6 +995,23 @@ fn push_looping(
         flip: Flip::None,
     };
     push_art(order, pack, at, art, depth, Playback::Looping);
+}
+
+/// Queue `sprite` centred on `at`, looping on `beat` when it has frames to
+/// loop: a plant or aisle piece in the art its occasion draws it in.
+fn push_held_or_looping(
+    order: &mut Vec<(Span, PieceKind)>,
+    pack: &OfficeArt,
+    at: Point,
+    sprite: PackPiece,
+    beat: crate::anim::Beat,
+    depth: u16,
+) {
+    if pack.piece(sprite).frames().len() > 1 {
+        push_looping(order, pack, at, sprite, beat, depth);
+    } else {
+        push_art(order, pack, at, Art::still(sprite), depth, Playback::Held);
+    }
 }
 
 fn push_hung(

@@ -682,3 +682,43 @@ fn a_frame_is_changed_whole_past_half_its_squares() {
     assert!(matches!(changed(half), Dirty::Rects(_)), "half");
     assert_eq!(changed(half + 1), Dirty::All, "past half");
 }
+
+/// A frame's hits read its plants in the art the day's occasion draws them
+/// in: on Christmas, a pointer over a plant a stand-in replaces names it.
+#[test]
+fn a_frame_hovers_its_plants_as_the_occasion_draws_them() {
+    use crate::layout::{Bounds, FixtureKind};
+    let (pack, density) = bundled();
+    let now = crate::holiday::Occasion::christmas_noon();
+    let scene = office(now);
+    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+    let look = Look::Cutaway {
+        scale: density,
+        text: WorldText::Baked,
+    };
+    let rendered =
+        render(&mut floor, office.stores(), look, inputs(&scene, now)).expect("lays out");
+    let occasion = crate::holiday::Occasion::at(now);
+    let mut stood_in = 0;
+    for f in rendered.hits.layout().fixtures() {
+        if !matches!(f.kind, FixtureKind::Plant { .. }) {
+            continue;
+        }
+        let mid = Bounds {
+            x: f.visual.x + f.visual.width / 2,
+            y: f.visual.y + f.visual.height / 2,
+            width: 1,
+            height: 1,
+        };
+        if rendered.hits.layout().fixture_at(mid) != Some(f.kind) {
+            continue;
+        }
+        let label = f.kind.hover_label(occasion).expect("a plant hovers");
+        assert_eq!(
+            rendered.hits.at(mid, None),
+            Some(crate::hit::SceneHit::Furniture(label))
+        );
+        stood_in += usize::from(label != f.kind.hover_label(Default::default()).expect("a plant"));
+    }
+    assert!(stood_in > 0, "no plant hovered as a stand-in");
+}

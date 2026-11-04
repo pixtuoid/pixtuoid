@@ -1,0 +1,7 @@
+# 5x4 wrapped presents where the succulent stood: a red box tied in gold
+# (`r`/`y`), its bow on top, a smaller blue one (`b`) beside it.
+@frame 0
+. y . y .
+. r y r .
+. r y r b
+. r y r b

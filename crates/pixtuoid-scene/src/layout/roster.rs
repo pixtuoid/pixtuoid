@@ -252,8 +252,25 @@ pub enum FixtureKind {
 }
 
 impl FixtureKind {
-    /// What hovering it says, or `None` where a tooltip would be noise.
-    pub(crate) fn hover_label(self) -> Option<&'static str> {
+    /// The piece it draws through [`Occasion::art`](crate::holiday::Occasion::art),
+    /// where it draws one: a plant's or an aisle's, in both painters.
+    pub(crate) fn occasion_piece(self) -> Option<crate::pack::Piece> {
+        match self {
+            FixtureKind::Plant { kind, .. } => Some(kind.piece()),
+            FixtureKind::Pod { kind, .. } => Some(kind.piece()),
+            _ => None,
+        }
+    }
+
+    /// What hovering it says on `occasion`, or `None` where a tooltip would
+    /// be noise.
+    pub(crate) fn hover_label(self, occasion: crate::holiday::Occasion) -> Option<&'static str> {
+        if let Some(label) = self
+            .occasion_piece()
+            .and_then(|p| stand_in_label(occasion.art(p)))
+        {
+            return Some(label);
+        }
         Some(match self {
             FixtureKind::Desk(_) => "Desk",
             FixtureKind::FilingCabinet(_) => "Filing Cabinet",
@@ -307,6 +324,17 @@ impl FixtureKind {
             // belongs to them.
             FixtureKind::NeonSign => return None,
         })
+    }
+}
+
+/// What hovering a holiday's stand-in says, or `None` for any other piece.
+fn stand_in_label(piece: crate::pack::Piece) -> Option<&'static str> {
+    use crate::pack::Piece;
+    match piece {
+        Piece::ChristmasTree | Piece::ChristmasTreeShort => Some("Christmas Tree"),
+        Piece::Poinsettia => Some("Poinsettia"),
+        Piece::Presents => Some("Presents"),
+        _ => None,
     }
 }
 

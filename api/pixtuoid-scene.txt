@@ -1559,6 +1559,8 @@ pub pixtuoid_scene::pack::Piece::BulletinBoard
 pub pixtuoid_scene::pack::Piece::CatSit
 pub pixtuoid_scene::pack::Piece::CatSleep
 pub pixtuoid_scene::pack::Piece::CatWalk
+pub pixtuoid_scene::pack::Piece::ChristmasTree
+pub pixtuoid_scene::pack::Piece::ChristmasTreeShort
 pub pixtuoid_scene::pack::Piece::CoatRack
 pub pixtuoid_scene::pack::Piece::Desk
 pub pixtuoid_scene::pack::Piece::DeskChair
@@ -1591,6 +1593,8 @@ pub pixtuoid_scene::pack::Piece::Plant
 pub pixtuoid_scene::pack::Piece::PlantFlower
 pub pixtuoid_scene::pack::Piece::PlantSucculent
 pub pixtuoid_scene::pack::Piece::PlantTall
+pub pixtuoid_scene::pack::Piece::Poinsettia
+pub pixtuoid_scene::pack::Piece::Presents
 pub pixtuoid_scene::pack::Piece::Printer
 pub pixtuoid_scene::pack::Piece::Seated
 pub pixtuoid_scene::pack::Piece::SeatedBack
@@ -1637,7 +1641,7 @@ impl core::str::traits::FromStr for pixtuoid_scene::pack::Piece
 pub type pixtuoid_scene::pack::Piece::Err = strum::ParseError
 pub fn pixtuoid_scene::pack::Piece::from_str(&str) -> core::result::Result<pixtuoid_scene::pack::Piece, <Self as core::str::traits::FromStr>::Err>
 impl enum_map::internal::Enum for pixtuoid_scene::pack::Piece
-pub type pixtuoid_scene::pack::Piece::Array<__EnumMapInternalV> = [__EnumMapInternalV; 60]
+pub type pixtuoid_scene::pack::Piece::Array<__EnumMapInternalV> = [__EnumMapInternalV; 64]
 pub fn pixtuoid_scene::pack::Piece::from_usize(usize) -> Self
 pub fn pixtuoid_scene::pack::Piece::into_usize(self) -> usize
 impl strum::VariantArray for pixtuoid_scene::pack::Piece
