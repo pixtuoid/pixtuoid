@@ -79,7 +79,11 @@ Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
 each step there before taking it, never from recall. Merging is
 `@mergifyio queue`, which a session comments itself once
 [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) holds, and a release PR
-merges by hand. The CI review applies REVIEW.md on every push;
+merges by hand. The org [Roadmap](https://github.com/orgs/pixtuoid/projects/1)
+is the plan of record, the owner's rule: every step (an item started or
+finished, a PR opened, merged or closed, a reorder) updates its board item in
+the same turn, a draft for work agents track and the issue for work an issue
+already tracks. The CI review applies REVIEW.md on every push;
 [arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says when the `local-review`
 skill runs it first.
 
@@ -87,12 +91,11 @@ skill runs it first.
 aside), the owner's cap: the runners take
 [20 jobs at once](https://docs.github.com/en/actions/reference/limits) and one
 light-tier push needs more, so each open PR past the first lengthens the wait
-of every push. A PR
-opens, never as a draft, once its branch is ready to merge, its local review
-done when one is due. The pre-push hook runs
-preflight and CI the rest, so neither is rerun by hand. Until a slot frees, the branch stays pushed
-with no PR. A PR
-that stops being ready closes with its branch kept and never force-pushed,
+of every push. A PR opens, never as a draft, once its branch is ready to
+merge, its local review done when one is due. The pre-push hook runs preflight
+and CI the rest, so neither is rerun by hand. Until a slot frees, the branch
+stays pushed with no PR. A PR that stops being ready closes with its branch
+kept and never force-pushed,
 since a force-pushed branch can't reopen; a stacked one is retargeted to
 `main` first, because merging its base deletes that branch. Closing leaves its
 runs queued, and a plain cancel still runs the `always()` gate jobs, so
