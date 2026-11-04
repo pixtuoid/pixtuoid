@@ -1675,8 +1675,8 @@ fn corridor_centre_y(aisle: &Bounds, h: u16) -> u16 {
     super::placement::centre_y_standing_on((aisle.y + aisle.height).saturating_sub(2), h)
 }
 
-/// Every waypoint the floor offers; a meeting room's sofa and chair slots are
-/// the only ones carrying a `room_id`, so they are pushed here and nowhere else.
+/// Every waypoint but the pantry's island and snack-shelf slots (pushed by `rooms::pantry`);
+/// the meeting rooms' sofa and chair slots, pushed only here, are the only ones with a `room_id`.
 fn compute_waypoints(
     plan: &FloorPlan,
     pod_decor: &[PodDecorItem],
