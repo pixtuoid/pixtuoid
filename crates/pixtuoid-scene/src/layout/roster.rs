@@ -527,7 +527,7 @@ impl SceneLayout {
             depth: Depth::sorted(visual.y + visual.height - 1),
         };
         let floor_end = self.floor_end();
-        std::iter::once(backdrop(FixtureKind::NeonSign, self.neon_panel()))
+        std::iter::once(backdrop(FixtureKind::NeonSign, self.board_panel()))
             .chain(
                 self.clock_pos()
                     .map(|at| backdrop(FixtureKind::Clock, boxed(at, CLOCK))),
@@ -745,7 +745,7 @@ impl SceneLayout {
                     .iter()
                     .map(|p| centred(p.pos, furniture_def(p.kind.furniture()).visual)),
             )
-            .chain([self.door_rect(), self.neon_panel()])
+            .chain([self.door_rect(), self.board_panel()])
             .chain(self.clock_pos().map(|at| boxed(at, CLOCK)))
             .collect();
         let clear = |board: Bounds| {
@@ -775,7 +775,7 @@ impl SceneLayout {
     pub(crate) fn clock_pos(&self) -> Option<Point> {
         let wall = self.window_wall();
         let middle = u16::midpoint(wall.start, wall.end);
-        let panel = self.neon_panel();
+        let panel = self.board_panel();
         super::window_posts(wall)
             .map(|post| u16::midpoint(post.start, post.end))
             .filter(|&centre| centre - CLOCK.w / 2 >= panel.x + panel.width)
@@ -786,8 +786,9 @@ impl SceneLayout {
             })
     }
 
-    /// The neon sign's outer box.
-    pub(crate) fn neon_panel(&self) -> Bounds {
+    /// The wall sign's outer box, its glowing frame included, which a host's
+    /// chrome keeps clear of.
+    pub fn board_panel(&self) -> Bounds {
         neon_panel(self.inner)
     }
 
@@ -795,12 +796,12 @@ impl SceneLayout {
     /// box, or the lit text overruns the glowing frame by the border on each
     /// side.
     pub fn board(&self) -> Bounds {
-        let panel = self.neon_panel();
+        let panel = self.board_panel();
         Bounds {
             x: panel.x + NEON_PANEL_BORDER,
             y: panel.y + NEON_PANEL_BORDER,
-            width: NEON_PANEL_INNER_W,
-            height: NEON_PANEL_INNER_H,
+            width: panel.width - 2 * NEON_PANEL_BORDER,
+            height: panel.height - 2 * NEON_PANEL_BORDER,
         }
     }
 
