@@ -3,6 +3,7 @@
 //! future reads, since "the daemon may terminate its connection with a client
 //! that does not process the daemon's responses".
 
+use std::cell::Cell;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::io;
 use std::os::fd::{AsRawFd, RawFd};
@@ -56,8 +57,7 @@ unsafe extern "C" {
 /// service go. The responder renames the instance on a conflict, which no flag
 /// here turns off.
 pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()> {
-    register(instance, port, spki)?.run().await;
-    Ok(())
+    register(instance, port, spki)?.run().await
 }
 
 /// The registration, with its socket on the runtime's poller.
@@ -66,10 +66,12 @@ fn register(instance: &str, port: u16, spki: &str) -> Result<Driver> {
     let regtype = CString::new(SERVICE_TYPE)?;
     let record = txt_record(&super::txt(spki))?;
     let record_len = u16::try_from(record.len())?;
+    let heard = Box::new(Cell::new(Heard::Held));
     let mut sd_ref: ServiceRef = ptr::null_mut();
     // SAFETY: every pointer lives through the call, which copies what it reads
-    // ("the DNSServiceRegister call copies the txtRecord data"), and `registered`
-    // has the reply's C signature. Port is in network byte order, as it asks.
+    // ("the DNSServiceRegister call copies the txtRecord data"), but `heard`,
+    // which `Driver` keeps past the ref; `registered` has the reply's C
+    // signature. Port is in network byte order, as it asks.
     let error = unsafe {
         DNSServiceRegister(
             &raw mut sd_ref,
@@ -83,7 +85,7 @@ fn register(instance: &str, port: u16, spki: &str) -> Result<Driver> {
             record_len,
             record.as_ptr().cast(),
             Some(registered),
-            ptr::null_mut(),
+            ptr::from_ref(&*heard).cast_mut().cast(),
         )
     };
     if error != NO_ERROR {
@@ -99,7 +101,11 @@ fn register(instance: &str, port: u16, spki: &str) -> Result<Driver> {
     // `Driver`'s field order puts after the `AsyncFd`'s drop.
     let socket = unsafe { AsyncFd::register_with_interest(Socket(fd), Interest::READABLE) }
         .map_err(|error| error.into_parts().1)?;
-    Ok(Driver { socket, service })
+    Ok(Driver {
+        socket,
+        service,
+        heard,
+    })
 }
 
 /// A TXT record of one string: a length byte, then the string.
@@ -114,24 +120,37 @@ fn txt_record(txt: &str) -> Result<Vec<u8>> {
 struct Driver {
     socket: AsyncFd<Socket>,
     service: Service,
+    /// Last, since the ref's replies write it.
+    heard: Box<Cell<Heard>>,
+}
+
+/// What the responder's last reply said of the service.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Heard {
+    Held,
+    /// "has to be deregistered": the reply without [`FLAGS_ADD`].
+    Withdrawn,
+    /// The reply's error, which the socket may outlive.
+    Refused(ErrorType),
 }
 
 impl Driver {
-    /// Hand each reply to `registered` until the responder goes away.
-    async fn run(self) {
+    /// Hand each reply to `registered` until the responder lets the service go;
+    /// a refusal is the error.
+    async fn run(self) -> Result<()> {
         loop {
             let mut ready = match self.socket.readable().await {
                 Ok(ready) => ready,
                 Err(error) => {
                     tracing::debug!(error = ?error, "mDNSResponder's socket failed");
-                    return;
+                    return Ok(());
                 }
             };
             match ready.try_io(|socket| socket.get_ref().reply_waits()) {
                 Err(_no_reply) => continue,
                 Ok(Err(error)) => {
                     tracing::debug!(error = ?error, "mDNSResponder closed the service's socket");
-                    return;
+                    return Ok(());
                 }
                 Ok(Ok(())) => {}
             }
@@ -140,7 +159,12 @@ impl Driver {
             let error = unsafe { DNSServiceProcessResult(self.service.0) };
             if error != NO_ERROR {
                 tracing::debug!(error, "mDNSResponder's reply failed");
-                return;
+                return Ok(());
+            }
+            match self.heard.get() {
+                Heard::Held => {}
+                Heard::Withdrawn => return Ok(()),
+                Heard::Refused(error) => bail!("mDNSResponder refused the service (error {error})"),
             }
         }
     }
@@ -192,8 +216,8 @@ impl Socket {
     }
 }
 
-/// The responder's word on the service: announced, renamed on a conflict, or
-/// lost.
+/// The responder's word on the service, kept in the [`Heard`] it is handed:
+/// announced, renamed on a conflict, withdrawn or refused.
 unsafe extern "C" fn registered(
     _sd_ref: ServiceRef,
     flags: Flags,
@@ -201,18 +225,19 @@ unsafe extern "C" fn registered(
     name: *const c_char,
     _regtype: *const c_char,
     _domain: *const c_char,
-    _context: *mut c_void,
+    context: *mut c_void,
 ) {
+    // SAFETY: the context is the `Driver`'s `heard`, which outlives its ref, and
+    // only `run`'s `DNSServiceProcessResult` calls this, on `run`'s thread.
+    let heard = unsafe { &*context.cast::<Cell<Heard>>() };
     if error != NO_ERROR {
-        tracing::warn!(error, "mDNSResponder dropped the service");
-        return;
-    }
-    // SAFETY: on success the reply names the instance, NUL-terminated and live
-    // through the call.
-    let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
-    if flags & FLAGS_ADD == 0 {
-        tracing::warn!(name = ?name, "mDNSResponder withdrew the service");
+        heard.set(Heard::Refused(error));
+    } else if flags & FLAGS_ADD == 0 {
+        heard.set(Heard::Withdrawn);
     } else {
+        // SAFETY: on success the reply names the instance, NUL-terminated and
+        // live through the call.
+        let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
         tracing::info!(name = ?name, "announced on the local network");
     }
 }
@@ -276,7 +301,12 @@ mod tests {
         }
     }
 
-    /// What the system resolves `instance` to, blocking until it is found.
+    /// How long a resolve waits for its reply, which a host with no responder
+    /// never sends.
+    const RESOLVE_WITHIN_MS: i32 = 10_000;
+
+    /// What the system resolves `instance` to, blocking up to
+    /// [`RESOLVE_WITHIN_MS`] for it.
     fn resolve(instance: &str) -> Found {
         let name = CString::new(instance).expect("no NUL");
         let regtype = CString::new(SERVICE_TYPE).expect("no NUL");
@@ -298,7 +328,20 @@ mod tests {
         };
         assert_eq!(error, NO_ERROR);
         let service = Service(sd_ref);
-        // SAFETY: blocks until the reply, which writes `found` through `resolved`.
+        let mut reply = libc::pollfd {
+            // SAFETY: the ref was just initialized.
+            fd: unsafe { DNSServiceRefSockFD(service.0) },
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one live `pollfd`.
+        let ready = unsafe { libc::poll(&raw mut reply, 1, RESOLVE_WITHIN_MS) };
+        assert_eq!(
+            ready, 1,
+            "{instance} did not resolve within {RESOLVE_WITHIN_MS} ms"
+        );
+        // SAFETY: a reply waits, so this returns without blocking, writing
+        // `found` through `resolved`.
         assert_eq!(unsafe { DNSServiceProcessResult(service.0) }, NO_ERROR);
         drop(service);
         found
@@ -320,6 +363,43 @@ mod tests {
         announcing.abort();
         let txt = txt_record(&super::super::txt("AB")).expect("short");
         assert_eq!(found, Some((port, txt)));
+    }
+
+    /// A reply that refuses or withdraws the service ends `run` whether or not
+    /// the socket stays open.
+    #[test]
+    fn a_refusing_or_withdrawing_reply_is_heard() {
+        // `kDNSServiceErr_ServiceNotRunning`, a daemon's crash.
+        let not_running = -65_563;
+        let heard = Cell::new(Heard::Held);
+        let context = ptr::from_ref(&heard).cast_mut().cast();
+        let null = ptr::null();
+        // SAFETY: a live `Heard`, and a name, read only on success, live
+        // through each call.
+        unsafe {
+            registered(
+                ptr::null_mut(),
+                FLAGS_ADD,
+                NO_ERROR,
+                c"studio".as_ptr(),
+                null,
+                null,
+                context,
+            );
+            assert_eq!(heard.get(), Heard::Held);
+            registered(
+                ptr::null_mut(),
+                0,
+                NO_ERROR,
+                c"studio".as_ptr(),
+                null,
+                null,
+                context,
+            );
+            assert_eq!(heard.get(), Heard::Withdrawn);
+            registered(ptr::null_mut(), 0, not_running, null, null, null, context);
+        }
+        assert_eq!(heard.get(), Heard::Refused(not_running));
     }
 
     #[test]

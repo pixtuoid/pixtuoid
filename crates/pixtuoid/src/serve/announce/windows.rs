@@ -1,14 +1,17 @@
 //! Windows' own mDNS responder, through dnsapi.dll's
 //! [`DnsServiceRegister`](https://learn.microsoft.com/en-us/windows/win32/api/windns/nf-windns-dnsserviceregister)
-//! (Windows 10 on), which names no way a registration is lost, so `announce`
-//! holds it until dropped.
+//! (Windows 10 on), whose callback reports "the status of the registration"
+//! and which names no way a registered service is lost, so `announce` holds one
+//! until dropped.
 
 use std::ffi::c_void;
+use std::mem::ManuallyDrop;
 use std::ptr;
 
 use anyhow::{Context, Result, bail};
 use pixtuoid_core::remote::{SERVICE_TYPE, SPKI_KEY};
-use windows_sys::Win32::Foundation::DNS_REQUEST_PENDING;
+use tokio::sync::watch;
+use windows_sys::Win32::Foundation::{DNS_REQUEST_PENDING, ERROR_SUCCESS};
 use windows_sys::Win32::NetworkManagement::Dns::{
     DNS_QUERY_REQUEST_VERSION1, DNS_SERVICE_INSTANCE, DNS_SERVICE_REGISTER_REQUEST,
     DnsServiceConstructInstance, DnsServiceDeRegister, DnsServiceFreeInstance, DnsServiceRegister,
@@ -20,13 +23,25 @@ use windows_sys::Win32::NetworkManagement::Dns::{
 /// which appends ".local" to the DNS host name: ".local must be appended in
 /// order for mDNS to work".
 pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()> {
-    let registered = register(instance, port, spki)?;
+    let (registered, mut completed) = register(instance, port, spki)?;
+    let status = *completed.wait_for(Option::is_some).await?;
+    if status != Some(ERROR_SUCCESS) {
+        bail!("Windows refused the service (status {status:?})");
+    }
+    tracing::info!("announced on the local network");
     std::future::pending::<()>().await;
     drop(registered);
     Ok(())
 }
 
-fn register(instance: &str, port: u16, spki: &str) -> Result<Registered> {
+/// The status a registration's callback reports, once.
+type Completion = watch::Sender<Option<u32>>;
+
+fn register(
+    instance: &str,
+    port: u16,
+    spki: &str,
+) -> Result<(Registered, watch::Receiver<Option<u32>>)> {
     let host = whoami::hostname().context("no host name to announce")?;
     let service = wide(&format!("{instance}.{SERVICE_TYPE}.local"));
     let host = wide(&format!("{host}.local"));
@@ -54,31 +69,35 @@ fn register(instance: &str, port: u16, spki: &str) -> Result<Registered> {
     if built.is_null() {
         bail!("Windows built no service instance");
     }
-    let registered = Registered(Box::new(DNS_SERVICE_REGISTER_REQUEST {
+    let (completion, completed) = watch::channel(None);
+    let completion = Box::new(completion);
+    let request = Box::new(DNS_SERVICE_REGISTER_REQUEST {
         Version: DNS_QUERY_REQUEST_VERSION1,
         InterfaceIndex: 0,
         pServiceInstance: built,
         pRegisterCompletionCallback: Some(registered),
-        pQueryContext: ptr::null_mut(),
+        pQueryContext: ptr::from_ref::<Completion>(&completion).cast_mut().cast(),
         hCredentials: ptr::null_mut(),
         unicastEnabled: 0,
-    }));
-    // SAFETY: the request and its instance outlive the registration: `Registered`
-    // leaks them past its deregistration.
-    let status = unsafe { DnsServiceRegister(&raw const *registered.0, ptr::null_mut()) };
+    });
+    // SAFETY: the request, its instance and its context outlive the
+    // registration: none is freed once it succeeds.
+    let status = unsafe { DnsServiceRegister(&raw const *request, ptr::null_mut()) };
     if status != DNS_REQUEST_PENDING.cast_unsigned() {
-        std::mem::forget(registered);
         // SAFETY: the instance came from DnsServiceConstructInstance, and a
-        // refused request never reads it again.
+        // refused request never reads it, or its context, again.
         unsafe { DnsServiceFreeInstance(built) };
         bail!("Windows refused the service (status {status})");
     }
-    Ok(registered)
+    Box::leak(completion);
+    Ok((Registered(ManuallyDrop::new(request)), completed))
 }
 
 /// A registration, deregistered on drop: Learn's Remarks, "To deregister the
-/// service, call DnsServiceDeRegister".
-struct Registered(Box<DNS_SERVICE_REGISTER_REQUEST>);
+/// service, call DnsServiceDeRegister". Its request, like the [`Completion`] its
+/// context points at, is never freed: dnsapi reads both until a deregistration
+/// completes, which a drop cannot wait for.
+struct Registered(ManuallyDrop<Box<DNS_SERVICE_REGISTER_REQUEST>>);
 
 // SAFETY: the request is read by dnsapi through the pointer each call is handed
 // and by this owner's drop, so moving the box between threads moves nothing it
@@ -88,10 +107,8 @@ unsafe impl Send for Registered {}
 impl Drop for Registered {
     fn drop(&mut self) {
         self.0.pRegisterCompletionCallback = Some(deregistered);
-        // SAFETY: the request registered the service; deregistering completes
-        // later, so the request is leaked rather than freed.
-        unsafe { DnsServiceDeRegister(&raw const *self.0, ptr::null_mut()) };
-        Box::leak(std::mem::take(&mut self.0));
+        // SAFETY: the request registered the service.
+        unsafe { DnsServiceDeRegister(&raw const **self.0, ptr::null_mut()) };
     }
 }
 
@@ -100,18 +117,17 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain([0]).collect()
 }
 
-/// The responder's word on the registration. "If not nullptr, then you are
-/// responsible for freeing the data using DnsServiceFreeInstance."
+/// The responder's word on the registration, sent to `announce`. "If not
+/// nullptr, then you are responsible for freeing the data using
+/// DnsServiceFreeInstance."
 unsafe extern "system" fn registered(
     status: u32,
-    _context: *const c_void,
+    context: *const c_void,
     instance: *const DNS_SERVICE_INSTANCE,
 ) {
-    if status == 0 {
-        tracing::info!("announced on the local network");
-    } else {
-        tracing::warn!(status, "Windows dropped the service");
-    }
+    // SAFETY: the context is the request's own `Completion`, never freed once
+    // the registration succeeds.
+    unsafe { &*context.cast::<Completion>() }.send_replace(Some(status));
     free(instance);
 }
 
@@ -128,5 +144,28 @@ fn free(instance: *const DNS_SERVICE_INSTANCE) {
     if !instance.is_null() {
         // SAFETY: the callback hands this instance to the callee to free.
         unsafe { DnsServiceFreeInstance(instance) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use windows_sys::Win32::Foundation::ERROR_TIMEOUT;
+
+    use super::*;
+
+    /// The status the callback reports reaches `announce`, which waits on
+    /// nothing else.
+    #[test]
+    fn a_registration_status_reaches_its_waiter() {
+        let (completion, completed) = watch::channel(None);
+        // SAFETY: a live `Completion`, and no instance to free.
+        unsafe {
+            registered(
+                ERROR_TIMEOUT,
+                ptr::from_ref(&completion).cast(),
+                ptr::null(),
+            )
+        };
+        assert_eq!(*completed.borrow(), Some(ERROR_TIMEOUT));
     }
 }
