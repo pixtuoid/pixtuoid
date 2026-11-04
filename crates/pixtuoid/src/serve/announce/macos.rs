@@ -66,10 +66,10 @@ fn register(instance: &str, port: u16, spki: &str) -> Result<Driver> {
     let regtype = CString::new(SERVICE_TYPE)?;
     let record = txt_record(&super::txt(spki))?;
     let record_len = u16::try_from(record.len())?;
-    let heard = Box::new(Cell::new(Heard::Held));
+    let replied = Box::new(Cell::new(NO_ERROR));
     let mut sd_ref: ServiceRef = ptr::null_mut();
     // SAFETY: every pointer lives through the call, which copies what it reads
-    // ("the DNSServiceRegister call copies the txtRecord data"), but `heard`,
+    // ("the DNSServiceRegister call copies the txtRecord data"), but `replied`,
     // which `Driver` keeps past the ref; `registered` has the reply's C
     // signature. Port is in network byte order, as it asks.
     let error = unsafe {
@@ -85,12 +85,10 @@ fn register(instance: &str, port: u16, spki: &str) -> Result<Driver> {
             record_len,
             record.as_ptr().cast(),
             Some(registered),
-            ptr::from_ref(&*heard).cast_mut().cast(),
+            ptr::from_ref(&*replied).cast_mut().cast(),
         )
     };
-    if error != NO_ERROR {
-        bail!("mDNSResponder refused the service (error {error})");
-    }
+    held(error)?;
     let service = Service(sd_ref);
     // SAFETY: the ref was just initialized.
     let fd = unsafe { DNSServiceRefSockFD(service.0) };
@@ -104,8 +102,17 @@ fn register(instance: &str, port: u16, spki: &str) -> Result<Driver> {
     Ok(Driver {
         socket,
         service,
-        heard,
+        replied,
     })
+}
+
+/// Whether `error`, a call's or a reply's, leaves the service held.
+fn held(error: ErrorType) -> Result<()> {
+    if error == NO_ERROR {
+        Ok(())
+    } else {
+        bail!("mDNSResponder refused the service (error {error})")
+    }
 }
 
 /// A TXT record of one string: a length byte, then the string.
@@ -120,18 +127,9 @@ fn txt_record(txt: &str) -> Result<Vec<u8>> {
 struct Driver {
     socket: AsyncFd<Socket>,
     service: Service,
-    /// Last, since the ref's replies write it.
-    heard: Box<Cell<Heard>>,
-}
-
-/// What the responder's last reply said of the service.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Heard {
-    Held,
-    /// "has to be deregistered": the reply without [`FLAGS_ADD`].
-    Withdrawn,
-    /// The reply's error, which the socket may outlive.
-    Refused(ErrorType),
+    /// The last reply's error, which the socket may outlive; last, since the
+    /// ref's replies write it.
+    replied: Box<Cell<ErrorType>>,
 }
 
 impl Driver {
@@ -161,11 +159,7 @@ impl Driver {
                 tracing::debug!(error, "mDNSResponder's reply failed");
                 return Ok(());
             }
-            match self.heard.get() {
-                Heard::Held => {}
-                Heard::Withdrawn => return Ok(()),
-                Heard::Refused(error) => bail!("mDNSResponder refused the service (error {error})"),
-            }
+            held(self.replied.get())?;
         }
     }
 }
@@ -216,8 +210,8 @@ impl Socket {
     }
 }
 
-/// The responder's word on the service, kept in the [`Heard`] it is handed:
-/// announced, renamed on a conflict, withdrawn or refused.
+/// The responder's word on the service, its error kept where `run` reads it:
+/// announced, withdrawn to be renamed, or refused.
 unsafe extern "C" fn registered(
     _sd_ref: ServiceRef,
     flags: Flags,
@@ -227,17 +221,20 @@ unsafe extern "C" fn registered(
     _domain: *const c_char,
     context: *mut c_void,
 ) {
-    // SAFETY: the context is the `Driver`'s `heard`, which outlives its ref, and
-    // only `run`'s `DNSServiceProcessResult` calls this, on `run`'s thread.
-    let heard = unsafe { &*context.cast::<Cell<Heard>>() };
+    // SAFETY: the context is the `Driver`'s `replied`, which outlives its ref,
+    // and only `run`'s `DNSServiceProcessResult` calls this, on `run`'s thread.
+    unsafe { &*context.cast::<Cell<ErrorType>>() }.set(error);
     if error != NO_ERROR {
-        heard.set(Heard::Refused(error));
-    } else if flags & FLAGS_ADD == 0 {
-        heard.set(Heard::Withdrawn);
+        return;
+    }
+    // SAFETY: on success the reply names the instance, NUL-terminated and live
+    // through the call.
+    let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
+    if flags & FLAGS_ADD == 0 {
+        // A conflict's: the responder "renames and reregisters" the name, an Add
+        // to follow (mDNSResponder-2881.120.11 `mDNSShared/uds_daemon.c:1081-1086`).
+        tracing::info!(name = ?name, "mDNSResponder withdrew the name to rename it");
     } else {
-        // SAFETY: on success the reply names the instance, NUL-terminated and
-        // live through the call.
-        let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
         tracing::info!(name = ?name, "announced on the local network");
     }
 }
@@ -365,41 +362,29 @@ mod tests {
         assert_eq!(found, Some((port, txt)));
     }
 
-    /// A reply that refuses or withdraws the service ends `run` whether or not
-    /// the socket stays open.
+    /// A withdrawal, then the renamed name's Add, holds the service; only a
+    /// reply's error ends `run`, whether or not the socket stays open.
     #[test]
-    fn a_refusing_or_withdrawing_reply_is_heard() {
+    fn only_a_replys_error_refuses_the_service() {
         // `kDNSServiceErr_ServiceNotRunning`, a daemon's crash.
         let not_running = -65_563;
-        let heard = Cell::new(Heard::Held);
-        let context = ptr::from_ref(&heard).cast_mut().cast();
+        let replied = Cell::new(NO_ERROR);
+        let context = ptr::from_ref(&replied).cast_mut().cast();
         let null = ptr::null();
-        // SAFETY: a live `Heard`, and a name, read only on success, live
-        // through each call.
-        unsafe {
-            registered(
-                ptr::null_mut(),
-                FLAGS_ADD,
-                NO_ERROR,
-                c"studio".as_ptr(),
-                null,
-                null,
-                context,
-            );
-            assert_eq!(heard.get(), Heard::Held);
-            registered(
-                ptr::null_mut(),
-                0,
-                NO_ERROR,
-                c"studio".as_ptr(),
-                null,
-                null,
-                context,
-            );
-            assert_eq!(heard.get(), Heard::Withdrawn);
-            registered(ptr::null_mut(), 0, not_running, null, null, null, context);
-        }
-        assert_eq!(heard.get(), Heard::Refused(not_running));
+        let reply = |flags, error, name: *const c_char| {
+            // SAFETY: a live `Cell`, and a name, read only on success, live
+            // through the call.
+            unsafe { registered(ptr::null_mut(), flags, error, name, null, null, context) };
+            held(replied.get())
+        };
+        assert!(reply(FLAGS_ADD, NO_ERROR, c"studio".as_ptr()).is_ok());
+        assert!(reply(0, NO_ERROR, c"studio".as_ptr()).is_ok());
+        assert!(reply(FLAGS_ADD, NO_ERROR, c"studio (2)".as_ptr()).is_ok());
+        let refused = reply(FLAGS_ADD, not_running, null).expect_err("refused");
+        assert!(
+            refused.to_string().contains(&not_running.to_string()),
+            "{refused}"
+        );
     }
 
     #[test]

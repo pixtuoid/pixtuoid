@@ -1,14 +1,14 @@
 //! Windows' own mDNS responder, through dnsapi.dll's
 //! [`DnsServiceRegister`](https://learn.microsoft.com/en-us/windows/win32/api/windns/nf-windns-dnsserviceregister)
-//! (Windows 10 on), whose callback reports "the status of the registration"
-//! and which names no way a registered service is lost, so `announce` holds one
-//! until dropped.
+//! (Windows 10 on), whose [callback](https://learn.microsoft.com/en-us/windows/win32/api/windns/nc-windns-dns_service_register_complete)
+//! reports "the status of the registration" and which names no way a
+//! registered service is lost, so `announce` holds one until dropped.
 
 use std::ffi::c_void;
 use std::mem::ManuallyDrop;
 use std::ptr;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use pixtuoid_core::remote::{SERVICE_TYPE, SPKI_KEY};
 use tokio::sync::watch;
 use windows_sys::Win32::Foundation::{DNS_REQUEST_PENDING, ERROR_SUCCESS};
@@ -24,24 +24,33 @@ use windows_sys::Win32::NetworkManagement::Dns::{
 /// order for mDNS to work".
 pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()> {
     let (registration, mut completed) = register(instance, port, spki)?;
-    let status = *completed.wait_for(Option::is_some).await?;
-    if status != Some(ERROR_SUCCESS) {
-        bail!("Windows refused the service (status {status:?})");
-    }
+    held(*completed.wait_for(|&status| status != PENDING).await?)?;
     tracing::info!("announced on the local network");
     std::future::pending::<()>().await;
     drop(registration);
     Ok(())
 }
 
-/// The status a registration's callback reports, once.
-type Completion = watch::Sender<Option<u32>>;
+/// The status dnsapi gives a registration still in progress.
+const PENDING: u32 = DNS_REQUEST_PENDING.cast_unsigned();
 
-fn register(
-    instance: &str,
-    port: u16,
-    spki: &str,
-) -> Result<(Registered, watch::Receiver<Option<u32>>)> {
+/// A registration's status, [`PENDING`] until its callback reports one.
+type Completion = watch::Sender<u32>;
+
+/// Whether the callback's `status` leaves the service held.
+fn held(status: u32) -> Result<()> {
+    if status == ERROR_SUCCESS {
+        Ok(())
+    } else {
+        Err(refused(status))
+    }
+}
+
+fn refused(status: u32) -> anyhow::Error {
+    anyhow!("Windows refused the service (status {status})")
+}
+
+fn register(instance: &str, port: u16, spki: &str) -> Result<(Registered, watch::Receiver<u32>)> {
     let host = whoami::hostname().context("no host name to announce")?;
     let service = wide(&format!("{instance}.{SERVICE_TYPE}.local"));
     let host = wide(&format!("{host}.local"));
@@ -69,7 +78,7 @@ fn register(
     if built.is_null() {
         bail!("Windows built no service instance");
     }
-    let (completion, completed) = watch::channel(None);
+    let (completion, completed) = watch::channel(PENDING);
     let completion = Box::new(completion);
     let request = Box::new(DNS_SERVICE_REGISTER_REQUEST {
         Version: DNS_QUERY_REQUEST_VERSION1,
@@ -83,11 +92,11 @@ fn register(
     // SAFETY: the request, its instance and its context outlive the
     // registration: none is freed once it succeeds.
     let status = unsafe { DnsServiceRegister(&raw const *request, ptr::null_mut()) };
-    if status != DNS_REQUEST_PENDING.cast_unsigned() {
+    if status != PENDING {
         // SAFETY: the instance came from DnsServiceConstructInstance, and a
         // refused request never reads it, or its context, again.
         unsafe { DnsServiceFreeInstance(built) };
-        bail!("Windows refused the service (status {status})");
+        return Err(refused(status));
     }
     Box::leak(completion);
     Ok((Registered(ManuallyDrop::new(request)), completed))
@@ -127,7 +136,7 @@ unsafe extern "system" fn registered(
 ) {
     // SAFETY: the context is the request's own `Completion`, never freed once
     // the registration succeeds.
-    unsafe { &*context.cast::<Completion>() }.send_replace(Some(status));
+    unsafe { &*context.cast::<Completion>() }.send_replace(status);
     free(instance);
 }
 
@@ -154,10 +163,10 @@ mod tests {
     use super::*;
 
     /// The status the callback reports reaches `announce`, which waits on
-    /// nothing else.
+    /// nothing else, and only success holds the service.
     #[test]
-    fn a_registration_status_reaches_its_waiter() {
-        let (completion, completed) = watch::channel(None);
+    fn a_registration_status_reaches_its_waiter_and_only_success_holds() {
+        let (completion, completed) = watch::channel(PENDING);
         // SAFETY: a live `Completion`, and no instance to free.
         unsafe {
             registered(
@@ -166,6 +175,11 @@ mod tests {
                 ptr::null(),
             )
         };
-        assert_eq!(*completed.borrow(), Some(ERROR_TIMEOUT));
+        assert_eq!(*completed.borrow(), ERROR_TIMEOUT);
+        assert!(held(ERROR_SUCCESS).is_ok());
+        assert_eq!(
+            held(ERROR_TIMEOUT).expect_err("refused").to_string(),
+            format!("Windows refused the service (status {ERROR_TIMEOUT})")
+        );
     }
 }
