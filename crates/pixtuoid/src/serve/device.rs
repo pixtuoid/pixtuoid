@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, ensure};
 use pixtuoid_core::remote::{
-    self, Answer, Ask, Changed, HEARTBEAT, Hello, LineError, Reply, SourceRow, VERSION,
+    self, Answer, Ask, Changed, HEARTBEAT, Hello, Reply, SourceRow, VERSION, WireError,
 };
 use serde::Serialize;
 use tokio::io::{
@@ -119,9 +119,9 @@ impl Devices {
         }
     }
 
-    /// Read the hello and the reply line to it. Anything but a verdict or another
-    /// version ends the connection with no reply: that's a retry, where a
-    /// refusal is a re-pair.
+    /// Read the hello and return the line that answers it. Anything but a
+    /// verdict or another version ends the connection with no reply: that's a
+    /// retry, where a refusal is a re-pair.
     async fn greet<S>(&self, stream: &mut S) -> Result<(String, Option<Hashed>)>
     where
         S: AsyncBufRead + Unpin,
@@ -131,11 +131,11 @@ impl Devices {
         let hello = match Hello::from_line(&line) {
             Ok(hello) => hello,
             // An older device shows its own update line.
-            Err(LineError::Incompatible { v }) => {
+            Err(WireError::Incompatible { v }) => {
                 if v > VERSION {
                     tracing::warn!(
-                        device = v,
-                        server = VERSION,
+                        device_version = v,
+                        server_version = VERSION,
                         "a device speaks a newer wire version: update pixtuoid on this computer"
                     );
                 }

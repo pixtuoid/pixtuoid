@@ -37,7 +37,7 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_regi
 /// reader ignores what it doesn't know and maps an unknown tag to its nearest
 /// state. Any break, in a line or the link, bumps it, and every pairing or
 /// reconnect across it ends in a precise "update" on the side that can act
-/// ([`PairLinkError::Incompatible`], [`LineError::Incompatible`]). The promise counts
+/// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]). The promise counts
 /// from the first release a device can pair with: an older server's link
 /// carries no version, which [`PairLink`]'s parse refuses
 /// ([`PairLinkError::Outdated`]).
@@ -70,10 +70,10 @@ fn versioned_line(body: &impl Serialize) -> serde_json::Result<String> {
 }
 
 /// `line` as a `T`, once its `v` proves it this build's [`VERSION`].
-fn read_versioned<T: DeserializeOwned>(line: &[u8]) -> Result<T, LineError> {
+fn read_versioned<T: DeserializeOwned>(line: &[u8]) -> Result<T, WireError> {
     let Version { v } = serde_json::from_slice(line)?;
     if v != VERSION {
-        return Err(LineError::Incompatible { v });
+        return Err(WireError::Incompatible { v });
     }
     Ok(serde_json::from_slice(line)?)
 }
@@ -585,7 +585,7 @@ impl Hello {
     ///
     /// If the device speaks another wire version, for which a server writes
     /// [`version_reply`] and spends nothing; or if the line is malformed.
-    pub fn from_line(line: &[u8]) -> Result<Self, LineError> {
+    pub fn from_line(line: &[u8]) -> Result<Self, WireError> {
         read_versioned(line)
     }
 }
@@ -625,7 +625,7 @@ impl Reply {
     ///
     /// If the server speaks another wire version, which [`version_reply`]
     /// names; or if the line is malformed.
-    pub fn from_line(line: &[u8]) -> Result<Self, LineError> {
+    pub fn from_line(line: &[u8]) -> Result<Self, WireError> {
         read_versioned(line)
     }
 }
@@ -765,7 +765,7 @@ pub enum SourceState {
 /// leaves the office unchanged.
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum LineError {
+pub enum WireError {
     /// The other side speaks a wire version this build doesn't: the older side
     /// updates.
     #[error("the other side speaks wire version {v}, where this build speaks {VERSION}")]
@@ -831,7 +831,7 @@ impl RemoteOffice {
     /// # Errors
     ///
     /// If the line is another wire version, or malformed.
-    pub fn apply(&mut self, line: &[u8], now: SystemTime) -> Result<(), LineError> {
+    pub fn apply(&mut self, line: &[u8], now: SystemTime) -> Result<(), WireError> {
         let Snapshot {
             now_ms,
             machine,
@@ -1290,7 +1290,7 @@ mod tests {
         let mut office = RemoteOffice::new(caps(4));
         let refused = office.apply(line.to_string().as_bytes(), at(AT));
         assert!(
-            matches!(refused, Err(LineError::Malformed(_))),
+            matches!(refused, Err(WireError::Malformed(_))),
             "{refused:?}"
         );
         assert_eq!(office.machine(), None);
@@ -1645,7 +1645,7 @@ mod tests {
         received(&mut office, &crowd(&["a"]), AT);
         let line = format!("{{\"v\":{},\"changed\":\"everything\"}}\n", VERSION + 1);
         let err = office.apply(line.as_bytes(), at(AT)).unwrap_err();
-        assert!(matches!(err, LineError::Incompatible { v } if v == VERSION + 1));
+        assert!(matches!(err, WireError::Incompatible { v } if v == VERSION + 1));
         assert_eq!(office.scene().agents.len(), 1);
     }
 
@@ -1655,7 +1655,7 @@ mod tests {
         received(&mut office, &crowd(&["a"]), AT);
         for line in ["", "not json", "{\"v\":1}"] {
             let err = office.apply(line.as_bytes(), at(AT)).unwrap_err();
-            assert!(matches!(err, LineError::Malformed(_)), "{line:?}");
+            assert!(matches!(err, WireError::Malformed(_)), "{line:?}");
         }
         assert_eq!(office.scene().agents.len(), 1);
     }
@@ -1712,7 +1712,7 @@ mod tests {
     #[test]
     fn a_peer_of_another_version_is_named_before_the_rest_is_read() {
         for v in [0, VERSION + 1] {
-            let incompatible = |read: Result<(), LineError>| matches!(read, Err(LineError::Incompatible { v: named }) if named == v);
+            let incompatible = |read: Result<(), WireError>| matches!(read, Err(WireError::Incompatible { v: named }) if named == v);
             let hello = format!("{{\"v\":{v},\"hello\":\"pair\",\"code\":\"c\"}}\n");
             assert!(incompatible(Hello::from_line(hello.as_bytes()).map(drop)));
             for reply in [
@@ -1728,7 +1728,7 @@ mod tests {
 
     #[test]
     fn a_hello_or_reply_without_its_version_is_malformed() {
-        let malformed = |read: Result<(), LineError>| matches!(read, Err(LineError::Malformed(_)));
+        let malformed = |read: Result<(), WireError>| matches!(read, Err(WireError::Malformed(_)));
         for line in [
             r#"{"hello":"pair","code":"c"}"#,
             r#"{"v":"1","hello":"pair","code":"c"}"#,
@@ -1844,7 +1844,7 @@ mod tests {
         received(&mut office, &crowd(&["a"]), AT);
         let answer = serde_json::to_string(&Answer::Unsupported).unwrap();
         let err = office.apply(answer.as_bytes(), at(AT)).unwrap_err();
-        assert!(matches!(err, LineError::Malformed(_)));
+        assert!(matches!(err, WireError::Malformed(_)));
         assert_eq!(office.scene().agents.len(), 1);
     }
 

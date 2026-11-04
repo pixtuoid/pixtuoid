@@ -130,13 +130,14 @@ Watch THAT PR's CI and intervene only if it reds.
    and submit it with ["Manually release this version"](https://developer.apple.com/help/app-store-connect/manage-your-apps-availability/select-an-app-store-version-release-option),
    rebuilding it if `VERSION` moves again before the tag.
 2. Once it is Pending Developer Release, cut the release.
-3. Release the App once the tag's homebrew-core bump PR merges. App updates
-   install on their own, so an App out sooner tells its users to update a CLI
-   that `brew upgrade` can't deliver until BrewTestBot's next run and that PR's CI.
+3. Release the App once the tag's homebrew-core bump PR merges. App Store apps
+   on iPhone ["automatically update by default"](https://support.apple.com/en-us/HT202180),
+   so an App out sooner tells most of its users to update a CLI that
+   `brew upgrade` can't deliver until BrewTestBot's next run and that PR's CI.
 
-Two gaps remain, each showing "update the app" until it arrives: a CLI installed
-another way before the brew merge, and the "up to 24 hours" Apple's page gives a
-release to reach the App Store.
+Two gaps remain, each leaving the App asking for its own update until that
+arrives: a CLI installed another way before the brew merge, and the "up to 24
+hours" Apple's release-option page gives a release to reach the App Store.
 
 Publishing uses **OIDC trusted publishing** — CI carries no registry tokens;
 the per-crate/per-package Trusted Publishers, each naming environment
