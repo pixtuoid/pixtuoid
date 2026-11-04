@@ -28,7 +28,11 @@ fn walkable_mask_standard_96x70() {
 }
 
 #[test]
-fn walkable_mask_open_plan_96x70() {
-    let l = SceneLayout::compute_with_seed(96, 70, Some(2), 2).unwrap();
-    insta::assert_snapshot!("walkable_mask_open_plan_96x70", mask_to_ascii(&l));
+fn walkable_mask_open_plan_seed11_96x70() {
+    let l = SceneLayout::compute_with_seed(96, 70, Some(2), 11).unwrap();
+    assert!(
+        l.meeting_rooms.is_empty() && l.pantry.is_some(),
+        "seed 11 lays out the open plan"
+    );
+    insta::assert_snapshot!("walkable_mask_open_plan_seed11_96x70", mask_to_ascii(&l));
 }

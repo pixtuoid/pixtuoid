@@ -5,29 +5,29 @@ expression: l.home_desks
 [
     HomeDesk {
         at: Point {
-            x: 67,
-            y: 48,
+            x: 53,
+            y: 62,
         },
         facing: South,
     },
     HomeDesk {
         at: Point {
-            x: 89,
-            y: 48,
+            x: 75,
+            y: 62,
         },
         facing: South,
     },
     HomeDesk {
         at: Point {
-            x: 67,
-            y: 60,
+            x: 53,
+            y: 74,
         },
         facing: North,
     },
     HomeDesk {
         at: Point {
-            x: 89,
-            y: 60,
+            x: 75,
+            y: 74,
         },
         facing: North,
     },

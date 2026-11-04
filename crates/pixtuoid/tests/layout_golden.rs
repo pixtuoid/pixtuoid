@@ -65,57 +65,62 @@ fn layout_standard_192x160_room_walls() {
     insta::assert_debug_snapshot!("room_walls_192x160", l.room_walls);
 }
 
-// Open plan: seed 2 hashes to floor_variant=1 (no meeting room, open pantry).
-
-#[test]
-fn layout_open_plan_seed2_desks() {
-    let l = SceneLayout::compute_with_seed(160, 120, Some(4), 2).unwrap();
-    insta::assert_debug_snapshot!("desks_open_plan_seed2", l.home_desks);
+/// Seed 11's office, checked for the open plan's shape, which the lounge shares;
+/// `pixtuoid-scene`'s `the_open_plan_goldens_seed_is_the_open_plan` pins which.
+fn open_plan_seed11() -> SceneLayout {
+    let l = SceneLayout::compute_with_seed(160, 120, Some(4), 11).unwrap();
+    assert!(
+        l.meeting_rooms.is_empty() && l.pantry.is_some(),
+        "seed 11 lays out the open plan"
+    );
+    l
 }
 
 #[test]
-fn layout_open_plan_seed2_waypoints() {
-    let l = SceneLayout::compute_with_seed(160, 120, Some(4), 2).unwrap();
-    insta::assert_debug_snapshot!("waypoints_open_plan_seed2", l.waypoints);
+fn layout_open_plan_seed11_desks() {
+    let l = open_plan_seed11();
+    insta::assert_debug_snapshot!("desks_open_plan_seed11", l.home_desks);
 }
 
 #[test]
-fn layout_open_plan_seed2_meeting() {
-    let l = SceneLayout::compute_with_seed(160, 120, Some(4), 2).unwrap();
-    insta::assert_debug_snapshot!("meeting_open_plan_seed2", l.meeting_room_bounds(0));
+fn layout_open_plan_seed11_waypoints() {
+    let l = open_plan_seed11();
+    insta::assert_debug_snapshot!("waypoints_open_plan_seed11", l.waypoints);
+}
+
+/// Seed 3's office, checked to be the dense floor (two meeting rooms, no
+/// pantry) before a snapshot can take another variant's under its name.
+fn dense_seed3() -> SceneLayout {
+    let l = SceneLayout::compute_with_seed(192, 160, Some(4), 3).unwrap();
+    assert!(
+        l.meeting_rooms.len() == 2 && l.pantry.is_none(),
+        "seed 3 lays out the dense floor"
+    );
+    l
 }
 
 #[test]
-fn layout_open_plan_seed2_room_walls() {
-    let l = SceneLayout::compute_with_seed(160, 120, Some(4), 2).unwrap();
-    insta::assert_debug_snapshot!("room_walls_open_plan_seed2", l.room_walls);
-}
-
-// Dense layout: seed 6 hashes to floor_variant=2 (dual meeting rooms if tall
-// enough).
-
-#[test]
-fn layout_dense_seed6_desks() {
-    let l = SceneLayout::compute_with_seed(192, 160, Some(4), 6).unwrap();
-    insta::assert_debug_snapshot!("desks_dense_seed6", l.home_desks);
+fn layout_dense_seed3_desks() {
+    let l = dense_seed3();
+    insta::assert_debug_snapshot!("desks_dense_seed3", l.home_desks);
 }
 
 #[test]
-fn layout_dense_seed6_waypoints() {
-    let l = SceneLayout::compute_with_seed(192, 160, Some(4), 6).unwrap();
-    insta::assert_debug_snapshot!("waypoints_dense_seed6", l.waypoints);
+fn layout_dense_seed3_waypoints() {
+    let l = dense_seed3();
+    insta::assert_debug_snapshot!("waypoints_dense_seed3", l.waypoints);
 }
 
 #[test]
-fn layout_dense_seed6_meeting() {
-    let l = SceneLayout::compute_with_seed(192, 160, Some(4), 6).unwrap();
-    insta::assert_debug_snapshot!("meeting_dense_seed6", l.meeting_room_bounds(0));
+fn layout_dense_seed3_meeting() {
+    let l = dense_seed3();
+    insta::assert_debug_snapshot!("meeting_dense_seed3", l.meeting_room_bounds(0));
 }
 
 #[test]
-fn layout_dense_seed6_room_walls() {
-    let l = SceneLayout::compute_with_seed(192, 160, Some(4), 6).unwrap();
-    insta::assert_debug_snapshot!("room_walls_dense_seed6", l.room_walls);
+fn layout_dense_seed3_room_walls() {
+    let l = dense_seed3();
+    insta::assert_debug_snapshot!("room_walls_dense_seed3", l.room_walls);
 }
 
 // A seed collision here makes adjacent floors look identical.
