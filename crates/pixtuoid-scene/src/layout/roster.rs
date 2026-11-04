@@ -393,14 +393,18 @@ pub(crate) fn desk_fixtures(
     })
 }
 
-/// Each home desk's task chair, where its facing turns it north.
-pub(crate) fn desk_chair_fixtures(home_desks: &[HomeDesk]) -> impl Iterator<Item = Fixture> + '_ {
+/// Each home desk's task chair in the office `inner` is the area inside the
+/// insets of, where its facing turns it north.
+pub(crate) fn desk_chair_fixtures(
+    home_desks: &[HomeDesk],
+    inner: Bounds,
+) -> impl Iterator<Item = Fixture> + '_ {
     home_desks
         .iter()
         .enumerate()
         .filter_map(move |(i, &HomeDesk { at, facing })| {
             let local = FloorLocalDeskIndex(i);
-            desk_chair_top_left(at, facing).map(|tl| Fixture {
+            desk_chair_top_left(at, facing, inner).map(|tl| Fixture {
                 kind: FixtureKind::DeskChair(local),
                 at: tl,
                 visual: boxed(tl, furniture_def(Furniture::DeskChair).visual),
@@ -707,7 +711,7 @@ impl SceneLayout {
                 self.notice_board_rect(room)
                     .map(|b| upright(FixtureKind::NoticeBoard { room }, top_left(b), b))
             }))
-            .chain(desk_chair_fixtures(home_desks))
+            .chain(desk_chair_fixtures(home_desks, self.inner))
     }
 
     /// The fixture hovering `cell` points at: the topmost whose art covers any
@@ -948,15 +952,15 @@ fn filing_cabinet_top_left(desk: Point, i: FloorLocalDeskIndex, floor_end: u16) 
     })
 }
 
-/// Where the task chair stands at `desk`, or `None` for a desk that does not
-/// face north: a viewer-facing occupant sits behind their desk, in front of
-/// their chair.
-pub(crate) fn desk_chair_top_left(desk: Point, facing: Facing) -> Option<Point> {
+/// Where the task chair stands at `desk` in the office `inner` is the area
+/// inside the insets of, or `None` for a desk that does not face north: a
+/// viewer-facing occupant sits behind their desk, in front of their chair.
+pub(crate) fn desk_chair_top_left(desk: Point, facing: Facing, inner: Bounds) -> Option<Point> {
     /// The backrest crosses the occupant's lower torso deliberately — clearing
     /// the sprite would leave a detached slab at their feet.
     const CHAIR_BACK_TOP_DY: u16 = 6;
     (facing == Facing::North).then(|| Point {
-        x: super::desk_walk_anchor_facing(desk, facing)
+        x: super::desk_walk_anchor_facing(desk, facing, inner)
             .x
             .saturating_sub(furniture_def(Furniture::DeskChair).visual.w / 2),
         y: desk.y + CHAIR_BACK_TOP_DY,
@@ -968,7 +972,7 @@ pub(crate) fn desk_chair_top_left(desk: Point, facing: Facing) -> Option<Point> 
 /// [`Tie::FixtureOver`] therefore draws the chair over its occupant throughout —
 /// no flip where the walk ends and the sit begins.
 pub(crate) fn desk_chair_sort_row(desk: Point, facing: Facing) -> u16 {
-    super::desk_walk_anchor_facing(desk, facing).y
+    super::desk_seat_row(desk, facing)
 }
 
 #[cfg(test)]

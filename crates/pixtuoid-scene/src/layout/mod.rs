@@ -22,8 +22,8 @@ pub(crate) use approach::{approach_point, first_reachable_on_side, stand_point};
 pub(crate) use compute::PANTRY_COUNTER_LARGE_W;
 pub use compute::min_layout_size;
 pub(crate) use decor::{
-    DwellWindow, SEAT_RENDER_Y_OFF, WALKING_Y_OFF, desk_furniture_def, desk_walk_anchor_facing,
-    seated_foot_cell,
+    DwellWindow, SEAT_RENDER_Y_OFF, WALKING_Y_OFF, desk_furniture_def, desk_seat_row,
+    desk_walk_anchor_facing, seated_foot_cell,
 };
 pub use decor::{
     Facing, Furniture, FurnitureDef, PlantKind, PodDecor, WallDecor, WaypointKind, furniture_def,
@@ -342,7 +342,7 @@ pub struct SceneLayout {
     pub buf_h: u16,
     /// The area inside the viewport's insets, where everything stands: under
     /// them lie only the floor, the walls and the sky.
-    pub(crate) inner: Bounds,
+    pub inner: Bounds,
     /// The desk-pod quadrant — the bounds enclosing the cubicle grid.
     pub cubicle_band: Bounds,
     /// The cubicle-band-width horizontal aisle at the bottom of the desk pods —
@@ -474,9 +474,10 @@ pub const ELEVATOR_H: u16 = 14;
 pub const CELL_ROWS: u16 = 2;
 
 /// The rows over a door whose top row is `door_y` that the terminal's floor
-/// indicator writes its text across: the whole cell above the door's.
-pub(crate) fn floor_indicator_rows(door_y: u16) -> std::ops::Range<u16> {
-    let top = (door_y / CELL_ROWS).saturating_sub(1) * CELL_ROWS;
+/// indicator writes its text across: the whole cell above the door's, on the
+/// cells of an office whose north edge is `office_top`.
+pub(crate) fn floor_indicator_rows(door_y: u16, office_top: u16) -> std::ops::Range<u16> {
+    let top = ((door_y - office_top) / CELL_ROWS).saturating_sub(1) * CELL_ROWS + office_top;
     top..top + CELL_ROWS
 }
 
@@ -499,7 +500,9 @@ pub fn floor_indicator(floor: crate::floor::FloorMeta) -> [crate::display::Conte
 /// an office whose north edge is `office_top`.
 pub(crate) fn exit_sign_pos(door: Point, office_top: u16) -> Option<Point> {
     let sign = furniture_def(WallDecor::ExitSign.furniture()).visual;
-    let y = floor_indicator_rows(door.y).start.checked_sub(sign.h)?;
+    let y = floor_indicator_rows(door.y, office_top)
+        .start
+        .checked_sub(sign.h)?;
     (y >= office_top + WINDOW_TOP).then_some(Point {
         x: door.x + (ELEVATOR_W - sign.w) / 2,
         y,
@@ -510,6 +513,15 @@ pub(crate) fn exit_sign_pos(door: Point, office_top: u16) -> Option<Point> {
 /// reference, and the `snapshot` example that renders the docs/CI media
 /// baselines pins its scene to it.
 pub const CLASSIC_OFFICE_DESKS: usize = 16;
+/// The area inside the insets of an office no chrome covers, for a test that
+/// seats a desk no layout placed.
+#[cfg(test)]
+pub(crate) const BARE_OFFICE: Bounds = Bounds {
+    x: 0,
+    y: 0,
+    width: u16::MAX,
+    height: u16::MAX,
+};
 /// Test-facing alias for [`CLASSIC_OFFICE_DESKS`] — the named default
 /// deterministic tests/snapshots pass as `Some(TEST_DEFAULT_DESKS)`.
 #[cfg(test)]

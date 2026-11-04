@@ -4,7 +4,9 @@
 
 use crate::pack::Piece;
 
-use super::{DESK_FOOT_H, DESK_H, DESK_W, OBSTACLE_PAD_PX, Pivot, Point, Size, TIGHT_PAD_PX};
+use super::{
+    Bounds, DESK_FOOT_H, DESK_H, DESK_W, OBSTACLE_PAD_PX, Pivot, Point, Size, TIGHT_PAD_PX,
+};
 
 /// Wander destinations the Idle state machine can pick — each kind controls the
 /// pose + sprite an arriving agent takes. Plants/lamps are decor, not waypoints.
@@ -831,13 +833,15 @@ pub(crate) fn seated_sort_row(seat: Point) -> u16 {
 /// `desk_walk_anchor_settles_exactly_on_the_seat` still pins it.
 pub(crate) const DESK_WALK_Y_OFF: u16 = 4;
 
-/// A point packed into one hash input, so a per-spot seed is derived the same
-/// way everywhere it is needed. The PACKING is load-bearing, not an
-/// implementation detail: every committed still was rendered against it, and
-/// swapping the halves re-seeds every seat and pot while every property test
-/// still passes — pinned by `point_seed_packing_is_frozen`.
-pub(super) fn point_seed(p: Point) -> u64 {
-    (u64::from(p.x) << 32) | u64::from(p.y)
+/// A point of the office whose area inside its insets is `inner`, packed into
+/// one hash input from that area's corner, so a per-spot seed is derived the
+/// same way everywhere it is needed and insets move no seat or pot. The PACKING
+/// is load-bearing, not an implementation detail: every committed still was
+/// rendered against it, and swapping the halves re-seeds every seat and pot
+/// while every property test still passes — pinned by
+/// `point_seed_packing_is_frozen`.
+pub(super) fn point_seed(p: Point, inner: Bounds) -> u64 {
+    (u64::from(p.x - inner.x) << 32) | u64::from(p.y - inner.y)
 }
 
 /// Half the seeded nudge's span. The chair is `CHARACTER_SPRITE_W` on a
@@ -849,9 +853,9 @@ const SEAT_NUDGE_PX: i32 = 2;
 /// ends there all derive from, the way a meeting seat derives from `wp.pos`. It
 /// centres on the PAINTED desk, whose sprite is wider than `DESK_W`, and carries
 /// a per-desk nudge so a pod does not read as a stamped grid.
-fn seat_center_x(desk: Point) -> u16 {
+fn seat_center_x(desk: Point, inner: Bounds) -> u16 {
     let base = i32::from(desk.x) + i32::from(desk_furniture_def().visual.w) / 2;
-    let seed = point_seed(desk);
+    let seed = point_seed(desk, inner);
     let span = SEAT_NUDGE_PX * 2 + 1;
     let nudge = (pixtuoid_core::id::splitmix64(seed) % span as u64) as i32 - SEAT_NUDGE_PX;
     base.saturating_add(nudge).max(0) as u16
@@ -862,16 +866,23 @@ pub(crate) const DESK_WALK_Y_OFF_BACK: u16 = WALKING_Y_OFF;
 // Below `WALKING_Y_OFF`, `seated_top_left`'s `saturating_sub` clamps and the sitter's sprite lands off its chair.
 const _: () = assert!(DESK_WALK_Y_OFF_BACK >= WALKING_Y_OFF);
 
-/// Where an agent walks to/from for its home `desk` (`East`/`West` never occur, and take the `South` arrangement).
-pub(crate) fn desk_walk_anchor_facing(desk: Point, facing: Facing) -> Point {
-    let y_off = match facing {
-        Facing::North => DESK_WALK_Y_OFF_BACK,
-        Facing::South | Facing::East | Facing::West => DESK_WALK_Y_OFF,
-    };
+/// Where an agent walks to/from for its home `desk` in the office whose area
+/// inside its insets is `inner` (`East`/`West` never occur, and take the
+/// `South` arrangement).
+pub(crate) fn desk_walk_anchor_facing(desk: Point, facing: Facing, inner: Bounds) -> Point {
     Point {
-        x: seat_center_x(desk),
-        y: desk.y + y_off,
+        x: seat_center_x(desk, inner),
+        y: desk_seat_row(desk, facing),
     }
+}
+
+/// The row [`desk_walk_anchor_facing`]'s seat lies on.
+pub(crate) fn desk_seat_row(desk: Point, facing: Facing) -> u16 {
+    desk.y
+        + match facing {
+            Facing::North => DESK_WALK_Y_OFF_BACK,
+            Facing::South | Facing::East | Facing::West => DESK_WALK_Y_OFF,
+        }
 }
 
 /// The cell where a seated agent's WALK visually ends so the seated sprite renders
@@ -881,8 +892,9 @@ pub(crate) fn desk_walk_anchor_facing(desk: Point, facing: Facing) -> Point {
 /// AT the approach cell. The post-A\* settle walks `approach_point → S`, and a
 /// blocked `S` (meeting sofa, desk) makes that leg the "sit down" motion rather
 /// than pathfinding. The `Desk` arm hardcodes `Facing::South` — a future caller
-/// must pass the facing.
-pub(crate) fn seated_foot_cell(kind: Furniture, pos: Point) -> Option<Point> {
+/// must pass the facing — and seats the desk in the office `inner` is the area
+/// inside the insets of.
+pub(crate) fn seated_foot_cell(kind: Furniture, pos: Point, inner: Bounds) -> Option<Point> {
     if !furniture_def(kind).occupies_pos {
         return None;
     }
@@ -892,7 +904,7 @@ pub(crate) fn seated_foot_cell(kind: Furniture, pos: Point) -> Option<Point> {
             y: pos.y + (WALKING_Y_OFF - SEAT_RENDER_Y_OFF),
         },
         Furniture::IslandStand => pos,
-        Furniture::Desk => desk_walk_anchor_facing(pos, crate::layout::Facing::South),
+        Furniture::Desk => desk_walk_anchor_facing(pos, crate::layout::Facing::South, inner),
         _ => unreachable!(
             "{kind:?} sets occupies_pos but lacks a seated_foot_cell arm — settling \
              silently would put its occupant on the blocked furniture centre"

@@ -714,7 +714,7 @@ fn narrow_width_desks_stay_inside_the_band_with_anchors_on_buffer() {
                     "{w}x70 seed {seed}: desk x={} overflows the band's right edge {band_right}",
                     d.at.x
                 );
-                let a = desk_walk_anchor_facing(d.at, crate::layout::Facing::South);
+                let a = desk_walk_anchor_facing(d.at, crate::layout::Facing::South, l.inner);
                 assert!(
                     a.x < l.buf_w && a.y < l.buf_h,
                     "{w}x70 seed {seed}: desk_walk_anchor_facing {a:?} is off-buffer ({}x{})",
@@ -783,7 +783,7 @@ fn every_home_desk_has_a_reachable_approach_on_its_own_far_side() {
              so nothing below probes the gap-side approach"
         );
         for &crate::layout::HomeDesk { at: desk, facing } in &l.home_desks {
-            let chair = desk_walk_anchor_facing(desk, facing);
+            let chair = desk_walk_anchor_facing(desk, facing, l.inner);
             const PROBE_DIST: u16 = 40;
             let origin = match facing {
                 Facing::North => Point {

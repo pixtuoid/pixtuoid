@@ -316,14 +316,18 @@ impl TextRun {
         set
     }
 
-    /// The floor indicator naming `floor` over the elevator at `door`:
-    /// centred on the door, in the cell over it, on the badge plate, an arrow
-    /// with no floor its way dim.
-    pub(crate) fn indicator(door: Point, floor: crate::floor::FloorMeta, theme: &Theme) -> Self {
+    /// The floor indicator naming `floor` over the elevator at `door` of an
+    /// office whose north edge is `office_top`: centred on the door, in the
+    /// cell over it, on the badge plate, an arrow with no floor its way dim.
+    pub(crate) fn indicator(
+        (door, office_top): (Point, u16),
+        floor: crate::floor::FloorMeta,
+        theme: &Theme,
+    ) -> Self {
         Self {
             at: Point {
                 x: door.x + crate::layout::ELEVATOR_W / 2,
-                y: crate::layout::floor_indicator_rows(door.y).start,
+                y: crate::layout::floor_indicator_rows(door.y, office_top).start,
             },
             align: Align::Centre,
             spans: crate::layout::floor_indicator(floor)
@@ -351,7 +355,7 @@ impl TextRun {
         theme: &Theme,
     ) -> Vec<Self> {
         let mut runs = board.runs(theme, layout.board());
-        runs.push(Self::indicator(layout.door, floor, theme));
+        runs.push(Self::indicator((layout.door, layout.inner.y), floor, theme));
         runs
     }
 
@@ -420,7 +424,7 @@ mod tests {
         let theme = &crate::theme::NORMAL;
         let arrows = |floor, floors| -> Vec<(Icon, Rgb)> {
             let meta = crate::floor::FloorMeta::for_floor(floor, floors);
-            TextRun::indicator(Point { x: 0, y: 0 }, meta, theme)
+            TextRun::indicator((Point { x: 0, y: 0 }, 0), meta, theme)
                 .spans
                 .into_iter()
                 .filter_map(|s| match s.content {

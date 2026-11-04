@@ -377,8 +377,8 @@ fn seat_view_maps_facing_to_sprite_and_flip() {
 fn a_back_turned_desk_shows_the_pose_s_own_back_view() {
     use crate::layout::{Facing, Point};
     let desk = Point { x: 40, y: 30 };
-    let back = Seat::at_desk(desk, Facing::North);
-    let front = Seat::at_desk(desk, Facing::South);
+    let back = Seat::at_desk(desk, Facing::North, crate::layout::BARE_OFFICE);
+    let front = Seat::at_desk(desk, Facing::South, crate::layout::BARE_OFFICE);
     for (base, want) in [
         (Piece::Seated, Piece::SeatedBack),
         (Piece::Typing, Piece::TypingBack),
@@ -1260,11 +1260,15 @@ fn a_seeded_seat_moves_the_chair_the_sitter_and_the_walk_together() {
         for y in (20..90).step_by(5) {
             let desk = Point { x, y };
             for facing in [Facing::South, Facing::North] {
-                let centre = crate::layout::desk_walk_anchor_facing(desk, facing);
+                let centre = crate::layout::desk_walk_anchor_facing(
+                    desk,
+                    facing,
+                    crate::layout::BARE_OFFICE,
+                );
                 // the sitter and the chair both centre on it
                 for w in [CHARACTER_SPRITE_W, 10] {
                     assert_eq!(
-                        seated_top_left(desk, w, facing).x,
+                        seated_top_left(desk, w, facing, crate::layout::BARE_OFFICE).x,
                         centre.x - w / 2,
                         "{desk:?} {facing:?} w={w}: sprite must centre on the seat"
                     );
@@ -1296,8 +1300,15 @@ fn desk_walk_anchor_settles_exactly_on_the_seat() {
             // Y drift: `a_back_turned_seat_puts_the_occupant_past_the_desk_body`.
             for facing in [crate::layout::Facing::South, crate::layout::Facing::North] {
                 assert_eq!(
-                    walking_top_left(crate::layout::desk_walk_anchor_facing(desk, facing), w),
-                    seated_top_left(desk, w, facing),
+                    walking_top_left(
+                        crate::layout::desk_walk_anchor_facing(
+                            desk,
+                            facing,
+                            crate::layout::BARE_OFFICE
+                        ),
+                        w
+                    ),
+                    seated_top_left(desk, w, facing, crate::layout::BARE_OFFICE),
                     "walking_top_left(desk_walk_anchor_facing({desk:?}, {facing:?}), {w}) \
                      must equal seated_top_left",
                 );
@@ -1316,29 +1327,43 @@ fn seated_foot_cell_settles_exactly_on_the_render_top_left() {
     ] {
         for w in [CHARACTER_SPRITE_W, 10] {
             for f in [Furniture::Couch, Furniture::MeetingSofa] {
-                let s = seated_foot_cell(f, pos).expect("occupies_pos seat");
+                let s = seated_foot_cell(f, pos, crate::layout::BARE_OFFICE)
+                    .expect("occupies_pos seat");
                 assert_eq!(
                     walking_top_left(s, w),
                     back_couch_top_left(pos, w),
                     "{f:?}: walking_top_left(S={s:?}) must equal back_couch_top_left(pos={pos:?}) w={w}",
                 );
             }
-            let s = seated_foot_cell(Furniture::MeetingChair, pos).expect("occupies_pos seat");
+            let s = seated_foot_cell(Furniture::MeetingChair, pos, crate::layout::BARE_OFFICE)
+                .expect("occupies_pos seat");
             assert_eq!(
                 walking_top_left(s, w),
                 back_couch_top_left(pos, w),
                 "MeetingChair: walking_top_left(S={s:?}) must equal back_couch_top_left(pos={pos:?}) w={w}",
             );
-            let sd = seated_foot_cell(Furniture::Desk, pos).expect("desk is occupies_pos");
+            let sd = seated_foot_cell(Furniture::Desk, pos, crate::layout::BARE_OFFICE)
+                .expect("desk is occupies_pos");
             assert_eq!(
                 walking_top_left(sd, w),
-                seated_top_left(pos, w, crate::layout::Facing::South),
+                seated_top_left(
+                    pos,
+                    w,
+                    crate::layout::Facing::South,
+                    crate::layout::BARE_OFFICE
+                ),
                 "Desk: walking_top_left(seated_foot_cell)={:?} must equal seated_top_left",
                 walking_top_left(sd, w),
             );
         }
-        assert_eq!(seated_foot_cell(Furniture::Pantry, pos), None);
-        assert_eq!(seated_foot_cell(Furniture::VendingMachine, pos), None);
+        assert_eq!(
+            seated_foot_cell(Furniture::Pantry, pos, crate::layout::BARE_OFFICE),
+            None
+        );
+        assert_eq!(
+            seated_foot_cell(Furniture::VendingMachine, pos, crate::layout::BARE_OFFICE),
+            None
+        );
     }
 }
 
@@ -1354,7 +1379,7 @@ fn settle_view_matches_the_seated_view_for_every_seat() {
     let seats: Vec<_> = l
         .waypoints
         .iter()
-        .filter(|w| crate::layout::seated_foot_cell(w.kind.furniture(), w.pos).is_some())
+        .filter(|w| crate::layout::seated_foot_cell(w.kind.furniture(), w.pos, l.inner).is_some())
         .collect();
     assert!(
         seats.iter().any(
@@ -1364,7 +1389,7 @@ fn settle_view_matches_the_seated_view_for_every_seat() {
         "this layout size must have a window-facing (North) seat to exercise the fix"
     );
     for w in &seats {
-        let foot = crate::layout::seated_foot_cell(w.kind.furniture(), w.pos)
+        let foot = crate::layout::seated_foot_cell(w.kind.furniture(), w.pos, l.inner)
             .expect("seat occupies_pos → has a settle foot cell");
         let seat = Seat::at_waypoint(w.kind, w.pos, w.facing);
         assert_eq!(
@@ -1460,9 +1485,9 @@ fn settle_seat_recognizes_the_home_desk() {
     )
     .expect("fits");
     let desk = *l.home_desks.first().expect("at least one home desk");
-    let chair = desk_walk_anchor_facing(desk.at, desk.facing);
+    let chair = desk_walk_anchor_facing(desk.at, desk.facing, l.inner);
     // Pinning `Front` unconditionally would assert the pre-facing world.
-    let want = Seat::at_desk(desk.at, desk.facing);
+    let want = Seat::at_desk(desk.at, desk.facing, l.inner);
     assert_eq!(
         settle_seat(chair, &l),
         Some(want),
@@ -1476,10 +1501,11 @@ fn settle_seat_recognizes_the_home_desk() {
     // `seated_foot_cell` is facing-BLIND — it takes a kind and a position, so its
     // desk arm can only answer for the viewer-facing seat.
     assert_eq!(
-        crate::layout::seated_foot_cell(Furniture::Desk, desk.at),
+        crate::layout::seated_foot_cell(Furniture::Desk, desk.at, l.inner),
         Some(crate::layout::desk_walk_anchor_facing(
             desk.at,
-            crate::layout::Facing::South
+            crate::layout::Facing::South,
+            l.inner
         ))
     );
     assert_eq!(
@@ -1495,7 +1521,7 @@ fn desk_sitter_feet_row_is_its_sort_row_on_the_documented_side_of_the_desk() {
     for desk in [Point { x: 40, y: 30 }, Point { x: 100, y: 60 }] {
         for facing in [Facing::North, Facing::South] {
             for w in [CHARACTER_SPRITE_W, 10] {
-                let seat = Seat::at_desk(desk, facing);
+                let seat = Seat::at_desk(desk, facing, crate::layout::BARE_OFFICE);
                 assert_eq!(
                     seat.render_top_left(w).y + crate::layout::WALKING_Y_OFF,
                     seat.sort_row(),
@@ -1529,7 +1555,7 @@ fn sit_arc_sort_row_is_stable_and_on_the_right_side_of_its_furniture() {
     for w in l
         .waypoints
         .iter()
-        .filter(|w| crate::layout::seated_foot_cell(w.kind.furniture(), w.pos).is_some())
+        .filter(|w| crate::layout::seated_foot_cell(w.kind.furniture(), w.pos, l.inner).is_some())
     {
         let z = Seat::at_waypoint(w.kind, w.pos, w.facing).sort_row();
 
@@ -1947,7 +1973,7 @@ fn a_seat_ties_its_sitter_and_hides_them_only_from_behind() {
             if let FixtureKind::DeskChair(i) = f.kind {
                 chairs += 1;
                 let desk = layout.home_desks[i.0];
-                let row = Seat::at_desk(desk.at, desk.facing).sort_row();
+                let row = Seat::at_desk(desk.at, desk.facing, layout.inner).sort_row();
                 assert_eq!(
                     f.depth,
                     Depth::Sorted {
@@ -5667,8 +5693,18 @@ fn a_back_turned_seat_puts_the_occupant_past_the_desk_body() {
     use crate::layout::{Facing, Furniture};
     let desk_h = crate::layout::furniture_def(Furniture::Desk).visual.h;
     for desk in [Point { x: 40, y: 30 }, Point { x: 100, y: 60 }] {
-        let far = seated_top_left(desk, CHARACTER_SPRITE_W, Facing::South);
-        let near = seated_top_left(desk, CHARACTER_SPRITE_W, Facing::North);
+        let far = seated_top_left(
+            desk,
+            CHARACTER_SPRITE_W,
+            Facing::South,
+            crate::layout::BARE_OFFICE,
+        );
+        let near = seated_top_left(
+            desk,
+            CHARACTER_SPRITE_W,
+            Facing::North,
+            crate::layout::BARE_OFFICE,
+        );
         assert!(
             far.y < desk.y,
             "a viewer-facing occupant sits ABOVE the desk row: {far:?} vs {desk:?}"
@@ -5717,8 +5753,13 @@ fn every_north_facing_desk_enqueues_a_chair_and_no_south_one_does() {
             .filter(|d| d.facing == crate::layout::Facing::North)
             .map(|&HomeDesk { at: d, .. }| {
                 (
-                    crate::sim::anchors::seated_top_left(d, chair_w, crate::layout::Facing::North)
-                        .x,
+                    crate::sim::anchors::seated_top_left(
+                        d,
+                        chair_w,
+                        crate::layout::Facing::North,
+                        layout.inner,
+                    )
+                    .x,
                     d.y + 6,
                 )
             })

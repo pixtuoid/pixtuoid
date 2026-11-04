@@ -5,6 +5,7 @@
 //! not the authority.
 
 use super::*;
+use crate::layout::Bounds;
 use crate::pack::Piece;
 
 use crate::sim::anchors::{back_couch_top_left, waypoint_top_left};
@@ -92,12 +93,13 @@ impl Seat {
         }
     }
 
-    /// The seat at a home `desk`. Its cell is the desk's walk anchor — the ONE
-    /// value the chair sprite, its occupant and the walk that ends there share.
-    pub(crate) fn at_desk(desk: Point, facing: crate::layout::Facing) -> Self {
+    /// The seat at a home `desk` in the office `inner` is the area inside the
+    /// insets of. Its cell is the desk's walk anchor — the ONE value the chair
+    /// sprite, its occupant and the walk that ends there share.
+    pub(crate) fn at_desk(desk: Point, facing: crate::layout::Facing, inner: Bounds) -> Self {
         Seat {
             kind: SeatKind::HomeDesk,
-            pos: crate::layout::desk_walk_anchor_facing(desk, facing),
+            pos: crate::layout::desk_walk_anchor_facing(desk, facing, inner),
             facing,
         }
     }
@@ -255,12 +257,12 @@ pub(crate) fn settle_seat(cell: Point, layout: &SceneLayout) -> Option<Seat> {
         .waypoints
         .iter()
         .find_map(|w| {
-            (seated_foot_cell(w.kind.furniture(), w.pos) == Some(cell))
+            (seated_foot_cell(w.kind.furniture(), w.pos, layout.inner) == Some(cell))
                 .then(|| Seat::at_waypoint(w.kind, w.pos, w.facing))
         })
         .or_else(|| {
             layout.home_desks.iter().find_map(|desk| {
-                let seat = Seat::at_desk(desk.at, desk.facing);
+                let seat = Seat::at_desk(desk.at, desk.facing, layout.inner);
                 (seat.pos == cell).then_some(seat)
             })
         })

@@ -13,11 +13,17 @@ use crate::sim::seat::Seat;
 
 use crate::layout::CHARACTER_SPRITE_W;
 
-/// Where a desk's occupant RENDERS — the desk's seat cell put through the same
-/// `Seat` model every other seat uses, so the chair, its occupant and the walk
-/// that ends there cannot drift apart.
-pub fn seated_top_left(desk: Point, sprite_w: u16, facing: crate::layout::Facing) -> Point {
-    Seat::at_desk(desk, facing).render_top_left(sprite_w)
+/// Where a desk's occupant RENDERS in the office `inner` is the area inside
+/// the insets of — the desk's seat cell put through the same `Seat` model every
+/// other seat uses, so the chair, its occupant and the walk that ends there
+/// cannot drift apart.
+pub fn seated_top_left(
+    desk: Point,
+    sprite_w: u16,
+    facing: crate::layout::Facing,
+    inner: Bounds,
+) -> Point {
+    Seat::at_desk(desk, facing, inner).render_top_left(sprite_w)
 }
 
 pub(crate) fn walking_top_left(p: Point, sprite_w: u16) -> Point {
@@ -147,7 +153,9 @@ pub(crate) fn character_top_left(
     let pose = pose::derive_with_routing(agent, now, layout, rctx)?;
     let w = CHARACTER_SPRITE_W;
     let top_left = match pose {
-        Pose::SeatedIdle | Pose::SeatedTyping => seated_top_left(desk.at, w, desk.facing),
+        Pose::SeatedIdle | Pose::SeatedTyping => {
+            seated_top_left(desk.at, w, desk.facing, layout.inner)
+        }
         Pose::AtWaypoint { wp, kind } => {
             let wp_obj = layout.waypoints.get(wp)?;
             let stand = layout.stand_point(wp_obj.kind, wp_obj.pos, desk.at, wp_obj.facing);
