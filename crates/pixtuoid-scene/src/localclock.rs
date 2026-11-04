@@ -1,7 +1,10 @@
-//! Local wall-clock instants for tests, benches and the snapshot examples.
+//! The office's one bridge between an instant and the viewer's wall clock:
+//! `local_time` reads `now` for every reader of the local hour or date, and
+//! the helpers build instants from local times for tests, benches and the
+//! snapshot examples.
 //!
-//! The sky model decodes `now` back through `chrono::Local`, so a test building
-//! its instants as epoch offsets is really asking for whatever local hours the
+//! The office reads `now` through `chrono::Local`, so a test building its
+//! instants as epoch offsets is really asking for whatever local hours the
 //! runner's `$TZ` gives — how `the_foreground_layer_is_lit_by_the_clock` passed
 //! in CI (UTC) and failed on a clean checkout in UTC-6.
 //!
@@ -13,8 +16,12 @@ use std::time::SystemTime;
 
 use chrono::TimeZone;
 
-/// Day 0 for every helper. January, so the sun arc is the same short winter one
-/// in each call.
+/// `now` on the viewer's wall clock.
+pub(crate) fn local_time(now: SystemTime) -> chrono::NaiveDateTime {
+    chrono::DateTime::<chrono::Local>::from(now).naive_local()
+}
+
+/// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders.
 const BASE: (i32, u32, u32) = (2026, 1, 1);
 
 /// `day` counts FORWARD from the base date by calendar arithmetic, not as a
@@ -43,11 +50,7 @@ fn local(day: u32, h: u32, m: u32) -> SystemTime {
 /// Local `h:m` on `day`'s own local date, not the reference day: a run on
 /// today's sky. `None` where that local time doesn't exist.
 pub(crate) fn on_date_of(day: SystemTime, h: u32, m: u32) -> Option<SystemTime> {
-    resolve(
-        chrono::DateTime::<chrono::Local>::from(day).date_naive(),
-        h,
-        m,
-    )
+    resolve(local_time(day).date(), h, m)
 }
 
 /// Local `h:00` on the reference day.
