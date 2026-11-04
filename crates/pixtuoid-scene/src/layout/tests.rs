@@ -66,7 +66,7 @@ fn widening_against_column_0_keeps_the_east_edge() {
 
 #[test]
 fn kitchen_island_places_on_roomy_pantries_and_refuses_small() {
-    let l = SceneLayout::compute_with_seed(240, 160, None, 2).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(240, 160), None, 2).expect("fits");
     let island = l
         .pantry
         .and_then(|p| p.kitchen_island)
@@ -109,7 +109,7 @@ fn kitchen_island_places_on_roomy_pantries_and_refuses_small() {
     );
     // Small Standard floor: a 26-wide pantry, under the ≥42 the island + stands +
     // clearances need.
-    let s = SceneLayout::compute_with_seed(96, 70, None, 0).expect("fits");
+    let s = SceneLayout::compute(Viewport::full(96, 70), None, 0).expect("fits");
     assert_eq!(
         s.pantry.and_then(|p| p.kitchen_island),
         None,
@@ -127,7 +127,7 @@ fn kitchen_island_places_on_roomy_pantries_and_refuses_small() {
 fn meeting_room_donates_surplus_height_to_the_pantry() {
     // The drift guard pinning `pantry_content_h`'s inverse-clamp math to the island
     // block's real clamps: if either side changes alone, the island vanishes here.
-    let l = SceneLayout::compute_with_seed(215, 98, None, 0).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(215, 98), None, 0).expect("fits");
     assert!(
         l.pantry.and_then(|p| p.kitchen_island).is_some(),
         "island must place on the short floor after the height transfer"
@@ -146,7 +146,7 @@ fn meeting_room_donates_surplus_height_to_the_pantry() {
         mr.height,
         pr.height
     );
-    let tall = SceneLayout::compute_with_seed(240, 160, None, 0).expect("fits");
+    let tall = SceneLayout::compute(Viewport::full(240, 160), None, 0).expect("fits");
     let (tmr, tpr) = (
         tall.meeting_room_bounds(0).expect("meeting room"),
         tall.pantry.map(|p| p.bounds).expect("pantry"),
@@ -160,7 +160,7 @@ fn meeting_room_donates_surplus_height_to_the_pantry() {
     // Deliberately asymmetric: if the island's clamps RELAX while pantry_content_h
     // stays, the split merely over-donates a benign row or two — only the
     // starve/rescue boundary is load-bearing.
-    let short = SceneLayout::compute_with_seed(215, 87, None, 0).expect("fits");
+    let short = SceneLayout::compute(Viewport::full(215, 87), None, 0).expect("fits");
     assert_eq!(
         short.pantry.and_then(|p| p.kitchen_island),
         None,
@@ -184,7 +184,7 @@ fn island_bartenders_approach_from_behind_never_through_the_front() {
     let mut exercised = false;
     for (bw, bh) in [(240u16, 160u16), (215, 98)] {
         for seed in 0..5u64 {
-            let l = SceneLayout::compute_with_seed(bw, bh, None, seed).expect("fits");
+            let l = SceneLayout::compute(Viewport::full(bw, bh), None, seed).expect("fits");
             let Some(island) = l.pantry.and_then(|p| p.kitchen_island) else {
                 continue;
             };
@@ -224,7 +224,7 @@ fn island_bartenders_approach_from_behind_never_through_the_front() {
 
 #[test]
 fn snack_shelf_hugs_the_west_wall_and_refuses_narrow_rooms() {
-    let l = SceneLayout::compute_with_seed(240, 160, None, 2).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(240, 160), None, 2).expect("fits");
     let pr = l.pantry.map(|p| p.bounds).expect("pantry");
     let shelf = l
         .waypoints
@@ -235,8 +235,12 @@ fn snack_shelf_hugs_the_west_wall_and_refuses_narrow_rooms() {
     assert_eq!(shelf.pos.x, pr.x + 1 + vis.w / 2, "west-wall hug");
     // Seed 11 at the narrowest buffer leaves the pantry under the shelf's `vis.w + 4`
     // width gate — the gate is a property of size AND seed, not of size alone.
-    let s = SceneLayout::compute_with_seed(crate::layout::compute::MIN_LAYOUT_W, 100, None, 11)
-        .expect("fits");
+    let s = SceneLayout::compute(
+        Viewport::full(crate::layout::compute::MIN_LAYOUT_W, 100),
+        None,
+        11,
+    )
+    .expect("fits");
     assert!(
         !s.waypoints
             .iter()
@@ -252,7 +256,7 @@ fn dense_inter_meeting_wall_is_solid_with_a_corridor_door_each() {
     // own centered corridor door in the east wall.
     let mut saw_dual = false;
     for seed in 0..10u64 {
-        let l = SceneLayout::compute_with_seed(192, 160, Some(8), seed).expect("fits");
+        let l = SceneLayout::compute(Viewport::full(192, 160), Some(8), seed).expect("fits");
         if l.meeting_rooms.len() < 2 {
             continue;
         }
@@ -306,7 +310,7 @@ fn dense_inter_meeting_wall_is_solid_with_a_corridor_door_each() {
 fn meeting_rooms_vec_indexes_are_the_waypoint_room_ids() {
     let mut saw_dual = false;
     for seed in 0..10u64 {
-        let l = SceneLayout::compute_with_seed(192, 160, Some(8), seed).expect("fits");
+        let l = SceneLayout::compute(Viewport::full(192, 160), Some(8), seed).expect("fits");
         assert_eq!(
             l.meeting_room_bounds(l.meeting_rooms.len()),
             None,
@@ -359,7 +363,7 @@ fn meeting_rooms_vec_indexes_are_the_waypoint_room_ids() {
 
 #[test]
 fn desk_is_walk_behind_the_monitor() {
-    let l = SceneLayout::compute(200, 90, Some(64)).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(200, 90), Some(64), 0).expect("fits");
     let vis = crate::layout::desk_furniture_def().visual;
     let foot_h = crate::layout::DESK_FOOT_H;
     for &d in &l.home_desks {
@@ -383,7 +387,8 @@ fn partial_bottom_row_caps_mid_fill_when_agents_run_out() {
     // `'partial_y` loop MID-ROW. A smaller num_agents caps in the earlier full-pod
     // phase instead and never reaches it.
     for (w, h, cap) in [(88u16, 100u16, 6usize), (88, 125, 8), (88, 160, 10)] {
-        let full = SceneLayout::compute_with_seed(w, h, Some(TEST_DEFAULT_DESKS), 0).expect("fits");
+        let full =
+            SceneLayout::compute(Viewport::full(w, h), Some(TEST_DEFAULT_DESKS), 0).expect("fits");
         assert_eq!(
             full.home_desks.len(),
             cap,
@@ -391,7 +396,7 @@ fn partial_bottom_row_caps_mid_fill_when_agents_run_out() {
         );
         let max_y = full.home_desks.iter().map(|d| d.at.y).max().unwrap();
         let band_at = |n: usize| {
-            SceneLayout::compute_with_seed(w, h, Some(n), 0)
+            SceneLayout::compute(Viewport::full(w, h), Some(n), 0)
                 .expect("fits")
                 .home_desks
                 .iter()
@@ -400,7 +405,7 @@ fn partial_bottom_row_caps_mid_fill_when_agents_run_out() {
         };
         for n in 1..=cap {
             assert_eq!(
-                SceneLayout::compute_with_seed(w, h, Some(n), 0)
+                SceneLayout::compute(Viewport::full(w, h), Some(n), 0)
                     .expect("fits")
                     .home_desks
                     .len(),
@@ -449,7 +454,7 @@ fn compute_does_not_overflow_on_huge_terminal() {
     for &seed in &[0u64, 1, 2, 3, 4] {
         // 4000×4000 px buffer → the percentage math's `buf_h * 30` = 120_000, well
         // past u16::MAX.
-        let l = SceneLayout::compute_with_seed(4000, 4000, Some(TEST_DEFAULT_DESKS), seed);
+        let l = SceneLayout::compute(Viewport::full(4000, 4000), Some(TEST_DEFAULT_DESKS), seed);
         assert!(
             l.is_some(),
             "huge terminal (seed {seed}) must lay out, not overflow"
@@ -459,7 +464,7 @@ fn compute_does_not_overflow_on_huge_terminal() {
 
 #[test]
 fn none_fills_desks_past_the_old_cap_on_a_large_buffer() {
-    let l = SceneLayout::compute_with_seed(800, 500, None, 0).expect("large buffer lays out");
+    let l = SceneLayout::compute(Viewport::full(800, 500), None, 0).expect("large buffer lays out");
     assert!(
         l.home_desks.len() > TEST_DEFAULT_DESKS,
         "None must fill past the old {TEST_DEFAULT_DESKS}-desk cap, got {}",
@@ -472,17 +477,75 @@ fn compute_returns_none_at_exact_boundary() {
     let min_w = crate::layout::compute::MIN_LAYOUT_W;
     let min_h = crate::layout::compute::MIN_LAYOUT_H;
     assert!(
-        SceneLayout::compute(min_w - 1, min_h, Some(1)).is_none(),
+        SceneLayout::compute(Viewport::full(min_w - 1, min_h), Some(1), 0).is_none(),
         "one pixel below MIN_LAYOUT_W should return None"
     );
     assert!(
-        SceneLayout::compute(min_w, min_h - 1, Some(1)).is_none(),
+        SceneLayout::compute(Viewport::full(min_w, min_h - 1), Some(1), 0).is_none(),
         "one pixel below MIN_LAYOUT_H should return None"
     );
     assert!(
-        SceneLayout::compute(min_w, min_h, Some(1)).is_some(),
+        SceneLayout::compute(Viewport::full(min_w, min_h), Some(1), 0).is_some(),
         "exactly at boundary should return Some"
     );
+}
+
+/// The floor is the area inside the insets: a viewport whose insets leave
+/// one unit less than the minimum on either axis lays out nothing, though
+/// its whole size would.
+#[test]
+fn the_minimum_is_the_area_inside_the_insets() {
+    let min_w = crate::layout::compute::MIN_LAYOUT_W;
+    let min_h = crate::layout::compute::MIN_LAYOUT_H;
+    let insets = Insets {
+        top: 7,
+        right: 3,
+        bottom: 5,
+        left: 9,
+    };
+    let inside = |w, h| super::inset_viewport(w, h, insets);
+    assert!(SceneLayout::compute(inside(min_w, min_h), Some(1), 0).is_some());
+    for under in [inside(min_w - 1, min_h), inside(min_w, min_h - 1)] {
+        assert!(
+            SceneLayout::compute(Viewport::full(under.size.w, under.size.h), Some(1), 0).is_some(),
+            "{under:?}: its whole size lays out"
+        );
+        assert!(
+            SceneLayout::compute(under, Some(1), 0).is_none(),
+            "{under:?}: the area inside its insets is under the minimum"
+        );
+    }
+}
+
+/// Insets that meet or cross leave no area inside them.
+#[test]
+fn insets_that_meet_leave_no_inner_area() {
+    let viewport = |insets| Viewport {
+        size: Size { w: 10, h: 8 },
+        insets,
+    };
+    let across = |left, right| Insets {
+        left,
+        right,
+        ..Insets::default()
+    };
+    assert_eq!(
+        viewport(across(4, 5)).inner(),
+        Some(Bounds {
+            x: 4,
+            y: 0,
+            width: 1,
+            height: 8
+        })
+    );
+    assert_eq!(viewport(across(4, 6)).inner(), None);
+    assert_eq!(viewport(across(11, 0)).inner(), None);
+    let down = Insets {
+        top: 3,
+        bottom: 5,
+        ..Insets::default()
+    };
+    assert_eq!(viewport(down).inner(), None);
 }
 
 /// The advertised minimum is a promise the painter repeats to the user, so it
@@ -495,7 +558,7 @@ fn every_floor_variant_seats_a_desk_at_the_minimum_layout_size() {
     let mut narrowest_band = u16::MAX;
     let mut shortest_band = u16::MAX;
     for seed in 0..64u64 {
-        let l = SceneLayout::compute_with_seed(min_w, min_h, None, seed)
+        let l = SceneLayout::compute(Viewport::full(min_w, min_h), None, seed)
             .unwrap_or_else(|| panic!("seed {seed}: {min_w}x{min_h} is the minimum, must lay out"));
         assert!(
             !l.home_desks.is_empty(),
@@ -519,7 +582,7 @@ fn every_floor_variant_seats_a_desk_at_the_minimum_layout_size() {
 
 #[test]
 fn compute_zones_are_ordered_top_to_bottom_and_nonoverlapping() {
-    let l = SceneLayout::compute(120, 80, Some(6)).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(120, 80), Some(6), 0).expect("fits");
     assert!(l.cubicle_band.y < l.cubicle_aisle.y);
     let c_bot = l.cubicle_band.y + l.cubicle_band.height;
     assert!(c_bot <= l.cubicle_aisle.y, "cubicle overlaps cubicle_aisle");
@@ -534,7 +597,7 @@ fn narrow_width_desks_stay_inside_the_band_with_anchors_on_buffer() {
     // land past the band's right edge, or entirely off-buffer.
     for &w in &[40u16, 50, 60] {
         for seed in 0..6u64 {
-            let Some(l) = SceneLayout::compute_with_seed(w, 70, Some(8), seed) else {
+            let Some(l) = SceneLayout::compute(Viewport::full(w, 70), Some(8), seed) else {
                 continue;
             };
             let band_right = l.cubicle_band.x + l.cubicle_band.width;
@@ -564,7 +627,7 @@ fn narrow_width_desks_stay_inside_the_band_with_anchors_on_buffer() {
 
 #[test]
 fn compute_places_all_waypoint_kinds() {
-    let l = SceneLayout::compute(120, 96, Some(1)).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(120, 96), Some(1), 0).expect("fits");
     // Only Couch + Pantry are unconditional; the rest ride a random pod_decor pick.
     assert!(l.waypoints.len() >= 2);
     let kinds: std::collections::HashSet<_> = l.waypoints.iter().map(|w| w.kind).collect();
@@ -610,7 +673,7 @@ fn every_home_desk_has_a_reachable_approach_on_its_own_far_side() {
     // the deeper reachable-aware scan finds it, and only a far-side probe prefers it.
     use crate::layout::{Facing, Furniture, approach_point, desk_walk_anchor_facing};
     for (w, h) in [(192u16, 158u16), (160, 120), (240, 160)] {
-        let l = SceneLayout::compute(w, h, Some(64)).expect("fits");
+        let l = SceneLayout::compute(Viewport::full(w, h), Some(64), 0).expect("fits");
         // Without this the loop is vacuous: chair, probe and assertion agree under
         // any single facing, so an all-`South` layout would pass it untouched.
         assert!(
@@ -669,7 +732,7 @@ fn every_home_desk_has_a_reachable_approach_on_its_own_far_side() {
 fn sofas_seat_three_people() {
     // 120 wide so the meeting room clears MEETING_FURNITURE_MIN_W: a 96-wide room
     // is too narrow to route to the sofa seats and is intentionally left bare.
-    let l = SceneLayout::compute(120, 80, Some(4)).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(120, 80), Some(4), 0).expect("fits");
 
     let couch: Vec<_> = l
         .waypoints
@@ -711,7 +774,7 @@ fn meeting_slots_track_meeting_trios() {
     let mut saw_no_room = false;
     let mut saw_dual = false;
     for seed in 0..40u64 {
-        let l = SceneLayout::compute_with_seed(160, 120, Some(8), seed).expect("fits");
+        let l = SceneLayout::compute(Viewport::full(160, 120), Some(8), seed).expect("fits");
         let sofa_slots: Vec<_> = l
             .waypoints
             .iter()
@@ -774,7 +837,7 @@ fn meeting_table_is_centered_between_its_two_sofas() {
     // sizes × seeds, NOT a fixed pixel offset.
     for (w, h) in [(128u16, 80u16), (160, 120), (192, 160), (240, 160)] {
         for seed in 0..8u64 {
-            let Some(l) = SceneLayout::compute_with_seed(w, h, Some(8), seed) else {
+            let Some(l) = SceneLayout::compute(Viewport::full(w, h), Some(8), seed) else {
                 continue;
             };
             for (room_id, room) in l
@@ -801,7 +864,7 @@ fn meeting_table_is_centered_between_its_two_sofas() {
 #[test]
 fn meeting_slots_face_the_table() {
     for seed in 0..40u64 {
-        let l = SceneLayout::compute_with_seed(160, 120, Some(8), seed).expect("fits");
+        let l = SceneLayout::compute(Viewport::full(160, 120), Some(8), seed).expect("fits");
         for w in &l.waypoints {
             let Some(room_id) = w.room_id else { continue };
             let table = l.meeting_rooms[room_id]
@@ -847,7 +910,7 @@ fn meeting_slots_face_the_table() {
 fn meeting_chair_cells_stay_walkable() {
     for seed in 0..40u64 {
         for (w, h) in [(160u16, 120u16), (200, 100), (240, 140)] {
-            let l = SceneLayout::compute_with_seed(w, h, Some(8), seed).expect("fits");
+            let l = SceneLayout::compute(Viewport::full(w, h), Some(8), seed).expect("fits");
             for wp in &l.waypoints {
                 if wp.kind == WaypointKind::MeetingChair {
                     assert!(
@@ -863,7 +926,7 @@ fn meeting_chair_cells_stay_walkable() {
 
 #[test]
 fn compute_places_bookshelf_on_wall_and_whiteboard_in_walkway() {
-    let l = SceneLayout::compute(120, 96, Some(1)).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(120, 96), Some(1), 0).expect("fits");
     let bookshelf = l.wall_decor.iter().find(|i| i.kind == WallDecor::Bookshelf);
     let whiteboard = l
         .wall_decor
@@ -877,7 +940,7 @@ fn compute_places_bookshelf_on_wall_and_whiteboard_in_walkway() {
 
 #[test]
 fn whiteboard_blocks_only_its_wheel_base_not_the_elevated_panel() {
-    let l = SceneLayout::compute(120, 96, Some(1)).expect("fits");
+    let l = SceneLayout::compute(Viewport::full(120, 96), Some(1), 0).expect("fits");
     let pos = l
         .wall_decor
         .iter()
@@ -897,7 +960,8 @@ fn whiteboard_blocks_only_its_wheel_base_not_the_elevated_panel() {
 
 #[test]
 fn fish_tank_sits_east_of_the_lounge_lamp_clear_of_the_elevator() {
-    let l = SceneLayout::compute(192, 160, Some(TEST_DEFAULT_DESKS)).expect("fits");
+    let l =
+        SceneLayout::compute(Viewport::full(192, 160), Some(TEST_DEFAULT_DESKS), 0).expect("fits");
     let lamp = l.floor_lamp().expect("lounge fits at this size");
     let tank = l.fish_tank().expect("tank fits at this size");
     let half_w = furniture_def(Furniture::FishTank).visual.w / 2;
@@ -913,7 +977,8 @@ fn fish_tank_sits_east_of_the_lounge_lamp_clear_of_the_elevator() {
         "tank + clearance stays west of the elevator door column"
     );
     for (w, h) in [(96u16, 70u16), (120, 80), (150, 68), (215, 98), (240, 160)] {
-        let Some(l) = SceneLayout::compute(w, h, Some(TEST_DEFAULT_DESKS)) else {
+        let Some(l) = SceneLayout::compute(Viewport::full(w, h), Some(TEST_DEFAULT_DESKS), 0)
+        else {
             continue;
         };
         if l.fish_tank().is_some() {
@@ -927,7 +992,8 @@ fn fish_tank_sits_east_of_the_lounge_lamp_clear_of_the_elevator() {
 
 #[test]
 fn meeting_table_ends_are_chair_seats_not_stands() {
-    let l = SceneLayout::compute(192, 160, Some(TEST_DEFAULT_DESKS)).expect("fits");
+    let l =
+        SceneLayout::compute(Viewport::full(192, 160), Some(TEST_DEFAULT_DESKS), 0).expect("fits");
     let trio = l.meeting_rooms[0].trio.as_ref().expect("trio");
     let chairs: Vec<_> = l
         .waypoints
@@ -959,7 +1025,8 @@ fn meeting_table_ends_are_chair_seats_not_stands() {
 fn coat_rack_yields_to_the_east_chair_in_narrow_fitted_rooms() {
     // On fitted rooms ≲40 wide the rack's coats would overprint the east chair body
     // and its sitter; bare rooms and roomy floors keep it.
-    let narrow = SceneLayout::compute(120, 160, Some(TEST_DEFAULT_DESKS)).expect("fits");
+    let narrow =
+        SceneLayout::compute(Viewport::full(120, 160), Some(TEST_DEFAULT_DESKS), 0).expect("fits");
     let r = &narrow.meeting_rooms[0];
     assert!(r.trio.is_some(), "120x160 hosts a fitted room");
     assert_eq!(
@@ -967,7 +1034,8 @@ fn coat_rack_yields_to_the_east_chair_in_narrow_fitted_rooms() {
         None,
         "narrow fitted room drops the rack instead of interpenetrating the chair"
     );
-    let roomy = SceneLayout::compute(192, 160, Some(TEST_DEFAULT_DESKS)).expect("fits");
+    let roomy =
+        SceneLayout::compute(Viewport::full(192, 160), Some(TEST_DEFAULT_DESKS), 0).expect("fits");
     assert!(
         roomy.meeting_rooms[0].coat_rack_pos().is_some(),
         "roomy fitted room keeps the rack"
@@ -994,7 +1062,7 @@ fn pod_grid_fills_every_desk_row_that_fits() {
     // a bottom row that physically fits never fired.
     for w in [140u16, 160, 192, 215, 240] {
         for h in (100..=240u16).step_by(10) {
-            let Some(l) = SceneLayout::compute(w, h, Some(64)) else {
+            let Some(l) = SceneLayout::compute(Viewport::full(w, h), Some(64), 0) else {
                 continue;
             };
             if l.home_desks.is_empty() {
@@ -1020,7 +1088,7 @@ fn desk_columns_stay_on_one_lattice_and_never_shift_with_width() {
     let stride_x = POD_SIDE * DESK_W + (POD_SIDE - 1) * INTRA_POD_GAP_X + INTER_POD_AISLE_X;
     let mut prev: BTreeSet<u16> = BTreeSet::new();
     for w in (140..=260u16).step_by(4) {
-        let Some(l) = SceneLayout::compute(w, 160, Some(64)) else {
+        let Some(l) = SceneLayout::compute(Viewport::full(w, 160), Some(64), 0) else {
             continue;
         };
         let origin = l.cubicle_band.x + INTER_POD_AISLE_X / 2;
@@ -1045,7 +1113,7 @@ fn desk_rows_stay_on_one_lattice() {
     let stride_y = POD_SIDE * DESK_H + (POD_SIDE - 1) * INTRA_POD_GAP_Y + INTER_POD_AISLE_Y;
     for w in [140u16, 160, 192, 240] {
         for h in (100..=240u16).step_by(20) {
-            let Some(l) = SceneLayout::compute(w, h, Some(64)) else {
+            let Some(l) = SceneLayout::compute(Viewport::full(w, h), Some(64), 0) else {
                 continue;
             };
             let Some(first) = l.home_desks.first() else {
@@ -1066,7 +1134,8 @@ fn desk_rows_stay_on_one_lattice() {
 
 #[test]
 fn ficus_greets_at_the_elevator_and_fills_the_lounge_west_flank() {
-    let l = SceneLayout::compute(192, 160, Some(TEST_DEFAULT_DESKS)).expect("fits");
+    let l =
+        SceneLayout::compute(Viewport::full(192, 160), Some(TEST_DEFAULT_DESKS), 0).expect("fits");
     let ficus: Vec<_> = l
         .plants
         .iter()

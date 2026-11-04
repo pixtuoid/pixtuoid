@@ -34,7 +34,11 @@ pub(crate) fn print_walkability_report(
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(size.width, size.height);
     // `None` = the SAME fill the renderer's draw_scene passes — the overlay
     // must mirror the real layout exactly (desks stamp the walkable mask).
-    let Some(layout) = SceneLayout::compute_with_seed(buf_w, buf_h, None, floor_seed) else {
+    let Some(layout) = SceneLayout::compute(
+        pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
+        None,
+        floor_seed,
+    ) else {
         println!("(debug_walkable) layout too small to compute");
         return Ok(());
     };
@@ -128,9 +132,8 @@ pub(crate) fn furniture_crop(
         return Ok(None);
     };
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
-    let layout = pixtuoid_scene::layout::SceneLayout::compute_with_seed(
-        buf_w,
-        buf_h,
+    let layout = pixtuoid_scene::layout::SceneLayout::compute(
+        pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
         Some(scene.floor_capacities[0]),
         args.floor_seed,
     )

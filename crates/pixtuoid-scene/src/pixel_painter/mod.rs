@@ -209,14 +209,14 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
         },
     );
     let top_wall_h = ctx.layout.wall_band_h();
-    paint_ground_and_walls(ctx.base_fill, ctx.buf, top_wall_h, &moment, ctx.theme);
+    let wall = crate::outside::Wall::of(ctx.layout);
+    paint_ground_and_walls(ctx.base_fill, ctx.buf, &wall, &moment, ctx.theme);
     let window_moment = ctx
         .window_sky
         .map(|sky| Moment::resolve(sky, ctx.theme, ctx.floor.altitude, ctx.timing));
     paint_windows(
         ctx.buf,
-        top_wall_h,
-        ctx.layout.window_bays(),
+        wall,
         window_moment.as_ref().unwrap_or(&moment),
         ctx.pack,
         ctx.theme,

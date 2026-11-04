@@ -1874,8 +1874,9 @@ mod tests {
         let pack = crate::pack::test_office();
         let d = test_density(4);
         let wall = crate::outside::Wall {
-            size: (crate::layout::WINDOW_W * 3, 32),
-            bays: crate::layout::window_slots(crate::layout::WINDOW_W * 3).collect(),
+            span: 0..crate::layout::WINDOW_W * 3,
+            band_h: 32,
+            bays: crate::layout::window_slots(0..crate::layout::WINDOW_W * 3).collect(),
         };
         let (run, glass_h) = wall.glass();
         for motion in [Motion::Full, Motion::Calm] {
@@ -1916,7 +1917,8 @@ mod tests {
                             &pack,
                             theme,
                             crate::outside::Wall {
-                                size: wall.size,
+                                span: wall.span.clone(),
+                                band_h: wall.band_h,
                                 bays: wall.bays.clone(),
                             },
                             d,

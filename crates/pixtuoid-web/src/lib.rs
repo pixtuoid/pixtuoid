@@ -372,17 +372,16 @@ impl Office {
     /// CENTER, `y` its head-top; the board `rect` is the neon-panel interior), and
     /// `badge_insets` is [`BADGE_INSETS`](pixtuoid_scene::display::BADGE_INSETS), in
     /// the face's pixels. Colors are RESOLVED against the CURRENT theme. Call
-    /// right after `step` (it reads the step's clock).
+    /// right after `step` (it reads the step's clock); `board` is null before
+    /// the first step and on a canvas too small to lay an office out.
     pub fn overlay_json(&mut self) -> String {
-        use pixtuoid_scene::layout::{
-            NEON_PANEL_INNER_H, NEON_PANEL_INNER_W, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y,
-        };
         let head = {
             let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
                 pixtuoid_scene::display::BADGE_INSETS;
             format!("{{\"badge_insets\":{{\"rim\":{rim},\"ring_w\":{ring_w},\"gap\":{gap}}}")
         };
-        let Some(now) = self.last_now else {
+        let rect = self.session.picture().map(|p| p.hits.layout().board());
+        let Some((now, rect)) = self.last_now.zip(rect) else {
             return format!("{head},\"labels\":[],\"board\":null}}");
         };
         let theme = self.theme;
@@ -413,8 +412,14 @@ impl Office {
             ));
             out.push('}');
         }
+        let pixtuoid_scene::layout::Bounds {
+            x,
+            y,
+            width,
+            height,
+        } = rect;
         out.push_str(&format!(
-            "],\"board\":{{\"rect\":{{\"x\":{NEON_PANEL_INNER_X},\"y\":{NEON_PANEL_INNER_Y},\"w\":{NEON_PANEL_INNER_W},\"h\":{NEON_PANEL_INNER_H}}},"
+            "],\"board\":{{\"rect\":{{\"x\":{x},\"y\":{y},\"w\":{width},\"h\":{height}}},"
         ));
         push_board_segment(&mut out, "brand", std::slice::from_ref(&board.brand), theme);
         out.push(',');
@@ -867,6 +872,19 @@ mod tests {
         let (uw, uh, s) = fit_of(&o, (390, 844));
         assert!(s < u32::from(MIN_UPSCALE) * u32::from(o.fit.density().get()));
         assert!(lays_out((uw, uh)));
+    }
+
+    /// On a canvas too small to lay an office out, the overlay's board is
+    /// null, though the frame before it set one.
+    #[test]
+    fn overlay_json_on_a_canvas_too_small_sets_no_board() {
+        let mut o = office();
+        o.step(T0_MS, 320, 180);
+        o.step(T0_MS + 10_000.0, 320, 180);
+        assert!(o.overlay_json().contains("\"board\":{"), "premise: a board");
+        o.step(T0_MS + 10_100.0, 8, 8);
+        let json = o.overlay_json();
+        assert!(json.ends_with(",\"board\":null}"), "{json}");
     }
 
     #[test]
@@ -1463,8 +1481,12 @@ mod tests {
             "the click past exhaustion is refused outright: {admitted:?}"
         );
         o.step(T0_MS + 32_000.0, w, h);
-        let layout = SceneLayout::compute_with_seed(w as u16, h as u16, None, o.seed)
-            .expect("the portrait buffer lays out");
+        let layout = SceneLayout::compute(
+            pixtuoid_scene::layout::Viewport::full(w as u16, h as u16),
+            None,
+            o.seed,
+        )
+        .expect("the portrait buffer lays out");
         assert_eq!(
             o.scene.total_capacity(),
             layout.home_desks.len(),

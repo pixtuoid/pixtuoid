@@ -602,7 +602,8 @@ mod tests {
     /// floor it roams, not off it.
     #[test]
     fn a_creature_set_down_out_of_reach_rests_where_it_can_roam() {
-        let layout = SceneLayout::compute(160, 96, None).expect("layout fits");
+        let layout = SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0)
+            .expect("layout fits");
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
         let mut walk = CreatureWalk::at_home(&layout, 7, now);
         let off = Point {
@@ -625,7 +626,8 @@ mod tests {
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
         let mut checked = 0u32;
         for (w, h) in [(160, 96), (192, 80), (240, 180)] {
-            let layout = SceneLayout::compute(w, h, None).expect("layout fits");
+            let layout = SceneLayout::compute(crate::layout::Viewport::full(w, h), None, 0)
+                .expect("layout fits");
             for f in layout.fixtures() {
                 if !matches!(
                     f.kind,
@@ -747,7 +749,7 @@ mod tests {
     }
 
     fn layout(w: u16, h: u16) -> SceneLayout {
-        SceneLayout::compute(w, h, None).expect("layout fits")
+        SceneLayout::compute(crate::layout::Viewport::full(w, h), None, 0).expect("layout fits")
     }
 
     /// A planted foot stays planted: each creature cruises exactly one stride
@@ -1708,7 +1710,11 @@ mod tests {
             (320, 200),
         ] {
             for seed in 0..24u64 {
-                let Some(l) = crate::layout::SceneLayout::compute(w, h, None) else {
+                let Some(l) = crate::layout::SceneLayout::compute(
+                    crate::layout::Viewport::full(w, h),
+                    None,
+                    0,
+                ) else {
                     panic!("{w}x{h}: refused at or above the derived floor");
                 };
                 // Independent rects: the pantry counter from its RUNTIME size, the

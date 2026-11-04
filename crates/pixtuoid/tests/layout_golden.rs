@@ -1,5 +1,5 @@
 //! Layout geometry golden snapshots: the key fields of `SceneLayout` at fixed
-//! buffer sizes, so any refactor to `compute` / `compute_with_seed` that
+//! buffer sizes, so any refactor to `compute` that
 //! accidentally shifts desk positions, room bounds, or waypoint coords fails
 //! immediately.
 //!
@@ -7,35 +7,35 @@
 //! `*.snap.new`, eyeball the diff, then `cargo insta accept`. The same applies
 //! to `walkable_golden.rs`.
 
-use pixtuoid_scene::layout::SceneLayout;
+use pixtuoid_scene::layout::{SceneLayout, Viewport};
 
 #[test]
 fn layout_standard_96x72_desks() {
-    let l = SceneLayout::compute(96, 72, Some(4)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(96, 72), Some(4), 0).unwrap();
     insta::assert_debug_snapshot!("desks_96x72", l.home_desks);
 }
 
 #[test]
 fn layout_standard_96x72_waypoints() {
-    let l = SceneLayout::compute(96, 72, Some(4)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(96, 72), Some(4), 0).unwrap();
     insta::assert_debug_snapshot!("waypoints_96x72", l.waypoints);
 }
 
 #[test]
 fn layout_standard_96x72_meeting() {
-    let l = SceneLayout::compute(96, 72, Some(4)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(96, 72), Some(4), 0).unwrap();
     insta::assert_debug_snapshot!("meeting_96x72", l.meeting_room_bounds(0));
 }
 
 #[test]
 fn layout_standard_96x72_room_walls() {
-    let l = SceneLayout::compute(96, 72, Some(4)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(96, 72), Some(4), 0).unwrap();
     insta::assert_debug_snapshot!("room_walls_96x72", l.room_walls);
 }
 
 #[test]
 fn layout_standard_96x72_zones() {
-    let l = SceneLayout::compute(96, 72, Some(4)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(96, 72), Some(4), 0).unwrap();
     insta::assert_debug_snapshot!("cubicle_band_96x72", l.cubicle_band);
     insta::assert_debug_snapshot!("cubicle_aisle_96x72", l.cubicle_aisle);
     insta::assert_debug_snapshot!("pantry_96x72", l.pantry.map(|p| p.bounds));
@@ -43,32 +43,32 @@ fn layout_standard_96x72_zones() {
 
 #[test]
 fn layout_standard_192x160_desks() {
-    let l = SceneLayout::compute(192, 160, Some(8)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(192, 160), Some(8), 0).unwrap();
     insta::assert_debug_snapshot!("desks_192x160", l.home_desks);
 }
 
 #[test]
 fn layout_standard_192x160_waypoints() {
-    let l = SceneLayout::compute(192, 160, Some(8)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(192, 160), Some(8), 0).unwrap();
     insta::assert_debug_snapshot!("waypoints_192x160", l.waypoints);
 }
 
 #[test]
 fn layout_standard_192x160_meeting() {
-    let l = SceneLayout::compute(192, 160, Some(8)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(192, 160), Some(8), 0).unwrap();
     insta::assert_debug_snapshot!("meeting_192x160", l.meeting_room_bounds(0));
 }
 
 #[test]
 fn layout_standard_192x160_room_walls() {
-    let l = SceneLayout::compute(192, 160, Some(8)).unwrap();
+    let l = SceneLayout::compute(Viewport::full(192, 160), Some(8), 0).unwrap();
     insta::assert_debug_snapshot!("room_walls_192x160", l.room_walls);
 }
 
 /// Seed 11's office, checked for the open plan's shape, which the lounge shares;
 /// `pixtuoid-scene`'s `the_open_plan_goldens_seed_is_the_open_plan` pins which.
 fn open_plan_seed11() -> SceneLayout {
-    let l = SceneLayout::compute_with_seed(160, 120, Some(4), 11).unwrap();
+    let l = SceneLayout::compute(Viewport::full(160, 120), Some(4), 11).unwrap();
     assert!(
         l.meeting_rooms.is_empty() && l.pantry.is_some(),
         "seed 11 lays out the open plan"
@@ -91,7 +91,7 @@ fn layout_open_plan_seed11_waypoints() {
 /// Seed 3's office, checked to be the dense floor (two meeting rooms, no
 /// pantry) before a snapshot can take another variant's under its name.
 fn dense_seed3() -> SceneLayout {
-    let l = SceneLayout::compute_with_seed(192, 160, Some(4), 3).unwrap();
+    let l = SceneLayout::compute(Viewport::full(192, 160), Some(4), 3).unwrap();
     assert!(
         l.meeting_rooms.len() == 2 && l.pantry.is_none(),
         "seed 3 lays out the dense floor"
@@ -132,7 +132,7 @@ fn floor_variant_hash_gives_unique_layouts_per_floor() {
     let signatures: HashSet<_> = (0..5)
         .map(|i| {
             let seed = pixtuoid_scene::floor::floor_seed(i);
-            let l = SceneLayout::compute_with_seed(192, 160, Some(4), seed).unwrap();
+            let l = SceneLayout::compute(Viewport::full(192, 160), Some(4), seed).unwrap();
             (l.meeting_rooms.clone(), l.pantry, l.home_desks)
         })
         .collect();

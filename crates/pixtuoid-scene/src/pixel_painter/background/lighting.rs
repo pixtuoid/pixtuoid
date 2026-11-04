@@ -351,9 +351,12 @@ mod tests {
     /// cache that repaints only what those bounds say changed.
     #[test]
     fn every_light_paints_only_inside_its_bounds() {
-        let layout =
-            crate::layout::SceneLayout::compute(192, 80, Some(crate::layout::TEST_DEFAULT_DESKS))
-                .expect("fits");
+        let layout = crate::layout::SceneLayout::compute(
+            crate::layout::Viewport::full(192, 80),
+            Some(crate::layout::TEST_DEFAULT_DESKS),
+            0,
+        )
+        .expect("fits");
         // 07:00 lights the lamps AND leans the sun through the windows.
         let sky =
             crate::sky::Sky::at_with(crate::localclock::at_hour(7), crate::sky::Weather::Clear);

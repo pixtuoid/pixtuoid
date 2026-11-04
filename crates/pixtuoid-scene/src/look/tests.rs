@@ -297,8 +297,9 @@ fn a_new_pack_or_theme_empties_the_office_caches() {
             pack,
             theme,
             Wall {
-                size: (w, 32),
-                bays: crate::layout::window_slots(w).collect(),
+                span: 0..w,
+                band_h: 32,
+                bays: crate::layout::window_slots(0..w).collect(),
             },
             crate::sprite::format::Density::ONE,
             crate::glass_weather::GlassWeather::of(&moment),

@@ -462,12 +462,19 @@ pub(crate) mod test_flash {
         }
     }
 
-    /// The neon sign's tube on its west side and the wall it lights, in
-    /// logical units: what a starved tube's catch changes and nothing else
-    /// in an empty office does.
-    pub(crate) fn neon_tube(x: u16, y: u16) -> bool {
-        use pixtuoid_scene::layout::{NEON_PANEL_INNER_H, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y};
-        x < NEON_PANEL_INNER_X && y < NEON_PANEL_INNER_Y + NEON_PANEL_INNER_H
+    /// Whether a logical unit is the neon sign's tube on its west side or the
+    /// wall it lights, in a viewport no chrome covers: what a starved tube's
+    /// catch changes and nothing else in an empty office does.
+    pub(crate) fn neon_tube() -> impl Fn(u16, u16) -> bool {
+        let min = pixtuoid_scene::layout::min_layout_size();
+        let board = pixtuoid_scene::layout::SceneLayout::compute(
+            pixtuoid_scene::layout::Viewport::full(min.w, min.h),
+            None,
+            0,
+        )
+        .expect("the minimum lays out")
+        .board();
+        move |x, y| x < board.x && y < board.y + board.height
     }
 
     /// The frame periods and first-frame offsets a painter whose frames come

@@ -35,7 +35,7 @@ fn slot(state: ActivityState, age_ms: u64) -> (AgentSlot, SystemTime) {
 }
 
 fn layout() -> SceneLayout {
-    SceneLayout::compute(120, 96, Some(4)).expect("fits")
+    SceneLayout::compute(crate::layout::Viewport::full(120, 96), Some(4), 0).expect("fits")
 }
 
 fn typing() -> ActivityState {

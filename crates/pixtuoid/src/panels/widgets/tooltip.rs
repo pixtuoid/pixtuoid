@@ -333,12 +333,23 @@ mod tests {
         }
     }
 
+    /// The wall board's text box of a 120x88 office no chrome covers.
+    fn office_board() -> pixtuoid_scene::layout::Bounds {
+        pixtuoid_scene::layout::SceneLayout::compute(
+            pixtuoid_scene::layout::Viewport::full(120, 88),
+            None,
+            0,
+        )
+        .expect("lays out")
+        .board()
+    }
+
     /// The board's lines land on the neon sign's interior: the brand leading
     /// L1, the star flush to its right, the mood on L2 and the context on L3.
     #[test]
     fn the_board_runs_land_on_the_signs_interior() {
         use pixtuoid_core::state::DaemonState;
-        use pixtuoid_scene::layout::{NEON_PANEL_INNER_W, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y};
+        let board = office_board();
         let counts = pixtuoid_scene::tally::StateCounts {
             running: 2,
             requires_action: 1,
@@ -360,7 +371,7 @@ mod tests {
         term.draw(|f| {
             super::paint_text_runs(
                 f,
-                &model.runs(&theme::NORMAL),
+                &model.runs(&theme::NORMAL, board),
                 (scene_rect, CellMap::HALF_BLOCK),
                 Dim::NONE,
             );
@@ -368,8 +379,8 @@ mod tests {
         .unwrap();
         let buf = term.backend().buffer();
         let row = |line: u16| -> String {
-            (0..NEON_PANEL_INNER_W)
-                .map(|dx| buf[(NEON_PANEL_INNER_X + dx, NEON_PANEL_INNER_Y / 2 + line)].symbol())
+            (0..board.width)
+                .map(|dx| buf[(board.x + dx, board.y / 2 + line)].symbol())
                 .collect()
         };
         let (l1, l2, l3) = (row(0), row(1), row(2));
@@ -439,7 +450,7 @@ mod tests {
                 badge.at
             );
         }
-        let runs = model.runs(&theme::NORMAL);
+        let runs = model.runs(&theme::NORMAL, office_board());
         let stars = runs.iter().filter(|r| r.role == super::TextRole::Star);
         assert_eq!(stars.count(), 1, "the board has its star");
         let grid = |w, h, scale| CellMap {

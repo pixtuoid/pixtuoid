@@ -255,7 +255,7 @@ pub(crate) fn compose_at<'a>(
     } = office;
     let ambient = crate::display::light::Ambient::of(&moment.look);
     let (mut collected, mut host_text) = collect_pieces(frame, office, moment, outside);
-    host_text.signs = TextRun::signs(board, office.layout.door, floor, theme);
+    host_text.signs = TextRun::signs(board, office.layout, floor, theme);
     collected.extend(signs(office, &host_text.signs));
     let sorted = depth_sort(
         collected
@@ -1485,10 +1485,7 @@ pub(crate) fn push_windows(
         scale,
     } = office;
     let density = Pen::for_pack(scale, pack).density();
-    let wall = crate::outside::Wall {
-        size: (layout.buf_w, layout.wall_band_h()),
-        bays: layout.window_bays().collect(),
-    };
+    let wall = crate::outside::Wall::of(layout);
     let views = outside.views(moment, pack, theme, wall, density, *weather);
     let rows = crate::layout::window_rows(layout.wall_band_h());
     // The bolt lights the glass and all it shows, over the weather on it.

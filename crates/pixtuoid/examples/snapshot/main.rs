@@ -898,8 +898,12 @@ mod tests {
         let rect = furniture_crop(&args, &scene, 192, 64)
             .unwrap()
             .expect("pantry crop");
-        let layout =
-            pixtuoid_scene::layout::SceneLayout::compute_with_seed(192, 126, Some(12), 0).unwrap();
+        let layout = pixtuoid_scene::layout::SceneLayout::compute(
+            pixtuoid_scene::layout::Viewport::full(192, 126),
+            Some(12),
+            0,
+        )
+        .unwrap();
         let pantry = layout
             .waypoints
             .iter()

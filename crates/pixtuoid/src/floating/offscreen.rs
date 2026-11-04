@@ -768,10 +768,11 @@ mod tests {
             assert_each_phase_holds_the_floor, frame_grid, lead, neon_tube, starved_stutter,
         };
         let stutter = starved_stutter();
+        let in_tube = neon_tube();
         let tube = |buf: &RgbBuffer| -> Vec<Rgb> {
             (0..buf.height())
                 .flat_map(|y| (0..buf.width()).map(move |x| (x, y)))
-                .filter(|&(x, y)| neon_tube(x, y))
+                .filter(|&(x, y)| in_tube(x, y))
                 .map(|(x, y)| buf.get(x, y))
                 .collect()
         };

@@ -41,13 +41,10 @@ pub use rooms::{MeetingRoom, MeetingTrio, PantryRoom};
 pub use roster::Station;
 pub(crate) use roster::StationArt;
 pub(crate) use roster::{
-    CLOCK, Depth, Fixture, NEON_PANEL, NEON_PANEL_BORDER, Tie, desk_chair_fixtures,
-    desk_chair_sort_row, desk_chair_top_left, desk_fixtures, pod_decor_fixtures,
+    CLOCK, Depth, Fixture, NEON_PANEL_BORDER, NEON_PANEL_X, Tie, desk_chair_fixtures,
+    desk_chair_sort_row, desk_chair_top_left, desk_fixtures, neon_panel, pod_decor_fixtures,
 };
-pub use roster::{
-    FixtureKind, NEON_PANEL_INNER_H, NEON_PANEL_INNER_W, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y,
-    NEON_PANEL_W,
-};
+pub use roster::{FixtureKind, NEON_PANEL_INNER_H, NEON_PANEL_INNER_W, NEON_PANEL_W};
 #[cfg(test)]
 pub(crate) use roster::{NEON_PANEL_H, coffee_machine_cols};
 // Painter tests tile walls no `SceneLayout` has.
@@ -80,6 +77,16 @@ pub struct Bounds {
 }
 
 impl Bounds {
+    /// The column past its east edge.
+    pub(crate) const fn right(self) -> u16 {
+        self.x + self.width
+    }
+
+    /// The row past its south edge.
+    pub(crate) const fn bottom(self) -> u16 {
+        self.y + self.height
+    }
+
     /// Whether the two half-open boxes share a pixel. A zero-sized box shares
     /// none.
     pub(crate) fn overlaps(self, other: Bounds) -> bool {
@@ -154,6 +161,63 @@ pub struct Size {
     pub w: u16,
     /// Height in pixels.
     pub h: u16,
+}
+
+/// How far a painter's own chrome reaches in from each edge of the viewport:
+/// under it the layout lays nothing but its floor, walls and sky.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) struct Insets {
+    /// From the north edge.
+    pub(crate) top: u16,
+    /// From the east edge.
+    pub(crate) right: u16,
+    /// From the south edge.
+    pub(crate) bottom: u16,
+    /// From the west edge.
+    pub(crate) left: u16,
+}
+
+/// What a painter draws the office on: its whole extent, and the insets its
+/// chrome covers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Viewport {
+    /// The whole extent, in layout units.
+    pub(crate) size: Size,
+    /// What the painter's chrome covers, in layout units.
+    pub(crate) insets: Insets,
+}
+
+impl Viewport {
+    /// A `w`×`h` viewport no chrome covers.
+    pub const fn full(w: u16, h: u16) -> Self {
+        Self {
+            size: Size { w, h },
+            insets: Insets {
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+            },
+        }
+    }
+
+    /// The area inside the insets, `None` where they leave none.
+    pub(crate) fn inner(&self) -> Option<Bounds> {
+        let Insets {
+            top,
+            right,
+            bottom,
+            left,
+        } = self.insets;
+        let width = self.size.w.checked_sub(left)?.checked_sub(right)?;
+        let height = self.size.h.checked_sub(top)?.checked_sub(bottom)?;
+        (width > 0 && height > 0).then_some(Bounds {
+            x: left,
+            y: top,
+            width,
+            height,
+        })
+    }
 }
 
 /// An interior room wall's straight run, both ends inclusive and in order. It
@@ -278,13 +342,16 @@ pub struct HomeDesk {
 
 /// The computed office geometry for one floor — quadrant bounds, per-agent
 /// desks, waypoints, decor, walls, and the walkability mask. Built once per
-/// `(buf_w, buf_h, max_desks)`.
+/// `(viewport, max_desks, floor_seed)`.
 #[derive(Debug, Clone)]
 pub struct SceneLayout {
     /// Buffer width in pixels this layout was computed for.
     pub buf_w: u16,
     /// Buffer height in pixels this layout was computed for.
     pub buf_h: u16,
+    /// The area inside the viewport's insets, where everything stands: under
+    /// them lie only the floor, the walls and the sky.
+    pub(crate) inner: Bounds,
     /// The desk-pod quadrant — the bounds enclosing the cubicle grid.
     pub cubicle_band: Bounds,
     /// The cubicle-band-width horizontal aisle at the bottom of the desk pods —
@@ -339,7 +406,7 @@ pub struct SceneLayout {
 }
 
 /// Integer percentage of `v`, floor semantics. Computed in u32: a bare
-/// `buf_h * 30` overflows u16 once `buf_h > 2184`.
+/// `v * n` overflows u16 once `v > u16::MAX / n`.
 pub(crate) const fn pct(v: u16, n: u16) -> u16 {
     ((v as u32 * n as u32) / 100) as u16
 }
@@ -416,9 +483,10 @@ pub const ELEVATOR_H: u16 = 14;
 pub const CELL_ROWS: u16 = 2;
 
 /// The rows over a door whose top row is `door_y` that the terminal's floor
-/// indicator writes its text across: the whole cell above the door's.
-pub(crate) fn floor_indicator_rows(door_y: u16) -> std::ops::Range<u16> {
-    let top = (door_y / CELL_ROWS).saturating_sub(1) * CELL_ROWS;
+/// indicator writes its text across: the whole cell above the door's, on the
+/// cells counted from `inner_top`, the north edge inside the insets.
+pub(crate) fn floor_indicator_rows(door_y: u16, inner_top: u16) -> std::ops::Range<u16> {
+    let top = ((door_y - inner_top) / CELL_ROWS).saturating_sub(1) * CELL_ROWS + inner_top;
     top..top + CELL_ROWS
 }
 
@@ -437,11 +505,14 @@ pub fn floor_indicator(floor: crate::floor::FloorMeta) -> [crate::display::Conte
 }
 
 /// Where the exit sign hangs over a door at `door`: centred above its floor
-/// indicator, or `None` where that would climb above the windows' head.
-pub(crate) fn exit_sign_pos(door: Point) -> Option<Point> {
+/// indicator, or `None` where that would climb above the row [`WINDOW_TOP`]
+/// under `inner_top`, the north edge inside the insets.
+pub(crate) fn exit_sign_pos(door: Point, inner_top: u16) -> Option<Point> {
     let sign = furniture_def(WallDecor::ExitSign.furniture()).visual;
-    let y = floor_indicator_rows(door.y).start.checked_sub(sign.h)?;
-    (y >= WINDOW_TOP).then_some(Point {
+    let y = floor_indicator_rows(door.y, inner_top)
+        .start
+        .checked_sub(sign.h)?;
+    (y >= inner_top + WINDOW_TOP).then_some(Point {
         x: door.x + (ELEVATOR_W - sign.w) / 2,
         y,
     })
@@ -459,9 +530,9 @@ pub(crate) const TEST_DEFAULT_DESKS: usize = CLASSIC_OFFICE_DESKS;
 /// tests reads it; the pod grid itself prices its own spacing.
 #[cfg(test)]
 pub(crate) const DESK_GAP_Y: u16 = 14;
-/// Floor (px) for the layout's `top_margin` — `compute::top_margin`'s
-/// percent-of-buffer derivation never shrinks the north wall band below this.
-pub(crate) const MIN_TOP_MARGIN: u16 = 20;
+/// Floor (px) for `compute::wall_depth`: its percent of the height inside the
+/// insets never shrinks the north wall band below this.
+pub(crate) const MIN_WALL_DEPTH: u16 = 20;
 const MIN_DUAL_MEETING_H: u16 = 80;
 
 /// Number of desks per side in a pod (`POD_SIDE * POD_SIDE` total).
@@ -486,15 +557,11 @@ pub(crate) const INTER_POD_AISLE_X: u16 = 20;
 pub(crate) const INTER_POD_AISLE_Y: u16 = 18;
 
 impl SceneLayout {
-    /// Returns `None` if the buffer is too small for even one cubicle plus the
-    /// fixed lounge area — the caller paints a "terminal too small" message.
-    /// Panics where [`Self::compute_with_seed`] does.
-    pub fn compute(buf_w: u16, buf_h: u16, max_desks: Option<usize>) -> Option<Self> {
-        Self::compute_with_seed(buf_w, buf_h, max_desks, 0)
-    }
-
-    /// `max_desks` caps the desk count: `None` fills the office to the buffer's
-    /// physical capacity, `Some(n)` caps at `n` for deterministic
+    /// The office of floor `floor_seed` on `viewport`, laid out inside its
+    /// insets; `None` where that area is too small for even one cubicle plus
+    /// the fixed lounge area, and the caller paints a "terminal too small"
+    /// message. `max_desks` caps the desk count: `None` fills the office to
+    /// its physical capacity, `Some(n)` caps at `n` for deterministic
     /// tests/snapshots. The pod grid geometry is always the room's true
     /// capacity regardless of the cap.
     ///
@@ -502,13 +569,8 @@ impl SceneLayout {
     ///
     /// If the office is still sealed once the #566 guard has dropped every
     /// decor that can seal it: a layout bug no production floor seed is known to reach.
-    pub fn compute_with_seed(
-        buf_w: u16,
-        buf_h: u16,
-        max_desks: Option<usize>,
-        floor_seed: u64,
-    ) -> Option<Self> {
-        compute::compute_with_seed(buf_w, buf_h, max_desks, floor_seed)
+    pub fn compute(viewport: Viewport, max_desks: Option<usize>, floor_seed: u64) -> Option<Self> {
+        compute::compute(viewport, max_desks, floor_seed)
     }
 
     /// Is buffer pixel `(x, y)` walkable?
@@ -661,5 +723,7 @@ impl SceneLayout {
 
 #[cfg(test)]
 mod placement_sweep;
+#[cfg(test)]
+pub(crate) use placement_sweep::inset_viewport;
 #[cfg(test)]
 mod tests;

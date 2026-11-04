@@ -337,7 +337,8 @@ mod tests {
         // spawn, so their stand cells are covered too.
         for (bw, bh) in [(160u16, 120u16), (160, 150)] {
             for seed in 0..5u64 {
-                let l = SceneLayout::compute_with_seed(bw, bh, Some(6), seed).unwrap();
+                let l = SceneLayout::compute(crate::layout::Viewport::full(bw, bh), Some(6), seed)
+                    .unwrap();
                 let origin = l.home_desks.first().map_or(Point { x: 0, y: 0 }, |d| d.at);
                 for wp in &l.waypoints {
                     let s = super::stand_point(
@@ -387,7 +388,9 @@ mod tests {
             (200, 140),
         ] {
             for seed in 0..16u64 {
-                let Some(l) = SceneLayout::compute_with_seed(bw, bh, Some(6), seed) else {
+                let Some(l) =
+                    SceneLayout::compute(crate::layout::Viewport::full(bw, bh), Some(6), seed)
+                else {
                     continue;
                 };
                 for &HomeDesk { at: desk, .. } in &l.home_desks {
@@ -543,7 +546,9 @@ mod tests {
         use crate::layout::{HomeDesk, SceneLayout, furniture_def};
         for (w, h) in [(120u16, 96u16), (160, 120), (192, 160), (240, 160)] {
             for seed in 0..4u64 {
-                let Some(l) = SceneLayout::compute_with_seed(w, h, Some(4), seed) else {
+                let Some(l) =
+                    SceneLayout::compute(crate::layout::Viewport::full(w, h), Some(4), seed)
+                else {
                     continue;
                 };
                 for &HomeDesk { at: desk, .. } in &l.home_desks {

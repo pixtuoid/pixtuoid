@@ -227,22 +227,32 @@ impl Origin {
     }
 }
 
-/// A wall's windows: the band they're cut in, `buf_w` by `band_h`, and the
-/// bays its painter draws: a strike lands on their panes, and
+/// A wall's windows: the columns they tile, the band they're cut in, `band_h`
+/// tall, and the bays its painter draws: a strike lands on their panes, and
 /// [`Outside::views`] paints exactly these.
 #[derive(Debug, PartialEq)]
 pub(crate) struct Wall {
-    pub(crate) size: (u16, u16),
+    pub(crate) span: Range<u16>,
+    pub(crate) band_h: u16,
     pub(crate) bays: Vec<WindowBay>,
 }
 
 impl Wall {
+    /// `layout`'s north wall.
+    pub(crate) fn of(layout: &crate::layout::SceneLayout) -> Self {
+        Self {
+            span: layout.wall_span(),
+            band_h: layout.wall_band_h(),
+            bays: layout.window_bays().collect(),
+        }
+    }
+
     /// The run of glass its windows cut, in units, and the glass's height:
-    /// the span the clouds are drawn across.
+    /// the run the clouds are drawn across.
     pub(crate) fn glass(&self) -> (Range<u16>, u16) {
-        let rows = window_rows(self.size.1);
+        let rows = window_rows(self.band_h);
         (
-            window_run(self.size.0),
+            window_run(self.span.clone()),
             crate::layout::glass_rows(rows.end - rows.start),
         )
     }
@@ -392,9 +402,8 @@ impl Outside {
         } = key;
         let outlook = crate::atmosphere::Outlook::resolve(sky, theme, altitude, beat);
         let (run, glass_h) = wall.glass();
-        let (buf_w, band_h) = wall.size;
         let bays = wall.bays.clone();
-        let rows = window_rows(band_h);
+        let rows = window_rows(wall.band_h);
         let panes: Vec<Range<u16>> = bays
             .iter()
             .copied()
@@ -402,7 +411,12 @@ impl Outside {
             .map(|p| p.start - run.start..p.end - run.start)
             .collect();
         Self {
-            sky: SkyView::of(&outlook, (buf_w, bays_span(&bays)), band_h, theme),
+            sky: SkyView::of(
+                &outlook,
+                (wall.span.clone(), bays_span(&bays)),
+                wall.band_h,
+                theme,
+            ),
             clouds: crate::clouds::Clouds::of(
                 &outlook,
                 (run.end - run.start, glass_h),
@@ -453,16 +467,18 @@ pub(crate) mod tests {
     /// takes in.
     #[test]
     fn the_bays_span_ends_short_of_the_doors_slot() {
-        let layout = crate::layout::SceneLayout::compute(160, 96, Some(4)).expect("lays out");
-        let bays: Vec<WindowBay> = layout.window_bays().collect();
-        let span = bays_span(&bays);
-        let (first, last) = (bays.first().expect("a bay"), bays.last().expect("a bay"));
+        let layout =
+            crate::layout::SceneLayout::compute(crate::layout::Viewport::full(160, 96), Some(4), 0)
+                .expect("lays out");
+        let wall = Wall::of(&layout);
+        let span = bays_span(&wall.bays);
+        let (first, last) = (
+            wall.bays.first().expect("a bay"),
+            wall.bays.last().expect("a bay"),
+        );
         assert_eq!(span, first.x..last.span().end);
         assert!(span.end <= layout.door_rect().x, "{span:?}");
-        assert!(
-            span.end < crate::layout::window_run(layout.buf_w).end,
-            "{span:?}"
-        );
+        assert!(span.end < wall.glass().0.end, "{span:?}");
         assert_eq!(bays_span(&[]), 0..0);
     }
     use crate::display::pen::test_density;
@@ -471,7 +487,7 @@ pub(crate) mod tests {
 
     /// The windows a wall `buf_w` wide has.
     fn slots(buf_w: u16) -> Vec<WindowBay> {
-        crate::layout::window_slots(buf_w).collect()
+        crate::layout::window_slots(0..buf_w).collect()
     }
 
     /// One sky a painter's frame is drawn under, beside the no-weather sky of
@@ -693,7 +709,8 @@ pub(crate) mod tests {
                     &pack,
                     &crate::theme::NORMAL,
                     Wall {
-                        size: f.wall,
+                        span: 0..f.wall.0,
+                        band_h: f.wall.1,
                         bays: slots(f.wall.0),
                     },
                     f.d,
@@ -841,7 +858,8 @@ pub(crate) mod tests {
                 &pack,
                 &crate::theme::NORMAL,
                 Wall {
-                    size: f.wall,
+                    span: 0..f.wall.0,
+                    band_h: f.wall.1,
                     bays: slots(f.wall.0),
                 },
                 f.d,
@@ -903,7 +921,8 @@ pub(crate) mod tests {
             &OutsideKey::of(
                 &moment,
                 Wall {
-                    size: (crate::layout::WINDOW_W * 3, 32),
+                    span: 0..crate::layout::WINDOW_W * 3,
+                    band_h: 32,
                     bays: slots(crate::layout::WINDOW_W * 3),
                 },
                 Density::ONE,
@@ -959,7 +978,8 @@ pub(crate) mod tests {
                     &OutsideKey::of(
                         &at(Weather::Storm),
                         Wall {
-                            size: wall,
+                            span: 0..wall.0,
+                            band_h: wall.1,
                             bays: bays.clone(),
                         },
                         d, // a clear pane's glass: no veil or rain over the bolt
