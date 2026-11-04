@@ -114,7 +114,7 @@ impl MeetingRoom {
     }
 
     /// Minimum room height that fits the sofa/table trio — the fit gate AND the
-    /// floor of `compute_with_seed`'s meeting/pantry split negotiation. Prices
+    /// floor of `compute`'s meeting/pantry split negotiation. Prices
     /// the TABLE between the sofas, not just the two sofa bodies: with both sofa
     /// clamps bound the centred table's ground would otherwise clip both.
     /// Derived from the furniture rows the mask stamps, so a sprite that grows
@@ -205,8 +205,11 @@ mod tests {
             (320, 180),
         ] {
             for seed in 0..8 {
-                let Some(layout) = crate::layout::SceneLayout::compute_with_seed(w, h, None, seed)
-                else {
+                let Some(layout) = crate::layout::SceneLayout::compute(
+                    crate::layout::Viewport::full(w, h),
+                    None,
+                    seed,
+                ) else {
                     continue;
                 };
                 let ground_end = layout.corridor.y;

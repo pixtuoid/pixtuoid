@@ -2,7 +2,7 @@ use super::*;
 use crate::layout::{SceneLayout, WallSegment};
 
 fn make_layout() -> SceneLayout {
-    SceneLayout::compute(160, 200, Some(4)).expect("layout fits")
+    SceneLayout::compute(crate::layout::Viewport::full(160, 200), Some(4), 0).expect("layout fits")
 }
 
 #[test]
@@ -139,8 +139,11 @@ fn every_wander_waypoint_is_routable_on_the_coarse_grid() {
     ];
     for (w, h) in sizes {
         for seed in 0..5u64 {
-            let Some(l) = SceneLayout::compute_with_seed(w, h, Some(TEST_DEFAULT_DESKS), seed)
-            else {
+            let Some(l) = SceneLayout::compute(
+                crate::layout::Viewport::full(w, h),
+                Some(TEST_DEFAULT_DESKS),
+                seed,
+            ) else {
                 continue;
             };
             let origin = l.door_threshold;
@@ -175,8 +178,11 @@ fn every_approach_point_is_routable_from_its_home_desk() {
         (240, 160),
     ] {
         for seed in 0..5u64 {
-            let Some(l) = SceneLayout::compute_with_seed(w, h, Some(TEST_DEFAULT_DESKS), seed)
-            else {
+            let Some(l) = SceneLayout::compute(
+                crate::layout::Viewport::full(w, h),
+                Some(TEST_DEFAULT_DESKS),
+                seed,
+            ) else {
                 continue;
             };
             for &crate::layout::HomeDesk { at: desk, .. } in &l.home_desks {
@@ -214,8 +220,11 @@ fn reachset_never_claims_an_unroutable_cell() {
     let overlay = OccupancyOverlay::new();
     for (w, h) in [(160u16, 120u16), (200, 80), (96, 70)] {
         for seed in 0..3u64 {
-            let Some(l) = SceneLayout::compute_with_seed(w, h, Some(TEST_DEFAULT_DESKS), seed)
-            else {
+            let Some(l) = SceneLayout::compute(
+                crate::layout::Viewport::full(w, h),
+                Some(TEST_DEFAULT_DESKS),
+                seed,
+            ) else {
                 continue;
             };
             let door = l.door_threshold;
@@ -261,7 +270,9 @@ fn every_aimless_wander_destination_is_routable_from_its_home_desk() {
         (240, 160),
     ] {
         for floor in 0..MAX_FLOORS {
-            let Some(l) = SceneLayout::compute_with_seed(w, h, None, floor_seed(floor)) else {
+            let Some(l) =
+                SceneLayout::compute(crate::layout::Viewport::full(w, h), None, floor_seed(floor))
+            else {
                 continue;
             };
             let origins: Vec<Point> = [l.home_desks.first(), l.home_desks.last()]
@@ -776,7 +787,8 @@ fn a_route_turns_on_the_open_pixel_nearest_a_blocked_centre() {
 /// clears it; the route steps through the one-pixel gap instead.
 #[test]
 fn a_route_through_a_one_pixel_gap_stays_on_open_floor() {
-    let l = SceneLayout::compute_with_seed(127, 45, None, 0).expect("127x45 lays out");
+    let l = SceneLayout::compute(crate::layout::Viewport::full(127, 45), None, 0)
+        .expect("127x45 lays out");
     let (from, to) = (Point { x: 55, y: 31 }, Point { x: 33, y: 39 });
     let path = find_path(&l.walkable, &OccupancyOverlay::new(), None, from, to).expect("routable");
     let off: Vec<Point> = path

@@ -319,7 +319,7 @@ mod tests {
             (89, 72, 2, counter(8, 57), cooler(24, 52), None),
         ];
         for (w, h, seed, counter, r, x) in rows {
-            let p = SceneLayout::compute_with_seed(w, h, None, seed)
+            let p = SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
                 .and_then(|l| l.pantry)
                 .expect("a pantry");
             assert_eq!(p.counter_rect(), counter, "{w}x{h} seed {seed}");

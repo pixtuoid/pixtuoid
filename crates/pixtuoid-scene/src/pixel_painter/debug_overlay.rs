@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn overlay_marks_seat_approach_sides_distinct_from_the_seat_cell() {
-        let l = SceneLayout::compute_with_seed(200, 130, Some(8), 0).unwrap();
+        let l = SceneLayout::compute(crate::layout::Viewport::full(200, 130), Some(8), 0).unwrap();
         let couch = l
             .waypoints
             .iter()
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn overlay_marks_desk_approach_distinct_from_the_chair() {
         use crate::layout::{Facing, Furniture};
-        let l = SceneLayout::compute_with_seed(200, 130, Some(8), 0).unwrap();
+        let l = SceneLayout::compute(crate::layout::Viewport::full(200, 130), Some(8), 0).unwrap();
         let desk = *l.home_desks.first().expect("a home desk");
         let chair = desk_walk_anchor_facing(desk.at, desk.facing);
         let mut buf = RgbBuffer::filled(l.buf_w, l.buf_h, Rgb { r: 0, g: 0, b: 0 });
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn first_reachable_on_side_breaks_on_negative_coords() {
-        let l = SceneLayout::compute_with_seed(200, 130, Some(8), 0).unwrap();
+        let l = SceneLayout::compute(crate::layout::Viewport::full(200, 130), Some(8), 0).unwrap();
         assert_eq!(
             first_reachable_on_side(&l, Point { x: 0, y: 0 }, -1, 0),
             None,

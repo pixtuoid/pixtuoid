@@ -357,7 +357,8 @@ fn a_runs_spans_step_on_one_grid_on_a_plate_or_off_one() {
 /// The layout leaves walkable rows between the wall band and `top_margin`.
 #[test]
 fn the_wall_band_stops_where_the_layout_says_the_ground_begins() {
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let band_h = layout.wall_band_h();
     assert!(band_h > 0, "a laid-out office has a wall band");
     assert!(
@@ -372,7 +373,8 @@ fn the_wall_band_stops_where_the_layout_says_the_ground_begins() {
 /// under the tile beside it, on the lit ground and the dark alike.
 #[test]
 fn the_ground_is_tiled_from_the_wall_foot() {
-    let layout = SceneLayout::compute_with_seed(160, 110, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 110), None, 0).expect("lays out");
     assert_ne!(
         layout.wall_band_h() % GROUND_TILE,
         0,
@@ -402,7 +404,8 @@ fn the_ground_is_tiled_from_the_wall_foot() {
 /// none: the lit zone is one flat tone.
 #[test]
 fn a_1x_ground_has_no_seams() {
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let (_, buf) = carpet(&layout, 1, 1);
     let y = layout.wall_band_h() + 1;
     assert!(
@@ -440,7 +443,8 @@ fn every_rug_lies_on_the_ground() {
     let (mut trios, mut lounges) = (0, 0);
     for (w, h) in [(160, 96), (200, 120), (240, 144), (480, 270)] {
         for seed in 0..3 {
-            let layout = SceneLayout::compute_with_seed(w, h, None, seed).expect("lays out");
+            let layout = SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+                .expect("lays out");
             trios += layout
                 .meeting_rooms
                 .iter()
@@ -693,7 +697,8 @@ fn a_shadow_falls_inside_its_pieces_reach() {
 fn the_windows_look_out_on_the_one_city_where_the_layout_tiles_them() {
     let pack = test_office();
     let theme = crate::theme::theme_by_name("normal").expect("theme");
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let scale = RenderScale::from(pack.max_density_variant());
     let pen = Pen::for_pack(scale, &pack);
     let d = pen.density();
@@ -755,19 +760,17 @@ fn the_windows_look_out_on_the_one_city_where_the_layout_tiles_them() {
             paint_window(view, *frame, pen, &mut buf);
         }
         let density = pen.density();
-        let band = (layout.buf_w, layout.wall_band_h());
-        let wall = crate::outside::Wall {
-            size: band,
-            bays: layout.window_bays().collect(),
-        };
+        let wall = crate::outside::Wall::of(&layout);
+        let (span, band_h) = (wall.span.clone(), wall.band_h);
         let outside = crate::outside::Outside::of(
             &crate::outside::OutsideKey::of(&moment, wall, density, GlassWeather::of(&moment)),
             &pack,
             theme,
             &mut crate::clouds::CloudCache::default(),
         );
-        let sky = crate::celestial::SkyView::of(&moment.outlook(theme), band.0, band.1, theme);
-        let run = crate::layout::window_run(band.0);
+        let sky =
+            crate::celestial::SkyView::of(&moment.outlook(theme), span.clone(), band_h, theme);
+        let run = crate::layout::window_run(span);
         let city = crate::skyline::CityStrip::draw(
             &pack,
             (
@@ -811,7 +814,8 @@ fn the_windows_look_out_on_the_one_city_where_the_layout_tiles_them() {
 fn the_wall_between_two_windows_is_one_frame_post() {
     let pack = test_office();
     let theme = crate::theme::theme_by_name("normal").expect("theme");
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let scale = RenderScale::from(pack.max_density_variant());
     let pen = Pen::for_pack(scale, &pack);
     let mut buf = RgbBuffer::filled(
@@ -829,7 +833,7 @@ fn the_wall_between_two_windows_is_one_frame_post() {
     let k = scale.get() / pen.density().get();
     let rows = crate::layout::window_rows(layout.wall_band_h());
     let mut posts = 0;
-    for post in crate::layout::window_posts(layout.buf_w) {
+    for post in crate::layout::window_posts(layout.wall_span()) {
         posts += 1;
         for x in post.clone() {
             for y in rows.clone() {
@@ -937,8 +941,9 @@ fn a_shared_backdrop_cache_paints_every_frame_as_a_fresh_one() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let pack = test_office();
     let now = crate::localclock::at_hour(12);
-    let layouts =
-        [0, 1].map(|seed| SceneLayout::compute_with_seed(160, 96, None, seed).expect("lays out"));
+    let layouts = [0, 1].map(|seed| {
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, seed).expect("lays out")
+    });
     assert_ne!(
         Backdrop::of(&layouts[0], theme),
         Backdrop::of(&layouts[1], theme),
@@ -1010,7 +1015,8 @@ fn a_strike_lifts_the_room_and_its_glass_most() {
     use crate::sky::{Sky, Weather};
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let frame = empty_frame(&layout);
     let now = crate::localclock::at_hour(23);
     let lift = crate::display::light::FLASH_MAX_STEPS as i8;
@@ -1469,7 +1475,8 @@ fn the_walls_contact_row_is_the_ground_a_shade_down() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let scale = RenderScale::from(pack.max_density_variant());
     let pen = Pen::for_pack(scale, &pack);
-    let layout = SceneLayout::compute_with_seed(240, 144, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(240, 144), None, 0).expect("lays out");
     let blank = || {
         RgbBuffer::filled(
             scale.to_buffer(layout.buf_w),
@@ -1558,7 +1565,8 @@ fn lowest_painted_row(
 fn the_tables_span_ends_where_it_paints() {
     let pack = test_office();
     let theme = crate::theme::theme_by_name("normal").expect("theme");
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     for s in [1, pack.max_density_variant().get()] {
         let scale = RenderScale::new(s).expect("nonzero");
         let order = queued(&layout, &pack, scale, &[], |k| {
@@ -2627,7 +2635,8 @@ fn moment_at(w: crate::sky::Weather, now: std::time::SystemTime) -> Moment {
 fn the_weather_shows_on_the_glass_and_only_there() {
     use crate::sky::Weather;
     for (w, h) in [(160, 96), (240, 135)] {
-        let layout = SceneLayout::compute_with_seed(w, h, None, 0).expect("lays out");
+        let layout =
+            SceneLayout::compute(crate::layout::Viewport::full(w, h), None, 0).expect("lays out");
         for hour in [12, 0] {
             let now = crate::localclock::at_hour(hour);
             let clear = GlassWeather::of(&moment_at(Weather::Clear, now));
@@ -2653,7 +2662,8 @@ fn the_weather_shows_on_the_glass_and_only_there() {
 #[test]
 fn a_window_s_fingerprint_moves_with_the_weather_tick_where_it_falls() {
     use crate::sky::Weather;
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let at = |w, ms| {
         moment_at(
             w,
@@ -2923,7 +2933,8 @@ fn every_piece_paints_only_inside_its_span() {
 /// A cat and two gateways of one source, the second degraded and in hand,
 /// so it sorts last on a row no feet stand on.
 fn creatures() -> (SceneLayout, SimFrame) {
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let mut frame = empty_frame(&layout);
     let (cat, lobster) = (Point { x: 40, y: 70 }, Point { x: 110, y: 70 });
     let row = |at, piece, frame| {
@@ -3254,7 +3265,8 @@ fn the_ground_takes_the_weathers_tint() {
     use crate::sky::{Sky, Weather};
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let frame = empty_frame(&layout);
     let now = crate::localclock::at_hour(12);
     let ground_in = |w: Weather| {
@@ -3292,7 +3304,8 @@ fn a_change_dithers_the_ground_and_the_veil_on_the_art_grid() {
     use crate::sprite::Rgb;
     let theme = &crate::theme::NORMAL;
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let now = crate::localclock::at_hour(12);
     // Partway through a change of cloud, at a share whose dither, unlike
     // half's checkerboard, moves with any shift of its key.
@@ -3750,7 +3763,8 @@ fn the_cutaway_glows_only_around_its_sign() {
 fn the_neon_glow_takes_its_tubes_hue() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(160, 96, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0).expect("lays out");
     let office = Office {
         layout: &layout,
         pack: &pack,
@@ -3790,7 +3804,8 @@ fn the_neon_glow_takes_its_tubes_hue() {
 fn a_desk_lamp_pools_under_its_painted_bulb() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let pack = test_office();
-    let layout = SceneLayout::compute_with_seed(240, 144, None, 0).expect("lays out");
+    let layout =
+        SceneLayout::compute(crate::layout::Viewport::full(240, 144), None, 0).expect("lays out");
     for s in [1, pack.max_density_variant().get()] {
         let scale = RenderScale::new(s).expect("nonzero");
         let pen = Pen::for_pack(scale, &pack);

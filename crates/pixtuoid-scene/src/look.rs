@@ -725,7 +725,7 @@ pub fn render(
             classic.drew(drawn);
             classic.dim = dim;
             classic.signs =
-                crate::display::TextRun::signs(&board, stepped.layout.door, world.floor, theme);
+                crate::display::TextRun::signs(&board, &stepped.layout, world.floor, theme);
             if look == Look::HALF_BLOCKS {
                 dim.apply(&mut classic.buf);
                 (Dirty::All, flash)

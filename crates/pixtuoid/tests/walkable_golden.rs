@@ -23,13 +23,15 @@ fn mask_to_ascii(layout: &SceneLayout) -> String {
 
 #[test]
 fn walkable_mask_standard_96x70() {
-    let l = SceneLayout::compute(96, 70, Some(2)).unwrap();
+    let l =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(96, 70), Some(2), 0).unwrap();
     insta::assert_snapshot!("walkable_mask_standard_96x70", mask_to_ascii(&l));
 }
 
 #[test]
 fn walkable_mask_open_plan_seed11_96x70() {
-    let l = SceneLayout::compute_with_seed(96, 70, Some(2), 11).unwrap();
+    let l =
+        SceneLayout::compute(pixtuoid_scene::layout::Viewport::full(96, 70), Some(2), 11).unwrap();
     assert!(
         l.meeting_rooms.is_empty() && l.pantry.is_some(),
         "seed 11 lays out the open plan"

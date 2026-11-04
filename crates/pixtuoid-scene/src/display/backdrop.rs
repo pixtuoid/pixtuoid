@@ -104,7 +104,7 @@ impl Backdrop {
                 h: layout.buf_h,
             },
             wall_band_h: band_h,
-            posts: crate::layout::window_posts(layout.buf_w).collect(),
+            posts: crate::layout::window_posts(layout.wall_span()).collect(),
             window_rows: crate::layout::window_rows(band_h),
             trim_row: crate::layout::wall_trim_row(band_h),
             coverings: layout

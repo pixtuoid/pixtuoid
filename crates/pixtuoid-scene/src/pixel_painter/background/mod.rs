@@ -22,7 +22,7 @@ use super::palette::{RgbLut, WHITE, blend_rgb};
 use crate::atmosphere::Moment;
 use crate::dither::Dithered;
 use crate::glass_weather::GlassWeather;
-use crate::layout::{WindowBay, wall_trim_row, window_posts, window_rows};
+use crate::layout::{wall_trim_row, window_posts, window_rows};
 use crate::sky::Sky;
 use crate::theme::Theme;
 
@@ -101,19 +101,19 @@ impl BaseFillCache {
     }
 }
 
-/// The ground and the north wall band `top_wall_h` tall, the posts between
-/// its windows included, over the whole of `buf`, at `moment`.
+/// The ground and the north `wall`'s band, the posts between its windows
+/// included, over the whole of `buf`, at `moment`.
 pub(super) fn paint_ground_and_walls(
     base_fill: &mut BaseFillCache,
     buf: &mut RgbBuffer,
-    top_wall_h: u16,
+    wall: &crate::outside::Wall,
     moment: &Moment,
     theme: &Theme,
 ) {
+    let top_wall_h = wall.band_h;
     let (buf_w, buf_h) = (buf.width(), buf.height());
     let look = &moment.look;
     let window_frame = theme.surface.window_frame;
-    let wall = theme.surface.wall;
     let wall_trim_color = theme.surface.wall_trim;
 
     let carpet = look.carpet(theme).map(|c| [c.lit, c.dark, c.base]);
@@ -122,12 +122,12 @@ pub(super) fn paint_ground_and_walls(
         BaseFillKey {
             band_h: top_wall_h.min(buf_h),
             carpet,
-            wall,
+            wall: theme.surface.wall,
         },
     );
 
     let rows = window_rows(top_wall_h);
-    for post in window_posts(buf_w) {
+    for post in window_posts(wall.span.clone()) {
         for x in post {
             for y in rows.clone() {
                 buf.put_checked(x, y, window_frame);
@@ -143,20 +143,15 @@ pub(super) fn paint_ground_and_walls(
     }
 }
 
-/// The windows `bays` on a wall band `top_wall_h` tall, at `moment`.
+/// `wall`'s windows, at `moment`.
 pub(super) fn paint_windows(
     buf: &mut RgbBuffer,
-    top_wall_h: u16,
-    bays: impl IntoIterator<Item = WindowBay>,
+    wall: crate::outside::Wall,
     moment: &Moment,
     pack: &OfficeArt,
     theme: &Theme,
     outside: &mut crate::outside::OutsideCache,
 ) {
-    let wall = crate::outside::Wall {
-        size: (buf.width(), top_wall_h),
-        bays: bays.into_iter().collect(),
-    };
     let views = outside.views(
         moment,
         pack,

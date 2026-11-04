@@ -63,7 +63,7 @@ fn sweep_over(
 ) {
     for &(w, h) in SWEEP_SIZES {
         for seed in seeds.clone() {
-            match SceneLayout::compute_with_seed(w, h, None, seed) {
+            match SceneLayout::compute(Viewport::full(w, h), None, seed) {
                 Some(l) => {
                     // The dual of the None arm below: that one prices a refusal, this
                     // one prices an acceptance.
@@ -100,6 +100,76 @@ fn sweep_production_floors(f: impl FnMut(u16, u16, u64, &SceneLayout)) {
         (0..crate::floor::MAX_FLOORS).map(crate::floor::floor_seed),
         f,
     );
+}
+
+/// The insets the inset sweeps lay each size out inside: each edge alone, all
+/// four, and a set off the coarse routing grid and the half-block rows.
+const SWEEP_INSETS: [Insets; 6] = [
+    Insets {
+        top: 6,
+        right: 0,
+        bottom: 0,
+        left: 0,
+    },
+    Insets {
+        top: 0,
+        right: 6,
+        bottom: 0,
+        left: 0,
+    },
+    Insets {
+        top: 0,
+        right: 0,
+        bottom: 6,
+        left: 0,
+    },
+    Insets {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 6,
+    },
+    Insets {
+        top: 6,
+        right: 6,
+        bottom: 6,
+        left: 6,
+    },
+    Insets {
+        top: 7,
+        right: 3,
+        bottom: 5,
+        left: 9,
+    },
+];
+
+/// The viewport whose `insets` leave a `w`×`h` area inside them.
+pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
+    Viewport {
+        size: Size {
+            w: w + insets.left + insets.right,
+            h: h + insets.top + insets.bottom,
+        },
+        insets,
+    }
+}
+
+/// Run `f` over `SWEEP_SIZES` × [`SWEEP_SEEDS`] × [`SWEEP_INSETS`], each size
+/// the area left inside the insets, at production fill.
+fn sweep_insets(mut f: impl FnMut(Viewport, u64, &SceneLayout)) {
+    for &(w, h) in SWEEP_SIZES {
+        for seed in SWEEP_SEEDS {
+            for insets in SWEEP_INSETS {
+                let viewport = inset_viewport(w, h, insets);
+                let l = SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
+                    panic!(
+                        "{viewport:?} seed {seed}: the area inside the insets fell under the floor"
+                    )
+                });
+                f(viewport, seed, &l);
+            }
+        }
+    }
 }
 
 /// Every swept office, on each seed a user's floors lay out with, shows some
@@ -734,7 +804,7 @@ fn no_route_on_a_short_floor_passes_through_a_wall() {
         })
         .collect();
     let check = |&(w, h, seed): &(u16, u16, u64)| {
-        let Some(l) = SceneLayout::compute_with_seed(w, h, None, seed) else {
+        let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
             panic!("{w}x{h} seed {seed}: refused above the floor");
         };
         let mut v = corner_routes_through_walls(w, h, seed, &l);
@@ -1026,7 +1096,7 @@ fn short_band_connectivity_boundary_scan() {
     for h in super::compute::MIN_LAYOUT_H..60 {
         for &w in &[super::compute::MIN_LAYOUT_W, 80, 120, 200] {
             for seed in SWEEP_SEEDS {
-                let Some(l) = SceneLayout::compute_with_seed(w, h, None, seed) else {
+                let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
                     panic!("{w}x{h} seed {seed}: refused above the floor");
                 };
                 assert!(
@@ -1050,7 +1120,7 @@ fn narrow_band_connectivity_boundary_scan() {
         // 46 reaches the SHORT band, where the appliance aisle sits at its 8px minimum.
         for &h in &[46u16, 80, 100, 120, 148, 160] {
             for seed in SWEEP_SEEDS {
-                let Some(l) = SceneLayout::compute_with_seed(w, h, None, seed) else {
+                let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
                     // Every size here is above BOTH floors, so a refusal is a bug —
                     // and `sweep_over`'s None arm covers only the discrete grid.
                     panic!("{w}x{h} seed {seed}: refused above the floor");
@@ -1220,7 +1290,8 @@ fn the_whiteboard_hides_no_desk_and_stands_clear_of_the_walls_and_its_twin() {
 #[test]
 fn the_width_floor_stands_no_whiteboard() {
     let (w, h, seed) = (super::compute::MIN_LAYOUT_W, 120, 3);
-    let l = SceneLayout::compute_with_seed(w, h, None, seed).expect("the width floor lays out");
+    let l =
+        SceneLayout::compute(Viewport::full(w, h), None, seed).expect("the width floor lays out");
     assert!(
         !l.wall_decor
             .iter()
@@ -1299,12 +1370,12 @@ fn desk_capacity_obeys_the_request_law() {
     // A sub-grid, because capacity re-computes the whole layout per n.
     for &(w, h) in &[(50u16, 80u16), (96, 100), (120, 96), (192, 158), (320, 180)] {
         for seed in 0..4u64 {
-            let Some(full) = SceneLayout::compute_with_seed(w, h, None, seed) else {
+            let Some(full) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
                 continue;
             };
             let cap = full.home_desks.len();
             for n in [1usize, cap.saturating_sub(1).max(1), cap, cap + 5] {
-                let l = SceneLayout::compute_with_seed(w, h, Some(n), seed).expect("fits");
+                let l = SceneLayout::compute(Viewport::full(w, h), Some(n), seed).expect("fits");
                 assert_eq!(
                     l.home_desks.len(),
                     n.min(cap),
@@ -1428,7 +1499,7 @@ fn the_sweep_reaches_every_floor_variant() {
     use std::collections::BTreeSet;
     let mut shapes: BTreeSet<(bool, bool, bool, u16)> = BTreeSet::new();
     for seed in SWEEP_SEEDS {
-        let l = SceneLayout::compute_with_seed(240, 160, None, seed).expect("fits");
+        let l = SceneLayout::compute(Viewport::full(240, 160), None, seed).expect("fits");
         shapes.insert((
             !l.meeting_rooms.is_empty(),
             l.pantry.is_some(),
@@ -1627,7 +1698,8 @@ fn a_plants_spot_varies_by_floor() {
     for &(w, h) in &[(96u16, 70u16), (160, 120), (192, 158)] {
         let mut seen: HashSet<Vec<(u16, u16)>> = HashSet::new();
         for f in 0..crate::floor::MAX_FLOORS {
-            if let Some(l) = SceneLayout::compute_with_seed(w, h, None, crate::floor::floor_seed(f))
+            if let Some(l) =
+                SceneLayout::compute(Viewport::full(w, h), None, crate::floor::floor_seed(f))
             {
                 seen.insert(l.plants.iter().map(|p| (p.pos.x, p.pos.y)).collect());
             }
@@ -1704,7 +1776,7 @@ fn a_wide_floors_decor_order_is_not_one_fixed_cycle() {
     for &(w, h) in &[(160u16, 120u16), (192, 158), (200, 116)] {
         let seen: HashSet<Vec<crate::layout::PodDecor>> = (0..crate::floor::MAX_FLOORS)
             .filter_map(|f| {
-                SceneLayout::compute_with_seed(w, h, None, crate::floor::floor_seed(f))
+                SceneLayout::compute(Viewport::full(w, h), None, crate::floor::floor_seed(f))
                     .map(|l| l.pod_decor.iter().map(|d| d.kind).collect())
             })
             .collect();
@@ -1759,4 +1831,130 @@ fn point_seed_packing_is_frozen() {
         super::decor::point_seed(Point { x: 5, y: 3 }),
         "the packing must not be symmetric in x and y"
     );
+}
+
+/// Under an inset lie only the floor, the walls and the sky: every fixture,
+/// seat, waypoint, room, zone and walkable cell lies inside the insets.
+#[test]
+fn nothing_is_placed_under_an_inset() {
+    let mut v = Vec::new();
+    sweep_insets(|viewport, seed, l| {
+        let inner = viewport.inner().expect("the sweep leaves an area inside");
+        let mut outside = |what: String, b: Bounds| {
+            let at = Point { x: b.x, y: b.y };
+            let size = Size {
+                w: b.width,
+                h: b.height,
+            };
+            if !rect_in_bounds(at, size, inner) {
+                v.push(format!(
+                    "{viewport:?} seed {seed}: {what} {b:?} reaches under an inset"
+                ));
+            }
+        };
+        let point = |p: Point| Bounds {
+            x: p.x,
+            y: p.y,
+            width: 1,
+            height: 1,
+        };
+        for f in l.fixtures() {
+            outside(format!("{:?}", f.kind), f.visual);
+        }
+        for (i, wp) in l.waypoints.iter().enumerate() {
+            outside(format!("waypoint[{i}] {:?}", wp.kind), point(wp.pos));
+        }
+        for (i, d) in l.home_desks.iter().enumerate() {
+            outside(
+                format!("desk[{i}]'s seat"),
+                point(desk_walk_anchor_facing(d.at, d.facing)),
+            );
+        }
+        outside("the door's threshold".into(), point(l.door_threshold));
+        outside("the corridor".into(), l.corridor);
+        outside("the cubicle band".into(), l.cubicle_band);
+        outside("the cubicle aisle".into(), l.cubicle_aisle);
+        for (i, r) in l.meeting_rooms.iter().enumerate() {
+            outside(format!("meeting room {i}"), r.bounds);
+        }
+        if let Some(p) = l.pantry {
+            outside("the pantry".into(), p.bounds);
+        }
+        for y in 0..l.buf_h {
+            for x in 0..l.buf_w {
+                if l.is_walkable(x, y) {
+                    outside("a walkable cell".into(), point(Point { x, y }));
+                }
+            }
+        }
+    });
+    assert_no_violations("inset", v);
+}
+
+/// The floor plan inside insets is the bare office's of the inner size, moved
+/// by them: its zones, rooms, door and its indicator's cell, desks and lounge,
+/// which nothing seeded by its spot moves.
+#[test]
+fn the_floor_plan_inside_insets_is_the_inner_sizes_moved() {
+    let mut v = Vec::new();
+    sweep_insets(|viewport, seed, l| {
+        let inner = viewport.inner().expect("the sweep leaves an area inside");
+        let bare = SceneLayout::compute(Viewport::full(inner.width, inner.height), None, seed)
+            .expect("the inner size lays out bare");
+        let at = |p: Point| Point {
+            x: p.x + inner.x,
+            y: p.y + inner.y,
+        };
+        let moved = |b: Bounds| {
+            let tl = at(Point { x: b.x, y: b.y });
+            Bounds {
+                x: tl.x,
+                y: tl.y,
+                ..b
+            }
+        };
+        let got = format!(
+            "{:?}",
+            (
+                (l.cubicle_band, l.cubicle_aisle, l.corridor),
+                l.meeting_rooms.iter().map(|r| r.bounds).collect::<Vec<_>>(),
+                l.pantry.map(|p| p.bounds),
+                (
+                    l.top_margin,
+                    l.door,
+                    l.door_threshold,
+                    super::floor_indicator_rows(l.door.y, inner.y).start,
+                ),
+                l.home_desks.iter().map(|d| d.at).collect::<Vec<_>>(),
+                l.lounge.map(|l| l.couch_center),
+            )
+        );
+        let want = format!(
+            "{:?}",
+            (
+                (
+                    moved(bare.cubicle_band),
+                    moved(bare.cubicle_aisle),
+                    moved(bare.corridor)
+                ),
+                bare.meeting_rooms
+                    .iter()
+                    .map(|r| moved(r.bounds))
+                    .collect::<Vec<_>>(),
+                bare.pantry.map(|p| moved(p.bounds)),
+                (
+                    bare.top_margin + inner.y,
+                    at(bare.door),
+                    at(bare.door_threshold),
+                    super::floor_indicator_rows(bare.door.y, 0).start + inner.y,
+                ),
+                bare.home_desks.iter().map(|d| at(d.at)).collect::<Vec<_>>(),
+                bare.lounge.map(|l| at(l.couch_center)),
+            )
+        );
+        if got != want {
+            v.push(format!("{viewport:?} seed {seed}: {got}\n  want {want}"));
+        }
+    });
+    assert_no_violations("moved-plan", v);
 }

@@ -3,8 +3,8 @@
 
 use super::decor::{FurnitureDef, GroundAlign};
 use super::{
-    Furniture, MeetingRoom, PANTRY_FOOTPRINT_DEPTH, Pivot, PlantItem, PodDecorItem, Point, Size,
-    WALL_THICK_V, WallDecorItem, Waypoint, WaypointKind, anchored_top_left, furniture_def,
+    Bounds, Furniture, MeetingRoom, PANTRY_FOOTPRINT_DEPTH, Pivot, PlantItem, PodDecorItem, Point,
+    Size, WALL_THICK_V, WallDecorItem, Waypoint, WaypointKind, anchored_top_left, furniture_def,
 };
 use crate::walkable::WalkableMask;
 
@@ -78,6 +78,8 @@ const WALL_ROUTING_MARGIN_X: u16 = 1;
 pub(super) struct MaskObstacles<'a> {
     pub(super) buf_w: u16,
     pub(super) buf_h: u16,
+    /// The area inside the insets, the only one walked on.
+    pub(super) inner: Bounds,
     pub(super) top_margin: u16,
     pub(super) home_desks: &'a [Point],
     pub(super) meeting_rooms: &'a [MeetingRoom],
@@ -100,6 +102,12 @@ impl MaskObstacles<'_> {
         Self {
             buf_w,
             buf_h,
+            inner: Bounds {
+                x: 0,
+                y: 0,
+                width: buf_w,
+                height: buf_h,
+            },
             top_margin: super::WALL_BAND_TO_TOP_MARGIN,
             home_desks: &[],
             meeting_rooms: &[],
@@ -132,6 +140,7 @@ pub(super) fn build_walkable_mask(obs: &MaskObstacles) -> WalkableMask {
     let &MaskObstacles {
         buf_w,
         buf_h,
+        inner,
         top_margin,
         home_desks,
         meeting_rooms,
@@ -149,13 +158,19 @@ pub(super) fn build_walkable_mask(obs: &MaskObstacles) -> WalkableMask {
 
     let mut mask = WalkableMask::new_open(buf_w, buf_h);
 
+    // Nothing walks under an inset; the wall band below covers the north one.
+    let (east, south) = (inner.right(), inner.bottom());
+    mask.mark_blocked(0, 0, inner.x, buf_h, 0);
+    mask.mark_blocked(east, 0, buf_w - east, buf_h, 0);
+    mask.mark_blocked(0, south, buf_w, buf_h - south, 0);
+
     // To the WALL VISUAL bottom, not the full top_margin: the rows between are
     // carpet apron, and blocking them pushed the walkable boundary south of the
     // visible wall base (invariant #6).
     mask.mark_blocked(0, 0, buf_w, super::wall_band_h(top_margin), 0);
     const BASEBOARD_H: u16 = 3;
 
-    let baseboard_top = buf_h.saturating_sub(BASEBOARD_H);
+    let baseboard_top = south.saturating_sub(BASEBOARD_H);
     mask.mark_blocked(0, baseboard_top, buf_w, BASEBOARD_H, 0);
 
     // Both block their FULL visual footprint (invariant #6); only the router
@@ -264,7 +279,12 @@ mod tests {
 
     #[test]
     fn vertical_wall_blocks_its_whole_visual_width_in_the_mask() {
-        let l = crate::layout::SceneLayout::compute_with_seed(200, 130, Some(8), 0).unwrap();
+        let l = crate::layout::SceneLayout::compute(
+            crate::layout::Viewport::full(200, 130),
+            Some(8),
+            0,
+        )
+        .unwrap();
         let piece = l
             .wall_pieces
             .iter()
@@ -326,21 +346,10 @@ mod tests {
             pos,
         }];
         let mask = build_walkable_mask(&MaskObstacles {
-            buf_w: 120,
-            buf_h: 96,
             top_margin: 20,
-            home_desks: &[],
-            meeting_rooms: &[],
-            kitchen_island: None,
-            waypoints: &[],
-            plants: &[],
-            floor_lamp: None,
-            lounge_side_table: None,
-            fish_tank: None,
             wall_decor: &wall_decor,
-            pod_decor: &[],
-            wall_pieces: &[],
             pantry_counter_size: Size { w: 20, h: 8 },
+            ..MaskObstacles::bare(120, 96)
         });
         let def = furniture_def(Furniture::Whiteboard);
         let sprite_h = def.visual.h;

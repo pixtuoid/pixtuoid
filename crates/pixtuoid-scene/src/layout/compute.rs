@@ -53,19 +53,21 @@ pub(super) const DESK_BAND_MIN_H: u16 = INTER_POD_AISLE_Y / 2 + DESK_GROUND_H;
 /// over it and `band_w` subtracts it, so it is one const, not two literals.
 const MID_DIVIDER_W: u16 = 1;
 
-/// The cubicle band's WIDTH for a buffer — everything east of the left column and its
-/// divider. THE formula `compute_with_seed` and `min_layout_w` both step from.
-pub(super) const fn band_w(buf_w: u16, mid_x_pct: u16) -> u16 {
-    buf_w.saturating_sub(pct(buf_w, mid_x_pct) + MID_DIVIDER_W)
+/// The cubicle band's WIDTH in an area `inner_w` wide inside the insets —
+/// everything east of the left column and its divider. THE formula `compute` and
+/// `min_layout_w` both step from.
+pub(super) const fn band_w(inner_w: u16, mid_x_pct: u16) -> u16 {
+    inner_w.saturating_sub(pct(inner_w, mid_x_pct) + MID_DIVIDER_W)
 }
 
-/// The band's HEIGHT — everything below the wall band, less the appliance aisle. THE
-/// formula `compute_with_seed` and `min_layout_h` both step from, and it SATURATES: a
-/// sub-`top_margin` buffer collapses to 0 rather than wrapping to 58,974 and an office
-/// of garbage desks. Only observable below the size gate, so no test can hold it — the
-/// gate and the use site together are what keep it unobservable.
-pub(super) const fn band_h(buf_h: u16) -> u16 {
-    let usable = buf_h.saturating_sub(top_margin(buf_h));
+/// The band's HEIGHT in an area `inner_h` tall inside the insets — everything below
+/// the wall band, less the appliance aisle. THE formula `compute` and `min_layout_h`
+/// both step from, and it SATURATES: a sub-`wall_depth` area collapses to 0 rather
+/// than wrapping to 58,974 and an office of garbage desks. Only observable below the
+/// size gate, so no test can hold it — the gate and the use site together are what
+/// keep it unobservable.
+pub(super) const fn band_h(inner_h: u16) -> u16 {
+    let usable = inner_h.saturating_sub(wall_depth(inner_h));
     usable.saturating_sub(cubicle_aisle_h(usable))
 }
 
@@ -75,12 +77,13 @@ const fn pct_at_least(v: u16, n: u16, min: u16) -> u16 {
     if share > min { share } else { min }
 }
 
-const TOP_MARGIN_PCT: u16 = 30;
+const WALL_DEPTH_PCT: u16 = 30;
 
-/// The north wall band's depth — [`TOP_MARGIN_PCT`] percent of the buffer, never
-/// under [`MIN_TOP_MARGIN`].
-pub(super) const fn top_margin(buf_h: u16) -> u16 {
-    pct_at_least(buf_h, TOP_MARGIN_PCT, MIN_TOP_MARGIN)
+/// The north wall band's depth below the north edge inside the insets —
+/// [`WALL_DEPTH_PCT`] percent of the `inner_h` inside them, never under
+/// [`MIN_WALL_DEPTH`].
+pub(super) const fn wall_depth(inner_h: u16) -> u16 {
+    pct_at_least(inner_h, WALL_DEPTH_PCT, MIN_WALL_DEPTH)
 }
 
 const fn cubicle_aisle_h(usable_h: u16) -> u16 {
@@ -91,8 +94,8 @@ const fn cubicle_aisle_h(usable_h: u16) -> u16 {
 /// The appliance aisle south of the pods never shrinks below this.
 const MIN_CUBICLE_AISLE_H: u16 = 8;
 
-/// The smallest buffer `compute_with_seed` lays out; below either it returns `None`
-/// ("terminal too small"). BOTH axes are SOLVED against the band, not the buffer, and
+/// The smallest area inside the insets `compute` lays out; below either it returns
+/// `None` ("terminal too small"). BOTH axes are SOLVED against the band, not that area, and
 /// the width against the north wall too: no narrower wall hangs the door clear of
 /// the neon.
 pub(super) const MIN_LAYOUT_W: u16 = min_layout_w();
@@ -100,7 +103,7 @@ const _: () = assert!(MIN_LAYOUT_W >= super::NEON_DOOR_WALL_W);
 // The shortest wall band's windows stand as tall as the door, so every office
 // that lays out has one.
 const _: () = assert!(
-    super::wall_trim_row(super::wall_band_h(super::MIN_TOP_MARGIN)) - super::WINDOW_TOP
+    super::wall_trim_row(super::wall_band_h(super::MIN_WALL_DEPTH)) - super::WINDOW_TOP
         >= super::ELEVATOR_H
 );
 pub(super) const MIN_LAYOUT_H: u16 = min_layout_h();
@@ -140,9 +143,10 @@ const fn min_layout_h() -> u16 {
     h
 }
 
-/// The smallest buffer that lays out, for a painter that has to TELL the user
-/// why it is not drawing an office. Buffer units — each painter owns its own
-/// cell aspect, so only it can turn this into rows and columns.
+/// The smallest area inside a viewport's insets that lays out, for a painter
+/// that has to TELL the user why it draws no office. Layout units — each
+/// painter owns its own cell aspect, so only it can turn this into rows and
+/// columns.
 pub fn min_layout_size() -> Size {
     Size {
         w: MIN_LAYOUT_W,
@@ -154,12 +158,12 @@ pub fn min_layout_size() -> Size {
 /// that holds only while the growth base stays above it.
 const _: () = assert!(COUCH_GAP_GROWTH_BASE_H > MIN_LAYOUT_H);
 
-const fn couch_to_desk_extra(buf_h: u16) -> u16 {
-    const BUF_ROWS_PER_GAP_ROW: u16 = 20;
-    buf_h.saturating_sub(COUCH_GAP_GROWTH_BASE_H) / BUF_ROWS_PER_GAP_ROW
+const fn couch_to_desk_extra(inner_h: u16) -> u16 {
+    const INNER_ROWS_PER_GAP_ROW: u16 = 20;
+    inner_h.saturating_sub(COUCH_GAP_GROWTH_BASE_H) / INNER_ROWS_PER_GAP_ROW
 }
 
-/// Buffer height at which the couch-to-desk gap starts growing. It equalled the
+/// The inner height at which the couch-to-desk gap starts growing. It equalled the
 /// old hand-written `MIN_LAYOUT_H` by coincidence, not by derivation — re-tying it
 /// to the now-lower floor would widen the gap on most offices tall enough to render
 /// today, so it keeps its own name and its own number.
@@ -182,8 +186,8 @@ fn room_fits_furniture(mr: &Bounds) -> bool {
 /// are placed in them: the side rooms west of the divider, and the cubicle band
 /// with its aisle east of it.
 struct FloorPlan {
-    buf_w: u16,
-    buf_h: u16,
+    /// The area inside the insets, which every zone divides.
+    inner: Bounds,
     top_margin: u16,
     usable_h: u16,
     /// The west bound lounge furniture and the whiteboard must clear: the divider
@@ -198,10 +202,10 @@ struct FloorPlan {
 }
 
 impl FloorPlan {
-    /// The zones a `buf_w`×`buf_h` floor of `floor_seed`'s variant divides into.
-    fn new(buf_w: u16, buf_h: u16, floor_seed: u64) -> Self {
-        let top_margin = top_margin(buf_h);
-        let usable_h = buf_h - top_margin;
+    /// The zones the area `inner` of a floor of `floor_seed`'s variant divides into.
+    fn new(inner: Bounds, floor_seed: u64) -> Self {
+        let top_margin = inner.y + wall_depth(inner.height);
+        let usable_h = inner.bottom() - top_margin;
 
         let variant = FloorVariant::from_seed(floor_seed);
         let has_meeting = variant.has_meeting();
@@ -211,13 +215,14 @@ impl FloorPlan {
             has_dual_meeting,
         };
         let has_pantry = geom.has_pantry();
-        let mid_x = pct(buf_w, geom.mid_x_pct());
+        let left_w = pct(inner.width, geom.mid_x_pct());
+        let mid_x = inner.x + left_w;
 
         const COUNTER_SIDE_CLEARANCE: u16 = 2;
         // Large counter + a routing clearance each side, else the compact fallback.
         // Width-only, so the size is known before the split prices the pantry against it.
         let pantry_counter_size: Size =
-            if has_pantry && mid_x >= PANTRY_COUNTER_LARGE_W + 2 * COUNTER_SIDE_CLEARANCE {
+            if has_pantry && left_w >= PANTRY_COUNTER_LARGE_W + 2 * COUNTER_SIDE_CLEARANCE {
                 super::LARGE_COUNTER
             } else {
                 super::COMPACT_COUNTER
@@ -248,9 +253,9 @@ impl FloorPlan {
                 "meeting implies pantry-or-dual per the variant table"
             );
             Some(Bounds {
-                x: 0,
+                x: inner.x,
                 y: top_margin,
-                width: mid_x,
+                width: left_w,
                 height: mid_y_split - top_margin,
             })
         } else {
@@ -258,9 +263,9 @@ impl FloorPlan {
         };
         let meeting_room_2 = if has_dual_meeting {
             Some(Bounds {
-                x: 0,
+                x: inner.x,
                 y: mid_y_split,
-                width: mid_x,
+                width: left_w,
                 height: usable_h - usable_h / 2,
             })
         } else {
@@ -268,9 +273,9 @@ impl FloorPlan {
         };
         let pantry_room = if has_pantry {
             Some(Bounds {
-                x: 0,
+                x: inner.x,
                 y: if has_meeting { mid_y_split } else { top_margin },
-                width: mid_x,
+                width: left_w,
                 height: if has_meeting {
                     usable_h - (mid_y_split - top_margin)
                 } else {
@@ -282,7 +287,7 @@ impl FloorPlan {
         };
 
         let right_x = mid_x + MID_DIVIDER_W;
-        let right_w = band_w(buf_w, geom.mid_x_pct());
+        let right_w = band_w(inner.width, geom.mid_x_pct());
         let lounge_west_clear = if has_meeting {
             mid_x + super::WALL_THICK_V
         } else {
@@ -291,7 +296,7 @@ impl FloorPlan {
         let cubicle_aisle_h = cubicle_aisle_h(usable_h);
         // NOT `usable_h - cubicle_aisle_h`, though the locals are right here — see
         // `band_h` for what its saturation buys below the gate.
-        let cubicle_h = band_h(buf_h);
+        let cubicle_h = band_h(inner.height);
         let cubicle_band = Bounds {
             x: right_x,
             y: top_margin,
@@ -309,7 +314,7 @@ impl FloorPlan {
         let pod_h = POD_SIDE * DESK_H + (POD_SIDE - 1) * INTRA_POD_GAP_Y;
         let pod_stride_x = pod_w + INTER_POD_AISLE_X;
         let pod_stride_y = pod_h + INTER_POD_AISLE_Y;
-        let couch_to_desk_extra = couch_to_desk_extra(buf_h);
+        let couch_to_desk_extra = couch_to_desk_extra(inner.height);
         let pod_cols = ((right_w.saturating_sub(INTER_POD_AISLE_X / 2)) / pod_stride_x).max(1);
         let pod_rows = ((cubicle_h.saturating_sub(couch_to_desk_extra) + INTER_POD_AISLE_Y)
             / pod_stride_y)
@@ -332,8 +337,7 @@ impl FloorPlan {
             meeting_rooms.push(MeetingRoom { bounds: mr, trio });
         }
         Self {
-            buf_w,
-            buf_h,
+            inner,
             top_margin,
             usable_h,
             lounge_west_clear,
@@ -362,22 +366,23 @@ const _: () = {
     }
 };
 
-pub(super) fn compute_with_seed(
-    buf_w: u16,
-    buf_h: u16,
+pub(super) fn compute(
+    viewport: Viewport,
     max_desks: Option<usize>,
     floor_seed: u64,
 ) -> Option<SceneLayout> {
-    if buf_w < MIN_LAYOUT_W || buf_h < MIN_LAYOUT_H {
+    let inner = viewport.inner()?;
+    if inner.width < MIN_LAYOUT_W || inner.height < MIN_LAYOUT_H {
         return None;
     }
+    let Size { w: buf_w, h: buf_h } = viewport.size;
 
-    let plan = FloorPlan::new(buf_w, buf_h, floor_seed);
+    let plan = FloorPlan::new(inner, floor_seed);
 
     let pod_desks = compute_pod_desks(max_desks, plan.pod_grid);
     let desk_points: Vec<Point> = pod_desks.iter().map(|d| d.at).collect();
 
-    let desk_art: Vec<(Point, Size)> = desk_fixtures(desk_points.iter().copied(), plan.buf_h)
+    let desk_art: Vec<(Point, Size)> = desk_fixtures(desk_points.iter().copied(), inner.bottom())
         .chain(desk_chair_fixtures(&pod_desks))
         .map(|f| art_rect(f.visual))
         .collect();
@@ -391,7 +396,7 @@ pub(super) fn compute_with_seed(
     // that gate can check couch↔door clearance.
     let top_wall_h = super::wall_band_h(plan.top_margin);
     let door = Point {
-        x: super::door_x(buf_w),
+        x: super::door_x(super::windows::wall_span(inner)),
         // Its bottom row is the band's trim row, so it stands on the floor
         // line instead of floating mid-wall.
         y: super::wall_trim_row(top_wall_h) + 1 - ELEVATOR_H,
@@ -540,9 +545,9 @@ pub(super) fn compute_with_seed(
     }
 
     let corridor = Bounds {
-        x: 0,
+        x: inner.x,
         y: plan.cubicle_aisle.y,
-        width: buf_w,
+        width: inner.width,
         height: plan.cubicle_aisle.height,
     };
 
@@ -581,6 +586,7 @@ pub(super) fn compute_with_seed(
         mask::build_walkable_mask(&mask::MaskObstacles {
             buf_w,
             buf_h,
+            inner,
             top_margin: plan.top_margin,
             home_desks: &desk_points,
             meeting_rooms: &plan.meeting_rooms,
@@ -681,6 +687,7 @@ pub(super) fn compute_with_seed(
     Some(SceneLayout {
         buf_w,
         buf_h,
+        inner,
         cubicle_band: plan.pod_grid.band,
         cubicle_aisle: plan.cubicle_aisle,
         home_desks,
@@ -719,7 +726,7 @@ fn place_wall_decor(
     pod_decor: &[PodDecorItem],
 ) -> Vec<WallDecorItem> {
     let FloorPlan {
-        buf_w,
+        inner,
         top_margin,
         usable_h,
         pod_grid,
@@ -734,7 +741,7 @@ fn place_wall_decor(
         let sx = mr.bounds.x + 1;
         (sx + screen.w < mr.bounds.x + mr.bounds.width).then_some(sx)
     });
-    let bookshelf_x = bookshelf_x(buf_w, screen.w, bookshelf.w, meeting_screen_x, meeting_room);
+    let bookshelf_x = bookshelf_x(inner, screen.w, bookshelf.w, meeting_screen_x, meeting_room);
     // WEST of the vertical divider too: on narrow trio rooms the drain clamp can push it
     // onto the wall's top segment, where it pierces the glass. Dropping reopens the apron.
     let bookshelf_east_limit = meeting_room
@@ -750,10 +757,12 @@ fn place_wall_decor(
             },
         });
     }
-    wall_decor.extend(super::exit_sign_pos(door).map(|pos| WallDecorItem {
-        kind: WallDecor::ExitSign,
-        pos,
-    }));
+    wall_decor.extend(
+        super::exit_sign_pos(door, inner.y).map(|pos| WallDecorItem {
+            kind: WallDecor::ExitSign,
+            pos,
+        }),
+    );
     const WHITEBOARD_HINT_DIVISOR: u16 = 3;
     // The hint is not a slot: unsnapped it drops the board on a desk row
     // or in the intra-pod gap, where the wheel strip plugs the pod's own west lane.
@@ -814,9 +823,10 @@ fn place_wall_decor(
         });
     }
     // A band too short to hang a piece under the neon sign drops it.
+    let panel = super::neon_panel(inner);
     wall_decor.retain(|d| {
         let v = furniture_def(d.kind.furniture()).visual;
-        !NEON_PANEL.overlaps(Bounds {
+        !panel.overlaps(Bounds {
             x: d.pos.x,
             y: d.pos.y,
             width: v.w,
@@ -829,14 +839,14 @@ fn place_wall_decor(
 /// The bookshelf's wall slot — flush east of the meeting screen, spread further past
 /// the sofa's drain edge, or back to flush when that spread would pierce the divider.
 fn bookshelf_x(
-    buf_w: u16,
+    inner: Bounds,
     screen_w: u16,
     bookshelf_w: u16,
     meeting_screen_x: Option<u16>,
     meeting_room: Option<&MeetingRoom>,
 ) -> u16 {
     const BOOKSHELF_X_PCT: u16 = 18;
-    let x = pct(buf_w, BOOKSHELF_X_PCT);
+    let x = inner.x + pct(inner.width, BOOKSHELF_X_PCT);
     match (meeting_screen_x, meeting_room) {
         (Some(sx), Some(mr)) => {
             // The ONE flush slot: screen east edge + both grounds' wall-decor pads, so the two
@@ -1275,7 +1285,7 @@ impl FloorVariant {
     /// its length. A variant missing here is unreachable — rustc's `dead_code` reds on
     /// the never-constructed arm, NOT `the_sweep_reaches_every_floor_variant`, which
     /// catches the other direction. `has_meeting` / `has_pantry_base` are `matches!`
-    /// lists; the `const _` above `compute_with_seed` reds a variant in neither.
+    /// lists; the `const _` above `compute` reds a variant in neither.
     pub(super) const ALL: [Self; 5] = [
         FloorVariant::Standard,
         FloorVariant::OpenPlan,
@@ -1312,7 +1322,7 @@ impl FloorVariant {
         )
     }
 
-    /// Left-column split as a percent of buffer width, BEFORE the Dense-degrade.
+    /// Left-column split as a percent of the width inside the insets, BEFORE the Dense-degrade.
     const fn mid_x_pct(self) -> u16 {
         match self {
             FloorVariant::Standard => 28,
@@ -1610,9 +1620,15 @@ pub(super) fn compute_pod_decor(
 /// desk's workstation — the desk and its filing cabinet, and its sitter, since
 /// a south-row sitter hangs into the aisle, over the art's top. Both facings,
 /// since a narrow band demotes a back-turned desk after this runs.
-fn clears_the_workstations(kind: Furniture, pos: Point, home_desks: &[Point], buf_h: u16) -> bool {
+fn clears_the_workstations(
+    kind: Furniture,
+    pos: Point,
+    home_desks: &[Point],
+    floor_end: u16,
+) -> bool {
     let art = corridor_art(kind, pos);
-    super::roster::desk_fixtures(home_desks.iter().copied(), buf_h).all(|f| !f.visual.overlaps(art))
+    super::roster::desk_fixtures(home_desks.iter().copied(), floor_end)
+        .all(|f| !f.visual.overlaps(art))
         && home_desks.iter().all(|&desk| {
             [Facing::North, Facing::South].into_iter().all(|facing| {
                 let foot = desk_walk_anchor_facing(desk, facing);
@@ -1648,7 +1664,7 @@ fn vending_spot(
     west: u16,
     stride: u16,
     home_desks: &[Point],
-    buf_h: u16,
+    floor_end: u16,
 ) -> Option<Point> {
     let fits = aisle.height >= VENDING_MIN_AISLE_H && aisle.width > VENDING_MIN_AISLE_W;
     let art = furniture_def(Furniture::VendingMachine).visual;
@@ -1658,7 +1674,7 @@ fn vending_spot(
             x: west + VENDING_WEST_GAP + art.w / 2 + dx,
             y: corridor_centre_y(aisle, art.h),
         })
-        .find(|&p| clears_the_workstations(Furniture::VendingMachine, p, home_desks, buf_h))
+        .find(|&p| clears_the_workstations(Furniture::VendingMachine, p, home_desks, floor_end))
 }
 
 pub(super) const VENDING_MIN_AISLE_H: u16 = 10;
@@ -1684,7 +1700,6 @@ fn compute_waypoints(
     home_desks: &[Point],
 ) -> Vec<Waypoint> {
     let FloorPlan {
-        buf_h,
         pantry: pantry_room,
         pantry_counter_size,
         ref pod_grid,
@@ -1731,7 +1746,14 @@ fn compute_waypoints(
         }
     }
 
-    let vending = vending_spot(cubicle_aisle, right_x, pod_grid.stride_x, home_desks, buf_h);
+    let floor_end = plan.inner.bottom();
+    let vending = vending_spot(
+        cubicle_aisle,
+        right_x,
+        pod_grid.stride_x,
+        home_desks,
+        floor_end,
+    );
     if let Some(vending) = vending {
         waypoints.push(Waypoint {
             pos: vending,
@@ -1750,7 +1772,7 @@ fn compute_waypoints(
             y: corridor_centre_y(cubicle_aisle, furniture_def(Furniture::Printer).visual.h),
         })
         .find(|&p| {
-            clears_the_workstations(Furniture::Printer, p, home_desks, buf_h)
+            clears_the_workstations(Furniture::Printer, p, home_desks, floor_end)
                 && vending.is_none_or(|v| {
                     !corridor_art(Furniture::Printer, p)
                         .shares_columns(corridor_art(Furniture::VendingMachine, v))
@@ -1835,8 +1857,14 @@ mod tests {
         for seed in SWEEP_SEEDS {
             let scan: Vec<(u16, bool, Option<u16>, u16)> = NARROW_BAND
                 .map(|w| {
-                    let l = SceneLayout::compute_with_seed(w, h, None, seed).expect("lays out");
-                    let plan = FloorPlan::new(w, h, seed);
+                    let l = SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+                        .expect("lays out");
+                    let plan = FloorPlan::new(
+                        crate::layout::Viewport::full(w, h)
+                            .inner()
+                            .expect("an area"),
+                        seed,
+                    );
                     let couch =
                         couch_pos(&plan.pod_grid.band, plan.top_margin, plan.lounge_west_clear);
                     (

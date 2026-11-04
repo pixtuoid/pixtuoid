@@ -340,11 +340,11 @@ fn stand_in_label(piece: crate::pack::Piece) -> Option<&'static str> {
 
 /// The wall clock's face.
 pub(crate) const CLOCK: Size = Size { w: 7, h: 7 };
-/// The wall clock's top row.
+/// The wall clock's top row, from the north edge inside the insets.
 const CLOCK_Y: u16 = 1;
 
-/// The neon sign's outer box: its origin, then its size with the frame
-/// included.
+/// The neon sign's outer box: its offset from the north-west corner inside the
+/// insets, then its size with the frame included.
 pub(crate) const NEON_PANEL_X: u16 = 1;
 pub(crate) const NEON_PANEL_Y: u16 = 1;
 /// The neon sign's outer width in pixels. A pixel column is a terminal cell
@@ -359,15 +359,8 @@ pub(crate) const NEON_PANEL_BORDER: u16 = 1;
 /// tighter stride read as bathroom tiling rather than a woven runner at
 /// half-block scale.
 pub(crate) const RUNNER_LATTICE_STRIDE: i32 = 10;
-/// The dark interior's left cell-origin — where board text starts. The board's
-/// text pins to the interior, not the outer box, or the lit text overruns the
-/// glowing frame by the border on each side.
-pub const NEON_PANEL_INNER_X: u16 = NEON_PANEL_X + NEON_PANEL_BORDER;
 /// The dark interior's cell WIDTH — the board's usable text width.
 pub const NEON_PANEL_INNER_W: u16 = NEON_PANEL_W - 2 * NEON_PANEL_BORDER;
-/// The dark interior's top pixel-origin — where the floating / wasm painters
-/// anchor the board's first text row.
-pub const NEON_PANEL_INNER_Y: u16 = NEON_PANEL_Y + NEON_PANEL_BORDER;
 /// The dark interior's pixel HEIGHT.
 pub const NEON_PANEL_INNER_H: u16 = NEON_PANEL_H - 2 * NEON_PANEL_BORDER;
 // The interior must be a non-empty strict subset of the outer frame (catches a
@@ -376,12 +369,14 @@ const _: () = assert!(NEON_PANEL_INNER_W > 0 && NEON_PANEL_INNER_W < NEON_PANEL_
 const _: () = assert!(NEON_PANEL_INNER_H > 0 && NEON_PANEL_INNER_H < NEON_PANEL_H);
 
 /// The neon sign's outer box.
-pub(crate) const NEON_PANEL: Bounds = Bounds {
-    x: NEON_PANEL_X,
-    y: NEON_PANEL_Y,
-    width: NEON_PANEL_W,
-    height: NEON_PANEL_H,
-};
+pub(crate) const fn neon_panel(inner: Bounds) -> Bounds {
+    Bounds {
+        x: inner.x + NEON_PANEL_X,
+        y: inner.y + NEON_PANEL_Y,
+        width: NEON_PANEL_W,
+        height: NEON_PANEL_H,
+    }
+}
 
 const NOTICE_BOARD: Size = Size { w: 8, h: 5 };
 /// Rows from the board's foot up off the band's trim.
@@ -397,17 +392,18 @@ fn top_left(b: Bounds) -> Point {
     Point { x: b.x, y: b.y }
 }
 
-/// Each home desk's filing cabinet, then the desk: the fixture authority the
-/// floor whiteboard also clears, before the layout that rosters them exists.
+/// Each home desk's filing cabinet, then the desk, on a floor ending at row
+/// `floor_end`: the fixture authority the floor whiteboard also clears, before the
+/// layout that rosters them exists.
 pub(crate) fn desk_fixtures(
     home_desks: impl IntoIterator<Item = Point>,
-    buf_h: u16,
+    floor_end: u16,
 ) -> impl Iterator<Item = Fixture> {
     let desk = furniture_def(Furniture::Desk).visual;
     home_desks.into_iter().enumerate().flat_map(move |(i, at)| {
         let local = FloorLocalDeskIndex(i);
         let depth = Depth::sorted(at.y + desk.h);
-        filing_cabinet_top_left(at, local, buf_h)
+        filing_cabinet_top_left(at, local, floor_end)
             .map(|tl| Fixture {
                 kind: FixtureKind::FilingCabinet(local),
                 at: tl,
@@ -474,9 +470,11 @@ impl SceneLayout {
     /// match. Lazy, so a probe that stops at its first hit builds nothing.
     pub(crate) fn fixtures(&self) -> impl Iterator<Item = Fixture> + '_ {
         let SceneLayout {
-            // Read through `clock_pos`.
+            // The canvas, which nothing stands on outside `inner`.
             buf_w: _,
-            buf_h,
+            buf_h: _,
+            // Read through `neon_panel`, `clock_pos` and `floor_end`.
+            inner: _,
             // Containers the pieces were placed in, not pieces.
             cubicle_band: _,
             cubicle_aisle: _,
@@ -551,7 +549,8 @@ impl SceneLayout {
             visual,
             depth: Depth::sorted(visual.y + visual.height - 1),
         };
-        std::iter::once(backdrop(FixtureKind::NeonSign, NEON_PANEL))
+        let floor_end = self.inner.bottom();
+        std::iter::once(backdrop(FixtureKind::NeonSign, self.neon_panel()))
             .chain(
                 self.clock_pos()
                     .map(|at| backdrop(FixtureKind::Clock, boxed(at, CLOCK))),
@@ -569,7 +568,7 @@ impl SceneLayout {
                 self.island_bar_mat()
                     .map(|b| backdrop(FixtureKind::IslandMat, b)),
             )
-            .chain(desk_fixtures(home_desks.iter().map(|d| d.at), *buf_h))
+            .chain(desk_fixtures(home_desks.iter().map(|d| d.at), floor_end))
             .chain(rooms.clone().filter_map(move |(room, _, trio)| {
                 // Off the corridor runner a south room's floor runs into.
                 let rug = trio?.0.rug(corridor.y);
@@ -628,7 +627,7 @@ impl SceneLayout {
             }))
             .chain(lounge.as_ref().map(|l| {
                 let first_desk_row = home_desks.iter().map(|d| d.at.y).min();
-                let rug = l.rug(first_desk_row.unwrap_or(*buf_h));
+                let rug = l.rug(first_desk_row.unwrap_or(floor_end));
                 Fixture {
                     kind: FixtureKind::LoungeRug,
                     at: top_left(rug),
@@ -769,7 +768,7 @@ impl SceneLayout {
                     .iter()
                     .map(|p| centred(p.pos, furniture_def(p.kind.furniture()).visual)),
             )
-            .chain([self.door_rect(), NEON_PANEL])
+            .chain([self.door_rect(), self.neon_panel()])
             .chain(self.clock_pos().map(|at| boxed(at, CLOCK)))
             .collect();
         let clear = |board: Bounds| {
@@ -797,15 +796,35 @@ impl SceneLayout {
     /// wall's middle that the neon sign leaves clear, or `None` on a wall
     /// with none.
     pub(crate) fn clock_pos(&self) -> Option<Point> {
-        let middle = self.buf_w / 2;
-        super::window_posts(self.buf_w)
+        let span = self.wall_span();
+        let middle = u16::midpoint(span.start, span.end);
+        let panel = self.neon_panel();
+        super::window_posts(span)
             .map(|post| u16::midpoint(post.start, post.end))
-            .filter(|&centre| centre - CLOCK.w / 2 >= NEON_PANEL.x + NEON_PANEL.width)
+            .filter(|&centre| centre - CLOCK.w / 2 >= panel.x + panel.width)
             .min_by_key(|centre| centre.abs_diff(middle))
             .map(|centre| Point {
                 x: centre - CLOCK.w / 2,
-                y: CLOCK_Y,
+                y: self.inner.y + CLOCK_Y,
             })
+    }
+
+    /// The neon sign's outer box.
+    pub(crate) fn neon_panel(&self) -> Bounds {
+        neon_panel(self.inner)
+    }
+
+    /// The wall board's text box: the neon sign's dark interior, not its outer
+    /// box, or the lit text overruns the glowing frame by the border on each
+    /// side.
+    pub fn board(&self) -> Bounds {
+        let panel = self.neon_panel();
+        Bounds {
+            x: panel.x + NEON_PANEL_BORDER,
+            y: panel.y + NEON_PANEL_BORDER,
+            width: NEON_PANEL_INNER_W,
+            height: NEON_PANEL_INNER_H,
+        }
     }
 
     /// The mat outside meeting room `r`'s door, or `None` when the lounge's
@@ -942,10 +961,10 @@ pub(crate) fn desk_has_cabinet(i: FloorLocalDeskIndex) -> bool {
 
 /// Where desk `i`, at `desk`, stands its filing cabinet — one clear column west
 /// of the desk — or `None` for a desk without one, or whose cabinet would run
-/// off a `buf_h`-tall office's south edge.
-fn filing_cabinet_top_left(desk: Point, i: FloorLocalDeskIndex, buf_h: u16) -> Option<Point> {
+/// past `floor_end`, the row past the floor's last.
+fn filing_cabinet_top_left(desk: Point, i: FloorLocalDeskIndex, floor_end: u16) -> Option<Point> {
     let cab = furniture_def(Furniture::FilingCabinet).visual;
-    (desk_has_cabinet(i) && desk.y + cab.h <= buf_h).then(|| Point {
+    (desk_has_cabinet(i) && desk.y + cab.h <= floor_end).then(|| Point {
         x: desk.x.saturating_sub(cab.w + 1),
         y: desk.y,
     })

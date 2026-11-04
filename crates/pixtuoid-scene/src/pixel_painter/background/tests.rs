@@ -6,15 +6,23 @@ use crate::pack::test_office;
 use crate::sky::{Weather, hour_is_day};
 use std::time::SystemTime;
 
+/// A wall `w` wide with its band `top_wall_h` tall, and no door.
+fn bare_wall(w: u16, top_wall_h: u16) -> crate::outside::Wall {
+    crate::outside::Wall {
+        span: 0..w,
+        band_h: top_wall_h,
+        bays: window_bays(0..w, 0..0).collect(),
+    }
+}
+
 /// The ground, the wall band `top_wall_h` tall and every window a wall as wide
 /// as `buf` shows, at `moment`.
 fn paint_band(buf: &mut RgbBuffer, top_wall_h: u16, moment: &Moment, theme: &crate::theme::Theme) {
-    paint_ground_and_walls(&mut BaseFillCache::new(), buf, top_wall_h, moment, theme);
-    let bays = window_bays(buf.width(), 0..0);
+    let wall = bare_wall(buf.width(), top_wall_h);
+    paint_ground_and_walls(&mut BaseFillCache::new(), buf, &wall, moment, theme);
     paint_windows(
         buf,
-        top_wall_h,
-        bays,
+        wall,
         moment,
         &test_office(),
         theme,
@@ -124,7 +132,13 @@ fn a_change_dithers_the_carpet_and_the_veil_on_the_buffer() {
         let mut m = moment();
         m.look = m.look.with_ground_tint_color(tint);
         let mut buf = RgbBuffer::filled(buf_w, buf_h, black);
-        paint_ground_and_walls(&mut BaseFillCache::new(), &mut buf, top_wall_h, &m, theme);
+        paint_ground_and_walls(
+            &mut BaseFillCache::new(),
+            &mut buf,
+            &bare_wall(buf_w, top_wall_h),
+            &m,
+            theme,
+        );
         buf
     };
     let [from, to] = tint.ends();
@@ -136,7 +150,7 @@ fn a_change_dithers_the_carpet_and_the_veil_on_the_buffer() {
 
     let veil = moment().look.glass_veil;
     assert!(
-        window_bays(buf_w, 0..0)
+        window_bays(0..buf_w, 0..0)
             .any(|b| b.glass_box(window_rows(top_wall_h)).x % crate::dither::PERIOD != 0),
         "every glass on the dither's phase: a key from its corner would pass"
     );
@@ -385,7 +399,7 @@ fn disc_lands_in_a_window_never_on_the_wall_margin() {
     // painted window (the wall margin, which is the bug this guards).
     let top_wall_h = 40u16;
     for buf_w in [76u16, 96, 120, 150, 192, 220, 300] {
-        let last_right = window_run(buf_w).end;
+        let last_right = window_run(0..buf_w).end;
         let mut seen_in_a_window = false;
         for h in [5u32, 6, 7, 17, 18, 19] {
             let buf = render_office_at(h, Weather::Clear, buf_w, top_wall_h);
@@ -507,7 +521,7 @@ fn disc_never_bleeds_across_a_window_pillar() {
     // sweeping the low-sun hours makes `cx` pass over one.
     let buf_w = 280u16;
     let top_wall_h = 40u16;
-    let bays: Vec<_> = window_bays(buf_w, 0..0).collect();
+    let bays: Vec<_> = window_bays(0..buf_w, 0..0).collect();
     for h in [5u32, 6, 7, 17, 18, 19] {
         let buf = render_office_at(h, Weather::Clear, buf_w, top_wall_h);
         let mut wins = std::collections::HashSet::new();
@@ -544,7 +558,7 @@ fn low_moon(day: u32, buf_w: u16, top_wall_h: u16) -> Option<(u32, crate::celest
         if !low || sky.nightfall() < 1.0 {
             return None;
         }
-        crate::celestial::Disc::of(&sky, buf_w, top_wall_h).map(|d| (h, d))
+        crate::celestial::Disc::of(&sky, 0..buf_w, top_wall_h).map(|d| (h, d))
     })
 }
 
@@ -712,7 +726,7 @@ fn glass_mean_luminance(buf: &RgbBuffer, top_wall_h: u16) -> f32 {
     let rows = window_rows(top_wall_h);
     let mut sum = 0.0f64;
     let mut n = 0u32;
-    for w in window_bays(buf.width(), 0..0) {
+    for w in window_bays(0..buf.width(), 0..0) {
         for y in (rows.start + 1)..rows.end.saturating_sub(1) {
             for x in (w.x + 1)..w.span().end.saturating_sub(1) {
                 if x < buf.width() && y < buf.height() {
@@ -861,7 +875,7 @@ fn base_fill_cache_hit_is_byte_identical_and_a_key_change_repaints() {
         paint_ground_and_walls(
             base_fill,
             &mut buf,
-            top_wall_h,
+            &bare_wall(buf_w, top_wall_h),
             &Moment::resolve(
                 Sky::at_with(now, weather),
                 theme,
@@ -920,7 +934,7 @@ fn base_fill_cache_resize_on_a_warm_cache_recomputes() {
         paint_ground_and_walls(
             base_fill,
             &mut buf,
-            14,
+            &bare_wall(w, 14),
             &Moment::resolve(Sky::clock(now), theme, 0.0, Motion::Full.timing(now)),
             theme,
         );
@@ -1039,7 +1053,7 @@ fn the_spill_leans_away_from_the_disc() {
             Motion::Full.timing(at),
         );
         let (sky, look) = (&moment.sky, &moment.look);
-        let disc = crate::celestial::Disc::of(sky, BUF_W, TOP_WALL_H).expect("a clear low sun");
+        let disc = crate::celestial::Disc::of(sky, 0..BUF_W, TOP_WALL_H).expect("a clear low sun");
         let disc_side = (disc.cx - mid).signum();
 
         // One centred window, so the lean can run either way unclipped.
@@ -1121,12 +1135,12 @@ fn the_wall_between_two_windows_is_one_frame_post() {
     paint_ground_and_walls(
         &mut BaseFillCache::new(),
         &mut buf,
-        top_wall_h,
+        &bare_wall(buf_w, top_wall_h),
         &Moment::resolve(Sky::clock(now), theme, 0.0, Motion::Full.timing(now)),
         theme,
     );
     let mut posts = 0;
-    for post in crate::layout::window_posts(buf_w) {
+    for post in crate::layout::window_posts(0..buf_w) {
         posts += 1;
         for x in post.clone() {
             for y in window_rows(top_wall_h) {

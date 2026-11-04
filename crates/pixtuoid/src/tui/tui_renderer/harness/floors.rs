@@ -205,7 +205,7 @@ fn transition_at_narrow_terminal_paints_no_agents_no_panic() {
         cap,
     );
     // 30 cols: scene_rect 30×39 passes the `MIN_SCENE_*` transition gate; buf_w=30
-    // fails compute_with_seed's office minimum.
+    // fails compute's office minimum.
     let mut r = TuiRenderer::new(
         Terminal::new(TestBackend::new(30, 40)).expect("test backend"),
         normal_theme(),
