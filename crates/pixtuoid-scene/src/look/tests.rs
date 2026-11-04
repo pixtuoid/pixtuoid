@@ -177,6 +177,152 @@ fn no_figure_is_drawn_under_an_inset() {
     }
 }
 
+/// No world text is set under an inset: under every inset of the sweep, in
+/// either look, with an agent carried to each edge and corner of the canvas,
+/// each badge, the bubble it hangs and each sign bakes only inside the insets,
+/// and the host sets each in cells that show what lies inside them.
+#[test]
+fn no_text_is_set_under_an_inset() {
+    use crate::display::TextRun;
+    use crate::display::cells::CellMap;
+    use crate::interact::{Figure, Gesture};
+    use crate::layout::Point;
+    const UNDER: crate::sprite::Rgb = crate::sprite::Rgb { r: 1, g: 2, b: 3 };
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let held = *scene.agents.keys().next().expect("an agent");
+    let scale = RenderScale::new(2).expect("nonzero");
+    let k = scale.get();
+    let (mut badged, mut runs_checked) = (0, 0);
+    for insets in crate::layout::SWEEP_INSETS {
+        let viewport = crate::layout::inset_viewport(SIZE.w, SIZE.h, insets);
+        let (size, inner) = (viewport.size, viewport.inner().expect("an office inside"));
+        let inside = |x: u16, y: u16| {
+            (inner.x * k..(inner.x + inner.width) * k).contains(&x)
+                && (inner.y * k..(inner.y + inner.height) * k).contains(&y)
+        };
+        let edges = [
+            (0, 0),
+            (size.w / 2, 0),
+            (size.w - 1, 0),
+            (size.w - 1, size.h / 2),
+            (size.w - 1, size.h - 1),
+            (size.w / 2, size.h - 1),
+            (0, size.h - 1),
+            (0, size.h / 2),
+        ];
+        let looks = [
+            Look::Classic {
+                scale,
+                text: WorldText::Host,
+            },
+            Look::Cutaway {
+                scale,
+                text: WorldText::Host,
+            },
+        ];
+        for look in looks {
+            let pack = Arc::new(crate::pack::test_office());
+            let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+            let pen = crate::display::pen::Pen::for_pack(scale, &pack);
+            let now = t0 + Duration::from_secs(600);
+            let seated = render(
+                &mut floor,
+                office.stores(),
+                look,
+                RenderInputs {
+                    viewport,
+                    ..inputs(&scene, now)
+                },
+            )
+            .expect("lays out")
+            .hits
+            .figures()
+            .find(|(target, _)| **target == crate::hit::HoverTarget::Agent(held))
+            .map(|(_, at)| at)
+            .expect("the held agent is drawn");
+            let lift = Gesture::Lift {
+                figure: Figure::Agent(held),
+                at: Point {
+                    x: seated.x + seated.width / 2,
+                    y: seated.y + seated.height / 2,
+                },
+            };
+            let gestures =
+                std::iter::once(lift).chain(edges.map(|(x, y)| Gesture::Carry(Point { x, y })));
+            for gesture in gestures {
+                floor.grip(&gesture);
+                let rendered = render(
+                    &mut floor,
+                    office.stores(),
+                    look,
+                    RenderInputs {
+                        viewport,
+                        ..inputs(&scene, now)
+                    },
+                )
+                .expect("lays out");
+                let text = rendered
+                    .picture(&floor.raster)
+                    .and_then(|p| p.text)
+                    .expect("the host sets the text");
+                badged += usize::from(text.badges.iter().any(|b| {
+                    b.agent == held && b.at.y < inner.y + crate::display::text::LABEL_GAP
+                }));
+                let bubbles = text.badges.iter().map(|badge| {
+                    let bubble = crate::chitchat::ChitchatBubble {
+                        text: "a quip as long as any",
+                        speaker: badge.agent,
+                    };
+                    TextRun::bubble(&bubble, badge, theme())
+                });
+                let runs: Vec<TextRun> = text
+                    .badges
+                    .iter()
+                    .map(crate::display::Badge::run)
+                    .chain(bubbles)
+                    .chain(text.bubbles.iter().cloned())
+                    .chain(text.signs.iter().cloned())
+                    .collect();
+                for run in &runs {
+                    let mut buf = crate::sprite::RgbBuffer::filled(size.w * k, size.h * k, UNDER);
+                    crate::cutaway::paint::paint_run(run, (&pack, pen), &mut buf);
+                    let under = (0..buf.height())
+                        .flat_map(|y| (0..buf.width()).map(move |x| (x, y)))
+                        .find(|&(x, y)| !inside(x, y) && buf.get(x, y) != UNDER);
+                    assert_eq!(
+                        under,
+                        None,
+                        "{insets:?} {look:?} {gesture:?}: {:?} {:?} bakes under an inset of {inner:?}",
+                        run.role,
+                        run.text()
+                    );
+                    let at = run.line_at(
+                        crate::display::text::width(&run.text()).0,
+                        CellMap::HALF_BLOCK,
+                    );
+                    for (col, row) in
+                        (at.x..at.x + at.w).flat_map(|c| (at.y..at.y + at.h).map(move |r| (c, r)))
+                    {
+                        assert!(
+                            CellMap::HALF_BLOCK.area(col, row).overlaps(inner),
+                            "{insets:?} {look:?} {gesture:?}: {:?} {:?} sets cell ({col}, {row}) under an inset of {inner:?}",
+                            run.role,
+                            run.text()
+                        );
+                    }
+                    runs_checked += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        badged > 0,
+        "the held agent's badge never reached the top inset, so the clamp went untested"
+    );
+    assert!(runs_checked > 0, "no text was set");
+}
+
 /// The entry runs the sim's epilogue every frame it steps: a carrier's cup is
 /// stamped with the frame that saw it, and the door's clamp is the frame's own.
 #[test]

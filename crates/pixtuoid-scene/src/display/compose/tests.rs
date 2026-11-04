@@ -539,6 +539,7 @@ fn badge_at(anchor: crate::layout::Point) -> TextRun {
     TextRun {
         at: anchor,
         align: Align::Over,
+        within: crate::layout::BARE_OFFICE,
         spans: vec![crate::display::TextSpan::new(
             "cc",
             crate::sprite::Rgb { r: 9, g: 9, b: 9 },
@@ -584,7 +585,11 @@ fn the_floor_indicator_stays_in_its_cell() {
         let pen = Pen::new(RenderScale::from(*d), *d).expect("d divides itself");
         for (floor, floors) in [(0, 1), (11, 12), (98, 99)] {
             let floor = crate::floor::FloorMeta::for_floor(floor, floors);
-            let run = TextRun::indicator((door, 0), floor, &crate::theme::NORMAL);
+            let run = TextRun::indicator(
+                (door, crate::layout::BARE_OFFICE),
+                floor,
+                &crate::theme::NORMAL,
+            );
             let plate = run_rect(&run, pen);
             let span = topmost_span(plate, pen);
             assert!(
@@ -610,7 +615,7 @@ fn the_star_sits_flush_with_the_interior_at_every_scale() {
     for s in [1, pack.max_density_variant().get()] {
         let pen = Pen::for_pack(RenderScale::new(s).expect("nonzero"), &pack);
         let star = quiet_board()
-            .runs(&crate::theme::NORMAL, board)
+            .runs(&crate::theme::NORMAL, board, crate::layout::BARE_OFFICE)
             .into_iter()
             .find(|run| run.role == crate::display::TextRole::Star)
             .expect("the star");
@@ -708,7 +713,7 @@ fn the_board_writes_inside_the_signs_interior() {
             now,
         );
         let pen = Pen::for_pack(scale, &pack);
-        for run in board.runs(&crate::theme::NORMAL, interior) {
+        for run in board.runs(&crate::theme::NORMAL, interior, crate::layout::BARE_OFFICE) {
             let span = topmost_span(run_rect(&run, pen), pen);
             assert!(
                 span.x0 >= interior.x

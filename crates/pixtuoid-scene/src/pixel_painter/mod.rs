@@ -285,9 +285,12 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
         } = d.kind
             && let Some(agent) = ctx.scene.agents.get(&agent.agent_id)
         {
-            drawn
-                .badges
-                .push(Badge::new(label_anchor, agent, &namesakes, ctx.theme));
+            drawn.badges.push(Badge::new(
+                (label_anchor, ctx.layout.inner),
+                agent,
+                &namesakes,
+                ctx.theme,
+            ));
         }
         drawn.hovers.push(hover);
     }
@@ -296,7 +299,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
         .iter()
         .filter_map(|bubble| {
             let badge = drawn.badges.iter().find(|b| b.agent == bubble.speaker)?;
-            Some(TextRun::bubble(bubble, badge.at, ctx.theme))
+            Some(TextRun::bubble(bubble, badge, ctx.theme))
         })
         .collect();
     // The floor's day/night wash, over the foreground: the overlays above run

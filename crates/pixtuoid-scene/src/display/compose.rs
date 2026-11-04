@@ -132,15 +132,39 @@ fn topmost_span(r: ArtRect, pen: Pen) -> Span {
     }
 }
 
+/// `r` [`kept`](crate::display::text::kept) to `within` on the art grid:
+/// where it is set, and the columns and rows of it that show.
+pub(crate) fn kept_art(
+    r: ArtRect,
+    within: Bounds,
+    pen: Pen,
+) -> (ArtRect, [std::ops::Range<u16>; 2]) {
+    let axis = |start: ArtPx, len: ArtPx, from: u16, size: u16| {
+        let area = pen.art(from).0..pen.art(from.saturating_add(size)).0;
+        crate::display::text::kept(start.0, len.0, area)
+    };
+    let [xs, ys] = [
+        axis(r.x, r.w, within.x, within.width),
+        axis(r.y, r.h, within.y, within.height),
+    ];
+    let set = ArtRect {
+        x: ArtPx(xs.start),
+        y: ArtPx(ys.start),
+        ..r
+    };
+    (set, [xs, ys])
+}
+
 /// A badge `run`'s plate on the art grid: centred over its anchor, its bottom
 /// [`LABEL_GAP`] rows up, so a ring grows it up and out, never onto the head.
 pub(crate) fn badge_plate(run: &TextRun, pen: Pen) -> ArtRect {
     let bottom = pen.art(run.at.y.saturating_sub(LABEL_GAP));
     let plate = centred(pen.art(run.at.x), ArtPx(0), plate_size(run, &run.text()));
-    ArtRect {
+    let plate = ArtRect {
         y: ArtPx(bottom.0.saturating_sub(plate.h.0)),
         ..plate
-    }
+    };
+    kept_art(plate, run.within, pen).0
 }
 
 /// Where `run`'s line lands on the art grid: the plate a badge or the floor
@@ -151,8 +175,8 @@ pub(crate) fn badge_plate(run: &TextRun, pen: Pen) -> ArtRect {
 pub(crate) fn run_rect(run: &TextRun, pen: Pen) -> ArtRect {
     let text = run.text();
     let cell = pen.art(crate::layout::CELL_ROWS).0;
-    match run.align {
-        Align::Over => badge_plate(run, pen),
+    let rect = match run.align {
+        Align::Over => return badge_plate(run, pen),
         Align::Centre => ArtRect {
             h: ArtPx(cell.max(LINE_H)),
             ..centred(pen.art(run.at.x), pen.art(run.at.y), plate_size(run, &text))
@@ -170,7 +194,8 @@ pub(crate) fn run_rect(run: &TextRun, pen: Pen) -> ArtRect {
                 h: ArtPx(LINE_H),
             }
         }
-    }
+    };
+    kept_art(rect, run.within, pen).0
 }
 
 /// Where `run`'s line starts in `rect`, its [`run_rect`]: inside its ring and
@@ -310,7 +335,7 @@ fn push_bubbles(
         .iter()
         .filter_map(|bubble| {
             let badge = badges.iter().find(|b| b.agent == bubble.speaker)?;
-            Some(TextRun::bubble(bubble, badge.at, office.theme))
+            Some(TextRun::bubble(bubble, badge, office.theme))
         })
         .collect();
     order.extend(bubbles.iter().map(|run| {
@@ -1281,7 +1306,7 @@ fn push_characters(
             crate::layout::Size { w, h: h + hair },
             badge_ceiling,
         );
-        let badge = crate::display::Badge::new(anchor, agent, &namesakes, theme);
+        let badge = crate::display::Badge::new((anchor, layout.inner), agent, &namesakes, theme);
         let run = badge.run();
         badges.push(badge);
         order.push((
