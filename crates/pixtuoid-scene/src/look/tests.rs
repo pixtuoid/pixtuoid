@@ -60,13 +60,68 @@ fn inputs(scene: &SceneState, now: SystemTime) -> RenderInputs<'_> {
     }
 }
 
+/// Lift `held` where `look` draws it on `inputs`' viewport and carry it to the
+/// middle of each canvas edge and to each corner, handing `check` each gesture
+/// with the frame it renders and the raster that drew it. Each carry must move
+/// the figure off its seat, so a lift that grips nothing fails here instead of
+/// leaving `check` nothing to test.
+fn carry_to_each_edge(
+    (floor, office): (&mut PerFloor, &mut PerOffice),
+    (look, inputs): (Look, RenderInputs<'_>),
+    held: AgentId,
+    mut check: impl FnMut(&crate::interact::Gesture, &Rendered, &Raster),
+) {
+    use crate::interact::{Figure, Gesture};
+    use crate::layout::Point;
+    let drawn = |rendered: &Rendered| {
+        rendered
+            .hits
+            .figures()
+            .find(|(target, _)| **target == crate::hit::HoverTarget::Agent(held))
+            .map(|(_, at)| at)
+            .expect("the held agent is drawn")
+    };
+    let seated = drawn(&render(floor, office.stores(), look, inputs).expect("lays out"));
+    let Size { w, h } = inputs.viewport.size;
+    let edges = [
+        (0, 0),
+        (w / 2, 0),
+        (w - 1, 0),
+        (w - 1, h / 2),
+        (w - 1, h - 1),
+        (w / 2, h - 1),
+        (0, h - 1),
+        (0, h / 2),
+    ];
+    let lift = Gesture::Lift {
+        figure: Figure::Agent(held),
+        at: Point {
+            x: seated.x + seated.width / 2,
+            y: seated.y + seated.height / 2,
+        },
+    };
+    let gestures = std::iter::once(lift).chain(edges.map(|(x, y)| Gesture::Carry(Point { x, y })));
+    for gesture in gestures {
+        floor.grip(&gesture);
+        let rendered = render(floor, office.stores(), look, inputs).expect("lays out");
+        if matches!(gesture, Gesture::Carry(_)) {
+            assert_ne!(
+                drawn(&rendered),
+                seated,
+                "{look:?} {gesture:?}: the held agent never left its seat"
+            );
+        }
+        check(&gesture, &rendered, &floor.raster);
+    }
+}
+
 /// No figure is drawn under an inset: in either look, frame after frame of
-/// agents walking in and wandering off, every box [`Hits::figures`] reports lies
-/// inside the insets.
+/// agents walking in and wandering off, and with one carried to each edge and
+/// corner of the canvas, every box [`Hits::figures`] reports lies inside the
+/// insets.
 #[test]
 fn no_figure_is_drawn_under_an_inset() {
-    use crate::interact::{Figure, Gesture};
-    use crate::layout::{Insets, Point};
+    use crate::layout::Insets;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let scene = office(t0);
     let viewport = Viewport {
@@ -133,47 +188,27 @@ fn no_figure_is_drawn_under_an_inset() {
             walking_frames > 0,
             "{look:?}: no figure walked, so the insets went untested"
         );
-        // Carried into each corner of the canvas, an agent is drawn inside.
         let held = *scene.agents.keys().next().expect("an agent");
         let now = t0 + Duration::from_secs(600);
-        let corners = [
-            (0, 0),
-            (SIZE.w - 1, 0),
-            (0, SIZE.h - 1),
-            (SIZE.w - 1, SIZE.h - 1),
-        ];
-        let lift = Gesture::Lift {
-            figure: Figure::Agent(held),
-            at: Point {
-                x: SIZE.w / 2,
-                y: SIZE.h / 2,
-            },
-        };
-        let gestures =
-            std::iter::once(lift).chain(corners.map(|(x, y)| Gesture::Carry(Point { x, y })));
-        for gesture in gestures {
-            floor.grip(&gesture);
-            let rendered = render(
-                &mut floor,
-                office.stores(),
+        carry_to_each_edge(
+            (&mut floor, &mut office),
+            (
                 look,
                 RenderInputs {
                     viewport,
                     ..inputs(&scene, now)
                 },
-            )
-            .expect("lays out");
-            let at = rendered
-                .hits
-                .figures()
-                .find(|(target, _)| **target == crate::hit::HoverTarget::Agent(held))
-                .map(|(_, at)| at)
-                .expect("the held agent is drawn");
-            assert!(
-                inside(at),
-                "{look:?} {gesture:?}: the held agent drawn at {at:?}, under an inset of {inner:?}"
-            );
-        }
+            ),
+            held,
+            |gesture, rendered, _| {
+                for (target, at) in rendered.hits.figures() {
+                    assert!(
+                        inside(at),
+                        "{look:?} {gesture:?}: {target:?} drawn at {at:?}, under an inset of {inner:?}"
+                    );
+                }
+            },
+        );
     }
 }
 
@@ -185,8 +220,6 @@ fn no_figure_is_drawn_under_an_inset() {
 fn no_text_is_set_under_an_inset() {
     use crate::display::TextRun;
     use crate::display::cells::CellMap;
-    use crate::interact::{Figure, Gesture};
-    use crate::layout::Point;
     const UNDER: crate::sprite::Rgb = crate::sprite::Rgb { r: 1, g: 2, b: 3 };
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let scene = office(t0);
@@ -201,16 +234,6 @@ fn no_text_is_set_under_an_inset() {
             (inner.x * k..(inner.x + inner.width) * k).contains(&x)
                 && (inner.y * k..(inner.y + inner.height) * k).contains(&y)
         };
-        let edges = [
-            (0, 0),
-            (size.w / 2, 0),
-            (size.w - 1, 0),
-            (size.w - 1, size.h / 2),
-            (size.w - 1, size.h - 1),
-            (size.w / 2, size.h - 1),
-            (0, size.h - 1),
-            (0, size.h / 2),
-        ];
         let looks = [
             Look::Classic {
                 scale,
@@ -226,94 +249,71 @@ fn no_text_is_set_under_an_inset() {
             let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
             let pen = crate::display::pen::Pen::for_pack(scale, &pack);
             let now = t0 + Duration::from_secs(600);
-            let seated = render(
-                &mut floor,
-                office.stores(),
-                look,
-                RenderInputs {
-                    viewport,
-                    ..inputs(&scene, now)
-                },
-            )
-            .expect("lays out")
-            .hits
-            .figures()
-            .find(|(target, _)| **target == crate::hit::HoverTarget::Agent(held))
-            .map(|(_, at)| at)
-            .expect("the held agent is drawn");
-            let lift = Gesture::Lift {
-                figure: Figure::Agent(held),
-                at: Point {
-                    x: seated.x + seated.width / 2,
-                    y: seated.y + seated.height / 2,
-                },
-            };
-            let gestures =
-                std::iter::once(lift).chain(edges.map(|(x, y)| Gesture::Carry(Point { x, y })));
-            for gesture in gestures {
-                floor.grip(&gesture);
-                let rendered = render(
-                    &mut floor,
-                    office.stores(),
+            carry_to_each_edge(
+                (&mut floor, &mut office),
+                (
                     look,
                     RenderInputs {
                         viewport,
                         ..inputs(&scene, now)
                     },
-                )
-                .expect("lays out");
-                let text = rendered
-                    .picture(&floor.raster)
-                    .and_then(|p| p.text)
-                    .expect("the host sets the text");
-                badged += usize::from(text.badges.iter().any(|b| {
-                    b.agent == held && b.at.y < inner.y + crate::display::text::LABEL_GAP
-                }));
-                let bubbles = text.badges.iter().map(|badge| {
-                    let bubble = crate::chitchat::ChitchatBubble {
-                        text: "a quip as long as any",
-                        speaker: badge.agent,
-                    };
-                    TextRun::bubble(&bubble, badge, theme())
-                });
-                let runs: Vec<TextRun> = text
-                    .badges
-                    .iter()
-                    .map(crate::display::Badge::run)
-                    .chain(bubbles)
-                    .chain(text.bubbles.iter().cloned())
-                    .chain(text.signs.iter().cloned())
-                    .collect();
-                for run in &runs {
-                    let mut buf = crate::sprite::RgbBuffer::filled(size.w * k, size.h * k, UNDER);
-                    crate::cutaway::paint::paint_run(run, (&pack, pen), &mut buf);
-                    let under = (0..buf.height())
-                        .flat_map(|y| (0..buf.width()).map(move |x| (x, y)))
-                        .find(|&(x, y)| !inside(x, y) && buf.get(x, y) != UNDER);
-                    assert_eq!(
-                        under,
-                        None,
-                        "{insets:?} {look:?} {gesture:?}: {:?} {:?} bakes under an inset of {inner:?}",
-                        run.role,
-                        run.text()
-                    );
-                    let at = run.line_at(
-                        crate::display::text::width(&run.text()).0,
-                        CellMap::HALF_BLOCK,
-                    );
-                    for (col, row) in
-                        (at.x..at.x + at.w).flat_map(|c| (at.y..at.y + at.h).map(move |r| (c, r)))
-                    {
-                        assert!(
-                            CellMap::HALF_BLOCK.area(col, row).overlaps(inner),
-                            "{insets:?} {look:?} {gesture:?}: {:?} {:?} sets cell ({col}, {row}) under an inset of {inner:?}",
+                ),
+                held,
+                |gesture, rendered, raster| {
+                    let text = rendered
+                        .picture(raster)
+                        .and_then(|p| p.text)
+                        .expect("the host sets the text");
+                    badged += usize::from(text.badges.iter().any(|b| {
+                        b.agent == held && b.at.y < inner.y + crate::display::text::LABEL_GAP
+                    }));
+                    let bubbles = text.badges.iter().map(|badge| {
+                        let bubble = crate::chitchat::ChitchatBubble {
+                            text: "a quip as long as any",
+                            speaker: badge.agent,
+                        };
+                        TextRun::bubble(&bubble, badge, theme())
+                    });
+                    let runs: Vec<TextRun> = text
+                        .badges
+                        .iter()
+                        .map(crate::display::Badge::run)
+                        .chain(bubbles)
+                        .chain(text.bubbles.iter().cloned())
+                        .chain(text.signs.iter().cloned())
+                        .collect();
+                    for run in &runs {
+                        let mut buf =
+                            crate::sprite::RgbBuffer::filled(size.w * k, size.h * k, UNDER);
+                        crate::cutaway::paint::paint_run(run, (&pack, pen), &mut buf);
+                        let under = (0..buf.height())
+                            .flat_map(|y| (0..buf.width()).map(move |x| (x, y)))
+                            .find(|&(x, y)| !inside(x, y) && buf.get(x, y) != UNDER);
+                        assert_eq!(
+                            under,
+                            None,
+                            "{insets:?} {look:?} {gesture:?}: {:?} {:?} bakes under an inset of {inner:?}",
                             run.role,
                             run.text()
                         );
+                        let at = run.line_at(
+                            crate::display::text::width(&run.text()).0,
+                            CellMap::HALF_BLOCK,
+                        );
+                        for (col, row) in (at.x..at.x + at.w)
+                            .flat_map(|c| (at.y..at.y + at.h).map(move |r| (c, r)))
+                        {
+                            assert!(
+                                CellMap::HALF_BLOCK.area(col, row).overlaps(inner),
+                                "{insets:?} {look:?} {gesture:?}: {:?} {:?} sets cell ({col}, {row}) under an inset of {inner:?}",
+                                run.role,
+                                run.text()
+                            );
+                        }
+                        runs_checked += 1;
                     }
-                    runs_checked += 1;
-                }
-            }
+                },
+            );
         }
     }
     assert!(
