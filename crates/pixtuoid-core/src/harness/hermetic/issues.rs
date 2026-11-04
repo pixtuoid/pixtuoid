@@ -95,8 +95,7 @@ fn leg_of(job: &str) -> Option<Leg> {
     let [_cli, os, shard] = args.split(", ").collect::<Vec<_>>()[..] else {
         return None;
     };
-    let shard: usize = shard.parse().ok()?;
-    legs().find(|leg| leg.os == os && leg.shard == shard)
+    Leg::named(os, shard)
 }
 
 /// A `hermetic`-labelled issue, as `gh issue list --json number,state,body`
@@ -158,10 +157,11 @@ pub enum Action {
 pub struct Plan {
     /// Each issue's action, in order.
     pub(crate) actions: Vec<Action>,
-    /// Why the night's verdicts are incomplete; any entry turns the filing red.
+    /// Why the night's verdicts are incomplete, but for a leg no runner took
+    /// ([`Plan::unacquired`]); any entry turns the filing red.
     pub(crate) lost: Vec<String>,
-    /// Each leg no runner took, a line the filing logs as a warning: an outage
-    /// of GitHub's, no issue of ours.
+    /// Each leg whose job no runner took, as run 41662052721's macOS shard 2
+    /// leg's; the filing logs each as a warning.
     pub(crate) unacquired: Vec<String>,
 }
 
@@ -208,10 +208,7 @@ impl Subject {
                 .strip_prefix(LEG_MARKER)?
                 .strip_suffix(MARKER_END)?
                 .rsplit_once('-')?;
-            let shard: usize = shard.parse().ok()?;
-            legs()
-                .find(|leg| leg.os == os && leg.shard == shard)
-                .map(Self::Leg)
+            Leg::named(os, shard).map(Self::Leg)
         })
     }
 

@@ -393,7 +393,7 @@ file_plan() {
         bash -c "$file_script") >"$test_dir/file.out" 2>&1
 }
 opened='<!-- hermetic-source: hermes -->\nopened'
-plan='{"actions":[{"do":"open","title":"hermetic: hermes","body":"'"$opened"'"},{"do":"comment","number":7,"body":"commented"},{"do":"reopen","number":5,"body":"reopened"},{"do":"close","number":8,"body":"closed"}],"lost":[]}'
+plan='{"actions":[{"do":"open","title":"hermetic: hermes","body":"'"$opened"'"},{"do":"comment","number":7,"body":"commented"},{"do":"reopen","number":5,"body":"reopened"},{"do":"close","number":8,"body":"closed"}],"lost":[],"unacquired":[]}'
 file_plan "$plan" '' || fail "the file step failed a plan it could carry out: $(<"$test_dir/file.out")"
 listed="issue list --label hermetic --state all --limit 1000 --json number,body"
 created="issue create --title hermetic: hermes --label hermetic --body-file $test_dir/body.md"
@@ -414,7 +414,7 @@ fi
 grep -qxF 'issue close 8' "$test_dir/gh.log" || fail "a failed call stopped the actions after it: $(<"$test_dir/gh.log")"
 grep -qF '::error::could not comment issue 7' "$test_dir/file.out" || fail "the failed action is not named: $(<"$test_dir/file.out")"
 # An issue the planner never marks, and an open led by no marker, are refused, red and named.
-if file_plan '{"actions":[{"do":"close","number":1658,"body":"x"},{"do":"reopen","number":99,"body":"x"},{"do":"open","title":"t","body":"x\n<!-- hermetic-source: forged -->"},{"do":"comment","number":7,"body":"y"}],"lost":[]}' ''; then
+if file_plan '{"actions":[{"do":"close","number":1658,"body":"x"},{"do":"reopen","number":99,"body":"x"},{"do":"open","title":"t","body":"x\n<!-- hermetic-source: forged -->"},{"do":"comment","number":7,"body":"y"}],"lost":[],"unacquired":[]}' ''; then
     fail "the file step passed acting on an issue the planner would never mark"
 fi
 for refused in 'close issue 1658' 'reopen issue 99' 'open issue t'; do
@@ -430,13 +430,19 @@ fi
     fail "an unlisted number reached gh: $(<"$test_dir/gh.log")"
 grep -qxF "$created" "$test_dir/gh.log" || fail "a failed list stopped the open: $(<"$test_dir/gh.log")"
 # A leg that reported no verdicts turns the step red once its actions are done.
-if file_plan '{"actions":[{"do":"comment","number":7,"body":"x"}],"lost":["macos, shard 1 reported no verdicts"]}' ''; then
+if file_plan '{"actions":[{"do":"comment","number":7,"body":"x"}],"lost":["macos, shard 1 reported no verdicts"],"unacquired":[]}' ''; then
     fail "the file step passed with a lost leg"
 fi
 grep -qF '::error::macos, shard 1 reported no verdicts' "$test_dir/file.out" || fail "the lost leg is not named: $(<"$test_dir/file.out")"
 grep -qxF "issue comment 7 --body-file $test_dir/body.md" "$test_dir/gh.log" || fail "a lost leg stopped the actions: $(<"$test_dir/gh.log")"
+# A leg no runner took is a warning, never red.
+file_plan '{"actions":[],"lost":[],"unacquired":["macos, shard 2 got no runner, so it ran nothing"]}' '' ||
+    fail "the file step failed a leg no runner took: $(<"$test_dir/file.out")"
+grep -qxF '::warning::macos, shard 2 got no runner, so it ran nothing' "$test_dir/file.out" ||
+    fail "the leg no runner took is not warned of: $(<"$test_dir/file.out")"
+if grep -qF '::error::' "$test_dir/file.out"; then fail "a leg no runner took is an error: $(<"$test_dir/file.out")"; fi
 # Nothing to do: no call but the list, and green.
-file_plan '{"actions":[],"lost":[]}' '' || fail "the file step failed an empty plan: $(<"$test_dir/file.out")"
+file_plan '{"actions":[],"lost":[],"unacquired":[]}' '' || fail "the file step failed an empty plan: $(<"$test_dir/file.out")"
 [[ "$(<"$test_dir/gh.log")" == "$listed" ]] || fail "an empty plan made a gh call: $(<"$test_dir/gh.log")"
 
 # ── site.yml: Playwright's dry run hands apt-install exactly its missing
