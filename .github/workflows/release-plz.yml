@@ -105,7 +105,7 @@ jobs:
           asserted='assert_match "([^"]*)", shell_output\("#\{bin\}/pixtuoid ([^"]*)"(, ([0-9]+))?\)'
           # Any other `assert_match` is no pass, but the one packaging-build's
           # Cargo.toml grep replays.
-          versioned='assert_match version\.to_s, shell_output\("#\{bin\}/pixtuoid --version"\)'
+          versioned='^[[:space:]]*assert_match version\.to_s, shell_output\("#\{bin\}/pixtuoid --version"\)[[:space:]]*$'
           while IFS= read -r line; do
             if ! [[ $line =~ $asserted ]]; then
               [[ $line == *assert_match* && ! $line =~ $versioned ]] \
