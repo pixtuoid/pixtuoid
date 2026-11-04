@@ -104,7 +104,7 @@ fn sweep_production_floors(f: impl FnMut(u16, u16, u64, &SceneLayout)) {
 
 /// The insets the inset sweeps lay each size out inside: each edge alone, all
 /// four, and a set off the coarse routing grid and the half-block rows.
-const SWEEP_INSETS: [Insets; 6] = [
+pub(crate) const SWEEP_INSETS: [Insets; 6] = [
     Insets {
         top: 6,
         right: 0,
@@ -144,7 +144,7 @@ const SWEEP_INSETS: [Insets; 6] = [
 ];
 
 /// The viewport whose `insets` leave a `w`×`h` office inside them.
-fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
+pub(crate) fn inset_viewport(w: u16, h: u16, insets: Insets) -> Viewport {
     Viewport {
         size: Size {
             w: w + insets.left + insets.right,

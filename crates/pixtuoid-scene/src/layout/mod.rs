@@ -724,4 +724,6 @@ impl SceneLayout {
 #[cfg(test)]
 mod placement_sweep;
 #[cfg(test)]
+pub(crate) use placement_sweep::{SWEEP_INSETS, inset_viewport};
+#[cfg(test)]
 mod tests;

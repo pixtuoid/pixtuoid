@@ -6307,3 +6307,71 @@ fn the_neon_halo_lifts_the_window_glass_it_falls_on() {
         .count();
     assert!(lifted > 0, "the sign's glow reaches no window glass");
 }
+
+/// The classic's dark carries past an inset's edge with no seam: at midnight,
+/// every light off, a bare margin pixel is the dark of its noon tone exactly
+/// as one inside is.
+#[test]
+fn the_classics_dark_carries_past_the_insets() {
+    let pack = crate::pack::test_office();
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme");
+    let (scene, walks) = (SceneState::uniform(16), HashMap::new());
+    let floor = crate::floor::FloorMeta::ground();
+    let black = Rgb { r: 0, g: 0, b: 0 };
+    let (midnight, noon) = (
+        crate::localclock::at_hour(0),
+        crate::localclock::at_hour(12),
+    );
+    let mut judged = 0;
+    for insets in crate::layout::SWEEP_INSETS {
+        let viewport = crate::layout::inset_viewport(192, 160, insets);
+        let layout = SceneLayout::compute(viewport, None, 0).expect("lays out");
+        let frame = SimFrame {
+            neon: crate::floor::NeonLevels {
+                alert: 0.0,
+                power: 0.0,
+            },
+            ..empty_frame(&layout)
+        };
+        let mut night = RgbBuffer::filled(layout.buf_w, layout.buf_h, black);
+        paint_frame(
+            &mut PaintCtx {
+                scene: &scene,
+                layout: &layout,
+                pack: &pack,
+                timing: Motion::Full.timing(midnight),
+                sky: crate::sky::Sky::at_with(midnight, crate::sky::Weather::Clear),
+                window_sky: None,
+                buf: &mut night,
+                cache: &mut FrameCache::new(),
+                base_fill: &mut BaseFillCache::new(),
+                shadows: &mut crate::ground::DepthsCache::default(),
+                theme,
+                floor,
+                walks: &walks,
+                debug_walkable: false,
+                outside: &mut crate::outside::OutsideCache::default(),
+            },
+            &frame,
+        );
+        let mut day = RgbBuffer::filled(layout.buf_w, layout.buf_h, black);
+        paint_ground_and_walls(
+            &mut BaseFillCache::new(),
+            &mut day,
+            &crate::outside::Wall::of(&layout),
+            &Moment::resolve(
+                crate::sky::Sky::at_with(noon, crate::sky::Weather::Clear),
+                theme,
+                floor.altitude,
+                Motion::Full.timing(noon),
+            ),
+            theme,
+        );
+        judged += crate::display::light::tests::assert_the_dark_carries_past_the_insets(
+            &layout,
+            (&day, &night),
+            &format!("{insets:?}"),
+        );
+    }
+    assert!(judged > 0, "no margin pixel lies below the window wall");
+}
