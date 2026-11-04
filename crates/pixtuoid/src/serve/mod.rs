@@ -3,7 +3,7 @@
 //! like any instance, with its scene leaving as [`pixtuoid_core::remote`] lines
 //! instead of being painted.
 
-mod advertise;
+mod announce;
 mod device;
 mod store;
 
@@ -125,17 +125,11 @@ async fn serve(
         crate::sources::device_change(&config_path, &live, who, source, on)
     });
     let machine = Machine::new(&machine_name(), Os::here());
-    // Held for the run; a device that can't find it still pairs by the QR.
-    let _advertised = advertise::advertise(
+    let _announcement = announce::announce(
         machine.name(),
         listener.local_addr()?.port(),
         &spki_pin(&key),
-    )
-    .await
-    .inspect_err(|error| {
-        tracing::warn!(error = ?error, "could not announce the office on the local network");
-    })
-    .ok();
+    );
     let devices = Devices::new(store, machine, scene, rows, change);
     let slots = Arc::new(Semaphore::new(MAX_CONNS));
     let mut deaths_seen = 0;

@@ -95,7 +95,7 @@ pub(crate) enum Cmd {
     /// needed. Agent status, model, usage, repo names, which agent CLIs you have
     /// and how each is connected, and the machine's name and OS leave it, never
     /// paths, prompts, tool input or transcripts, and it announces the machine's
-    /// name and key fingerprint on the network for a device to find. A paired
+    /// name and its key's SPKI hash on the network. A paired
     /// device can also connect or disconnect those CLIs. Nothing listens on a
     /// network unless this runs.
     #[cfg(feature = "serve")]

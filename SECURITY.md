@@ -21,17 +21,15 @@ pixtuoid is **telemetry-free and local by default**:
   GitHub URL for you to open manually.) The dependency set is audited daily for
   advisories via `cargo-deny` (see `.github/workflows/audit.yml`).
 - **No listener unless you start one.** Only `pixtuoid serve` listens on a
-  network, and only a device you paired on your local network gets anything from
-  it.
+  network; past announcing this machine's name and its key's SPKI hash there
+  (DNS-SD `_pixtuoid._tcp`), which pairs no one, it gives a device nothing until paired.
 - **Your session data stays on your machine unless you run `pixtuoid serve`.**
   pixtuoid reads your agent CLIs'
   transcripts (e.g. `~/.claude/projects`, `~/.codex/sessions`) **read-only**, to
   derive what each sprite is doing. Only `pixtuoid serve` sends anything, to paired
   devices: agent status, model, usage, repo names (a project directory's last
   component), which agent CLIs you have and how each is connected, and this
-  machine's name and OS. It also announces the machine's name and its key's
-  SPKI hash to everyone on the local network (DNS-SD, `_pixtuoid._tcp`), for a
-  device to find; neither pairs anyone. No path,
+  machine's name and OS. No path,
   prompt, tool input or transcript leaves; the wire is the allowlist in [`remote.rs`](crates/pixtuoid-core/src/remote.rs).
 
 ## Trust boundaries / attack surface
