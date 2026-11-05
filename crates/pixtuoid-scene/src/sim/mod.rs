@@ -324,8 +324,8 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // visible "flash"). Sitters at desks are already covered by the static desk
     // mask, so only waypoint visitors — stable across frames — contribute.
     stores.overlay.clear();
-    // Only a wanderer stands at a waypoint (`Motion::walks`).
-    let mobile = if floor.motion.walks() {
+    // Only a walk that takes time routes around a wanderer (`Motion::walks_take_time`).
+    let mobile = if floor.motion.walks_take_time() {
         &agents[..]
     } else {
         &[][..]

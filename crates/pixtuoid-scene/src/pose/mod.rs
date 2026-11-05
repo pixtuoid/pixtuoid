@@ -405,10 +405,6 @@ pub(crate) fn derive_with_routing(
     // for seconds, then snapped it to physics wander.
     let is_idle = matches!(slot.state, pixtuoid_core::state::ActivityState::Idle);
     if is_idle && slot.exiting_at.is_none() {
-        if !rctx.planner.motion.walks() {
-            return Some(Pose::SeatedIdle);
-        }
-
         // A per-frame snapshot, so the arms below never re-borrow `rctx.walks`.
         let wf = advance_wander(slot, now, layout, desk, &mut rctx.planner, rctx.walks);
 

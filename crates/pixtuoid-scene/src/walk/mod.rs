@@ -336,7 +336,11 @@ pub(crate) fn advance_wander(
     let result = match walk.wander.phase {
         WanderPhase::Seated => {
             if may_transition && elapsed_phase >= seated_dur {
-                if !takes_trip(id, walk.wander.cycle_n) || layout.waypoints.is_empty() {
+                // None sets off under Still, its clock still keeping time.
+                if !planner.motion.walks_take_time()
+                    || !takes_trip(id, walk.wander.cycle_n)
+                    || layout.waypoints.is_empty()
+                {
                     walk.wander.cycle_n += 1;
                     walk.wander.phase_started_at += Duration::from_millis(seated_dur);
                 } else {
@@ -381,8 +385,13 @@ pub(crate) fn advance_wander(
 
         WanderPhase::AtWaypoint(back) => {
             if may_transition && elapsed_phase >= dwell_dur {
-                walk.wander.phase = WanderPhase::WalkingBack(back);
                 walk.wander.phase_started_at += Duration::from_millis(dwell_dur);
+                let back = planner.timed(back);
+                if walk_arrived(&back, 0) {
+                    sit_down(walk, 0);
+                } else {
+                    walk.wander.phase = WanderPhase::WalkingBack(back);
+                }
             }
             (walk.wander.phase, LegProgress::ZERO)
         }
@@ -391,12 +400,7 @@ pub(crate) fn advance_wander(
             match poll_walk_leg(&profile, elapsed_phase, may_transition) {
                 WalkLegStatus::InFlight(t) => (WanderPhase::WalkingBack(profile), t),
                 WalkLegStatus::Arrived { walk_total } => {
-                    // `target.dest` is deliberately left as-is: the Seated arm
-                    // never reads it and the next WalkingOut overwrites it.
-                    walk.wander.cycle_n += 1;
-                    walk.wander.target.kind = WanderKind::Aimless;
-                    walk.wander.phase = WanderPhase::Seated;
-                    advance_phase_clock(walk, walk_total);
+                    sit_down(walk, walk_total);
                     (WanderPhase::Seated, LegProgress::ZERO)
                 }
             }
@@ -443,6 +447,16 @@ fn poll_walk_leg(profile: &WalkProfile, elapsed_phase: u64, may_transition: bool
 /// next phase starts exactly when this one's wall-time budget elapsed.
 fn advance_phase_clock(walk: &mut WalkState, walk_total: u64) {
     walk.wander.phase_started_at += Duration::from_millis(walk_total);
+}
+
+/// Home from a walk back that took `walk_total`: the cycle is done.
+fn sit_down(walk: &mut WalkState, walk_total: u64) {
+    // `target.dest` is deliberately left as-is: the Seated arm never reads it
+    // and the next WalkingOut overwrites it.
+    walk.wander.cycle_n += 1;
+    walk.wander.target.kind = WanderKind::Aimless;
+    walk.wander.phase = WanderPhase::Seated;
+    advance_phase_clock(walk, walk_total);
 }
 
 /// Delegates to the ONE stateless resolver `crate::pose::resolve_wander_target`,
@@ -547,10 +561,10 @@ pub(crate) struct Planner<'a> {
 }
 
 impl Planner<'_> {
-    /// `profile` as this frame's tier times it: [`WalkProfile::INSTANT`] on
-    /// one no figure walks on.
+    /// `profile` for a walk set off now: [`WalkProfile::INSTANT`] where none
+    /// takes time ([`Motion::walks_take_time`]).
     pub(crate) fn timed(&self, profile: WalkProfile) -> WalkProfile {
-        if self.motion.walks() {
+        if self.motion.walks_take_time() {
             profile
         } else {
             WalkProfile::INSTANT
@@ -558,25 +572,32 @@ impl Planner<'_> {
     }
 }
 
-/// Freeze one walk leg's timing profile. Measuring the ROUTED (not raw)
-/// polyline is load-bearing: the duration must cover the whole path or `t`
-/// reaches [`LegProgress::DONE`] before the sprite
-/// arrives and it pops.
+/// Freeze the timing profile of a walk leg set off now.
 pub(crate) fn snapshot_leg_profile(
     planner: &mut Planner<'_>,
     mask: &WalkableMask,
     id: AgentId,
     leg: LegPlan,
 ) -> WalkProfile {
-    let path = route_jittered(planner.router, mask, planner.overlay, id, leg.from, leg.to);
-    planner.timed(walk_profile(
-        measured_leg_len(&path, leg.settle),
-        leg.intent,
-        id,
-    ))
+    let profile = routed_profile(planner, mask, id, leg);
+    planner.timed(profile)
 }
 
-/// Freeze the WanderBack profile. The endpoint is the desk APPROACH cell
+/// `leg`'s profile as a walk that takes time. Measuring the ROUTED (not raw)
+/// polyline is load-bearing: the duration must cover the whole path or `t`
+/// reaches [`LegProgress::DONE`] before the sprite arrives and it pops.
+fn routed_profile(
+    planner: &mut Planner<'_>,
+    mask: &WalkableMask,
+    id: AgentId,
+    leg: LegPlan,
+) -> WalkProfile {
+    let path = route_jittered(planner.router, mask, planner.overlay, id, leg.from, leg.to);
+    walk_profile(measured_leg_len(&path, leg.settle), leg.intent, id)
+}
+
+/// Freeze the WanderBack profile, untimed until the walk back sets off. The
+/// endpoint is the desk APPROACH cell
 /// (matching `seated_top_left` via the chair-glide) so there's no jump on arrival;
 /// this intentionally differs from `pose::pure::idle_pose`'s raw `to: desk`, since
 /// only the routed path is user-visible.
@@ -588,7 +609,7 @@ fn snapshot_back_profile(
     planner: &mut Planner<'_>,
 ) -> WalkProfile {
     let (snap_to, chair_settle) = desk_leg_endpoint(desk, layout);
-    snapshot_leg_profile(
+    routed_profile(
         planner,
         &layout.walkable,
         slot.agent_id,

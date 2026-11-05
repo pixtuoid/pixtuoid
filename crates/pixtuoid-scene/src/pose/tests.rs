@@ -2572,6 +2572,135 @@ fn under_still_no_walk_is_drawn() {
     }
 }
 
+/// An agent idle long before `t0` whose wander sets off within its first
+/// minute from it.
+fn tripper(t0: SystemTime) -> AgentSlot {
+    let id = (0u64..1000)
+        .map(|i| AgentId::from_transcript_path(&format!("/tripper/{i}.jsonl")))
+        .find(|id| takes_trip(*id, 0))
+        .expect("a trip agent");
+    AgentSlot {
+        agent_id: id,
+        ..entry_slot(t0 - Duration::from_secs(120))
+    }
+}
+
+/// A wander under way when Still comes on finishes on its frozen leg, then
+/// comes home at once: the walk back, set off under Still, takes no time.
+#[test]
+fn a_wander_under_way_when_still_comes_on_finishes_then_lands_home() {
+    use crate::anim::Motion;
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let slot = tripper(t0);
+    let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    let walking = |pose: &Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
+    let mut rig = RouteRig::new(StubRouter::straight());
+    let out = (0..3_000)
+        .find(|&i| walking(&derive_with_routing(&slot, at(i), &l, &mut rig.rctx())))
+        .expect("it sets off");
+    rig.motion = Motion::Still;
+    let poses: Vec<_> = (out + 1..out + 3_000)
+        .map(|i| derive_with_routing(&slot, at(i), &l, &mut rig.rctx()))
+        .collect();
+    assert!(walking(&poses[0]), "the walk under way goes on");
+    let ended = poses.iter().position(|p| !walking(p)).expect("it arrives");
+    assert!(
+        matches!(poses[ended], Some(Pose::AtWaypoint { .. })),
+        "at its waypoint: {:?}",
+        poses[ended]
+    );
+    assert!(!poses[ended..].iter().any(walking), "it walks no more");
+    assert_eq!(poses.last(), Some(&Some(Pose::SeatedIdle)), "it is home");
+}
+
+/// A walk back is timed as it sets off, not when its route was frozen at the
+/// waypoint: a wander that reached its waypoint under Still walks home if
+/// Full is back by the dwell's end.
+#[test]
+fn a_walk_back_is_timed_as_it_sets_off() {
+    use crate::anim::Motion;
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let slot = tripper(t0);
+    let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    let walking = |pose: &Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
+    let mut rig = RouteRig::new(StubRouter::straight());
+    let out = (0..3_000)
+        .find(|&i| walking(&derive_with_routing(&slot, at(i), &l, &mut rig.rctx())))
+        .expect("it sets off");
+    rig.motion = Motion::Still;
+    let there = (out + 1..out + 3_000)
+        .find(|&i| {
+            let pose = derive_with_routing(&slot, at(i), &l, &mut rig.rctx());
+            matches!(pose, Some(Pose::AtWaypoint { .. }))
+        })
+        .expect("it reaches its waypoint under Still");
+    rig.motion = Motion::Full;
+    let left = (there + 1..there + 3_000)
+        .map(|i| derive_with_routing(&slot, at(i), &l, &mut rig.rctx()))
+        .find(|pose| !matches!(pose, Some(Pose::AtWaypoint { .. })));
+    assert!(
+        left.as_ref().is_some_and(walking),
+        "it walks home under Full: {left:?}"
+    );
+}
+
+/// A stretch of Still leaves the wander's clock current, so Full coming back
+/// replays nothing it missed: a phase changes once per due event, never frame
+/// on frame. The clock keeps time whether Still finds the agent at a
+/// waypoint, for less than a stale resume, or seated through its dwells.
+#[test]
+fn full_after_a_stretch_of_still_replays_no_overdue_wander() {
+    use crate::anim::Motion;
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let slot = tripper(t0);
+    let id = slot.agent_id;
+    let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    let frames_in = |ms: u64| ms / PAINT_FRAME_MS;
+    let phase = |rig: &RouteRig<StubRouter>| std::mem::discriminant(&rig.walks[&id].wander.phase);
+    let mut full = RouteRig::new(StubRouter::straight());
+    let back = (0..6_000)
+        .find(|&i| {
+            derive_with_routing(&slot, at(i), &l, &mut full.rctx());
+            matches!(
+                full.walks[&id].wander.phase,
+                crate::walk::WanderPhase::WalkingBack(_)
+            )
+        })
+        .expect("it walks back");
+    let at_waypoint = back - frames_in(500)..back + frames_in(6_000);
+    assert!(
+        (at_waypoint.end - at_waypoint.start) * PAINT_FRAME_MS < STALE_RESUME_GAP_BASE_MS,
+        "premise: shorter than any stale resume"
+    );
+    let seated = 0..frames_in(10 * seated_dwell_ms(id));
+
+    for still in [at_waypoint, seated] {
+        let mut rig = RouteRig::new(StubRouter::straight());
+        let mut changes = 0;
+        let mut last = None;
+        for i in 0..still.end + frames_in(1_000) {
+            rig.motion = if still.contains(&i) {
+                Motion::Still
+            } else {
+                Motion::Full
+            };
+            derive_with_routing(&slot, at(i), &l, &mut rig.rctx());
+            let now = phase(&rig);
+            if i >= still.end && last.is_some_and(|was| was != now) {
+                changes += 1;
+            }
+            last = Some(now);
+        }
+        assert!(
+            changes <= 1,
+            "{still:?}: {changes} phase changes in the second after"
+        );
+    }
+}
+
 /// The exit render and the resurrect check must read "has the walkout finished?"
 /// through the SAME time-compressed clock. Every other resurrect test routes
 /// straight-line on the small layout, where the compression branch is dead — so
