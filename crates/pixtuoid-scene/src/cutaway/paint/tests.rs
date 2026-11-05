@@ -771,16 +771,14 @@ fn the_windows_look_out_on_the_one_city_where_the_layout_tiles_them() {
         }
         let density = pen.density();
         let wall = crate::outside::Wall::of(&layout);
-        let (span, band_h) = (wall.span.clone(), wall.band_h);
+        let sky = crate::celestial::SkyView::of(&moment.outlook(theme), &wall, theme);
+        let run = crate::layout::window_run(wall.span.clone());
         let outside = crate::outside::Outside::of(
             &crate::outside::OutsideKey::of(&moment, wall, density, GlassWeather::of(&moment)),
             &pack,
             theme,
             &mut crate::clouds::CloudCache::default(),
         );
-        let sky =
-            crate::celestial::SkyView::of(&moment.outlook(theme), span.clone(), band_h, theme);
-        let run = crate::layout::window_run(span);
         let city = crate::skyline::CityStrip::draw(
             &pack,
             (

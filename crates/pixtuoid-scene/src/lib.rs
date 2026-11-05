@@ -130,6 +130,36 @@ pub(crate) fn splitmix_draw(seed: u64, n: u64) -> u64 {
     pixtuoid_core::id::splitmix64(seed.wrapping_add(n.wrapping_mul(GOLDEN_GAMMA)))
 }
 
+/// A deterministic stream of [`splitmix_draw`]'s draws, counting from 1: raw,
+/// or in `0..1`.
+pub(crate) struct Rng {
+    seed: u64,
+    n: u64,
+}
+
+impl Rng {
+    pub(crate) fn new(seed: u64) -> Self {
+        Self { seed, n: 0 }
+    }
+
+    /// The stream's next raw draw.
+    pub(crate) fn draw(&mut self) -> u64 {
+        self.n += 1;
+        splitmix_draw(self.seed, self.n)
+    }
+
+    /// The stream's next draw in `0..1`, at a float's full precision.
+    pub(crate) fn u(&mut self) -> f32 {
+        let draw = self.draw();
+        (draw >> (u64::BITS - f32::MANTISSA_DIGITS)) as f32 / (1u64 << f32::MANTISSA_DIGITS) as f32
+    }
+
+    /// The stream's next draw in `a..b`.
+    pub(crate) fn between(&mut self, a: f32, b: f32) -> f32 {
+        a + (b - a) * self.u()
+    }
+}
+
 /// `hash` spread over `0..len` alike on every target: the modulo runs in
 /// `u64`, so a 32-bit `usize` (the wasm build) keeps the hash's high bits. An
 /// empty range spreads to 0.
