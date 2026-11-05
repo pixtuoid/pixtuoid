@@ -350,7 +350,7 @@ pub(super) async fn emit_session_exit(id: &str, decoders: SourceDecoders, ctx: &
         // A truncated-below-cursor file must be parked at its new EOF, not
         // handed to the walk's truncation arm (cursor→0, whole-file replay).
         park_if_truncated_below_cursor(path, ctx).await;
-        walk_jsonl(path, decoders, ctx).await;
+        walk_jsonl(path, decoders, ctx, false).await;
     }
     let agent_id = AgentId::from_parts(ctx.source, id);
     let _ = ctx

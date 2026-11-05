@@ -14,6 +14,7 @@ use crate::source::{AgentEvent, TaggedSender, Transport};
 
 use super::health::FailureLatch;
 use super::liveness::{probe_admits, revouch_gated_files};
+use super::root_watch::{DirId, dir_id};
 use super::{
     ActivityRecency, HeadLabel, SessionEndChecker, Sight, SourceDecoders, TailActivity, WatchCtx,
 };
@@ -85,11 +86,58 @@ fn within(t: std::time::SystemTime, window: Duration) -> bool {
 /// transcript be "ended" and "active" over different bytes.
 pub(super) const TAIL_BYTES: u64 = 8192;
 
+/// What the scans know of the root they list.
+#[derive(Default)]
+pub(super) struct RootRead {
+    pub(super) health: FailureLatch,
+    /// The directory the last scan listed; `None` before one, or while the
+    /// root was absent.
+    last: Option<DirId>,
+}
+
+/// One listing of a root: the directory listed, its entries, and the error
+/// that cut it short.
+#[derive(Default)]
+struct Listing {
+    dir: Option<DirId>,
+    entries: Vec<PathBuf>,
+    cut: Option<std::io::Error>,
+}
+
+/// `root` listed and named in one blocking step, the name taken once the
+/// listing has the directory open; an absent root is an empty listing of none.
+async fn list_root(root: &Path) -> std::io::Result<Listing> {
+    let root = root.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let read = match std::fs::read_dir(&root) {
+            Ok(read) => read,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Listing::default()),
+            Err(e) => return Err(e),
+        };
+        let mut listing = Listing {
+            dir: dir_id(&root)?,
+            ..Listing::default()
+        };
+        for entry in read {
+            match entry {
+                Ok(entry) => listing.entries.push(entry.path()),
+                Err(e) => {
+                    listing.cut = Some(e);
+                    break;
+                }
+            }
+        }
+        Ok(listing)
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
 pub(super) async fn scan_root(
     root: &Path,
     decoders: SourceDecoders,
     ctx: &WatchCtx<'_>,
-    root_health: &mut FailureLatch,
+    read: &mut RootRead,
 ) {
     // A scan admits every transcript in the initial window, and a followed one
     // costs an fd; its pass's reconcile follows only what a live writer holds.
@@ -98,36 +146,35 @@ pub(super) async fn scan_root(
         ..*ctx
     };
     revouch_gated_files(decoders, ctx).await;
-    match tokio::fs::read_dir(root).await {
-        Ok(mut read) => {
-            if root_health.on_success() {
+    match list_root(root).await {
+        Ok(Listing { dir, entries, cut }) => {
+            // The watcher never creates its CLI's root, so an uninstalled CLI's is
+            // absent: nothing to discover yet, not a failure.
+            if dir.is_some() && read.health.on_success() {
                 tracing::info!(root = ?root, "watched root is readable again");
             }
-            loop {
-                match read.next_entry().await {
-                    Ok(Some(entry)) => walk_jsonl(&entry.path(), decoders, ctx).await,
-                    Ok(None) => break,
-                    Err(e) => {
-                        // Latched, unlike the subdirectory twin below: truncation here
-                        // hides every remaining PROJECT, and there is only one root.
-                        if root_health.on_failure() {
-                            warn!(
-                                root = ?root,
-                                error = %e,
-                                "watched root listing truncated; some sessions will not be \
-                                 discovered this pass"
-                            );
-                        }
-                        break;
-                    }
+            // A directory no scan has listed holds what predates every read of
+            // it: a boot's, or a root's that appeared or was replaced since.
+            let replaying = dir != read.last;
+            read.last = dir;
+            for entry in entries {
+                walk_jsonl(&entry, decoders, ctx, replaying).await;
+            }
+            if let Some(e) = cut {
+                // Latched, unlike the subdirectory twin below: truncation here
+                // hides every remaining PROJECT, and there is only one root.
+                if read.health.on_failure() {
+                    warn!(
+                        root = ?root,
+                        error = %e,
+                        "watched root listing truncated; some sessions will not be \
+                         discovered this pass"
+                    );
                 }
             }
         }
-        // The watcher never creates its CLI's root, so an uninstalled CLI's is
-        // absent: nothing to discover yet, not a failure.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
-            if root_health.on_failure() {
+            if read.health.on_failure() {
                 warn!(
                     root = ?root,
                     error = %e,
@@ -139,7 +186,14 @@ pub(super) async fn scan_root(
     }
 }
 
-pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &WatchCtx<'_>) {
+/// Reads `path`, a transcript or a directory of them; a first read of a file
+/// replays when `replaying`, which only a scan of what predates its reads sets.
+pub(super) async fn walk_jsonl(
+    path: &Path,
+    decoders: SourceDecoders,
+    ctx: &WatchCtx<'_>,
+    replaying: bool,
+) {
     let WatchCtx {
         source,
         cursors,
@@ -148,7 +202,6 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         window,
         live: _,
         follower,
-        replaying,
     } = *ctx;
     let SourceDecoders {
         decode_line,
@@ -184,7 +237,9 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         match tokio::fs::read_dir(path).await {
             Ok(mut read) => loop {
                 match read.next_entry().await {
-                    Ok(Some(entry)) => Box::pin(walk_jsonl(&entry.path(), decoders, ctx)).await,
+                    Ok(Some(entry)) => {
+                        Box::pin(walk_jsonl(&entry.path(), decoders, ctx, replaying)).await
+                    }
                     Ok(None) => break,
                     Err(e) => {
                         // Split from `Ok(None)` for the LOG only; the listing stops

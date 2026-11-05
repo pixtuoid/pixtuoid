@@ -86,14 +86,14 @@ pub(crate) enum Reconciled {
 /// Windows file ids are "not guaranteed to be unique over time", nor on ReFS
 /// (`BY_HANDLE_FILE_INFORMATION`'s docs).
 #[derive(Clone, Debug, PartialEq)]
-struct DirId {
+pub(super) struct DirId {
     volume: u64,
     index: u64,
     born: Option<SystemTime>,
 }
 
 /// `None` when nothing is at `path`.
-fn dir_id(path: &Path) -> io::Result<Option<DirId>> {
+pub(super) fn dir_id(path: &Path) -> io::Result<Option<DirId>> {
     match read_dir_id(path) {
         Ok(id) => Ok(Some(id)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -325,8 +325,6 @@ pub(crate) struct RootWatch {
     placed: Placement,
     watchers: Vec<Box<dyn Watcher + Send>>,
     root_watched: bool,
-    /// The root the last scan read, by [`Self::start_scan`].
-    scanned: Option<DirId>,
     /// A watch of `placed` failed: retried only by a [`Wake::Poll`].
     broken: bool,
     root_health: FailureLatch,
@@ -387,7 +385,6 @@ impl RootWatch {
             placed: Placement::default(),
             watchers: Vec::new(),
             root_watched: false,
-            scanned: None,
             broken: false,
             root_health: FailureLatch::default(),
             anchor_health: FailureLatch::default(),
@@ -396,16 +393,6 @@ impl RootWatch {
 
     pub(crate) fn is_attached(&self) -> bool {
         self.root_watched
-    }
-
-    /// Starts a scan, from whichever wake: whether it replays, recording the
-    /// root it reads. It replays a root no scan has read, attached or refused
-    /// its watch, and while none is placed, since one can appear before the
-    /// scan reads it; a root a scan has read reads live.
-    pub(crate) fn start_scan(&mut self) -> bool {
-        let replays = self.placed.root.is_none() || self.placed.root != self.scanned;
-        self.scanned = self.placed.root.clone();
-        replays
     }
 
     /// Brings the watches in line with the filesystem: the anchor on the root's

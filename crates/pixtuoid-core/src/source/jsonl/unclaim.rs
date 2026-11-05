@@ -164,7 +164,7 @@ pub(super) async fn drain_child_end_unclaims(
             // still exists: a drain that met NotFound retired the claim, and a
             // blind insert would bring it back as ended.
             park_if_truncated_below_cursor(path, ctx).await;
-            walk_jsonl(path, decoders, ctx).await;
+            walk_jsonl(path, decoders, ctx, false).await;
             {
                 let mut seen = ctx.seen.lock().await;
                 if seen.contains_key(path) {
