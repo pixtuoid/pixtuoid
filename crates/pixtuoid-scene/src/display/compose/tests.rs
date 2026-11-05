@@ -1798,3 +1798,26 @@ fn a_badge_at_a_bare_east_edge_keeps_its_whole_line() {
         }
     );
 }
+
+/// The units art ranges cover start at the unit their first art pixel lies
+/// in and end past their last, and an empty range covers none, wherever it
+/// starts.
+#[test]
+fn an_art_range_covers_the_units_its_pixels_lie_in() {
+    let pen = Pen::new(
+        RenderScale::new(4).expect("nonzero"),
+        crate::display::pen::test_density(4),
+    )
+    .expect("4 divides 4");
+    assert_eq!(
+        units_box([9..13, 6..10], pen),
+        Bounds {
+            x: 2,
+            y: 1,
+            width: 2,
+            height: 2,
+        }
+    );
+    let empty = units_box([9..9, 6..6], pen);
+    assert_eq!((empty.width, empty.height), (0, 0), "{empty:?}");
+}

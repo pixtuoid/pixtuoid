@@ -196,7 +196,7 @@ impl CutawayCanvas {
         };
         let mut list = tracing::trace_span!("canvas.compose")
             .in_scope(|| compose(&stepped.frame, office, showing, (&mut self.lights, outside)));
-        let badges = Arc::clone(list.badge_list());
+        let badges = Arc::clone(list.badges());
         let host_text = (text == crate::look::WorldText::Host).then(|| list.host_text());
         let epoch = Epoch {
             backdrop: list.backdrop().clone(),

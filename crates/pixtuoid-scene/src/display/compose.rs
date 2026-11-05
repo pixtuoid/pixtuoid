@@ -641,13 +641,21 @@ pub(crate) fn shown_box(run: &TextRun, pen: Pen, canvas: crate::layout::Size) ->
 
 /// The logical cells holding any of the art columns and rows `[xs, ys]`.
 fn units_box([xs, ys]: [std::ops::Range<u16>; 2], pen: Pen) -> Bounds {
-    let d = pen.density().get();
-    let (x, y) = (xs.start / d, ys.start / d);
+    let units = |r: std::ops::Range<u16>| {
+        let start = pen.logical(ArtPx(r.start));
+        let end = if r.is_empty() {
+            start
+        } else {
+            r.end.div_ceil(pen.density().get())
+        };
+        start..end
+    };
+    let (xs, ys) = (units(xs), units(ys));
     Bounds {
-        x,
-        y,
-        width: xs.end.div_ceil(d) - x,
-        height: ys.end.div_ceil(d) - y,
+        x: xs.start,
+        y: ys.start,
+        width: xs.end - xs.start,
+        height: ys.end - ys.start,
     }
 }
 

@@ -267,7 +267,7 @@ impl<'a> DisplayList<'a> {
     }
 
     /// Each drawn agent's badge, held to outlive the frame.
-    pub(crate) fn badge_list(&self) -> &std::sync::Arc<[super::Badge]> {
+    pub(crate) fn badges(&self) -> &std::sync::Arc<[super::Badge]> {
         &self.host_text.badges
     }
 
@@ -281,7 +281,7 @@ impl<'a> DisplayList<'a> {
 
     /// Each agent's badge, in draw order.
     #[cfg(test)]
-    pub(crate) fn badges(&self) -> impl Iterator<Item = &super::TextRun> + '_ {
+    pub(crate) fn badge_runs(&self) -> impl Iterator<Item = &super::TextRun> + '_ {
         self.pieces.iter().filter_map(|p| match &p.kind {
             PieceKind::Text { run } if matches!(run.role, super::TextRole::Badge(_)) => Some(run),
             _ => None,
