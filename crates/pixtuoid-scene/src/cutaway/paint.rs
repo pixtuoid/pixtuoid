@@ -7,6 +7,7 @@ use crate::sprite::blit::blit_frame_scaled;
 
 use crate::atmosphere::Carpet;
 use crate::cutaway::shade::{Ramp, fill, slab};
+use crate::display::compose::kept_art;
 #[cfg(test)]
 use crate::display::compose::{art_size, desk_front_h};
 use crate::display::pen::{ArtPx, ArtRect, BufferPx, Pen};
@@ -69,9 +70,21 @@ impl Screen {
 }
 
 /// Paint `run`: its plate, if it has one, and its ring, then its spans end to
-/// end from its [line's start](line_start), each icon in `pack`'s art.
+/// end from its [line's start](line_start), each icon in `pack`'s art, cut to
+/// what of it shows ([`kept_art`]).
 pub(crate) fn paint_run(run: &TextRun, (pack, pen): (&OfficeArt, Pen), buf: &mut RgbBuffer) {
-    let rect = run_rect(run, pen);
+    let (rect, shown) = kept_art(run_rect(run, pen), run.within, pen);
+    let [xs, ys] = shown.map(|r| pen.buffer(ArtPx(r.start)).0..pen.buffer(ArtPx(r.end)).0);
+    buf.with_clip((xs, ys), |buf| paint_run_whole(run, rect, (pack, pen), buf));
+}
+
+/// Paint `run` set at `rect`, its [`run_rect`], whole.
+fn paint_run_whole(
+    run: &TextRun,
+    rect: ArtRect,
+    (pack, pen): (&OfficeArt, Pen),
+    buf: &mut RgbBuffer,
+) {
     if let Some(ground) = run.plate {
         pen.fill(buf, rect, ground);
     }

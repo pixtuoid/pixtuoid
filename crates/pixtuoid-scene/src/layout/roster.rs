@@ -553,7 +553,7 @@ impl SceneLayout {
             depth: Depth::sorted(visual.y + visual.height - 1),
         };
         let floor_end = self.inner.bottom();
-        std::iter::once(backdrop(FixtureKind::NeonSign, self.neon_panel()))
+        std::iter::once(backdrop(FixtureKind::NeonSign, self.board_panel()))
             .chain(
                 self.clock_pos()
                     .map(|at| backdrop(FixtureKind::Clock, boxed(at, CLOCK))),
@@ -771,7 +771,7 @@ impl SceneLayout {
                     .iter()
                     .map(|p| centred(p.pos, furniture_def(p.kind.furniture()).visual)),
             )
-            .chain([self.door_rect(), self.neon_panel()])
+            .chain([self.door_rect(), self.board_panel()])
             .chain(self.clock_pos().map(|at| boxed(at, CLOCK)))
             .collect();
         let clear = |board: Bounds| {
@@ -801,7 +801,7 @@ impl SceneLayout {
     pub(crate) fn clock_pos(&self) -> Option<Point> {
         let span = self.wall_span();
         let middle = u16::midpoint(span.start, span.end);
-        let panel = self.neon_panel();
+        let panel = self.board_panel();
         super::window_posts(span)
             .map(|post| u16::midpoint(post.start, post.end))
             .filter(|&centre| centre - CLOCK.w / 2 >= panel.x + panel.width)
@@ -812,21 +812,30 @@ impl SceneLayout {
             })
     }
 
-    /// The neon sign's outer box.
-    pub(crate) fn neon_panel(&self) -> Bounds {
-        neon_panel(self.inner)
-    }
-
     /// The wall board's text box: the neon sign's dark interior, not its outer
     /// box, or the lit text overruns the glowing frame by the border on each
     /// side.
     pub fn board(&self) -> Bounds {
-        let panel = self.neon_panel();
+        let panel = self.board_panel();
         Bounds {
             x: panel.x + NEON_PANEL_BORDER,
             y: panel.y + NEON_PANEL_BORDER,
             width: NEON_PANEL_INNER_W,
             height: NEON_PANEL_INNER_H,
+        }
+    }
+
+    /// The area its world text keeps to: [`Self::inner`], open past a side no
+    /// inset covers, where text runs on into the host's own margin.
+    pub(crate) fn text_area(&self) -> Bounds {
+        let inner = self.inner;
+        let open = |edge: u16, end: u16, from: u16, len: u16| {
+            if edge == end { u16::MAX - from } else { len }
+        };
+        Bounds {
+            width: open(inner.right(), self.buf_w, inner.x, inner.width),
+            height: open(inner.bottom(), self.buf_h, inner.y, inner.height),
+            ..inner
         }
     }
 

@@ -72,6 +72,24 @@ impl CellMap {
         )
     }
 
+    /// The columns and the rows of the cells wholly inside `b`.
+    pub(crate) fn cells_inside(self, b: crate::layout::Bounds) -> [std::ops::Range<u16>; 2] {
+        let cells = |from: u16, len: u16, px: u16| {
+            let cell = |units: u16, round: fn(u32, u32) -> u32| {
+                u16::try_from(round(
+                    u32::from(units) * u32::from(self.scale),
+                    u32::from(px.max(1)),
+                ))
+                .unwrap_or(u16::MAX)
+            };
+            cell(from, u32::div_ceil)..cell(from.saturating_add(len), |a, b| a / b)
+        };
+        [
+            cells(b.x, b.width, self.cell.w),
+            cells(b.y, b.height, self.cell.h),
+        ]
+    }
+
     /// The logical units cell `(col, row)` shows any part of; past the far
     /// edge, units nothing paints.
     pub fn area(self, col: u16, row: u16) -> crate::layout::Bounds {
@@ -281,6 +299,33 @@ mod tests {
                 height: 2
             }
         );
+    }
+
+    /// The cells inside an area start at the first cell past its near edge and
+    /// stop before the cell its far edge cuts, on both axes; an area inside one
+    /// cell holds none.
+    #[test]
+    fn the_cells_inside_an_area_round_in_at_both_ends() {
+        use crate::layout::Bounds;
+        let half_block = CellMap::HALF_BLOCK.cells_inside(Bounds {
+            x: 0,
+            y: 7,
+            width: 5,
+            height: 160,
+        });
+        assert_eq!(half_block, [0..5, 4..83]);
+        let wide = CellMap {
+            scale: 16,
+            cell: CellPx { w: 14, h: 28 },
+        };
+        let [cols, rows] = wide.cells_inside(Bounds {
+            x: 9,
+            y: 0,
+            width: 3,
+            height: 1,
+        });
+        assert_eq!(cols, 11..13);
+        assert!(rows.is_empty(), "{rows:?}");
     }
 
     #[test]

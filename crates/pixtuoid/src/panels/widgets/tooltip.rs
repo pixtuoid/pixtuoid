@@ -170,7 +170,7 @@ fn put_line(f: &mut ratatui::Frame<'_>, line: Line<'_>, at: CellRect, scene_rect
             x: scene_rect.x.saturating_add(at.x),
             y: scene_rect.y.saturating_add(at.y),
             width: at.w,
-            height: 1,
+            height: at.h,
         },
         scene_rect,
     ) {
@@ -275,6 +275,14 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
 
+    /// An office no chrome covers, the area its text keeps to.
+    const BARE_OFFICE: pixtuoid_scene::layout::Bounds = pixtuoid_scene::layout::Bounds {
+        x: 0,
+        y: 0,
+        width: u16::MAX,
+        height: u16::MAX,
+    };
+
     /// Join the whole buffer into one newline-free string, so a `.contains` probe
     /// finds text regardless of which cell the box landed in.
     fn buffer_text(term: &Terminal<TestBackend>) -> String {
@@ -327,6 +335,7 @@ mod tests {
         super::Badge {
             agent: agent.agent_id,
             at,
+            within: BARE_OFFICE,
             marker: ink.marker,
             name: pixtuoid_scene::display::TextSpan::new(&*agent.label, ink.name),
             plate: theme.ui.tooltip_bg,
@@ -371,7 +380,7 @@ mod tests {
         term.draw(|f| {
             super::paint_text_runs(
                 f,
-                &model.runs(&theme::NORMAL, board),
+                &model.runs(&theme::NORMAL, board, BARE_OFFICE),
                 (scene_rect, CellMap::HALF_BLOCK),
                 Dim::NONE,
             );
@@ -450,7 +459,7 @@ mod tests {
                 badge.at
             );
         }
-        let runs = model.runs(&theme::NORMAL, office_board());
+        let runs = model.runs(&theme::NORMAL, office_board(), BARE_OFFICE);
         let stars = runs.iter().filter(|r| r.role == super::TextRole::Star);
         assert_eq!(stars.count(), 1, "the board has its star");
         let grid = |w, h, scale| CellMap {
@@ -525,6 +534,7 @@ mod tests {
         let run = super::TextRun {
             at,
             align: pixtuoid_scene::display::Align::Centre,
+            within: BARE_OFFICE,
             spans: pixtuoid_scene::layout::floor_indicator(
                 pixtuoid_scene::floor::FloorMeta::ground(),
             )
@@ -704,6 +714,7 @@ mod tests {
                 ..speaker.at
             },
             align: pixtuoid_scene::display::Align::Over,
+            within: BARE_OFFICE,
             spans: vec![pixtuoid_scene::display::TextSpan::new(
                 quip,
                 theme::NORMAL.ui.tooltip_text,

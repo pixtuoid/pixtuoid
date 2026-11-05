@@ -1415,22 +1415,58 @@ mod tests {
     #[cfg(feature = "pixel-font")]
     #[test]
     fn the_canvas_paints_the_pinned_frames() {
+        use crate::layout::{FixtureKind, Insets, Viewport};
         use crate::sky::{Weather, WeatherPolicy};
         use std::fmt::Write as _;
         let pack = Arc::new(test_office());
         let (walk_layout, _, frames, _) = sit_down(crate::layout::Facing::North, 2);
         let walk_layout = Arc::new(walk_layout);
-        let office = crate::floor::FloorSession::new(Arc::clone(&pack))
-            .step(
-                crate::floor::FloorInputs {
-                    scene: &pixtuoid_core::SceneState::uniform(16),
-                    now: crate::localclock::at_hour(12),
-                    floor: FloorMeta::ground(),
-                    pets: crate::floor::PetInputs::default(),
-                },
-                crate::layout::Viewport::full(240, 144),
-            )
-            .expect("lays out");
+        let empty = |viewport, floor_seed| {
+            crate::floor::FloorSession::new(Arc::clone(&pack))
+                .step(
+                    crate::floor::FloorInputs {
+                        scene: &pixtuoid_core::SceneState::uniform(16),
+                        now: crate::localclock::at_hour(12),
+                        floor: FloorMeta {
+                            floor_seed,
+                            ..FloorMeta::ground()
+                        },
+                        pets: crate::floor::PetInputs::default(),
+                    },
+                    viewport,
+                )
+                .expect("lays out")
+        };
+        let office = empty(Viewport::full(240, 144), FloorMeta::ground().floor_seed);
+        // Each inset the App's chrome takes: a bottom bar, the same over a
+        // floor whose south room lays a rug against it, and a banner on top.
+        let inset = |insets| Viewport {
+            size: crate::layout::Size { w: 240, h: 144 },
+            insets,
+        };
+        let bar = Insets {
+            bottom: 12,
+            ..Insets::default()
+        };
+        let banner = Insets {
+            top: 12,
+            ..Insets::default()
+        };
+        let under_bar = empty(inset(bar), FloorMeta::ground().floor_seed);
+        // A dual-meeting floor's seed.
+        let rug_on_bar = empty(inset(bar), 3);
+        let under_banner = empty(inset(banner), FloorMeta::ground().floor_seed);
+        assert!(
+            rug_on_bar
+                .layout
+                .fixtures()
+                .any(|f| f.kind == FixtureKind::MeetingRug { room: 1 }),
+            "premise: the south room lays its rug"
+        );
+        assert!(
+            under_banner.layout.board().y > banner.top,
+            "premise: the sign hangs below the banner"
+        );
         let lively = Arc::new(lively_office());
         let busy = SimFrame {
             door_frame: 2,
@@ -1450,6 +1486,9 @@ mod tests {
             ),
             ("office", &office.layout, &office.frame),
             ("lively", &lively, &busy),
+            ("under-bar", &under_bar.layout, &under_bar.frame),
+            ("rug-on-bar", &rug_on_bar.layout, &rug_on_bar.frame),
+            ("under-banner", &under_banner.layout, &under_banner.frame),
         ];
         let moments = [
             ("normal", Weather::Clear, 12),

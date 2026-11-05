@@ -6,6 +6,7 @@
 //! waypoints, decor positions, and a per-pixel walkability mask.
 
 mod approach;
+pub mod chrome;
 mod coarse;
 mod compute;
 mod decor;
@@ -16,8 +17,8 @@ mod rooms;
 pub(crate) mod roster;
 mod windows;
 
-// The deep interface is `SceneLayout::{stand_point,approach_point}`; these free
-// fns stay for this crate's own synthetic-mask unit tests.
+// The deep interface is `SceneLayout::{stand_point,approach_point}`; `compute` calls the free
+// `approach_point` before any layout, the debug overlay `first_reachable_on_side`, tests all three.
 pub(crate) use approach::{approach_point, first_reachable_on_side, stand_point};
 pub(crate) use compute::PANTRY_COUNTER_LARGE_W;
 pub use compute::min_layout_size;
@@ -164,8 +165,8 @@ pub struct Size {
 }
 
 /// How far a painter's own chrome reaches in from each edge of the viewport:
-/// under it the layout lays nothing but its floor, walls and sky, and no
-/// figure is drawn.
+/// under it the office paints only its floor, walls and sky, and places
+/// nothing that carries information or takes a press.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Insets {
     /// From the north edge.
@@ -530,8 +531,8 @@ pub(crate) fn exit_sign_pos(door: Point, inner_top: u16) -> Option<Point> {
 /// reference, and the `snapshot` example that renders the docs/CI media
 /// baselines pins its scene to it.
 pub const CLASSIC_OFFICE_DESKS: usize = 16;
-/// An `inner` no edge bounds, for a test that calls a function taking a
-/// layout's `inner` without a layout to take it from.
+/// An area no edge bounds, for a test that calls a function taking a layout's
+/// `inner` or text area without a layout to take it from.
 #[cfg(test)]
 pub(crate) const BARE_OFFICE: Bounds = Bounds {
     x: 0,

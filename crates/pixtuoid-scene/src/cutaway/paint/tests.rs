@@ -346,6 +346,7 @@ fn a_runs_spans_step_on_one_grid_on_a_plate_or_off_one() {
         let run = TextRun {
             at: Point { x: 8, y: 0 },
             align,
+            within: crate::layout::BARE_OFFICE,
             spans: vec![TextSpan::new(first, a), TextSpan::new(second, b)],
             plate,
             ring: None,
