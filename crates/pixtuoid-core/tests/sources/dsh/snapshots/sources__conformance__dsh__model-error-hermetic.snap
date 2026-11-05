@@ -3,32 +3,32 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 13698828696505702245
+    agent_id: 3898843190737436213
     source: dsh
-    session_id: session-2b62c0a6-8cf9-433f-bd24-860c9fa45e75
+    session_id: session-ac298950-c0c4-4065-9312-b35284d927ac
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 13698828696505702245
+    agent_id: 3898843190737436213
     source: dsh
-    session_id: session-2b62c0a6-8cf9-433f-bd24-860c9fa45e75
+    session_id: session-ac298950-c0c4-4065-9312-b35284d927ac
     cwd: /private/tmp/pixtuoid-capture/proj
 - Identity:
-    agent_id: 13698828696505702245
+    agent_id: 3898843190737436213
     source: dsh
-    session_id: session-2b62c0a6-8cf9-433f-bd24-860c9fa45e75
+    session_id: session-ac298950-c0c4-4065-9312-b35284d927ac
     cwd: /private/tmp/pixtuoid-capture/proj
 - ModelInfo:
-    agent_id: 13698828696505702245
+    agent_id: 3898843190737436213
     model: deepseek-flash
     effort: high
 - Identity:
-    agent_id: 13698828696505702245
+    agent_id: 3898843190737436213
     source: dsh
-    session_id: session-2b62c0a6-8cf9-433f-bd24-860c9fa45e75
+    session_id: session-ac298950-c0c4-4065-9312-b35284d927ac
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 13698828696505702245
+    agent_id: 3898843190737436213
 - SessionEnd:
-    agent_id: 13698828696505702245
+    agent_id: 3898843190737436213
     as_child: false
