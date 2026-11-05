@@ -2416,13 +2416,13 @@ fn a_lifted_agent_hangs_from_the_pointer_and_walks_home_when_set_down() {
     assert_eq!(sat, Some(Pose::SeatedIdle), "home, it sits");
 }
 
-/// `scene`'s routed poses on `session` at `now`, its floor moving at `motion`.
-fn poses_at(
+/// `scene` stepped on `session` at `now`, its floor moving at `motion`.
+fn frame_at(
     session: &mut FloorSession,
     scene: &SceneState,
     motion: Motion,
     now: SystemTime,
-) -> HashMap<AgentId, Option<crate::pose::Pose>> {
+) -> crate::sim::SimFrame {
     session
         .step(
             FloorInputs {
@@ -2435,7 +2435,36 @@ fn poses_at(
         )
         .expect("lays out")
         .frame
-        .poses
+}
+
+/// The elevator follows each walk, not the tier: a walk set off under Full and
+/// still under way when Still comes on opens it, and one Still ended at once
+/// opens it for no one when Full comes back.
+#[test]
+fn the_elevator_opens_for_a_walk_through_it_across_a_tier_change() {
+    let scene = make_scene(1, 4);
+    let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+    let pack = Arc::new(crate::pack::test_office());
+    let door = |first: Motion, then: Motion| {
+        let mut session = FloorSession::new(Arc::clone(&pack));
+        frame_at(&mut session, &scene, first, t0() + frame);
+        frame_at(&mut session, &scene, then, t0() + 10 * frame).door_frame
+    };
+    assert_ne!(
+        door(Motion::Full, Motion::Full),
+        0,
+        "premise: it opens under Full"
+    );
+    assert_ne!(
+        door(Motion::Full, Motion::Still),
+        0,
+        "a walk under way opens it"
+    );
+    assert_eq!(
+        door(Motion::Still, Motion::Full),
+        0,
+        "a walk Still ended opens nothing"
+    );
 }
 
 /// Under Still the pairing swap takes one frame: the frame the device's office
@@ -2458,22 +2487,31 @@ fn under_still_a_machine_change_swaps_the_cast_in_one_frame() {
         office.apply(line.as_bytes(), at).expect("it applies");
     };
     let (demo, live) = (cast(["a", "b"]), cast(["c", "d"]));
-    let mut office = RemoteOffice::new([2; MAX_FLOORS]);
-    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
-    received(&mut office, &demo, &Machine::new("demo", Os::Other), t0());
-    let before = poses_at(&mut session, office.scene(), Motion::Still, t0());
+    let switch = t0() + Duration::from_secs(1);
+    // The demo cast's poses before the switch, and everyone's at it.
+    let swap = |motion: Motion| {
+        let mut office = RemoteOffice::new([2; MAX_FLOORS]);
+        let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
+        received(&mut office, &demo, &Machine::new("demo", Os::Other), t0());
+        let before = frame_at(&mut session, office.scene(), motion, t0()).poses;
+        let live_machine = Machine::new("studio", Os::Macos);
+        received(&mut office, &live, &live_machine, switch);
+        (
+            before,
+            frame_at(&mut session, office.scene(), motion, switch).poses,
+        )
+    };
+    let (_, full) = swap(Motion::Full);
+    assert!(
+        live.agents
+            .keys()
+            .all(|id| matches!(full.get(id), Some(Some(Pose::Walking { .. })))),
+        "premise: under Full the live cast walks in"
+    );
+    let (before, after) = swap(Motion::Still);
     for id in demo.agents.keys() {
         assert_eq!(before.get(id), Some(&Some(Pose::SeatedIdle)), "premise");
     }
-
-    let switch = t0() + Duration::from_secs(1);
-    received(
-        &mut office,
-        &live,
-        &Machine::new("studio", Os::Macos),
-        switch,
-    );
-    let after = poses_at(&mut session, office.scene(), Motion::Still, switch);
     for id in demo.agents.keys() {
         assert_eq!(
             after.get(id).copied().flatten(),
@@ -2511,10 +2549,10 @@ fn calm_walks_as_full_does() {
     for i in 0..200 {
         let now = t0() + frame * i;
         let scene = if now < exit { &arriving } else { &leaving };
-        let poses = poses_at(&mut full, scene, Motion::Full, now);
+        let poses = frame_at(&mut full, scene, Motion::Full, now).poses;
         assert_eq!(
             poses,
-            poses_at(&mut calm, scene, Motion::Calm, now),
+            frame_at(&mut calm, scene, Motion::Calm, now).poses,
             "frame {i}"
         );
         walked |= (poses.values().flatten()).any(|pose| matches!(pose, Pose::Walking { .. }));

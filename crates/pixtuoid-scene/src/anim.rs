@@ -73,8 +73,7 @@ pub fn from_epoch_ms(ms: f64) -> SystemTime {
 }
 
 /// How much of the office moves. Each tier steps the loops that only make it
-/// look alive — a flicker, a twinkle, a wander — on its own clock, and a
-/// figure's walks keep their own pace on every tier but [`Still`](Self::Still).
+/// look alive — a flicker, a twinkle, a pet's roam (`Roam`) — on its own clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Motion {
     /// Every loop, stepped each `FULL_TICK_MS`.
@@ -82,11 +81,11 @@ pub enum Motion {
     Full,
     /// Every loop at a quarter of Full's pace: each `CALM_TICK_MS` it steps
     /// one Full tick, so a loop plays Full's very sequence, slower, and none
-    /// aliases on the slower repaint.
+    /// aliases on the slower repaint. A figure's walks keep Full's pace.
     Calm,
-    /// No loop moves and no lightning flashes: each holds its first frame.
-    /// Under Still no figure walks and the elevator doesn't open: a figure is
-    /// where each walk ends, at once.
+    /// No loop moves and no lightning flashes: each holds its first frame. A
+    /// walk set off under Still ends where it's going the frame it starts and
+    /// opens no elevator; one already under way finishes.
     Still,
 }
 
@@ -216,8 +215,7 @@ impl Motion {
     /// Every tier.
     pub(crate) const ALL: [Motion; 3] = [Motion::Full, Motion::Calm, Motion::Still];
 
-    /// Whether a figure walks: it wanders, a leg takes its time and the
-    /// elevator opens for it.
+    /// False on [`Still`](Self::Still) alone.
     pub(crate) const fn walks(self) -> bool {
         !matches!(self, Self::Still)
     }

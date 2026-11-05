@@ -491,7 +491,7 @@ fn parse_look(value: &str) -> Option<crate::graphics::LookMode> {
     <crate::graphics::LookMode as clap::ValueEnum>::from_str(value, false).ok()
 }
 
-/// How much of the office's ambient life moves: the `motion` config key.
+/// How much of the office moves, walks and elevator too: the `motion` config key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub(crate) enum MotionMode {
     /// What the display affords: calmer where a repaint is dear.
@@ -501,7 +501,7 @@ pub(crate) enum MotionMode {
     Full,
     /// Every ambient loop, at a quarter of the pace.
     Calm,
-    /// No ambient loop and no flash.
+    /// No ambient loop, no flash, no walk and no elevator opening.
     Still,
 }
 

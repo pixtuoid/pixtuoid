@@ -324,14 +324,13 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // visible "flash"). Sitters at desks are already covered by the static desk
     // mask, so only waypoint visitors — stable across frames — contribute.
     stores.overlay.clear();
-    // Only a walker stands at a waypoint or opens the elevator, and under Still
-    // none walks.
-    let walkers = if floor.motion.walks() {
+    // Only a wanderer stands at a waypoint (`Motion::walks`).
+    let mobile = if floor.motion.walks() {
         &agents[..]
     } else {
         &[][..]
     };
-    for agent in walkers {
+    for agent in mobile {
         // A lifted one stands nowhere its timeline says.
         if stores
             .walks
@@ -434,7 +433,10 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     let mascots = mascot_placements(scene, pack, timing, &mut ground, stores.creatures);
     let desks = desk_props(&agents, layout, pack, coffee, timing);
 
-    let door_frame = anchors::compute_door_frame_idx(walkers, now, door_anim_max_ms);
+    let through_door = agents.iter().filter(|a| {
+        (stores.walks.get(&a.agent_id)).is_none_or(|w| w.walks_the_door(a.exiting_at.is_some()))
+    });
+    let door_frame = anchors::compute_door_frame_idx(through_door, now, door_anim_max_ms);
     SimFrame {
         agents,
         poses,

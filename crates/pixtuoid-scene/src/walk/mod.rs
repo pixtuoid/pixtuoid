@@ -222,6 +222,14 @@ impl Default for WalkState {
 }
 
 impl WalkState {
+    /// Whether the leg an agent `exiting` or not passes the elevator on took
+    /// its time: one [`WalkProfile::INSTANT`] walked through no door.
+    pub(crate) fn walks_the_door(&self, exiting: bool) -> bool {
+        let leg = if exiting { &self.exit } else { &self.entry };
+        leg.as_ref()
+            .is_none_or(|leg| leg.profile != WalkProfile::INSTANT)
+    }
+
     /// The agent's wander timeline.
     #[doc(hidden)]
     pub fn wander(&self) -> &WanderState {
