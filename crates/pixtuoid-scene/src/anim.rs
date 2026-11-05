@@ -73,8 +73,8 @@ pub fn from_epoch_ms(ms: f64) -> SystemTime {
 }
 
 /// How much of the office moves. Each tier steps the loops that only make it
-/// look alive — a flicker, a twinkle, an idle wander — on its own clock, and an
-/// agent's walks keep their own pace on every tier but [`Still`](Self::Still).
+/// look alive — a flicker, a twinkle, a wander — on its own clock, and a
+/// figure's walks keep their own pace on every tier but [`Still`](Self::Still).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Motion {
     /// Every loop, stepped each `FULL_TICK_MS`.
@@ -84,8 +84,9 @@ pub enum Motion {
     /// one Full tick, so a loop plays Full's very sequence, slower, and none
     /// aliases on the slower repaint.
     Calm,
-    /// No loop moves and no lightning flashes: each holds its first frame. An
-    /// agent poses where each walk ends, at once.
+    /// No loop moves and no lightning flashes: each holds its first frame.
+    /// Under Still no figure walks and the elevator doesn't open: a figure is
+    /// where each walk ends, at once.
     Still,
 }
 
@@ -215,8 +216,8 @@ impl Motion {
     /// Every tier.
     pub(crate) const ALL: [Motion; 3] = [Motion::Full, Motion::Calm, Motion::Still];
 
-    /// Whether an agent walks: an idle one wanders off its desk, and a leg
-    /// takes its time.
+    /// Whether a figure walks: it wanders, a leg takes its time and the
+    /// elevator opens for it.
     pub(crate) const fn walks(self) -> bool {
         !matches!(self, Self::Still)
     }

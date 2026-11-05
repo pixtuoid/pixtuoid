@@ -9,7 +9,6 @@
 use std::num::NonZeroU16;
 use std::time::{Duration, SystemTime};
 
-use crate::walkable::OccupancyOverlay;
 use pixtuoid_core::AgentSlot;
 use pixtuoid_core::SceneState;
 use pixtuoid_core::id::splitmix64;
@@ -18,13 +17,14 @@ use pixtuoid_core::state::{ActivityState, DaemonState};
 
 use crate::anim::{FULL_TICK_MS, Timing, elapsed_ms};
 use crate::layout::{Point, SceneLayout};
-use crate::pathfind::{Router, snap_point_to_walkable, snap_point_where};
+use crate::pathfind::{snap_point_to_walkable, snap_point_where};
 use crate::pet::PetKind;
 use crate::physics::{
     Gait, OCTILE_STRAIGHT_COST, Segment, WALK_ACCEL, WalkProfile, octile_path_len, walk_arrived,
     walk_profile_for, walk_progress,
 };
 use crate::pose::STALE_RESUME_GAP_BASE_MS;
+use crate::walk::Planner;
 
 /// How close a resting spot must be to an idle agent's desk to count as "napping
 /// beside them" — sized to the desk's footprint plus a creature's width, so it
@@ -163,12 +163,10 @@ impl Roam {
     }
 }
 
-/// What a creature walks on this frame: the floor, its router, and the
-/// stationary people its legs route around.
+/// What a creature walks on this frame: the floor, and what plans its legs.
 pub(crate) struct Ground<'a> {
     pub(crate) layout: &'a SceneLayout,
-    pub(crate) router: &'a mut dyn Router,
-    pub(crate) overlay: &'a OccupancyOverlay,
+    pub(crate) planner: Planner<'a>,
 }
 
 /// One frozen leg: when it began, its timing, and the polyline it follows.
@@ -196,13 +194,12 @@ impl Walk {
         if !reach.reaches(from) || !reach.reaches(to) {
             return None;
         }
-        let path = ground
-            .router
-            .route(&ground.layout.walkable, ground.overlay, from, to);
+        let planner = &mut ground.planner;
+        let path = (planner.router).route(&ground.layout.walkable, planner.overlay, from, to);
         let len = octile_path_len(&path);
         (len > 0).then(|| Walk {
             started_at: now,
-            profile: walk_profile_for(len, gait),
+            profile: planner.timed(walk_profile_for(len, gait)),
             path,
             to,
         })
@@ -448,7 +445,6 @@ impl CreatureWalk {
             since,
             walked_ms,
         } = self.phase
-            && !beat.is_rest()
             && beat.ms().saturating_sub(beat.loop_at(since)) >= walked_ms + self.rest_ms(roam)
         {
             self.roams += 1;
@@ -670,6 +666,7 @@ mod tests {
     use crate::pathfind::{AStarRouter, point_in_walkable_cell};
     use crate::pet::{Pet, PetState};
     use crate::sim::SimFrame;
+    use crate::walkable::OccupancyOverlay;
 
     /// One paint, as a painter repaints.
     const PAINT_MS: u64 = 1_000 / PAINT_FPS as u64;
@@ -719,8 +716,11 @@ mod tests {
         let overlay = OccupancyOverlay::new();
         let mut ground = Ground {
             layout,
-            router: &mut router,
-            overlay: &overlay,
+            planner: Planner {
+                router: &mut router,
+                overlay: &overlay,
+                motion,
+            },
         };
         (from_ms..to_ms)
             .step_by(PAINT_MS as usize)
@@ -1139,8 +1139,11 @@ mod tests {
         let overlay = OccupancyOverlay::new();
         let mut ground = Ground {
             layout: &l,
-            router: &mut router,
-            overlay: &overlay,
+            planner: Planner {
+                router: &mut router,
+                overlay: &overlay,
+                motion: Motion::Full,
+            },
         };
         let mut walk = CreatureWalk::at_home(&l, 3, at(0));
         let mut ms = 0;
@@ -1280,6 +1283,72 @@ mod tests {
 
     fn lobsters(f: &SimFrame) -> Vec<(Point, Piece)> {
         f.mascots.iter().map(|m| (m.pos, m.anim_name)).collect()
+    }
+
+    /// Under Still no figure walks and the elevator doesn't open: an agent
+    /// walking in, one walking out and a gateway's mascot arriving each end
+    /// where they would, at once, the cat never leaves where it rests, and the
+    /// door stays shut. Under Full each of them walks and the door opens.
+    #[test]
+    fn under_still_no_figure_walks_and_the_elevator_stays_shut() {
+        use crate::character::test_support::make_slot;
+        use crate::pose::Pose;
+        use pixtuoid_core::AgentId;
+        use pixtuoid_core::state::{ActivityState, GlobalDeskIndex};
+        const SEEN: [&str; 5] = ["agent in", "agent out", "mascot in", "pet wander", "door"];
+        let exit_ms = 2_000;
+        let agent = |name: &str, desk: usize, arrived: SystemTime| {
+            let id = AgentId::from_transcript_path(name);
+            AgentSlot {
+                desk_index: GlobalDeskIndex(desk),
+                arrived_at: Some(arrived),
+                ..make_slot(id, ActivityState::Idle)
+            }
+        };
+        let arriving = agent("/in.jsonl", 0, at(0));
+        let leaving = agent("/out.jsonl", 1, at(0) - Duration::from_secs(3_600));
+        let (in_id, out_id) = (arriving.agent_id, leaving.agent_id);
+        let mut before = SceneState::uniform(4);
+        before.agents.insert(in_id, arriving);
+        before.agents.insert(out_id, leaving);
+        gateway(&mut before, "18789", DaemonLiveness::UP, 0, 0);
+        let mut after = before.clone();
+        if let Some(slot) = after.agents.get_mut(&out_id) {
+            slot.exiting_at = Some(at(exit_ms));
+        }
+        let cat = Pet::defaulted(PetKind::Cat);
+        let seen = |motion: Motion| {
+            let mut office = Office::new(192, 80);
+            office.floor = office.floor.with_motion(motion);
+            let walking =
+                |pose: Option<&Option<Pose>>| matches!(pose, Some(Some(Pose::Walking { .. })));
+            let mut seen = [false; SEEN.len()];
+            let mut rests_at = None;
+            for ms in (0..60_000).step_by(PAINT_MS as usize) {
+                let scene = if ms < exit_ms { &before } else { &after };
+                let f = office.frame(scene, Some(&cat), None, ms);
+                let pet = f.pet.as_ref().expect("the cat is drawn");
+                let rests_at = *rests_at.get_or_insert(pet.pos);
+                let now = [
+                    walking(f.poses.get(&in_id)),
+                    walking(f.poses.get(&out_id)),
+                    f.mascots.iter().any(|m| m.anim_name == Piece::LobsterWalk),
+                    pet.anim_name == PetKind::Cat.walk_anim().piece() || pet.pos != rests_at,
+                    f.door_frame != 0,
+                ];
+                for (was, is) in seen.iter_mut().zip(now) {
+                    *was |= is;
+                }
+            }
+            seen
+        };
+        for (what, (full, still)) in SEEN
+            .iter()
+            .zip(seen(Motion::Full).into_iter().zip(seen(Motion::Still)))
+        {
+            assert!(full, "premise: under Full, {what} moves");
+            assert!(!still, "under Still, {what} moved");
+        }
     }
 
     /// A gateway's mascot walks in from the elevator once its stagger is up,

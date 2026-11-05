@@ -324,13 +324,14 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // visible "flash"). Sitters at desks are already covered by the static desk
     // mask, so only waypoint visitors — stable across frames — contribute.
     stores.overlay.clear();
-    // Only a wanderer stands at a waypoint, and under Still none walks.
-    let wanderers = if floor.motion.walks() {
+    // Only a walker stands at a waypoint or opens the elevator, and under Still
+    // none walks.
+    let walkers = if floor.motion.walks() {
         &agents[..]
     } else {
         &[][..]
     };
-    for agent in wanderers {
+    for agent in walkers {
         // A lifted one stands nowhere its timeline says.
         if stores
             .walks
@@ -415,8 +416,11 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         chitchat::update_and_collect(stores.chitchat, floor.floor_idx, &waypoint_visitors, now);
     let mut ground = Ground {
         layout,
-        router: &mut *stores.router,
-        overlay: &*stores.overlay,
+        planner: crate::walk::Planner {
+            router: &mut *stores.router,
+            overlay: &*stores.overlay,
+            motion: floor.motion,
+        },
     };
     let pet = pet_placement(
         &agents,
@@ -430,7 +434,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     let mascots = mascot_placements(scene, pack, timing, &mut ground, stores.creatures);
     let desks = desk_props(&agents, layout, pack, coffee, timing);
 
-    let door_frame = anchors::compute_door_frame_idx(&agents, now, door_anim_max_ms);
+    let door_frame = anchors::compute_door_frame_idx(walkers, now, door_anim_max_ms);
     SimFrame {
         agents,
         poses,

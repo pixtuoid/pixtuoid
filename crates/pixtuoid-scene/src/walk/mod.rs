@@ -538,6 +538,18 @@ pub(crate) struct Planner<'a> {
     pub(crate) motion: Motion,
 }
 
+impl Planner<'_> {
+    /// `profile` as this frame's tier times it: [`WalkProfile::INSTANT`] on
+    /// one no figure walks on.
+    pub(crate) fn timed(&self, profile: WalkProfile) -> WalkProfile {
+        if self.motion.walks() {
+            profile
+        } else {
+            WalkProfile::INSTANT
+        }
+    }
+}
+
 /// Freeze one walk leg's timing profile. Measuring the ROUTED (not raw)
 /// polyline is load-bearing: the duration must cover the whole path or `t`
 /// reaches [`LegProgress::DONE`] before the sprite
@@ -548,11 +560,12 @@ pub(crate) fn snapshot_leg_profile(
     id: AgentId,
     leg: LegPlan,
 ) -> WalkProfile {
-    if !planner.motion.walks() {
-        return WalkProfile::INSTANT;
-    }
     let path = route_jittered(planner.router, mask, planner.overlay, id, leg.from, leg.to);
-    walk_profile(measured_leg_len(&path, leg.settle), leg.intent, id)
+    planner.timed(walk_profile(
+        measured_leg_len(&path, leg.settle),
+        leg.intent,
+        id,
+    ))
 }
 
 /// Freeze the WanderBack profile. The endpoint is the desk APPROACH cell
