@@ -63,9 +63,8 @@ pub(super) const fn band_w(inner_w: u16, mid_x_pct: u16) -> u16 {
 /// The band's HEIGHT in the area `inner` inside the insets of a viewport
 /// `viewport_h` tall — everything from the [`top_margin`] to the area's south
 /// edge, less the appliance aisle. THE formula `compute` and the size gate both
-/// step from, and both its subtractions SATURATE: under a deep top or bottom
-/// inset the gate reads it on an area ending above the top margin, or holding
-/// less than the aisle, where the 0 it collapses to, rather than a wrapped, huge
+/// step from, and both its subtractions SATURATE: the gate reads it on areas too
+/// short for a band, where the 0 it collapses to, rather than a wrapped, huge
 /// band, is what refuses the office
 /// (`the_size_gate_admits_exactly_the_offices_that_seat_a_desk`).
 pub(super) const fn band_h(inner: Bounds, viewport_h: u16) -> u16 {
