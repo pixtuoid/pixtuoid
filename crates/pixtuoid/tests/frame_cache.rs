@@ -43,6 +43,7 @@ fn make_slot(id: AgentId) -> AgentSlot {
         state: ActivityState::Idle,
         state_started_at: now,
         created_at: now,
+        arrived_at: Some(now),
         last_event_at: now,
         exiting_at: None,
 

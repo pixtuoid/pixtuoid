@@ -7,7 +7,7 @@ use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
 use crate::source::{AgentEvent, CopyId, Resolution, ToolDetail, Transport};
 use crate::state::correlation::{
-    CopyHolders, Correlation, Counted, ToolEventKind, elapsed_at_least, elapsed_past,
+    CopyHolders, Correlation, Counted, ToolEventKind, elapsed_at_least,
 };
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
@@ -1427,6 +1427,8 @@ impl Reducer {
                 state_started_at: now,
                 last_event_at: now,
                 created_at: now,
+                // The local office walks in every slot it registers, a replay's included.
+                arrived_at: Some(now),
                 exiting_at: None,
                 desk_index,
                 floor_idx,
@@ -1732,11 +1734,7 @@ impl Reducer {
         let expired: Vec<AgentId> = scene
             .agents
             .iter()
-            .filter_map(|(id, slot)| {
-                slot.exiting_at
-                    .filter(|t| elapsed_past(now, *t, EXIT_GRACE_WINDOW))
-                    .map(|_| *id)
-            })
+            .filter_map(|(id, slot)| slot.walked_out(now).then_some(*id))
             .collect();
         for id in expired {
             scene.agents.remove(&id);

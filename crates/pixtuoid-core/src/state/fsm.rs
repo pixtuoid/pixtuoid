@@ -187,6 +187,7 @@ mod tests {
             state_started_at: started,
             last_event_at: started,
             created_at: started,
+            arrived_at: Some(started),
             exiting_at: None,
             desk_index: crate::state::GlobalDeskIndex(0),
             floor_idx: 0,

@@ -219,7 +219,8 @@ pub(crate) fn compute_door_frame_idx(
     let mut max_frame: usize = 0;
     for a in agents {
         if a.exiting_at.is_none()
-            && let Ok(d) = now.duration_since(a.created_at)
+            && let Some(arrived) = a.arrived_at
+            && let Ok(d) = now.duration_since(arrived)
         {
             let ms = d.as_millis() as u64;
             if ms < entry_window_ms {

@@ -953,6 +953,7 @@ mod tests {
                 state_started_at: SystemTime::UNIX_EPOCH,
                 last_event_at: SystemTime::UNIX_EPOCH,
                 created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(secs),
+                arrived_at: Some(SystemTime::UNIX_EPOCH + Duration::from_secs(secs)),
                 exiting_at: None,
                 desk_index: GlobalDeskIndex(0),
                 floor_idx: 0,

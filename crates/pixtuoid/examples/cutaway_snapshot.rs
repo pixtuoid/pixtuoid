@@ -69,6 +69,7 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
                 state,
                 state_started_at: seated,
                 created_at: seated,
+                arrived_at: Some(seated),
                 last_event_at: recent,
                 exiting_at: None,
                 desk_index: GlobalDeskIndex(i),
