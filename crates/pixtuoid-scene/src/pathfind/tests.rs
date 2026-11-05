@@ -446,36 +446,38 @@ fn snap_to_walkable_returns_cell_when_already_walkable() {
     let l = make_layout();
     let overlay = OccupancyOverlay::new();
     let corridor = l.corridor;
-    let cell_w = l.buf_w / 4;
-    let cell_h = l.buf_h / 4;
-    let cx = (corridor.x + corridor.width / 2) / 4;
-    let cy = (corridor.y + corridor.height / 2) / 4;
-    let result = snap(
-        &l.walkable,
-        &overlay,
-        (cx, cy),
-        cell_w,
-        cell_h,
-        MAX_SNAP_RADIUS,
-    );
-    assert_eq!(result, Some((cx, cy)));
+    let (cell_w, cell_h) = cell_dims(&l.walkable);
+    let centre = Point {
+        x: corridor.x + corridor.width / 2,
+        y: corridor.y + corridor.height / 2,
+    };
+    let cell = crate::layout::cell_holding(grid_origin(&l.walkable), centre)
+        .expect("the corridor is on the grid");
+    let result = snap(&l.walkable, &overlay, cell, cell_w, cell_h, MAX_SNAP_RADIUS);
+    assert_eq!(result, Some(cell));
 }
 
 #[test]
 fn snap_to_walkable_finds_nearby_cell_when_blocked() {
     let l = make_layout();
-    let cell_w = l.buf_w / 4;
-    let cell_h = l.buf_h / 4;
-    let wall_cell_y = l.top_margin / CELL_SIZE;
-    let result = snap(
-        &l.walkable,
-        &OccupancyOverlay::new(),
-        (0, wall_cell_y),
-        cell_w,
-        cell_h,
-        MAX_SNAP_RADIUS,
+    let empty = OccupancyOverlay::new();
+    let (cell_w, cell_h) = cell_dims(&l.walkable);
+    let origin = grid_origin(&l.walkable);
+    // The wall band's last row, which nothing walks.
+    let band_foot = Point {
+        x: origin.x,
+        y: l.wall_band_h() - 1,
+    };
+    let wall = crate::layout::cell_holding(origin, band_foot).expect("the band is on the grid");
+    assert!(
+        !cell_walkable(&l.walkable, &empty, wall.0, wall.1),
+        "the snap must start from a blocked wall-band cell: {wall:?}"
     );
-    assert!(result.is_some(), "should snap to a nearby walkable cell");
+    let result = snap(&l.walkable, &empty, wall, cell_w, cell_h, MAX_SNAP_RADIUS);
+    assert!(
+        result.is_some_and(|cell| cell != wall),
+        "should snap to a nearby walkable cell"
+    );
 }
 
 #[test]
@@ -501,21 +503,54 @@ fn open_field() -> WalkableMask {
     WalkableMask::new_open(64, 64)
 }
 
+/// An open mask whose router tiles from a corner off the canvas's, off the
+/// cell pitch on both axes.
+fn offset_field() -> WalkableMask {
+    WalkableMask::new(
+        64,
+        64,
+        Bounds {
+            x: 5,
+            y: 3,
+            width: 48,
+            height: 48,
+        },
+    )
+}
+
 #[test]
 fn cell_holding_maps_pixel_to_cell() {
     use crate::layout::cell_holding;
-    let origin = Point { x: 0, y: 0 };
-    assert_eq!(cell_holding(origin, Point { x: 0, y: 0 }), Some((0, 0)));
-    assert_eq!(cell_holding(origin, Point { x: 7, y: 11 }), Some((1, 2)));
-    assert_eq!(cell_holding(origin, Point { x: 4, y: 4 }), Some((1, 1)));
+    let origin = grid_origin(&offset_field());
+    let at = |dx, dy| Point {
+        x: origin.x + dx,
+        y: origin.y + dy,
+    };
+    assert_eq!(cell_holding(origin, at(0, 0)), Some((0, 0)));
+    assert_eq!(cell_holding(origin, at(7, 11)), Some((1, 2)));
+    assert_eq!(cell_holding(origin, at(4, 4)), Some((1, 1)));
+    let west = Point {
+        x: origin.x - 1,
+        ..origin
+    };
+    let north = Point {
+        y: origin.y - 1,
+        ..origin
+    };
+    assert_eq!(cell_holding(origin, west), None, "one pixel west");
+    assert_eq!(cell_holding(origin, north), None, "one pixel north");
 }
 
 #[test]
 fn cell_center_is_midpoint_of_cell() {
-    let c = cell_center(&open_field(), 0, 0);
-    assert_eq!(c, Point { x: 2, y: 2 });
-    let c = cell_center(&open_field(), 3, 5);
-    assert_eq!(c, Point { x: 14, y: 22 });
+    let field = offset_field();
+    let origin = grid_origin(&field);
+    let at = |dx, dy| Point {
+        x: origin.x + dx,
+        y: origin.y + dy,
+    };
+    assert_eq!(cell_center(&field, 0, 0), at(2, 2));
+    assert_eq!(cell_center(&field, 3, 5), at(14, 22));
 }
 
 #[test]

@@ -2033,15 +2033,19 @@ fn the_routing_grid_tiles_from_the_floors_origin() {
     ];
     for viewport in offices {
         let l = inset_layout(viewport, 0);
-        let (inner, floor_top) = (l.inner, l.top_margin);
+        let (inner, top_margin) = (l.inner, l.top_margin);
         assert_ne!(
-            (floor_top - inner.y) % COARSE_CELL_SIZE,
+            (top_margin - inner.y) % COARSE_CELL_SIZE,
             0,
             "{viewport:?}: a floor on the inner corner's pitch tells no anchor apart"
         );
         let origin = grid_origin(&l.walkable);
         assert_eq!(origin.x, inner.x, "{viewport:?}");
-        assert_eq!((floor_top - origin.y) % COARSE_CELL_SIZE, 0, "{viewport:?}");
+        assert_eq!(
+            (top_margin - origin.y) % COARSE_CELL_SIZE,
+            0,
+            "{viewport:?}"
+        );
         assert!(
             (inner.y..inner.y + COARSE_CELL_SIZE).contains(&origin.y),
             "{viewport:?}: {origin:?}"
@@ -2051,7 +2055,9 @@ fn the_routing_grid_tiles_from_the_floors_origin() {
 
 /// Inside insets, the office is one connected floor its entrant steps onto,
 /// every desk approach routes from the door, every wander leg routes from its
-/// desk, and no route cuts a wall corner.
+/// desk, and no route cuts a wall corner. Only a west inset puts the routing
+/// grid's origin off column 0, so only here does a route that turns on pixels
+/// whose `cell_anchor` drops that origin show.
 #[test]
 #[cfg_attr(
     coverage,

@@ -39,7 +39,7 @@ impl ReachSet {
             return ReachSet { grid, origin };
         }
         let empty = OccupancyOverlay::new();
-        let seed_cell = snap_cell(origin, seed);
+        let seed_cell = snap_cell(mask, seed);
         if let Some(start) = snap(mask, &empty, seed_cell, cell_w, cell_h, SEED_SNAP_CELLS) {
             let mut coarse = CoarseGrid::new(mask, &empty);
             let mut q = VecDeque::new();

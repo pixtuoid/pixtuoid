@@ -15,7 +15,7 @@ use crate::walkable::{OccupancyOverlay, WalkableMask};
 
 use crate::layout::{
     Bounds, COARSE_CELL_SIZE, CoarseGrid, Point, cell_anchor, cell_center, cell_dims, cell_holding,
-    cell_walkable, grid_origin, snap, snap_where,
+    cell_walkable, grid_origin, snap, snap_cell, snap_where,
 };
 use crate::physics::{OCTILE_DIAGONAL_COST, OCTILE_STRAIGHT_COST, octile_cost};
 
@@ -185,12 +185,6 @@ fn cell_in_zone(mask: &WalkableMask, zone: Option<Bounds>, cx: u16, cy: u16) -> 
     cp.x >= z.x && cp.x < z.x + z.width && cp.y >= z.y && cp.y < z.y + z.height
 }
 
-/// The cell of `mask`'s coarse grid a snap toward `p` starts from
-/// ([`crate::layout::snap_cell`]).
-fn start_cell(mask: &WalkableMask, p: Point) -> (u16, u16) {
-    crate::layout::snap_cell(grid_origin(mask), p)
-}
-
 /// Coarse-grid dimensions, or `None` when either axis is 0 — a degenerate grid
 /// the A* loop can't index.
 fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
@@ -225,7 +219,7 @@ pub(crate) fn find_path(
     let start = snap(
         mask,
         overlay,
-        start_cell(mask, from),
+        snap_cell(mask, from),
         cell_w,
         cell_h,
         MAX_SNAP_RADIUS,
@@ -233,7 +227,7 @@ pub(crate) fn find_path(
     let goal = snap(
         mask,
         overlay,
-        start_cell(mask, to),
+        snap_cell(mask, to),
         cell_w,
         cell_h,
         MAX_SNAP_RADIUS,
@@ -326,7 +320,7 @@ pub(crate) fn snap_point_where(
     let (cell_w, cell_h) = grid_dims(mask)?;
     let empty = OccupancyOverlay::new();
     let (cx, cy) = snap_where(
-        start_cell(mask, p),
+        snap_cell(mask, p),
         cell_w,
         cell_h,
         MAX_SNAP_RADIUS,

@@ -19,11 +19,11 @@ pub(crate) const COARSE_CELL_SIZE: u16 = 4;
 const COARSE_CELL_WALKABLE_MIN: u16 = 8;
 
 /// The area the coarse grid tiles over an office's area `inner` whose floor
-/// starts at row `floor_top`: `inner` from its first row on `floor_top`'s pitch,
-/// so the cells stand where the floor does, the apron under the wall band
-/// still among them.
-pub(crate) fn routed_area(inner: Bounds, floor_top: u16) -> Bounds {
-    let y = inner.y + (floor_top - inner.y) % COARSE_CELL_SIZE;
+/// starts at row `top_margin`: `inner` from its first row on `top_margin`'s
+/// pitch, so the cells stand where the floor does, the apron under the wall
+/// band still among them.
+pub(crate) fn routed_area(inner: Bounds, top_margin: u16) -> Bounds {
+    let y = inner.y + (top_margin - inner.y) % COARSE_CELL_SIZE;
     Bounds {
         y,
         height: inner.bottom() - y,
@@ -59,9 +59,12 @@ pub(crate) fn cell_holding(origin: Point, p: Point) -> Option<(u16, u16)> {
     ))
 }
 
-/// The coarse cell a snap toward pixel `p` starts from: the one
-/// [`cell_holding`] it, or the nearest on the grid's west or north edge.
-pub(crate) fn snap_cell(origin: Point, p: Point) -> (u16, u16) {
+/// The cell of `mask`'s coarse grid a snap toward pixel `p` starts from: the
+/// one [`cell_holding`] it, its column or row clamped onto the grid's west or
+/// north edge, and past its east or south edge an index off the grid, which
+/// [`snap_where`] searches back from.
+pub(crate) fn snap_cell(mask: &WalkableMask, p: Point) -> (u16, u16) {
+    let origin = grid_origin(mask);
     (
         p.x.saturating_sub(origin.x) / COARSE_CELL_SIZE,
         p.y.saturating_sub(origin.y) / COARSE_CELL_SIZE,

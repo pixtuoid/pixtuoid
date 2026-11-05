@@ -2,7 +2,7 @@
 //! `(x, y)` u16 pixel positions; origin top-left.
 //!
 //! The static [`WalkableMask`] is kept separate from the per-frame
-//! [`OccupancyOverlay`] so the mask can be cached and shipped over the wire.
+//! [`OccupancyOverlay`] so the mask is built once per layout.
 
 use crate::grid::Grid;
 use crate::layout::Bounds;
@@ -19,24 +19,29 @@ pub struct WalkableMask {
 }
 
 impl WalkableMask {
-    /// A fully-open mask its router tiles whole. Caller fills obstacles via
-    /// `mark_blocked`.
+    /// A fully-open `width × height` mask whose router tiles `routed`. Caller
+    /// fills obstacles via `mark_blocked`.
     #[inline]
-    pub(crate) fn new_open(width: u16, height: u16) -> Self {
+    pub(crate) fn new(width: u16, height: u16, routed: Bounds) -> Self {
         Self {
             open: Grid::filled(width, height, true),
-            routed: Bounds {
+            routed,
+        }
+    }
+
+    /// A fully-open mask its router tiles whole.
+    #[cfg(test)]
+    pub(crate) fn new_open(width: u16, height: u16) -> Self {
+        Self::new(
+            width,
+            height,
+            Bounds {
                 x: 0,
                 y: 0,
                 width,
                 height,
             },
-        }
-    }
-
-    /// This mask, its router tiling `routed` alone.
-    pub(crate) fn routed_over(self, routed: Bounds) -> Self {
-        Self { routed, ..self }
+        )
     }
 
     /// The area the coarse routing grid tiles.
