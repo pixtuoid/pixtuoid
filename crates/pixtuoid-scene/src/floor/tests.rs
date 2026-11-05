@@ -560,22 +560,24 @@ fn floor_capacity_clamps_to_zero_on_a_too_small_buffer() {
     assert!(floor_capacity(Viewport::full(192, 160), 0) > 0);
 }
 
-/// A floor's capacity is the capacity of the area inside its insets, and an
-/// area under the minimum seats no one, though the whole viewport would.
+/// Under top and side insets a floor seats what the bare canvas of its width
+/// does, a top inset moving only the sky, and an area narrower than the
+/// minimum seats no one, though the whole viewport would.
 #[test]
-fn floor_capacity_is_the_capacity_inside_the_insets() {
+fn floor_capacity_under_top_and_side_insets_seats_what_the_bare_canvas_does() {
     use crate::layout::{Insets, Viewport, min_layout_size};
     let insets = Insets {
         top: 9,
         right: 7,
-        bottom: 11,
+        bottom: 0,
         left: 5,
     };
     let inside = |w, h| crate::layout::inset_viewport(w, h, insets);
+    let office = inside(192, 160);
     for seed in (0..4).map(floor_seed) {
         assert_eq!(
-            floor_capacity(inside(192, 160), seed),
-            floor_capacity(Viewport::full(192, 160), seed)
+            floor_capacity(office, seed),
+            floor_capacity(Viewport::full(192, office.size.h), seed)
         );
     }
     let under = inside(min_layout_size().w - 1, min_layout_size().h);
@@ -583,9 +585,11 @@ fn floor_capacity_is_the_capacity_inside_the_insets() {
     assert!(floor_capacity(Viewport::from(under.size), 0) > 0);
 }
 
-/// Insets alone re-lay the floor out: the memo keys on the whole viewport.
+/// Insets alone re-lay the office out: the memo keys on the whole viewport. A
+/// top inset moves only the sky, the floor keeping its rows, so the area inside
+/// the insets is what tells the two layouts apart.
 #[test]
-fn a_change_of_insets_alone_re_lays_the_floor_out() {
+fn a_change_of_insets_alone_re_lays_the_office_out() {
     use crate::layout::{Insets, Viewport};
     let mut ctx = FloorCtx::new();
     let bare = Viewport::full(192, 160);
@@ -598,9 +602,9 @@ fn a_change_of_insets_alone_re_lays_the_floor_out() {
     };
     let a = ctx.frame_layout(bare, 0).expect("lays out");
     let b = ctx.frame_layout(inset, 0).expect("lays out");
-    assert_ne!(a.door, b.door, "the inset layout moved nothing");
+    assert_ne!(a.inner, b.inner, "the memo served the bare layout");
     let fresh = crate::layout::SceneLayout::compute(inset, None, 0).expect("lays out");
-    assert_eq!(b.door, fresh.door);
+    assert_eq!(b.inner, fresh.inner);
     assert_eq!(b.walkable, fresh.walkable);
 }
 
@@ -1100,7 +1104,7 @@ fn the_foreground_layer_is_lit_by_the_clock() {
     let render = |now: SystemTime| {
         let scene = make_scene(6, 8);
         let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
-        classic_frame(
+        let layout = classic_frame(
             &mut session,
             &scene,
             now,
@@ -1108,9 +1112,9 @@ fn the_foreground_layer_is_lit_by_the_clock() {
             Viewport::full(192, 160),
         )
         .expect("layout");
-        session
+        (session, layout)
     };
-    let (noon_session, night_session) = (render(at_hour(12)), render(at_hour(2)));
+    let ((noon_session, layout), (night_session, _)) = (render(at_hour(12)), render(at_hour(2)));
     let (noon, night) = (
         noon_session.picture().expect("classic buffer").pixels,
         night_session.picture().expect("classic buffer").pixels,
@@ -1123,7 +1127,7 @@ fn the_foreground_layer_is_lit_by_the_clock() {
     // count needs a threshold, and a threshold is what let the corridor runner
     // and the pantry mats pass at 8.3% under a 12% ceiling.
     let mut clustered = Vec::new();
-    for y in (h * 30 / 100)..(h * 92 / 100) {
+    for y in layout.top_margin..(h * 92 / 100) {
         for x in 0..w {
             if frozen(x, y)
                 && [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)]

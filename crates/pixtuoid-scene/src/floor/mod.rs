@@ -39,7 +39,8 @@ pub fn floor_seed(floor_idx: usize) -> u64 {
 }
 
 /// How many home desks floor `floor_seed` fits on `viewport`, inside its
-/// insets. Returns `0` when that area is too small for even one cubicle.
+/// insets. Returns `0` where [`SceneLayout::compute`](crate::layout::SceneLayout::compute)
+/// lays out no office.
 pub fn floor_capacity(viewport: Viewport, floor_seed: u64) -> usize {
     crate::layout::SceneLayout::compute(viewport, None, floor_seed)
         .map(|l| l.home_desks.len())
@@ -210,8 +211,8 @@ impl FloorCtx {
     /// The per-frame layout — memoized `compute(viewport, None, seed)` + the router
     /// corridor re-point, the ONE frame prologue every painter rides. Returns a cheap
     /// `Arc` handle so callers can hold it across later `&mut self` uses without
-    /// re-cloning the whole `SceneLayout` every frame. A viewport leaving too small an
-    /// area inside its insets returns `None` without poisoning the memo.
+    /// re-cloning the whole `SceneLayout` every frame. A viewport that lays out no
+    /// office returns `None` without poisoning the memo.
     pub(crate) fn frame_layout(
         &mut self,
         viewport: Viewport,

@@ -341,7 +341,7 @@ fn stand_in_label(piece: crate::pack::Piece) -> Option<&'static str> {
 /// The wall clock's face.
 pub(crate) const CLOCK: Size = Size { w: 7, h: 7 };
 /// The wall clock's top row, from the north edge inside the insets.
-const CLOCK_Y: u16 = 1;
+pub(super) const CLOCK_Y: u16 = 1;
 
 /// The neon sign's outer box: its offset from the north-west corner inside the
 /// insets, then its size with the frame included.

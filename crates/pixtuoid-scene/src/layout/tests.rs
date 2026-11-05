@@ -550,29 +550,27 @@ fn compute_returns_none_at_exact_boundary() {
     );
 }
 
-/// The floor is the area inside the insets: a viewport whose insets leave
-/// one unit less than the minimum on either axis lays out nothing, though
-/// its whole size would.
+/// The bare minimum lays out, and a one-unit inset on any edge of it refuses
+/// the office: a side one narrows the area inside it under the minimum width,
+/// and a top or a bottom one shortens the band, the top margin being a share of
+/// the whole canvas.
 #[test]
-fn the_minimum_is_the_area_inside_the_insets() {
-    let min_w = crate::layout::compute::MIN_LAYOUT_W;
-    let min_h = crate::layout::compute::MIN_LAYOUT_H;
-    let insets = Insets {
-        top: 7,
-        right: 3,
-        bottom: 5,
-        left: 9,
+fn an_inset_on_any_edge_refuses_the_bare_minimum() {
+    let size = Size {
+        w: crate::layout::compute::MIN_LAYOUT_W,
+        h: crate::layout::compute::MIN_LAYOUT_H,
     };
-    let inside = |w, h| super::inset_viewport(w, h, insets);
-    assert!(SceneLayout::compute(inside(min_w, min_h), Some(1), 0).is_some());
-    for under in [inside(min_w - 1, min_h), inside(min_w, min_h - 1)] {
+    assert!(SceneLayout::compute(Viewport::from(size), Some(1), 0).is_some());
+    let one = Insets::default();
+    for insets in [
+        Insets { top: 1, ..one },
+        Insets { right: 1, ..one },
+        Insets { bottom: 1, ..one },
+        Insets { left: 1, ..one },
+    ] {
         assert!(
-            SceneLayout::compute(Viewport::from(under.size), Some(1), 0).is_some(),
-            "{under:?}: its whole size lays out"
-        );
-        assert!(
-            SceneLayout::compute(under, Some(1), 0).is_none(),
-            "{under:?}: the area inside its insets is under the minimum"
+            SceneLayout::compute(Viewport { size, insets }, Some(1), 0).is_none(),
+            "{insets:?}"
         );
     }
 }
