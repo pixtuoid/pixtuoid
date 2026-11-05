@@ -2482,10 +2482,6 @@ fn under_still_no_walk_is_drawn() {
     let entry = Duration::from_millis(ENTRY_ANIMATION_MS);
     let exit = pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
     let back = t0 + Duration::from_millis(200);
-    let trip = (0u64..1000)
-        .map(|i| AgentId::from_transcript_path(&format!("/still/{i}.jsonl")))
-        .find(|id| takes_trip(*id, 0))
-        .expect("a trip agent");
     let leaving = move || AgentSlot {
         exiting_at: Some(t0),
         ..entry_slot(settled)
@@ -2538,10 +2534,7 @@ fn under_still_no_walk_is_drawn() {
         },
         AgentWalk {
             name: "a trip",
-            slot: Box::new(move |_| AgentSlot {
-                agent_id: trip,
-                ..entry_slot(t0 - Duration::from_secs(120))
-            }),
+            slot: Box::new(move |_| tripper(t0)),
             before: Box::new(|_| {}),
             counted: t0..t0 + Duration::from_secs(50),
         },
@@ -2572,8 +2565,8 @@ fn under_still_no_walk_is_drawn() {
     }
 }
 
-/// An agent idle long before `t0` whose wander sets off within its first
-/// minute from it.
+/// An agent arrived long before `t0` and idle from it, so its wander starts at
+/// cycle 0, one that takes a trip.
 fn tripper(t0: SystemTime) -> AgentSlot {
     let id = (0u64..1000)
         .map(|i| AgentId::from_transcript_path(&format!("/tripper/{i}.jsonl")))
@@ -2581,8 +2574,61 @@ fn tripper(t0: SystemTime) -> AgentSlot {
         .expect("a trip agent");
     AgentSlot {
         agent_id: id,
+        state_started_at: t0,
         ..entry_slot(t0 - Duration::from_secs(120))
     }
+}
+
+/// Whether `rig` holds `id` on its trip's way out.
+fn tripping(rig: &RouteRig<StubRouter>, id: AgentId) -> bool {
+    matches!(
+        rig.walks[&id].wander.phase,
+        crate::walk::WanderPhase::WalkingOut(_)
+    )
+}
+
+/// A walk back made instant leaves the agent drawn at its chair, so an exit
+/// under Full within `HISTORY_RECENT_MS` of it starts at the desk, not at the
+/// waypoint the agent last stood at.
+#[test]
+fn an_exit_after_an_instant_walk_back_starts_at_the_desk() {
+    use crate::anim::Motion;
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let slot = tripper(t0);
+    let id = slot.agent_id;
+    let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    let mut rig = RouteRig::new(StubRouter::straight());
+    let out = (0..3_000)
+        .find(|&i| {
+            derive_with_routing(&slot, at(i), &l, &mut rig.rctx());
+            tripping(&rig, id)
+        })
+        .expect("premise: it trips under Full");
+    rig.motion = Motion::Still;
+    let home = (out + 1..out + 3_000)
+        .find(|&i| {
+            derive_with_routing(&slot, at(i), &l, &mut rig.rctx());
+            matches!(
+                rig.walks[&id].wander.phase,
+                crate::walk::WanderPhase::Seated
+            )
+        })
+        .expect("it comes home under Still");
+    rig.motion = Motion::Full;
+    let leave = at(home + 1);
+    let leaving = AgentSlot {
+        exiting_at: Some(leave),
+        ..slot.clone()
+    };
+    derive_with_routing(&leaving, leave, &l, &mut rig.rctx());
+    let desk = l.home_desks[0];
+    let exit = rig.walks[&id].exit.as_ref().expect("an exit leg");
+    assert_eq!(
+        exit.from,
+        desk_walk_anchor_facing(desk.at, desk.facing, l.inner),
+        "it leaves from its desk"
+    );
 }
 
 /// A wander under way when Still comes on finishes on its frozen leg, then
@@ -2596,9 +2642,13 @@ fn a_wander_under_way_when_still_comes_on_finishes_then_lands_home() {
     let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
     let walking = |pose: &Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
     let mut rig = RouteRig::new(StubRouter::straight());
+    let id = slot.agent_id;
     let out = (0..3_000)
-        .find(|&i| walking(&derive_with_routing(&slot, at(i), &l, &mut rig.rctx())))
-        .expect("it sets off");
+        .find(|&i| {
+            derive_with_routing(&slot, at(i), &l, &mut rig.rctx());
+            tripping(&rig, id)
+        })
+        .expect("premise: it trips under Full");
     rig.motion = Motion::Still;
     let poses: Vec<_> = (out + 1..out + 3_000)
         .map(|i| derive_with_routing(&slot, at(i), &l, &mut rig.rctx()))
@@ -2606,8 +2656,11 @@ fn a_wander_under_way_when_still_comes_on_finishes_then_lands_home() {
     assert!(walking(&poses[0]), "the walk under way goes on");
     let ended = poses.iter().position(|p| !walking(p)).expect("it arrives");
     assert!(
-        matches!(poses[ended], Some(Pose::AtWaypoint { .. })),
-        "at its waypoint: {:?}",
+        matches!(
+            poses[ended],
+            Some(Pose::AtWaypoint { .. } | Pose::AimlessAt { .. })
+        ),
+        "at its trip's end: {:?}",
         poses[ended]
     );
     assert!(!poses[ended..].iter().any(walking), "it walks no more");
@@ -2626,20 +2679,24 @@ fn a_walk_back_is_timed_as_it_sets_off() {
     let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
     let walking = |pose: &Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
     let mut rig = RouteRig::new(StubRouter::straight());
+    let id = slot.agent_id;
     let out = (0..3_000)
-        .find(|&i| walking(&derive_with_routing(&slot, at(i), &l, &mut rig.rctx())))
-        .expect("it sets off");
+        .find(|&i| {
+            derive_with_routing(&slot, at(i), &l, &mut rig.rctx());
+            tripping(&rig, id)
+        })
+        .expect("premise: it trips under Full");
     rig.motion = Motion::Still;
     let there = (out + 1..out + 3_000)
         .find(|&i| {
             let pose = derive_with_routing(&slot, at(i), &l, &mut rig.rctx());
-            matches!(pose, Some(Pose::AtWaypoint { .. }))
+            matches!(pose, Some(Pose::AtWaypoint { .. } | Pose::AimlessAt { .. }))
         })
-        .expect("it reaches its waypoint under Still");
+        .expect("it reaches its trip's end under Still");
     rig.motion = Motion::Full;
     let left = (there + 1..there + 3_000)
         .map(|i| derive_with_routing(&slot, at(i), &l, &mut rig.rctx()))
-        .find(|pose| !matches!(pose, Some(Pose::AtWaypoint { .. })));
+        .find(|pose| !matches!(pose, Some(Pose::AtWaypoint { .. } | Pose::AimlessAt { .. })));
     assert!(
         left.as_ref().is_some_and(walking),
         "it walks home under Full: {left:?}"
@@ -2669,7 +2726,7 @@ fn full_after_a_stretch_of_still_replays_no_overdue_wander() {
                 crate::walk::WanderPhase::WalkingBack(_)
             )
         })
-        .expect("it walks back");
+        .expect("premise: it trips under Full and walks back");
     let at_waypoint = back - frames_in(500)..back + frames_in(6_000);
     assert!(
         (at_waypoint.end - at_waypoint.start) * PAINT_FRAME_MS < STALE_RESUME_GAP_BASE_MS,

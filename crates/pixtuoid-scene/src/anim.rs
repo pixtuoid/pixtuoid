@@ -83,9 +83,9 @@ pub enum Motion {
     /// one Full tick, so a loop plays Full's very sequence, slower, and none
     /// aliases on the slower repaint. A figure's walks keep Full's pace.
     Calm,
-    /// No loop moves and no lightning flashes: each holds its first frame. A
-    /// walk set off under Still ends where it's going the frame it starts and
-    /// opens no elevator; one already under way finishes.
+    /// No loop moves and no lightning flashes: each holds its first frame. No
+    /// idle wander sets off, a walk set off ends where it's going the frame it
+    /// starts and opens no elevator, and one already under way finishes.
     Still,
 }
 

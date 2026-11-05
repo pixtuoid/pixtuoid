@@ -406,7 +406,15 @@ pub(crate) fn derive_with_routing(
     let is_idle = matches!(slot.state, pixtuoid_core::state::ActivityState::Idle);
     if is_idle && slot.exiting_at.is_none() {
         // A per-frame snapshot, so the arms below never re-borrow `rctx.walks`.
-        let wf = advance_wander(slot, now, layout, desk, &mut rctx.planner, rctx.walks);
+        let wf = advance_wander(
+            slot,
+            now,
+            layout,
+            desk,
+            &mut rctx.planner,
+            rctx.walks,
+            rctx.history,
+        );
 
         match wf.phase {
             WanderPhase::WalkingOut(_) => {

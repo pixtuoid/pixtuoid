@@ -12,13 +12,13 @@ use pixtuoid_core::AgentId;
 use pixtuoid_core::state::AgentSlot;
 
 use crate::anim::Motion;
-use crate::layout::{HomeDesk, Point, SceneLayout, WaypointKind};
+use crate::layout::{HomeDesk, Point, SceneLayout, WaypointKind, desk_walk_anchor_facing};
 use crate::pathfind::Router;
+use crate::pose::{PoseHistory, desk_leg_endpoint, route_jittered};
 use crate::pose::{
     SpotClaims, WANDER_DWELL_EST_MS, dwell_ms, est_wander_cycle_ms, seated_dwell_ms,
     stale_resume_gap_ms, takes_trip,
 };
-use crate::pose::{desk_leg_endpoint, route_jittered};
 
 /// Frozen A* polyline for one in-flight walk leg. Snapshotted when the leg's
 /// `(from, to)` first appear and reused unchanged: per-frame occupancy churn
@@ -137,8 +137,9 @@ impl WanderKind {
 /// unit.
 #[derive(Debug, Clone)]
 pub struct WanderState {
-    /// Wander cycle counter, incremented each time `WalkingBack` completes —
-    /// selects the waypoint destination (mirrors `pose::pure`'s derivation).
+    /// Wander cycle counter, incremented each time a cycle ends, seated or home
+    /// from its trip (`sit_down`) — selects the waypoint destination (mirrors
+    /// `pose::pure`'s derivation).
     pub(crate) cycle_n: u64,
     /// Current phase of the wander cycle.
     pub(crate) phase: WanderPhase,
@@ -282,6 +283,7 @@ pub(crate) fn advance_wander(
     desk: HomeDesk,
     planner: &mut Planner<'_>,
     walks: &mut HashMap<AgentId, WalkState>,
+    history: &mut PoseHistory,
 ) -> WanderFrame {
     let id = slot.agent_id;
     // Claims must be snapshotted BEFORE this agent's `&mut` — the two borrows of
@@ -389,6 +391,9 @@ pub(crate) fn advance_wander(
                 let back = planner.timed(back);
                 if walk_arrived(&back, 0) {
                     sit_down(walk, 0);
+                    // Drawn at its chair from this frame, where a walk out starts.
+                    let chair = desk_walk_anchor_facing(desk.at, desk.facing, layout.inner);
+                    history.record(id, chair, now);
                 } else {
                     walk.wander.phase = WanderPhase::WalkingBack(back);
                 }
