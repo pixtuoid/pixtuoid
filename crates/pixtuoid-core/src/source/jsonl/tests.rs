@@ -426,9 +426,8 @@ async fn walk_once_with_recency(
         window,
         live: &live,
         follower: None,
-        replaying: false,
     };
-    walk_jsonl(path, decoders, &ctx).await;
+    walk_jsonl(path, decoders, &ctx, false).await;
     drop(tx);
     drain_events(&mut rx)
 }
@@ -459,9 +458,8 @@ async fn first_sight_cwd_falls_back_to_the_path_deriver_when_content_has_none() 
             window: Duration::from_secs(3600),
             live: &live,
             follower: None,
-            replaying: false,
         };
-        walk_jsonl(&path, decoders, &ctx).await;
+        walk_jsonl(&path, decoders, &ctx, false).await;
         drop(tx);
         while let Ok((_, ev)) = rx.try_recv() {
             if let AgentEvent::SessionStart { cwd, .. } = ev {
@@ -504,9 +502,8 @@ async fn walk_once_live(
         window,
         live: &live,
         follower: None,
-        replaying: false,
     };
-    walk_jsonl(path, decoders, &ctx).await;
+    walk_jsonl(path, decoders, &ctx, false).await;
     drop(tx);
     drain_events(&mut rx)
 }
@@ -800,9 +797,8 @@ async fn walk_jsonl_honors_the_path_filter() {
         window: Duration::from_secs(60),
         live: &live,
         follower: None,
-        replaying: false,
     };
-    walk_jsonl(dir.path(), decoders, &ctx).await;
+    walk_jsonl(dir.path(), decoders, &ctx, false).await;
 
     let cursors = cursors.lock().await;
     assert!(
@@ -966,9 +962,8 @@ async fn walk_once_with_head_label(
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
-    walk_jsonl(path, decoders, &ctx).await;
+    walk_jsonl(path, decoders, &ctx, false).await;
     drop(tx);
     drain_events(&mut rx)
 }
@@ -1011,9 +1006,8 @@ async fn codex_first_sights(
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
-    walk_jsonl(path, decoders, &ctx).await;
+    walk_jsonl(path, decoders, &ctx, false).await;
     drop(tx);
     let mut starts = Vec::new();
     while let Ok((_, e)) = rx.try_recv() {
@@ -1392,7 +1386,6 @@ async fn session_exit_drains_pending_bytes_so_a_straggler_walk_cannot_resurrect(
         window,
         live: &live,
         follower: None,
-        replaying: false,
     };
     let id = default_id_from_path(&path);
     emit_session_exit(&id, decoders, &ctx).await;
@@ -1458,10 +1451,9 @@ async fn session_exit_purges_live_so_a_probe_failure_pass_cannot_revouch() {
         window,
         live: &live,
         follower: None,
-        replaying: false,
     };
 
-    walk_jsonl(&path, decoders, &ctx).await;
+    walk_jsonl(&path, decoders, &ctx, false).await;
     emit_session_exit(&id, decoders, &ctx).await;
     assert!(
         !live.lock().await.contains(&id),
@@ -1469,8 +1461,8 @@ async fn session_exit_purges_live_so_a_probe_failure_pass_cannot_revouch() {
     );
     while rx.try_recv().is_ok() {}
 
-    let mut health = FailureLatch::default();
-    scan_root(dir.path(), decoders, &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    scan_root(dir.path(), decoders, &ctx, &mut read).await;
     drop(tx);
     let events = drain_events(&mut rx);
     assert!(
@@ -1560,7 +1552,6 @@ async fn child_end_unclaim_drains_stragglers_then_ends_the_claim_without_session
         window,
         live: &live,
         follower: None,
-        replaying: false,
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     let events = drain_events(&mut rx);
@@ -1634,7 +1625,6 @@ async fn an_ended_claim_is_not_revouched_into_a_full_replay() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     let events = drain_events(&mut rx);
@@ -1646,8 +1636,8 @@ async fn an_ended_claim_is_not_revouched_into_a_full_replay() {
          exactly what would expose the path to the re-vouch replay below"
     );
 
-    let mut health = FailureLatch::default();
-    scan_root(dir.path(), t_decoders(), &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    scan_root(dir.path(), t_decoders(), &ctx, &mut read).await;
     let events = drain_events(&mut rx);
     assert!(
         events.is_empty(),
@@ -1715,10 +1705,9 @@ async fn a_decoded_terminators_ended_claim_is_not_revouched_into_a_full_replay()
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
-    let mut health = FailureLatch::default();
-    scan_root(dir.path(), decoders, &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    scan_root(dir.path(), decoders, &ctx, &mut read).await;
     let events = drain_events(&mut rx);
     assert!(
         events.is_empty(),
@@ -1755,7 +1744,6 @@ async fn unclaim_for_foreign_id_stays_pending_and_leaves_local_claims_alone() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     assert_eq!(
@@ -1828,7 +1816,6 @@ async fn child_end_unclaim_ends_only_the_matched_ids_own_path() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     assert_eq!(
@@ -1963,9 +1950,8 @@ async fn known_oversized_tail_emits_session_end_if_the_skipped_span_ended() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
-    walk_jsonl(&path, decoders, &ctx).await;
+    walk_jsonl(&path, decoders, &ctx, false).await;
     drop(tx);
 
     let events = drain_events(&mut rx);
@@ -2225,11 +2211,10 @@ async fn scan_pass_re_vouches_a_transiently_gated_live_file() {
         window: Duration::from_secs(60),
         live: &live,
         follower: None,
-        replaying: false,
     };
 
-    let mut health = FailureLatch::default();
-    scan_root(dir.path(), decoders, &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    scan_root(dir.path(), decoders, &ctx, &mut read).await;
     assert!(rx.try_recv().is_err(), "pass 1 must gate silently");
     assert!(
         !seen.lock().await.contains_key(&path),
@@ -2238,7 +2223,7 @@ async fn scan_pass_re_vouches_a_transiently_gated_live_file() {
 
     live.lock().await.insert(LIVE_UUID.to_string());
 
-    scan_root(dir.path(), decoders, &ctx, &mut health).await;
+    scan_root(dir.path(), decoders, &ctx, &mut read).await;
     let events = drain_events(&mut rx);
     let expected = AgentId::from_parts("test", LIVE_UUID);
     assert!(
@@ -2249,7 +2234,7 @@ async fn scan_pass_re_vouches_a_transiently_gated_live_file() {
         "a re-vouched scan pass must register the gated live session, got {events:?}"
     );
 
-    scan_root(dir.path(), decoders, &ctx, &mut health).await;
+    scan_root(dir.path(), decoders, &ctx, &mut read).await;
     assert!(
         rx.try_recv().is_err(),
         "a registered file must not be re-vouched/replayed again"
@@ -2329,16 +2314,15 @@ async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
 
-    let mut health = FailureLatch::default();
-    scan_root(dir.path(), decoders, &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    scan_root(dir.path(), decoders, &ctx, &mut read).await;
     assert!(
         drain_events(&mut rx).is_empty(),
         "the first pass must park the ended transcript silently"
     );
-    scan_root(dir.path(), decoders, &ctx, &mut health).await;
+    scan_root(dir.path(), decoders, &ctx, &mut read).await;
     let events = drain_events(&mut rx);
     assert!(
         events.is_empty(),
@@ -2884,10 +2868,9 @@ async fn walk_refuses_symlinked_entries() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
-    let mut health = FailureLatch::default();
-    scan_root(root.path(), t_decoders(), &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    scan_root(root.path(), t_decoders(), &ctx, &mut read).await;
     drop(tx);
     let events = drain_events(&mut rx);
 
@@ -2953,7 +2936,6 @@ async fn session_exit_parks_truncated_transcript_so_a_straggler_walk_cannot_resu
         window,
         live: &live,
         follower: None,
-        replaying: false,
     };
     let id = default_id_from_path(&path);
     let decoders = SourceDecoders {
@@ -3043,7 +3025,6 @@ async fn child_end_unclaim_parks_truncated_transcript_before_the_end() {
         window,
         live: &live,
         follower: None,
-        replaying: false,
     };
     let decoders = SourceDecoders {
         decode_line: t_decode_lifecycle,
@@ -3106,7 +3087,6 @@ async fn park_if_truncated_below_cursor_lands_exactly_at_new_eof() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
 
     park_if_truncated_below_cursor(&path, &ctx).await;
@@ -3144,11 +3124,10 @@ async fn scan_root_on_unreadable_root_latches_failure_and_emits_nothing() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
 
-    let mut health = FailureLatch::default();
-    scan_root(&bad, t_decoders(), &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    scan_root(&bad, t_decoders(), &ctx, &mut read).await;
     drop(tx);
     let events = drain_events(&mut rx);
     assert!(
@@ -3156,7 +3135,7 @@ async fn scan_root_on_unreadable_root_latches_failure_and_emits_nothing() {
         "an unreadable root discovers no sessions, got {events:?}"
     );
     assert!(
-        !health.on_failure(),
+        !read.health.on_failure(),
         "scan_root's Err arm must have already latched the failure"
     );
 }
@@ -3178,11 +3157,10 @@ async fn scan_root_on_absent_root_is_healthy_and_emits_nothing() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
 
-    let mut health = FailureLatch::default();
-    scan_root(&bad, t_decoders(), &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    scan_root(&bad, t_decoders(), &ctx, &mut read).await;
     drop(tx);
     let events = drain_events(&mut rx);
     assert!(
@@ -3190,7 +3168,7 @@ async fn scan_root_on_absent_root_is_healthy_and_emits_nothing() {
         "an absent root discovers no sessions, got {events:?}"
     );
     assert!(
-        health.on_failure(),
+        read.health.on_failure(),
         "an absent root (an uninstalled CLI's) must not latch a failure"
     );
 }
@@ -3217,15 +3195,21 @@ async fn scan_root_recovers_after_a_failed_root_reports_success_once() {
         window: Duration::from_secs(3600),
         live: &live,
         follower: None,
-        replaying: false,
     };
 
-    let mut health = FailureLatch::default();
-    let bad: PathBuf = std::env::temp_dir().join(format!("pixtuoid-no-such-{}", uuid_like()));
-    scan_root(&bad, t_decoders(), &ctx, &mut health).await;
+    let mut read = RootRead::default();
+    let bad = good.path().join("projects");
+    std::fs::write(&bad, b"").unwrap();
+    scan_root(&bad, t_decoders(), &ctx, &mut read).await;
     assert!(rx.try_recv().is_err(), "the bad root emits nothing");
+    let absent: PathBuf = std::env::temp_dir().join(format!("pixtuoid-no-such-{}", uuid_like()));
+    scan_root(&absent, t_decoders(), &ctx, &mut read).await;
+    assert!(
+        !read.health.on_failure(),
+        "an absent root is no recovery: the failure stays latched"
+    );
 
-    scan_root(good.path(), t_decoders(), &ctx, &mut health).await;
+    scan_root(good.path(), t_decoders(), &ctx, &mut read).await;
     drop(tx);
     let events = drain_events(&mut rx);
     let expected = AgentId::from_parts("test", &default_id_from_path(&real));
@@ -3237,11 +3221,11 @@ async fn scan_root_recovers_after_a_failed_root_reports_success_once() {
         "the recovered root must register the real transcript, got {events:?}"
     );
     assert!(
-        !health.on_success(),
+        !read.health.on_success(),
         "scan_root's Ok arm must have already reported the recovery"
     );
     assert!(
-        health.on_failure(),
+        read.health.on_failure(),
         "a failure after the consumed recovery must report again"
     );
 }
@@ -3530,7 +3514,6 @@ async fn revouch_pass_prunes_deleted_files_from_cursors() {
         window: Duration::from_secs(60),
         live: &live,
         follower: None,
-        replaying: false,
     };
     revouch_gated_files(decoders, &ctx).await;
     assert!(
@@ -4258,10 +4241,9 @@ mod follow {
             window: Duration::from_secs(60),
             live: &live,
             follower: Some(&follower),
-            replaying: false,
         };
-        walk_jsonl(&fresh, t_decoders(), &ctx).await;
-        walk_jsonl(&old, t_decoders(), &ctx).await;
+        walk_jsonl(&fresh, t_decoders(), &ctx, false).await;
+        walk_jsonl(&old, t_decoders(), &ctx, false).await;
         assert!(
             follower.follows(&fresh),
             "the admitted empty file is followed"
@@ -4291,7 +4273,6 @@ mod follow {
             window: Duration::from_secs(60),
             live: &live,
             follower: Some(&follower),
-            replaying: false,
         };
         // `probe_admits` takes `live` after the walk's stat and before its
         // follow, so holding it parks the walk in that window.
@@ -4306,7 +4287,7 @@ mod follow {
                 .unwrap();
             drop(parked);
         };
-        tokio::join!(walk_jsonl(&path, t_decoders(), &ctx), first_line);
+        tokio::join!(walk_jsonl(&path, t_decoders(), &ctx, false), first_line);
         assert!(follower.follows(&path));
         assert!(
             drain_events(&mut rx)
@@ -4337,9 +4318,8 @@ mod follow {
             window: Duration::from_secs(60),
             live: &live,
             follower: Some(&follower),
-            replaying: false,
         };
-        scan_root(dir.path(), t_decoders(), &ctx, &mut FailureLatch::default()).await;
+        scan_root(dir.path(), t_decoders(), &ctx, &mut RootRead::default()).await;
         assert_eq!(seen.lock().await.get(&path), Some(&Sight::Claimed));
         assert!(!follower.follows(&path));
     }
@@ -4376,7 +4356,6 @@ mod follow {
             window: Duration::from_secs(60),
             live: &live,
             follower: Some(&follower),
-            replaying: false,
         };
         let mut scan_state = ScanState::new(Duration::from_secs(60));
         watcher
@@ -4449,7 +4428,7 @@ mod backlog {
     /// The pass that reads it.
     #[derive(Clone, Copy)]
     enum Pass {
-        /// Over what predates the watch, a boot's or an attach's.
+        /// A read of what no scan has listed: a boot's, or a new root's.
         Boot,
         Walk,
         Scan,
@@ -4463,9 +4442,45 @@ mod backlog {
     struct Tail {
         dir: tempfile::TempDir,
         path: PathBuf,
+        memory: Memory,
+        read: Mutex<RootRead>,
+    }
+
+    struct Memory {
         cursors: Arc<Mutex<HashMap<PathBuf, u64>>>,
         seen: Arc<Mutex<HashMap<PathBuf, Sight>>>,
         live: Arc<Mutex<HashSet<String>>>,
+    }
+
+    impl Memory {
+        fn new() -> Self {
+            Self {
+                cursors: Arc::new(Mutex::new(HashMap::new())),
+                seen: Arc::new(Mutex::new(HashMap::new())),
+                live: Arc::new(Mutex::new(HashSet::new())),
+            }
+        }
+
+        async fn sends<F: AsyncFnOnce(&WatchCtx<'_>)>(&self, pass: F) -> Vec<AgentEvent> {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
+            let source: Arc<str> = Arc::from("test");
+            let ctx = WatchCtx {
+                source: &source,
+                cursors: &self.cursors,
+                seen: &self.seen,
+                tx: &tx,
+                window: WINDOW,
+                live: &self.live,
+                follower: None,
+            };
+            pass(&ctx).await;
+            let mut events = Vec::new();
+            while let Ok((transport, event)) = rx.try_recv() {
+                assert_eq!(transport, Transport::Jsonl);
+                events.push(event);
+            }
+            events
+        }
     }
 
     impl Tail {
@@ -4476,9 +4491,8 @@ mod backlog {
             Self {
                 dir,
                 path,
-                cursors: Arc::new(Mutex::new(HashMap::new())),
-                seen: Arc::new(Mutex::new(HashMap::new())),
-                live: Arc::new(Mutex::new(HashSet::new())),
+                memory: Memory::new(),
+                read: Mutex::new(RootRead::default()),
             }
         }
 
@@ -4505,44 +4519,18 @@ mod backlog {
                 }
                 Vouch => {
                     let id = decoders().id_derive.id_for(&self.path);
-                    self.live.lock().await.insert(id);
+                    self.memory.live.lock().await.insert(id);
                 }
             }
         }
 
-        /// What `pass` sent through a context of this tail's, `replaying` or not.
-        async fn sends<F: AsyncFnOnce(&WatchCtx<'_>)>(
-            &self,
-            replaying: bool,
-            pass: F,
-        ) -> Vec<AgentEvent> {
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
-            let source: Arc<str> = Arc::from("test");
-            let ctx = WatchCtx {
-                source: &source,
-                cursors: &self.cursors,
-                seen: &self.seen,
-                tx: &tx,
-                window: WINDOW,
-                live: &self.live,
-                follower: None,
-                replaying,
-            };
-            pass(&ctx).await;
-            let mut events = Vec::new();
-            while let Ok((transport, event)) = rx.try_recv() {
-                assert_eq!(transport, Transport::Jsonl);
-                events.push(event);
-            }
-            events
-        }
-
         async fn walk(&self, replaying: bool, decoders: SourceDecoders) -> Vec<AgentEvent> {
             let path = self.path.clone();
-            self.sends(replaying, async move |ctx: &WatchCtx<'_>| {
-                walk_jsonl(&path, decoders, ctx).await;
-            })
-            .await
+            self.memory
+                .sends(async move |ctx: &WatchCtx<'_>| {
+                    walk_jsonl(&path, decoders, ctx, replaying).await;
+                })
+                .await
         }
 
         async fn read(&self, pass: Pass) -> Vec<Sent> {
@@ -4551,15 +4539,124 @@ mod backlog {
                 Walk => self.walk(false, decoders()).await,
                 Scan => {
                     let root = self.dir.path().to_path_buf();
-                    (self.sends(false, async move |ctx: &WatchCtx<'_>| {
-                        let mut health = FailureLatch::default();
-                        scan_root(&root, decoders(), ctx, &mut health).await;
+                    let read = &self.read;
+                    (self.memory.sends(async move |ctx: &WatchCtx<'_>| {
+                        scan_root(&root, decoders(), ctx, &mut *read.lock().await).await;
                     }))
                     .await
                 }
             };
             events.iter().map(sent).collect()
         }
+    }
+
+    struct Root {
+        _dir: tempfile::TempDir,
+        root: PathBuf,
+        memory: Memory,
+        read: RootRead,
+    }
+
+    impl Root {
+        fn absent() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path().join("root");
+            Self {
+                _dir: dir,
+                root,
+                memory: Memory::new(),
+                read: RootRead::default(),
+            }
+        }
+
+        fn aside(&self) -> PathBuf {
+            self.root.with_file_name("aside")
+        }
+
+        fn moved_aside(&self) {
+            std::fs::rename(&self.root, self.aside()).unwrap();
+        }
+
+        fn moved_back_with(&self, name: &str) {
+            std::fs::write(self.aside().join(name), WORK).unwrap();
+            std::fs::rename(self.aside(), &self.root).unwrap();
+        }
+
+        fn replaced_by(&self, name: &str) {
+            if self.root.exists() {
+                std::fs::remove_dir_all(&self.root).unwrap();
+            }
+            std::fs::create_dir(&self.root).unwrap();
+            self.session(name);
+        }
+
+        fn session(&self, name: &str) {
+            std::fs::write(self.root.join(name), WORK).unwrap();
+        }
+
+        async fn scan(&mut self) -> Vec<Sent> {
+            let Self {
+                root, memory, read, ..
+            } = self;
+            let events = memory
+                .sends(async move |ctx: &WatchCtx<'_>| {
+                    scan_root(root, decoders(), ctx, read).await;
+                })
+                .await;
+            events.iter().map(sent).collect()
+        }
+    }
+
+    /// A scan replays any directory but `RootRead::last`.
+    #[tokio::test]
+    async fn a_scan_replays_a_root_the_last_scan_did_not_list() {
+        const REPLAYED: &[Sent] = &[Start, Rename, Closes, Usage, Tool, Opens];
+        const LIVE: &[Sent] = &[Start, Rename, Opens, Usage, Tool];
+        let mut root = Root::absent();
+        assert_eq!(root.scan().await, [], "absent");
+        root.replaced_by("a.jsonl");
+        assert_eq!(root.scan().await, REPLAYED, "appeared");
+        root.session("b.jsonl");
+        assert_eq!(
+            root.scan().await,
+            LIVE,
+            "the directory the last scan listed"
+        );
+        root.replaced_by("c.jsonl");
+        assert_eq!(root.scan().await, REPLAYED, "replaced");
+        root.session("d.jsonl");
+        assert_eq!(root.scan().await, LIVE, "replaced, then listed");
+        root.moved_aside();
+        assert_eq!(root.scan().await, [], "moved aside");
+        root.moved_back_with("e.jsonl");
+        assert_eq!(
+            root.scan().await,
+            REPLAYED,
+            "moved back, the same directory"
+        );
+    }
+
+    #[test]
+    fn only_another_directorys_truncated_listing_clears_the_last() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let id = |d: &tempfile::TempDir| super::super::root_watch::dir_id(d.path()).unwrap();
+        let mut read = RootRead::default();
+        assert!(read.replays(id(&a), true), "truncated");
+        assert!(
+            read.replays(id(&a), false),
+            "in full, after a truncated listing"
+        );
+        assert!(!read.replays(id(&a), false), "in full again");
+        assert!(!read.replays(id(&a), true), "truncated, the same directory");
+        assert!(
+            !read.replays(id(&a), false),
+            "in full, after its own truncated listing"
+        );
+        assert!(read.replays(id(&b), true), "another, truncated");
+        assert!(
+            read.replays(id(&a), false),
+            "back in full, after another's truncated listing"
+        );
     }
 
     #[tokio::test]
