@@ -425,7 +425,7 @@ pub(crate) mod test_flash {
             .with_weather(weather)
             .with_motion(Motion::Full);
         let noon = pixtuoid_scene::localclock::at_hour_min(12, 0);
-        let setup = [noon, noon + ms(VacancyDim::EMPTY_DEBOUNCE_MS)];
+        let setup = [noon, noon + ms(VacancyDim::VACANCY_DEBOUNCE_MS)];
         let mut session = FloorSession::new(pack_arc());
         let mut phase = |at| rendered_flash(&mut session, floor, at);
         phase(setup[0]);

@@ -73,14 +73,15 @@ pub(crate) fn floor_capacity_scaled(
     )
 }
 
-/// Per-floor identity + look: index, altitude, and derived layout seed.
+/// A floor's identity (index, count, altitude, seed) and what every floor of its
+/// office shares (weather, motion, offline).
 #[derive(Debug, Clone, Copy)]
 pub struct FloorMeta {
     /// Zero-based floor index.
     pub floor_idx: usize,
     /// How many floors the building has.
     pub floors: usize,
-    /// Height fraction: 0.0 (ground) → 1.0 (top floor); drives skyline depth in the windows.
+    /// Height fraction: 0.0 (ground) → 1.0 (top floor); drives skyline depth, never lighting.
     pub altitude: f32,
     /// This floor's layout seed (`floor_seed(floor_idx)`).
     pub floor_seed: u64,
@@ -88,6 +89,9 @@ pub struct FloorMeta {
     pub weather: crate::sky::WeatherPolicy,
     /// How its loops and walks move: [`Motion`](crate::anim::Motion).
     pub motion: crate::anim::Motion,
+    /// Whether its host has lost the feed that fills it, which dims it as an
+    /// emptied floor dims.
+    pub offline: bool,
 }
 
 impl FloorMeta {
@@ -98,8 +102,6 @@ impl FloorMeta {
         } else {
             floor_idx as f32 / (total_floors - 1) as f32
         };
-        // Indoor lighting is deliberately uniform across floors — `altitude`
-        // drives only skyline depth in the windows, never a lighting offset.
         Self {
             floor_idx,
             floors: total_floors,
@@ -107,6 +109,7 @@ impl FloorMeta {
             floor_seed: floor_seed(floor_idx),
             weather: crate::sky::WeatherPolicy::Clock,
             motion: crate::anim::Motion::Full,
+            offline: false,
         }
     }
 
@@ -680,14 +683,14 @@ pub(crate) fn step_floor(
     Some(SteppedFloor { layout, frame })
 }
 
-/// Per-floor indoor-lighting fade state: an emptied floor holds full light for
-/// `EMPTY_DEBOUNCE_MS` (so agents briefly disappearing between transcripts don't
-/// flicker it) then eases toward `MIN_LEVEL`; repopulating snaps the target
-/// straight back to 1.0.
+/// Per-floor indoor-lighting fade state: a vacant floor holds full light for
+/// `VACANCY_DEBOUNCE_MS` (so agents briefly disappearing between transcripts don't
+/// flicker it) then eases toward `MIN_LEVEL`; repopulating or coming back online
+/// snaps the target straight back to 1.0.
 #[derive(Debug)]
 pub struct VacancyDim {
     level: f32,
-    empty_since: Option<SystemTime>,
+    vacant_since: Option<SystemTime>,
     last_update: Option<SystemTime>,
     dimmed: bool,
 }
@@ -699,10 +702,10 @@ impl Default for VacancyDim {
 }
 
 impl VacancyDim {
-    /// Floor of the smoothed lit level — an empty floor dims to here, never to black.
+    /// Floor of the smoothed lit level — a vacant floor dims to here, never to black.
     pub(crate) const MIN_LEVEL: f32 = 0.10;
-    /// How long an emptied floor holds full light before it starts fading (ms).
-    pub const EMPTY_DEBOUNCE_MS: u64 = 5_000;
+    /// How long a vacant floor holds full light before it starts fading (ms).
+    pub const VACANCY_DEBOUNCE_MS: u64 = 5_000;
     /// Time constant of the exponential lit-level ease (ms).
     pub(crate) const FADE_TAU_MS: u64 = 800;
     /// How near its target the ease lands on it: under one 8-bit channel step.
@@ -711,15 +714,15 @@ impl VacancyDim {
     pub(crate) fn new() -> Self {
         Self {
             level: 1.0,
-            empty_since: None,
+            vacant_since: None,
             last_update: None,
             dimmed: false,
         }
     }
 
-    /// Whether the empty-debounce has run out — the floor's VERDICT that it is
-    /// really empty. Read this, never `level() < 1.0`: the level trails the
-    /// verdict by the length of its ease.
+    /// Whether the debounce has run out — the floor's VERDICT that it is vacant:
+    /// empty, or [`FloorMeta::offline`]. Read this, never `level() < 1.0`: the
+    /// level trails the verdict by the length of its ease.
     pub(crate) fn dimmed(&self) -> bool {
         self.dimmed
     }
@@ -735,28 +738,28 @@ impl VacancyDim {
         self.level != target
     }
 
-    /// Force the steady-state empty look, bypassing the debounce + ease — static
+    /// Force the steady-state vacant look, bypassing the debounce + ease — static
     /// snapshots want it, not frame-0 of the fade. The debounce is back-dated too,
-    /// so the next tick still JUDGES the floor empty instead of re-arming it.
-    pub fn snap_to_empty(&mut self) {
+    /// so the next tick still JUDGES the floor vacant instead of re-arming it.
+    pub fn snap_to_vacant(&mut self) {
         self.level = Self::MIN_LEVEL;
-        self.empty_since = Some(SystemTime::UNIX_EPOCH);
+        self.vacant_since = Some(SystemTime::UNIX_EPOCH);
         self.dimmed = true;
     }
 
     /// Advance the fade one frame. Returns the new lit level in
     /// `[MIN_LEVEL, 1.0]`.
-    pub(crate) fn tick(&mut self, empty: bool, now: SystemTime) -> f32 {
-        let target = if empty {
-            let since = *self.empty_since.get_or_insert(now);
+    pub(crate) fn tick(&mut self, vacant: bool, now: SystemTime) -> f32 {
+        let target = if vacant {
+            let since = *self.vacant_since.get_or_insert(now);
             let elapsed = crate::anim::elapsed_ms(now, since);
-            if elapsed >= Self::EMPTY_DEBOUNCE_MS {
+            if elapsed >= Self::VACANCY_DEBOUNCE_MS {
                 Self::MIN_LEVEL
             } else {
                 1.0
             }
         } else {
-            self.empty_since = None;
+            self.vacant_since = None;
             1.0
         };
         self.dimmed = target < 1.0;
@@ -805,8 +808,8 @@ impl NeonLevels {
         alert: 0.0,
         power: 0.62,
     };
-    /// Nobody home: the tube barely holds, and stutters ([`NeonState::tick`]).
-    pub(crate) const EMPTY: Self = Self {
+    /// A vacant room: the tube barely holds, and stutters ([`NeonState::tick`]).
+    pub(crate) const VACANT: Self = Self {
         alert: 0.0,
         power: 0.16,
     };
@@ -853,7 +856,7 @@ pub(crate) fn neon_look(levels: NeonLevels, theme: &Theme) -> NeonLook {
 /// Per-floor neon-sign fade state: a mood change eases the light over
 /// [`NeonState::FADE_MS`] instead of snapping the hue. A sign with no recent light
 /// to ease FROM — its first tick, or one nobody has drawn for longer than a fade
-/// (a still's warm-up step, a floor switched back to) — snaps to the mood's own.
+/// (a still's warm-up step, a floor switched back to) — snaps to its target.
 #[derive(Debug, Default)]
 pub(crate) struct NeonState {
     fade: Option<NeonFade>,
@@ -960,10 +963,9 @@ impl NeonState {
     /// inside one mood is not a change, and a reversal mid-fade restarts from the
     /// light it interrupted.
     ///
-    /// `room_dimmed` is [`VacancyDim::dimmed`]: the sign only starves once the
-    /// ROOM is judged empty, so that debounce is the one "is the office really
-    /// empty" clock — a gap between transcripts, or the last agent still walking
-    /// out of a lit room, can't drop the sign.
+    /// `room_dimmed` is [`VacancyDim::dimmed`]: the sign starves exactly when the
+    /// ROOM is judged vacant, whatever its mood, so a gap between transcripts or
+    /// the last agent still walking out of a lit room can't drop the sign.
     pub(crate) fn tick(
         &mut self,
         mood: crate::neon_sign::OfficeMood,
@@ -972,11 +974,14 @@ impl NeonState {
     ) -> NeonLevels {
         use crate::neon_sign::OfficeMood;
         let now = timing.now;
-        let to = match mood {
-            OfficeMood::Alert { .. } => NeonLevels::ALERT,
-            OfficeMood::Running { .. } => NeonLevels::RUNNING,
-            OfficeMood::Empty if room_dimmed => NeonLevels::EMPTY,
-            OfficeMood::Calm | OfficeMood::Empty => NeonLevels::CALM,
+        let to = if room_dimmed {
+            NeonLevels::VACANT
+        } else {
+            match mood {
+                OfficeMood::Alert { .. } => NeonLevels::ALERT,
+                OfficeMood::Running { .. } => NeonLevels::RUNNING,
+                OfficeMood::Calm | OfficeMood::Empty => NeonLevels::CALM,
+            }
         };
         let gap_ms = self
             .last_tick
@@ -1010,7 +1015,8 @@ impl NeonState {
         };
         // Only a tube that has LANDED on starved stutters, not one coasting down.
         let drawable = step_ms.is_some_and(|step| step <= Self::shortest_flash_ms());
-        self.stutter = current == NeonLevels::EMPTY && drawable && Self::stutter_flash(timing.beat);
+        self.stutter =
+            current == NeonLevels::VACANT && drawable && Self::stutter_flash(timing.beat);
         if self.stutter {
             NeonLevels::FLASH
         } else {

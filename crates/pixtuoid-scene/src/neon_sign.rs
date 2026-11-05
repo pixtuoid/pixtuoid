@@ -185,9 +185,9 @@ pub fn gateway_tone(state: DaemonState) -> BoardTone {
     }
 }
 
-/// The office's mood — the ONE classification the tally's empty line, the persona
-/// line and the sign's light all read, so the words and the glow can't disagree.
-/// Exiting agents never count: a walkout isn't the mood.
+/// The office's mood: what the tally's empty line and the persona line read, and the sign
+/// while its room is lit. A room judged vacant ([dimmed](crate::floor::VacancyDim::dimmed))
+/// starves its sign whatever the mood. Exiting agents never count: a walkout isn't the mood.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OfficeMood {
     /// `requires_action` agents are blocked on the user — outranks everything.

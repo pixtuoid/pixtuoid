@@ -1636,7 +1636,7 @@ fn a_moving_pieces_fingerprint_moves_with_what_it_shows() {
     let levels = [
         crate::floor::NeonLevels::CALM,
         crate::floor::NeonLevels::ALERT,
-        crate::floor::NeonLevels::EMPTY,
+        crate::floor::NeonLevels::VACANT,
     ];
     for now in moments {
         for door_frame in 0..3 {

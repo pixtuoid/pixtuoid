@@ -312,7 +312,7 @@ pub(crate) struct LightInputs<'a> {
     /// Whether each home desk's occupant sits there now.
     pub(crate) seated: &'a HashMap<FloorLocalDeskIndex, bool>,
     pub(crate) floor_idx: usize,
-    /// The room's artificial-light level, which an emptied floor turns down.
+    /// The room's artificial-light level, which a vacant floor turns down.
     pub(crate) indoor_scale: f32,
     pub(crate) neon: NeonLevels,
     /// The neon halo's breath steps on it.
@@ -385,7 +385,7 @@ impl Lights {
 
 /// The lights of a desk facing `facing` that hangs its lamp's `bulb`, scaled
 /// by `darkness` — `1 − exterior`, so weather counts and not just the hour —
-/// and by `indoor`, which is what an emptied floor switches off.
+/// and by `indoor`, which is what a vacant floor switches off.
 fn desk_lights(
     desk: Point,
     facing: Facing,
@@ -538,7 +538,7 @@ fn neon_halo_strength(levels: NeonLevels, beat: crate::anim::Beat, darkness: f32
     let daylight = NEON_DAYLIGHT_MIN + (1.0 - NEON_DAYLIGHT_MIN) * darkness.clamp(0.0, 1.0);
     // A tube only throws light ABOVE its starved level — one darker than the wall
     // it hangs on has none to give.
-    let starved = NeonLevels::EMPTY.power;
+    let starved = NeonLevels::VACANT.power;
     let throw = ((levels.power - starved) / (1.0 - starved)).max(0.0);
     throw * (brand + (alert - brand) * levels.alert) * daylight
 }

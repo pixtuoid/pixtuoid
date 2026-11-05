@@ -115,7 +115,7 @@ fn neon_halo_drops_to_its_daylight_floor_and_a_calm_sign_glows_less_than_a_runni
 
 #[test]
 fn a_starved_tube_throws_no_halo_and_a_flash_does() {
-    assert_eq!(neon_at(NeonLevels::EMPTY, 1.0), 0.0);
+    assert_eq!(neon_at(NeonLevels::VACANT, 1.0), 0.0);
     assert!(neon_at(NeonLevels::FLASH, 1.0) > 0.0);
 }
 
@@ -130,7 +130,7 @@ fn the_neon_halo_throws_the_signs_own_levels() {
     let sky = Sky::at_with(crate::localclock::at_hour(0), Weather::Clear);
     let look = SkyTones::resolve(&sky, &crate::theme::NORMAL);
     let beat = Beat::at_ms(WALL_CLOCK_MS);
-    for levels in [NeonLevels::CALM, NeonLevels::ALERT, NeonLevels::EMPTY] {
+    for levels in [NeonLevels::CALM, NeonLevels::ALERT, NeonLevels::VACANT] {
         let lights = Lights::of(
             &layout,
             &look,
