@@ -281,8 +281,8 @@ fn no_text_is_set_under_an_inset() {
             ..inner
         };
         let inside = |x: u16, y: u16| {
-            (inner.x * k..(inner.x + inner.width) * k).contains(&x)
-                && (inner.y * k..(inner.y + inner.height) * k).contains(&y)
+            (inner.x * k..inner.right() * k).contains(&x)
+                && (inner.y * k..inner.bottom() * k).contains(&y)
         };
         let looks = [
             Look::Classic {
