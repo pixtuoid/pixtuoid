@@ -2416,6 +2416,112 @@ fn a_lifted_agent_hangs_from_the_pointer_and_walks_home_when_set_down() {
     assert_eq!(sat, Some(Pose::SeatedIdle), "home, it sits");
 }
 
+/// `scene`'s routed poses on `session` at `now`, its floor moving at `motion`.
+fn poses_at(
+    session: &mut FloorSession,
+    scene: &SceneState,
+    motion: Motion,
+    now: SystemTime,
+) -> HashMap<AgentId, Option<crate::pose::Pose>> {
+    session
+        .step(
+            FloorInputs {
+                scene,
+                now,
+                floor: FloorMeta::ground().with_motion(motion),
+                pets: PetInputs::default(),
+            },
+            Viewport::full(160, 96),
+        )
+        .expect("lays out")
+        .frame
+        .poses
+}
+
+/// Under Still the pairing swap takes one frame: the frame the device's office
+/// changes machine draws the demo cast gone and the live cast seated.
+#[test]
+fn under_still_a_machine_change_swaps_the_cast_in_one_frame() {
+    use crate::pose::Pose;
+    use pixtuoid_core::remote::{Machine, Os, RemoteOffice, encode};
+    use pixtuoid_core::state::MAX_FLOORS;
+    let cast = |names: [&str; 2]| {
+        let mut scene = SceneState::uniform(MAX_FLOORS);
+        for name in names {
+            let id = AgentId::from_transcript_path(&format!("/{name}.jsonl"));
+            scene.agents.insert(id, make_slot(id, ActivityState::Idle));
+        }
+        scene
+    };
+    let received = |office: &mut RemoteOffice, scene: &SceneState, from: &Machine, at| {
+        let line = encode(scene, from, at).expect("a scene encodes");
+        office.apply(line.as_bytes(), at).expect("it applies");
+    };
+    let (demo, live) = (cast(["a", "b"]), cast(["c", "d"]));
+    let mut office = RemoteOffice::new([2; MAX_FLOORS]);
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
+    received(&mut office, &demo, &Machine::new("demo", Os::Other), t0());
+    let before = poses_at(&mut session, office.scene(), Motion::Still, t0());
+    for id in demo.agents.keys() {
+        assert_eq!(before.get(id), Some(&Some(Pose::SeatedIdle)), "premise");
+    }
+
+    let switch = t0() + Duration::from_secs(1);
+    received(
+        &mut office,
+        &live,
+        &Machine::new("studio", Os::Macos),
+        switch,
+    );
+    let after = poses_at(&mut session, office.scene(), Motion::Still, switch);
+    for id in demo.agents.keys() {
+        assert_eq!(
+            after.get(id).copied().flatten(),
+            None,
+            "the demo cast is gone"
+        );
+    }
+    for id in live.agents.keys() {
+        assert_eq!(
+            after.get(id),
+            Some(&Some(Pose::SeatedIdle)),
+            "the live cast sits"
+        );
+    }
+}
+
+/// Calm walks every agent walk as Full does, since it slows only the ambient
+/// loops: each frame poses each agent alike.
+#[test]
+fn calm_walks_as_full_does() {
+    use crate::pose::Pose;
+    let arriving = make_scene(2, 4);
+    let mut leaving = arriving.clone();
+    let exit = t0() + Duration::from_secs(1);
+    if let Some(slot) = leaving.agents.values_mut().nth(1) {
+        slot.exiting_at = Some(exit);
+    }
+    let pack = Arc::new(crate::pack::test_office());
+    let (mut full, mut calm) = (
+        FloorSession::new(Arc::clone(&pack)),
+        FloorSession::new(pack),
+    );
+    let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+    let mut walked = false;
+    for i in 0..200 {
+        let now = t0() + frame * i;
+        let scene = if now < exit { &arriving } else { &leaving };
+        let poses = poses_at(&mut full, scene, Motion::Full, now);
+        assert_eq!(
+            poses,
+            poses_at(&mut calm, scene, Motion::Calm, now),
+            "frame {i}"
+        );
+        walked |= (poses.values().flatten()).any(|pose| matches!(pose, Pose::Walking { .. }));
+    }
+    assert!(walked, "premise: the agents walk");
+}
+
 /// A drop and another figure's lift that reach a floor between two of its
 /// steps both land: the one set down leaves the hand, an agent to walk home
 /// and sit, a pet to rest and roam on.

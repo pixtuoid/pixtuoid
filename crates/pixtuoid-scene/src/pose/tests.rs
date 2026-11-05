@@ -2451,6 +2451,127 @@ fn a_cast_switched_back_mid_walkout_turns_round_as_a_resurrect_does() {
     );
 }
 
+/// What a walk's stores hold before its first frame.
+type Seed = Box<dyn Fn(&mut RouteRig<StubRouter>)>;
+
+/// One walk an agent takes, for `under_still_no_walk_is_drawn`.
+struct AgentWalk {
+    name: &'static str,
+    /// The agent's slot at each instant.
+    slot: Box<dyn Fn(SystemTime) -> AgentSlot>,
+    before: Seed,
+    /// The frames that count: from when its walk can start until it must be
+    /// over.
+    counted: std::ops::Range<SystemTime>,
+}
+
+/// Under Still no frame draws an agent mid-walk, whichever walk it takes:
+/// each poses where its walk ends at once. Under Full each of them walks.
+#[test]
+fn under_still_no_walk_is_drawn() {
+    use crate::anim::Motion;
+    use crate::walk::Lifted;
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let settled = t0 - Duration::from_secs(3_600);
+    let desk = l.home_desks[0];
+    let away = Point {
+        x: desk.at.x + 50,
+        y: desk.at.y + 30,
+    };
+    let entry = Duration::from_millis(ENTRY_ANIMATION_MS);
+    let exit = pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    let back = t0 + Duration::from_millis(200);
+    let trip = (0u64..1000)
+        .map(|i| AgentId::from_transcript_path(&format!("/still/{i}.jsonl")))
+        .find(|id| takes_trip(*id, 0))
+        .expect("a trip agent");
+    let leaving = move || AgentSlot {
+        exiting_at: Some(t0),
+        ..entry_slot(settled)
+    };
+    let walks = [
+        AgentWalk {
+            name: "in",
+            slot: Box::new(move |_| entry_slot(t0)),
+            before: Box::new(|_| {}),
+            counted: t0..t0 + entry,
+        },
+        AgentWalk {
+            name: "out",
+            slot: Box::new(move |_| leaving()),
+            before: Box::new(|_| {}),
+            counted: t0..t0 + exit,
+        },
+        AgentWalk {
+            name: "back in",
+            slot: Box::new(move |now| {
+                if now < back {
+                    leaving()
+                } else {
+                    AgentSlot {
+                        state_started_at: back,
+                        ..entry_slot(settled)
+                    }
+                }
+            }),
+            before: Box::new(|_| {}),
+            counted: back..back + entry,
+        },
+        AgentWalk {
+            name: "to its desk",
+            slot: Box::new(move |_| running_slot(t0, settled)),
+            before: Box::new(move |rig| {
+                let id = running_slot(t0, settled).agent_id;
+                rig.history.record(id, away, t0 - Duration::from_millis(50));
+            }),
+            counted: t0..t0 + entry,
+        },
+        AgentWalk {
+            name: "home from a drop",
+            slot: Box::new(move |_| entry_slot(settled)),
+            before: Box::new(move |rig| {
+                let id = entry_slot(settled).agent_id;
+                rig.walks.entry(id).or_default().lifted = Some(Lifted::Dropped(away));
+            }),
+            counted: t0..t0 + entry,
+        },
+        AgentWalk {
+            name: "a trip",
+            slot: Box::new(move |_| AgentSlot {
+                agent_id: trip,
+                ..entry_slot(t0 - Duration::from_secs(120))
+            }),
+            before: Box::new(|_| {}),
+            counted: t0..t0 + Duration::from_secs(50),
+        },
+    ];
+    let walked = |motion: Motion, walk: &AgentWalk| {
+        let mut rig = RouteRig::new(StubRouter::straight());
+        rig.motion = motion;
+        (walk.before)(&mut rig);
+        (0..)
+            .map(|i| t0 + Duration::from_millis(i * PAINT_FRAME_MS))
+            .take_while(|now| *now < walk.counted.end)
+            .any(|now| {
+                let pose = derive_with_routing(&(walk.slot)(now), now, &l, &mut rig.rctx());
+                walk.counted.contains(&now) && matches!(pose, Some(Pose::Walking { .. }))
+            })
+    };
+    for walk in &walks {
+        assert!(
+            walked(Motion::Full, walk),
+            "premise: {} walks under Full",
+            walk.name
+        );
+        assert!(
+            !walked(Motion::Still, walk),
+            "{} walked under Still",
+            walk.name
+        );
+    }
+}
+
 /// The exit render and the resurrect check must read "has the walkout finished?"
 /// through the SAME time-compressed clock. Every other resurrect test routes
 /// straight-line on the small layout, where the compression branch is dead — so

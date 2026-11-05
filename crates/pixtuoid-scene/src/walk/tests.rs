@@ -198,8 +198,11 @@ impl<R: Router> WanderRig<R> {
             now,
             &self.layout,
             desk,
-            &mut self.route.router,
-            &self.route.overlay,
+            &mut Planner {
+                router: &mut self.route.router,
+                overlay: &self.route.overlay,
+                motion: self.route.motion,
+            },
             &mut self.route.walks,
         );
     }
@@ -484,9 +487,12 @@ fn snapshot_leg_profile_measures_the_routed_leg_plus_settles() {
     // Pins that measurement runs on the ROUTED polyline plus the settles, not
     // on the raw `from`→`to` line.
     let got = snapshot_leg_profile(
-        &mut Straight,
+        &mut Planner {
+            router: &mut Straight,
+            overlay: &overlay,
+            motion: crate::anim::Motion::Full,
+        },
         &mask,
-        &overlay,
         id,
         LegPlan {
             from,
@@ -505,9 +511,12 @@ fn snapshot_leg_profile_measures_the_routed_leg_plus_settles() {
     assert_eq!(got.duration_ms, expect.duration_ms);
 
     let no_settle = snapshot_leg_profile(
-        &mut Straight,
+        &mut Planner {
+            router: &mut Straight,
+            overlay: &overlay,
+            motion: crate::anim::Motion::Full,
+        },
         &mask,
-        &overlay,
         id,
         LegPlan {
             from,
@@ -759,7 +768,12 @@ fn back_profile_routes_to_the_jittered_desk_goal_the_render_uses() {
     let mut walk = WalkState::default();
     walk.wander.target.dest = Point { x: 40, y: 60 };
 
-    let _ = snapshot_back_profile(&slot, &walk, &l, l.home_desks[0], &mut router, &overlay);
+    let mut planner = Planner {
+        router: &mut router,
+        overlay: &overlay,
+        motion: crate::anim::Motion::Full,
+    };
+    let _ = snapshot_back_profile(&slot, &walk, &l, l.home_desks[0], &mut planner);
 
     let (snap_to, _) = desk_leg_endpoint(l.home_desks[0], &l);
     assert_eq!(

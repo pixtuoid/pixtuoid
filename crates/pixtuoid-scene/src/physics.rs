@@ -65,6 +65,17 @@ pub(crate) struct WalkProfile {
     pub accel: f32,
 }
 
+impl WalkProfile {
+    /// A leg that takes no time: arrived as it starts.
+    pub(crate) const INSTANT: Self = Self {
+        duration_ms: 0,
+        pause_ms: 0,
+        path_len_octile: 0,
+        v_cruise: 0.0,
+        accel: 0.0,
+    };
+}
+
 /// Deterministic per-agent speed multiplier in [SPEED_MULT_MIN, SPEED_MULT_MAX].
 ///
 /// Uses bits 24..34 of the agent's hash — disjoint from `personality_for`

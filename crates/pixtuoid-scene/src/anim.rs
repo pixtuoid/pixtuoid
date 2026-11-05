@@ -72,9 +72,9 @@ pub fn from_epoch_ms(ms: f64) -> SystemTime {
     SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ms as u64)
 }
 
-/// How much of the office's ambient life moves: the loops that only make it
-/// look alive — a flicker, a twinkle, an idle wander — never what an agent is
-/// doing. Each tier steps those loops on its own clock.
+/// How much of the office moves. Each tier steps the loops that only make it
+/// look alive — a flicker, a twinkle, an idle wander — on its own clock, and an
+/// agent's walks keep their own pace on every tier but [`Still`](Self::Still).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Motion {
     /// Every loop, stepped each `FULL_TICK_MS`.
@@ -84,7 +84,8 @@ pub enum Motion {
     /// one Full tick, so a loop plays Full's very sequence, slower, and none
     /// aliases on the slower repaint.
     Calm,
-    /// No loop moves and no lightning flashes: each holds its first frame.
+    /// No loop moves and no lightning flashes: each holds its first frame. An
+    /// agent poses where each walk ends, at once.
     Still,
 }
 
@@ -213,6 +214,12 @@ pub(crate) fn most_flashes_in_a_second(samples: impl IntoIterator<Item = (u64, f
 impl Motion {
     /// Every tier.
     pub(crate) const ALL: [Motion; 3] = [Motion::Full, Motion::Calm, Motion::Still];
+
+    /// Whether an agent walks: an idle one wanders off its desk, and a leg
+    /// takes its time.
+    pub(crate) const fn walks(self) -> bool {
+        !matches!(self, Self::Still)
+    }
 
     /// Wall-clock ms per ms of loop time; `None` at rest.
     pub(crate) const fn pace(self) -> Option<u64> {

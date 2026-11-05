@@ -11,6 +11,7 @@ use crate::walkable::{OccupancyOverlay, WalkableMask};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::AgentSlot;
 
+use crate::anim::Motion;
 use crate::layout::{HomeDesk, Point, SceneLayout, WaypointKind};
 use crate::pathfind::Router;
 use crate::pose::{
@@ -271,8 +272,7 @@ pub(crate) fn advance_wander(
     now: SystemTime,
     layout: &SceneLayout,
     desk: HomeDesk,
-    router: &mut dyn Router,
-    overlay: &OccupancyOverlay,
+    planner: &mut Planner<'_>,
     walks: &mut HashMap<AgentId, WalkState>,
 ) -> WanderFrame {
     let id = slot.agent_id;
@@ -341,9 +341,8 @@ pub(crate) fn advance_wander(
 
                     let (from, chair_settle) = desk_leg_endpoint(desk, layout);
                     walk.wander.phase = WanderPhase::WalkingOut(snapshot_leg_profile(
-                        router,
+                        planner,
                         &layout.walkable,
-                        overlay,
                         id,
                         LegPlan {
                             from,
@@ -364,7 +363,7 @@ pub(crate) fn advance_wander(
                 WalkLegStatus::Arrived { walk_total } => {
                     // Snapshot the walk-back profile now — the overlay may differ
                     // by the time the dwell ends.
-                    let back = snapshot_back_profile(slot, walk, layout, desk, router, overlay);
+                    let back = snapshot_back_profile(slot, walk, layout, desk, planner);
                     walk.wander.phase = WanderPhase::AtWaypoint(back);
                     advance_phase_clock(walk, walk_total);
                     (WanderPhase::AtWaypoint(back), LegProgress::ZERO)
@@ -528,18 +527,31 @@ pub(crate) struct LegPlan {
     pub(crate) intent: WalkIntent,
 }
 
+/// What a frame plans its walk legs with.
+#[derive(Debug)]
+pub(crate) struct Planner<'a> {
+    /// The A* router for this frame.
+    pub(crate) router: &'a mut dyn Router,
+    /// Live occupancy overlay (shared, read-only here).
+    pub(crate) overlay: &'a OccupancyOverlay,
+    /// How much of the office moves.
+    pub(crate) motion: Motion,
+}
+
 /// Freeze one walk leg's timing profile. Measuring the ROUTED (not raw)
 /// polyline is load-bearing: the duration must cover the whole path or `t`
 /// reaches [`LegProgress::DONE`] before the sprite
 /// arrives and it pops.
 pub(crate) fn snapshot_leg_profile(
-    router: &mut dyn Router,
+    planner: &mut Planner<'_>,
     mask: &WalkableMask,
-    overlay: &OccupancyOverlay,
     id: AgentId,
     leg: LegPlan,
 ) -> WalkProfile {
-    let path = route_jittered(router, mask, overlay, id, leg.from, leg.to);
+    if !planner.motion.walks() {
+        return WalkProfile::INSTANT;
+    }
+    let path = route_jittered(planner.router, mask, planner.overlay, id, leg.from, leg.to);
     walk_profile(measured_leg_len(&path, leg.settle), leg.intent, id)
 }
 
@@ -552,14 +564,12 @@ fn snapshot_back_profile(
     walk: &WalkState,
     layout: &SceneLayout,
     desk: HomeDesk,
-    router: &mut dyn Router,
-    overlay: &OccupancyOverlay,
+    planner: &mut Planner<'_>,
 ) -> WalkProfile {
     let (snap_to, chair_settle) = desk_leg_endpoint(desk, layout);
     snapshot_leg_profile(
-        router,
+        planner,
         &layout.walkable,
-        overlay,
         slot.agent_id,
         LegPlan {
             from: walk.wander.target.dest,

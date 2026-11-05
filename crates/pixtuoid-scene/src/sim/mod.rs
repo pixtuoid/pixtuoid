@@ -306,7 +306,6 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         door_anim_max_ms,
     } = inputs;
     let timing = floor.motion.timing(now);
-    let beat = timing.beat;
     let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
     take_grip(stores, &agents, layout, now);
 
@@ -325,8 +324,12 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // visible "flash"). Sitters at desks are already covered by the static desk
     // mask, so only waypoint visitors — stable across frames — contribute.
     stores.overlay.clear();
-    // Only a wanderer stands at a waypoint, and at rest none wanders.
-    let wanderers = if beat.is_rest() { &[][..] } else { &agents[..] };
+    // Only a wanderer stands at a waypoint, and under Still none walks.
+    let wanderers = if floor.motion.walks() {
+        &agents[..]
+    } else {
+        &[][..]
+    };
     for agent in wanderers {
         // A lifted one stands nowhere its timeline says.
         if stores
@@ -376,11 +379,13 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
                 now,
                 layout,
                 &mut pose::RouteCtx {
-                    router: &mut *stores.router,
-                    overlay: &*stores.overlay,
+                    planner: crate::walk::Planner {
+                        router: &mut *stores.router,
+                        overlay: &*stores.overlay,
+                        motion: floor.motion,
+                    },
                     history: &mut *stores.history,
                     walks: &mut *stores.walks,
-                    wanders: !beat.is_rest(),
                 },
             );
             (a.agent_id, p)
