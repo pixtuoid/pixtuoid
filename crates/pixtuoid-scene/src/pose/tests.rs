@@ -131,14 +131,14 @@ fn walk_leg_freezes_path_against_midleg_reroute() {
     );
 }
 
-fn running_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSlot {
+fn running_slot(state_started_at: SystemTime, arrived_at: SystemTime) -> AgentSlot {
     AgentSlot {
         cwd: Arc::from(PathBuf::from("/p").as_path()),
         label: "cc".into(),
         state_started_at,
-        last_event_at: created_at,
-        created_at,
-        arrived_at: Some(created_at),
+        last_event_at: arrived_at,
+        created_at: arrived_at,
+        arrived_at: Some(arrived_at),
         ..make_slot(
             AgentId::from_transcript_path("/snap.jsonl"),
             ActivityState::Running {
@@ -152,8 +152,8 @@ fn running_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSl
     }
 }
 
-fn entry_slot(created_at: SystemTime) -> AgentSlot {
-    let mut s = running_slot(created_at, created_at);
+fn entry_slot(arrived_at: SystemTime) -> AgentSlot {
+    let mut s = running_slot(arrived_at, arrived_at);
     s.state = ActivityState::Idle;
     s
 }
@@ -786,15 +786,15 @@ fn snap_back_rearms_on_new_state_transition() {
     );
 }
 
-fn entry_slot_near(created_at: SystemTime) -> AgentSlot {
-    let mut s = running_slot(created_at, created_at);
+fn entry_slot_near(arrived_at: SystemTime) -> AgentSlot {
+    let mut s = running_slot(arrived_at, arrived_at);
     s.state = pixtuoid_core::state::ActivityState::Idle;
     s.desk_index = GlobalDeskIndex(0);
     s
 }
 
-fn entry_slot_far(created_at: SystemTime, desk_index: usize) -> AgentSlot {
-    let mut s = entry_slot_near(created_at);
+fn entry_slot_far(arrived_at: SystemTime, desk_index: usize) -> AgentSlot {
+    let mut s = entry_slot_near(arrived_at);
     s.desk_index = GlobalDeskIndex(desk_index);
     // Give each far slot a distinct agent_id so speed_mult differs.
     s.agent_id = AgentId::from_transcript_path(&format!("/far/{desk_index}.jsonl"));

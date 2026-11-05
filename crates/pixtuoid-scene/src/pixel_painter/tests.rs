@@ -2014,11 +2014,10 @@ fn every_pod_occludes_via_overhang() {
     }
 }
 
-fn entry_slot(created_at_ms_ago: u64, now: SystemTime) -> AgentSlot {
+fn entry_slot(arrived_ms_ago: u64, now: SystemTime) -> AgentSlot {
     let id = pixtuoid_core::AgentId::from_transcript_path("/door.jsonl");
     let mut s = make_slot(id, ActivityState::Idle);
-    s.created_at = now - std::time::Duration::from_millis(created_at_ms_ago);
-    s.arrived_at = Some(s.created_at);
+    s.arrived_at = Some(now - std::time::Duration::from_millis(arrived_ms_ago));
     s
 }
 
@@ -2051,7 +2050,7 @@ fn door_frame_after_opening_ramp_is_fully_open() {
     // 150 ms (still inside opening ramp but past midpoint) → frame 2.
     let s1 = entry_slot(150, now);
     assert_eq!(compute_door_frame_idx(&[s1], now, 0), 2);
-    // 2 s into the `ENTRY_ANIMATION_MS` window → fully open.
+    // 2 s into the entry window → fully open.
     let s2 = entry_slot(2_000, now);
     assert_eq!(compute_door_frame_idx(&[s2], now, 0), 2);
 }

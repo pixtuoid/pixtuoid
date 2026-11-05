@@ -52,12 +52,16 @@ pub(crate) fn walk_frame(travelled: u32, anim: &Sprite, stride: NonZeroU16) -> u
     ((u64::from(travelled) * frames / per_cycle) % frames) as usize
 }
 
-/// Spawn-window guard for entry routing in `pose::derive_with_routing`: the
-/// *upper bound* on the window during which the routed walk layer will
-/// attempt an entry walk and (via `FloorCtx::door_anim_max_ms`) drive door-open
-/// cosmetics. NOT the walk duration — the walk completes when
-/// `physics::walk_arrived` returns true.
+/// The entry window: the *upper bound* on how long after its arrival the
+/// routed walk layer (`pose::derive_with_routing`) will attempt an entry walk
+/// and (via `FloorCtx::door_anim_max_ms`) drive door-open cosmetics. NOT the
+/// walk duration — the walk completes when `physics::walk_arrived` returns true.
 pub(crate) const ENTRY_ANIMATION_MS: u64 = 4000;
+
+/// `slot`'s arrival, while `now` is inside its entry window.
+pub(crate) fn arriving(slot: &AgentSlot, now: SystemTime) -> Option<SystemTime> {
+    (slot.arrived_at).filter(|&at| crate::anim::elapsed_ms(now, at) < ENTRY_ANIMATION_MS)
+}
 
 /// Per-agent stale-resume gap (ms): above this `now - last_advanced_at`,
 /// `walk::advance_wander` treats the floor as off-screen/paused and
@@ -228,13 +232,9 @@ pub(crate) fn derive(slot: &AgentSlot, now: SystemTime, layout: &SceneLayout) ->
     // otherwise the A* router detours around the desk and always approaches
     // from one side.
     let from = layout.door_threshold;
-    let since_arrival = slot
-        .arrived_at
-        .map(|at| crate::anim::elapsed_ms(now, at))
-        .filter(|&ms| ms < ENTRY_ANIMATION_MS);
-    if let Some(since_arrival) = since_arrival {
+    if let Some(arrived) = arriving(slot, now) {
         return Some(linear_walk_pose(
-            since_arrival,
+            crate::anim::elapsed_ms(now, arrived),
             from,
             desk_walk_anchor_facing(desk.at, desk.facing, layout.inner),
         ));

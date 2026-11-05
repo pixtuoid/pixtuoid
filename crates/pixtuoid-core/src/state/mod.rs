@@ -322,9 +322,8 @@ pub struct AgentSlot {
     /// Wall-clock time the slot was first created: its age, unaffected by later
     /// state transitions.
     pub created_at: SystemTime,
-    /// When this office saw the slot walk in, the one-shot entry walk's anchor;
-    /// `None` for one already in the room when the office opened, which sits at
-    /// its desk from its first frame.
+    /// The entry walk's anchor; `None` seats the slot at its desk from its first
+    /// frame.
     pub arrived_at: Option<SystemTime>,
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
@@ -818,8 +817,18 @@ impl SceneState {
 
     /// Lowest free desk index, or `None` if all desks are occupied.
     pub fn next_free_desk(&self) -> Option<GlobalDeskIndex> {
-        let occupied: std::collections::BTreeSet<GlobalDeskIndex> =
-            self.agents.values().map(|a| a.desk_index).collect();
+        self.next_desk_free_of(|_| true)
+    }
+
+    /// Lowest desk no slot that `holds` sits at, or `None` if there is none.
+    pub(crate) fn next_desk_free_of(
+        &self,
+        holds: impl Fn(&AgentSlot) -> bool,
+    ) -> Option<GlobalDeskIndex> {
+        let occupied: std::collections::BTreeSet<GlobalDeskIndex> = (self.agents.values())
+            .filter(|a| holds(a))
+            .map(|a| a.desk_index)
+            .collect();
         (0..self.total_capacity())
             .map(GlobalDeskIndex)
             .find(|i| !occupied.contains(i))

@@ -1427,7 +1427,7 @@ impl Reducer {
                 state_started_at: now,
                 last_event_at: now,
                 created_at: now,
-                // Registered as it starts, it walks in as it is created.
+                // The local office walks in every slot it registers, a replay's included.
                 arrived_at: Some(now),
                 exiting_at: None,
                 desk_index,
