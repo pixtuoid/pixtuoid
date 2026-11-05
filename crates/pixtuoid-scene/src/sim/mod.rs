@@ -309,7 +309,9 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
     take_grip(stores, &agents, layout, now);
 
-    let indoor_scale = stores.vacancy_dim.tick(scene.agents.is_empty(), now);
+    let indoor_scale = stores
+        .vacancy_dim
+        .tick(scene.agents.is_empty() || floor.offline, now);
     let neon = stores.neon.tick(
         crate::neon_sign::OfficeMood::of(crate::tally::scene_stats(scene)),
         stores.vacancy_dim.dimmed(),

@@ -489,6 +489,68 @@ fn light_backward_clock_jump_does_not_move_level() {
 }
 
 #[test]
+fn an_offline_floor_dims_as_an_emptied_one_does() {
+    let pack = Arc::new(crate::pack::test_office());
+    let [offline, emptied] = [
+        (
+            make_scene(3, 8),
+            FloorMeta {
+                offline: true,
+                ..FloorMeta::ground()
+            },
+        ),
+        (make_scene(0, 8), FloorMeta::ground()),
+    ]
+    .map(|(scene, floor)| {
+        let mut session = FloorSession::new(Arc::clone(&pack));
+        (0..3 * VacancyDim::EMPTY_DEBOUNCE_MS / crate::anim::PAINT_FRAME_MS)
+            .map(|i| {
+                let now = t0() + FRAME * i as u32;
+                let world = FloorInputs {
+                    scene: &scene,
+                    now,
+                    floor,
+                    pets: PetInputs::default(),
+                };
+                let lit = session
+                    .step(world, Viewport::full(160, 96))
+                    .expect("lays out")
+                    .frame
+                    .indoor_scale;
+                (lit, session.floor().ctx.vacancy_dim.dimmed())
+            })
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(offline, emptied);
+    assert_eq!(
+        offline.last(),
+        Some(&(VacancyDim::MIN_LEVEL, true)),
+        "premise: the emptied floor dims"
+    );
+}
+
+#[test]
+fn every_floor_of_an_office_shares_its_offline() {
+    let scene = make_scene(3, 2);
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    office.prepare(&scene, t0());
+    let world = FloorInputs {
+        scene: &scene,
+        now: t0(),
+        floor: FloorMeta {
+            offline: true,
+            ..FloorMeta::ground()
+        },
+        pets: PetInputs::default(),
+    };
+    for floor in 0..2 {
+        let projected = project_floor_scene(&scene, floor);
+        let seen = office.floor_world(world, &projected, floor, &[]).floor;
+        assert!(seen.offline && seen.floor_idx == floor, "floor {floor}");
+    }
+}
+
+#[test]
 fn light_snap_to_empty_forces_min_level() {
     let mut dim = VacancyDim::new();
     dim.snap_to_empty();

@@ -143,6 +143,7 @@ pub pixtuoid_scene::floor::FloorMeta::floor_idx: usize
 pub pixtuoid_scene::floor::FloorMeta::floor_seed: u64
 pub pixtuoid_scene::floor::FloorMeta::floors: usize
 pub pixtuoid_scene::floor::FloorMeta::motion: pixtuoid_scene::anim::Motion
+pub pixtuoid_scene::floor::FloorMeta::offline: bool
 pub pixtuoid_scene::floor::FloorMeta::weather: pixtuoid_scene::sky::WeatherPolicy
 impl pixtuoid_scene::floor::FloorMeta
 pub fn pixtuoid_scene::floor::FloorMeta::for_floor(usize, usize) -> Self

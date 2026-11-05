@@ -80,7 +80,7 @@ pub struct FloorMeta {
     pub floor_idx: usize,
     /// How many floors the building has.
     pub floors: usize,
-    /// Height fraction: 0.0 (ground) → 1.0 (top floor); drives skyline depth in the windows.
+    /// Height fraction: 0.0 (ground) → 1.0 (top floor); drives skyline depth, never lighting.
     pub altitude: f32,
     /// This floor's layout seed (`floor_seed(floor_idx)`).
     pub floor_seed: u64,
@@ -88,6 +88,9 @@ pub struct FloorMeta {
     pub weather: crate::sky::WeatherPolicy,
     /// How its loops and walks move: [`Motion`](crate::anim::Motion).
     pub motion: crate::anim::Motion,
+    /// Whether its host has lost the feed that fills it, which dims it as an
+    /// emptied floor dims.
+    pub offline: bool,
 }
 
 impl FloorMeta {
@@ -98,8 +101,6 @@ impl FloorMeta {
         } else {
             floor_idx as f32 / (total_floors - 1) as f32
         };
-        // Indoor lighting is deliberately uniform across floors — `altitude`
-        // drives only skyline depth in the windows, never a lighting offset.
         Self {
             floor_idx,
             floors: total_floors,
@@ -107,6 +108,7 @@ impl FloorMeta {
             floor_seed: floor_seed(floor_idx),
             weather: crate::sky::WeatherPolicy::Clock,
             motion: crate::anim::Motion::Full,
+            offline: false,
         }
     }
 

@@ -188,11 +188,22 @@ impl FloorNav {
     }
 }
 
-/// Floor `floor` of `n_floors` under `office`'s weather and motion.
+/// Floor `floor` of `n_floors`, all else as `office` has it.
 fn floor_meta(office: FloorMeta, floor: usize, n_floors: usize) -> FloorMeta {
-    FloorMeta::for_floor(floor, n_floors)
-        .with_weather(office.weather)
-        .with_motion(office.motion)
+    let FloorMeta {
+        floor_idx,
+        floors,
+        altitude,
+        floor_seed,
+        ..
+    } = FloorMeta::for_floor(floor, n_floors);
+    FloorMeta {
+        floor_idx,
+        floors,
+        altitude,
+        floor_seed,
+        ..office
+    }
 }
 
 /// The pet of `pets` floor `floor` of `n_floors` draws: the one choice its
@@ -445,8 +456,8 @@ impl OfficeSession {
     /// or both floors of a slide composed into one, `gap` between them dimmed
     /// as the floors are and their world text baked whatever `look` says.
     /// `inputs.world.scene` is the FULL live scene: the office evicts against
-    /// it and projects each floor out of it. `inputs.world.floor` carries the
-    /// office's weather and motion, `inputs.place.gateway` its gateway; each
+    /// it and projects each floor out of it. `inputs.world.floor` carries what
+    /// its floors share, `inputs.place.gateway` its gateway; each
     /// floor's index, altitude, breadcrumb and pet (of `pets`) are the
     /// office's, and a petting plays only on its own floor. Its picture is
     /// [`Self::picture`].
@@ -552,7 +563,7 @@ impl OfficeSession {
     }
 
     /// One frame of audio intent for the floor showing, in `scene` (the FULL
-    /// live scene) under `office_floor`'s weather and motion.
+    /// live scene) under `office_floor`.
     fn audio_frame(
         &mut self,
         scene: &SceneState,
