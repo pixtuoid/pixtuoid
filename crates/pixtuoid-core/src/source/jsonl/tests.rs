@@ -4607,7 +4607,7 @@ mod backlog {
         }
     }
 
-    /// A scan replays any root but `RootRead::last`.
+    /// A scan replays any directory but `RootRead::last`.
     #[tokio::test]
     async fn a_scan_replays_a_root_the_last_scan_did_not_list() {
         const REPLAYED: &[Sent] = &[Start, Rename, Closes, Usage, Tool, Opens];
