@@ -835,8 +835,9 @@ pub(crate) const DESK_WALK_Y_OFF: u16 = 4;
 
 /// A point packed into one hash input, its column counted from the floor's
 /// `west` edge and its row from the canvas's top, as the floor's rows are, so a
-/// per-spot seed is derived the same way everywhere it is needed and a top or
-/// side inset re-seeds no seat or pot (a bottom one re-divides the floor). The
+/// per-spot seed is derived the same way everywhere it is needed and a floor
+/// moved sideways at its width, or under a top inset within the wall's share,
+/// re-seeds no seat or pot; one narrowed or shortened is re-divided. The
 /// PACKING is load-bearing, not an implementation detail: every committed still
 /// was rendered against it, and swapping the halves re-seeds every seat and pot
 /// while every property test still passes — pinned by

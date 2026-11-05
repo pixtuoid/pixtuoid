@@ -564,7 +564,7 @@ fn floor_capacity_clamps_to_zero_on_a_too_small_buffer() {
 /// does, a top inset moving only the sky, and an area narrower than the
 /// minimum seats no one, though the whole viewport would.
 #[test]
-fn floor_capacity_under_top_and_side_insets_is_the_bare_canvass() {
+fn floor_capacity_under_top_and_side_insets_seats_what_the_bare_canvas_does() {
     use crate::layout::{Insets, Viewport, min_layout_size};
     let insets = Insets {
         top: 9,

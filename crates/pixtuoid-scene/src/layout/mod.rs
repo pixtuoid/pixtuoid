@@ -444,8 +444,9 @@ const WALL_PIECES_H: u16 = {
     if hung > door { hung } else { door }
 };
 
-/// The band's minimum under the insets in [`compute::top_margin`], where the
-/// canvas's share would leave too shallow a band to hang the wall's pieces.
+/// The top margin's minimum depth below the insets in [`compute::top_margin`],
+/// the apron under the wall band included, where the canvas's share would leave
+/// too shallow a wall to hang its pieces.
 pub(crate) const MIN_WALL_DEPTH: u16 = WALL_PIECES_H + TRIM_H + WALL_BAND_TO_TOP_MARGIN;
 
 /// How many pixels of the pantry counter actually sit on the floor: only the
@@ -581,9 +582,9 @@ pub(crate) const INTER_POD_AISLE_Y: u16 = 18;
 
 impl SceneLayout {
     /// The office of floor `floor_seed` on `viewport`, laid out inside its
-    /// insets; `None` where that area is too small for even one cubicle plus
-    /// the fixed lounge area, and the caller paints a "terminal too small"
-    /// message. `max_desks` caps the desk count: `None` fills the office to
+    /// insets; `None` where that area is too narrow for one cubicle, or seats no
+    /// desk below the top margin, a share of the whole canvas, and the caller
+    /// paints a "terminal too small" message. `max_desks` caps the desk count: `None` fills the office to
     /// its physical capacity, `Some(n)` caps at `n` for deterministic
     /// tests/snapshots. The pod grid geometry is always the room's true
     /// capacity regardless of the cap.

@@ -64,9 +64,9 @@ pub(super) const fn band_w(inner_w: u16, mid_x_pct: u16) -> u16 {
 /// `viewport_h` tall — everything from the [`top_margin`] to the area's south
 /// edge, less the appliance aisle. THE formula `compute` and the size gate both
 /// step from, and it SATURATES: the gate reads it on an area that ends above the
-/// top margin under a deep top inset, where the 0 it collapses to, rather than
-/// wrapping to 58,974, is what refuses the office
-/// (`every_office_the_size_gate_admits_seats_a_desk`).
+/// top margin under a deep top or bottom inset, where the 0 it collapses to,
+/// rather than a wrapped, huge band, is what refuses the office
+/// (`the_size_gate_admits_exactly_the_offices_that_seat_a_desk`).
 pub(super) const fn band_h(inner: Bounds, viewport_h: u16) -> u16 {
     let usable = inner
         .bottom()
@@ -86,16 +86,21 @@ const fn pct_at_least(v: u16, n: u16, min: u16) -> u16 {
     if share > min { share } else { min }
 }
 
-/// The share of the canvas the wall stands down from its top: the proportion the
-/// owner approved on the terminal.
+/// A look choice the owner approved on the terminal, not derived from the wall's
+/// pieces.
 const WALL_DEPTH_PCT: u16 = 30;
 
 /// The top margin, the floor's north edge, in rows from the canvas top:
 /// [`WALL_DEPTH_PCT`] of a viewport `viewport_h` tall, a top inset counting toward
-/// it, since its host paints the strip as wall; never less than [`MIN_WALL_DEPTH`]
-/// of band under an inset ending at row `inner_top`.
+/// it, since the office paints its wall on under the inset ([`Insets`]); never
+/// less than [`MIN_WALL_DEPTH`] below an inset ending at row `inner_top`.
 pub(super) const fn top_margin(viewport_h: u16, inner_top: u16) -> u16 {
-    pct_at_least(viewport_h, WALL_DEPTH_PCT, inner_top + MIN_WALL_DEPTH)
+    // Saturating, so an inset at the canvas's edge leaves no band to admit.
+    pct_at_least(
+        viewport_h,
+        WALL_DEPTH_PCT,
+        inner_top.saturating_add(MIN_WALL_DEPTH),
+    )
 }
 
 const fn cubicle_aisle_h(usable_h: u16) -> u16 {
@@ -177,14 +182,14 @@ pub fn min_layout_size() -> Size {
 /// only the sky.
 const fn couch_to_desk_extra(floor_end: u16) -> u16 {
     const ROWS_PER_GAP_ROW: u16 = 20;
-    floor_end.saturating_sub(COUCH_GAP_GROWTH_BASE_H) / ROWS_PER_GAP_ROW
+    floor_end.saturating_sub(COUCH_GAP_GROWTH_FLOOR_END) / ROWS_PER_GAP_ROW
 }
 
 /// The floor's south edge, from the canvas top, past which the couch-to-desk gap
 /// grows. It equalled the old hand-written `MIN_LAYOUT_H` by coincidence, not by
 /// derivation — re-tying it to the now-lower floor would widen the gap on most
 /// offices tall enough to render today, so it keeps its own name and its own number.
-const COUCH_GAP_GROWTH_BASE_H: u16 = 60;
+const COUCH_GAP_GROWTH_FLOOR_END: u16 = 60;
 
 /// A meeting room narrower than this can't host the sofa body with enough
 /// walkable margin for the coarse router ([`COARSE_CELL_SIZE`]) to reach the
@@ -384,8 +389,9 @@ const _: () = {
     }
 };
 
-/// The area inside `viewport`'s insets an office lays out in: `None` where
-/// they leave less than the smallest office.
+/// The area inside `viewport`'s insets an office lays out in: `None` where it
+/// is narrower than the smallest office, or seats no desk below the top margin,
+/// a share of the whole canvas.
 pub(super) fn office_area(viewport: Viewport) -> Option<Bounds> {
     viewport
         .inner()
@@ -2056,10 +2062,10 @@ mod tests {
 
     /// The top margin is [`WALL_DEPTH_PCT`](super::WALL_DEPTH_PCT) of the canvas,
     /// the top inset counting toward it, until the inset leaves less than
-    /// [`MIN_WALL_DEPTH`](crate::layout::MIN_WALL_DEPTH) of band under it: then the
-    /// band stands at that minimum.
+    /// [`MIN_WALL_DEPTH`](crate::layout::MIN_WALL_DEPTH) below it: then the top
+    /// margin stands that minimum below the inset.
     #[test]
-    fn a_top_inset_deeper_than_the_walls_share_pins_the_band_at_its_minimum() {
+    fn a_top_inset_deeper_than_the_walls_share_pins_the_top_margin_at_its_minimum() {
         use crate::layout::{Insets, MIN_WALL_DEPTH, SceneLayout, Size, Viewport, pct};
         let size = Size { w: 150, h: 218 };
         let share = pct(size.h, super::WALL_DEPTH_PCT);
@@ -2090,34 +2096,64 @@ mod tests {
         );
     }
 
-    /// A top inset counts toward the wall, so the band under a deep one is short
-    /// while the couch's gap follows the canvas: the size gate refuses every such
-    /// office that would seat no desk.
+    /// A top or a bottom inset counts toward the wall, so the band over a deep one
+    /// is short, or gone, while the couch's gap follows the canvas: the size gate
+    /// admits exactly the offices whose plan seats a desk.
     #[test]
-    fn every_office_the_size_gate_admits_seats_a_desk() {
+    fn the_size_gate_admits_exactly_the_offices_that_seat_a_desk() {
         use crate::layout::{Insets, SceneLayout, Size, Viewport};
         let size = Size { w: 150, h: 240 };
         let (mut admitted, mut refused) = (0, 0);
-        for top in 0..size.h {
-            let viewport = Viewport {
-                size,
-                insets: Insets {
-                    top,
+        for inset in 0..size.h {
+            for insets in [
+                Insets {
+                    top: inset,
                     ..Insets::default()
                 },
-            };
-            match SceneLayout::compute(viewport, None, 0) {
-                Some(l) => {
-                    assert!(!l.home_desks.is_empty(), "top {top}: a deskless office");
+                Insets {
+                    bottom: inset,
+                    ..Insets::default()
+                },
+            ] {
+                let viewport = Viewport { size, insets };
+                if let Some(l) = SceneLayout::compute(viewport, None, 0) {
+                    assert!(!l.home_desks.is_empty(), "{insets:?}: a deskless office");
                     admitted += 1;
+                    continue;
                 }
-                None => refused += 1,
+                refused += 1;
+                let inner = viewport.inner().expect("an area inside the insets");
+                if super::top_margin(size.h, inner.y) < inner.bottom() {
+                    let plan = super::FloorPlan::new(inner, size.h, 0);
+                    assert!(
+                        super::compute_pod_desks(None, plan.pod_grid).is_empty(),
+                        "{insets:?}: a refused office its plan seats"
+                    );
+                }
             }
         }
         assert!(
             admitted > 0 && refused > 0,
             "{admitted} admitted, {refused} refused"
         );
+    }
+
+    /// A top inset that leaves less than the wall's minimum below it on the
+    /// tallest canvas refuses the office rather than overflowing the top margin.
+    #[test]
+    fn a_top_inset_at_the_canvas_edge_is_refused() {
+        use crate::layout::{Insets, SceneLayout, Size, Viewport};
+        let viewport = Viewport {
+            size: Size {
+                w: 150,
+                h: u16::MAX,
+            },
+            insets: Insets {
+                top: u16::MAX - 1,
+                ..Insets::default()
+            },
+        };
+        assert!(SceneLayout::compute(viewport, None, 0).is_none());
     }
 
     /// Two top insets, 29 and 16, over a bottom of 22: a top inset moves only the

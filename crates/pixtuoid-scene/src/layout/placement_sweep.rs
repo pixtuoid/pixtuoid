@@ -1905,42 +1905,28 @@ fn nothing_is_placed_under_an_inset() {
     assert_no_violations("inset", v);
 }
 
-/// `l` as seen from `corner`, its cells from row `from` of its area inside its
-/// insets: every field the layout places, but the pieces hung from that area's
-/// north edge where `hung` drops them, its walls cut at the area's edges.
-fn seen_from(
-    l: &SceneLayout,
-    corner: Point,
-    from: u16,
-    hung: Hung,
-) -> [(&'static str, String); 10] {
+/// `l` with its columns counted from `west` and its rows from the canvas top,
+/// its cells from row `from` of its area inside its insets: every field the
+/// layout places, but the pieces hung from that area's north edge where `hung`
+/// drops them, its walls cut at the area's edges.
+fn seen_from(l: &SceneLayout, west: u16, from: u16, hung: Hung) -> [(&'static str, String); 10] {
     let inner = l.inner;
-    let p = |p: Point| Point {
-        x: p.x - corner.x,
-        y: p.y - corner.y,
-    };
-    let b = |b: Bounds| {
-        let tl = p(Point { x: b.x, y: b.y });
-        Bounds {
-            x: tl.x,
-            y: tl.y,
-            ..b
-        }
-    };
+    let p = |p: Point| Point { x: p.x - west, ..p };
+    let b = |b: Bounds| Bounds { x: b.x - west, ..b };
     let (east, south) = (inner.right(), inner.bottom());
     let walls: Vec<WallSegment> = l
         .room_walls
         .iter()
         .map(|&w| match w {
             WallSegment::Horizontal { y, x0, x1 } => WallSegment::Horizontal {
-                y: y - corner.y,
-                x0: x0.max(inner.x) - corner.x,
-                x1: x1 - corner.x,
+                y,
+                x0: x0.max(inner.x) - west,
+                x1: x1 - west,
             },
             WallSegment::Vertical { x, y0, y1 } => WallSegment::Vertical {
-                x: x - corner.x,
-                y0: y0 - corner.y,
-                y1: y1.min(south) - corner.y,
+                x: x - west,
+                y0,
+                y1: y1.min(south),
             },
         })
         .collect();
@@ -1953,16 +1939,7 @@ fn seen_from(
     let fixtures: Vec<_> = l
         .fixtures()
         .filter(|f| hung == Hung::Kept || !hangs_from_the_inset(f.kind))
-        .map(|f| {
-            let depth = match f.depth {
-                Depth::Sorted { row, tie } => Depth::Sorted {
-                    row: row - corner.y,
-                    tie,
-                },
-                Depth::Backdrop => Depth::Backdrop,
-            };
-            (f.kind, b(f.visual), depth)
-        })
+        .map(|f| (f.kind, b(f.visual), f.depth))
         .collect();
     let waypoints: Vec<_> = l
         .waypoints
@@ -1981,7 +1958,7 @@ fn seen_from(
         b(l.cubicle_band),
         b(l.cubicle_aisle),
         b(l.corridor),
-        l.top_margin - corner.y,
+        l.top_margin,
         p(l.door),
         p(l.door_threshold),
     );
@@ -2024,11 +2001,10 @@ fn hangs_from_the_inset(kind: FixtureKind) -> bool {
 }
 
 /// An office inside insets stands its top margin where the bare canvas of its
-/// width would, but for a top inset deep enough to pin the band under it at
-/// [`MIN_WALL_DEPTH`]. With no bottom inset and an unpinned band, the top-,
-/// left- and right-only insets of [`SWEEP_INSETS`], it lays out that canvas's
-/// floor field for field, moved by its west inset, the pieces hung from a top
-/// inset's edge aside: a top inset moves only the sky. A bottom inset keeps the
+/// width would, but for a top inset deep enough to pin the top margin at
+/// [`MIN_WALL_DEPTH`] below it. With no bottom inset and an unpinned top margin,
+/// it lays out that canvas's floor field for field, moved by its west inset, the
+/// pieces hung from a top inset's edge aside: a top inset moves only the sky. A bottom inset keeps the
 /// top margin and re-divides the shorter floor, which the placement sweeps check
 /// inside every inset themselves ([`sweep_bare_and_inset`]).
 #[test]
@@ -2050,15 +2026,14 @@ fn an_office_inside_insets_lays_out_the_canvas_floor() {
             return;
         }
         floors += 1;
-        let moved = Point { x: inner.x, y: 0 };
         let hung = if inner.y > 0 {
             Hung::Dropped
         } else {
             Hung::Kept
         };
-        if let Some(((field, _), _)) = seen_from(l, moved, inner.y, hung)
+        if let Some(((field, _), _)) = seen_from(l, inner.x, inner.y, hung)
             .into_iter()
-            .zip(seen_from(&bare, Point { x: 0, y: 0 }, inner.y, hung))
+            .zip(seen_from(&bare, 0, inner.y, hung))
             .find(|(got, want)| got != want)
         {
             v.push(format!("{viewport:?} seed {seed}: its {field} moved off"));
