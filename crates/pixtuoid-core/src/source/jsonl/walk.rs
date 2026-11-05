@@ -86,26 +86,22 @@ fn within(t: std::time::SystemTime, window: Duration) -> bool {
 /// transcript be "ended" and "active" over different bytes.
 pub(super) const TAIL_BYTES: u64 = 8192;
 
-/// What the scans know of the root they list.
 #[derive(Default)]
 pub(super) struct RootRead {
     pub(super) health: FailureLatch,
-    /// The directory the last scan listed; `None` before one, or while the
-    /// root was absent.
+    /// What the last scan listed: a directory no scan has listed holds what predates its reads.
     last: Option<DirId>,
 }
 
-/// One listing of a root: the directory listed, its entries, and the error
-/// that cut it short.
 #[derive(Default)]
 struct Listing {
     dir: Option<DirId>,
     entries: Vec<PathBuf>,
-    cut: Option<std::io::Error>,
+    truncated_by: Option<std::io::Error>,
 }
 
-/// `root` listed and named in one blocking step, the name taken once the
-/// listing has the directory open; an absent root is an empty listing of none.
+/// Named after the open, so a root replaced meanwhile is named as its successor and
+/// replays; the walk then reads entries by path.
 async fn list_root(root: &Path) -> std::io::Result<Listing> {
     let root = root.to_path_buf();
     tokio::task::spawn_blocking(move || {
@@ -122,7 +118,7 @@ async fn list_root(root: &Path) -> std::io::Result<Listing> {
             match entry {
                 Ok(entry) => listing.entries.push(entry.path()),
                 Err(e) => {
-                    listing.cut = Some(e);
+                    listing.truncated_by = Some(e);
                     break;
                 }
             }
@@ -147,20 +143,21 @@ pub(super) async fn scan_root(
     };
     revouch_gated_files(decoders, ctx).await;
     match list_root(root).await {
-        Ok(Listing { dir, entries, cut }) => {
-            // The watcher never creates its CLI's root, so an uninstalled CLI's is
-            // absent: nothing to discover yet, not a failure.
+        Ok(Listing {
+            dir,
+            entries,
+            truncated_by,
+        }) => {
+            // An uninstalled CLI's root is absent: nothing to discover yet, not a failure.
             if dir.is_some() && read.health.on_success() {
                 tracing::info!(root = ?root, "watched root is readable again");
             }
-            // A directory no scan has listed holds what predates every read of
-            // it: a boot's, or a root's that appeared or was replaced since.
             let replaying = dir != read.last;
             read.last = dir;
             for entry in entries {
                 walk_jsonl(&entry, decoders, ctx, replaying).await;
             }
-            if let Some(e) = cut {
+            if let Some(e) = truncated_by {
                 // Latched, unlike the subdirectory twin below: truncation here
                 // hides every remaining PROJECT, and there is only one root.
                 if read.health.on_failure() {
@@ -186,8 +183,6 @@ pub(super) async fn scan_root(
     }
 }
 
-/// Reads `path`, a transcript or a directory of them; a first read of a file
-/// replays when `replaying`, which only a scan of what predates its reads sets.
 pub(super) async fn walk_jsonl(
     path: &Path,
     decoders: SourceDecoders,

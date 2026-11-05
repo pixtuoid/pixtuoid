@@ -162,14 +162,14 @@ struct ScanState {
     /// probe blip can't end a live session) plus the `pid → ids` bindings the
     /// instant-exit arm joins on.
     ladder: ProbeLadder,
-    root: RootRead,
+    root_read: RootRead,
 }
 
 impl ScanState {
     fn new(negative_vouch_min_span: Duration) -> Self {
         Self {
             ladder: ProbeLadder::new(negative_vouch_min_span),
-            root: RootRead::default(),
+            root_read: RootRead::default(),
         }
     }
 }
@@ -334,7 +334,7 @@ impl JsonlWatcher {
         if drain {
             drain_child_end_unclaims(unclaims, decoders, ctx).await;
         }
-        scan_root(&self.root, decoders, ctx, &mut scan_state.root).await;
+        scan_root(&self.root, decoders, ctx, &mut scan_state.root_read).await;
         if healthy {
             if let Some(follower) = ctx.follower {
                 let started = follower.reconcile(
