@@ -86,14 +86,14 @@ pub(crate) enum Reconciled {
 /// Windows file ids are "not guaranteed to be unique over time", nor on ReFS
 /// (`BY_HANDLE_FILE_INFORMATION`'s docs).
 #[derive(Clone, Debug, PartialEq)]
-struct DirId {
+pub(super) struct DirId {
     volume: u64,
     index: u64,
     born: Option<SystemTime>,
 }
 
 /// `None` when nothing is at `path`.
-fn dir_id(path: &Path) -> io::Result<Option<DirId>> {
+pub(super) fn dir_id(path: &Path) -> io::Result<Option<DirId>> {
     match read_dir_id(path) {
         Ok(id) => Ok(Some(id)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),

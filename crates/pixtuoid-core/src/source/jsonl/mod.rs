@@ -34,7 +34,7 @@ use liveness::{
 };
 pub(crate) use root_watch::{Nudge, Reconciled, RootWatch, Wake, absolute_root};
 use unclaim::drain_child_end_unclaims;
-use walk::{scan_root, walk_jsonl};
+use walk::{RootRead, scan_root, walk_jsonl};
 
 use crate::source::decoder::LineDecoder;
 
@@ -154,9 +154,6 @@ struct WatchCtx<'a> {
     /// What an event-driven walk follows a first sight with; `scan_root`
     /// drops it.
     follower: Option<&'a Follower>,
-    /// This pass reads what predates the watch, so a first read here replays
-    /// where any other's is a session just begun.
-    replaying: bool,
 }
 
 struct ScanState {
@@ -165,14 +162,14 @@ struct ScanState {
     /// probe blip can't end a live session) plus the `pid → ids` bindings the
     /// instant-exit arm joins on.
     ladder: ProbeLadder,
-    root_health: FailureLatch,
+    root_read: RootRead,
 }
 
 impl ScanState {
     fn new(negative_vouch_min_span: Duration) -> Self {
         Self {
             ladder: ProbeLadder::new(negative_vouch_min_span),
-            root_health: FailureLatch::default(),
+            root_read: RootRead::default(),
         }
     }
 }
@@ -337,7 +334,7 @@ impl JsonlWatcher {
         if drain {
             drain_child_end_unclaims(unclaims, decoders, ctx).await;
         }
-        scan_root(&self.root, decoders, ctx, &mut scan_state.root_health).await;
+        scan_root(&self.root, decoders, ctx, &mut scan_state.root_read).await;
         if healthy {
             if let Some(follower) = ctx.follower {
                 let started = follower.reconcile(
@@ -346,7 +343,7 @@ impl JsonlWatcher {
                     |path| decoders.id_derive.id_for(path),
                 );
                 for path in started {
-                    walk_jsonl(&path, decoders, ctx).await;
+                    walk_jsonl(&path, decoders, ctx, false).await;
                 }
             }
             emit_proof_of_life(ctx.live, ctx.source, ctx.tx).await;
@@ -459,7 +456,6 @@ impl JsonlWatcher {
                 window: self.initial_window,
                 live: &live,
                 follower: follower.as_ref(),
-                replaying: true,
             };
             self.run_scan_pass(
                 &ctx,
@@ -491,14 +487,13 @@ impl JsonlWatcher {
                 window: self.initial_window,
                 live: &live,
                 follower: follower.as_ref(),
-                replaying: false,
             };
             tokio::select! {
                 Some(()) = nudges.recv() => {
                     if root_watch.reconcile_logged(Wake::Nudge).await == Reconciled::Attached {
                         // What was written before the watch existed.
                         self.run_scan_pass(
-                            &WatchCtx { replaying: true, ..ctx }, &mut scan_state,
+                            &ctx, &mut scan_state,
                             exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
                         ).await;
                     }
@@ -509,13 +504,12 @@ impl JsonlWatcher {
                     // of waiting out the 60s poll while turn-N+1 bytes stream past
                     // as unknown-id no-ops.
                     drain_child_end_unclaims(unclaims.as_ref(), decoders, &ctx).await;
-                    walk_jsonl(&path, decoders, &ctx).await;
+                    walk_jsonl(&path, decoders, &ctx, false).await;
                 }
                 _ = poll.tick() => {
-                    let attached =
-                        root_watch.reconcile_logged(Wake::Poll).await == Reconciled::Attached;
+                    root_watch.reconcile_logged(Wake::Poll).await;
                     self.run_scan_pass(
-                        &WatchCtx { replaying: attached, ..ctx }, &mut scan_state,
+                        &ctx, &mut scan_state,
                         exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
                     ).await;
                 }
