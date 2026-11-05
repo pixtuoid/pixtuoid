@@ -2940,11 +2940,11 @@ fn every_piece_paints_only_inside_its_span() {
     }
 }
 
-/// A dressed figure carried to the top of the area under a top inset, at the
-/// pack's densest art, paints none of its hair over the inset, and the box
+/// A dressed figure carried to the top edge of the area inside a top inset, at
+/// the pack's densest art, paints none of its hair over the inset, and the box
 /// [`Hits::figures`](crate::look::Hits::figures) reports stops at its edge.
 #[test]
-fn a_dressed_figure_under_a_top_inset_keeps_its_hair_off_it() {
+fn a_dressed_figure_at_a_top_insets_edge_keeps_its_hair_off_it() {
     let base = test_office();
     let scale = RenderScale::from(base.max_density_variant());
     let walk = crate::pack::densest_frame(&base, PackPiece::Walking, 0, scale);
