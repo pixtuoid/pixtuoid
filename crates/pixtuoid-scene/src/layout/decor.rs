@@ -833,15 +833,16 @@ pub(crate) fn seated_sort_row(seat: Point) -> u16 {
 /// `desk_walk_anchor_settles_exactly_on_the_seat` still pins it.
 pub(crate) const DESK_WALK_Y_OFF: u16 = 4;
 
-/// A point packed into one hash input from the corner of the office's
-/// [`super::SceneLayout::inner`], so a per-spot seed is derived the same way
-/// everywhere it is needed and insets move no seat or pot. The PACKING
+/// A point packed into one hash input, from the west edge of the office's
+/// [`super::SceneLayout::inner`] and the canvas's top, where the floor's rows are
+/// counted from, so a per-spot seed is derived the same way everywhere it is
+/// needed and insets move no seat or pot. The PACKING
 /// is load-bearing, not an implementation detail: every committed still was
 /// rendered against it, and swapping the halves re-seeds every seat and pot
 /// while every property test still passes — pinned by
 /// `point_seed_packing_is_frozen`.
 pub(super) fn point_seed(p: Point, inner: Bounds) -> u64 {
-    (u64::from(p.x - inner.x) << 32) | u64::from(p.y - inner.y)
+    (u64::from(p.x - inner.x) << 32) | u64::from(p.y)
 }
 
 /// Half the seeded nudge's span. The chair is `CHARACTER_SPRITE_W` on a

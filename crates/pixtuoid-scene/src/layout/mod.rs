@@ -50,8 +50,8 @@ pub use roster::{FixtureKind, NEON_PANEL_INNER_H, NEON_PANEL_INNER_W, NEON_PANEL
 pub(crate) use roster::{NEON_PANEL_H, coffee_machine_cols};
 // Painter tests tile walls no `SceneLayout` has.
 pub(crate) use windows::{
-    NEON_DOOR_WALL_W, WINDOW_TOP, WindowBay, door_x, glass_rows, wall_trim_row, window_frame,
-    window_posts, window_rows, window_run,
+    NEON_DOOR_WALL_W, TRIM_H, WINDOW_TOP, WindowBay, door_x, glass_rows, wall_trim_row,
+    window_frame, window_posts, window_rows, window_run,
 };
 #[cfg(test)]
 pub(crate) use windows::{WINDOW_W, window_bays, window_slots};
@@ -432,6 +432,23 @@ pub(crate) const fn wall_band_h(top_margin: u16) -> u16 {
     top_margin - WALL_BAND_TO_TOP_MARGIN
 }
 
+/// The rows the north wall's tallest piece needs above its trim row, from the
+/// north edge inside the insets: the neon sign and the clock hang from the top,
+/// and the window the door stands in runs down from [`WINDOW_TOP`] as tall as
+/// the door.
+const WALL_PIECES_H: u16 = {
+    let sign = roster::NEON_PANEL_Y + roster::NEON_PANEL_H;
+    let clock = roster::CLOCK_Y + CLOCK.h;
+    let door = WINDOW_TOP + ELEVATOR_H;
+    let hung = if sign > clock { sign } else { clock };
+    if hung > door { hung } else { door }
+};
+
+/// Floor for the band under the insets in `compute::wall_foot`, where the
+/// canvas's share would leave too shallow a band to hang the wall's pieces:
+/// [`WALL_PIECES_H`] over the trim, and the apron under the band.
+pub(crate) const MIN_WALL_DEPTH: u16 = WALL_PIECES_H + TRIM_H + WALL_BAND_TO_TOP_MARGIN;
+
 /// How many pixels of the pantry counter actually sit on the floor: only the
 /// southern base contacts the ground, the receding cabinet tops + backsplash
 /// are overhang (invariant #6), so a character routed behind the counter is
@@ -540,9 +557,6 @@ pub(crate) const TEST_DEFAULT_DESKS: usize = CLASSIC_OFFICE_DESKS;
 /// tests reads it; the pod grid itself prices its own spacing.
 #[cfg(test)]
 pub(crate) const DESK_GAP_Y: u16 = 14;
-/// Floor (px) for `compute::wall_depth`: its percent of the height inside the
-/// insets never shrinks the north wall band below this.
-pub(crate) const MIN_WALL_DEPTH: u16 = 20;
 const MIN_DUAL_MEETING_H: u16 = 80;
 
 /// Number of desks per side in a pod (`POD_SIDE * POD_SIDE` total).

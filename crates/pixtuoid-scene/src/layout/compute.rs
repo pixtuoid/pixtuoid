@@ -45,8 +45,8 @@ fn couch_pos(cubicle_band: &Bounds, top_margin: u16, west_clear_x: u16) -> Point
 /// cabinets included, so NOT `DESK_W`).
 pub(super) const DESK_BAND_MIN_W: u16 = INTER_POD_AISLE_X / 2 + DESK_GROUND_W;
 
-/// The Y twin. The y-clamp adds a third term, `couch_to_desk_extra`, which is 0
-/// everywhere below `COUCH_GAP_GROWTH_BASE_H` — pinned by the const assert there.
+/// The Y twin, less the y-clamp's third term, `couch_to_desk_extra`, which
+/// [`seats_a_desk`] adds.
 pub(super) const DESK_BAND_MIN_H: u16 = INTER_POD_AISLE_Y / 2 + DESK_GROUND_H;
 
 /// The 1px column between the left rooms and the cubicle band — `right_x` steps
@@ -60,15 +60,24 @@ pub(super) const fn band_w(inner_w: u16, mid_x_pct: u16) -> u16 {
     inner_w.saturating_sub(pct(inner_w, mid_x_pct) + MID_DIVIDER_W)
 }
 
-/// The band's HEIGHT in an area `inner_h` tall inside the insets — everything below
-/// the wall band, less the appliance aisle. THE formula `compute` and `min_layout_h`
-/// both step from, and it SATURATES: a sub-`wall_depth` area collapses to 0 rather
-/// than wrapping to 58,974 and an office of garbage desks. Only observable below the
+/// The band's HEIGHT in the area `inner` inside the insets of a viewport
+/// `viewport_h` tall — everything from the [`wall_foot`] to the area's south edge,
+/// less the appliance aisle. THE formula `compute` and the size gate both step
+/// from, and it SATURATES: an area ending above the foot collapses to 0 rather than
+/// wrapping to 58,974 and an office of garbage desks. Only observable below the
 /// size gate, so no test can hold it — the gate and the use site together are what
 /// keep it unobservable.
-pub(super) const fn band_h(inner_h: u16) -> u16 {
-    let usable = inner_h.saturating_sub(wall_depth(inner_h));
+pub(super) const fn band_h(inner: Bounds, viewport_h: u16) -> u16 {
+    let usable = inner
+        .bottom()
+        .saturating_sub(wall_foot(viewport_h, inner.y));
     usable.saturating_sub(cubicle_aisle_h(usable))
+}
+
+/// Whether the area `inner` of a viewport `viewport_h` tall seats a desk: its band
+/// holds the first pod row past the couch's gap, the y-clamp's three terms.
+const fn seats_a_desk(inner: Bounds, viewport_h: u16) -> bool {
+    band_h(inner, viewport_h) >= DESK_BAND_MIN_H + couch_to_desk_extra(inner.bottom())
 }
 
 /// `n` percent of `v`, never under `min`.
@@ -77,13 +86,19 @@ const fn pct_at_least(v: u16, n: u16, min: u16) -> u16 {
     if share > min { share } else { min }
 }
 
+/// The share of the canvas the wall stands down from its top: the proportion the
+/// owner approved on the terminal.
 const WALL_DEPTH_PCT: u16 = 30;
 
-/// The north wall band's depth below the north edge inside the insets —
-/// [`WALL_DEPTH_PCT`] percent of the `inner_h` inside them, never under
-/// [`MIN_WALL_DEPTH`].
-pub(super) const fn wall_depth(inner_h: u16) -> u16 {
-    pct_at_least(inner_h, WALL_DEPTH_PCT, MIN_WALL_DEPTH)
+/// The wall's foot, the floor's north edge, in rows from the canvas top:
+/// [`WALL_DEPTH_PCT`] of a viewport `viewport_h` tall, a top inset counting toward
+/// it, since its host paints the strip as wall; never less than [`MIN_WALL_DEPTH`]
+/// of band under an inset ending at row `inner_top`. A viewport no inset frames
+/// stands the wall it always has.
+pub(super) const fn wall_foot(viewport_h: u16, inner_top: u16) -> u16 {
+    let share = pct(viewport_h, WALL_DEPTH_PCT);
+    let floor = inner_top + MIN_WALL_DEPTH;
+    if share > floor { share } else { floor }
 }
 
 const fn cubicle_aisle_h(usable_h: u16) -> u16 {
@@ -94,18 +109,14 @@ const fn cubicle_aisle_h(usable_h: u16) -> u16 {
 /// The appliance aisle south of the pods never shrinks below this.
 const MIN_CUBICLE_AISLE_H: u16 = 8;
 
-/// The smallest area inside the insets `compute` lays out; below either it returns
-/// `None` ("terminal too small"). BOTH axes are SOLVED against the band, not that area, and
-/// the width against the north wall too: no narrower wall hangs the door clear of
-/// the neon.
+/// The smallest office `compute` lays out: no area inside the insets narrower, and
+/// no viewport no inset frames shorter; below either it returns `None` ("terminal
+/// too small"). Under a top inset, which counts toward the wall, the gate asks
+/// [`seats_a_desk`] itself. BOTH axes are SOLVED against the band, not that area,
+/// and the width against the north wall too: no narrower wall hangs the door clear
+/// of the neon.
 pub(super) const MIN_LAYOUT_W: u16 = min_layout_w();
 const _: () = assert!(MIN_LAYOUT_W >= super::NEON_DOOR_WALL_W);
-// The shortest wall band's windows stand as tall as the door, so every office
-// that lays out has one.
-const _: () = assert!(
-    super::wall_trim_row(super::wall_band_h(super::MIN_WALL_DEPTH)) - super::WINDOW_TOP
-        >= super::ELEVATOR_H
-);
 pub(super) const MIN_LAYOUT_H: u16 = min_layout_h();
 
 /// The widest left column any variant takes — the band gets the rest, so this
@@ -137,16 +148,25 @@ const fn min_layout_w() -> u16 {
 
 const fn min_layout_h() -> u16 {
     let mut h = DESK_BAND_MIN_H;
-    while band_h(h) < DESK_BAND_MIN_H {
+    while !seats_a_desk(bare(h), h) {
         h += 1;
     }
     h
 }
 
-/// The smallest area inside a viewport's insets that lays out, for a painter
-/// that has to TELL the user why it draws no office. Layout units — each
-/// painter owns its own cell aspect, so only it can turn this into rows and
-/// columns.
+/// The area of a viewport `h` tall no inset frames, in the rows [`band_h`] reads.
+const fn bare(h: u16) -> Bounds {
+    Bounds {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: h,
+    }
+}
+
+/// The smallest viewport no inset frames that lays out, for a painter that has
+/// to TELL the user why it draws no office. Layout units — each painter owns its
+/// own cell aspect, so only it can turn this into rows and columns.
 pub fn min_layout_size() -> Size {
     Size {
         w: MIN_LAYOUT_W,
@@ -154,19 +174,18 @@ pub fn min_layout_size() -> Size {
     }
 }
 
-/// `DESK_BAND_MIN_H` omits the Y clamp's third term because it is 0 at the floor;
-/// that holds only while the growth base stays above it.
-const _: () = assert!(COUCH_GAP_GROWTH_BASE_H > MIN_LAYOUT_H);
-
-const fn couch_to_desk_extra(inner_h: u16) -> u16 {
-    const INNER_ROWS_PER_GAP_ROW: u16 = 20;
-    inner_h.saturating_sub(COUCH_GAP_GROWTH_BASE_H) / INNER_ROWS_PER_GAP_ROW
+/// The couch-to-desk gap's growth for a floor whose south edge is `floor_end` rows
+/// from the canvas top, measured as the [`wall_foot`] is, so a top inset moves
+/// only the sky.
+const fn couch_to_desk_extra(floor_end: u16) -> u16 {
+    const ROWS_PER_GAP_ROW: u16 = 20;
+    floor_end.saturating_sub(COUCH_GAP_GROWTH_BASE_H) / ROWS_PER_GAP_ROW
 }
 
-/// The inner height at which the couch-to-desk gap starts growing. It equalled the
-/// old hand-written `MIN_LAYOUT_H` by coincidence, not by derivation — re-tying it
-/// to the now-lower floor would widen the gap on most offices tall enough to render
-/// today, so it keeps its own name and its own number.
+/// The floor's south edge, from the canvas top, past which the couch-to-desk gap
+/// grows. It equalled the old hand-written `MIN_LAYOUT_H` by coincidence, not by
+/// derivation — re-tying it to the now-lower floor would widen the gap on most
+/// offices tall enough to render today, so it keeps its own name and its own number.
 const COUCH_GAP_GROWTH_BASE_H: u16 = 60;
 
 /// A meeting room narrower than this can't host the sofa body with enough
@@ -202,9 +221,10 @@ struct FloorPlan {
 }
 
 impl FloorPlan {
-    /// The zones the area `inner` of a floor of `floor_seed`'s variant divides into.
-    fn new(inner: Bounds, floor_seed: u64) -> Self {
-        let top_margin = inner.y + wall_depth(inner.height);
+    /// The zones the area `inner` inside the insets of a viewport `viewport_h` tall
+    /// divides into, on a floor of `floor_seed`'s variant.
+    fn new(inner: Bounds, viewport_h: u16, floor_seed: u64) -> Self {
+        let top_margin = wall_foot(viewport_h, inner.y);
         let usable_h = inner.bottom() - top_margin;
 
         let variant = FloorVariant::from_seed(floor_seed);
@@ -296,7 +316,7 @@ impl FloorPlan {
         let cubicle_aisle_h = cubicle_aisle_h(usable_h);
         // NOT `usable_h - cubicle_aisle_h`, though the locals are right here — see
         // `band_h` for what its saturation buys below the gate.
-        let cubicle_h = band_h(inner.height);
+        let cubicle_h = band_h(inner, viewport_h);
         let cubicle_band = Bounds {
             x: right_x,
             y: top_margin,
@@ -314,7 +334,7 @@ impl FloorPlan {
         let pod_h = POD_SIDE * DESK_H + (POD_SIDE - 1) * INTRA_POD_GAP_Y;
         let pod_stride_x = pod_w + INTER_POD_AISLE_X;
         let pod_stride_y = pod_h + INTER_POD_AISLE_Y;
-        let couch_to_desk_extra = couch_to_desk_extra(inner.height);
+        let couch_to_desk_extra = couch_to_desk_extra(inner.bottom());
         let pod_cols = ((right_w.saturating_sub(INTER_POD_AISLE_X / 2)) / pod_stride_x).max(1);
         let pod_rows = ((cubicle_h.saturating_sub(couch_to_desk_extra) + INTER_POD_AISLE_Y)
             / pod_stride_y)
@@ -371,7 +391,7 @@ const _: () = {
 pub(super) fn office_area(viewport: Viewport) -> Option<Bounds> {
     viewport
         .inner()
-        .filter(|inner| inner.width >= MIN_LAYOUT_W && inner.height >= MIN_LAYOUT_H)
+        .filter(|&inner| inner.width >= MIN_LAYOUT_W && seats_a_desk(inner, viewport.size.h))
 }
 
 pub(super) fn compute(
@@ -382,7 +402,7 @@ pub(super) fn compute(
     let inner = office_area(viewport)?;
     let Size { w: buf_w, h: buf_h } = viewport.size;
 
-    let plan = FloorPlan::new(inner, floor_seed);
+    let plan = FloorPlan::new(inner, viewport.size.h, floor_seed);
 
     let pod_desks = compute_pod_desks(max_desks, plan.pod_grid);
     let desk_points: Vec<Point> = pod_desks.iter().map(|d| d.at).collect();
@@ -1876,6 +1896,7 @@ mod tests {
                         crate::layout::Viewport::full(w, h)
                             .inner()
                             .expect("an area"),
+                        h,
                         seed,
                     );
                     let couch =
@@ -2027,11 +2048,156 @@ mod tests {
                 || under < super::super::NEON_DOOR_WALL_W,
             "the width floor is not tight: {under} px still clears the band and the neon"
         );
+        let under = super::MIN_LAYOUT_H - 1;
         assert!(
-            super::band_h(super::MIN_LAYOUT_H - 1) < super::DESK_BAND_MIN_H,
-            "the height floor is not tight: {} px still clears the band",
-            super::MIN_LAYOUT_H - 1
+            !super::seats_a_desk(super::bare(under), under),
+            "the height floor is not tight: {under} px still seats a desk"
         );
+    }
+
+    /// The wall's foot is [`WALL_DEPTH_PCT`](super::WALL_DEPTH_PCT) of the canvas,
+    /// the top inset counting toward it, until the inset leaves less than
+    /// [`MIN_WALL_DEPTH`](crate::layout::MIN_WALL_DEPTH) of band under it: then the
+    /// band stands at that floor.
+    #[test]
+    fn a_top_inset_deeper_than_the_walls_share_pins_the_band_at_its_floor() {
+        use crate::layout::{Insets, MIN_WALL_DEPTH, SceneLayout, Size, Viewport, pct};
+        let size = Size { w: 150, h: 218 };
+        let share = pct(size.h, super::WALL_DEPTH_PCT);
+        let (mut shared, mut floored) = (0, 0);
+        for top in 0..=size.h / 2 {
+            let viewport = Viewport {
+                size,
+                insets: Insets {
+                    top,
+                    ..Insets::default()
+                },
+            };
+            let l = SceneLayout::compute(viewport, None, 0).expect("lays out");
+            if top + MIN_WALL_DEPTH < share {
+                assert_eq!(l.top_margin, share, "top {top}: the foot leaves its row");
+                shared += 1;
+            } else {
+                assert_eq!(l.top_margin - l.inner.y, MIN_WALL_DEPTH, "top {top}");
+                floored += 1;
+            }
+        }
+        assert!(
+            shared > 0 && floored > 0,
+            "{shared} on the share, {floored} floored"
+        );
+    }
+
+    /// A top inset counts toward the wall, so the band under a deep one is short
+    /// while the couch's gap follows the canvas: the size gate refuses every such
+    /// office that would seat no desk.
+    #[test]
+    fn every_office_the_size_gate_admits_seats_a_desk() {
+        use crate::layout::{Insets, SceneLayout, Size, Viewport};
+        let size = Size { w: 150, h: 240 };
+        let (mut admitted, mut refused) = (0, 0);
+        for top in 0..size.h {
+            let viewport = Viewport {
+                size,
+                insets: Insets {
+                    top,
+                    ..Insets::default()
+                },
+            };
+            match SceneLayout::compute(viewport, None, 0) {
+                Some(l) => {
+                    assert!(!l.home_desks.is_empty(), "top {top}: a deskless office");
+                    admitted += 1;
+                }
+                None => refused += 1,
+            }
+        }
+        assert!(
+            admitted > 0 && refused > 0,
+            "{admitted} admitted, {refused} refused"
+        );
+    }
+
+    /// Pairing the App's iPhone takes its top inset from 29 to 16, which moves
+    /// only the sky: the wall's foot stays on its row, every desk keeps its spot
+    /// and its facing, and the floor's reach is the same, the routing grid tiling
+    /// from the floor's origin.
+    #[test]
+    fn a_top_inset_change_keeps_the_floor_where_it_stands() {
+        use crate::layout::{Insets, Point, SceneLayout, Size, Viewport};
+        let at = |top| {
+            let viewport = Viewport {
+                size: Size { w: 150, h: 218 },
+                insets: Insets {
+                    top,
+                    bottom: 22,
+                    ..Insets::default()
+                },
+            };
+            SceneLayout::compute(viewport, None, 0).expect("lays out")
+        };
+        let (demo, paired) = (at(29), at(16));
+        assert_eq!(demo.top_margin, paired.top_margin, "the wall's foot moved");
+        assert_eq!(demo.home_desks, paired.home_desks);
+        let floor = |l: &SceneLayout| {
+            (l.top_margin..l.inner.bottom())
+                .flat_map(|y| (l.inner.x..l.inner.right()).map(move |x| Point { x, y }))
+                .map(|p| l.reachable.reaches(p))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(floor(&demo), floor(&paired), "the floor's reach moved");
+    }
+
+    /// At its floor the wall holds every piece it hangs above its trim row, the
+    /// floor indicator over the door included, and its tallest piece needs every
+    /// one of those rows: the floor is that piece, with no row to spare. A short
+    /// office stands its wall at the floor.
+    #[test]
+    fn the_walls_floor_holds_its_tallest_piece_with_no_row_to_spare() {
+        use crate::layout::{
+            ELEVATOR_H, FixtureKind, MIN_WALL_DEPTH, SceneLayout, Viewport, floor_indicator_rows,
+            wall_trim_row, window_rows,
+        };
+        let mut clocks = 0;
+        for w in [super::MIN_LAYOUT_W, 96] {
+            let l = SceneLayout::compute(Viewport::full(w, 60), None, 0).expect("lays out");
+            assert_eq!(
+                l.top_margin, MIN_WALL_DEPTH,
+                "{w}: the wall stands at its floor"
+            );
+            let trim = wall_trim_row(l.wall_band_h());
+            let hung: Vec<_> = l
+                .fixtures()
+                .filter(|f| matches!(f.kind, FixtureKind::NeonSign | FixtureKind::Clock))
+                .inspect(|f| clocks += usize::from(f.kind == FixtureKind::Clock))
+                .map(|f| f.visual)
+                .collect();
+            for piece in &hung {
+                assert!(
+                    piece.bottom() <= trim,
+                    "{w}: {piece:?} reaches the trim row {trim}"
+                );
+            }
+            let window = window_rows(l.wall_band_h());
+            assert!(
+                window.len() >= usize::from(ELEVATOR_H),
+                "{w}: the door's window {window:?} is shorter than the door"
+            );
+            let door = l.door_rect();
+            let indicator = floor_indicator_rows(door.y, l.inner.y);
+            assert!(
+                indicator.start >= l.inner.y && indicator.end <= door.y,
+                "{w}: the floor indicator {indicator:?} leaves the wall over the door at {}",
+                door.y
+            );
+            let tallest = hung
+                .iter()
+                .map(|p| p.bottom())
+                .chain(std::iter::once(window.start + ELEVATOR_H))
+                .max();
+            assert_eq!(tallest, Some(trim), "{w}: the floor spares a row");
+        }
+        assert!(clocks > 0, "no office here hangs a clock to hold");
     }
 
     /// `DESK_BAND_MIN_W` must be where `compute_pod_desks` ITSELF stops fitting a desk —

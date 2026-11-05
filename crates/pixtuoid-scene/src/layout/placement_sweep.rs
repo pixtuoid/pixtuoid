@@ -1898,13 +1898,14 @@ fn nothing_is_placed_under_an_inset() {
     assert_no_violations("inset", v);
 }
 
-/// `l` as seen from the north-west corner of its area inside its insets:
-/// every field the layout places, its walls cut at that area's edges.
-fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 10] {
+/// `l` as seen from `corner`, its cells from row `from` of its area inside its
+/// insets: every field the layout places but the pieces hung from that area's
+/// north edge, its walls cut at the area's edges.
+fn seen_from(l: &SceneLayout, corner: Point, from: u16) -> [(&'static str, String); 10] {
     let inner = l.inner;
     let p = |p: Point| Point {
-        x: p.x - inner.x,
-        y: p.y - inner.y,
+        x: p.x - corner.x,
+        y: p.y - corner.y,
     };
     let b = |b: Bounds| {
         let tl = p(Point { x: b.x, y: b.y });
@@ -1920,29 +1921,30 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 10] {
         .iter()
         .map(|&w| match w {
             WallSegment::Horizontal { y, x0, x1 } => WallSegment::Horizontal {
-                y: y - inner.y,
-                x0: x0.max(inner.x) - inner.x,
-                x1: x1 - inner.x,
+                y: y - corner.y,
+                x0: x0.max(inner.x) - corner.x,
+                x1: x1 - corner.x,
             },
             WallSegment::Vertical { x, y0, y1 } => WallSegment::Vertical {
-                x: x - inner.x,
-                y0: y0 - inner.y,
-                y1: y1.min(south) - inner.y,
+                x: x - corner.x,
+                y0: y0 - corner.y,
+                y1: y1.min(south) - corner.y,
             },
         })
         .collect();
     let cells = |f: &dyn Fn(Point) -> bool| -> String {
-        (inner.y..south)
+        (from..south)
             .flat_map(|y| (inner.x..east).map(move |x| Point { x, y }))
             .map(|q| if f(q) { '.' } else { '#' })
             .collect()
     };
     let fixtures: Vec<_> = l
         .fixtures()
+        .filter(|f| !hangs_from_the_inset(f.kind))
         .map(|f| {
             let depth = match f.depth {
                 Depth::Sorted { row, tie } => Depth::Sorted {
-                    row: row - inner.y,
+                    row: row - corner.y,
                     tie,
                 },
                 Depth::Backdrop => Depth::Backdrop,
@@ -1967,7 +1969,7 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 10] {
         b(l.cubicle_band),
         b(l.cubicle_aisle),
         b(l.corridor),
-        l.top_margin - inner.y,
+        l.top_margin - corner.y,
         p(l.door),
         p(l.door_threshold),
     );
@@ -1988,26 +1990,57 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 10] {
     ]
 }
 
-/// An office inside insets is the bare office of the inner size, moved by
-/// them, but for the walls that run on under them: every field it places, its
-/// reach included, so every placement sweep over a bare office holds for one
-/// inside insets too.
+/// The pieces hung from the north edge of an office's area inside its insets,
+/// which a top inset moves with the sky.
+fn hangs_from_the_inset(kind: FixtureKind) -> bool {
+    matches!(
+        kind,
+        FixtureKind::NeonSign
+            | FixtureKind::Clock
+            | FixtureKind::Wall {
+                kind: WallDecor::ExitSign,
+                ..
+            }
+    )
+}
+
+/// An office inside insets stands its wall's foot where its canvas, less the
+/// side insets, would bare, but for a top inset deep enough to pin the band
+/// under it at [`MIN_WALL_DEPTH`]. Without a bottom inset, and the band under a
+/// top one deeper than that, the floor is the bare canvas's, moved by its west
+/// inset: a top inset moves only the sky. A bottom inset keeps the foot and
+/// shortens the floor from below, which re-divides what stands on it. So every
+/// placement sweep over a bare office holds for one inside insets too.
 #[test]
-fn an_office_inside_insets_is_the_inner_sizes_moved() {
+fn an_office_inside_insets_lays_out_its_canvass_floor() {
     let mut v = Vec::new();
+    let mut floors = 0;
     sweep_insets(|viewport, seed, l| {
-        let inner = viewport.inner().expect("the sweep leaves an area inside");
-        let bare = SceneLayout::compute(Viewport::full(inner.width, inner.height), None, seed)
-            .expect("the inner size lays out bare");
-        let fields = from_its_inner_corner(l).into_iter();
-        if let Some(((field, _), _)) = fields
-            .zip(from_its_inner_corner(&bare))
+        let inner = l.inner;
+        let bare = SceneLayout::compute(Viewport::full(inner.width, viewport.size.h), None, seed)
+            .expect("the canvas lays out bare");
+        let pinned = inner.y + MIN_WALL_DEPTH;
+        if l.top_margin != bare.top_margin.max(pinned) {
+            v.push(format!(
+                "{viewport:?} seed {seed}: its foot at {}, the canvas's at {}",
+                l.top_margin, bare.top_margin
+            ));
+        }
+        if viewport.insets.bottom > 0 || pinned > bare.top_margin {
+            return;
+        }
+        floors += 1;
+        let moved = Point { x: inner.x, y: 0 };
+        if let Some(((field, _), _)) = seen_from(l, moved, inner.y)
+            .into_iter()
+            .zip(seen_from(&bare, Point { x: 0, y: 0 }, inner.y))
             .find(|(got, want)| got != want)
         {
             v.push(format!("{viewport:?} seed {seed}: its {field} moved off"));
         }
     });
-    assert_no_violations("moved-office", v);
+    assert!(floors > 0, "no inset office was compared floor for floor");
+    assert_no_violations("canvas-floor", v);
 }
 
 /// The routing grid tiles from the floor plan's own origin: its columns from the

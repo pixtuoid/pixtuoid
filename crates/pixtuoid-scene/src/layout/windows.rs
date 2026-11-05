@@ -143,9 +143,12 @@ pub(crate) fn door_x(span: Range<u16>) -> u16 {
     door_slot_x(span).expect("every wall that lays out holds the door's slot") + DOOR_INSET
 }
 
+/// The rows the wall band's trim takes at its foot.
+pub(crate) const TRIM_H: u16 = 1;
+
 /// The wall band's trim row, where the band meets the floor.
 pub(crate) const fn wall_trim_row(band_h: u16) -> u16 {
-    band_h.saturating_sub(1)
+    band_h.saturating_sub(TRIM_H)
 }
 
 /// The rows a window spans on a wall band `band_h` tall, frame included: from
