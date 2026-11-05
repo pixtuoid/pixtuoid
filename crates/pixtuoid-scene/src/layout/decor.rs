@@ -833,15 +833,17 @@ pub(crate) fn seated_sort_row(seat: Point) -> u16 {
 /// `desk_walk_anchor_settles_exactly_on_the_seat` still pins it.
 pub(crate) const DESK_WALK_Y_OFF: u16 = 4;
 
-/// A point packed into one hash input from the corner of the office's
-/// [`super::SceneLayout::inner`], so a per-spot seed is derived the same way
-/// everywhere it is needed and insets move no seat or pot. The PACKING
-/// is load-bearing, not an implementation detail: every committed still was
-/// rendered against it, and swapping the halves re-seeds every seat and pot
+/// A point packed into one hash input, its column counted from the floor's
+/// `west` edge and its row from the canvas's top, as the floor's rows are, so a
+/// per-spot seed is derived the same way everywhere it is needed and a floor
+/// moved sideways without changing width, or under a top inset within the wall's share,
+/// re-seeds no seat or pot; one narrowed or shortened is re-divided. The
+/// PACKING is load-bearing, not an implementation detail: every committed still
+/// was rendered against it, and swapping the halves re-seeds every seat and pot
 /// while every property test still passes — pinned by
 /// `point_seed_packing_is_frozen`.
-pub(super) fn point_seed(p: Point, inner: Bounds) -> u64 {
-    (u64::from(p.x - inner.x) << 32) | u64::from(p.y - inner.y)
+pub(super) fn point_seed(p: Point, west: u16) -> u64 {
+    (u64::from(p.x - west) << 32) | u64::from(p.y)
 }
 
 /// Half the seeded nudge's span. The chair is `CHARACTER_SPRITE_W` on a
@@ -855,7 +857,7 @@ const SEAT_NUDGE_PX: i32 = 2;
 /// a per-desk nudge so a pod does not read as a stamped grid.
 fn seat_center_x(desk: Point, inner: Bounds) -> u16 {
     let base = i32::from(desk.x) + i32::from(desk_furniture_def().visual.w) / 2;
-    let seed = point_seed(desk, inner);
+    let seed = point_seed(desk, inner.x);
     let span = SEAT_NUDGE_PX * 2 + 1;
     let nudge = (pixtuoid_core::id::splitmix64(seed) % span as u64) as i32 - SEAT_NUDGE_PX;
     base.saturating_add(nudge).max(0) as u16
