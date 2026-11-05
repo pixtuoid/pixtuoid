@@ -38,7 +38,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Hermes Agent",
     label_prefix: "hm",
-    verified_version: "0.22.5",
+    verified_version: "0.22.7",
     version_probe: Some(&["hermes", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("HERMES_HOME"),
