@@ -410,7 +410,7 @@ impl TextRun {
 }
 
 /// The cells of `map` a line `w` cells wide takes, placed by `at` as `align`
-/// says, and [`kept`] to the cells that show `within`: the row `at`'s cell
+/// says, and [`kept`] to the cells wholly inside `within`: the row `at`'s cell
 /// lies in, `LABEL_GAP` rows up for [`Align::Over`].
 fn line_at((at, align): (Point, Align), w: u16, map: CellMap, within: Bounds) -> CellRect {
     let anchor = match align {
@@ -426,7 +426,7 @@ fn line_at((at, align): (Point, Align), w: u16, map: CellMap, within: Bounds) ->
         Align::Right => col.saturating_sub(w),
         Align::Over | Align::Centre => col.saturating_sub(w / 2),
     };
-    let [cols, rows] = map.cells_showing(within);
+    let [cols, rows] = map.cells_inside(within);
     let (cols, rows) = (kept(x, w, cols), kept(row, 1, rows));
     CellRect {
         x: cols.start,

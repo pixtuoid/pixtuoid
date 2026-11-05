@@ -1466,10 +1466,10 @@ fn a_fitted_inset_is_rounded_up_to_whole_units() {
     let fitted = Viewport::fitted(
         Size { w: 1206, h: 2622 },
         Insets {
-            top: 186,
-            right: 18,
-            bottom: 102,
-            left: 30,
+            top: 181,
+            right: 13,
+            bottom: 97,
+            left: 25,
         },
         art,
         per_point,

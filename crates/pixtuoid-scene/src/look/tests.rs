@@ -251,7 +251,7 @@ fn no_figure_is_drawn_under_an_inset() {
 /// No world text is set under an inset: under every inset of the sweep, in
 /// either look, with an agent carried to each edge and corner of the canvas,
 /// each badge, the bubble it hangs and each sign bakes only inside the insets,
-/// and the host sets each in cells that show what lies inside them.
+/// and the host sets each in cells wholly inside them.
 #[test]
 fn no_text_is_set_under_an_inset() {
     use crate::display::TextRun;
@@ -314,13 +314,26 @@ fn no_text_is_set_under_an_inset() {
                         .picture(raster)
                         .and_then(|p| p.text)
                         .expect("the host sets the text");
-                    badged += usize::from(
+                    let kept = |run: &TextRun| {
+                        crate::display::compose::kept_art(
+                            crate::display::run_rect(run, pen),
+                            run.within,
+                            pen,
+                        )
+                    };
+                    for badge in text.badges.iter().filter(|b| {
                         insets.top > 0
-                            && text.badges.iter().any(|b| {
-                                b.agent == held
-                                    && b.at.y < inner.y + crate::display::text::LABEL_GAP
-                            }),
-                    );
+                            && b.agent == held
+                            && b.at.y < inner.y + crate::display::text::LABEL_GAP
+                    }) {
+                        let (set, [_, ys]) = kept(&badge.run());
+                        assert!(
+                            ys.len() == usize::from(set.h.0) && set.y.0 >= pen.art(inner.y).0,
+                            "{insets:?} {look:?} {gesture:?}: the held badge's plate {set:?} \
+                             shows only rows {ys:?} of the top inset's edge"
+                        );
+                        badged += 1;
+                    }
                     let bubbles = text.badges.iter().map(|badge| {
                         let bubble = crate::chitchat::ChitchatBubble {
                             text: "a quip as long as any",
@@ -337,6 +350,16 @@ fn no_text_is_set_under_an_inset() {
                         .chain(text.signs.iter().cloned())
                         .collect();
                     for run in &runs {
+                        let (set, [xs, ys]) = kept(run);
+                        assert!(
+                            xs.is_empty()
+                                || ys.is_empty()
+                                || (xs.start, ys.start) == (set.x.0, set.y.0),
+                            "{insets:?} {look:?} {gesture:?}: {:?} {:?} is cut at {xs:?} {ys:?} \
+                             but set at {set:?}, not moved in",
+                            run.role,
+                            run.text()
+                        );
                         let mut buf =
                             crate::sprite::RgbBuffer::filled(size.w * k, size.h * k, UNDER);
                         crate::cutaway::paint::paint_run(run, (&pack, pen), &mut buf);
@@ -357,8 +380,12 @@ fn no_text_is_set_under_an_inset() {
                         for (col, row) in (at.x..at.x + at.w)
                             .flat_map(|c| (at.y..at.y + at.h).map(move |r| (c, r)))
                         {
+                            let cell = CellMap::HALF_BLOCK.area(col, row);
                             assert!(
-                                CellMap::HALF_BLOCK.area(col, row).overlaps(open),
+                                cell.x >= open.x
+                                    && cell.y >= open.y
+                                    && cell.right() <= open.right()
+                                    && cell.bottom() <= open.bottom(),
                                 "{insets:?} {look:?} {gesture:?}: {:?} {:?} sets cell ({col}, {row}) under an inset of {inner:?}",
                                 run.role,
                                 run.text()

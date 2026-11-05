@@ -72,8 +72,8 @@ impl CellMap {
         )
     }
 
-    /// The columns and the rows of the cells that show any of `b`.
-    pub(crate) fn cells_showing(self, b: crate::layout::Bounds) -> [std::ops::Range<u16>; 2] {
+    /// The columns and the rows of the cells wholly inside `b`.
+    pub(crate) fn cells_inside(self, b: crate::layout::Bounds) -> [std::ops::Range<u16>; 2] {
         let cells = |from: u16, len: u16, px: u16| {
             let cell = |units: u16, round: fn(u32, u32) -> u32| {
                 u16::try_from(round(
@@ -82,7 +82,7 @@ impl CellMap {
                 ))
                 .unwrap_or(u16::MAX)
             };
-            cell(from, |a, b| a / b)..cell(from.saturating_add(len), u32::div_ceil)
+            cell(from, u32::div_ceil)..cell(from.saturating_add(len), |a, b| a / b)
         };
         [
             cells(b.x, b.width, self.cell.w),
