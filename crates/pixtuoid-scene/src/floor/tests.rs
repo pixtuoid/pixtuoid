@@ -149,27 +149,29 @@ fn door_anim_excludes_arrived_entry_profiles() {
     let id = AgentId::from_transcript_path("/p/door.jsonl");
     let mut fctx = FloorCtx::new();
     let mut walk = WalkState::default();
+    let profile = WalkProfile {
+        duration_ms: 2000,
+        pause_ms: 300,
+        path_len_octile: 500,
+        v_cruise: 0.36,
+        accel: 6.5e-4,
+    };
+    let window = profile.duration_ms + profile.pause_ms;
     walk.entry = Some(crate::walk::WalkLeg {
         started_at: t0,
-        profile: WalkProfile {
-            duration_ms: 2000,
-            pause_ms: 300,
-            path_len_octile: 500,
-            v_cruise: 0.36,
-            accel: 6.5e-4,
-        },
+        profile,
         from: crate::layout::Point { x: 0, y: 0 },
     });
     fctx.walks.insert(id, walk);
 
-    fctx.recompute_door_anim_max_ms(t0 + Duration::from_millis(1000));
+    fctx.recompute_door_anim_max_ms(t0 + Duration::from_millis(window - 1));
     assert_eq!(
-        fctx.door_anim_max_ms, 2300,
+        fctx.door_anim_max_ms, window,
         "in-flight entry walk should drive the door cosmetic window"
     );
 
     // Past arrival, even though WalkState.entry is never cleared for this agent.
-    fctx.recompute_door_anim_max_ms(t0 + Duration::from_millis(3000));
+    fctx.recompute_door_anim_max_ms(t0 + Duration::from_millis(window));
     assert_eq!(
         fctx.door_anim_max_ms, 0,
         "an arrived entry profile must not hold the door open for the agent's lifetime"
@@ -341,16 +343,16 @@ fn transition_t_progresses() {
 
     assert!((tr.t(start) - 0.0).abs() < f32::EPSILON);
 
-    let mid = start + Duration::from_millis(450);
+    let mid = start + Duration::from_millis(TRANSITION_DURATION_MS / 2);
     let t_mid = tr.t(mid);
     assert!(
         t_mid > 0.0 && t_mid < 1.0,
         "mid should be between 0 and 1, got {t_mid}"
     );
 
-    let end = start + Duration::from_millis(900);
+    let end = start + Duration::from_millis(TRANSITION_DURATION_MS);
     assert!((tr.t(end) - 1.0).abs() < f32::EPSILON);
-    assert!(!tr.is_done(start + Duration::from_millis(450)));
+    assert!(!tr.is_done(mid));
     assert!(tr.is_done(end));
 }
 
@@ -359,7 +361,7 @@ fn transition_t_clamps_past_duration() {
     let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let tr = FloorTransition::new(0, 1, start);
 
-    let past = start + Duration::from_millis(1000);
+    let past = start + Duration::from_millis(TRANSITION_DURATION_MS + 1);
     assert!((tr.t(past) - 1.0).abs() < f32::EPSILON);
     assert!(tr.is_done(past));
 }
@@ -372,7 +374,8 @@ fn t0() -> SystemTime {
 fn light_steady_state_populated() {
     let mut dim = VacancyDim::new();
     let start = t0();
-    for ms in (0..3_000).step_by(crate::anim::PAINT_FRAME_MS as usize) {
+    for ms in (0..2 * VacancyDim::VACANCY_DEBOUNCE_MS).step_by(crate::anim::PAINT_FRAME_MS as usize)
+    {
         let level = dim.tick(false, start + Duration::from_millis(ms));
         assert!(
             (level - 1.0).abs() < 1e-6,
@@ -401,7 +404,7 @@ fn light_eases_toward_min_after_debounce() {
     let mut dim = VacancyDim::new();
     let start = t0();
     dim.tick(true, start);
-    // the last full-light tick, so the fade below spans only its own second
+    // the last full-light tick, so the fade below spans only the probe's own step
     dim.tick(
         true,
         start + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS - 1),
@@ -419,8 +422,9 @@ fn light_eases_toward_min_after_debounce() {
 fn light_converges_to_min_when_empty_long_enough() {
     let mut dim = VacancyDim::new();
     let start = t0();
-    // A realistic frame cadence for 30 s, so the exponential ease has fully landed.
-    for ms in (0..30_000).step_by(crate::anim::PAINT_FRAME_MS as usize) {
+    // Frames through the debounce and ten time constants, so the ease has landed.
+    let landed = VacancyDim::VACANCY_DEBOUNCE_MS + 10 * VacancyDim::FADE_TAU_MS;
+    for ms in (0..landed).step_by(crate::anim::PAINT_FRAME_MS as usize) {
         dim.tick(true, start + Duration::from_millis(ms));
     }
     let level = dim.level();
@@ -434,12 +438,13 @@ fn light_converges_to_min_when_empty_long_enough() {
 fn light_rises_back_when_repopulated() {
     let mut dim = VacancyDim::new();
     let start = t0();
-    for ms in (0..20_000).step_by(crate::anim::PAINT_FRAME_MS as usize) {
+    let landed = VacancyDim::VACANCY_DEBOUNCE_MS + 10 * VacancyDim::FADE_TAU_MS;
+    for ms in (0..landed).step_by(crate::anim::PAINT_FRAME_MS as usize) {
         dim.tick(true, start + Duration::from_millis(ms));
     }
     assert!(dim.level() < 0.2);
-    let later = start + Duration::from_millis(20_000);
-    for ms in (0..3_000).step_by(crate::anim::PAINT_FRAME_MS as usize) {
+    let later = start + Duration::from_millis(landed);
+    for ms in (0..4 * VacancyDim::FADE_TAU_MS).step_by(crate::anim::PAINT_FRAME_MS as usize) {
         dim.tick(false, later + Duration::from_millis(ms));
     }
     let level = dim.level();
@@ -450,13 +455,14 @@ fn light_rises_back_when_repopulated() {
 fn light_resets_vacant_since_when_repopulated() {
     let mut dim = VacancyDim::new();
     let start = t0();
+    let debounce = VacancyDim::VACANCY_DEBOUNCE_MS;
+    let at = |ms| start + Duration::from_millis(ms);
     dim.tick(true, start);
-    dim.tick(true, start + Duration::from_millis(3_000));
-    dim.tick(false, start + Duration::from_millis(3_500));
-    // Empty again: the debounce must restart here, so the 7.5 s sample is only
-    // 3.9 s into the new window and must still hold at 1.0.
-    dim.tick(true, start + Duration::from_millis(3_600));
-    let level = dim.tick(true, start + Duration::from_millis(7_500));
+    dim.tick(false, at(debounce - 1));
+    // Vacant again: the debounce restarts here, so a probe past the first window
+    // but inside the new one still holds at 1.0.
+    dim.tick(true, at(debounce));
+    let level = dim.tick(true, at(2 * debounce - 1));
     assert!(
         (level - 1.0).abs() < 1e-6,
         "vacant_since did not reset on repopulate: {level}"
@@ -468,7 +474,8 @@ fn light_large_dt_does_not_overshoot_or_nan() {
     let mut dim = VacancyDim::new();
     let start = t0();
     dim.tick(true, start);
-    let later = start + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 1_000);
+    let later =
+        start + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + VacancyDim::FADE_TAU_MS);
     let level = dim.tick(true, later);
     assert!(level.is_finite(), "level went non-finite: {level}");
     assert!(
@@ -567,7 +574,7 @@ fn light_snap_to_vacant_forces_min_level() {
 fn coffee_record_stamps_only_new_carriers_and_evict_follows_the_scene() {
     let id = AgentId::from_parts("claude-code", "coffee-test");
     let t0 = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-    let t1 = t0 + std::time::Duration::from_secs(60);
+    let t1 = t0 + std::time::Duration::from_secs(CoffeeState::STEAM_WINDOW_SECS / 2);
     let mut coffee = CoffeeState::default();
     coffee.record([id], t0);
     assert_eq!(coffee.map().get(&id), Some(&t0), "a new carrier is stamped");
@@ -595,7 +602,7 @@ fn coffee_second_trip_after_steam_window_restamps() {
         Some(&t0),
         "a re-report within the steam window keeps the original stamp"
     );
-    let refetch = t0 + Duration::from_secs(CoffeeState::STEAM_WINDOW_SECS * 3);
+    let refetch = t0 + Duration::from_secs(CoffeeState::STEAM_WINDOW_SECS);
     coffee.record([id], refetch);
     assert_eq!(
         coffee.map().get(&id),
@@ -680,7 +687,7 @@ fn a_change_of_insets_alone_re_lays_the_office_out() {
 fn transition_escapes_a_backward_clock_step() {
     let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let tr = FloorTransition::new(0, 1, start);
-    let wobble = start - Duration::from_millis(100);
+    let wobble = start - Duration::from_millis(tr.duration_ms);
     assert!(
         !tr.is_done(wobble),
         "a small wobble must not abort the slide"
@@ -688,7 +695,7 @@ fn transition_escapes_a_backward_clock_step() {
     assert!((tr.t(wobble) - 0.0).abs() < f32::EPSILON);
     // Without the escape the renderer stays wedged in the transition composite —
     // no labels, tooltips or hit-testing — until the clock re-passes started_at.
-    let stepped = start - Duration::from_millis(tr.duration_ms * 2);
+    let stepped = start - Duration::from_millis(tr.duration_ms + 1);
     assert!(
         tr.is_done(stepped),
         "a large backward clock step must complete the transition"
@@ -952,7 +959,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
 fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
     let scene = make_scene(1, 8);
     let id = AgentId::from_transcript_path("/p/0.jsonl");
-    let t = t0() + Duration::from_millis(100); // 100ms in: entry walk in flight
+    let t = t0() + FRAME; // a frame in: entry walk in flight
     let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
 
     let frame = session
@@ -1415,7 +1422,7 @@ fn starved_cycle(step: Duration) -> Vec<(u64, NeonLevels)> {
 
 #[test]
 fn neon_a_starved_tube_flashes_inside_its_windows_and_only_there() {
-    for (ms, levels) in starved_cycle(Duration::from_millis(10)).into_iter().skip(1) {
+    for (ms, levels) in starved_cycle(Duration::from_millis(1)).into_iter().skip(1) {
         let in_window = NeonState::STUTTER_FLASHES_MS
             .iter()
             .any(|&(start, end)| (start..end).contains(&ms));
@@ -1593,7 +1600,7 @@ fn neon_never_flashes_while_lit_or_while_still_coasting_down() {
     );
     let mut last = coasting.tick(neon_mood(0, 0, 0), ROOM_DIMMED, Motion::Full.timing(now));
     while now < flash_at {
-        now += Duration::from_millis(10);
+        now += FRAME;
         last = coasting.tick(neon_mood(0, 0, 0), ROOM_DIMMED, Motion::Full.timing(now));
     }
     assert_ne!(last, NeonLevels::FLASH);
@@ -1866,7 +1873,7 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
             None,
             &typing,
             &asking,
-            Duration::from_secs(6),
+            switch + 2 * Duration::from_millis(u64::from(NeonState::FADE_MS)),
         ),
     ];
     // the beat is the cutaway's at every scale, so the cheapest checks it
@@ -1952,7 +1959,7 @@ fn a_frame_is_a_function_of_its_instant_and_tier() {
 #[test]
 fn floor_nav_slides_lands_and_clamps() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let done = t0 + Duration::from_secs(2);
+    let done = t0 + Duration::from_millis(TRANSITION_DURATION_MS);
     let mut nav = FloorNav::default();
     assert!(!nav.navigate(0, t0), "no floor slides to itself");
     assert!(nav.navigate(1, t0));
@@ -2036,7 +2043,8 @@ fn a_petting_plays_only_on_its_own_floor() {
     };
     assert!(petted(0, t0), "the petted floor");
     assert!(!petted(1, t0), "another floor");
-    assert!(!petted(0, t0 + Duration::from_secs(3600)), "a petting over");
+    let over = t0 + Duration::from_millis(crate::pet::PET_DURATION_MS);
+    assert!(!petted(0, over), "a petting over");
 }
 
 /// A lift goes to the floor showing and nothing during a slide; its carry and
@@ -2056,7 +2064,7 @@ fn a_grip_stays_on_the_floor_it_lifted_on() {
     assert_eq!(gripped.of(&lift, &nav), Some(0));
     assert!(nav.navigate(1, t0));
     assert_eq!(gripped.of(&Gesture::Carry(at), &nav), Some(0));
-    nav.settle(2, t0 + Duration::from_secs(2));
+    nav.settle(2, t0 + Duration::from_millis(TRANSITION_DURATION_MS));
     assert_eq!(nav.current(), 1);
     assert_eq!(gripped.of(&Gesture::Drop(at), &nav), Some(0));
     assert_eq!(
@@ -2111,7 +2119,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
     let bread = |office: &OfficeSession| office.footer_floor(&scene).map(|f| f.current);
     assert_eq!(bread(&office), Some(1));
     assert!(office.navigate(1, t0));
-    let mid = t0 + Duration::from_millis(400);
+    let mid = t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2);
     let _ = render(&mut office, mid);
     let slide = office.picture().expect("the slide is composed");
     assert!(
@@ -2119,7 +2127,10 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         "a slide has no one layout"
     );
     assert!(slide.hits().is_none(), "a slide hits nothing");
-    let _ = render(&mut office, t0 + Duration::from_secs(2));
+    let _ = render(
+        &mut office,
+        t0 + Duration::from_millis(TRANSITION_DURATION_MS),
+    );
     assert!(matches!(
         office.picture(),
         Some(crate::look::Picture::Floor(_))
@@ -2156,7 +2167,8 @@ fn every_floors_badges_read_the_offices_floor_nameplates() {
     let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     let namesakes = crate::nameplate::FloorNamesakes::of(&scene);
     let mut badged = 0;
-    for (floor, now) in [(0, t0), (1, t0 + Duration::from_secs(2))] {
+    let landed = t0 + Duration::from_millis(TRANSITION_DURATION_MS);
+    for (floor, now) in [(0, t0), (1, landed)] {
         if floor > 0 {
             assert!(office.navigate(floor, t0));
         }
@@ -2303,7 +2315,10 @@ fn a_slides_gap_dims_with_its_floors() {
     };
     let _ = render(&mut office, t0);
     assert!(office.navigate(1, t0));
-    let _ = render(&mut office, t0 + Duration::from_millis(400));
+    let _ = render(
+        &mut office,
+        t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2),
+    );
     let slide = office.picture().expect("composed").pixels();
     let rows = |rgb| {
         (0..slide.height())
