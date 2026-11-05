@@ -3930,33 +3930,58 @@ async fn root_watch_follows_the_root_through_appearance_and_removal() {
     );
 }
 
-/// A poll's scan replays when it is the first pass to read the root there now:
-/// one its reconcile found absent, which can appear before the scan reads it,
-/// or one that reconcile attached, found moved or found with its watch refused.
-/// A later pass over the same root reads live, watched or still refused.
+/// `watch` reconciled for a poll, and whether the poll's scan replays.
+async fn polled(watch: &mut RootWatch) -> bool {
+    watch.reconcile_logged(Wake::Poll).await;
+    watch.start_scan()
+}
+
+/// A scan replays a root no scan has read: one found absent, which can appear
+/// before the scan reads it, or one attached, moved or refused its watch, even
+/// where a nudge placed it and scanned nothing. A later scan of the same root
+/// reads live, watched or still refused.
 #[tokio::test]
-async fn a_scan_replays_on_the_first_pass_over_a_root() {
+async fn a_scan_replays_a_root_no_scan_has_read() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("root");
     let root_fake = FakeWatcher::default();
     let (mut watch, _anchor, _nudges) = fake_root_watch(&root, &root_fake);
 
-    assert!(watch.reconcile_for_scan().await, "found absent");
+    assert!(polled(&mut watch).await, "found absent");
     std::fs::create_dir(&root).unwrap();
-    assert!(watch.reconcile_for_scan().await, "attached");
-    assert!(!watch.reconcile_for_scan().await, "watched");
+    assert!(polled(&mut watch).await, "attached");
+    assert!(!polled(&mut watch).await, "watched");
     std::fs::remove_dir(&root).unwrap();
     std::fs::create_dir(&root).unwrap();
-    assert!(watch.reconcile_for_scan().await, "moved");
-    assert!(!watch.reconcile_for_scan().await, "moved, then watched");
+    assert!(polled(&mut watch).await, "moved");
+    assert!(!polled(&mut watch).await, "moved, then watched");
 
     let refusing = FakeWatcher {
         refuse: Some(root.clone()),
         ..FakeWatcher::default()
     };
     let (mut refused, _anchor, _nudges) = fake_root_watch(&root, &refusing);
-    assert!(refused.reconcile_for_scan().await, "its watch refused");
-    assert!(!refused.reconcile_for_scan().await, "still refused");
+    assert!(polled(&mut refused).await, "its watch refused");
+    assert!(!polled(&mut refused).await, "still refused");
+
+    for (fake, attaches, then) in [
+        (
+            FakeWatcher {
+                failures: Arc::new(std::sync::Mutex::new(1)),
+                ..FakeWatcher::default()
+            },
+            true,
+            "attached on the poll's retry",
+        ),
+        (refusing, false, "refused again on the poll's retry"),
+    ] {
+        let (mut nudged, _anchor, _nudges) = fake_root_watch(&root, &fake);
+        nudged.reconcile_logged(Wake::Nudge).await;
+        assert!(!nudged.is_attached(), "premise: the nudge's watch refused");
+        assert!(polled(&mut nudged).await, "placed by a nudge, {then}");
+        assert_eq!(nudged.is_attached(), attaches, "premise: {then}");
+        assert!(!polled(&mut nudged).await, "placed by a nudge, read");
+    }
 }
 
 /// inotify and Windows drop the watch of a deleted directory, so one deleted

@@ -459,7 +459,7 @@ impl JsonlWatcher {
                 window: self.initial_window,
                 live: &live,
                 follower: follower.as_ref(),
-                replaying: true,
+                replaying: root_watch.start_scan(),
             };
             self.run_scan_pass(
                 &ctx,
@@ -497,8 +497,9 @@ impl JsonlWatcher {
                 Some(()) = nudges.recv() => {
                     if root_watch.reconcile_logged(Wake::Nudge).await == Reconciled::Attached {
                         // What was written before the watch existed.
+                        let replaying = root_watch.start_scan();
                         self.run_scan_pass(
-                            &WatchCtx { replaying: true, ..ctx }, &mut scan_state,
+                            &WatchCtx { replaying, ..ctx }, &mut scan_state,
                             exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
                         ).await;
                     }
@@ -512,7 +513,8 @@ impl JsonlWatcher {
                     walk_jsonl(&path, decoders, &ctx).await;
                 }
                 _ = poll.tick() => {
-                    let replaying = root_watch.reconcile_for_scan().await;
+                    root_watch.reconcile_logged(Wake::Poll).await;
+                    let replaying = root_watch.start_scan();
                     self.run_scan_pass(
                         &WatchCtx { replaying, ..ctx }, &mut scan_state,
                         exit_watch.as_ref(), unclaims.as_ref(), decoders, true,

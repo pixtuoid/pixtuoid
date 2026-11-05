@@ -325,6 +325,8 @@ pub(crate) struct RootWatch {
     placed: Placement,
     watchers: Vec<Box<dyn Watcher + Send>>,
     root_watched: bool,
+    /// The root the last scan read, by [`Self::start_scan`].
+    scanned: Option<DirId>,
     /// A watch of `placed` failed: retried only by a [`Wake::Poll`].
     broken: bool,
     root_health: FailureLatch,
@@ -385,6 +387,7 @@ impl RootWatch {
             placed: Placement::default(),
             watchers: Vec::new(),
             root_watched: false,
+            scanned: None,
             broken: false,
             root_health: FailureLatch::default(),
             anchor_health: FailureLatch::default(),
@@ -395,14 +398,14 @@ impl RootWatch {
         self.root_watched
     }
 
-    /// A poll's [`Self::reconcile_logged`], and whether the scan after it
-    /// replays: whether that scan is the first pass to read the root there now.
-    /// One found absent can appear before the scan reads it; one new or moved
-    /// is unread whether its watch attached or was refused.
-    pub(crate) async fn reconcile_for_scan(&mut self) -> bool {
-        let read = self.placed.root.clone();
-        self.reconcile_logged(Wake::Poll).await;
-        read.is_none() || read != self.placed.root
+    /// Starts a scan, from whichever wake: whether it replays, recording the
+    /// root it reads. It replays a root no scan has read, attached or refused
+    /// its watch, and while none is placed, since one can appear before the
+    /// scan reads it; a root a scan has read reads live.
+    pub(crate) fn start_scan(&mut self) -> bool {
+        let replays = self.placed.root.is_none() || self.placed.root != self.scanned;
+        self.scanned = self.placed.root.clone();
+        replays
     }
 
     /// Brings the watches in line with the filesystem: the anchor on the root's
