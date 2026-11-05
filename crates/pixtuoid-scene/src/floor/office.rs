@@ -195,7 +195,9 @@ fn floor_meta(office: FloorMeta, floor: usize, n_floors: usize) -> FloorMeta {
         floors,
         altitude,
         floor_seed,
-        ..
+        weather: _,
+        motion: _,
+        offline: _,
     } = FloorMeta::for_floor(floor, n_floors);
     FloorMeta {
         floor_idx,

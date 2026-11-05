@@ -1232,7 +1232,7 @@ const ROOM_DIMMED: bool = true;
 const FRAME: Duration = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
 
 #[test]
-fn neon_first_tick_snaps_to_the_mood() {
+fn neon_first_tick_snaps_to_its_target() {
     for (mood, room, want) in [
         (neon_mood(2, 1, 0), ROOM_LIT, NeonLevels::ALERT),
         (neon_mood(2, 0, 3), ROOM_LIT, NeonLevels::RUNNING),

@@ -73,7 +73,8 @@ pub(crate) fn floor_capacity_scaled(
     )
 }
 
-/// Per-floor identity + look: index, altitude, and derived layout seed.
+/// A floor's identity (index, count, altitude, seed) and what every floor of its
+/// office shares (weather, motion, offline).
 #[derive(Debug, Clone, Copy)]
 pub struct FloorMeta {
     /// Zero-based floor index.
@@ -719,8 +720,8 @@ impl VacancyDim {
         }
     }
 
-    /// Whether the debounce has run out — the floor's VERDICT that it is vacant,
-    /// empty or [`FloorMeta::offline`]. Read this, never `level() < 1.0`: the
+    /// Whether the debounce has run out — the floor's VERDICT that it is vacant:
+    /// empty, or [`FloorMeta::offline`]. Read this, never `level() < 1.0`: the
     /// level trails the verdict by the length of its ease.
     pub(crate) fn dimmed(&self) -> bool {
         self.dimmed
@@ -855,7 +856,7 @@ pub(crate) fn neon_look(levels: NeonLevels, theme: &Theme) -> NeonLook {
 /// Per-floor neon-sign fade state: a mood change eases the light over
 /// [`NeonState::FADE_MS`] instead of snapping the hue. A sign with no recent light
 /// to ease FROM — its first tick, or one nobody has drawn for longer than a fade
-/// (a still's warm-up step, a floor switched back to) — snaps to the mood's own.
+/// (a still's warm-up step, a floor switched back to) — snaps to its target.
 #[derive(Debug, Default)]
 pub(crate) struct NeonState {
     fade: Option<NeonFade>,
