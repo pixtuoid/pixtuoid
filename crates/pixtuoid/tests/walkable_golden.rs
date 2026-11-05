@@ -10,7 +10,7 @@ fn mask_to_ascii(layout: &SceneLayout) -> String {
     let mut s = String::with_capacity(w * h + h);
     for y in 0..h {
         for x in 0..w {
-            s.push(if layout.walkable.is_walkable(x as u16, y as u16) {
+            s.push(if layout.is_walkable(x as u16, y as u16) {
                 '.'
             } else {
                 '#'
