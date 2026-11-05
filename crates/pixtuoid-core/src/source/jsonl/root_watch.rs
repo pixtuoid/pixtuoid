@@ -395,11 +395,14 @@ impl RootWatch {
         self.root_watched
     }
 
-    /// Whether a scan after a reconcile that returned `outcome` reads what
-    /// predates the root's watch: one the reconcile attached, or one it found
-    /// absent, which can appear before the scan's own read.
-    pub(crate) fn scan_replays(&self, outcome: Reconciled) -> bool {
-        outcome == Reconciled::Attached || self.placed.root.is_none()
+    /// A poll's [`Self::reconcile_logged`], and whether the scan after it
+    /// replays: whether that scan is the first pass to read the root there now.
+    /// One found absent can appear before the scan reads it; one new or moved
+    /// is unread whether its watch attached or was refused.
+    pub(crate) async fn reconcile_for_scan(&mut self) -> bool {
+        let read = self.placed.root.clone();
+        self.reconcile_logged(Wake::Poll).await;
+        read.is_none() || read != self.placed.root
     }
 
     /// Brings the watches in line with the filesystem: the anchor on the root's

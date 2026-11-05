@@ -3930,39 +3930,33 @@ async fn root_watch_follows_the_root_through_appearance_and_removal() {
     );
 }
 
-/// A scan reads what predates the root's watch, so replays, after the
-/// reconcile that attached it and after one that found it absent: the root can
-/// appear between that reconcile's read and the scan's. Once watched, or present
-/// with its watch refused, a scan's first read is live.
+/// A poll's scan replays when it is the first pass to read the root there now:
+/// one its reconcile found absent, which can appear before the scan reads it,
+/// or one that reconcile attached, found moved or found with its watch refused.
+/// A later pass over the same root reads live, watched or still refused.
 #[tokio::test]
-async fn a_scan_replays_what_predates_the_roots_watch() {
+async fn a_scan_replays_on_the_first_pass_over_a_root() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("root");
     let root_fake = FakeWatcher::default();
     let (mut watch, _anchor, _nudges) = fake_root_watch(&root, &root_fake);
 
-    let absent = watch.reconcile(Wake::Poll).await.unwrap();
+    assert!(watch.reconcile_for_scan().await, "found absent");
     std::fs::create_dir(&root).unwrap();
-    assert!(
-        watch.scan_replays(absent),
-        "found absent, it appeared before the scan"
-    );
-    let attached = watch.reconcile(Wake::Poll).await.unwrap();
-    assert_eq!(attached, Reconciled::Attached, "premise");
-    assert!(watch.scan_replays(attached));
-    let watched = watch.reconcile(Wake::Poll).await.unwrap();
-    assert!(!watch.scan_replays(watched), "watched");
+    assert!(watch.reconcile_for_scan().await, "attached");
+    assert!(!watch.reconcile_for_scan().await, "watched");
+    std::fs::remove_dir(&root).unwrap();
+    std::fs::create_dir(&root).unwrap();
+    assert!(watch.reconcile_for_scan().await, "moved");
+    assert!(!watch.reconcile_for_scan().await, "moved, then watched");
 
     let refusing = FakeWatcher {
         refuse: Some(root.clone()),
         ..FakeWatcher::default()
     };
     let (mut refused, _anchor, _nudges) = fake_root_watch(&root, &refusing);
-    assert!(refused.reconcile(Wake::Poll).await.is_err(), "premise");
-    assert!(
-        !refused.scan_replays(Reconciled::Unchanged),
-        "present, its watch refused"
-    );
+    assert!(refused.reconcile_for_scan().await, "its watch refused");
+    assert!(!refused.reconcile_for_scan().await, "still refused");
 }
 
 /// inotify and Windows drop the watch of a deleted directory, so one deleted
