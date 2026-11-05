@@ -1416,25 +1416,36 @@ fn waypoint_depth_baseline_is_its_grounds_south_row() {
     }
 }
 
-/// Each case is the office the App lays out for that device, upright and
-/// turned, on its 4-pixel art at whole device pixels a frame pixel.
-/// The iPhone 18 Pro's 402×874 pt at 3× and the 13-inch iPad Pro's 1032×1376
-/// pt at 2× are the App's (`OfficeModelTests.swift`, `OfficeFitTests.swift`);
-/// the iPhone SE's 1334×750 px is Apple's (<https://support.apple.com/kb/SP867>)
-/// at the 4.7-inch display's 2× (Table 2-1's iPhone 8,
+/// Each surface the App fits an office to, upright and turned, with its least
+/// device pixels a frame pixel, and the office and upscale `Viewport::fitted`
+/// gives it on 4-pixel art. The iPhone 18 Pro's 402×874 pt at 3× and the
+/// 13-inch iPad Pro's 1032×1376 pt at 2× are the App's (`OfficeModelTests.swift`,
+/// `OfficeFitTests.swift`); the iPhone SE's 1334×750 px is Apple's
+/// (<https://support.apple.com/kb/SP867>) at the 4.7-inch display's 2×
+/// (Table 2-1's iPhone 8,
 /// <https://developer.apple.com/library/archive/documentation/DeviceInformation/Reference/iOSDeviceCompatibility/Displays/Displays.html>).
+/// A surface 218 units tall at 3× keeps 3× while the iPhone 18 Pro, 218.5, takes
+/// 4×: the two bracket `FITTED_MAX_H` at its value.
+const FITTED_SURFACES: [(&str, (u16, u16), u16, (u16, u16), u16); 7] = [
+    ("iPhone 18 Pro", (1206, 2622), 3, (150, 163), 4),
+    ("iPhone 18 Pro turned", (2622, 1206), 3, (218, 100), 3),
+    (
+        "a surface 218 units tall at 3×",
+        (1206, 2616),
+        3,
+        (150, 218),
+        3,
+    ),
+    ("iPhone SE", (750, 1334), 2, (150, 166), 2),
+    ("iPhone SE turned", (1334, 750), 2, (166, 93), 2),
+    ("iPad Pro 13", (2064, 2752), 2, (150, 172), 4),
+    ("iPad Pro 13 turned", (2752, 2064), 2, (229, 172), 3),
+];
+
 #[test]
-fn a_fitted_viewport_is_the_apps_office_fit() {
+fn a_fitted_viewport_fits_each_app_surface() {
     let art = crate::sprite::format::Density::new(4).expect("nonzero");
-    let cases = [
-        ("iPhone 18 Pro", (1206, 2622), 3, (150, 163), 4),
-        ("iPhone 18 Pro turned", (2622, 1206), 3, (218, 100), 3),
-        ("iPhone SE", (750, 1334), 2, (150, 166), 2),
-        ("iPhone SE turned", (1334, 750), 2, (166, 93), 2),
-        ("iPad Pro 13", (2064, 2752), 2, (150, 172), 4),
-        ("iPad Pro 13 turned", (2752, 2064), 2, (229, 172), 3),
-    ];
-    for (device, (w, h), per_point, (units_w, units_h), upscale) in cases {
+    for (device, (w, h), per_point, (units_w, units_h), upscale) in FITTED_SURFACES {
         let fitted = Viewport::fitted(
             Size { w, h },
             Insets::default(),
@@ -1512,7 +1523,7 @@ fn a_fitted_office_takes_bigger_pixels_rather_than_grow_past_its_cap() {
 #[test]
 fn a_fitted_office_keeps_every_meeting_rooms_furniture() {
     let mut rooms = 0;
-    for h in [93, 100, 166, 172, 218, 229] {
+    for h in FITTED_SURFACES.map(|(_, _, _, (_, units_h), _)| units_h) {
         for seed in 0..48 {
             let layout = SceneLayout::compute(Viewport::full(FITTED_MIN_W, h), None, seed)
                 .expect("lays out");
