@@ -2018,6 +2018,7 @@ fn entry_slot(created_at_ms_ago: u64, now: SystemTime) -> AgentSlot {
     let id = pixtuoid_core::AgentId::from_transcript_path("/door.jsonl");
     let mut s = make_slot(id, ActivityState::Idle);
     s.created_at = now - std::time::Duration::from_millis(created_at_ms_ago);
+    s.arrived_at = Some(s.created_at);
     s
 }
 
@@ -2025,6 +2026,7 @@ fn exit_slot(exit_ms_ago: u64, now: SystemTime) -> AgentSlot {
     let id = pixtuoid_core::AgentId::from_transcript_path("/exit.jsonl");
     let mut s = make_slot(id, ActivityState::Idle);
     s.created_at = now - std::time::Duration::from_secs(300);
+    s.arrived_at = Some(s.created_at);
     s.exiting_at = Some(now - std::time::Duration::from_millis(exit_ms_ago));
     s
 }
@@ -2714,6 +2716,7 @@ fn sim_rig() -> (
     let id = pixtuoid_core::AgentId::from_transcript_path("/p/sim-seam.jsonl");
     let mut slot = make_slot(id, ActivityState::Idle);
     slot.created_at = now0;
+    slot.arrived_at = Some(slot.created_at);
     slot.state_started_at = now0;
     slot.last_event_at = now0;
     let mut scene = SceneState::uniform(16);
@@ -3277,6 +3280,7 @@ fn a_requires_action_agent_stays_seated_and_gets_its_bubble_whichever_way_the_de
         // Past the entry walk, or the agent is still coming in the door.
         let now = now0 + std::time::Duration::from_millis(crate::pose::ENTRY_ANIMATION_MS + 5_000);
         slot.created_at = now0;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = now0;
         let mut owned = OwnedSimStores::new();
         let f = sim_step(
@@ -3336,6 +3340,7 @@ fn the_hover_list_omits_the_undrawn_and_follows_sort_drawables() {
         );
         s.desk_index = GlobalDeskIndex(desk);
         (s.created_at, s.state_started_at, s.last_event_at) = (created, created, created);
+        s.arrived_at = Some(created);
         s
     };
     let off = slot("/hover/off.jsonl", layout.home_desks.len(), now0);
@@ -3676,6 +3681,7 @@ fn a_bubble_clears_its_speakers_badge_at_every_chitchat_spot() {
             let mut s = make_slot(id, ActivityState::Idle);
             s.desk_index = GlobalDeskIndex(n % layout.home_desks.len());
             (s.created_at, s.state_started_at, s.last_event_at) = (now, now, now);
+            s.arrived_at = Some(now);
             scene.agents.insert(id, s);
             poses.insert(id, Some(Pose::AtWaypoint { wp, kind }));
         }
@@ -4677,6 +4683,7 @@ fn no_two_agents_ever_occupy_the_same_exclusive_waypoint() {
         // one lockstep wave.
         let started = now0 - Duration::from_secs(5 + (i as u64 * 11) % 80);
         slot.created_at = started;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = started;
         slot.last_event_at = started;
         slot.desk_index = GlobalDeskIndex(i);
@@ -4746,6 +4753,7 @@ fn a_placement_is_seated_exactly_when_its_figure_sits_on_furniture() {
         let mut slot = make_slot(id, ActivityState::Idle);
         let started = now0 - Duration::from_secs(5 + (i as u64 * 11) % 80);
         slot.created_at = started;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = started;
         slot.last_event_at = started;
         slot.desk_index = GlobalDeskIndex(i);
@@ -4815,6 +4823,7 @@ fn a_running_agent_releases_the_seat_it_snapped_back_from() {
     let id = pixtuoid_core::AgentId::from_transcript_path("/p/claim-release.jsonl");
     let mut slot = make_slot(id, ActivityState::Idle);
     slot.created_at = now0;
+    slot.arrived_at = Some(slot.created_at);
     slot.state_started_at = now0;
     slot.last_event_at = now0;
     let mut scene = SceneState::uniform(16);
@@ -4943,6 +4952,7 @@ fn one_meeting_sofa_still_seats_three_agents_at_once() {
         let mut slot = make_slot(id, ActivityState::Idle);
         let started = now0 - Duration::from_secs(5 + (i as u64 * 11) % 80);
         slot.created_at = started;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = started;
         slot.last_event_at = started;
         slot.desk_index = GlobalDeskIndex(i);
@@ -5009,6 +5019,7 @@ fn a_meeting_chair_sitter_is_drawn_on_the_seat_not_5px_high() {
         let mut slot = make_slot(id, ActivityState::Idle);
         let started = now0 - Duration::from_secs(5 + (i as u64 * 11) % 80);
         slot.created_at = started;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = started;
         slot.last_event_at = started;
         slot.desk_index = GlobalDeskIndex(i);
@@ -5293,6 +5304,7 @@ fn east_rim_targets(layout: &SceneLayout, now0: SystemTime) -> Vec<(u32, u64)> {
         .filter_map(|aid| {
             let mut slot = make_slot(edge_agent_id(aid), ActivityState::Idle);
             slot.created_at = now0;
+            slot.arrived_at = Some(slot.created_at);
             slot.state_started_at = now0;
             slot.last_event_at = now0;
             (1..900u64)
@@ -5336,6 +5348,7 @@ fn a_wandering_character_is_never_sliced_by_the_canvas_edge() {
         let id = edge_agent_id(aid);
         let mut slot = make_slot(id, ActivityState::Idle);
         slot.created_at = now0;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = now0;
         slot.last_event_at = now0;
         let mut scene = SceneState::uniform(16);
@@ -5525,6 +5538,7 @@ fn seated_at_every_desk() -> (SceneState, SceneLayout, SystemTime, OfficeArt) {
         );
         s.desk_index = GlobalDeskIndex(i);
         (s.created_at, s.state_started_at, s.last_event_at) = (now0, now0, now0);
+        s.arrived_at = Some(now0);
         scene.agents.insert(s.agent_id, s);
     }
     let now = now0 + std::time::Duration::from_millis(crate::pose::ENTRY_ANIMATION_MS + 5_000);
@@ -5741,6 +5755,7 @@ fn a_badge_follows_its_sprite_fitted_to_the_canvas_rim() {
         let id = edge_agent_id(aid);
         let mut slot = make_slot(id, ActivityState::Idle);
         slot.created_at = now0;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = now0;
         slot.last_event_at = now0;
         let mut scene = SceneState::uniform(16);

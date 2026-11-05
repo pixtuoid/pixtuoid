@@ -50,6 +50,7 @@ pub(super) fn running_on(
         },
         state_started_at: started,
         created_at: started,
+        arrived_at: Some(started),
         last_event_at: started,
         exiting_at: None,
         desk_index: GlobalDeskIndex(desk),

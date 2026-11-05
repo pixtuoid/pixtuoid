@@ -319,9 +319,13 @@ pub struct AgentSlot {
     /// Wall-clock time of the most recent event (any type) from this agent —
     /// the stale-agent sweep's primary liveness signal.
     pub last_event_at: SystemTime,
-    /// Wall-clock time the slot was first created — the one-shot entry
-    /// animation's anchor, unaffected by later state transitions.
+    /// Wall-clock time the slot was first created: its age, unaffected by later
+    /// state transitions.
     pub created_at: SystemTime,
+    /// When this office saw the slot walk in, the one-shot entry walk's anchor;
+    /// `None` for one already in the room when the office opened, which sits at
+    /// its desk from its first frame.
+    pub arrived_at: Option<SystemTime>,
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
@@ -371,6 +375,15 @@ pub struct AgentSlot {
     /// The most recent Usage reading (see [`UsageObservation`]).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub last_usage: Option<UsageObservation>,
+}
+
+impl AgentSlot {
+    /// Whether its exit walk has had [`EXIT_GRACE_WINDOW`](reducer::EXIT_GRACE_WINDOW)
+    /// to reach the door, so its slot may go.
+    pub(crate) fn walked_out(&self, now: SystemTime) -> bool {
+        self.exiting_at
+            .is_some_and(|t| correlation::elapsed_past(now, t, reducer::EXIT_GRACE_WINDOW))
+    }
 }
 
 fn u64_is_zero(v: &u64) -> bool {
@@ -849,6 +862,7 @@ mod tests {
             state: ActivityState::Idle,
             state_started_at: now,
             created_at: now,
+            arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
             desk_index: GlobalDeskIndex(desk_index),

@@ -138,6 +138,7 @@ fn running_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSl
         state_started_at,
         last_event_at: created_at,
         created_at,
+        arrived_at: Some(created_at),
         ..make_slot(
             AgentId::from_transcript_path("/snap.jsonl"),
             ActivityState::Running {
@@ -155,6 +156,46 @@ fn entry_slot(created_at: SystemTime) -> AgentSlot {
     let mut s = running_slot(created_at, created_at);
     s.state = ActivityState::Idle;
     s
+}
+
+/// The entry walk runs from a slot's arrival, never its age, in the stateless
+/// pose, the routed one and the door's frames: an old slot that just arrived
+/// walks in, and a fresh one that never arrived sits at its desk.
+#[test]
+fn the_entry_walk_keys_on_arrival_not_age() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let l = layout();
+    let probe = now + Duration::from_millis(ENTRY_ANIMATION_MS / 4);
+    let arrived = AgentSlot {
+        arrived_at: Some(now),
+        ..running_slot(now, now - Duration::from_secs(3_600))
+    };
+    let seated = AgentSlot {
+        arrived_at: None,
+        ..running_slot(now, now)
+    };
+    let walking = |pose: Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
+    assert!(walking(crate::pose::pure::derive(&arrived, probe, &l)));
+    assert!(!walking(crate::pose::pure::derive(&seated, probe, &l)));
+    let mut rig = RouteRig::new(StubRouter::straight());
+    assert!(walking(derive_with_routing(
+        &arrived,
+        probe,
+        &l,
+        &mut rig.rctx()
+    )));
+    let mut rig = RouteRig::new(StubRouter::straight());
+    assert!(!walking(derive_with_routing(
+        &seated,
+        probe,
+        &l,
+        &mut rig.rctx()
+    )));
+    let door = |slot: &AgentSlot| {
+        crate::sim::anchors::compute_door_frame_idx(std::slice::from_ref(slot), probe, 0)
+    };
+    assert_ne!(door(&arrived), 0, "the door opens for an arrival");
+    assert_eq!(door(&seated), 0, "and stays shut for one already in");
 }
 
 #[test]
@@ -582,6 +623,7 @@ fn at_waypoint_pose_records_position_to_history() {
         label: "cc".into(),
         state_started_at: now,
         created_at: now - Duration::from_secs(60),
+        arrived_at: Some(now - Duration::from_secs(60)),
         last_event_at: now - Duration::from_secs(60),
         ..make_slot(
             AgentId::from_transcript_path("/idle.jsonl"),
@@ -2263,7 +2305,7 @@ fn a_resurrect_after_the_walkout_arrived_re_enters_through_the_door() {
     let l = layout();
     let door = l.door_threshold;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    // Born long before the spawn window, so only a re-arm can produce an entry.
+    // Arrived long before the entry window, so only a re-arm can produce an entry.
     let created = t0 - Duration::from_secs(3600);
     let mut slot = entry_slot(created);
     slot.exiting_at = Some(t0);
@@ -2283,7 +2325,7 @@ fn a_resurrect_after_the_walkout_arrived_re_enters_through_the_door() {
         "test setup: the walkout must have reached the door"
     );
 
-    // exiting_at cleared, state_started_at re-stamped, created_at untouched —
+    // exiting_at cleared, state_started_at re-stamped, arrived_at untouched —
     // exactly what `fsm::resurrect_in_place` leaves behind.
     slot.exiting_at = None;
     slot.state_started_at = arrived;

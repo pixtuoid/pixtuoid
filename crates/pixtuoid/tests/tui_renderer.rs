@@ -38,6 +38,7 @@ fn agent_slot(
         state,
         state_started_at: now,
         created_at: now - Duration::from_secs(60),
+        arrived_at: Some(now - Duration::from_secs(60)),
         last_event_at: now - Duration::from_secs(60),
         exiting_at: None,
         desk_index: desk,

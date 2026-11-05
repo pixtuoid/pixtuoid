@@ -130,6 +130,7 @@ mod tests {
             state_started_at: SystemTime::UNIX_EPOCH,
             last_event_at: SystemTime::UNIX_EPOCH,
             created_at: SystemTime::UNIX_EPOCH,
+            arrived_at: Some(SystemTime::UNIX_EPOCH),
             exiting_at: None,
             desk_index: GlobalDeskIndex(desk),
             floor_idx: 0,

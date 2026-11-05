@@ -1409,6 +1409,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::TurnKey
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::TurnKey
 pub struct pixtuoid_core::state::AgentSlot
 pub pixtuoid_core::state::AgentSlot::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::state::AgentSlot::arrived_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::state::AgentSlot::created_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
 pub pixtuoid_core::state::AgentSlot::desk_index: pixtuoid_core::state::GlobalDeskIndex
@@ -1938,6 +1939,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::id::AgentId
 pub struct pixtuoid_core::AgentSlot
 pub pixtuoid_core::AgentSlot::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentSlot::arrived_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::AgentSlot::created_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
 pub pixtuoid_core::AgentSlot::desk_index: pixtuoid_core::state::GlobalDeskIndex

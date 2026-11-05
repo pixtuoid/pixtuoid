@@ -282,6 +282,7 @@ fn project_agent(slot: &AgentSlot) -> Agent {
         state_started_at,
         last_event_at: _,
         created_at,
+        arrived_at: _,
         exiting_at,
         desk_index: _,
         floor_idx: _,
@@ -798,6 +799,9 @@ pub struct RemoteOffice {
     machine: Option<Machine>,
     /// The device's clock minus the server's, in ms; held from line to line.
     skew_ms: Option<i64>,
+    /// The cast of a machine the office left, walking out until its grace ends:
+    /// no line names them any more.
+    departing: std::collections::BTreeSet<AgentId>,
 }
 
 impl RemoteOffice {
@@ -807,6 +811,7 @@ impl RemoteOffice {
             scene: SceneState::new(capacities),
             machine: None,
             skew_ms: None,
+            departing: std::collections::BTreeSet::new(),
         }
     }
 
@@ -838,7 +843,10 @@ impl RemoteOffice {
     }
 
     /// Take one line `encode` wrote, received at the device's `now`. An agent
-    /// keeps its desk from line to line, and takes one when it first fits.
+    /// keeps its desk and arrival from line to line, and takes them when it
+    /// first fits: none on the first line, the device's `now` on a line from
+    /// another machine, whose cast walks out from it, and its creation on one
+    /// from the same machine.
     ///
     /// # Errors
     ///
@@ -851,6 +859,8 @@ impl RemoteOffice {
             daemons,
             today,
         } = read_versioned(line)?;
+        let first_line = self.machine.is_none();
+        let another_machine = self.machine.as_ref().is_some_and(|held| *held != machine);
         self.machine = Some(machine);
 
         let skew = self.skew_for(now_ms, now);
@@ -865,20 +875,39 @@ impl RemoteOffice {
         };
 
         agents.sort_by_key(|agent| (agent.created_ms, agent.id));
-        self.scene
-            .agents
-            .retain(|id, _| agents.iter().any(|agent| agent.id == *id));
+        if another_machine {
+            for (id, slot) in &mut self.scene.agents {
+                slot.exiting_at.get_or_insert(now);
+                self.departing.insert(*id);
+            }
+        }
+        let departing = &self.departing;
+        self.scene.agents.retain(|id, slot| {
+            agents.iter().any(|agent| agent.id == *id)
+                || departing.contains(id) && !slot.walked_out(now)
+        });
+        let held = &self.scene.agents;
+        self.departing.retain(|id| held.contains_key(id));
         for agent in agents {
-            let desk = match self.scene.agents.get(&agent.id) {
-                Some(slot) => Some((slot.desk_index, slot.floor_idx)),
+            let seat = match self.scene.agents.get(&agent.id) {
+                Some(slot) => Some((slot.desk_index, slot.floor_idx, slot.arrived_at)),
                 // One never seen alive was never in the room to leave it.
                 None if agent.exiting_ms.is_some() => None,
-                None => self.free_desk(),
+                None => self.free_desk().map(|(desk, floor)| {
+                    let arrived = if first_line {
+                        None
+                    } else if another_machine {
+                        Some(now)
+                    } else {
+                        Some(local(agent.created_ms))
+                    };
+                    (desk, floor, arrived)
+                }),
             };
-            if let Some(desk) = desk {
+            if let Some(seat) = seat {
                 self.scene
                     .agents
-                    .insert(agent.id, inflate_agent(agent, desk, &local));
+                    .insert(agent.id, inflate_agent(agent, seat, &local));
             }
         }
 
@@ -920,7 +949,7 @@ impl RemoteOffice {
 /// from this one entry.
 fn inflate_agent(
     agent: Agent,
-    (desk_index, floor_idx): (GlobalDeskIndex, usize),
+    (desk_index, floor_idx, arrived_at): (GlobalDeskIndex, usize, Option<SystemTime>),
     local: &impl Fn(u64) -> SystemTime,
 ) -> AgentSlot {
     let source = display_safe(&agent.source);
@@ -957,6 +986,7 @@ fn inflate_agent(
         state_started_at,
         last_event_at: state_started_at,
         created_at: local(agent.created_ms),
+        arrived_at,
         exiting_at: agent.exiting_ms.map(local),
         desk_index,
         floor_idx,
@@ -1035,6 +1065,7 @@ mod tests {
             state_started_at: at(AT - 2_000),
             last_event_at: at(AT - 1_000),
             created_at: at(AT - 60_000),
+            arrived_at: Some(at(AT - 60_000)),
             exiting_at: None,
             desk_index: GlobalDeskIndex(0),
             floor_idx: 0,
@@ -1514,6 +1545,98 @@ mod tests {
         received(&mut office, &scene, AT);
         assert_eq!(office.scene().agents.len(), 3);
         assert_eq!(desk_of(&office, "c"), GlobalDeskIndex(0));
+    }
+
+    /// `name`'s slot in `office`, if it holds one.
+    fn slot_of<'a>(office: &'a RemoteOffice, name: &str) -> Option<&'a AgentSlot> {
+        office
+            .scene()
+            .agents
+            .get(&AgentId::from_parts("claude-code", name))
+    }
+
+    /// `scene` as `machine` writes it at `device_now`, received then.
+    fn received_from(
+        office: &mut RemoteOffice,
+        scene: &SceneState,
+        machine: &Machine,
+        device_now: u64,
+    ) {
+        let line = encode(scene, machine, at(device_now)).expect("a scene encodes");
+        office
+            .apply(line.as_bytes(), at(device_now))
+            .expect("it applies");
+    }
+
+    /// The first line after launch walks no one in, however fresh: the cast was
+    /// in the room before the device opened it.
+    #[test]
+    fn the_first_line_walks_no_one_in() {
+        let mut office = RemoteOffice::new(caps(4));
+        received(&mut office, &crowd(&["a"]), AT);
+        assert_eq!(slot_of(&office, "a").expect("seated").arrived_at, None);
+    }
+
+    /// A line from the same machine keeps a held slot's arrival, through a
+    /// clock step that moves its other times, and walks one it hasn't held in
+    /// from when its server made it: a reconnect walks no one in again.
+    #[test]
+    fn a_same_machine_line_keeps_a_held_slots_arrival() {
+        let mut office = RemoteOffice::new(caps(4));
+        received(&mut office, &crowd(&["a"]), AT);
+        received(&mut office, &crowd(&["a", "b"]), AT);
+        let b = slot_of(&office, "b").expect("seated");
+        let arrived = b.arrived_at;
+        assert_eq!(arrived, Some(b.created_at));
+
+        let step = AT + 60_000;
+        received(&mut office, &crowd(&["a", "b"]), step);
+        let b = slot_of(&office, "b").expect("held");
+        assert_ne!(
+            Some(b.created_at),
+            arrived,
+            "premise: the step moved its times"
+        );
+        assert_eq!(b.arrived_at, arrived);
+        assert_eq!(slot_of(&office, "a").expect("held").arrived_at, None);
+    }
+
+    /// A line from another machine walks the old cast out from the device's
+    /// now, held until the exit grace window ends, and walks the new cast in
+    /// from that same now: a demo office handing over to a live one.
+    #[test]
+    fn a_machine_change_walks_the_old_cast_out_and_the_new_one_in() {
+        let demo = Machine::new("demo", Os::Macos);
+        let mut office = RemoteOffice::new(caps(4));
+        received_from(&mut office, &crowd(&["a", "b"]), &demo, AT);
+        let switch = AT + 10_000;
+        received_from(&mut office, &crowd(&["c", "d"]), &machine(), switch);
+        for name in ["a", "b"] {
+            let slot = slot_of(&office, name).expect("walking out");
+            assert_eq!(slot.exiting_at, Some(at(switch)), "{name}");
+        }
+        for name in ["c", "d"] {
+            let slot = slot_of(&office, name).expect("walking in");
+            assert_eq!(slot.arrived_at, Some(at(switch)), "{name}");
+        }
+        let grace = u64::try_from(crate::state::reducer::EXIT_GRACE_WINDOW.as_millis())
+            .expect("a grace window in ms");
+        received_from(&mut office, &crowd(&["c", "d"]), &machine(), switch + grace);
+        assert!(slot_of(&office, "a").is_some(), "held through the window");
+        received_from(
+            &mut office,
+            &crowd(&["c", "d"]),
+            &machine(),
+            switch + grace + 1,
+        );
+        assert!(
+            slot_of(&office, "a").is_none() && slot_of(&office, "b").is_none(),
+            "gone once the window ends"
+        );
+        assert_eq!(
+            slot_of(&office, "c").expect("held").arrived_at,
+            Some(at(switch))
+        );
     }
 
     #[test]

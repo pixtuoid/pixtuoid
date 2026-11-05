@@ -228,13 +228,13 @@ pub(crate) fn derive(slot: &AgentSlot, now: SystemTime, layout: &SceneLayout) ->
     // otherwise the A* router detours around the desk and always approaches
     // from one side.
     let from = layout.door_threshold;
-    let since_spawn = now
-        .duration_since(slot.created_at)
-        .unwrap_or(Duration::ZERO)
-        .as_millis() as u64;
-    if since_spawn < ENTRY_ANIMATION_MS {
+    let since_arrival = slot
+        .arrived_at
+        .map(|at| crate::anim::elapsed_ms(now, at))
+        .filter(|&ms| ms < ENTRY_ANIMATION_MS);
+    if let Some(since_arrival) = since_arrival {
         return Some(linear_walk_pose(
-            since_spawn,
+            since_arrival,
             from,
             desk_walk_anchor_facing(desk.at, desk.facing, layout.inner),
         ));

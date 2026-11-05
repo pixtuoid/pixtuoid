@@ -63,6 +63,7 @@ pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneS
                 state_started_at: now,
                 last_event_at: now,
                 created_at,
+                arrived_at: Some(created_at),
                 exiting_at: None,
 
                 desk_index: GlobalDeskIndex(i),

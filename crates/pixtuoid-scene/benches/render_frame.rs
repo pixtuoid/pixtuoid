@@ -120,6 +120,7 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
                 state,
                 state_started_at: stamp,
                 created_at: stamp,
+                arrived_at: Some(stamp),
                 last_event_at: stamp,
                 exiting_at: None,
                 desk_index: GlobalDeskIndex(i),

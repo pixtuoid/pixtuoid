@@ -287,6 +287,7 @@ mod tests {
             state_started_at: now,
             last_event_at: now,
             created_at: now,
+            arrived_at: Some(now),
             exiting_at: None,
             desk_index: pixtuoid_core::GlobalDeskIndex(0),
             floor_idx: 0,

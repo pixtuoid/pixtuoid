@@ -859,6 +859,7 @@ mod tests {
             state_started_at: now,
             // 2s < the 5s freshness floor → `--%`.
             created_at: now - Duration::from_secs(2),
+            arrived_at: Some(now - Duration::from_secs(2)),
             last_event_at: now,
             exiting_at: None,
             desk_index: GlobalDeskIndex(0),
@@ -948,6 +949,7 @@ mod tests {
                 state,
                 state_started_at: now,
                 created_at: now - Duration::from_secs(2),
+                arrived_at: Some(now - Duration::from_secs(2)),
                 last_event_at: now,
                 exiting_at: None,
                 desk_index: GlobalDeskIndex(0),
