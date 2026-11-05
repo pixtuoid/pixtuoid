@@ -512,10 +512,10 @@ impl JsonlWatcher {
                     walk_jsonl(&path, decoders, &ctx).await;
                 }
                 _ = poll.tick() => {
-                    let attached =
-                        root_watch.reconcile_logged(Wake::Poll).await == Reconciled::Attached;
+                    let outcome = root_watch.reconcile_logged(Wake::Poll).await;
+                    let replaying = root_watch.scan_replays(outcome);
                     self.run_scan_pass(
-                        &WatchCtx { replaying: attached, ..ctx }, &mut scan_state,
+                        &WatchCtx { replaying, ..ctx }, &mut scan_state,
                         exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
                     ).await;
                 }

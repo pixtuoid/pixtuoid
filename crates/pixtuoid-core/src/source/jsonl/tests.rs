@@ -3930,6 +3930,41 @@ async fn root_watch_follows_the_root_through_appearance_and_removal() {
     );
 }
 
+/// A scan reads what predates the root's watch, so replays, after the
+/// reconcile that attached it and after one that found it absent: the root can
+/// appear between that reconcile's read and the scan's. Once watched, or present
+/// with its watch refused, a scan's first read is live.
+#[tokio::test]
+async fn a_scan_replays_what_predates_the_roots_watch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    let root_fake = FakeWatcher::default();
+    let (mut watch, _anchor, _nudges) = fake_root_watch(&root, &root_fake);
+
+    let absent = watch.reconcile(Wake::Poll).await.unwrap();
+    std::fs::create_dir(&root).unwrap();
+    assert!(
+        watch.scan_replays(absent),
+        "found absent, it appeared before the scan"
+    );
+    let attached = watch.reconcile(Wake::Poll).await.unwrap();
+    assert_eq!(attached, Reconciled::Attached, "premise");
+    assert!(watch.scan_replays(attached));
+    let watched = watch.reconcile(Wake::Poll).await.unwrap();
+    assert!(!watch.scan_replays(watched), "watched");
+
+    let refusing = FakeWatcher {
+        refuse: Some(root.clone()),
+        ..FakeWatcher::default()
+    };
+    let (mut refused, _anchor, _nudges) = fake_root_watch(&root, &refusing);
+    assert!(refused.reconcile(Wake::Poll).await.is_err(), "premise");
+    assert!(
+        !refused.scan_replays(Reconciled::Unchanged),
+        "present, its watch refused"
+    );
+}
+
 /// inotify and Windows drop the watch of a deleted directory, so one deleted
 /// and recreated between two reconciles must be watched afresh.
 #[tokio::test]

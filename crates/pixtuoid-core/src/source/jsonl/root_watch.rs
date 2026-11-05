@@ -395,6 +395,13 @@ impl RootWatch {
         self.root_watched
     }
 
+    /// Whether a scan after a reconcile that returned `outcome` reads what
+    /// predates the root's watch: one the reconcile attached, or one it found
+    /// absent, which can appear before the scan's own read.
+    pub(crate) fn scan_replays(&self, outcome: Reconciled) -> bool {
+        outcome == Reconciled::Attached || self.placed.root.is_none()
+    }
+
     /// Brings the watches in line with the filesystem: the anchor on the root's
     /// deepest existing ancestor, the root watch on the directory the root
     /// names now. It re-reads until a read finds what the last one placed, so
