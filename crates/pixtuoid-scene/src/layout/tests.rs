@@ -1569,8 +1569,8 @@ fn a_fitted_office_takes_bigger_pixels_rather_than_grow_past_its_cap() {
 }
 
 /// The fitted width keeps every meeting room's furniture: on every seed, at
-/// each height a fitted phone or tablet lays out, every meeting room of an
-/// office that narrow seats its sofa and table.
+/// each height a [`FITTED_SURFACES`] surface lays out, every meeting room of
+/// an office that narrow seats its sofa and table.
 #[test]
 fn a_fitted_office_keeps_every_meeting_rooms_furniture() {
     let mut rooms = 0;
