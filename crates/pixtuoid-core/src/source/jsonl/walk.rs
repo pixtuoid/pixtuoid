@@ -89,8 +89,19 @@ pub(super) const TAIL_BYTES: u64 = 8192;
 #[derive(Default)]
 pub(super) struct RootRead {
     pub(super) health: FailureLatch,
-    /// What the last scan listed: a directory no scan has listed holds what predates its reads.
+    /// The directory the last scan listed in full; none before one, or while absent.
     last: Option<DirId>,
+}
+
+impl RootRead {
+    pub(super) fn replays(&mut self, dir: Option<DirId>, truncated: bool) -> bool {
+        // Any directory but the last one listed in full may hold what no read has seen.
+        let replaying = dir != self.last;
+        if !truncated {
+            self.last = dir;
+        }
+        replaying
+    }
 }
 
 #[derive(Default)]
@@ -100,8 +111,6 @@ struct Listing {
     truncated_by: Option<std::io::Error>,
 }
 
-/// Named after the open, so a root replaced meanwhile is named as its successor and
-/// replays; the walk then reads entries by path.
 async fn list_root(root: &Path) -> std::io::Result<Listing> {
     let root = root.to_path_buf();
     tokio::task::spawn_blocking(move || {
@@ -111,6 +120,7 @@ async fn list_root(root: &Path) -> std::io::Result<Listing> {
             Err(e) => return Err(e),
         };
         let mut listing = Listing {
+            // After the open: a root replaced meanwhile replays only the names its listing held.
             dir: dir_id(&root)?,
             ..Listing::default()
         };
@@ -152,8 +162,7 @@ pub(super) async fn scan_root(
             if dir.is_some() && read.health.on_success() {
                 tracing::info!(root = ?root, "watched root is readable again");
             }
-            let replaying = dir != read.last;
-            read.last = dir;
+            let replaying = read.replays(dir, truncated_by.is_some());
             for entry in entries {
                 walk_jsonl(&entry, decoders, ctx, replaying).await;
             }

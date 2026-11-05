@@ -3198,7 +3198,6 @@ async fn scan_root_recovers_after_a_failed_root_reports_success_once() {
     };
 
     let mut read = RootRead::default();
-    // A file where the root should be: present, but not listable.
     let bad = good.path().join("projects");
     std::fs::write(&bad, b"").unwrap();
     scan_root(&bad, t_decoders(), &ctx, &mut read).await;
@@ -4444,9 +4443,9 @@ mod backlog {
         dir: tempfile::TempDir,
         path: PathBuf,
         memory: Memory,
+        read: Mutex<RootRead>,
     }
 
-    /// The watcher's memory of the transcripts it has read.
     struct Memory {
         cursors: Arc<Mutex<HashMap<PathBuf, u64>>>,
         seen: Arc<Mutex<HashMap<PathBuf, Sight>>>,
@@ -4462,7 +4461,6 @@ mod backlog {
             }
         }
 
-        /// What `pass` sent through a context of this memory's.
         async fn sends<F: AsyncFnOnce(&WatchCtx<'_>)>(&self, pass: F) -> Vec<AgentEvent> {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
             let source: Arc<str> = Arc::from("test");
@@ -4494,6 +4492,7 @@ mod backlog {
                 dir,
                 path,
                 memory: Memory::new(),
+                read: Mutex::new(RootRead::default()),
             }
         }
 
@@ -4540,8 +4539,9 @@ mod backlog {
                 Walk => self.walk(false, decoders()).await,
                 Scan => {
                     let root = self.dir.path().to_path_buf();
+                    let read = &self.read;
                     (self.memory.sends(async move |ctx: &WatchCtx<'_>| {
-                        scan_root(&root, decoders(), ctx, &mut RootRead::default()).await;
+                        scan_root(&root, decoders(), ctx, &mut *read.lock().await).await;
                     }))
                     .await
                 }
@@ -4550,7 +4550,6 @@ mod backlog {
         }
     }
 
-    /// A watched root and the watcher's memory of its scans.
     struct Root {
         _dir: tempfile::TempDir,
         root: PathBuf,
@@ -4570,7 +4569,6 @@ mod backlog {
             }
         }
 
-        /// Where the root's directory is moved aside to, the same directory.
         fn aside(&self) -> PathBuf {
             self.root.with_file_name("aside")
         }
@@ -4579,13 +4577,11 @@ mod backlog {
             std::fs::rename(&self.root, self.aside()).unwrap();
         }
 
-        /// Its directory moved back, holding a new session's `WORK` as `name`.
         fn moved_back_with(&self, name: &str) {
             std::fs::write(self.aside().join(name), WORK).unwrap();
             std::fs::rename(self.aside(), &self.root).unwrap();
         }
 
-        /// A new directory at the root, holding a session's `WORK` as `name`.
         fn replaced_by(&self, name: &str) {
             if self.root.exists() {
                 std::fs::remove_dir_all(&self.root).unwrap();
@@ -4611,11 +4607,7 @@ mod backlog {
         }
     }
 
-    /// A scan replays the root it lists unless the last scan listed that same
-    /// directory: a boot's first, one that appeared whatever a reconcile or a
-    /// nudge made of it, one replaced, and one back from a scan that found it
-    /// absent. A scan records the directory it listed, so the next scan of it
-    /// reads live.
+    /// A scan replays a root unless the last scan listed it.
     #[tokio::test]
     async fn a_scan_replays_a_root_the_last_scan_did_not_list() {
         const REPLAYED: &[Sent] = &[Start, Rename, Closes, Usage, Tool, Opens];
@@ -4642,6 +4634,16 @@ mod backlog {
             REPLAYED,
             "moved back, the same directory"
         );
+    }
+
+    #[test]
+    fn a_cut_listing_leaves_its_directory_to_replay() {
+        let dir = tempfile::tempdir().unwrap();
+        let listed = || super::super::root_watch::dir_id(dir.path()).unwrap();
+        let mut read = RootRead::default();
+        assert!(read.replays(listed(), true), "cut short");
+        assert!(read.replays(listed(), false), "in full, after a cut");
+        assert!(!read.replays(listed(), false), "in full again");
     }
 
     #[tokio::test]
