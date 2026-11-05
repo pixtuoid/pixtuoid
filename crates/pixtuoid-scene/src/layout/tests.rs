@@ -1424,16 +1424,16 @@ struct FittedSurface {
     upscale: u16,
 }
 
-/// Each surface the App fits an office to, upright and turned, with its least
-/// device pixels a frame pixel, and the office and upscale `Viewport::fitted`
-/// gives it on 4-pixel art. The iPhone 18 Pro's 402×874 pt at 3× and the
+/// Each surface the App fits an office to, upright and turned, and one that
+/// brackets `FITTED_MAX_H`, with its least device pixels a frame pixel, and
+/// the office and upscale `Viewport::fitted` gives it on 4-pixel art. The iPhone 18 Pro's 402×874 pt at 3× and the
 /// 13-inch iPad Pro's 1032×1376 pt at 2× are the App's (`OfficeModelTests.swift`,
 /// `OfficeFitTests.swift`); the iPhone SE's 1334×750 px is Apple's
 /// (<https://support.apple.com/kb/SP867>) at the 4.7-inch display's 2×
 /// (Table 2-1's iPhone 8,
 /// <https://developer.apple.com/library/archive/documentation/DeviceInformation/Reference/iOSDeviceCompatibility/Displays/Displays.html>).
-/// A surface 218 units tall at 3× keeps 3× while the iPhone 18 Pro, 218.5, takes
-/// 4×: the two bracket `FITTED_MAX_H` at its value.
+/// A surface 218 units tall at 3× keeps 3× while the iPhone 18 Pro, 218.5 units
+/// tall at 3×, takes 4×: the two bracket `FITTED_MAX_H` at its value.
 const FITTED_SURFACES: [FittedSurface; 7] = [
     FittedSurface {
         name: "iPhone 18 Pro",
@@ -1487,10 +1487,10 @@ const FITTED_SURFACES: [FittedSurface; 7] = [
 ];
 
 #[test]
-fn a_fitted_viewport_fits_each_app_surface() {
+fn a_fitted_viewport_fits_each_surface() {
     let art = crate::sprite::format::Density::new(4).expect("nonzero");
     for FittedSurface {
-        name: device,
+        name,
         px: (w, h),
         per_point,
         units: (units_w, units_h),
@@ -1509,7 +1509,7 @@ fn a_fitted_viewport_fits_each_app_surface() {
                 viewport: Viewport::full(units_w, units_h),
                 upscale,
             }),
-            "{device}"
+            "{name}"
         );
     }
 }
