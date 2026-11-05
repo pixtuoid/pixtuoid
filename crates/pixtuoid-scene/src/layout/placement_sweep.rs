@@ -178,6 +178,13 @@ fn sweep_insets(mut f: impl FnMut(Viewport, u64, &SceneLayout)) {
     }
 }
 
+/// Run `f` over [`sweep`]'s bare offices, then over [`inset_offices`], each by
+/// its whole viewport's size: a placement check holds inside insets too.
+fn sweep_bare_and_inset(mut f: impl FnMut(u16, u16, u64, &SceneLayout)) {
+    sweep(&mut f);
+    sweep_insets(|viewport, seed, l| f(viewport.size.w, viewport.size.h, seed, l));
+}
+
 /// Every swept office, on each seed a user's floors lay out with, shows some
 /// stand-in of each holiday: a holiday standing in only for pieces an office
 /// lacks would pass it by unseen.
@@ -192,7 +199,7 @@ fn every_office_shows_each_holiday() {
             assert!(shows, "{w}x{h} seed {seed} shows nothing of {occasion:?}");
         }
     };
-    sweep(check);
+    sweep_bare_and_inset(check);
     sweep_production_floors(check);
 }
 
@@ -533,7 +540,7 @@ fn assert_no_violations(what: &str, violations: Vec<String>) {
 #[test]
 fn every_piece_stays_inside_the_buffer() {
     let mut v = Vec::new();
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         let buffer = Bounds {
             x: 0,
             y: 0,
@@ -568,7 +575,7 @@ fn every_piece_stays_inside_the_buffer() {
 #[test]
 fn every_piece_ground_stays_in_its_container() {
     let mut v = Vec::new();
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         for p in pieces(l) {
             let Some(b) = container_bounds(l, p.container) else {
                 if p.ground.is_some() {
@@ -604,7 +611,7 @@ fn every_piece_ground_stays_in_its_container() {
 #[test]
 fn every_piece_ground_is_blocked_in_the_mask() {
     let mut v = Vec::new();
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         for p in pieces(l) {
             let Some((tl, sz)) = p.ground else { continue };
             let (cx, cy) = (tl.x + sz.w / 2, tl.y + sz.h / 2);
@@ -622,7 +629,7 @@ fn every_piece_ground_is_blocked_in_the_mask() {
 #[test]
 fn every_rug_lies_whole_on_the_floor() {
     let mut v = Vec::new();
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         let rugs = l.fixtures().filter_map(|f| {
             matches!(
                 f.kind,
@@ -648,7 +655,7 @@ fn every_rug_lies_whole_on_the_floor() {
 #[test]
 fn no_two_furniture_grounds_overlap() {
     let mut v = Vec::new();
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         let ps: Vec<Piece> = pieces(l)
             .into_iter()
             .filter(|p| p.ground.is_some())
@@ -679,7 +686,7 @@ fn no_two_furniture_grounds_overlap() {
 #[test]
 fn no_furniture_ground_overlaps_a_wall() {
     let mut v = Vec::new();
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         let walls: Vec<(Point, Size)> = l.wall_pieces.iter().map(|p| p.footprint()).collect();
         for p in pieces(l) {
             let Some(g) = p.ground else { continue };
@@ -1040,7 +1047,7 @@ fn assert_back_turned_desks_face_a_partner(w: u16, h: u16, seed: u64, l: &SceneL
 
 #[test]
 fn back_turned_desks_face_a_partner_across_the_pod_gap() {
-    sweep(assert_back_turned_desks_face_a_partner);
+    sweep_bare_and_inset(assert_back_turned_desks_face_a_partner);
     sweep_production_floors(assert_back_turned_desks_face_a_partner);
 }
 
@@ -1049,7 +1056,7 @@ fn back_turned_desks_face_a_partner_across_the_pod_gap() {
 /// a walker can stand IN the divider.
 #[test]
 fn no_walkable_hole_where_a_vertical_wall_meets_a_horizontal_one() {
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         let h_walls: Vec<_> = l
             .room_walls
             .iter()
@@ -1188,7 +1195,7 @@ fn assert_no_free_standing_piece_inside_a_pod(w: u16, h: u16, seed: u64, l: &Sce
 
 #[test]
 fn free_standing_furniture_never_stands_inside_a_pod() {
-    sweep(assert_no_free_standing_piece_inside_a_pod);
+    sweep_bare_and_inset(assert_no_free_standing_piece_inside_a_pod);
     sweep_production_floors(assert_no_free_standing_piece_inside_a_pod);
 }
 
@@ -1217,7 +1224,7 @@ fn assert_the_whiteboard_lands_when_an_aisle_exists(w: u16, h: u16, seed: u64, l
 
 #[test]
 fn the_whiteboard_lands_whenever_an_inter_pod_aisle_exists() {
-    sweep(assert_the_whiteboard_lands_when_an_aisle_exists);
+    sweep_bare_and_inset(assert_the_whiteboard_lands_when_an_aisle_exists);
     sweep_production_floors(assert_the_whiteboard_lands_when_an_aisle_exists);
 }
 
@@ -1284,7 +1291,7 @@ fn assert_the_whiteboard_hides_no_desk_or_wall(w: u16, h: u16, seed: u64, l: &Sc
 
 #[test]
 fn the_whiteboard_hides_no_desk_and_stands_clear_of_the_walls_and_its_twin() {
-    sweep(assert_the_whiteboard_hides_no_desk_or_wall);
+    sweep_bare_and_inset(assert_the_whiteboard_hides_no_desk_or_wall);
     sweep_production_floors(assert_the_whiteboard_hides_no_desk_or_wall);
 }
 
@@ -1365,7 +1372,7 @@ fn assert_each_appliance_lands_where_its_aisle_fits(w: u16, h: u16, seed: u64, l
 
 #[test]
 fn each_appliance_lands_wherever_its_aisle_fits() {
-    sweep(assert_each_appliance_lands_where_its_aisle_fits);
+    sweep_bare_and_inset(assert_each_appliance_lands_where_its_aisle_fits);
     sweep_production_floors(assert_each_appliance_lands_where_its_aisle_fits);
 }
 
@@ -1474,7 +1481,7 @@ fn every_kind_is_placed_somewhere_in_the_sweep() {
 /// containment is pos-in-room.
 #[test]
 fn every_meeting_slot_sits_in_its_room() {
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         for wp in &l.waypoints {
             let Some(room_id) = wp.room_id else { continue };
             let Some(b) = l.meeting_room_bounds(room_id) else {
@@ -1571,7 +1578,7 @@ fn scatter_plants_keep_obstacle_clearance_and_survive_by_sliding() {
         super::placement::rects_overlap(plant_box, inflated)
     };
     let mut v = Vec::new();
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         for p in &l.plants {
             let pv = furniture_def(p.kind.furniture()).visual;
             let plant_box = visual_tl(p.pos, pv);
@@ -1645,7 +1652,7 @@ fn scatter_plants_keep_obstacle_clearance_and_survive_by_sliding() {
 #[test]
 fn every_placed_sprite_is_opaque_to_the_visual_clearance_predicate() {
     let mut checked = 0u32;
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         for p in pieces(l) {
             let (tl, sz) = p.visual;
             if sz.w == 0 || sz.h == 0 {
@@ -1674,7 +1681,7 @@ fn every_placed_sprite_is_opaque_to_the_visual_clearance_predicate() {
 #[test]
 fn no_cell_of_the_north_wall_band_is_walkable() {
     let mut checked = 0usize;
-    sweep(|w, h, seed, l| {
+    sweep_bare_and_inset(|w, h, seed, l| {
         let band = l.wall_band_h();
         assert!(band > 0, "{w}x{h} seed {seed}: no wall band to check");
         for y in 0..band {
@@ -1825,17 +1832,17 @@ fn no_two_adjacent_aisle_slots_share_a_kind() {
 #[test]
 fn point_seed_packing_is_frozen() {
     assert_eq!(
-        super::decor::point_seed(Point { x: 1, y: 2 }, crate::layout::BARE_OFFICE),
+        super::decor::point_seed(Point { x: 1, y: 2 }, crate::layout::BARE_OFFICE.x),
         (1u64 << 32) | 2,
         "x occupies the high word and y the low one"
     );
     assert_eq!(
-        super::decor::point_seed(Point { x: 0, y: 0 }, crate::layout::BARE_OFFICE),
+        super::decor::point_seed(Point { x: 0, y: 0 }, crate::layout::BARE_OFFICE.x),
         0
     );
     assert_ne!(
-        super::decor::point_seed(Point { x: 3, y: 5 }, crate::layout::BARE_OFFICE),
-        super::decor::point_seed(Point { x: 5, y: 3 }, crate::layout::BARE_OFFICE),
+        super::decor::point_seed(Point { x: 3, y: 5 }, crate::layout::BARE_OFFICE.x),
+        super::decor::point_seed(Point { x: 5, y: 3 }, crate::layout::BARE_OFFICE.x),
         "the packing must not be symmetric in x and y"
     );
 }
@@ -1899,9 +1906,14 @@ fn nothing_is_placed_under_an_inset() {
 }
 
 /// `l` as seen from `corner`, its cells from row `from` of its area inside its
-/// insets: every field the layout places but the pieces hung from that area's
-/// north edge, its walls cut at the area's edges.
-fn seen_from(l: &SceneLayout, corner: Point, from: u16) -> [(&'static str, String); 10] {
+/// insets: every field the layout places, but the pieces hung from that area's
+/// north edge where `hung` drops them, its walls cut at the area's edges.
+fn seen_from(
+    l: &SceneLayout,
+    corner: Point,
+    from: u16,
+    hung: Hung,
+) -> [(&'static str, String); 10] {
     let inner = l.inner;
     let p = |p: Point| Point {
         x: p.x - corner.x,
@@ -1940,7 +1952,7 @@ fn seen_from(l: &SceneLayout, corner: Point, from: u16) -> [(&'static str, Strin
     };
     let fixtures: Vec<_> = l
         .fixtures()
-        .filter(|f| !hangs_from_the_inset(f.kind))
+        .filter(|f| hung == Hung::Kept || !hangs_from_the_inset(f.kind))
         .map(|f| {
             let depth = match f.depth {
                 Depth::Sorted { row, tie } => Depth::Sorted {
@@ -1990,6 +2002,13 @@ fn seen_from(l: &SceneLayout, corner: Point, from: u16) -> [(&'static str, Strin
     ]
 }
 
+/// Whether [`seen_from`] keeps the pieces hung from the inset's edge.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Hung {
+    Kept,
+    Dropped,
+}
+
 /// The pieces hung from the north edge of an office's area inside its insets,
 /// which a top inset moves with the sky.
 fn hangs_from_the_inset(kind: FixtureKind) -> bool {
@@ -2004,15 +2023,16 @@ fn hangs_from_the_inset(kind: FixtureKind) -> bool {
     )
 }
 
-/// An office inside insets stands its wall's foot where its canvas, less the
-/// side insets, would bare, but for a top inset deep enough to pin the band
-/// under it at [`MIN_WALL_DEPTH`]. Without a bottom inset, and the band under a
-/// top one deeper than that, the floor is the bare canvas's, moved by its west
-/// inset: a top inset moves only the sky. A bottom inset keeps the foot and
-/// shortens the floor from below, which re-divides what stands on it. So every
-/// placement sweep over a bare office holds for one inside insets too.
+/// An office inside insets stands its top margin where the bare canvas of its
+/// width would, but for a top inset deep enough to pin the band under it at
+/// [`MIN_WALL_DEPTH`]. With no bottom inset and an unpinned band, the top-,
+/// left- and right-only insets of [`SWEEP_INSETS`], it lays out that canvas's
+/// floor field for field, moved by its west inset, the pieces hung from a top
+/// inset's edge aside: a top inset moves only the sky. A bottom inset keeps the
+/// top margin and re-divides the shorter floor, which the placement sweeps check
+/// inside every inset themselves ([`sweep_bare_and_inset`]).
 #[test]
-fn an_office_inside_insets_lays_out_its_canvass_floor() {
+fn an_office_inside_insets_lays_out_the_canvas_floor() {
     let mut v = Vec::new();
     let mut floors = 0;
     sweep_insets(|viewport, seed, l| {
@@ -2022,7 +2042,7 @@ fn an_office_inside_insets_lays_out_its_canvass_floor() {
         let pinned = inner.y + MIN_WALL_DEPTH;
         if l.top_margin != bare.top_margin.max(pinned) {
             v.push(format!(
-                "{viewport:?} seed {seed}: its foot at {}, the canvas's at {}",
+                "{viewport:?} seed {seed}: its top margin at {}, the canvas's at {}",
                 l.top_margin, bare.top_margin
             ));
         }
@@ -2031,9 +2051,14 @@ fn an_office_inside_insets_lays_out_its_canvass_floor() {
         }
         floors += 1;
         let moved = Point { x: inner.x, y: 0 };
-        if let Some(((field, _), _)) = seen_from(l, moved, inner.y)
+        let hung = if inner.y > 0 {
+            Hung::Dropped
+        } else {
+            Hung::Kept
+        };
+        if let Some(((field, _), _)) = seen_from(l, moved, inner.y, hung)
             .into_iter()
-            .zip(seen_from(&bare, Point { x: 0, y: 0 }, inner.y))
+            .zip(seen_from(&bare, Point { x: 0, y: 0 }, inner.y, hung))
             .find(|(got, want)| got != want)
         {
             v.push(format!("{viewport:?} seed {seed}: its {field} moved off"));

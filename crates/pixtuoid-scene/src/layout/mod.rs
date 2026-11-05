@@ -444,9 +444,8 @@ const WALL_PIECES_H: u16 = {
     if hung > door { hung } else { door }
 };
 
-/// Floor for the band under the insets in `compute::wall_foot`, where the
-/// canvas's share would leave too shallow a band to hang the wall's pieces:
-/// [`WALL_PIECES_H`] over the trim, and the apron under the band.
+/// The band's minimum under the insets in [`compute::top_margin`], where the
+/// canvas's share would leave too shallow a band to hang the wall's pieces.
 pub(crate) const MIN_WALL_DEPTH: u16 = WALL_PIECES_H + TRIM_H + WALL_BAND_TO_TOP_MARGIN;
 
 /// How many pixels of the pantry counter actually sit on the floor: only the

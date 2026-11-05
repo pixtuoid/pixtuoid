@@ -13,7 +13,7 @@ Directions in this crate are **SCREEN-SPACE**, map-style (north = up), NOT
 real-world headings. Pin this and stop re-deriving it:
 
 - **North = −y = screen TOP** — the far wall, the floor-to-ceiling windows,
-  the city skyline (the north wall band, `layout/compute.rs::wall_foot`).
+  the city skyline (the north wall band, `layout/compute.rs::top_margin`).
   "Behind" a piece.
 - **South = +y = screen BOTTOM** — the near side, the FRONT, toward the
   viewer. This is the z-sort **"south row"** (`placement.rs` pins the z-sort

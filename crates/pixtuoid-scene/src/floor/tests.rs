@@ -557,22 +557,24 @@ fn floor_capacity_clamps_to_zero_on_a_too_small_buffer() {
     assert!(floor_capacity(Viewport::full(192, 160), 0) > 0);
 }
 
-/// A floor's capacity is the capacity of the area inside its insets, and an
-/// area under the minimum seats no one, though the whole viewport would.
+/// Under top and side insets a floor seats what the bare canvas of its width
+/// does, a top inset moving only the sky, and an area narrower than the
+/// minimum seats no one, though the whole viewport would.
 #[test]
-fn floor_capacity_is_the_capacity_inside_the_insets() {
+fn floor_capacity_under_top_and_side_insets_is_the_bare_canvass() {
     use crate::layout::{Insets, Viewport, min_layout_size};
     let insets = Insets {
         top: 9,
         right: 7,
-        bottom: 11,
+        bottom: 0,
         left: 5,
     };
     let inside = |w, h| crate::layout::inset_viewport(w, h, insets);
+    let office = inside(192, 160);
     for seed in (0..4).map(floor_seed) {
         assert_eq!(
-            floor_capacity(inside(192, 160), seed),
-            floor_capacity(Viewport::full(192, 160), seed)
+            floor_capacity(office, seed),
+            floor_capacity(Viewport::full(192, office.size.h), seed)
         );
     }
     let under = inside(min_layout_size().w - 1, min_layout_size().h);
