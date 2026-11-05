@@ -19,8 +19,8 @@ pub struct WalkableMask {
 }
 
 impl WalkableMask {
-    /// A fully-open `width × height` mask whose router tiles `routed`. Caller
-    /// fills obstacles via `mark_blocked`.
+    /// A fully-open `width × height` mask whose coarse grid tiles `routed`.
+    /// Caller fills obstacles via `mark_blocked`.
     #[inline]
     pub(crate) fn new(width: u16, height: u16, routed: Bounds) -> Self {
         Self {
@@ -29,7 +29,7 @@ impl WalkableMask {
         }
     }
 
-    /// A fully-open mask its router tiles whole.
+    /// A fully-open mask whose coarse grid tiles all of it.
     #[cfg(test)]
     pub(crate) fn new_open(width: u16, height: u16) -> Self {
         Self::new(

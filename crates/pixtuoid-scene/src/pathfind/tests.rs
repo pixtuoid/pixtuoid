@@ -498,13 +498,8 @@ fn sealed_like(like: &WalkableMask) -> WalkableMask {
     sealed
 }
 
-/// An open mask whose router tiles from the canvas's corner.
-fn open_field() -> WalkableMask {
-    WalkableMask::new_open(64, 64)
-}
-
-/// An open mask whose router tiles from a corner off the canvas's, off the
-/// cell pitch on both axes.
+/// An open mask whose coarse grid tiles from a corner off the canvas's, off
+/// the cell pitch on both axes.
 fn offset_field() -> WalkableMask {
     WalkableMask::new(
         64,
@@ -555,7 +550,7 @@ fn cell_center_is_midpoint_of_cell() {
 
 #[test]
 fn cell_in_zone_false_when_none() {
-    assert!(!cell_in_zone(&open_field(), None, 5, 5));
+    assert!(!cell_in_zone(&offset_field(), None, 5, 5));
 }
 
 // A cell center landing EXACTLY on the exclusive far edge (x+width / y+height)
@@ -564,23 +559,24 @@ fn cell_in_zone_false_when_none() {
 // a `<`->`<=` mutation is invisible (no on-edge cell is ever tested).
 #[test]
 fn cell_in_zone_false_on_exclusive_edges() {
-    let right_edge = cell_center(&open_field(), 2, 1).x;
+    let field = offset_field();
+    let right_edge = cell_center(&field, 2, 1).x;
     let zone_x = Bounds {
         x: 0,
         y: 0,
         width: right_edge,
         height: 40,
     };
-    assert!(!cell_in_zone(&open_field(), Some(zone_x), 2, 1));
+    assert!(!cell_in_zone(&field, Some(zone_x), 2, 1));
 
-    let bottom_edge = cell_center(&open_field(), 1, 2).y;
+    let bottom_edge = cell_center(&field, 1, 2).y;
     let zone_y = Bounds {
         x: 0,
         y: 0,
         width: 40,
         height: bottom_edge,
     };
-    assert!(!cell_in_zone(&open_field(), Some(zone_y), 1, 2));
+    assert!(!cell_in_zone(&field, Some(zone_y), 1, 2));
 }
 
 // Inside on ONE axis but outside on the other is OUTSIDE — the four bounds
@@ -589,14 +585,16 @@ fn cell_in_zone_false_on_exclusive_edges() {
 // miss (T on one pair, F on the other) is what makes the conjunction observable.
 #[test]
 fn cell_in_zone_false_when_outside_on_one_axis_only() {
+    let field = offset_field();
+    let inside = cell_center(&field, 1, 1);
     let zone = Bounds {
         x: 0,
         y: 0,
-        width: 10,
-        height: 10,
+        width: inside.x + 1,
+        height: inside.y + 1,
     };
-    assert!(!cell_in_zone(&open_field(), Some(zone), 20, 1)); // outside x, inside y
-    assert!(!cell_in_zone(&open_field(), Some(zone), 1, 20)); // inside x, outside y
+    assert!(!cell_in_zone(&field, Some(zone), 20, 1)); // outside x, inside y
+    assert!(!cell_in_zone(&field, Some(zone), 1, 20)); // inside x, outside y
 }
 
 // The complement of the exclusive-edge test: a cell center landing EXACTLY
@@ -605,14 +603,15 @@ fn cell_in_zone_false_when_outside_on_one_axis_only() {
 // mirror of the `<`->`<=` gap above; sibling-set-spans-axes).
 #[test]
 fn cell_in_zone_true_on_inclusive_lower_edges() {
-    let near = cell_center(&open_field(), 1, 1);
+    let field = offset_field();
+    let near = cell_center(&field, 1, 1);
     let zone = Bounds {
         x: near.x,
         y: near.y,
         width: 40,
         height: 40,
     };
-    assert!(cell_in_zone(&open_field(), Some(zone), 1, 1));
+    assert!(cell_in_zone(&field, Some(zone), 1, 1));
 }
 
 #[test]

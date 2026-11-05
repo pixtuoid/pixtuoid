@@ -65,10 +65,12 @@ pub(crate) fn cell_holding(origin: Point, p: Point) -> Option<(u16, u16)> {
 /// [`snap_where`] searches back from.
 pub(crate) fn snap_cell(mask: &WalkableMask, p: Point) -> (u16, u16) {
     let origin = grid_origin(mask);
-    (
-        p.x.saturating_sub(origin.x) / COARSE_CELL_SIZE,
-        p.y.saturating_sub(origin.y) / COARSE_CELL_SIZE,
-    )
+    let onto = Point {
+        x: p.x.max(origin.x),
+        y: p.y.max(origin.y),
+    };
+    // Clamped onto the grid's corner or past it, so never west or north of it.
+    cell_holding(origin, onto).unwrap_or_default()
 }
 
 /// The north-west pixel of `mask`'s coarse cell `(cx, cy)`.

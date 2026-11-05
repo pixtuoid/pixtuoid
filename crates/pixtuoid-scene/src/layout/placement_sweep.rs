@@ -2037,7 +2037,9 @@ fn the_routing_grid_tiles_from_the_floors_origin() {
         assert_ne!(
             (top_margin - inner.y) % COARSE_CELL_SIZE,
             0,
-            "{viewport:?}: a floor on the inner corner's pitch tells no anchor apart"
+            "{viewport:?}: the floor's north edge sits on the inner corner's cell pitch, \
+             so a grid tiled from inner.y would pass too; the fixture must be off-pitch \
+             to pin the origin"
         );
         let origin = grid_origin(&l.walkable);
         assert_eq!(origin.x, inner.x, "{viewport:?}");
