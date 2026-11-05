@@ -463,9 +463,10 @@ pub struct Hits {
     star: Option<crate::layout::Bounds>,
     /// The holiday the frame's office keeps.
     occasion: crate::holiday::Occasion,
-    /// Each drawn agent's badge, and the grid its look draws a plate on
-    /// ([`Self::badge`]).
-    pub(crate) badges: (Arc<[crate::display::Badge]>, crate::display::pen::Pen),
+    /// Each drawn agent's badge ([`Self::badge`]).
+    pub(crate) badges: Arc<[crate::display::Badge]>,
+    /// The grid the frame's look draws a plate on.
+    pub(crate) pen: crate::display::pen::Pen,
 }
 
 impl Hits {
@@ -474,7 +475,7 @@ impl Hits {
         layout: Arc<SceneLayout>,
         star: Option<crate::layout::Bounds>,
         occasion: crate::holiday::Occasion,
-        badges: (Arc<[crate::display::Badge]>, crate::display::pen::Pen),
+        (badges, pen): (Arc<[crate::display::Badge]>, crate::display::pen::Pen),
     ) -> Self {
         Self {
             hovers,
@@ -482,6 +483,7 @@ impl Hits {
             star,
             occasion,
             badges,
+            pen,
         }
     }
 

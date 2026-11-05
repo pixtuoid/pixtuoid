@@ -63,6 +63,12 @@ pub(crate) use coarse::{
 use crate::walkable::WalkableMask;
 use pixtuoid_core::state::FloorLocalDeskIndex;
 
+/// The column or row past a box `len` long from `at`, in u32: it can lie one
+/// past `u16::MAX`.
+fn exclusive_end(at: u16, len: u16) -> u32 {
+    u32::from(at) + u32::from(len)
+}
+
 /// Primitive rectangle — same shape as `ratatui::layout::Rect` so the binary
 /// converts field-by-field without core paying for the ratatui dep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -92,7 +98,7 @@ impl Bounds {
     /// takes them, and its size clamped to `u16` (two boxes on one buffer
     /// never need more).
     pub(crate) fn union(self, other: Bounds) -> Bounds {
-        let end = |at: u16, len: u16| u32::from(at) + u32::from(len);
+        let end = exclusive_end;
         let (x, y) = (self.x.min(other.x), self.y.min(other.y));
         let span = |from: u16, to: u32| u16::try_from(to - u32::from(from)).unwrap_or(u16::MAX);
         Bounds {

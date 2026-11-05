@@ -601,28 +601,28 @@ impl core::marker::Unpin for pixtuoid_scene::layout::chrome::Fitted
 impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::chrome::Fitted
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::chrome::Fitted
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::chrome::Fitted
-pub struct pixtuoid_scene::layout::chrome::Mark
-impl pixtuoid_scene::layout::chrome::Mark
-pub const fn pixtuoid_scene::layout::chrome::Mark::height(self) -> u16
-pub fn pixtuoid_scene::layout::chrome::Mark::ink(self, u16, u16) -> bool
-pub const fn pixtuoid_scene::layout::chrome::Mark::width(self) -> u16
-impl core::clone::Clone for pixtuoid_scene::layout::chrome::Mark
-pub fn pixtuoid_scene::layout::chrome::Mark::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_scene::layout::chrome::Mark
-impl core::cmp::PartialEq for pixtuoid_scene::layout::chrome::Mark
-pub fn pixtuoid_scene::layout::chrome::Mark::eq(&self, &Self) -> bool
-impl core::fmt::Debug for pixtuoid_scene::layout::chrome::Mark
-pub fn pixtuoid_scene::layout::chrome::Mark::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for pixtuoid_scene::layout::chrome::Mark
-impl core::marker::StructuralPartialEq for pixtuoid_scene::layout::chrome::Mark
-impl core::marker::Freeze for pixtuoid_scene::layout::chrome::Mark
-impl core::marker::Send for pixtuoid_scene::layout::chrome::Mark
-impl core::marker::Sync for pixtuoid_scene::layout::chrome::Mark
-impl core::marker::Unpin for pixtuoid_scene::layout::chrome::Mark
-impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::chrome::Mark
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::chrome::Mark
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::chrome::Mark
-pub const pixtuoid_scene::layout::chrome::REQUIRES_ACTION_MARK: pixtuoid_scene::layout::chrome::Mark
+pub struct pixtuoid_scene::layout::chrome::Glyph
+impl pixtuoid_scene::layout::chrome::Glyph
+pub const fn pixtuoid_scene::layout::chrome::Glyph::height(self) -> u16
+pub fn pixtuoid_scene::layout::chrome::Glyph::ink(self, u16, u16) -> bool
+pub const fn pixtuoid_scene::layout::chrome::Glyph::width(self) -> u16
+impl core::clone::Clone for pixtuoid_scene::layout::chrome::Glyph
+pub fn pixtuoid_scene::layout::chrome::Glyph::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::layout::chrome::Glyph
+impl core::cmp::PartialEq for pixtuoid_scene::layout::chrome::Glyph
+pub fn pixtuoid_scene::layout::chrome::Glyph::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::layout::chrome::Glyph
+pub fn pixtuoid_scene::layout::chrome::Glyph::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::StructuralPartialEq for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::Freeze for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::Send for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::Sync for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::Unpin for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::chrome::Glyph
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::chrome::Glyph
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::chrome::Glyph
+pub const pixtuoid_scene::layout::chrome::REQUIRES_ACTION_MARK: pixtuoid_scene::layout::chrome::Glyph
 pub enum pixtuoid_scene::layout::Facing
 pub pixtuoid_scene::layout::Facing::East
 pub pixtuoid_scene::layout::Facing::North

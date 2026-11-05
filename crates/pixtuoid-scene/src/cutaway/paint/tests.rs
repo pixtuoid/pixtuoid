@@ -1390,7 +1390,7 @@ const UNDER: [crate::sprite::Rgb; 2] = [
 
 /// `kind` painted alone over each of two opposite fills: where the two
 /// buffers agree, the piece wrote the pixel.
-fn painted_over_two_fills(
+pub(crate) fn painted_over_two_fills(
     kind: &PieceKind,
     layout: &SceneLayout,
     pack: &OfficeArt,
