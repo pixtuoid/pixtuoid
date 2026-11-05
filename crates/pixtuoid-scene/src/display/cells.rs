@@ -301,6 +301,33 @@ mod tests {
         );
     }
 
+    /// The cells inside an area start at the first cell past its near edge and
+    /// stop before the cell its far edge cuts, on both axes; an area inside one
+    /// cell holds none.
+    #[test]
+    fn the_cells_inside_an_area_round_in_at_both_ends() {
+        use crate::layout::Bounds;
+        let half_block = CellMap::HALF_BLOCK.cells_inside(Bounds {
+            x: 0,
+            y: 7,
+            width: 5,
+            height: 160,
+        });
+        assert_eq!(half_block, [0..5, 4..83]);
+        let wide = CellMap {
+            scale: 16,
+            cell: CellPx { w: 14, h: 28 },
+        };
+        let [cols, rows] = wide.cells_inside(Bounds {
+            x: 9,
+            y: 0,
+            width: 3,
+            height: 1,
+        });
+        assert_eq!(cols, 11..13);
+        assert!(rows.is_empty(), "{rows:?}");
+    }
+
     #[test]
     fn a_wide_cluster_takes_two_cells_the_second_empty() {
         let mut grid = CellGrid::new(5, 1);

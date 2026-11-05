@@ -1418,10 +1418,10 @@ fn waypoint_depth_baseline_is_its_grounds_south_row() {
     }
 }
 
-/// The App's office fit (pixtuoid-apple `App/Pixtuoid/OfficeScreen.swift`'s
-/// `OfficeFit`, at main `e5c7744`), moved: on each device, upright and turned,
-/// a fitted viewport is the office `OfficeFit` lays out on the App's 4-pixel
-/// art, at its whole device pixels a frame pixel, each pair the App's own run.
+/// Each case is the office the App's `OfficeFit` (pixtuoid-apple
+/// `App/Pixtuoid/OfficeScreen.swift` at `e5c7744`) laid out for that device,
+/// upright and turned, on its 4-pixel art at whole device pixels a frame pixel:
+/// the App's output, which this fit must keep reproducing.
 /// The iPhone 18 Pro's 402×874 pt at 3× and the 13-inch iPad Pro's 1032×1376
 /// pt at 2× are the App's (`OfficeModelTests.swift`, `OfficeFitTests.swift`);
 /// the iPhone SE's 1334×750 px is Apple's (<https://support.apple.com/kb/SP867>)

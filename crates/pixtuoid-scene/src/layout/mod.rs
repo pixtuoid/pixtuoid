@@ -17,8 +17,8 @@ mod rooms;
 pub(crate) mod roster;
 mod windows;
 
-// The deep interface is `SceneLayout::{stand_point,approach_point}`; these free
-// fns stay for this crate's own synthetic-mask unit tests.
+// The deep interface is `SceneLayout::{stand_point,approach_point}`; `compute` calls the free
+// `approach_point` before any layout, the debug overlay `first_reachable_on_side`, tests all three.
 pub(crate) use approach::{approach_point, first_reachable_on_side, stand_point};
 pub(crate) use compute::PANTRY_COUNTER_LARGE_W;
 pub use compute::min_layout_size;
