@@ -386,8 +386,10 @@ fn light_holds_during_debounce_window() {
     let mut dim = VacancyDim::new();
     let start = t0();
     dim.tick(true, start);
-    // 4 s after going empty, inside the 5 s debounce.
-    let level = dim.tick(true, start + Duration::from_millis(4_000));
+    let level = dim.tick(
+        true,
+        start + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS - 1),
+    );
     assert!(
         (level - 1.0).abs() < 1e-6,
         "level dropped before debounce expired: {level}"
@@ -404,8 +406,11 @@ fn light_eases_toward_min_after_debounce() {
         true,
         start + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS - 1),
     );
-    // 6 s: the debounce expired 1 s ago, ~1.25 tau of fade.
-    let level = dim.tick(true, start + Duration::from_millis(6_000));
+    // one time constant of fade past the debounce
+    let level = dim.tick(
+        true,
+        start + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + VacancyDim::FADE_TAU_MS),
+    );
     assert!(level < 0.95, "no fade started after debounce: {level}");
     assert!(level > VacancyDim::MIN_LEVEL, "overshot floor: {level}");
 }
