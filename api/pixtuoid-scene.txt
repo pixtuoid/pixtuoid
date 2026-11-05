@@ -331,8 +331,6 @@ pub fn pixtuoid_scene::floor::num_floors(&pixtuoid_core::state::SceneState) -> u
 pub fn pixtuoid_scene::floor::project_floor_scene(&pixtuoid_core::state::SceneState, usize) -> pixtuoid_scene::floor::FloorScene
 pub mod pixtuoid_scene::grid
 pub struct pixtuoid_scene::grid::Grid<T>
-impl pixtuoid_scene::grid::Grid<bool>
-pub fn pixtuoid_scene::grid::Grid<bool>::is_walkable(&self, u16, u16) -> bool
 impl<T> pixtuoid_scene::grid::Grid<T>
 pub fn pixtuoid_scene::grid::Grid<T>::as_slice(&self) -> &[T]
 impl<T> pixtuoid_scene::grid::Grid<T>
@@ -2415,5 +2413,20 @@ impl core::marker::Unpin for pixtuoid_scene::walkable::OccupancyOverlay
 impl core::marker::UnsafeUnpin for pixtuoid_scene::walkable::OccupancyOverlay
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::walkable::OccupancyOverlay
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::walkable::OccupancyOverlay
-pub type pixtuoid_scene::walkable::WalkableMask = pixtuoid_scene::grid::Grid<bool>
+pub struct pixtuoid_scene::walkable::WalkableMask
+impl core::clone::Clone for pixtuoid_scene::walkable::WalkableMask
+pub fn pixtuoid_scene::walkable::WalkableMask::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::walkable::WalkableMask
+impl core::cmp::PartialEq for pixtuoid_scene::walkable::WalkableMask
+pub fn pixtuoid_scene::walkable::WalkableMask::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::walkable::WalkableMask
+pub fn pixtuoid_scene::walkable::WalkableMask::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_scene::walkable::WalkableMask
+impl core::marker::Freeze for pixtuoid_scene::walkable::WalkableMask
+impl core::marker::Send for pixtuoid_scene::walkable::WalkableMask
+impl core::marker::Sync for pixtuoid_scene::walkable::WalkableMask
+impl core::marker::Unpin for pixtuoid_scene::walkable::WalkableMask
+impl core::marker::UnsafeUnpin for pixtuoid_scene::walkable::WalkableMask
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::walkable::WalkableMask
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::walkable::WalkableMask
 pub const pixtuoid_scene::DEMO_REPOS: &[&str]

@@ -255,7 +255,7 @@ fn pet_walks_routed_ground_and_rests_on_walkable_floor() {
         } else {
             // A rest is a snapped cell center, so the per-pixel check applies.
             assert!(
-                layout.walkable.is_walkable(pos.x, pos.y),
+                layout.is_walkable(pos.x, pos.y),
                 "resting pet at ({},{}) is on a blocked cell (step={step})",
                 pos.x,
                 pos.y
