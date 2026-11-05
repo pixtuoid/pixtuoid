@@ -1249,7 +1249,7 @@ fn neon_first_tick_snaps_to_its_target() {
     }
 }
 
-/// The `--empty` still: one tick after the snap must still judge the floor empty.
+/// The `--empty` still: one tick after the snap must still judge the floor vacant.
 #[test]
 fn light_snap_to_vacant_survives_its_first_tick_and_reads_dimmed() {
     let mut dim = VacancyDim::new();
