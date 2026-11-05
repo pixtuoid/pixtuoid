@@ -4607,7 +4607,7 @@ mod backlog {
         }
     }
 
-    /// A scan replays a root unless the last scan listed it.
+    /// A scan replays a root unless the last scan listed it in full.
     #[tokio::test]
     async fn a_scan_replays_a_root_the_last_scan_did_not_list() {
         const REPLAYED: &[Sent] = &[Start, Rename, Closes, Usage, Tool, Opens];
@@ -4649,7 +4649,7 @@ mod backlog {
         assert!(!read.replays(id(&a), false), "in full again");
         assert!(!read.replays(id(&a), true), "truncated, the same directory");
         assert!(
-            read.replays(id(&a), false),
+            !read.replays(id(&a), false),
             "in full, after its own truncated listing"
         );
         assert!(read.replays(id(&b), true), "another, truncated");

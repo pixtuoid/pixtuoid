@@ -89,17 +89,20 @@ pub(super) const TAIL_BYTES: u64 = 8192;
 #[derive(Default)]
 pub(super) struct RootRead {
     pub(super) health: FailureLatch,
-    /// The directory the last scan listed, if it listed it in full; none before
-    /// one, while absent, or after a truncated listing.
+    /// The directory last listed in full, unless another's listing was truncated since.
     last: Option<DirId>,
 }
 
 impl RootRead {
     pub(super) fn replays(&mut self, dir: Option<DirId>, truncated: bool) -> bool {
-        // Any directory but the one the last scan listed in full may hold what no
-        // read has seen.
+        // Any directory but `last` may hold what no read has seen.
         let replaying = dir != self.last;
-        self.last = if truncated { None } else { dir };
+        if !truncated {
+            self.last = dir;
+        } else if replaying {
+            // `last` may come back from another's truncated listing holding files no scan saw.
+            self.last = None;
+        }
         replaying
     }
 }
