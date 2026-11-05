@@ -7,7 +7,7 @@
 
 use std::collections::VecDeque;
 
-use super::{COARSE_CELL_SIZE, CoarseGrid, Point, snap};
+use super::{CoarseGrid, Point, cell_dims, cell_holding, grid_origin, snap, snap_cell};
 use crate::grid::Grid;
 use crate::walkable::{OccupancyOverlay, WalkableMask};
 
@@ -19,10 +19,12 @@ const SEED_SNAP_CELLS: u16 = 3;
 /// The set of coarse cells reachable (by `CoarseGrid::neighbors` steps) from a
 /// seed — i.e. the agent's connected walkable component. Built once per layout
 /// from a known in-component seed (the door, or a home desk).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReachSet {
-    /// Coarse-cell reachability; the grid dims are `mask` dims / `COARSE_CELL_SIZE`.
+    /// Coarse-cell reachability over the mask's [`cell_dims`].
     grid: Grid<bool>,
+    /// The mask's [`grid_origin`].
+    origin: Point,
 }
 
 impl ReachSet {
@@ -30,14 +32,14 @@ impl ReachSet {
     /// nearest walkable cell when `seed` lands on a blocked one). An
     /// empty/degenerate mask yields an all-unreachable set.
     pub(crate) fn from_mask(mask: &WalkableMask, seed: Point) -> ReachSet {
-        let cell_w = mask.width() / COARSE_CELL_SIZE;
-        let cell_h = mask.height() / COARSE_CELL_SIZE;
+        let (cell_w, cell_h) = cell_dims(mask);
+        let origin = grid_origin(mask);
         let mut grid = Grid::filled(cell_w, cell_h, false);
         if cell_w == 0 || cell_h == 0 {
-            return ReachSet { grid };
+            return ReachSet { grid, origin };
         }
         let empty = OccupancyOverlay::new();
-        let seed_cell = (seed.x / COARSE_CELL_SIZE, seed.y / COARSE_CELL_SIZE);
+        let seed_cell = snap_cell(origin, seed);
         if let Some(start) = snap(mask, &empty, seed_cell, cell_w, cell_h, SEED_SNAP_CELLS) {
             let mut coarse = CoarseGrid::new(mask, &empty);
             let mut q = VecDeque::new();
@@ -52,7 +54,7 @@ impl ReachSet {
                 }
             }
         }
-        ReachSet { grid }
+        ReachSet { grid, origin }
     }
 
     /// Is the coarse cell containing pixel `p` in the reachable component?
@@ -64,8 +66,7 @@ impl ReachSet {
     /// `reaches(p) ⇒ A* can route to p`, so `approach_point` can safely drop any
     /// side `reaches` rejects.
     pub(crate) fn reaches(&self, p: Point) -> bool {
-        self.grid
-            .get_or(p.x / COARSE_CELL_SIZE, p.y / COARSE_CELL_SIZE, false)
+        cell_holding(self.origin, p).is_some_and(|(cx, cy)| self.grid.get_or(cx, cy, false))
     }
 }
 

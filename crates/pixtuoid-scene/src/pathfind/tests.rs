@@ -332,7 +332,7 @@ fn router_serves_the_cached_path_instead_of_re_running_astar() {
          straight-line fallback: {first:?}"
     );
 
-    let sealed = WalkableMask::filled(l.walkable.width(), l.walkable.height(), false);
+    let sealed = sealed_like(&l.walkable);
     let second = router.route(&sealed, &overlay, from, to);
     assert_eq!(
         second, first,
@@ -351,7 +351,7 @@ fn an_overlay_evicts_only_the_paths_it_actually_crosses() {
     let mut overlay = OccupancyOverlay::new();
     let from = Point { x: 30, y: 80 };
     let to = Point { x: 30, y: 120 };
-    let sealed = WalkableMask::filled(l.walkable.width(), l.walkable.height(), false);
+    let sealed = sealed_like(&l.walkable);
 
     let first = router.route(&l.walkable, &overlay, from, to);
     assert!(first.len() > 2, "fixture must corner: {first:?}");
@@ -489,24 +489,38 @@ fn heuristic_diagonal_uses_octile() {
     assert_eq!(h, 28);
 }
 
+/// A mask `like`'s size with every pixel blocked.
+fn sealed_like(like: &WalkableMask) -> WalkableMask {
+    let mut sealed = WalkableMask::new_open(like.width(), like.height());
+    sealed.mark_blocked(0, 0, like.width(), like.height(), 0);
+    sealed
+}
+
+/// An open mask whose router tiles from the canvas's corner.
+fn open_field() -> WalkableMask {
+    WalkableMask::new_open(64, 64)
+}
+
 #[test]
-fn cell_of_maps_pixel_to_cell() {
-    assert_eq!(cell_of(Point { x: 0, y: 0 }), (0, 0));
-    assert_eq!(cell_of(Point { x: 7, y: 11 }), (1, 2));
-    assert_eq!(cell_of(Point { x: 4, y: 4 }), (1, 1));
+fn cell_holding_maps_pixel_to_cell() {
+    use crate::layout::cell_holding;
+    let origin = Point { x: 0, y: 0 };
+    assert_eq!(cell_holding(origin, Point { x: 0, y: 0 }), Some((0, 0)));
+    assert_eq!(cell_holding(origin, Point { x: 7, y: 11 }), Some((1, 2)));
+    assert_eq!(cell_holding(origin, Point { x: 4, y: 4 }), Some((1, 1)));
 }
 
 #[test]
 fn cell_center_is_midpoint_of_cell() {
-    let c = cell_center(0, 0);
+    let c = cell_center(&open_field(), 0, 0);
     assert_eq!(c, Point { x: 2, y: 2 });
-    let c = cell_center(3, 5);
+    let c = cell_center(&open_field(), 3, 5);
     assert_eq!(c, Point { x: 14, y: 22 });
 }
 
 #[test]
 fn cell_in_zone_false_when_none() {
-    assert!(!cell_in_zone(None, 5, 5));
+    assert!(!cell_in_zone(&open_field(), None, 5, 5));
 }
 
 // A cell center landing EXACTLY on the exclusive far edge (x+width / y+height)
@@ -515,23 +529,23 @@ fn cell_in_zone_false_when_none() {
 // a `<`->`<=` mutation is invisible (no on-edge cell is ever tested).
 #[test]
 fn cell_in_zone_false_on_exclusive_edges() {
-    let right_edge = cell_center(2, 1).x;
+    let right_edge = cell_center(&open_field(), 2, 1).x;
     let zone_x = Bounds {
         x: 0,
         y: 0,
         width: right_edge,
         height: 40,
     };
-    assert!(!cell_in_zone(Some(zone_x), 2, 1));
+    assert!(!cell_in_zone(&open_field(), Some(zone_x), 2, 1));
 
-    let bottom_edge = cell_center(1, 2).y;
+    let bottom_edge = cell_center(&open_field(), 1, 2).y;
     let zone_y = Bounds {
         x: 0,
         y: 0,
         width: 40,
         height: bottom_edge,
     };
-    assert!(!cell_in_zone(Some(zone_y), 1, 2));
+    assert!(!cell_in_zone(&open_field(), Some(zone_y), 1, 2));
 }
 
 // Inside on ONE axis but outside on the other is OUTSIDE — the four bounds
@@ -546,8 +560,8 @@ fn cell_in_zone_false_when_outside_on_one_axis_only() {
         width: 10,
         height: 10,
     };
-    assert!(!cell_in_zone(Some(zone), 20, 1)); // outside x, inside y
-    assert!(!cell_in_zone(Some(zone), 1, 20)); // inside x, outside y
+    assert!(!cell_in_zone(&open_field(), Some(zone), 20, 1)); // outside x, inside y
+    assert!(!cell_in_zone(&open_field(), Some(zone), 1, 20)); // inside x, outside y
 }
 
 // The complement of the exclusive-edge test: a cell center landing EXACTLY
@@ -556,14 +570,14 @@ fn cell_in_zone_false_when_outside_on_one_axis_only() {
 // mirror of the `<`->`<=` gap above; sibling-set-spans-axes).
 #[test]
 fn cell_in_zone_true_on_inclusive_lower_edges() {
-    let near = cell_center(1, 1);
+    let near = cell_center(&open_field(), 1, 1);
     let zone = Bounds {
         x: near.x,
         y: near.y,
         width: 40,
         height: 40,
     };
-    assert!(cell_in_zone(Some(zone), 1, 1));
+    assert!(cell_in_zone(&open_field(), Some(zone), 1, 1));
 }
 
 #[test]
@@ -735,7 +749,7 @@ fn snap_lands_on_an_open_pixel_when_the_cell_centre_itself_is_blocked() {
     // 16 px open, so the cell it snaps to can have a BLOCKED centre.
     let mut mask = crate::walkable::WalkableMask::new_open(64, 64);
     let cell = (4u16, 4u16);
-    let centre = cell_center(cell.0, cell.1);
+    let centre = cell_center(&mask, cell.0, cell.1);
     // 2x2 leaves 12 of the cell's 16 px open — walkable to the coarse grid, centre blocked.
     mask.mark_blocked(centre.x, centre.y, 2, 2, 0);
     assert!(
@@ -759,7 +773,7 @@ fn snap_lands_on_an_open_pixel_when_the_cell_centre_itself_is_blocked() {
 fn a_route_turns_on_the_open_pixel_nearest_a_blocked_centre() {
     let mut mask = crate::walkable::WalkableMask::new_open(64, 64);
     let cell = (4u16, 4u16);
-    let centre = cell_center(cell.0, cell.1);
+    let centre = cell_center(&mask, cell.0, cell.1);
     // The cell's south half: still walkable to the coarse grid, centre inside.
     mask.mark_blocked(centre.x - 2, centre.y, 4, 2, 0);
     assert!(cell_walkable(

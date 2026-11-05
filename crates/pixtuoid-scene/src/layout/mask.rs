@@ -156,7 +156,8 @@ pub(super) fn build_walkable_mask(obs: &MaskObstacles) -> WalkableMask {
         pantry_counter_size,
     } = obs;
 
-    let mut mask = WalkableMask::new_open(buf_w, buf_h);
+    let mut mask =
+        WalkableMask::new_open(buf_w, buf_h).routed_over(super::routed_area(inner, top_margin));
 
     // Nothing walks under an inset; the wall band below covers the north one.
     let (east, south) = (inner.right(), inner.bottom());

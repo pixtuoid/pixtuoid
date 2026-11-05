@@ -4,7 +4,7 @@
 //! neighbour rule and snap is what makes "reachable here" (`ReachSet`) agree
 //! with "routable here" (A\*).
 
-use super::Point;
+use super::{Bounds, Point};
 use crate::grid::Grid;
 use crate::walkable::{OccupancyOverlay, WalkableMask};
 
@@ -18,11 +18,71 @@ pub(crate) const COARSE_CELL_SIZE: u16 = 4;
 /// meeting room unreachable), high enough not to graze furniture edges.
 const COARSE_CELL_WALKABLE_MIN: u16 = 8;
 
-/// The centre pixel of coarse cell `(cx, cy)`.
-pub(crate) fn cell_center(cx: u16, cy: u16) -> Point {
+/// The area the coarse grid tiles over an office's area `inner` whose floor
+/// starts at row `floor_top`: `inner` from its first row on `floor_top`'s pitch,
+/// so the cells stand where the floor does, the apron under the wall band
+/// still among them.
+pub(crate) fn routed_area(inner: Bounds, floor_top: u16) -> Bounds {
+    let y = inner.y + (floor_top - inner.y) % COARSE_CELL_SIZE;
+    Bounds {
+        y,
+        height: inner.bottom() - y,
+        ..inner
+    }
+}
+
+/// The coarse grid's size in cells: the whole cells across `mask`'s routed area.
+pub(crate) fn cell_dims(mask: &WalkableMask) -> (u16, u16) {
+    let routed = mask.routed();
+    (
+        routed.width / COARSE_CELL_SIZE,
+        routed.height / COARSE_CELL_SIZE,
+    )
+}
+
+/// The pixel `mask`'s coarse grid tiles from: its routed area's north-west
+/// corner.
+pub(crate) fn grid_origin(mask: &WalkableMask) -> Point {
+    let routed = mask.routed();
     Point {
-        x: cx * COARSE_CELL_SIZE + COARSE_CELL_SIZE / 2,
-        y: cy * COARSE_CELL_SIZE + COARSE_CELL_SIZE / 2,
+        x: routed.x,
+        y: routed.y,
+    }
+}
+
+/// The coarse cell holding pixel `p` on a grid tiled from `origin`, or `None`
+/// west or north of it.
+pub(crate) fn cell_holding(origin: Point, p: Point) -> Option<(u16, u16)> {
+    Some((
+        p.x.checked_sub(origin.x)? / COARSE_CELL_SIZE,
+        p.y.checked_sub(origin.y)? / COARSE_CELL_SIZE,
+    ))
+}
+
+/// The coarse cell a snap toward pixel `p` starts from: the one
+/// [`cell_holding`] it, or the nearest on the grid's west or north edge.
+pub(crate) fn snap_cell(origin: Point, p: Point) -> (u16, u16) {
+    (
+        p.x.saturating_sub(origin.x) / COARSE_CELL_SIZE,
+        p.y.saturating_sub(origin.y) / COARSE_CELL_SIZE,
+    )
+}
+
+/// The north-west pixel of `mask`'s coarse cell `(cx, cy)`.
+fn cell_corner(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
+    let origin = grid_origin(mask);
+    Point {
+        x: origin.x + cx * COARSE_CELL_SIZE,
+        y: origin.y + cy * COARSE_CELL_SIZE,
+    }
+}
+
+/// The centre pixel of `mask`'s coarse cell `(cx, cy)`.
+pub(crate) fn cell_center(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
+    let corner = cell_corner(mask, cx, cy);
+    Point {
+        x: corner.x + COARSE_CELL_SIZE / 2,
+        y: corner.y + COARSE_CELL_SIZE / 2,
     }
 }
 
@@ -31,9 +91,9 @@ pub(crate) fn cell_center(cx: u16, cy: u16) -> Point {
 /// walkable at half open, so the half holding its centre can be a wall's, and a
 /// walker turning on the centre would stand in it.
 pub(crate) fn cell_anchor(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
-    let centre = cell_center(cx, cy);
+    let centre = cell_center(mask, cx, cy);
     let piece = walk_piece(mask, &OccupancyOverlay::new(), cx, cy);
-    cell_pixels(cx, cy)
+    cell_pixels(mask, cx, cy)
         .filter(|&(bit, _)| piece & bit != 0)
         .map(|(_, p)| p)
         .min_by_key(|p| (p.x.abs_diff(centre.x) + p.y.abs_diff(centre.y), p.y, p.x))
@@ -44,9 +104,13 @@ pub(crate) fn cell_anchor(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
 type CellBits = u16;
 const _: () = assert!(COARSE_CELL_SIZE * COARSE_CELL_SIZE <= CellBits::BITS as u16);
 
-/// Each pixel of coarse cell `(cx, cy)` with its [`CellBits`] bit.
-fn cell_pixels(cx: u16, cy: u16) -> impl Iterator<Item = (CellBits, Point)> {
-    let (x0, y0) = (cx * COARSE_CELL_SIZE, cy * COARSE_CELL_SIZE);
+/// Each pixel of `mask`'s coarse cell `(cx, cy)` with its [`CellBits`] bit.
+fn cell_pixels(
+    mask: &WalkableMask,
+    cx: u16,
+    cy: u16,
+) -> impl Iterator<Item = (CellBits, Point)> + use<> {
+    let Point { x: x0, y: y0 } = cell_corner(mask, cx, cy);
     (0..COARSE_CELL_SIZE).flat_map(move |dy| {
         (0..COARSE_CELL_SIZE).map(move |dx| {
             (
@@ -78,7 +142,7 @@ const EAST_COLUMN: CellBits = WEST_COLUMN << (COARSE_CELL_SIZE - 1);
 /// corner can split a cell's open pixels into pieces touching only diagonally,
 /// and a walker crossing between them cuts that corner.
 fn walk_piece(mask: &WalkableMask, overlay: &OccupancyOverlay, cx: u16, cy: u16) -> CellBits {
-    let open_bits = cell_pixels(cx, cy)
+    let open_bits = cell_pixels(mask, cx, cy)
         .filter(|&(_, p)| open(mask, overlay, p.x, p.y))
         .fold(0, |bits, (bit, _)| bits | bit);
     let mut unseen = open_bits;
@@ -184,10 +248,7 @@ pub(crate) struct CoarseGrid<'a> {
 
 impl<'a> CoarseGrid<'a> {
     pub(crate) fn new(mask: &'a WalkableMask, overlay: &'a OccupancyOverlay) -> Self {
-        let (w, h) = (
-            mask.width() / COARSE_CELL_SIZE,
-            mask.height() / COARSE_CELL_SIZE,
-        );
+        let (w, h) = cell_dims(mask);
         CoarseGrid {
             mask,
             overlay,
@@ -378,7 +439,7 @@ mod tests {
         m.mark_blocked(s, s, s, s, 0);
         m.mark_walkable(s + 1, s, s - 1, s / 2);
         m.mark_walkable(s, s + s / 2, 1, s / 2);
-        let open = cell_pixels(1, 1)
+        let open = cell_pixels(&m, 1, 1)
             .filter(|&(_, p)| m.is_walkable(p.x, p.y))
             .count();
         assert_eq!(open, usize::from(COARSE_CELL_WALKABLE_MIN));

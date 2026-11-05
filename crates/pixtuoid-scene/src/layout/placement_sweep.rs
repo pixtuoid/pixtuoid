@@ -1900,7 +1900,7 @@ fn nothing_is_placed_under_an_inset() {
 
 /// `l` as seen from the north-west corner of its area inside its insets:
 /// every field the layout places, its walls cut at that area's edges.
-fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 9] {
+fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 10] {
     let inner = l.inner;
     let p = |p: Point| Point {
         x: p.x - inner.x,
@@ -1984,15 +1984,14 @@ fn from_its_inner_corner(l: &SceneLayout) -> [(&'static str, String); 9] {
         ("walls", format!("{walls:?}")),
         ("doorways", format!("{doorways:?}")),
         ("walkable", cells(&|q| l.is_walkable(q.x, q.y))),
+        ("reach", cells(&|q| l.reachable.reaches(q))),
     ]
 }
 
 /// An office inside insets is the bare office of the inner size, moved by
-/// them, but for the walls that run on under them: every field it places, so
-/// every placement sweep over a bare office holds for one inside insets too.
-/// Its reach is the coarse routing grid's, which runs from the canvas's corner
-/// whatever the insets, so the route sweeps run inside insets themselves
-/// ([`the_route_sweeps_hold_inside_insets`]).
+/// them, but for the walls that run on under them: every field it places, its
+/// reach included, so every placement sweep over a bare office holds for one
+/// inside insets too.
 #[test]
 fn an_office_inside_insets_is_the_inner_sizes_moved() {
     let mut v = Vec::new();
@@ -2009,6 +2008,45 @@ fn an_office_inside_insets_is_the_inner_sizes_moved() {
         }
     });
     assert_no_violations("moved-office", v);
+}
+
+/// The routing grid tiles from the floor plan's own origin: its columns from the
+/// west edge inside the insets, its rows lined up on the floor's north edge, so
+/// its cells stand where the floor does however the insets frame it. It starts
+/// within a cell of the north edge inside the insets, keeping the apron under
+/// the wall band routable.
+#[test]
+fn the_routing_grid_tiles_from_the_floors_origin() {
+    use crate::layout::{COARSE_CELL_SIZE, grid_origin};
+    let offices = [
+        Viewport::full(96, 72),
+        inset_viewport(
+            128,
+            100,
+            Insets {
+                top: 7,
+                right: 3,
+                bottom: 5,
+                left: 9,
+            },
+        ),
+    ];
+    for viewport in offices {
+        let l = inset_layout(viewport, 0);
+        let (inner, floor_top) = (l.inner, l.top_margin);
+        assert_ne!(
+            (floor_top - inner.y) % COARSE_CELL_SIZE,
+            0,
+            "{viewport:?}: a floor on the inner corner's pitch tells no anchor apart"
+        );
+        let origin = grid_origin(&l.walkable);
+        assert_eq!(origin.x, inner.x, "{viewport:?}");
+        assert_eq!((floor_top - origin.y) % COARSE_CELL_SIZE, 0, "{viewport:?}");
+        assert!(
+            (inner.y..inner.y + COARSE_CELL_SIZE).contains(&origin.y),
+            "{viewport:?}: {origin:?}"
+        );
+    }
 }
 
 /// Inside insets, the office is one connected floor its entrant steps onto,

@@ -14,8 +14,8 @@ use crate::grid::Grid;
 use crate::walkable::{OccupancyOverlay, WalkableMask};
 
 use crate::layout::{
-    Bounds, COARSE_CELL_SIZE, CoarseGrid, Point, cell_anchor, cell_center, cell_walkable, snap,
-    snap_where,
+    Bounds, COARSE_CELL_SIZE, CoarseGrid, Point, cell_anchor, cell_center, cell_dims, cell_holding,
+    cell_walkable, grid_origin, snap, snap_where,
 };
 use crate::physics::{OCTILE_DIAGONAL_COST, OCTILE_STRAIGHT_COST, octile_cost};
 
@@ -176,24 +176,25 @@ fn heuristic(a: (u16, u16), b: (u16, u16)) -> u32 {
     octile_cost(dx, dy)
 }
 
-/// Is the center of cell `(cx, cy)` inside `zone`?
-fn cell_in_zone(zone: Option<Bounds>, cx: u16, cy: u16) -> bool {
+/// Is the center of `mask`'s cell `(cx, cy)` inside `zone`?
+fn cell_in_zone(mask: &WalkableMask, zone: Option<Bounds>, cx: u16, cy: u16) -> bool {
     let Some(z) = zone else {
         return false;
     };
-    let cp = cell_center(cx, cy);
+    let cp = cell_center(mask, cx, cy);
     cp.x >= z.x && cp.x < z.x + z.width && cp.y >= z.y && cp.y < z.y + z.height
 }
 
-fn cell_of(p: Point) -> (u16, u16) {
-    (p.x / CELL_SIZE, p.y / CELL_SIZE)
+/// The cell of `mask`'s coarse grid a snap toward `p` starts from
+/// ([`crate::layout::snap_cell`]).
+fn start_cell(mask: &WalkableMask, p: Point) -> (u16, u16) {
+    crate::layout::snap_cell(grid_origin(mask), p)
 }
 
 /// Coarse-grid dimensions, or `None` when either axis is 0 — a degenerate grid
 /// the A* loop can't index.
 fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
-    let cell_w = mask.width() / CELL_SIZE;
-    let cell_h = mask.height() / CELL_SIZE;
+    let (cell_w, cell_h) = cell_dims(mask);
     if cell_w == 0 || cell_h == 0 {
         return None;
     }
@@ -224,12 +225,19 @@ pub(crate) fn find_path(
     let start = snap(
         mask,
         overlay,
-        cell_of(from),
+        start_cell(mask, from),
         cell_w,
         cell_h,
         MAX_SNAP_RADIUS,
     )?;
-    let goal = snap(mask, overlay, cell_of(to), cell_w, cell_h, MAX_SNAP_RADIUS)?;
+    let goal = snap(
+        mask,
+        overlay,
+        start_cell(mask, to),
+        cell_w,
+        cell_h,
+        MAX_SNAP_RADIUS,
+    )?;
 
     if start == goal {
         return Some(reconstruct(
@@ -266,7 +274,7 @@ pub(crate) fn find_path(
             } else {
                 OCTILE_STRAIGHT_COST
             };
-            let step = if cell_in_zone(preferred, nx, ny) {
+            let step = if cell_in_zone(mask, preferred, nx, ny) {
                 base_step * PREFERRED_ZONE_COST_NUM / PREFERRED_ZONE_COST_DEN
             } else {
                 base_step
@@ -295,8 +303,9 @@ pub fn point_in_walkable_cell(mask: &WalkableMask, p: Point) -> bool {
     let Some((cell_w, cell_h)) = grid_dims(mask) else {
         return false;
     };
-    let (cx, cy) = cell_of(p);
-    cx < cell_w && cy < cell_h && cell_walkable(mask, &OccupancyOverlay::new(), cx, cy)
+    cell_holding(grid_origin(mask), p).is_some_and(|(cx, cy)| {
+        cx < cell_w && cy < cell_h && cell_walkable(mask, &OccupancyOverlay::new(), cx, cy)
+    })
 }
 
 /// Snap a pixel-space `Point` into the nearest walkable coarse CELL on
@@ -316,9 +325,13 @@ pub(crate) fn snap_point_where(
 ) -> Option<Point> {
     let (cell_w, cell_h) = grid_dims(mask)?;
     let empty = OccupancyOverlay::new();
-    let (cx, cy) = snap_where(cell_of(p), cell_w, cell_h, MAX_SNAP_RADIUS, |(cx, cy)| {
-        cell_walkable(mask, &empty, cx, cy) && fits(cell_anchor(mask, cx, cy))
-    })?;
+    let (cx, cy) = snap_where(
+        start_cell(mask, p),
+        cell_w,
+        cell_h,
+        MAX_SNAP_RADIUS,
+        |(cx, cy)| cell_walkable(mask, &empty, cx, cy) && fits(cell_anchor(mask, cx, cy)),
+    )?;
     Some(cell_anchor(mask, cx, cy))
 }
 
