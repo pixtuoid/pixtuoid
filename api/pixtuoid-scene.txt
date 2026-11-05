@@ -312,9 +312,9 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::SteppedF
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::SteppedFloor
 pub struct pixtuoid_scene::floor::VacancyDim
 impl pixtuoid_scene::floor::VacancyDim
-pub const pixtuoid_scene::floor::VacancyDim::EMPTY_DEBOUNCE_MS: u64
+pub const pixtuoid_scene::floor::VacancyDim::VACANCY_DEBOUNCE_MS: u64
 pub fn pixtuoid_scene::floor::VacancyDim::level(&self) -> f32
-pub fn pixtuoid_scene::floor::VacancyDim::snap_to_empty(&mut self)
+pub fn pixtuoid_scene::floor::VacancyDim::snap_to_vacant(&mut self)
 impl core::default::Default for pixtuoid_scene::floor::VacancyDim
 pub fn pixtuoid_scene::floor::VacancyDim::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::floor::VacancyDim

@@ -402,7 +402,7 @@ fn light_eases_toward_min_after_debounce() {
     // the last full-light tick, so the fade below spans only its own second
     dim.tick(
         true,
-        start + Duration::from_millis(VacancyDim::EMPTY_DEBOUNCE_MS - 1),
+        start + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS - 1),
     );
     // 6 s: the debounce expired 1 s ago, ~1.25 tau of fade.
     let level = dim.tick(true, start + Duration::from_millis(6_000));
@@ -442,7 +442,7 @@ fn light_rises_back_when_repopulated() {
 }
 
 #[test]
-fn light_resets_empty_since_when_repopulated() {
+fn light_resets_vacant_since_when_repopulated() {
     let mut dim = VacancyDim::new();
     let start = t0();
     dim.tick(true, start);
@@ -454,7 +454,7 @@ fn light_resets_empty_since_when_repopulated() {
     let level = dim.tick(true, start + Duration::from_millis(7_500));
     assert!(
         (level - 1.0).abs() < 1e-6,
-        "empty_since did not reset on repopulate: {level}"
+        "vacant_since did not reset on repopulate: {level}"
     );
 }
 
@@ -463,7 +463,7 @@ fn light_large_dt_does_not_overshoot_or_nan() {
     let mut dim = VacancyDim::new();
     let start = t0();
     dim.tick(true, start);
-    let later = start + Duration::from_millis(VacancyDim::EMPTY_DEBOUNCE_MS + 1_000);
+    let later = start + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 1_000);
     let level = dim.tick(true, later);
     assert!(level.is_finite(), "level went non-finite: {level}");
     assert!(
@@ -503,7 +503,7 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
     ]
     .map(|(scene, floor)| {
         let mut session = FloorSession::new(Arc::clone(&pack));
-        (0..3 * VacancyDim::EMPTY_DEBOUNCE_MS / crate::anim::PAINT_FRAME_MS)
+        (0..3 * VacancyDim::VACANCY_DEBOUNCE_MS / crate::anim::PAINT_FRAME_MS)
             .map(|i| {
                 let now = t0() + FRAME * i as u32;
                 let world = FloorInputs {
@@ -552,9 +552,9 @@ fn every_floor_of_an_office_shares_its_offline() {
 }
 
 #[test]
-fn light_snap_to_empty_forces_min_level() {
+fn light_snap_to_vacant_forces_min_level() {
     let mut dim = VacancyDim::new();
-    dim.snap_to_empty();
+    dim.snap_to_vacant();
     assert!((dim.level() - VacancyDim::MIN_LEVEL).abs() < f32::EPSILON);
 }
 
@@ -1237,9 +1237,9 @@ fn neon_first_tick_snaps_to_the_mood() {
         (neon_mood(2, 1, 0), ROOM_LIT, NeonLevels::ALERT),
         (neon_mood(2, 0, 3), ROOM_LIT, NeonLevels::RUNNING),
         (neon_mood(0, 0, 3), ROOM_LIT, NeonLevels::CALM),
-        (neon_mood(0, 0, 0), ROOM_DIMMED, NeonLevels::EMPTY),
+        (neon_mood(0, 0, 0), ROOM_DIMMED, NeonLevels::VACANT),
         (neon_mood(0, 0, 0), ROOM_LIT, NeonLevels::CALM),
-        (neon_mood(2, 1, 0), ROOM_DIMMED, NeonLevels::EMPTY),
+        (neon_mood(2, 1, 0), ROOM_DIMMED, NeonLevels::VACANT),
     ] {
         assert_eq!(
             NeonState::new().tick(mood, room, Motion::Full.timing(t0())),
@@ -1251,9 +1251,9 @@ fn neon_first_tick_snaps_to_the_mood() {
 
 /// The `--empty` still: one tick after the snap must still judge the floor empty.
 #[test]
-fn light_snap_to_empty_survives_its_first_tick_and_reads_dimmed() {
+fn light_snap_to_vacant_survives_its_first_tick_and_reads_dimmed() {
     let mut dim = VacancyDim::new();
-    dim.snap_to_empty();
+    dim.snap_to_vacant();
     assert!(dim.dimmed());
     let level = dim.tick(true, t0());
     assert_eq!(level, VacancyDim::MIN_LEVEL);
@@ -1265,7 +1265,7 @@ fn light_snap_to_empty_survives_its_first_tick_and_reads_dimmed() {
 #[test]
 fn light_is_dimmed_exactly_once_the_debounce_runs_out() {
     let mut dim = VacancyDim::new();
-    let debounce = Duration::from_millis(VacancyDim::EMPTY_DEBOUNCE_MS);
+    let debounce = Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS);
     dim.tick(true, t0());
     dim.tick(true, t0() + debounce - Duration::from_millis(1));
     assert!(!dim.dimmed());
@@ -1417,7 +1417,7 @@ fn neon_a_starved_tube_flashes_inside_its_windows_and_only_there() {
         let want = if in_window {
             NeonLevels::FLASH
         } else {
-            NeonLevels::EMPTY
+            NeonLevels::VACANT
         };
         assert_eq!(levels, want, "{ms}ms");
     }
@@ -1535,7 +1535,7 @@ fn neon_a_starved_tube_never_flashes_at_rest() {
     for ms in (0..NeonState::STUTTER_MS).step_by(10) {
         let timing = Motion::Still.timing(in_stutter_cycle(ms));
         let levels = neon.tick(neon_mood(0, 0, 0), ROOM_DIMMED, timing);
-        assert_eq!(levels, NeonLevels::EMPTY, "{ms}ms");
+        assert_eq!(levels, NeonLevels::VACANT, "{ms}ms");
     }
 }
 
@@ -1546,7 +1546,7 @@ fn neon_a_painter_slower_than_a_flash_never_shows_one() {
     let shortest = Duration::from_millis(NeonState::shortest_flash_ms());
     let slower = shortest + Duration::from_millis(crate::anim::FULL_TICK_MS);
     for (ms, levels) in starved_cycle(slower) {
-        assert_eq!(levels, NeonLevels::EMPTY, "{ms}ms at a {slower:?} tick");
+        assert_eq!(levels, NeonLevels::VACANT, "{ms}ms at a {slower:?} tick");
     }
     assert!(
         starved_cycle(shortest)
@@ -1561,7 +1561,7 @@ fn neon_a_painter_slower_than_a_flash_never_shows_one() {
             ROOM_DIMMED,
             Motion::Full.timing(in_a_flash)
         ),
-        NeonLevels::EMPTY,
+        NeonLevels::VACANT,
         "a still's single tick"
     );
 }
@@ -1592,7 +1592,7 @@ fn neon_never_flashes_while_lit_or_while_still_coasting_down() {
         last = coasting.tick(neon_mood(0, 0, 0), ROOM_DIMMED, Motion::Full.timing(now));
     }
     assert_ne!(last, NeonLevels::FLASH);
-    assert!(last.power > NeonLevels::EMPTY.power, "{last:?}");
+    assert!(last.power > NeonLevels::VACANT.power, "{last:?}");
 }
 
 /// The classic looks out from its own floor.
@@ -1822,8 +1822,8 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
         slot.last_event_at = t0 + switch;
     }
     // past the switch, the debounce and the ease to a still room
-    let emptied =
-        switch + Duration::from_millis(VacancyDim::EMPTY_DEBOUNCE_MS + 6 * VacancyDim::FADE_TAU_MS);
+    let emptied = switch
+        + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 6 * VacancyDim::FADE_TAU_MS);
     // (case, tier, weather, pet, the scene before and after `switch`, window);
     // the cat walks most of a window, so it rides only where nothing else must
     let cases = [

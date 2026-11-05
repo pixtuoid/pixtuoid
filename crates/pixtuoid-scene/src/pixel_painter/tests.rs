@@ -1695,7 +1695,7 @@ fn empty_frame(layout: &SceneLayout) -> SimFrame {
         seated_agents: HashMap::new(),
         characters: Vec::new(),
         indoor_scale: 0.0,
-        neon: crate::floor::NeonLevels::EMPTY,
+        neon: crate::floor::NeonLevels::VACANT,
         neon_stutter: false,
         chitchat_bubbles: Vec::new(),
         new_coffee_carriers: Vec::new(),
@@ -2760,8 +2760,8 @@ fn sim_step_keeps_the_sign_lit_through_a_gap_in_a_room_that_once_dimmed() {
         }
         last.expect("at least one frame")
     };
-    let debounce = crate::floor::VacancyDim::EMPTY_DEBOUNCE_MS;
-    assert_eq!(run(&empty, debounce * 3), crate::floor::NeonLevels::EMPTY);
+    let debounce = crate::floor::VacancyDim::VACANCY_DEBOUNCE_MS;
+    assert_eq!(run(&empty, debounce * 3), crate::floor::NeonLevels::VACANT);
     run(&populated, 60_000);
     // A gap between transcripts: the tally is empty, the room's debounce is not up.
     let gap = run(&empty, debounce / 2);
@@ -6398,7 +6398,7 @@ fn the_neon_halo_lifts_the_window_glass_it_falls_on() {
     };
     let (lit, dark) = (
         paint(crate::floor::NeonLevels::FLASH),
-        paint(crate::floor::NeonLevels::EMPTY),
+        paint(crate::floor::NeonLevels::VACANT),
     );
     let sign = layout
         .fixtures()

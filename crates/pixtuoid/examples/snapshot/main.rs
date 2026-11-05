@@ -827,7 +827,7 @@ fn settle_empty(
     pixel: Option<&mut PixelOffice<pixtuoid_scene::floor::FloorSession>>,
 ) {
     for floor in std::iter::once(floor).chain(pixel.map(PixelOffice::floor_mut)) {
-        floor.ctx.vacancy_dim.snap_to_empty();
+        floor.ctx.vacancy_dim.snap_to_vacant();
     }
 }
 

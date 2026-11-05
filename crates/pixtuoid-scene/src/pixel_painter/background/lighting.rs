@@ -315,7 +315,7 @@ mod tests {
         paint_light(
             &mut buf,
             &glow(PANEL_AT, PANEL_AT, NEON_PANEL_W, NEON_PANEL_H, 0.0),
-            look(NeonLevels::EMPTY).halo,
+            look(NeonLevels::VACANT).halo,
         );
         assert!((0..40).all(|y| (0..60).all(|x| buf.get(x, y) == WALL)));
     }

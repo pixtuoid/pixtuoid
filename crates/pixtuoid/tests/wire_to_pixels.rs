@@ -63,7 +63,7 @@ fn new_renderer(cols: u16, rows: u16) -> TuiRenderer<TestBackend> {
 /// (timezone-dependent) sky and isolates the agent's footprint.
 fn settled_pixels(scene: &SceneState, cols: u16, rows: u16, now: SystemTime) -> Vec<(u8, u8, u8)> {
     // Bounded on BOTH sides: long enough for the entry walk to finish, and
-    // SHORTER than VacancyDim's 5s EMPTY_DEBOUNCE_MS — past that the empty
+    // SHORTER than VacancyDim's 5s VACANCY_DEBOUNCE_MS — past that the empty
     // office's floor dim would start easing while the occupied office holds its
     // lights, so the two backgrounds would stop being byte-identical and the diff
     // would no longer be purely the agent's paint. Don't raise past ~150 frames.

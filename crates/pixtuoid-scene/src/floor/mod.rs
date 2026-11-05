@@ -682,14 +682,14 @@ pub(crate) fn step_floor(
     Some(SteppedFloor { layout, frame })
 }
 
-/// Per-floor indoor-lighting fade state: an emptied floor holds full light for
-/// `EMPTY_DEBOUNCE_MS` (so agents briefly disappearing between transcripts don't
-/// flicker it) then eases toward `MIN_LEVEL`; repopulating snaps the target
-/// straight back to 1.0.
+/// Per-floor indoor-lighting fade state: a vacant floor holds full light for
+/// `VACANCY_DEBOUNCE_MS` (so agents briefly disappearing between transcripts don't
+/// flicker it) then eases toward `MIN_LEVEL`; repopulating or coming back online
+/// snaps the target straight back to 1.0.
 #[derive(Debug)]
 pub struct VacancyDim {
     level: f32,
-    empty_since: Option<SystemTime>,
+    vacant_since: Option<SystemTime>,
     last_update: Option<SystemTime>,
     dimmed: bool,
 }
@@ -701,10 +701,10 @@ impl Default for VacancyDim {
 }
 
 impl VacancyDim {
-    /// Floor of the smoothed lit level — an empty floor dims to here, never to black.
+    /// Floor of the smoothed lit level — a vacant floor dims to here, never to black.
     pub(crate) const MIN_LEVEL: f32 = 0.10;
-    /// How long an emptied floor holds full light before it starts fading (ms).
-    pub const EMPTY_DEBOUNCE_MS: u64 = 5_000;
+    /// How long a vacant floor holds full light before it starts fading (ms).
+    pub const VACANCY_DEBOUNCE_MS: u64 = 5_000;
     /// Time constant of the exponential lit-level ease (ms).
     pub(crate) const FADE_TAU_MS: u64 = 800;
     /// How near its target the ease lands on it: under one 8-bit channel step.
@@ -713,7 +713,7 @@ impl VacancyDim {
     pub(crate) fn new() -> Self {
         Self {
             level: 1.0,
-            empty_since: None,
+            vacant_since: None,
             last_update: None,
             dimmed: false,
         }
@@ -737,12 +737,12 @@ impl VacancyDim {
         self.level != target
     }
 
-    /// Force the steady-state empty look, bypassing the debounce + ease — static
+    /// Force the steady-state vacant look, bypassing the debounce + ease — static
     /// snapshots want it, not frame-0 of the fade. The debounce is back-dated too,
-    /// so the next tick still JUDGES the floor empty instead of re-arming it.
-    pub fn snap_to_empty(&mut self) {
+    /// so the next tick still JUDGES the floor vacant instead of re-arming it.
+    pub fn snap_to_vacant(&mut self) {
         self.level = Self::MIN_LEVEL;
-        self.empty_since = Some(SystemTime::UNIX_EPOCH);
+        self.vacant_since = Some(SystemTime::UNIX_EPOCH);
         self.dimmed = true;
     }
 
@@ -750,15 +750,15 @@ impl VacancyDim {
     /// `[MIN_LEVEL, 1.0]`.
     pub(crate) fn tick(&mut self, vacant: bool, now: SystemTime) -> f32 {
         let target = if vacant {
-            let since = *self.empty_since.get_or_insert(now);
+            let since = *self.vacant_since.get_or_insert(now);
             let elapsed = crate::anim::elapsed_ms(now, since);
-            if elapsed >= Self::EMPTY_DEBOUNCE_MS {
+            if elapsed >= Self::VACANCY_DEBOUNCE_MS {
                 Self::MIN_LEVEL
             } else {
                 1.0
             }
         } else {
-            self.empty_since = None;
+            self.vacant_since = None;
             1.0
         };
         self.dimmed = target < 1.0;
@@ -808,7 +808,7 @@ impl NeonLevels {
         power: 0.62,
     };
     /// A vacant room: the tube barely holds, and stutters ([`NeonState::tick`]).
-    pub(crate) const EMPTY: Self = Self {
+    pub(crate) const VACANT: Self = Self {
         alert: 0.0,
         power: 0.16,
     };
@@ -974,7 +974,7 @@ impl NeonState {
         use crate::neon_sign::OfficeMood;
         let now = timing.now;
         let to = if room_dimmed {
-            NeonLevels::EMPTY
+            NeonLevels::VACANT
         } else {
             match mood {
                 OfficeMood::Alert { .. } => NeonLevels::ALERT,
@@ -1014,7 +1014,8 @@ impl NeonState {
         };
         // Only a tube that has LANDED on starved stutters, not one coasting down.
         let drawable = step_ms.is_some_and(|step| step <= Self::shortest_flash_ms());
-        self.stutter = current == NeonLevels::EMPTY && drawable && Self::stutter_flash(timing.beat);
+        self.stutter =
+            current == NeonLevels::VACANT && drawable && Self::stutter_flash(timing.beat);
         if self.stutter {
             NeonLevels::FLASH
         } else {

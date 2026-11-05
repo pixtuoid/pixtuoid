@@ -55,7 +55,7 @@ fn occupied_floor_stays_lit() {
     let mut r = build(100, 40, vec![]);
     for now in [
         t0(),
-        t0() + Duration::from_millis(VacancyDim::EMPTY_DEBOUNCE_MS),
+        t0() + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS),
     ] {
         r.render(&scene, now).unwrap();
     }
