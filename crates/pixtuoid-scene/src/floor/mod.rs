@@ -85,7 +85,7 @@ pub struct FloorMeta {
     pub floor_seed: u64,
     /// Which weather its windows show, and its rain sounds.
     pub weather: crate::sky::WeatherPolicy,
-    /// How much of its ambient life moves.
+    /// How its loops and walks move: [`Motion`](crate::anim::Motion).
     pub motion: crate::anim::Motion,
 }
 

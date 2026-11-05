@@ -187,8 +187,8 @@ const DOOR_TRANSITION_MS: u64 = 200;
 /// `door_anim_max_ms` is the per-floor cached maximum entry/exit physics
 /// duration; it falls back to `ENTRY_ANIMATION_MS` when zero (before any entry
 /// walk is in flight).
-pub(crate) fn compute_door_frame_idx(
-    agents: &[AgentSlot],
+pub(crate) fn compute_door_frame_idx<'a>(
+    agents: impl IntoIterator<Item = &'a AgentSlot>,
     now: SystemTime,
     door_anim_max_ms: u64,
 ) -> usize {

@@ -14,8 +14,8 @@ use pixtuoid_core::state::AgentSlot;
 
 use crate::physics::{Segment, WalkIntent, WalkProfile, walk_arrived, walk_progress};
 use crate::walk::{
-    LegPlan, Lifted, Settle, WalkLeg, WalkPathSnapshot, WalkState, WanderKind, WanderPhase,
-    advance_wander, snapshot_leg_profile,
+    LegPlan, Lifted, Planner, Settle, WalkLeg, WalkPathSnapshot, WalkState, WanderKind,
+    WanderPhase, advance_wander, snapshot_leg_profile,
 };
 use crate::walkable::{OccupancyOverlay, WalkableMask};
 
@@ -41,17 +41,12 @@ use crate::pathfind::Router;
 /// separate args — frame inputs, not engine state.
 #[derive(Debug)]
 pub(crate) struct RouteCtx<'a> {
-    /// The A* router for this frame.
-    pub router: &'a mut dyn Router,
-    /// Live occupancy overlay (shared, read-only here).
-    pub overlay: &'a OccupancyOverlay,
+    /// What this frame plans walk legs with.
+    pub planner: Planner<'a>,
     /// Per-agent rendered-position cache.
     pub history: &'a mut PoseHistory,
     /// Per-agent walk state, keyed by `AgentId`.
     pub walks: &'a mut HashMap<AgentId, WalkState>,
-    /// Whether an idle agent wanders off its desk: an ambient loop, so not at
-    /// [`Motion::Still`](crate::anim::Motion::Still).
-    pub wanders: bool,
 }
 
 /// Owns the stores a [`RouteCtx`] borrows, so a test threads one value.
@@ -61,6 +56,7 @@ pub(crate) struct RouteRig<R> {
     pub(crate) overlay: OccupancyOverlay,
     pub(crate) history: PoseHistory,
     pub(crate) walks: HashMap<AgentId, WalkState>,
+    pub(crate) motion: crate::anim::Motion,
 }
 
 #[cfg(test)]
@@ -71,16 +67,19 @@ impl<R: Router> RouteRig<R> {
             overlay: OccupancyOverlay::new(),
             history: PoseHistory::new(),
             walks: HashMap::new(),
+            motion: crate::anim::Motion::Full,
         }
     }
 
     pub(crate) fn rctx(&mut self) -> RouteCtx<'_> {
         RouteCtx {
-            router: &mut self.router,
-            overlay: &self.overlay,
+            planner: Planner {
+                router: &mut self.router,
+                overlay: &self.overlay,
+                motion: self.motion,
+            },
             history: &mut self.history,
             walks: &mut self.walks,
-            wanders: true,
         }
     }
 }
@@ -230,7 +229,7 @@ fn exit_elapsed_ms(profile: &WalkProfile, elapsed_ms: u64) -> u64 {
 }
 
 /// Routed variant of `derive`: Walking poses trace an A*-routed polyline
-/// (layout mask + per-frame [`RouteCtx::overlay`]) corner-by-corner instead of
+/// (layout mask + per-frame [`Planner::overlay`]) corner-by-corner instead of
 /// cutting through obstacles or other agents.
 ///
 /// [`RouteCtx::walks`] drives entry/exit physics — the A* path length is
@@ -270,9 +269,8 @@ pub(crate) fn derive_with_routing(
                 (from, None)
             };
             let profile = snapshot_leg_profile(
-                rctx.router,
+                &mut rctx.planner,
                 &layout.walkable,
-                rctx.overlay,
                 slot.agent_id,
                 LegPlan {
                     from: route_from,
@@ -358,9 +356,8 @@ pub(crate) fn derive_with_routing(
         && let Some(started_at) = entry_started
     {
         let profile = snapshot_leg_profile(
-            rctx.router,
+            &mut rctx.planner,
             &layout.walkable,
-            rctx.overlay,
             slot.agent_id,
             LegPlan {
                 from: entry_from,
@@ -408,19 +405,15 @@ pub(crate) fn derive_with_routing(
     // for seconds, then snapped it to physics wander.
     let is_idle = matches!(slot.state, pixtuoid_core::state::ActivityState::Idle);
     if is_idle && slot.exiting_at.is_none() {
-        if !rctx.wanders {
-            return Some(Pose::SeatedIdle);
-        }
-
         // A per-frame snapshot, so the arms below never re-borrow `rctx.walks`.
         let wf = advance_wander(
             slot,
             now,
             layout,
             desk,
-            rctx.router,
-            rctx.overlay,
+            &mut rctx.planner,
             rctx.walks,
+            rctx.history,
         );
 
         match wf.phase {
@@ -514,9 +507,8 @@ pub(crate) fn derive_with_routing(
                 if dist >= SNAP_BACK_MIN_DIST {
                     let (snap_target, chair_settle) = desk_leg_endpoint(desk, layout);
                     let p = snapshot_leg_profile(
-                        rctx.router,
+                        &mut rctx.planner,
                         &layout.walkable,
-                        rctx.overlay,
                         slot.agent_id,
                         LegPlan {
                             from: prev,
@@ -597,9 +589,8 @@ fn lifted_pose(
         Some(Lifted::Dropped(at)) => {
             let from = landing(at, home, layout);
             let profile = snapshot_leg_profile(
-                rctx.router,
+                &mut rctx.planner,
                 &layout.walkable,
-                rctx.overlay,
                 slot.agent_id,
                 LegPlan {
                     from,
@@ -657,8 +648,8 @@ fn route_walking_pose(
     leg: LegPose,
     settle: Settle,
 ) -> Pose {
-    let router = &mut *rctx.router;
-    let overlay = rctx.overlay;
+    let router = &mut *rctx.planner.router;
+    let overlay = rctx.planner.overlay;
     let history = &mut *rctx.history;
     let walks = &mut *rctx.walks;
     let LegPose {
