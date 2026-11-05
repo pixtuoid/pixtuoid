@@ -203,8 +203,8 @@ struct FloorPlan {
 
 impl FloorPlan {
     /// The zones the area `inner` of a floor of `floor_seed`'s variant divides into.
-    fn new(inner: Bounds, floor_seed: u64) -> Self {
-        let top_margin = inner.y + wall_depth(inner.height);
+    fn new(inner: Bounds, floor_seed: u64, viewport_h: u16) -> Self {
+        let top_margin = (inner.y + MIN_WALL_DEPTH).max(pct(viewport_h, WALL_DEPTH_PCT));
         let usable_h = inner.bottom() - top_margin;
 
         let variant = FloorVariant::from_seed(floor_seed);
@@ -296,7 +296,7 @@ impl FloorPlan {
         let cubicle_aisle_h = cubicle_aisle_h(usable_h);
         // NOT `usable_h - cubicle_aisle_h`, though the locals are right here — see
         // `band_h` for what its saturation buys below the gate.
-        let cubicle_h = band_h(inner.height);
+        let cubicle_h = usable_h.saturating_sub(cubicle_aisle_h);
         let cubicle_band = Bounds {
             x: right_x,
             y: top_margin,
@@ -382,7 +382,7 @@ pub(super) fn compute(
     let inner = office_area(viewport)?;
     let Size { w: buf_w, h: buf_h } = viewport.size;
 
-    let plan = FloorPlan::new(inner, floor_seed);
+    let plan = FloorPlan::new(inner, floor_seed, viewport.size.h);
 
     let pod_desks = compute_pod_desks(max_desks, plan.pod_grid);
     let desk_points: Vec<Point> = pod_desks.iter().map(|d| d.at).collect();
@@ -1877,6 +1877,7 @@ mod tests {
                             .inner()
                             .expect("an area"),
                         seed,
+                        h,
                     );
                     let couch =
                         couch_pos(&plan.pod_grid.band, plan.top_margin, plan.lounge_west_clear);
