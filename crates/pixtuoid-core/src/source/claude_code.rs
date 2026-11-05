@@ -29,7 +29,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Claude Code",
     label_prefix: "cc",
-    verified_version: "2.1.316",
+    verified_version: "2.1.318",
     version_probe: Some(&["claude", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("CLAUDE_CONFIG_DIR"),
