@@ -824,7 +824,8 @@ impl RemoteOffice {
 
     /// Take a new layout: everyone takes a new desk, those staying before those
     /// walking out and oldest first, since the old one means nothing here.
-    /// Whoever doesn't fit returns with a later line that names it.
+    /// Whoever doesn't fit is dropped: one staying returns with a later line
+    /// that names it, one walking out does not.
     pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS]) {
         self.scene.floor_capacities = capacities;
         let mut agents: Vec<_> = std::mem::take(&mut self.scene.agents)

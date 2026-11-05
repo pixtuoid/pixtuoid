@@ -2393,6 +2393,64 @@ fn a_resurrect_mid_walkout_re_enters_from_the_live_position() {
     );
 }
 
+/// A device's cast switched back to within its grace comes back as a local
+/// resurrect leaves a slot: `exiting_at` cleared and its arrival untouched,
+/// here the first line's `None`. So the routed pose, the one every frame renders,
+/// turns it round where it walks rather than seating it.
+#[test]
+fn a_cast_switched_back_mid_walkout_turns_round_as_a_resurrect_does() {
+    use pixtuoid_core::SceneState;
+    use pixtuoid_core::remote::{Machine, Os, RemoteOffice, encode};
+    use pixtuoid_core::state::MAX_FLOORS;
+    fn received(office: &mut RemoteOffice, scene: &SceneState, from: &Machine, at: SystemTime) {
+        let line = encode(scene, from, at).expect("a scene encodes");
+        office.apply(line.as_bytes(), at).expect("it applies");
+    }
+
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let demo = Machine::new("demo", Os::Other);
+    let walker = entry_slot(t0 - Duration::from_secs(3600));
+    let id = walker.agent_id;
+    let mut cast = SceneState::uniform(4);
+    cast.agents.insert(id, walker);
+    let mut office = RemoteOffice::new([4; MAX_FLOORS]);
+    received(&mut office, &cast, &demo, t0);
+    let switch = t0 + Duration::from_secs(1);
+    let live = Machine::new("studio", Os::Macos);
+    received(&mut office, &SceneState::uniform(4), &live, switch);
+
+    let mut rig = RouteRig::new(StubRouter::straight());
+    let leaving = office.scene().agents[&id].clone();
+    derive_with_routing(&leaving, switch, &l, &mut rig.rctx());
+    let mid = switch + Duration::from_millis(200);
+    assert!(
+        matches!(
+            derive_with_routing(&leaving, mid, &l, &mut rig.rctx()),
+            Some(Pose::Walking { .. })
+        ),
+        "premise: the walkout is in flight"
+    );
+    let walking_at = (rig.history)
+        .recent(id, HISTORY_RECENT_MS, mid)
+        .expect("the walkout renders every frame, so history holds a position");
+
+    received(&mut office, &cast, &demo, mid);
+    let back = &office.scene().agents[&id];
+    assert_eq!(
+        (back.exiting_at, back.arrived_at),
+        (None, None),
+        "premise: back as a resurrect leaves it, with no arrival"
+    );
+    let pose = derive_with_routing(back, mid, &l, &mut rig.rctx());
+    let leg = (rig.walks[&id].entry.as_ref()).expect("the switch-back re-arms entry");
+    assert_eq!(leg.from, walking_at, "it turns round where it walks");
+    assert!(
+        matches!(pose, Some(Pose::Walking { .. })),
+        "and renders that walk, never its desk"
+    );
+}
+
 /// The exit render and the resurrect check must read "has the walkout finished?"
 /// through the SAME time-compressed clock. Every other resurrect test routes
 /// straight-line on the small layout, where the compression branch is dead — so
