@@ -14,7 +14,7 @@ pub(crate) const FITTED_MIN_W: u16 = 150;
 /// The tallest office [`Viewport::fitted`] lays out, so a taller surface takes
 /// bigger pixels instead: the App's (pixtuoid-apple `docs/design.md`), past
 /// which a layout stretches its rooms and shrinks its people.
-pub(crate) const FITTED_MAX_H: u16 = 240;
+pub(crate) const FITTED_MAX_H: u16 = 218;
 
 /// [`Viewport::fitted`] before its layout's size gate.
 pub(super) fn fit(

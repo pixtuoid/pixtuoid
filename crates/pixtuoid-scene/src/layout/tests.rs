@@ -1416,27 +1416,87 @@ fn waypoint_depth_baseline_is_its_grounds_south_row() {
     }
 }
 
-/// Each case is the office the App's `OfficeFit` (pixtuoid-apple
-/// `App/Pixtuoid/OfficeScreen.swift` at `e5c7744`) laid out for that device,
-/// upright and turned, on its 4-pixel art at whole device pixels a frame pixel:
-/// the App's output, which this fit must keep reproducing.
-/// The iPhone 18 Pro's 402×874 pt at 3× and the 13-inch iPad Pro's 1032×1376
-/// pt at 2× are the App's (`OfficeModelTests.swift`, `OfficeFitTests.swift`);
-/// the iPhone SE's 1334×750 px is Apple's (<https://support.apple.com/kb/SP867>)
-/// at the 4.7-inch display's 2× (Table 2-1's iPhone 8,
+struct FittedSurface {
+    name: &'static str,
+    px: (u16, u16),
+    per_point: u16,
+    units: (u16, u16),
+    upscale: u16,
+}
+
+/// Each surface the App fits an office to, upright and turned, and one that
+/// brackets `FITTED_MAX_H`, with its least device pixels a frame pixel, and
+/// the office and upscale `Viewport::fitted` gives it on 4-pixel art. The iPhone 18 Pro's 402×874 pt at 3× and the
+/// 13-inch iPad Pro's 1032×1376 pt at 2× are the App's (`OfficeModelTests.swift`,
+/// `OfficeFitTests.swift`); the iPhone SE's 1334×750 px is Apple's
+/// (<https://support.apple.com/kb/SP867>) at the 4.7-inch display's 2×
+/// (Table 2-1's iPhone 8,
 /// <https://developer.apple.com/library/archive/documentation/DeviceInformation/Reference/iOSDeviceCompatibility/Displays/Displays.html>).
+/// A surface 218 units tall at 3× keeps 3× while the iPhone 18 Pro, 218.5 units
+/// tall at 3×, takes 4×: the two bracket `FITTED_MAX_H` at its value.
+const FITTED_SURFACES: [FittedSurface; 7] = [
+    FittedSurface {
+        name: "iPhone 18 Pro",
+        px: (1206, 2622),
+        per_point: 3,
+        units: (150, 163),
+        upscale: 4,
+    },
+    FittedSurface {
+        name: "iPhone 18 Pro turned",
+        px: (2622, 1206),
+        per_point: 3,
+        units: (218, 100),
+        upscale: 3,
+    },
+    FittedSurface {
+        name: "a surface 218 units tall at 3×",
+        px: (1206, 2616),
+        per_point: 3,
+        units: (150, 218),
+        upscale: 3,
+    },
+    FittedSurface {
+        name: "iPhone SE",
+        px: (750, 1334),
+        per_point: 2,
+        units: (150, 166),
+        upscale: 2,
+    },
+    FittedSurface {
+        name: "iPhone SE turned",
+        px: (1334, 750),
+        per_point: 2,
+        units: (166, 93),
+        upscale: 2,
+    },
+    FittedSurface {
+        name: "iPad Pro 13",
+        px: (2064, 2752),
+        per_point: 2,
+        units: (150, 172),
+        upscale: 4,
+    },
+    FittedSurface {
+        name: "iPad Pro 13 turned",
+        px: (2752, 2064),
+        per_point: 2,
+        units: (229, 172),
+        upscale: 3,
+    },
+];
+
 #[test]
-fn a_fitted_viewport_is_the_apps_office_fit() {
+fn a_fitted_viewport_fits_each_surface() {
     let art = crate::sprite::format::Density::new(4).expect("nonzero");
-    let cases = [
-        ("iPhone 18 Pro", (1206, 2622), 3, (150, 218), 3),
-        ("iPhone 18 Pro turned", (2622, 1206), 3, (218, 100), 3),
-        ("iPhone SE", (750, 1334), 2, (150, 166), 2),
-        ("iPhone SE turned", (1334, 750), 2, (166, 93), 2),
-        ("iPad Pro 13", (2064, 2752), 2, (172, 229), 3),
-        ("iPad Pro 13 turned", (2752, 2064), 2, (229, 172), 3),
-    ];
-    for (device, (w, h), per_point, (units_w, units_h), upscale) in cases {
+    for FittedSurface {
+        name,
+        px: (w, h),
+        per_point,
+        units: (units_w, units_h),
+        upscale,
+    } in FITTED_SURFACES
+    {
         let fitted = Viewport::fitted(
             Size { w, h },
             Insets::default(),
@@ -1449,7 +1509,7 @@ fn a_fitted_viewport_is_the_apps_office_fit() {
                 viewport: Viewport::full(units_w, units_h),
                 upscale,
             }),
-            "{device}"
+            "{name}"
         );
     }
 }
@@ -1460,7 +1520,7 @@ fn a_fitted_viewport_is_the_apps_office_fit() {
 fn a_fitted_inset_is_rounded_up_to_whole_units() {
     let art = crate::sprite::format::Density::new(4).expect("nonzero");
     let per_point = std::num::NonZeroU16::new(3).expect("nonzero");
-    // Twelve device pixels a unit: 3 a frame pixel, 4 frame pixels a unit.
+    // Sixteen device pixels a unit: 4 a frame pixel, 4 frame pixels a unit.
     let fitted = Viewport::fitted(
         Size { w: 1206, h: 2622 },
         Insets {
@@ -1476,10 +1536,10 @@ fn a_fitted_inset_is_rounded_up_to_whole_units() {
     assert_eq!(
         fitted.viewport.insets,
         Insets {
-            top: 16,
-            right: 2,
-            bottom: 9,
-            left: 3,
+            top: 12,
+            right: 1,
+            bottom: 7,
+            left: 2,
         }
     );
 }
@@ -1509,12 +1569,12 @@ fn a_fitted_office_takes_bigger_pixels_rather_than_grow_past_its_cap() {
 }
 
 /// The fitted width keeps every meeting room's furniture: on every seed, at
-/// each height a fitted phone or tablet lays out, every meeting room of an
-/// office that narrow seats its sofa and table.
+/// each height a [`FITTED_SURFACES`] surface lays out, every meeting room of
+/// an office that narrow seats its sofa and table.
 #[test]
 fn a_fitted_office_keeps_every_meeting_rooms_furniture() {
     let mut rooms = 0;
-    for h in [93, 100, 166, 172, 218, 229] {
+    for h in FITTED_SURFACES.map(|surface| surface.units.1) {
         for seed in 0..48 {
             let layout = SceneLayout::compute(Viewport::full(FITTED_MIN_W, h), None, seed)
                 .expect("lays out");

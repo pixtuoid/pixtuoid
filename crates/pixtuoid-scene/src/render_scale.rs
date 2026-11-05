@@ -176,10 +176,10 @@ impl PixelFit {
         Self::at(RenderScale(scale), density, px)
     }
 
-    /// The fit whose office stands at most `max_h` units over a surface `px`
-    /// big: art at `density`, upscaled the fewest whole times from `least`
-    /// that keeps it that low, so a taller surface takes bigger pixels rather
-    /// than more office.
+    /// The fit whose surface `px` stands at most `max_h` units high before its
+    /// office rounds down: art at `density`, upscaled the fewest whole times
+    /// from `least` that keeps it that low, so a taller surface takes bigger
+    /// pixels rather than more office.
     pub(crate) fn at_most_high(
         max_h: u16,
         (density, least): (Density, NonZeroU16),
