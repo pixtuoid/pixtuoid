@@ -334,6 +334,7 @@ pub(crate) fn sit_down_as(
             cwd: std::sync::Arc::from(std::path::Path::new("/w/x")),
             state_started_at: now0,
             created_at: now0,
+            arrived_at: Some(now0),
             last_event_at: now0,
             desk_index: pixtuoid_core::GlobalDeskIndex(home),
             ..make_slot(

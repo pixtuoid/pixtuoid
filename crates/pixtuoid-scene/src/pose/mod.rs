@@ -7,7 +7,7 @@
 mod pure;
 
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::AgentSlot;
@@ -20,8 +20,8 @@ use crate::walk::{
 use crate::walkable::{OccupancyOverlay, WalkableMask};
 
 pub(crate) use pure::{
-    ENTRY_ANIMATION_MS, STALE_RESUME_GAP_BASE_MS, WANDER_DWELL_EST_MS, derive, derive_state_only,
-    dwell_ms, stale_resume_gap_ms,
+    ENTRY_ANIMATION_MS, STALE_RESUME_GAP_BASE_MS, WANDER_DWELL_EST_MS, arriving, derive,
+    derive_state_only, dwell_ms, stale_resume_gap_ms,
 };
 pub(crate) use pure::{LegPose, Pose};
 #[cfg(test)]
@@ -189,8 +189,8 @@ enum ReEnter {
 /// Take a spent EXIT leg off the non-exiting path and say where entry re-arms.
 ///
 /// An exit leg surviving onto this path means `exiting_at` was cleared under us
-/// without re-stamping `created_at`, so the entry branch's spawn-window gate can
-/// never re-arm on its own and the agent would pop onto its chair. The take is
+/// without re-stamping `arrived_at`, so the entry window can never re-arm the
+/// entry branch on its own and the agent would pop onto its chair. The take is
 /// load-bearing on its own: a retained arrived leg is replayed by the NEXT exit,
 /// vanishing the sprite on its first frame instead of walking out.
 fn take_cancelled_walkout(
@@ -339,13 +339,6 @@ pub(crate) fn derive_with_routing(
         return Some(pose);
     }
 
-    // ENTRY_ANIMATION_MS bounds only how long we try to ROUTE; the physics
-    // duration is the real walk time.
-    let since_spawn = now
-        .duration_since(slot.created_at)
-        .unwrap_or(Duration::ZERO)
-        .as_millis() as u64;
-
     let door = layout.door_threshold;
     let (approach, chair_settle) = desk_leg_endpoint(desk, layout);
     let settle = chair_settle.map_or(Settle::None, Settle::End);
@@ -356,7 +349,14 @@ pub(crate) fn derive_with_routing(
         Some(ReEnter::Live(p)) => p,
         _ => door,
     };
-    if walk.entry.is_none() && (since_spawn < ENTRY_ANIMATION_MS || re_enter.is_some()) {
+    let entry_started = if re_enter.is_some() {
+        Some(now)
+    } else {
+        arriving(slot, now)
+    };
+    if walk.entry.is_none()
+        && let Some(started_at) = entry_started
+    {
         let profile = snapshot_leg_profile(
             rctx.router,
             &layout.walkable,
@@ -370,11 +370,7 @@ pub(crate) fn derive_with_routing(
             },
         );
         walk.entry = Some(WalkLeg {
-            started_at: if re_enter.is_some() {
-                now
-            } else {
-                slot.created_at
-            },
+            started_at,
             profile,
             from: entry_from,
         });
@@ -408,8 +404,8 @@ pub(crate) fn derive_with_routing(
         // and causes a double-walk. Fall through to the state-driven pose.
     }
 
-    // Gates on Idle, NOT `since_spawn >= ENTRY_ANIMATION_MS`: that fixed gate sat a
-    // near-desk agent in `idle_pose` for seconds, then snapped it to physics wander.
+    // Gates on Idle, NOT the entry window: that fixed gate sat a near-desk agent in `idle_pose`
+    // for seconds, then snapped it to physics wander.
     let is_idle = matches!(slot.state, pixtuoid_core::state::ActivityState::Idle);
     if is_idle && slot.exiting_at.is_none() {
         if !rctx.wanders {

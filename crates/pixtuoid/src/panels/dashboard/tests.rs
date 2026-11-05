@@ -25,6 +25,7 @@ fn mk_slot(
         state,
         state_started_at: now,
         created_at: now,
+        arrived_at: Some(now),
         last_event_at: now,
         exiting_at: None,
         desk_index: GlobalDeskIndex(desk_index),

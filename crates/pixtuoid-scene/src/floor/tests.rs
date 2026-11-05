@@ -201,6 +201,7 @@ fn make_scene(n: usize, max_desks: usize) -> SceneState {
                 label: format!("a{i}").into(),
                 state_started_at: now,
                 created_at: now,
+                arrived_at: Some(now),
                 last_event_at: now,
                 desk_index: GlobalDeskIndex(i),
                 floor_idx,
@@ -290,6 +291,7 @@ fn build_floor_scene_skips_agent_below_grown_offset() {
             label: "stale".into(),
             state_started_at: now,
             created_at: now,
+            arrived_at: Some(now),
             last_event_at: now,
             desk_index: GlobalDeskIndex(5),
             floor_idx: 1,
@@ -321,6 +323,7 @@ fn num_floors_variable_capacities() {
                 label: format!("a{i}").into(),
                 state_started_at: now,
                 created_at: now,
+                arrived_at: Some(now),
                 last_event_at: now,
                 desk_index: GlobalDeskIndex(i),
                 floor_idx,
@@ -799,6 +802,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
     let mut scene = make_scene(1, 8);
     for slot in scene.agents.values_mut() {
         slot.created_at = now0;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = now0;
         slot.last_event_at = now0;
     }
@@ -1580,6 +1584,7 @@ fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
     let mut scene = make_scene(n, 8);
     for (i, slot) in scene.agents.values_mut().enumerate() {
         slot.created_at = settled;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = settled;
         slot.last_event_at = settled;
         slot.state = match i {
@@ -1727,6 +1732,7 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
     let mut arriving = make_scene(3, 8);
     for slot in arriving.agents.values_mut() {
         (slot.created_at, slot.state_started_at, slot.last_event_at) = (t0, t0, t0);
+        slot.arrived_at = Some(t0);
     }
     let empty = make_scene(0, 8);
     let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
@@ -2248,6 +2254,7 @@ fn a_frame_without_the_office_forgets_the_last() {
     let mut scene = make_scene(1, 8);
     for slot in scene.agents.values_mut() {
         slot.created_at = now0;
+        slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = now0;
         slot.last_event_at = now0;
     }
@@ -2762,6 +2769,7 @@ mod figure_box {
                         cwd: Arc::from(Path::new(cwd)),
                         state_started_at: idle,
                         created_at: idle,
+                        arrived_at: Some(idle),
                         last_event_at: idle,
                         desk_index: GlobalDeskIndex(desk),
                         ..make_slot(id, ActivityState::Idle)
@@ -3003,6 +3011,7 @@ fn every_drawn_agent_has_a_walk_a_lift_lands_on() {
     let mut slots = scene.agents.values_mut();
     let seated = slots.next().expect("three agents");
     seated.created_at = t0 - Duration::from_secs(120);
+    seated.arrived_at = Some(seated.created_at);
     let leaving = slots.next().expect("three agents");
     leaving.exiting_at = Some(t0);
     let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));

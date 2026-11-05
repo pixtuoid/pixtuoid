@@ -19,7 +19,7 @@ fn slot(state: ActivityState, age_ms: u64) -> (AgentSlot, SystemTime) {
     let id = AgentId::from_transcript_path("/p/a.jsonl");
     let started = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let now = started + Duration::from_millis(age_ms);
-    // created_at well before `started` so the entry-animation override
+    // Arrived well before `started` so the entry-animation override
     // doesn't fire in tests that probe regular state→pose mapping.
     let created = started - Duration::from_secs(60);
     let s = AgentSlot {
@@ -28,6 +28,7 @@ fn slot(state: ActivityState, age_ms: u64) -> (AgentSlot, SystemTime) {
         label: "cc".into(),
         state_started_at: started,
         created_at: created,
+        arrived_at: Some(created),
         last_event_at: created,
         ..make_slot(id, state)
     };
@@ -316,13 +317,14 @@ fn non_trip_cycle_is_seated_idle_throughout() {
 fn entry_animation_overrides_normal_pose_while_it_runs() {
     let id = AgentId::from_transcript_path("/p/entry.jsonl");
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    // created_at == now0, so since_spawn is the probe offset
+    // arrived_at == now0, so the time since arrival is the probe offset
     let s = AgentSlot {
         session_id: std::sync::Arc::from("abc"),
         cwd: std::sync::Arc::from(PathBuf::from("/repo").as_path()),
         label: "cc".into(),
         state_started_at: now0,
         created_at: now0,
+        arrived_at: Some(now0),
         last_event_at: now0,
         ..make_slot(id, ActivityState::Idle)
     };
@@ -382,7 +384,7 @@ fn waypoint_index_is_zero_when_no_waypoints() {
 
 #[test]
 fn entry_window_fall_through_uses_state_driven_pose() {
-    // since_spawn >= ENTRY_ANIMATION_MS, so the entry override's `if` is false
+    // Arrived ENTRY_ANIMATION_MS or more ago, so the entry override's `if` is false
     // and derive falls through.
     let (mut s, now) = slot(
         ActivityState::RequiresAction {
@@ -392,6 +394,7 @@ fn entry_window_fall_through_uses_state_driven_pose() {
     );
     let l = layout();
     s.created_at = now - Duration::from_millis(ENTRY_ANIMATION_MS + 10_000);
+    s.arrived_at = Some(s.created_at);
     assert_eq!(derive(&s, now, &l), Some(Pose::SeatedIdle));
 }
 
@@ -450,6 +453,7 @@ fn an_idle_agents_pose_ignores_how_recently_it_worked() {
     for age_ms in [5_000, 60_000, 600_000] {
         let (mut s, now) = slot(ActivityState::Idle, age_ms);
         s.created_at = now - Duration::from_secs(3_600);
+        s.arrived_at = Some(s.created_at);
         s.last_event_at = now - Duration::from_secs(1);
         let recent = derive(&s, now, &l);
         s.last_event_at = s.created_at;
@@ -529,6 +533,7 @@ fn entry_walk_does_not_carry_coffee() {
         label: "cc".into(),
         state_started_at: now0,
         created_at: now0,
+        arrived_at: Some(now0),
         last_event_at: now0,
         ..make_slot(id, ActivityState::Idle)
     };
@@ -551,13 +556,14 @@ fn entry_walk_does_not_carry_coffee() {
 fn derive_state_only_skips_entry_override() {
     let id = AgentId::from_transcript_path("/p/entry-so.jsonl");
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    // Slot with created_at == now0; probe at 1500 ms → inside entry window.
+    // Slot with arrived_at == now0; probe at 1500 ms → inside entry window.
     let s = AgentSlot {
         session_id: std::sync::Arc::from("abc"),
         cwd: std::sync::Arc::from(PathBuf::from("/repo").as_path()),
         label: "cc".into(),
         state_started_at: now0,
         created_at: now0,
+        arrived_at: Some(now0),
         last_event_at: now0,
         ..make_slot(
             id,

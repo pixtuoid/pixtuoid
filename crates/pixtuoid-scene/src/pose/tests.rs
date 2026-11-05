@@ -131,13 +131,14 @@ fn walk_leg_freezes_path_against_midleg_reroute() {
     );
 }
 
-fn running_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSlot {
+fn running_slot(state_started_at: SystemTime, arrived_at: SystemTime) -> AgentSlot {
     AgentSlot {
         cwd: Arc::from(PathBuf::from("/p").as_path()),
         label: "cc".into(),
         state_started_at,
-        last_event_at: created_at,
-        created_at,
+        last_event_at: arrived_at,
+        created_at: arrived_at,
+        arrived_at: Some(arrived_at),
         ..make_slot(
             AgentId::from_transcript_path("/snap.jsonl"),
             ActivityState::Running {
@@ -151,10 +152,50 @@ fn running_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSl
     }
 }
 
-fn entry_slot(created_at: SystemTime) -> AgentSlot {
-    let mut s = running_slot(created_at, created_at);
+fn entry_slot(arrived_at: SystemTime) -> AgentSlot {
+    let mut s = running_slot(arrived_at, arrived_at);
     s.state = ActivityState::Idle;
     s
+}
+
+/// The entry walk runs from a slot's arrival, never its age, in the stateless
+/// pose, the routed one and the door's frames: an old slot that just arrived
+/// walks in, and a fresh one that never arrived sits at its desk.
+#[test]
+fn the_entry_walk_keys_on_arrival_not_age() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let l = layout();
+    let probe = now + Duration::from_millis(ENTRY_ANIMATION_MS / 4);
+    let arrived = AgentSlot {
+        arrived_at: Some(now),
+        ..running_slot(now, now - Duration::from_secs(3_600))
+    };
+    let seated = AgentSlot {
+        arrived_at: None,
+        ..running_slot(now, now)
+    };
+    let walking = |pose: Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
+    assert!(walking(crate::pose::pure::derive(&arrived, probe, &l)));
+    assert!(!walking(crate::pose::pure::derive(&seated, probe, &l)));
+    let mut rig = RouteRig::new(StubRouter::straight());
+    assert!(walking(derive_with_routing(
+        &arrived,
+        probe,
+        &l,
+        &mut rig.rctx()
+    )));
+    let mut rig = RouteRig::new(StubRouter::straight());
+    assert!(!walking(derive_with_routing(
+        &seated,
+        probe,
+        &l,
+        &mut rig.rctx()
+    )));
+    let door = |slot: &AgentSlot| {
+        crate::sim::anchors::compute_door_frame_idx(std::slice::from_ref(slot), probe, 0)
+    };
+    assert_ne!(door(&arrived), 0, "the door opens for an arrival");
+    assert_eq!(door(&seated), 0, "and stays shut for one already in");
 }
 
 #[test]
@@ -582,6 +623,7 @@ fn at_waypoint_pose_records_position_to_history() {
         label: "cc".into(),
         state_started_at: now,
         created_at: now - Duration::from_secs(60),
+        arrived_at: Some(now - Duration::from_secs(60)),
         last_event_at: now - Duration::from_secs(60),
         ..make_slot(
             AgentId::from_transcript_path("/idle.jsonl"),
@@ -744,15 +786,15 @@ fn snap_back_rearms_on_new_state_transition() {
     );
 }
 
-fn entry_slot_near(created_at: SystemTime) -> AgentSlot {
-    let mut s = running_slot(created_at, created_at);
+fn entry_slot_near(arrived_at: SystemTime) -> AgentSlot {
+    let mut s = running_slot(arrived_at, arrived_at);
     s.state = pixtuoid_core::state::ActivityState::Idle;
     s.desk_index = GlobalDeskIndex(0);
     s
 }
 
-fn entry_slot_far(created_at: SystemTime, desk_index: usize) -> AgentSlot {
-    let mut s = entry_slot_near(created_at);
+fn entry_slot_far(arrived_at: SystemTime, desk_index: usize) -> AgentSlot {
+    let mut s = entry_slot_near(arrived_at);
     s.desk_index = GlobalDeskIndex(desk_index);
     // Give each far slot a distinct agent_id so speed_mult differs.
     s.agent_id = AgentId::from_transcript_path(&format!("/far/{desk_index}.jsonl"));
@@ -2263,7 +2305,7 @@ fn a_resurrect_after_the_walkout_arrived_re_enters_through_the_door() {
     let l = layout();
     let door = l.door_threshold;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    // Born long before the spawn window, so only a re-arm can produce an entry.
+    // Arrived long before the entry window, so only a re-arm can produce an entry.
     let created = t0 - Duration::from_secs(3600);
     let mut slot = entry_slot(created);
     slot.exiting_at = Some(t0);
@@ -2283,7 +2325,7 @@ fn a_resurrect_after_the_walkout_arrived_re_enters_through_the_door() {
         "test setup: the walkout must have reached the door"
     );
 
-    // exiting_at cleared, state_started_at re-stamped, created_at untouched —
+    // exiting_at cleared, state_started_at re-stamped, arrived_at untouched —
     // exactly what `fsm::resurrect_in_place` leaves behind.
     slot.exiting_at = None;
     slot.state_started_at = arrived;
@@ -2348,6 +2390,64 @@ fn a_resurrect_mid_walkout_re_enters_from_the_live_position() {
         matches!(pose, Some(Pose::Walking { .. })),
         "and it RENDERS that walk — the entry branch runs before the wander \
          dispatch, which would otherwise return a seated pose and teleport it"
+    );
+}
+
+/// A device's cast switched back to within its grace comes back as a local
+/// resurrect leaves a slot: `exiting_at` cleared and its arrival untouched,
+/// here the first line's `None`. So the routed pose, the one every frame renders,
+/// turns it round where it walks rather than seating it.
+#[test]
+fn a_cast_switched_back_mid_walkout_turns_round_as_a_resurrect_does() {
+    use pixtuoid_core::SceneState;
+    use pixtuoid_core::remote::{Machine, Os, RemoteOffice, encode};
+    use pixtuoid_core::state::MAX_FLOORS;
+    fn received(office: &mut RemoteOffice, scene: &SceneState, from: &Machine, at: SystemTime) {
+        let line = encode(scene, from, at).expect("a scene encodes");
+        office.apply(line.as_bytes(), at).expect("it applies");
+    }
+
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let demo = Machine::new("demo", Os::Other);
+    let walker = entry_slot(t0 - Duration::from_secs(3600));
+    let id = walker.agent_id;
+    let mut cast = SceneState::uniform(4);
+    cast.agents.insert(id, walker);
+    let mut office = RemoteOffice::new([4; MAX_FLOORS]);
+    received(&mut office, &cast, &demo, t0);
+    let switch = t0 + Duration::from_secs(1);
+    let live = Machine::new("studio", Os::Macos);
+    received(&mut office, &SceneState::uniform(4), &live, switch);
+
+    let mut rig = RouteRig::new(StubRouter::straight());
+    let leaving = office.scene().agents[&id].clone();
+    derive_with_routing(&leaving, switch, &l, &mut rig.rctx());
+    let mid = switch + Duration::from_millis(200);
+    assert!(
+        matches!(
+            derive_with_routing(&leaving, mid, &l, &mut rig.rctx()),
+            Some(Pose::Walking { .. })
+        ),
+        "premise: the walkout is in flight"
+    );
+    let walking_at = (rig.history)
+        .recent(id, HISTORY_RECENT_MS, mid)
+        .expect("the walkout renders every frame, so history holds a position");
+
+    received(&mut office, &cast, &demo, mid);
+    let back = &office.scene().agents[&id];
+    assert_eq!(
+        (back.exiting_at, back.arrived_at),
+        (None, None),
+        "premise: back as a resurrect leaves it, with no arrival"
+    );
+    let pose = derive_with_routing(back, mid, &l, &mut rig.rctx());
+    let leg = (rig.walks[&id].entry.as_ref()).expect("the switch-back re-arms entry");
+    assert_eq!(leg.from, walking_at, "it turns round where it walks");
+    assert!(
+        matches!(pose, Some(Pose::Walking { .. })),
+        "and renders that walk, never its desk"
     );
 }
 

@@ -88,6 +88,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
                 state: state.clone(),
                 state_started_at: seated_since,
                 created_at: seated_since,
+                arrived_at: Some(seated_since),
                 last_event_at: recent,
                 exiting_at: None,
                 desk_index: GlobalDeskIndex(i),

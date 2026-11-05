@@ -319,9 +319,12 @@ pub struct AgentSlot {
     /// Wall-clock time of the most recent event (any type) from this agent —
     /// the stale-agent sweep's primary liveness signal.
     pub last_event_at: SystemTime,
-    /// Wall-clock time the slot was first created — the one-shot entry
-    /// animation's anchor, unaffected by later state transitions.
+    /// Wall-clock time the slot was first created: its age, unaffected by later
+    /// state transitions.
     pub created_at: SystemTime,
+    /// The entry walk's anchor; `None` seats the slot at its desk from its first
+    /// frame.
+    pub arrived_at: Option<SystemTime>,
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
@@ -371,6 +374,15 @@ pub struct AgentSlot {
     /// The most recent Usage reading (see [`UsageObservation`]).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub last_usage: Option<UsageObservation>,
+}
+
+impl AgentSlot {
+    /// Whether its exit walk has had [`EXIT_GRACE_WINDOW`](reducer::EXIT_GRACE_WINDOW)
+    /// to reach the door, so its slot may go.
+    pub(crate) fn walked_out(&self, now: SystemTime) -> bool {
+        self.exiting_at
+            .is_some_and(|t| correlation::elapsed_past(now, t, reducer::EXIT_GRACE_WINDOW))
+    }
 }
 
 fn u64_is_zero(v: &u64) -> bool {
@@ -805,8 +817,18 @@ impl SceneState {
 
     /// Lowest free desk index, or `None` if all desks are occupied.
     pub fn next_free_desk(&self) -> Option<GlobalDeskIndex> {
-        let occupied: std::collections::BTreeSet<GlobalDeskIndex> =
-            self.agents.values().map(|a| a.desk_index).collect();
+        self.next_desk_free_of(|_| true)
+    }
+
+    /// Lowest desk no slot that `holds` sits at, or `None` if there is none.
+    pub(crate) fn next_desk_free_of(
+        &self,
+        holds: impl Fn(&AgentSlot) -> bool,
+    ) -> Option<GlobalDeskIndex> {
+        let occupied: std::collections::BTreeSet<GlobalDeskIndex> = (self.agents.values())
+            .filter(|a| holds(a))
+            .map(|a| a.desk_index)
+            .collect();
         (0..self.total_capacity())
             .map(GlobalDeskIndex)
             .find(|i| !occupied.contains(i))
@@ -849,6 +871,7 @@ mod tests {
             state: ActivityState::Idle,
             state_started_at: now,
             created_at: now,
+            arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
             desk_index: GlobalDeskIndex(desk_index),

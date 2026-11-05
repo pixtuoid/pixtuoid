@@ -190,6 +190,7 @@ fn office(start: SystemTime) -> SceneState {
                 state,
                 state_started_at: started,
                 created_at: started,
+                arrived_at: Some(started),
                 last_event_at: started,
                 exiting_at: None,
                 desk_index: GlobalDeskIndex(i),

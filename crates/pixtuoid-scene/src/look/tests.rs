@@ -35,6 +35,7 @@ fn office(t0: SystemTime) -> SceneState {
                 label: format!("a{i}").into(),
                 state_started_at: started,
                 created_at: started,
+                arrived_at: Some(started),
                 last_event_at: started,
                 desk_index: GlobalDeskIndex(i),
                 ..make_slot(id, ActivityState::Idle)

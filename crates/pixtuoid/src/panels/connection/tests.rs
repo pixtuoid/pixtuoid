@@ -32,6 +32,7 @@ fn mk_slot(id: AgentId, source: &str, last_event_at: SystemTime) -> AgentSlot {
         state: ActivityState::Idle,
         state_started_at: SystemTime::UNIX_EPOCH,
         created_at: SystemTime::UNIX_EPOCH,
+        arrived_at: Some(SystemTime::UNIX_EPOCH),
         last_event_at,
         exiting_at: None,
         desk_index: GlobalDeskIndex(0),
