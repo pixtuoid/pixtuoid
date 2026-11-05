@@ -4637,13 +4637,26 @@ mod backlog {
     }
 
     #[test]
-    fn a_cut_listing_leaves_its_directory_to_replay() {
-        let dir = tempfile::tempdir().unwrap();
-        let listed = || super::super::root_watch::dir_id(dir.path()).unwrap();
+    fn a_truncated_listing_leaves_its_directory_to_replay() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let id = |d: &tempfile::TempDir| super::super::root_watch::dir_id(d.path()).unwrap();
         let mut read = RootRead::default();
-        assert!(read.replays(listed(), true), "cut short");
-        assert!(read.replays(listed(), false), "in full, after a cut");
-        assert!(!read.replays(listed(), false), "in full again");
+        assert!(read.replays(id(&a), true), "truncated");
+        assert!(
+            read.replays(id(&a), false),
+            "in full, after a truncated listing"
+        );
+        assert!(!read.replays(id(&a), false), "in full again");
+        assert!(!read.replays(id(&a), true), "truncated, the same directory");
+        assert!(
+            read.replays(id(&a), false),
+            "in full, after its own truncated listing"
+        );
+        assert!(read.replays(id(&b), true), "another, truncated");
+        assert!(
+            read.replays(id(&a), false),
+            "back in full, after another's truncated listing"
+        );
     }
 
     #[tokio::test]
