@@ -566,7 +566,7 @@ fn the_minimum_is_the_area_inside_the_insets() {
     assert!(SceneLayout::compute(inside(min_w, min_h), Some(1), 0).is_some());
     for under in [inside(min_w - 1, min_h), inside(min_w, min_h - 1)] {
         assert!(
-            SceneLayout::compute(Viewport::full(under.size.w, under.size.h), Some(1), 0).is_some(),
+            SceneLayout::compute(Viewport::from(under.size), Some(1), 0).is_some(),
             "{under:?}: its whole size lays out"
         );
         assert!(

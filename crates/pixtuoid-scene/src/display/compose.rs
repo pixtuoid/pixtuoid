@@ -1253,12 +1253,12 @@ fn push_characters(
         let at = cutaway_top_left(c);
         let shadow = !c.seated;
         // The drawn box reaches up over the hair its style dresses it in, as
-        // far as the canvas's top, where `paint_figure` cuts it.
+        // far as the top inset's edge, where `paint_figure` cuts it.
         let hair = key
             .dress
             .as_ref()
             .map_or(0, |d| d.rise().div_ceil(key.frame.density.get()))
-            .min(at.y);
+            .min(at.y.saturating_sub(layout.inner.y));
         let top = crate::layout::Point {
             x: at.x,
             y: at.y - hair,

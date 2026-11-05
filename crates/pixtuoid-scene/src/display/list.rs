@@ -200,8 +200,20 @@ impl<'a> DisplayList<'a> {
         &self.lights
     }
 
+    /// The room's lights, for a rasterizer test to switch one off.
+    #[cfg(test)]
+    pub(crate) fn lights_mut(&mut self) -> &mut Vec<LightPiece> {
+        &mut self.lights
+    }
+
     pub(crate) fn ambient(&self) -> crate::display::light::Ambient {
         self.ambient
+    }
+
+    /// How dark the room is, for a rasterizer test to change the hour.
+    #[cfg(test)]
+    pub(crate) fn ambient_mut(&mut self) -> &mut crate::display::light::Ambient {
+        &mut self.ambient
     }
 
     pub(crate) fn carpet(&self) -> Dithered<Carpet> {
@@ -226,6 +238,12 @@ impl<'a> DisplayList<'a> {
 
     pub(crate) fn backdrop(&self) -> &super::Backdrop {
         &self.backdrop
+    }
+
+    /// What lies under every piece, for a rasterizer test to bare the floor.
+    #[cfg(test)]
+    pub(crate) fn backdrop_mut(&mut self) -> &mut super::Backdrop {
+        &mut self.backdrop
     }
 
     pub(crate) fn recolours(&self) -> &Recolours {

@@ -8,8 +8,10 @@ use pixtuoid_core::{AgentId, AgentSlot, SceneState};
 
 use super::*;
 use crate::floor::{FloorMeta, PerOffice, PetInputs};
+use crate::layout::Size;
 
 const SIZE: Size = Size { w: 192, h: 160 };
+const VIEWPORT: Viewport = Viewport::full(SIZE.w, SIZE.h);
 
 fn theme() -> &'static Theme {
     crate::theme::theme_by_name("normal").expect("normal theme")
@@ -51,10 +53,198 @@ fn inputs(scene: &SceneState, now: SystemTime) -> RenderInputs<'_> {
             pets: PetInputs::default(),
         },
         theme: theme(),
-        size: SIZE,
+        viewport: VIEWPORT,
         place: Place::default(),
         debug_walkable: false,
         dim: crate::look::Dim::NONE,
+    }
+}
+
+/// Lift `held` where `look` draws it on `inputs`' viewport and carry it to the
+/// middle of each canvas edge and to each corner, handing `check` each gesture
+/// with the frame it renders. Each carry must move the figure off where it
+/// rested, so a lift that grips nothing fails here instead of leaving `check`
+/// nothing to test.
+fn carry_to_each_edge(
+    (floor, office): (&mut PerFloor, &mut PerOffice),
+    (look, inputs): (Look, RenderInputs<'_>),
+    held: crate::interact::Figure,
+    mut check: impl FnMut(&crate::interact::Gesture, &Rendered),
+) {
+    use crate::interact::{Figure, Gesture};
+    use crate::layout::Point;
+    let drawn = |rendered: &Rendered| {
+        rendered
+            .hits
+            .figures()
+            .find(|(target, _)| Figure::of(target) == held)
+            .map(|(_, at)| at)
+            .expect("the held figure is drawn")
+    };
+    let rest = drawn(&render(floor, office.stores(), look, inputs).expect("lays out"));
+    let Size { w, h } = inputs.viewport.size;
+    let edges = [
+        (0, 0),
+        (w / 2, 0),
+        (w - 1, 0),
+        (w - 1, h / 2),
+        (w - 1, h - 1),
+        (w / 2, h - 1),
+        (0, h - 1),
+        (0, h / 2),
+    ];
+    let lift = Gesture::Lift {
+        figure: held.clone(),
+        at: Point {
+            x: rest.x + rest.width / 2,
+            y: rest.y + rest.height / 2,
+        },
+    };
+    let gestures = std::iter::once(lift).chain(edges.map(|(x, y)| Gesture::Carry(Point { x, y })));
+    for gesture in gestures {
+        floor.grip(&gesture);
+        let rendered = render(floor, office.stores(), look, inputs).expect("lays out");
+        if matches!(gesture, Gesture::Carry(_)) {
+            assert_ne!(
+                drawn(&rendered),
+                rest,
+                "{look:?} {gesture:?}: {held:?} never left where it rested"
+            );
+        }
+        check(&gesture, &rendered);
+    }
+}
+
+/// No figure is drawn under an inset: in either look, frame after frame of
+/// agents walking in and wandering off beside a cat and a gateway's mascot,
+/// and with each of the three carried to each edge and corner of the canvas,
+/// every box [`Hits::figures`] reports lies inside the insets.
+#[test]
+fn no_figure_is_drawn_under_an_inset() {
+    use crate::hit::HoverTarget;
+    use crate::interact::Figure;
+    use crate::layout::Insets;
+    use pixtuoid_core::source::daemon::{DaemonInstanceKey, DaemonPresenceUpdate, apply_presence};
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let mut scene = office(t0);
+    let gateway = DaemonInstanceKey::new(
+        pixtuoid_core::source::openclaw::SOURCE_NAME,
+        pixtuoid_core::state::DaemonInstanceId::new("18789".to_string()).expect("id"),
+    );
+    apply_presence(
+        &mut scene,
+        &gateway,
+        DaemonPresenceUpdate::GatewayUp { pid: Some(7) },
+        t0 - Duration::from_secs(3_600),
+    );
+    let cat = crate::pet::Pet::defaulted(crate::pet::PetKind::Cat);
+    let viewport = Viewport {
+        size: SIZE,
+        insets: Insets {
+            top: 9,
+            right: 7,
+            bottom: 11,
+            left: 5,
+        },
+    };
+    let at = |now| {
+        let bare = inputs(&scene, now);
+        RenderInputs {
+            world: FloorInputs {
+                pets: PetInputs {
+                    pet: Some(&cat),
+                    petting: None,
+                },
+                ..bare.world
+            },
+            viewport,
+            place: Place {
+                gateway: crate::tally::office_gateway(&scene),
+                floor: None,
+            },
+            ..bare
+        }
+    };
+    let inner = viewport.inner().expect("an area inside the insets");
+    let inside = |b: Bounds| {
+        b.x >= inner.x
+            && b.y >= inner.y
+            && b.right() <= inner.right()
+            && b.bottom() <= inner.bottom()
+    };
+    // The densest cutaway dresses its figures in hair that rises over them.
+    let dense = RenderScale::from(crate::pack::test_office().max_density_variant());
+    let looks = [
+        Look::HALF_BLOCKS,
+        Look::Cutaway {
+            scale: RenderScale::new(2).expect("nonzero"),
+            text: WorldText::Baked,
+        },
+        Look::Cutaway {
+            scale: dense,
+            text: WorldText::Baked,
+        },
+    ];
+    for look in looks {
+        let (mut floor, mut office) = (
+            PerFloor::new(Arc::new(crate::pack::test_office())),
+            PerOffice::new(),
+        );
+        let mut last: Vec<(HoverTarget, Bounds)> = Vec::new();
+        let (mut walking_frames, mut pet_frames, mut mascot_frames) = (0, 0, 0);
+        for step in 0..600u64 {
+            let now = t0 + Duration::from_millis(step * 250);
+            let rendered = render(&mut floor, office.stores(), look, at(now)).expect("lays out");
+            let figures: Vec<_> = rendered
+                .hits
+                .figures()
+                .map(|(target, at)| (target.clone(), at))
+                .collect();
+            for (target, at) in &figures {
+                assert!(
+                    inside(*at),
+                    "{look:?} step {step}: {target:?} drawn at {at:?}, under an inset of {inner:?}"
+                );
+            }
+            walking_frames += usize::from(
+                figures
+                    .iter()
+                    .any(|f| last.iter().any(|l| l.0 == f.0 && l.1 != f.1)),
+            );
+            pet_frames += usize::from(figures.iter().any(|f| matches!(f.0, HoverTarget::Pet(_))));
+            mascot_frames += usize::from(
+                figures
+                    .iter()
+                    .any(|f| matches!(f.0, HoverTarget::Mascot(_))),
+            );
+            last = figures;
+        }
+        assert!(
+            walking_frames > 0 && pet_frames > 0 && mascot_frames > 0,
+            "{look:?}: {walking_frames} walking, {pet_frames} pet and {mascot_frames} mascot frames, \
+             so the insets went untested"
+        );
+        let agent = *scene.agents.keys().next().expect("an agent");
+        let now = t0 + Duration::from_secs(600);
+        for held in [
+            Figure::Agent(agent),
+            Figure::Pet(cat.kind),
+            Figure::Mascot(gateway.clone()),
+        ] {
+            carry_to_each_edge(
+                (&mut floor, &mut office),
+                (look, at(now)),
+                held,
+                |gesture, rendered| {
+                    for (target, at) in rendered.hits.figures() {
+                        assert!(
+                            inside(at),
+                            "{look:?} {gesture:?}: {target:?} drawn at {at:?}, under an inset of {inner:?}"
+                        );
+                    }
+                },
+            );
+        }
     }
 }
 
@@ -259,7 +449,7 @@ fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
         "{signs:?}"
     );
     let refused = RenderInputs {
-        size: Size { w: 1, h: 1 },
+        viewport: Viewport::full(1, 1),
         ..inputs(&scene, t0)
     };
     assert!(render(&mut floor, office.stores(), Look::HALF_BLOCKS, refused).is_none());

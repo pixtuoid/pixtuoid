@@ -201,7 +201,10 @@ pub(crate) fn min_window(density: Density) -> LogicalSize<u32> {
 /// their agreement is structural rather than two loops that happen to agree.
 pub(crate) fn floor_caps_for_buffer(buf_w: u16, buf_h: u16) -> [usize; MAX_FLOORS] {
     std::array::from_fn(|i| {
-        pixtuoid_scene::floor::floor_capacity(buf_w, buf_h, pixtuoid_scene::floor::floor_seed(i))
+        pixtuoid_scene::floor::floor_capacity(
+            pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
+            pixtuoid_scene::floor::floor_seed(i),
+        )
     })
 }
 
@@ -378,8 +381,7 @@ mod tests {
         let boot = boot_capacities_for_window(PhysicalSize::new(w, h), density(), Zoom::default());
         for (i, &got) in boot.iter().enumerate() {
             let want = pixtuoid_scene::floor::floor_capacity(
-                office.w,
-                office.h,
+                pixtuoid_scene::layout::Viewport::from(office),
                 pixtuoid_scene::floor::floor_seed(i),
             );
             assert_eq!(
@@ -461,8 +463,7 @@ mod tests {
         let office = window_geometry(tiny, density(), Zoom::default()).logical();
         assert_eq!(
             pixtuoid_scene::floor::floor_capacity(
-                office.w,
-                office.h,
+                pixtuoid_scene::layout::Viewport::from(office),
                 pixtuoid_scene::floor::floor_seed(0)
             ),
             0,

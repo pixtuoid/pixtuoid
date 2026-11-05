@@ -1,6 +1,7 @@
 use super::*;
 use crate::anim::Motion;
 use crate::character::test_support::make_slot;
+use crate::layout::Viewport;
 use pixtuoid_core::id::AgentId;
 use pixtuoid_core::state::{ActivityState, ToolUse};
 use std::path::Path;
@@ -13,8 +14,8 @@ fn frame_layout_memo_matches_fresh_compute_across_hits_resizes_and_none() {
     let fresh =
         crate::layout::SceneLayout::compute(crate::layout::Viewport::full(192, 156), None, 0)
             .unwrap();
-    let a = ctx.frame_layout(192, 156, 0).unwrap();
-    let b = ctx.frame_layout(192, 156, 0).unwrap();
+    let a = ctx.frame_layout(Viewport::full(192, 156), 0).unwrap();
+    let b = ctx.frame_layout(Viewport::full(192, 156), 0).unwrap();
     // Pointer identity first: the value-equality below would still pass a reverted
     // `Arc::new((**l).clone())`.
     assert!(
@@ -26,15 +27,17 @@ fn frame_layout_memo_matches_fresh_compute_across_hits_resizes_and_none() {
         assert_eq!(l.reachable, fresh.reachable);
         assert_eq!(l.home_desks.len(), fresh.home_desks.len());
     }
-    let resized = ctx.frame_layout(120, 100, 0).unwrap();
+    let resized = ctx.frame_layout(Viewport::full(120, 100), 0).unwrap();
     let fresh_resized =
         crate::layout::SceneLayout::compute(crate::layout::Viewport::full(120, 100), None, 0)
             .unwrap();
     assert_eq!(resized.walkable, fresh_resized.walkable);
     // A too-small buffer is None and must not poison the memo.
-    assert!(ctx.frame_layout(3, 3, 0).is_none());
+    assert!(ctx.frame_layout(Viewport::full(3, 3), 0).is_none());
     assert_eq!(
-        ctx.frame_layout(192, 156, 0).unwrap().walkable,
+        ctx.frame_layout(Viewport::full(192, 156), 0)
+            .unwrap()
+            .walkable,
         fresh.walkable
     );
 }
@@ -57,18 +60,18 @@ fn a_new_layout_drops_the_routers_cached_paths() {
         assert!(!ctx.router.is_empty(), "the route was cached");
     };
     let mut ctx = FloorCtx::new();
-    let l = ctx.frame_layout(192, 156, 0).unwrap();
+    let l = ctx.frame_layout(Viewport::full(192, 156), 0).unwrap();
     cache_a_route(&mut ctx, &l);
-    ctx.frame_layout(192, 156, 0).unwrap();
+    ctx.frame_layout(Viewport::full(192, 156), 0).unwrap();
     assert!(!ctx.router.is_empty(), "the same layout keeps its paths");
-    ctx.frame_layout(120, 100, 0).unwrap();
+    ctx.frame_layout(Viewport::full(120, 100), 0).unwrap();
     assert!(ctx.router.is_empty(), "a new layout drops its paths");
     for h in 40..=240 {
-        let Some(l) = ctx.frame_layout(192, h, 0) else {
+        let Some(l) = ctx.frame_layout(Viewport::full(192, h), 0) else {
             continue;
         };
         cache_a_route(&mut ctx, &l);
-        if ctx.frame_layout(192, h + 1, 0).is_some() {
+        if ctx.frame_layout(Viewport::full(192, h + 1), 0).is_some() {
             assert!(
                 ctx.router.is_empty(),
                 "192x{h} to 192x{} kept its paths",
@@ -549,8 +552,53 @@ fn coffee_record_keeps_stamp_on_a_backward_clock_step() {
 
 #[test]
 fn floor_capacity_clamps_to_zero_on_a_too_small_buffer() {
-    assert_eq!(floor_capacity(3, 3, 0), 0);
-    assert!(floor_capacity(192, 160, 0) > 0);
+    use crate::layout::Viewport;
+    assert_eq!(floor_capacity(Viewport::full(3, 3), 0), 0);
+    assert!(floor_capacity(Viewport::full(192, 160), 0) > 0);
+}
+
+/// A floor's capacity is the capacity of the area inside its insets, and an
+/// area under the minimum seats no one, though the whole viewport would.
+#[test]
+fn floor_capacity_is_the_capacity_inside_the_insets() {
+    use crate::layout::{Insets, Viewport, min_layout_size};
+    let insets = Insets {
+        top: 9,
+        right: 7,
+        bottom: 11,
+        left: 5,
+    };
+    let inside = |w, h| crate::layout::inset_viewport(w, h, insets);
+    for seed in (0..4).map(floor_seed) {
+        assert_eq!(
+            floor_capacity(inside(192, 160), seed),
+            floor_capacity(Viewport::full(192, 160), seed)
+        );
+    }
+    let under = inside(min_layout_size().w - 1, min_layout_size().h);
+    assert_eq!(floor_capacity(under, 0), 0);
+    assert!(floor_capacity(Viewport::from(under.size), 0) > 0);
+}
+
+/// Insets alone re-lay the floor out: the memo keys on the whole viewport.
+#[test]
+fn a_change_of_insets_alone_re_lays_the_floor_out() {
+    use crate::layout::{Insets, Viewport};
+    let mut ctx = FloorCtx::new();
+    let bare = Viewport::full(192, 160);
+    let inset = Viewport {
+        insets: Insets {
+            top: 9,
+            ..Insets::default()
+        },
+        ..bare
+    };
+    let a = ctx.frame_layout(bare, 0).expect("lays out");
+    let b = ctx.frame_layout(inset, 0).expect("lays out");
+    assert_ne!(a.door, b.door, "the inset layout moved nothing");
+    let fresh = crate::layout::SceneLayout::compute(inset, None, 0).expect("lays out");
+    assert_eq!(b.door, fresh.door);
+    assert_eq!(b.walkable, fresh.walkable);
 }
 
 #[test]
@@ -578,7 +626,7 @@ fn classic_frame(
     scene: &SceneState,
     now: SystemTime,
     floor: FloorMeta,
-    size: Size,
+    viewport: Viewport,
 ) -> Option<Arc<crate::layout::SceneLayout>> {
     session.render(
         crate::look::Look::HALF_BLOCKS,
@@ -590,7 +638,7 @@ fn classic_frame(
                 pets: PetInputs::default(),
             },
             theme: crate::theme::theme_by_name("normal").expect("normal theme exists"),
-            size,
+            viewport,
             place: crate::look::Place::default(),
             debug_walkable: false,
             dim: crate::look::Dim::NONE,
@@ -618,7 +666,7 @@ fn the_classic_paints_the_flame_crown_for_a_top_tier_agent() {
         &scene,
         now,
         FloorMeta::ground(),
-        Size { w: 192, h: 160 },
+        Viewport::full(192, 160),
     )
     .expect("layout");
     // Against the SAME scene with the crown's inputs cleared: the foreground's
@@ -635,7 +683,7 @@ fn the_classic_paints_the_flame_crown_for_a_top_tier_agent() {
         &plain,
         now,
         FloorMeta::ground(),
-        Size { w: 192, h: 160 },
+        Viewport::full(192, 160),
     )
     .expect("layout");
     let (buf, buf2) = (
@@ -668,7 +716,7 @@ fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
         &scene,
         now,
         FloorMeta::ground(),
-        Size { w: 8, h: 8 },
+        Viewport::full(8, 8),
     );
     assert!(none.is_none(), "an unlayoutable size returns None");
     let buf = session.floor().raster.pixels().expect("classic buffer");
@@ -683,7 +731,7 @@ fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
         &scene,
         now,
         FloorMeta::ground(),
-        Size { w: 160, h: 96 },
+        Viewport::full(160, 96),
     );
     assert!(layout.is_some(), "a layoutable size returns the layout");
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
@@ -721,7 +769,7 @@ fn floor_session_render_owns_the_dual_eviction() {
                 pets: PetInputs::default(),
             },
             theme,
-            size: Size { w: 160, h: 96 },
+            viewport: Viewport::full(160, 96),
             place: crate::look::Place::default(),
             debug_walkable: false,
             dim: crate::look::Dim::NONE,
@@ -771,7 +819,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
                     pets: PetInputs::default(),
                 },
                 theme,
-                size: Size { w: 160, h: 96 },
+                viewport: Viewport::full(160, 96),
                 place: crate::look::Place::default(),
                 debug_walkable: false,
                 dim: crate::look::Dim::NONE,
@@ -811,7 +859,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
                 pets: PetInputs::default(),
             },
             theme,
-            size: Size { w: 8, h: 8 },
+            viewport: Viewport::full(8, 8),
             place: crate::look::Place::default(),
             debug_walkable: false,
             dim: crate::look::Dim::NONE,
@@ -839,7 +887,7 @@ fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
                 floor: FloorMeta::ground(),
                 pets: crate::floor::PetInputs::default(),
             },
-            Size { w: 160, h: 96 },
+            Viewport::full(160, 96),
         )
         .expect("a layoutable size steps")
         .frame;
@@ -869,7 +917,7 @@ fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default()
                 },
-                Size { w: 8, h: 8 }
+                Viewport::full(8, 8)
             )
             .is_none(),
         "an unlayoutable size steps nothing"
@@ -880,7 +928,7 @@ fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
 #[test]
 fn step_hands_back_the_layout_the_sim_stepped_on() {
     let scene = make_scene(1, 8);
-    let size = Size { w: 160, h: 96 };
+    let viewport = Viewport::full(160, 96);
     let meta = FloorMeta::ground();
     let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     let stepped = session
@@ -891,13 +939,13 @@ fn step_hands_back_the_layout_the_sim_stepped_on() {
                 floor: meta,
                 pets: crate::floor::PetInputs::default(),
             },
-            size,
+            viewport,
         )
         .expect("a layoutable size steps");
     let memoized = session
         .floor_mut()
         .ctx
-        .frame_layout(size.w, size.h, meta.floor_seed)
+        .frame_layout(viewport, meta.floor_seed)
         .expect("the memoized layout");
     assert!(Arc::ptr_eq(&stepped.layout, &memoized));
 }
@@ -923,7 +971,7 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
             floor: FloorMeta::for_floor(1, num_floors(&scene)),
             pets: crate::floor::PetInputs::default(),
         },
-        Size { w: 160, h: 96 },
+        Viewport::full(160, 96),
     );
     assert!(stepped.is_some());
     assert!(office.coffee.map().contains_key(&downstairs));
@@ -1053,7 +1101,7 @@ fn the_foreground_layer_is_lit_by_the_clock() {
             &scene,
             now,
             FloorMeta::ground().with_weather(clear),
-            Size { w: 192, h: 160 },
+            Viewport::full(192, 160),
         )
         .expect("layout");
         session
@@ -1488,7 +1536,7 @@ fn the_classic_sees_the_skyline_from_its_floors_altitude() {
             &scene,
             now,
             floor_meta,
-            Size { w: 192, h: 160 },
+            Viewport::full(192, 160),
         )
         .expect("layout");
         session
@@ -1556,7 +1604,7 @@ fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
 }
 
 /// The painters' office extent and the cutaway's scale over it.
-const PAINTED: crate::layout::Size = crate::layout::Size { w: 192, h: 80 };
+const PAINTED: Viewport = Viewport::full(192, 80);
 
 fn looks() -> [crate::look::Look; 2] {
     let scale = crate::render_scale::RenderScale::new(4).expect("nonzero");
@@ -1587,7 +1635,7 @@ fn paint(
             pets: PetInputs { pet, petting: None },
         },
         theme,
-        size: PAINTED,
+        viewport: PAINTED,
         place: crate::look::Place {
             gateway: crate::tally::office_gateway(scene),
             floor: None,
@@ -1966,7 +2014,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
                     pets: PetInputs::default(),
                 },
                 theme,
-                size: Size { w: 160, h: 96 },
+                viewport: Viewport::full(160, 96),
                 place: crate::look::Place::default(),
                 debug_walkable: false,
                 dim: crate::look::Dim::NONE,
@@ -2043,7 +2091,7 @@ fn every_floors_badges_read_the_offices_floor_nameplates() {
                     pets: PetInputs::default(),
                 },
                 theme,
-                size: Size { w: 160, h: 96 },
+                viewport: Viewport::full(160, 96),
                 place: crate::look::Place::default(),
                 debug_walkable: false,
                 dim: crate::look::Dim::NONE,
@@ -2100,7 +2148,7 @@ fn a_cutaway_slide_bakes_its_floors_text() {
                         pets: PetInputs::default(),
                     },
                     theme,
-                    size: Size { w: 160, h: 96 },
+                    viewport: Viewport::full(160, 96),
                     place: crate::look::Place::default(),
                     debug_walkable: false,
                     dim: crate::look::Dim::NONE,
@@ -2165,7 +2213,7 @@ fn a_slides_gap_dims_with_its_floors() {
                     pets: PetInputs::default(),
                 },
                 theme,
-                size: Size { w: 160, h: 96 },
+                viewport: Viewport::full(160, 96),
                 place: crate::look::Place::default(),
                 debug_walkable: false,
                 dim,
@@ -2213,7 +2261,7 @@ fn a_frame_without_the_office_forgets_the_last() {
                     pets: PetInputs::default(),
                 },
                 theme,
-                size: Size { w: 160, h: 96 },
+                viewport: Viewport::full(160, 96),
                 place: crate::look::Place::default(),
                 debug_walkable: false,
                 dim: crate::look::Dim::NONE,
@@ -2260,7 +2308,7 @@ fn an_office_session_follows_its_floors_down() {
                     pets: PetInputs::default(),
                 },
                 theme,
-                size: Size { w: 160, h: 96 },
+                viewport: Viewport::full(160, 96),
                 place: crate::look::Place::default(),
                 debug_walkable: false,
                 dim: crate::look::Dim::NONE,
@@ -2292,7 +2340,7 @@ fn a_lifted_agent_hangs_from_the_pointer_and_walks_home_when_set_down() {
     let id = *scene.agents.keys().next().expect("one agent");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
-    let size = Size { w: 160, h: 96 };
+    let viewport = Viewport::full(160, 96);
     let step = |session: &mut FloorSession, now| {
         session
             .step(
@@ -2302,7 +2350,7 @@ fn a_lifted_agent_hangs_from_the_pointer_and_walks_home_when_set_down() {
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
-                size,
+                viewport,
             )
             .expect("lays out")
     };
@@ -2393,7 +2441,7 @@ fn a_drop_and_the_next_lift_between_two_steps_both_land() {
                         petting: None,
                     },
                 },
-                Size { w: 160, h: 96 },
+                Viewport::full(160, 96),
             )
             .expect("lays out")
             .frame
@@ -2444,13 +2492,10 @@ fn a_lifted_agent_reserves_no_cell() {
     use crate::layout::Point;
     use crate::pose::Pose;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let size = Size { w: 160, h: 96 };
-    let layout = crate::layout::SceneLayout::compute(
-        crate::layout::Viewport::full(size.w, size.h),
-        None,
-        FloorMeta::ground().floor_seed,
-    )
-    .expect("lays out");
+    let viewport = Viewport::full(160, 96);
+    let layout =
+        crate::layout::SceneLayout::compute(viewport, None, FloorMeta::ground().floor_seed)
+            .expect("lays out");
     let at_waypoint = |slot: &AgentSlot, now| {
         matches!(
             crate::pose::derive(slot, now, &layout),
@@ -2481,7 +2526,7 @@ fn a_lifted_agent_reserves_no_cell() {
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
-                size,
+                viewport,
             )
             .expect("lays out")
     };
@@ -2545,7 +2590,7 @@ fn a_lifted_creature_is_in_front_of_the_room() {
         kind: crate::pet::PetKind::Cat,
         name: "Mochi".into(),
     };
-    let size = Size { w: 160, h: 96 };
+    let viewport = Viewport::full(160, 96);
     let render = |session: &mut FloorSession, look, now| {
         session.render(
             look,
@@ -2560,7 +2605,7 @@ fn a_lifted_creature_is_in_front_of_the_room() {
                     },
                 },
                 theme,
-                size,
+                viewport,
                 place: crate::look::Place::default(),
                 debug_walkable: false,
                 dim: crate::look::Dim::NONE,
@@ -2587,8 +2632,8 @@ fn a_lifted_creature_is_in_front_of_the_room() {
     }) {
         let mut session = FloorSession::new(Arc::clone(&pack));
         render(&mut session, look, now);
-        let head = (0..size.h)
-            .flat_map(|y| (0..size.w).map(move |x| Point { x, y }))
+        let head = (0..viewport.size.h)
+            .flat_map(|y| (0..viewport.size.w).map(move |x| Point { x, y }))
             .find(|&p| {
                 session.picture().is_some_and(|picture| {
                     matches!(
@@ -2695,7 +2740,7 @@ mod figure_box {
         use crate::layout::{Bounds, Point};
         let pack = Arc::new(crate::pack::test_office());
         let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
-        let size = Size { w: 160, h: 96 };
+        let viewport = Viewport::full(160, 96);
         let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         // Long idle, their trips walk one to the canvas's west edge and one to its
         // east; the third is held at its top.
@@ -2748,7 +2793,7 @@ mod figure_box {
                             pets: PetInputs::default(),
                         },
                         theme,
-                        size,
+                        viewport,
                         place: crate::look::Place::default(),
                         debug_walkable: false,
                         dim: crate::look::Dim::NONE,
@@ -2820,7 +2865,7 @@ mod figure_box {
                 if *look == Look::HALF_BLOCKS {
                     for &(_, at) in &boxes {
                         west_edge |= at.x == 0;
-                        east_edge |= at.x + at.width == size.w;
+                        east_edge |= at.right() == viewport.size.w;
                         top_edge |= at.y == 0;
                     }
                     flat = boxes;
@@ -2839,11 +2884,14 @@ mod figure_box {
             }
             // Lifted mid-room, where its hair rises over its frame, then carried
             // to the top, where the canvas cuts it.
-            let x = size.w / 2;
+            let x = viewport.size.w / 2;
             let grip = match step {
                 0 => Gesture::Lift {
                     figure: Figure::Agent(held),
-                    at: Point { x, y: size.h / 2 },
+                    at: Point {
+                        x,
+                        y: viewport.size.h / 2,
+                    },
                 },
                 1 => Gesture::Carry(Point { x, y: 0 }),
                 _ => continue,
@@ -2917,7 +2965,7 @@ fn a_creature_not_in_hand_sorts_on_its_frames_south_row() {
                         petting: None,
                     },
                 },
-                Size { w: 160, h: 96 },
+                Viewport::full(160, 96),
             )
             .expect("lays out")
             .frame;
@@ -2962,7 +3010,7 @@ fn every_drawn_agent_has_a_walk_a_lift_lands_on() {
                 floor: FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
-            Size { w: 160, h: 96 },
+            Viewport::full(160, 96),
         )
         .expect("lays out");
     assert_eq!(stepped.frame.characters.len(), 3, "all three drawn");
@@ -3000,7 +3048,7 @@ fn a_pet_flicked_within_one_paint_lands_at_the_drop() {
                         petting: None,
                     },
                 },
-                Size { w: 160, h: 96 },
+                Viewport::full(160, 96),
             )
             .expect("lays out")
             .frame
@@ -3034,7 +3082,7 @@ fn a_lifted_pet_rests_where_it_is_set_down() {
         name: "Mochi".into(),
     };
     let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
-    let size = Size { w: 160, h: 96 };
+    let viewport = Viewport::full(160, 96);
     let pet_at = |session: &mut FloorSession, now| {
         let stepped = session
             .step(
@@ -3047,7 +3095,7 @@ fn a_lifted_pet_rests_where_it_is_set_down() {
                         petting: None,
                     },
                 },
-                size,
+                viewport,
             )
             .expect("lays out");
         stepped.frame.pet.expect("the cat is drawn").pos

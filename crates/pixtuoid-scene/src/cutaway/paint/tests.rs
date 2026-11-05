@@ -2204,7 +2204,7 @@ fn the_cutaway_paints_whole_art_pixels() {
                 floor: FloorMeta::ground(),
                 pets: crate::floor::PetInputs::default(),
             },
-            crate::layout::Size { w: 240, h: 144 },
+            crate::layout::Viewport::full(240, 144),
         )
         .expect("lays out");
     assert!(
@@ -2431,7 +2431,7 @@ fn the_outside_reaches_only_the_glass() {
                 floor: FloorMeta::ground(),
                 pets: crate::floor::PetInputs::default(),
             },
-            crate::layout::Size { w: 240, h: 144 },
+            crate::layout::Viewport::full(240, 144),
         )
         .expect("lays out");
     let layout = &office.layout;
@@ -2547,7 +2547,7 @@ fn a_window_is_drawn_before_whatever_hangs_over_it() {
                 floor: FloorMeta::ground(),
                 pets: crate::floor::PetInputs::default(),
             },
-            crate::layout::Size { w: 240, h: 144 },
+            crate::layout::Viewport::full(240, 144),
         )
         .expect("lays out");
     let at = Office {
@@ -2885,7 +2885,7 @@ fn every_piece_paints_only_inside_its_span() {
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),
                 },
-                crate::layout::Size { w, h },
+                crate::layout::Viewport::full(w, h),
             )
             .expect("lays out");
         check("default", &pack, &stepped.frame, &stepped.layout, false);
@@ -2936,6 +2936,81 @@ fn every_piece_paints_only_inside_its_span() {
             sprite.name()
         );
     }
+}
+
+/// A dressed figure carried to the top edge of the area inside a top inset, at
+/// the pack's densest art, paints none of its hair over the inset, and the box
+/// [`Hits::figures`](crate::look::Hits::figures) reports stops at its edge.
+#[test]
+fn a_dressed_figure_at_a_top_insets_edge_keeps_its_hair_off_it() {
+    let base = test_office();
+    let scale = RenderScale::from(base.max_density_variant());
+    let walk = crate::pack::densest_frame(&base, PackPiece::Walking, 0, scale);
+    let id = (0..1000)
+        .map(|i| pixtuoid_core::AgentId::from_transcript_path(&format!("/style/{i}.jsonl")))
+        .find(|&id| {
+            crate::character::dress_for(&base, id, walk.frame, walk.head, walk.density)
+                .is_some_and(|d| d.rise() > 0)
+        })
+        .expect("a style whose hair rises over the frame");
+    let (_, pack, frames, _) = sit_down_as(base.clone(), crate::layout::Facing::South, 0, id);
+    let insets = crate::layout::Insets {
+        top: 9,
+        ..Default::default()
+    };
+    let layout = SceneLayout::compute(
+        crate::layout::inset_viewport(160, 96, insets),
+        None,
+        crate::floor::FloorMeta::ground().floor_seed,
+    )
+    .expect("lays out");
+    let mut frame = frames.first().expect("a walking frame").clone();
+    for c in &mut frame.characters {
+        c.top_left.y = layout.inner.y;
+    }
+    let theme = crate::theme::theme_by_name("normal").expect("theme");
+    let moment = Moment::resolve(
+        crate::sky::Sky::clock(std::time::UNIX_EPOCH),
+        theme,
+        0.0,
+        Motion::Full.timing(std::time::UNIX_EPOCH),
+    );
+    let list = compose_at(
+        &frame,
+        Office {
+            layout: &layout,
+            pack: &pack,
+            theme,
+            scale,
+        },
+        &moment,
+        crate::floor::FloorMeta::ground(),
+        quiet_board(),
+        (
+            &mut crate::display::compose::LightCache::default(),
+            &mut crate::outside::OutsideCache::default(),
+        ),
+    );
+    let figure = list
+        .pieces()
+        .iter()
+        .find(|p| matches!(p.kind, PieceKind::Character { .. }))
+        .expect("the figure is drawn");
+    let [a, b] = painted_over_two_fills(&figure.kind, &layout, &pack, &Recolours::of(theme), scale);
+    let w = usize::from(scale.to_buffer(layout.buf_w));
+    let over = usize::from(scale.to_buffer(layout.inner.y)) * w;
+    let written_over = a.as_slice()[..over]
+        .iter()
+        .zip(&b.as_slice()[..over])
+        .position(|(pa, pb)| pa == pb)
+        .map(|i| (i % w, i / w));
+    assert_eq!(written_over, None, "a pixel painted over the inset");
+    let boxes: Vec<_> = list.hovers().listed().iter().map(|h| h.at).collect();
+    assert_eq!(
+        boxes.iter().map(|b| b.y).min(),
+        Some(layout.inner.y),
+        "the boxes stop at the inset's edge: {boxes:?}"
+    );
 }
 
 /// A cat and two gateways of one source, the second degraded and in hand,
@@ -4309,4 +4384,166 @@ fn a_sitter_over_a_screen_takes_the_rooms_light() {
         over > 0,
         "no sitter covers a screen, so nothing was compared"
     );
+}
+
+/// A full office on `viewport`: every desk seated at work, its room lit to
+/// the full.
+fn full_office(viewport: crate::layout::Viewport) -> (SceneLayout, SimFrame) {
+    let layout = SceneLayout::compute(viewport, None, 0).expect("lays out");
+    let mut frame = empty_frame(&layout);
+    let running = pixtuoid_core::state::ActivityState::Running {
+        item: Some(pixtuoid_core::state::ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: pixtuoid_core::state::ToolKind::Edit,
+        }),
+    };
+    frame.agents = (0..layout.home_desks.len())
+        .map(|i| {
+            let id = pixtuoid_core::AgentId::from_transcript_path(&format!("/lit/{i}.jsonl"));
+            pixtuoid_core::AgentSlot {
+                desk_index: pixtuoid_core::state::GlobalDeskIndex(i),
+                ..crate::character::test_support::make_slot(id, running.clone())
+            }
+        })
+        .collect();
+    frame.seated_agents = (0..layout.home_desks.len())
+        .map(|i| (pixtuoid_core::state::FloorLocalDeskIndex(i), true))
+        .collect();
+    frame.neon = crate::floor::NeonLevels::RUNNING;
+    (layout, frame)
+}
+
+/// `list` painted whole on a fresh canvas.
+fn painted(list: &DisplayList<'_>, size: (u16, u16)) -> crate::sprite::RgbBuffer {
+    let mut buf =
+        crate::sprite::RgbBuffer::filled(size.0, size.1, crate::sprite::Rgb { r: 0, g: 0, b: 0 });
+    paint(list, &mut CutawayCache::default(), &mut buf);
+    buf
+}
+
+/// Light carries across an inset's edge with no seam: under every inset of the
+/// sweep, wherever a light of a full office lifts the margin past the area
+/// inside the insets, the frame lit by it differs there from the frame without
+/// it — every light by night, and the sun's spills slanting low. No desk lamp,
+/// monitor or floor lamp stands near enough an edge to reach past it.
+#[test]
+fn every_light_crossing_an_inset_edge_lifts_the_margin() {
+    use crate::lighting::EmitterKind;
+    let pack = test_office();
+    let mut crossed: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for insets in crate::layout::SWEEP_INSETS {
+        let viewport = crate::layout::inset_viewport(192, 160, insets);
+        let (layout, frame) = full_office(viewport);
+        let inner = layout.inner;
+        let outside = |(x, y): (u16, u16)| {
+            x < inner.x || y < inner.y || x >= inner.right() || y >= inner.bottom()
+        };
+        for hour in [0, 8, 17] {
+            let floor = crate::floor::FloorMeta::ground().with_weather(
+                crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Clear),
+            );
+            let office = Office {
+                layout: &layout,
+                pack: &pack,
+                theme: &crate::theme::NORMAL,
+                scale: RenderScale::ONE,
+            };
+            let mut list = compose(
+                &frame,
+                office,
+                showing(floor, crate::localclock::at_hour(hour)),
+                (
+                    &mut crate::display::compose::LightCache::default(),
+                    &mut crate::outside::OutsideCache::default(),
+                ),
+            );
+            let size = (layout.buf_w, layout.buf_h);
+            let lit = painted(&list, size);
+            for k in 0..list.lights().len() {
+                // One logical unit an art pixel at `RenderScale::ONE`.
+                let margin: Vec<(u16, u16)> = list.lights()[k]
+                    .view
+                    .lit()
+                    .filter(|&p| outside(p))
+                    .collect();
+                if margin.is_empty() {
+                    continue;
+                }
+                let kind = [
+                    (EmitterKind::NeonGlow, "neon"),
+                    (EmitterKind::WindowSpill, "spill"),
+                    (EmitterKind::FloorLamp, "floor lamp"),
+                    (EmitterKind::DeskLamp, "desk lamp"),
+                    (
+                        EmitterKind::MonitorHalo(crate::lighting::ScreenWork::Turn),
+                        "monitor halo",
+                    ),
+                ]
+                .into_iter()
+                .find_map(|(kind, name)| list.lights()[k].view.is(kind).then_some(name))
+                .expect("every light has a kind");
+                crossed.insert(kind);
+                let light = list.lights_mut().remove(k);
+                let unlit = painted(&list, size);
+                list.lights_mut().insert(k, light);
+                assert!(
+                    margin
+                        .iter()
+                        .any(|&(x, y)| lit.get(x, y) != unlit.get(x, y)),
+                    "{insets:?} at {hour:02}h: the {kind} lifts nothing past {inner:?}"
+                );
+            }
+        }
+    }
+    assert_eq!(
+        crossed.into_iter().collect::<Vec<_>>(),
+        ["neon", "spill"],
+        "the lights that reach past an inset's edge, each tested"
+    );
+}
+
+/// The dark carries past an inset's edge with no seam: at midnight, every
+/// light off and the floor bare, a margin pixel is the dark of its daylight
+/// tone exactly as one inside is.
+#[test]
+fn the_cutaways_dark_carries_past_the_insets() {
+    let pack = test_office();
+    let mut judged = 0;
+    for insets in crate::layout::SWEEP_INSETS {
+        let viewport = crate::layout::inset_viewport(192, 160, insets);
+        let layout = SceneLayout::compute(viewport, None, 0).expect("lays out");
+        let floor = crate::floor::FloorMeta::ground().with_weather(
+            crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Clear),
+        );
+        let office = Office {
+            layout: &layout,
+            pack: &pack,
+            theme: &crate::theme::NORMAL,
+            scale: RenderScale::ONE,
+        };
+        let mut list = compose(
+            &empty_frame(&layout),
+            office,
+            showing(floor, crate::localclock::at_hour(0)),
+            (
+                &mut crate::display::compose::LightCache::default(),
+                &mut crate::outside::OutsideCache::default(),
+            ),
+        );
+        assert!(list.ambient().steps() > 0, "midnight darkens the room");
+        list.lights_mut().clear();
+        list.pieces_mut().clear();
+        list.backdrop_mut().coverings.clear();
+        let size = (layout.buf_w, layout.buf_h);
+        let night = painted(&list, size);
+        *list.ambient_mut() = crate::display::light::Ambient::default();
+        let day = painted(&list, size);
+        judged += crate::display::light::tests::assert_the_dark_carries_past_the_insets(
+            &layout,
+            (&day, &night),
+            &format!("{insets:?}"),
+        );
+    }
+    assert!(judged > 0, "no margin pixel lies below the window wall");
 }

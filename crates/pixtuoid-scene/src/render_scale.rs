@@ -441,8 +441,8 @@ mod tests {
     #[test]
     fn without_the_seam_a_bigger_buffer_builds_a_bigger_office() {
         let seed = floor_seed(0);
-        let base = floor_capacity(192, 160, seed);
-        let unscaled = floor_capacity(192 * 8, 160 * 8, seed);
+        let base = floor_capacity(crate::layout::Viewport::full(192, 160), seed);
+        let unscaled = floor_capacity(crate::layout::Viewport::full(192 * 8, 160 * 8), seed);
         assert!(
             unscaled > base * 8,
             "expected the un-seamed call to balloon the desk count \

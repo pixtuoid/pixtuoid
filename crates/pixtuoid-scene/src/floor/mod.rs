@@ -18,7 +18,7 @@ use pixtuoid_core::state::{AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, Scen
 use crate::audio::{AudioCueTracker, AudioFrame};
 use crate::chitchat::{ActiveChitchat, VenueKey};
 use crate::composite::{BLACK, WHITE, blend_rgb};
-use crate::layout::Size;
+use crate::layout::Viewport;
 use crate::pathfind::{AStarRouter, Router};
 use crate::pet::{Pet, PetState};
 use crate::pose::PoseHistory;
@@ -38,25 +38,21 @@ pub fn floor_seed(floor_idx: usize) -> u64 {
     (floor_idx as u64).wrapping_mul(crate::GOLDEN_GAMMA)
 }
 
-/// How many home desks a floor of buffer size `buf_w × buf_h` with `floor_seed`
-/// fits. Returns `0` when the buffer is too small for even one cubicle.
-pub fn floor_capacity(buf_w: u16, buf_h: u16, floor_seed: u64) -> usize {
-    crate::layout::SceneLayout::compute(
-        crate::layout::Viewport::full(buf_w, buf_h),
-        None,
-        floor_seed,
-    )
-    .map(|l| l.home_desks.len())
-    .unwrap_or(0)
+/// How many home desks floor `floor_seed` fits on `viewport`, inside its
+/// insets. Returns `0` when that area is too small for even one cubicle.
+pub fn floor_capacity(viewport: Viewport, floor_seed: u64) -> usize {
+    crate::layout::SceneLayout::compute(viewport, None, floor_seed)
+        .map(|l| l.home_desks.len())
+        .unwrap_or(0)
 }
 
-/// How many home desks a floor fits when `buf_w × buf_h` PIXELS are painted at
-/// `scale` — i.e. the capacity of the logical office those pixels cover.
+/// How many home desks a floor fits when `buf_w × buf_h` PIXELS are painted
+/// at `scale` — i.e. the capacity of the logical office those pixels cover.
 ///
-/// [`floor_capacity`] is the `RenderScale::ONE` case. The two are separate
-/// functions rather than one defaulted parameter because every existing caller
-/// means "buffer pixels are layout units" and must keep meaning it; a painter
-/// that adopts a scale opts in at its own call site.
+/// [`floor_capacity`] over a [`Viewport::full`] is the `RenderScale::ONE` case.
+/// The two are separate functions rather than one defaulted parameter because
+/// every existing caller means "buffer pixels are layout units" and must keep
+/// meaning it; a painter that adopts a scale opts in at its own call site.
 ///
 /// `#[cfg(test)]` because no painter has opted in yet: this is the vehicle for
 /// `render_scale`'s scale-invariance proof, not shipped behaviour. Un-gate it
@@ -70,7 +66,10 @@ pub(crate) fn floor_capacity_scaled(
     scale: crate::render_scale::RenderScale,
     floor_seed: u64,
 ) -> usize {
-    floor_capacity(scale.logical(buf_w), scale.logical(buf_h), floor_seed)
+    floor_capacity(
+        Viewport::full(scale.logical(buf_w), scale.logical(buf_h)),
+        floor_seed,
+    )
 }
 
 /// Per-floor identity + look: index, altitude, and derived layout seed.
@@ -158,7 +157,7 @@ pub struct FloorCtx {
     /// `SceneLayout::compute` reads on the frame path. Rebuilding it every
     /// frame re-allocs + re-stamps the walkable mask and re-runs the coarse BFS
     /// — the dominant fixed per-frame CPU, quadratic in buffer area.
-    layout_memo: Option<((u16, u16, u64), Arc<crate::layout::SceneLayout>)>,
+    layout_memo: Option<((Viewport, u64), Arc<crate::layout::SceneLayout>)>,
 }
 
 impl Default for FloorCtx {
@@ -208,25 +207,22 @@ impl FloorCtx {
         }
     }
 
-    /// The per-frame layout — memoized `compute(viewport, None, seed)` +
-    /// the router corridor re-point, the ONE frame prologue every painter rides.
-    /// Returns a cheap `Arc` handle so callers can hold it across later
-    /// `&mut self` uses without re-cloning the whole `SceneLayout` every frame. A
-    /// too-small buffer returns `None` without poisoning the memo.
+    /// The per-frame layout — memoized `compute(viewport, None, seed)` + the router
+    /// corridor re-point, the ONE frame prologue every painter rides. Returns a cheap
+    /// `Arc` handle so callers can hold it across later `&mut self` uses without
+    /// re-cloning the whole `SceneLayout` every frame. A viewport leaving too small an
+    /// area inside its insets returns `None` without poisoning the memo.
     pub(crate) fn frame_layout(
         &mut self,
-        buf_w: u16,
-        buf_h: u16,
+        viewport: Viewport,
         floor_seed: u64,
     ) -> Option<Arc<crate::layout::SceneLayout>> {
-        let key = (buf_w, buf_h, floor_seed);
+        let key = (viewport, floor_seed);
         let layout = match &self.layout_memo {
             Some((k, l)) if *k == key => Arc::clone(l),
             _ => {
                 let l = Arc::new(crate::layout::SceneLayout::compute(
-                    crate::layout::Viewport::full(buf_w, buf_h),
-                    None,
-                    floor_seed,
+                    viewport, None, floor_seed,
                 )?);
                 self.layout_memo = Some((key, Arc::clone(&l)));
                 l
@@ -631,16 +627,16 @@ impl FloorSession {
     }
 
     /// Advance the world one tick WITHOUT painting: the session's eviction, then
-    /// `step_floor`. `size` is the layout's logical extent, whatever scale a
-    /// painter draws it at. `None` when the size can't lay out.
-    pub fn step(&mut self, world: FloorInputs<'_>, size: Size) -> Option<SteppedFloor> {
+    /// `step_floor`. `viewport` is the layout's logical extent and insets,
+    /// whatever scale a painter draws it at. `None` when it can't lay out.
+    pub fn step(&mut self, world: FloorInputs<'_>, viewport: Viewport) -> Option<SteppedFloor> {
         self.evict_missing(world.scene);
         step_floor(
             &mut self.view.floor,
             &mut self.office.coffee,
             &mut self.office.chitchat,
             world,
-            size,
+            viewport,
         )
     }
 }
@@ -651,10 +647,10 @@ pub(crate) fn step_floor(
     coffee: &mut CoffeeState,
     chitchat: &mut HashMap<VenueKey, ActiveChitchat>,
     world: FloorInputs<'_>,
-    size: Size,
+    viewport: Viewport,
 ) -> Option<SteppedFloor> {
     let PerFloor { ctx: fctx, raster } = floor;
-    let layout = fctx.frame_layout(size.w, size.h, world.floor.floor_seed)?;
+    let layout = fctx.frame_layout(viewport, world.floor.floor_seed)?;
     let door_anim_max_ms = fctx.door_anim_max_ms;
     let frame = sim_step(
         &mut fctx.sim_stores(chitchat),

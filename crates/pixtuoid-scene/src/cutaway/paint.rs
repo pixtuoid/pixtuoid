@@ -622,9 +622,11 @@ fn paint_piece(
         }
         PieceKind::Effect(ref riding) => riding.paint(buf),
         PieceKind::Character {
-            ref figure, chair, ..
+            ref figure,
+            chair,
+            body,
         } => {
-            paint_figure(figure, pack, scale, &mut cache.figures, buf);
+            paint_figure(figure, body.y0, pack, scale, &mut cache.figures, buf);
             // The sitter's own chair, straight after them: one piece, so
             // nothing can sort between a person and the chair they sit in.
             if let Some(at) = chair {
@@ -1161,6 +1163,7 @@ fn paint_wall_decor(
 
 fn paint_figure(
     figure: &Figure,
+    ceiling: u16,
     pack: &OfficeArt,
     scale: RenderScale,
     cache: &mut crate::frame_cache::FrameCache,
@@ -1171,11 +1174,12 @@ fn paint_figure(
     // cache: a raw pack blit clones one placeholder-palette person per agent.
     let art = crate::character::keyed_character_frame(key, pack, scale, cache);
     // A dressed frame reaches up over its hair, its art's top staying at `at`:
-    // whatever rows would start above the buffer are cut, not the whole figure
-    // pushed down.
+    // whatever rows would start above `ceiling`, its box's top, are cut, not
+    // the whole figure pushed down.
     let blit = i32::from(art.blit_at.get());
     let top = i32::from(scale.to_buffer(at.y)) - i32::from(art.rise) * blit;
-    let cut = u16::try_from((-top).max(0).unsigned_abs().div_ceil(blit.unsigned_abs()))
+    let above = i32::from(scale.to_buffer(ceiling)) - top;
+    let cut = u16::try_from(above.max(0).unsigned_abs().div_ceil(blit.unsigned_abs()))
         .unwrap_or(u16::MAX);
     let clipped;
     let frame = if cut == 0 {

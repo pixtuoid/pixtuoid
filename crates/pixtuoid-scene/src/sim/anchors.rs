@@ -71,40 +71,36 @@ pub(crate) fn back_couch_top_left(wp: Point, sprite_w: u16) -> Point {
     }
 }
 
-/// Nudge a sprite so the whole frame lands inside the canvas, answering in the
+/// Nudge a sprite so the whole frame lands inside `area`, answering in the
 /// SAME pivot space `pos` came in.
 ///
 /// It moves a figure's paint top-left, never its sim position (invariant #6).
-pub(crate) fn keep_sprite_on_canvas(pivot: Pivot, pos: Point, size: Size, buf: Size) -> Point {
+pub(crate) fn keep_sprite_inside(pivot: Pivot, pos: Point, size: Size, area: Bounds) -> Point {
+    let (east, south) = (area.right(), area.bottom());
+    // `min` before `max` in both arms: on an area narrower than the sprite the
+    // lower bound wins instead of `clamp`'s inverted-range panic.
     match pivot {
-        // `min` before `max`: on a buffer narrower than the sprite the lower
-        // bound wins instead of `clamp`'s inverted-range panic.
         Pivot::Center => Point {
             x: pos
                 .x
-                .min(buf.w.saturating_sub(size.w.div_ceil(2)))
-                .max(size.w / 2),
+                .min(east.saturating_sub(size.w.div_ceil(2)))
+                .max(area.x + size.w / 2),
             y: pos
                 .y
-                .min(buf.h.saturating_sub(size.h.div_ceil(2)))
-                .max(size.h / 2),
+                .min(south.saturating_sub(size.h.div_ceil(2)))
+                .max(area.y + size.h / 2),
         },
-        // No lower bound needed — `u16` already floors a top-left `pos` at 0.
         Pivot::TopLeft => Point {
-            x: pos.x.min(buf.w.saturating_sub(size.w)),
-            y: pos.y.min(buf.h.saturating_sub(size.h)),
+            x: pos.x.min(east.saturating_sub(size.w)).max(area.x),
+            y: pos.y.min(south.saturating_sub(size.h)).max(area.y),
         },
     }
 }
 
-/// `pos`, in `pivot` space, moved so a `size` frame lands on `layout`'s canvas:
-/// the one fit every figure's placement takes.
-pub(crate) fn on_canvas(layout: &SceneLayout, pivot: Pivot, pos: Point, size: Size) -> Point {
-    let canvas = Size {
-        w: layout.buf_w,
-        h: layout.buf_h,
-    };
-    keep_sprite_on_canvas(pivot, pos, size, canvas)
+/// `pos`, in `pivot` space, moved so a `size` frame lands inside `layout`'s
+/// insets: the one fit every figure's placement takes.
+pub(crate) fn inside_insets(layout: &SceneLayout, pivot: Pivot, pos: Point, size: Size) -> Point {
+    keep_sprite_inside(pivot, pos, size, layout.inner)
 }
 
 /// How far a later arrival steps aside along x so two agents at one
@@ -168,7 +164,7 @@ pub(crate) fn character_top_left(
         Pose::AimlessAt { dest: at } | Pose::Held { at } => waypoint_top_left(at, w),
         Pose::Walking { segment, .. } => walking_top_left(segment.at(), w),
     };
-    Some(on_canvas(
+    Some(inside_insets(
         layout,
         Pivot::TopLeft,
         top_left,

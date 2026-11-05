@@ -17,7 +17,7 @@ use pixtuoid_core::source::claude_code;
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
 use pixtuoid_scene::floor::{FloorMeta, FloorSession};
-use pixtuoid_scene::layout::Size;
+use pixtuoid_scene::layout::Viewport;
 use pixtuoid_scene::look::{Look, Place, RenderInputs};
 use pixtuoid_scene::render_scale::RenderScale;
 use pixtuoid_scene::theme::theme_by_name;
@@ -204,7 +204,7 @@ fn main() -> Result<()> {
                 pets: pixtuoid_scene::floor::PetInputs::default(),
             },
             theme,
-            size: Size { w: lw, h: lh },
+            viewport: Viewport::full(lw, lh),
             place: Place {
                 gateway: pixtuoid_scene::tally::office_gateway(&scene),
                 floor: None,

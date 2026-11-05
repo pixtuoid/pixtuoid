@@ -1428,7 +1428,7 @@ mod tests {
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),
                 },
-                crate::layout::Size { w: 240, h: 144 },
+                crate::layout::Viewport::full(240, 144),
             )
             .expect("lays out");
         let lively = Arc::new(lively_office());

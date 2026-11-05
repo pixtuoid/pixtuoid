@@ -95,7 +95,7 @@ impl OfficeRenderer {
             RenderInputs {
                 world,
                 theme,
-                size: at.logical(),
+                viewport: at.logical().into(),
                 place,
                 debug_walkable: false,
                 dim,

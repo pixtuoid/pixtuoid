@@ -145,7 +145,7 @@ Repo skills (committed): `local-review`, `beautify-decoration`,
 3. **`Source` trait is the only seam** for a transcript-bearing CLI; per-source format knowledge lives in that source's decoder. Exceptions: hook-only CLIs (Reasonix) and the shared ACP wire standard (`source/acp.rs`, reused by grok) — [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#adding-a-new-agent-cli) step 3 and `source/acp.rs`'s header.
 4. **Hook install writes through symlinks** (`resolve_symlink` in `install/io.rs`) — critical for stow-managed configs; Windows keeps the bounded rename-retry.
 5. **The hook shim never blocks CC** — always exit 0 silently; the send bound (pixtuoid-hook's `transport::WRITE_TIMEOUT`) is watchdog-enforced on both platforms. Shim coverage is child-process level only.
-6. **Walkable mask = ground footprint only**; sprite size never moves a sim position — the canvas fit (`keep_sprite_on_canvas`) adjusts only a placement's paint top-left (#912).
+6. **Walkable mask = ground footprint only**; sprite size never moves a sim position — the sprite fit (`keep_sprite_inside`) adjusts only a placement's paint top-left (#912).
 
 ## Ownership by crate
 

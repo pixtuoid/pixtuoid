@@ -197,7 +197,7 @@ pub fn pixtuoid_scene::floor::FloorSession::floor_mut(&mut self) -> &mut pixtuoi
 pub fn pixtuoid_scene::floor::FloorSession::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
 pub fn pixtuoid_scene::floor::FloorSession::picture(&self) -> core::option::Option<pixtuoid_scene::look::FloorPicture<'_>>
 pub fn pixtuoid_scene::floor::FloorSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>)
-pub fn pixtuoid_scene::floor::FloorSession::step(&mut self, pixtuoid_scene::floor::FloorInputs<'_>, pixtuoid_scene::layout::Size) -> core::option::Option<pixtuoid_scene::floor::SteppedFloor>
+pub fn pixtuoid_scene::floor::FloorSession::step(&mut self, pixtuoid_scene::floor::FloorInputs<'_>, pixtuoid_scene::layout::Viewport) -> core::option::Option<pixtuoid_scene::floor::SteppedFloor>
 impl core::fmt::Debug for pixtuoid_scene::floor::FloorSession
 pub fn pixtuoid_scene::floor::FloorSession::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::FloorSession
@@ -325,7 +325,7 @@ impl core::marker::Unpin for pixtuoid_scene::floor::VacancyDim
 impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::VacancyDim
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::VacancyDim
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::VacancyDim
-pub fn pixtuoid_scene::floor::floor_capacity(u16, u16, u64) -> usize
+pub fn pixtuoid_scene::floor::floor_capacity(pixtuoid_scene::layout::Viewport, u64) -> usize
 pub fn pixtuoid_scene::floor::floor_seed(usize) -> u64
 pub fn pixtuoid_scene::floor::num_floors(&pixtuoid_core::state::SceneState) -> usize
 pub fn pixtuoid_scene::floor::project_floor_scene(&pixtuoid_core::state::SceneState, usize) -> pixtuoid_scene::floor::FloorScene
@@ -931,6 +931,31 @@ impl core::marker::Unpin for pixtuoid_scene::layout::HomeDesk
 impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::HomeDesk
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::HomeDesk
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::HomeDesk
+pub struct pixtuoid_scene::layout::Insets
+pub pixtuoid_scene::layout::Insets::bottom: u16
+pub pixtuoid_scene::layout::Insets::left: u16
+pub pixtuoid_scene::layout::Insets::right: u16
+pub pixtuoid_scene::layout::Insets::top: u16
+impl core::clone::Clone for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::layout::Insets
+impl core::cmp::PartialEq for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::eq(&self, &Self) -> bool
+impl core::default::Default for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::default() -> Self
+impl core::fmt::Debug for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::layout::Insets
+pub fn pixtuoid_scene::layout::Insets::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_scene::layout::Insets
+impl core::marker::StructuralPartialEq for pixtuoid_scene::layout::Insets
+impl core::marker::Freeze for pixtuoid_scene::layout::Insets
+impl core::marker::Send for pixtuoid_scene::layout::Insets
+impl core::marker::Sync for pixtuoid_scene::layout::Insets
+impl core::marker::Unpin for pixtuoid_scene::layout::Insets
+impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::Insets
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::Insets
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::Insets
 pub struct pixtuoid_scene::layout::Lounge
 pub pixtuoid_scene::layout::Lounge::couch_center: pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::Lounge::fish_tank: core::option::Option<pixtuoid_scene::layout::Point>
@@ -1119,6 +1144,8 @@ pub fn pixtuoid_scene::layout::Size::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Size
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Size
 pub fn pixtuoid_scene::layout::Size::eq(&self, &Self) -> bool
+impl core::convert::From<pixtuoid_scene::layout::Size> for pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::from(pixtuoid_scene::layout::Size) -> Self
 impl core::fmt::Debug for pixtuoid_scene::layout::Size
 pub fn pixtuoid_scene::layout::Size::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Size
@@ -1133,6 +1160,8 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::Size
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::Size
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::Size
 pub struct pixtuoid_scene::layout::Viewport
+pub pixtuoid_scene::layout::Viewport::insets: pixtuoid_scene::layout::Insets
+pub pixtuoid_scene::layout::Viewport::size: pixtuoid_scene::layout::Size
 impl pixtuoid_scene::layout::Viewport
 pub const fn pixtuoid_scene::layout::Viewport::full(u16, u16) -> Self
 impl core::clone::Clone for pixtuoid_scene::layout::Viewport
@@ -1140,6 +1169,8 @@ pub fn pixtuoid_scene::layout::Viewport::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Viewport
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Viewport
 pub fn pixtuoid_scene::layout::Viewport::eq(&self, &Self) -> bool
+impl core::convert::From<pixtuoid_scene::layout::Size> for pixtuoid_scene::layout::Viewport
+pub fn pixtuoid_scene::layout::Viewport::from(pixtuoid_scene::layout::Size) -> Self
 impl core::fmt::Debug for pixtuoid_scene::layout::Viewport
 pub fn pixtuoid_scene::layout::Viewport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Viewport
@@ -1439,8 +1470,8 @@ pub struct pixtuoid_scene::look::RenderInputs<'a>
 pub pixtuoid_scene::look::RenderInputs::debug_walkable: bool
 pub pixtuoid_scene::look::RenderInputs::dim: pixtuoid_scene::look::Dim
 pub pixtuoid_scene::look::RenderInputs::place: pixtuoid_scene::look::Place
-pub pixtuoid_scene::look::RenderInputs::size: pixtuoid_scene::layout::Size
 pub pixtuoid_scene::look::RenderInputs::theme: &'static pixtuoid_scene::theme::Theme
+pub pixtuoid_scene::look::RenderInputs::viewport: pixtuoid_scene::layout::Viewport
 pub pixtuoid_scene::look::RenderInputs::world: pixtuoid_scene::floor::FloorInputs<'a>
 impl<'a> core::clone::Clone for pixtuoid_scene::look::RenderInputs<'a>
 pub fn pixtuoid_scene::look::RenderInputs<'a>::clone(&self) -> Self

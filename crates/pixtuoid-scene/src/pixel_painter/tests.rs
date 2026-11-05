@@ -5240,30 +5240,41 @@ fn a_roaming_creature_is_never_sliced_by_the_canvas_edge() {
 }
 
 #[test]
-fn keep_sprite_on_canvas_bounds_differ_by_pivot() {
-    use crate::layout::{Pivot, Size};
-    use crate::sim::anchors::keep_sprite_on_canvas;
-    let buf = Size { w: 100, h: 80 };
+fn keep_sprite_inside_bounds_differ_by_pivot() {
+    use crate::layout::{Bounds, Pivot, Size};
+    use crate::sim::anchors::keep_sprite_inside;
+    let area = Bounds {
+        x: 5,
+        y: 7,
+        width: 100,
+        height: 80,
+    };
     let size = Size { w: 8, h: 12 };
-    let at = |p, x, y| keep_sprite_on_canvas(p, Point { x, y }, size, buf);
+    let at = |p, x, y| keep_sprite_inside(p, Point { x, y }, size, area);
 
     // Centre-anchored: `pos` is the middle, so BOTH bounds inset by half.
-    assert_eq!(at(Pivot::Center, 0, 0), Point { x: 4, y: 6 });
-    assert_eq!(at(Pivot::Center, 99, 79), Point { x: 96, y: 74 });
-    // Top-left-anchored: `u16` already floors the near edge, only the far one binds.
-    assert_eq!(at(Pivot::TopLeft, 0, 0), Point { x: 0, y: 0 });
-    assert_eq!(at(Pivot::TopLeft, 99, 79), Point { x: 92, y: 68 });
+    assert_eq!(at(Pivot::Center, 0, 0), Point { x: 9, y: 13 });
+    assert_eq!(at(Pivot::Center, 104, 86), Point { x: 101, y: 81 });
+    // Top-left-anchored: the near edge binds the top-left, the far one its
+    // far corner.
+    assert_eq!(at(Pivot::TopLeft, 0, 0), Point { x: 5, y: 7 });
+    assert_eq!(at(Pivot::TopLeft, 104, 86), Point { x: 97, y: 75 });
 
-    // A canvas smaller than the sprite: `Center` falls back to its lower bound
-    // rather than `clamp`'s inverted-range panic; `TopLeft` just floors at 0.
-    let tiny = Size { w: 4, h: 4 };
+    // An area smaller than the sprite: either pivot falls back to its lower
+    // bound rather than `clamp`'s inverted-range panic.
+    let tiny = Bounds {
+        x: 5,
+        y: 7,
+        width: 4,
+        height: 4,
+    };
     assert_eq!(
-        keep_sprite_on_canvas(Pivot::Center, Point { x: 2, y: 2 }, size, tiny),
-        Point { x: 4, y: 6 }
+        keep_sprite_inside(Pivot::Center, Point { x: 2, y: 2 }, size, tiny),
+        Point { x: 9, y: 13 }
     );
     assert_eq!(
-        keep_sprite_on_canvas(Pivot::TopLeft, Point { x: 2, y: 2 }, size, tiny),
-        Point { x: 0, y: 0 }
+        keep_sprite_inside(Pivot::TopLeft, Point { x: 2, y: 2 }, size, tiny),
+        Point { x: 5, y: 7 }
     );
 }
 
@@ -6389,4 +6400,72 @@ fn the_neon_halo_lifts_the_window_glass_it_falls_on() {
         .filter(|&(x, y)| lit.get(x, y) != dark.get(x, y))
         .count();
     assert!(lifted > 0, "the sign's glow reaches no window glass");
+}
+
+/// The classic's dark carries past an inset's edge with no seam: at midnight,
+/// every light off, a bare margin pixel is the dark of its noon tone exactly
+/// as one inside is.
+#[test]
+fn the_classics_dark_carries_past_the_insets() {
+    let pack = crate::pack::test_office();
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme");
+    let (scene, walks) = (SceneState::uniform(16), HashMap::new());
+    let floor = crate::floor::FloorMeta::ground();
+    let black = Rgb { r: 0, g: 0, b: 0 };
+    let (midnight, noon) = (
+        crate::localclock::at_hour(0),
+        crate::localclock::at_hour(12),
+    );
+    let mut judged = 0;
+    for insets in crate::layout::SWEEP_INSETS {
+        let viewport = crate::layout::inset_viewport(192, 160, insets);
+        let layout = SceneLayout::compute(viewport, None, 0).expect("lays out");
+        let frame = SimFrame {
+            neon: crate::floor::NeonLevels {
+                alert: 0.0,
+                power: 0.0,
+            },
+            ..empty_frame(&layout)
+        };
+        let mut night = RgbBuffer::filled(layout.buf_w, layout.buf_h, black);
+        paint_frame(
+            &mut PaintCtx {
+                scene: &scene,
+                layout: &layout,
+                pack: &pack,
+                timing: Motion::Full.timing(midnight),
+                sky: crate::sky::Sky::at_with(midnight, crate::sky::Weather::Clear),
+                window_sky: None,
+                buf: &mut night,
+                cache: &mut FrameCache::new(),
+                base_fill: &mut BaseFillCache::new(),
+                shadows: &mut crate::ground::DepthsCache::default(),
+                theme,
+                floor,
+                walks: &walks,
+                debug_walkable: false,
+                outside: &mut crate::outside::OutsideCache::default(),
+            },
+            &frame,
+        );
+        let mut day = RgbBuffer::filled(layout.buf_w, layout.buf_h, black);
+        paint_ground_and_walls(
+            &mut BaseFillCache::new(),
+            &mut day,
+            &crate::outside::Wall::of(&layout),
+            &Moment::resolve(
+                crate::sky::Sky::at_with(noon, crate::sky::Weather::Clear),
+                theme,
+                floor.altitude,
+                Motion::Full.timing(noon),
+            ),
+            theme,
+        );
+        judged += crate::display::light::tests::assert_the_dark_carries_past_the_insets(
+            &layout,
+            (&day, &night),
+            &format!("{insets:?}"),
+        );
+    }
+    assert!(judged > 0, "no margin pixel lies below the window wall");
 }
