@@ -96,17 +96,7 @@ const SLEEP_Z: &[&str] = &[
 ];
 
 /// The requires-action mark, beside the head.
-const REQUIRES_ACTION_MARK: &[&str] = &[
-    ".####.", //
-    "##..##", //
-    "##..##", //
-    "...##.", //
-    "..##..", //
-    "..##..", //
-    "......", //
-    "..##..", //
-    "..##..", //
-];
+const REQUIRES_ACTION_MARK: &[&str] = crate::layout::chrome::REQUIRES_ACTION_MARK.rows();
 
 /// Art columns from the head mark to the west edge of what floats beside the
 /// head: clear of the hair, and of the badge centred over it.

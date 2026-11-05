@@ -88,21 +88,6 @@ impl Bounds {
         self.y + self.height
     }
 
-    /// Whether the two half-open boxes share a pixel. A zero-sized box shares
-    /// none.
-    pub(crate) fn overlaps(self, other: Bounds) -> bool {
-        // u32: a box's exclusive end can lie one past `u16::MAX`.
-        let end = |at: u16, len: u16| u32::from(at) + u32::from(len);
-        self.width > 0
-            && self.height > 0
-            && other.width > 0
-            && other.height > 0
-            && u32::from(self.x) < end(other.x, other.width)
-            && u32::from(other.x) < end(self.x, self.width)
-            && u32::from(self.y) < end(other.y, other.height)
-            && u32::from(other.y) < end(self.y, self.height)
-    }
-
     /// The least box holding both, its ends taken in u32 as [`Self::overlaps`]
     /// takes them, and its size clamped to `u16` (two boxes on one buffer
     /// never need more).

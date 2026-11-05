@@ -345,7 +345,7 @@ struct Classic {
     buf: RgbBuffer,
     caches: ClassicCaches,
     /// The last frame's badges and bubbles.
-    badges: Vec<crate::display::Badge>,
+    badges: Arc<[crate::display::Badge]>,
     bubbles: Vec<crate::display::TextRun>,
     /// What the last frame answers a pointer with.
     hovers: Arc<Hovers>,
@@ -375,7 +375,7 @@ impl Classic {
             bubbles,
             hovers,
         } = drawn;
-        self.badges = badges;
+        self.badges = badges.into();
         self.bubbles = bubbles;
         self.hovers = Arc::new(hovers);
     }
@@ -463,6 +463,9 @@ pub struct Hits {
     star: Option<crate::layout::Bounds>,
     /// The holiday the frame's office keeps.
     occasion: crate::holiday::Occasion,
+    /// Each drawn agent's badge, and the grid its look draws a plate on
+    /// ([`Self::badge`]).
+    pub(crate) badges: (Arc<[crate::display::Badge]>, crate::display::pen::Pen),
 }
 
 impl Hits {
@@ -471,12 +474,14 @@ impl Hits {
         layout: Arc<SceneLayout>,
         star: Option<crate::layout::Bounds>,
         occasion: crate::holiday::Occasion,
+        badges: (Arc<[crate::display::Badge]>, crate::display::pen::Pen),
     ) -> Self {
         Self {
             hovers,
             layout,
             star,
             occasion,
+            badges,
         }
     }
 
@@ -526,7 +531,7 @@ impl Raster {
         self.classic.get_or_insert_with(|| Classic {
             buf: RgbBuffer::filled(0, 0, crate::sprite::Rgb { r: 0, g: 0, b: 0 }),
             caches: ClassicCaches::new(),
-            badges: Vec::new(),
+            badges: Arc::default(),
             bubbles: Vec::new(),
             hovers: Arc::default(),
             signs: Vec::new(),
@@ -575,6 +580,21 @@ impl Raster {
             Look::Classic { .. } => self.classic.as_ref().map(|c| &c.hovers),
             Look::Cutaway { .. } => self.cutaway.as_ref()?.hovers(),
         }
+    }
+
+    /// Each agent's badge the last frame drew, and the grid its look draws a
+    /// plate on ([`Hits::badge`]); `None` before the first.
+    pub(crate) fn badges(
+        &self,
+    ) -> Option<(Arc<[crate::display::Badge]>, crate::display::pen::Pen)> {
+        let (badges, scale) = match self.shown? {
+            Look::Classic { scale, .. } => (&self.classic.as_ref()?.badges, scale),
+            Look::Cutaway { scale, .. } => (self.cutaway.as_ref()?.badges()?, scale),
+        };
+        Some((
+            Arc::clone(badges),
+            crate::display::pen::Pen::for_pack(scale, &self.pack),
+        ))
     }
 
     /// The cells of the star the last frame baked, where a pointer opens the
@@ -794,6 +814,7 @@ pub fn render(
             stepped.layout,
             raster.star(),
             stepped.frame.occasion,
+            raster.badges()?,
         ),
         occupied_waypoints: stepped.frame.occupied_waypoints,
         flash,

@@ -404,6 +404,145 @@ fn no_text_is_set_under_an_inset() {
     assert!(runs_checked > 0, "no text was set");
 }
 
+/// The units a run's painter writes any pixel of on a canvas `size` big at
+/// `scale`, painted alone.
+fn painted_units(
+    run: &crate::display::TextRun,
+    pack: &crate::pack::OfficeArt,
+    scale: RenderScale,
+    size: Size,
+) -> Bounds {
+    let pen = crate::display::pen::Pen::for_pack(scale, pack);
+    let (w, h) = (scale.to_buffer(size.w), scale.to_buffer(size.h));
+    let [a, b] = [
+        crate::composite::BLACK,
+        crate::sprite::Rgb {
+            r: 255,
+            g: 255,
+            b: 255,
+        },
+    ]
+    .map(|fill| {
+        let mut buf = crate::sprite::RgbBuffer::filled(w, h, fill);
+        crate::cutaway::paint::paint_run(run, (pack, pen), &mut buf);
+        buf
+    });
+    let written: Vec<(u16, u16)> = (0..h)
+        .flat_map(|y| (0..w).map(move |x| (x, y)))
+        .filter(|&(x, y)| a.get(x, y) == b.get(x, y))
+        .collect();
+    let k = scale.get();
+    let span = |at: fn(&(u16, u16)) -> u16| {
+        let lo = written.iter().map(at).min().expect("the run paints");
+        let hi = written.iter().map(at).max().expect("the run paints");
+        (lo / k, (hi + 1).div_ceil(k))
+    };
+    let ((x0, x1), (y0, y1)) = (span(|p| p.0), span(|p| p.1));
+    Bounds {
+        x: x0,
+        y: y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    }
+}
+
+/// Each agent a frame draws hangs its badge where [`Hits::badge`] says, in
+/// every look, baked or set by its host: on the units its plate's painter
+/// writes, cut as it cuts it. An agent the floor doesn't draw has none.
+#[test]
+fn each_drawn_agent_names_the_plate_its_badge_is_drawn_on() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let now = t0 + Duration::from_secs(600);
+    let pack = Arc::new(crate::pack::test_office());
+    let dense = RenderScale::from(pack.max_density_variant());
+    for (scale, text) in [
+        (RenderScale::ONE, WorldText::Host),
+        (dense, WorldText::Baked),
+        (dense, WorldText::Host),
+    ] {
+        for look in [Look::Classic { scale, text }, Look::Cutaway { scale, text }] {
+            let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+            let rendered =
+                render(&mut floor, office.stores(), look, inputs(&scene, now)).expect("lays out");
+            let agents: HashSet<AgentId> = rendered
+                .hits
+                .figures()
+                .filter_map(|(target, _)| match target {
+                    crate::hit::HoverTarget::Agent(id) => Some(*id),
+                    _ => None,
+                })
+                .collect();
+            assert!(!agents.is_empty(), "{look:?}: premise: agents are drawn");
+            let badges = &rendered.hits.badges.0;
+            assert_eq!(
+                badges.iter().map(|b| b.agent).collect::<HashSet<_>>(),
+                agents,
+                "{look:?}: premise: every drawn agent hangs a badge"
+            );
+            for badge in badges.iter() {
+                assert_eq!(
+                    rendered.hits.badge(&badge.agent),
+                    Some(painted_units(&badge.run(), &pack, scale, SIZE)),
+                    "{look:?}: {:?}",
+                    badge.agent
+                );
+            }
+            let absent = AgentId::from_transcript_path("/look/absent.jsonl");
+            assert_eq!(rendered.hits.badge(&absent), None, "{look:?}");
+        }
+    }
+}
+
+/// A carried agent's badge stays inside a top inset, whichever edge or corner
+/// it is carried to.
+#[test]
+fn a_carried_agents_badge_keeps_inside_a_top_inset() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let held = *scene.agents.keys().next().expect("an agent");
+    let viewport = Viewport {
+        size: SIZE,
+        insets: crate::layout::Insets {
+            top: 9,
+            ..Default::default()
+        },
+    };
+    let inner = viewport.inner().expect("an area inside the insets");
+    let pack = Arc::new(crate::pack::test_office());
+    let dense = RenderScale::from(pack.max_density_variant());
+    for look in [
+        Look::HALF_BLOCKS,
+        Look::Cutaway {
+            scale: dense,
+            text: WorldText::Baked,
+        },
+    ] {
+        let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+        carry_to_each_edge(
+            (&mut floor, &mut office),
+            (
+                look,
+                RenderInputs {
+                    viewport,
+                    ..inputs(&scene, t0 + Duration::from_secs(600))
+                },
+            ),
+            crate::interact::Figure::Agent(held),
+            |gesture, rendered, _| {
+                let plate = rendered.hits.badge(&held).expect("the held agent's badge");
+                assert!(
+                    plate.x >= inner.x
+                        && plate.y >= inner.y
+                        && plate.right() <= inner.right()
+                        && plate.bottom() <= inner.bottom(),
+                    "{look:?} {gesture:?}: {plate:?} past {inner:?}"
+                );
+            },
+        );
+    }
+}
+
 /// The entry runs the sim's epilogue every frame it steps: a carrier's cup is
 /// stamped with the frame that saw it, and the door's clamp is the frame's own.
 #[test]

@@ -266,6 +266,11 @@ impl<'a> DisplayList<'a> {
         std::mem::take(&mut self.host_text)
     }
 
+    /// Each drawn agent's badge, held to outlive the frame.
+    pub(crate) fn badge_list(&self) -> &std::sync::Arc<[super::Badge]> {
+        &self.host_text.badges
+    }
+
     /// Each text run, in draw order.
     pub(crate) fn texts(&self) -> impl Iterator<Item = &super::TextRun> + '_ {
         self.pieces.iter().filter_map(|p| match &p.kind {
