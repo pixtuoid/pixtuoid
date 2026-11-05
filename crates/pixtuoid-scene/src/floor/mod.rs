@@ -719,9 +719,9 @@ impl VacancyDim {
         }
     }
 
-    /// Whether the empty-debounce has run out — the floor's VERDICT that it is
-    /// really empty. Read this, never `level() < 1.0`: the level trails the
-    /// verdict by the length of its ease.
+    /// Whether the debounce has run out — the floor's VERDICT that it is vacant,
+    /// empty or [`FloorMeta::offline`]. Read this, never `level() < 1.0`: the
+    /// level trails the verdict by the length of its ease.
     pub(crate) fn dimmed(&self) -> bool {
         self.dimmed
     }
@@ -748,8 +748,8 @@ impl VacancyDim {
 
     /// Advance the fade one frame. Returns the new lit level in
     /// `[MIN_LEVEL, 1.0]`.
-    pub(crate) fn tick(&mut self, empty: bool, now: SystemTime) -> f32 {
-        let target = if empty {
+    pub(crate) fn tick(&mut self, vacant: bool, now: SystemTime) -> f32 {
+        let target = if vacant {
             let since = *self.empty_since.get_or_insert(now);
             let elapsed = crate::anim::elapsed_ms(now, since);
             if elapsed >= Self::EMPTY_DEBOUNCE_MS {
@@ -807,7 +807,7 @@ impl NeonLevels {
         alert: 0.0,
         power: 0.62,
     };
-    /// Nobody home: the tube barely holds, and stutters ([`NeonState::tick`]).
+    /// A vacant room: the tube barely holds, and stutters ([`NeonState::tick`]).
     pub(crate) const EMPTY: Self = Self {
         alert: 0.0,
         power: 0.16,
@@ -962,10 +962,9 @@ impl NeonState {
     /// inside one mood is not a change, and a reversal mid-fade restarts from the
     /// light it interrupted.
     ///
-    /// `room_dimmed` is [`VacancyDim::dimmed`]: the sign only starves once the
-    /// ROOM is judged empty, so that debounce is the one "is the office really
-    /// empty" clock — a gap between transcripts, or the last agent still walking
-    /// out of a lit room, can't drop the sign.
+    /// `room_dimmed` is [`VacancyDim::dimmed`]: the sign starves exactly when the
+    /// ROOM is judged vacant, whatever its mood, so a gap between transcripts or
+    /// the last agent still walking out of a lit room can't drop the sign.
     pub(crate) fn tick(
         &mut self,
         mood: crate::neon_sign::OfficeMood,
@@ -974,11 +973,14 @@ impl NeonState {
     ) -> NeonLevels {
         use crate::neon_sign::OfficeMood;
         let now = timing.now;
-        let to = match mood {
-            OfficeMood::Alert { .. } => NeonLevels::ALERT,
-            OfficeMood::Running { .. } => NeonLevels::RUNNING,
-            OfficeMood::Empty if room_dimmed => NeonLevels::EMPTY,
-            OfficeMood::Calm | OfficeMood::Empty => NeonLevels::CALM,
+        let to = if room_dimmed {
+            NeonLevels::EMPTY
+        } else {
+            match mood {
+                OfficeMood::Alert { .. } => NeonLevels::ALERT,
+                OfficeMood::Running { .. } => NeonLevels::RUNNING,
+                OfficeMood::Calm | OfficeMood::Empty => NeonLevels::CALM,
+            }
         };
         let gap_ms = self
             .last_tick

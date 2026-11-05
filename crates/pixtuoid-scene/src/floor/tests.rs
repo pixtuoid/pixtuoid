@@ -512,19 +512,20 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
                     floor,
                     pets: PetInputs::default(),
                 };
-                let lit = session
+                let frame = session
                     .step(world, Viewport::full(160, 96))
                     .expect("lays out")
-                    .frame
-                    .indoor_scale;
-                (lit, session.floor().ctx.vacancy_dim.dimmed())
+                    .frame;
+                let dimmed = session.floor().ctx.vacancy_dim.dimmed();
+                (frame.indoor_scale, dimmed, frame.neon)
             })
             .collect::<Vec<_>>()
     });
     assert_eq!(offline, emptied);
-    assert_eq!(
-        offline.last(),
-        Some(&(VacancyDim::MIN_LEVEL, true)),
+    assert!(
+        offline
+            .last()
+            .is_some_and(|&(lit, dimmed, _)| lit == VacancyDim::MIN_LEVEL && dimmed),
         "premise: the emptied floor dims"
     );
 }
@@ -1238,6 +1239,7 @@ fn neon_first_tick_snaps_to_the_mood() {
         (neon_mood(0, 0, 3), ROOM_LIT, NeonLevels::CALM),
         (neon_mood(0, 0, 0), ROOM_DIMMED, NeonLevels::EMPTY),
         (neon_mood(0, 0, 0), ROOM_LIT, NeonLevels::CALM),
+        (neon_mood(2, 1, 0), ROOM_DIMMED, NeonLevels::EMPTY),
     ] {
         assert_eq!(
             NeonState::new().tick(mood, room, Motion::Full.timing(t0())),
