@@ -1416,10 +1416,8 @@ fn waypoint_depth_baseline_is_its_grounds_south_row() {
     }
 }
 
-/// Each case is the office the App's `OfficeFit` (pixtuoid-apple
-/// `App/Pixtuoid/OfficeScreen.swift` at `e5c7744`) laid out for that device,
-/// upright and turned, on its 4-pixel art at whole device pixels a frame pixel:
-/// the App's output, which this fit must keep reproducing.
+/// Each case is the office the App lays out for that device, upright and
+/// turned, on its 4-pixel art at whole device pixels a frame pixel.
 /// The iPhone 18 Pro's 402×874 pt at 3× and the 13-inch iPad Pro's 1032×1376
 /// pt at 2× are the App's (`OfficeModelTests.swift`, `OfficeFitTests.swift`);
 /// the iPhone SE's 1334×750 px is Apple's (<https://support.apple.com/kb/SP867>)
@@ -1429,11 +1427,11 @@ fn waypoint_depth_baseline_is_its_grounds_south_row() {
 fn a_fitted_viewport_is_the_apps_office_fit() {
     let art = crate::sprite::format::Density::new(4).expect("nonzero");
     let cases = [
-        ("iPhone 18 Pro", (1206, 2622), 3, (150, 218), 3),
+        ("iPhone 18 Pro", (1206, 2622), 3, (150, 163), 4),
         ("iPhone 18 Pro turned", (2622, 1206), 3, (218, 100), 3),
         ("iPhone SE", (750, 1334), 2, (150, 166), 2),
         ("iPhone SE turned", (1334, 750), 2, (166, 93), 2),
-        ("iPad Pro 13", (2064, 2752), 2, (172, 229), 3),
+        ("iPad Pro 13", (2064, 2752), 2, (150, 172), 4),
         ("iPad Pro 13 turned", (2752, 2064), 2, (229, 172), 3),
     ];
     for (device, (w, h), per_point, (units_w, units_h), upscale) in cases {
@@ -1460,7 +1458,7 @@ fn a_fitted_viewport_is_the_apps_office_fit() {
 fn a_fitted_inset_is_rounded_up_to_whole_units() {
     let art = crate::sprite::format::Density::new(4).expect("nonzero");
     let per_point = std::num::NonZeroU16::new(3).expect("nonzero");
-    // Twelve device pixels a unit: 3 a frame pixel, 4 frame pixels a unit.
+    // Sixteen device pixels a unit: 4 a frame pixel, 4 frame pixels a unit.
     let fitted = Viewport::fitted(
         Size { w: 1206, h: 2622 },
         Insets {
@@ -1476,10 +1474,10 @@ fn a_fitted_inset_is_rounded_up_to_whole_units() {
     assert_eq!(
         fitted.viewport.insets,
         Insets {
-            top: 16,
-            right: 2,
-            bottom: 9,
-            left: 3,
+            top: 12,
+            right: 1,
+            bottom: 7,
+            left: 2,
         }
     );
 }
