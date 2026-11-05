@@ -2272,8 +2272,8 @@ fn a_cutaway_slide_bakes_its_floors_text() {
         "a slide starts on it"
     );
     assert_eq!(
-        frame(WorldText::Host, Some(400)),
-        frame(WorldText::Baked, Some(400)),
+        frame(WorldText::Host, Some(TRANSITION_DURATION_MS / 2)),
+        frame(WorldText::Baked, Some(TRANSITION_DURATION_MS / 2)),
         "a slide bakes it"
     );
 }
