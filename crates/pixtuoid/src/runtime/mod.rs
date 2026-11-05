@@ -80,9 +80,9 @@ pub(crate) fn floor_capacities(
         offices
             .values()
             .flatten()
-            .map(|office| {
+            .map(|&office| {
                 pixtuoid_scene::floor::floor_capacity(
-                    pixtuoid_scene::layout::Viewport::full(office.w, office.h),
+                    pixtuoid_scene::layout::Viewport::from(office),
                     seed,
                 )
             })
@@ -617,7 +617,7 @@ mod tests {
         let painted = fit.logical();
         for (i, &seeded) in seed.iter().enumerate() {
             let desks = pixtuoid_scene::floor::floor_capacity(
-                pixtuoid_scene::layout::Viewport::full(painted.w, painted.h),
+                pixtuoid_scene::layout::Viewport::from(painted),
                 floor_seed(i),
             );
             assert!(seeded <= desks, "floor {i}: seeds {seeded} of {desks}");
@@ -651,7 +651,7 @@ mod tests {
         let painted = fit.logical();
         for (i, &seeded) in seed.iter().enumerate() {
             let desks = pixtuoid_scene::floor::floor_capacity(
-                pixtuoid_scene::layout::Viewport::full(painted.w, painted.h),
+                pixtuoid_scene::layout::Viewport::from(painted),
                 floor_seed(i),
             );
             assert!(
@@ -667,7 +667,7 @@ mod tests {
             .expect("the classic's office");
         let expected: [usize; MAX_FLOORS] = std::array::from_fn(|i| {
             pixtuoid_scene::floor::floor_capacity(
-                pixtuoid_scene::layout::Viewport::full(office.w, office.h),
+                pixtuoid_scene::layout::Viewport::from(office),
                 floor_seed(i),
             )
         });

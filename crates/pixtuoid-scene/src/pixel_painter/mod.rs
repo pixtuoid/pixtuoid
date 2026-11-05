@@ -510,8 +510,14 @@ fn queue_fixtures<'a>(
                     StationArt::SnackShelf => DrawableKind::SnackShelf { pos: f.at },
                 }
             }
-            FixtureKind::Plant { kind, .. } => DrawableKind::Plant { kind, pos: f.at },
-            FixtureKind::Pod { kind, .. } => DrawableKind::PodDecorItem { kind, pos: f.at },
+            FixtureKind::Plant { kind, .. } => DrawableKind::Plant {
+                art: frame.occasion.art(kind.piece()),
+                pos: f.at,
+            },
+            FixtureKind::Pod { kind, .. } => DrawableKind::PodDecorItem {
+                art: frame.occasion.art(kind.piece()),
+                pos: f.at,
+            },
             FixtureKind::Wall { kind, .. } => DrawableKind::WallDecor {
                 kind,
                 pos: f.top_left(),

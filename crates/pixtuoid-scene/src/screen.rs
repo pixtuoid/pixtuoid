@@ -10,13 +10,15 @@ use std::time::{Duration, SystemTime};
 
 use crate::anim::PHOTOSENSITIVE_PHASE_MIN_MS;
 
-/// What of a floor's frame flashes: which of a strike's levels lights it, and
-/// whether a starved neon tube is catching. Two frames flash alike iff equal.
+/// What of a floor's frame flashes: which of a strike's levels lights it,
+/// whether a starved neon tube is catching, and the phase each of the sky's
+/// fireworks bursts is in. Two frames flash alike iff equal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct FlashPhase {
     // The sky's flash level's bits: a strike's levels are exact constants.
     strike: u32,
     stutter: bool,
+    bursts: [Option<crate::sky::fireworks::BurstPhase>; crate::sky::fireworks::LANES],
 }
 
 impl FlashPhase {
@@ -25,6 +27,7 @@ impl FlashPhase {
         Self {
             strike: sky.flash().to_bits(),
             stutter: frame.neon_stutter,
+            bursts: sky.bursts().map(|b| b.map(|b| b.phase)),
         }
     }
 }
@@ -322,7 +325,7 @@ mod tests {
         [1, 2].map(|strike| {
             Flashes::of_floor(FlashPhase {
                 strike,
-                stutter: false,
+                ..FlashPhase::default()
             })
         })
     }
@@ -420,9 +423,10 @@ mod tests {
     }
 
     /// The phase is the composed frame's own: its sky's strike level, each a
-    /// phase of its own and dark at none, and its neon's catch.
+    /// phase of its own and dark at none, its neon's catch, and each burst's
+    /// phase.
     #[test]
-    fn a_flash_phase_is_the_frames_strike_level_and_catch() {
+    fn a_flash_phase_is_the_frames_strike_level_catch_and_bursts() {
         let now = at(0);
         let sky =
             |strike| crate::sky::Sky::at_with(now, crate::sky::Weather::Storm).with_strike(strike);
@@ -434,13 +438,29 @@ mod tests {
             FlashPhase::of(&sky(Some(crate::sky::StrikePhase::After)), &frame),
         );
         assert!(dim != bright && dim != FlashPhase::default());
+        let burst = |phase| crate::sky::fireworks::Burst {
+            x: 0.5,
+            y: 0.5,
+            phase,
+            hue: crate::sky::fireworks::Hue::Gold,
+        };
+        let bursting = |phase| {
+            let mut bursts = [None; crate::sky::fireworks::LANES];
+            bursts[0] = Some(burst(phase));
+            FlashPhase::of(&sky(None).with_bursts(bursts), &frame)
+        };
+        let (kindle, bloom) = (
+            bursting(crate::sky::fireworks::BurstPhase::Kindle),
+            bursting(crate::sky::fireworks::BurstPhase::Bloom),
+        );
+        assert!(kindle != bloom && kindle != FlashPhase::default());
         frame.neon_stutter = true;
         assert_ne!(FlashPhase::of(&sky(None), &frame), FlashPhase::default());
     }
 
     /// What a floor laid out on `layout` answers a pointer with.
     fn hits(layout: &Arc<crate::layout::SceneLayout>) -> crate::look::Hits {
-        crate::look::Hits::new(Arc::default(), Arc::clone(layout), None)
+        crate::look::Hits::new(Arc::default(), Arc::clone(layout), None, Default::default())
     }
 
     /// A floor's picture flashing `flashes`, answering a pointer with `hits`.

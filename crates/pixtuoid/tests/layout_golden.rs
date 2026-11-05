@@ -65,8 +65,8 @@ fn layout_standard_192x160_room_walls() {
     insta::assert_debug_snapshot!("room_walls_192x160", l.room_walls);
 }
 
-/// Seed 11's office, checked to be the open plan (no meeting room, a pantry)
-/// before a snapshot can take another variant's under its name.
+/// Seed 11's office, checked for the open plan's shape, which the lounge shares;
+/// `pixtuoid-scene`'s `the_open_plan_goldens_seed_is_the_open_plan` pins which.
 fn open_plan_seed11() -> SceneLayout {
     let l = SceneLayout::compute(Viewport::full(160, 120), Some(4), 11).unwrap();
     assert!(

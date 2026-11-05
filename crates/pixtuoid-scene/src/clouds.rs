@@ -15,29 +15,8 @@ use crate::sprite::Rgb;
 use crate::atmosphere::Moment;
 use crate::outside::{Cell, WindowView};
 
+use crate::Rng;
 use crate::sky::{Element, Sky, StrikePhase, Weather};
-
-/// A deterministic stream of `0..1` draws: [`crate::splitmix_draw`]'s.
-struct Rng {
-    seed: u64,
-    n: u64,
-}
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        Self { seed, n: 0 }
-    }
-
-    fn u(&mut self) -> f32 {
-        self.n += 1;
-        let draw = crate::splitmix_draw(self.seed, self.n);
-        (draw >> (u64::BITS - f32::MANTISSA_DIGITS)) as f32 / (1u64 << f32::MANTISSA_DIGITS) as f32
-    }
-
-    fn between(&mut self, a: f32, b: f32) -> f32 {
-        a + (b - a) * self.u()
-    }
-}
 
 /// `0..1` value noise along `x`, one lattice point per unit, smoothstepped.
 fn noise(seed: u64, x: f32) -> f32 {
@@ -210,10 +189,10 @@ impl Mass {
             return false;
         }
         let lobes = &self.lobes;
-        if lobes
-            .iter()
-            .any(|l| (x - l.x).powi(2) + (y - l.y).powi(2) <= l.r * l.r)
-        {
+        if lobes.iter().any(|l| {
+            let (dx, dy) = (x - l.x, y - l.y);
+            dx * dx + dy * dy <= l.r * l.r
+        }) {
             return true;
         }
         // a skirt down to the base, narrowing slowly: the base is flat, its
@@ -226,8 +205,9 @@ impl Mass {
         }
         let (mut above, mut below) = (false, false);
         for l in lobes {
-            if (x - l.x).abs() < l.r {
-                let half = (l.r * l.r - (x - l.x).powi(2)).sqrt();
+            let dx = x - l.x;
+            if dx.abs() < l.r {
+                let half = (l.r * l.r - dx * dx).sqrt();
                 above |= y - CREASE < l.y + half && l.y + half < y;
                 below |= y < l.y - half && l.y - half < y + CREASE;
             }
@@ -248,14 +228,19 @@ impl Mass {
             .lobes
             .iter()
             .filter_map(|l| {
-                let h = l.r * l.r - (x - l.x).powi(2) - (y - l.y).powi(2);
+                let (dx, dy) = (x - l.x, y - l.y);
+                let h = l.r * l.r - dx * dx - dy * dy;
                 (h > 0.0).then(|| {
                     let e = DOME_EASE * l.r;
-                    (SMOOTH * ((h + e * e).sqrt() - e)).exp()
+                    libm::expf(SMOOTH * ((h + e * e).sqrt() - e))
                 })
             })
             .sum();
-        if acc > 0.0 { acc.ln() / SMOOTH } else { 0.0 }
+        if acc > 0.0 {
+            libm::logf(acc) / SMOOTH
+        } else {
+            0.0
+        }
     }
 }
 
@@ -411,8 +396,8 @@ fn cauliflower(lobes: Vec<Lobe>, seed: u64) -> Vec<Lobe> {
             let a = std::f32::consts::PI * r.between(BUMP_ARC.0, BUMP_ARC.1);
             let b = l.r * r.between(BUMP_R.0, BUMP_R.1);
             out.push(Lobe {
-                x: l.x + a.cos() * (l.r - b * BUMP_INSET),
-                y: l.y + a.sin() * (l.r - b * BUMP_INSET),
+                x: l.x + libm::cosf(a) * (l.r - b * BUMP_INSET),
+                y: l.y + libm::sinf(a) * (l.r - b * BUMP_INSET),
                 r: b,
             });
         }
@@ -1411,7 +1396,7 @@ impl Clouds {
             } else {
                 BOLT_FLASH_ASPECT
             };
-        let mut dist = ((x - s.at.0) / s.radius).hypot((y - s.at.1) / ry);
+        let mut dist = libm::hypotf((x - s.at.0) / s.radius, (y - s.at.1) / ry);
         let (fx, fy) = RING_GRAIN;
         dist += RING_RAGGED * (noise(RING_SEED, x * fx + y * fy) - 0.5);
         let ring = if dist < INNER_RING {
@@ -2320,7 +2305,7 @@ mod tests {
                 continue;
             }
             let (lx, ly) = c.lighting.dir;
-            let l = lx.hypot(ly).max(f32::EPSILON);
+            let l = libm::hypotf(lx, ly).max(f32::EPSILON);
             for m in &c.masses {
                 let (west, east) = m.extent();
                 let (mut x, step) = (west, 0.25);

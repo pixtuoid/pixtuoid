@@ -577,7 +577,7 @@ fn floor_capacity_is_the_capacity_inside_the_insets() {
     }
     let under = inside(min_layout_size().w - 1, min_layout_size().h);
     assert_eq!(floor_capacity(under, 0), 0);
-    assert!(floor_capacity(Viewport::full(under.size.w, under.size.h), 0) > 0);
+    assert!(floor_capacity(Viewport::from(under.size), 0) > 0);
 }
 
 /// Insets alone re-lay the floor out: the memo keys on the whole viewport.
@@ -2865,7 +2865,7 @@ mod figure_box {
                 if *look == Look::HALF_BLOCKS {
                     for &(_, at) in &boxes {
                         west_edge |= at.x == 0;
-                        east_edge |= at.x + at.width == viewport.size.w;
+                        east_edge |= at.right() == viewport.size.w;
                         top_edge |= at.y == 0;
                     }
                     flat = boxes;

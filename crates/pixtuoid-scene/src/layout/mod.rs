@@ -164,7 +164,7 @@ pub struct Size {
     pub h: u16,
 }
 
-/// How far a painter's own chrome reaches in from each edge of the office:
+/// How far a painter's own chrome reaches in from each edge of the viewport:
 /// under it the office paints only its floor, walls and sky, and places
 /// nothing that carries information or takes a press.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -179,8 +179,8 @@ pub struct Insets {
     pub left: u16,
 }
 
-/// The office a painter draws: its whole extent, and the [`Insets`] its chrome
-/// covers.
+/// What a painter draws the office on: its whole extent, and the [`Insets`] its
+/// chrome covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Viewport {
     /// The whole extent, in layout units.
@@ -190,7 +190,7 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    /// A `w`×`h` office no chrome covers.
+    /// A `w`×`h` viewport no chrome covers.
     pub const fn full(w: u16, h: u16) -> Self {
         Self {
             size: Size { w, h },
@@ -219,6 +219,13 @@ impl Viewport {
             width,
             height,
         })
+    }
+}
+
+impl From<Size> for Viewport {
+    /// A `size` viewport no chrome covers ([`Viewport::full`]).
+    fn from(size: Size) -> Self {
+        Self::full(size.w, size.h)
     }
 }
 
@@ -408,7 +415,7 @@ pub struct SceneLayout {
 }
 
 /// Integer percentage of `v`, floor semantics. Computed in u32: a bare
-/// `buf_h * 30` overflows u16 once `buf_h > 2184`.
+/// `v * n` overflows u16 once `v > u16::MAX / n`.
 pub(crate) const fn pct(v: u16, n: u16) -> u16 {
     ((v as u32 * n as u32) / 100) as u16
 }
@@ -486,9 +493,9 @@ pub const CELL_ROWS: u16 = 2;
 
 /// The rows over a door whose top row is `door_y` that the terminal's floor
 /// indicator writes its text across: the whole cell above the door's, on the
-/// cells of an office whose north edge is `office_top`.
-pub(crate) fn floor_indicator_rows(door_y: u16, office_top: u16) -> std::ops::Range<u16> {
-    let top = ((door_y - office_top) / CELL_ROWS).saturating_sub(1) * CELL_ROWS + office_top;
+/// cells counted from `inner_top`, the north edge inside the insets.
+pub(crate) fn floor_indicator_rows(door_y: u16, inner_top: u16) -> std::ops::Range<u16> {
+    let top = ((door_y - inner_top) / CELL_ROWS).saturating_sub(1) * CELL_ROWS + inner_top;
     top..top + CELL_ROWS
 }
 
@@ -507,14 +514,14 @@ pub fn floor_indicator(floor: crate::floor::FloorMeta) -> [crate::display::Conte
 }
 
 /// Where the exit sign hangs over a door at `door`: centred above its floor
-/// indicator, or `None` where that would climb above the windows' head over
-/// an office whose north edge is `office_top`.
-pub(crate) fn exit_sign_pos(door: Point, office_top: u16) -> Option<Point> {
+/// indicator, or `None` where that would climb above the row [`WINDOW_TOP`]
+/// under `inner_top`, the north edge inside the insets.
+pub(crate) fn exit_sign_pos(door: Point, inner_top: u16) -> Option<Point> {
     let sign = furniture_def(WallDecor::ExitSign.furniture()).visual;
-    let y = floor_indicator_rows(door.y, office_top)
+    let y = floor_indicator_rows(door.y, inner_top)
         .start
         .checked_sub(sign.h)?;
-    (y >= office_top + WINDOW_TOP).then_some(Point {
+    (y >= inner_top + WINDOW_TOP).then_some(Point {
         x: door.x + (ELEVATOR_W - sign.w) / 2,
         y,
     })
@@ -524,8 +531,8 @@ pub(crate) fn exit_sign_pos(door: Point, office_top: u16) -> Option<Point> {
 /// reference, and the `snapshot` example that renders the docs/CI media
 /// baselines pins its scene to it.
 pub const CLASSIC_OFFICE_DESKS: usize = 16;
-/// The area inside the insets of an office no chrome covers, for a test that
-/// seats a desk no layout placed.
+/// An `inner` no edge bounds, for a test that calls a function taking a
+/// layout's `inner` without a layout to take it from.
 #[cfg(test)]
 pub(crate) const BARE_OFFICE: Bounds = Bounds {
     x: 0,
@@ -541,9 +548,9 @@ pub(crate) const TEST_DEFAULT_DESKS: usize = CLASSIC_OFFICE_DESKS;
 /// tests reads it; the pod grid itself prices its own spacing.
 #[cfg(test)]
 pub(crate) const DESK_GAP_Y: u16 = 14;
-/// Floor (px) for the layout's `top_margin`: `compute::wall_depth`'s percent of the
-/// office inside its insets never shrinks the north wall band below this.
-pub(crate) const MIN_TOP_MARGIN: u16 = 20;
+/// Floor (px) for `compute::wall_depth`: its percent of the height inside the
+/// insets never shrinks the north wall band below this.
+pub(crate) const MIN_WALL_DEPTH: u16 = 20;
 const MIN_DUAL_MEETING_H: u16 = 80;
 
 /// Number of desks per side in a pod (`POD_SIDE * POD_SIDE` total).

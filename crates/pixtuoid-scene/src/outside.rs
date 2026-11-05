@@ -241,20 +241,29 @@ impl Wall {
     /// `layout`'s north wall.
     pub(crate) fn of(layout: &crate::layout::SceneLayout) -> Self {
         Self {
-            span: layout.window_wall(),
+            span: layout.wall_span(),
             band_h: layout.wall_band_h(),
             bays: layout.window_bays().collect(),
         }
     }
 
     /// The run of glass its windows cut, in units, and the glass's height:
-    /// the span the clouds are drawn across.
+    /// the run the clouds are drawn across.
     pub(crate) fn glass(&self) -> (Range<u16>, u16) {
         let rows = window_rows(self.band_h);
         (
             window_run(self.span.clone()),
             crate::layout::glass_rows(rows.end - rows.start),
         )
+    }
+
+    /// The columns, in units, its bays span, frames included: unlike
+    /// [`Wall::glass`]'s run, never the door's slot, which shows no glass.
+    pub(crate) fn bays_span(&self) -> Range<u16> {
+        match (self.bays.first(), self.bays.last()) {
+            (Some(first), Some(last)) => first.x..last.span().end,
+            _ => 0..0,
+        }
     }
 }
 
@@ -402,7 +411,7 @@ impl Outside {
             .map(|p| p.start - run.start..p.end - run.start)
             .collect();
         Self {
-            sky: SkyView::of(&outlook, wall.span.clone(), wall.band_h, theme),
+            sky: SkyView::of(&outlook, wall, theme),
             clouds: crate::clouds::Clouds::of(
                 &outlook,
                 (run.end - run.start, glass_h),
@@ -447,6 +456,30 @@ impl Outside {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// The bays' span runs from the first shown bay's west edge to the last
+    /// one's east edge, short of the door's slot, which the wall's glass run
+    /// takes in.
+    #[test]
+    fn the_bays_span_ends_short_of_the_doors_slot() {
+        let layout =
+            crate::layout::SceneLayout::compute(crate::layout::Viewport::full(160, 96), Some(4), 0)
+                .expect("lays out");
+        let wall = Wall::of(&layout);
+        let span = wall.bays_span();
+        let (first, last) = (
+            wall.bays.first().expect("a bay"),
+            wall.bays.last().expect("a bay"),
+        );
+        assert_eq!(span, first.x..last.span().end);
+        assert!(span.end <= layout.door_rect().x, "{span:?}");
+        assert!(span.end < wall.glass().0.end, "{span:?}");
+        let bare = Wall {
+            bays: Vec::new(),
+            ..wall
+        };
+        assert_eq!(bare.bays_span(), 0..0);
+    }
     use crate::display::pen::test_density;
     use crate::sky::{Sky, Weather};
     use crate::sprite::RgbBuffer;

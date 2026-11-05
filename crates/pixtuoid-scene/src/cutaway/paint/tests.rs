@@ -772,16 +772,14 @@ fn the_windows_look_out_on_the_one_city_where_the_layout_tiles_them() {
         }
         let density = pen.density();
         let wall = crate::outside::Wall::of(&layout);
-        let (span, band_h) = (wall.span.clone(), wall.band_h);
+        let sky = crate::celestial::SkyView::of(&moment.outlook(theme), &wall, theme);
+        let run = crate::layout::window_run(wall.span.clone());
         let outside = crate::outside::Outside::of(
             &crate::outside::OutsideKey::of(&moment, wall, density, GlassWeather::of(&moment)),
             &pack,
             theme,
             &mut crate::clouds::CloudCache::default(),
         );
-        let sky =
-            crate::celestial::SkyView::of(&moment.outlook(theme), span.clone(), band_h, theme);
-        let run = crate::layout::window_run(span);
         let city = crate::skyline::CityStrip::draw(
             &pack,
             (
@@ -844,7 +842,7 @@ fn the_wall_between_two_windows_is_one_frame_post() {
     let k = scale.get() / pen.density().get();
     let rows = crate::layout::window_rows(layout.wall_band_h());
     let mut posts = 0;
-    for post in crate::layout::window_posts(layout.window_wall()) {
+    for post in crate::layout::window_posts(layout.wall_span()) {
         posts += 1;
         for x in post.clone() {
             for y in rows.clone() {
@@ -2941,6 +2939,81 @@ fn every_piece_paints_only_inside_its_span() {
     }
 }
 
+/// A dressed figure carried to the top edge of the area inside a top inset, at
+/// the pack's densest art, paints none of its hair over the inset, and the box
+/// [`Hits::figures`](crate::look::Hits::figures) reports stops at its edge.
+#[test]
+fn a_dressed_figure_at_a_top_insets_edge_keeps_its_hair_off_it() {
+    let base = test_office();
+    let scale = RenderScale::from(base.max_density_variant());
+    let walk = crate::pack::densest_frame(&base, PackPiece::Walking, 0, scale);
+    let id = (0..1000)
+        .map(|i| pixtuoid_core::AgentId::from_transcript_path(&format!("/style/{i}.jsonl")))
+        .find(|&id| {
+            crate::character::dress_for(&base, id, walk.frame, walk.head, walk.density)
+                .is_some_and(|d| d.rise() > 0)
+        })
+        .expect("a style whose hair rises over the frame");
+    let (_, pack, frames, _) = sit_down_as(base.clone(), crate::layout::Facing::South, 0, id);
+    let insets = crate::layout::Insets {
+        top: 9,
+        ..Default::default()
+    };
+    let layout = SceneLayout::compute(
+        crate::layout::inset_viewport(160, 96, insets),
+        None,
+        crate::floor::FloorMeta::ground().floor_seed,
+    )
+    .expect("lays out");
+    let mut frame = frames.first().expect("a walking frame").clone();
+    for c in &mut frame.characters {
+        c.top_left.y = layout.inner.y;
+    }
+    let theme = crate::theme::theme_by_name("normal").expect("theme");
+    let moment = Moment::resolve(
+        crate::sky::Sky::clock(std::time::UNIX_EPOCH),
+        theme,
+        0.0,
+        Motion::Full.timing(std::time::UNIX_EPOCH),
+    );
+    let list = compose_at(
+        &frame,
+        Office {
+            layout: &layout,
+            pack: &pack,
+            theme,
+            scale,
+        },
+        &moment,
+        crate::floor::FloorMeta::ground(),
+        quiet_board(),
+        (
+            &mut crate::display::compose::LightCache::default(),
+            &mut crate::outside::OutsideCache::default(),
+        ),
+    );
+    let figure = list
+        .pieces()
+        .iter()
+        .find(|p| matches!(p.kind, PieceKind::Character { .. }))
+        .expect("the figure is drawn");
+    let [a, b] = painted_over_two_fills(&figure.kind, &layout, &pack, &Recolours::of(theme), scale);
+    let w = usize::from(scale.to_buffer(layout.buf_w));
+    let over = usize::from(scale.to_buffer(layout.inner.y)) * w;
+    let written_over = a.as_slice()[..over]
+        .iter()
+        .zip(&b.as_slice()[..over])
+        .position(|(pa, pb)| pa == pb)
+        .map(|i| (i % w, i / w));
+    assert_eq!(written_over, None, "a pixel painted over the inset");
+    let boxes: Vec<_> = list.hovers().listed().iter().map(|h| h.at).collect();
+    assert_eq!(
+        boxes.iter().map(|b| b.y).min(),
+        Some(layout.inner.y),
+        "the boxes stop at the inset's edge: {boxes:?}"
+    );
+}
+
 /// A cat and two gateways of one source, the second degraded and in hand,
 /// so it sorts last on a row no feet stand on.
 fn creatures() -> (SceneLayout, SimFrame) {
@@ -4365,7 +4438,7 @@ fn every_light_crossing_an_inset_edge_lifts_the_margin() {
         let (layout, frame) = full_office(viewport);
         let inner = layout.inner;
         let outside = |(x, y): (u16, u16)| {
-            x < inner.x || y < inner.y || x >= inner.x + inner.width || y >= inner.y + inner.height
+            x < inner.x || y < inner.y || x >= inner.right() || y >= inner.bottom()
         };
         for hour in [0, 8, 17] {
             let floor = crate::floor::FloorMeta::ground().with_weather(

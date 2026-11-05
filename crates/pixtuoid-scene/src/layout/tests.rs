@@ -264,13 +264,13 @@ fn a_room_wall_to_the_floors_south_edge_runs_on_under_the_bottom_inset() {
             size: Size { w: 240, h: 144 },
             insets,
         };
-        let inner = viewport.inner().expect("an office inside");
+        let inner = viewport.inner().expect("an area inside");
         let l = SceneLayout::compute(viewport, None, seed).expect("lays out");
         for seg in &l.room_walls {
             if let WallSegment::Vertical { y1, .. } = *seg {
                 assert_ne!(
                     y1,
-                    inner.y + inner.height,
+                    inner.bottom(),
                     "seed {seed}: {seg:?} stops at the floor's south edge"
                 );
                 reached += usize::from(y1 == l.buf_h);
@@ -292,7 +292,7 @@ fn a_room_wall_to_the_floors_west_edge_runs_on_under_the_west_inset() {
             ..Insets::default()
         },
     };
-    let inner = viewport.inner().expect("an office inside");
+    let inner = viewport.inner().expect("an area inside");
     let mut reached = 0;
     for seed in 0..12 {
         let l = SceneLayout::compute(viewport, None, seed).expect("lays out");
@@ -567,7 +567,7 @@ fn the_minimum_is_the_area_inside_the_insets() {
     assert!(SceneLayout::compute(inside(min_w, min_h), Some(1), 0).is_some());
     for under in [inside(min_w - 1, min_h), inside(min_w, min_h - 1)] {
         assert!(
-            SceneLayout::compute(Viewport::full(under.size.w, under.size.h), Some(1), 0).is_some(),
+            SceneLayout::compute(Viewport::from(under.size), Some(1), 0).is_some(),
             "{under:?}: its whole size lays out"
         );
         assert!(

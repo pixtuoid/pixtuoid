@@ -1426,7 +1426,7 @@ mod tests {
                 .step(
                     crate::floor::FloorInputs {
                         scene: &pixtuoid_core::SceneState::uniform(16),
-                        now: SystemTime::UNIX_EPOCH,
+                        now: crate::localclock::at_hour(12),
                         floor: FloorMeta {
                             floor_seed,
                             ..FloorMeta::ground()

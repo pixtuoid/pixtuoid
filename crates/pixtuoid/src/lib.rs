@@ -334,10 +334,7 @@ pub(crate) mod test_flash {
                     pets: PetInputs::default(),
                 },
                 theme: pixtuoid_scene::theme::ALL_THEMES[0],
-                viewport: {
-                    let min = pixtuoid_scene::layout::min_layout_size();
-                    pixtuoid_scene::layout::Viewport::full(min.w, min.h)
-                },
+                viewport: pixtuoid_scene::layout::min_layout_size().into(),
                 place: Place::default(),
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,
@@ -466,12 +463,11 @@ pub(crate) mod test_flash {
     }
 
     /// Whether a logical unit is the neon sign's tube on its west side or the
-    /// wall it lights, in an office no chrome covers: what a starved tube's
+    /// wall it lights, in a viewport no chrome covers: what a starved tube's
     /// catch changes and nothing else in an empty office does.
     pub(crate) fn neon_tube() -> impl Fn(u16, u16) -> bool {
-        let min = pixtuoid_scene::layout::min_layout_size();
         let board = pixtuoid_scene::layout::SceneLayout::compute(
-            pixtuoid_scene::layout::Viewport::full(min.w, min.h),
+            pixtuoid_scene::layout::min_layout_size().into(),
             None,
             0,
         )

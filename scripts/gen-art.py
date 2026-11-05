@@ -2371,10 +2371,15 @@ def meeting_sofa_north():
 
 
 # ---- the plants ----------------------------------------------------------------
-def blade(g, x0, y0, ang, length, width, lit_side=1, rib=True):
+LEAF_KEYS = (LEAF, LEAF_SH, LEAF_HI, LEAF_DK)
+
+
+def blade(g, x0, y0, ang, length, width, lit_side=1, rib=True, keys=LEAF_KEYS):
     """One leaf from (x0, y0) along `ang` (radians), drawn over the leaves
     behind it: lit on the half facing the window, a dark rim along its
-    lower-right edge so it parts from the leaf it covers, a midrib if long."""
+    lower-right edge so it parts from the leaf it covers, a midrib if long.
+    `keys` are its body, shade, light and rim."""
+    body, shade, light, rim = keys
     ca, sa = math.cos(ang), math.sin(ang)
     mask = set()
     for y in range(len(g)):
@@ -2387,13 +2392,13 @@ def blade(g, x0, y0, ang, length, width, lit_side=1, rib=True):
     cells = {(x, y) for x, y, _, _ in mask}
     for x, y, u, v in mask:
         if (x + 1, y) not in cells or (x, y + 1) not in cells:
-            g[y][x] = LEAF_DK
+            g[y][x] = rim
         elif rib and abs(v) < 0.6 and 1.5 < u < length - 1.5:
-            g[y][x] = LEAF_SH if (v > 0) == (lit_side > 0) else LEAF_DK
+            g[y][x] = shade if (v > 0) == (lit_side > 0) else rim
         elif (v > 0) == (lit_side > 0):
-            g[y][x] = LEAF_HI if u < length * 0.55 and abs(v) > width * 0.35 else LEAF
+            g[y][x] = light if u < length * 0.55 and abs(v) > width * 0.35 else body
         else:
-            g[y][x] = LEAF_SH
+            g[y][x] = shade
 
 
 def planter(g, cx, top, bot, half_top, half_bot, dark=False):
@@ -2415,6 +2420,21 @@ def planter(g, cx, top, bot, half_top, half_bot, dark=False):
     rect(g, int(cx - half_top - 1), top, int(cx + half_top + 1) + 1, top + 1, rim)
 
 
+def bush_pot(g):
+    """The lobby ficus's terracotta pot, and its holiday stand-in's."""
+    planter(g, 12, 17, 27, 6.0, 4.5)
+
+
+def tall_pot(g):
+    """The tall plant's dark pot, and its holiday stand-in's."""
+    planter(g, 12, 30, 39, 6.0, 4.8, dark=True)
+
+
+def flower_pot(g):
+    """The flower's terracotta pot, and its holiday stand-in's."""
+    planter(g, 12, 15, 23, 4.5, 3.5)
+
+
 def plant_bush():
     """A leafy bush in terracotta: long pointed leaves fanning up and out from
     the pot, every tip clear of its neighbours."""
@@ -2431,7 +2451,7 @@ def plant_bush():
         (-1.57, 10.0, 2.4, 1),
     ):
         blade(g, 12, 18.5, ang, ln, wd, side)
-    planter(g, 12, 17, 27, 6.0, 4.5)
+    bush_pot(g)
     union_outline(g)
     return g
 
@@ -2453,7 +2473,7 @@ def plant_tall():
         (-1.25, 11.0, -1, 11),
     ):
         blade(g, 12, y, ang, ln, 2.4, side, rib=False)
-    planter(g, 12, 30, 39, 6.0, 4.8, dark=True)
+    tall_pot(g)
     union_outline(g)
     return g
 
@@ -2490,7 +2510,7 @@ def plant_flower():
         disc(g, bx, by, 2.4, col)
         put(g, int(bx) - 1, int(by) - 1, PETAL_HI)
         put(g, int(bx), int(by), GOLD if col == PETAL_R else DARK_RED)
-    planter(g, 12, 15, 23, 4.5, 3.5)
+    flower_pot(g)
     union_outline(g)
     return g
 
@@ -2505,6 +2525,138 @@ def plant_succulent():
     for ang in (-2.05, -1.1):
         blade(g, 10, 10, ang, 6.0, 2.4, 1 if ang < -1.57 else -1, rib=False)
     planter(g, 10, 9, 15, 6.5, 5.0)
+    union_outline(g)
+    return g
+
+
+# ---- the holiday stand-ins -----------------------------------------------------
+# Each is drawn on the canvas of the plant it stands in for, its base where the
+# plant's pot stands, so the plant's footprint holds. A tree's lights are two
+# strings lit in turn, in BULB, which glows of its own after dark.
+BRACT_KEYS = (RED, DARK_RED, VERMILION, DARK_RED)
+
+
+def bough(g, cx, apex, base, half):
+    """One tier of a fir: a triangle from `apex` down to `base`, `half` wide
+    there, lit west and shaded east, its hem two dark rows, the lower
+    scalloped into points, so it parts from the tier under it."""
+    for y in range(apex, base + 1):
+        w = half * (y - apex + 1) / (base - apex + 1)
+        for x in range(len(g[0])):
+            d = x + 0.5 - cx
+            if abs(d) > w:
+                continue
+            if y == base and x % 3 == 1:
+                continue
+            if y >= base - 1:
+                g[y][x] = LEAF_DK
+            elif d < -w * 0.5:
+                g[y][x] = LEAF_HI
+            elif d < w * 0.35:
+                g[y][x] = LEAF
+            else:
+                g[y][x] = LEAF_SH
+
+
+def star(g, cx, top):
+    """The tree's gold star over `cx`, its heart a bulb."""
+    x = int(cx)
+    rect(g, x - 1, top, x + 1, top + 5, GOLD)
+    rect(g, x - 3, top + 2, x + 3, top + 3, GOLD)
+    rect(g, x - 2, top + 1, x + 2, top + 4, GOLD)
+    rect(g, x - 1, top + 2, x + 1, top + 3, BULB)
+
+
+def tree_frames(w, h, tiers, trunk, bulbs, draw_pot):
+    """A fir's two frames: its `tiers` of (apex, base, half), a `trunk` of
+    (top, bottom), two strings of 2x2 `bulbs` lit in turn, and its pot."""
+    frames = []
+    for lit in range(2):
+        g = canvas(w, h)
+        cx = w / 2
+        rect(g, int(cx) - 1, trunk[0], int(cx) + 1, trunk[1], BROWN)
+        rect(g, int(cx), trunk[0], int(cx) + 1, trunk[1], WOOD_DK)
+        for apex, base, half in tiers:
+            bough(g, cx, apex, base, half)
+        for string, cells in enumerate(bulbs):
+            bulb = BULB if string == lit else (RED, BLUE)[string]
+            for x, y in cells:
+                rect(g, x, y, x + 2, y + 2, bulb)
+        star(g, cx, 0)
+        draw_pot(g)
+        union_outline(g)
+        frames.append(g)
+    return frames
+
+
+def christmas_tree():
+    """A Christmas tree in the tall plant's dark pot: three tiers of fir under
+    a gold star, two strings of lights twinkling in turn."""
+    return tree_frames(
+        6 * S,
+        10 * S,
+        ((4, 13, 5.5), (9, 21, 8.5), (15, 29, 11.5)),
+        (28, 31),
+        (
+            ((10, 9), (14, 16), (6, 22), (15, 25)),
+            ((12, 12), (8, 17), (12, 21), (9, 26)),
+        ),
+        tall_pot,
+    )
+
+
+def christmas_tree_short():
+    """A short Christmas tree in the lobby ficus's terracotta pot: two tiers of
+    fir under a gold star, two strings of lights twinkling in turn."""
+    return tree_frames(
+        6 * S,
+        7 * S,
+        ((4, 11, 7.0), (8, 17, 11.5)),
+        (16, 18),
+        (
+            ((9, 8), (14, 13)),
+            ((13, 9), (7, 14)),
+        ),
+        bush_pot,
+    )
+
+
+def poinsettia():
+    """A poinsettia in the flower's terracotta pot: a star of red bracts over
+    green leaves, a gold heart."""
+    g = canvas(6 * S, 6 * S)
+    for ang, side in ((-2.7, 1), (-0.45, -1)):
+        blade(g, 12, 14, ang, 9.0, 2.6, side, rib=False)
+    for i in range(6):
+        ang = -math.pi / 2 + i * math.tau / 6
+        blade(g, 12, 8, ang, 7.0, 2.4, 1 if math.cos(ang) < 0 else -1, keys=BRACT_KEYS)
+    disc(g, 12, 8, 1.6, GOLD)
+    put(g, 11, 7, PETAL_HI)
+    flower_pot(g)
+    union_outline(g)
+    return g
+
+
+def gift(g, x0, y0, x1, y1, wrap, wrap_sh, ribbon):
+    """A wrapped box from (x0, y0) to (x1, y1): shaded east, tied both ways
+    with `ribbon`."""
+    rect(g, x0, y0, x1, y1, wrap)
+    rect(g, x1 - (x1 - x0) // 3, y0, x1, y1, wrap_sh)
+    mx, my = (x0 + x1) // 2, (y0 + y1) // 2
+    rect(g, mx - 1, y0, mx + 1, y1, ribbon)
+    rect(g, x0, my - 1, x1, my, ribbon)
+
+
+def presents():
+    """Wrapped presents where the succulent stood: a red box tied in gold
+    under its bow, and a smaller blue one beside it."""
+    g = canvas(5 * S, 4 * S)
+    gift(g, 3, 6, 13, 16, RED, DARK_RED, GOLD)
+    gift(g, 13, 10, 19, 16, BLUE, INK, CYAN)
+    for x0 in (4, 9):
+        rect(g, x0, 3, x0 + 3, 6, GOLD)
+        put(g, x0 + 1, 4, DARK_RED)
+    rect(g, 7, 4, 9, 6, GOLD)
     union_outline(g)
     return g
 
@@ -5653,6 +5805,10 @@ def main():
         "plant_tall": (doc(plant_tall), [plant_tall()]),
         "plant_flower": (doc(plant_flower), [plant_flower()]),
         "plant_succulent": (doc(plant_succulent), [plant_succulent()]),
+        "christmas_tree": (doc(christmas_tree), christmas_tree()),
+        "christmas_tree_short": (doc(christmas_tree_short), christmas_tree_short()),
+        "poinsettia": (doc(poinsettia), [poinsettia()]),
+        "presents": (doc(presents), [presents()]),
         "floor_lamp": (doc(floor_lamp), [floor_lamp()]),
         "filing_cabinet": (doc(filing_cabinet), [filing_cabinet()]),
         "bulletin_board": (doc(bulletin_board), [bulletin_board()]),

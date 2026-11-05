@@ -429,9 +429,9 @@ fn the_door_is_centred_in_the_last_window_slot() {
         let door = l.door_rect();
         let roster = l.fixtures().find(|f| f.kind == FixtureKind::Door);
         assert_eq!(roster.map(|f| f.visual), Some(door), "{at}");
-        let slots: Vec<_> = super::super::window_slots(l.window_wall()).collect();
+        let slots: Vec<_> = super::super::window_slots(l.wall_span()).collect();
         let Some(&slot) = slots.last() else {
-            assert_eq!(door.x, super::super::door_x(l.window_wall()), "{at}");
+            assert_eq!(door.x, super::super::door_x(l.wall_span()), "{at}");
             continue;
         };
         assert!(
@@ -527,7 +527,7 @@ fn the_clock_hangs_centred_on_a_window_post() {
         let at = format!("{}x{}", l.buf_w, l.buf_h);
         let Some(clock) = l.fixtures().find(|f| f.kind == FixtureKind::Clock) else {
             assert!(
-                super::super::window_posts(l.window_wall()).count() <= 1,
+                super::super::window_posts(l.wall_span()).count() <= 1,
                 "{at}: no clock, though a post stands clear of the neon"
             );
             continue;
@@ -536,12 +536,41 @@ fn the_clock_hangs_centred_on_a_window_post() {
         let clock = clock.visual;
         let centre = clock.x + clock.width / 2;
         assert!(
-            super::super::window_posts(l.window_wall())
+            super::super::window_posts(l.wall_span())
                 .any(|p| u16::midpoint(p.start, p.end) == centre),
             "{at}: {clock:?} off every post"
         );
     }
     assert!(met > 0, "the census met a clock");
+}
+
+/// The board is the sign the painter draws less the frame it lights,
+/// wherever the insets hang the sign.
+#[test]
+fn the_board_is_the_neon_signs_interior() {
+    let insets = crate::layout::Insets {
+        top: 7,
+        right: 3,
+        bottom: 5,
+        left: 9,
+    };
+    for viewport in [
+        crate::layout::Viewport::full(240, 144),
+        crate::layout::inset_viewport(240, 144, insets),
+    ] {
+        let l = SceneLayout::compute(viewport, None, 0).expect("lays out");
+        let sign = l
+            .fixtures()
+            .find(|f| f.kind == FixtureKind::NeonSign)
+            .expect("the office hangs its sign")
+            .visual;
+        let (board, b) = (l.board(), NEON_PANEL_BORDER);
+        assert_eq!(
+            (board.x, board.y, board.right(), board.bottom()),
+            (sign.x + b, sign.y + b, sign.right() - b, sign.bottom() - b),
+            "{viewport:?}"
+        );
+    }
 }
 
 /// [`kind_key`], with a pod decor by its own kind: a phone booth and a
@@ -910,26 +939,35 @@ fn a_desk_sorts_between_a_walker_behind_it_and_one_in_front() {
     assert!(walker(south - 1) < desk_key, "behind the desk");
 }
 
-/// The wall sign's outer box holds its board's interior [`NEON_PANEL_BORDER`]
-/// in, under every inset of the sweep.
+/// A plant a holiday stands a piece in for hovers as its stand-in and, with
+/// no holiday, as itself; a piece no holiday replaces hovers as itself either
+/// way; and every stand-in names itself.
 #[test]
-fn the_board_panel_frames_the_board() {
-    let b = NEON_PANEL_BORDER;
-    for insets in crate::layout::SWEEP_INSETS {
-        for (w, h) in [(120, 88), (192, 160), (240, 144)] {
-            let viewport = crate::layout::inset_viewport(w, h, insets);
-            let l = SceneLayout::compute(viewport, None, 0).expect("lays out");
-            let (panel, board) = (l.board_panel(), l.board());
-            assert_eq!(
-                board,
-                Bounds {
-                    x: panel.x + b,
-                    y: panel.y + b,
-                    width: NEON_PANEL_INNER_W,
-                    height: NEON_PANEL_INNER_H,
-                },
-                "{viewport:?}"
-            );
-        }
+fn a_plant_hovers_as_its_stand_in() {
+    use crate::holiday::Occasion;
+    let christmas = Occasion::at(Occasion::christmas_noon());
+    let plant = |kind| FixtureKind::Plant { item: 0, kind };
+    let pod = |kind| FixtureKind::Pod { item: 0, kind };
+    for (fixture, stood_in, bare) in [
+        (plant(PlantKind::Ficus), "Christmas Tree", "Ficus"),
+        (plant(PlantKind::Tall), "Christmas Tree", "Tall Plant"),
+        (plant(PlantKind::Flower), "Poinsettia", "Flower Pot"),
+        (plant(PlantKind::Succulent), "Presents", "Succulent"),
+        (pod(PodDecor::PlantTall), "Christmas Tree", "Tall Plant"),
+        (pod(PodDecor::Whiteboard), "Whiteboard", "Whiteboard"),
+    ] {
+        assert_eq!(
+            fixture.hover_label(christmas),
+            Some(stood_in),
+            "{fixture:?}"
+        );
+        assert_eq!(
+            fixture.hover_label(Occasion::default()),
+            Some(bare),
+            "{fixture:?}"
+        );
+    }
+    for stand_in in crate::holiday::every_stand_in().map(|s| s.art) {
+        assert!(stand_in_label(stand_in).is_some(), "{}", stand_in.name());
     }
 }

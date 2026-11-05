@@ -38,6 +38,8 @@ const RAMP_WARM_HUE_DEG: f32 = 80.0;
 /// The OKLCH hue shadows pull toward: blue-violet, a cool ambient fill.
 const RAMP_COOL_HUE_DEG: f32 = 280.0;
 
+const RADIANS_PER_DEGREE: f32 = std::f32::consts::PI / 180.0;
+
 /// One just-noticeable ΔE-OK, the farthest a clipped color may land from its
 /// target: CSS Color 4's <https://www.w3.org/TR/css-color-4/#GMA-Binary-local-MINDE>.
 const GAMUT_JND: f32 = 0.02;
@@ -105,13 +107,13 @@ impl Rgb {
 
     /// Level `steps` past `prev` (aimed at `prev_aim`), and the lightness it aims at.
     fn ramp_step(base: Oklab, steps: u8, lit: bool, prev: Rgb, prev_aim: f32) -> (Rgb, f32) {
-        let keep = (1.0 - RAMP_LIGHTNESS_STEP).powi(i32::from(steps));
+        let keep = libm::powf(1.0 - RAMP_LIGHTNESS_STEP, f32::from(steps));
         let (own, hue, toward) = if lit {
             (1.0 - (1.0 - base.l) * keep, RAMP_WARM_HUE_DEG, 1.0)
         } else {
             (base.l * keep, RAMP_COOL_HUE_DEG, -1.0)
         };
-        let (sin, cos) = hue.to_radians().sin_cos();
+        let (sin, cos) = libm::sincosf(hue * RADIANS_PER_DEGREE);
         let pull = RAMP_HUE_PULL * f32::from(steps);
         let (a, b) = (base.a + pull * cos, base.b + pull * sin);
         let room = if lit { 1.0 - prev_aim } else { prev_aim };

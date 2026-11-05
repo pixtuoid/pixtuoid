@@ -47,7 +47,7 @@ pub(super) fn fit(
 /// What a surface of device pixels fits an office as ([`Viewport::fitted`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Fitted {
-    /// The office in layout units: the surface's, never narrower than the
+    /// The viewport in layout units: the surface's, never narrower than the
     /// fitted width that keeps its meeting rooms furnished, its insets rounded
     /// up to whole units.
     pub viewport: Viewport,

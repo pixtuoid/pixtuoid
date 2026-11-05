@@ -165,17 +165,23 @@ fn no_figure_is_drawn_under_an_inset() {
             ..bare
         }
     };
-    let inner = viewport.inner().expect("an office inside the insets");
+    let inner = viewport.inner().expect("an area inside the insets");
     let inside = |b: Bounds| {
         b.x >= inner.x
             && b.y >= inner.y
-            && b.x + b.width <= inner.x + inner.width
-            && b.y + b.height <= inner.y + inner.height
+            && b.right() <= inner.right()
+            && b.bottom() <= inner.bottom()
     };
+    // The densest cutaway dresses its figures in hair that rises over them.
+    let dense = RenderScale::from(crate::pack::test_office().max_density_variant());
     let looks = [
         Look::HALF_BLOCKS,
         Look::Cutaway {
             scale: RenderScale::new(2).expect("nonzero"),
+            text: WorldText::Baked,
+        },
+        Look::Cutaway {
+            scale: dense,
             text: WorldText::Baked,
         },
     ];
@@ -259,7 +265,7 @@ fn no_text_is_set_under_an_inset() {
     let (mut badged, mut runs_checked) = (0, 0);
     for insets in crate::layout::SWEEP_INSETS {
         let viewport = crate::layout::inset_viewport(SIZE.w, SIZE.h, insets);
-        let (size, inner) = (viewport.size, viewport.inner().expect("an office inside"));
+        let (size, inner) = (viewport.size, viewport.inner().expect("an area inside"));
         // Past a side no inset covers lies the host's own margin, never an inset.
         let open = Bounds {
             width: if insets.right == 0 {
@@ -994,4 +1000,44 @@ fn a_frame_is_changed_whole_past_half_its_squares() {
     let half = cols * rows / 2;
     assert!(matches!(changed(half), Dirty::Rects(_)), "half");
     assert_eq!(changed(half + 1), Dirty::All, "past half");
+}
+
+/// A frame's hits read its plants in the art the day's occasion draws them
+/// in: on Christmas, a pointer over a plant a stand-in replaces names it.
+#[test]
+fn a_frame_hovers_its_plants_as_the_occasion_draws_them() {
+    use crate::layout::{Bounds, FixtureKind};
+    let (pack, density) = bundled();
+    let now = crate::holiday::Occasion::christmas_noon();
+    let scene = office(now);
+    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+    let look = Look::Cutaway {
+        scale: density,
+        text: WorldText::Baked,
+    };
+    let rendered =
+        render(&mut floor, office.stores(), look, inputs(&scene, now)).expect("lays out");
+    let occasion = crate::holiday::Occasion::at(now);
+    let mut stood_in = 0;
+    for f in rendered.hits.layout().fixtures() {
+        if !matches!(f.kind, FixtureKind::Plant { .. }) {
+            continue;
+        }
+        let mid = Bounds {
+            x: f.visual.x + f.visual.width / 2,
+            y: f.visual.y + f.visual.height / 2,
+            width: 1,
+            height: 1,
+        };
+        if rendered.hits.layout().fixture_at(mid) != Some(f.kind) {
+            continue;
+        }
+        let label = f.kind.hover_label(occasion).expect("a plant hovers");
+        assert_eq!(
+            rendered.hits.at(mid, None),
+            Some(crate::hit::SceneHit::Furniture(label))
+        );
+        stood_in += usize::from(label != f.kind.hover_label(Default::default()).expect("a plant"));
+    }
+    assert!(stood_in > 0, "no plant hovered as a stand-in");
 }

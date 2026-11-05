@@ -171,7 +171,7 @@ fn floor_frames<'a>(
                     pets: PetInputs::default(),
                 },
                 theme,
-                viewport: Viewport::full(size.w, size.h),
+                viewport: size.into(),
                 place: Place::default(),
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,
@@ -197,7 +197,7 @@ fn render_frame(c: &mut Criterion) {
     let idle_crowd = office_scene(biggest, biggest, base, false);
     // Every crowd must seat, else the case measures a smaller office than its name claims.
     let seats = pixtuoid_scene::floor::floor_capacity(
-        Viewport::full(CLASSIC_WIDE.w, CLASSIC_WIDE.h),
+        Viewport::from(CLASSIC_WIDE),
         pixtuoid_scene::floor::floor_seed(0),
     );
     assert!(
@@ -257,7 +257,7 @@ fn render_cutaway_frame(c: &mut Criterion) {
     );
     // Every agent must seat, else the case measures a smaller office than its name claims.
     let seats = pixtuoid_scene::floor::floor_capacity(
-        Viewport::full(CUTAWAY_LOGICAL.w, CUTAWAY_LOGICAL.h),
+        Viewport::from(CUTAWAY_LOGICAL),
         pixtuoid_scene::floor::floor_seed(0),
     );
     assert!(seats >= 12, "{CUTAWAY_LOGICAL:?} seats {seats} < 12");

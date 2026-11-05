@@ -1,6 +1,7 @@
-//! The sun, the moon and the stars behind the windows: where the disc stands,
-//! and what a pane's glass shows at a point, as a few tones resolved once a
-//! frame and picked per pixel by ordered dither.
+//! The sun, the moon, the stars and a fireworks night's bursts behind the
+//! windows: where the disc stands, and what a pane's glass shows at a point,
+//! as a few tones resolved once a frame and picked per pixel by ordered
+//! dither.
 
 use crate::sprite::Rgb;
 use crate::sprite::format::Density;
@@ -10,6 +11,7 @@ use crate::composite::{blend, blend_rgb};
 use crate::dither::FALLOFF_TONES;
 use crate::layout::{WindowBay, glass_rows, window_run};
 use crate::outside::WindowView;
+use crate::sky::fireworks::{Burst, Hue, LANES};
 use crate::sky::{BodyKind, Sky};
 use crate::theme::Theme;
 
@@ -65,9 +67,9 @@ const HORIZON_FADE: f32 = 0.1;
 
 impl Disc {
     /// This frame's disc over a wall band `top_wall_h` tall whose windows tile
-    /// the columns `wall`, or `None` while its body is below the horizon or its
+    /// the columns `span`, or `None` while its body is below the horizon or its
     /// visibility (cloud, nightfall, horizon fade) is under [`MIN_DISC_VIS`].
-    pub(crate) fn of(sky: &Sky, wall: Range<u16>, top_wall_h: u16) -> Option<Self> {
+    pub(crate) fn of(sky: &Sky, span: Range<u16>, top_wall_h: u16) -> Option<Self> {
         let e = sky.body();
         if e.altitude <= 0.0 {
             return None;
@@ -82,14 +84,14 @@ impl Disc {
             return None;
         }
         // Sweep across [first pane, last pane] inset by the radius. NOT the pane
-        // CENTERS (bit-identical to the mullion columns, so the span bisected the
+        // CENTERS (bit-identical to the mullion columns, so the sweep bisected the
         // disc at its most visible low-altitude moment and froze `cx` there on a
         // single-window buffer) and NOT a linear `buf_w - WINDOW_W` bound (that
         // only coincidentally lands inside a window).
-        let run = window_run(wall);
-        let span_left = f32::from(run.start) + DISC_RADIUS_PX;
-        let span_right = (f32::from(run.end) - DISC_RADIUS_PX).max(span_left);
-        let cx = span_left + e.azimuth * (span_right - span_left);
+        let run = window_run(span);
+        let sweep_left = f32::from(run.start) + DISC_RADIUS_PX;
+        let sweep_right = (f32::from(run.end) - DISC_RADIUS_PX).max(sweep_left);
+        let cx = sweep_left + e.azimuth * (sweep_right - sweep_left);
         let horizon_y = f32::from(top_wall_h) * HORIZON_FRAC;
         let cy = horizon_y - e.altitude * (f32::from(top_wall_h) * ARC_RISE_FRAC);
         let (lit_frac, lit_right) = match e.kind {
@@ -146,6 +148,58 @@ impl Disc {
 /// Roughly 1-in-`STAR_SPARSITY` sky pixels host a star — prime so the
 /// hash-modulo grid can't line up into a visible lattice.
 const STAR_SPARSITY: u64 = 47;
+/// The colour sparks of `hue` burn in.
+const fn hue_rgb(hue: Hue) -> Rgb {
+    match hue {
+        Hue::Gold => Rgb {
+            r: 255,
+            g: 214,
+            b: 102,
+        },
+        Hue::Red => Rgb {
+            r: 255,
+            g: 96,
+            b: 96,
+        },
+        Hue::Green => Rgb {
+            r: 112,
+            g: 232,
+            b: 136,
+        },
+        Hue::Blue => Rgb {
+            r: 112,
+            g: 176,
+            b: 255,
+        },
+        Hue::Violet => Rgb {
+            r: 214,
+            g: 144,
+            b: 255,
+        },
+    }
+}
+
+/// The ways a burst's sparks fly from its heart: every twelfth of a turn.
+const SPARK_DIRECTIONS: [(f32, f32); 12] = {
+    /// `sqrt(3) / 2`, the cosine of a twelfth of a turn.
+    const S: f32 = 0.866_025_4;
+    const H: f32 = 0.5;
+    [
+        (1.0, 0.0),
+        (S, H),
+        (H, S),
+        (0.0, 1.0),
+        (-H, S),
+        (-S, H),
+        (-1.0, 0.0),
+        (-S, -H),
+        (-H, -S),
+        (0.0, -1.0),
+        (H, -S),
+        (S, -H),
+    ]
+};
+
 const STAR_COLOR: Rgb = Rgb {
     r: 255,
     g: 255,
@@ -228,11 +282,15 @@ impl Blaze {
     }
 }
 
-/// The window sky one frame shows: its disc and stars, and every tone they
-/// paint in, resolved once so a pixel only picks among them.
+/// The window sky one frame shows: its disc, stars and bursts, and every tone
+/// they paint in, resolved once so a pixel only picks among them.
 #[derive(PartialEq)]
 pub(crate) struct SkyView {
     disc: Option<Disc>,
+    bursts: [Option<Burst>; LANES],
+    /// The columns, in units, the wall's bays span, which a burst's heart is
+    /// a share of: a burst opens where a window shows it.
+    bays: std::ops::Range<u16>,
     stars: bool,
     beat: crate::anim::Beat,
     sky: Bands,
@@ -244,12 +302,10 @@ pub(crate) struct SkyView {
 }
 
 impl SkyView {
-    /// `outlook`'s sky behind a wall band `top_wall_h` tall whose windows tile
-    /// the columns `wall`, in `theme`.
+    /// `outlook`'s sky behind `wall`, in `theme`.
     pub(crate) fn of(
         outlook: &crate::atmosphere::Outlook,
-        wall: Range<u16>,
-        top_wall_h: u16,
+        wall: &crate::outside::Wall,
         theme: &Theme,
     ) -> Self {
         let look = outlook.look();
@@ -257,7 +313,7 @@ impl SkyView {
             look.glass_zenith
                 .mix(look.glass_horizon, k as f32 / (SKY_BANDS - 1) as f32)
         });
-        let disc = Disc::of(outlook.sky(), wall, top_wall_h);
+        let disc = Disc::of(outlook.sky(), wall.span.clone(), wall.band_h);
         let core = match disc.map_or(BodyKind::Sun, |d| d.body) {
             BodyKind::Sun => theme.lighting.sun_core,
             BodyKind::Moon => theme.lighting.moon_core,
@@ -267,6 +323,8 @@ impl SkyView {
         let tone = |k: usize| peak * (k + 1) as f32 / f32::from(FALLOFF_TONES);
         Self {
             disc,
+            bursts: outlook.sky().bursts(),
+            bays: wall.bays_span(),
             stars: look.star_strength > 0.0,
             beat: outlook.beat(),
             sky,
@@ -299,6 +357,44 @@ impl SkyView {
                 let open = pane.colour(cell.at, cell.glass_offset.1);
                 self.blaze.map_or(open, |b| b.over(open))
             })
+        })
+    }
+
+    /// The colour and strength of the burst whose spark, trail or heart
+    /// stands at `x` units across the wall and `glass_dy` units down the
+    /// glass, if one does: each fills the unit square it lands in, the
+    /// burst's heart a share of the bays' span and of the `clear_rows` of
+    /// open sky.
+    fn spark_at(&self, x: f32, glass_dy: f32, clear_rows: u16) -> Option<(Rgb, f32)> {
+        const HALF_UNIT: f32 = 0.5;
+        /// Where a spark's trail stands, as a share of the spark's distance
+        /// from the heart.
+        const TRAIL: f32 = 0.6;
+        /// How much of its spark's strength a trail lays.
+        const TRAIL_STRENGTH: f32 = 0.5;
+        let lands = |(px, py): (f32, f32)| {
+            (x - px.round()).abs() < HALF_UNIT && (glass_dy - py.round()).abs() < HALF_UNIT
+        };
+        let bays_x = f32::from(self.bays.start);
+        let bays_w = f32::from(self.bays.end - self.bays.start);
+        self.bursts.iter().flatten().find_map(|b| {
+            let heart = (bays_x + b.x * bays_w, b.y * f32::from(clear_rows));
+            let (r, sag, strength) = (b.phase.radius(), b.phase.sag(), b.phase.strength());
+            let at = |reach: f32, (dx, dy): (f32, f32)| {
+                (heart.0 + reach * dx, heart.1 + reach * dy + sag)
+            };
+            if SPARK_DIRECTIONS.iter().any(|&dir| lands(at(r, dir)))
+                || (b.phase.heart_lit() && lands(heart))
+            {
+                Some((hue_rgb(b.hue), strength))
+            } else if SPARK_DIRECTIONS
+                .iter()
+                .any(|&dir| lands(at(r * TRAIL, dir)))
+            {
+                Some((hue_rgb(b.hue), strength * TRAIL_STRENGTH))
+            } else {
+                None
+            }
         })
     }
 
@@ -338,6 +434,9 @@ impl PaneSky<'_> {
         let share = crate::atmosphere::sky_share(glass_dy, self.glass_h);
         let band = crate::dither::nearest(share * (SKY_BANDS - 1) as f32, g.0, g.1);
         let i = usize::from(band);
+        if let Some((hue, strength)) = v.spark_at(p.0, glass_dy, self.clear_rows) {
+            return blend_rgb(v.sky[i], hue, strength);
+        }
         match v
             .disc
             .filter(|_| self.hosts_disc)
@@ -512,7 +611,104 @@ mod tests {
             0.0,
             crate::anim::Motion::Full.timing(now),
         );
-        SkyView::of(&moment.outlook(theme), 0..160, 40, theme)
+        let wall = crate::outside::Wall {
+            span: 0..160,
+            band_h: 40,
+            bays: Vec::new(),
+        };
+        SkyView::of(&moment.outlook(theme), &wall, theme)
+    }
+
+    /// A burst lays its sparks in its hue over the open sky, within its
+    /// reach of its heart, fallen by its sag, across and down, at every
+    /// density; its heart burns as it kindles; a fading burst lays less than
+    /// its full hue; and nothing shows where the city stands before the sky.
+    #[test]
+    fn a_burst_sparks_in_its_hue_only_where_the_sky_shows() {
+        use crate::display::pen::{ArtPx, layout_point};
+        use crate::sky::fireworks::{Burst, BurstPhase, LANES};
+        const WALL_W: u16 = 160;
+        const ROWS: std::ops::Range<u16> = 1..33;
+        let hue = Hue::Violet;
+        let bay = WindowBay {
+            x: WALL_W / 2,
+            w: crate::layout::WINDOW_W,
+            idx: 1,
+        };
+        let pane = bay.panes()[0].clone();
+        let heart = (
+            f32::from(pane.start + pane.end) / 2.0,
+            0.5 * f32::from(crate::skyline::clear_sky_rows(glass_rows(
+                ROWS.end - ROWS.start,
+            ))),
+        );
+        // Bays from off the wall's west end, so the heart's offset is read.
+        let wall = crate::outside::Wall {
+            span: 0..WALL_W,
+            band_h: 40,
+            bays: vec![
+                WindowBay {
+                    x: bay.x / 2,
+                    ..bay
+                },
+                bay,
+            ],
+        };
+        let bays = wall.bays_span();
+        let share = (heart.0 - f32::from(bays.start)) / f32::from(bays.end - bays.start);
+        let now = crate::localclock::at_hour(2);
+        let theme = crate::theme::theme_by_name("normal").expect("theme");
+        let view = |phase: Option<BurstPhase>| {
+            let mut bursts = [None; LANES];
+            bursts[0] = phase.map(|phase| Burst {
+                x: share,
+                y: 0.5,
+                phase,
+                hue,
+            });
+            let sky = Sky::at_with(now, Weather::Clear).with_bursts(bursts);
+            let moment = Moment::resolve(sky, theme, 0.0, crate::anim::Motion::Full.timing(now));
+            SkyView::of(&moment.outlook(theme), &wall, theme)
+        };
+        let bare = view(None);
+        for phase in [BurstPhase::Kindle, BurstPhase::Bloom, BurstPhase::Ember] {
+            let lit = view(Some(phase));
+            let reach = phase.radius() + 1.0;
+            for d in [1, 4] {
+                let grid = test_density(d);
+                let sky: std::collections::HashMap<_, _> =
+                    bare.window(bay, ROWS, grid, |_| None).cells().collect();
+                let (mut full, mut changed, mut heart_lit) = (0, 0, false);
+                for (at, c) in lit.window(bay, ROWS, grid, |_| None).cells() {
+                    if c == sky[&at] {
+                        continue;
+                    }
+                    let x = layout_point(ArtPx(at.0), grid);
+                    let dy = layout_point(ArtPx(at.1), grid) - f32::from(ROWS.start) - 1.0;
+                    let from = (x - heart.0, dy - heart.1 - phase.sag());
+                    assert!(
+                        from.0.abs() <= reach && from.1.abs() <= reach,
+                        "{phase:?} {d}: {at:?}"
+                    );
+                    changed += 1;
+                    full += usize::from(c == hue_rgb(hue));
+                    heart_lit |=
+                        (x - heart.0.round()).abs() < 0.5 && (dy - heart.1.round()).abs() < 0.5;
+                }
+                assert!(changed > 0, "{phase:?} {d}: the burst shows");
+                assert_eq!(heart_lit, phase.heart_lit(), "{phase:?} {d}: its heart");
+                assert_eq!(
+                    full > 0,
+                    phase.strength() == 1.0,
+                    "{phase:?} {d}: its full hue"
+                );
+                let hidden = lit.window(bay, ROWS, grid, |_| Some(Rgb { r: 0, g: 0, b: 0 }));
+                assert!(
+                    hidden.cells().all(|(_, c)| c == Rgb { r: 0, g: 0, b: 0 }),
+                    "{phase:?} {d}"
+                );
+            }
+        }
     }
 
     /// The window sky lights its stars on a clear night and none under

@@ -77,9 +77,9 @@ pub(crate) fn back_couch_top_left(wp: Point, sprite_w: u16) -> Point {
 /// It moves a figure's paint top-left, never its sim position (invariant #6).
 pub(crate) fn keep_sprite_inside(pivot: Pivot, pos: Point, size: Size, area: Bounds) -> Point {
     let (east, south) = (area.right(), area.bottom());
+    // `min` before `max` in both arms: on an area narrower than the sprite the
+    // lower bound wins instead of `clamp`'s inverted-range panic.
     match pivot {
-        // `min` before `max`: on an area narrower than the sprite the lower
-        // bound wins instead of `clamp`'s inverted-range panic.
         Pivot::Center => Point {
             x: pos
                 .x

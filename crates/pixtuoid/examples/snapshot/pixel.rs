@@ -149,7 +149,7 @@ impl<S: PixelSession> PixelOffice<S> {
         })
     }
 
-    /// It under a painter's chrome covering `insets` of its office.
+    /// It under a painter's chrome covering `insets` of its viewport.
     pub(crate) fn inset(self, insets: Insets) -> Self {
         Self { insets, ..self }
     }
@@ -440,10 +440,7 @@ mod tests {
             RenderInputs {
                 world,
                 theme: &NORMAL,
-                viewport: Viewport {
-                    size: classic.fit.logical(),
-                    insets: Insets::default(),
-                },
+                viewport: classic.fit.logical().into(),
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(&scene),
                     floor: None,

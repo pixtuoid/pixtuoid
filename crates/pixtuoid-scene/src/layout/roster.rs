@@ -252,8 +252,25 @@ pub enum FixtureKind {
 }
 
 impl FixtureKind {
-    /// What hovering it says, or `None` where a tooltip would be noise.
-    pub(crate) fn hover_label(self) -> Option<&'static str> {
+    /// The piece it draws through [`Occasion::art`](crate::holiday::Occasion::art),
+    /// where it draws one: a plant's or an aisle's, in both painters.
+    pub(crate) fn occasion_piece(self) -> Option<crate::pack::Piece> {
+        match self {
+            FixtureKind::Plant { kind, .. } => Some(kind.piece()),
+            FixtureKind::Pod { kind, .. } => Some(kind.piece()),
+            _ => None,
+        }
+    }
+
+    /// What hovering it says on `occasion`, or `None` where a tooltip would
+    /// be noise.
+    pub(crate) fn hover_label(self, occasion: crate::holiday::Occasion) -> Option<&'static str> {
+        if let Some(label) = self
+            .occasion_piece()
+            .and_then(|p| stand_in_label(occasion.art(p)))
+        {
+            return Some(label);
+        }
         Some(match self {
             FixtureKind::Desk(_) => "Desk",
             FixtureKind::FilingCabinet(_) => "Filing Cabinet",
@@ -310,13 +327,24 @@ impl FixtureKind {
     }
 }
 
+/// What hovering a holiday's stand-in says, or `None` for any other piece.
+fn stand_in_label(piece: crate::pack::Piece) -> Option<&'static str> {
+    use crate::pack::Piece;
+    match piece {
+        Piece::ChristmasTree | Piece::ChristmasTreeShort => Some("Christmas Tree"),
+        Piece::Poinsettia => Some("Poinsettia"),
+        Piece::Presents => Some("Presents"),
+        _ => None,
+    }
+}
+
 /// The wall clock's face.
 pub(crate) const CLOCK: Size = Size { w: 7, h: 7 };
-/// The wall clock's top row, from the office's north edge.
+/// The wall clock's top row, from the north edge inside the insets.
 const CLOCK_Y: u16 = 1;
 
-/// The neon sign's outer box: its offset from the office's north-west corner,
-/// then its size with the frame included.
+/// The neon sign's outer box: its offset from the north-west corner inside the
+/// insets, then its size with the frame included.
 pub(crate) const NEON_PANEL_X: u16 = 1;
 pub(crate) const NEON_PANEL_Y: u16 = 1;
 /// The neon sign's outer width in pixels. A pixel column is a terminal cell
@@ -771,10 +799,10 @@ impl SceneLayout {
     /// wall's middle that the neon sign leaves clear, or `None` on a wall
     /// with none.
     pub(crate) fn clock_pos(&self) -> Option<Point> {
-        let wall = self.window_wall();
-        let middle = u16::midpoint(wall.start, wall.end);
+        let span = self.wall_span();
+        let middle = u16::midpoint(span.start, span.end);
         let panel = self.board_panel();
-        super::window_posts(wall)
+        super::window_posts(span)
             .map(|post| u16::midpoint(post.start, post.end))
             .filter(|&centre| centre - CLOCK.w / 2 >= panel.x + panel.width)
             .min_by_key(|centre| centre.abs_diff(middle))
