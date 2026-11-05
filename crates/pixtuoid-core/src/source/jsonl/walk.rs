@@ -89,7 +89,7 @@ pub(super) const TAIL_BYTES: u64 = 8192;
 #[derive(Default)]
 pub(super) struct RootRead {
     pub(super) health: FailureLatch,
-    /// The directory last listed in full, unless another's listing was truncated since.
+    /// Last listed in full (none if absent); another directory's truncated listing clears it.
     last: Option<DirId>,
 }
 

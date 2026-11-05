@@ -4607,7 +4607,7 @@ mod backlog {
         }
     }
 
-    /// A scan replays a root unless the last scan listed it in full.
+    /// A scan replays any root but `RootRead::last`.
     #[tokio::test]
     async fn a_scan_replays_a_root_the_last_scan_did_not_list() {
         const REPLAYED: &[Sent] = &[Start, Rename, Closes, Usage, Tool, Opens];
@@ -4637,7 +4637,7 @@ mod backlog {
     }
 
     #[test]
-    fn a_truncated_listing_leaves_its_directory_to_replay() {
+    fn only_another_directorys_truncated_listing_clears_the_last() {
         let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let id = |d: &tempfile::TempDir| super::super::root_watch::dir_id(d.path()).unwrap();
         let mut read = RootRead::default();
