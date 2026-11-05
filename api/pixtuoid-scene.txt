@@ -601,6 +601,28 @@ impl core::marker::Unpin for pixtuoid_scene::layout::chrome::Fitted
 impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::chrome::Fitted
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::chrome::Fitted
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::chrome::Fitted
+pub struct pixtuoid_scene::layout::chrome::Glyph
+impl pixtuoid_scene::layout::chrome::Glyph
+pub const fn pixtuoid_scene::layout::chrome::Glyph::height(self) -> u16
+pub fn pixtuoid_scene::layout::chrome::Glyph::ink(self, u16, u16) -> bool
+pub const fn pixtuoid_scene::layout::chrome::Glyph::width(self) -> u16
+impl core::clone::Clone for pixtuoid_scene::layout::chrome::Glyph
+pub fn pixtuoid_scene::layout::chrome::Glyph::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::layout::chrome::Glyph
+impl core::cmp::PartialEq for pixtuoid_scene::layout::chrome::Glyph
+pub fn pixtuoid_scene::layout::chrome::Glyph::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::layout::chrome::Glyph
+pub fn pixtuoid_scene::layout::chrome::Glyph::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::StructuralPartialEq for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::Freeze for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::Send for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::Sync for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::Unpin for pixtuoid_scene::layout::chrome::Glyph
+impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::chrome::Glyph
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::chrome::Glyph
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::chrome::Glyph
+pub const pixtuoid_scene::layout::chrome::REQUIRES_ACTION_MARK: pixtuoid_scene::layout::chrome::Glyph
 pub enum pixtuoid_scene::layout::Facing
 pub pixtuoid_scene::layout::Facing::East
 pub pixtuoid_scene::layout::Facing::North
@@ -894,6 +916,8 @@ pub pixtuoid_scene::layout::Bounds::height: u16
 pub pixtuoid_scene::layout::Bounds::width: u16
 pub pixtuoid_scene::layout::Bounds::x: u16
 pub pixtuoid_scene::layout::Bounds::y: u16
+impl pixtuoid_scene::layout::Bounds
+pub fn pixtuoid_scene::layout::Bounds::overlaps(self, pixtuoid_scene::layout::Bounds) -> bool
 impl core::clone::Clone for pixtuoid_scene::layout::Bounds
 pub fn pixtuoid_scene::layout::Bounds::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Bounds
@@ -1420,6 +1444,8 @@ impl pixtuoid_scene::look::Hits
 pub fn pixtuoid_scene::look::Hits::at(&self, pixtuoid_scene::layout::Bounds, core::option::Option<pixtuoid_scene::layout::Bounds>) -> core::option::Option<pixtuoid_scene::hit::SceneHit<'_>>
 pub fn pixtuoid_scene::look::Hits::figures(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&pixtuoid_scene::hit::HoverTarget, pixtuoid_scene::layout::Bounds)>
 pub fn pixtuoid_scene::look::Hits::layout(&self) -> &alloc::rcs::arc::Arc<pixtuoid_scene::layout::SceneLayout>
+impl pixtuoid_scene::look::Hits
+pub fn pixtuoid_scene::look::Hits::badge(&self, &pixtuoid_core::id::AgentId) -> core::option::Option<pixtuoid_scene::layout::Bounds>
 impl core::clone::Clone for pixtuoid_scene::look::Hits
 pub fn pixtuoid_scene::look::Hits::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::look::Hits

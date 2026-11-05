@@ -1390,7 +1390,7 @@ const UNDER: [crate::sprite::Rgb; 2] = [
 
 /// `kind` painted alone over each of two opposite fills: where the two
 /// buffers agree, the piece wrote the pixel.
-fn painted_over_two_fills(
+pub(crate) fn painted_over_two_fills(
     kind: &PieceKind,
     layout: &SceneLayout,
     pack: &OfficeArt,
@@ -4239,7 +4239,7 @@ fn each_drawn_agent_hovers_inside_its_piece() {
             );
         }
         // Each drawn agent's badge, known by whose it is.
-        let badged: Vec<_> = list.badges().map(|run| run.role).collect();
+        let badged: Vec<_> = list.badge_runs().map(|run| run.role).collect();
         let drawn: std::collections::HashSet<_> = hovers
             .iter()
             .map(|&(id, _)| crate::display::TextRole::Badge(id))

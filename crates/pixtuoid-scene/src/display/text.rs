@@ -262,7 +262,7 @@ pub struct HostText<'a> {
 /// A frame's [`HostText`], held.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct HostRuns {
-    pub(crate) badges: Vec<Badge>,
+    pub(crate) badges: std::sync::Arc<[Badge]>,
     pub(crate) bubbles: Vec<TextRun>,
     pub(crate) signs: Vec<TextRun>,
 }

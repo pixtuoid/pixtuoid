@@ -1545,4 +1545,4 @@ fn paint_chair(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

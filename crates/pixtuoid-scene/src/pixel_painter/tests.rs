@@ -678,7 +678,7 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
                 &mut crate::outside::OutsideCache::default(),
             ),
         );
-        let anchors: Vec<_> = list.badges().map(|run| run.at).collect();
+        let anchors: Vec<_> = list.badge_runs().map(|run| run.at).collect();
         (buf.as_slice().to_vec(), anchors)
     };
 
@@ -3517,7 +3517,7 @@ fn both_looks_hang_a_badge_from_the_one_anchor() {
             scale: crate::render_scale::RenderScale::ONE,
         };
         let list = crate::display::compose::tests::list_at(frame, office, 12);
-        let cutaway: Vec<_> = list.badges().cloned().collect();
+        let cutaway: Vec<_> = list.badge_runs().cloned().collect();
         assert!(!classic.is_empty(), "premise: the walker wears a badge");
         assert_eq!(cutaway, classic);
     }
@@ -3554,7 +3554,7 @@ fn a_pixel_badge_rings_its_plate_and_writes_no_marker() {
             frame.agents[0].label = label.into();
         }
         let list = crate::display::compose::tests::list_at(&frame, office, 12);
-        let badges: Vec<_> = list.badges().collect();
+        let badges: Vec<_> = list.badge_runs().collect();
         assert!(!badges.is_empty(), "premise: the walker wears a badge");
         if let Some(label) = label {
             assert!(
@@ -3706,7 +3706,7 @@ fn a_bubble_clears_its_speakers_badge_at_every_chitchat_spot() {
             let TextRole::Bubble(id) = bubble.role else {
                 continue;
             };
-            let badge = (list.badges())
+            let badge = (list.badge_runs())
                 .find(|b| b.role == TextRole::Badge(id))
                 .expect("a bubble's speaker wears a badge");
             let (above, below) = (

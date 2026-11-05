@@ -155,6 +155,8 @@ struct Shown {
     hovers: Arc<Hovers>,
     /// The cells of the star it drew, if it drew one.
     star: Option<Bounds>,
+    /// Each drawn agent's badge.
+    badges: Arc<[crate::display::Badge]>,
     /// The world text it left to the host, if it baked none.
     host_text: Option<crate::display::text::HostRuns>,
 }
@@ -194,6 +196,7 @@ impl CutawayCanvas {
         };
         let mut list = tracing::trace_span!("canvas.compose")
             .in_scope(|| compose(&stepped.frame, office, showing, (&mut self.lights, outside)));
+        let badges = Arc::clone(list.badges());
         let host_text = (text == crate::look::WorldText::Host).then(|| list.host_text());
         let epoch = Epoch {
             backdrop: list.backdrop().clone(),
@@ -266,6 +269,7 @@ impl CutawayCanvas {
                         crate::display::pen::Pen::for_pack(scale, &self.pack),
                     )
                 }),
+            badges,
             host_text,
         });
         CanvasFrame {
@@ -288,6 +292,11 @@ impl CutawayCanvas {
     /// What the last frame answers a pointer with; `None` before the first.
     pub(crate) fn hovers(&self) -> Option<&Arc<Hovers>> {
         self.shown.as_ref().map(|shown| &shown.hovers)
+    }
+
+    /// Each agent's badge the last frame drew; `None` before the first.
+    pub(crate) fn badges(&self) -> Option<&Arc<[crate::display::Badge]>> {
+        self.shown.as_ref().map(|shown| &shown.badges)
     }
 
     /// The cells of the star the last frame drew; `None` before the first or

@@ -1,6 +1,6 @@
 //! What a painter outside this workspace, the App, reads to lay its chrome
-//! over an office: how its surface fits one, and the sign its chrome keeps
-//! clear of.
+//! over an office: how its surface fits one, the sign and badges its chrome
+//! keeps clear of, whether two boxes overlap, and the mark it draws.
 
 use super::{Bounds, Insets, SceneLayout, Size, Viewport};
 
@@ -77,5 +77,129 @@ impl SceneLayout {
     /// chrome keeps clear of.
     pub fn board_panel(&self) -> Bounds {
         super::roster::neon_panel(self.inner)
+    }
+}
+
+impl Bounds {
+    /// Whether the two half-open boxes share a pixel. A zero-sized box shares
+    /// none.
+    pub fn overlaps(self, other: Bounds) -> bool {
+        let end = super::exclusive_end;
+        self.width > 0
+            && self.height > 0
+            && other.width > 0
+            && other.height > 0
+            && u32::from(self.x) < end(other.x, other.width)
+            && u32::from(other.x) < end(self.x, self.width)
+            && u32::from(self.y) < end(other.y, other.height)
+            && u32::from(other.y) < end(self.y, self.height)
+    }
+}
+
+impl crate::look::Hits {
+    /// `agent`'s badge plate as this frame drew it, in layout units, cut where
+    /// the area inside the insets or the canvas ends; under host-set text, the
+    /// plate the frame would have baked. `None` for an agent this floor
+    /// doesn't draw.
+    pub fn badge(&self, agent: &pixtuoid_core::AgentId) -> Option<Bounds> {
+        let canvas = Size {
+            w: self.layout().buf_w,
+            h: self.layout().buf_h,
+        };
+        self.badges
+            .iter()
+            .find(|b| b.agent == *agent)
+            .map(|b| crate::display::compose::shown_box(&b.run(), self.pen, canvas))
+    }
+}
+
+/// Rows of art pixels, every row as wide as the first: `.` a gap, and any
+/// other character ink, which a look with several inks names by that
+/// character.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Glyph {
+    rows: &'static [&'static str],
+}
+
+impl Glyph {
+    /// `rows` as a glyph: a row not ASCII or not as wide as the first fails
+    /// the build of the const it is made in.
+    pub(crate) const fn new(rows: &'static [&'static str]) -> Self {
+        let mut i = 0;
+        while i < rows.len() {
+            assert!(
+                rows[i].is_ascii() && rows[i].len() == rows[0].len(),
+                "a glyph's rows are ASCII and as wide as its first"
+            );
+            i += 1;
+        }
+        Self { rows }
+    }
+
+    /// Its width, in art pixels.
+    pub const fn width(self) -> u16 {
+        match self.rows.first() {
+            Some(row) => row.len() as u16,
+            None => 0,
+        }
+    }
+
+    /// Its height, in art pixels.
+    pub const fn height(self) -> u16 {
+        self.rows.len() as u16
+    }
+
+    /// Whether art pixel `(x, y)` of it is inked; `false` past its edges.
+    pub fn ink(self, x: u16, y: u16) -> bool {
+        self.inked().any(|(dx, dy, _)| (dx, dy) == (x, y))
+    }
+
+    /// Its inked pixels, as offsets from its top-left with the character that
+    /// inks each: the one rule every painter draws a glyph by.
+    pub(crate) fn inked(self) -> impl Iterator<Item = (u16, u16, char)> {
+        (0u16..).zip(self.rows).flat_map(|(dy, row)| {
+            (0u16..)
+                .zip(row.chars())
+                .filter(|&(_, c)| c != '.')
+                .map(move |(dx, c)| (dx, dy, c))
+        })
+    }
+}
+
+/// The mark beside the head of an agent whose turn it is.
+pub const REQUIRES_ACTION_MARK: Glyph = Glyph::new(&[
+    ".####.", //
+    "##..##", //
+    "##..##", //
+    "...##.", //
+    "..##..", //
+    "..##..", //
+    "......", //
+    "..##..", //
+    "..##..", //
+]);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A glyph inks a pixel exactly where its rows put any character but a
+    /// `.`, and none past its edges: the mark, and a glyph of several inks.
+    #[test]
+    fn a_glyph_inks_where_its_rows_do() {
+        for glyph in [REQUIRES_ACTION_MARK, Glyph::new(&["D.#", ".M."])] {
+            for (y, row) in (0u16..).zip(glyph.rows) {
+                for (x, c) in (0u16..).zip(row.chars()) {
+                    assert_eq!(glyph.ink(x, y), c != '.', "{glyph:?} ({x}, {y})");
+                }
+            }
+            for (x, y) in [
+                (glyph.width(), 0),
+                (0, glyph.height()),
+                (u16::MAX, u16::MAX),
+            ] {
+                assert!(!glyph.ink(x, y), "{glyph:?} ({x}, {y})");
+            }
+        }
     }
 }

@@ -622,13 +622,40 @@ pub(crate) fn set_signs(runs: &[TextRun], pen: Pen) -> Vec<(&TextRun, ArtRect)> 
 /// a pointer names a run the cutaway drew.
 pub(crate) fn run_box(run: &TextRun, pen: Pen) -> Bounds {
     let r = run_rect(run, pen);
-    let d = pen.density().get();
-    let (x, y) = (pen.logical(r.x), pen.logical(r.y));
+    units_box([r.x.0..r.x.0 + r.w.0, r.y.0..r.y.0 + r.h.0], pen)
+}
+
+/// The logical cells of `run` on `pen`'s grid its painter shows on a `canvas`:
+/// [`run_rect`] cut where [`kept_art`] and the canvas's far edges cut it.
+pub(crate) fn shown_box(run: &TextRun, pen: Pen, canvas: crate::layout::Size) -> Bounds {
+    let (_, shown) = kept_art(run_rect(run, pen), run.within, pen);
+    let b = units_box(shown, pen);
+    let (x, y) = (b.x.min(canvas.w), b.y.min(canvas.h));
     Bounds {
         x,
         y,
-        width: (r.x.0 + r.w.0).div_ceil(d) - x,
-        height: (r.y.0 + r.h.0).div_ceil(d) - y,
+        width: b.right().min(canvas.w) - x,
+        height: b.bottom().min(canvas.h) - y,
+    }
+}
+
+/// The logical cells holding any of the art columns and rows `[xs, ys]`.
+fn units_box([xs, ys]: [std::ops::Range<u16>; 2], pen: Pen) -> Bounds {
+    let units = |r: std::ops::Range<u16>| {
+        let start = pen.logical(ArtPx(r.start));
+        let end = if r.is_empty() {
+            start
+        } else {
+            r.end.div_ceil(pen.density().get())
+        };
+        start..end
+    };
+    let (xs, ys) = (units(xs), units(ys));
+    Bounds {
+        x: xs.start,
+        y: ys.start,
+        width: xs.end - xs.start,
+        height: ys.end - ys.start,
     }
 }
 
@@ -659,14 +686,13 @@ fn collect_pieces(
         &mut order,
         outside,
     );
-    let mut host_text = crate::display::text::HostRuns::default();
-    let carried = push_characters(
-        frame,
-        office,
-        moment.timing.now,
-        (&mut order, &mut host_text.badges),
-    );
-    host_text.bubbles = push_bubbles(frame, office, &host_text.badges, &mut order);
+    let mut badges = Vec::new();
+    let carried = push_characters(frame, office, moment.timing.now, (&mut order, &mut badges));
+    let host_text = crate::display::text::HostRuns {
+        bubbles: push_bubbles(frame, office, &badges, &mut order),
+        badges: badges.into(),
+        ..Default::default()
+    };
     push_creatures(frame, office, &mut order);
     for fixture in layout.fixtures() {
         push_fixture(fixture, inputs, &carried, &mut order);
