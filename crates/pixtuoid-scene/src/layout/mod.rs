@@ -582,8 +582,8 @@ pub(crate) const INTER_POD_AISLE_Y: u16 = 18;
 
 impl SceneLayout {
     /// The office of floor `floor_seed` on `viewport`, laid out inside its
-    /// insets; `None` where that area is too narrow for one cubicle, or seats no
-    /// desk below the top margin, a share of the whole canvas, and the caller
+    /// insets; `None` where that area is narrower than the smallest office, or
+    /// seats no desk below the top margin, a share of the whole canvas, and the caller
     /// paints a "terminal too small" message. `max_desks` caps the desk count: `None` fills the office to
     /// its physical capacity, `Some(n)` caps at `n` for deterministic
     /// tests/snapshots. The pod grid geometry is always the room's true

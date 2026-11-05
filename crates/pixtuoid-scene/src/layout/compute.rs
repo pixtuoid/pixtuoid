@@ -63,9 +63,10 @@ pub(super) const fn band_w(inner_w: u16, mid_x_pct: u16) -> u16 {
 /// The band's HEIGHT in the area `inner` inside the insets of a viewport
 /// `viewport_h` tall — everything from the [`top_margin`] to the area's south
 /// edge, less the appliance aisle. THE formula `compute` and the size gate both
-/// step from, and it SATURATES: the gate reads it on an area that ends above the
-/// top margin under a deep top or bottom inset, where the 0 it collapses to,
-/// rather than a wrapped, huge band, is what refuses the office
+/// step from, and both its subtractions SATURATE: under a deep top or bottom
+/// inset the gate reads it on an area ending above the top margin, or holding
+/// less than the aisle, where the 0 it collapses to, rather than a wrapped, huge
+/// band, is what refuses the office
 /// (`the_size_gate_admits_exactly_the_offices_that_seat_a_desk`).
 pub(super) const fn band_h(inner: Bounds, viewport_h: u16) -> u16 {
     let usable = inner
@@ -187,7 +188,7 @@ const fn couch_to_desk_extra(floor_end: u16) -> u16 {
 
 /// The floor's south edge, from the canvas top, past which the couch-to-desk gap
 /// grows. It equalled the old hand-written `MIN_LAYOUT_H` by coincidence, not by
-/// derivation — re-tying it to the now-lower floor would widen the gap on most
+/// derivation — re-tying it to the now-lower minimum would widen the gap on most
 /// offices tall enough to render today, so it keeps its own name and its own number.
 const COUCH_GAP_GROWTH_FLOOR_END: u16 = 60;
 
@@ -2096,9 +2097,10 @@ mod tests {
         );
     }
 
-    /// A top or a bottom inset counts toward the wall, so the band over a deep one
-    /// is short, or gone, while the couch's gap follows the canvas: the size gate
-    /// admits exactly the offices whose plan seats a desk.
+    /// A deep top inset pins the top margin and a deep bottom one cuts the floor
+    /// short, so the band below the top margin is short, or gone, while the
+    /// couch's gap follows the floor's south edge: the size gate admits exactly
+    /// the offices whose plan seats a desk.
     #[test]
     fn the_size_gate_admits_exactly_the_offices_that_seat_a_desk() {
         use crate::layout::{Insets, SceneLayout, Size, Viewport};
