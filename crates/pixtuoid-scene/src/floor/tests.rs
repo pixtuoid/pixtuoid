@@ -730,7 +730,7 @@ fn classic_frame(
 }
 
 /// The office keeps no tier of model: one at its top effort is drawn, in both
-/// looks, as the same agent on any other model, with nothing riding on it.
+/// looks, as the same agent on any other model, the same effects riding on it.
 #[test]
 fn a_top_model_at_max_effort_draws_as_any_other_agent() {
     let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);

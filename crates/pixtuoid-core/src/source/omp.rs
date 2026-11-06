@@ -1554,7 +1554,7 @@ mod tests {
     }
 
     #[test]
-    fn assistant_message_surfaces_model_info_for_the_burn_tier() {
+    fn assistant_message_surfaces_model_info() {
         let line = r#"{"type":"message","id":"m1","parentId":null,"timestamp":"t","message":{"role":"assistant","provider":"kimi-code","model":"kimi-for-coding","content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"command":"ls"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
@@ -1597,7 +1597,6 @@ mod tests {
                 },
             ] => {
                 assert_eq!(*agent_id, root());
-                // Forwarded RAW, untranslated
                 assert_eq!(effort.as_str(), "xhigh");
             }
             other => panic!("expected one model-free ModelInfo, got {other:?}"),

@@ -46,7 +46,7 @@ pub(crate) fn make_slot_cwd(id_path: &str, cwd: &str, unknown_cwd: bool) -> Agen
     s
 }
 
-/// `key`'s color for `slot`, unlit and unburnt.
+/// `key`'s color for `slot`, unlit.
 pub(crate) fn color_of(slot: &AgentSlot, key: char) -> crate::sprite::Pixel {
     override_of(&agent_overrides(slot, None), key)
 }

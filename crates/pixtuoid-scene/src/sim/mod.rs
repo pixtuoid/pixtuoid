@@ -411,7 +411,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         .collect();
 
     let (characters, waypoint_visitors, new_coffee_carriers, occupied_waypoints) =
-        resolve_characters(&agents, &poses, layout, pack, coffee, timing);
+        resolve_characters(&agents, &poses, layout, pack, coffee, timing.beat);
 
     let chitchat_bubbles =
         chitchat::update_and_collect(stores.chitchat, floor.floor_idx, &waypoint_visitors, now);
@@ -877,14 +877,13 @@ pub(crate) fn resolve_characters(
     layout: &SceneLayout,
     pack: &OfficeArt,
     coffee: &HashMap<AgentId, SystemTime>,
-    timing: Timing,
+    beat: Beat,
 ) -> (
     Vec<CharacterPlacement>,
     Vec<chitchat::Visitor>,
     Vec<AgentId>,
     std::collections::HashSet<usize>,
 ) {
-    let beat = timing.beat;
     let mut placements: Vec<(CharacterPlacement, Cues)> = Vec::new();
     let mut new_coffee_carriers: Vec<AgentId> = Vec::new();
     let mut wp_rank: HashMap<usize, usize> = HashMap::new();

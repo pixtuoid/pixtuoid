@@ -1373,7 +1373,7 @@ fn riders(
     let pen =
         Pen::new(scale, key.frame.density).expect("`densest` picks a density dividing `scale`");
     // A dressed frame's head is its mark's column on its crest; the base
-    // art's, the classic's crown point: its frame's top, centred.
+    // art's: its frame's top, centred.
     let head = match key.dress.as_ref() {
         Some(dress) => {
             let (d, frame_w) = (i32::from(d), i32::from(w) * i32::from(d));

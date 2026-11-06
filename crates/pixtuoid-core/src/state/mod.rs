@@ -351,8 +351,7 @@ pub struct AgentSlot {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub pid: Option<crate::source::PidIdentity>,
     /// The RAW model string last observed on this agent's wire —
-    /// last-seen-wins, so a mid-session `/model` switch tracks. Interpretation
-    /// lives in the scene layer; this stays
+    /// last-seen-wins, so a mid-session `/model` switch tracks; this stays
     /// uninterpreted wire truth.
     #[serde(
         with = "opt_arc_str_serde",
@@ -361,8 +360,7 @@ pub struct AgentSlot {
     )]
     pub model: Option<Arc<str>>,
     /// The RAW effort observation last seen. The scene layer shows the value
-    /// only within its TTL — no sighting means it drops off, which is honest
-    /// (an idle agent spends no effort).
+    /// only within its TTL — no sighting means it drops off.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub effort: Option<EffortObservation>,
     /// Session-cumulative FRESH tokens (new input + cache writes + output —

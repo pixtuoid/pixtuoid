@@ -1,6 +1,6 @@
 //! The [effects](crate::effects) riding on the display list's figures, drawn on the
 //! figure's own art grid: a look authored at [`LOOK_DENSITY`] where the figure
-//! is drawn there with a head to stand it on, the base art's z and requires-action
+//! is drawn there with a head to float it beside, the base art's z and requires-action
 //! mark beside its head, else its [shared look](crate::effects::look), a
 //! layout cell per art cell block. A look stays whole down to [`LOOK_SOLID`].
 
@@ -32,7 +32,7 @@ pub(crate) struct ArtPoint {
 pub(crate) struct Riding {
     pub(crate) effect: Effect,
     /// The figure's head on the art grid: the top of its hair over the head
-    /// mark's column. `None` where its frame has no head to stand a look on.
+    /// mark's column. `None` where its frame has no head to float a look beside.
     pub(crate) head: Option<ArtPoint>,
     /// The figure's own grid.
     pub(crate) pen: Pen,
@@ -134,9 +134,13 @@ fn base_look(
                 let rise = (t * f32::from(SLEEP_Z_MAX_RISE)) as i32;
                 let top = head.y + BESIDE_DY_1X - i32::from(SLEEP_Z_1X.height()) - rise;
                 let coverage = (alpha / LOOK_SOLID).min(1.0);
-                stamp(SLEEP_Z_1X, head.x + BESIDE_DX_1X, top, emit, |_| {
-                    Some((inks.sleep_z, coverage))
-                });
+                stamp(
+                    SLEEP_Z_1X,
+                    head.x + BESIDE_DX_1X,
+                    top,
+                    emit,
+                    (inks.sleep_z, coverage),
+                );
             }
             true
         }
@@ -147,7 +151,7 @@ fn base_look(
                 head.x + BESIDE_DX_1X,
                 top,
                 emit,
-                |_| Some((inks.requires_action, 1.0)),
+                (inks.requires_action, 1.0),
             );
             true
         }
@@ -172,19 +176,23 @@ fn dense_look(
             let x = head.x + BESIDE_DX + rise / SLEEP_Z_DRIFT;
             let top = head.y + BESIDE_DY - i32::from(SLEEP_Z.height()) - rise;
             let coverage = (alpha / LOOK_SOLID).min(1.0);
-            stamp(SLEEP_Z, x, top, emit, |_| Some((inks.sleep_z, coverage)));
+            stamp(SLEEP_Z, x, top, emit, (inks.sleep_z, coverage));
         }
         EffectKind::RequiresActionMark => {
             let top = head.y + BESIDE_DY - i32::from(REQUIRES_ACTION_MARK.height());
-            stamp(REQUIRES_ACTION_MARK, head.x + BESIDE_DX, top, emit, |_| {
-                Some((inks.requires_action, 1.0))
-            });
+            stamp(
+                REQUIRES_ACTION_MARK,
+                head.x + BESIDE_DX,
+                top,
+                emit,
+                (inks.requires_action, 1.0),
+            );
         }
         EffectKind::WalkingDust => {
             let foot = walking_dust_foot(e.at, e.phase);
             let x = i32::from(foot.x) * d + d / 2 - i32::from(DUST.width()) / 2;
             let y = i32::from(foot.y) * d - 1;
-            stamp(DUST, x, y, emit, |_| Some((inks.dust, 1.0)));
+            stamp(DUST, x, y, emit, (inks.dust, 1.0));
         }
         // A creature's riders have no head, so `look` plots them as the classic
         // does; steam isn't drawn here.
@@ -198,15 +206,13 @@ fn stamp(
     x: i32,
     y: i32,
     emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32),
-    ink: impl Fn(char) -> Option<(Rgb, f32)>,
+    (c, coverage): (Rgb, f32),
 ) {
-    for (dx, dy, ch) in glyph.inked() {
-        if let Some((c, coverage)) = ink(ch) {
-            let at = ArtPoint {
-                x: x + i32::from(dx),
-                y: y + i32::from(dy),
-            };
-            emit(at, 1, c, coverage);
-        }
+    for (dx, dy, _) in glyph.inked() {
+        let at = ArtPoint {
+            x: x + i32::from(dx),
+            y: y + i32::from(dy),
+        };
+        emit(at, 1, c, coverage);
     }
 }

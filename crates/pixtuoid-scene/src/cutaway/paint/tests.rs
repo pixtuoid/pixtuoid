@@ -1090,6 +1090,65 @@ fn a_strike_lifts_the_room_and_its_glass_most() {
     }
 }
 
+/// A rider's head, which the z and the requires-action mark float beside, is
+/// its figure's top painted row, at the density the art is drawn at and at
+/// the base art's, for a sitter whose hair rises off their frame's top.
+#[test]
+fn a_riders_head_is_its_figures_top_row() {
+    let theme = crate::theme::theme_by_name("normal").expect("theme");
+    let densest = RenderScale::from(test_office().max_density_variant());
+    let (layout, pack, mut frame) = (0..64)
+        .find_map(|i| {
+            let id = pixtuoid_core::AgentId::from_transcript_path(&format!("/rider/{i}.jsonl"));
+            let (layout, pack, frames, _) =
+                sit_down_as(test_office(), crate::layout::Facing::South, 2, id);
+            let frame = frames.last()?.clone();
+            let c = frame.characters.first()?;
+            let agent = &frame.agents[c.agent_idx];
+            let pose = crate::character::SpritePose::of(c, agent, theme);
+            let crest = crate::character::character_key(pose, agent, &pack, densest)
+                .dress
+                .map(|d| d.crest);
+            crest
+                .is_some_and(|crest| crest != 0)
+                .then_some((layout, pack, frame))
+        })
+        .expect("premise: a style moves the hair's top off the frame's");
+    for c in &mut frame.characters {
+        c.effects = vec![crate::effects::requires_action_mark(c.top_left)];
+    }
+    for scale in [RenderScale::ONE, densest] {
+        let office = Office {
+            layout: &layout,
+            pack: &pack,
+            theme,
+            scale,
+        };
+        let list = list_at(&frame, office, 12);
+        let figure = list
+            .pieces()
+            .iter()
+            .find(|p| matches!(p.kind, PieceKind::Character { .. }))
+            .expect("the figure");
+        let [a, b] =
+            painted_over_two_fills(&figure.kind, &layout, &pack, &Recolours::of(theme), scale);
+        let top = (0..a.height())
+            .find(|&y| (0..a.width()).any(|x| a.get(x, y) != UNDER[0] || b.get(x, y) != UNDER[1]))
+            .expect("the figure paints");
+        let riding = list
+            .pieces()
+            .iter()
+            .find_map(|p| match p.kind {
+                PieceKind::Effect(riding) => Some(riding),
+                _ => None,
+            })
+            .expect("the rider");
+        let head = riding.head.expect("a head to float beside");
+        let top = riding.pen.art_of_buffer(crate::display::pen::BufferPx(top));
+        assert_eq!(head.y, i32::from(top.0), "at scale {}", scale.get());
+    }
+}
+
 /// [`mark`] writes nothing outside the piece's span, at every scale: a lit
 /// and a dark screen, a desk lamp's bulb, the wall decor's, a floor lamp's
 /// and an open elevator's.

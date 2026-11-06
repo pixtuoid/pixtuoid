@@ -3556,7 +3556,7 @@ fn a_bubble_clears_its_speakers_badge_at_every_chitchat_spot() {
             &layout,
             &pack,
             &HashMap::new(),
-            Motion::Full.timing(now),
+            Motion::Full.beat(now),
         );
         frame.chitchat_bubbles = (frame.agents.iter())
             .map(|a| crate::chitchat::ChitchatBubble {
@@ -5495,7 +5495,7 @@ fn a_typist_keys_on_the_art_its_seat_resolves_to() {
             &layout,
             &pack,
             &HashMap::new(),
-            timing,
+            timing.beat,
         );
         let [p] = <[_; 1]>::try_from(placements).expect("one agent, one placement");
         assert_eq!(p.anim_name, Piece::TypingBack);
@@ -5529,7 +5529,7 @@ fn only_a_placement_that_breathes_takes_the_breath() {
             &layout,
             &pack,
             &HashMap::new(),
-            Motion::Full.timing(now),
+            Motion::Full.beat(now),
         );
         let [p] = <[_; 1]>::try_from(placements).expect("one agent, one placement");
         p
@@ -5592,7 +5592,7 @@ fn co_located_visitors_badges_step_aside_with_their_sprites() {
         &layout,
         &pack,
         &HashMap::new(),
-        Motion::Full.timing(now),
+        Motion::Full.beat(now),
     );
     let drawn = badged(&paint_drawn(&owned, &scene, &layout, &pack, now, &frame));
     assert_eq!(drawn.len(), 3, "premise: all three are drawn");
