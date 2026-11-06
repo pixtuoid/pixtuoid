@@ -1,4 +1,5 @@
-//! [`OfficeArt::portrait`], here beside the recolour so pack/ never depends on it.
+//! [`OfficeArt::portrait`], here beside [`character_frame`] so [`crate::pack`]
+//! never depends on `character`.
 
 use pixtuoid_core::AgentSlot;
 
