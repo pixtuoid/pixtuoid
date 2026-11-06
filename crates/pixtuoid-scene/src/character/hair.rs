@@ -53,23 +53,18 @@ pub(crate) fn dress_for(
     Some(Dress::of(body, head, style))
 }
 
-/// The most any agent's [`Dress`] of `body` (as [`dress_for`] takes it) rises
+/// The most any agent's [`Dress`] of `art` (as [`dress_for`] takes it) rises
 /// over it: the headroom a canvas needs to hold every agent's figure uncut.
-pub(crate) fn max_rise(
-    pack: &OfficeArt,
-    body: &Frame,
-    head: Option<HeadMark>,
-    density: Density,
-) -> u16 {
-    let Some(head) = dressed_head(head, density) else {
+pub(crate) fn max_rise(pack: &OfficeArt, art: &crate::pack::DenseFrame<'_>) -> u16 {
+    let Some(head) = dressed_head(art.head, art.density) else {
         return 0;
     };
     pack.inner()
         .hairstyles()
-        .filter(|style| style.density() == density)
+        .filter(|style| style.density() == art.density)
         .map(Some)
         .chain([None])
-        .map(|style| Dress::of(body, head, style).rise())
+        .map(|style| Dress::of(art.frame, head, style).rise())
         .max()
         .unwrap_or(0)
 }

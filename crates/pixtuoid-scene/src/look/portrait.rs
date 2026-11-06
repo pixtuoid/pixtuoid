@@ -38,28 +38,32 @@ impl OfficeArt {
     /// }
     /// ```
     pub fn portrait(&self, agent: &AgentSlot) -> (Frame, Density) {
-        let density = self.max_density_variant();
-        let scale = RenderScale::from(density);
-        let standing = densest_frame(self, Piece::Standing, 0, scale);
-        let rise = max_rise(self, standing.frame, standing.head, density);
+        let scale = RenderScale::from(self.max_density_variant());
+        let standing = densest_frame(self, STANDING.anim_name, STANDING.frame_idx, scale);
         let (width, height) = (
             standing.frame.width(),
-            standing.frame.height().saturating_add(rise),
+            standing
+                .frame
+                .height()
+                .saturating_add(max_rise(self, &standing)),
         );
         let mut cache = FrameCache::new();
         let figure = character_frame(STANDING, agent, self, scale, &mut cache).frame;
-        let mut pixels = vec![None; usize::from(width) * usize::from(height)];
+        let mut canvas = Frame::from_pixels(
+            width,
+            height,
+            vec![None; usize::from(width) * usize::from(height)],
+        );
         // Bottom-aligned, so every agent stands on one baseline whatever their hair.
         let top = height.saturating_sub(figure.height());
-        for y in 0..figure.height().min(height) {
-            for x in 0..figure.width().min(width) {
-                let at = usize::from(top + y) * usize::from(width) + usize::from(x);
-                if let (Some(&px), Some(slot)) = (figure.get(x, y), pixels.get_mut(at)) {
-                    *slot = px;
+        for y in 0..figure.height() {
+            for x in 0..figure.width() {
+                if let Some(&px) = figure.get(x, y) {
+                    canvas.set(x, top + y, px);
                 }
             }
         }
-        (Frame::from_pixels(width, height, pixels), density)
+        (canvas, standing.density)
     }
 }
 
@@ -69,11 +73,18 @@ mod tests {
     use crate::character::character_key;
     use crate::character::test_support::make_slot_cwd;
 
+    const POSE: SpritePose = SpritePose {
+        anim_name: Piece::Standing,
+        frame_idx: 0,
+        flip_x: false,
+        glow_tint: None,
+    };
+
     /// `agent`'s standing figure as the office recolours and dresses it at
     /// `art`'s densest scale.
     fn office_figure(art: &OfficeArt, agent: &AgentSlot) -> Frame {
         let scale = RenderScale::from(art.max_density_variant());
-        character_frame(STANDING, agent, art, scale, &mut FrameCache::new())
+        character_frame(POSE, agent, art, scale, &mut FrameCache::new())
             .frame
             .clone()
     }
@@ -107,8 +118,8 @@ mod tests {
         );
     }
 
-    /// Every agent's portrait in one pack is one size, whatever hairstyle
-    /// they wear, and holds their whole figure on its bottom row.
+    /// Every agent's portrait in one pack is one size, whatever hairstyle they
+    /// wear: the tallest one's height, each whole figure on its bottom row.
     #[test]
     fn every_portrait_of_a_pack_is_one_size() {
         let art = crate::pack::test_office();
@@ -126,13 +137,14 @@ mod tests {
         );
         let mut worn = std::collections::BTreeSet::new();
         let mut sizes = std::collections::BTreeSet::new();
+        let (mut width, mut tallest) = (0, 0);
         for i in 0.. {
             if worn.len() == styles.len() {
                 break;
             }
             assert!(i < 10_000, "no agent wears {:?}", styles.difference(&worn));
             let agent = make_slot_cwd(&format!("/p/style-{i}.jsonl"), "/work/atlas", false);
-            let key = character_key(STANDING, &agent, &art, scale);
+            let key = character_key(POSE, &agent, &art, scale);
             let Some(style) = key.dress.and_then(|d| d.style) else {
                 continue;
             };
@@ -140,6 +152,7 @@ mod tests {
                 continue;
             }
             let figure = office_figure(&art, &agent);
+            (width, tallest) = (figure.width(), tallest.max(figure.height()));
             let (frame, _) = art.portrait(&agent);
             sizes.insert((frame.width(), frame.height()));
             assert!(
@@ -152,17 +165,31 @@ mod tests {
                 "agent {i}'s figure is not on the bottom row"
             );
         }
-        assert_eq!(sizes.len(), 1, "one size: {sizes:?}");
+        assert_eq!(sizes, [(width, tallest)].into());
     }
 
+    /// At its figure's density, not the pack's densest: here only a sign has 8x art.
     #[test]
-    fn a_portrait_is_at_the_packs_max_density() {
-        let art = crate::pack::test_office();
+    fn a_portrait_is_at_the_density_its_figure_is_drawn_at() {
+        let row = vec!["r"; 40].join(" ");
+        let sign = format!("@frame 0\n{}", vec![row; 24].join("\n"));
+        let art = crate::pack::test_office_with(
+            "[animations.\"exit_sign@8x\"]\nframes=[\"sign8.sprite\"]\nframe_ms=600\n",
+            &[("sign8.sprite", sign.as_str())],
+        );
+        let scale = RenderScale::from(art.max_density_variant());
+        let standing = densest_frame(&art, POSE.anim_name, POSE.frame_idx, scale);
+        assert!(
+            art.max_density_variant() > standing.density,
+            "premise: the fixture's densest outruns its standing figure"
+        );
         let agent = make_slot_cwd("/p/dense.jsonl", "/work/atlas", false);
-        let densest = art.max_density_variant();
+        let figure = office_figure(&art, &agent);
         let (portrait, density) = art.portrait(&agent);
-        assert_eq!(density, densest);
-        let standing = densest_frame(&art, Piece::Standing, 0, RenderScale::from(densest));
-        assert_eq!(portrait.width(), standing.frame.width());
+        assert_eq!(density, standing.density);
+        assert_eq!(
+            (portrait.width(), portrait.height()),
+            (figure.width(), figure.height())
+        );
     }
 }
