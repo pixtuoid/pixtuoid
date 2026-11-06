@@ -15,7 +15,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use pixtuoid_core::state::DaemonLiveness;
 use pixtuoid_scene::pack::OfficeArt;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -765,16 +764,9 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // A LIVE gateway daemon holds the frame rate: its mascot walks in a
-        // stagger after the gateway comes up, mid-beat, before the office
-        // reports it walking. So does the onboarding's backdrop dim mid-ramp.
-        let busy = self.live.as_ref().is_some_and(|live| {
-            live.scene_rx
-                .borrow()
-                .daemons()
-                .any(|(_, _, d)| d.liveness != DaemonLiveness::Down)
-        }) || self.ui.dim_moving();
-        let until = if busy {
+        // The onboarding's backdrop dim mid-ramp is the window's own motion,
+        // which the office can't count.
+        let until = if self.ui.dim_moving() {
             None
         } else {
             self.renderer.until_next_paint(SystemTime::now())

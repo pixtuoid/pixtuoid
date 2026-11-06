@@ -1695,8 +1695,7 @@ fn the_classic_sees_the_skyline_from_its_floors_altitude() {
 /// typists, a waiter and a wandering gateway mascot; at rest also idle
 /// sleepers, whose wander leaves the sim's walks for real time.
 fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
-    use pixtuoid_core::source::daemon::{DaemonInstanceKey, DaemonPresenceUpdate, apply_presence};
-    use pixtuoid_core::state::{DaemonInstanceId, ToolKind};
+    use pixtuoid_core::state::ToolKind;
     let typing = || ActivityState::Running {
         item: Some(ToolUse {
             tool_use_id: None,
@@ -1720,17 +1719,23 @@ fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
             _ => ActivityState::Idle,
         };
     }
+    gateway_at(&mut scene, settled);
+    scene
+}
+
+/// A gateway in `scene` up since `at`.
+fn gateway_at(scene: &mut SceneState, at: SystemTime) {
+    use pixtuoid_core::source::daemon::{DaemonInstanceKey, DaemonPresenceUpdate, apply_presence};
     let key = DaemonInstanceKey::new(
         pixtuoid_core::source::openclaw::SOURCE_NAME,
-        DaemonInstanceId::new("18789".to_string()).expect("id"),
+        pixtuoid_core::state::DaemonInstanceId::new("18789".to_string()).expect("id"),
     );
     apply_presence(
-        &mut scene,
+        scene,
         &key,
         DaemonPresenceUpdate::GatewayUp { pid: Some(7) },
-        settled,
+        at,
     );
-    scene
 }
 
 /// The painters' office extent and the cutaway's scale over it.
@@ -1837,17 +1842,20 @@ fn both_painters_paint_one_frame_per_beat() {
     }
 }
 
-/// What lets a painter sleep to the next beat: through arrivals, wanders, a
-/// storm, the calm tier and a floor emptying, a frame after which the floor
-/// reports nothing off the beat is the frame painted until the beat turns.
+/// What lets a painter sleep: through arrivals, wanders, a storm, the calm
+/// tier, a floor emptying, a gateway coming up, a token reading, a petting and
+/// a room leaving, each fed between two beats, a frame is the frame painted
+/// until the wait [`OfficeSession::until_next_paint`] names after it runs out,
+/// short of a new feed, which a painter wakes for.
 #[test]
-fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
+fn a_frame_holds_for_the_wait_its_office_names() {
     use crate::sky::{Weather, WeatherPolicy};
     let cat = Pet {
         kind: crate::pet::PetKind::Cat,
         name: "cat".into(),
     };
-    let t0 = crate::localclock::at_hour(23) + Duration::from_secs(5);
+    // between two beats, as a feed lands
+    let t0 = crate::localclock::at_hour(23) + Duration::from_millis(5_037);
     let lived_in = ambient_office(t0, false);
     // no gateway: its mascot's walks would outlast the arrival's
     let mut arriving = make_scene(3, 8);
@@ -1860,16 +1868,7 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
     let switch = Duration::from_secs(2);
     // a room of typists, then one turns to the user: the sign fades to its
     // alert while nobody walks
-    let mut typing = lived_in.clone();
-    for slot in typing.agents.values_mut() {
-        slot.state = ActivityState::Running {
-            item: Some(ToolUse {
-                tool_use_id: None,
-                detail: None,
-                kind: pixtuoid_core::state::ToolKind::Edit,
-            }),
-        };
-    }
+    let typing = settled_typists(t0);
     let mut asking = typing.clone();
     if let Some(slot) = asking.agents.values_mut().next() {
         slot.state = ActivityState::RequiresAction {
@@ -1878,17 +1877,48 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
         slot.state_started_at = t0 + switch;
         slot.last_event_at = t0 + switch;
     }
+    let mut reading = typing.clone();
+    if let Some(slot) = reading.agents.values_mut().next() {
+        // a tower for the sheet to fall onto
+        slot.tokens_used = 1_000_000;
+        slot.last_usage = Some(pixtuoid_core::state::UsageObservation::new(
+            crate::token_meter::SHEET_MIN_DELTA_TOKENS,
+            t0 + switch,
+        ));
+    }
+    let mut leaving = typing.clone();
+    for slot in leaving.agents.values_mut() {
+        slot.exiting_at = Some(t0 + switch);
+    }
+    let mut gateway_up = empty.clone();
+    gateway_at(&mut gateway_up, t0 + switch);
+    // idle at their desks since long before: each sets off on a wander once
+    // its desk dwell, at most 30 s, is up
+    let mut idling = make_scene(3, 8);
+    for slot in idling.agents.values_mut() {
+        let settled = t0 - Duration::from_secs(3_600);
+        (slot.created_at, slot.state_started_at, slot.last_event_at) = (settled, settled, settled);
+        slot.arrived_at = Some(settled);
+    }
     // past the switch, the debounce and the ease to a still room
     let emptied = switch
         + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 6 * VacancyDim::FADE_TAU_MS);
-    // (case, tier, weather, pet, the scene before and after `switch`, window);
-    // the cat walks most of a window, so it rides only where nothing else must
+    let after_a_beat = |ms: u64| switch + Duration::from_millis(ms) + Duration::from_secs(1);
+    let petting = crate::pet::PetState {
+        petted_at: t0 + switch,
+        kind: cat.kind,
+        floor_idx: 0,
+    };
+    // (case, tier, weather, pet, petted at the switch, the scene before and
+    // after it, window); the cat walks most of a window, so it rides only
+    // where nothing else must
     let cases = [
         (
             "arrival",
             Motion::Full,
             Weather::Storm,
             None,
+            false,
             &arriving,
             &arriving,
             Duration::from_secs(8),
@@ -1898,6 +1928,7 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
             Motion::Calm,
             Weather::Clear,
             Some(&cat),
+            false,
             &lived_in,
             &lived_in,
             Duration::from_secs(12),
@@ -1907,7 +1938,8 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
             Motion::Full,
             Weather::Clear,
             None,
-            &lived_in,
+            false,
+            &typing,
             &empty,
             emptied,
         ),
@@ -1916,9 +1948,60 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
             Motion::Full,
             Weather::Clear,
             None,
+            false,
             &typing,
             &asking,
             switch + 2 * Duration::from_millis(u64::from(NeonState::FADE_MS)),
+        ),
+        (
+            "gateway",
+            Motion::Full,
+            Weather::Clear,
+            None,
+            false,
+            &empty,
+            &gateway_up,
+            Duration::from_secs(8),
+        ),
+        (
+            "wander",
+            Motion::Calm,
+            Weather::Clear,
+            None,
+            false,
+            &idling,
+            &idling,
+            Duration::from_secs(40),
+        ),
+        (
+            "reading",
+            Motion::Full,
+            Weather::Clear,
+            None,
+            false,
+            &typing,
+            &reading,
+            after_a_beat(crate::token_meter::SHEET_FALL_MS),
+        ),
+        (
+            "petting",
+            Motion::Full,
+            Weather::Clear,
+            Some(&cat),
+            true,
+            &typing,
+            &typing,
+            after_a_beat(crate::pet::PET_DURATION_MS),
+        ),
+        (
+            "leaving",
+            Motion::Full,
+            Weather::Clear,
+            None,
+            false,
+            &typing,
+            &leaving,
+            after_a_beat(pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW.as_millis() as u64),
         ),
     ];
     // the beat is the cutaway's at every scale, so the cheapest checks it
@@ -1930,33 +2013,42 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
         },
     ];
     let pack = Arc::new(crate::pack::test_office());
-    for (case, motion, weather, pet, before, after, window) in cases {
+    for (case, motion, weather, pet, petted, before, after, window) in cases {
         let floor = FloorMeta::ground()
             .with_weather(WeatherPolicy::Forced(weather))
             .with_motion(motion);
+        let pets: Vec<Pet> = pet.into_iter().cloned().collect();
         for look in looks {
-            let mut session = FloorSession::new(Arc::clone(&pack));
-            let mut held: Option<(u64, Vec<Rgb>)> = None;
+            let mut office = OfficeSession::new(Arc::clone(&pack));
+            let mut held: Option<(SystemTime, Vec<Rgb>)> = None;
             let (mut slept, mut ticks) = (0, 0);
             while ticks * frame < window {
                 let now = t0 + ticks * frame;
-                let scene = if ticks * frame < switch {
-                    before
-                } else {
-                    after
-                };
-                let px = paint(&mut session, look, scene, floor, pet, now);
-                let beat = motion.timing(now).beat.ms();
-                if let Some((held_beat, held_px)) = &held
-                    && *held_beat == beat
+                let fed = ticks * frame >= switch;
+                if fed && (ticks - 1) * frame < switch {
+                    held = None;
+                }
+                let scene = if fed { after } else { before };
+                let petting = (petted && fed).then_some(&petting);
+                render_office_with(&mut office, look, scene, floor, now, (&pets, petting));
+                let px = office
+                    .picture()
+                    .expect("lays out")
+                    .pixels()
+                    .as_slice()
+                    .to_vec();
+                if let Some((until, held_px)) = &held
+                    && now < *until
                 {
                     assert!(
                         *held_px == px,
-                        "{case} {look:?}: the frame moved off the beat at {} ms",
+                        "{case} {look:?}: the frame moved before its wait ran out, at {} ms",
                         (ticks * frame).as_millis()
                     );
                 }
-                held = (!session.moves_off_beat()).then_some((beat, px));
+                held = office
+                    .until_next_paint(now)
+                    .map(|wait| (now + wait - PAST_THE_TURN, px));
                 slept += usize::from(held.is_some());
                 ticks += 1;
             }
@@ -2107,6 +2199,140 @@ fn under_still_a_reading_and_a_petting_hold_their_frame() {
             "{look:?}: the frame moved"
         );
     }
+}
+
+/// Under Still, the tier a Reduce Motion user rests on, a lived-in room waits
+/// the rest tick through a turn's token reading, a gateway coming up, a
+/// petting and an idle agent's dwell running out: none of them moves there,
+/// and a mascot that appears a wait late skips nothing.
+#[test]
+fn under_still_a_lived_in_room_waits_the_rest_tick() {
+    let t0 = crate::localclock::at_hour(12) + Duration::from_millis(37);
+    let mut idle = make_scene(5, 8);
+    for slot in idle.agents.values_mut() {
+        let settled = t0 - Duration::from_secs(3_600);
+        (slot.created_at, slot.state_started_at, slot.last_event_at) = (settled, settled, settled);
+        slot.arrived_at = Some(settled);
+    }
+    let mut turn_ended = idle.clone();
+    if let Some(slot) = turn_ended.agents.values_mut().next() {
+        (slot.state_started_at, slot.last_event_at) = (t0, t0);
+        // a tower for the sheet to fall onto
+        slot.tokens_used = 1_000_000;
+        slot.last_usage = Some(pixtuoid_core::state::UsageObservation::new(
+            crate::token_meter::SHEET_MIN_DELTA_TOKENS,
+            t0,
+        ));
+    }
+    let mut gateway_up = idle.clone();
+    gateway_at(&mut gateway_up, t0);
+    let cat = Pet {
+        kind: crate::pet::PetKind::Cat,
+        name: "cat".into(),
+    };
+    let petting = crate::pet::PetState {
+        petted_at: t0,
+        kind: cat.kind,
+        floor_idx: 0,
+    };
+    let floor = FloorMeta::ground().with_motion(Motion::Still);
+    let now = t0 + Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+    for (case, scene, petting) in [
+        ("a turn just ended", &turn_ended, None),
+        ("a gateway just came up", &gateway_up, None),
+        ("a pet being petted", &idle, Some(&petting)),
+    ] {
+        let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+        let pets = (std::slice::from_ref(&cat), petting);
+        render_office_with(
+            &mut office,
+            crate::look::Look::HALF_BLOCKS,
+            scene,
+            floor,
+            now,
+            pets,
+        );
+        assert_eq!(office.until_next_paint(now), Some(REST_TICK), "{case}");
+    }
+    let dwell = (idle.agents.keys())
+        .map(|id| crate::pose::seated_dwell_ms(*id))
+        .min()
+        .expect("agents");
+    let late = t0 + Duration::from_millis(dwell - crate::anim::CALM_TICK_MS);
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    // drawn on each rest tick, as a painter resting on Still draws it
+    let ticks = (0..).map(|tick| t0 + tick * REST_TICK);
+    for at in ticks.take_while(|&at| at < late).chain([late]) {
+        render_office(
+            &mut office,
+            crate::look::Look::HALF_BLOCKS,
+            &idle,
+            Motion::Still,
+            at,
+        );
+    }
+    assert_eq!(
+        office.until_next_paint(late),
+        Some(REST_TICK),
+        "a dwell running out"
+    );
+}
+
+/// A change its floor scheduled wakes an office while it stands, and once it
+/// fires, or is called off, or the wall runs past it with no step past it (a
+/// paused clock), the wait is the rest tick again.
+#[test]
+fn a_scheduled_change_wakes_its_office_only_while_it_stands() {
+    let t0 = crate::localclock::at_hour(12) + Duration::from_millis(37);
+    let look = crate::look::Look::HALF_BLOCKS;
+    let empty = make_scene(0, 8);
+    let fades_at = t0 + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS);
+    let soon = Duration::from_millis(crate::anim::CALM_TICK_MS);
+    let drawn = |at: &[(SystemTime, &SceneState)]| {
+        let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+        for &(now, scene) in at {
+            render_office(&mut office, look, scene, Motion::Still, now);
+        }
+        office
+    };
+    assert_eq!(
+        drawn(&[(t0, &empty)]).until_next_paint(t0),
+        Some(REST_TICK),
+        "a fade further off than the rest tick"
+    );
+    assert_eq!(
+        drawn(&[(t0, &empty), (fades_at - soon, &empty)]).until_next_paint(fades_at - soon),
+        Some(soon + PAST_THE_TURN),
+        "a fade sooner than the rest tick"
+    );
+    assert_eq!(
+        drawn(&[(t0, &empty), (fades_at + PAST_THE_TURN, &empty)])
+            .until_next_paint(fades_at + PAST_THE_TURN),
+        None,
+        "the fade under way"
+    );
+    let faded = fades_at + Duration::from_millis(6 * VacancyDim::FADE_TAU_MS);
+    assert_eq!(
+        drawn(&[
+            (t0, &empty),
+            (fades_at + PAST_THE_TURN, &empty),
+            (faded, &empty)
+        ])
+        .until_next_paint(faded),
+        Some(REST_TICK),
+        "the fade done"
+    );
+    let refilled = settled_typists(t0);
+    assert_eq!(
+        drawn(&[(t0, &empty), (fades_at - soon, &refilled)]).until_next_paint(fades_at - soon),
+        Some(REST_TICK),
+        "the fade called off"
+    );
+    assert_eq!(
+        drawn(&[(t0, &empty)]).until_next_paint(fades_at + PAST_THE_TURN),
+        Some(REST_TICK),
+        "the fade passed unstepped"
+    );
 }
 
 /// An office that drew `scene` in `look` under `motion` at `t0`.

@@ -157,6 +157,8 @@ pub struct FloorCtx {
     /// Whether the last stepped frame changes between beats: see
     /// [`OfficeSession::moves_off_beat`].
     off_beat: bool,
+    /// When the last stepped frame next changes by itself between beats.
+    next_change: Option<SystemTime>,
     /// Memo of the last per-frame layout, keyed by the ONLY inputs
     /// `SceneLayout::compute` reads on the frame path. Rebuilding it every
     /// frame re-allocs + re-stamps the walkable mask and re-runs the coarse BFS
@@ -184,6 +186,7 @@ impl FloorCtx {
             grip: crate::interact::Grip::default(),
             door_anim_max_ms: 0,
             off_beat: false,
+            next_change: None,
             layout_memo: None,
         }
     }
@@ -191,6 +194,12 @@ impl FloorCtx {
     /// [`OfficeSession::moves_off_beat`] for this floor.
     pub(crate) fn moves_off_beat(&self) -> bool {
         self.off_beat
+    }
+
+    /// When this floor's last stepped frame next changes by itself between
+    /// beats, nothing in it moving till then.
+    pub(crate) fn next_change(&self) -> Option<SystemTime> {
+        self.next_change
     }
 
     /// This floor's stores for one `sim_step`, beside the office's `chitchat`.
@@ -679,7 +688,10 @@ pub(crate) fn step_floor(
         .any(|pose| matches!(pose, crate::pose::Pose::Walking { .. }))
         || fctx.creatures.values().any(|w| w.walks_at(world.now))
         || fctx.neon.fading(world.now)
-        || fctx.vacancy_dim.easing();
+        || fctx.vacancy_dim.easing()
+        || frame.desks.iter().any(|desk| desk.sheet_fall.is_some())
+        || frame.pet.as_ref().is_some_and(|pet| pet.hearts_rise);
+    fctx.next_change = frame.next_change;
     Some(SteppedFloor { layout, frame })
 }
 
@@ -736,6 +748,12 @@ impl VacancyDim {
     pub(crate) fn easing(&self) -> bool {
         let target = if self.dimmed { Self::MIN_LEVEL } else { 1.0 };
         self.level != target
+    }
+
+    /// When a vacant floor waiting out its debounce starts to fade.
+    pub(crate) fn fades_at(&self) -> Option<SystemTime> {
+        let since = self.vacant_since.filter(|_| !self.dimmed)?;
+        Some(since + Duration::from_millis(Self::VACANCY_DEBOUNCE_MS))
     }
 
     /// Force the steady-state vacant look, bypassing the debounce + ease — static

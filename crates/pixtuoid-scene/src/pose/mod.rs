@@ -47,6 +47,8 @@ pub(crate) struct RouteCtx<'a> {
     pub history: &'a mut PoseHistory,
     /// Per-agent walk state, keyed by `AgentId`.
     pub walks: &'a mut HashMap<AgentId, WalkState>,
+    /// When the frame next changes by itself.
+    pub next_change: &'a mut crate::sim::SelfChange,
 }
 
 /// Owns the stores a [`RouteCtx`] borrows, so a test threads one value.
@@ -57,6 +59,7 @@ pub(crate) struct RouteRig<R> {
     pub(crate) history: PoseHistory,
     pub(crate) walks: HashMap<AgentId, WalkState>,
     pub(crate) motion: crate::anim::Motion,
+    pub(crate) next_change: crate::sim::SelfChange,
 }
 
 #[cfg(test)]
@@ -68,6 +71,7 @@ impl<R: Router> RouteRig<R> {
             history: PoseHistory::new(),
             walks: HashMap::new(),
             motion: crate::anim::Motion::Full,
+            next_change: crate::sim::SelfChange::default(),
         }
     }
 
@@ -80,6 +84,7 @@ impl<R: Router> RouteRig<R> {
             },
             history: &mut self.history,
             walks: &mut self.walks,
+            next_change: &mut self.next_change,
         }
     }
 }
@@ -415,6 +420,9 @@ pub(crate) fn derive_with_routing(
             rctx.walks,
             rctx.history,
         );
+        if let Some(at) = wf.turns_at {
+            rctx.next_change.at(at);
+        }
 
         match wf.phase {
             WanderPhase::WalkingOut(_) => {

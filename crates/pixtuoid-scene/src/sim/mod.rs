@@ -61,6 +61,27 @@ pub(crate) struct SimStores<'a> {
     pub grip: &'a mut crate::interact::Grip,
 }
 
+/// The earliest instant a step's world next changes by itself while nothing
+/// in it moves: each change it schedules between two beats (a mascot walking
+/// in after its stagger, a wander setting off) registers its moment here, so
+/// a painter sleeping to the beat wakes for it instead of showing it already
+/// under way. A new one each step, so a change that fired or was called off
+/// leaves no wake behind.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct SelfChange(Option<SystemTime>);
+
+impl SelfChange {
+    /// A change scheduled for `at`.
+    pub(crate) fn at(&mut self, at: SystemTime) {
+        self.0 = Some(self.0.map_or(at, |next| next.min(at)));
+    }
+
+    /// The earliest change registered.
+    pub(crate) fn next(self) -> Option<SystemTime> {
+        self.0
+    }
+}
+
 /// A theme-free glow decision for a character sprite. Sim decides WHETHER a
 /// glow applies; paint maps it to a `Theme` color — colors are presentation
 /// and must not leak into the sim layer.
@@ -138,6 +159,9 @@ pub(crate) struct PetPlacement {
     pub(crate) frame_idx: usize,
     /// What rides on it this tick, in paint order.
     pub(crate) effects: Vec<Effect>,
+    /// Whether hearts rise over it: it is petted, and its tier's motions take
+    /// time.
+    pub(crate) hearts_rise: bool,
 }
 
 impl PetPlacement {
@@ -269,6 +293,8 @@ pub struct SimFrame {
     /// The holiday the office keeps on the frame's local date, its night
     /// running past midnight.
     pub(crate) occasion: crate::holiday::Occasion,
+    /// [`SelfChange`] after this tick.
+    pub(crate) next_change: Option<SystemTime>,
 }
 
 impl SimFrame {
@@ -308,10 +334,14 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     let timing = floor.motion.timing(now);
     let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
     take_grip(stores, &agents, layout, now);
+    let mut next_change = SelfChange::default();
 
     let indoor_scale = stores
         .vacancy_dim
         .tick(scene.agents.is_empty() || floor.offline, now);
+    if let Some(at) = stores.vacancy_dim.fades_at() {
+        next_change.at(at);
+    }
     let neon = stores.neon.tick(
         crate::neon_sign::OfficeMood::of(crate::tally::scene_stats(scene)),
         stores.vacancy_dim.dimmed(),
@@ -388,6 +418,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
                     },
                     history: &mut *stores.history,
                     walks: &mut *stores.walks,
+                    next_change: &mut next_change,
                 },
             );
             (a.agent_id, p)
@@ -432,13 +463,28 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         &mut ground,
         stores.creatures,
     );
-    let mascots = mascot_placements(scene, pack, timing, &mut ground, stores.creatures);
+    let mascots = mascot_placements(
+        scene,
+        pack,
+        timing,
+        &mut ground,
+        stores.creatures,
+        &mut next_change,
+    );
     let desks = desk_props(&agents, layout, pack, coffee, floor.motion, timing);
 
-    let through_door = agents.iter().filter(|a| {
-        (stores.walks.get(&a.agent_id)).is_none_or(|w| w.walks_the_door(a.exiting_at.is_some()))
-    });
-    let door_frame = anchors::compute_door_frame_idx(through_door, now, door_anim_max_ms);
+    let through_door: Vec<&AgentSlot> = agents
+        .iter()
+        .filter(|a| {
+            (stores.walks.get(&a.agent_id)).is_none_or(|w| w.walks_the_door(a.exiting_at.is_some()))
+        })
+        .collect();
+    let door_frame =
+        anchors::compute_door_frame_idx(through_door.iter().copied(), now, door_anim_max_ms);
+    if let Some(at) = anchors::door_changes_at(through_door.iter().copied(), now, door_anim_max_ms)
+    {
+        next_change.at(at);
+    }
     SimFrame {
         agents,
         poses,
@@ -455,6 +501,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         desks,
         door_frame,
         occasion: crate::holiday::Occasion::at(now),
+        next_change: next_change.next(),
     }
 }
 
@@ -550,6 +597,7 @@ fn pet_placement(
     if petted.is_some() {
         walk.hold(now);
     }
+    let hearts_rise = petted.is_some() && floor.motion.motions_take_time();
     let Stance { at, walking } = walk.step(Roam::pet(stride), ground, timing)?;
     // a petted pet sits for it, even held mid-leg
     let (anim_name, frame_idx, flip) = match walking.filter(|_| petted.is_none()) {
@@ -590,15 +638,10 @@ fn pet_placement(
             kind,
             pos,
             anim_name,
-            petted.map(|p| {
-                if floor.motion.motions_take_time() {
-                    p.elapsed_ms(now)
-                } else {
-                    0
-                }
-            }),
+            petted.map(|p| if hearts_rise { p.elapsed_ms(now) } else { 0 }),
             beat,
         ),
+        hearts_rise,
     })
 }
 
@@ -648,6 +691,7 @@ fn mascot_placements(
     timing: Timing,
     ground: &mut Ground<'_>,
     creatures: &mut HashMap<CreatureKey, CreatureWalk>,
+    next_change: &mut SelfChange,
 ) -> Vec<MascotPlacement> {
     let Timing { now, beat } = timing;
     let Some(elevator) = mascot_elevator(ground.layout) else {
@@ -678,6 +722,11 @@ fn mascot_placements(
                 let enters_at =
                     presence.entered_at + Duration::from_millis(mascot_enter_delay(seed));
                 if now < enters_at {
+                    // Under Still it appears instead of walking in: shown a
+                    // wait late, it skips nothing.
+                    if ground.planner.motion.motions_take_time() {
+                        next_change.at(enters_at);
+                    }
                     continue;
                 }
                 e.insert(CreatureWalk::arriving(

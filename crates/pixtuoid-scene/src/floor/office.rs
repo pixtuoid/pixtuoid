@@ -306,9 +306,9 @@ fn compose_slide(
     }
 }
 
-/// How far past its beat's turn an office next paints: a painter arms the wait
-/// on the monotonic clock while the beat turns on the wall clock, and the frame
-/// must land on the new beat.
+/// How far past its beat's turn, or a change it scheduled, an office next
+/// paints: a painter arms the wait on the monotonic clock while both fall on
+/// the wall clock, and the frame must land past them.
 pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
 /// How often an office whose beat never turns paints: never 0fps, since its
 /// clock and sky still move with the wall and a frozen one reads as a dead
@@ -614,8 +614,9 @@ impl OfficeSession {
     }
 
     /// Whether the floor showing's last frame changes between beats: someone
-    /// walks, or the sign's or the room's light is mid-fade. Everything else a
-    /// painter draws holds one frame per beat
+    /// walks, the sign's or the room's light is mid-fade, a token sheet falls or
+    /// a petted pet's hearts rise. Everything else a painter draws holds one
+    /// frame per beat
     /// (`both_painters_paint_one_frame_per_beat`), so
     /// [`Self::until_next_paint`] waits for the next beat only while this is false.
     pub(crate) fn moves_off_beat(&self) -> bool {
@@ -625,17 +626,21 @@ impl OfficeSession {
     /// How long after `wall` this office next needs painting by itself: `None`
     /// while it moves between beats, on its floor or sliding to another (paint
     /// every frame), else just past the next turn of the beat its last frame
-    /// was drawn on, or a rest tick where that beat never turns. Events a
-    /// painter wakes for itself (input, a dropped frame, new feed) are its own.
+    /// was drawn on, or a rest tick where that beat never turns, or just past a
+    /// change its floor scheduled for sooner. Events a painter wakes for itself
+    /// (input, a dropped frame, new feed) are its own.
     pub fn until_next_paint(&self, wall: SystemTime) -> Option<Duration> {
-        let motion = self.views[self.nav.current()].last_motion?;
+        let view = &self.views[self.nav.current()];
+        let motion = view.last_motion?;
         if self.moves_off_beat() || self.nav.transition().is_some() {
             return None;
         }
-        Some(
-            motion
-                .until_next_beat(wall)
-                .map_or(REST_TICK, |until| until + PAST_THE_TURN),
-        )
+        let beat = (motion.until_next_beat(wall)).map_or(REST_TICK, |until| until + PAST_THE_TURN);
+        // One the wall has passed with no step past it (a paused clock) is
+        // no reason to paint again.
+        let change = (view.floor.ctx.next_change())
+            .and_then(|at| at.duration_since(wall).ok())
+            .map(|until| until + PAST_THE_TURN);
+        Some(change.map_or(beat, |change| change.min(beat)))
     }
 }
