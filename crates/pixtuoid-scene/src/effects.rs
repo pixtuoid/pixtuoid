@@ -4,6 +4,7 @@
 
 use crate::anim::Beat;
 use crate::layout::Point;
+use crate::sprite::{HeadView, Rgb};
 
 pub(crate) mod look;
 
@@ -25,6 +26,18 @@ pub(crate) enum EffectKind {
     SteamPuff,
     /// One bubble over a running gateway mascot; rows it has risen.
     MascotBubble,
+    /// A subagent's cap; still.
+    SubagentCap(Cap),
+}
+
+/// A subagent's cap: its team's `ink`, the `line` round it at the densest
+/// art, and the head it sits on: seen from `view`, mirrored when `flip`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Cap {
+    pub(crate) ink: Rgb,
+    pub(crate) line: Rgb,
+    pub(crate) view: HeadView,
+    pub(crate) flip: bool,
 }
 
 impl EffectKind {
@@ -67,6 +80,15 @@ pub(crate) fn requires_action_mark(at: Point) -> Effect {
     Effect {
         kind: EffectKind::RequiresActionMark,
         at,
+        phase: 0,
+    }
+}
+
+/// `cap`, its brim on the head mark at `brow`.
+pub(crate) fn subagent_cap(brow: Point, cap: Cap) -> Effect {
+    Effect {
+        kind: EffectKind::SubagentCap(cap),
+        at: brow,
         phase: 0,
     }
 }

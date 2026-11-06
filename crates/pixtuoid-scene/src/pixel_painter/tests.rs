@@ -397,29 +397,38 @@ fn a_back_turned_desk_shows_the_pose_s_own_back_view() {
 }
 
 /// `piece`'s base art and each density variant, named as the manifest keys them.
-fn arts_of(pack: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, &crate::sprite::Sprite)> {
-    std::iter::once((piece.name().to_owned(), pack.piece(piece)))
-        .chain(
-            pack.inner()
-                .variants_of(piece)
-                .iter()
-                .map(|(d, s)| (format!("{}@{d}x", piece.name()), s)),
-        )
-        .collect()
+fn arts_of(pack: &crate::pack::OfficeArt, piece: Piece) -> Vec<(String, Art<'_>)> {
+    std::iter::once((
+        piece.name().to_owned(),
+        (pack.piece(piece), crate::sprite::format::Density::ONE),
+    ))
+    .chain(
+        pack.inner()
+            .variants_of(piece)
+            .iter()
+            .map(|(&d, s)| (format!("{}@{d}x", piece.name()), (s, d))),
+    )
+    .collect()
 }
 
+/// An animation's art and the density it is drawn at.
+type Art<'a> = (&'a crate::sprite::Sprite, crate::sprite::format::Density);
+
 /// Every look of frame `i` of `anim` a viewer could see under `overrides`:
-/// recolored and, where the art marks its head, dressed in each of the pack's
-/// hairstyles.
+/// recolored and, where a variant marks its head, dressed in each of the
+/// pack's hairstyles.
 fn looks(
     pack: &crate::pack::OfficeArt,
-    anim: &crate::sprite::Sprite,
+    (anim, density): Art<'_>,
     i: usize,
     overrides: &[(char, crate::sprite::Pixel)],
 ) -> Vec<crate::sprite::Frame> {
     let bare = anim.recolorable_at(i).recolored(overrides);
     let line = pack.inner().character_outline();
-    match anim.head(i) {
+    match anim
+        .head(i)
+        .filter(|_| density > crate::sprite::format::Density::ONE)
+    {
         None => vec![bare],
         Some(head) => pack
             .inner()
@@ -433,12 +442,7 @@ fn looks(
 }
 
 /// Whether recoloring `key` changes some pixel of every look of frame `i`.
-fn recolors(
-    pack: &crate::pack::OfficeArt,
-    anim: &crate::sprite::Sprite,
-    i: usize,
-    key: char,
-) -> bool {
+fn recolors(pack: &crate::pack::OfficeArt, anim: Art<'_>, i: usize, key: char) -> bool {
     let sentinel = Some(Rgb { r: 1, g: 2, b: 3 });
     looks(pack, anim, i, &[])
         .iter()
@@ -483,7 +487,7 @@ fn every_character_frame_at_every_density_recolors_hair_and_shirt() {
     {
         for (name, anim) in arts_of(&pack, base) {
             variants += usize::from(name.contains('@'));
-            for i in 0..anim.frames().len() {
+            for i in 0..anim.0.frames().len() {
                 for key in [HAIR_KEY, SHIRT_KEY] {
                     assert!(
                         recolors(&pack, anim, i, key),

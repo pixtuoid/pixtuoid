@@ -333,36 +333,17 @@ mod tests {
         }
     }
 
-    /// WCAG 2.2's relative luminance
-    /// (<https://www.w3.org/TR/WCAG22/#dfn-relative-luminance>).
-    fn luminance(c: crate::sprite::Rgb) -> f64 {
-        let linear = |v: u8| {
-            let s = f64::from(v) / 255.0;
-            if s <= 0.04045 {
-                s / 12.92
-            } else {
-                libm::pow((s + 0.055) / 1.055, 2.4)
-            }
-        };
-        0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
-    }
-
-    /// WCAG 2.2's contrast ratio (<https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio>).
-    fn contrast(a: crate::sprite::Rgb, b: crate::sprite::Rgb) -> f64 {
-        let (la, lb) = (luminance(a), luminance(b));
-        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
-    }
-
     /// A badge's name is small text, never large-scale, so it holds WCAG 2.2
     /// AA's 4.5:1 (<https://www.w3.org/TR/WCAG22/#contrast-minimum>) on its
-    /// plate; its marker is a graphic, held to 3:1
-    /// (<https://www.w3.org/TR/WCAG22/#non-text-contrast>). Over every
+    /// plate; its marker is a graphic, held to
+    /// [`NON_TEXT_CONTRAST`](crate::sprite::NON_TEXT_CONTRAST). Over every
     /// registered source and an unregistered one, in every tone. The guarantee holds on the plate,
     /// which the cutaway paints: the painter #873 measured an idle badge in at
     /// 2.05:1, straight on the floor.
     #[test]
     fn every_badge_ink_reads_on_its_plate_in_every_theme() {
         use super::badge_plate_colour;
+        use crate::sprite::NON_TEXT_CONTRAST;
         let agents: Vec<AgentSlot> = pixtuoid_core::source::registry::REGISTRY
             .iter()
             .map(|s| s.name)
@@ -373,11 +354,11 @@ mod tests {
             let plate = badge_plate_colour(theme);
             for agent in &agents {
                 let ink = badge_ink(agent, theme);
-                let name = contrast(ink.name, plate);
-                let marker = contrast(ink.marker, plate);
+                let name = ink.name.contrast(plate);
+                let marker = ink.marker.contrast(plate);
                 let at = format!("{} {:?} {}", theme.name, tone_of(agent), agent.source);
                 assert!(name >= 4.5, "{at}: name {name:.2}:1");
-                assert!(marker >= 3.0, "{at}: marker {marker:.2}:1");
+                assert!(marker >= NON_TEXT_CONTRAST, "{at}: marker {marker:.2}:1");
             }
         }
     }

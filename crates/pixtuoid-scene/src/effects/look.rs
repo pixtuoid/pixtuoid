@@ -1,9 +1,9 @@
 //! Each effect's look in layout cells, which every painter draws it from;
 //! [`super`] decides only when and where one shows.
 
-use crate::sprite::Rgb;
+use crate::sprite::{HeadView, Rgb};
 
-use super::{Effect, EffectKind, HEART_LIFE_MS, SLEEP_Z_RISE_MS, STEAM_CYCLE_MS};
+use super::{Cap, Effect, EffectKind, HEART_LIFE_MS, SLEEP_Z_RISE_MS, STEAM_CYCLE_MS};
 use crate::composite::WHITE;
 use crate::layout::chrome::Glyph;
 use crate::layout::{Point, WALKING_Y_OFF};
@@ -47,6 +47,7 @@ pub(crate) fn plot_effect(e: &Effect, inks: &Inks, plot: &mut impl FnMut(u16, u1
         EffectKind::PetHeart => plot_pet_heart(plot, e.at, e.phase),
         EffectKind::SteamPuff => plot_steam_puff(plot, e.at, e.phase, inks),
         EffectKind::MascotBubble => plot_mascot_bubble(plot, e.at, e.phase),
+        EffectKind::SubagentCap(cap) => plot_subagent_cap(plot, e.at, cap),
     }
 }
 
@@ -65,6 +66,79 @@ pub(crate) const REQUIRES_ACTION_MARK_1X: Glyph = Glyph::new(&[
     ".#.", //
     ".#.", //
 ]);
+
+/// A subagent's cap on the base art, as [`SLEEP_Z_1X`] is, from the front:
+/// layers of a glyph and the ramp step of the cap's ink it is drawn in, each
+/// glyph's middle column on the head mark and its last row on the brow.
+const CAP_1X_FRONT: [(Glyph, i8); 2] = [
+    (
+        Glyph::new(&[
+            "...####...", //
+            "..######..", //
+            "..........", //
+        ]),
+        0,
+    ),
+    (
+        Glyph::new(&[
+            "..........", //
+            "..........", //
+            "..######..", //
+        ]),
+        CAP_1X_UNDER,
+    ),
+];
+/// [`CAP_1X_FRONT`] from behind: the strap's nub under the crown.
+const CAP_1X_BACK: [(Glyph, i8); 1] = [(
+    Glyph::new(&[
+        "...####...", //
+        "..######..", //
+        "....##....", //
+    ]),
+    0,
+)];
+/// [`CAP_1X_FRONT`] in profile, facing east: the peak jutting past the brow.
+const CAP_1X_SIDE: [(Glyph, i8); 2] = [
+    (
+        Glyph::new(&[
+            "....###...", //
+            "...#####..", //
+            "...#####..", //
+        ]),
+        0,
+    ),
+    (
+        Glyph::new(&[
+            "..........", //
+            "..........", //
+            "........##", //
+        ]),
+        CAP_1X_UNDER,
+    ),
+];
+/// [`CAP_1X_FRONT`] from above: the peak a shade on the crown.
+const CAP_1X_CROWN: [(Glyph, i8); 2] = [
+    (
+        Glyph::new(&[
+            "...####...", //
+            "..######..", //
+        ]),
+        0,
+    ),
+    (
+        Glyph::new(&[
+            "..........", //
+            "....##....", //
+        ]),
+        CAP_1X_TAB,
+    ),
+];
+/// The ramp step of a base-art cap's brim and peak, which lie on skin or
+/// floor.
+const CAP_1X_UNDER: i8 = -2;
+/// [`CAP_1X_UNDER`] for the tab of a cap seen from above, one step only: it
+/// lies on hair, and two steps sink the lightest ink into silver hair.
+const CAP_1X_TAB: i8 = -1;
 
 /// Layout rows a sleep z rises over its life.
 pub(crate) const SLEEP_Z_MAX_RISE: u16 = 4;
@@ -182,5 +256,25 @@ fn plot_requires_action_mark(
     let by = top_left.y.saturating_sub(5) & !1u16;
     for (dx, dy) in REQUIRES_ACTION_MARK_1X.inked() {
         plot(top_left.x + 2 + dx, by + dy, fg, 1.0);
+    }
+}
+
+fn plot_subagent_cap(plot: &mut impl FnMut(u16, u16, Rgb, f32), brow: Point, cap: Cap) {
+    let layers: &[(Glyph, i8)] = match cap.view {
+        HeadView::Front => &CAP_1X_FRONT,
+        HeadView::Back => &CAP_1X_BACK,
+        HeadView::Side => &CAP_1X_SIDE,
+        HeadView::Crown => &CAP_1X_CROWN,
+    };
+    let sign = if cap.flip { -1 } else { 1 };
+    for &(glyph, level) in layers {
+        let (mid, bottom) = (glyph.width() / 2, glyph.height() - 1);
+        for (dx, dy) in glyph.inked() {
+            let x = i32::from(brow.x) + sign * (i32::from(dx) - i32::from(mid));
+            let y = (brow.y + dy).checked_sub(bottom);
+            if let (Ok(x), Some(y)) = (u16::try_from(x), y) {
+                plot(x, y, cap.ink.ramp(level), 1.0);
+            }
+        }
     }
 }

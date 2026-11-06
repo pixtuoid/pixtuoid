@@ -61,6 +61,7 @@ mod tests {
                     phase,
                 },
                 head: None,
+                brow: None,
                 pen,
                 inks: crate::effects::look::Inks::of(theme),
             };

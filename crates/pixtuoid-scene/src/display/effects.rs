@@ -1,11 +1,11 @@
 //! The [effects](crate::effects) riding on the display list's figures, drawn on the
 //! figure's own art grid: a look authored at [`LOOK_DENSITY`] where the figure
-//! is drawn there with a head to float it beside, the base art's z and requires-action
+//! is drawn there with a head to set it on or beside, the base art's z and requires-action
 //! mark beside its head, else its [shared look](crate::effects::look), a
 //! layout cell per art cell block. A look stays whole down to [`LOOK_SOLID`].
 
-use crate::sprite::Rgb;
 use crate::sprite::format::Density;
+use crate::sprite::{HeadView, Rgb};
 
 use crate::display::Span;
 use crate::display::pen::Pen;
@@ -13,7 +13,7 @@ use crate::effects::look::{
     Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X, SLEEP_Z_MAX_RISE, plot_effect, sleep_z_fade,
     walking_dust_foot,
 };
-use crate::effects::{Effect, EffectKind};
+use crate::effects::{Cap, Effect, EffectKind};
 use crate::layout::chrome::{Glyph, REQUIRES_ACTION_MARK};
 
 /// The density this module's own looks are drawn at.
@@ -27,6 +27,14 @@ pub(crate) struct ArtPoint {
     pub(crate) y: i32,
 }
 
+/// A dressed head's brow on the art grid: its mark, and the columns it is
+/// drawn across there ([`Dress::brow`](crate::character::Dress::brow)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Brow {
+    pub(crate) at: ArtPoint,
+    pub(crate) reach: (i32, i32),
+}
+
 /// One effect on the figure it rides on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Riding {
@@ -34,6 +42,8 @@ pub(crate) struct Riding {
     /// The figure's head on the art grid: the top of its hair over the head
     /// mark's column. `None` where its frame has no head to float a look beside.
     pub(crate) head: Option<ArtPoint>,
+    /// Its dressed head's brow, where a cap sits at the densest art.
+    pub(crate) brow: Option<Brow>,
     /// The figure's own grid.
     pub(crate) pen: Pen,
     /// The theme's colours its look is drawn in.
@@ -71,7 +81,7 @@ impl Riding {
         let (e, inks) = (self.effect, &self.inks);
         let d = self.pen.density();
         match self.head {
-            Some(head) if d == LOOK_DENSITY => return dense_look(e, head, inks, emit),
+            Some(head) if d == LOOK_DENSITY => return dense_look(e, (head, self.brow), inks, emit),
             Some(head) if d == Density::ONE && base_look(e, head, inks, emit) => return,
             _ => {}
         }
@@ -159,10 +169,10 @@ fn base_look(
     }
 }
 
-/// `e`'s look at [`LOOK_DENSITY`], from its rider's `head`.
+/// `e`'s look at [`LOOK_DENSITY`], from its rider's `head` and `brow`.
 fn dense_look(
     e: Effect,
-    head: ArtPoint,
+    (head, brow): (ArtPoint, Option<Brow>),
     inks: &Inks,
     emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32),
 ) {
@@ -194,9 +204,136 @@ fn dense_look(
             let y = i32::from(foot.y) * d - 1;
             stamp(DUST, x, y, emit, (inks.dust, 1.0));
         }
+        EffectKind::SubagentCap(cap) => {
+            if let Some(brow) = brow {
+                cap_look(cap, brow, emit);
+            }
+        }
         // A creature's riders have no head, so `look` plots them as the classic
         // does; steam isn't drawn here.
         EffectKind::PetHeart | EffectKind::SteamPuff | EffectKind::MascotBubble => {}
+    }
+}
+
+/// A cap's crown, top row first: each row's half-width as a share of the head
+/// it covers, a dome flattened on top as a ball cap's is.
+const CAP_CROWN: [f32; 8] = [0.47, 0.7, 0.82, 0.9, 0.95, 0.98, 0.99, 1.0];
+/// A cap seen from above, row by row as [`CAP_CROWN`] is: a disc.
+const CAP_DISC: [f32; 8] = [0.54, 0.82, 0.95, 1.0, 1.0, 0.95, 0.82, 0.54];
+/// Rows under an upright cap's crown down to its brim: the visor's at the
+/// front, the strap's at the back, the peak's in profile.
+const CAP_BAND: i32 = 3;
+/// The visor seen from the front, row by row: its share of the head and the
+/// ramp step it is drawn in, its seam, its lit top and its dark lip.
+const CAP_VISOR: [(f32, i8); 3] = [(1.0, CAP_UNDER), (0.96, 1), (0.82, CAP_UNDER)];
+/// The peak in profile, row by row from the band's second: the columns it
+/// juts past the crown and its ramp step, its lit top over its underside.
+const CAP_PEAK: [(i32, i8); 2] = [(4, 1), (6, CAP_UNDER)];
+/// The tab under a cap seen from above, row by row from the disc's last: its
+/// share of the head, the peak glimpsed past the crown.
+const CAP_TAB: [f32; 2] = [0.55, 0.4];
+/// The share of the head the seam across a cap seen from above spans.
+const CAP_CROSS: f32 = 0.92;
+/// The ramp step of a cap's seams and its shaded east edge.
+const CAP_SEAM: i8 = -1;
+/// The ramp step of what lies under a cap's crown: its brim, strap and tab.
+const CAP_UNDER: i8 = -2;
+/// Columns a cap is lit along its west edge.
+const CAP_LIT: i32 = 3;
+/// Columns a cap is shaded along its east edge.
+const CAP_SHADED: i32 = 2;
+
+/// `cap` with its brim on `brow`, as wide as the head is drawn there: its
+/// crown lit on top and west and shaded east, ringed in its line as a dressed
+/// figure is, and turned with its figure.
+fn cap_look(cap: Cap, brow: Brow, emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32)) {
+    let (west, east) = brow.reach;
+    let share = |s: f32| {
+        let side = |reach: i32| (reach as f32 * s).round() as i32;
+        (side(west), side(east))
+    };
+    let ink = |level: i8| cap.ink.ramp(level);
+    let (crown, under): (&[f32], i32) = match cap.view {
+        HeadView::Front => (&CAP_CROWN, 0),
+        HeadView::Back => (&CAP_CROWN, CAP_BAND - 1),
+        HeadView::Side => (&CAP_CROWN, CAP_BAND),
+        HeadView::Crown => (&CAP_DISC, 0),
+    };
+    let mut px = std::collections::BTreeMap::new();
+    let rows = crown.iter().map(|&s| share(s));
+    let full = std::iter::repeat_n((west, east), usize::try_from(under).unwrap_or(0));
+    for (row, (w, e)) in (0..).zip(rows.chain(full)) {
+        for dx in -w..=e {
+            let level = if row == 0 || dx < CAP_LIT - w {
+                1
+            } else if dx > e - CAP_SHADED {
+                CAP_SEAM
+            } else {
+                0
+            };
+            px.insert((dx, row), ink(level));
+        }
+    }
+    let mut band = |row: i32, (w, e): (i32, i32), c: Rgb| {
+        for dx in -w..=e {
+            px.insert((dx, row), c);
+        }
+    };
+    let (centre, depth) = ((east - west + 1).div_euclid(2), crown.len() as i32);
+    let seam = (-centre, centre);
+    let button = (1 - centre, centre);
+    match cap.view {
+        HeadView::Front => {
+            (1..depth).for_each(|row| band(row, seam, ink(CAP_SEAM)));
+            band(-1, button, ink(CAP_SEAM));
+            for (row, (s, level)) in (depth..).zip(CAP_VISOR) {
+                band(row, share(s), ink(level));
+            }
+        }
+        HeadView::Back => {
+            let strap = depth + under;
+            (1..strap - 1).for_each(|row| band(row, seam, ink(CAP_SEAM)));
+            band(-1, button, ink(CAP_SEAM));
+            band(strap - 1, button, cap.line);
+            band(strap, (2 - centre, centre + 1), ink(CAP_UNDER));
+        }
+        HeadView::Side => {
+            band(-1, button, ink(CAP_SEAM));
+            for (row, (jut, level)) in (depth + 1..).zip(CAP_PEAK) {
+                band(row, (-east - 1, east + jut), ink(level));
+            }
+        }
+        HeadView::Crown => {
+            let tab = depth - 1;
+            (1..tab).for_each(|row| band(row, seam, ink(CAP_SEAM)));
+            let (w, e) = share(CAP_CROSS);
+            band(depth / 2, (w - 1, e - 1), ink(CAP_SEAM));
+            for row in depth / 2 - 1..=depth / 2 {
+                band(row, button, ink(CAP_UNDER));
+            }
+            for (row, s) in (tab..).zip(CAP_TAB) {
+                band(row, share(s), ink(CAP_UNDER));
+            }
+        }
+    }
+    let Some(bottom) = px.keys().map(|&(_, row)| row).max() else {
+        return;
+    };
+    let sign = if cap.flip { -1 } else { 1 };
+    let at = |(dx, row): (i32, i32)| ArtPoint {
+        x: brow.at.x + sign * dx,
+        y: brow.at.y - bottom + row,
+    };
+    let ring: std::collections::BTreeSet<_> = px
+        .keys()
+        .flat_map(|&(dx, row)| [(dx + 1, row), (dx - 1, row), (dx, row + 1), (dx, row - 1)])
+        .filter(|cell| !px.contains_key(cell))
+        .collect();
+    for cell in ring {
+        emit(at(cell), 1, cap.line, 1.0);
+    }
+    for (&cell, &c) in &px {
+        emit(at(cell), 1, c, 1.0);
     }
 }
 

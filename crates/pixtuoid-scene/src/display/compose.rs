@@ -407,6 +407,7 @@ fn push_creatures(frame: &SimFrame, office: Office<'_>, order: &mut Vec<(Span, P
             let riding = crate::display::effects::Riding {
                 effect,
                 head: None,
+                brow: None,
                 pen,
                 inks: crate::effects::look::Inks::of(theme),
             };
@@ -1372,28 +1373,37 @@ fn riders(
     let d = key.frame.density.get();
     let pen =
         Pen::new(scale, key.frame.density).expect("`densest` picks a density dividing `scale`");
-    // A dressed frame's head is its mark's column on its crest; the base
-    // art's: its frame's top, centred.
-    let head = match key.dress.as_ref() {
-        Some(dress) => {
-            let (d, frame_w) = (i32::from(d), i32::from(w) * i32::from(d));
-            let x = i32::from(dress.head.x);
-            Some(crate::display::effects::ArtPoint {
-                x: i32::from(at.x) * d + if key.frame.flip_x { frame_w - 1 - x } else { x },
-                y: i32::from(at.y) * d + dress.crest,
-            })
-        }
+    // A dressed frame's head and brow are its mark's column on its crest and on
+    // its mark's row; the base art's head: its frame's top, centred.
+    let dressed = key.dress.as_ref().map(|dress| {
+        let (d, frame_w) = (i32::from(d), i32::from(w) * i32::from(d));
+        let x = i32::from(dress.head.x);
+        let x = i32::from(at.x) * d + if key.frame.flip_x { frame_w - 1 - x } else { x };
+        let at_row = |row: i32| crate::display::effects::ArtPoint {
+            x,
+            y: i32::from(at.y) * d + row,
+        };
+        let brow = crate::display::effects::Brow {
+            at: at_row(i32::from(dress.head.y)),
+            reach: dress.brow,
+        };
+        (at_row(dress.crest), brow)
+    });
+    let head = match dressed {
+        Some((crest, _)) => Some(crest),
         None if d == 1 => Some(crate::display::effects::ArtPoint {
             x: i32::from(at.x + w / 2),
             y: i32::from(at.y),
         }),
         None => None,
     };
+    let brow = dressed.map(|(_, brow)| brow);
     c.effects
         .iter()
         .map(|&effect| crate::display::effects::Riding {
             effect,
             head,
+            brow,
             pen,
             inks,
         })

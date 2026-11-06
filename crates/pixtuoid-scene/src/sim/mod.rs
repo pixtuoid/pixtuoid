@@ -833,13 +833,20 @@ pub(crate) struct Cues {
 }
 
 /// What rides on the figure whose frame stands at `top_left` this tick, in
-/// paint order: dust underfoot, then a sleeper's z or a waiter's mark.
-pub(crate) fn character_effects(top_left: Point, cues: Cues, beat: Beat) -> Vec<Effect> {
+/// paint order: dust underfoot, the `cap` it wears, then a sleeper's z or a
+/// waiter's mark.
+pub(crate) fn character_effects(
+    top_left: Point,
+    cues: Cues,
+    cap: Option<Effect>,
+    beat: Beat,
+) -> Vec<Effect> {
     let mut out = Vec::new();
     out.extend(
         cues.planted_foot
             .map(|f| effects::walking_dust(top_left, f)),
     );
+    out.extend(cap);
     out.extend(
         cues.sleep_seed
             .and_then(|seed| effects::sleep_z(top_left, seed, beat)),
@@ -848,6 +855,41 @@ pub(crate) fn character_effects(top_left: Point, cues: Cues, beat: Beat) -> Vec<
         out.push(effects::requires_action_mark(top_left));
     }
     out
+}
+
+/// The cap `agent` wears on the figure `p` draws, where they are a subagent:
+/// its brim on the base art's head mark, the brow, in their team's ink.
+pub(crate) fn cap_for(
+    p: &CharacterPlacement,
+    agent: &AgentSlot,
+    pack: &OfficeArt,
+) -> Option<Effect> {
+    let lead = agent.parent_id?;
+    let art = crate::pack::densest_frame(
+        pack,
+        p.anim_name,
+        p.frame_idx,
+        crate::render_scale::RenderScale::ONE,
+    );
+    let head = art.head?;
+    let x = if p.flip_x {
+        art.logical.0 - 1 - head.x
+    } else {
+        head.x
+    };
+    let brow = Point {
+        x: p.top_left.x + x,
+        y: p.top_left.y + head.y,
+    };
+    Some(effects::subagent_cap(
+        brow,
+        effects::Cap {
+            ink: crate::character::cap_ink(lead),
+            line: pack.inner().character_outline(),
+            view: head.view,
+            flip: p.flip_x,
+        },
+    ))
 }
 
 /// The upright seated pose. Each seated pose is a base
@@ -1104,7 +1146,8 @@ pub(crate) fn resolve_characters(
         } else {
             fitted
         };
-        p.effects = character_effects(p.top_left, *cues, beat);
+        let cap = cap_for(p, agent, pack);
+        p.effects = character_effects(p.top_left, *cues, cap, beat);
     }
 
     // wp_rank's keys ARE this tick's occupied waypoints — every AtWaypoint
@@ -1207,6 +1250,126 @@ mod tests {
         let one = make_slot_cwd("/p/aaaa.jsonl", "/Users/someone/work/app", false);
         let two = make_slot_cwd("/p/bbbb.jsonl", "/tmp/elsewhere/APP", false);
         assert_eq!(outfit_seed_for(&one), outfit_seed_for(&two));
+    }
+
+    /// A subagent wearing `figure`'s pose, of the team `lead` leads: their
+    /// cap.
+    fn cap_on(figure: &SimFrame, child: AgentId, lead: AgentId, pack: &OfficeArt) -> effects::Cap {
+        let c = &figure.characters[0];
+        let mut agent = figure.agents[c.agent_idx].clone();
+        (agent.agent_id, agent.parent_id) = (child, Some(lead));
+        match cap_for(c, &agent, pack).map(|e| e.kind) {
+            Some(effects::EffectKind::SubagentCap(cap)) => cap,
+            other => panic!("a subagent wears no cap: {other:?}"),
+        }
+    }
+
+    /// A subagent's cap takes its lead's ink, whoever the subagent is, so a
+    /// team matches; and two leads' teams can differ.
+    #[test]
+    fn a_team_shares_its_cap_ink_and_teams_can_differ() {
+        let (_, pack, frames, _) = crate::display::compose::tests::sit_down(Facing::South, 0);
+        let figure = frames.last().expect("a frame");
+        let id = |path: String| AgentId::from_transcript_path(&path);
+        let lead = id("/team/lead.jsonl".into());
+        let first = id("/team/child-0.jsonl".into());
+        let sibling = (1..64)
+            .map(|n| id(format!("/team/child-{n}.jsonl")))
+            .find(|&s| crate::character::cap_ink(s) != crate::character::cap_ink(first))
+            .expect("two children whose own ids pick different inks");
+        assert_eq!(
+            cap_on(figure, first, lead, &pack).ink,
+            cap_on(figure, sibling, lead, &pack).ink,
+            "siblings wear different inks"
+        );
+        let other_team = (0..)
+            .map(|n| id(format!("/other/lead-{n}.jsonl")))
+            .map(|l| cap_on(figure, first, l, &pack).ink)
+            .take(32)
+            .any(|ink| ink != cap_on(figure, first, lead, &pack).ink);
+        assert!(other_team, "every team wears one ink");
+    }
+
+    /// A subagent wears a cap in every frame of every pose, its brim on the
+    /// base art's head mark, the brow, mirrored with the frame.
+    #[test]
+    fn a_cap_sits_on_the_base_heads_brow_in_every_frame() {
+        use strum::VariantArray as _;
+        let (_, pack, frames, _) = crate::display::compose::tests::sit_down(Facing::South, 0);
+        let mut frame = frames.last().expect("a frame").clone();
+        let at = frame.characters[0].top_left;
+        for &piece in Piece::VARIANTS
+            .iter()
+            .filter(|p| p.kind() == crate::pack::validate::PieceKind::Character)
+        {
+            let art = pack.piece(piece);
+            for idx in 0..art.frames().len() {
+                let head = art
+                    .head(idx)
+                    .unwrap_or_else(|| panic!("{piece:?} frame {idx} marks no head"));
+                for flip in [false, true] {
+                    let c = &mut frame.characters[0];
+                    (c.anim_name, c.frame_idx, c.flip_x) = (piece, idx, flip);
+                    let lead = AgentId::from_transcript_path("/brow/lead.jsonl");
+                    let mut agent = frame.agents[c.agent_idx].clone();
+                    agent.parent_id = Some(lead);
+                    let cap = cap_for(c, &agent, &pack).expect("a subagent wears a cap");
+                    let x = if flip {
+                        art.frame_at(idx).width() - 1 - head.x
+                    } else {
+                        head.x
+                    };
+                    assert_eq!(
+                        cap.at,
+                        Point {
+                            x: at.x + x,
+                            y: at.y + head.y
+                        },
+                        "{piece:?} frame {idx}, flipped: {flip}"
+                    );
+                    assert_eq!(
+                        cap.kind,
+                        effects::EffectKind::SubagentCap(effects::Cap {
+                            ink: crate::character::cap_ink(lead),
+                            line: pack.inner().character_outline(),
+                            view: head.view,
+                            flip,
+                        })
+                    );
+                }
+            }
+        }
+    }
+
+    /// A cap rides under a sleeper's z and a waiter's mark, which it would hide
+    /// where they meet over a wide head.
+    #[test]
+    fn a_cap_rides_under_the_z_and_the_mark() {
+        use crate::effects::EffectKind as K;
+        use crate::sprite::Rgb;
+        let at = Point { x: 10, y: 10 };
+        let cap = effects::subagent_cap(
+            at,
+            effects::Cap {
+                ink: Rgb { r: 1, g: 2, b: 3 },
+                line: Rgb { r: 4, g: 5, b: 6 },
+                view: crate::sprite::HeadView::Front,
+                flip: false,
+            },
+        );
+        let cues = Cues {
+            sleep_seed: Some(0),
+            requires_action: true,
+            planted_foot: Some(0),
+        };
+        let kinds: Vec<K> = character_effects(at, cues, Some(cap), Beat::at_ms(0))
+            .iter()
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            [K::WalkingDust, cap.kind, K::SleepZ, K::RequiresActionMark]
+        );
     }
 
     /// The phase is epoch-based, so it outgrows a u16: the scanline must keep

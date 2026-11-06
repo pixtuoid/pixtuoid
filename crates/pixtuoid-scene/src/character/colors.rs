@@ -275,6 +275,38 @@ const HAIR_PRESETS: &[Rgb] = &[
     }, // silver-grey
 ];
 const _: () = assert!(!HAIR_PRESETS.is_empty());
+/// The inks a subagent's cap comes in, one per team: its lead's id picks it
+/// ([`cap_ink`]), so siblings match and a glance groups them. Picked to stand
+/// off every [`HAIR_PRESETS`] entry, which the cap sits on, rather than to
+/// fill the hue wheel: an orange or red would vanish into ginger or auburn.
+const CAP_INKS: &[Rgb] = &[
+    Rgb {
+        r: 0xec,
+        g: 0xec,
+        b: 0xec,
+    }, // off-white
+    Rgb {
+        r: 0x2f,
+        g: 0x6f,
+        b: 0xde,
+    }, // blue
+    Rgb {
+        r: 0x58,
+        g: 0xd0,
+        b: 0x68,
+    }, // green
+    Rgb {
+        r: 0xf5,
+        g: 0xe0,
+        b: 0x4a,
+    }, // yellow
+    Rgb {
+        r: 0xe0,
+        g: 0x60,
+        b: 0xc8,
+    }, // magenta
+];
+const _: () = assert!(!CAP_INKS.is_empty());
 const SKIN_PRESETS: &[Rgb] = &[
     Rgb {
         r: 0xf4,
@@ -350,12 +382,50 @@ pub(crate) fn work_glow_tint(
     crate::lighting::screen_work(agent).map(|work| glow.for_work(work))
 }
 
+/// The ink of the cap a subagent of `lead`'s team wears.
+pub(crate) fn cap_ink(lead: pixtuoid_core::AgentId) -> Rgb {
+    CAP_INKS[crate::spread(lead.raw(), CAP_INKS.len())]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::character::test_support::{color_of, make_slot, make_slot_cwd, override_of};
     use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
     use std::sync::Arc;
+
+    /// The closest any cap ink comes to any hair, in OKLab: measured off
+    /// [`CAP_INKS`] as picked, not a perceptual threshold. A ratchet: an ink
+    /// edited nearer a hair the cap sits on fails here first.
+    const CAP_HAIR_FLOOR: f32 = 0.159;
+
+    #[test]
+    fn no_cap_ink_comes_nearer_a_hair_than_the_measured_floor() {
+        let nearest = CAP_INKS
+            .iter()
+            .flat_map(|&ink| HAIR_PRESETS.iter().map(move |&hair| ink.delta_e(hair)))
+            .fold(f32::INFINITY, f32::min);
+        assert!(nearest >= CAP_HAIR_FLOOR, "a cap ink {nearest} from a hair");
+    }
+
+    /// The dark backdrop the owner approved the team inks against.
+    const DARK_FLOOR: Rgb = Rgb {
+        r: 0x1c,
+        g: 0x1c,
+        b: 0x1e,
+    };
+
+    /// A cap is a graphic, so each ink holds the non-text bar on a dark floor.
+    #[test]
+    fn every_cap_ink_reads_as_a_graphic_on_a_dark_floor() {
+        for ink in CAP_INKS {
+            let ratio = ink.contrast(DARK_FLOOR);
+            assert!(
+                ratio >= crate::sprite::NON_TEXT_CONTRAST,
+                "{ink:?} at {ratio:.2}:1"
+            );
+        }
+    }
 
     #[test]
     fn agent_overrides_are_deterministic_per_id() {

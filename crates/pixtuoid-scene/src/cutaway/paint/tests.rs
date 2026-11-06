@@ -1149,6 +1149,169 @@ fn a_riders_head_is_its_figures_top_row() {
     }
 }
 
+/// `frame`'s first figure made a subagent, wearing the cap the sim gives one.
+fn capped(mut frame: SimFrame, pack: &OfficeArt) -> SimFrame {
+    let c = &mut frame.characters[0];
+    let agent = &mut frame.agents[c.agent_idx];
+    agent.parent_id = Some(pixtuoid_core::AgentId::from_transcript_path(
+        "/cap/lead.jsonl",
+    ));
+    c.effects = crate::sim::cap_for(c, agent, pack).into_iter().collect();
+    assert!(!c.effects.is_empty(), "premise: a subagent wears a cap");
+    frame
+}
+
+/// The art pixels `riding` paints in a colour `keep` takes.
+fn painted_by(
+    riding: &crate::display::effects::Riding,
+    keep: impl Fn(crate::sprite::Rgb) -> bool,
+) -> std::collections::BTreeSet<(i32, i32)> {
+    let mut px = std::collections::BTreeSet::new();
+    riding.look(&mut |at, size, c, _| {
+        if keep(c) {
+            px.extend((0..size).flat_map(|dy| (0..size).map(move |dx| (at.x + dx, at.y + dy))));
+        }
+    });
+    px
+}
+
+/// The cap rider in `list`.
+fn cap_rider(list: &crate::display::DisplayList<'_>) -> crate::display::effects::Riding {
+    list.pieces()
+        .iter()
+        .find_map(|p| match p.kind {
+            PieceKind::Effect(r)
+                if matches!(r.effect.kind, crate::effects::EffectKind::SubagentCap(_)) =>
+            {
+                Some(r)
+            }
+            _ => None,
+        })
+        .expect("the cap")
+}
+
+/// A subagent's cap puts its brim on the brow, its head mark's row, in every
+/// pose, at the base art and at the densest: there fitted to the head as its
+/// dress draws it across the brow, at the base art centred on the mark, and
+/// mirrored with a mirrored figure at both.
+#[test]
+fn a_caps_brim_sits_on_the_brow_in_every_pose() {
+    let theme = crate::theme::theme_by_name("normal").expect("theme");
+    let (layout, pack, frames, _) = sit_down(crate::layout::Facing::South, 2);
+    let densest = RenderScale::from(pack.max_density_variant());
+    let seated = frames.last().expect("a seated frame").clone();
+    for piece in [
+        PackPiece::Seated,
+        PackPiece::SeatedBack,
+        PackPiece::Walking,
+        PackPiece::SideSeated,
+        PackPiece::SeatedSleeping,
+    ] {
+        for scale in [RenderScale::ONE, densest] {
+            let office = Office {
+                layout: &layout,
+                pack: &pack,
+                theme,
+                scale,
+            };
+            let art = crate::pack::densest_frame(&pack, piece, 0, scale);
+            let (d, head) = (i32::from(art.density.get()), art.head.expect("a head mark"));
+            let worn = |flip: bool| {
+                let mut frame = seated.clone();
+                let c = &mut frame.characters[0];
+                (c.anim_name, c.frame_idx, c.flip_x) = (piece, 0, flip);
+                let frame = capped(frame, &pack);
+                let cap = cap_rider(&list_at(&frame, office, 12));
+                let crate::effects::EffectKind::SubagentCap(look) = cap.effect.kind else {
+                    unreachable!("the cap rider");
+                };
+                let c = &frame.characters[0];
+                let agent = &frame.agents[c.agent_idx];
+                let key = crate::character::character_key(
+                    crate::character::SpritePose::of(c, agent, theme),
+                    agent,
+                    &pack,
+                    scale,
+                );
+                (painted_by(&cap, |px| px != look.line), c.top_left, key)
+            };
+            let (cap, at, key) = worn(false);
+            let (flipped, ..) = worn(true);
+            let here = format!("{piece:?} at scale {}", scale.get());
+            let (left, top) = (i32::from(at.x) * d, i32::from(at.y) * d);
+            let mark = left + i32::from(head.x);
+            let brim = cap.iter().map(|&(_, y)| y).max().expect("the cap paints");
+            assert_eq!(
+                brim,
+                top + i32::from(head.y),
+                "{here}: the brim is off the brow"
+            );
+            let width = i32::from(art.logical.0) * d;
+            let mirrored: std::collections::BTreeSet<_> = cap
+                .iter()
+                .map(|&(x, y)| (2 * left + width - 1 - x, y))
+                .collect();
+            assert_eq!(
+                flipped, mirrored,
+                "{here}: the cap does not turn with its figure"
+            );
+            let crown = cap.iter().map(|&(_, y)| y).min().expect("the cap paints");
+            let edge = |row: i32| row_span(&cap, row).expect("a row of cap");
+            if d == 1 {
+                let (x0, x1) = edge(crown);
+                assert!(
+                    (x0 + x1 - 2 * mark).abs() <= 1,
+                    "{here}: {x0}..={x1} off the mark {mark}"
+                );
+            } else {
+                let (west, east) = key.dress.expect("a dressed figure").brow;
+                let (x0, x1) = (
+                    cap.iter().map(|&(x, _)| x).min().expect("the cap paints"),
+                    cap.iter().map(|&(x, _)| x).max().expect("the cap paints"),
+                );
+                assert_eq!(x0, mark - west, "{here}: not fitted to the head's west");
+                if piece == PackPiece::SideSeated {
+                    assert!(x1 > mark + east, "{here}: no peak juts past the brow");
+                } else {
+                    assert_eq!(x1, mark + east, "{here}: not fitted to the head's east");
+                }
+            }
+        }
+    }
+}
+
+/// The first and last columns of `row` in `px`.
+fn row_span(px: &std::collections::BTreeSet<(i32, i32)>, row: i32) -> Option<(i32, i32)> {
+    let xs = px.iter().filter(|&&(_, y)| y == row).map(|&(x, _)| x);
+    Some((xs.clone().min()?, xs.max()?))
+}
+
+/// A cap stays inside its figure's box, so a subagent's badge hangs where a
+/// lead's does, sitting and walking, at the base art and at the densest.
+#[test]
+fn a_cap_never_moves_its_figures_badge() {
+    let theme = crate::theme::theme_by_name("normal").expect("theme");
+    let (layout, pack, frames, _) = sit_down(crate::layout::Facing::South, 2);
+    let densest = RenderScale::from(pack.max_density_variant());
+    let walking = frames
+        .iter()
+        .find(|f| f.characters[0].seat_desk.is_none())
+        .expect("a walking frame");
+    for lead in [walking, frames.last().expect("a seated frame")] {
+        let capped = capped(lead.clone(), &pack);
+        for scale in [RenderScale::ONE, densest] {
+            let office = Office {
+                layout: &layout,
+                pack: &pack,
+                theme,
+                scale,
+            };
+            let badge = |frame: &SimFrame| list_at(frame, office, 12).badges()[0].run();
+            assert_eq!(badge(&capped), badge(lead), "at scale {}", scale.get());
+        }
+    }
+}
+
 /// [`mark`] writes nothing outside the piece's span, at every scale: a lit
 /// and a dark screen, a desk lamp's bulb, the wall decor's, a floor lamp's
 /// and an open elevator's.
@@ -3196,48 +3359,56 @@ fn an_effect_never_blocks_its_figure() {
         c.effects = every_effect(c.top_left);
     }
     let id = crate::hit::HoverTarget::Agent(frame.agents[frame.characters[0].agent_idx].agent_id);
-    // Only the densest art lays an effect over its figure; at 1x each rides
-    // beside or below it, so there is nothing to block.
-    let office = Office {
-        layout: &layout,
-        pack: &pack,
-        theme,
-        scale: RenderScale::from(pack.max_density_variant()),
-    };
-    let list = list_at(&frame, office, 12);
-    let body = list
-        .pieces()
-        .iter()
-        .find_map(|p| match p.kind {
-            PieceKind::Character { body, .. } => Some(body),
-            _ => None,
-        })
-        .expect("the sitter");
-    let mut over = 0;
-    for p in list.pieces() {
-        let PieceKind::Effect(riding) = p.kind else {
-            continue;
+    for scale in [
+        RenderScale::ONE,
+        RenderScale::from(pack.max_density_variant()),
+    ] {
+        let office = Office {
+            layout: &layout,
+            pack: &pack,
+            theme,
+            scale,
         };
-        let e = p.span;
-        for y in e.y0.max(body.y0)..=e.y1.min(body.y1) {
-            for x in e.x0.max(body.x0)..=e.x1.min(body.x1) {
-                over += 1;
-                let cell = Bounds {
-                    x,
-                    y,
-                    width: 1,
-                    height: 1,
-                };
-                assert_eq!(
-                    list.hovers().at(cell),
-                    Some(&id),
-                    "{:?} at {cell:?}",
-                    riding.effect.kind
-                );
+        let list = list_at(&frame, office, 12);
+        let body = list
+            .pieces()
+            .iter()
+            .find_map(|p| match p.kind {
+                PieceKind::Character { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("the sitter");
+        let mut over = 0;
+        for p in list.pieces() {
+            let PieceKind::Effect(riding) = p.kind else {
+                continue;
+            };
+            let e = p.span;
+            for y in e.y0.max(body.y0)..=e.y1.min(body.y1) {
+                for x in e.x0.max(body.x0)..=e.x1.min(body.x1) {
+                    over += 1;
+                    let cell = Bounds {
+                        x,
+                        y,
+                        width: 1,
+                        height: 1,
+                    };
+                    assert_eq!(
+                        list.hovers().at(cell),
+                        Some(&id),
+                        "{:?} at {cell:?}, scale {}",
+                        riding.effect.kind,
+                        scale.get()
+                    );
+                }
             }
         }
+        assert!(
+            over > 0,
+            "premise at scale {}: an effect lies over the body",
+            scale.get()
+        );
     }
-    assert!(over > 0, "premise: an effect lies over the body");
 }
 
 /// The pet and the gateway mascots stand as figures: each paints only
@@ -3507,10 +3678,11 @@ fn riders_paint_beside_their_figure() {
             .position(|p| matches!(p.kind, PieceKind::Character { .. }))
             .expect("the figure");
         assert_eq!(
-            kinds[figure - 1..=figure + 2],
+            kinds[figure - 1..=figure + 3],
             [
                 Some(K::WalkingDust),
                 None,
+                Some(K::SubagentCap(EVERY_CAP)),
                 Some(K::SleepZ),
                 Some(K::RequiresActionMark)
             ]
@@ -4256,12 +4428,29 @@ fn each_drawn_agent_hovers_inside_its_piece() {
     }
 }
 
+/// [`every_effect`]'s cap.
+const EVERY_CAP: crate::effects::Cap = crate::effects::Cap {
+    ink: crate::sprite::Rgb {
+        r: 0xec,
+        g: 0xec,
+        b: 0xec,
+    },
+    line: crate::sprite::Rgb {
+        r: 0x10,
+        g: 0x10,
+        b: 0x10,
+    },
+    view: crate::sprite::HeadView::Front,
+    flip: false,
+};
+
 /// One of each effect a figure carries, riding on its `top_left`, each at a
-/// step it shows at.
+/// step it shows at, in the order the sim puts them on.
 fn every_effect(top_left: crate::layout::Point) -> Vec<crate::effects::Effect> {
     let at = |ms| std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms);
     vec![
         crate::effects::walking_dust(top_left, 0),
+        crate::effects::subagent_cap(top_left, EVERY_CAP),
         crate::effects::sleep_z(top_left, 0, Motion::Full.beat(at(500)))
             .expect("a z rising at 500 ms"),
         crate::effects::requires_action_mark(top_left),

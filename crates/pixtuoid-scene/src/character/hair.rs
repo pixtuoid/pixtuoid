@@ -37,6 +37,9 @@ pub(crate) struct Dress {
     /// The dressed figure's topmost drawn row, counted from the frame's top:
     /// negative where it rises over it.
     pub(crate) crest: i32,
+    /// Art columns the dressed head spans west and east of its mark's column,
+    /// on its mark's row: what a cap with its brim there covers.
+    pub(crate) brow: (i32, i32),
 }
 
 /// The [`Dress`] of `body`, frame `head`'s art at `density`, for `agent`:
@@ -60,6 +63,7 @@ impl Dress {
             head,
             style: style.map(|s| s.name().to_owned()),
             crest: crest(body, head, style),
+            brow: brow(body, head, style),
         }
     }
 
@@ -74,21 +78,48 @@ fn opaque_top(f: &Frame) -> Option<u16> {
     (0..f.height()).find(|&y| (0..f.width()).any(|x| f.get(x, y).copied().flatten().is_some()))
 }
 
+/// `body`, then `style`'s layers for its head's view, each with its offset on
+/// the body.
+fn laid<'a>(
+    body: &'a Frame,
+    head: HeadMark,
+    style: Option<&'a Hairstyle>,
+) -> impl Iterator<Item = (&'a Frame, i32, i32)> {
+    let layers = style
+        .and_then(|s| s.layers(head.view))
+        .into_iter()
+        .flat_map(|layers| [layers.behind(), layers.over()].into_iter().flatten())
+        .filter_map(move |layer| layer.laid_on(head));
+    std::iter::once((body, 0, 0)).chain(layers)
+}
+
 /// [`Dress::crest`] of `body` dressed in `style`: its hair's top or its own,
 /// and the outline's row above that.
 fn crest(body: &Frame, head: HeadMark, style: Option<&Hairstyle>) -> i32 {
-    let hair = style
-        .and_then(|s| s.layers(head.view))
-        .into_iter()
-        .flat_map(|layers| {
-            [layers.behind(), layers.over()]
-                .into_iter()
-                .flatten()
-                .filter_map(|layer| layer.laid_on(head))
-                .filter_map(|(f, _, dy)| Some(dy + i32::from(opaque_top(f)?)))
-        });
-    let top = hair.chain(opaque_top(body).map(i32::from)).min();
+    let top = laid(body, head, style)
+        .filter_map(|(f, _, dy)| Some(dy + i32::from(opaque_top(f)?)))
+        .min();
     top.map_or(0, |top| top - 1)
+}
+
+/// [`Dress::brow`] of `body` dressed in `style`, as far as the body's sides,
+/// where [`dress`] cuts a layer. Fitted rather than one size, so a cap covers
+/// the hair it sits on: a mop spills no wider than its brim, a crop never
+/// hides under it.
+fn brow(body: &Frame, head: HeadMark, style: Option<&Hairstyle>) -> (i32, i32) {
+    let (row, mark) = (i32::from(head.y), i32::from(head.x));
+    let xs = laid(body, head, style).flat_map(|(f, dx, dy)| {
+        let y = u16::try_from(row - dy).ok().filter(|&y| y < f.height());
+        y.into_iter().flat_map(move |y| {
+            (0..f.width())
+                .filter(move |&x| f.get(x, y).copied().flatten().is_some())
+                .map(move |x| i32::from(x) + dx)
+        })
+    });
+    let (west, east) = xs
+        .filter(|x| (0..i32::from(body.width())).contains(x))
+        .fold((mark, mark), |(lo, hi), x| (lo.min(x), hi.max(x)));
+    (mark - west, east - mark)
 }
 
 /// `body` dressed as `dress` says: `style`'s behind layer for its head's view,
@@ -297,6 +328,31 @@ mod tests {
         );
     }
 
+    /// A brow spans the head as dressed across its mark's row, the hair as
+    /// well as the skin, as far as the body's sides, where `dress` cuts a
+    /// layer; a row the mark is not on counts for nothing.
+    #[test]
+    fn a_brow_spans_the_dressed_head_across_its_marks_row() {
+        let pack = crate::pack::test_office_with(
+            "[palette]\n\".\"=\"transparent\"\n\"H\"=\"#c86432\"\n\"S\"=\"#f0c0a0\"\n\
+             \"k\"=\"#010101\"\n[characters]\noutline=\"k\"\n\
+             [animations.seated]\nframes=[\"b.sprite\"]\nframe_ms=100\n\
+             [hairstyles.\"wide@2x\"]\nfront={ over=\"o.sprite\" }\n",
+            &[
+                (
+                    "b.sprite",
+                    "@frame 0\n@mark head.front 2 1\nS S S S S\n. . S . .\n",
+                ),
+                ("o.sprite", "@frame 0\n@mark head.front 1 0\nH H H H H H\n"),
+            ],
+        );
+        let sprite = pack.piece(Piece::Seated);
+        let (body, head) = (sprite.first(), sprite.head(0).expect("marked"));
+        let style = pack.inner().hairstyles().next();
+        assert_eq!(Dress::of(body, head, style).brow, (1, 2));
+        assert_eq!(Dress::of(body, head, None).brow, (0, 0));
+    }
+
     #[test]
     fn a_bare_head_is_outlined_as_a_dressed_one_is() {
         let pack = pack_of(". S .\n. . .\n", (1, 0), &[]);
@@ -389,7 +445,7 @@ mod tests {
         assert!(flagged_seen && bottom_seen);
     }
 
-    /// Every bundled character frame, bare and dressed in every bundled style,
+    /// Every bundled variant character frame, bare and dressed in every style,
     /// keeps its one outline whole: nothing but the line on a side edge, where
     /// the line has no column left to run in, and no pinhole inside it. A
     /// dressed frame first exists here, at runtime, so no generator check can
@@ -403,12 +459,10 @@ mod tests {
             .iter()
             .filter(|p| p.kind() == PieceKind::Character)
             .flat_map(|&p| {
-                std::iter::once((p.name().to_owned(), pack.piece(p))).chain(
-                    pack.inner()
-                        .variants_of(p)
-                        .iter()
-                        .map(move |(d, s)| (format!("{}@{d}x", p.name()), s)),
-                )
+                pack.inner()
+                    .variants_of(p)
+                    .iter()
+                    .map(move |(d, s)| (format!("{}@{d}x", p.name()), s))
             });
         for (name, sprite) in arts {
             for (i, body) in sprite.frames().iter().enumerate() {
