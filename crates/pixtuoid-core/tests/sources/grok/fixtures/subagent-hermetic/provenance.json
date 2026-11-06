@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "grok",
-  "version": "grok 1.0.70 (f50904eaee6c)",
-  "captured": "2026-10-28",
+  "version": "grok 1.0.77 (50ca579fa996)",
+  "captured": "2026-11-06",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -41,7 +41,7 @@
     }
   },
   "sentinel_reads": {
-    "01a1803a-d54d-71c1-9353-82519ef50b0b/updates.jsonl": [
+    "01a1b185-14d0-7e62-8d9f-8f4d37f30800/updates.jsonl": [
       "4:/params/update/rawInput/background"
     ],
     "hook-payloads.jsonl": [
