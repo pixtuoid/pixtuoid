@@ -5,7 +5,7 @@
 //! Usage:
 //!   cargo run --release --example cutaway_snapshot -- <out.png> [--scale N]
 //!       [--agents N] [--theme T] [--logical WxH] [--now-hour H] [--floor I/N]
-//!       [--weather W] [--now-day D] [--now-sec S] [--flame I] [--repos a,b,...]
+//!       [--weather W] [--now-day D] [--now-sec S] [--repos a,b,...]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -100,7 +100,6 @@ fn main() -> Result<()> {
     // 1 = the clock's base date, as the classic snapshot's `--now-day`.
     let mut now_day = 1u32;
     let mut weather = None::<String>;
-    let mut flame = None::<usize>;
     let mut repos: Vec<String> = pixtuoid_scene::DEMO_REPOS[..pixtuoid_scene::DEMO_TEAMS]
         .iter()
         .map(|&r| r.to_string())
@@ -133,8 +132,6 @@ fn main() -> Result<()> {
             "--now-sec" => now_sec = val("--now-sec")?.parse().context("bad --now-sec")?,
             "--weather" => weather = Some(val("--weather")?),
             "--repos" => repos = val("--repos")?.split(',').map(str::to_string).collect(),
-            // The `I`th agent burns at the Top tier, crowned in flame.
-            "--flame" => flame = Some(val("--flame")?.parse().context("bad --flame")?),
             "--floor" => {
                 let v = val("--floor")?;
                 let (f, n) = v
@@ -177,18 +174,6 @@ fn main() -> Result<()> {
 
     let mut scene = SceneState::uniform(64);
     populate(&mut scene, now, agents, &repos);
-    if let Some(i) = flame {
-        let id = AgentId::from_transcript_path(&format!("/cutaway/a{i}.jsonl"));
-        let a = scene
-            .agents
-            .get_mut(&id)
-            .ok_or_else(|| anyhow!("--flame {i}: only {agents} agents"))?;
-        a.model = Some("claude-fable-5".into());
-        a.effort = Some(pixtuoid_core::state::EffortObservation::new(
-            "ultra".into(),
-            now,
-        ));
-    }
 
     // The real sim, at LOGICAL size, drawn through the painters' one entry.
     let mut session = FloorSession::new(Arc::clone(&pack));

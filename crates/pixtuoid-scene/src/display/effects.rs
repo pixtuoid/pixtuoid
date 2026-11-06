@@ -10,8 +10,8 @@ use crate::sprite::format::Density;
 use crate::display::Span;
 use crate::display::pen::Pen;
 use crate::effects::look::{
-    FLAME_CORE, FLAME_DEEP, FLAME_MID, FLAME_TIP, Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X,
-    SLEEP_Z_MAX_RISE, plot_effect, sleep_z_fade, walking_dust_foot,
+    Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X, SLEEP_Z_MAX_RISE, plot_effect, sleep_z_fade,
+    walking_dust_foot,
 };
 use crate::effects::{Effect, EffectKind};
 use crate::layout::chrome::{Glyph, REQUIRES_ACTION_MARK};
@@ -107,33 +107,6 @@ const LOOK_SOLID: f32 = 0.3;
 /// Art rows a rising z drifts one column away from the head.
 const SLEEP_Z_DRIFT: i32 = 4;
 
-/// The flame crown's two frames, centred over the head mark, their bottom row
-/// on the hair's top: `D`eep, `M`id, `T`ip, `C`ore.
-const FLAME_CROWN: [Glyph; 2] = [
-    Glyph::new(&[
-        "......M........", //
-        "......DM....M..", //
-        "..M..DMD...DM..", //
-        "..DM.DTMD..DMD.", //
-        ".DMD.MTTMD.MTD.", //
-        ".DTMDMTCTMDTTMD", //
-        "DMTTMTCCCTMTCTD", //
-        "DTCCTCCCCCTCCMD", //
-        "DMTTCCTCCTCTTMD", //
-    ]),
-    Glyph::new(&[
-        "........M......", //
-        "...M...MD......", //
-        "...MD..DMD..M..", //
-        "..DMD.DMTD..MD.", //
-        ".DMTD.MTTMD.DMD", //
-        "DMTTMDTCTMDMTD.", //
-        "DTCTMTCCCTMTTMD", //
-        "DMCCTCCCCCTCCTD", //
-        "DMTTCTCCTCCTTMD", //
-    ]),
-];
-
 /// The walking dust's speckle, kicked up round a foot's sole.
 const DUST: Glyph = Glyph::new(&[
     "..#.#..", //
@@ -190,7 +163,6 @@ fn dense_look(
     emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32),
 ) {
     let d = i32::from(LOOK_DENSITY.get());
-    let centred = |glyph: Glyph| head.x - i32::from(glyph.width()) / 2;
     match e.kind {
         EffectKind::SleepZ => {
             let Some((alpha, t)) = sleep_z_fade(e.phase) else {
@@ -206,19 +178,6 @@ fn dense_look(
             let top = head.y + BESIDE_DY - i32::from(REQUIRES_ACTION_MARK.height());
             stamp(REQUIRES_ACTION_MARK, head.x + BESIDE_DX, top, emit, |_| {
                 Some((inks.requires_action, 1.0))
-            });
-        }
-        EffectKind::FlameCrown => {
-            let glyph = FLAME_CROWN[usize::from(e.phase == 1)];
-            let top = head.y - i32::from(glyph.height()) + 1;
-            stamp(glyph, centred(glyph), top, emit, |ch| {
-                let c = match ch {
-                    'D' => FLAME_DEEP,
-                    'M' => FLAME_MID,
-                    'T' => FLAME_TIP,
-                    _ => FLAME_CORE,
-                };
-                Some((c, 1.0))
             });
         }
         EffectKind::WalkingDust => {
@@ -248,22 +207,6 @@ fn stamp(
                 y: y + i32::from(dy),
             };
             emit(at, 1, c, coverage);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The flame crown inks in no colour but those its look names.
-    #[test]
-    fn the_flame_crown_inks_only_the_colours_it_names() {
-        for frame in FLAME_CROWN {
-            assert!(
-                frame.inked().all(|(_, _, c)| "DMTC".contains(c)),
-                "{frame:?} inks a colour the crown has no name for"
-            );
         }
     }
 }

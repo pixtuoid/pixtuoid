@@ -44,7 +44,6 @@ pub(crate) fn plot_effect(e: &Effect, inks: &Inks, plot: &mut impl FnMut(u16, u1
         EffectKind::SleepZ => plot_sleep_z(plot, e.at, e.phase, inks),
         EffectKind::RequiresActionMark => plot_requires_action_mark(plot, e.at, inks),
         EffectKind::WalkingDust => plot_walking_dust(plot, e.at, e.phase, inks),
-        EffectKind::FlameCrown => plot_flame_crown(plot, e.at, e.phase),
         EffectKind::PetHeart => plot_pet_heart(plot, e.at, e.phase),
         EffectKind::SteamPuff => plot_steam_puff(plot, e.at, e.phase, inks),
         EffectKind::MascotBubble => plot_mascot_bubble(plot, e.at, e.phase),
@@ -183,77 +182,5 @@ fn plot_requires_action_mark(
     let by = top_left.y.saturating_sub(5) & !1u16;
     for (dx, dy, _) in REQUIRES_ACTION_MARK_1X.inked() {
         plot(top_left.x + 2 + dx, by + dy, fg, 1.0);
-    }
-}
-
-/// The flame gradient's deep-ember base, which a burning agent's hair also
-/// wears (`character::colors::EMBER_HAIR` aliases it).
-pub(crate) const FLAME_DEEP: Rgb = Rgb {
-    r: 0xc2,
-    g: 0x28,
-    b: 0x12,
-};
-
-/// The flame gradient's yellow tip. `pub(crate)` so render tests assert the REAL
-/// painted colors instead of re-hardcoding them.
-pub(crate) const FLAME_TIP: Rgb = Rgb {
-    r: 0xff,
-    g: 0xd2,
-    b: 0x4a,
-};
-
-/// The flame gradient's orange between [`FLAME_DEEP`] and [`FLAME_TIP`].
-pub(crate) const FLAME_MID: Rgb = Rgb {
-    r: 0xe8,
-    g: 0x64,
-    b: 0x1f,
-};
-
-/// The flame's hottest heart, over [`FLAME_TIP`].
-pub(crate) const FLAME_CORE: Rgb = Rgb {
-    r: 0xff,
-    g: 0xf3,
-    b: 0xa0,
-};
-
-/// `crown` is the head's top-centre; `frame` which of the two shows.
-fn plot_flame_crown(plot: &mut impl FnMut(u16, u16, Rgb, f32), crown: Point, frame: u64) {
-    // The asymmetric two-frame flicker is what reads as fire, not a hat, and the
-    // tips stay ≤2 px above the hair top so the flame never collides with the
-    // name-badge row.
-    const TIP: Rgb = FLAME_TIP;
-    // Pattern entries are (dx from the head center, dy up from the hair top, color).
-    let frame_a: &[(i32, u16, Rgb)] = &[
-        (-2, 0, FLAME_MID),
-        (-1, 0, FLAME_MID),
-        (0, 0, FLAME_DEEP),
-        (1, 0, FLAME_MID),
-        (-2, 1, FLAME_MID),
-        (-1, 1, FLAME_CORE),
-        (0, 1, FLAME_MID),
-        (1, 1, TIP),
-        (-2, 2, TIP),
-        (0, 2, TIP),
-    ];
-    let frame_b: &[(i32, u16, Rgb)] = &[
-        (-2, 0, FLAME_MID),
-        (-1, 0, FLAME_DEEP),
-        (0, 0, FLAME_MID),
-        (1, 0, FLAME_MID),
-        (-2, 1, TIP),
-        (-1, 1, FLAME_MID),
-        (0, 1, FLAME_CORE),
-        (1, 1, FLAME_MID),
-        (-1, 2, TIP),
-        (1, 2, TIP),
-    ];
-    for &(dx, dy, c) in if frame == 1 { frame_b } else { frame_a } {
-        let Some(px) = crown.x.checked_add_signed(dx as i16) else {
-            continue;
-        };
-        let Some(py) = crown.y.checked_sub(dy) else {
-            continue;
-        };
-        plot(px, py, c, 1.0);
     }
 }

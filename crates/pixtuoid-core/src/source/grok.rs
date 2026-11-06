@@ -456,7 +456,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
         _ => vec![],
     };
     // The model rides `_meta` on an ORDINARY update; keying on the
-    // `model_changed` tag a real session never sends left the flame dark.
+    // `model_changed` tag a real session never sends left the model unseen.
     if let Some(model) = update
         .get("_meta")
         .and_then(|m| m.get("modelId"))

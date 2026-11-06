@@ -446,10 +446,10 @@ fn hovered_running_agent_tooltip_shows_state_and_detail() {
 }
 
 #[test]
-fn hovered_burning_agent_tooltip_shows_model_and_fresh_effort() {
+fn a_hovered_agents_tooltip_shows_model_and_fresh_effort() {
     use pixtuoid_core::state::EffortObservation;
     let mut a = running(
-        "/burn/0.jsonl",
+        "/effort/0.jsonl",
         0,
         "Read src/main.rs",
         t0() - Duration::from_secs(30),
@@ -459,7 +459,7 @@ fn hovered_burning_agent_tooltip_shows_model_and_fresh_effort() {
     a.effort = Some(EffortObservation::new("ultra".into(), t0()));
     let id = a.agent_id;
     let plain = running(
-        "/burn/1.jsonl",
+        "/effort/1.jsonl",
         1,
         "Read src/lib.rs",
         t0() - Duration::from_secs(30),
@@ -488,10 +488,10 @@ fn hovered_burning_agent_tooltip_shows_model_and_fresh_effort() {
 #[test]
 fn stale_effort_drops_off_the_dossier() {
     // An hour-old stamp is comfortably past the freshness window
-    // (`pixtuoid_scene::burn::EFFORT_TTL_SECS`, crate-private).
+    // (the tooltip's `EFFORT_TTL_SECS`, crate-private).
     use pixtuoid_core::state::EffortObservation;
     let mut a = running(
-        "/burn/2.jsonl",
+        "/effort/2.jsonl",
         0,
         "Read src/main.rs",
         t0() - Duration::from_secs(30),
@@ -524,7 +524,7 @@ fn the_exit_sentinel_never_renders_in_the_dossier() {
     use pixtuoid_core::source::claude_code::ULTRA_EXIT_LABEL;
     use pixtuoid_core::state::EffortObservation;
     let mut a = running(
-        "/burn/3.jsonl",
+        "/effort/3.jsonl",
         0,
         "Read src/main.rs",
         t0() - Duration::from_secs(30),

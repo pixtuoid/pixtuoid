@@ -1090,56 +1090,6 @@ fn a_strike_lifts_the_room_and_its_glass_most() {
     }
 }
 
-/// A burning figure's crown stands on the top of their hair, at the
-/// density the art is drawn at and at the base art's.
-#[test]
-fn the_flame_crown_stands_on_the_hair() {
-    let theme = crate::theme::theme_by_name("normal").expect("theme");
-    let (layout, pack, frames, _) = sit_down(crate::layout::Facing::South, 2);
-    let mut frame = frames.last().expect("a seated frame").clone();
-    for c in &mut frame.characters {
-        c.effects = vec![crate::effects::flame_crown(
-            c.top_left,
-            8,
-            Motion::Full.beat(std::time::UNIX_EPOCH),
-        )];
-    }
-    for s in [1, pack.max_density_variant().get()] {
-        let scale = RenderScale::new(s).expect("nonzero");
-        let office = Office {
-            layout: &layout,
-            pack: &pack,
-            theme,
-            scale,
-        };
-        let list = list_at(&frame, office, 12);
-        // The rows a piece paints alone, top and bottom.
-        let rows = |want: fn(&PieceKind) -> bool| {
-            let piece = list
-                .pieces()
-                .iter()
-                .find(|p| want(&p.kind))
-                .expect("the piece");
-            let [a, b] =
-                painted_over_two_fills(&piece.kind, &layout, &pack, &Recolours::of(theme), scale);
-            let painted: Vec<u16> = (0..a.height())
-                .filter(|&y| {
-                    (0..a.width()).any(|x| a.get(x, y) != UNDER[0] || b.get(x, y) != UNDER[1])
-                })
-                .collect();
-            (painted.first().copied(), painted.last().copied())
-        };
-        let (hair, _) = rows(|k| matches!(k, PieceKind::Character { .. }));
-        let (_, base) = rows(|k| matches!(k, PieceKind::Effect(_)));
-        // Within the hair's top layout row.
-        assert!(
-            base.zip(hair)
-                .is_some_and(|(base, hair)| (hair..hair + s).contains(&base)),
-            "at scale {s} the crown's base row {base:?} is off the hair's top {hair:?}"
-        );
-    }
-}
-
 /// [`mark`] writes nothing outside the piece's span, at every scale: a lit
 /// and a dark screen, a desk lamp's bulb, the wall decor's, a floor lamp's
 /// and an open elevator's.
@@ -3187,6 +3137,7 @@ fn an_effect_never_blocks_its_figure() {
         c.effects = every_effect(c.top_left);
     }
     let id = crate::hit::HoverTarget::Agent(frame.agents[frame.characters[0].agent_idx].agent_id);
+    let mut over = 0;
     for s in [1, pack.max_density_variant().get()] {
         let office = Office {
             layout: &layout,
@@ -3203,7 +3154,6 @@ fn an_effect_never_blocks_its_figure() {
                 _ => None,
             })
             .expect("the sitter");
-        let mut over = 0;
         for p in list.pieces() {
             let PieceKind::Effect(riding) = p.kind else {
                 continue;
@@ -3227,11 +3177,8 @@ fn an_effect_never_blocks_its_figure() {
                 }
             }
         }
-        assert!(
-            over > 0,
-            "premise: at scale {s} an effect lies over the body"
-        );
     }
+    assert!(over > 0, "premise: an effect lies over the body");
 }
 
 /// The pet and the gateway mascots stand as figures: each paints only
@@ -3501,11 +3448,10 @@ fn riders_paint_beside_their_figure() {
             .position(|p| matches!(p.kind, PieceKind::Character { .. }))
             .expect("the figure");
         assert_eq!(
-            kinds[figure - 1..=figure + 3],
+            kinds[figure - 1..=figure + 2],
             [
                 Some(K::WalkingDust),
                 None,
-                Some(K::FlameCrown),
                 Some(K::SleepZ),
                 Some(K::RequiresActionMark)
             ]
@@ -4021,7 +3967,7 @@ fn a_sitters_fingerprint_moves_with_everything_their_figure_paints_from() {
             .find(|f| f.characters.first().is_some_and(|c| c.seat_desk.is_some()))
             .expect("the fixture sits down");
         let other = pixtuoid_core::AgentId::from_transcript_path("/cutaway/other.jsonl");
-        let variants: [&FigureEdit; 7] = [
+        let variants: [&FigureEdit; 6] = [
             &|_, _| {},
             &|c, a| {
                 c.glow = crate::sim::CharacterGlow::Work;
@@ -4033,7 +3979,6 @@ fn a_sitters_fingerprint_moves_with_everything_their_figure_paints_from() {
                     }),
                 };
             },
-            &|_, a| a.model = Some(std::sync::Arc::from("claude-fable-5")),
             &|_, a| a.cwd = std::sync::Arc::from(std::path::Path::new("/w/other")),
             &|c, _| c.flip_x = !c.flip_x,
             &|c, _| {
@@ -4258,7 +4203,6 @@ fn every_effect(top_left: crate::layout::Point) -> Vec<crate::effects::Effect> {
     let at = |ms| std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms);
     vec![
         crate::effects::walking_dust(top_left, 0),
-        crate::effects::flame_crown(top_left, 8, Motion::Full.beat(at(0))),
         crate::effects::sleep_z(top_left, 0, Motion::Full.beat(at(500)))
             .expect("a z rising at 500 ms"),
         crate::effects::requires_action_mark(top_left),

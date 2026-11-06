@@ -409,7 +409,7 @@ pub(crate) fn hook_identity(
     )
 }
 
-/// Burn-tier effort observation (CC): tool-context hook payloads carry an
+/// Effort observation (CC): tool-context hook payloads carry an
 /// `effort: {level}` object — hooks.md lists low/medium/high/xhigh/max and notes
 /// that ULTRACODE "is not a distinct level and reports as xhigh". Codex hook
 /// payloads carry no such field, and absent emits nothing.

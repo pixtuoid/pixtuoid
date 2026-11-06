@@ -352,7 +352,7 @@ pub struct AgentSlot {
     pub pid: Option<crate::source::PidIdentity>,
     /// The RAW model string last observed on this agent's wire —
     /// last-seen-wins, so a mid-session `/model` switch tracks. Interpretation
-    /// (the burn-tier tables) lives in the scene layer; this stays
+    /// lives in the scene layer; this stays
     /// uninterpreted wire truth.
     #[serde(
         with = "opt_arc_str_serde",
@@ -360,9 +360,9 @@ pub struct AgentSlot {
         default
     )]
     pub model: Option<Arc<str>>,
-    /// The RAW effort observation last seen. The scene layer treats the value
-    /// as live only within its TTL — no sighting means the boost decays, which
-    /// is honest (an idle agent isn't burning).
+    /// The RAW effort observation last seen. The scene layer shows the value
+    /// only within its TTL — no sighting means it drops off, which is honest
+    /// (an idle agent spends no effort).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub effort: Option<EffortObservation>,
     /// Session-cumulative FRESH tokens (new input + cache writes + output —
@@ -390,14 +390,14 @@ fn u64_is_zero(v: &u64) -> bool {
 }
 
 /// A RAW effort string + WHEN it was last observed — the freshness the scene
-/// layer's burn-tier TTL reads (see `AgentSlot::effort`).
+/// layer's effort TTL reads (see `AgentSlot::effort`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct EffortObservation {
     /// The RAW effort string as observed on the wire (uninterpreted).
     #[serde(with = "arc_str_serde")]
     pub value: Arc<str>,
-    /// When `value` was last observed — the burn-tier freshness clock.
+    /// When `value` was last observed — the effort's freshness clock.
     pub seen_at: SystemTime,
 }
 

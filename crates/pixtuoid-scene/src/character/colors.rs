@@ -304,10 +304,6 @@ const SKIN_PRESETS: &[Rgb] = &[
 ];
 const _: () = assert!(!SKIN_PRESETS.is_empty());
 
-/// A burning agent's hair — an alias of the flame gradient's deep base, so a
-/// gradient tweak can't desync the hair from the crown.
-const EMBER_HAIR: Rgb = crate::effects::look::FLAME_DEEP;
-
 /// The palette keys a character sprite draws its shirt, hair, skin and pants
 /// in: the keys [`agent_overrides`] replaces, so a pack's own sprites take each
 /// agent's colors.
@@ -326,19 +322,11 @@ pub(crate) const PANTS_KEY: char = 'P';
     clippy::cast_possible_truncation,
     reason = "a hash picks through `crate::spread`, alike on every target"
 )]
-pub(crate) fn agent_overrides(
-    agent: &AgentSlot,
-    glow_tint: Option<Rgb>,
-    burn: crate::burn::BurnTier,
-) -> [(char, Pixel); 4] {
+pub(crate) fn agent_overrides(agent: &AgentSlot, glow_tint: Option<Rgb>) -> [(char, Pixel); 4] {
     let id_seed = agent.agent_id.raw();
     let outfit_seed = outfit_seed_for(agent);
     let outfit = OUTFITS[crate::spread(outfit_seed, OUTFITS.len())];
-    let hair = if burn == crate::burn::BurnTier::Normal {
-        HAIR_PRESETS[crate::spread(id_seed / 7, HAIR_PRESETS.len())]
-    } else {
-        EMBER_HAIR
-    };
+    let hair = HAIR_PRESETS[crate::spread(id_seed / 7, HAIR_PRESETS.len())];
     let skin = SKIN_PRESETS[crate::spread(id_seed / 13, SKIN_PRESETS.len())];
     let final_skin = if let Some(tint) = glow_tint {
         blend_rgb(skin, tint, 0.18)
@@ -373,18 +361,14 @@ mod tests {
     fn agent_overrides_are_deterministic_per_id() {
         let id = pixtuoid_core::AgentId::from_transcript_path("/a.jsonl");
         let slot = make_slot(id, ActivityState::Idle);
-        assert_eq!(
-            agent_overrides(&slot, None, crate::burn::BurnTier::Normal),
-            agent_overrides(&slot, None, crate::burn::BurnTier::Normal)
-        );
+        assert_eq!(agent_overrides(&slot, None), agent_overrides(&slot, None));
     }
 
     #[test]
     fn agent_overrides_glow_tint_shifts_skin_toward_given_color() {
         let id = pixtuoid_core::AgentId::from_transcript_path("/a.jsonl");
         let slot = make_slot(id, ActivityState::Idle);
-        let normal = crate::burn::BurnTier::Normal;
-        let unlit = agent_overrides(&slot, None, normal);
+        let unlit = agent_overrides(&slot, None);
         let green_glow = agent_overrides(
             &slot,
             Some(Rgb {
@@ -392,7 +376,6 @@ mod tests {
                 g: 240,
                 b: 170,
             }),
-            normal,
         );
         let blue_glow = agent_overrides(
             &slot,
@@ -401,7 +384,6 @@ mod tests {
                 g: 160,
                 b: 255,
             }),
-            normal,
         );
         for key in [SHIRT_KEY, HAIR_KEY, PANTS_KEY] {
             assert_eq!(override_of(&unlit, key), override_of(&green_glow, key));
@@ -559,8 +541,7 @@ mod tests {
             .iter()
             .chain(SKIN_PRESETS)
             .copied()
-            .chain(outfits)
-            .chain([EMBER_HAIR]);
+            .chain(outfits);
         for c in colors {
             let shades: Vec<Rgb> = (-MAX_RAMP_LEVEL..=MAX_RAMP_LEVEL)
                 .map(|n| c.ramp(n))

@@ -19,8 +19,6 @@ pub(crate) enum EffectKind {
     /// The puff a walker's stride kicks up; the foot it rises under
     /// ([`planted_foot`]).
     WalkingDust,
-    /// The flame crowning a burning head; which of its two frames shows.
-    FlameCrown,
     /// One heart rising off a petted pet; ms into its [`HEART_LIFE_MS`].
     PetHeart,
     /// One puff of coffee steam; ms into its [`STEAM_CYCLE_MS`].
@@ -87,24 +85,6 @@ pub(crate) fn walking_dust(at: Point, foot: usize) -> Effect {
 /// from the strike that opens its cycle, its west from the one halfway.
 pub(crate) fn planted_foot(frame: usize, frames: usize, flip: bool) -> usize {
     usize::from(frame * 2 >= frames) ^ usize::from(flip)
-}
-
-/// How long the flame crown holds each of its two frames: whole Full beats,
-/// so it flickers evenly.
-const FLAME_FLICKER_MS: u64 = 2 * crate::anim::FULL_TICK_MS;
-
-/// The flame crowning a `width`-wide figure whose frame's top-left is
-/// `top_left`: it stands on the head's top row, centred on the frame.
-pub(crate) fn flame_crown(top_left: Point, width: u16, beat: Beat) -> Effect {
-    Effect {
-        kind: EffectKind::FlameCrown,
-        at: Point {
-            x: top_left.x + width / 2,
-            y: top_left.y,
-        },
-        // Integer division: epoch-ms as f32 loses precision and freezes the flicker.
-        phase: (beat.ms() / FLAME_FLICKER_MS) % 2,
-    }
 }
 
 /// One puff's rise, from its spout to gone.
@@ -228,26 +208,6 @@ mod tests {
             sleep_z(AT, seed + SLEEP_Z_CYCLE_MS, at_ms(0)),
             sleep_z(AT, seed, at_ms(0)),
             "a whole cycle of seed changes nothing"
-        );
-    }
-
-    #[test]
-    fn the_crown_flips_frame_every_flicker() {
-        let frame = |ms| flame_crown(AT, 8, at_ms(ms)).phase;
-        assert_eq!(frame(0), 0);
-        assert_eq!(frame(FLAME_FLICKER_MS - 1), 0);
-        assert_eq!(frame(FLAME_FLICKER_MS), 1);
-        assert_eq!(frame(2 * FLAME_FLICKER_MS), 0);
-        // Far past where an f32 epoch would have frozen it.
-        let late = u64::from(u32::MAX) * FLAME_FLICKER_MS;
-        assert_ne!(frame(late), frame(late + FLAME_FLICKER_MS));
-        assert_eq!(
-            flame_crown(AT, 8, at_ms(0)).at,
-            Point {
-                x: AT.x + 4,
-                y: AT.y
-            },
-            "it stands centred on the head's top row"
         );
     }
 

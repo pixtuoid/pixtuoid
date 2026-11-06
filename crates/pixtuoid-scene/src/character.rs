@@ -1,7 +1,5 @@
 //! `character_frame` is the per-agent recolor both profiles draw through.
 
-use std::time::SystemTime;
-
 use crate::pack::OfficeArt;
 use crate::pack::Piece;
 use crate::sprite::{Frame, Rgb};
@@ -24,7 +22,7 @@ pub(crate) use hair::{Dress, dress_for};
 
 /// Which image of a character's art to draw: the part of its
 /// [`FrameKey`](crate::frame_cache::FrameKey) the sim's placement decides; the
-/// agent, its burn tier and the scale's density key the rest. A request, not
+/// agent and the scale's density key the rest. A request, not
 /// the cache's key, which is published and keys the image it made.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SpritePose {
@@ -78,10 +76,9 @@ pub(crate) fn character_frame<'c>(
     pack: &OfficeArt,
     scale: crate::render_scale::RenderScale,
     cache: &'c mut FrameCache,
-    now: SystemTime,
 ) -> CharacterFrame<'c> {
     let dense = crate::pack::densest_frame(pack, pose.anim_name, pose.frame_idx, scale);
-    let key = character_key_at(&dense, pack, pose, agent, now);
+    let key = character_key_at(&dense, pack, pose, agent);
     recolor(dense, &key, pack, cache)
 }
 
@@ -159,10 +156,9 @@ pub(crate) fn character_key(
     agent: &AgentSlot,
     pack: &OfficeArt,
     scale: crate::render_scale::RenderScale,
-    now: SystemTime,
 ) -> CharacterKey {
     let dense = crate::pack::densest_frame(pack, pose.anim_name, pose.frame_idx, scale);
-    character_key_at(&dense, pack, pose, agent, now)
+    character_key_at(&dense, pack, pose, agent)
 }
 
 fn character_key_at(
@@ -170,7 +166,6 @@ fn character_key_at(
     pack: &OfficeArt,
     pose: SpritePose,
     agent: &AgentSlot,
-    now: SystemTime,
 ) -> CharacterKey {
     let SpritePose {
         anim_name,
@@ -178,7 +173,6 @@ fn character_key_at(
         flip_x,
         glow_tint,
     } = pose;
-    let burn = crate::burn::slot_burn_tier(agent, now);
     let density = dense.density;
     CharacterKey {
         frame: crate::frame_cache::FrameKey {
@@ -187,11 +181,10 @@ fn character_key_at(
             frame_idx,
             flip_x,
             glow_tint,
-            burn,
             density,
         },
         outfit: outfit_seed_for(agent),
-        palette: agent_overrides(agent, glow_tint, burn),
+        palette: agent_overrides(agent, glow_tint),
         dress: dress_for(pack, agent.agent_id, dense.frame, dense.head, density),
     }
 }
@@ -259,10 +252,9 @@ mod tests {
             glow_tint: None,
         };
         let coffee = pack.inner().variants_of(Piece::HoldingCoffee)[&density].frame_ms();
-        let coworker =
-            character_frame(pose, agent, pack, scale, &mut cache, SystemTime::UNIX_EPOCH)
-                .frame
-                .clone();
+        let coworker = character_frame(pose, agent, pack, scale, &mut cache)
+            .frame
+            .clone();
         let cat = &pack.inner().variants_of(Piece::CatSleep)[&density];
         let art: Vec<_> = std::iter::once(("coworker", coffee, &coworker))
             .chain(cat.frames().iter().map(|f| ("cat", cat.frame_ms(), f)))

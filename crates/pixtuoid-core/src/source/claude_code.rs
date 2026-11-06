@@ -72,9 +72,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 };
 
 /// The label the attachment decoder synthesizes for the `ultra_effort_exit`
-/// marker — deliberately NOT a real effort word, so last-seen-wins kills the
-/// flame instantly, and suppressed by `pixtuoid_scene::burn::fresh_effort` so
-/// the sentinel never reaches the dossier. In-workspace decoder↔painter
+/// marker — deliberately NOT a real effort word, so last-seen-wins ends the
+/// shown effort at once, and suppressed by the scene tooltip's fresh-effort
+/// rule so the sentinel never reaches the dossier. In-workspace decoder↔painter
 /// contract token, not a stable API.
 #[doc(hidden)]
 pub const ULTRA_EXIT_LABEL: &str = "ultra_exit";

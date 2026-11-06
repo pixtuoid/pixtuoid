@@ -35,7 +35,7 @@ pub(crate) async fn capture_live_scene(
     }
     let watcher_handle = tokio::spawn(async move { watcher.run(tx).await });
     // ALSO listen on the real hook socket: a live CC session's hooks carry
-    // activity + the burn-tier effort level the transcript alone can't provide in
+    // activity + the effort level the transcript alone can't provide in
     // real time. A running pixtuoid that owns it relays them, like the app.
     let hook_handle = {
         use pixtuoid_core::source::DynSource;
@@ -893,12 +893,12 @@ mod tests {
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         let team = sample_scene(now, 12, 12);
         let a = team.agents.values().next().unwrap();
-        assert!(agent_named(&team, "--flame", a.label.as_ref()).is_err());
-        let by_session = agent_named(&team, "--flame", &a.session_id).unwrap();
+        assert!(agent_named(&team, "--crop-agent", a.label.as_ref()).is_err());
+        let by_session = agent_named(&team, "--crop-agent", &a.session_id).unwrap();
         assert_eq!(by_session.agent_id, a.agent_id);
         let alone = sample_scene(now, 12, 1);
         let b = alone.agents.values().next().unwrap();
-        let by_label = agent_named(&alone, "--flame", b.label.as_ref()).unwrap();
+        let by_label = agent_named(&alone, "--crop-agent", b.label.as_ref()).unwrap();
         assert_eq!(by_label.agent_id, b.agent_id);
     }
 

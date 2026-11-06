@@ -609,8 +609,8 @@ const MESSAGE: &str = "message";
 /// `tool_use_id` would double-count `tool_call_count`.
 const CUSTOM: &str = "custom";
 
-/// A `--thinking` pin change, forwarded RAW: omp's vocabulary already contains
-/// `burn::MAX_EFFORTS` verbatim, so translating would be a second vocabulary to
+/// A `--thinking` pin change, forwarded RAW: the dossier shows the wire's own
+/// word, so translating would be a second vocabulary to
 /// keep in sync. Its `configured` field is the user's PIN, not the turn's level.
 const THINKING_LEVEL_CHANGE: &str = "thinking_level_change";
 const TITLE: &str = "title";
@@ -632,7 +632,7 @@ const TITLE_FIELD: &str = "title";
 const SESSION_EXIT: &str = "session_exit";
 
 /// The turn role carrying tool calls. Its `model` is read BARE, never the
-/// provider-prefixed `model_change` form, so `TOP_MODELS` prefix matching sees the
+/// provider-prefixed `model_change` form, so the dossier shows the
 /// vocabulary CC/codex/copilot emit. `model_change` itself stays undecoded: every
 /// assistant message re-stamps the bare `model` anyway — one turn's lag.
 const ROLE_ASSISTANT: &str = "assistant";
@@ -1597,7 +1597,7 @@ mod tests {
                 },
             ] => {
                 assert_eq!(*agent_id, root());
-                // Forwarded RAW: `burn::MAX_EFFORTS` already contains "xhigh"
+                // Forwarded RAW, untranslated
                 assert_eq!(effort.as_str(), "xhigh");
             }
             other => panic!("expected one model-free ModelInfo, got {other:?}"),

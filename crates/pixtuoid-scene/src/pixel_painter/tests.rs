@@ -518,7 +518,6 @@ fn character_frame_takes_a_density_variant_recolored_like_the_base() {
         ActivityState::Idle,
     );
     let mut cache = crate::frame_cache::FrameCache::new();
-    let now = SystemTime::UNIX_EPOCH;
     let scale = crate::render_scale::RenderScale::new(4).expect("nonzero");
 
     let dense = crate::character::character_frame(
@@ -532,7 +531,6 @@ fn character_frame_takes_a_density_variant_recolored_like_the_base() {
         &pack,
         scale,
         &mut cache,
-        now,
     );
     let got = (dense.frame.width(), dense.blit_at.get());
     let dense_shirt = dense.frame.get(0, 0).copied().flatten();
@@ -549,7 +547,6 @@ fn character_frame_takes_a_density_variant_recolored_like_the_base() {
         &pack,
         crate::render_scale::RenderScale::ONE,
         &mut cache,
-        now,
     );
     // Same agent, animation and frame through one cache: only the density key
     // keeps the classic request from being served the dense recolor.
@@ -2248,134 +2245,6 @@ fn obstacle_kinds_render_upright_and_unflipped() {
 }
 
 #[test]
-fn top_tier_slot_paints_ember_hair_and_a_flame_crown() {
-    use pixtuoid_core::state::EffortObservation;
-    use std::time::Duration;
-    let pack = crate::pack::test_office();
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let black = Rgb { r: 0, g: 0, b: 0 };
-    let top_left = Point { x: 8, y: 8 };
-    let mut slot = make_slot(
-        pixtuoid_core::AgentId::from_parts("claude-code", "ses_burn"),
-        ActivityState::Idle,
-    );
-
-    let render = |slot: &pixtuoid_core::AgentSlot| {
-        let mut buf = RgbBuffer::filled(32, 32, black);
-        let drawn = paint_character_at(
-            &mut buf,
-            crate::character::SpritePose {
-                anim_name: Piece::Seated,
-                frame_idx: 0,
-                flip_x: false,
-                glow_tint: None,
-            },
-            top_left,
-            slot,
-            &pack,
-            &mut FrameCache::new(),
-            now,
-        );
-        let fx = crate::sim::character_effects(
-            slot,
-            top_left,
-            drawn.w,
-            crate::sim::Cues::default(),
-            Motion::Full.timing(now),
-        );
-        super::effects::paint_effects(
-            &mut buf,
-            &fx,
-            crate::theme::theme_by_name("normal").expect("normal theme"),
-        );
-        buf
-    };
-    let has = |buf: &RgbBuffer, c: Rgb| {
-        (0..buf.height()).any(|y| (0..buf.width()).any(|x| buf.get(x, y) == c))
-    };
-    const EMBER: Rgb = crate::effects::look::FLAME_DEEP;
-    const TIP: Rgb = crate::effects::look::FLAME_TIP;
-
-    let plain = render(&slot);
-    assert!(
-        !has(&plain, EMBER) && !has(&plain, TIP),
-        "Normal must not burn"
-    );
-
-    slot.model = Some("claude-fable-5".into());
-    let ember = render(&slot);
-    assert!(has(&ember, EMBER), "Premium recolors the hair to ember");
-    assert!(!has(&ember, TIP), "Premium must not flame");
-    assert_ne!(plain.as_slice(), ember.as_slice());
-
-    slot.effort = Some(EffortObservation::new("ultra".into(), now));
-    let burning = render(&slot);
-    assert!(has(&burning, TIP), "Top paints flame tips");
-    let above = (0..top_left.y).any(|y| (0..32).any(|x| burning.get(x, y) != black));
-    assert!(above, "the crown must rise above the sprite's top row");
-
-    slot.effort = Some(EffortObservation::new(
-        "ultra".into(),
-        now - Duration::from_secs(crate::burn::EFFORT_TTL_SECS + 1),
-    ));
-    let decayed = render(&slot);
-    assert!(!has(&decayed, TIP), "stale effort must decay the flame");
-    assert!(has(&decayed, EMBER), "…back to ember hair");
-}
-
-/// The sim crowns a Top-burning agent's placement on its post-breath top-left,
-/// centred on its pack frame; a Premium one burns no crown.
-#[test]
-fn a_top_burning_placement_carries_its_crown_on_its_top_left() {
-    use crate::effects::EffectKind;
-    use crate::pose::Pose;
-    use pixtuoid_core::state::EffortObservation;
-    let (mut scene, layout, id, now0, pack) = sim_rig();
-    // A breathing instant, where the post-breath top-left is off the fit.
-    let now = (0..u64::from(u16::MAX))
-        .map(|ms| now0 + std::time::Duration::from_millis(ms))
-        .find(|&t| {
-            crate::sim::anchors::with_breath(Point { x: 0, y: 1 }, id, Motion::Full.beat(t)).y == 0
-        })
-        .expect("the breath rises within a cycle");
-    let slot = scene.agents.get_mut(&id).expect("the rig's agent");
-    slot.model = Some("claude-fable-5".into());
-    let crowns = |scene: &SceneState| {
-        let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
-        let poses = HashMap::from([(id, Some(Pose::SeatedTyping))]);
-        let (placements, ..) = crate::sim::resolve_characters(
-            &agents,
-            &poses,
-            &layout,
-            &pack,
-            &HashMap::new(),
-            Motion::Full.timing(now),
-        );
-        let [p] = <[_; 1]>::try_from(placements).expect("one agent, one placement");
-        let crowns: Vec<Point> = p
-            .effects
-            .iter()
-            .filter(|e| e.kind == EffectKind::FlameCrown)
-            .map(|e| e.at)
-            .collect();
-        (p, crowns)
-    };
-    assert!(crowns(&scene).1.is_empty(), "Premium must not flame");
-
-    let slot = scene.agents.get_mut(&id).expect("the rig's agent");
-    slot.effort = Some(EffortObservation::new("ultra".into(), now));
-    let (p, crowns) = crowns(&scene);
-    let w = crate::sim::pack_frame_size(&pack, p.anim_name, p.frame_idx).w;
-    assert_eq!(
-        crowns,
-        [Point {
-            x: p.top_left.x + w / 2,
-            y: p.top_left.y
-        }]
-    );
-}
-
-#[test]
 fn glass_wall_h_clamps_below_buffer_bottom() {
     // `y_face` at the buffer's last row runs the face past it, so the pen's
     // clip drops the rows below.
@@ -2617,7 +2486,6 @@ fn cwd_backfill_invalidates_cached_outfit_frames() {
         &unknown,
         &pack,
         &mut cache,
-        SystemTime::UNIX_EPOCH,
     );
 
     let mut after = RgbBuffer::filled(24, 24, black);
@@ -2633,7 +2501,6 @@ fn cwd_backfill_invalidates_cached_outfit_frames() {
         &healed,
         &pack,
         &mut cache,
-        SystemTime::UNIX_EPOCH,
     );
 
     let mut fresh = RgbBuffer::filled(24, 24, black);
@@ -2649,7 +2516,6 @@ fn cwd_backfill_invalidates_cached_outfit_frames() {
         &healed,
         &pack,
         &mut FrameCache::new(),
-        SystemTime::UNIX_EPOCH,
     );
 
     assert_ne!(
@@ -3452,7 +3318,6 @@ fn a_figure_hovers_on_the_box_it_is_drawn_in_in_both_looks() {
                     agent,
                     &pack,
                     &mut FrameCache::new(),
-                    now,
                 );
                 Hover::figure(
                     Pivot::TopLeft,
@@ -5919,33 +5784,6 @@ fn paint_chair_back_writes_its_mask_and_nothing_outside_it() {
     );
 }
 
-/// The crown's own pixels, on a BLANK buffer — the burn tier also tints the
-/// sprite over this exact box, so no full-pass diff can isolate the crown.
-#[test]
-fn paint_flame_crown_draws_its_pattern() {
-    const BG: Rgb = Rgb { r: 9, g: 9, b: 9 };
-    let mut buf = RgbBuffer::filled(40, 40, BG);
-    let top_left = Point { x: 12, y: 20 };
-    const W: u16 = 8;
-    super::effects::paint_effect(
-        &mut buf,
-        &crate::effects::flame_crown(top_left, W, Motion::Full.beat(SystemTime::UNIX_EPOCH)),
-        crate::theme::theme_by_name("normal").expect("normal theme"),
-    );
-    let painted: Vec<(u16, u16)> = (0..buf.height())
-        .flat_map(|y| (0..buf.width()).map(move |x| (x, y)))
-        .filter(|&(x, y)| buf.get(x, y) != BG)
-        .collect();
-    assert!(!painted.is_empty(), "the crown must paint");
-    let cx = top_left.x + W / 2;
-    for &(x, y) in &painted {
-        assert!(
-            (cx - 2..=cx + 1).contains(&x) && (top_left.y - 2..=top_left.y).contains(&y),
-            "the crown painted outside its own box at ({x}, {y})"
-        );
-    }
-}
-
 /// The two sideways kinds mirror on OPPOSITE facings, and the shipped `standing`
 /// sprite is not left-right symmetric (its mouth sits off-centre), so aligning
 /// the two predicates turns every bartender around by a pixel — silently, since
@@ -6145,7 +5983,6 @@ fn an_unflipped_character_faces_the_way_its_art_does() {
         &pack,
         crate::render_scale::RenderScale::ONE,
         &mut cache,
-        SystemTime::UNIX_EPOCH,
     )
     .frame
     .clone();
@@ -6165,7 +6002,6 @@ fn a_facing_flip_mirrors_the_dressed_frame() {
     let pack = crate::pack::test_office();
     let scale = crate::render_scale::RenderScale::from(pack.max_density_variant());
     let mut cache = crate::frame_cache::FrameCache::new();
-    let now = SystemTime::UNIX_EPOCH;
     let mut asymmetric = 0;
     for i in 0..12 {
         let id = pixtuoid_core::AgentId::from_transcript_path(&format!("/flip/{i}.jsonl"));
@@ -6182,7 +6018,6 @@ fn a_facing_flip_mirrors_the_dressed_frame() {
                 &pack,
                 scale,
                 &mut cache,
-                now,
             )
             .frame
             .clone()

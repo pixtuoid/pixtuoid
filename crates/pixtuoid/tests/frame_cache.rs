@@ -15,7 +15,6 @@ fn key(id: AgentId, anim_name: Piece, frame_idx: usize, flip_x: bool) -> FrameKe
         frame_idx,
         flip_x,
         glow_tint: None,
-        burn: pixtuoid_scene::burn::BurnTier::Normal,
         density: pixtuoid_scene::sprite::format::Density::ONE,
     }
 }

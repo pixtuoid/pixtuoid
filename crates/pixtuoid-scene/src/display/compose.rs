@@ -687,7 +687,7 @@ fn collect_pieces(
         outside,
     );
     let mut badges = Vec::new();
-    let carried = push_characters(frame, office, moment.timing.now, (&mut order, &mut badges));
+    let carried = push_characters(frame, office, (&mut order, &mut badges));
     let host_text = crate::display::text::HostRuns {
         bubbles: push_bubbles(frame, office, &badges, &mut order),
         badges: badges.into(),
@@ -1274,7 +1274,6 @@ fn chair_span(
 fn push_characters(
     frame: &SimFrame,
     office: Office<'_>,
-    now: std::time::SystemTime,
     (order, badges): (&mut Vec<(Span, PieceKind)>, &mut Vec<crate::display::Badge>),
 ) -> Vec<crate::layout::Point> {
     let Office {
@@ -1294,7 +1293,7 @@ fn push_characters(
         let (w, h) =
             crate::pack::densest_frame(pack, pose.anim_name, pose.frame_idx, RenderScale::ONE)
                 .logical;
-        let key = crate::character::character_key(pose, agent, pack, scale, now);
+        let key = crate::character::character_key(pose, agent, pack, scale);
         let seat = c.seat_desk;
         let chair = seat.and_then(|d| chair_span(pack, d.facing, d.at, layout.inner));
         if let (Some(d), Some(_)) = (seat, chair) {
