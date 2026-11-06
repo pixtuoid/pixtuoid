@@ -933,9 +933,9 @@ impl NeonState {
 
     /// Whether a mood change is still crossing over at `now`.
     pub(crate) fn fading(&self, now: SystemTime) -> bool {
-        self.fade
-            .as_ref()
-            .is_some_and(|f| crate::anim::elapsed_ms(now, f.started_at) < u64::from(Self::FADE_MS))
+        self.fade.as_ref().is_some_and(|f| {
+            f.from != f.to && crate::anim::elapsed_ms(now, f.started_at) < u64::from(Self::FADE_MS)
+        })
     }
 
     fn stutter_flash(beat: crate::anim::Beat) -> bool {

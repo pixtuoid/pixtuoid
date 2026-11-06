@@ -2028,20 +2028,37 @@ fn settled_typists(t0: SystemTime) -> SceneState {
     scene
 }
 
-/// An office that drew `scene` in `look` under `motion` at `t0`, and a sign's
-/// fade before: a sign's first light counts as a fade for that long.
-fn office_settled_at(
+/// An office that drew `scene` in `look` under `motion` at `t0`.
+fn office_drawn_at(
     look: crate::look::Look,
     scene: &SceneState,
     motion: Motion,
     t0: SystemTime,
 ) -> OfficeSession {
     let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
-    let fade = Duration::from_millis(u64::from(NeonState::FADE_MS));
-    for now in [t0 - fade, t0] {
-        render_office(&mut office, look, scene, motion, now);
-    }
+    render_office(&mut office, look, scene, motion, t0);
     office
+}
+
+/// A room nothing moves in moves nothing off the beat from its first frame on,
+/// and after a gap past a sign's fade: a sign lit with no recent light to ease
+/// from snaps, which is no fade.
+#[test]
+fn a_sign_lit_from_no_recent_light_moves_nothing_off_the_beat() {
+    let t0 = crate::localclock::at_hour(12);
+    let scene = settled_typists(t0);
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    let past_a_fade = t0 + 2 * Duration::from_millis(u64::from(NeonState::FADE_MS));
+    for now in [t0, past_a_fade] {
+        render_office(
+            &mut office,
+            crate::look::Look::HALF_BLOCKS,
+            &scene,
+            Motion::Full,
+            now,
+        );
+        assert!(!office.moves_off_beat(), "{:?} in", now.duration_since(t0));
+    }
 }
 
 /// An office never rendered has no frame to hold: it paints now.
@@ -2086,7 +2103,7 @@ fn an_office_mid_slide_paints_every_frame() {
     let scene = make_scene(3, 2);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000 + 3_600);
     let look = crate::look::Look::HALF_BLOCKS;
-    let mut office = office_settled_at(look, &scene, Motion::Still, t0);
+    let mut office = office_drawn_at(look, &scene, Motion::Still, t0);
     assert!(office.navigate(1, t0), "a second floor to slide to");
     let mid = t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2);
     render_office(&mut office, look, &scene, Motion::Still, mid);
@@ -2104,7 +2121,7 @@ fn a_room_nothing_moves_in_paints_just_past_its_beats_turn() {
     let t0 = crate::localclock::at_hour(12) + Duration::from_millis(37);
     let scene = settled_typists(t0);
     for motion in [Motion::Full, Motion::Calm] {
-        let office = office_settled_at(crate::look::Look::HALF_BLOCKS, &scene, motion, t0);
+        let office = office_drawn_at(crate::look::Look::HALF_BLOCKS, &scene, motion, t0);
         assert!(
             !office.moves_off_beat(),
             "{motion:?}: nothing moves off the beat"
@@ -2131,7 +2148,7 @@ fn a_room_nothing_moves_in_paints_just_past_its_beats_turn() {
 #[test]
 fn under_still_a_room_paints_on_the_rest_tick() {
     let t0 = crate::localclock::at_hour(12) + Duration::from_millis(37);
-    let office = office_settled_at(
+    let office = office_drawn_at(
         crate::look::Look::HALF_BLOCKS,
         &settled_typists(t0),
         Motion::Still,
@@ -2150,7 +2167,7 @@ fn the_wait_follows_the_last_renders_tier_though_its_picture_held() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_millis(37);
     let scene = make_scene(0, 8);
     let [_, look] = looks();
-    let mut office = office_settled_at(look, &scene, Motion::Still, t0);
+    let mut office = office_drawn_at(look, &scene, Motion::Still, t0);
     render_office(&mut office, look, &scene, Motion::Full, t0);
     assert_eq!(
         office.picture().expect("lays out").dirty(),
