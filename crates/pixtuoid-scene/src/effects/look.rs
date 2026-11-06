@@ -69,11 +69,11 @@ pub(crate) const REQUIRES_ACTION_MARK_1X: Glyph = Glyph::new(&[
 
 /// A subagent's cap on the base art, as [`SLEEP_Z_1X`] is, from the front:
 /// layers of a glyph and the ramp step of the cap's ink it is drawn in, each
-/// glyph's middle column on the head mark and its last row on the brow.
+/// glyph's middle column on the head mark and its last row on the brow, the
+/// cap's line ringing them on the row over them ([`plot_subagent_cap`]).
 const CAP_1X_FRONT: [(Glyph, i8); 2] = [
     (
         Glyph::new(&[
-            "...####...", //
             "..######..", //
             "..........", //
         ]),
@@ -81,7 +81,6 @@ const CAP_1X_FRONT: [(Glyph, i8); 2] = [
     ),
     (
         Glyph::new(&[
-            "..........", //
             "..........", //
             "..######..", //
         ]),
@@ -91,7 +90,6 @@ const CAP_1X_FRONT: [(Glyph, i8); 2] = [
 /// [`CAP_1X_FRONT`] from behind: the strap's nub under the crown.
 const CAP_1X_BACK: [(Glyph, i8); 1] = [(
     Glyph::new(&[
-        "...####...", //
         "..######..", //
         "....##....", //
     ]),
@@ -101,7 +99,6 @@ const CAP_1X_BACK: [(Glyph, i8); 1] = [(
 const CAP_1X_SIDE: [(Glyph, i8); 2] = [
     (
         Glyph::new(&[
-            "....###...", //
             "...#####..", //
             "...#####..", //
         ]),
@@ -109,7 +106,6 @@ const CAP_1X_SIDE: [(Glyph, i8); 2] = [
     ),
     (
         Glyph::new(&[
-            "..........", //
             "..........", //
             "........##", //
         ]),
@@ -133,8 +129,8 @@ const CAP_1X_CROWN: [(Glyph, i8); 2] = [
         CAP_1X_TAB,
     ),
 ];
-/// The ramp step of a base-art cap's brim and peak, which lie on skin or
-/// floor.
+/// The ramp step of a base-art cap's brim and peak, which lie on skin or the
+/// ground.
 const CAP_1X_UNDER: i8 = -2;
 /// [`CAP_1X_UNDER`] for the tab of a cap seen from above, one step only: it
 /// lies on hair, and two steps sink the lightest ink into silver hair.
@@ -259,6 +255,9 @@ fn plot_requires_action_mark(
     }
 }
 
+/// `cap` on the base art, its brim on `brow`: its glyphs, ringed in its line
+/// within its own rows and the one over them, never under the brow, so the
+/// cap keeps to its frame and reads against any carpet.
 fn plot_subagent_cap(plot: &mut impl FnMut(u16, u16, Rgb, f32), brow: Point, cap: Cap) {
     let layers: &[(Glyph, i8)] = match cap.view {
         HeadView::Front => &CAP_1X_FRONT,
@@ -266,15 +265,32 @@ fn plot_subagent_cap(plot: &mut impl FnMut(u16, u16, Rgb, f32), brow: Point, cap
         HeadView::Side => &CAP_1X_SIDE,
         HeadView::Crown => &CAP_1X_CROWN,
     };
-    let sign = if cap.flip { -1 } else { 1 };
+    let mut ink = std::collections::BTreeMap::new();
     for &(glyph, level) in layers {
-        let (mid, bottom) = (glyph.width() / 2, glyph.height() - 1);
+        let (mid, bottom) = (i32::from(glyph.width() / 2), i32::from(glyph.height()) - 1);
         for (dx, dy) in glyph.inked() {
-            let x = i32::from(brow.x) + sign * (i32::from(dx) - i32::from(mid));
-            let y = (brow.y + dy).checked_sub(bottom);
-            if let (Ok(x), Some(y)) = (u16::try_from(x), y) {
-                plot(x, y, cap.ink.ramp(level), 1.0);
-            }
+            let cell = (i32::from(dx) - mid, i32::from(dy) - bottom);
+            ink.insert(cell, cap.ink.ramp(level));
+        }
+    }
+    let Some(top) = ink.keys().map(|&(_, row)| row).min() else {
+        return;
+    };
+    let (x0, x1) = ink
+        .keys()
+        .fold((0, 0), |(lo, hi), &(dx, _)| (lo.min(dx), hi.max(dx)));
+    let around = (top - 1..=0).flat_map(|row| (x0 - 1..=x1 + 1).map(move |dx| (dx, row)));
+    let ring = crate::character::outline(around, |dx, row| ink.contains_key(&(dx, row)));
+    let sign = if cap.flip { -1 } else { 1 };
+    let cells = ring.map(|cell| (cell, cap.line)).collect::<Vec<_>>();
+    for ((dx, row), c) in cells
+        .into_iter()
+        .chain(ink.iter().map(|(&cell, &c)| (cell, c)))
+    {
+        let x = i32::from(brow.x) + sign * dx;
+        let y = i32::from(brow.y) + row;
+        if let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) {
+            plot(x, y, c, 1.0);
         }
     }
 }

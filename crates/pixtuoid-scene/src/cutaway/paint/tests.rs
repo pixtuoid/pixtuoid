@@ -1308,6 +1308,49 @@ fn a_caps_brim_sits_on_the_brow_in_every_pose() {
     }
 }
 
+/// The base art's cap is ringed in its line as the densest's is: its top row,
+/// the frame's, is all line in a front, back or side view, the ring's own row
+/// over the ink.
+#[test]
+fn a_base_caps_top_row_is_its_ring() {
+    let theme = crate::theme::theme_by_name("normal").expect("theme");
+    let (layout, pack, frames, _) = sit_down(crate::layout::Facing::South, 2);
+    let office = Office {
+        layout: &layout,
+        pack: &pack,
+        theme,
+        scale: RenderScale::ONE,
+    };
+    for piece in [
+        PackPiece::Seated,
+        PackPiece::SeatedBack,
+        PackPiece::SideSeated,
+    ] {
+        let mut frame = frames.last().expect("a seated frame").clone();
+        let c = &mut frame.characters[0];
+        (c.anim_name, c.frame_idx) = (piece, 0);
+        let frame = capped(frame, &pack);
+        let cap = cap_rider(&list_at(&frame, office, 12));
+        let crate::effects::EffectKind::SubagentCap(look) = cap.effect.kind else {
+            unreachable!("the cap rider");
+        };
+        let all = painted_by(&cap, |_| true);
+        let top = all.iter().map(|&(_, y)| y).min().expect("the cap paints");
+        assert_eq!(
+            top,
+            i32::from(frame.characters[0].top_left.y),
+            "{piece:?}: the cap rises off its frame"
+        );
+        let ring = painted_by(&cap, |c| c == look.line);
+        let top_row: std::collections::BTreeSet<_> =
+            all.iter().copied().filter(|&(_, y)| y == top).collect();
+        assert!(
+            top_row.is_subset(&ring),
+            "{piece:?}: the top row is not all ring"
+        );
+    }
+}
+
 /// The first and last columns of `row` in `px`.
 fn row_span(px: &std::collections::BTreeSet<(i32, i32)>, row: i32) -> Option<(i32, i32)> {
     let xs = px.iter().filter(|&&(_, y)| y == row).map(|&(x, _)| x);

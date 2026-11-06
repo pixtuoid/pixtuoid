@@ -397,29 +397,24 @@ mod tests {
     /// The closest any cap ink comes to any hair, in OKLab: measured off
     /// [`CAP_INKS`] as picked, not a perceptual threshold. A ratchet: an ink
     /// edited nearer a hair the cap sits on fails here first.
-    const CAP_HAIR_FLOOR: f32 = 0.159;
+    const CAP_HAIR_MIN: f32 = 0.159;
 
     #[test]
-    fn no_cap_ink_comes_nearer_a_hair_than_the_measured_floor() {
+    fn no_cap_ink_comes_nearer_a_hair_than_the_measured_minimum() {
         let nearest = CAP_INKS
             .iter()
             .flat_map(|&ink| HAIR_PRESETS.iter().map(move |&hair| ink.delta_e(hair)))
             .fold(f32::INFINITY, f32::min);
-        assert!(nearest >= CAP_HAIR_FLOOR, "a cap ink {nearest} from a hair");
+        assert!(nearest >= CAP_HAIR_MIN, "a cap ink {nearest} from a hair");
     }
 
-    /// The dark backdrop the owner approved the team inks against.
-    const DARK_FLOOR: Rgb = Rgb {
-        r: 0x1c,
-        g: 0x1c,
-        b: 0x1e,
-    };
-
-    /// A cap is a graphic, so each ink holds the non-text bar on a dark floor.
+    /// A cap is a graphic ringed in the pack's `[characters] outline` at every
+    /// density, so each ink holds the non-text bar against that ring.
     #[test]
-    fn every_cap_ink_reads_as_a_graphic_on_a_dark_floor() {
+    fn every_cap_ink_reads_as_a_graphic_against_its_ring() {
+        let ring = crate::pack::test_office().inner().character_outline();
         for ink in CAP_INKS {
-            let ratio = ink.contrast(DARK_FLOOR);
+            let ratio = ink.contrast(ring);
             assert!(
                 ratio >= crate::sprite::NON_TEXT_CONTRAST,
                 "{ink:?} at {ratio:.2}:1"
