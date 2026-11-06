@@ -238,7 +238,6 @@ impl Hairstyle {
     }
 
     /// The density of the art it dresses.
-    #[cfg(test)]
     pub(crate) fn density(&self) -> Density {
         self.density
     }

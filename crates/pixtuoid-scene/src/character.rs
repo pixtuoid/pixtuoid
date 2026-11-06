@@ -10,6 +10,7 @@ use crate::sim::{CharacterGlow, outfit_seed_for};
 
 mod colors;
 mod hair;
+mod portrait;
 #[cfg(test)]
 pub(crate) mod test_support;
 
