@@ -1,0 +1,17 @@
+{"type":"session.start","data":{"sessionId":"03da61a3-b39c-48fa-919e-cc1d25a70431","version":0,"producer":"","copilotVersion":"","startTime":"","selectedModel":"","contextTier":null,"context":{"cwd":"/private/tmp/pixtuoid-capture/proj","gitRoot":"","branch":"","headCommit":""},"alreadyInUse":false,"remoteSteerable":false},"id":"","timestamp":"","parentId":null}
+{}
+{}
+{}
+{}
+{"type":"session.usage_record","data":{"usage":{"model":"","responseModel":"","modelDisplayName":"","inputTokens":5623,"outputTokens":16,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":0,"duration":0,"timeToFirstTokenMs":0,"outputTtftMs":0,"interTokenLatencyMs":0,"initiator":"","interactionType":"","isByok":false,"byokKind":"","modelProvider":"","providerType":"","isAuto":false,"maxPromptTokens":0,"maxOutputTokens":0,"transport":"","inferenceGateway":false,"requestBodyBytes":0,"requestBodyWireBytes":0,"requestBodyEncoding":"","apiCallId":"","rte":false,"apiEndpoint":"","accounting":{},"aiCreditsStatus":"","availableToolCount":0,"toolTokenCount":0,"customToolCallCount":0,"unmatchedToolResultCount":0,"orphanToolCallCount":0,"frontierSource":"","cacheDetailsReported":false,"numToolCalls":0,"toolCounts":{},"finishReason":"","contentFilterTriggered":false}},"id":"1d67cc18-49e0-4587-80b1-827d2ac8bda5","timestamp":"","parentId":""}
+{}
+{"type":"tool.execution_start","data":{"toolCallId":"call_yjeYlMH8DKOEzirl","toolName":"bash","arguments":{"command":"rm NOTE.txt","description":""},"turnId":"","model":"","toolTitle":"","shellToolInfo":{}},"id":"","timestamp":"","parentId":""}
+{"type":"permission.requested","data":{"requestId":"","permissionRequest":{"kind":"shell","toolCallId":"call_yjeYlMH8DKOEzirl","fullCommandText":"","shellType":"","intention":"","commands":[],"hasParseErrors":false,"commandSegments":[],"possiblePaths":[],"canOfferSessionApproval":false,"hasWriteFileRedirection":false,"possibleUrls":[]},"promptRequest":{},"assistedApprovalAssessment":{},"agentMode":"","permissionMode":"","ownerSessionId":""},"id":"","timestamp":"","parentId":""}
+{"type":"permission.completed","data":{"requestId":"","toolCallId":"call_yjeYlMH8DKOEzirl","result":{},"decisionSource":""},"id":"","timestamp":"","parentId":""}
+{"type":"tool.execution_complete","data":{"toolCallId":"call_yjeYlMH8DKOEzirl","model":"gpt-4.1","interactionId":"","turnId":"","rte":false,"success":false,"error":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}
+{}
+{}
+{"type":"session.usage_record","data":{"usage":{"model":"","responseModel":"","modelDisplayName":"","inputTokens":5670,"outputTokens":1,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":0,"duration":0,"timeToFirstTokenMs":0,"outputTtftMs":0,"interTokenLatencyMs":0,"initiator":"","interactionType":"","isByok":false,"byokKind":"","modelProvider":"","providerType":"","isAuto":false,"maxPromptTokens":0,"maxOutputTokens":0,"transport":"","inferenceGateway":false,"requestBodyBytes":0,"requestBodyWireBytes":0,"requestBodyEncoding":"","apiCallId":"","rte":false,"apiEndpoint":"","accounting":{},"aiCreditsStatus":"","availableToolCount":0,"toolTokenCount":0,"customToolCallCount":0,"unmatchedToolResultCount":0,"orphanToolCallCount":0,"frontierSource":"","cacheDetailsReported":false,"numToolCalls":0,"toolCounts":{},"finishReason":"","contentFilterTriggered":false}},"id":"1910e15b-9113-42f4-b33b-9d9bfec359d7","timestamp":"","parentId":""}
+{}
+{}
+{"type":"session.shutdown","data":{},"id":"","timestamp":"","parentId":""}
