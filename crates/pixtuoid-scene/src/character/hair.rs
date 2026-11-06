@@ -48,9 +48,35 @@ pub(crate) fn dress_for(
     head: Option<HeadMark>,
     density: Density,
 ) -> Option<Dress> {
-    let head = head.filter(|_| density.get() > 1)?;
+    let head = dressed_head(head, density)?;
     let style = pick(pack, agent).and_then(|name| pack.inner().hairstyle(name, density));
     Some(Dress::of(body, head, style))
+}
+
+/// The most any agent's [`Dress`] of `body` (as [`dress_for`] takes it) rises
+/// over it: the headroom a canvas needs to hold every agent's figure uncut.
+pub(crate) fn max_rise(
+    pack: &OfficeArt,
+    body: &Frame,
+    head: Option<HeadMark>,
+    density: Density,
+) -> u16 {
+    let Some(head) = dressed_head(head, density) else {
+        return 0;
+    };
+    pack.inner()
+        .hairstyles()
+        .filter(|style| style.density() == density)
+        .map(Some)
+        .chain([None])
+        .map(|style| Dress::of(body, head, style).rise())
+        .max()
+        .unwrap_or(0)
+}
+
+/// `head`, where a frame at `density` is dressed at all.
+fn dressed_head(head: Option<HeadMark>, density: Density) -> Option<HeadMark> {
+    head.filter(|_| density.get() > 1)
 }
 
 impl Dress {

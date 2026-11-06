@@ -18,7 +18,7 @@ pub(crate) use colors::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY};
 pub(crate) use colors::{agent_overrides, work_glow_tint};
 #[cfg(test)]
 pub(crate) use hair::dress;
-pub(crate) use hair::{Dress, dress_for};
+pub(crate) use hair::{Dress, dress_for, max_rise};
 
 /// Which image of a character's art to draw: the part of its
 /// [`FrameKey`](crate::frame_cache::FrameKey) the sim's placement decides; the
