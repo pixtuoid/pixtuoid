@@ -129,9 +129,8 @@ const CAP_1X_CROWN: [(Glyph, i8); 2] = [
         CAP_UNDER,
     ),
 ];
-/// The ramp step of a cap's brim, peak and tab at every density, and of its
-/// strap and button at the densest art: one step, so the darkest ink's shade
-/// still reads against the cap's ring.
+/// The ramp step a cap's looks shade what lies under its crown with: one
+/// step, so the darkest ink's shade still reads against the cap's ring.
 pub(crate) const CAP_UNDER: i8 = -1;
 
 /// Layout rows a sleep z rises over its life.
