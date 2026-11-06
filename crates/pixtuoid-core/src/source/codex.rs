@@ -36,7 +36,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Codex CLI",
     label_prefix: "cx",
-    verified_version: "0.166.0",
+    verified_version: "0.167.0",
     version_probe: Some(&["codex", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("CODEX_HOME"),

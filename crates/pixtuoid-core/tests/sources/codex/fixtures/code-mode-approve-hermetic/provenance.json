@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.166.0",
-  "captured": "2026-11-02",
+  "version": "codex-cli 0.167.0",
+  "captured": "2026-11-06",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -30,7 +30,7 @@
     }
   },
   "sentinel_reads": {
-    "rollout-2026-11-01T16-45-40-01a199b8-1320-7ae3-ba4d-8506855f385c.jsonl": [
+    "rollout-2026-11-06T15-44-16-01a1b188-347a-7b53-92aa-2ca44a17b7ca.jsonl": [
       "16:/payload/info/last_token_usage/cached_input_tokens",
       "22:/payload/info/last_token_usage/cached_input_tokens"
     ]

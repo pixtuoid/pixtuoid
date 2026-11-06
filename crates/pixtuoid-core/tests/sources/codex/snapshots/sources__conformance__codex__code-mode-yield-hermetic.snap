@@ -3,68 +3,68 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - TurnStart:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     turn:
-      Id: 01a199b8-4a4a-7551-a4ae-6f5ec90e7ff1
+      Id: 01a1b188-6c0b-7780-84ea-8b53d48c85f7
 - ModelInfo:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     model: gpt-5.5
     effort: high
 - ToolUseStart:
-    agent_id: 7556422234021230909
-    tool_use_id: call_k7eXmGsOYZ7XHni5
+    agent_id: 13477837657776143647
+    tool_use_id: call_tgu0__hYPS3lUHI2
     detail:
       Generic:
         display: exec
 - ToolUseEnd:
-    agent_id: 7556422234021230909
-    tool_use_id: call_k7eXmGsOYZ7XHni5
+    agent_id: 13477837657776143647
+    tool_use_id: call_tgu0__hYPS3lUHI2
 - Usage:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     fresh_tokens: 19
     reading_id: "19"
 - ToolUseStart:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     tool_use_id: call_hermetic_wait_cell_1
     detail:
       Generic:
         display: wait
 - ToolUseEnd:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     tool_use_id: call_hermetic_wait_cell_1
 - Usage:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     fresh_tokens: 19
     reading_id: "38"
 - Usage:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     fresh_tokens: 19
     reading_id: "57"
 - TurnEnd:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     turn:
-      Id: 01a199b8-4a4a-7551-a4ae-6f5ec90e7ff1
+      Id: 01a1b188-6c0b-7780-84ea-8b53d48c85f7
 - SessionStart:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     source: codex
-    session_id: 01a199b8-4999-71d3-938b-3ed87ae80dc5
+    session_id: 01a1b188-6bd0-7bb1-82c1-da2f039a0664
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     model: gpt-5.5
     effort: ~
 - SessionStart:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     source: codex
-    session_id: 01a199b8-4999-71d3-938b-3ed87ae80dc5
+    session_id: 01a1b188-6bd0-7bb1-82c1-da2f039a0664
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - UserActionResolved:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     by:
       Turn:
-        Id: 01a199b8-4a4a-7551-a4ae-6f5ec90e7ff1
+        Id: 01a1b188-6c0b-7780-84ea-8b53d48c85f7
 - SessionEnd:
-    agent_id: 7556422234021230909
+    agent_id: 13477837657776143647
     as_child: false
