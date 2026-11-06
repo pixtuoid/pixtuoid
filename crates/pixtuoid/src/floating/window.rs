@@ -191,7 +191,7 @@ impl FloatingApp {
             cursor_in: false,
             hovered: false,
             petting: None,
-            clock: super::cadence::FrameClock::new(Instant::now(), motion),
+            clock: super::cadence::FrameClock::new(Instant::now()),
             cursor_icon: None,
             zoom: cfg.zoom,
             overlays: super::overlays::OverlayLayers::default(),
@@ -765,27 +765,27 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // An EMPTY office still steps on its beat (clock hands, weather,
-        // lightning, day/night), so it paints each beat, never 0fps. A LIVE
-        // gateway daemon lives in `daemons`, not `agents`, and is a WANDERING
-        // mascot, so it holds the fast cadence, as does whatever the floor
-        // reports moving between beats (a walk, or a light mid-fade) and the
-        // onboarding's backdrop dim mid-ramp.
-        let office_idle = self.live.as_ref().is_none_or(|live| {
+        // A populated office, a LIVE gateway daemon (in `daemons`, not
+        // `agents`: a WANDERING mascot), a slide and the onboarding's backdrop
+        // dim mid-ramp hold the frame rate; else the office says when it next
+        // needs painting.
+        let busy = self.live.as_ref().is_some_and(|live| {
             let scene = live.scene_rx.borrow();
-            scene.agents.is_empty()
-                && scene
+            !scene.agents.is_empty()
+                || scene
                     .daemons()
-                    .all(|(_, _, d)| d.liveness == DaemonLiveness::Down)
-        }) && !self.renderer.moves_off_beat()
-            && self.renderer.nav().transition().is_none()
-            && !self.ui.dim_moving();
+                    .any(|(_, _, d)| d.liveness != DaemonLiveness::Down)
+        }) || self.renderer.nav().transition().is_some()
+            || self.ui.dim_moving();
+        let until = if busy {
+            None
+        } else {
+            self.renderer.until_next_paint(SystemTime::now())
+        };
         // The redraw REQUEST rides the same deadline as the wait: requesting one
         // unconditionally here leaves winit a pending redraw, so `WaitUntil` never
         // sleeps and both cadences collapse to max-rate (see `super::cadence`).
-        let (paint, deadline) = self
-            .clock
-            .poll(Instant::now(), SystemTime::now(), office_idle);
+        let (paint, deadline) = self.clock.poll(Instant::now(), until);
         event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
         if let Some(due) = paint {
             self.jank.due_at(due);

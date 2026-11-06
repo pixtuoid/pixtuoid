@@ -1,3 +1,4 @@
+use super::office::{PAST_THE_TURN, REST_TICK};
 use super::*;
 use crate::anim::Motion;
 use crate::character::test_support::make_slot;
@@ -1978,6 +1979,173 @@ fn a_frame_is_a_function_of_its_instant_and_tier() {
         );
         assert!(a == b, "{motion:?}");
     }
+}
+
+/// `office`'s frame of `scene` at `now` in `look`, its floors moving at `motion`.
+fn render_office(
+    office: &mut OfficeSession,
+    look: crate::look::Look,
+    scene: &SceneState,
+    motion: Motion,
+    now: SystemTime,
+) {
+    let theme = crate::theme::theme_by_name("normal").expect("theme");
+    let _ = office.render(
+        look,
+        crate::look::RenderInputs {
+            world: FloorInputs {
+                scene,
+                now,
+                floor: FloorMeta::ground().with_motion(motion),
+                pets: PetInputs::default(),
+            },
+            theme,
+            viewport: PAINTED,
+            place: crate::look::Place::default(),
+            debug_walkable: false,
+            dim: crate::look::Dim::NONE,
+        },
+        &[],
+        theme.surface.bg_fallback,
+    );
+}
+
+/// Three typists long at their desks: a room nobody walks in.
+fn settled_typists(t0: SystemTime) -> SceneState {
+    let settled = t0 - Duration::from_secs(3_600);
+    let mut scene = make_scene(3, 8);
+    for slot in scene.agents.values_mut() {
+        (slot.created_at, slot.state_started_at, slot.last_event_at) = (settled, settled, settled);
+        slot.arrived_at = Some(settled);
+        slot.state = ActivityState::Running {
+            item: Some(ToolUse {
+                tool_use_id: None,
+                detail: None,
+                kind: pixtuoid_core::state::ToolKind::Edit,
+            }),
+        };
+    }
+    scene
+}
+
+/// An office that drew `scene` in `look` under `motion` at `t0`, and a sign's
+/// fade before: a sign's first light counts as a fade for that long.
+fn office_settled_at(
+    look: crate::look::Look,
+    scene: &SceneState,
+    motion: Motion,
+    t0: SystemTime,
+) -> OfficeSession {
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    let fade = Duration::from_millis(u64::from(NeonState::FADE_MS));
+    for now in [t0 - fade, t0] {
+        render_office(&mut office, look, scene, motion, now);
+    }
+    office
+}
+
+/// An office never rendered has no frame to hold: it paints now.
+#[test]
+fn an_office_never_rendered_paints_now() {
+    let office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    assert_eq!(
+        office.until_next_paint(crate::localclock::at_hour(12)),
+        None
+    );
+}
+
+/// An office paints every frame while someone walks in it.
+#[test]
+fn an_office_with_a_walker_paints_every_frame() {
+    let t0 = crate::localclock::at_hour(12);
+    let mut scene = make_scene(3, 8);
+    for slot in scene.agents.values_mut() {
+        (slot.created_at, slot.state_started_at, slot.last_event_at) = (t0, t0, t0);
+        slot.arrived_at = Some(t0);
+    }
+    let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    // A BUDGET for the arrivals to set off, not part of the assertion.
+    let walking = (0..60).map(|i| t0 + i * frame).find(|&now| {
+        render_office(
+            &mut office,
+            crate::look::Look::HALF_BLOCKS,
+            &scene,
+            Motion::Full,
+            now,
+        );
+        office.moves_off_beat()
+    });
+    let now = walking.expect("the arrivals walk in");
+    assert_eq!(office.until_next_paint(now), None);
+}
+
+/// A room nothing moves in between beats paints just past the next turn of
+/// its tier's beat.
+#[test]
+fn a_room_nothing_moves_in_paints_just_past_its_beats_turn() {
+    let t0 = crate::localclock::at_hour(12) + Duration::from_millis(37);
+    let scene = settled_typists(t0);
+    for motion in [Motion::Full, Motion::Calm] {
+        let office = office_settled_at(crate::look::Look::HALF_BLOCKS, &scene, motion, t0);
+        assert!(
+            !office.moves_off_beat(),
+            "{motion:?}: nothing moves off the beat"
+        );
+        let wait = office
+            .until_next_paint(t0)
+            .expect("a moving tier's beat turns");
+        let turn = t0 + wait - PAST_THE_TURN;
+        assert_ne!(
+            motion.beat(turn),
+            motion.beat(t0),
+            "{motion:?}: painted before the turn"
+        );
+        assert_eq!(
+            motion.beat(turn - Duration::from_millis(1)),
+            motion.beat(t0),
+            "{motion:?}: painted past the next turn"
+        );
+    }
+}
+
+/// Under Still, whose beat never turns, a room nothing moves in still paints
+/// on the rest tick.
+#[test]
+fn under_still_a_room_paints_on_the_rest_tick() {
+    let t0 = crate::localclock::at_hour(12) + Duration::from_millis(37);
+    let office = office_settled_at(
+        crate::look::Look::HALF_BLOCKS,
+        &settled_typists(t0),
+        Motion::Still,
+        t0,
+    );
+    assert!(!office.moves_off_beat(), "nothing moves off the beat");
+    assert_eq!(office.until_next_paint(t0), Some(REST_TICK));
+}
+
+/// The wait follows the tier of the last render, one whose picture held
+/// included: a switch from Still to Full that draws nothing new still turns
+/// the office's beat.
+#[test]
+fn the_wait_follows_the_last_renders_tier_though_its_picture_held() {
+    // The epoch's first beat, where Full's loop clock reads Still's 0.
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_millis(37);
+    let scene = make_scene(0, 8);
+    let [_, look] = looks();
+    let mut office = office_settled_at(look, &scene, Motion::Still, t0);
+    render_office(&mut office, look, &scene, Motion::Full, t0);
+    assert_eq!(
+        office.picture().expect("lays out").dirty(),
+        &crate::look::Dirty::Unchanged,
+        "the switch held the picture"
+    );
+    assert_eq!(
+        office.until_next_paint(t0),
+        Motion::Full
+            .until_next_beat(t0)
+            .map(|until| until + PAST_THE_TURN)
+    );
 }
 
 /// A slide never begins during one; it lands on its destination when it

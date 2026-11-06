@@ -253,8 +253,7 @@ impl Motion {
 
     /// How long after `wall` this tier's [`beat`](Self::beat) next turns, as
     /// [`loop_time`] steps; `None` at rest, which never turns.
-    #[doc(hidden)]
-    pub fn until_next_beat(self, wall: SystemTime) -> Option<std::time::Duration> {
+    pub(crate) fn until_next_beat(self, wall: SystemTime) -> Option<std::time::Duration> {
         let period = FULL_TICK_MS * self.pace()?;
         let turn = (epoch_ms(wall) / period + 1) * period;
         let since = wall
