@@ -3196,44 +3196,44 @@ fn an_effect_never_blocks_its_figure() {
         c.effects = every_effect(c.top_left);
     }
     let id = crate::hit::HoverTarget::Agent(frame.agents[frame.characters[0].agent_idx].agent_id);
+    // Only the densest art lays an effect over its figure; at 1x each rides
+    // beside or below it, so there is nothing to block.
+    let office = Office {
+        layout: &layout,
+        pack: &pack,
+        theme,
+        scale: RenderScale::from(pack.max_density_variant()),
+    };
+    let list = list_at(&frame, office, 12);
+    let body = list
+        .pieces()
+        .iter()
+        .find_map(|p| match p.kind {
+            PieceKind::Character { body, .. } => Some(body),
+            _ => None,
+        })
+        .expect("the sitter");
     let mut over = 0;
-    for s in [1, pack.max_density_variant().get()] {
-        let office = Office {
-            layout: &layout,
-            pack: &pack,
-            theme,
-            scale: RenderScale::new(s).expect("nonzero"),
+    for p in list.pieces() {
+        let PieceKind::Effect(riding) = p.kind else {
+            continue;
         };
-        let list = list_at(&frame, office, 12);
-        let body = list
-            .pieces()
-            .iter()
-            .find_map(|p| match p.kind {
-                PieceKind::Character { body, .. } => Some(body),
-                _ => None,
-            })
-            .expect("the sitter");
-        for p in list.pieces() {
-            let PieceKind::Effect(riding) = p.kind else {
-                continue;
-            };
-            let e = p.span;
-            for y in e.y0.max(body.y0)..=e.y1.min(body.y1) {
-                for x in e.x0.max(body.x0)..=e.x1.min(body.x1) {
-                    over += 1;
-                    let cell = Bounds {
-                        x,
-                        y,
-                        width: 1,
-                        height: 1,
-                    };
-                    assert_eq!(
-                        list.hovers().at(cell),
-                        Some(&id),
-                        "at scale {s}, {:?} at {cell:?}",
-                        riding.effect.kind
-                    );
-                }
+        let e = p.span;
+        for y in e.y0.max(body.y0)..=e.y1.min(body.y1) {
+            for x in e.x0.max(body.x0)..=e.x1.min(body.x1) {
+                over += 1;
+                let cell = Bounds {
+                    x,
+                    y,
+                    width: 1,
+                    height: 1,
+                };
+                assert_eq!(
+                    list.hovers().at(cell),
+                    Some(&id),
+                    "{:?} at {cell:?}",
+                    riding.effect.kind
+                );
             }
         }
     }

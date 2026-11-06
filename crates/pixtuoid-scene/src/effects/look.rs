@@ -91,7 +91,7 @@ fn plot_sleep_z(plot: &mut impl FnMut(u16, u16, Rgb, f32), at: Point, phase_ms: 
     };
     let rise = (t * f32::from(SLEEP_Z_MAX_RISE)) as u16;
     let z_y = at.y.saturating_sub(rise + 3);
-    for (dx, dy, _) in SLEEP_Z_1X.inked() {
+    for (dx, dy) in SLEEP_Z_1X.inked() {
         plot(at.x + 5 + dx, z_y + dy, z_color, alpha);
     }
 }
@@ -180,7 +180,7 @@ fn plot_requires_action_mark(
 ) {
     let fg = inks.requires_action;
     let by = top_left.y.saturating_sub(5) & !1u16;
-    for (dx, dy, _) in REQUIRES_ACTION_MARK_1X.inked() {
+    for (dx, dy) in REQUIRES_ACTION_MARK_1X.inked() {
         plot(top_left.x + 2 + dx, by + dy, fg, 1.0);
     }
 }

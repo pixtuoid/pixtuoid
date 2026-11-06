@@ -114,8 +114,7 @@ impl crate::look::Hits {
 }
 
 /// Rows of art pixels, every row as wide as the first: `.` a gap, and any
-/// other character ink, which a look with several inks names by that
-/// character.
+/// other character ink.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Glyph {
     rows: &'static [&'static str],
@@ -151,17 +150,17 @@ impl Glyph {
 
     /// Whether art pixel `(x, y)` of it is inked; `false` past its edges.
     pub fn ink(self, x: u16, y: u16) -> bool {
-        self.inked().any(|(dx, dy, _)| (dx, dy) == (x, y))
+        self.inked().any(|at| at == (x, y))
     }
 
-    /// Its inked pixels, as offsets from its top-left with the character that
-    /// inks each: the one rule every painter draws a glyph by.
-    pub(crate) fn inked(self) -> impl Iterator<Item = (u16, u16, char)> {
+    /// Its inked pixels, as offsets from its top-left: the one rule every
+    /// painter draws a glyph by.
+    pub(crate) fn inked(self) -> impl Iterator<Item = (u16, u16)> {
         (0u16..).zip(self.rows).flat_map(|(dy, row)| {
             (0u16..)
                 .zip(row.chars())
                 .filter(|&(_, c)| c != '.')
-                .map(move |(dx, c)| (dx, dy, c))
+                .map(move |(dx, _)| (dx, dy))
         })
     }
 }
@@ -184,22 +183,21 @@ mod tests {
     use super::*;
 
     /// A glyph inks a pixel exactly where its rows put any character but a
-    /// `.`, and none past its edges: the mark, and a glyph of several inks.
+    /// `.`, and none past its edges.
     #[test]
     fn a_glyph_inks_where_its_rows_do() {
-        for glyph in [REQUIRES_ACTION_MARK, Glyph::new(&["D.#", ".M."])] {
-            for (y, row) in (0u16..).zip(glyph.rows) {
-                for (x, c) in (0u16..).zip(row.chars()) {
-                    assert_eq!(glyph.ink(x, y), c != '.', "{glyph:?} ({x}, {y})");
-                }
+        let glyph = REQUIRES_ACTION_MARK;
+        for (y, row) in (0u16..).zip(glyph.rows) {
+            for (x, c) in (0u16..).zip(row.chars()) {
+                assert_eq!(glyph.ink(x, y), c != '.', "({x}, {y})");
             }
-            for (x, y) in [
-                (glyph.width(), 0),
-                (0, glyph.height()),
-                (u16::MAX, u16::MAX),
-            ] {
-                assert!(!glyph.ink(x, y), "{glyph:?} ({x}, {y})");
-            }
+        }
+        for (x, y) in [
+            (glyph.width(), 0),
+            (0, glyph.height()),
+            (u16::MAX, u16::MAX),
+        ] {
+            assert!(!glyph.ink(x, y), "({x}, {y})");
         }
     }
 }

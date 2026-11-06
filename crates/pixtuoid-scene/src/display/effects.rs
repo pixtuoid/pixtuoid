@@ -200,7 +200,7 @@ fn dense_look(
     }
 }
 
-/// Emit each of `glyph`'s inked cells from `(x, y)`, coloured by `ink`.
+/// Emit each of `glyph`'s inked cells from `(x, y)` in colour `c` at `coverage`.
 fn stamp(
     glyph: Glyph,
     x: i32,
@@ -208,7 +208,7 @@ fn stamp(
     emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32),
     (c, coverage): (Rgb, f32),
 ) {
-    for (dx, dy, _) in glyph.inked() {
+    for (dx, dy) in glyph.inked() {
         let at = ArtPoint {
             x: x + i32::from(dx),
             y: y + i32::from(dy),
