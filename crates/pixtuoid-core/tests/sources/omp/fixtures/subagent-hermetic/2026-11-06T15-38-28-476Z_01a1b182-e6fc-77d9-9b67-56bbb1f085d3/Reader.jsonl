@@ -1,0 +1,15 @@
+{}
+{"type":"session","version":0,"id":"","timestamp":"","cwd":"/tmp/pixtuoid-capture/proj","parentSession":""}
+{}
+{}
+{}
+{}
+{}
+{}
+{}
+{}
+{"type":"message","id":"d7bc5d7f","parentId":"","timestamp":"2026-11-06T15:38:39.721Z","runtime":{},"message":{"role":"assistant","content":[{"type":"toolCall","id":"call_3EmYVvu76_ftJzFk","name":"read","arguments":{"i":"","path":"NOTE.txt"},"partialArgs":"","streamIndex":0,"intent":""}],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2837,"output":12,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{}
+{"type":"message","id":"","parentId":"","timestamp":"","runtime":{},"message":{"role":"toolResult","toolCallId":"call_3EmYVvu76_ftJzFk","toolName":"","content":[],"details":{},"isError":false,"timestamp":0}}
+{"type":"message","id":"6af23cf6","parentId":"","timestamp":"2026-11-06T15:38:40.640Z","runtime":{},"message":{"role":"assistant","content":[],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2843,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{"type":"custom","customType":"session_exit","data":{},"id":"","parentId":"","timestamp":"","runtime":{}}

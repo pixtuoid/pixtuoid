@@ -43,7 +43,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Oh My Pi",
     label_prefix: "om",
-    verified_version: "18.16.0",
+    verified_version: "18.17.0",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),
