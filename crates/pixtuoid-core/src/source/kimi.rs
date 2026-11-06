@@ -43,7 +43,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Kimi Code CLI",
     label_prefix: "km",
-    verified_version: "2.5.1",
+    verified_version: "2.5.2",
     version_probe: Some(&["kimi", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
