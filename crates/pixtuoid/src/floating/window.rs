@@ -465,6 +465,9 @@ impl FloatingApp {
         else {
             // Nothing rendered, or held: the window keeps the last frame, which
             // the next one's dirt is no longer measured against.
+            if !live && self.renderer.buf().is_some() {
+                self.clock.retry();
+            }
             self.presented.stale();
             return;
         };
@@ -764,9 +767,9 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // The onboarding's backdrop dim mid-ramp is the window's own motion,
-        // which the office can't count.
-        let until = if self.ui.dim_moving() {
+        // The window's own overlays that move with the clock are motion the
+        // office can't count.
+        let until = if self.ui.overlay_moves() {
             None
         } else {
             self.renderer.until_next_paint(SystemTime::now())

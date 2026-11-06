@@ -136,11 +136,13 @@ const SNAP_BACK_MS: u64 = 900;
 /// desk before animating the snap-back; below this the teleport is invisible.
 const SNAP_BACK_MIN_DIST: i32 = 8;
 /// Max age (ms) for a recorded `PoseHistory` position to count as "where the
-/// agent is now".
-const HISTORY_RECENT_MS: u64 = 300;
+/// agent is now": a standing agent is recorded only when its floor is drawn,
+/// and a resting painter draws it a [`REST_TICK`](crate::anim::REST_TICK)
+/// apart at most, waking up to a frame late.
+const HISTORY_RECENT_MS: u64 =
+    crate::anim::REST_TICK.as_millis() as u64 + crate::anim::PAINT_FRAME_MS;
 /// Safety margin (ms) shaved off `EXIT_GRACE_WINDOW` so the time-compressed exit
-/// walk reaches the door before the reducer GCs the slot. Equal to
-/// `HISTORY_RECENT_MS` by coincidence, not by motivation — don't merge them.
+/// walk reaches the door before the reducer GCs the slot.
 const EXIT_BUDGET_MARGIN_MS: u64 = 300;
 
 /// The home desk's ARRIVAL target: a reachable cell on an ALLOWED side

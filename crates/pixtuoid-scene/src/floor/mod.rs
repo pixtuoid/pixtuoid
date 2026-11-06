@@ -157,7 +157,8 @@ pub struct FloorCtx {
     /// Whether the last stepped frame changes between beats: see
     /// [`OfficeSession::moves_off_beat`].
     off_beat: bool,
-    /// When the last stepped frame next changes by itself between beats.
+    /// The earliest change the last step scheduled
+    /// ([`SelfChange`](crate::sim::SelfChange)).
     next_change: Option<SystemTime>,
     /// Memo of the last per-frame layout, keyed by the ONLY inputs
     /// `SceneLayout::compute` reads on the frame path. Rebuilding it every
@@ -196,8 +197,8 @@ impl FloorCtx {
         self.off_beat
     }
 
-    /// When this floor's last stepped frame next changes by itself between
-    /// beats, nothing in it moving till then.
+    /// The earliest change this floor's last step scheduled, for
+    /// [`OfficeSession::until_next_paint`].
     pub(crate) fn next_change(&self) -> Option<SystemTime> {
         self.next_change
     }
@@ -768,19 +769,22 @@ impl VacancyDim {
     /// Advance the fade one frame. Returns the new lit level in
     /// `[MIN_LEVEL, 1.0]`.
     pub(crate) fn tick(&mut self, vacant: bool, now: SystemTime) -> f32 {
+        // Each ease runs from the instant its target switched, not from
+        // whenever the floor was last drawn before it: a vacant floor's from
+        // its debounce's end, a refilled one's from the tick that sees it full.
         let target = if vacant {
             let since = *self.vacant_since.get_or_insert(now);
             let fades_at = since + Duration::from_millis(Self::VACANCY_DEBOUNCE_MS);
             if now >= fades_at {
-                // The ease runs from the debounce's end, not from whenever the
-                // floor was last drawn before it.
                 self.last_update = self.last_update.map(|last| last.max(fades_at));
                 Self::MIN_LEVEL
             } else {
                 1.0
             }
         } else {
-            self.vacant_since = None;
+            if self.vacant_since.take().is_some() {
+                self.last_update = Some(now);
+            }
             1.0
         };
         self.dimmed = target < 1.0;

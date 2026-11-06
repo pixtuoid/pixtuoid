@@ -94,13 +94,21 @@ pub enum Motion {
 pub const FULL_TICK_MS: u64 = 125;
 /// How often a [`Motion::Calm`] loop steps.
 pub(crate) const CALM_TICK_MS: u64 = 500;
-/// The rate a painter repaints an office with agents in it, on every tier: the
-/// sampling rate the walks' strides are sized for
-/// (`a_walking_person_never_slides`).
+/// The rate a painter repaints an office: the TUI on every tier, any other
+/// painter while [`OfficeSession::until_next_paint`] is `None`. The sampling
+/// rate the walks' strides are sized for (`a_walking_person_never_slides`).
+///
+/// [`OfficeSession::until_next_paint`]: crate::floor::OfficeSession::until_next_paint
 pub const PAINT_FPS: u32 = 30;
 /// One [`PAINT_FPS`] frame, in whole ms.
 #[doc(hidden)]
 pub const PAINT_FRAME_MS: u64 = 1000 / PAINT_FPS as u64;
+/// How often an office whose beat never turns paints: never 0fps, since its
+/// clock and sky still move with the wall and a frozen one reads as a dead
+/// window. The longest wait an office names while nothing moves, which a
+/// slower tier's beat would outgrow.
+pub(crate) const REST_TICK: std::time::Duration = std::time::Duration::from_secs(1);
+const _: () = assert!((CALM_TICK_MS as u128) < REST_TICK.as_millis());
 
 /// The least any phase of a flash — a strike's level, a starved neon's catch,
 /// the dark between — lasts in loop time: the project's own floor, beside

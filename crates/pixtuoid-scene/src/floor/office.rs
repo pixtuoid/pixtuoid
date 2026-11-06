@@ -310,10 +310,6 @@ fn compose_slide(
 /// paints: a painter arms the wait on the monotonic clock while both fall on
 /// the wall clock, and the frame must land past them.
 pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
-/// How often an office whose beat never turns paints: never 0fps, since its
-/// clock and sky still move with the wall and a frozen one reads as a dead
-/// window.
-pub(super) const REST_TICK: Duration = Duration::from_secs(1);
 
 /// A painter's office of up to [`MAX_FLOORS`](super::MAX_FLOORS) floors:
 /// each floor's view, the office-wide state they share (a cup of
@@ -615,17 +611,17 @@ impl OfficeSession {
 
     /// Whether the floor showing's last frame changes between beats: someone
     /// walks, the sign's or the room's light is mid-fade, a token sheet falls or
-    /// a petted pet's hearts rise. Everything else a painter draws holds one
-    /// frame per beat
-    /// (`both_painters_paint_one_frame_per_beat`), so
-    /// [`Self::until_next_paint`] waits for the next beat only while this is false.
+    /// a petted pet's hearts rise. Otherwise its frame holds per beat
+    /// (`both_painters_paint_one_frame_per_beat`) but for a change its floor
+    /// scheduled, so [`Self::until_next_paint`] waits for the sooner of the two
+    /// only while this is false.
     pub(crate) fn moves_off_beat(&self) -> bool {
         self.views[self.nav.current()].moves_off_beat()
     }
 
     /// How long after `wall` this office next needs painting by itself: `None`
     /// while it moves between beats, on its floor or sliding to another (paint
-    /// every frame), else just past the next turn of the beat its last frame
+    /// every frame, at [`PAINT_FPS`](crate::anim::PAINT_FPS)), else just past the next turn of the beat its last frame
     /// was drawn on, or a rest tick where that beat never turns, or just past a
     /// change its floor scheduled for sooner. Events a painter wakes for itself
     /// (input, a dropped frame, new feed) are its own.
@@ -635,7 +631,8 @@ impl OfficeSession {
         if self.moves_off_beat() || self.nav.transition().is_some() {
             return None;
         }
-        let beat = (motion.until_next_beat(wall)).map_or(REST_TICK, |until| until + PAST_THE_TURN);
+        let beat = (motion.until_next_beat(wall))
+            .map_or(crate::anim::REST_TICK, |until| until + PAST_THE_TURN);
         // One the wall has passed with no step past it (a paused clock) is
         // no reason to paint again.
         let change = (view.floor.ctx.next_change())

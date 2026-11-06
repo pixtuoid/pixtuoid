@@ -307,9 +307,7 @@ const _: () = assert!(
 /// pool. Same 1-col vocabulary as the tally (see [`board_mood_segments`]).
 /// `None` = L2 stays on the
 /// tally: a line too wide for the panel (the tally abbreviates, this can't), and
-/// an EMPTY office — its tally already reads in plain English, and the floating
-/// window paints an empty office only as its beat turns (the binary's
-/// `floating::cadence`), which would hold a roll mid-scramble on screen.
+/// an EMPTY office — its tally already reads in plain English.
 fn board_persona_segments(mood: OfficeMood, pick: u64, lit: bool) -> Option<Vec<BoardSegment>> {
     let (pool, n, tone) = match mood {
         OfficeMood::Alert { requires_action: 1 } => {

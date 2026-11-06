@@ -11,23 +11,31 @@
 
 use std::time::{Duration, Instant};
 
-/// Motion is time-driven, so a populated office must repaint continuously.
-const ACTIVE_FPS: u32 = pixtuoid_scene::anim::PAINT_FPS;
-
-/// One frame of a populated office.
+/// One frame while the office or an overlay moves between beats.
 pub(super) fn frame() -> Duration {
-    Duration::from_secs(1) / ACTIVE_FPS
+    Duration::from_secs(1) / pixtuoid_scene::anim::PAINT_FPS
 }
 
 pub(crate) struct FrameClock {
     next: Instant,
+    /// Whether the frame last due was held back by the flash hold.
+    retry: bool,
 }
 
 impl FrameClock {
     /// Armed to paint immediately, so the first `about_to_wait` after window
     /// creation still draws.
     pub(crate) fn new(now: Instant) -> Self {
-        Self { next: now }
+        Self {
+            next: now,
+            retry: false,
+        }
+    }
+
+    /// The frame last due was held back: the next poll retries it a [`frame`]
+    /// on, not at the office's next wait, past which a one-beat phase is gone.
+    pub(crate) fn retry(&mut self) {
+        self.retry = true;
     }
 
     /// One `about_to_wait` pass at `now`, the office next needing a paint
@@ -41,7 +49,11 @@ impl FrameClock {
         now: Instant,
         until: Option<Duration>,
     ) -> (Option<Instant>, Instant) {
-        let wait = until.unwrap_or_else(frame);
+        let wait = if std::mem::take(&mut self.retry) {
+            frame()
+        } else {
+            until.unwrap_or_else(frame)
+        };
         if now >= self.next {
             let due = self.next;
             self.next = now + wait;
@@ -57,6 +69,7 @@ impl FrameClock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pixtuoid_scene::anim::PAINT_FPS;
 
     /// How far past the first pass `clock` paints over `span`, polled every
     /// `step`, the office next needing a paint `until` later.
@@ -82,12 +95,12 @@ mod tests {
     }
 
     #[test]
-    fn an_active_office_paints_at_active_fps_not_once_per_event_loop_iteration() {
+    fn a_moving_office_paints_at_paint_fps_not_once_per_event_loop_iteration() {
         let painted = paints_over(None, Duration::from_secs(1), Duration::from_millis(1)).len();
         // A band, not equality: 1ms poll quantization can slip a tick by a ms.
         assert!(
-            (ACTIVE_FPS as usize - 2..=ACTIVE_FPS as usize + 1).contains(&painted),
-            "an active office must paint ~ACTIVE_FPS times per second, not once per \
+            (PAINT_FPS as usize - 2..=PAINT_FPS as usize + 1).contains(&painted),
+            "a moving office must paint ~PAINT_FPS times per second, not once per \
              event-loop iteration (got {painted} over 1001 passes)"
         );
     }
@@ -124,6 +137,24 @@ mod tests {
             t0 + soon + frame(),
             "an agent arriving mid-rest must pull the deadline in to the active \
              cadence, not sit out the rest of the second"
+        );
+    }
+
+    /// A frame the flash hold kept back is retried a frame on, not at the
+    /// office's next wait, and the wait after it is the office's again.
+    #[test]
+    fn a_held_frame_is_retried_a_frame_on() {
+        let t0 = Instant::now();
+        let rest = Duration::from_secs(1);
+        let mut clock = FrameClock::new(t0);
+        assert!(clock.poll(t0, Some(rest)).0.is_some());
+        clock.retry();
+        let soon = t0 + Duration::from_millis(1);
+        assert_eq!(clock.poll(soon, Some(rest)), (None, soon + frame()));
+        let retried = soon + frame();
+        assert_eq!(
+            clock.poll(retried, Some(rest)),
+            (Some(retried), retried + rest)
         );
     }
 
