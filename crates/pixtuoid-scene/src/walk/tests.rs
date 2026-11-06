@@ -204,7 +204,6 @@ impl<R: Router> WanderRig<R> {
                 motion: self.route.motion,
             },
             &mut self.route.walks,
-            &mut self.route.history,
         );
     }
 
