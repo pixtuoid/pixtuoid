@@ -103,10 +103,6 @@ pub const PAINT_FPS: u32 = 30;
 /// One [`PAINT_FPS`] frame, in whole ms.
 #[doc(hidden)]
 pub const PAINT_FRAME_MS: u64 = 1000 / PAINT_FPS as u64;
-/// How far past its beat's turn, or a change it scheduled, an office next
-/// paints: a painter arms the wait on the monotonic clock while both fall on
-/// the wall clock, and the frame must land past them.
-pub(crate) const PAST_THE_TURN: std::time::Duration = std::time::Duration::from_millis(1);
 
 /// The least any phase of a flash — a strike's level, a starved neon's catch,
 /// the dark between — lasts in loop time: the project's own floor, beside

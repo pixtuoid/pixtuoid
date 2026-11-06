@@ -2838,16 +2838,16 @@ fn the_resurrect_check_reads_the_same_compressed_clock_as_the_exit_render() {
     );
 }
 
-/// Every tier whose walks take time rests at most a beat and a turn between
-/// two draws, and a standing agent's record outlives that wait woken a frame
-/// late: a slower moving tier fails here, not as a teleport.
+/// Every tier whose walks take time rests at most a beat between two draws,
+/// and a standing agent's record outlives that gap woken a frame late: a
+/// slower moving tier fails here, not as a teleport.
 #[test]
 fn a_moving_tiers_rest_fits_the_history_window() {
-    use crate::anim::{Motion, PAST_THE_TURN};
+    use crate::anim::Motion;
     for motion in Motion::ALL.into_iter().filter(|m| m.motions_take_time()) {
         let beat = (motion.until_next_beat(std::time::SystemTime::UNIX_EPOCH))
             .expect("a moving tier turns");
-        let rest = beat + PAST_THE_TURN + Duration::from_millis(PAINT_FRAME_MS);
+        let rest = beat + Duration::from_millis(PAINT_FRAME_MS);
         assert!(
             rest <= Duration::from_millis(HISTORY_RECENT_MS),
             "{motion:?} rests {rest:?}"

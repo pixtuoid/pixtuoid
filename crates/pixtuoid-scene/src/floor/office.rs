@@ -9,7 +9,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use crate::anim::PAST_THE_TURN;
 use crate::pack::OfficeArt;
 use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::SceneState;
@@ -307,6 +306,10 @@ fn compose_slide(
     }
 }
 
+/// How far past its beat's turn, or a change it scheduled, an office next
+/// paints: a painter arms the wait on the monotonic clock while both fall on
+/// the wall clock, and the frame must land past them.
+pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
 /// How often an office whose beat never turns paints: never 0fps, since its
 /// clock and sky still move with the wall and a frozen one reads as a dead
 /// window.

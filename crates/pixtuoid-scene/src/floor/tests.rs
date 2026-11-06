@@ -1,7 +1,6 @@
-use super::office::REST_TICK;
+use super::office::{PAST_THE_TURN, REST_TICK};
 use super::*;
 use crate::anim::Motion;
-use crate::anim::PAST_THE_TURN;
 use crate::character::test_support::make_slot;
 use crate::layout::Viewport;
 use pixtuoid_core::id::AgentId;

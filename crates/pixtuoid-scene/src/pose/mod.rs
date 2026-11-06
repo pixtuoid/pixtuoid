@@ -137,12 +137,10 @@ const SNAP_BACK_MS: u64 = 900;
 const SNAP_BACK_MIN_DIST: i32 = 8;
 /// Max age (ms) for a recorded `PoseHistory` position to count as "where the
 /// agent is now": a standing agent is recorded only when drawn, which a
-/// painter resting on a tier whose walks take time does a beat and a turn
-/// apart at most, waking up to a frame late. Calm's is the slowest such beat
+/// painter resting on a tier whose walks take time does a beat apart at most,
+/// waking up to a frame late. Calm's is the slowest such beat
 /// (`a_moving_tiers_rest_fits_the_history_window`).
-const HISTORY_RECENT_MS: u64 = crate::anim::CALM_TICK_MS
-    + crate::anim::PAST_THE_TURN.as_millis() as u64
-    + crate::anim::PAINT_FRAME_MS;
+const HISTORY_RECENT_MS: u64 = crate::anim::CALM_TICK_MS + crate::anim::PAINT_FRAME_MS;
 /// Safety margin (ms) shaved off `EXIT_GRACE_WINDOW` so the time-compressed exit
 /// walk reaches the door before the reducer GCs the slot.
 const EXIT_BUDGET_MARGIN_MS: u64 = 300;
