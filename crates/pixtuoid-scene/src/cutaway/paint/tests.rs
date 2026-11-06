@@ -884,9 +884,15 @@ fn looks_keep_their_places(s: u16) {
         theme,
         scale,
     };
-    let mut frame = frames.last().expect("a seated frame").clone();
+    let mut frame = capped(frames.last().expect("a seated frame").clone(), &pack);
+    let cap = frame.characters[0].effects[0];
     for c in &mut frame.characters {
         c.effects = every_effect(c.top_left);
+        for e in &mut c.effects {
+            if matches!(e.kind, K::SubagentCap(_)) {
+                *e = cap;
+            }
+        }
     }
     let list = list_at(&frame, office, 12);
     let badge = list
@@ -905,11 +911,13 @@ fn looks_keep_their_places(s: u16) {
             .expect("the rider")
     };
     let clear = |s: Span| s.x1 < badge.x0 || badge.x1 < s.x0 || s.y1 < badge.y0 || badge.y1 < s.y0;
-    let (_, mark) = rider(K::RequiresActionMark);
-    assert!(
-        clear(mark),
-        "at scale {s} the mark {mark:?} lands on the badge {badge:?}"
-    );
+    for (what, kind) in [("mark", K::RequiresActionMark), ("cap", cap.kind)] {
+        let (_, span) = rider(kind);
+        assert!(
+            clear(span),
+            "at scale {s} the {what} {span:?} lands on the badge {badge:?}"
+        );
+    }
     let (z, _) = rider(K::SleepZ);
     let mut last: Option<Span> = None;
     for phase in (0..crate::effects::SLEEP_Z_RISE_MS).step_by(100) {
@@ -1091,8 +1099,9 @@ fn a_strike_lifts_the_room_and_its_glass_most() {
 }
 
 /// A rider's head, which the z and the requires-action mark float beside, is
-/// its figure's top painted row, at the density the art is drawn at and at
-/// the base art's, for a sitter whose hair rises off their frame's top.
+/// its figure's top painted row over its head mark's column, turned with the
+/// figure, at the density the art is drawn at and at the base art's, for a
+/// sitter whose hair rises off their frame's top.
 #[test]
 fn a_riders_head_is_its_figures_top_row() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
@@ -1114,10 +1123,14 @@ fn a_riders_head_is_its_figures_top_row() {
                 .then_some((layout, pack, frame))
         })
         .expect("premise: a style moves the hair's top off the frame's");
-    for c in &mut frame.characters {
-        c.effects = vec![crate::effects::requires_action_mark(c.top_left)];
-    }
-    for scale in [RenderScale::ONE, densest] {
+    for (scale, flip) in [RenderScale::ONE, densest]
+        .into_iter()
+        .flat_map(|s| [(s, false), (s, true)])
+    {
+        for c in &mut frame.characters {
+            c.effects = vec![crate::effects::requires_action_mark(c.top_left)];
+            c.flip_x = flip;
+        }
         let office = Office {
             layout: &layout,
             pack: &pack,
@@ -1143,9 +1156,26 @@ fn a_riders_head_is_its_figures_top_row() {
                 _ => None,
             })
             .expect("the rider");
-        let head = riding.head.expect("a head to float beside");
+        let head = match riding.head.expect("a head to float beside") {
+            crate::display::effects::Head::Base(head)
+            | crate::display::effects::Head::Dressed { crest: head, .. } => head,
+        };
         let top = riding.pen.art_of_buffer(crate::display::pen::BufferPx(top));
         assert_eq!(head.y, i32::from(top.0), "at scale {}", scale.get());
+        let c = &frame.characters[0];
+        let art = crate::pack::densest_frame(&pack, c.anim_name, c.frame_idx, scale);
+        let (d, mark) = (art.density.get(), art.head.expect("a head mark").x);
+        let x = if flip {
+            art.logical.0 * d - 1 - mark
+        } else {
+            mark
+        };
+        assert_eq!(
+            head.x,
+            i32::from(c.top_left.x * d + x),
+            "at scale {}, flipped: {flip}",
+            scale.get()
+        );
     }
 }
 
@@ -1191,22 +1221,21 @@ fn cap_rider(list: &crate::display::DisplayList<'_>) -> crate::display::effects:
 }
 
 /// A subagent's cap puts its brim on the brow, its head mark's row, in every
-/// pose, at the base art and at the densest: there fitted to the head as its
-/// dress draws it across the brow, at the base art centred on the mark, and
-/// mirrored with a mirrored figure at both.
+/// frame of every pose, at the base art and at the densest: there fitted to
+/// the head as its dress draws it across the brow, at the base art centred on
+/// the mark, and mirrored with a mirrored figure at both.
 #[test]
 fn a_caps_brim_sits_on_the_brow_in_every_pose() {
+    use strum::VariantArray as _;
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let (layout, pack, frames, _) = sit_down(crate::layout::Facing::South, 2);
     let densest = RenderScale::from(pack.max_density_variant());
     let seated = frames.last().expect("a seated frame").clone();
-    for piece in [
-        PackPiece::Seated,
-        PackPiece::SeatedBack,
-        PackPiece::Walking,
-        PackPiece::SideSeated,
-        PackPiece::SeatedSleeping,
-    ] {
+    let poses = PackPiece::VARIANTS
+        .iter()
+        .filter(|p| p.kind() == crate::pack::validate::PieceKind::Character)
+        .flat_map(|&p| (0..pack.piece(p).frames().len()).map(move |i| (p, i)));
+    for (piece, idx) in poses {
         for scale in [RenderScale::ONE, densest] {
             let office = Office {
                 layout: &layout,
@@ -1214,12 +1243,12 @@ fn a_caps_brim_sits_on_the_brow_in_every_pose() {
                 theme,
                 scale,
             };
-            let art = crate::pack::densest_frame(&pack, piece, 0, scale);
+            let art = crate::pack::densest_frame(&pack, piece, idx, scale);
             let (d, head) = (i32::from(art.density.get()), art.head.expect("a head mark"));
             let worn = |flip: bool| {
                 let mut frame = seated.clone();
                 let c = &mut frame.characters[0];
-                (c.anim_name, c.frame_idx, c.flip_x) = (piece, 0, flip);
+                (c.anim_name, c.frame_idx, c.flip_x) = (piece, idx, flip);
                 let frame = capped(frame, &pack);
                 let cap = cap_rider(&list_at(&frame, office, 12));
                 let crate::effects::EffectKind::SubagentCap(look) = cap.effect.kind else {
@@ -1237,7 +1266,7 @@ fn a_caps_brim_sits_on_the_brow_in_every_pose() {
             };
             let (cap, at, key) = worn(false);
             let (flipped, ..) = worn(true);
-            let here = format!("{piece:?} at scale {}", scale.get());
+            let here = format!("{piece:?} frame {idx} at scale {}", scale.get());
             let (left, top) = (i32::from(at.x) * d, i32::from(at.y) * d);
             let mark = left + i32::from(head.x);
             let brim = cap.iter().map(|&(_, y)| y).max().expect("the cap paints");
@@ -1256,9 +1285,8 @@ fn a_caps_brim_sits_on_the_brow_in_every_pose() {
                 "{here}: the cap does not turn with its figure"
             );
             let crown = cap.iter().map(|&(_, y)| y).min().expect("the cap paints");
-            let edge = |row: i32| row_span(&cap, row).expect("a row of cap");
             if d == 1 {
-                let (x0, x1) = edge(crown);
+                let (x0, x1) = row_span(&cap, crown).expect("a row of cap");
                 assert!(
                     (x0 + x1 - 2 * mark).abs() <= 1,
                     "{here}: {x0}..={x1} off the mark {mark}"
@@ -1270,7 +1298,7 @@ fn a_caps_brim_sits_on_the_brow_in_every_pose() {
                     cap.iter().map(|&(x, _)| x).max().expect("the cap paints"),
                 );
                 assert_eq!(x0, mark - west, "{here}: not fitted to the head's west");
-                if piece == PackPiece::SideSeated {
+                if head.view == crate::sprite::HeadView::Side {
                     assert!(x1 > mark + east, "{here}: no peak juts past the brow");
                 } else {
                     assert_eq!(x1, mark + east, "{here}: not fitted to the head's east");
@@ -1286,8 +1314,9 @@ fn row_span(px: &std::collections::BTreeSet<(i32, i32)>, row: i32) -> Option<(i3
     Some((xs.clone().min()?, xs.max()?))
 }
 
-/// A cap stays inside its figure's box, so a subagent's badge hangs where a
-/// lead's does, sitting and walking, at the base art and at the densest.
+/// A cap stays inside its figure's box, its top no higher than the body's, so
+/// a subagent's badge hangs where a lead's does, sitting and walking, at the
+/// base art and at the densest.
 #[test]
 fn a_cap_never_moves_its_figures_badge() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
@@ -1308,6 +1337,26 @@ fn a_cap_never_moves_its_figures_badge() {
             };
             let badge = |frame: &SimFrame| list_at(frame, office, 12).badges()[0].run();
             assert_eq!(badge(&capped), badge(lead), "at scale {}", scale.get());
+            let worn = list_at(&capped, office, 12);
+            let body = worn
+                .pieces()
+                .iter()
+                .find_map(|p| match p.kind {
+                    PieceKind::Character { body, .. } => Some(body),
+                    _ => None,
+                })
+                .expect("the figure");
+            let cap = worn
+                .pieces()
+                .iter()
+                .find(|p| matches!(p.kind, PieceKind::Effect(r) if r == cap_rider(&worn)))
+                .expect("the cap")
+                .span;
+            assert!(
+                cap.y0 >= body.y0,
+                "at scale {} the cap {cap:?} rises over the body {body:?}",
+                scale.get()
+            );
         }
     }
 }

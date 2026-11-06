@@ -31,7 +31,8 @@ pub(crate) enum EffectKind {
 }
 
 /// A subagent's cap: its team's `ink`, the `line` round it at the densest
-/// art, and the head it sits on: seen from `view`, mirrored when `flip`.
+/// art, and the base art's head it sits on: seen from `view`, mirrored when
+/// `flip`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Cap {
     pub(crate) ink: Rgb,

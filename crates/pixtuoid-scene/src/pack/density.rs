@@ -26,8 +26,8 @@ pub(crate) struct DenseFrame<'a> {
     pub(crate) density: Density,
     /// The factor still left to blit at: the scale divided by `density`.
     pub(crate) blit_at: NonZeroU16,
-    /// Where the frame's head is, if the art marks it: where a hairstyle
-    /// dresses it ([`crate::character::dress_for`]).
+    /// Where the frame's head is, if the art marks it
+    /// ([`Sprite::head`](crate::sprite::Sprite::head)).
     pub(crate) head: Option<crate::sprite::HeadMark>,
 }
 

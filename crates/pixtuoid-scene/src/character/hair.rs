@@ -173,13 +173,7 @@ pub(crate) fn dress(
         (0..w_i).contains(&x) && (0..h_i).contains(&y) && px[idx(x, y)].is_some()
     };
     let cells = || (0..h_i).flat_map(move |y| (0..w_i).map(move |x| (x, y)));
-    let edge: Vec<usize> = cells()
-        .filter(|&(x, y)| {
-            !opaque(&px, x, y)
-                && [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                    .iter()
-                    .any(|(dx, dy)| opaque(&px, x + dx, y + dy))
-        })
+    let edge: Vec<usize> = outline(cells(), |x, y| opaque(&px, x, y))
         .map(|(x, y)| idx(x, y))
         .collect();
     for i in edge {
@@ -190,10 +184,7 @@ pub(crate) fn dress(
     // hair, and no author can see it to close it.
     let holes: Vec<usize> = cells()
         .filter(|&(x, y)| {
-            !opaque(&px, x, y)
-                && [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                    .iter()
-                    .all(|(dx, dy)| opaque(&px, x + dx, y + dy))
+            !opaque(&px, x, y) && SIDES.iter().all(|(dx, dy)| opaque(&px, x + dx, y + dy))
         })
         .map(|(x, y)| idx(x, y))
         .collect();
@@ -201,6 +192,19 @@ pub(crate) fn dress(
         px[i] = Some(line);
     }
     Frame::from_pixels(w, h, px)
+}
+
+/// A cell's four sides, as the steps to its neighbours there.
+const SIDES: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+
+/// The cells of `area` a shape leaves empty but touches along a side, the
+/// shape being the cells `opaque` holds: where one line round it runs, as a
+/// dressed figure's and a cap's do.
+pub(crate) fn outline(
+    area: impl Iterator<Item = (i32, i32)>,
+    opaque: impl Fn(i32, i32) -> bool,
+) -> impl Iterator<Item = (i32, i32)> {
+    area.filter(move |&(x, y)| !opaque(x, y) && SIDES.iter().any(|(dx, dy)| opaque(x + dx, y + dy)))
 }
 
 #[cfg(test)]
