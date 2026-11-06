@@ -339,7 +339,7 @@ pub(crate) fn advance_wander(
         WanderPhase::Seated => {
             if may_transition && elapsed_phase >= seated_dur {
                 // None sets off under Still, its clock still keeping time.
-                if !planner.motion.walks_take_time()
+                if !planner.motion.motions_take_time()
                     || !takes_trip(id, walk.wander.cycle_n)
                     || layout.waypoints.is_empty()
                 {
@@ -567,9 +567,9 @@ pub(crate) struct Planner<'a> {
 
 impl Planner<'_> {
     /// `profile` for a walk set off now: [`WalkProfile::INSTANT`] where none
-    /// takes time ([`Motion::walks_take_time`]).
+    /// takes time ([`Motion::motions_take_time`]).
     pub(crate) fn timed(&self, profile: WalkProfile) -> WalkProfile {
-        if self.motion.walks_take_time() {
+        if self.motion.motions_take_time() {
             profile
         } else {
             WalkProfile::INSTANT

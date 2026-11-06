@@ -326,8 +326,8 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // visible "flash"). Sitters at desks are already covered by the static desk
     // mask, so only waypoint visitors — stable across frames — contribute.
     stores.overlay.clear();
-    // Only a walk that takes time routes around a wanderer (`Motion::walks_take_time`).
-    let mobile = if floor.motion.walks_take_time() {
+    // Only a walk that takes time routes around a wanderer (`Motion::motions_take_time`).
+    let mobile = if floor.motion.motions_take_time() {
         &agents[..]
     } else {
         &[][..]
@@ -433,7 +433,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         stores.creatures,
     );
     let mascots = mascot_placements(scene, pack, timing, &mut ground, stores.creatures);
-    let desks = desk_props(&agents, layout, pack, coffee, timing);
+    let desks = desk_props(&agents, layout, pack, coffee, floor.motion, timing);
 
     let through_door = agents.iter().filter(|a| {
         (stores.walks.get(&a.agent_id)).is_none_or(|w| w.walks_the_door(a.exiting_at.is_some()))
@@ -590,7 +590,13 @@ fn pet_placement(
             kind,
             pos,
             anim_name,
-            petted.map(|p| p.elapsed_ms(now)),
+            petted.map(|p| {
+                if floor.motion.motions_take_time() {
+                    p.elapsed_ms(now)
+                } else {
+                    0
+                }
+            }),
             beat,
         ),
     })
@@ -786,6 +792,7 @@ fn desk_props(
     layout: &SceneLayout,
     pack: &OfficeArt,
     coffee: &HashMap<AgentId, SystemTime>,
+    motion: crate::anim::Motion,
     timing: Timing,
 ) -> Vec<DeskProps> {
     let Timing { now, beat } = timing;
@@ -805,7 +812,8 @@ fn desk_props(
             DeskProps {
                 cup,
                 token_tier: occupant.map_or(0, |a| crate::token_meter::token_tier(a.tokens_used)),
-                sheet_fall: occupant.and_then(|a| crate::token_meter::sheet_fall_dist(a, now)),
+                sheet_fall: occupant
+                    .and_then(|a| crate::token_meter::sheet_fall_dist(a, motion, now)),
                 effects: cup_effects(desk_cup_at(pack, desk.at, desk.facing), cup, beat),
                 scanline: scanline_col(desk.at.x, beat),
             }

@@ -2007,6 +2007,20 @@ fn render_office(
     motion: Motion,
     now: SystemTime,
 ) {
+    let floor = FloorMeta::ground().with_motion(motion);
+    render_office_with(office, look, scene, floor, now, (&[], None));
+}
+
+/// [`render_office`] under `floor`, its floors picking their pet of `pets.0`,
+/// a petting `pets.1` playing.
+fn render_office_with(
+    office: &mut OfficeSession,
+    look: crate::look::Look,
+    scene: &SceneState,
+    floor: FloorMeta,
+    now: SystemTime,
+    (pets, petting): (&[Pet], Option<&crate::pet::PetState>),
+) {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let _ = office.render(
         look,
@@ -2014,16 +2028,19 @@ fn render_office(
             world: FloorInputs {
                 scene,
                 now,
-                floor: FloorMeta::ground().with_motion(motion),
-                pets: PetInputs::default(),
+                floor,
+                pets: PetInputs { pet: None, petting },
             },
             theme,
             viewport: PAINTED,
-            place: crate::look::Place::default(),
+            place: crate::look::Place {
+                gateway: crate::tally::office_gateway(scene),
+                floor: None,
+            },
             debug_walkable: false,
             dim: crate::look::Dim::NONE,
         },
-        &[],
+        pets,
         theme.surface.bg_fallback,
     );
 }
@@ -2044,6 +2061,52 @@ fn settled_typists(t0: SystemTime) -> SceneState {
         };
     }
     scene
+}
+
+/// Under Still a token sheet lands as it drops and a petted pet's hearts hold
+/// their first frame, as every motion does there: the frame a reading or a
+/// petting brings holds while they last.
+#[test]
+fn under_still_a_reading_and_a_petting_hold_their_frame() {
+    let t0 = crate::localclock::at_hour(12) + Duration::from_millis(37);
+    let mut scene = settled_typists(t0);
+    if let Some(slot) = scene.agents.values_mut().next() {
+        // a tower for the sheet to fall onto
+        slot.tokens_used = 1_000_000;
+        slot.last_usage = Some(pixtuoid_core::state::UsageObservation::new(
+            crate::token_meter::SHEET_MIN_DELTA_TOKENS,
+            t0,
+        ));
+    }
+    let cat = Pet {
+        kind: crate::pet::PetKind::Cat,
+        name: "cat".into(),
+    };
+    let petting = crate::pet::PetState {
+        petted_at: t0,
+        kind: cat.kind,
+        floor_idx: 0,
+    };
+    let floor = FloorMeta::ground().with_motion(Motion::Still);
+    for look in looks() {
+        let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+        let mut frame_at = |ms| {
+            let now = t0 + Duration::from_millis(ms);
+            let pets = (std::slice::from_ref(&cat), Some(&petting));
+            render_office_with(&mut office, look, &scene, floor, now, pets);
+            office
+                .picture()
+                .expect("lays out")
+                .pixels()
+                .as_slice()
+                .to_vec()
+        };
+        let first = frame_at(crate::anim::PAINT_FRAME_MS);
+        assert!(
+            first == frame_at(crate::token_meter::SHEET_FALL_MS - 1),
+            "{look:?}: the frame moved"
+        );
+    }
 }
 
 /// An office that drew `scene` in `look` under `motion` at `t0`.

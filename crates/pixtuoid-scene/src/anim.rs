@@ -215,9 +215,10 @@ impl Motion {
     /// Every tier.
     pub(crate) const ALL: [Motion; 3] = [Motion::Full, Motion::Calm, Motion::Still];
 
-    /// Whether a walk set off now takes its time, and whether an idle agent
-    /// sets off on a wander: false on [`Still`](Self::Still) alone.
-    pub(crate) const fn walks_take_time(self) -> bool {
+    /// Whether a motion set off now takes its time (a walk, a token sheet's
+    /// fall, a petted pet's hearts), and whether an idle agent sets off on a
+    /// wander: false on [`Still`](Self::Still) alone.
+    pub(crate) const fn motions_take_time(self) -> bool {
         !matches!(self, Self::Still)
     }
 
