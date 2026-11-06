@@ -129,8 +129,8 @@ const CAP_1X_CROWN: [(Glyph, i8); 2] = [
         CAP_UNDER,
     ),
 ];
-/// The ramp step a cap's looks shade what lies under its crown with: one
-/// step, so the darkest ink's shade still reads against the cap's ring.
+/// The ramp step a cap's shaded parts take: one step, so the darkest ink's
+/// shade still reads against the cap's ring (`every_cap_shade_reads_as_a_graphic_against_its_ring`).
 pub(crate) const CAP_UNDER: i8 = -1;
 
 /// Layout rows a sleep z rises over its life.
