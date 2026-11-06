@@ -488,6 +488,20 @@ fn light_eases_from_the_debounces_end_however_long_since_drawn() {
     );
 }
 
+/// A floor refilled after nobody drew it for longer than its light takes to
+/// settle has no ease to resume: it shows lit at once, as its sign does.
+#[test]
+fn light_snaps_lit_on_a_floor_refilled_unseen() {
+    let mut dim = VacancyDim::new();
+    dim.tick(true, t0());
+    let dimmed =
+        t0() + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + VacancyDim::SETTLE_MS);
+    dim.tick(true, dimmed);
+    assert!(dim.dimmed(), "premise: the floor dims");
+    let back = dimmed + Duration::from_millis(VacancyDim::SETTLE_MS + 1);
+    assert_eq!(dim.tick(false, back), 1.0);
+}
+
 #[test]
 fn light_large_dt_does_not_overshoot_or_nan() {
     let mut dim = VacancyDim::new();
@@ -1842,6 +1856,29 @@ fn both_painters_paint_one_frame_per_beat() {
     }
 }
 
+/// Every wait an office names while nothing moves, woken a frame late, falls
+/// inside the stale-resume gap: past it the wander re-seats each agent and
+/// drops its record, so a resting painter would re-seat them every wait.
+#[test]
+fn every_resting_wait_falls_inside_the_stale_resume_gap() {
+    // on a turn of every tier's beat, where its wait is longest
+    let t0 = crate::localclock::at_hour(12);
+    let late = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+    let gap = Duration::from_millis(crate::pose::STALE_RESUME_GAP_BASE_MS);
+    for motion in Motion::ALL {
+        let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+        render_office(
+            &mut office,
+            crate::look::Look::HALF_BLOCKS,
+            &settled_typists(t0),
+            motion,
+            t0,
+        );
+        let wait = office.until_next_paint(t0).expect("nothing moves");
+        assert!(wait + late < gap, "{motion:?} waits {wait:?}");
+    }
+}
+
 /// What lets a painter sleep: through each case below, fed between two beats,
 /// a frame is the frame painted until the wait
 /// [`OfficeSession::until_next_paint`] names after it runs out, short of a new
@@ -1852,7 +1889,8 @@ fn both_painters_paint_one_frame_per_beat() {
 fn a_frame_holds_for_the_wait_its_office_names() {
     use crate::sky::{Weather, WeatherPolicy};
     /// What a case plays under, its scene before and after a feed at
-    /// `switch`, how long it runs, and whether a wander must set off in it.
+    /// `switch`, how long it runs, whether a wander must set off in it, and a
+    /// stretch its sparse office sleeps through, waking at its end.
     struct Case<'a> {
         name: &'static str,
         motion: Motion,
@@ -1864,6 +1902,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         switch: Duration,
         window: Duration,
         sets_off: bool,
+        asleep: Option<(Duration, Duration)>,
     }
     let cat = Pet {
         kind: crate::pet::PetKind::Cat,
@@ -1919,9 +1958,10 @@ fn a_frame_holds_for_the_wait_its_office_names() {
     let a_second_past = |at: Duration| at + Duration::from_secs(1);
     let calm = FloorMeta::ground().with_motion(Motion::Calm);
     // The first of them to stand at a waypoint, its wander set off, and a
-    // feed on the resting paint that closes the longest gap a Calm beat leaves
-    // on the frame grid, a second into its stay: its record is then a beat and
-    // a frame's lateness old, which must still place it.
+    // feed half a beat after the resting paint that closes the longest gap a
+    // Calm beat leaves on the frame grid, a second into its stay. The sparse
+    // office sleeps through that paint, as a loop coalescing its timers does,
+    // so its record is past a beat, a frame and half a beat old at the feed.
     let mut scout = OfficeSession::new(Arc::clone(&pack));
     let mut scout_at = |now| {
         render_office_with(
@@ -1966,14 +2006,19 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         .find(|&turn| gap(turn, beat).is_ok_and(|gap| gap > beat))
         .map(paint_after)
         .expect("a gap past the beat");
-    for now in frames(at_waypoint + frame).take_while(|&now| now <= prompt) {
+    let late = prompt + beat / 2;
+    for now in frames(at_waypoint + frame).take_while(|&now| now <= late) {
         assert_eq!(
             scout_at(now),
             Some(dweller),
             "it stands at its waypoint till the feed"
         );
     }
-    let prompt_at = prompt.duration_since(t0).expect("after t0");
+    let prompt_at = late.duration_since(t0).expect("after t0");
+    let overslept = Some((
+        (prompt - frame).duration_since(t0).expect("after t0"),
+        prompt_at,
+    ));
     let mut prompted = idling.clone();
     if let Some(slot) = prompted.agents.get_mut(&dweller) {
         slot.state = ActivityState::Running { item: None };
@@ -1984,8 +2029,8 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         slot.exiting_at = Some(t0 + prompt_at);
     }
     // past the switch, the debounce and the ease to a still room
-    let emptied = switch
-        + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 6 * VacancyDim::FADE_TAU_MS);
+    let emptied =
+        switch + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + VacancyDim::SETTLE_MS);
     let petting = crate::pet::PetState {
         petted_at: t0 + switch,
         kind: cat.kind,
@@ -2002,6 +2047,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         switch,
         window: Duration::from_secs(8),
         sets_off: false,
+        asleep: None,
     };
     // the cat walks most of a window, so it rides only where nothing else must
     let cases = [
@@ -2027,12 +2073,14 @@ fn a_frame_holds_for_the_wait_its_office_names() {
             switch: prompt_at,
             window: a_second_past(prompt_at),
             sets_off: true,
+            asleep: overslept,
             ..fed("prompted at a waypoint", Motion::Calm, &idling, &prompted)
         },
         Case {
             switch: prompt_at,
             window: a_second_past(prompt_at),
             sets_off: true,
+            asleep: overslept,
             ..fed("quit at a waypoint", Motion::Calm, &idling, &quit)
         },
         Case {
@@ -2109,7 +2157,11 @@ fn a_frame_holds_for_the_wait_its_office_names() {
                         "{name} {look:?}: painted only when it said, it drew another frame at {} ms",
                         (ticks * frame).as_millis()
                     );
-                    sparse_due = now + sparse.until_next_paint(now).unwrap_or(frame);
+                    let due = now + sparse.until_next_paint(now).unwrap_or(frame);
+                    sparse_due = match case.asleep {
+                        Some((from, until)) if (t0 + from..t0 + until).contains(&due) => t0 + until,
+                        _ => due,
+                    };
                 }
                 let wait = office.until_next_paint(now);
                 set_off |= ticks > 0 && wait.is_none();
@@ -2380,7 +2432,7 @@ fn a_scheduled_change_wakes_its_office_only_while_it_stands() {
         None,
         "the fade under way"
     );
-    let faded = fades_at + Duration::from_millis(6 * VacancyDim::FADE_TAU_MS);
+    let faded = fades_at + Duration::from_millis(VacancyDim::SETTLE_MS);
     assert_eq!(
         drawn(&[
             (t0, &empty),

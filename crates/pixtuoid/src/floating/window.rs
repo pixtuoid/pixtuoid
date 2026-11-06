@@ -13,7 +13,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
 use pixtuoid_scene::pack::OfficeArt;
 use winit::application::ApplicationHandler;
@@ -62,8 +62,7 @@ pub(crate) struct FloatingApp {
     /// (the `[floating]` config size is LOGICAL and would mis-seed on HiDPI).
     /// `take`n exactly once; `None` afterwards.
     boot: Option<super::PipelineBoot>,
-    /// The live pipeline — `None` until `resumed` boots it. `about_to_wait` DOES
-    /// fire before then, so it reads `None` as an idle office. `redraw` cannot
+    /// The live pipeline — `None` until `resumed` boots it. `redraw` cannot
     /// reach that state because `resumed` sets `live` BEFORE `window` and
     /// `redraw`'s window guard runs first. Don't reorder those assignments.
     live: Option<super::LivePipeline>,
@@ -772,7 +771,7 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
         let until = if self.ui.overlay_moves() {
             None
         } else {
-            self.renderer.until_next_paint(SystemTime::now())
+            self.renderer.until_next_paint(self.ui.wall())
         };
         // The redraw REQUEST rides the same deadline as the wait: requesting one
         // unconditionally here leaves winit a pending redraw, so `WaitUntil` never

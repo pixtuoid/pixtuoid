@@ -264,11 +264,18 @@ impl UiState {
 
     /// This frame's wall clock: real time, or the frozen instant while paused.
     pub(crate) fn now(&mut self) -> SystemTime {
-        let wall = self
-            .fake_now
-            .and_then(|(read, at)| at.checked_add(read.elapsed()))
-            .unwrap_or_else(SystemTime::now);
+        let wall = self.wall();
         self.pause.now(wall)
+    }
+
+    /// The clock the frames run on, `$PIXTUOID_FAKE_NOW`'s or the real one,
+    /// running on while paused: an office's wait read against the frozen
+    /// instant would never pass a change scheduled just after it, and repaint
+    /// at that gap for the whole pause.
+    pub(crate) fn wall(&self) -> SystemTime {
+        self.fake_now
+            .and_then(|(read, at)| at.checked_add(read.elapsed()))
+            .unwrap_or_else(SystemTime::now)
     }
 
     pub(crate) fn toggle_pause(&mut self) {
@@ -658,6 +665,7 @@ mod tests {
 
     /// `$PIXTUOID_FAKE_NOW`'s clock runs on from its instant, and holds still
     /// while paused, as the wall clock does: pace-check's sky rests on both.
+    /// The clock an office's wait reads runs on through the pause.
     #[test]
     fn a_fake_clock_runs_from_its_instant_and_holds_when_paused() {
         let mut ui = ui();
@@ -670,9 +678,11 @@ mod tests {
         assert!(later > first, "it advances");
         ui.toggle_pause();
         let held = ui.now();
+        let running = ui.wall();
         std::thread::sleep(std::time::Duration::from_millis(5));
         assert_eq!(ui.now(), held, "it holds while paused");
         assert!(held >= later);
+        assert!(ui.wall() > running, "the wait's clock runs on while paused");
     }
 
     #[test]

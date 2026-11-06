@@ -61,12 +61,12 @@ pub(crate) struct SimStores<'a> {
     pub grip: &'a mut crate::interact::Grip,
 }
 
-/// The earliest instant a step's world next changes by itself while nothing
-/// in it moves: each change it schedules between two beats (a mascot walking
-/// in after its stagger, a wander setting off) registers its moment here, so
-/// a painter sleeping to the beat wakes for it instead of showing it already
-/// under way. A new one each step, so a change that fired or was called off
-/// leaves no wake behind.
+/// The earliest change a step scheduled between two beats and draws as begun
+/// there (a mascot walking in after its stagger, a wander setting off), so a
+/// painter sleeping to the beat wakes for it instead of showing it under way.
+/// A discrete change (a chat's turn, a cup going cold) stays out: shown a wait
+/// late, it skips nothing. A new one each step, so a change that fired or was
+/// called off leaves no wake behind.
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct SelfChange(Option<SystemTime>);
 

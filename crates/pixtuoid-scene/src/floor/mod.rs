@@ -723,6 +723,9 @@ impl VacancyDim {
     pub(crate) const FADE_TAU_MS: u64 = 800;
     /// How near its target the ease lands on it: under one 8-bit channel step.
     const SETTLED: f32 = 1.0 / u8::MAX as f32;
+    /// How long the ease takes from one end to land on the other: six time
+    /// constants leave less than [`Self::SETTLED`] of the way.
+    pub(crate) const SETTLE_MS: u64 = 6 * Self::FADE_TAU_MS;
     /// A fully-lit floor (level 1.0), no fade in progress.
     pub(crate) fn new() -> Self {
         Self {
@@ -772,6 +775,8 @@ impl VacancyDim {
         // Each ease runs from the instant its target switched, not from
         // whenever the floor was last drawn before it: a vacant floor's from
         // its debounce's end, a refilled one's from the tick that sees it full.
+        // A floor nobody drew for longer than an ease has none to resume and
+        // snaps, as its sign does.
         let target = if vacant {
             let since = *self.vacant_since.get_or_insert(now);
             let fades_at = since + Duration::from_millis(Self::VACANCY_DEBOUNCE_MS);
@@ -782,7 +787,10 @@ impl VacancyDim {
                 1.0
             }
         } else {
-            if self.vacant_since.take().is_some() {
+            if self.vacant_since.take().is_some()
+                && (self.last_update)
+                    .is_some_and(|last| crate::anim::elapsed_ms(now, last) <= Self::SETTLE_MS)
+            {
                 self.last_update = Some(now);
             }
             1.0
