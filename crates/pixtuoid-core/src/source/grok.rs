@@ -52,7 +52,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Grok Build",
     label_prefix: "gk",
-    verified_version: "1.0.70",
+    verified_version: "1.0.77",
     version_probe: Some(&["grok", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("GROK_HOME"),
