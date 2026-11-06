@@ -409,20 +409,18 @@ mod tests {
     }
 
     /// A cap is a graphic ringed in the pack's `[characters] outline` at every
-    /// density, so each ink holds the non-text bar against that ring in every
-    /// shade the looks draw beside it: itself, its seams and shaded edge, and
-    /// what lies under its crown, at the densest art and at the base art.
+    /// density, so each ink holds the non-text bar against that ring, itself
+    /// and in the one shade a cap draws.
     #[test]
     fn every_cap_shade_reads_as_a_graphic_against_its_ring() {
-        use crate::display::effects::CAP_SEAM;
-        use crate::effects::look::CAP_UNDER;
+        use crate::effects::look::CAP_SHADE;
         use palette::color_difference::Wcag21RelativeContrast as _;
         let ring = crate::pack::test_office()
             .inner()
             .character_outline()
             .srgb();
         for ink in CAP_INKS {
-            for level in [0, CAP_SEAM, CAP_UNDER] {
+            for level in [0, CAP_SHADE] {
                 let shade = ink.ramp(level).srgb();
                 assert!(
                     shade.has_min_contrast_graphics(ring),

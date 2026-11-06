@@ -10,7 +10,7 @@ use crate::sprite::{HeadView, Rgb};
 use crate::display::Span;
 use crate::display::pen::Pen;
 use crate::effects::look::{
-    CAP_UNDER, Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X, SLEEP_Z_MAX_RISE, plot_effect,
+    CAP_SHADE, Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X, SLEEP_Z_MAX_RISE, plot_effect,
     sleep_z_fade, walking_dust_foot,
 };
 use crate::effects::{Cap, Effect, EffectKind};
@@ -234,17 +234,15 @@ const CAP_DISC: [f32; 8] = [0.54, 0.82, 0.95, 1.0, 1.0, 0.95, 0.82, 0.54];
 const CAP_BAND: usize = 3;
 /// The visor seen from the front, row by row: its share of the head and the
 /// ramp step it is drawn in, its seam, its lit top and its dark lip.
-const CAP_VISOR: [(f32, i8); CAP_BAND] = [(1.0, CAP_UNDER), (0.96, 1), (0.82, CAP_UNDER)];
+const CAP_VISOR: [(f32, i8); CAP_BAND] = [(1.0, CAP_SHADE), (0.96, 1), (0.82, CAP_SHADE)];
 /// The peak in profile, row by row down to the brim: the columns it juts
 /// past the crown and its ramp step, its lit top over its underside.
-const CAP_PEAK: [(i32, i8); CAP_BAND - 1] = [(4, 1), (6, CAP_UNDER)];
+const CAP_PEAK: [(i32, i8); CAP_BAND - 1] = [(4, 1), (6, CAP_SHADE)];
 /// The tab under a cap seen from above, row by row from the disc's last: its
 /// share of the head, the peak glimpsed past the crown.
 const CAP_TAB: [f32; 2] = [0.55, 0.4];
 /// The share of the head the seam across a cap seen from above spans.
 const CAP_CROSS: f32 = 0.92;
-/// The ramp step of a cap's seams and its shaded east edge.
-pub(crate) const CAP_SEAM: i8 = -1;
 /// Columns a cap is lit along its west edge.
 const CAP_LIT: i32 = 3;
 /// Columns a cap is shaded along its east edge.
@@ -274,7 +272,7 @@ fn cap_look(cap: Cap, brow: Brow, emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32)
             let level = if row == 0 || dx < lo + CAP_LIT {
                 1
             } else if dx > hi - CAP_SHADED {
-                CAP_SEAM
+                CAP_SHADE
             } else {
                 0
             };
@@ -289,21 +287,21 @@ fn cap_look(cap: Cap, brow: Brow, emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32)
     let (centre, depth) = ((east - west + 1).div_euclid(2), crown.len() as i32);
     match brow.view {
         HeadView::Front => {
-            (1..depth).for_each(|row| band(row, centre..=centre, ink(CAP_SEAM)));
-            band(-1, centre - 1..=centre, ink(CAP_SEAM));
+            (1..depth).for_each(|row| band(row, centre..=centre, ink(CAP_SHADE)));
+            band(-1, centre - 1..=centre, ink(CAP_SHADE));
             for (row, (s, level)) in (depth..).zip(CAP_VISOR) {
                 band(row, span(s), ink(level));
             }
         }
         HeadView::Back => {
             let strap = depth + under as i32;
-            (1..strap - 1).for_each(|row| band(row, centre..=centre, ink(CAP_SEAM)));
-            band(-1, centre - 1..=centre, ink(CAP_SEAM));
+            (1..strap - 1).for_each(|row| band(row, centre..=centre, ink(CAP_SHADE)));
+            band(-1, centre - 1..=centre, ink(CAP_SHADE));
             band(strap - 1, centre - 1..=centre, cap.line);
-            band(strap, centre - 2..=centre + 1, ink(CAP_UNDER));
+            band(strap, centre - 2..=centre + 1, ink(CAP_SHADE));
         }
         HeadView::Side => {
-            band(-1, centre - 1..=centre, ink(CAP_SEAM));
+            band(-1, centre - 1..=centre, ink(CAP_SHADE));
             let peak = depth + (CAP_BAND - CAP_PEAK.len()) as i32;
             for (row, (jut, level)) in (peak..).zip(CAP_PEAK) {
                 band(row, east + 1..=east + jut, ink(level));
@@ -311,18 +309,18 @@ fn cap_look(cap: Cap, brow: Brow, emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32)
         }
         HeadView::Crown => {
             let tab = depth - 1;
-            (1..tab).for_each(|row| band(row, centre..=centre, ink(CAP_SEAM)));
+            (1..tab).for_each(|row| band(row, centre..=centre, ink(CAP_SHADE)));
             let cross = span(CAP_CROSS);
             band(
                 depth / 2,
                 cross.start() + 1..=cross.end() - 1,
-                ink(CAP_SEAM),
+                ink(CAP_SHADE),
             );
             for row in depth / 2 - 1..=depth / 2 {
-                band(row, centre - 1..=centre, ink(CAP_UNDER));
+                band(row, centre - 1..=centre, ink(CAP_SHADE));
             }
             for (row, s) in (tab..).zip(CAP_TAB) {
-                band(row, span(s), ink(CAP_UNDER));
+                band(row, span(s), ink(CAP_SHADE));
             }
         }
     }

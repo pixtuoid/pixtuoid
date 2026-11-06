@@ -84,7 +84,7 @@ const CAP_1X_FRONT: [(Glyph, i8); 2] = [
             "..........", //
             "..######..", //
         ]),
-        CAP_UNDER,
+        CAP_SHADE,
     ),
 ];
 /// [`CAP_1X_FRONT`] from behind: the strap's nub under the crown.
@@ -109,7 +109,7 @@ const CAP_1X_SIDE: [(Glyph, i8); 2] = [
             "..........", //
             "........##", //
         ]),
-        CAP_UNDER,
+        CAP_SHADE,
     ),
 ];
 /// [`CAP_1X_FRONT`] from above: the peak a shade on the crown.
@@ -126,12 +126,12 @@ const CAP_1X_CROWN: [(Glyph, i8); 2] = [
             "..........", //
             "....##....", //
         ]),
-        CAP_UNDER,
+        CAP_SHADE,
     ),
 ];
-/// The ramp step a cap's shaded parts take: one step, so the darkest ink's
-/// shade still reads against the cap's ring (`every_cap_shade_reads_as_a_graphic_against_its_ring`).
-pub(crate) const CAP_UNDER: i8 = -1;
+/// The one shade a cap draws its shading in, one ramp step down: the darkest
+/// ink's shade still reads against the cap's ring (`every_cap_shade_reads_as_a_graphic_against_its_ring`).
+pub(crate) const CAP_SHADE: i8 = -1;
 
 /// Layout rows a sleep z rises over its life.
 pub(crate) const SLEEP_Z_MAX_RISE: u16 = 4;
