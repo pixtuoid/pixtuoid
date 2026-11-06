@@ -1,9 +1,9 @@
 //! Each effect's look in layout cells, which every painter draws it from;
 //! [`super`] decides only when and where one shows.
 
-use crate::sprite::Rgb;
+use crate::sprite::{HeadView, Rgb};
 
-use super::{Effect, EffectKind, HEART_LIFE_MS, SLEEP_Z_RISE_MS, STEAM_CYCLE_MS};
+use super::{Cap, Effect, EffectKind, HEART_LIFE_MS, SLEEP_Z_RISE_MS, STEAM_CYCLE_MS};
 use crate::composite::WHITE;
 use crate::layout::chrome::Glyph;
 use crate::layout::{Point, WALKING_Y_OFF};
@@ -47,6 +47,7 @@ pub(crate) fn plot_effect(e: &Effect, inks: &Inks, plot: &mut impl FnMut(u16, u1
         EffectKind::PetHeart => plot_pet_heart(plot, e.at, e.phase),
         EffectKind::SteamPuff => plot_steam_puff(plot, e.at, e.phase, inks),
         EffectKind::MascotBubble => plot_mascot_bubble(plot, e.at, e.phase),
+        EffectKind::SubagentCap(cap) => plot_subagent_cap(plot, e.at, cap),
     }
 }
 
@@ -65,6 +66,72 @@ pub(crate) const REQUIRES_ACTION_MARK_1X: Glyph = Glyph::new(&[
     ".#.", //
     ".#.", //
 ]);
+
+/// A subagent's cap on the base art, as [`SLEEP_Z_1X`] is, from the front:
+/// layers of a glyph and the ramp step of the cap's ink it is drawn in, each
+/// glyph's middle column on the head mark and its last row on the brow, the
+/// cap's line ringing them on the row over them ([`plot_subagent_cap`]).
+const CAP_1X_FRONT: [(Glyph, i8); 2] = [
+    (
+        Glyph::new(&[
+            "..######..", //
+            "..........", //
+        ]),
+        0,
+    ),
+    (
+        Glyph::new(&[
+            "..........", //
+            "..######..", //
+        ]),
+        CAP_SHADE,
+    ),
+];
+/// [`CAP_1X_FRONT`] from behind: the strap's nub under the crown.
+const CAP_1X_BACK: [(Glyph, i8); 1] = [(
+    Glyph::new(&[
+        "..######..", //
+        "....##....", //
+    ]),
+    0,
+)];
+/// [`CAP_1X_FRONT`] in profile, facing east: the peak jutting past the brow.
+const CAP_1X_SIDE: [(Glyph, i8); 2] = [
+    (
+        Glyph::new(&[
+            "...#####..", //
+            "...#####..", //
+        ]),
+        0,
+    ),
+    (
+        Glyph::new(&[
+            "..........", //
+            "........##", //
+        ]),
+        CAP_SHADE,
+    ),
+];
+/// [`CAP_1X_FRONT`] from above: the peak a shade on the crown.
+const CAP_1X_CROWN: [(Glyph, i8); 2] = [
+    (
+        Glyph::new(&[
+            "...####...", //
+            "..######..", //
+        ]),
+        0,
+    ),
+    (
+        Glyph::new(&[
+            "..........", //
+            "....##....", //
+        ]),
+        CAP_SHADE,
+    ),
+];
+/// The one shade a cap draws its shading in, one ramp step down: the darkest
+/// ink's shade still reads against the cap's ring (`every_cap_shade_reads_as_a_graphic_against_its_ring`).
+pub(crate) const CAP_SHADE: i8 = -1;
 
 /// Layout rows a sleep z rises over its life.
 pub(crate) const SLEEP_Z_MAX_RISE: u16 = 4;
@@ -182,5 +249,45 @@ fn plot_requires_action_mark(
     let by = top_left.y.saturating_sub(5) & !1u16;
     for (dx, dy) in REQUIRES_ACTION_MARK_1X.inked() {
         plot(top_left.x + 2 + dx, by + dy, fg, 1.0);
+    }
+}
+
+/// `cap` on the base art, its brim on `brow`: its glyphs, ringed in its line
+/// within its own rows and the one over them, never under the brow, so the
+/// cap keeps to its frame and reads against any carpet.
+fn plot_subagent_cap(plot: &mut impl FnMut(u16, u16, Rgb, f32), brow: Point, cap: Cap) {
+    let layers: &[(Glyph, i8)] = match cap.view {
+        HeadView::Front => &CAP_1X_FRONT,
+        HeadView::Back => &CAP_1X_BACK,
+        HeadView::Side => &CAP_1X_SIDE,
+        HeadView::Crown => &CAP_1X_CROWN,
+    };
+    let mut ink = std::collections::BTreeMap::new();
+    for &(glyph, level) in layers {
+        let (mid, bottom) = (i32::from(glyph.width() / 2), i32::from(glyph.height()) - 1);
+        for (dx, dy) in glyph.inked() {
+            let cell = (i32::from(dx) - mid, i32::from(dy) - bottom);
+            ink.insert(cell, cap.ink.ramp(level));
+        }
+    }
+    let Some(top) = ink.keys().map(|&(_, row)| row).min() else {
+        return;
+    };
+    let (x0, x1) = ink
+        .keys()
+        .fold((0, 0), |(lo, hi), &(dx, _)| (lo.min(dx), hi.max(dx)));
+    let around = (top - 1..=0).flat_map(|row| (x0 - 1..=x1 + 1).map(move |dx| (dx, row)));
+    let ring = crate::character::outline(around, |dx, row| ink.contains_key(&(dx, row)));
+    let sign = if cap.flip { -1 } else { 1 };
+    let cells = ring.map(|cell| (cell, cap.line)).collect::<Vec<_>>();
+    for ((dx, row), c) in cells
+        .into_iter()
+        .chain(ink.iter().map(|(&cell, &c)| (cell, c)))
+    {
+        let x = i32::from(brow.x) + sign * dx;
+        let y = i32::from(brow.y) + row;
+        if let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) {
+            plot(x, y, c, 1.0);
+        }
     }
 }

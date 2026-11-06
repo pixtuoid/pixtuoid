@@ -4,6 +4,7 @@
 # at the bottom for visual grounding. 2 transparent rows at top make the
 # character visibly shorter than the upright typing sprite.
 @frame 0
+@mark head.crown 4 2
 . . . . . . . .
 . . H H H H . .
 . n H H H H n .

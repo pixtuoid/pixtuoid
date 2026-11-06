@@ -1290,9 +1290,9 @@ fn push_characters(
         let pose = crate::character::SpritePose::of(c, agent, theme);
         // The frame `paint_figure` draws: an animation's frames need not
         // share a size.
-        let (w, h) =
-            crate::pack::densest_frame(pack, pose.anim_name, pose.frame_idx, RenderScale::ONE)
-                .logical;
+        let base =
+            crate::pack::densest_frame(pack, pose.anim_name, pose.frame_idx, RenderScale::ONE);
+        let (w, h) = base.logical;
         let key = crate::character::character_key(pose, agent, pack, scale);
         let seat = c.seat_desk;
         let chair = seat.and_then(|d| chair_span(pack, d.facing, d.at, layout.inner));
@@ -1321,7 +1321,7 @@ fn push_characters(
         let riders = riders(
             c,
             &key,
-            (w, at),
+            (w, at, base.head),
             scale,
             crate::effects::look::Inks::of(theme),
         );
@@ -1361,31 +1361,47 @@ fn push_characters(
 }
 
 /// `c`'s effects on the grid of its figure `key`, `w` logical columns wide
-/// with its frame's top-left at `at`.
+/// with its frame's top-left at `at` and its base art's head at `mark`.
 fn riders(
     c: &crate::sim::CharacterPlacement,
     key: &crate::character::CharacterKey,
-    (w, at): (u16, crate::layout::Point),
+    (w, at, mark): (u16, crate::layout::Point, Option<crate::sprite::HeadMark>),
     scale: RenderScale,
     inks: crate::effects::look::Inks,
 ) -> Vec<crate::display::effects::Riding> {
+    use crate::display::effects::{ArtPoint, Brow, Head};
     let d = key.frame.density.get();
     let pen =
         Pen::new(scale, key.frame.density).expect("`densest` picks a density dividing `scale`");
-    // A dressed frame's head is its mark's column on its crest; the base
-    // art's: its frame's top, centred.
+    // A head is its mark's column, turned with the frame: a dressed frame's on
+    // its crest and its brow on its mark's row, the base art's on its top row.
+    let column = |x: u16, d: i32| {
+        let x = i32::from(x);
+        let frame_w = i32::from(w) * d;
+        i32::from(at.x) * d + if key.frame.flip_x { frame_w - 1 - x } else { x }
+    };
     let head = match key.dress.as_ref() {
         Some(dress) => {
-            let (d, frame_w) = (i32::from(d), i32::from(w) * i32::from(d));
-            let x = i32::from(dress.head.x);
-            Some(crate::display::effects::ArtPoint {
-                x: i32::from(at.x) * d + if key.frame.flip_x { frame_w - 1 - x } else { x },
-                y: i32::from(at.y) * d + dress.crest,
+            let d = i32::from(d);
+            let x = column(dress.head.x, d);
+            let row = |y: i32| ArtPoint {
+                x,
+                y: i32::from(at.y) * d + y,
+            };
+            Some(Head::Dressed {
+                crest: row(dress.crest),
+                brow: Brow {
+                    at: row(i32::from(dress.head.y)),
+                    reach: dress.reach,
+                    view: dress.head.view,
+                },
             })
         }
-        None if d == 1 => Some(crate::display::effects::ArtPoint {
-            x: i32::from(at.x + w / 2),
-            y: i32::from(at.y),
+        None if d == 1 => mark.map(|m| {
+            Head::Base(ArtPoint {
+                x: column(m.x, 1),
+                y: i32::from(at.y),
+            })
         }),
         None => None,
     };

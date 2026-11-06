@@ -768,6 +768,55 @@ fn a_top_model_at_max_effort_draws_as_any_other_agent() {
     assert_eq!(effects(&top), effects(&other), "something rode a top model");
 }
 
+/// A subagent wears a cap, which reaches both painters and leaves the badge
+/// where it was; the lead who dispatched them wears none.
+#[test]
+fn a_subagent_wears_a_cap_and_a_lead_does_not() {
+    let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    let floor = FloorMeta::ground();
+    let plain = make_scene(2, 8);
+    let [lead, child] = [0, 1].map(|i| AgentId::from_transcript_path(&format!("/p/{i}.jsonl")));
+    let mut dispatched = plain.clone();
+    dispatched
+        .agents
+        .get_mut(&child)
+        .expect("the child")
+        .parent_id = Some(lead);
+    let placed = |scene: &SceneState| {
+        let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
+        let world = FloorInputs {
+            scene,
+            now,
+            floor,
+            pets: PetInputs::default(),
+        };
+        let frame = session.step(world, PAINTED).expect("lays out").frame;
+        frame
+            .characters
+            .iter()
+            .map(|c| (frame.agents[c.agent_idx].agent_id, c.clone()))
+            .collect::<std::collections::HashMap<_, _>>()
+    };
+    let caps = |c: &crate::sim::CharacterPlacement| {
+        c.effects
+            .iter()
+            .filter(|e| matches!(e.kind, crate::effects::EffectKind::SubagentCap(_)))
+            .count()
+    };
+    let (before, after) = (placed(&plain), placed(&dispatched));
+    assert!(before.values().all(|c| caps(c) == 0), "a lead wore a cap");
+    assert_eq!(caps(&after[&lead]), 0, "the lead wore a cap");
+    assert_eq!(caps(&after[&child]), 1, "the subagent wore no cap");
+    assert_eq!(
+        after[&child].label_anchor, before[&child].label_anchor,
+        "the cap moved the classic's badge"
+    );
+    let (classic, cutaway) = both_painters(&dispatched, floor, None, now);
+    let (bare_classic, bare_cutaway) = both_painters(&plain, floor, None, now);
+    assert!(classic != bare_classic, "the classic drew no cap");
+    assert!(cutaway != bare_cutaway, "the cutaway drew no cap");
+}
+
 #[test]
 fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
     let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);

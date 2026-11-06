@@ -3,6 +3,7 @@
 # centered head-on-desk variant while staying equally "short" (2 empty
 # top rows). No face visible — head is face-down tilted.
 @frame 0
+@mark head.crown 5 3
 . . . . . . . .
 . . . . . . . .
 . . . . H H . .
