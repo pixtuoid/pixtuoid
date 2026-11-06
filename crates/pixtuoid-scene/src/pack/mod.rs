@@ -984,6 +984,45 @@ mod tests {
         assert_eq!(test_default_pack().max_density_variant().get(), 4);
     }
 
+    /// Every bundled base character frame marks its brow, where a subagent's
+    /// cap sits: the first row its face shows skin in, and in a back view,
+    /// which shows none, the front's row, as the base art keeps the front's
+    /// head rows. A view from above shows no face to pin it by.
+    #[test]
+    fn every_bundled_base_character_frame_marks_its_brow() {
+        use crate::sprite::HeadView;
+        use strum::VariantArray as _;
+        let pack = test_default_pack();
+        let skin = Some(Rgb { r: 1, g: 2, b: 3 });
+        let mut rows =
+            std::collections::BTreeMap::<HeadView, std::collections::BTreeSet<u16>>::new();
+        for &piece in Piece::VARIANTS
+            .iter()
+            .filter(|p| p.kind() == validate::PieceKind::Character)
+        {
+            let art = pack.piece(piece);
+            for i in 0..art.frames().len() {
+                let head = art
+                    .head(i)
+                    .unwrap_or_else(|| panic!("{piece:?} frame {i} marks no brow"));
+                rows.entry(head.view).or_default().insert(head.y);
+                if matches!(head.view, HeadView::Front | HeadView::Side) {
+                    let f = art
+                        .recolorable_at(i)
+                        .recolored(&[(crate::character::SKIN_KEY, skin)]);
+                    let face = (0..f.height())
+                        .find(|&y| (0..f.width()).any(|x| f.get(x, y).copied().flatten() == skin));
+                    assert_eq!(face, Some(head.y), "{piece:?} frame {i}");
+                }
+            }
+        }
+        assert_eq!(
+            rows.get(&HeadView::Back),
+            rows.get(&HeadView::Front),
+            "a back view's brow is off the front's"
+        );
+    }
+
     /// Each bundled building ships a variant at the bundled art's density,
     /// beside the base the classic painter draws, for a city drawn on that
     /// art's grid.

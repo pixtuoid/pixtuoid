@@ -162,8 +162,20 @@ impl Rgb {
         self.to_oklab().l
     }
 
+    /// How far apart this color and `other` look: their distance in OKLab, the
+    /// space [`Rgb::ramp`] steps in.
+    #[cfg(test)]
+    pub(crate) fn delta_e(self, other: Rgb) -> f32 {
+        self.to_oklab().distance(other.to_oklab())
+    }
+
+    /// This color as palette's sRGB, which its color science reads.
+    pub(crate) fn srgb(self) -> Srgb<f32> {
+        Srgb::new(self.r, self.g, self.b).into_format()
+    }
+
     fn to_oklab(self) -> Oklab {
-        Oklab::from_color(Srgb::new(self.r, self.g, self.b).into_format::<f32>())
+        Oklab::from_color(self.srgb())
     }
 
     /// `c` cut in chroma at its lightness and hue until clipping lands within
@@ -480,8 +492,9 @@ impl HeadView {
     }
 }
 
-/// A frame's head: which way it faces and the point a hairstyle layer's own
-/// head is laid on, read from the frame's one `head.<view>` [`Mark`].
+/// A frame's head: which way it faces and its point, where a hairstyle
+/// layer's own head is laid and a subagent's cap sits, read from the frame's
+/// one `head.<view>` [`Mark`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct HeadMark {
     /// Which way the head faces.
@@ -549,7 +562,8 @@ impl Sprite {
         self.marks.get(idx).map_or(&[], Vec::as_slice)
     }
 
-    /// Frame `idx`'s head: where a hairstyle dresses it.
+    /// Frame `idx`'s head: where a hairstyle dresses it and a subagent's cap
+    /// sits.
     pub(crate) fn head(&self, idx: usize) -> Option<HeadMark> {
         self.marks(idx).iter().find_map(HeadMark::of)
     }
@@ -1091,13 +1105,12 @@ mod tests {
 
     /// A one-level nudge to a base moves no ramp step a JND further, past rounding.
     fn assert_ramp_moves_continuously(from: Rgb, to: Rgb) {
-        let moved = |a: Rgb, b: Rgb| a.to_oklab().distance(b.to_oklab());
         for (a, b) in shades(from).into_iter().zip(shades(to)) {
             let rounding = [a.r.abs_diff(b.r), a.g.abs_diff(b.g), a.b.abs_diff(b.b)]
                 .iter()
                 .all(|&d| d <= 1);
             assert!(
-                rounding || moved(a, b) - moved(from, to) < GAMUT_JND,
+                rounding || a.delta_e(b) - from.delta_e(to) < GAMUT_JND,
                 "{from:?} -> {a:?} but {to:?} -> {b:?}"
             );
         }

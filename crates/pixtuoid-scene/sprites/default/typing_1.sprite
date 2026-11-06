@@ -2,6 +2,7 @@
 # Only the wrist pixel swaps sides (row 10-11) — subtle at half-block
 # but the per-tool monitor glow + status dot already convey "active".
 @frame 0
+@mark head.front 4 2
 . n H H H H n .
 n H H H H H H n
 H S S S S S S H

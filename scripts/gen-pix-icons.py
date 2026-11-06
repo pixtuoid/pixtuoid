@@ -32,7 +32,7 @@ import unittest
 from pathlib import Path
 
 from PIL import Image
-from readme_pixels import PACK_DIR, load_pack, sprite_path
+from readme_pixels import PACK_DIR, load_pack, parse_sprite, sprite_path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "site/src/assets/pix-icons"
@@ -325,20 +325,6 @@ def load_palette():
     return pal
 
 
-def sprite_rows(name, frame=0):
-    rows, in_frame = [], False
-    for line in (PACK_DIR / name).read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("@frame"):
-            in_frame = int(line.split()[1]) == frame
-            continue
-        if in_frame:
-            rows.append(line.split())
-    return rows
-
-
 def render(icon_name, rows, pal):
     h, w = len(rows), len(rows[0])
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -421,7 +407,7 @@ def generate(site_dir, readme_dir, check, icons=ICONS):
     try:
         for name, spec in icons.items():
             rows = (
-                sprite_rows(spec["sprite"])
+                parse_sprite((PACK_DIR / spec["sprite"]).read_text(encoding="utf-8"))
                 if "sprite" in spec
                 else [r.split() for r in spec["grid"]]
             )

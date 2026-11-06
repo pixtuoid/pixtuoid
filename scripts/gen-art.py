@@ -1842,6 +1842,14 @@ def figure_1x():
     """)
 
 
+def head_mark_1x(view):
+    """The base art's head mark seen from `view`: its middle column on its face's
+    first row, the brow a subagent's cap sits on, where a back view keeps the
+    front's rows."""
+    g = figure_1x()
+    return (view, len(g[0]) // 2, next(y for y, row in enumerate(g) if SKIN in row))
+
+
 def back_head_1x():
     """The base art's head from behind: hair where the face was."""
     return master("""
@@ -5890,13 +5898,16 @@ def main():
                         [(view, HEAD_MARK[0], HEAD_MARK[1] + LIFT)],
                     )
     check_walks()
-    sprites["standing.sprite"] = render_sprite(doc(figure_1x), [figure_1x()])
+    sprites["standing.sprite"] = render_sprite(
+        doc(figure_1x), [figure_1x()], [head_mark_1x("front")]
+    )
     for name, (view, mug, title) in WALKS.items():
         for i, step in enumerate(WALK_CYCLE):
             sprites[f"{name}_{i}.sprite"] = render_sprite(
                 f"{title}, frame {i}: {step.phase}. "
                 "The base art's person (`standing`) at this step.",
                 [walk_1x(view, step, mug)],
+                [head_mark_1x(view)],
             )
     classic_marks = {
         "desk": desk_marks_1x("desk"),
