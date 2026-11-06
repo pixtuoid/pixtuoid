@@ -488,18 +488,27 @@ fn light_eases_from_the_debounces_end_however_long_since_drawn() {
     );
 }
 
-/// A floor refilled after nobody drew it for longer than its light takes to
-/// settle has no ease to resume: it shows lit at once, as its sign does.
+/// A floor refilled within its sign's fade of its last draw eases up from the
+/// refill; one nobody drew for longer has nothing to ease from and shows lit
+/// at once, as its sign does.
 #[test]
-fn light_snaps_lit_on_a_floor_refilled_unseen() {
-    let mut dim = VacancyDim::new();
-    dim.tick(true, t0());
-    let dimmed =
-        t0() + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + VacancyDim::SETTLE_MS);
-    dim.tick(true, dimmed);
-    assert!(dim.dimmed(), "premise: the floor dims");
-    let back = dimmed + Duration::from_millis(VacancyDim::SETTLE_MS + 1);
-    assert_eq!(dim.tick(false, back), 1.0);
+fn light_eases_on_a_refill_within_the_signs_fade_and_snaps_past_it() {
+    let fade = u64::from(NeonState::FADE_MS);
+    let refilled_after = |gap: u64| {
+        let mut dim = VacancyDim::new();
+        dim.tick(true, t0());
+        let dimmed = t0()
+            + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 6 * VacancyDim::FADE_TAU_MS);
+        dim.tick(true, dimmed);
+        assert!(dim.dimmed(), "premise: the floor dims");
+        dim.tick(false, dimmed + Duration::from_millis(gap))
+    };
+    assert_eq!(
+        refilled_after(fade - 1),
+        VacancyDim::MIN_LEVEL,
+        "eases from the refill"
+    );
+    assert_eq!(refilled_after(fade + 1), 1.0, "snaps lit");
 }
 
 #[test]
@@ -1856,14 +1865,16 @@ fn both_painters_paint_one_frame_per_beat() {
     }
 }
 
-/// Every wait an office names while nothing moves, woken a frame late, falls
-/// inside the stale-resume gap: past it the wander re-seats each agent and
-/// drops its record, so a resting painter would re-seat them every wait.
+/// Every wait an office names while nothing moves, woken a frame late, stays
+/// under its sign's fade and the stale-resume gap: past the fade a watched
+/// floor's lights would snap, and past the gap the wander would re-seat each
+/// agent every wait.
 #[test]
-fn every_resting_wait_falls_inside_the_stale_resume_gap() {
+fn every_resting_wait_stays_under_the_fade_and_the_stale_resume_gap() {
     // on a turn of every tier's beat, where its wait is longest
     let t0 = crate::localclock::at_hour(12);
     let late = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+    let fade = Duration::from_millis(u64::from(NeonState::FADE_MS));
     let gap = Duration::from_millis(crate::pose::STALE_RESUME_GAP_BASE_MS);
     for motion in Motion::ALL {
         let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
@@ -1875,7 +1886,7 @@ fn every_resting_wait_falls_inside_the_stale_resume_gap() {
             t0,
         );
         let wait = office.until_next_paint(t0).expect("nothing moves");
-        assert!(wait + late < gap, "{motion:?} waits {wait:?}");
+        assert!(wait + late < fade.min(gap), "{motion:?} waits {wait:?}");
     }
 }
 
@@ -2001,22 +2012,24 @@ fn a_frame_holds_for_the_wait_its_office_names() {
     let beat = Motion::Calm
         .until_next_beat(first_turn)
         .expect("Calm turns");
-    let prompt = (0..)
+    let resting_paint = (0..)
         .map(|k| first_turn + k * beat)
         .find(|&turn| gap(turn, beat).is_ok_and(|gap| gap > beat))
         .map(paint_after)
         .expect("a gap past the beat");
-    let late = prompt + beat / 2;
-    for now in frames(at_waypoint + frame).take_while(|&now| now <= late) {
+    let prompt = resting_paint + beat / 2;
+    for now in frames(at_waypoint + frame).take_while(|&now| now <= prompt) {
         assert_eq!(
             scout_at(now),
             Some(dweller),
             "it stands at its waypoint till the feed"
         );
     }
-    let prompt_at = late.duration_since(t0).expect("after t0");
+    let prompt_at = prompt.duration_since(t0).expect("after t0");
     let overslept = Some((
-        (prompt - frame).duration_since(t0).expect("after t0"),
+        (resting_paint - frame)
+            .duration_since(t0)
+            .expect("after t0"),
         prompt_at,
     ));
     let mut prompted = idling.clone();
@@ -2029,8 +2042,8 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         slot.exiting_at = Some(t0 + prompt_at);
     }
     // past the switch, the debounce and the ease to a still room
-    let emptied =
-        switch + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + VacancyDim::SETTLE_MS);
+    let emptied = switch
+        + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 6 * VacancyDim::FADE_TAU_MS);
     let petting = crate::pet::PetState {
         petted_at: t0 + switch,
         kind: cat.kind,
@@ -2432,7 +2445,7 @@ fn a_scheduled_change_wakes_its_office_only_while_it_stands() {
         None,
         "the fade under way"
     );
-    let faded = fades_at + Duration::from_millis(VacancyDim::SETTLE_MS);
+    let faded = fades_at + Duration::from_millis(6 * VacancyDim::FADE_TAU_MS);
     assert_eq!(
         drawn(&[
             (t0, &empty),

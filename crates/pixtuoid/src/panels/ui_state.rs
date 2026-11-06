@@ -262,16 +262,16 @@ impl UiState {
         }
     }
 
-    /// This frame's wall clock: real time, or the frozen instant while paused.
+    /// This frame's time: [`Self::wall`], or the instant the pause began.
     pub(crate) fn now(&mut self) -> SystemTime {
         let wall = self.wall();
         self.pause.now(wall)
     }
 
-    /// The clock the frames run on, `$PIXTUOID_FAKE_NOW`'s or the real one,
-    /// running on while paused: an office's wait read against the frozen
-    /// instant would never pass a change scheduled just after it, and repaint
-    /// at that gap for the whole pause.
+    /// `$PIXTUOID_FAKE_NOW`'s clock or the real one, running on while paused:
+    /// an office's wait read against the frozen instant would never pass a
+    /// change scheduled just after it, and repaint at that gap for the whole
+    /// pause.
     pub(crate) fn wall(&self) -> SystemTime {
         self.fake_now
             .and_then(|(read, at)| at.checked_add(read.elapsed()))

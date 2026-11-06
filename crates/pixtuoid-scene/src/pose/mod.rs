@@ -115,12 +115,15 @@ impl PoseHistory {
     pub fn contains(&self, agent_id: AgentId) -> bool {
         self.last.contains_key(&agent_id)
     }
-    /// Where `agent_id` was last drawn, while its floor has been stepped
-    /// continuously by the wander's own measure ([`stale_resume_gap_ms`]):
-    /// past that gap the wander re-seats the agent, and the record with it.
-    /// A standing agent is recorded only when drawn, which a resting painter
-    /// does a wait apart, inside that gap
-    /// (`every_resting_wait_falls_inside_the_stale_resume_gap`).
+    /// Forget where an agent was drawn: a draw that records nothing, so a
+    /// record is only ever the last place it was drawn.
+    pub(crate) fn forget(&mut self, agent_id: AgentId) {
+        self.last.remove(&agent_id);
+    }
+    /// Where `agent_id` was last drawn, walking or at a waypoint, while no
+    /// older than [`stale_resume_gap_ms`]: past that the wander re-seats it. A
+    /// resting painter draws a standing agent well inside it
+    /// (`every_resting_wait_stays_under_the_fade_and_the_stale_resume_gap`).
     pub(crate) fn recent(&self, agent_id: AgentId, now: SystemTime) -> Option<Point> {
         let (pt, when) = self.last.get(&agent_id).copied()?;
         let age = now.duration_since(when).ok()?.as_millis() as u64;
@@ -469,6 +472,7 @@ pub(crate) fn derive_with_routing(
                 ));
             }
             WanderPhase::Seated => {
+                rctx.history.forget(slot.agent_id);
                 // DIRECTLY, not via `derive_state_only`: that re-runs the STATELESS
                 // `idle_pose`, whose independent timeline returns AtWaypoint at an
                 // unrelated location and teleports the sprite as the clocks drift.
@@ -570,6 +574,7 @@ pub(crate) fn derive_with_routing(
             if let Some(walk) = rctx.walks.get_mut(&slot.agent_id) {
                 walk.walk_path = None;
             }
+            rctx.history.forget(slot.agent_id);
             Some(raw)
         }
     }

@@ -361,6 +361,60 @@ fn snap_back_cornered_leg_freezes_path_no_reroute() {
     );
 }
 
+/// A record is the last place the agent was drawn: one drawn seated since it
+/// stood at a waypoint, its floor hidden meanwhile, changes state or quits
+/// from its desk, not from the waypoint, whether it went to work or sat back
+/// down idle.
+#[test]
+fn a_seated_draw_forgets_the_waypoint_it_last_stood_at() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let l = layout();
+    let desk = l.home_desks[0];
+    let waypoint = Point {
+        x: desk.at.x + 16,
+        y: desk.at.y + 12,
+    };
+    let stood = |slot: &AgentSlot| {
+        let mut rig = RouteRig::new(StubRouter::straight());
+        rig.history.record(slot.agent_id, waypoint, t0);
+        rig
+    };
+    // to work while hidden, shown again past the snap-back window, then asked
+    let mut slot = running_slot(t0 + Duration::from_secs(1), t0 - Duration::from_secs(60));
+    let mut rig = stood(&slot);
+    let shown = slot.state_started_at + Duration::from_millis(SNAP_BACK_MS + PAINT_FRAME_MS);
+    let seated = derive_with_routing(&slot, shown, &l, &mut rig.rctx());
+    assert_eq!(
+        seated,
+        Some(Pose::SeatedTyping),
+        "premise: shown again at its desk"
+    );
+    let asked = shown + Duration::from_secs(1);
+    slot.state = ActivityState::RequiresAction { reason: None };
+    slot.state_started_at = asked;
+    let pose = derive_with_routing(&slot, asked, &l, &mut rig.rctx());
+    assert!(
+        !matches!(pose, Some(Pose::Walking { .. })),
+        "asked, it walked back from the waypoint: {pose:?}"
+    );
+    // idle again while hidden, shown re-seated, then quits
+    let mut slot = AgentSlot {
+        state: ActivityState::Idle,
+        ..running_slot(t0 + Duration::from_secs(1), t0 - Duration::from_secs(60))
+    };
+    let mut rig = stood(&slot);
+    let shown = t0 + Duration::from_secs(2);
+    let seated = derive_with_routing(&slot, shown, &l, &mut rig.rctx());
+    assert_eq!(seated, Some(Pose::SeatedIdle), "premise: shown re-seated");
+    let quit = shown + Duration::from_secs(1);
+    slot.exiting_at = Some(quit);
+    let pose = derive_with_routing(&slot, quit, &l, &mut rig.rctx());
+    assert!(
+        !matches!(pose, Some(Pose::Walking { segment, .. }) if segment.from() == waypoint),
+        "quitting, it walked out from the waypoint: {pose:?}"
+    );
+}
+
 #[test]
 fn snap_back_derive_is_idempotent_within_a_frame() {
     // A repeat derive at the SAME `now` must change neither the pose nor the
