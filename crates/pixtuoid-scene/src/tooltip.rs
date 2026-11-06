@@ -326,11 +326,9 @@ pub fn agent(office: &SceneState, id: AgentId, now: SystemTime) -> Option<Toolti
         rows.push(dim(format!("\u{21b3} under {lead}")));
     }
     rows.push(dim(format!("\u{25a4} {}", short_cwd(&agent.cwd))));
-    // The effort is suffixed only while FRESH — the same burn-TTL the flame
-    // reads, so the text can't outlive the fire.
     if let Some(model) = agent.model.as_deref() {
         let mut row = format!("\u{2605} {model}");
-        if let Some(effort) = crate::burn::fresh_effort(agent, now) {
+        if let Some(effort) = fresh_effort(agent, now) {
             row.push_str(&format!(" \u{b7} {effort}"));
         }
         rows.push(dim(row));
@@ -362,6 +360,29 @@ pub fn agent(office: &SceneState, id: AgentId, now: SystemTime) -> Option<Toolti
     Some(Tooltip {
         rows,
         anchor: TipAnchor::Below,
+    })
+}
+
+/// How long an effort observation stays fresh. The per-turn carriers (Codex,
+/// CC) re-stamp well inside it; omp's fires only on a change, so a pinned
+/// effort's suffix drops past it — cosmetic, accepted.
+const EFFORT_TTL_SECS: u64 = 600;
+
+/// The agent's effort, IF still fresh: the ONE freshness rule the dossier's
+/// `· effort` suffix reads, so the tooltip never shows an effort gone stale.
+fn fresh_effort(slot: &pixtuoid_core::AgentSlot, now: SystemTime) -> Option<&str> {
+    slot.effort.as_ref().and_then(|obs| {
+        // The CC decoder's exit sentinel ends the shown effort via last-seen-wins;
+        // it is not an effort, and the dossier never shows it.
+        if &*obs.value == pixtuoid_core::source::claude_code::ULTRA_EXIT_LABEL {
+            return None;
+        }
+        let fresh = now
+            .duration_since(obs.seen_at)
+            .map(|d| d.as_secs() <= EFFORT_TTL_SECS)
+            // A future-stamped observation (clock skew) counts as fresh.
+            .unwrap_or(true);
+        fresh.then_some(&*obs.value)
     })
 }
 
@@ -439,6 +460,31 @@ pub fn mascot_text(card: &GatewayCard) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_exit_sentinel_never_reaches_the_dossier() {
+        use pixtuoid_core::source::claude_code::ULTRA_EXIT_LABEL;
+        use pixtuoid_core::state::{ActivityState, EffortObservation};
+        let t0 = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        let id = AgentId::from_transcript_path("/tip/effort.jsonl");
+        let mut slot = crate::character::test_support::make_slot(id, ActivityState::Idle);
+        slot.effort = Some(EffortObservation::new(ULTRA_EXIT_LABEL.into(), t0));
+        assert_eq!(fresh_effort(&slot, t0), None);
+        slot.effort = Some(EffortObservation::new("ultra".into(), t0));
+        assert_eq!(fresh_effort(&slot, t0), Some("ultra"));
+    }
+
+    #[test]
+    fn an_effort_is_shown_only_while_fresh() {
+        use pixtuoid_core::state::{ActivityState, EffortObservation};
+        let t0 = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        let id = AgentId::from_transcript_path("/tip/ttl.jsonl");
+        let mut slot = crate::character::test_support::make_slot(id, ActivityState::Idle);
+        slot.effort = Some(EffortObservation::new("ultra".into(), t0));
+        let at = |secs| t0 + std::time::Duration::from_secs(secs);
+        assert_eq!(fresh_effort(&slot, at(EFFORT_TTL_SECS)), Some("ultra"));
+        assert_eq!(fresh_effort(&slot, at(EFFORT_TTL_SECS + 1)), None);
+    }
 
     fn span(text: &str, tone: TipTone) -> TipSpan {
         TipSpan::new(text, tone)

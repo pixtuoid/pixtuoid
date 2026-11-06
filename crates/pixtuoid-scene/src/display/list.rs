@@ -377,9 +377,6 @@ impl PieceKind {
         match self {
             PieceKind::Window { view, .. } => Emits::Pane(view),
             PieceKind::Neon { .. } | PieceKind::Text { .. } => Emits::Emissive,
-            PieceKind::Effect(r) if r.effect.kind == crate::effects::EffectKind::FlameCrown => {
-                Emits::Emissive
-            }
             PieceKind::Desk { .. }
             | PieceKind::Prop { .. }
             | PieceKind::Animated { .. }

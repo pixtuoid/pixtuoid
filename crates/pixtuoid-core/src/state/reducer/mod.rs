@@ -1057,7 +1057,7 @@ impl Reducer {
     /// session. Legitimate on BOTH transports: model/effort are wire data, not
     /// liveness. Known cosmetic residual: a first-sight replay stamps a
     /// HISTORICAL effort marker with apply-time `now`, so a session that used
-    /// max effort earlier flames until the scene's effort TTL expires.
+    /// max effort earlier shows it until the scene's effort TTL expires.
     fn apply_model_info(
         scene: &mut SceneState,
         agent_id: AgentId,

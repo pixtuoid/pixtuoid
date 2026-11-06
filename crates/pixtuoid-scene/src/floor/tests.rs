@@ -729,62 +729,43 @@ fn classic_frame(
     session.picture().map(|p| Arc::clone(p.hits.layout()))
 }
 
+/// The office keeps no tier of model: one at its top effort is drawn, in both
+/// looks, as the same agent on any other model, the same effects riding on it.
 #[test]
-fn the_classic_paints_the_flame_crown_for_a_top_tier_agent() {
-    // Driven through the FULL pass: a projection or sim/paint hop dropping
-    // slot.model/effort fails here while the unit-level paint test stays green.
-    let pack = Arc::new(crate::pack::test_office());
+fn a_top_model_at_max_effort_draws_as_any_other_agent() {
     let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-    let mut scene = make_scene(1, 8);
-    let slot = scene.agents.values_mut().next().expect("one agent");
-    slot.model = Some("claude-fable-5".into());
-    slot.effort = Some(pixtuoid_core::state::EffortObservation::new(
-        "ultra".into(),
-        now,
-    ));
-    let mut session = FloorSession::new(Arc::clone(&pack));
-    classic_frame(
-        &mut session,
-        &scene,
-        now,
-        FloorMeta::ground(),
-        Viewport::full(192, 160),
-    )
-    .expect("layout");
-    // Against the SAME scene with the crown's inputs cleared: the foreground's
-    // day/night wash blends every drawable, so the crown's authored RGB never
-    // reaches the buffer and an equality probe pins nothing. What must survive
-    // the full pass is that the crown CHANGES the frame.
-    let mut plain = scene.clone();
-    let slot = plain.agents.values_mut().next().expect("one agent");
-    slot.model = None;
-    slot.effort = None;
-    let mut session2 = FloorSession::new(Arc::clone(&pack));
-    classic_frame(
-        &mut session2,
-        &plain,
-        now,
-        FloorMeta::ground(),
-        Viewport::full(192, 160),
-    )
-    .expect("layout");
-    let (buf, buf2) = (
-        session.picture().expect("classic buffer").pixels,
-        session2.picture().expect("classic buffer").pixels,
-    );
-    // What this pins is that model/effort REACH the painter through projection
-    // and the sim/paint hop — not that the crown itself drew. The burn tier also
-    // tints the sprite over the crown's own pixels, so no scoping of this diff
-    // can isolate the crown; `paint_flame_crown_draws_its_pattern` owns that half.
-    let differing = (0..buf.height())
-        .flat_map(|y| (0..buf.width()).map(move |x| (x, y)))
-        .filter(|&(x, y)| buf.get(x, y) != buf2.get(x, y))
-        .count();
+    let as_model = |model: &str| {
+        let mut scene = make_scene(1, 8);
+        let slot = scene.agents.values_mut().next().expect("one agent");
+        slot.model = Some(model.into());
+        slot.effort = Some(pixtuoid_core::state::EffortObservation::new(
+            "ultra".into(),
+            now,
+        ));
+        scene
+    };
+    let (top, other) = (as_model("claude-fable-5"), as_model("claude-opus-4-8"));
+    let floor = FloorMeta::ground();
     assert!(
-        differing > 0,
-        "a top-tier agent rendered byte-identical to a model-less one — \
-         slot.model/effort were dropped before the painter"
+        both_painters(&top, floor, None, now) == both_painters(&other, floor, None, now),
+        "a top model drew apart"
     );
+    let effects = |scene: &SceneState| {
+        let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
+        let world = FloorInputs {
+            scene,
+            now,
+            floor,
+            pets: PetInputs::default(),
+        };
+        let frame = session.step(world, PAINTED).expect("lays out").frame;
+        frame
+            .characters
+            .iter()
+            .flat_map(|c| c.effects.iter().map(|e| e.kind))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(effects(&top), effects(&other), "something rode a top model");
 }
 
 #[test]
@@ -1642,12 +1623,12 @@ fn the_classic_sees_the_skyline_from_its_floors_altitude() {
     );
 }
 
-/// An office with every ambient loop running at `t0`, long settled: a typist,
-/// a burning typist, a waiter and a wandering gateway mascot; at rest also
-/// idle sleepers, whose wander leaves the sim's walks for real time.
+/// An office with every ambient loop running at `t0`, long settled: two
+/// typists, a waiter and a wandering gateway mascot; at rest also idle
+/// sleepers, whose wander leaves the sim's walks for real time.
 fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
     use pixtuoid_core::source::daemon::{DaemonInstanceKey, DaemonPresenceUpdate, apply_presence};
-    use pixtuoid_core::state::{DaemonInstanceId, EffortObservation, ToolKind};
+    use pixtuoid_core::state::{DaemonInstanceId, ToolKind};
     let typing = || ActivityState::Running {
         item: Some(ToolUse {
             tool_use_id: None,
@@ -1670,10 +1651,6 @@ fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
             },
             _ => ActivityState::Idle,
         };
-        if i == 1 {
-            slot.model = Some(Arc::from("claude-fable"));
-            slot.effort = Some(EffortObservation::new(Arc::from("max"), t0));
-        }
     }
     let key = DaemonInstanceKey::new(
         pixtuoid_core::source::openclaw::SOURCE_NAME,

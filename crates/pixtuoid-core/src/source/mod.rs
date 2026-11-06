@@ -237,7 +237,7 @@ pub enum AgentEvent {
     },
     /// An LLM model/effort OBSERVATION from a source's wire. Both fields are
     /// RAW wire strings (the house RAW-store/interpret-at-paint posture — the
-    /// burn-tier tables in `pixtuoid-scene` do the reading). The reducer
+    /// tooltip in `pixtuoid-scene` does the reading). The reducer
     /// updates an EXISTING slot only (unknown id = no-op — a model line never
     /// registers a session) and dedups per field; decoders may emit per
     /// sighting.

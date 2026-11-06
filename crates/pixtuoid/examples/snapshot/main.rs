@@ -290,11 +290,6 @@ struct SnapshotArgs {
     #[arg(long, conflicts_with_all = ["gif", "anim"])]
     crop_furniture: Option<String>,
 
-    /// Give the agent with this session id, or the one agent with this label,
-    /// a Top burn tier (claude-fable-5 at fresh ultra effort → ember hair + flame crown).
-    #[arg(long)]
-    flame: Option<String>,
-
     /// Crop the generated PNG to the fixed crop window centered on the gateway
     /// lobster mascot `--openclaw` stages. Static-PNG path only.
     // Visibility is still checked at runtime (the mascot may be off-canvas).
@@ -482,16 +477,6 @@ fn main() -> Result<()> {
         eprintln!("WARMUP pre-roll = {skip_ms}ms (explicit --warmup-secs)");
     }
     let mut scene = scene;
-    if let Some(key) = &args.flame {
-        let id = scenes::agent_named(&scene, "--flame", key)?.agent_id;
-        if let Some(a) = scene.agents.get_mut(&id) {
-            a.model = Some("claude-fable-5".into());
-            a.effort = Some(pixtuoid_core::state::EffortObservation::new(
-                "ultra".into(),
-                now,
-            ));
-        }
-    }
     if let Some(state) = args.openclaw {
         inject_openclaw_presence(&mut scene, state, now, &args.openclaw_ports)?;
     }

@@ -6,8 +6,6 @@
 //! `sort_row` = closer to camera = paints last. A backdrop fixture is a
 //! [`DrawableKind`] the background pass paints flat instead.
 
-use std::time::SystemTime;
-
 use crate::pack::OfficeArt;
 use crate::pack::Piece;
 use crate::sprite::blit::blit_frame;
@@ -303,7 +301,7 @@ pub(super) fn paint_drawable(kind: &DrawableKind<'_>, c: &mut DrawableCtx<'_>) {
             ..
         } => {
             paint_effects(buf, effects.iter().filter(|e| e.kind.beneath()), theme);
-            paint_character_at(buf, *pose, *top_left, agent, pack, cache, now);
+            paint_character_at(buf, *pose, *top_left, agent, pack, cache);
             paint_effects(buf, effects.iter().filter(|e| !e.kind.beneath()), theme);
         }
         DrawableKind::FilingCabinet { pos } => {
@@ -521,7 +519,6 @@ pub(crate) fn paint_character_at(
     agent: &AgentSlot,
     pack: &OfficeArt,
     cache: &mut FrameCache,
-    now: SystemTime,
 ) -> Size {
     let CharacterFrame {
         frame: cached,
@@ -533,7 +530,6 @@ pub(crate) fn paint_character_at(
         pack,
         crate::render_scale::RenderScale::ONE,
         cache,
-        now,
     );
     let size = Size {
         w: cached.width(),
@@ -566,6 +562,7 @@ mod tests {
     use crate::layout::{DESK_W, Facing};
     use crate::pet::PetKind;
     use crate::sim::Cup;
+    use std::time::SystemTime;
 
     /// The 1x token tower's width and rows a tier, as its art draws them.
     const STACK_W: u16 = 3;

@@ -259,7 +259,6 @@ fn a_walker_sorts_on_the_sims_sort_row() {
                 theme: &crate::theme::NORMAL,
                 scale: RenderScale::ONE,
             },
-            std::time::UNIX_EPOCH,
             (&mut order, &mut Vec::new()),
         );
         let (span, _) = order.first().expect("the walker is drawn");
@@ -398,7 +397,6 @@ fn a_seated_sitter_carries_their_chair() {
                 theme: &crate::theme::NORMAL,
                 scale: RenderScale::ONE
             },
-            std::time::UNIX_EPOCH,
             (&mut order, &mut Vec::new())
         ),
         vec![desk]
@@ -517,7 +515,6 @@ fn a_sitters_depth_holds_through_their_breath() {
                 theme: &crate::theme::NORMAL,
                 scale: RenderScale::ONE,
             },
-            std::time::UNIX_EPOCH,
             (&mut order, &mut Vec::new()),
         );
         let (span, _) = order.first().expect("the sitter is drawn");
@@ -1775,7 +1772,6 @@ fn a_badge_at_a_bare_east_edge_keeps_its_whole_line() {
             theme: &crate::theme::NORMAL,
             scale: RenderScale::ONE,
         },
-        std::time::UNIX_EPOCH,
         (&mut Vec::new(), &mut badges),
     );
     let badge = badges.first().expect("the sitter's badge");
