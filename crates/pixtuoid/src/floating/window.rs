@@ -765,18 +765,15 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // A populated office, a LIVE gateway daemon (in `daemons`, not
-        // `agents`: a WANDERING mascot), a slide and the onboarding's backdrop
-        // dim mid-ramp hold the frame rate; else the office says when it next
-        // needs painting.
+        // A LIVE gateway daemon holds the frame rate: its mascot walks in a
+        // stagger after the gateway comes up, mid-beat, before the office
+        // reports it walking. So does the onboarding's backdrop dim mid-ramp.
         let busy = self.live.as_ref().is_some_and(|live| {
-            let scene = live.scene_rx.borrow();
-            !scene.agents.is_empty()
-                || scene
-                    .daemons()
-                    .any(|(_, _, d)| d.liveness != DaemonLiveness::Down)
-        }) || self.renderer.nav().transition().is_some()
-            || self.ui.dim_moving();
+            live.scene_rx
+                .borrow()
+                .daemons()
+                .any(|(_, _, d)| d.liveness != DaemonLiveness::Down)
+        }) || self.ui.dim_moving();
         let until = if busy {
             None
         } else {

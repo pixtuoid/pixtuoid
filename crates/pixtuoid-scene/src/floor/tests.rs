@@ -2080,6 +2080,23 @@ fn an_office_with_a_walker_paints_every_frame() {
     assert_eq!(office.until_next_paint(now), None);
 }
 
+/// An office paints every frame of a slide between two floors.
+#[test]
+fn an_office_mid_slide_paints_every_frame() {
+    let scene = make_scene(3, 2);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000 + 3_600);
+    let look = crate::look::Look::HALF_BLOCKS;
+    let mut office = office_settled_at(look, &scene, Motion::Still, t0);
+    assert!(office.navigate(1, t0), "a second floor to slide to");
+    let mid = t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2);
+    render_office(&mut office, look, &scene, Motion::Still, mid);
+    assert!(
+        !office.moves_off_beat(),
+        "nothing moves on the floor it leaves"
+    );
+    assert_eq!(office.until_next_paint(mid), None);
+}
+
 /// A room nothing moves in between beats paints just past the next turn of
 /// its tier's beat.
 #[test]

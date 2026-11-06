@@ -623,13 +623,13 @@ impl OfficeSession {
     }
 
     /// How long after `wall` this office next needs painting by itself: `None`
-    /// while its floor moves between beats (paint every frame), else just past
-    /// the next turn of the beat its last frame was drawn on, or a rest tick
-    /// where that beat never turns. Events a painter wakes for itself (input,
-    /// a dropped frame, new feed) are its own.
+    /// while it moves between beats, on its floor or sliding to another (paint
+    /// every frame), else just past the next turn of the beat its last frame
+    /// was drawn on, or a rest tick where that beat never turns. Events a
+    /// painter wakes for itself (input, a dropped frame, new feed) are its own.
     pub fn until_next_paint(&self, wall: SystemTime) -> Option<Duration> {
         let motion = self.views[self.nav.current()].last_motion?;
-        if self.moves_off_beat() {
+        if self.moves_off_beat() || self.nav.transition().is_some() {
             return None;
         }
         Some(
