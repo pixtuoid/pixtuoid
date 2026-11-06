@@ -286,9 +286,9 @@ const CAP_INKS: &[Rgb] = &[
         b: 0xec,
     }, // off-white
     Rgb {
-        r: 0x3e,
-        g: 0x84,
-        b: 0xea,
+        r: 0x2f,
+        g: 0x6f,
+        b: 0xde,
     }, // blue
     Rgb {
         r: 0x58,
@@ -414,15 +414,15 @@ mod tests {
     /// what lies under its crown, at the densest art and at the base art.
     #[test]
     fn every_cap_shade_reads_as_a_graphic_against_its_ring() {
-        use crate::display::effects::{CAP_SEAM, CAP_UNDER};
-        use crate::effects::look::{CAP_1X_TAB, CAP_1X_UNDER};
+        use crate::display::effects::CAP_SEAM;
+        use crate::effects::look::CAP_UNDER;
         use palette::color_difference::Wcag21RelativeContrast as _;
         let ring = crate::pack::test_office()
             .inner()
             .character_outline()
             .srgb();
         for ink in CAP_INKS {
-            for level in [0, CAP_SEAM, CAP_UNDER, CAP_1X_UNDER, CAP_1X_TAB] {
+            for level in [0, CAP_SEAM, CAP_UNDER] {
                 let shade = ink.ramp(level).srgb();
                 assert!(
                     shade.has_min_contrast_graphics(ring),

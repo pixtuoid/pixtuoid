@@ -10,8 +10,8 @@ use crate::sprite::{HeadView, Rgb};
 use crate::display::Span;
 use crate::display::pen::Pen;
 use crate::effects::look::{
-    Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X, SLEEP_Z_MAX_RISE, plot_effect, sleep_z_fade,
-    walking_dust_foot,
+    CAP_UNDER, Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X, SLEEP_Z_MAX_RISE, plot_effect,
+    sleep_z_fade, walking_dust_foot,
 };
 use crate::effects::{Cap, Effect, EffectKind};
 use crate::layout::chrome::{Glyph, REQUIRES_ACTION_MARK};
@@ -245,9 +245,6 @@ const CAP_TAB: [f32; 2] = [0.55, 0.4];
 const CAP_CROSS: f32 = 0.92;
 /// The ramp step of a cap's seams and its shaded east edge.
 pub(crate) const CAP_SEAM: i8 = -1;
-/// The ramp step of what lies under a cap's crown, its brim, strap and tab,
-/// and of its button seen from above.
-pub(crate) const CAP_UNDER: i8 = -2;
 /// Columns a cap is lit along its west edge.
 const CAP_LIT: i32 = 3;
 /// Columns a cap is shaded along its east edge.

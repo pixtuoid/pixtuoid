@@ -84,7 +84,7 @@ const CAP_1X_FRONT: [(Glyph, i8); 2] = [
             "..........", //
             "..######..", //
         ]),
-        CAP_1X_UNDER,
+        CAP_UNDER,
     ),
 ];
 /// [`CAP_1X_FRONT`] from behind: the strap's nub under the crown.
@@ -109,7 +109,7 @@ const CAP_1X_SIDE: [(Glyph, i8); 2] = [
             "..........", //
             "........##", //
         ]),
-        CAP_1X_UNDER,
+        CAP_UNDER,
     ),
 ];
 /// [`CAP_1X_FRONT`] from above: the peak a shade on the crown.
@@ -126,15 +126,14 @@ const CAP_1X_CROWN: [(Glyph, i8); 2] = [
             "..........", //
             "....##....", //
         ]),
-        CAP_1X_TAB,
+        CAP_UNDER,
     ),
 ];
-/// The ramp step of a base-art cap's brim and peak, which lie on skin or the
-/// ground.
-pub(crate) const CAP_1X_UNDER: i8 = -2;
-/// [`CAP_1X_UNDER`] for the tab of a cap seen from above, one step only: it
-/// lies on hair, and two steps sink the lightest ink into silver hair.
-pub(crate) const CAP_1X_TAB: i8 = -1;
+/// The ramp step of what lies under a cap's crown at every density, its
+/// brim, strap, peak and tab, and of its button seen from above: one step,
+/// so the darkest ink's shade still reads against the cap's ring, and none
+/// sinks into the hair it lies on.
+pub(crate) const CAP_UNDER: i8 = -1;
 
 /// Layout rows a sleep z rises over its life.
 pub(crate) const SLEEP_Z_MAX_RISE: u16 = 4;
