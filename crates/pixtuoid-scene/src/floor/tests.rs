@@ -470,6 +470,24 @@ fn light_resets_vacant_since_when_repopulated() {
     );
 }
 
+/// A vacant floor's light eases from the debounce's end however long before
+/// it the floor was last drawn, so a painter sleeping to that end shows the
+/// light a painter drawing every frame does.
+#[test]
+fn light_eases_from_the_debounces_end_however_long_since_drawn() {
+    let fades_at = t0() + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS);
+    let level_drawn_before = |before: u64| {
+        let mut dim = VacancyDim::new();
+        dim.tick(true, t0());
+        dim.tick(true, fades_at - Duration::from_millis(before));
+        dim.tick(true, fades_at + PAST_THE_TURN)
+    };
+    assert_eq!(
+        level_drawn_before(crate::anim::PAINT_FRAME_MS),
+        level_drawn_before(crate::anim::FULL_TICK_MS)
+    );
+}
+
 #[test]
 fn light_large_dt_does_not_overshoot_or_nan() {
     let mut dim = VacancyDim::new();

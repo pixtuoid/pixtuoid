@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crate::pack::OfficeArt;
 use crate::physics::{WalkProfile, walk_arrived};
@@ -752,8 +752,11 @@ impl VacancyDim {
     pub(crate) fn tick(&mut self, vacant: bool, now: SystemTime) -> f32 {
         let target = if vacant {
             let since = *self.vacant_since.get_or_insert(now);
-            let elapsed = crate::anim::elapsed_ms(now, since);
-            if elapsed >= Self::VACANCY_DEBOUNCE_MS {
+            let fades_at = since + Duration::from_millis(Self::VACANCY_DEBOUNCE_MS);
+            if now >= fades_at {
+                // The ease runs from the debounce's end, not from whenever the
+                // floor was last drawn before it.
+                self.last_update = self.last_update.map(|last| last.max(fades_at));
                 Self::MIN_LEVEL
             } else {
                 1.0
