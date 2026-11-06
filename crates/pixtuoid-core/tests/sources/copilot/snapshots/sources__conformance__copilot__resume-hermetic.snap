@@ -3,45 +3,45 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 14038436998050234201
+    agent_id: 10348825876216328906
     source: copilot
-    session_id: 84718557-50b4-48e0-9945-e3b2f066744d
+    session_id: 4a0d1054-efe0-49b6-8128-cdffe1d6764c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 14038436998050234201
-    fresh_tokens: 5602
-    reading_id: 87dea1d8-187d-4e0d-a832-246834080635
+    agent_id: 10348825876216328906
+    fresh_tokens: 5638
+    reading_id: efaef0b4-520f-4413-ae67-60f2e013273a
 - ToolUseStart:
-    agent_id: 14038436998050234201
-    tool_use_id: call_V4aRjyMszEmVlBzV
+    agent_id: 10348825876216328906
+    tool_use_id: call_6me54LTw1SddxqZ0
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 14038436998050234201
-    tool_use_id: call_V4aRjyMszEmVlBzV
+    agent_id: 10348825876216328906
+    tool_use_id: call_6me54LTw1SddxqZ0
 - ModelInfo:
-    agent_id: 14038436998050234201
+    agent_id: 10348825876216328906
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 14038436998050234201
-    fresh_tokens: 5589
-    reading_id: 26d10ea7-bf0d-40d0-871d-8e26504a4c91
+    agent_id: 10348825876216328906
+    fresh_tokens: 5625
+    reading_id: 50912dc9-ff12-4c2c-824b-7eab69eec48a
 - SessionEnd:
-    agent_id: 14038436998050234201
+    agent_id: 10348825876216328906
     as_child: false
 - SessionStart:
-    agent_id: 14038436998050234201
+    agent_id: 10348825876216328906
     source: copilot
-    session_id: 84718557-50b4-48e0-9945-e3b2f066744d
+    session_id: 4a0d1054-efe0-49b6-8128-cdffe1d6764c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 14038436998050234201
-    fresh_tokens: 5609
-    reading_id: 6c8ba34b-3cda-4a0d-8456-7a5b8f995ae1
+    agent_id: 10348825876216328906
+    fresh_tokens: 5645
+    reading_id: d798cade-1322-4ea3-85ce-9af2a4dcd244
 - SessionEnd:
-    agent_id: 14038436998050234201
+    agent_id: 10348825876216328906
     as_child: false
