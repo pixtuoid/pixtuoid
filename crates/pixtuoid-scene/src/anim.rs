@@ -94,9 +94,11 @@ pub enum Motion {
 pub const FULL_TICK_MS: u64 = 125;
 /// How often a [`Motion::Calm`] loop steps.
 pub(crate) const CALM_TICK_MS: u64 = 500;
-/// The rate a painter repaints an office with agents in it, on every tier: the
-/// sampling rate the walks' strides are sized for
-/// (`a_walking_person_never_slides`).
+/// The rate a painter repaints an office: the TUI on every tier, any other
+/// painter while [`OfficeSession::until_next_paint`] is `None`. The sampling
+/// rate the walks' strides are sized for (`a_walking_person_never_slides`).
+///
+/// [`OfficeSession::until_next_paint`]: crate::floor::OfficeSession::until_next_paint
 pub const PAINT_FPS: u32 = 30;
 /// One [`PAINT_FPS`] frame, in whole ms.
 #[doc(hidden)]
@@ -215,9 +217,10 @@ impl Motion {
     /// Every tier.
     pub(crate) const ALL: [Motion; 3] = [Motion::Full, Motion::Calm, Motion::Still];
 
-    /// Whether a walk set off now takes its time, and whether an idle agent
-    /// sets off on a wander: false on [`Still`](Self::Still) alone.
-    pub(crate) const fn walks_take_time(self) -> bool {
+    /// Whether a motion set off now takes its time (a walk, a token sheet's
+    /// fall, a petted pet's hearts), and whether an idle agent sets off on a
+    /// wander: false on [`Still`](Self::Still) alone.
+    pub(crate) const fn motions_take_time(self) -> bool {
         !matches!(self, Self::Still)
     }
 
@@ -253,8 +256,7 @@ impl Motion {
 
     /// How long after `wall` this tier's [`beat`](Self::beat) next turns, as
     /// [`loop_time`] steps; `None` at rest, which never turns.
-    #[doc(hidden)]
-    pub fn until_next_beat(self, wall: SystemTime) -> Option<std::time::Duration> {
+    pub(crate) fn until_next_beat(self, wall: SystemTime) -> Option<std::time::Duration> {
         let period = FULL_TICK_MS * self.pace()?;
         let turn = (epoch_ms(wall) / period + 1) * period;
         let since = wall

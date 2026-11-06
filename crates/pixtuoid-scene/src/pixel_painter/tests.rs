@@ -1706,6 +1706,7 @@ fn empty_frame(layout: &SceneLayout) -> SimFrame {
         desks: vec![Default::default(); layout.home_desks.len()],
         door_frame: 0,
         occasion: Default::default(),
+        next_change: None,
     }
 }
 
@@ -3649,6 +3650,7 @@ fn a_pet_tied_with_an_agent_sorts_under_them_in_both_looks() {
         anim_name,
         frame_idx: 0,
         effects: crate::effects::pet_hearts(pos, 300).collect(),
+        hearts_rise: false,
     };
     let pet = cat.target();
     frame.pet = Some(cat);
@@ -3727,6 +3729,7 @@ fn the_classic_layers_creatures_under_characters_in_any_queue_order() {
         anim_name: PackPiece::CatWalk,
         frame_idx: 0,
         effects: Vec::new(),
+        hearts_rise: false,
     });
     frame.mascots = vec![crate::sim::MascotPlacement {
         pos,

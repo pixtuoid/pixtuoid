@@ -47,6 +47,8 @@ pub(crate) struct RouteCtx<'a> {
     pub history: &'a mut PoseHistory,
     /// Per-agent walk state, keyed by `AgentId`.
     pub walks: &'a mut HashMap<AgentId, WalkState>,
+    /// When the frame next changes by itself.
+    pub next_change: &'a mut crate::sim::SelfChange,
 }
 
 /// Owns the stores a [`RouteCtx`] borrows, so a test threads one value.
@@ -57,6 +59,7 @@ pub(crate) struct RouteRig<R> {
     pub(crate) history: PoseHistory,
     pub(crate) walks: HashMap<AgentId, WalkState>,
     pub(crate) motion: crate::anim::Motion,
+    pub(crate) next_change: crate::sim::SelfChange,
 }
 
 #[cfg(test)]
@@ -68,6 +71,7 @@ impl<R: Router> RouteRig<R> {
             history: PoseHistory::new(),
             walks: HashMap::new(),
             motion: crate::anim::Motion::Full,
+            next_change: crate::sim::SelfChange::default(),
         }
     }
 
@@ -80,6 +84,7 @@ impl<R: Router> RouteRig<R> {
             },
             history: &mut self.history,
             walks: &mut self.walks,
+            next_change: &mut self.next_change,
         }
     }
 }
@@ -110,16 +115,16 @@ impl PoseHistory {
     pub fn contains(&self, agent_id: AgentId) -> bool {
         self.last.contains_key(&agent_id)
     }
-    /// Latest recorded position if it's at most `max_age_ms` old.
-    pub(crate) fn recent(
-        &self,
-        agent_id: AgentId,
-        max_age_ms: u64,
-        now: SystemTime,
-    ) -> Option<Point> {
+    /// Where `agent_id` was last drawn, while its floor has been stepped
+    /// continuously by the wander's own measure ([`stale_resume_gap_ms`]):
+    /// past that gap the wander re-seats the agent, and the record with it.
+    /// A standing agent is recorded only when drawn, which a resting painter
+    /// does a wait apart, inside that gap
+    /// (`every_resting_wait_falls_inside_the_stale_resume_gap`).
+    pub(crate) fn recent(&self, agent_id: AgentId, now: SystemTime) -> Option<Point> {
         let (pt, when) = self.last.get(&agent_id).copied()?;
         let age = now.duration_since(when).ok()?.as_millis() as u64;
-        if age <= max_age_ms { Some(pt) } else { None }
+        (age <= stale_resume_gap_ms(agent_id)).then_some(pt)
     }
 }
 
@@ -130,12 +135,8 @@ const SNAP_BACK_MS: u64 = 900;
 /// Minimum manhattan distance (px) from the current rendered position to the
 /// desk before animating the snap-back; below this the teleport is invisible.
 const SNAP_BACK_MIN_DIST: i32 = 8;
-/// Max age (ms) for a recorded `PoseHistory` position to count as "where the
-/// agent is now".
-const HISTORY_RECENT_MS: u64 = 300;
 /// Safety margin (ms) shaved off `EXIT_GRACE_WINDOW` so the time-compressed exit
-/// walk reaches the door before the reducer GCs the slot. Equal to
-/// `HISTORY_RECENT_MS` by coincidence, not by motivation — don't merge them.
+/// walk reaches the door before the reducer GCs the slot.
 const EXIT_BUDGET_MARGIN_MS: u64 = 300;
 
 /// The home desk's ARRIVAL target: a reachable cell on an ALLOWED side
@@ -260,7 +261,7 @@ pub(crate) fn derive_with_routing(
                 }
                 Some(Lifted::Home(_)) | None => rctx
                     .history
-                    .recent(slot.agent_id, HISTORY_RECENT_MS, now)
+                    .recent(slot.agent_id, now)
                     .unwrap_or(desk_anchor),
             };
             let (route_from, chair_rise) = if from == desk_anchor {
@@ -328,7 +329,7 @@ pub(crate) fn derive_with_routing(
         ));
     }
 
-    let live_now = rctx.history.recent(slot.agent_id, HISTORY_RECENT_MS, now);
+    let live_now = rctx.history.recent(slot.agent_id, now);
     let re_enter = take_cancelled_walkout(rctx.walks.get_mut(&slot.agent_id), now, live_now);
 
     // A pointer's hold, and the walk home after it, outrank all but the exit,
@@ -415,6 +416,9 @@ pub(crate) fn derive_with_routing(
             rctx.walks,
             rctx.history,
         );
+        if let Some(at) = wf.turns_at {
+            rctx.next_change.at(at);
+        }
 
         match wf.phase {
             WanderPhase::WalkingOut(_) => {
@@ -497,7 +501,7 @@ pub(crate) fn derive_with_routing(
         if !already_armed {
             walk.snap_back = None;
             if since_state < SNAP_BACK_MS
-                && let Some(prev) = rctx.history.recent(slot.agent_id, HISTORY_RECENT_MS, now)
+                && let Some(prev) = rctx.history.recent(slot.agent_id, now)
             {
                 // To the CHAIR, not the desk origin: the chair is offset, so a
                 // desk-origin gate re-fires forever once the agent settles on it.

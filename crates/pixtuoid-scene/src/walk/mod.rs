@@ -62,6 +62,9 @@ pub(crate) struct WanderFrame {
     /// The current trip's kind — the seat cell + waypoint identity the walk /
     /// at-waypoint arms need.
     pub kind: WanderKind,
+    /// When a dwell's phase ends and its next leg sets off, drawn as begun
+    /// then; `None` while a leg is walked, and under a tier no leg takes time.
+    pub turns_at: Option<SystemTime>,
 }
 
 /// A one-shot walk leg (entry / exit / snap-back / walk home).
@@ -339,7 +342,7 @@ pub(crate) fn advance_wander(
         WanderPhase::Seated => {
             if may_transition && elapsed_phase >= seated_dur {
                 // None sets off under Still, its clock still keeping time.
-                if !planner.motion.walks_take_time()
+                if !planner.motion.motions_take_time()
                     || !takes_trip(id, walk.wander.cycle_n)
                     || layout.waypoints.is_empty()
                 {
@@ -419,11 +422,19 @@ pub(crate) fn advance_wander(
     // `result.0` == `walk.wander.phase` in every arm, so the frame's
     // `dest`/`kind` always describe the returned phase.
     let (phase, progress) = result;
+    let dwell = match phase {
+        WanderPhase::Seated => Some(seated_dur),
+        WanderPhase::AtWaypoint(_) => Some(dwell_dur),
+        WanderPhase::WalkingOut(_) | WanderPhase::WalkingBack(_) => None,
+    };
     WanderFrame {
         phase,
         progress,
         dest: walk.wander.target.dest,
         kind: walk.wander.target.kind,
+        turns_at: dwell
+            .filter(|_| planner.motion.motions_take_time())
+            .map(|ms| walk.wander.phase_started_at + Duration::from_millis(ms)),
     }
 }
 
@@ -567,9 +578,9 @@ pub(crate) struct Planner<'a> {
 
 impl Planner<'_> {
     /// `profile` for a walk set off now: [`WalkProfile::INSTANT`] where none
-    /// takes time ([`Motion::walks_take_time`]).
+    /// takes time ([`Motion::motions_take_time`]).
     pub(crate) fn timed(&self, profile: WalkProfile) -> WalkProfile {
-        if self.motion.walks_take_time() {
+        if self.motion.motions_take_time() {
             profile
         } else {
             WalkProfile::INSTANT

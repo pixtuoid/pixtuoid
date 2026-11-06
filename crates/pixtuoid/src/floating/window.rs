@@ -13,9 +13,8 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
-use pixtuoid_core::state::DaemonLiveness;
 use pixtuoid_scene::pack::OfficeArt;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -63,8 +62,7 @@ pub(crate) struct FloatingApp {
     /// (the `[floating]` config size is LOGICAL and would mis-seed on HiDPI).
     /// `take`n exactly once; `None` afterwards.
     boot: Option<super::PipelineBoot>,
-    /// The live pipeline — `None` until `resumed` boots it. `about_to_wait` DOES
-    /// fire before then, so it reads `None` as an idle office. `redraw` cannot
+    /// The live pipeline — `None` until `resumed` boots it. `redraw` cannot
     /// reach that state because `resumed` sets `live` BEFORE `window` and
     /// `redraw`'s window guard runs first. Don't reorder those assignments.
     live: Option<super::LivePipeline>,
@@ -191,7 +189,7 @@ impl FloatingApp {
             cursor_in: false,
             hovered: false,
             petting: None,
-            clock: super::cadence::FrameClock::new(Instant::now(), motion),
+            clock: super::cadence::FrameClock::new(Instant::now()),
             cursor_icon: None,
             zoom: cfg.zoom,
             overlays: super::overlays::OverlayLayers::default(),
@@ -466,6 +464,9 @@ impl FloatingApp {
         else {
             // Nothing rendered, or held: the window keeps the last frame, which
             // the next one's dirt is no longer measured against.
+            if !live && self.renderer.buf().is_some() {
+                self.clock.retry();
+            }
             self.presented.stale();
             return;
         };
@@ -765,27 +766,17 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // An EMPTY office still steps on its beat (clock hands, weather,
-        // lightning, day/night), so it paints each beat, never 0fps. A LIVE
-        // gateway daemon lives in `daemons`, not `agents`, and is a WANDERING
-        // mascot, so it holds the fast cadence, as does whatever the floor
-        // reports moving between beats (a walk, or a light mid-fade) and the
-        // onboarding's backdrop dim mid-ramp.
-        let office_idle = self.live.as_ref().is_none_or(|live| {
-            let scene = live.scene_rx.borrow();
-            scene.agents.is_empty()
-                && scene
-                    .daemons()
-                    .all(|(_, _, d)| d.liveness == DaemonLiveness::Down)
-        }) && !self.renderer.moves_off_beat()
-            && self.renderer.nav().transition().is_none()
-            && !self.ui.dim_moving();
+        // The window's own overlays that move with the clock are motion the
+        // office can't count.
+        let until = if self.ui.overlay_moves() {
+            None
+        } else {
+            self.renderer.until_next_paint(self.ui.wall())
+        };
         // The redraw REQUEST rides the same deadline as the wait: requesting one
         // unconditionally here leaves winit a pending redraw, so `WaitUntil` never
         // sleeps and both cadences collapse to max-rate (see `super::cadence`).
-        let (paint, deadline) = self
-            .clock
-            .poll(Instant::now(), SystemTime::now(), office_idle);
+        let (paint, deadline) = self.clock.poll(Instant::now(), until);
         event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
         if let Some(due) = paint {
             self.jank.due_at(due);

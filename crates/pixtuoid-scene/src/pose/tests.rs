@@ -383,13 +383,13 @@ fn snap_back_derive_is_idempotent_within_a_frame() {
     for i in 0..60u64 {
         let t = now0 + Duration::from_millis(i * PAINT_FRAME_MS);
         let p0 = derive_with_routing(&slot, t, &l, &mut rig.rctx());
-        let h0 = rig.history.recent(slot.agent_id, 300, t);
+        let h0 = rig.history.recent(slot.agent_id, t);
         if arrived_frame.is_none() && matches!(p0, Some(Pose::SeatedTyping | Pose::SeatedIdle)) {
             arrived_frame = Some(i);
         }
         for k in 1..4 {
             let pk = derive_with_routing(&slot, t, &l, &mut rig.rctx());
-            let hk = rig.history.recent(slot.agent_id, 300, t);
+            let hk = rig.history.recent(slot.agent_id, t);
             assert_eq!(
                 p0, pk,
                 "frame {i} call {k}: pose differs within one frame ({p0:?} vs {pk:?}) — K-call desync"
@@ -608,7 +608,7 @@ fn multi_segment_path_maps_progress_to_segment_via_octile_distance() {
                     <= Segment::straight(door, mid, LegProgress::of(1, 2)).travelled(),
                 "expected first-segment progress in [0,half], got {segment:?}"
             );
-            assert!(rig.history.recent(slot.agent_id, 1_000, now).is_some());
+            assert!(rig.history.recent(slot.agent_id, now).is_some());
         }
         other => panic!("expected Walking on segment 0, got {other:?}"),
     }
@@ -633,7 +633,7 @@ fn at_waypoint_pose_records_position_to_history() {
     let mut rig = RouteRig::new(StubRouter::straight());
     let _ = derive_with_routing(&slot, now, &l, &mut rig.rctx());
     assert!(
-        rig.history.recent(slot.agent_id, 1_000, now).is_none(),
+        rig.history.recent(slot.agent_id, now).is_none(),
         "SeatedIdle should not write history"
     );
 }
@@ -654,9 +654,9 @@ fn pose_history_record_and_recent() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let pt = Point { x: 42, y: 99 };
     let mut history = PoseHistory::new();
-    assert!(history.recent(id, 500, now).is_none());
+    assert!(history.recent(id, now).is_none());
     history.record(id, pt, now);
-    assert_eq!(history.recent(id, 500, now), Some(pt));
+    assert_eq!(history.recent(id, now), Some(pt));
 }
 
 #[test]
@@ -666,9 +666,12 @@ fn pose_history_recent_expires() {
     let pt = Point { x: 10, y: 20 };
     let mut history = PoseHistory::new();
     history.record(id, pt, t0);
-    let t1 = t0 + Duration::from_millis(600);
-    assert_eq!(history.recent(id, 500, t1), None);
-    assert_eq!(history.recent(id, 700, t1), Some(pt));
+    let gap = Duration::from_millis(stale_resume_gap_ms(id));
+    assert_eq!(history.recent(id, t0 + gap), Some(pt));
+    assert_eq!(
+        history.recent(id, t0 + gap + Duration::from_millis(1)),
+        None
+    );
 }
 
 #[test]
@@ -704,8 +707,8 @@ fn snap_back_progress_is_physics_eased_not_linear() {
         "profile duration must be > 0 for a non-trivial distance"
     );
 
-    // Record history 50 ms before `quarter_now` so it stays inside the
-    // `HISTORY_RECENT_MS` freshness gate.
+    // Record history 50 ms before `quarter_now`, so it is where the agent is
+    // now.
     let slot_q = running_slot(now, now - Duration::from_secs(60));
     let quarter_now = now + Duration::from_millis(dur_ms / 4);
     rig.history = PoseHistory::new();
@@ -1747,8 +1750,9 @@ fn carried_off(now: SystemTime) -> Hand {
     let held = hand.at.expect("in hand");
     let far = hand.far_floor(held);
     hand.carry_to(far, 4);
-    // Past `HISTORY_RECENT_MS`, so no stale walk can stand in for the hold.
-    for _ in 0..HISTORY_RECENT_MS / PAINT_FRAME_MS * 3 {
+    // Past the stale-resume gap, so no stale walk can stand in for the hold.
+    let gap = stale_resume_gap_ms(hand.slot().agent_id);
+    for _ in 0..gap / PAINT_FRAME_MS * 3 {
         hand.paint();
     }
     hand
@@ -2177,10 +2181,7 @@ fn route_walking_pose_straight_leg_records_lerp_and_clears_walk_path() {
             .is_some_and(|walk| walk.walk_path.is_none()),
         "straight 2-point walk must clear walk_path"
     );
-    let recorded = rig
-        .history
-        .recent(slot.agent_id, 1_000, now)
-        .expect("history");
+    let recorded = rig.history.recent(slot.agent_id, now).expect("history");
     assert_eq!(
         recorded,
         Segment::straight(from, to, LegProgress::of(1, 2)).at(),
@@ -2367,7 +2368,7 @@ fn a_resurrect_mid_walkout_re_enters_from_the_live_position() {
     );
     let live = rig
         .history
-        .recent(slot.agent_id, HISTORY_RECENT_MS, mid)
+        .recent(slot.agent_id, mid)
         .expect("the walkout renders every frame, so history holds a position");
 
     slot.exiting_at = None;
@@ -2432,7 +2433,7 @@ fn a_cast_switched_back_mid_walkout_turns_round_as_a_resurrect_does() {
         "premise: the walkout is in flight"
     );
     let walking_at = (rig.history)
-        .recent(id, HISTORY_RECENT_MS, mid)
+        .recent(id, mid)
         .expect("the walkout renders every frame, so history holds a position");
 
     received(&mut office, &cast, &demo, mid);
@@ -2588,8 +2589,8 @@ fn tripping(rig: &RouteRig<StubRouter>, id: AgentId) -> bool {
 }
 
 /// A walk back made instant leaves the agent drawn at its chair, so an exit
-/// under Full within `HISTORY_RECENT_MS` of it starts at the desk, not at the
-/// waypoint the agent last stood at.
+/// under Full right after it starts at the desk, not at the waypoint the agent
+/// last stood at.
 #[test]
 fn an_exit_after_an_instant_walk_back_starts_at_the_desk() {
     use crate::anim::Motion;
@@ -2815,9 +2816,7 @@ fn the_resurrect_check_reads_the_same_compressed_clock_as_the_exit_render() {
     let just_before = t0 + Duration::from_millis(arrived_at.saturating_sub(100));
     derive_with_routing(&slot, just_before, &l, &mut rig.rctx());
     assert!(
-        rig.history
-            .recent(slot.agent_id, HISTORY_RECENT_MS, at)
-            .is_some(),
+        rig.history.recent(slot.agent_id, at).is_some(),
         "setup: history must be fresh at the resurrect instant"
     );
     slot.exiting_at = None;

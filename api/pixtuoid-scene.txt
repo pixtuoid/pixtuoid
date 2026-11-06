@@ -229,6 +229,7 @@ pub fn pixtuoid_scene::floor::OfficeSession::navigate(&mut self, usize, std::tim
 pub fn pixtuoid_scene::floor::OfficeSession::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
 pub fn pixtuoid_scene::floor::OfficeSession::picture(&self) -> core::option::Option<pixtuoid_scene::look::Picture<'_>>
 pub fn pixtuoid_scene::floor::OfficeSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>, &[pixtuoid_scene::pet::Pet], pixtuoid_scene::sprite::Rgb) -> pixtuoid_scene::floor::Feed
+pub fn pixtuoid_scene::floor::OfficeSession::until_next_paint(&self, std::time::SystemTime) -> core::option::Option<core::time::Duration>
 impl core::fmt::Debug for pixtuoid_scene::floor::OfficeSession
 pub fn pixtuoid_scene::floor::OfficeSession::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::OfficeSession

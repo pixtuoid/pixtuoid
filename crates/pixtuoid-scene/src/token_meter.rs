@@ -41,12 +41,20 @@ pub fn token_tier(tokens_used: u64) -> u8 {
 }
 
 /// The falling sheet's distance FALLEN (0..=[`SHEET_FALL_PX`]) at `now`, or
-/// `None` when no sheet is in the air (reading too small, too old, or the clock
-/// went backwards). The ease-in is hand-rolled in integer math because
-/// `anim::eased_progress`'s clamped f32 curve cannot express the backward-clock
-/// `None`, and integers keep the goldens deterministic.
-pub(crate) fn sheet_fall_dist(slot: &AgentSlot, now: SystemTime) -> Option<u16> {
-    let reading = slot.last_usage.as_ref()?;
+/// `None` when no sheet is in the air (reading too small, too old, the clock
+/// went backwards, or under a `motion` whose sheets land as they drop). The
+/// ease-in is hand-rolled in integer math because `anim::eased_progress`'s
+/// clamped f32 curve cannot express the backward-clock `None`, and integers
+/// keep the goldens deterministic.
+pub(crate) fn sheet_fall_dist(
+    slot: &AgentSlot,
+    motion: crate::anim::Motion,
+    now: SystemTime,
+) -> Option<u16> {
+    let reading = slot
+        .last_usage
+        .as_ref()
+        .filter(|_| motion.motions_take_time())?;
     if reading.delta < SHEET_MIN_DELTA_TOKENS {
         return None;
     }
@@ -84,6 +92,8 @@ fn format_scaled(t: u64, unit: u64, suffix: char) -> String {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+
+    use crate::anim::Motion;
 
     use super::*;
 
@@ -137,22 +147,33 @@ mod tests {
     fn sheet_falls_only_for_a_big_fresh_reading_within_the_window() {
         let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
         let slot = slot_with_usage(SHEET_MIN_DELTA_TOKENS, t0);
-        let early = sheet_fall_dist(&slot, t0).expect("just dropped");
-        let late = sheet_fall_dist(&slot, t0 + Duration::from_millis(SHEET_FALL_MS - 1))
-            .expect("still falling");
+        let early = sheet_fall_dist(&slot, Motion::Full, t0).expect("just dropped");
+        let late = sheet_fall_dist(
+            &slot,
+            Motion::Full,
+            t0 + Duration::from_millis(SHEET_FALL_MS - 1),
+        )
+        .expect("still falling");
         assert!(early < late, "ease-in must descend: {early} !< {late}");
         assert!(late <= SHEET_FALL_PX);
         assert_eq!(
-            sheet_fall_dist(&slot, t0 + Duration::from_millis(SHEET_FALL_MS)),
+            sheet_fall_dist(
+                &slot,
+                Motion::Full,
+                t0 + Duration::from_millis(SHEET_FALL_MS)
+            ),
             None
         );
         let small = slot_with_usage(SHEET_MIN_DELTA_TOKENS - 1, t0);
-        assert_eq!(sheet_fall_dist(&small, t0), None);
+        assert_eq!(sheet_fall_dist(&small, Motion::Full, t0), None);
         let mut none = slot_with_usage(SHEET_MIN_DELTA_TOKENS, t0);
         none.last_usage = None;
-        assert_eq!(sheet_fall_dist(&none, t0), None);
+        assert_eq!(sheet_fall_dist(&none, Motion::Full, t0), None);
         // Clock skew: a reading in the future stays silent instead of panicking.
-        assert_eq!(sheet_fall_dist(&slot, t0 - Duration::from_secs(1)), None);
+        assert_eq!(
+            sheet_fall_dist(&slot, Motion::Full, t0 - Duration::from_secs(1)),
+            None
+        );
     }
 
     #[test]
