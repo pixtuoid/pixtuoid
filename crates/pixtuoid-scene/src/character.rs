@@ -10,6 +10,7 @@ use crate::sim::{CharacterGlow, outfit_seed_for};
 
 mod colors;
 mod hair;
+mod portrait;
 #[cfg(test)]
 pub(crate) mod test_support;
 
@@ -18,7 +19,7 @@ pub(crate) use colors::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY};
 pub(crate) use colors::{agent_overrides, work_glow_tint};
 #[cfg(test)]
 pub(crate) use hair::dress;
-pub(crate) use hair::{Dress, dress_for, max_rise};
+pub(crate) use hair::{Dress, dress_for};
 
 /// Which image of a character's art to draw: the part of its
 /// [`FrameKey`](crate::frame_cache::FrameKey) the sim's placement decides; the

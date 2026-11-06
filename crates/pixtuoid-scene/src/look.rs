@@ -824,6 +824,5 @@ pub fn render(
 }
 
 mod classic;
-mod portrait;
 #[cfg(test)]
 mod tests;

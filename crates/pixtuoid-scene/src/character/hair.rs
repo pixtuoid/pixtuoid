@@ -335,6 +335,77 @@ mod tests {
         );
     }
 
+    /// A body whose skin tops its frame, with a 2x variant drawn of it, the
+    /// styles `styles` at 2x and `extra` tables beside: the seated frame a
+    /// renderer at 2x takes.
+    fn seated_at_2x(
+        styles: &[&str],
+        extra: &str,
+    ) -> (&'static OfficeArt, crate::pack::DenseFrame<'static>) {
+        let mut toml = format!(
+            "[palette]\n\".\"=\"transparent\"\n\"H\"=\"#c86432\"\n\"S\"=\"#f0c0a0\"\n\
+             \"k\"=\"#010101\"\n[characters]\noutline=\"k\"\n\
+             [animations.seated]\nframes=[\"b.sprite\"]\nframe_ms=100\n\
+             [animations.\"seated@2x\"]\nframes=[\"b2.sprite\"]\nframe_ms=100\n{extra}"
+        );
+        for s in styles {
+            toml.push_str(&format!(
+                "[hairstyles.\"{s}@2x\"]\nfront={{ over=\"o.sprite\" }}\n"
+            ));
+        }
+        let pack = crate::pack::test_office_with(
+            &toml,
+            &[
+                ("b.sprite", "@frame 0\n@mark head.front 1 0\n. S .\n. . .\n"),
+                (
+                    "b2.sprite",
+                    "@frame 0\n@mark head.front 2 0\n\
+                     . . S S . .\n. . S S . .\n. . . . . .\n. . . . . .\n",
+                ),
+                ("o.sprite", "@frame 0\n@mark head.front 0 1\nH\n. \n"),
+                ("o4.sprite", "@frame 0\n@mark head.front 0 3\nH\nH\nH\n. \n"),
+            ],
+        );
+        let pack: &'static OfficeArt = Box::leak(Box::new(pack));
+        let scale = crate::render_scale::RenderScale::new(2).expect("nonzero");
+        let art = crate::pack::densest_frame(pack, Piece::Seated, 0, scale);
+        assert_eq!(art.density, TWO, "premise: the 2x variant is drawn");
+        (pack, art)
+    }
+
+    #[test]
+    fn the_headroom_holds_a_bare_head_in_a_pack_with_no_styles() {
+        let (pack, art) = seated_at_2x(&[], "");
+        assert_eq!(max_rise(pack, &art), 1, "a row for the outline alone");
+    }
+
+    #[test]
+    fn the_headroom_counts_only_the_styles_drawn_at_the_frames_density() {
+        let (pack, art) = seated_at_2x(
+            &["mop"],
+            "[hairstyles.\"mop@4x\"]\nfront={ over=\"o4.sprite\" }\n",
+        );
+        let at_2x = pack.inner().hairstyle("mop", TWO);
+        let head = art.head.expect("premise: the 2x frame marks a head");
+        assert_eq!(
+            max_rise(pack, &art),
+            Dress::of(art.frame, head, at_2x).rise(),
+            "the taller 4x layer never sizes a 2x frame's headroom"
+        );
+    }
+
+    #[test]
+    fn a_base_frame_needs_no_headroom() {
+        let (pack, _) = seated_at_2x(&["mop"], "");
+        let art = crate::pack::densest_frame(
+            pack,
+            Piece::Seated,
+            0,
+            crate::render_scale::RenderScale::ONE,
+        );
+        assert_eq!(max_rise(pack, &art), 0, "base art is never dressed");
+    }
+
     #[test]
     fn a_gap_the_outline_closes_to_one_pixel_takes_the_line() {
         // Four pixels two apart round a centre none of them touches: the line

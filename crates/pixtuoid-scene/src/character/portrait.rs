@@ -1,6 +1,9 @@
+//! [`OfficeArt::portrait`], here beside the recolour so pack/ never depends on it.
+
 use pixtuoid_core::AgentSlot;
 
-use crate::character::{SpritePose, character_frame, max_rise};
+use super::hair::max_rise;
+use super::{SpritePose, character_frame};
 use crate::frame_cache::FrameCache;
 use crate::pack::{OfficeArt, Piece, densest_frame};
 use crate::render_scale::RenderScale;
@@ -20,8 +23,7 @@ impl OfficeArt {
     /// for an out-of-workspace painter's list row, with the [`Density`] it is
     /// drawn at. It is bottom-aligned on a canvas one size for every agent of
     /// the pack, so a list's rows line up, and transparent around the figure. It
-    /// carries no marker: the row names the agent's source in text. Its sibling
-    /// export is [`frames_at`](Self::frames_at).
+    /// carries no marker: the row names the agent's source in text.
     ///
     /// ```
     /// use pixtuoid_core::AgentSlot;
