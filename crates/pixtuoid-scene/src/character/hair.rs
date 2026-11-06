@@ -39,7 +39,7 @@ pub(crate) struct Dress {
     pub(crate) crest: i32,
     /// Art columns the dressed head spans west and east of its mark's column,
     /// on its mark's row: what a cap with its brim there covers.
-    pub(crate) brow: (i32, i32),
+    pub(crate) reach: (i32, i32),
 }
 
 /// The [`Dress`] of `body`, frame `head`'s art at `density`, for `agent`:
@@ -63,7 +63,7 @@ impl Dress {
             head,
             style: style.map(|s| s.name().to_owned()),
             crest: crest(body, head, style),
-            brow: brow(body, head, style),
+            reach: reach(body, head, style),
         }
     }
 
@@ -102,11 +102,11 @@ fn crest(body: &Frame, head: HeadMark, style: Option<&Hairstyle>) -> i32 {
     top.map_or(0, |top| top - 1)
 }
 
-/// [`Dress::brow`] of `body` dressed in `style`, as far as the body's sides,
+/// [`Dress::reach`] of `body` dressed in `style`, as far as the body's sides,
 /// where [`dress`] cuts a layer. Fitted rather than one size, so a cap covers
 /// the hair it sits on: a mop spills no wider than its brim, a crop never
 /// hides under it.
-fn brow(body: &Frame, head: HeadMark, style: Option<&Hairstyle>) -> (i32, i32) {
+fn reach(body: &Frame, head: HeadMark, style: Option<&Hairstyle>) -> (i32, i32) {
     let (row, mark) = (i32::from(head.y), i32::from(head.x));
     let xs = laid(body, head, style).flat_map(|(f, dx, dy)| {
         let y = u16::try_from(row - dy).ok().filter(|&y| y < f.height());
@@ -332,11 +332,11 @@ mod tests {
         );
     }
 
-    /// A brow spans the head as dressed across its mark's row, the hair as
+    /// A reach spans the head as dressed across its mark's row, the hair as
     /// well as the skin, as far as the body's sides, where `dress` cuts a
     /// layer; a row the mark is not on counts for nothing.
     #[test]
-    fn a_brow_spans_the_dressed_head_across_its_marks_row() {
+    fn a_reach_spans_the_dressed_head_across_its_marks_row() {
         let pack = crate::pack::test_office_with(
             "[palette]\n\".\"=\"transparent\"\n\"H\"=\"#c86432\"\n\"S\"=\"#f0c0a0\"\n\
              \"k\"=\"#010101\"\n[characters]\noutline=\"k\"\n\
@@ -353,8 +353,8 @@ mod tests {
         let sprite = pack.piece(Piece::Seated);
         let (body, head) = (sprite.first(), sprite.head(0).expect("marked"));
         let style = pack.inner().hairstyles().next();
-        assert_eq!(Dress::of(body, head, style).brow, (1, 2));
-        assert_eq!(Dress::of(body, head, None).brow, (0, 0));
+        assert_eq!(Dress::of(body, head, style).reach, (1, 2));
+        assert_eq!(Dress::of(body, head, None).reach, (0, 0));
     }
 
     #[test]

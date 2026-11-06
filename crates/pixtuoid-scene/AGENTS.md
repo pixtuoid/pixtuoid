@@ -83,8 +83,8 @@ ground covered, not by `frame_ms`. A walk without one does not load.
 
 A frame can name points on itself for the renderer: `@mark <name> <x> <y>` in
 its `@frame` block, at column `x` and row `y` from the frame's top-left. A
-frame names each mark once. `head.<view>` is its brow, the top row of its face,
-with `view` one of `front`, `back`, `side` or `crown`; a frame has at most one.
+frame names each mark once. `head.<view>`, at most one (`front`, `back`, `side` or
+`crown`), is its brow: the row its face starts on, or the front's where it hides.
 
 A pack can dress its variant characters in hairstyles. A
 `[hairstyles."<name>@<N>x"]` table gives any of the views a `behind` layer, drawn

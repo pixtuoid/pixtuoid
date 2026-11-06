@@ -1392,7 +1392,7 @@ fn riders(
                 crest: row(dress.crest),
                 brow: Brow {
                     at: row(i32::from(dress.head.y)),
-                    reach: dress.brow,
+                    reach: dress.reach,
                     view: dress.head.view,
                 },
             })

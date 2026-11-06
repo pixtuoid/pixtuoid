@@ -286,9 +286,9 @@ const CAP_INKS: &[Rgb] = &[
         b: 0xec,
     }, // off-white
     Rgb {
-        r: 0x2f,
-        g: 0x6f,
-        b: 0xde,
+        r: 0x3e,
+        g: 0x84,
+        b: 0xea,
     }, // blue
     Rgb {
         r: 0x58,
@@ -409,16 +409,27 @@ mod tests {
     }
 
     /// A cap is a graphic ringed in the pack's `[characters] outline` at every
-    /// density, so each ink holds the non-text bar against that ring.
+    /// density, so each ink holds the non-text bar against that ring in every
+    /// shade the looks draw beside it: itself, its seams and shaded edge, and
+    /// what lies under its crown, at the densest art and at the base art.
     #[test]
-    fn every_cap_ink_reads_as_a_graphic_against_its_ring() {
-        let ring = crate::pack::test_office().inner().character_outline();
+    fn every_cap_shade_reads_as_a_graphic_against_its_ring() {
+        use crate::display::effects::{CAP_SEAM, CAP_UNDER};
+        use crate::effects::look::{CAP_1X_TAB, CAP_1X_UNDER};
+        use palette::color_difference::Wcag21RelativeContrast as _;
+        let ring = crate::pack::test_office()
+            .inner()
+            .character_outline()
+            .srgb();
         for ink in CAP_INKS {
-            let ratio = ink.contrast(ring);
-            assert!(
-                ratio >= crate::sprite::NON_TEXT_CONTRAST,
-                "{ink:?} at {ratio:.2}:1"
-            );
+            for level in [0, CAP_SEAM, CAP_UNDER, CAP_1X_UNDER, CAP_1X_TAB] {
+                let shade = ink.ramp(level).srgb();
+                assert!(
+                    shade.has_min_contrast_graphics(ring),
+                    "{ink:?} at step {level}: {:.2}:1",
+                    shade.relative_contrast(ring)
+                );
+            }
         }
     }
 

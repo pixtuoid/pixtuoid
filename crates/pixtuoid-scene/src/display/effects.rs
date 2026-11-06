@@ -38,7 +38,7 @@ pub(crate) enum Head {
 }
 
 /// A dressed head's brow on the art grid: its mark, the columns it is drawn
-/// across there ([`Dress::brow`](crate::character::Dress::brow)) and the view
+/// across there ([`Dress::reach`](crate::character::Dress::reach)) and the view
 /// it is seen from, which a cap there takes its shape from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Brow {
@@ -244,10 +244,10 @@ const CAP_TAB: [f32; 2] = [0.55, 0.4];
 /// The share of the head the seam across a cap seen from above spans.
 const CAP_CROSS: f32 = 0.92;
 /// The ramp step of a cap's seams and its shaded east edge.
-const CAP_SEAM: i8 = -1;
+pub(crate) const CAP_SEAM: i8 = -1;
 /// The ramp step of what lies under a cap's crown, its brim, strap and tab,
 /// and of its button seen from above.
-const CAP_UNDER: i8 = -2;
+pub(crate) const CAP_UNDER: i8 = -2;
 /// Columns a cap is lit along its west edge.
 const CAP_LIT: i32 = 3;
 /// Columns a cap is shaded along its east edge.

@@ -1292,7 +1292,7 @@ fn a_caps_brim_sits_on_the_brow_in_every_pose() {
                     "{here}: {x0}..={x1} off the mark {mark}"
                 );
             } else {
-                let (west, east) = key.dress.expect("a dressed figure").brow;
+                let (west, east) = key.dress.expect("a dressed figure").reach;
                 let (x0, x1) = (
                     cap.iter().map(|&(x, _)| x).min().expect("the cap paints"),
                     cap.iter().map(|&(x, _)| x).max().expect("the cap paints"),

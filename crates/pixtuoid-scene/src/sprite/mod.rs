@@ -169,29 +169,13 @@ impl Rgb {
         self.to_oklab().distance(other.to_oklab())
     }
 
-    /// WCAG 2.2's contrast ratio of this color against `other`
-    /// (<https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio>), each one's
-    /// relative luminance
-    /// (<https://www.w3.org/TR/WCAG22/#dfn-relative-luminance>) plus its flare.
-    #[cfg(test)]
-    pub(crate) fn contrast(self, other: Rgb) -> f64 {
-        let luminance = |c: Rgb| {
-            let linear = |v: u8| {
-                let s = f64::from(v) / 255.0;
-                if s <= 0.04045 {
-                    s / 12.92
-                } else {
-                    libm::pow((s + 0.055) / 1.055, 2.4)
-                }
-            };
-            0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
-        };
-        let (a, b) = (luminance(self), luminance(other));
-        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    /// This color as palette's sRGB, which its color science reads.
+    pub(crate) fn srgb(self) -> Srgb<f32> {
+        Srgb::new(self.r, self.g, self.b).into_format()
     }
 
     fn to_oklab(self) -> Oklab {
-        Oklab::from_color(Srgb::new(self.r, self.g, self.b).into_format::<f32>())
+        Oklab::from_color(self.srgb())
     }
 
     /// `c` cut in chroma at its lightness and hue until clipping lands within
@@ -251,11 +235,6 @@ impl Rgb {
         }
     }
 }
-
-/// WCAG 2.2 AA's least contrast for a graphic
-/// (<https://www.w3.org/TR/WCAG22/#non-text-contrast>), by [`Rgb::contrast`].
-#[cfg(test)]
-pub(crate) const NON_TEXT_CONTRAST: f64 = 3.0;
 
 /// A single pixel: `Some(rgb)` or `None` (transparent).
 pub type Pixel = Option<Rgb>;

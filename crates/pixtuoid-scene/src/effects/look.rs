@@ -131,10 +131,10 @@ const CAP_1X_CROWN: [(Glyph, i8); 2] = [
 ];
 /// The ramp step of a base-art cap's brim and peak, which lie on skin or the
 /// ground.
-const CAP_1X_UNDER: i8 = -2;
+pub(crate) const CAP_1X_UNDER: i8 = -2;
 /// [`CAP_1X_UNDER`] for the tab of a cap seen from above, one step only: it
 /// lies on hair, and two steps sink the lightest ink into silver hair.
-const CAP_1X_TAB: i8 = -1;
+pub(crate) const CAP_1X_TAB: i8 = -1;
 
 /// Layout rows a sleep z rises over its life.
 pub(crate) const SLEEP_Z_MAX_RISE: u16 = 4;
