@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use crate::anim::PAST_THE_TURN;
 use crate::pack::OfficeArt;
 use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::SceneState;
@@ -306,10 +307,10 @@ fn compose_slide(
     }
 }
 
-/// How far past its beat's turn, or a change it scheduled, an office next
-/// paints: a painter arms the wait on the monotonic clock while both fall on
-/// the wall clock, and the frame must land past them.
-pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
+/// How often an office whose beat never turns paints: never 0fps, since its
+/// clock and sky still move with the wall and a frozen one reads as a dead
+/// window.
+pub(super) const REST_TICK: Duration = Duration::from_secs(1);
 
 /// A painter's office of up to [`MAX_FLOORS`](super::MAX_FLOORS) floors:
 /// each floor's view, the office-wide state they share (a cup of
@@ -631,8 +632,7 @@ impl OfficeSession {
         if self.moves_off_beat() || self.nav.transition().is_some() {
             return None;
         }
-        let beat = (motion.until_next_beat(wall))
-            .map_or(crate::anim::REST_TICK, |until| until + PAST_THE_TURN);
+        let beat = (motion.until_next_beat(wall)).map_or(REST_TICK, |until| until + PAST_THE_TURN);
         // One the wall has passed with no step past it (a paused clock) is
         // no reason to paint again.
         let change = (view.floor.ctx.next_change())

@@ -1,7 +1,7 @@
-use super::office::PAST_THE_TURN;
+use super::office::REST_TICK;
 use super::*;
 use crate::anim::Motion;
-use crate::anim::REST_TICK;
+use crate::anim::PAST_THE_TURN;
 use crate::character::test_support::make_slot;
 use crate::layout::Viewport;
 use pixtuoid_core::id::AgentId;
@@ -1920,46 +1920,61 @@ fn a_frame_holds_for_the_wait_its_office_names() {
     let a_second_past = |at: Duration| at + Duration::from_secs(1);
     let calm = FloorMeta::ground().with_motion(Motion::Calm);
     // The first of them to stand at a waypoint, its wander set off, and a
-    // feed about 400 ms after the resting paint of the first Calm beat a
-    // second into its stay: older than a frame's history, which must still
-    // place it.
-    let (dweller, at_waypoint) = {
-        let mut office = OfficeSession::new(Arc::clone(&pack));
-        // A BUDGET for a wander to reach its waypoint, not part of the
-        // assertion: two of the longest wander cycles.
-        let cycles = (idling.agents.keys())
-            .map(|id| Duration::from_millis(2 * crate::pose::est_wander_cycle_ms(*id)))
-            .max()
-            .expect("agents");
-        (0..)
-            .map(|tick| t0 + tick * frame)
-            .take_while(|&now| now < t0 + cycles)
-            .find_map(|now| {
-                render_office_with(
-                    &mut office,
-                    crate::look::Look::HALF_BLOCKS,
-                    &idling,
-                    calm,
-                    now,
-                    (&[], None),
-                );
-                let floor = office.floor(0).expect("drawn");
-                (floor.ctx.walks.iter())
-                    .find(|(_, w)| {
-                        matches!(w.wander.phase, crate::walk::WanderPhase::AtWaypoint(_))
-                    })
-                    .map(|(id, _)| (*id, now))
-            })
-            .expect("a wander reaches its waypoint")
+    // feed on the resting paint that closes the longest gap a Calm beat leaves
+    // on the frame grid, a second into its stay: its record is then a beat and
+    // a frame's lateness old, which must still place it.
+    let mut scout = OfficeSession::new(Arc::clone(&pack));
+    let mut scout_at = |now| {
+        render_office_with(
+            &mut scout,
+            crate::look::Look::HALF_BLOCKS,
+            &idling,
+            calm,
+            now,
+            (&[], None),
+        );
+        let floor = scout.floor(0).expect("drawn");
+        (floor.ctx.walks.iter())
+            .find(|(_, w)| matches!(w.wander.phase, crate::walk::WanderPhase::AtWaypoint(_)))
+            .map(|(id, _)| *id)
     };
+    // A BUDGET for a wander to reach its waypoint, not part of the assertion:
+    // two of the longest wander cycles.
+    let cycles = (idling.agents.keys())
+        .map(|id| Duration::from_millis(2 * crate::pose::est_wander_cycle_ms(*id)))
+        .max()
+        .expect("agents");
+    let frames = |from: SystemTime| (0..).map(move |tick| from + tick * frame);
+    let (dweller, at_waypoint) = frames(t0)
+        .take_while(|&now| now < t0 + cycles)
+        .find_map(|now| scout_at(now).map(|id| (id, now)))
+        .expect("a wander reaches its waypoint");
+    let paint_after = |turn: SystemTime| {
+        let since = (turn + PAST_THE_TURN).duration_since(t0).expect("after t0");
+        t0 + frame * since.as_millis().div_ceil(frame.as_millis()) as u32
+    };
+    let gap = |turn: SystemTime, beat| paint_after(turn).duration_since(paint_after(turn - beat));
     let settled_in = at_waypoint + Duration::from_secs(1);
-    let turn = settled_in
+    let first_turn = settled_in
         + Motion::Calm
             .until_next_beat(settled_in)
             .expect("Calm turns");
-    let prompt_at = (turn + Duration::from_millis(400))
-        .duration_since(t0)
-        .expect("after t0");
+    let beat = Motion::Calm
+        .until_next_beat(first_turn)
+        .expect("Calm turns");
+    let prompt = (0..)
+        .map(|k| first_turn + k * beat)
+        .find(|&turn| gap(turn, beat).is_ok_and(|gap| gap > beat))
+        .map(paint_after)
+        .expect("a gap past the beat");
+    for now in frames(at_waypoint + frame).take_while(|&now| now <= prompt) {
+        assert_eq!(
+            scout_at(now),
+            Some(dweller),
+            "it stands at its waypoint till the feed"
+        );
+    }
+    let prompt_at = prompt.duration_since(t0).expect("after t0");
     let mut prompted = idling.clone();
     if let Some(slot) = prompted.agents.get_mut(&dweller) {
         slot.state = ActivityState::Running { item: None };
