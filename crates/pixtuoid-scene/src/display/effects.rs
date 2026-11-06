@@ -244,9 +244,9 @@ const CAP_TAB: [f32; 2] = [0.55, 0.4];
 /// The share of the head the seam across a cap seen from above spans.
 const CAP_CROSS: f32 = 0.92;
 /// Columns a cap is lit along its west edge.
-const CAP_LIT: i32 = 3;
+const CAP_LIT_COLUMNS: i32 = 3;
 /// Columns a cap is shaded along its east edge.
-const CAP_SHADED: i32 = 2;
+const CAP_SHADED_COLUMNS: i32 = 2;
 
 /// `cap` with its brim on `brow`, as wide as the head is drawn there: its
 /// crown lit on top and west and shaded east, ringed in its line as a dressed
@@ -269,9 +269,9 @@ fn cap_look(cap: Cap, brow: Brow, emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32)
     for (row, cols) in (0..).zip(rows.chain(std::iter::repeat_n(-west..=east, under))) {
         let (lo, hi) = (*cols.start(), *cols.end());
         for dx in cols {
-            let level = if row == 0 || dx < lo + CAP_LIT {
+            let level = if row == 0 || dx < lo + CAP_LIT_COLUMNS {
                 1
-            } else if dx > hi - CAP_SHADED {
+            } else if dx > hi - CAP_SHADED_COLUMNS {
                 CAP_SHADE
             } else {
                 0
