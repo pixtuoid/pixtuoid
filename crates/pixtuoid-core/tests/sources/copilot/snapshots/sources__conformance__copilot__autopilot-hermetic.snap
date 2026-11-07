@@ -3,47 +3,47 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 1597643658496619735
+    agent_id: 9820997371099864414
     source: copilot
-    session_id: 4793c4ed-10e1-4e2d-83a9-7103de9b7d9f
+    session_id: def593f6-853c-4e73-aca6-e698168ec288
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 1597643658496619735
+    agent_id: 9820997371099864414
     fresh_tokens: 7224
-    reading_id: 5f95e8ab-d011-4e87-8272-20f0b6923651
+    reading_id: f28933db-bfac-4ea0-bfc6-7e56b956c324
 - ToolUseStart:
-    agent_id: 1597643658496619735
-    tool_use_id: call_YYLRyBNg6q21XmKI
+    agent_id: 9820997371099864414
+    tool_use_id: call_MsSMWpzLFLNKsLJl
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 1597643658496619735
-    tool_use_id: call_YYLRyBNg6q21XmKI
+    agent_id: 9820997371099864414
+    tool_use_id: call_MsSMWpzLFLNKsLJl
 - ModelInfo:
-    agent_id: 1597643658496619735
+    agent_id: 9820997371099864414
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 1597643658496619735
+    agent_id: 9820997371099864414
     fresh_tokens: 7219
-    reading_id: cca284e2-24b6-4129-b4d0-f3726765b5e7
+    reading_id: ac954d81-ebf8-4db3-abf1-3f5df8c7e22a
 - ToolUseStart:
-    agent_id: 1597643658496619735
-    tool_use_id: call_fH5fzR19GNPdtXm-
+    agent_id: 9820997371099864414
+    tool_use_id: call_mKYLIXYQRA_IztmX
     detail:
       Generic:
         display: task_complete
 - ToolUseEnd:
-    agent_id: 1597643658496619735
-    tool_use_id: call_fH5fzR19GNPdtXm-
+    agent_id: 9820997371099864414
+    tool_use_id: call_mKYLIXYQRA_IztmX
 - ModelInfo:
-    agent_id: 1597643658496619735
+    agent_id: 9820997371099864414
     model: gpt-4.1
     effort: ~
 - TurnEnd:
-    agent_id: 1597643658496619735
+    agent_id: 9820997371099864414
 - SessionEnd:
-    agent_id: 1597643658496619735
+    agent_id: 9820997371099864414
     as_child: false
