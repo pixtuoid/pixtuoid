@@ -9,7 +9,7 @@ mod sources_cli;
 
 use std::io::Write;
 
-use crate::cli::{Cli, Cmd, SourceArgs, SourcesAction};
+use crate::cli::{Cli, Cmd, JsonArgs, SourceArgs, SourceIdArgs, SourcesAction};
 use crate::{config, doctor, floating, install, runtime, sources};
 use anyhow::Result;
 use clap::Parser;
@@ -156,29 +156,39 @@ pub fn run() -> Result<()> {
             write!(crate::cli_stdout(), "{report}")?;
             Ok(())
         }
-        Cmd::Sources { action: None, json } => sources_cli::run_sources_list(json),
         Cmd::Sources {
-            action: Some(SourcesAction::Set { ids }),
-            json,
+            action: None,
+            output: JsonArgs { json },
+        } => sources_cli::run_sources_list(json),
+        Cmd::Sources {
+            action:
+                Some(SourcesAction::Set {
+                    sources: SourceIdArgs { ids },
+                }),
+            output: JsonArgs { json },
         } => sources_cli::run_sources_set(&ids, json),
-        Cmd::Connect { ids, json } => sources_cli::run_change(&ids, json, |c, i| {
+        Cmd::Connect {
+            sources: SourceIdArgs { ids },
+            output: JsonArgs { json },
+        } => sources_cli::run_change(&ids, json, |c, i| {
             sources::connect(c, i).map(|_| sources::ChangeOutcome::Connected)
         }),
-        Cmd::Disconnect { ids, json } => {
-            sources_cli::run_change(&ids, json, |c, i| match sources::disconnect(c, i)? {
-                sources::DisconnectOutcome::Uninstalled(r)
-                    if let Some(cli) = r.plugin_left_registered =>
-                {
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "{i}: {}",
-                        pixtuoid_core::remote::plugin_left_registered(cli.command)
-                    );
-                    Ok(sources::ChangeOutcome::Disconnected)
-                }
-                _ => Ok(sources::ChangeOutcome::Disconnected),
-            })
-        }
+        Cmd::Disconnect {
+            sources: SourceIdArgs { ids },
+            output: JsonArgs { json },
+        } => sources_cli::run_change(&ids, json, |c, i| match sources::disconnect(c, i)? {
+            sources::DisconnectOutcome::Uninstalled(r)
+                if let Some(cli) = r.plugin_left_registered =>
+            {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "{i}: {}",
+                    pixtuoid_core::remote::plugin_left_registered(cli.command)
+                );
+                Ok(sources::ChangeOutcome::Disconnected)
+            }
+            _ => Ok(sources::ChangeOutcome::Disconnected),
+        }),
         Cmd::Setup { yes } => sources_cli::run_setup(yes),
         // Packaging interfaces: stdout carries ONLY the generated artifact (the
         // tracing subscriber writes to stderr) so the homebrew

@@ -13,11 +13,13 @@ pub(crate) struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
 
-    /// Log verbosity. The TUI always logs warn+ to a file per run
-    /// (in ~/.cache/pixtuoid/logs/ or $XDG_STATE_HOME/pixtuoid/logs/, or
-    /// the one file $PIXTUOID_LOG names); debug/trace raise the file's
-    /// verbosity. Non-TUI commands log to stderr at this level.
-    /// ($RUST_LOG remains the escape hatch for full directive syntax.)
+    /// Log verbosity.
+    ///
+    /// The TUI and the floating window always log warn+ to a file per run (in
+    /// ~/.cache/pixtuoid/logs/ or $XDG_STATE_HOME/pixtuoid/logs/, or the one file
+    /// $PIXTUOID_LOG names); debug/trace raise the file's verbosity. Everything
+    /// else logs to stderr at this level. ($RUST_LOG remains the escape hatch for
+    /// full directive syntax.)
     #[arg(long, global = true, value_enum, default_value = "info")]
     pub log_level: LogLevel,
 }
@@ -46,14 +48,16 @@ fn theme_help() -> String {
 /// [`crate::config::resolve_look`].
 #[derive(Debug, Default, Clone, Copy, clap::Args)]
 pub(crate) struct LookArgs {
-    /// Which office to paint: the cutaway, drawn in terminal graphics (the
-    /// protocols `--protocol` lists), or the classic half-blocks. Overrides the
-    /// `look` config key; the default is `auto`. `pixtuoid doctor` shows what
-    /// this terminal supports.
+    /// Which office to paint: the cutaway or the classic.
+    ///
+    /// The cutaway is drawn in terminal graphics (the protocols `--protocol`
+    /// lists), the classic in half-blocks. Overrides the `look` config key; the
+    /// default is `auto`. `pixtuoid doctor` shows what this terminal supports.
     #[arg(long, value_enum)]
     pub(crate) look: Option<crate::graphics::LookMode>,
-    /// Draw the cutaway in this protocol whatever protocol the terminal
-    /// reports; it implies `--look cutaway`.
+    /// Draw the cutaway in this protocol whatever protocol the terminal reports.
+    ///
+    /// It implies `--look cutaway`.
     #[arg(long, value_enum, conflicts_with = "look")]
     pub(crate) protocol: Option<crate::graphics::ImageProtocol>,
 }
@@ -70,6 +74,24 @@ pub(crate) struct SourceArgs {
     pub socket: Option<PathBuf>,
 }
 
+/// The source ids `connect`, `disconnect` and `sources set` act on.
+#[derive(Debug, clap::Args)]
+pub(crate) struct SourceIdArgs {
+    /// Source ids, e.g. `claude-code codex`.
+    #[arg(required = true)]
+    pub(crate) ids: Vec<String>,
+}
+
+/// `--json`, for the commands whose output a script reads.
+#[derive(Debug, Clone, Copy, clap::Args)]
+pub(crate) struct JsonArgs {
+    /// Emit machine-readable JSON instead of a table.
+    // `global` so `sources` honors it both before and after `set` (`sources
+    // --json set …` == `sources set … --json`), the natural Raycast/script form.
+    #[arg(long, global = true)]
+    pub(crate) json: bool,
+}
+
 #[derive(Debug, Subcommand)]
 pub(crate) enum Cmd {
     /// Run the TUI (default if no subcommand given).
@@ -84,6 +106,7 @@ pub(crate) enum Cmd {
         #[arg(long, hide = true, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
         max_desks: Option<usize>,
         /// Skip the TUI entirely — useful for CI / scripting.
+        ///
         /// Prints a one-line `agents=[label@desk:state, ...]` summary on each
         /// change of the scene.
         #[arg(long, default_value_t = false)]
@@ -120,6 +143,7 @@ pub(crate) enum Cmd {
     #[cfg(feature = "serve")]
     Pair {
         /// The hostname or IPv4 address a device reaches this machine at.
+        ///
         /// Defaults to this Mac's `.local` name, elsewhere to the default route's
         /// local-network IPv4.
         #[arg(long)]
@@ -141,6 +165,7 @@ pub(crate) enum Cmd {
     /// It reads decode drift from the log. Changes no config.
     Doctor {
         /// The look the `graphics:` row plans, as `run --look` takes it.
+        ///
         /// Defaults to `cutaway` whatever the `look` config key says: the row
         /// reports what this terminal can do.
         #[arg(long, value_enum, default_value_t = crate::graphics::LookMode::Named(LookKind::Cutaway))]
@@ -156,37 +181,33 @@ pub(crate) enum Cmd {
     Sources {
         #[command(subcommand)]
         action: Option<SourcesAction>,
-        /// Emit machine-readable JSON instead of a table.
-        // `global` so it's honored both before and after `set` (`sources --json
-        // set …` == `sources set … --json`), the natural Raycast/script form.
-        #[arg(long, global = true)]
-        json: bool,
+        #[command(flatten)]
+        output: JsonArgs,
     },
     /// Connect one or more sources: install their hooks + persist the choice.
     ///
     /// A running office reflects it on its next launch.
     Connect {
-        /// Source ids, e.g. `claude-code codex`.
-        #[arg(required = true)]
-        ids: Vec<String>,
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        sources: SourceIdArgs,
+        #[command(flatten)]
+        output: JsonArgs,
     },
     /// Disconnect one or more sources: remove their hooks + persist the choice.
     Disconnect {
-        /// Source ids, e.g. `codex cursor`.
-        #[arg(required = true)]
-        ids: Vec<String>,
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        sources: SourceIdArgs,
+        #[command(flatten)]
+        output: JsonArgs,
     },
     /// First-run setup: detect installed agent CLIs and connect them.
     ///
     /// The headless twin of the in-TUI onboarding. Without `--yes` it's a DRY RUN
     /// that only prints what it would connect.
     Setup {
-        /// Apply: actually connect the detected CLIs (install their hooks). Without
-        /// it, `setup` only previews the detected set.
+        /// Apply: actually connect the detected CLIs (install their hooks).
+        ///
+        /// Without it, `setup` only previews the detected set.
         // Opt-in: applying writes to another tool's config.
         #[arg(long)]
         yes: bool,
@@ -220,8 +241,8 @@ pub(crate) enum SourcesAction {
     /// Make these ids the connected set: every other source disconnects.
     // Declarative: it backs the Raycast multi-select checkbox-form.
     Set {
-        #[arg(required = true)]
-        ids: Vec<String>,
+        #[command(flatten)]
+        sources: SourceIdArgs,
     },
 }
 
@@ -295,7 +316,7 @@ mod tests {
         let host = pair
             .get_arguments()
             .find(|arg| arg.get_id() == "host")
-            .and_then(|arg| arg.get_help())
+            .and_then(|arg| arg.get_long_help())
             .expect("documented")
             .to_string();
         assert!(host.contains("default route"), "{host}");
@@ -518,7 +539,10 @@ mod tests {
         let cli = Cli::try_parse_from(["pixtuoid", "sources", "set", "codex", "cursor"]).unwrap();
         match cli.cmd {
             Some(Cmd::Sources {
-                action: Some(SourcesAction::Set { ids }),
+                action:
+                    Some(SourcesAction::Set {
+                        sources: SourceIdArgs { ids },
+                    }),
                 ..
             }) => assert_eq!(ids, vec!["codex".to_string(), "cursor".to_string()]),
             other => panic!("expected sources set, got {other:?}"),
@@ -537,7 +561,7 @@ mod tests {
                     cli.cmd,
                     Some(Cmd::Sources {
                         action: Some(SourcesAction::Set { .. }),
-                        json: true
+                        output: JsonArgs { json: true },
                     })
                 ),
                 "args {args:?} must parse json=true"
@@ -555,7 +579,13 @@ mod tests {
         let c = Cli::try_parse_from(["pixtuoid", "connect", "claude-code", "codex"]).unwrap();
         assert!(matches!(c.cmd, Some(Cmd::Connect { .. })));
         let d = Cli::try_parse_from(["pixtuoid", "disconnect", "codex", "--json"]).unwrap();
-        assert!(matches!(d.cmd, Some(Cmd::Disconnect { json: true, .. })));
+        assert!(matches!(
+            d.cmd,
+            Some(Cmd::Disconnect {
+                output: JsonArgs { json: true },
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -624,18 +654,28 @@ mod tests {
         }
     }
 
-    /// Each command a `--help` lists gets one line: its doc's first paragraph,
-    /// the rest being its own `--help`.
+    /// Each command a `--help` lists gets one line, and each visible flag or
+    /// positional a one-line summary: a doc's first paragraph, the rest being
+    /// the long `--help`.
     #[test]
-    fn every_listed_summary_fits_one_help_line() {
+    fn every_help_summary_is_present_and_fits_one_line() {
         // clap's own help width where it can't read the terminal's
         // (`clap::Command::term_width`).
         const HELP_WIDTH: usize = 100;
         let mut root = <Cli as clap::CommandFactory>::command();
         root.build();
-        let mut parents = vec![root];
-        while let Some(mut parent) = parents.pop() {
-            let help = parent.render_long_help().to_string();
+        let mut commands = vec![root];
+        while let Some(mut command) = commands.pop() {
+            let name = command.get_name().to_owned();
+            for arg in command.get_arguments().filter(|a| !a.is_hide_set()) {
+                let help = arg.get_help().map(ToString::to_string).unwrap_or_default();
+                assert!(
+                    !help.is_empty() && help.chars().count() <= HELP_WIDTH,
+                    "`{name}`'s {} summary: {help:?}",
+                    arg.get_id()
+                );
+            }
+            let help = command.render_long_help().to_string();
             let listing = help
                 .split_once("Commands:\n")
                 .and_then(|(_, rest)| rest.split("\n\n").next())
@@ -643,11 +683,10 @@ mod tests {
             for line in listing.lines() {
                 assert!(
                     line.chars().count() <= HELP_WIDTH,
-                    "`{} --help` lists:\n{line}",
-                    parent.get_name()
+                    "`{name} --help` lists:\n{line}"
                 );
             }
-            parents.extend(parent.get_subcommands().cloned());
+            commands.extend(command.get_subcommands().cloned());
         }
     }
 
