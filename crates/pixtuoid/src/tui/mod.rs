@@ -464,11 +464,6 @@ fn paint_plan<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     }
 }
 
-/// The least time between two of the event loop's frames.
-pub(crate) fn frame_tick() -> Duration {
-    Duration::from_secs(1) / pixtuoid_scene::anim::PAINT_FPS
-}
-
 /// The event loop, running as the `block_on` ROOT future rather than on a tokio worker — so
 /// `tokio::task::block_in_place` here is inert, not a yield point, and does not panic either
 /// (that is `current_thread`-only). Pinned by `block_in_place_is_inert_on_the_block_on_thread`.
@@ -521,11 +516,9 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
 
-    let tick = frame_tick();
-    renderer.scheduled_every(tick);
     let mut fired = None;
     let result: Result<()> = (async {
-        let mut frames = frame_clock(tick);
+        let mut frames = frame_clock(pixtuoid_scene::anim::PAINT_FRAME);
         let mut events = EventStream::new();
         let mut snapshot = scene_rx.borrow().clone();
         let mut now = ui.now();
@@ -621,7 +614,7 @@ fn run_outcome(
 /// paints at once and the next back on the grid, neither a burst to catch up
 /// nor a re-anchor that lets every late wake stretch the rate
 /// ([`MissedTickBehavior::Skip`]).
-pub(crate) fn frame_clock(period: Duration) -> tokio::time::Interval {
+pub fn frame_clock(period: Duration) -> tokio::time::Interval {
     let mut frames = tokio::time::interval(period);
     frames.set_missed_tick_behavior(MissedTickBehavior::Skip);
     frames

@@ -48,6 +48,7 @@ pub(super) fn tear_down(parts: &mut impl Teardown) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pixtuoid_scene::anim::PAINT_FRAME;
     use std::time::{Duration, Instant};
 
     struct Fake {
@@ -84,15 +85,13 @@ mod tests {
     #[test]
     fn a_skipped_scheduled_frame_is_not_booked_against_the_next_redraw() {
         let t0 = Instant::now();
-        let ms = Duration::from_millis;
         let logged = crate::test_capture::capture(|| {
             let mut app = Fake {
                 jank: Jank::new(),
                 log: Vec::new(),
                 presents: false,
-                shown_at: t0 + ms(500),
+                shown_at: t0 + 2 * PAINT_FRAME,
             };
-            app.jank.scheduled_every(ms(33));
             app.jank.due_at(t0);
             redraw(&mut app);
             assert_eq!(app.log, ["paint", "recursor"]);

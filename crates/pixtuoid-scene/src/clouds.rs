@@ -12,6 +12,7 @@ use std::ops::Range;
 
 use crate::sprite::Rgb;
 
+use crate::anim::{PAINT_FRAME, frames_in};
 use crate::atmosphere::Moment;
 use crate::outside::{Cell, WindowView};
 
@@ -794,6 +795,7 @@ fn dequantize(k: u8, steps: f32) -> f32 {
 /// How far ahead [`Clouds::draw_ahead`] looks for a step: a step's every mass,
 /// [`DRAWS_AHEAD`] a frame, is drawn before it lands.
 const AHEAD: std::time::Duration = std::time::Duration::from_secs(1);
+const AHEAD_FRAMES: u32 = frames_in(AHEAD);
 /// The masses a frame draws ahead at most: a transition's share and light
 /// steps can land a second apart, each a deck's masses.
 const DRAWS_AHEAD: usize = 2;
@@ -1014,15 +1016,14 @@ impl Clouds {
         cache: &mut CloudCache,
     ) {
         let _ahead = tracing::trace_span!("clouds.ahead").entered();
-        let frame = std::time::Duration::from_millis(crate::anim::PAINT_FRAME_MS);
         let mut budget = if std::mem::take(&mut cache.warming) {
             usize::MAX
         } else {
             DRAWS_AHEAD
         };
         let mut was = Self::keyed(&moment.sky);
-        for k in 1..=AHEAD.as_millis() / frame.as_millis() {
-            let sky = Sky::at(moment.timing.later(frame * k as u32), moment.sky.policy());
+        for k in 1..=AHEAD_FRAMES {
+            let sky = Sky::at(moment.timing.later(PAINT_FRAME * k), moment.sky.policy());
             let keyed = Self::keyed(&sky);
             if keyed == was {
                 continue;
@@ -1766,19 +1767,16 @@ mod tests {
     fn a_warmed_cache_draws_the_first_second_ahead() {
         use crate::sky::WeatherPolicy;
         let theme = &crate::theme::NORMAL;
-        let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
         let start = crate::sky::first_transition_after(
             std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000),
         )
         .expect("a transition");
         let moment_at = |n: u32| {
-            let timing = Motion::Full.timing(start + frame * n);
+            let timing = Motion::Full.timing(start + PAINT_FRAME * n);
             Moment::resolve(Sky::at(timing, WeatherPolicy::Clock), theme, 0.0, timing)
         };
-        let steps = (1..AHEAD.as_millis() / frame.as_millis())
-            .filter(|&n| {
-                Clouds::keyed(&moment_at(n as u32).sky) != Clouds::keyed(&moment_at(0).sky)
-            })
+        let steps = (1..AHEAD_FRAMES)
+            .filter(|&n| Clouds::keyed(&moment_at(n).sky) != Clouds::keyed(&moment_at(0).sky))
             .count();
         assert!(steps > 0, "a step lands within the first second");
         let mut cache = CloudCache::default();
@@ -1791,7 +1789,7 @@ mod tests {
             &mut cache,
         );
         Clouds::draw_ahead(&moment_at(0), (SPAN, GLASS_H), test_density(4), &mut cache);
-        for n in 1..(AHEAD.as_millis() / frame.as_millis()) as u32 {
+        for n in 1..AHEAD_FRAMES {
             let moment = moment_at(n);
             let (_, planned) = Clouds::plan(&moment.sky, 0.0, (SPAN, GLASS_H), test_density(4));
             assert!(
@@ -1837,7 +1835,7 @@ mod tests {
             .into_iter()
             .max()
             .unwrap_or(0);
-        let ahead = (AHEAD.as_millis() / u128::from(crate::anim::PAINT_FRAME_MS)) as usize;
+        let ahead = AHEAD_FRAMES as usize;
         assert!(
             CloudCache::CAPACITY.get() >= 2 * (2 * fullest + ahead * DRAWS_AHEAD),
             "{fullest} masses a deck"
@@ -1854,7 +1852,6 @@ mod tests {
     fn every_step_is_drawn_ahead_of_it() {
         use crate::sky::WeatherPolicy;
         let theme = &crate::theme::NORMAL;
-        let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
         let noon = crate::localclock::at_hour(12);
         let windows = [
             (
@@ -1870,7 +1867,7 @@ mod tests {
         ];
         // Each window opens `AHEAD` early: a step within `AHEAD` of the first
         // frame has had no frames to be drawn ahead in.
-        let lead = (AHEAD.as_millis() / frame.as_millis()) as u32;
+        let lead = AHEAD_FRAMES;
         let pack = crate::pack::test_office();
         let d = test_density(4);
         let wall = crate::outside::Wall {
@@ -1881,13 +1878,13 @@ mod tests {
         let (run, glass_h) = wall.glass();
         for motion in [Motion::Full, Motion::Calm] {
             for (start, policy, length) in windows {
-                let timing = |n: u32| motion.timing(start - AHEAD + frame * n);
+                let timing = |n: u32| motion.timing(start - AHEAD + PAINT_FRAME * n);
                 let planned =
                     |sky: &Sky| Clouds::plan(sky, 0.0, (run.end - run.start, glass_h), d).1;
                 // Only a frame within `AHEAD` of a step, where the plan
                 // changes, can draw ahead or on demand, so the rest are
                 // found by the plan alone, which paints nothing, and skipped.
-                let frames = lead + (length.as_millis() / frame.as_millis()) as u32;
+                let frames = lead + frames_in(length);
                 let mut near = vec![false; frames as usize];
                 let mut last_plan = planned(&Sky::at(timing(0), policy));
                 for n in 1..frames {

@@ -1,13 +1,13 @@
 //! Frame-time telemetry, after Android's JankStats
 //! (<https://developer.android.com/topic/performance/jankstats>): a frame past
-//! the loop's scheduled interval is a debug `frame slow`, one past twice it a
-//! debug `frame jank`, each with what it was drawn under; once a minute, at a
-//! change of painter and at exit, a `frame pacing` summary gives the spread,
-//! at warn when a frame janked.
+//! [`PAINT_FRAME`] is a debug `frame slow`, one past twice it a debug `frame
+//! jank`, each with what it was drawn under; once a minute, at a change of
+//! painter and at exit, a `frame pacing` summary gives the spread, at warn
+//! when a frame janked.
 
 use std::time::{Duration, Instant};
 
-use pixtuoid_scene::anim::PAINT_FRAME_MS;
+use pixtuoid_scene::anim::{PAINT_FRAME, frames_in};
 use pixtuoid_scene::look::FrameNote;
 
 /// The target every report logs under, whatever module this is:
@@ -19,7 +19,7 @@ const TARGET: &str = "pixtuoid::jank";
 const WINDOW: Duration = Duration::from_secs(60);
 /// A window's frames twice over, room for a loop that runs hot: past it the
 /// oldest are overwritten.
-const RING: usize = 2 * (WINDOW.as_millis() / PAINT_FRAME_MS as u128) as usize;
+const RING: usize = 2 * frames_in(WINDOW) as usize;
 
 /// What of the scene a frame repainted, as its report names it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -75,7 +75,7 @@ pub(crate) struct FrameSend {
     pub(crate) encode: Duration,
 }
 
-/// One over-interval frame's report at `level`, with what drew it.
+/// One report at `level` of a frame past [`PAINT_FRAME`], with what drew it.
 macro_rules! report {
     ($level:ident, $message:literal, $total:expr, $present:expr, $send:expr, $note:expr) => {{
         let (total, present, send, note): (Duration, Duration, FrameSend, Option<FrameNote>) =
@@ -112,10 +112,10 @@ pub(crate) struct Jank {
     len: usize,
     next: usize,
     janks: u32,
-    /// Frames past their interval.
+    /// Frames past [`PAINT_FRAME`].
     over: u32,
-    /// How late frames showed past their interval this window
-    /// ([`Self::due_at`]).
+    /// How far frames showed past their due by more than one [`PAINT_FRAME`]
+    /// this window ([`Self::due_at`]).
     hitch: Duration,
     /// The frames this window that a schedule asked for.
     scheduled: u32,
@@ -124,8 +124,6 @@ pub(crate) struct Jank {
     /// When this window began: `None` until the first frame starts it.
     since: Option<Instant>,
     painter: Painter,
-    /// The interval the loop schedules frames at.
-    interval: Duration,
 }
 
 /// What draws the frames a summary spreads: one matrix cell of a run.
@@ -156,21 +154,14 @@ impl Jank {
             due: None,
             since: None,
             painter: Painter::default(),
-            interval: Duration::from_millis(PAINT_FRAME_MS),
         }
     }
 
-    /// The interval frames are scheduled at from now on, which a frame is
-    /// slow past and janks at twice.
-    pub(crate) fn scheduled_every(&mut self, interval: Duration) {
-        self.interval = interval;
-    }
-
     /// The redraw that follows is the one the schedule asked for at `at`: if it
-    /// records, it counts toward the hitch time by how far it showed past its interval,
-    /// when the frame after it is due. That is the hitch duration, "the
-    /// difference between the actual frame lifetime and the expected frame
-    /// lifetime", each from the frame's begin
+    /// records, it counts toward the hitch time by how far it showed past `at`
+    /// by more than one [`PAINT_FRAME`], when the frame after it is due. That
+    /// is the hitch duration, "the difference between the actual frame
+    /// lifetime and the expected frame lifetime", each from the frame's begin
     /// (<https://developer.apple.com/documentation/xcode/understanding-hitches-in-your-app>).
     /// A redraw that ends without recording spends the due
     /// ([`Self::spend_due`]); one no schedule asked for has none, so it can't
@@ -205,10 +196,10 @@ impl Jank {
     }
 
     /// Count a frame that took `total`, `present` of it writing the held frame
-    /// out, reported past its interval and twice
-    /// past it; the window's spread once `now` closes it. The per-frame
-    /// reports are debug, so a slow terminal can't grow the log a line a
-    /// frame; a window that janked warns once, in its summary.
+    /// out, reported past [`PAINT_FRAME`] and twice past it; the window's
+    /// spread once `now` closes it. The per-frame reports are debug, so a slow
+    /// terminal can't grow the log a line a frame; a window that janked warns
+    /// once, in its summary.
     pub(crate) fn record(
         &mut self,
         total: Duration,
@@ -218,19 +209,19 @@ impl Jank {
         now: Instant,
     ) {
         if let Some(due) = self.due.take() {
-            self.hitch += now.saturating_duration_since(due + self.interval);
+            self.hitch += now.saturating_duration_since(due + PAINT_FRAME);
             self.scheduled += 1;
         }
         self.micros[self.next] = u32::try_from(total.as_micros()).unwrap_or(u32::MAX);
         self.next = (self.next + 1) % RING;
         self.len = (self.len + 1).min(RING);
-        if total > self.interval {
+        if total > PAINT_FRAME {
             self.over += 1;
             let send = send.unwrap_or(FrameSend {
                 dirty: Painted::Classic,
                 ..FrameSend::default()
             });
-            if total > 2 * self.interval {
+            if total > 2 * PAINT_FRAME {
                 self.janks += 1;
                 report!(debug, "frame jank", total, present, send, note);
             } else {
@@ -282,7 +273,6 @@ impl Jank {
         let over = self.over;
         let hitch_ms = self.hitch.as_secs_f64() * 1000.0;
         let scheduled = self.scheduled;
-        let interval_ms = self.interval.as_secs_f64() * 1000.0;
         let span_ms = now.saturating_duration_since(since).as_secs_f64() * 1000.0;
         let Painter {
             look,
@@ -292,9 +282,9 @@ impl Jank {
             sync,
         } = &self.painter;
         if janks > 0 {
-            tracing::warn!(target: TARGET, look, scale, tmux, terminal = ?terminal, sync, frames, over, janks, scheduled, hitch_ms, interval_ms, span_ms, p50, p99, max, "frame pacing");
+            tracing::warn!(target: TARGET, look, scale, tmux, terminal = ?terminal, sync, frames, over, janks, scheduled, hitch_ms, span_ms, p50, p99, max, "frame pacing");
         } else {
-            tracing::info!(target: TARGET, look, scale, tmux, terminal = ?terminal, sync, frames, over, janks, scheduled, hitch_ms, interval_ms, span_ms, p50, p99, max, "frame pacing");
+            tracing::info!(target: TARGET, look, scale, tmux, terminal = ?terminal, sync, frames, over, janks, scheduled, hitch_ms, span_ms, p50, p99, max, "frame pacing");
         }
     }
 }
@@ -316,23 +306,17 @@ mod tests {
     use super::*;
 
     fn slow() -> Duration {
-        2 * Duration::from_millis(PAINT_FRAME_MS) + Duration::from_millis(1)
+        2 * PAINT_FRAME + Duration::from_nanos(1)
     }
 
-    /// A frame over twice the interval is reported at debug, with its
+    /// A frame over twice [`PAINT_FRAME`] is reported at debug, with its
     /// transmits; one within it is not.
     #[test]
-    fn a_frame_over_twice_the_interval_is_reported() {
+    fn a_frame_over_twice_the_paint_frame_is_reported() {
         let t0 = Instant::now();
         let logged = crate::test_capture::capture(|| {
             let mut jank = Jank::new();
-            jank.record(
-                Duration::from_millis(PAINT_FRAME_MS),
-                Duration::ZERO,
-                None,
-                None,
-                t0,
-            );
+            jank.record(PAINT_FRAME, Duration::ZERO, None, None, t0);
             let send = FrameSend {
                 dirty: Painted::All,
                 fresh: true,
@@ -363,38 +347,46 @@ mod tests {
         );
     }
 
-    /// A frame past its interval but short of twice it is a debug `frame
-    /// slow`, not a jank, and counts as over; the interval is the schedule's.
+    /// A frame past [`PAINT_FRAME`] up to twice it is a debug `frame slow`,
+    /// not a jank, and counts as over; a frame of exactly one is neither.
     #[test]
-    fn a_frame_past_its_scheduled_interval_is_slow() {
+    fn a_frame_past_the_paint_frame_is_slow() {
         let t0 = Instant::now();
         let logged = crate::test_capture::capture(|| {
             let mut jank = Jank::new();
-            jank.scheduled_every(Duration::from_millis(125));
-            jank.record(Duration::from_millis(100), Duration::ZERO, None, None, t0);
-            jank.record(Duration::from_millis(150), Duration::ZERO, None, None, t0);
+            for total in [
+                PAINT_FRAME,
+                PAINT_FRAME + Duration::from_nanos(1),
+                2 * PAINT_FRAME,
+            ] {
+                jank.record(total, Duration::ZERO, None, None, t0);
+            }
             jank.finish(t0);
         });
-        assert_eq!(logged.matches("frame slow").count(), 1, "{logged}");
+        assert_eq!(logged.matches("frame slow").count(), 2, "{logged}");
         assert_eq!(logged.matches("frame jank").count(), 0, "{logged}");
-        assert!(logged.contains("over=1"), "{logged}");
+        assert!(logged.contains("over=2"), "{logged}");
         assert!(logged.contains("janks=0"), "{logged}");
     }
 
-    /// A frame hitches by how far it showed past its interval, and one
-    /// shown within it never does, however late in it. Every 33 ms, due at 0,
-    /// 33, 66 and 132 ms and shown at 5, 60, 110 and 133: only the third is
-    /// past its 99 ms, by 11. A redraw with no due counts neither way.
+    /// A frame hitches by how far it showed past its due by more than one
+    /// [`PAINT_FRAME`]: one shown within that never hitches, however late in
+    /// it. A redraw with no due counts neither way.
     #[test]
-    fn a_frame_hitches_by_how_far_it_showed_past_its_interval() {
+    fn a_frame_hitches_by_how_far_it_showed_past_its_due_plus_a_paint_frame() {
         let t0 = Instant::now();
         let ms = Duration::from_millis;
         let logged = crate::test_capture::capture(|| {
             let mut jank = Jank::new();
-            jank.scheduled_every(ms(33));
-            for (due, at) in [(0, 5), (33, 60), (66, 110), (132, 133)] {
-                jank.due_at(t0 + ms(due));
-                jank.record(ms(1), Duration::ZERO, None, None, t0 + ms(at));
+            for (frame, after) in [
+                (0, ms(5)),
+                (1, ms(27)),
+                (2, PAINT_FRAME + ms(11)),
+                (4, ms(1)),
+            ] {
+                let due = t0 + PAINT_FRAME * frame;
+                jank.due_at(due);
+                jank.record(ms(1), Duration::ZERO, None, None, due + after);
             }
             // A redraw no schedule asked for, however late.
             jank.record(ms(1), Duration::ZERO, None, None, t0 + ms(900));
@@ -407,11 +399,6 @@ mod tests {
         let late = ms(11).as_secs_f64() * 1000.0;
         assert!(line.contains(&format!("hitch_ms={late:?} ")), "{line}");
         assert!(line.contains("scheduled=4 "), "{line}");
-        let interval = ms(33).as_secs_f64() * 1000.0;
-        assert!(
-            line.contains(&format!("interval_ms={interval:?}")),
-            "{line}"
-        );
     }
 
     /// A window that closes reports its frames' spread and janks, then starts
@@ -549,8 +536,9 @@ mod tests {
     }
 
     /// A summary names the span it covers, what the fluency gate rates its
-    /// hitch time over: a painter that records fewer frames than its interval
-    /// fits, as the floating window's idle beats do, still covers its span.
+    /// hitch time over: a painter that records a frame less often than every
+    /// [`PAINT_FRAME`], as the floating window's idle beats do, still covers
+    /// its span.
     #[test]
     fn a_summary_reports_the_span_it_covers() {
         let t0 = Instant::now();

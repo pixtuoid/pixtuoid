@@ -858,13 +858,12 @@ fn intro(protocol: ImageProtocol) -> &'static str {
 fn each_strike_phase_holds_the_floor_on_screen_at_every_protocols_cadence() {
     use crate::test_flash::{assert_each_phase_holds_the_floor, frame_grid, lead, storm_strike};
     let strike = storm_strike();
-    let tick = crate::tui::frame_tick();
     for protocol in [
         ImageProtocol::Kitty,
         ImageProtocol::Sixel,
         ImageProtocol::Iterm2,
     ] {
-        for (frame, offset) in frame_grid(tick) {
+        for (frame, offset) in frame_grid(PAINT_FRAME) {
             let (cols, rows) = crate::tui::renderer::min_terminal_size();
             let (mut r, wire, screen) = on_screen(cols, rows, protocol);
             r.set_weather(strike.weather);
@@ -1091,8 +1090,7 @@ fn a_pause_inside_a_hold_never_wedges_the_repaint() {
 fn each_strike_phase_holds_the_floor_in_the_cells_a_full_modal_leaves() {
     use crate::test_flash::{assert_each_phase_holds_the_floor, frame_grid, lead, storm_strike};
     let strike = storm_strike();
-    let tick = crate::tui::frame_tick();
-    for (frame, offset) in frame_grid(tick) {
+    for (frame, offset) in frame_grid(PAINT_FRAME) {
         let (cols, rows) = crate::tui::renderer::min_terminal_size();
         let (mut r, wire, screen) = on_screen(cols, rows, ImageProtocol::Sixel);
         r.set_weather(strike.weather);
@@ -1133,7 +1131,6 @@ fn each_stutter_phase_holds_the_floor_on_screen_at_every_protocols_cadence() {
         assert_each_phase_holds_the_floor, frame_grid, lead, neon_tube, starved_stutter,
     };
     let stutter = starved_stutter();
-    let tick = crate::tui::frame_tick();
     let scene = scene_with(vec![], 16);
     let (cols, rows) = crate::tui::renderer::min_terminal_size();
     let area = crate::tui::renderer::scene_rect(Rect::new(0, 0, cols, rows));
@@ -1143,7 +1140,7 @@ fn each_stutter_phase_holds_the_floor_on_screen_at_every_protocols_cadence() {
         ImageProtocol::Sixel,
         ImageProtocol::Iterm2,
     ] {
-        for (frame, offset) in frame_grid(tick) {
+        for (frame, offset) in frame_grid(PAINT_FRAME) {
             let (mut r, wire, screen) = on_screen(cols, rows, protocol);
             r.set_weather(stutter.weather);
             r.set_motion(pixtuoid_scene::anim::Motion::Full);

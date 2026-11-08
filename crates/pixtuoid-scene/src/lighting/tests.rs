@@ -93,8 +93,12 @@ fn lights_at(w: u16, h: u16, hour: u32) -> (SceneLayout, Lights) {
 #[test]
 fn neon_breath_advances_at_wall_clock_scale_and_stays_in_band() {
     let a = neon_breath(WALL_CLOCK_MS, NEON_BREATH_MS, NEON_BREATH_FLOOR);
-    let b = neon_breath(WALL_CLOCK_MS + 33, NEON_BREATH_MS, NEON_BREATH_FLOOR);
-    assert_ne!(a, b, "the breath must move across a 33ms frame");
+    let b = neon_breath(
+        WALL_CLOCK_MS + crate::anim::PAINT_FRAME_MS,
+        NEON_BREATH_MS,
+        NEON_BREATH_FLOOR,
+    );
+    assert_ne!(a, b, "the breath must move across a paint frame");
     for ms in (0..NEON_BREATH_MS).step_by(97) {
         let v = neon_breath(WALL_CLOCK_MS + ms, NEON_BREATH_MS, NEON_BREATH_FLOOR);
         assert!((NEON_BREATH_FLOOR..=1.0).contains(&v), "{v} at +{ms}ms");

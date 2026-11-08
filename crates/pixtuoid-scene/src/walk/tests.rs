@@ -704,7 +704,7 @@ fn long_dwell_never_trips_stale_resume_on_screen() {
     let mut t = t2;
     let end = at_wp_start + Duration::from_millis(dwell_dur.saturating_sub(2_000));
     while t < end {
-        t += Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+        t += crate::anim::PAINT_FRAME;
         rig.advance(t);
         assert!(
             !matches!(rig.state().wander.phase, WanderPhase::Seated),

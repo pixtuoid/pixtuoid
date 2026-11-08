@@ -11,10 +11,7 @@
 
 use std::time::{Duration, Instant};
 
-/// One frame while the office or an overlay moves between beats.
-pub(super) fn frame() -> Duration {
-    Duration::from_secs(1) / pixtuoid_scene::anim::PAINT_FPS
-}
+use pixtuoid_scene::anim::PAINT_FRAME;
 
 pub(crate) struct FrameClock {
     next: Instant,
@@ -32,16 +29,17 @@ impl FrameClock {
         }
     }
 
-    /// The frame last due was held back: the next poll retries it a [`frame`]
-    /// on, not at the office's next wait, past which a one-beat phase is gone.
+    /// The frame last due was held back: the next poll retries it a
+    /// [`PAINT_FRAME`] on, not at the office's next wait, past which a one-beat
+    /// phase is gone.
     pub(crate) fn retry(&mut self) {
         self.retry = true;
     }
 
     /// One `about_to_wait` pass at `now`, the office next needing a paint
     /// `until` later ([`OfficeSession::until_next_paint`], `None` each
-    /// [`frame`]): `(paint, deadline)` — the instant the frame to redraw NOW
-    /// was due, if one is, and the instant the loop should wait until.
+    /// [`PAINT_FRAME`]): `(paint, deadline)` — the instant the frame to redraw
+    /// NOW was due, if one is, and the instant the loop should wait until.
     ///
     /// [`OfficeSession::until_next_paint`]: pixtuoid_scene::floor::OfficeSession::until_next_paint
     pub(crate) fn poll(
@@ -50,9 +48,9 @@ impl FrameClock {
         until: Option<Duration>,
     ) -> (Option<Instant>, Instant) {
         let wait = if std::mem::take(&mut self.retry) {
-            frame()
+            PAINT_FRAME
         } else {
-            until.unwrap_or_else(frame)
+            until.unwrap_or(PAINT_FRAME)
         };
         if now >= self.next {
             let due = self.next;
@@ -91,7 +89,7 @@ mod tests {
     fn the_first_pass_paints_so_the_window_is_never_blank() {
         let t0 = Instant::now();
         let mut clock = FrameClock::new(t0);
-        assert_eq!(clock.poll(t0, None), (Some(t0), t0 + frame()));
+        assert_eq!(clock.poll(t0, None), (Some(t0), t0 + PAINT_FRAME));
     }
 
     #[test]
@@ -134,7 +132,7 @@ mod tests {
         );
         assert_eq!(
             deadline,
-            t0 + soon + frame(),
+            t0 + soon + PAINT_FRAME,
             "an agent arriving mid-rest must pull the deadline in to the active \
              cadence, not sit out the rest of the second"
         );
@@ -150,8 +148,8 @@ mod tests {
         assert!(clock.poll(t0, Some(rest)).0.is_some());
         clock.retry();
         let soon = t0 + Duration::from_millis(1);
-        assert_eq!(clock.poll(soon, Some(rest)), (None, soon + frame()));
-        let retried = soon + frame();
+        assert_eq!(clock.poll(soon, Some(rest)), (None, soon + PAINT_FRAME));
+        let retried = soon + PAINT_FRAME;
         assert_eq!(
             clock.poll(retried, Some(rest)),
             (Some(retried), retried + rest)

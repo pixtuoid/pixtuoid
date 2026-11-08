@@ -6,7 +6,7 @@ use pixtuoid_core::AgentId;
 use pixtuoid_core::state::{
     ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
 };
-use pixtuoid_scene::anim::PAINT_FRAME_MS;
+use pixtuoid_scene::anim::PAINT_FRAME;
 use pixtuoid_scene::hit::PetHover;
 use pixtuoid_scene::pet::PetKind;
 use ratatui::Terminal;
@@ -54,7 +54,7 @@ pub(super) fn render_until_settled<B: Backend<Error: Send + Sync + 'static>>(
     target_floor: usize,
 ) {
     for _ in 0..60 {
-        *now += Duration::from_millis(PAINT_FRAME_MS);
+        *now += PAINT_FRAME;
         r.render(scene, *now).expect("render");
         if r.current_floor() == target_floor && r.transition().is_none() {
             return;

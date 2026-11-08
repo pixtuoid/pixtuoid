@@ -401,7 +401,7 @@ fn gateway_mascot_walks_out_then_is_gone() {
     // Swept from the roster, it walks on until it is out.
     let mut frames = 0;
     while p.px(&no_presence(), now) > 0 {
-        now += Duration::from_millis(33);
+        now += PAINT_FRAME;
         frames += 1;
         assert!(frames < 3_600, "the lobster never reached the elevator");
     }

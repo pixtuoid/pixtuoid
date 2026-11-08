@@ -11,8 +11,7 @@ fn coffee_state_evicted_when_agent_leaves_scene() {
     assert!(r.coffee_contains(id));
     let empty = SceneState::uniform(16);
     r.evict_missing(&empty);
-    r.render(&empty, t0() + Duration::from_millis(PAINT_FRAME_MS))
-        .unwrap();
+    r.render(&empty, t0() + PAINT_FRAME).unwrap();
     assert!(
         !r.coffee_contains(id),
         "coffee state must be evicted when the agent leaves (no leak)"
@@ -32,10 +31,10 @@ fn coffee_state_is_evicted_during_a_floor_transition() {
     r.render(&scene, now).expect("render");
     assert!(r.coffee_contains(a), "cup staged");
 
-    now += Duration::from_millis(PAINT_FRAME_MS);
+    now += PAINT_FRAME;
     r.navigate_floor(1, now);
     let gone = scene_with(vec![slot(b, 1, cap, t0())], cap);
-    now += Duration::from_millis(PAINT_FRAME_MS);
+    now += PAINT_FRAME;
     r.evict_missing(&gone);
     r.render(&gone, now).expect("render");
     assert!(r.transition().is_some(), "still mid-slide");
@@ -125,7 +124,7 @@ fn injected_coffee_changes_desk_render() {
         vec![idle("/cof/steam.jsonl", 0, t0() - Duration::from_secs(30))],
         16,
     );
-    let t1 = t0() + Duration::from_millis(PAINT_FRAME_MS);
+    let t1 = t0() + PAINT_FRAME;
 
     let mut base = build(100, 40, vec![]);
     base.render(&scene, t0()).unwrap();

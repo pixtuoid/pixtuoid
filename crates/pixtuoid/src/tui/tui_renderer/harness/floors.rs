@@ -22,7 +22,7 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
     let mut now = t0;
     for _ in 0..10 {
         r.render(&scene, now).expect("render");
-        now += Duration::from_millis(PAINT_FRAME_MS);
+        now += PAINT_FRAME;
     }
     assert_eq!(r.current_floor(), 0);
     assert!(
@@ -41,7 +41,7 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
 
     // ~30 s on floor 1.
     for _ in 0..900 {
-        now += Duration::from_millis(PAINT_FRAME_MS);
+        now += PAINT_FRAME;
         r.render(&scene, now).expect("render");
     }
     let still_frozen = r
@@ -216,7 +216,7 @@ fn transition_at_narrow_terminal_paints_no_agents_no_panic() {
     r.render(&scene, now).expect("render at 30 cols");
     r.navigate_floor(1, now);
     assert!(r.transition().is_some(), "navigation begins a transition");
-    now += Duration::from_millis(PAINT_FRAME_MS);
+    now += PAINT_FRAME;
     r.render(&scene, now)
         .expect("transition render at a narrow terminal must not panic");
     assert!(

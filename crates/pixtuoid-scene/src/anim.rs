@@ -100,9 +100,18 @@ pub(crate) const CALM_TICK_MS: u64 = 500;
 ///
 /// [`OfficeSession::until_next_paint`]: crate::floor::OfficeSession::until_next_paint
 pub const PAINT_FPS: u32 = 30;
-/// One [`PAINT_FPS`] frame, in whole ms.
-#[doc(hidden)]
-pub const PAINT_FRAME_MS: u64 = 1000 / PAINT_FPS as u64;
+/// One [`PAINT_FPS`] frame.
+pub const PAINT_FRAME: Duration = match Duration::from_secs(1).checked_div(PAINT_FPS) {
+    Some(frame) => frame,
+    None => panic!("PAINT_FPS is zero"),
+};
+/// [`PAINT_FRAME`] truncated to whole ms, for a test stepping a clock of whole ms.
+#[cfg(test)]
+pub(crate) const PAINT_FRAME_MS: u64 = PAINT_FRAME.as_millis() as u64;
+/// How many whole [`PAINT_FRAME`]s `span` holds.
+pub const fn frames_in(span: Duration) -> u32 {
+    (span.as_nanos() / PAINT_FRAME.as_nanos()) as u32
+}
 
 /// The least any phase of a flash — a strike's level, a starved neon's catch,
 /// the dark between — lasts in loop time: the project's own floor, beside
@@ -433,7 +442,8 @@ mod tests {
     fn a_later_timing_is_the_tiers_own_then() {
         let base = SystemTime::UNIX_EPOCH + Duration::from_millis(1_700_000_000_123);
         for motion in Motion::ALL {
-            for by in [1, PAINT_FRAME_MS, 499, 1000, 60_000].map(Duration::from_millis) {
+            let ms = Duration::from_millis;
+            for by in [ms(1), PAINT_FRAME, ms(499), ms(1000), ms(60_000)] {
                 let later = motion.timing(base).later(by);
                 let then = motion.timing(base + by);
                 assert_eq!(
