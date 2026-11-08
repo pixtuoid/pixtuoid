@@ -554,9 +554,9 @@ fn a_second_server_on_a_port_says_so_and_leaves() {
     assert!(stderr.contains("already running"), "{stderr}");
 }
 
-/// The greeting names the host `pair` defaults to, never the 0.0.0.0 the server
-/// binds, and with no such host it gives only the port. Whichever this machine's
-/// network gives, the two agree.
+/// Agreement only, whatever this machine's network: the greeting never says
+/// 0.0.0.0, and names the host `pair` defaults to, or the port alone when `pair`
+/// finds none. The only test that `serve` and `pair` read one `local_host`.
 #[test]
 fn the_greeting_names_the_host_pair_defaults_to() {
     let world = World::new();

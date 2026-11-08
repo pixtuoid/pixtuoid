@@ -302,8 +302,8 @@ fn local_host() -> Result<String> {
 
 /// `pair`'s default host and `serve`'s greeting: the default route's private or
 /// link-local IPv4, which a device reaches with no name service to answer for
-/// this machine, the source address of a datagram to TEST-NET-1, which no route
-/// but the default covers (RFC 5737 §4: "These blocks are not for local use").
+/// this machine. It is the source address of a datagram to TEST-NET-1, which no
+/// route but the default covers (RFC 5737 §4: "These blocks are not for local use").
 #[cfg(not(target_os = "macos"))]
 fn local_host() -> Result<String> {
     const TEST_NET_1: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
@@ -382,10 +382,16 @@ mod tests {
         assert!(greeting.contains(why), "{greeting}");
     }
 
+    /// With a host, the greeting names it beside the port.
+    #[test]
+    fn a_greeting_names_its_host() {
+        let greeting = greeting(Ok("10.0.0.2".into()), DEFAULT_PORT);
+        let greeted = format!("listening on 10.0.0.2:{DEFAULT_PORT};");
+        assert!(greeting.starts_with(&greeted), "{greeting}");
+    }
+
     /// Every runner routes to loopback, and only the `connect` turns the
-    /// probe's 0.0.0.0 into loopback's address. On Windows too, which documents
-    /// only that the address "may not be available until I/O occurs"
-    /// (<https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-getsockname>).
+    /// probe's 0.0.0.0 into loopback's address.
     #[test]
     fn a_probe_names_the_source_its_route_gives() {
         let source = source_toward(Ipv4Addr::LOCALHOST).expect("loopback routes");
