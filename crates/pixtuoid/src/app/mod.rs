@@ -47,27 +47,18 @@ pub fn run() -> Result<()> {
         ) {
             ColorPreflight::Proceed => {}
             ColorPreflight::ForceColor => crossterm::style::force_color_output(true),
-            ColorPreflight::RefuseNoColor => {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "pixtuoid: $NO_COLOR is set, so color output is disabled — the \
-                     pixel-art office is 24-bit color with no legible monochrome mode \
-                     and would render as unreadable blocks. Unset NO_COLOR (or set \
-                     CLICOLOR_FORCE=1 to override) to run it, or use \
-                     `pixtuoid run --headless` for a text summary."
-                );
-                return Ok(());
-            }
-            ColorPreflight::RefuseDumbTerm => {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "pixtuoid: $TERM=dumb — this terminal can't render the pixel-art \
-                     office (no cursor addressing or color). Use a graphical terminal \
-                     (Windows Terminal, iTerm2, Ghostty, Alacritty, kitty, WezTerm), \
-                     or `pixtuoid run --headless` for a text summary."
-                );
-                return Ok(());
-            }
+            ColorPreflight::RefuseNoColor => anyhow::bail!(
+                "$NO_COLOR is set, so color output is disabled — the pixel-art office \
+                 is 24-bit color with no legible monochrome mode and would render as \
+                 unreadable blocks. Unset NO_COLOR (or set CLICOLOR_FORCE=1 to override) \
+                 to run it, or use `pixtuoid run --headless` for a text summary."
+            ),
+            ColorPreflight::RefuseDumbTerm => anyhow::bail!(
+                "$TERM=dumb — this terminal can't render the pixel-art office (no cursor \
+                 addressing or color). Use a graphical terminal (Windows Terminal, \
+                 iTerm2, Ghostty, Alacritty, kitty, WezTerm), or `pixtuoid run \
+                 --headless` for a text summary."
+            ),
         }
     }
 
