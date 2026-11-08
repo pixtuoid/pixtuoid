@@ -27,6 +27,7 @@ impl StubRouter {
 }
 
 impl Router for StubRouter {
+    fn new_layout(&mut self, _: Option<crate::layout::Bounds>) {}
     fn route(
         &mut self,
         _: &WalkableMask,
@@ -55,6 +56,7 @@ struct ChangingRouter {
     rest: Vec<Point>,
 }
 impl Router for ChangingRouter {
+    fn new_layout(&mut self, _: Option<crate::layout::Bounds>) {}
     fn route(
         &mut self,
         _: &WalkableMask,
@@ -2012,6 +2014,7 @@ struct FlipRouter {
     b: Vec<Point>,
 }
 impl Router for FlipRouter {
+    fn new_layout(&mut self, _: Option<crate::layout::Bounds>) {}
     fn route(
         &mut self,
         _: &WalkableMask,

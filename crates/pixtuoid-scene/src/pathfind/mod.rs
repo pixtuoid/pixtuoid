@@ -40,10 +40,7 @@ pub trait Router: std::fmt::Debug {
     /// Route over a new layout from here, keeping nothing routed over the
     /// last, and bias the cost function toward `zone` (the office corridor) so
     /// paths hug the hallway instead of cutting across the cubicle floor.
-    /// Default impl is a no-op.
-    fn new_layout(&mut self, zone: Option<Bounds>) {
-        let _ = zone;
-    }
+    fn new_layout(&mut self, zone: Option<Bounds>);
 }
 
 /// Path-cache entry cap, sized above the recurring (from, to) pairs of a fully

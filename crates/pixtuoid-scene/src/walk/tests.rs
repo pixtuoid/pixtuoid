@@ -60,6 +60,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 struct Straight;
 impl Router for Straight {
+    fn new_layout(&mut self, _: Option<crate::layout::Bounds>) {}
     fn route(
         &mut self,
         _: &WalkableMask,
@@ -78,6 +79,7 @@ struct Recording {
     calls: Vec<(Point, Point)>,
 }
 impl Router for Recording {
+    fn new_layout(&mut self, _: Option<crate::layout::Bounds>) {}
     fn route(
         &mut self,
         _: &WalkableMask,
@@ -97,6 +99,7 @@ struct FixedLen {
     octile_len: u32,
 }
 impl Router for FixedLen {
+    fn new_layout(&mut self, _: Option<crate::layout::Bounds>) {}
     fn route(
         &mut self,
         _: &WalkableMask,
