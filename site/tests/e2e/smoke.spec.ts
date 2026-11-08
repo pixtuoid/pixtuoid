@@ -1168,7 +1168,8 @@ test('the dracula sequence honours the keyboard-shortcut off-switch (WCAG 2.1.4)
 
 test('crisp AA captions overlay the live office (name badges + neon board)', async ({ page }) => {
   const errors = watchErrors(page);
-  // Lighthouse's color-contrast grades the captions at whatever opacity it meets them, so none is partial.
+  // Lighthouse's color-contrast (axe-core 4.14.0, axe.js:29626-29633, calculateBlendedForegroundColor)
+  // multiplies the text's alpha by its stacking contexts' opacity, so the captions never show at a partial one.
   await page.addInitScript(() => {
     const w = window as unknown as { __captionsOnAt?: string };
     const on = new MutationObserver(() => {
