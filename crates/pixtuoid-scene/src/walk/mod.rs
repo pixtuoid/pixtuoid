@@ -167,9 +167,9 @@ pub struct WalkState {
     /// cancels an IN-FLIGHT walkout re-enters from wherever the sprite is.
     pub(crate) entry: Option<WalkLeg>,
     /// The walkout, snapshotted when `exiting_at` fires and again on a new
-    /// layout. `from` is where the sprite actually is (where a pointer's hold
-    /// lands it, where it was last drawn out, which a new layout forgets, else
-    /// the desk anchor), so the exit doesn't teleport to the desk.
+    /// layout. `from` is where a pointer's hold lands it, else where it was last
+    /// drawn walking or at a waypoint (a new layout forgets that), else the desk
+    /// anchor, so the exit doesn't teleport to the desk.
     pub(crate) exit: Option<WalkLeg>,
     /// The state-transition snap-back walk. `from` is the FROZEN origin recorded
     /// when the leg armed, reused every frame so the walk doesn't drift toward

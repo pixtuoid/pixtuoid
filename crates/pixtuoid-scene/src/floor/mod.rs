@@ -249,8 +249,8 @@ impl FloorCtx {
 
     /// Drops what the router, the pose history and the walks derived from the
     /// last layout, and re-seats each creature at its latest draw, so a refit
-    /// draws what a direct fit would. A pointer's points carry over: the
-    /// pointer still holds them.
+    /// draws what a direct fit would. Where a pointer holds or set a figure
+    /// down carries over: that point is the pointer's, not the layout's.
     fn relaid(&mut self, layout: &crate::layout::SceneLayout, now: SystemTime) {
         self.router.new_layout(layout.corridor);
         self.history = PoseHistory::new();
