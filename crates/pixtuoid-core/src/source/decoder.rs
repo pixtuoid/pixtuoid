@@ -711,13 +711,17 @@ pub const ELLIPSIS: char = '\u{2026}';
 /// the [`super::drift`] breadcrumbs and [`DecodeError`]'s wire strings, which
 /// reach stderr under whatever `tracing` subscriber the host installs — and for
 /// Jcode's decoded fields and what a [`crate::remote`] line brings into a scene.
-/// The binary's `strip_control_chars` is a COPY — keep the two in step.
 pub(crate) fn display_safe(s: &str) -> String {
-    let stripped: String = s
-        .chars()
-        .filter(|c| !c.is_control() && !is_bidi_control(*c))
-        .collect();
+    let stripped: String = s.chars().filter(|c| !is_terminal_unsafe(*c)).collect();
     ellipsize(&stripped, MAX_DECODED_FIELD_CHARS)
+}
+
+/// A character that can drive a terminal or reorder the text it shows: the one
+/// predicate every display sink strips with, the binary's terminal egress
+/// included.
+#[doc(hidden)]
+pub fn is_terminal_unsafe(c: char) -> bool {
+    c.is_control() || is_bidi_control(c)
 }
 
 /// The Unicode Bidi_Control characters — category Cf, so `char::is_control` (Cc

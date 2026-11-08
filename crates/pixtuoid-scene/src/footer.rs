@@ -15,6 +15,7 @@ use crate::sprite::Rgb;
 use pixtuoid_core::SceneState;
 use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS, ToolKind, ToolUse};
 
+use crate::display::Icon;
 use crate::neon_sign::gateway_label;
 use crate::tally::StateCounts;
 use crate::theme::Theme;
@@ -41,13 +42,14 @@ impl RungKind {
 
     /// A distinct geometric glyph per state — all East-Asian *ambiguous* width
     /// (1 cell in a non-CJK terminal).
-    pub fn glyph(self) -> char {
+    pub fn glyph(self) -> &'static str {
         match self {
-            RungKind::Running => '\u{25cf}',
-            RungKind::RequiresAction => '\u{25d0}',
-            RungKind::Idle => '\u{25cb}',
-            RungKind::Exiting => '\u{25cc}',
+            RungKind::Running => Icon::Running,
+            RungKind::RequiresAction => Icon::RequiresAction,
+            RungKind::Idle => Icon::Idle,
+            RungKind::Exiting => Icon::Exiting,
         }
+        .terminal()
     }
 
     /// A distinct single letter — the primary colour-blind channel at the
@@ -315,7 +317,11 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
         let quit = clip_cols(ctx.keys_alert, w);
         let avail = w.saturating_sub(cols(&quit));
         let alarm = if counts.requires_action > 0 {
-            format!(" · \u{25b2}{} need you", counts.requires_action)
+            format!(
+                " · {}{} need you",
+                Icon::Alert.terminal(),
+                counts.requires_action
+            )
         } else {
             String::new()
         };
@@ -364,7 +370,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let floor_suffix = match ctx.floor {
         Some(fi) => {
             let cross = match cross_floor {
-                Some(n) => format!(" \u{25b2}F{n}"),
+                Some(n) => format!(" {}F{n}", Icon::Alert.terminal()),
                 None => String::new(),
             };
             format!(
@@ -425,11 +431,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
         if let Some(g) = ctx.gateway {
             segs.push(FooterSegment::new(" · ".to_string(), FooterTone::Neutral));
             segs.push(FooterSegment::new(
-                format!(
-                    "{}gw {}",
-                    crate::display::Icon::Gateway.terminal(),
-                    gateway_label(g)
-                ),
+                format!("{}gw {}", Icon::Gateway.terminal(), gateway_label(g)),
                 FooterTone::Gateway(g),
             ));
         }
@@ -466,7 +468,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let seg_min = if counts.requires_action > 0 {
         vec![
             FooterSegment::new(
-                format!(" \u{25b2}{}", counts.requires_action),
+                format!(" {}{}", Icon::Alert.terminal(), counts.requires_action),
                 FooterTone::Rung(RungKind::RequiresAction),
             ),
             FooterSegment::new(format!(" \u{b7} {count_str} "), FooterTone::Neutral),

@@ -89,7 +89,7 @@ fn state_vocab_is_total_and_distinct() {
     use std::collections::HashSet;
     let kinds = StateKind::ALL;
     assert_eq!(kinds.len(), 4, "the vocab covers exactly the four buckets");
-    let glyphs: HashSet<char> = kinds.iter().map(|k| k.glyph()).collect();
+    let glyphs: HashSet<&str> = kinds.iter().map(|k| k.glyph()).collect();
     let letters: HashSet<char> = kinds.iter().map(|k| k.letter()).collect();
     let words: HashSet<&str> = kinds.iter().map(|k| k.word()).collect();
     assert_eq!(glyphs.len(), 4, "each state has a distinct glyph");
