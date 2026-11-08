@@ -95,9 +95,9 @@ watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
   greens a binary audit that failed one run). Collect URLs pin `?theme=day`
   (otherwise the wall clock picks the palette — half of CI runs would audit
   each). **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
-  doubled collect list. LCP, `interactive` and `speed-index` are sized at the
-  office's wasm padded to its `just gen-wasm-check` cap, plus run spread
-  (#1124; the first two again for pixtuoid-lofi 0.3 and at 640 KiB).
+  doubled collect list. LCP, `interactive` and `speed-index` are CI's median
+  plus run spread, with the office's wasm padded to its `just gen-wasm-check`
+  cap (#1124), its only size gate: Lighthouse's simulation drops worker fetches.
 - **Fonts**: WOFF2, `font-display: optional`, loaded before use (a preload;
   the captions' face: OfficeBackdrop's boot) — never `swap` (Ubuntu cold
   visits reflow past the CLS budget; `font-layout.spec.ts` reproduces it).

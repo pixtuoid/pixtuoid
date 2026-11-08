@@ -949,7 +949,8 @@ gen-wasm-check:
         # Not tuned to the last KB: this measures gzip locally while the CDN does its
         # own.
         case "$lib" in
-            # Fetched by the office's worker, whose requests Lighthouse's simulation drops: this cap alone gates it.
+            # Fetched by the office's worker, whose requests Lighthouse's simulation drops (@paulirish/trace_engine
+            # 0.0.67, models/trace/lantern/graph/PageDependencyGraph.js:56-58): this cap alone gates it.
             pixtuoid_web) CAP=655360 ;;
             # Fetched on the first ♩ click, which Lighthouse never makes: this cap alone gates it.
             pixtuoid_web_music) CAP=131072 ;;

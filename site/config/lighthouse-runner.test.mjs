@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -132,33 +132,73 @@ async function answersWithin(url, ms) {
 }
 
 test('the preview stays a foreground child under an agent, so stop() frees its port', async () => {
-  // CI is no agent: force astro's detection (am-i-vibing reads CLAUDECODE) so
-  // this takes the path that daemonizes.
+  // CI is no agent: force astro's detection (am-i-vibing 0.5.0 lists CLAUDECODE:
+  // node_modules/am-i-vibing/dist/detector-1yx2Hoe0.mjs:26-29).
   process.env.CLAUDECODE = '1';
   const root = mkdtempSync(join(tmpdir(), 'lh-preview-'));
   mkdirSync(join(root, 'dist'));
   writeFileSync(join(root, 'dist', 'index.html'), 'ok');
+  const url = `http://localhost:${await freePort()}/`;
   const { command, ready } = previewServer({
-    collect: {
-      startServerCommand: 'npm run preview',
-      url: [`http://localhost:${await freePort()}/`],
-    },
+    collect: { startServerCommand: 'npm run preview', url: [url] },
   });
+  // A daemon's pid is in its lock file: kill it and wait for its port, so no run
+  // leaves it listening.
+  const lock = join(root, '.astro', 'preview.json');
+  const reap = async () => {
+    if (!existsSync(lock)) return;
+    try {
+      process.kill(JSON.parse(readFileSync(lock, 'utf8')).pid);
+    } catch {
+      // a foreground server's stale lock: already gone
+    }
+    rmSync(lock);
+    await answersWithin(url, 5_000);
+  };
+
+  // The control: without the flag astro must daemonize, or the check below
+  // passes whatever the flag does.
+  try {
+    const launcher = await startServer(
+      `${command.replace(' --ignore-lock', '')} --root ${root}`,
+      ready,
+      20_000
+    ).catch((e) => {
+      // A daemonizing launcher may exit before its output is read.
+      if (!/exited early/.test(e.message)) throw e;
+    });
+    if (launcher) stop(launcher);
+    assert.equal(
+      await answersWithin(url, 2_000),
+      true,
+      'astro no longer daemonizes under CLAUDECODE'
+    );
+  } finally {
+    await reap();
+  }
+
   let server;
   let outlived;
   try {
     server = await startServer(`${command} --root ${root}`, ready, 20_000);
-    assert.equal(await (await fetch(ready)).text(), 'ok');
+    assert.equal(await (await fetch(url)).text(), 'ok');
     stop(server);
-    outlived = await answersWithin(ready, 5_000);
+    outlived = await answersWithin(url, 5_000);
   } finally {
     if (server) stop(server);
-    // A daemon reads as a launcher that exited early, or one that outlives
-    // stop(); its pid is in its lock file, so a red run leaves nothing listening.
-    const lock = join(root, '.astro', 'preview.json');
-    if (existsSync(lock)) process.kill(JSON.parse(readFileSync(lock, 'utf8')).pid);
+    await reap();
   }
   assert.equal(outlived, false, 'the preview outlived stop(): astro daemonized it');
+});
+
+test('the ready signal is any loopback name on the audited port, and no other port', () => {
+  const { ready } = previewServer({
+    collect: { startServerCommand: 'npm run preview', url: ['http://localhost:4321/'] },
+  });
+  for (const host of ['localhost', '127.0.0.1', '[::1]'])
+    assert.match(`Local   http://${host}:4321/`, ready);
+  for (const moved of ['http://localhost:4322/', 'http://127.0.0.1:43210/'])
+    assert.doesNotMatch(`Local   ${moved}`, ready);
 });
 
 test('a squatted audit port fails the start instead of auditing the squatter', async () => {

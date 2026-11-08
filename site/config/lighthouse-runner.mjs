@@ -8,7 +8,7 @@
 // without an explicit aggregationMethod aggregates by MEDIAN (LHCI defaulted
 // to optimistic; median is stricter-or-equal).
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -93,7 +93,7 @@ export function startServer(command, ready, timeoutMs) {
     }, timeoutMs);
     const watch = (chunk) => {
       output += chunk;
-      if (output.includes(ready)) {
+      if (ready.test(output)) {
         clearTimeout(timer);
         resolve(child);
       }
@@ -108,26 +108,32 @@ export function startServer(command, ready, timeoutMs) {
 }
 
 export function previewServer(cfg) {
-  const { origin, port } = new URL(cfg.collect.url[0]);
+  const { port } = new URL(cfg.collect.url[0]);
   return {
     // Under an agent, astro 7.4 starts `astro preview` as a detached daemon
     // (node_modules/astro/dist/cli/preview/index.js:37-45) that `stop` cannot
     // reach and the next run silently reuses; `--ignore-lock` is upstream's
     // one-off foreground server.
     command: `${cfg.collect.startServerCommand} -- --port ${port} --ignore-lock`,
-    // The audited origin, not any localhost URL: on a squatted port vite moves
-    // the preview to the next one, and the audit must time out, not measure the
-    // squatter.
-    ready: `${origin}/`,
+    // Any loopback name vite prints (vite 8.3 names the address `localhost` resolves
+    // to when Node's DNS order differs: node_modules/vite/dist/node/chunks/node.js:2604-2622),
+    // but only on the audited port: on a squatted port vite moves the preview to
+    // the next one, and the audit must time out, not measure the squatter.
+    ready: new RegExp(`http://(localhost|127\\.0\\.0\\.1|\\[::1\\]):${port}/`),
   };
 }
 
-// astro preview is a process TREE under a shell — kill the group, not the
+// astro preview is a process TREE under a shell — kill the tree, not the
 // shell, or CI keeps an orphan listener.
 export function stop(child) {
+  // /t ends the shell and every child it started, astro included
+  // (https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill).
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore' });
+    return;
+  }
   try {
-    if (process.platform === 'win32') child.kill();
-    else process.kill(-child.pid, 'SIGTERM');
+    process.kill(-child.pid, 'SIGTERM');
   } catch {
     // already gone
   }
