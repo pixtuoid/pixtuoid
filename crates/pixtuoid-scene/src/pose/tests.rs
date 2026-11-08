@@ -270,7 +270,7 @@ fn snap_back_origin_is_frozen_across_frames() {
     rig.history.set(slot.agent_id, Some(prev0));
 
     // Eight frames stay well inside `SNAP_BACK_MS`; re-derive each frame so
-    // route_walking_pose advances history like the real render loop does.
+    // `derive_with_routing` records the advancing walker, as the render loop does.
     let mut origins = Vec::new();
     for i in 0..8u64 {
         let t = now0 + Duration::from_millis(i * PAINT_FRAME_MS);
@@ -2329,8 +2329,8 @@ fn a_resurrect_after_the_walkout_arrived_re_enters_through_the_door() {
 
     let mut rig = RouteRig::new(StubRouter::straight());
 
-    // Let the leg arrive: the sprite is off-floor (`None`) and `history` has
-    // nothing recent — the state the snap-back cannot recover from.
+    // Let the leg arrive: the sprite is off-floor (`None`) while `history` still
+    // holds the exit's first point, so only the arrival check sends it to the door.
     derive_with_routing(&slot, t0, &l, &mut rig.rctx());
     assert!(
         rig.walks[&slot.agent_id].exit.is_some(),
@@ -2825,15 +2825,10 @@ fn the_resurrect_check_reads_the_same_compressed_clock_as_the_exit_render() {
     );
     let at = t0 + Duration::from_millis(arrived_at);
 
-    // Render one frame just BEFORE the compressed arrival so `PoseHistory` holds
-    // a fresh corridor position. Without it both clocks fall back to the door
-    // (the arrived exit branch returns None without recording) and the fixture
-    // cannot tell them apart — the trap this test exists to avoid.
-    let just_before = t0 + Duration::from_millis(arrived_at.saturating_sub(100));
-    derive_with_routing(&slot, just_before, &l, &mut rig.rctx());
     assert!(
         rig.history.last_drawn(slot.agent_id).is_some(),
-        "setup: history must be fresh at the resurrect instant"
+        "setup: history holds where the walkout was last drawn, so a raw clock \
+         would re-enter from there instead of the door"
     );
     slot.exiting_at = None;
     slot.state_started_at = at;
