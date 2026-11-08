@@ -27,10 +27,10 @@ serde_json = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 
-# The client-side peer-cred check (#495) and the `cli_pid` ancestor walk (#528)
+# The client-side pipe checks (#495) and the `cli_pid` ancestor walk (#528)
 # need Win32 — verified decls beat hand-FFI in a never-panic shim.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Pipes", "Win32_System_Threading"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Pipes", "Win32_System_Threading"] }
 
 [dev-dependencies]
 temp-env = { workspace = true }

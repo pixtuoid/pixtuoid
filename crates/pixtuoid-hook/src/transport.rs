@@ -121,11 +121,7 @@ pub(crate) fn send_line(_bound: &TimeBound, endpoint: &std::path::Path, line: &[
     const ERROR_PIPE_BUSY: i32 = windows_sys::Win32::Foundation::ERROR_PIPE_BUSY as i32;
     const PIPE_BUSY_RETRY_BACKOFF_MS: u64 = 10;
     loop {
-        match std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(endpoint)
-        {
+        match open_pipe(endpoint) {
             Ok(mut f) => {
                 // #495: before writing, verify the pipe SERVER runs as US — a
                 // co-located user who squatted our predictable default pipe (so
@@ -147,6 +143,20 @@ pub(crate) fn send_line(_bound: &TimeBound, endpoint: &std::path::Path, line: &[
             Err(_) => return,
         }
     }
+}
+
+/// The pipe's client end at `SecurityIdentification`: without the flag a
+/// server impersonates at `SecurityImpersonation`
+/// (<https://learn.microsoft.com/en-us/windows/win32/ipc/impersonating-a-named-pipe-client>),
+/// so a squatter could act as us before [`peer::server_is_us`] runs.
+#[cfg(windows)]
+fn open_pipe(endpoint: &std::path::Path) -> std::io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .security_qos_flags(windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION)
+        .open(endpoint)
 }
 
 /// The Windows counterpart of the Unix `peer_is_us` check (#495): verify the
@@ -257,15 +267,68 @@ mod win_peer_tests {
         let _server = tokio::net::windows::named_pipe::ServerOptions::new()
             .create(&name)
             .expect("create self-hosted pipe server");
-        // A blocking std client: the same handle type `send_line` writes over.
-        let client = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&name)
-            .expect("open client end");
+        let client = super::open_pipe(std::path::Path::new(&name)).expect("open client end");
         assert!(
             super::peer::server_is_us(&client),
             "our own process's pipe server must verify as us"
         );
+    }
+
+    /// What a squatting server gets from the shim's connect, read the way one
+    /// would: impersonate, then inspect the thread token's level.
+    #[tokio::test]
+    async fn the_pipe_server_can_identify_the_shim_but_never_act_as_it() {
+        use std::io::Write;
+        use std::os::windows::io::AsRawHandle;
+
+        use tokio::io::AsyncReadExt;
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::Security::{
+            GetTokenInformation, RevertToSelf, SECURITY_IMPERSONATION_LEVEL,
+            SecurityIdentification, TOKEN_QUERY, TokenImpersonationLevel,
+        };
+        use windows_sys::Win32::System::Pipes::ImpersonateNamedPipeClient;
+        use windows_sys::Win32::System::Threading::{GetCurrentThread, OpenThreadToken};
+
+        let name = format!(r"\\.\pipe\pixtuoid-qos-selftest-{}", std::process::id());
+        let mut server = tokio::net::windows::named_pipe::ServerOptions::new()
+            .create(&name)
+            .expect("create self-hosted pipe server");
+        let mut client = super::open_pipe(std::path::Path::new(&name)).expect("open client end");
+        server.connect().await.expect("server sees the client");
+        client.write_all(b"\n").expect("client writes");
+        let mut byte = [0u8; 1];
+        server.read_exact(&mut byte).await.expect("server reads");
+
+        let mut level: SECURITY_IMPERSONATION_LEVEL = 0;
+        // SAFETY: `server` is a live connected pipe handle for the whole block;
+        // `token` is closed only when OpenThreadToken opened it; `level` outlives
+        // the read and is exactly the length passed; RevertToSelf ends the
+        // impersonation on this thread before any assert can unwind.
+        let (impersonated, read) = unsafe {
+            let impersonated = ImpersonateNamedPipeClient(server.as_raw_handle() as HANDLE) != 0;
+            let mut token: HANDLE = std::ptr::null_mut();
+            let opened = impersonated
+                && OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut token) != 0;
+            let mut len = 0u32;
+            let read = opened
+                && GetTokenInformation(
+                    token,
+                    TokenImpersonationLevel,
+                    (&raw mut level).cast(),
+                    size_of::<SECURITY_IMPERSONATION_LEVEL>() as u32,
+                    &mut len,
+                ) != 0;
+            if opened {
+                CloseHandle(token);
+            }
+            RevertToSelf();
+            (impersonated, read)
+        };
+        assert!(
+            impersonated && read,
+            "the server reads the client's token level"
+        );
+        assert_eq!(level, SecurityIdentification);
     }
 }
