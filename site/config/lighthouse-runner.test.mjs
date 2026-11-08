@@ -157,24 +157,27 @@ test('the preview stays a foreground child under an agent, so stop() frees its p
   };
 
   // The control: without the flag astro must daemonize, or the check below
-  // passes whatever the flag does.
-  try {
-    const launcher = await startServer(
-      `${command.replace(' --ignore-lock', '')} --root ${root}`,
-      ready,
-      20_000
-    ).catch((e) => {
-      // A daemonizing launcher may exit before its output is read.
-      if (!/exited early/.test(e.message)) throw e;
-    });
-    if (launcher) stop(launcher);
-    assert.equal(
-      await answersWithin(url, 2_000),
-      true,
-      'astro no longer daemonizes under CLAUDECODE'
-    );
-  } finally {
-    await reap();
+  // passes whatever the flag does. Not on win32, where astro never
+  // auto-backgrounds (node_modules/astro/dist/cli/agent.js:10).
+  if (process.platform !== 'win32') {
+    try {
+      const launcher = await startServer(
+        `${command.replace(' --ignore-lock', '')} --root ${root}`,
+        ready,
+        20_000
+      ).catch((e) => {
+        // A daemonizing launcher may exit before its output is read.
+        if (!/exited early/.test(e.message)) throw e;
+      });
+      if (launcher) stop(launcher);
+      assert.equal(
+        await answersWithin(url, 2_000),
+        true,
+        'astro no longer daemonizes under CLAUDECODE'
+      );
+    } finally {
+      await reap();
+    }
   }
 
   let server;
