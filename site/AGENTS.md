@@ -101,7 +101,7 @@ watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
   gzips the wasm as GitHub Pages does and `astro preview` doesn't. LCP,
   `interactive` and `speed-index` are sized at the office's wasm padded to its
   `just gen-wasm-check` cap, plus run spread (#1124; the first two again for
-  pixtuoid-lofi 0.3, whose code, not its bytes, cost them time).
+  pixtuoid-lofi 0.3 and at 640 KiB).
 - **Fonts**: WOFF2, `font-display: optional`, loaded before use (a preload;
   the captions' face: OfficeBackdrop's boot) — never `swap` (Ubuntu cold
   visits reflow past the CLS budget; `font-layout.spec.ts` reproduces it).
