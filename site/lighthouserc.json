@@ -2,8 +2,6 @@
   "ci": {
     "collect": {
       "startServerCommand": "npm run preview",
-      "previewPort": 4320,
-      "startServerReadyPattern": "http://localhost",
       "startServerReadyTimeout": 20000,
       "numberOfRuns": 5,
       "url": [
