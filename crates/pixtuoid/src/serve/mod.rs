@@ -383,9 +383,9 @@ mod tests {
     }
 
     /// Every runner routes to loopback, and only the `connect` turns the
-    /// probe's 0.0.0.0 into loopback's address. Not on Windows, whose
-    /// `getsockname` may not know an address before I/O.
-    #[cfg(unix)]
+    /// probe's 0.0.0.0 into loopback's address. On Windows too, which documents
+    /// only that the address "may not be available until I/O occurs"
+    /// (<https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-getsockname>).
     #[test]
     fn a_probe_names_the_source_its_route_gives() {
         let source = source_toward(Ipv4Addr::LOCALHOST).expect("loopback routes");
