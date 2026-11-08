@@ -26,7 +26,7 @@ contract; fill briefs from them, never a paraphrase here.
    (`gh api repos/pixtuoid/.github/contents/.github/workflows/claude-review.yml --jq .content | base64 -d`),
    with three overrides: their GitHub tools become local read-only ones
    (`git diff <base>...<head>`, the worktree's files, and
-   `gh pr view --json title,body` or the planned title and body), since no PR
+   `gh pr view <N> --json title,body` or the planned title and body), since no PR
    may exist yet; the scope is `<base>...<head>`; and a reviewer may fetch the docs a
    best-practice question needs, which CI can't. Spawn the two reviewers in
    parallel, then one verifier per candidate. Run each must-run item the
