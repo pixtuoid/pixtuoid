@@ -556,7 +556,7 @@ fn a_second_server_on_a_port_says_so_and_leaves() {
 
 /// Whatever this machine's network, the greeting never says 0.0.0.0 and agrees
 /// with `pair`'s default: its host, or the port alone when `pair` finds none. It
-/// reads the real network because only the two binaries show they share `local_host`.
+/// reads the real network because only running `serve` and `pair` shows they share `local_host`.
 #[test]
 fn the_greeting_names_the_host_pair_defaults_to() {
     let world = World::new();
