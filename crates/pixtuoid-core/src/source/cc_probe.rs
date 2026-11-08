@@ -68,7 +68,7 @@ pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
                     SHAPE_DRIFT_WARNED.call_once(|| {
                         crate::source::drift::shape_drift(
                             crate::source::claude_code::SOURCE_NAME,
-                            crate::source::drift::Shape::RegistryKey { path: &path, key },
+                            crate::source::drift::ShapeDrift::RegistryKey { path: &path, key },
                         );
                     });
                     continue;

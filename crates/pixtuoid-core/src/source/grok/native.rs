@@ -53,7 +53,7 @@ pub(crate) fn live_grok_session_ids(grok_root: &Path) -> Option<ProbeSnapshot> {
             SHAPE_DRIFT_WARNED.call_once(|| {
                 crate::source::drift::shape_drift(
                     SOURCE_NAME,
-                    crate::source::drift::Shape::RegistryUnparsed {
+                    crate::source::drift::ShapeDrift::RegistryUnparsed {
                         path: &path,
                         truncated,
                     },

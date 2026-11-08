@@ -2446,7 +2446,7 @@ mod tests {
             drift::unknown_dispatch("copilot", "AgentV3");
             drift::shape_drift(
                 "copilot",
-                drift::Shape::RegistryKey {
+                drift::ShapeDrift::RegistryKey {
                     path: std::path::Path::new("/r/1.json"),
                     key: "pid",
                 },

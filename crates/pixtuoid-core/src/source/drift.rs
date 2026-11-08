@@ -94,17 +94,12 @@ pub fn unknown_dispatch(source: &str, tool: &str) {
 /// What a [`shape_drift`] breadcrumb reports. Each carries its own fields, so the
 /// message stays a constant and no value is cut to fit another's length.
 #[derive(Debug, Clone, Copy)]
-pub enum Shape<'a> {
+#[expect(missing_docs, reason = "a field is its log field's name")]
+pub enum ShapeDrift<'a> {
     /// A registry entry parses as JSON, but a key we read is missing or mistyped.
-    RegistryKey {
-        /// The entry's file.
-        path: &'a Path,
-        /// The key that no longer reads.
-        key: &'static str,
-    },
+    RegistryKey { path: &'a Path, key: &'static str },
     /// A registry file does not parse.
     RegistryUnparsed {
-        /// The registry's file.
         path: &'a Path,
         /// The read hit its cap: ours, not an upstream format change.
         truncated: bool,
@@ -113,26 +108,25 @@ pub enum Shape<'a> {
     SubagentStem {
         /// The transcript's stem, which the decode keys on.
         stem: &'a str,
-        /// The prefixed agent id the hook carried.
         agent_id: &'a str,
     },
 }
 
 /// A consumed upstream data SHAPE drifted: a registry or transcript value that
 /// still arrives but no longer reads as the shape we decode.
-pub fn shape_drift(source: &str, shape: Shape<'_>) {
+pub fn shape_drift(source: &str, shape: ShapeDrift<'_>) {
     let source = display_safe(source);
     let kind = <&str>::from(DriftKind::ShapeDrift);
     match shape {
-        Shape::RegistryKey { path, key } => tracing::warn!(
+        ShapeDrift::RegistryKey { path, key } => tracing::warn!(
             target: TARGET, source = %source, kind, path = ?path, key,
             "a registry entry parses, but a key we read is missing or mistyped; liveness falls back to mtime gating"
         ),
-        Shape::RegistryUnparsed { path, truncated } => tracing::warn!(
+        ShapeDrift::RegistryUnparsed { path, truncated } => tracing::warn!(
             target: TARGET, source = %source, kind, path = ?path, truncated,
             "a registry file does not parse; liveness falls back to mtime gating"
         ),
-        Shape::SubagentStem { stem, agent_id } => tracing::warn!(
+        ShapeDrift::SubagentStem { stem, agent_id } => tracing::warn!(
             target: TARGET, source = %source, kind,
             stem = ?display_safe(stem), agent_id = ?display_safe(agent_id),
             "a SubagentStop transcript stem is not its prefixed agent id; keying on the stem"
@@ -155,7 +149,7 @@ mod tests {
             unknown_dispatch("codex", "t");
             shape_drift(
                 "codex",
-                Shape::SubagentStem {
+                ShapeDrift::SubagentStem {
                     stem: "s",
                     agent_id: "a",
                 },
@@ -189,7 +183,7 @@ mod tests {
             missing_field(source, "to\u{1b}olZ", "na\u{202e}meZ");
             shape_drift(
                 source,
-                Shape::SubagentStem {
+                ShapeDrift::SubagentStem {
                     stem: &"x".repeat(1000),
                     agent_id: "a\u{202e}b",
                 },
@@ -216,6 +210,9 @@ mod tests {
             !out.contains(&"x".repeat(200)),
             "an uncapped value became an uncapped log line:\n{out}"
         );
+        // A `?` field escapes U+202E on its own; only the stripped value
+        // proves `display_safe` ran.
+        assert!(out.contains("agent_id=\"ab\""), "{out}");
     }
 
     /// The diagnostic survives a long home path: what drifted, and whether the
@@ -226,14 +223,14 @@ mod tests {
         let out = capture(|| {
             shape_drift(
                 "claude-code",
-                Shape::RegistryKey {
+                ShapeDrift::RegistryKey {
                     path: &path,
                     key: "startedAt",
                 },
             );
             shape_drift(
                 "grok",
-                Shape::RegistryUnparsed {
+                ShapeDrift::RegistryUnparsed {
                     path: &path,
                     truncated: true,
                 },

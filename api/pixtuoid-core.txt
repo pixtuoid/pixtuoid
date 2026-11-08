@@ -691,28 +691,28 @@ impl core::marker::Unpin for pixtuoid_core::source::drift::DriftKind
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::drift::DriftKind
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::drift::DriftKind
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::drift::DriftKind
-pub enum pixtuoid_core::source::drift::Shape<'a>
-pub pixtuoid_core::source::drift::Shape::RegistryKey
-pub pixtuoid_core::source::drift::Shape::RegistryKey::key: &'static str
-pub pixtuoid_core::source::drift::Shape::RegistryKey::path: &'a std::path::Path
-pub pixtuoid_core::source::drift::Shape::RegistryUnparsed
-pub pixtuoid_core::source::drift::Shape::RegistryUnparsed::path: &'a std::path::Path
-pub pixtuoid_core::source::drift::Shape::RegistryUnparsed::truncated: bool
-pub pixtuoid_core::source::drift::Shape::SubagentStem
-pub pixtuoid_core::source::drift::Shape::SubagentStem::agent_id: &'a str
-pub pixtuoid_core::source::drift::Shape::SubagentStem::stem: &'a str
-impl<'a> core::clone::Clone for pixtuoid_core::source::drift::Shape<'a>
-pub fn pixtuoid_core::source::drift::Shape<'a>::clone(&self) -> Self
-impl<'a> core::fmt::Debug for pixtuoid_core::source::drift::Shape<'a>
-pub fn pixtuoid_core::source::drift::Shape<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Copy for pixtuoid_core::source::drift::Shape<'a>
-impl<'a> core::marker::Freeze for pixtuoid_core::source::drift::Shape<'a>
-impl<'a> core::marker::Send for pixtuoid_core::source::drift::Shape<'a>
-impl<'a> core::marker::Sync for pixtuoid_core::source::drift::Shape<'a>
-impl<'a> core::marker::Unpin for pixtuoid_core::source::drift::Shape<'a>
-impl<'a> core::marker::UnsafeUnpin for pixtuoid_core::source::drift::Shape<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::drift::Shape<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::drift::Shape<'a>
+pub enum pixtuoid_core::source::drift::ShapeDrift<'a>
+pub pixtuoid_core::source::drift::ShapeDrift::RegistryKey
+pub pixtuoid_core::source::drift::ShapeDrift::RegistryKey::key: &'static str
+pub pixtuoid_core::source::drift::ShapeDrift::RegistryKey::path: &'a std::path::Path
+pub pixtuoid_core::source::drift::ShapeDrift::RegistryUnparsed
+pub pixtuoid_core::source::drift::ShapeDrift::RegistryUnparsed::path: &'a std::path::Path
+pub pixtuoid_core::source::drift::ShapeDrift::RegistryUnparsed::truncated: bool
+pub pixtuoid_core::source::drift::ShapeDrift::SubagentStem
+pub pixtuoid_core::source::drift::ShapeDrift::SubagentStem::agent_id: &'a str
+pub pixtuoid_core::source::drift::ShapeDrift::SubagentStem::stem: &'a str
+impl<'a> core::clone::Clone for pixtuoid_core::source::drift::ShapeDrift<'a>
+pub fn pixtuoid_core::source::drift::ShapeDrift<'a>::clone(&self) -> Self
+impl<'a> core::fmt::Debug for pixtuoid_core::source::drift::ShapeDrift<'a>
+pub fn pixtuoid_core::source::drift::ShapeDrift<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for pixtuoid_core::source::drift::ShapeDrift<'a>
+impl<'a> core::marker::Freeze for pixtuoid_core::source::drift::ShapeDrift<'a>
+impl<'a> core::marker::Send for pixtuoid_core::source::drift::ShapeDrift<'a>
+impl<'a> core::marker::Sync for pixtuoid_core::source::drift::ShapeDrift<'a>
+impl<'a> core::marker::Unpin for pixtuoid_core::source::drift::ShapeDrift<'a>
+impl<'a> core::marker::UnsafeUnpin for pixtuoid_core::source::drift::ShapeDrift<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::drift::ShapeDrift<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::drift::ShapeDrift<'a>
 pub struct pixtuoid_core::source::drift::UnknownDriftKind(_)
 impl core::clone::Clone for pixtuoid_core::source::drift::UnknownDriftKind
 pub fn pixtuoid_core::source::drift::UnknownDriftKind::clone(&self) -> Self
@@ -736,7 +736,7 @@ pub const pixtuoid_core::source::drift::KIND_FIELD: &str
 pub const pixtuoid_core::source::drift::SOURCE_FIELD: &str
 pub const pixtuoid_core::source::drift::TARGET: &str
 pub fn pixtuoid_core::source::drift::missing_field(&str, &str, &str)
-pub fn pixtuoid_core::source::drift::shape_drift(&str, pixtuoid_core::source::drift::Shape<'_>)
+pub fn pixtuoid_core::source::drift::shape_drift(&str, pixtuoid_core::source::drift::ShapeDrift<'_>)
 pub fn pixtuoid_core::source::drift::unknown_dispatch(&str, &str)
 pub fn pixtuoid_core::source::drift::unknown_event(&str, &str)
 pub mod pixtuoid_core::source::dsh
