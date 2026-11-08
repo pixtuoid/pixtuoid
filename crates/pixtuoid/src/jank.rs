@@ -7,7 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use pixtuoid_scene::anim::PAINT_FRAME;
+use pixtuoid_scene::anim::{PAINT_FRAME, frames_in};
 use pixtuoid_scene::look::FrameNote;
 
 /// The target every report logs under, whatever module this is:
@@ -19,7 +19,7 @@ const TARGET: &str = "pixtuoid::jank";
 const WINDOW: Duration = Duration::from_secs(60);
 /// A window's frames twice over, room for a loop that runs hot: past it the
 /// oldest are overwritten.
-const RING: usize = 2 * (WINDOW.as_nanos() / PAINT_FRAME.as_nanos()) as usize;
+const RING: usize = 2 * frames_in(WINDOW) as usize;
 
 /// What of the scene a frame repainted, as its report names it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -75,7 +75,7 @@ pub(crate) struct FrameSend {
     pub(crate) encode: Duration,
 }
 
-/// One over-interval frame's report at `level`, with what drew it.
+/// One report at `level` of a frame past [`PAINT_FRAME`], with what drew it.
 macro_rules! report {
     ($level:ident, $message:literal, $total:expr, $present:expr, $send:expr, $note:expr) => {{
         let (total, present, send, note): (Duration, Duration, FrameSend, Option<FrameNote>) =
@@ -114,8 +114,8 @@ pub(crate) struct Jank {
     janks: u32,
     /// Frames past [`PAINT_FRAME`].
     over: u32,
-    /// How late frames showed past their interval this window
-    /// ([`Self::due_at`]).
+    /// How far frames showed past their due by more than one [`PAINT_FRAME`]
+    /// this window ([`Self::due_at`]).
     hitch: Duration,
     /// The frames this window that a schedule asked for.
     scheduled: u32,
@@ -158,10 +158,10 @@ impl Jank {
     }
 
     /// The redraw that follows is the one the schedule asked for at `at`: if it
-    /// records, it counts toward the hitch time by how far it showed past its interval,
-    /// when the frame after it is due. That is the hitch duration, "the
-    /// difference between the actual frame lifetime and the expected frame
-    /// lifetime", each from the frame's begin
+    /// records, it counts toward the hitch time by how far it showed past `at`
+    /// by more than one [`PAINT_FRAME`], when the frame after it is due. That
+    /// is the hitch duration, "the difference between the actual frame
+    /// lifetime and the expected frame lifetime", each from the frame's begin
     /// (<https://developer.apple.com/documentation/xcode/understanding-hitches-in-your-app>).
     /// A redraw that ends without recording spends the due
     /// ([`Self::spend_due`]); one no schedule asked for has none, so it can't
@@ -312,7 +312,7 @@ mod tests {
     /// A frame over twice [`PAINT_FRAME`] is reported at debug, with its
     /// transmits; one within it is not.
     #[test]
-    fn a_frame_over_twice_the_interval_is_reported() {
+    fn a_frame_over_twice_the_paint_frame_is_reported() {
         let t0 = Instant::now();
         let logged = crate::test_capture::capture(|| {
             let mut jank = Jank::new();
@@ -369,13 +369,11 @@ mod tests {
         assert!(logged.contains("janks=0"), "{logged}");
     }
 
-    /// A frame hitches by how far it showed past its interval, and one
-    /// shown within it never does, however late in it. Due at frames 0, 1, 2
-    /// and 4 and shown 5 ms, 27 ms, a frame and 11 ms, and 1 ms after: only
-    /// the third is past its interval, by 11 ms. A redraw with no due counts
-    /// neither way.
+    /// A frame hitches by how far it showed past its due by more than one
+    /// [`PAINT_FRAME`]: one shown within that never hitches, however late in
+    /// it. A redraw with no due counts neither way.
     #[test]
-    fn a_frame_hitches_by_how_far_it_showed_past_its_interval() {
+    fn a_frame_hitches_by_how_far_it_showed_past_its_due_plus_a_paint_frame() {
         let t0 = Instant::now();
         let ms = Duration::from_millis;
         let logged = crate::test_capture::capture(|| {
@@ -538,8 +536,9 @@ mod tests {
     }
 
     /// A summary names the span it covers, what the fluency gate rates its
-    /// hitch time over: a painter that records fewer frames than its interval
-    /// fits, as the floating window's idle beats do, still covers its span.
+    /// hitch time over: a painter that records a frame less often than every
+    /// [`PAINT_FRAME`], as the floating window's idle beats do, still covers
+    /// its span.
     #[test]
     fn a_summary_reports_the_span_it_covers() {
         let t0 = Instant::now();

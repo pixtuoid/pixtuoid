@@ -109,7 +109,7 @@ pub const PAINT_FRAME: Duration = match Duration::from_secs(1).checked_div(PAINT
 #[cfg(test)]
 pub(crate) const PAINT_FRAME_MS: u64 = PAINT_FRAME.as_millis() as u64;
 /// How many whole [`PAINT_FRAME`]s `span` holds.
-pub(crate) const fn frames_in(span: Duration) -> u32 {
+pub const fn frames_in(span: Duration) -> u32 {
     (span.as_nanos() / PAINT_FRAME.as_nanos()) as u32
 }
 

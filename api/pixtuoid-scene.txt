@@ -27,6 +27,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::anim::Motion
 pub const pixtuoid_scene::anim::PAINT_FPS: u32
 pub const pixtuoid_scene::anim::PAINT_FRAME: core::time::Duration
 pub const pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS: u64
+pub const fn pixtuoid_scene::anim::frames_in(core::time::Duration) -> u32
 pub mod pixtuoid_scene::audio
 pub use pixtuoid_scene::audio::Controls
 pub use pixtuoid_scene::audio::Frame

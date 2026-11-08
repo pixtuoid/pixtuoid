@@ -6,14 +6,13 @@
 //! frame writes. Advisory, local: `just bench-pacing`.
 //!
 //! The scene advances a VIRTUAL clock one paint interval per frame, so every
-//! case paints the same frames, and each frame waits for its tick on the wall
-//! clock as the TUI's does (`Pace::Paced`): the CPU idles between frames
-//! and each wakes on a cooled core, which a frame run back to back never
-//! sees. Each case's `hot p99` runs the same frames back to back
-//! (`Pace::Hot`). The interval columns are computed from the measured
-//! render times under each loop model, not observed; the one `real-clock`
-//! case runs the production loop's shape on the wall clock to check that
-//! model once.
+//! case paints the same frames, and each frame waits for its tick on the TUI's
+//! own frame clock (`Pace::Paced`): the CPU idles between frames and each
+//! wakes on a cooled core, which a frame run back to back never sees. Each
+//! case's `hot p99` runs the same frames back to back (`Pace::Hot`). The
+//! interval column is computed from the measured render times under
+//! `SkipClock`, that frame clock's model, not observed; the one `real-clock`
+//! case runs the frame clock on the wall clock to check the model once.
 //!
 //! `pacing next-storm` and `pacing dusk` print the Unix second the clock's
 //! next transition into a storm and today's nightfall start, and `pacing
@@ -38,10 +37,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result};
-use pixtuoid::dev::{Protocol, renderer};
+use pixtuoid::dev::{Protocol, frame_clock, renderer};
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
-use pixtuoid_scene::anim::{Motion, PAINT_FRAME};
+use pixtuoid_scene::anim::{Motion, PAINT_FRAME, frames_in};
 use pixtuoid_scene::look::spans;
 use pixtuoid_scene::pet::{Pet, PetKind};
 use pixtuoid_scene::sky::{Weather, WeatherPolicy, first_strike_after};
@@ -239,19 +238,18 @@ fn run(
     let scene = office(start);
     // By frame index: `PAINT_FRAME` is truncated to whole ns, so no multiple
     // of it lands exactly on a whole second.
-    let frame_at = |d: Duration| d.as_nanos() / PAINT_FRAME.as_nanos();
-    let frames = frame_at(SCENARIO);
+    let frames = frames_in(SCENARIO);
     let (mut slid, mut resized) = (false, false);
     let mut out = Vec::new();
-    let pacer = Pacer::new(pace);
+    let mut pacer = Pacer::new(pace)?;
     for n in 0..frames {
-        let now = start + PAINT_FRAME * u32::try_from(n)?;
+        let now = start + PAINT_FRAME * n;
         pacer.wait();
-        if n == frame_at(SLIDE_AT) {
+        if n == frames_in(SLIDE_AT) {
             r.navigate_floor(1, now);
             slid = r.transition().is_some();
         }
-        if n == frame_at(RESIZE_AT) {
+        if n == frames_in(RESIZE_AT) {
             r.terminal
                 .backend_mut()
                 .resize(TERMINAL.0 - RESIZE_BY.0, TERMINAL.1 - RESIZE_BY.1);
@@ -284,11 +282,11 @@ fn run(
     Ok(out)
 }
 
-/// The production loop's shape on the wall clock: render, then wait a paint
-/// interval for input that never comes. Each frame's interval, observed.
+/// The production loop's shape on the wall clock: each frame on the TUI's own
+/// frame clock. Each frame's interval, observed.
 fn real_clock(
     pack: &Arc<pixtuoid_scene::pack::OfficeArt>,
-) -> Result<(Vec<Duration>, Vec<Duration>, &'static str)> {
+) -> Result<(Vec<Duration>, Vec<Duration>)> {
     let (mut r, _wire) = renderer(
         Protocol::HalfBlock,
         TERMINAL.0,
@@ -304,32 +302,23 @@ fn real_clock(
     let clock = Instant::now();
     let (mut renders, mut intervals) = (Vec::new(), Vec::new());
     let mut last = None;
-    // Probed once: a failed poll per frame would add its syscall to every
-    // observed interval.
-    let polls = crossterm::event::poll(Duration::ZERO).is_ok();
+    let mut pacer = Pacer::new(Pace::Paced)?;
     while clock.elapsed() < SCENARIO {
+        pacer.wait();
         let begun = Instant::now();
         if let Some(prev) = last.replace(begun) {
             intervals.push(begun - prev);
         }
         r.render(&scene, start + clock.elapsed())?;
         renders.push(begun.elapsed());
-        // The loop's own wait is crossterm's input poll; a CI runner has no
-        // terminal to poll, so it sleeps.
-        if !polls {
-            std::thread::sleep(PAINT_FRAME);
-        } else if crossterm::event::poll(PAINT_FRAME)? {
-            crossterm::event::read()?;
-        }
     }
-    Ok((renders, intervals, if polls { "poll" } else { "sleep" }))
+    Ok((renders, intervals))
 }
 
 /// How a run spaces its frames on the wall clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pace {
-    /// Each frame on its own tick, as the TUI's frame interval runs them
-    /// (`tokio::time::interval`, `MissedTickBehavior::Skip`).
+    /// Each frame on its own tick of the TUI's frame clock.
     Paced,
     /// Back to back, which keeps the CPU hot as no running TUI does.
     Hot,
@@ -337,27 +326,49 @@ enum Pace {
 
 /// Holds each frame of a run to its tick under a [`Pace`].
 struct Pacer {
-    pace: Pace,
-    origin: Instant,
+    /// The TUI's own frame clock, on a runtime of its own; `None` back to back.
+    clock: Option<(tokio::time::Interval, tokio::runtime::Runtime)>,
 }
 
 impl Pacer {
-    fn new(pace: Pace) -> Self {
-        Self {
-            pace,
-            origin: Instant::now(),
-        }
+    fn new(pace: Pace) -> Result<Self> {
+        let clock = match pace {
+            Pace::Hot => None,
+            Pace::Paced => {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_time()
+                    .build()?;
+                let frames = rt.block_on(async { frame_clock(PAINT_FRAME) });
+                Some((frames, rt))
+            }
+        };
+        Ok(Self { clock })
     }
 
-    /// Wait for the next tick not yet past, as `Skip` does after an overrun.
-    fn wait(&self) {
-        if self.pace == Pace::Hot {
-            return;
+    /// Wait for the frame clock's next tick.
+    fn wait(&mut self) {
+        if let Some((frames, rt)) = &mut self.clock {
+            rt.block_on(frames.tick());
         }
-        let since = self.origin.elapsed();
-        let ticks = since.as_nanos().div_ceil(PAINT_FRAME.as_nanos());
-        let at = PAINT_FRAME.saturating_mul(u32::try_from(ticks).unwrap_or(u32::MAX));
-        std::thread::sleep(at.saturating_sub(since));
+    }
+}
+
+/// A model of the TUI's frame clock, which runs on tokio's
+/// `MissedTickBehavior::Skip`: a frame ready before its tick starts on it,
+/// one ready after starts at once, and the tick after that is the next one on
+/// the grid from the first (tokio's `time/interval.rs`, `next_timeout`).
+#[derive(Default)]
+struct SkipClock {
+    /// The next tick, from the first frame's start.
+    tick: Duration,
+}
+
+impl SkipClock {
+    /// When a frame ready at `ready` starts.
+    fn start(&mut self, ready: Duration) -> Duration {
+        let start = ready.max(self.tick);
+        self.tick = PAINT_FRAME * (frames_in(start) + 1);
+        start
     }
 }
 
@@ -373,17 +384,20 @@ fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1e3
 }
 
-/// Each frame's interval under the production loop today: render, then a full
-/// paint interval of polling.
-fn sleep_loop(renders: &[Duration]) -> Vec<Duration> {
-    renders.iter().map(|&r| r + PAINT_FRAME).collect()
-}
-
-/// Each frame's interval under a deadline-paced loop: the next frame starts at
-/// the previous deadline plus a paint interval, or as soon as the render ends
-/// when it overran, re-anchoring there rather than bursting to catch up.
-fn deadline_loop(renders: &[Duration]) -> Vec<Duration> {
-    renders.iter().map(|&r| r.max(PAINT_FRAME)).collect()
+/// Each frame's interval on the [`SkipClock`], from its start to the next
+/// frame's.
+fn skip_loop(renders: &[Duration]) -> Vec<Duration> {
+    let mut clock = SkipClock::default();
+    let mut start = clock.start(Duration::ZERO);
+    renders
+        .iter()
+        .map(|&render| {
+            let next = clock.start(start + render);
+            let interval = next - start;
+            start = next;
+            interval
+        })
+        .collect()
 }
 
 fn stats(xs: &[Duration]) -> serde_json::Value {
@@ -738,7 +752,7 @@ fn hitch(path: &Path) -> Result<()> {
         } else {
             Pace::Paced
         };
-        let pacer = Pacer::new(pace);
+        let mut pacer = Pacer::new(pace)?;
         loop {
             pacer.wait();
             let offset = match run.start {
@@ -887,7 +901,7 @@ fn main() -> Result<()> {
     );
     let _ = writeln!(
         stdout,
-        "{:<38} {:>7} {:>7} {:>7} {:>7} {:>7} | {:>6} {:>6} {:>6} {:>6} | {:>5} | {:>13} {:>13} | {:>9} {:>9}",
+        "{:<38} {:>7} {:>7} {:>7} {:>7} {:>7} | {:>6} {:>6} {:>6} {:>6} | {:>5} | {:>13} | {:>9} {:>9}",
         "case",
         "p50",
         "p95",
@@ -899,8 +913,7 @@ fn main() -> Result<()> {
         "enc",
         "write",
         "over%",
-        "now p95/jit",
-        "deadl p95/jit",
+        "intvl p95/jit",
         "B p50",
         "B p95"
     );
@@ -915,8 +928,7 @@ fn main() -> Result<()> {
         let total = col(|f| f.total);
         let over =
             total.iter().filter(|&&t| t > PAINT_FRAME).count() as f64 * 100.0 / total.len() as f64;
-        let now_loop = sleep_loop(&total);
-        let deadline = deadline_loop(&total);
+        let interval = skip_loop(&total);
         let jitter = |xs: &[Duration]| pct(xs, 95.0).saturating_sub(pct(xs, 50.0));
         let mut bytes: Vec<u64> = frames.iter().map(|f| f.bytes).collect();
         bytes.sort_unstable();
@@ -926,7 +938,7 @@ fn main() -> Result<()> {
         };
         let _ = writeln!(
             stdout,
-            "{:<38} {:>7.2} {:>7.2} {:>7.2} {:>7.2} {:>7.2} | {:>6.2} {:>6.2} {:>6.2} {:>6.2} | {:>5.1} | {:>6.1}/{:>6.2} {:>6.1}/{:>6.2} | {:>9} {:>9}",
+            "{:<38} {:>7.2} {:>7.2} {:>7.2} {:>7.2} {:>7.2} | {:>6.2} {:>6.2} {:>6.2} {:>6.2} | {:>5.1} | {:>6.1}/{:>6.2} | {:>9} {:>9}",
             case.name,
             ms(pct(&total, 50.0)),
             ms(pct(&total, 95.0)),
@@ -938,10 +950,8 @@ fn main() -> Result<()> {
             ms(pct(&col(|f| f.encode), 50.0)),
             ms(pct(&col(|f| f.write), 50.0)),
             over,
-            ms(pct(&now_loop, 95.0)),
-            ms(jitter(&now_loop)),
-            ms(pct(&deadline, 95.0)),
-            ms(jitter(&deadline)),
+            ms(pct(&interval, 95.0)),
+            ms(jitter(&interval)),
             byte_pct(50.0),
             byte_pct(95.0),
         );
@@ -955,19 +965,17 @@ fn main() -> Result<()> {
             "encode": stats(&col(|f| f.encode)),
             "write": stats(&col(|f| f.write)),
             "over_budget_pct": over,
-            "interval_render_then_poll": stats(&now_loop),
-            "jitter_render_then_poll_ms": ms(jitter(&now_loop)),
-            "interval_deadline": stats(&deadline),
-            "jitter_deadline_ms": ms(jitter(&deadline)),
+            "interval": stats(&interval),
+            "jitter_ms": ms(jitter(&interval)),
             "bytes_p50": byte_pct(50.0),
             "bytes_p95": byte_pct(95.0),
         }));
     }
-    let (renders, observed, waited) = real_clock(&pack)?;
-    let modeled = sleep_loop(&renders);
+    let (renders, observed) = real_clock(&pack)?;
+    let modeled = skip_loop(&renders);
     let _ = writeln!(
         stdout,
-        "\nreal-clock half-block Full (waits on {waited}): interval OBSERVED p50/p95/p99 {:.2}/{:.2}/{:.2} ms vs COMPUTED {:.2}/{:.2}/{:.2} ms",
+        "\nreal-clock half-block Full: interval OBSERVED p50/p95/p99 {:.2}/{:.2}/{:.2} ms vs COMPUTED {:.2}/{:.2}/{:.2} ms",
         ms(pct(&observed, 50.0)),
         ms(pct(&observed, 95.0)),
         ms(pct(&observed, 99.0)),
@@ -977,7 +985,6 @@ fn main() -> Result<()> {
     );
     report.push(serde_json::json!({
         "case": "real-clock half-block Full",
-        "waits_on": waited,
         "interval_observed": stats(&observed),
         "interval_computed": stats(&modeled),
     }));

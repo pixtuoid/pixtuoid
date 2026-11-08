@@ -57,6 +57,7 @@ pub mod dev {
     pub use crate::serve::MAX_CONNS;
     pub use crate::sources::{ConnState, ConnectionRow};
     pub use crate::tui::cutaway::ImageCells;
+    pub use crate::tui::frame_clock;
     pub use crate::tui::renderer::{
         DrawCtx, PetState, draw_over_image, draw_scene, scene_buf_size,
     };

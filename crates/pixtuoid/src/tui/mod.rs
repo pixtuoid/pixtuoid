@@ -614,7 +614,7 @@ fn run_outcome(
 /// paints at once and the next back on the grid, neither a burst to catch up
 /// nor a re-anchor that lets every late wake stretch the rate
 /// ([`MissedTickBehavior::Skip`]).
-pub(crate) fn frame_clock(period: Duration) -> tokio::time::Interval {
+pub fn frame_clock(period: Duration) -> tokio::time::Interval {
     let mut frames = tokio::time::interval(period);
     frames.set_missed_tick_behavior(MissedTickBehavior::Skip);
     frames
