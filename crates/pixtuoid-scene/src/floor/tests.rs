@@ -4115,8 +4115,9 @@ fn a_refit_that_moves_the_floor_re_seats_its_creatures_where_a_direct_fit_does()
 
 /// A refit mid-walk re-arms every walk on the new layout as a floor fitted
 /// there directly arms it, keeping no point of the last: one walking in from
-/// the elevator, one walking out to it, and one out on an errand each stand
-/// where a direct fit draws them.
+/// the elevator, one walking out to it, one out on an errand and one walking
+/// home from where a pointer set it down each stand where a direct fit draws
+/// them.
 #[test]
 fn a_refit_mid_walk_draws_every_walker_where_a_direct_fit_does() {
     use crate::hit::HoverTarget;
@@ -4207,4 +4208,37 @@ fn a_refit_mid_walk_draws_every_walker_where_a_direct_fit_does() {
     assert!(out(&session), "setup: still out when the refit lands");
     let (drawn, fresh) = refit(session, &idle, now);
     assert_eq!(drawn, fresh, "out on an errand");
+
+    let mut typing = make_scene(1, 8);
+    let typist = typing.agents.values_mut().next().expect("one agent");
+    typist.created_at = t_refit - Duration::from_secs(3_600);
+    (typist.arrived_at, typist.state_started_at) = (Some(typist.created_at), typist.created_at);
+    typist.state = ActivityState::Running { item: None };
+    let id = typist.agent_id;
+    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut now = t_refit;
+    people(&mut session, &typing, deep, now);
+    let far = crate::layout::SceneLayout::compute(phone_office(deep), None, floor_seed(0))
+        .expect("lays out")
+        .door_threshold;
+    let figure = crate::interact::Figure::Agent(id);
+    let floor = session.floor_mut();
+    floor.grip(&crate::interact::Gesture::Lift { figure, at: far });
+    floor.grip(&crate::interact::Gesture::Drop(far));
+    for _ in 0..10 {
+        now += FRAME;
+        people(&mut session, &typing, deep, now);
+    }
+    assert!(
+        matches!(
+            session.floor().ctx.walks[&id].lifted,
+            Some(crate::walk::Lifted::Home(_))
+        ),
+        "setup: walking home when the refit lands"
+    );
+    let (drawn, fresh) = refit(session, &typing, now + FRAME);
+    assert_eq!(
+        drawn, fresh,
+        "walking home from where a pointer set it down"
+    );
 }

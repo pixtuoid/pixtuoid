@@ -40,7 +40,7 @@ pub trait Router: std::fmt::Debug {
     /// Route over a new layout from here, keeping nothing routed over the
     /// last, and bias the cost function toward `zone` (the office corridor) so
     /// paths hug the hallway instead of cutting across the cubicle floor.
-    fn new_layout(&mut self, zone: Option<Bounds>);
+    fn new_layout(&mut self, zone: Bounds);
 }
 
 /// Path-cache entry cap, sized above the recurring (from, to) pairs of a fully
@@ -115,11 +115,11 @@ impl Router for AStarRouter {
         }
     }
 
-    fn new_layout(&mut self, zone: Option<Bounds>) {
+    fn new_layout(&mut self, zone: Bounds) {
         // `route` revalidates a cached path against the overlay alone, never
         // the mask, so one routed over the last layout could cross a wall.
         self.paths.clear();
-        self.preferred_zone = zone;
+        self.preferred_zone = Some(zone);
     }
 }
 

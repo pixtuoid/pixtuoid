@@ -247,11 +247,12 @@ impl FloorCtx {
         Some(layout)
     }
 
-    /// Puts every point a store keeps across steps on `layout`, or it would
-    /// stand on the last one: the walks and the router as a floor fitted there
-    /// directly holds them, each creature at its latest draw.
+    /// Drops what the router, the pose history and the walks derived from the
+    /// last layout, and re-seats each creature at its latest draw, so a refit
+    /// draws what a direct fit would. A pointer's points carry over: the
+    /// pointer still holds them.
     fn relaid(&mut self, layout: &crate::layout::SceneLayout, now: SystemTime) {
-        self.router.new_layout(Some(layout.corridor));
+        self.router.new_layout(layout.corridor);
         self.history = PoseHistory::new();
         self.walks.values_mut().for_each(WalkState::relaid);
         for creature in self.creatures.values_mut() {
@@ -270,9 +271,9 @@ impl FloorCtx {
 
     /// Recompute `door_anim_max_ms`: the max `duration_ms + pause_ms` over the
     /// **in-flight** entry/exit profiles only. An ARRIVED profile is excluded
-    /// because `WalkState` keeps an agent's `entry` profile for its whole
-    /// lifetime — without the gate the door would stay "open" for as long as the
-    /// agent lives rather than just while they walk through it.
+    /// because `WalkState` keeps an agent's `entry` profile after it arrives,
+    /// until the next layout (`relaid`) — without the gate the door would stay
+    /// "open" all that while, not just while they walk through it.
     pub fn recompute_door_anim_max_ms(&mut self, now: SystemTime) {
         let in_flight = |started_at: SystemTime, p: &WalkProfile| -> u64 {
             let elapsed = crate::anim::elapsed_ms(now, started_at);
