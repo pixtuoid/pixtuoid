@@ -1,5 +1,5 @@
 use super::*;
-use crate::anim::PAINT_FRAME_MS;
+use crate::anim::{PAINT_FRAME, frames_in};
 use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, octile_distance, octile_path_len, walk_profile};
 use crate::walk::settle_len;
@@ -274,8 +274,8 @@ fn snap_back_origin_is_frozen_across_frames() {
     // Eight frames stay well inside `SNAP_BACK_MS`; re-derive each frame so
     // `derive_with_routing` records the advancing walker, as the render loop does.
     let mut origins = Vec::new();
-    for i in 0..8u64 {
-        let t = now0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 0..8u32 {
+        let t = now0 + PAINT_FRAME * i;
         match derive_with_routing(&slot, t, &l, &mut rig.rctx()) {
             Some(Pose::Walking { segment, .. }) => origins.push((i, segment.from())),
             other => panic!("frame {i}: expected Walking pose mid snap-back, got {other:?}"),
@@ -382,7 +382,7 @@ fn a_seated_draw_forgets_the_waypoint_it_last_stood_at() {
     // to work while hidden, shown again past the snap-back window, then asked
     let mut slot = running_slot(t0 + Duration::from_secs(1), t0 - Duration::from_secs(60));
     let mut rig = stood(&slot);
-    let shown = slot.state_started_at + Duration::from_millis(SNAP_BACK_MS + PAINT_FRAME_MS);
+    let shown = slot.state_started_at + Duration::from_millis(SNAP_BACK_MS) + PAINT_FRAME;
     let seated = derive_with_routing(&slot, shown, &l, &mut rig.rctx());
     assert_eq!(
         seated,
@@ -432,9 +432,9 @@ fn snap_back_derive_is_idempotent_within_a_frame() {
     let mut rig = RouteRig::new(StubRouter::straight());
     rig.history.set(slot.agent_id, Some(prev0));
 
-    let mut arrived_frame: Option<u64> = None;
-    for i in 0..60u64 {
-        let t = now0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    let mut arrived_frame: Option<u32> = None;
+    for i in 0..60u32 {
+        let t = now0 + PAINT_FRAME * i;
         let p0 = derive_with_routing(&slot, t, &l, &mut rig.rctx());
         let h0 = rig.history.last_drawn(slot.agent_id);
         if arrived_frame.is_none() && matches!(p0, Some(Pose::SeatedTyping | Pose::SeatedIdle)) {
@@ -478,8 +478,8 @@ fn wander_derive_is_idempotent_within_a_frame() {
     let mut rig = RouteRig::new(AStarRouter::new());
     rig.router.new_layout(l.corridor);
 
-    for i in 0..200u64 {
-        let t = now0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 0..200u32 {
+        let t = now0 + PAINT_FRAME * i;
         let a0 = character_top_left(&slot, &l, t, &mut rig.rctx());
         for k in 1..4 {
             let ak = character_top_left(&slot, &l, t, &mut rig.rctx());
@@ -506,10 +506,10 @@ fn snap_back_long_distance_renders_past_window_by_physics() {
     rig.history.set(slot.agent_id, Some(prev));
 
     let (mut walking_after_window, mut arrived) = (false, false);
-    for i in 0..90u64 {
-        let t = now0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 0..90u32 {
+        let t = now0 + PAINT_FRAME * i;
         match derive_with_routing(&slot, t, &l, &mut rig.rctx()) {
-            Some(Pose::Walking { .. }) if i * PAINT_FRAME_MS > SNAP_BACK_MS => {
+            Some(Pose::Walking { .. }) if PAINT_FRAME * i > Duration::from_millis(SNAP_BACK_MS) => {
                 walking_after_window = true
             }
             Some(Pose::Walking { .. }) => {}
@@ -1059,7 +1059,7 @@ fn exit_uses_commute_speed_faster_than_wander() {
 /// pose-type boundary, under any desk↔waypoint teleport on this layout.
 const MAX_FRAME_STEP_PX: i32 = 20;
 
-/// Step `slot` for `frames` frames of [`PAINT_FRAME_MS`], sampling
+/// Step `slot` for `frames` frames of [`PAINT_FRAME`], sampling
 /// `character_top_left` against a real `AStarRouter`. Returns
 /// `(max_chebyshev_step, walking_frame_count)`. `churn` toggles an interior
 /// obstacle every other frame to force A* cache invalidation.
@@ -1067,7 +1067,7 @@ fn max_top_left_step(
     slot: &AgentSlot,
     l: &SceneLayout,
     start: SystemTime,
-    frames: u64,
+    frames: u32,
     churn: bool,
 ) -> (i32, usize) {
     use crate::pathfind::AStarRouter;
@@ -1085,7 +1085,7 @@ fn max_top_left_step(
     let mut max_step = 0i32;
     let mut walking = 0usize;
     for i in 0..frames {
-        let now = start + Duration::from_millis(i * PAINT_FRAME_MS);
+        let now = start + PAINT_FRAME * i;
         if churn {
             rig.overlay.clear();
             if i % 2 == 0 {
@@ -1248,8 +1248,8 @@ fn wander_legs_approach_the_desk_via_an_allowed_side_not_through_the_front() {
 
     let (mut saw_out, mut saw_back) = (false, false);
     let mut seen_ends: Vec<(Point, Point)> = Vec::new();
-    for i in 0..6000u64 {
-        let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 0..6000u32 {
+        let t = now + PAINT_FRAME * i;
         let _ = derive_with_routing(&slot, t, &l, &mut rig.rctx());
         let Some(snap) = rig
             .walks
@@ -1407,8 +1407,8 @@ fn wander_interrupted_by_running_does_not_teleport() {
 
     let mut last_pos = seated;
     let mut flip_frame = None;
-    for i in 0..1500u64 {
-        let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 0..1500u32 {
+        let t = now + PAINT_FRAME * i;
         if let Some(a) = character_top_left(&idle, &l, t, &mut rig.rctx()) {
             let d = (i32::from(a.x) - i32::from(seated.x))
                 .abs()
@@ -1430,13 +1430,13 @@ fn wander_interrupted_by_running_does_not_teleport() {
                 kind: ToolKind::Edit,
             }),
         },
-        state_started_at: now + Duration::from_millis(flip_frame * PAINT_FRAME_MS),
+        state_started_at: now + PAINT_FRAME * flip_frame,
         ..idle.clone()
     };
     let mut prev = last_pos;
     let mut max_step = 0i32;
     for i in (flip_frame + 1)..(flip_frame + 46) {
-        let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
+        let t = now + PAINT_FRAME * i;
         if let Some(a) = character_top_left(&running, &l, t, &mut rig.rctx()) {
             let step = (i32::from(a.x) - i32::from(prev.x))
                 .abs()
@@ -1472,16 +1472,16 @@ fn floor_offscreen_then_resume_does_not_replay() {
     let mut rig = RouteRig::new(AStarRouter::new());
     rig.router.new_layout(l.corridor);
 
-    for i in 0..60u64 {
-        let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 0..60u32 {
+        let t = now + PAINT_FRAME * i;
         let _ = character_top_left(&slot, &l, t, &mut rig.rctx());
     }
 
     // Frames 60..1000 are NOT rendered — the off-screen gap.
     let mut prev: Option<Point> = None;
     let mut max_step = 0i32;
-    for i in 1000..1120u64 {
-        let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 1000..1120u32 {
+        let t = now + PAINT_FRAME * i;
         if let Some(a) = character_top_left(&slot, &l, t, &mut rig.rctx()) {
             if let Some(p) = prev {
                 let step = (i32::from(a.x) - i32::from(p.x))
@@ -1533,8 +1533,8 @@ fn exit_while_wandering_does_not_teleport_to_desk() {
     let mut away_frame = None;
     // Several wander cycles' worth of frames, so one near-desk cycle
     // pick can't starve the away-detection.
-    for i in 0..3000u64 {
-        let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 0..3000u32 {
+        let t = now + PAINT_FRAME * i;
         if let Some(a) = character_top_left(&idle, &l, t, &mut rig.rctx()) {
             last = a;
             let d = (i32::from(a.x) - i32::from(seat.x))
@@ -1552,12 +1552,12 @@ fn exit_while_wandering_does_not_teleport_to_desk() {
     }
     let away_frame = away_frame.expect("agent should walk away from desk within 100 s");
 
-    let exit_at = now + Duration::from_millis(away_frame * PAINT_FRAME_MS);
+    let exit_at = now + PAINT_FRAME * away_frame;
     let exiting = AgentSlot {
         exiting_at: Some(exit_at),
         ..idle.clone()
     };
-    let t_next = exit_at + Duration::from_millis(PAINT_FRAME_MS);
+    let t_next = exit_at + PAINT_FRAME;
     let first_exit = character_top_left(&exiting, &l, t_next, &mut rig.rctx()).expect("exit pose");
     let jump = (i32::from(first_exit.x) - i32::from(last.x))
         .abs()
@@ -1569,8 +1569,8 @@ fn exit_while_wandering_does_not_teleport_to_desk() {
 
     let mut prev = first_exit;
     let mut max_step = 0i32;
-    for i in 2..200u64 {
-        let t = exit_at + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 2..200u32 {
+        let t = exit_at + PAINT_FRAME * i;
         match character_top_left(&exiting, &l, t, &mut rig.rctx()) {
             Some(a) => {
                 let step = (i32::from(a.x) - i32::from(prev.x))
@@ -1652,7 +1652,7 @@ impl Hand {
                 crate::layout::Viewport::full(160, 96),
             )
             .expect("lays out");
-        self.now += Duration::from_millis(PAINT_FRAME_MS);
+        self.now += PAINT_FRAME;
         let idx = stepped
             .frame
             .agents
@@ -1843,8 +1843,7 @@ fn an_agent_lifted_as_it_comes_back_from_an_exit_never_resumes_the_walk_out() {
     slot.state_started_at = back;
     hand.lift();
     // Past the walk out's end, so a replay of it re-enters from the door.
-    let grace = pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW.as_millis() as u64;
-    for _ in 0..grace / PAINT_FRAME_MS {
+    for _ in 0..frames_in(pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW) {
         hand.paint();
     }
     hand.drop_it();
@@ -2067,7 +2066,7 @@ fn frozen_leg_anchor_continuous_across_router_shape_change() {
     // ~40% of the frozen entry duration — mid-walk, where A and B diverge most.
     let entry_id = entry_slot(now).agent_id;
     let dur = walk_profile(octile_path_len(&a).max(1), WalkIntent::Entry, entry_id).duration_ms;
-    let flip_frame = ((dur * 2 / 5) / PAINT_FRAME_MS).max(2);
+    let flip_frame = frames_in(Duration::from_millis(dur * 2 / 5)).max(2);
 
     let mut rig = RouteRig::new(FlipRouter {
         flipped: false,
@@ -2082,7 +2081,7 @@ fn frozen_leg_anchor_continuous_across_router_shape_change() {
             rig.router.flipped = true;
         }
         let slot = entry_slot(now - Duration::from_millis(200));
-        let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
+        let t = now + PAINT_FRAME * i;
         if let Some(Pose::Walking { segment, .. }) =
             derive_with_routing(&slot, t, &l, &mut rig.rctx())
         {
@@ -2129,8 +2128,8 @@ fn multiple_agents_share_overlay_without_teleport() {
     let mut prev: HashMap<AgentId, Point> = HashMap::new();
     let mut max_step = 0i32;
 
-    for i in 0..700u64 {
-        let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
+    for i in 0..700u32 {
+        let t = now + PAINT_FRAME * i;
         // Rebuild the shared overlay as the pixel pass does — this is the churn
         // that re-routes the other walkers.
         rig.overlay.clear();
@@ -2564,7 +2563,7 @@ fn under_still_no_walk_is_drawn() {
         rig.motion = motion;
         (walk.before)(&mut rig);
         (0..)
-            .map(|i| t0 + Duration::from_millis(i * PAINT_FRAME_MS))
+            .map(|i| t0 + PAINT_FRAME * i)
             .take_while(|now| *now < walk.counted.end)
             .any(|now| {
                 let pose = derive_with_routing(&(walk.slot)(now), now, &l, &mut rig.rctx());
@@ -2617,7 +2616,7 @@ fn an_exit_after_an_instant_walk_back_starts_at_the_desk() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let slot = tripper(t0);
     let id = slot.agent_id;
-    let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    let at = |i: u32| t0 + PAINT_FRAME * i;
     let mut rig = RouteRig::new(StubRouter::straight());
     let out = (0..3_000)
         .find(|&i| {
@@ -2659,7 +2658,7 @@ fn a_wander_under_way_when_still_comes_on_finishes_then_lands_home() {
     let l = layout();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let slot = tripper(t0);
-    let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    let at = |i: u32| t0 + PAINT_FRAME * i;
     let walking = |pose: &Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
     let mut rig = RouteRig::new(StubRouter::straight());
     let id = slot.agent_id;
@@ -2696,7 +2695,7 @@ fn a_walk_back_is_timed_as_it_sets_off() {
     let l = layout();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let slot = tripper(t0);
-    let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
+    let at = |i: u32| t0 + PAINT_FRAME * i;
     let walking = |pose: &Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
     let mut rig = RouteRig::new(StubRouter::straight());
     let id = slot.agent_id;
@@ -2734,8 +2733,8 @@ fn full_after_a_stretch_of_still_replays_no_overdue_wander() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let slot = tripper(t0);
     let id = slot.agent_id;
-    let at = |i: u64| t0 + Duration::from_millis(i * PAINT_FRAME_MS);
-    let frames_in = |ms: u64| ms / PAINT_FRAME_MS;
+    let at = |i: u32| t0 + PAINT_FRAME * i;
+    let frames_in_ms = |ms: u64| frames_in(Duration::from_millis(ms));
     let phase = |rig: &RouteRig<StubRouter>| std::mem::discriminant(&rig.walks[&id].wander.phase);
     let mut full = RouteRig::new(StubRouter::straight());
     let back = (0..6_000)
@@ -2747,18 +2746,19 @@ fn full_after_a_stretch_of_still_replays_no_overdue_wander() {
             )
         })
         .expect("premise: it trips under Full and walks back");
-    let at_waypoint = back - frames_in(500)..back + frames_in(6_000);
+    let at_waypoint = back - frames_in_ms(500)..back + frames_in_ms(6_000);
     assert!(
-        (at_waypoint.end - at_waypoint.start) * PAINT_FRAME_MS < STALE_RESUME_GAP_BASE_MS,
+        PAINT_FRAME * (at_waypoint.end - at_waypoint.start)
+            < Duration::from_millis(STALE_RESUME_GAP_BASE_MS),
         "premise: shorter than any stale resume"
     );
-    let seated = 0..frames_in(10 * seated_dwell_ms(id));
+    let seated = 0..frames_in_ms(10 * seated_dwell_ms(id));
 
     for still in [at_waypoint, seated] {
         let mut rig = RouteRig::new(StubRouter::straight());
         let mut changes = 0;
         let mut last = None;
-        for i in 0..still.end + frames_in(1_000) {
+        for i in 0..still.end + frames_in_ms(1_000) {
             rig.motion = if still.contains(&i) {
                 Motion::Still
             } else {

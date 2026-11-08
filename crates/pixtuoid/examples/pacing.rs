@@ -238,7 +238,7 @@ fn run(
     r.set_motion(case.motion);
     let start = start_for(case.motion)?;
     let scene = office(start);
-    // By frame index: `tick` is a truncated third of a second, so no multiple
+    // By frame index: `PAINT_FRAME` is truncated to whole ns, so no multiple
     // of it lands exactly on a whole second.
     let frame_at = |d: Duration| d.as_nanos() / tick.as_nanos();
     let frames = frame_at(SCENARIO);

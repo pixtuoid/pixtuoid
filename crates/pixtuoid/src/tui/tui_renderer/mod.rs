@@ -397,12 +397,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.jank.finish(std::time::Instant::now());
     }
 
-    /// The interval the loop now schedules frames at: what a frame's pacing
-    /// is judged against.
-    pub(crate) fn scheduled_every(&mut self, interval: std::time::Duration) {
-        self.jank.scheduled_every(interval);
-    }
-
     /// The next frame is the one the loop's clock scheduled for `at`
     /// ([`crate::jank::Jank::due_at`]).
     pub(crate) fn due_at(&mut self, at: std::time::Instant) {

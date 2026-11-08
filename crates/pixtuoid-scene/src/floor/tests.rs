@@ -1,6 +1,6 @@
 use super::office::{PAST_THE_TURN, REST_TICK};
 use super::*;
-use crate::anim::Motion;
+use crate::anim::{Motion, frames_in};
 use crate::character::test_support::make_slot;
 use crate::layout::Viewport;
 use pixtuoid_core::id::AgentId;
@@ -496,15 +496,15 @@ fn light_resets_vacant_since_when_repopulated() {
 #[test]
 fn light_eases_from_the_debounces_end_however_long_since_drawn() {
     let fades_at = t0() + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS);
-    let level_drawn_before = |before: u64| {
+    let level_drawn_before = |before: Duration| {
         let mut dim = VacancyDim::new();
         dim.tick(true, t0());
-        dim.tick(true, fades_at - Duration::from_millis(before));
+        dim.tick(true, fades_at - before);
         dim.tick(true, fades_at + PAST_THE_TURN)
     };
     assert_eq!(
-        level_drawn_before(crate::anim::PAINT_FRAME_MS),
-        level_drawn_before(crate::anim::FULL_TICK_MS)
+        level_drawn_before(FRAME),
+        level_drawn_before(Duration::from_millis(crate::anim::FULL_TICK_MS))
     );
 }
 
@@ -577,9 +577,9 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
     ]
     .map(|(scene, floor)| {
         let mut session = FloorSession::new(Arc::clone(&pack));
-        (0..3 * VacancyDim::VACANCY_DEBOUNCE_MS / crate::anim::PAINT_FRAME_MS)
+        (0..frames_in(Duration::from_millis(3 * VacancyDim::VACANCY_DEBOUNCE_MS)))
             .map(|i| {
-                let now = t0() + FRAME * i as u32;
+                let now = t0() + FRAME * i;
                 let world = FloorInputs {
                     scene: &scene,
                     now,
@@ -1333,7 +1333,7 @@ fn neon_mood(running: usize, requires_action: usize, idle: usize) -> crate::neon
 const ROOM_LIT: bool = false;
 const ROOM_DIMMED: bool = true;
 /// A live painter's frame tick — well under the shortest stutter flash.
-const FRAME: Duration = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+const FRAME: Duration = crate::anim::PAINT_FRAME;
 
 #[test]
 fn neon_first_tick_snaps_to_its_target() {
@@ -1558,9 +1558,8 @@ fn neon_a_starved_tube_holds_each_flash_and_dark_the_floor() {
         };
         let mut neon = NeonState::new();
         let mut runs: Vec<(bool, u64)> = Vec::new();
-        let frames = CYCLES * NeonState::STUTTER_MS * pace / FRAME.as_millis() as u64;
-        for n in 0..frames {
-            let timing = motion.timing(in_stutter_cycle(0) + FRAME * n as u32);
+        for n in 0..frames_in(Duration::from_millis(CYCLES * NeonState::STUTTER_MS * pace)) {
+            let timing = motion.timing(in_stutter_cycle(0) + FRAME * n);
             let lit = neon.tick(neon_mood(0, 0, 0), ROOM_DIMMED, timing) == NeonLevels::FLASH;
             let loop_ms = timing.beat.ms();
             let in_window = NeonState::STUTTER_FLASHES_MS
@@ -1611,14 +1610,13 @@ fn neon_records_the_catch_it_draws() {
 fn neon_a_starved_tube_flashes_at_most_three_times_a_second() {
     use crate::anim::{PHOTOSENSITIVE_FLASHES_PER_SECOND, most_flashes_in_a_second};
     const CYCLES: u64 = 2;
-    let frame_ms = FRAME.as_millis() as u64;
     for motion in Motion::ALL {
         let mut neon = NeonState::new();
         let span = CYCLES * NeonState::STUTTER_MS * motion.pace().unwrap_or(1);
-        let samples = (0..span / frame_ms).map(|n| {
-            let timing = motion.timing(in_stutter_cycle(0) + FRAME * n as u32);
+        let samples = (0..frames_in(Duration::from_millis(span))).map(|n| {
+            let timing = motion.timing(in_stutter_cycle(0) + FRAME * n);
             let lit = neon.tick(neon_mood(0, 0, 0), ROOM_DIMMED, timing) == NeonLevels::FLASH;
-            (n * frame_ms, if lit { 1.0 } else { 0.0 })
+            ((FRAME * n).as_millis() as u64, if lit { 1.0 } else { 0.0 })
         });
         let most = most_flashes_in_a_second(samples);
         assert!(
@@ -1891,7 +1889,7 @@ fn both_painters_paint_one_frame_per_beat() {
 fn every_resting_wait_stays_under_the_signs_fade() {
     // on a turn of every tier's beat, where its wait is longest
     let t0 = crate::localclock::at_hour(12);
-    let late = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+    let late = FRAME;
     let fade = Duration::from_millis(u64::from(NeonState::FADE_MS));
     for motion in Motion::ALL {
         let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
@@ -1947,7 +1945,6 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         slot.arrived_at = Some(t0);
     }
     let empty = make_scene(0, 8);
-    let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
     let switch = Duration::from_secs(2);
     // a room of typists, then one turns to the user: the sign fades to its
     // alert while nobody walks
@@ -1991,7 +1988,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
     // resting paint there, which the sparse office sleeps through as a painter
     // called away does: the walk back or the exit still starts where the
     // agent was last drawn.
-    let frames = |from: SystemTime| (0..).map(move |tick| from + tick * frame);
+    let frames = |from: SystemTime| (0..).map(move |tick| from + tick * FRAME);
     // A BUDGET for a wander to reach a waypoint it stays at, not part of the
     // assertion: two of the longest wander cycles.
     let cycles = (idling.agents.keys())
@@ -1999,7 +1996,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         .max()
         .expect("agents");
     let beat = Duration::from_millis(crate::anim::CALM_TICK_MS);
-    let gap_of = |id| Duration::from_millis(crate::pose::stale_resume_gap_ms(id)) + frame;
+    let gap_of = |id| Duration::from_millis(crate::pose::stale_resume_gap_ms(id)) + FRAME;
     let stands_long = |idle: AgentId| {
         let mut alone = idling.clone();
         for (id, slot) in &mut alone.agents {
@@ -2038,7 +2035,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         .expect("an agent idle alone stands at a waypoint past its gap");
     let paint_after = |turn: SystemTime| {
         let since = (turn + PAST_THE_TURN).duration_since(t0).expect("after t0");
-        t0 + frame * since.as_millis().div_ceil(frame.as_millis()) as u32
+        t0 + FRAME * since.as_nanos().div_ceil(FRAME.as_nanos()) as u32
     };
     let turn = at_waypoint
         + Motion::Calm
@@ -2048,7 +2045,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
     let prompt = resting_paint + gap_of(dweller);
     let prompt_at = prompt.duration_since(t0).expect("after t0");
     let overslept = Some((
-        (resting_paint - frame)
+        (resting_paint - FRAME)
             .duration_since(t0)
             .expect("after t0"),
         prompt_at,
@@ -2159,10 +2156,10 @@ fn a_frame_holds_for_the_wait_its_office_names() {
             let mut sparse_due = t0;
             let mut held: Option<(SystemTime, Vec<Rgb>)> = None;
             let (mut slept, mut set_off, mut ticks) = (0, false, 0);
-            while ticks * frame < case.window {
-                let now = t0 + ticks * frame;
-                let fed = ticks * frame >= case.switch;
-                let feed = fed && (ticks == 0 || (ticks - 1) * frame < case.switch);
+            while ticks * FRAME < case.window {
+                let now = t0 + ticks * FRAME;
+                let fed = ticks * FRAME >= case.switch;
+                let feed = fed && (ticks == 0 || (ticks - 1) * FRAME < case.switch);
                 if feed {
                     held = None;
                 }
@@ -2180,7 +2177,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
                     assert!(
                         *held_px == px,
                         "{name} {look:?}: the frame moved before its wait ran out, at {} ms",
-                        (ticks * frame).as_millis()
+                        (ticks * FRAME).as_millis()
                     );
                 }
                 // painted at the first frame its wait or a feed reaches, as
@@ -2189,9 +2186,9 @@ fn a_frame_holds_for_the_wait_its_office_names() {
                     assert!(
                         draw(&mut sparse) == px,
                         "{name} {look:?}: painted only when it said, it drew another frame at {} ms",
-                        (ticks * frame).as_millis()
+                        (ticks * FRAME).as_millis()
                     );
-                    let due = now + sparse.until_next_paint(now).unwrap_or(frame);
+                    let due = now + sparse.until_next_paint(now).unwrap_or(FRAME);
                     sparse_due = match case.asleep {
                         Some((from, until)) if (t0 + from..t0 + until).contains(&due) => t0 + until,
                         _ => due,
@@ -2337,8 +2334,8 @@ fn under_still_a_reading_and_a_petting_hold_their_frame() {
     let floor = FloorMeta::ground().with_motion(Motion::Still);
     for look in looks() {
         let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
-        let mut frame_at = |ms| {
-            let now = t0 + Duration::from_millis(ms);
+        let mut frame_at = |since: Duration| {
+            let now = t0 + since;
             let pets = (std::slice::from_ref(&cat), Some(&petting));
             render_office_with(&mut office, look, &scene, floor, now, pets);
             office
@@ -2348,9 +2345,9 @@ fn under_still_a_reading_and_a_petting_hold_their_frame() {
                 .as_slice()
                 .to_vec()
         };
-        let first = frame_at(crate::anim::PAINT_FRAME_MS);
+        let first = frame_at(FRAME);
         assert!(
-            first == frame_at(crate::token_meter::SHEET_FALL_MS - 1),
+            first == frame_at(Duration::from_millis(crate::token_meter::SHEET_FALL_MS - 1)),
             "{look:?}: the frame moved"
         );
     }
@@ -2391,7 +2388,7 @@ fn under_still_a_lived_in_room_waits_the_rest_tick() {
         floor_idx: 0,
     };
     let floor = FloorMeta::ground().with_motion(Motion::Still);
-    let now = t0 + Duration::from_millis(crate::anim::PAINT_FRAME_MS);
+    let now = t0 + FRAME;
     for (case, scene, petting) in [
         ("a turn just ended", &turn_ended, None),
         ("a gateway just came up", &gateway_up, None),
@@ -3159,12 +3156,11 @@ fn frame_at(
 #[test]
 fn the_elevator_opens_for_a_walk_through_it_across_a_tier_change() {
     let scene = make_scene(1, 4);
-    let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
     let pack = Arc::new(crate::pack::test_office());
     let door = |first: Motion, then: Motion| {
         let mut session = FloorSession::new(Arc::clone(&pack));
-        frame_at(&mut session, &scene, first, t0() + frame);
-        frame_at(&mut session, &scene, then, t0() + 10 * frame).door_frame
+        frame_at(&mut session, &scene, first, t0() + FRAME);
+        frame_at(&mut session, &scene, then, t0() + 10 * FRAME).door_frame
     };
     assert_ne!(
         door(Motion::Full, Motion::Full),
@@ -3260,10 +3256,9 @@ fn calm_walks_as_full_does() {
         FloorSession::new(Arc::clone(&pack)),
         FloorSession::new(pack),
     );
-    let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
     let mut walked = false;
     for i in 0..200 {
-        let now = t0() + frame * i;
+        let now = t0() + FRAME * i;
         let scene = if now < exit { &arriving } else { &leaving };
         let poses = frame_at(&mut full, scene, Motion::Full, now).poses;
         assert_eq!(

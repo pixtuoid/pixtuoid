@@ -2604,12 +2604,11 @@ fn sim_step_keeps_the_sign_lit_through_a_gap_in_a_room_that_once_dimmed() {
     let empty = SceneState::uniform(16);
     let coffee = std::collections::HashMap::new();
     let mut owned = OwnedSimStores::new();
-    let frame = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
     let mut now = now0;
     let mut run = |scene: &SceneState, ms: u64| {
         let mut last = None;
-        for _ in 0..ms / frame.as_millis() as u64 {
-            now += frame;
+        for _ in 0..crate::anim::frames_in(Duration::from_millis(ms)) {
+            now += crate::anim::PAINT_FRAME;
             last = Some(
                 sim_step(
                     &mut owned.stores(),

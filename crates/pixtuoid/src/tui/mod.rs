@@ -516,11 +516,9 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
 
-    let tick = pixtuoid_scene::anim::PAINT_FRAME;
-    renderer.scheduled_every(tick);
     let mut fired = None;
     let result: Result<()> = (async {
-        let mut frames = frame_clock(tick);
+        let mut frames = frame_clock(pixtuoid_scene::anim::PAINT_FRAME);
         let mut events = EventStream::new();
         let mut snapshot = scene_rx.borrow().clone();
         let mut now = ui.now();

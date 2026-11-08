@@ -15,6 +15,8 @@ use pixtuoid_core::SceneState;
 use pixtuoid_core::harness::{DRIVEN_DESKS, Drive, Reach};
 use pixtuoid_core::source::daemon::apply_presence;
 use pixtuoid_core::source::registry;
+use pixtuoid_scene::anim::PAINT_FRAME;
+use pixtuoid_scene::floor::VacancyDim;
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pack::load_bundled_pack;
 use pixtuoid_scene::theme::NORMAL;
@@ -68,15 +70,14 @@ fn settled_pixels(scene: &SceneState, cols: u16, rows: u16, now: SystemTime) -> 
     // diff would stop being the agent's paint alone.
     const SETTLE_FRAMES: usize = 30;
     const _: () = assert!(
-        SETTLE_FRAMES as u64 * pixtuoid_scene::anim::PAINT_FRAME_MS
-            < pixtuoid_scene::floor::VacancyDim::VACANCY_DEBOUNCE_MS
+        PAINT_FRAME.as_nanos() * (SETTLE_FRAMES as u128)
+            < Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS).as_nanos()
     );
-    const FRAME_STEP: Duration = Duration::from_millis(pixtuoid_scene::anim::PAINT_FRAME_MS);
     let mut r = new_renderer(cols, rows);
     let mut t = now;
     for _ in 0..SETTLE_FRAMES {
         r.render(scene, t).expect("render office");
-        t += FRAME_STEP;
+        t += PAINT_FRAME;
     }
     r.buf()
         .expect("a frame")

@@ -1291,7 +1291,7 @@ mod tests {
 
         agents.push(running_on("/d/f1-new.jsonl", 1, cap));
         let scene = scene_with(agents.clone(), cap);
-        now += std::time::Duration::from_millis(pixtuoid_scene::anim::PAINT_FRAME_MS);
+        now += pixtuoid_scene::anim::PAINT_FRAME;
         renderer.render(
             cutaway(Size { w: 160, h: 96 }),
             WindowFrame {
@@ -1317,7 +1317,7 @@ mod tests {
 
         agents.push(running_on("/d/f0-new.jsonl", 0, 1));
         let scene = scene_with(agents, cap);
-        now += std::time::Duration::from_millis(pixtuoid_scene::anim::PAINT_FRAME_MS);
+        now += pixtuoid_scene::anim::PAINT_FRAME;
         renderer.render(
             cutaway(Size { w: 160, h: 96 }),
             WindowFrame {
