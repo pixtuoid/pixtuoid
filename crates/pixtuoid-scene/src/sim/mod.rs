@@ -914,14 +914,13 @@ pub(crate) fn character_effects(
     out
 }
 
-/// The cap `agent` wears on the figure `p` draws, where they are a subagent:
-/// its brim on the base art's head mark, the brow, in their team's ink.
+/// [`team_cap`] on the figure `p` draws, its brim on the base art's head mark,
+/// the brow.
 pub(crate) fn cap_for(
     p: &CharacterPlacement,
     agent: &AgentSlot,
     pack: &OfficeArt,
 ) -> Option<Effect> {
-    let lead = agent.parent_id?;
     let art = crate::pack::densest_frame(
         pack,
         p.anim_name,
@@ -929,6 +928,7 @@ pub(crate) fn cap_for(
         crate::render_scale::RenderScale::ONE,
     );
     let head = art.head?;
+    let cap = team_cap(agent, pack, head.view, p.flip_x)?;
     let x = if p.flip_x {
         art.logical.0 - 1 - head.x
     } else {
@@ -938,15 +938,22 @@ pub(crate) fn cap_for(
         x: p.top_left.x + x,
         y: p.top_left.y + head.y,
     };
-    Some(effects::subagent_cap(
-        brow,
-        effects::Cap {
-            ink: crate::character::cap_ink(lead),
-            line: pack.inner().character_outline(),
-            view: head.view,
-            flip: p.flip_x,
-        },
-    ))
+    Some(effects::subagent_cap(brow, cap))
+}
+
+/// The cap `agent` wears where they are a subagent, in their team's ink.
+pub(crate) fn team_cap(
+    agent: &AgentSlot,
+    pack: &OfficeArt,
+    view: crate::sprite::HeadView,
+    flip: bool,
+) -> Option<effects::Cap> {
+    Some(effects::Cap {
+        ink: crate::character::cap_ink(agent.parent_id?),
+        line: pack.inner().character_outline(),
+        view,
+        flip,
+    })
 }
 
 /// The upright seated pose. Each seated pose is a base

@@ -37,6 +37,49 @@ pub(crate) enum Head {
     Dressed { crest: ArtPoint, brow: Brow },
 }
 
+impl Head {
+    /// The head of the figure `key` draws, its frame `w` logical columns wide
+    /// with its top-left at `at` and its base art's head at `mark`: its mark's
+    /// column, turned with the frame, a dressed frame's on its crest and its
+    /// brow on its mark's row, the base art's on its top row.
+    pub(crate) fn of(
+        key: &crate::character::CharacterKey,
+        (w, at, mark): (u16, crate::layout::Point, Option<crate::sprite::HeadMark>),
+    ) -> Option<Self> {
+        let d = key.frame.density.get();
+        let column = |x: u16, d: i32| {
+            let x = i32::from(x);
+            let frame_w = i32::from(w) * d;
+            i32::from(at.x) * d + if key.frame.flip_x { frame_w - 1 - x } else { x }
+        };
+        match key.dress.as_ref() {
+            Some(dress) => {
+                let d = i32::from(d);
+                let x = column(dress.head.x, d);
+                let row = |y: i32| ArtPoint {
+                    x,
+                    y: i32::from(at.y) * d + y,
+                };
+                Some(Head::Dressed {
+                    crest: row(dress.crest),
+                    brow: Brow {
+                        at: row(i32::from(dress.head.y)),
+                        reach: dress.reach,
+                        view: dress.head.view,
+                    },
+                })
+            }
+            None if d == 1 => mark.map(|m| {
+                Head::Base(ArtPoint {
+                    x: column(m.x, 1),
+                    y: i32::from(at.y),
+                })
+            }),
+            None => None,
+        }
+    }
+}
+
 /// A dressed head's brow on the art grid: its mark, the columns it is drawn
 /// across there ([`Dress::reach`](crate::character::Dress::reach)) and the view
 /// it is seen from, which a cap there takes its shape from.
@@ -251,7 +294,7 @@ const CAP_SHADED_COLUMNS: i32 = 2;
 /// `cap` with its brim on `brow`, as wide as the head is drawn there: its
 /// crown lit on top and west and shaded east, ringed in its line as a dressed
 /// figure is, and turned with its figure.
-fn cap_look(cap: Cap, brow: Brow, emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32)) {
+pub(crate) fn cap_look(cap: Cap, brow: Brow, emit: &mut impl FnMut(ArtPoint, i32, Rgb, f32)) {
     let (west, east) = brow.reach;
     let span = |s: f32| {
         let side = |reach: i32| (reach as f32 * s).round() as i32;

@@ -1360,51 +1360,18 @@ fn push_characters(
     carried
 }
 
-/// `c`'s effects on the grid of its figure `key`, `w` logical columns wide
-/// with its frame's top-left at `at` and its base art's head at `mark`.
+/// `c`'s effects on the grid of its figure `key`, which `figure` places as
+/// [`Head::of`](crate::display::effects::Head::of) takes it.
 fn riders(
     c: &crate::sim::CharacterPlacement,
     key: &crate::character::CharacterKey,
-    (w, at, mark): (u16, crate::layout::Point, Option<crate::sprite::HeadMark>),
+    figure: (u16, crate::layout::Point, Option<crate::sprite::HeadMark>),
     scale: RenderScale,
     inks: crate::effects::look::Inks,
 ) -> Vec<crate::display::effects::Riding> {
-    use crate::display::effects::{ArtPoint, Brow, Head};
-    let d = key.frame.density.get();
     let pen =
         Pen::new(scale, key.frame.density).expect("`densest` picks a density dividing `scale`");
-    // A head is its mark's column, turned with the frame: a dressed frame's on
-    // its crest and its brow on its mark's row, the base art's on its top row.
-    let column = |x: u16, d: i32| {
-        let x = i32::from(x);
-        let frame_w = i32::from(w) * d;
-        i32::from(at.x) * d + if key.frame.flip_x { frame_w - 1 - x } else { x }
-    };
-    let head = match key.dress.as_ref() {
-        Some(dress) => {
-            let d = i32::from(d);
-            let x = column(dress.head.x, d);
-            let row = |y: i32| ArtPoint {
-                x,
-                y: i32::from(at.y) * d + y,
-            };
-            Some(Head::Dressed {
-                crest: row(dress.crest),
-                brow: Brow {
-                    at: row(i32::from(dress.head.y)),
-                    reach: dress.reach,
-                    view: dress.head.view,
-                },
-            })
-        }
-        None if d == 1 => mark.map(|m| {
-            Head::Base(ArtPoint {
-                x: column(m.x, 1),
-                y: i32::from(at.y),
-            })
-        }),
-        None => None,
-    };
+    let head = crate::display::effects::Head::of(key, figure);
     c.effects
         .iter()
         .map(|&effect| crate::display::effects::Riding {
