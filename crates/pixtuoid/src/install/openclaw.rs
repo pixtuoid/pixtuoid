@@ -1,7 +1,7 @@
 //! OpenClaw install target — the TWO-OWNERSHIP hybrid: a plugin DIR wholly owned
-//! by pixtuoid (`<openclaw-home>/plugins/pixtuoid/`, the target's `beside` files,
+//! by pixtuoid (`<state-dir>/plugins/pixtuoid/`, the target's `beside` files,
 //! with the shim path baked into `index.js`) PLUS a config merge into
-//! `<openclaw-home>/openclaw.json`; neither alone loads the plugin. The install is a
+//! `<state-dir>/openclaw.json`; neither alone loads the plugin. The install is a
 //! pure `ConfigLock` write: a bare `plugins.load.paths` entry follows the normal
 //! policy for its origin (openclaw `docs/cli/plugins/install.md:318-320` @
 //! v2026.10.1), while `plugins install --link` creates a managed install record that
