@@ -9,7 +9,7 @@ Delete sections that don't apply.
 
 ## Summary
 
-<!-- What this changes and why, and the claims the review should hold the diff to. -->
+<!-- The claims the review should hold the diff to, and their why. -->
 
 ## Related issue
 
