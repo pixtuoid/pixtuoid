@@ -243,7 +243,7 @@ fn run(
     let frames = frame_at(SCENARIO);
     let (mut slid, mut resized) = (false, false);
     let mut out = Vec::new();
-    let pacer = Pacer::new(pace, PAINT_FRAME);
+    let pacer = Pacer::new(pace);
     for n in 0..frames {
         let now = start + PAINT_FRAME * u32::try_from(n)?;
         pacer.wait();
@@ -338,15 +338,13 @@ enum Pace {
 /// Holds each frame of a run to its tick under a [`Pace`].
 struct Pacer {
     pace: Pace,
-    tick: Duration,
     origin: Instant,
 }
 
 impl Pacer {
-    fn new(pace: Pace, tick: Duration) -> Self {
+    fn new(pace: Pace) -> Self {
         Self {
             pace,
-            tick,
             origin: Instant::now(),
         }
     }
@@ -357,10 +355,8 @@ impl Pacer {
             return;
         }
         let since = self.origin.elapsed();
-        let ticks = since.as_nanos().div_ceil(self.tick.as_nanos());
-        let at = self
-            .tick
-            .saturating_mul(u32::try_from(ticks).unwrap_or(u32::MAX));
+        let ticks = since.as_nanos().div_ceil(PAINT_FRAME.as_nanos());
+        let at = PAINT_FRAME.saturating_mul(u32::try_from(ticks).unwrap_or(u32::MAX));
         std::thread::sleep(at.saturating_sub(since));
     }
 }
@@ -379,15 +375,15 @@ fn ms(d: Duration) -> f64 {
 
 /// Each frame's interval under the production loop today: render, then a full
 /// paint interval of polling.
-fn sleep_loop(renders: &[Duration], tick: Duration) -> Vec<Duration> {
-    renders.iter().map(|&r| r + tick).collect()
+fn sleep_loop(renders: &[Duration]) -> Vec<Duration> {
+    renders.iter().map(|&r| r + PAINT_FRAME).collect()
 }
 
 /// Each frame's interval under a deadline-paced loop: the next frame starts at
 /// the previous deadline plus a paint interval, or as soon as the render ends
 /// when it overran, re-anchoring there rather than bursting to catch up.
-fn deadline_loop(renders: &[Duration], tick: Duration) -> Vec<Duration> {
-    renders.iter().map(|&r| r.max(tick)).collect()
+fn deadline_loop(renders: &[Duration]) -> Vec<Duration> {
+    renders.iter().map(|&r| r.max(PAINT_FRAME)).collect()
 }
 
 fn stats(xs: &[Duration]) -> serde_json::Value {
@@ -742,7 +738,7 @@ fn hitch(path: &Path) -> Result<()> {
         } else {
             Pace::Paced
         };
-        let pacer = Pacer::new(pace, PAINT_FRAME);
+        let pacer = Pacer::new(pace);
         loop {
             pacer.wait();
             let offset = match run.start {
@@ -919,8 +915,8 @@ fn main() -> Result<()> {
         let total = col(|f| f.total);
         let over =
             total.iter().filter(|&&t| t > PAINT_FRAME).count() as f64 * 100.0 / total.len() as f64;
-        let now_loop = sleep_loop(&total, PAINT_FRAME);
-        let deadline = deadline_loop(&total, PAINT_FRAME);
+        let now_loop = sleep_loop(&total);
+        let deadline = deadline_loop(&total);
         let jitter = |xs: &[Duration]| pct(xs, 95.0).saturating_sub(pct(xs, 50.0));
         let mut bytes: Vec<u64> = frames.iter().map(|f| f.bytes).collect();
         bytes.sort_unstable();
@@ -968,7 +964,7 @@ fn main() -> Result<()> {
         }));
     }
     let (renders, observed, waited) = real_clock(&pack)?;
-    let modeled = sleep_loop(&renders, PAINT_FRAME);
+    let modeled = sleep_loop(&renders);
     let _ = writeln!(
         stdout,
         "\nreal-clock half-block Full (waits on {waited}): interval OBSERVED p50/p95/p99 {:.2}/{:.2}/{:.2} ms vs COMPUTED {:.2}/{:.2}/{:.2} ms",
