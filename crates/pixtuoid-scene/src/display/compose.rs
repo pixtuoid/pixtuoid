@@ -1321,7 +1321,7 @@ fn push_characters(
         let riders = riders(
             c,
             &key,
-            (w, at, base.head),
+            crate::display::effects::Head::of(&key, &base, at),
             scale,
             crate::effects::look::Inks::of(theme),
         );
@@ -1360,18 +1360,16 @@ fn push_characters(
     carried
 }
 
-/// `c`'s effects on the grid of its figure `key`, which `figure` places as
-/// [`Head::of`](crate::display::effects::Head::of) takes it.
+/// `c`'s effects riding `head`, on the grid of the frame `key` draws at `scale`, in `inks`.
 fn riders(
     c: &crate::sim::CharacterPlacement,
     key: &crate::character::CharacterKey,
-    figure: (u16, crate::layout::Point, Option<crate::sprite::HeadMark>),
+    head: Option<crate::display::effects::Head>,
     scale: RenderScale,
     inks: crate::effects::look::Inks,
 ) -> Vec<crate::display::effects::Riding> {
     let pen =
         Pen::new(scale, key.frame.density).expect("`densest` picks a density dividing `scale`");
-    let head = crate::display::effects::Head::of(key, figure);
     c.effects
         .iter()
         .map(|&effect| crate::display::effects::Riding {

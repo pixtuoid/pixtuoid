@@ -77,7 +77,7 @@ impl OfficeArt {
         let cap = base
             .head
             .and_then(|head| team_cap(agent, self, head.view, STANDING.flip_x));
-        let head = Head::of(&key, (base.logical.0, Point { x: 0, y: 0 }, base.head));
+        let head = Head::of(&key, &base, Point { x: 0, y: 0 });
         if let (Some(cap), Some(Head::Dressed { brow, .. })) = (cap, head) {
             cap_look(cap, brow, &mut |at, _, c, _| {
                 // `at` is on the body's grid, `headroom` rows down the canvas.
