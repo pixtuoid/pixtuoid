@@ -107,12 +107,9 @@ async fn serve(
         sink,
     );
 
+    let port = listener.local_addr()?.port();
     let mut out = crate::cli_stdout();
-    writeln!(
-        out,
-        "listening on {}; `pixtuoid pair` lets a device in",
-        listener.local_addr()?
-    )?;
+    writeln!(out, "{}", greeting(local_host(), port))?;
 
     let deaths = health_rx.clone();
     let live = connected.clone();
@@ -125,11 +122,7 @@ async fn serve(
         crate::sources::device_change(&config_path, &live, who, source, on)
     });
     let machine = Machine::new(&machine_name(), Os::here());
-    let _announcement = announce::announce(
-        machine.name(),
-        listener.local_addr()?.port(),
-        &spki_pin(&key),
-    );
+    let _announcement = announce::announce(machine.name(), port, &spki_pin(&key));
     let devices = Devices::new(store, machine, scene, rows, change);
     let slots = Arc::new(Semaphore::new(MAX_CONNS));
     let mut deaths_seen = 0;
@@ -172,6 +165,18 @@ async fn serve(
             }
             signal = &mut quit => return Ok(signal),
         }
+    }
+}
+
+/// What `serve` says once it listens on every interface: the host `pair`
+/// defaults to, else why there is none.
+fn greeting(host: Result<String>, port: u16) -> String {
+    match host {
+        Ok(host) => format!("listening on {host}:{port}; `pixtuoid pair` lets a device in"),
+        Err(why) => format!(
+            "listening on port {port}; no address a device reaches ({why:#}), so `pixtuoid pair` \
+             needs --host"
+        ),
     }
 }
 
@@ -228,7 +233,11 @@ pub(crate) fn pair(host: Option<String>, port: u16, reset: bool) -> Result<()> {
         writeln!(out, "every device is forgotten")?;
         return Ok(());
     }
-    let host = host.map_or_else(local_host, Ok)?;
+    let host = match host {
+        Some(host) => host,
+        None => local_host()
+            .context("pass --host: the name or IPv4 address a device reaches this machine at")?,
+    };
     // Before the code: a typo mustn't cost the owner a code they already printed.
     anyhow::ensure!(is_host(&host), "--host takes a hostname or an IPv4 address");
     let by_address = host.parse::<Ipv4Addr>().is_ok();
@@ -276,37 +285,34 @@ fn qr(link: &str) -> Result<String> {
         .join("\n"))
 }
 
+/// `pair`'s default host and `serve`'s greeting: this Mac's "local (Bonjour)
+/// host name" (scutil(8)).
 #[cfg(target_os = "macos")]
 fn local_host() -> Result<String> {
     let out = std::process::Command::new("/usr/sbin/scutil")
         .args(["--get", "LocalHostName"])
         .output()
         .context("could not ask scutil for this Mac's name")?;
-    anyhow::ensure!(
-        out.status.success(),
-        "this Mac has no local name: pass --host"
-    );
+    anyhow::ensure!(out.status.success(), "this Mac has no local name");
     Ok(format!(
         "{}.local",
         String::from_utf8_lossy(&out.stdout).trim()
     ))
 }
 
-/// The default route's private or link-local IPv4, which a device reaches with
-/// no name service to answer for this machine: the source address of a
-/// datagram to TEST-NET-1, which no route but the default covers (RFC 5737 §4:
-/// "These blocks are not for local use").
+/// `pair`'s default host and `serve`'s greeting: the default route's private or
+/// link-local IPv4, which a device reaches with no name service to answer for
+/// this machine, the source address of a datagram to TEST-NET-1, which no route
+/// but the default covers (RFC 5737 §4: "These blocks are not for local use").
 #[cfg(not(target_os = "macos"))]
 fn local_host() -> Result<String> {
-    const PASS_HOST: &str =
-        "pass --host: the name or IPv4 address a device reaches this machine at";
     const TEST_NET_1: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
-    let source = source_toward(TEST_NET_1).context(PASS_HOST)?;
+    let source = source_toward(TEST_NET_1).context("no default route")?;
     // Winsock may leave the address unset until I/O, which reads as 0.0.0.0
     // (`getsockname`) and fails the range check like any other non-LAN address.
     match source {
         IpAddr::V4(ip) if on_a_local_network(ip) => Ok(ip.to_string()),
-        _ => anyhow::bail!("{PASS_HOST} (the default route has no local-network address)"),
+        _ => anyhow::bail!("the default route has no local-network address"),
     }
 }
 
@@ -364,6 +370,16 @@ mod tests {
         ] {
             assert!(!on_a_local_network(ip.parse().expect("an IP")), "{ip}");
         }
+    }
+
+    /// With no host to give, the greeting says why, and gives the port alone.
+    #[test]
+    fn a_greeting_with_no_host_says_why() {
+        let why = "the default route has no local-network address";
+        let greeting = greeting(Err(anyhow::anyhow!(why)), DEFAULT_PORT);
+        let port_alone = format!("listening on port {DEFAULT_PORT};");
+        assert!(greeting.starts_with(&port_alone), "{greeting}");
+        assert!(greeting.contains(why), "{greeting}");
     }
 
     /// Every runner routes to loopback, and only the `connect` turns the
