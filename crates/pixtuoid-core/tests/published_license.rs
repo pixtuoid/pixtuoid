@@ -3,6 +3,11 @@
 //! symlink to the root one, which `cargo package` flattens to its target
 //! (<https://doc.rust-lang.org/cargo/commands/cargo-package.html>).
 
+// Unix only: a Windows checkout without `core.symlinks` writes the link as a
+// file holding its target path, and the crates publish from release-plz.yml's
+// ubuntu job, where the link is real.
+#![cfg(unix)]
+
 use std::path::Path;
 
 fn manifest(dir: &Path) -> toml::Table {
@@ -12,10 +17,6 @@ fn manifest(dir: &Path) -> toml::Table {
         .expect("parse manifest")
 }
 
-// Unix only: a Windows checkout without `core.symlinks` writes the link as a
-// file holding its target path, and the crates publish from release-plz.yml's
-// ubuntu job, where the link is real.
-#[cfg(unix)]
 #[test]
 fn every_published_crate_carries_the_root_license_text() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
