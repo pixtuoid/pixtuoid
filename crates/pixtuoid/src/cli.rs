@@ -85,7 +85,7 @@ pub(crate) struct SourceIdArgs {
 /// `--json`, for the commands whose output a script reads.
 #[derive(Debug, Clone, Copy, clap::Args)]
 pub(crate) struct JsonArgs {
-    /// Emit machine-readable JSON instead of a table.
+    /// Emit machine-readable JSON instead of text.
     // `global` so `sources` honors it both before and after `set` (`sources
     // --json set …` == `sources set … --json`), the natural Raycast/script form.
     #[arg(long, global = true)]
@@ -107,8 +107,8 @@ pub(crate) enum Cmd {
         max_desks: Option<usize>,
         /// Skip the TUI entirely — useful for CI / scripting.
         ///
-        /// Prints a one-line `agents=[label@desk:state, ...]` summary on each
-        /// change of the scene.
+        /// Prints a one-line `agents=[…] daemons=[…]` summary on each change
+        /// of the scene.
         #[arg(long, default_value_t = false)]
         headless: bool,
         #[command(flatten)]
