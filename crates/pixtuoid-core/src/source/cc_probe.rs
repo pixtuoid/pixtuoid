@@ -68,12 +68,7 @@ pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
                     SHAPE_DRIFT_WARNED.call_once(|| {
                         crate::source::drift::shape_drift(
                             crate::source::claude_code::SOURCE_NAME,
-                            &format!(
-                                "sessions-registry entry {} parses as JSON but `{key}` is \
-                                 missing or mistyped — the registry shape changed upstream; \
-                                 mid-attach liveness degraded to mtime gating",
-                                path.display()
-                            ),
+                            crate::source::drift::Shape::RegistryKey { path: &path, key },
                         );
                     });
                     continue;

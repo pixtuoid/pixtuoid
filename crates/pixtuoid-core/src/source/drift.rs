@@ -67,6 +67,8 @@ impl UnknownDriftKind {
     }
 }
 
+use std::path::Path;
+
 use crate::source::decoder::display_safe;
 
 /// A hook/transcript event we don't handle and that isn't a registered custom
@@ -89,10 +91,40 @@ pub fn unknown_dispatch(source: &str, tool: &str) {
     tracing::warn!(target: TARGET, source = %display_safe(source), kind = <&str>::from(DriftKind::UnknownDispatch), tool = %display_safe(tool));
 }
 
-/// A consumed upstream data SHAPE drifted — a registry/transcript field that
-/// still parses but lost a key we read. `detail` carries the specifics.
-pub fn shape_drift(source: &str, detail: &str) {
-    tracing::warn!(target: TARGET, source = %display_safe(source), kind = <&str>::from(DriftKind::ShapeDrift), detail = %display_safe(detail));
+/// What a [`shape_drift`] breadcrumb reports. Each carries its own fields, so the
+/// message stays a constant and no value is cut to fit another's length.
+#[derive(Debug, Clone, Copy)]
+pub enum Shape<'a> {
+    /// A registry entry parses as JSON, but `key`, which we read, is missing or
+    /// mistyped.
+    RegistryKey { path: &'a Path, key: &'static str },
+    /// A registry file does not parse. `truncated` when the read hit its cap:
+    /// that is ours, not an upstream format change.
+    RegistryUnparsed { path: &'a Path, truncated: bool },
+    /// A SubagentStop's transcript stem is not its prefixed agent id.
+    SubagentStem { stem: &'a str, agent_id: &'a str },
+}
+
+/// A consumed upstream data SHAPE drifted: a registry or transcript value that
+/// still arrives but no longer reads as the shape we decode.
+pub fn shape_drift(source: &str, shape: Shape<'_>) {
+    let source = display_safe(source);
+    let kind = <&str>::from(DriftKind::ShapeDrift);
+    match shape {
+        Shape::RegistryKey { path, key } => tracing::warn!(
+            target: TARGET, source = %source, kind, path = ?path, key,
+            "a registry entry parses, but a key we read is missing or mistyped; liveness falls back to mtime gating"
+        ),
+        Shape::RegistryUnparsed { path, truncated } => tracing::warn!(
+            target: TARGET, source = %source, kind, path = ?path, truncated,
+            "a registry file does not parse; liveness falls back to mtime gating"
+        ),
+        Shape::SubagentStem { stem, agent_id } => tracing::warn!(
+            target: TARGET, source = %source, kind,
+            stem = ?display_safe(stem), agent_id = ?display_safe(agent_id),
+            "a SubagentStop transcript stem is not its prefixed agent id; keying on the stem"
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -108,7 +140,13 @@ mod tests {
             unknown_event("codex", "e");
             missing_field("codex", "e", "f");
             unknown_dispatch("codex", "t");
-            shape_drift("codex", "d");
+            shape_drift(
+                "codex",
+                Shape::SubagentStem {
+                    stem: "s",
+                    agent_id: "a",
+                },
+            );
         });
         for &kind in <DriftKind as strum::VariantArray>::VARIANTS {
             assert!(
@@ -136,7 +174,13 @@ mod tests {
             unknown_event(source, "ev\u{1b}]0;PWNED\u{7}il\u{202e}Z");
             unknown_dispatch(source, "De\u{1b}[31mlegateZ");
             missing_field(source, "to\u{1b}olZ", "na\u{202e}meZ");
-            shape_drift(source, &"x".repeat(1000));
+            shape_drift(
+                source,
+                Shape::SubagentStem {
+                    stem: &"x".repeat(1000),
+                    agent_id: "a\u{202e}b",
+                },
+            );
         });
         for bad in ['\u{1b}', '\u{7}', '\u{202e}'] {
             assert!(
@@ -159,5 +203,31 @@ mod tests {
             !out.contains(&"x".repeat(200)),
             "an uncapped value became an uncapped log line:\n{out}"
         );
+    }
+
+    /// The diagnostic survives a long home path: what drifted, and whether the
+    /// read was cut by our own cap, each ride their own field.
+    #[test]
+    fn a_long_path_never_hides_what_drifted() {
+        let path = std::path::PathBuf::from(format!("/Users/{}/4242.json", "a".repeat(100)));
+        let out = capture(|| {
+            shape_drift(
+                "claude-code",
+                Shape::RegistryKey {
+                    path: &path,
+                    key: "startedAt",
+                },
+            );
+            shape_drift(
+                "grok",
+                Shape::RegistryUnparsed {
+                    path: &path,
+                    truncated: true,
+                },
+            );
+        });
+        assert!(out.contains("key=\"startedAt\""), "{out}");
+        assert!(out.contains("truncated=true"), "{out}");
+        assert!(out.contains(&"a".repeat(100)), "the path is whole:\n{out}");
     }
 }

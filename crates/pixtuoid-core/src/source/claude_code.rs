@@ -150,10 +150,10 @@ pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<Agent
             // Upstream scheme change: hook-FIRST Start registrations go phantom.
             crate::source::drift::shape_drift(
                 SOURCE_NAME,
-                &format!(
-                    "SubagentStop transcript stem `{k}` != prefixed agent_id \
-                         `{prefixed}`; keying on the stem"
-                ),
+                crate::source::drift::Shape::SubagentStem {
+                    stem: k,
+                    agent_id: &prefixed,
+                },
             );
         }
         Ok(Some(vec![AgentEvent::SessionEnd {
