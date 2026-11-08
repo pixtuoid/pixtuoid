@@ -161,15 +161,15 @@ pub struct WanderState {
 /// Walk state for one live agent on one floor.
 #[derive(Debug, Clone)]
 pub struct WalkState {
-    /// The arrival walk, snapshotted once at door-crossing, or a pointer's
-    /// walk home ([`Lifted::Home`]) once that arrives. Carries its own `from`
-    /// because a resurrect that cancels an IN-FLIGHT walkout re-enters from
-    /// wherever the sprite is; a hardcoded door origin teleports it.
+    /// The arrival walk, snapshotted at door-crossing and again on a new layout
+    /// ([`relaid`](Self::relaid)), or a pointer's walk home ([`Lifted::Home`])
+    /// once that arrives. Carries its own `from` because a resurrect that
+    /// cancels an IN-FLIGHT walkout re-enters from wherever the sprite is.
     pub(crate) entry: Option<WalkLeg>,
-    /// The walkout, snapshotted once when `exiting_at` fires. `from` is where
-    /// the sprite actually is (where a pointer's hold lands it, its wander
-    /// position if it was out, else the desk anchor), so the exit doesn't
-    /// teleport to the desk.
+    /// The walkout, snapshotted when `exiting_at` fires and again on a new
+    /// layout. `from` is where a pointer's hold lands it, else where it was last
+    /// drawn walking or at a waypoint (a new layout forgets that), else the desk
+    /// anchor, so the exit doesn't teleport to the desk.
     pub(crate) exit: Option<WalkLeg>,
     /// The state-transition snap-back walk. `from` is the FROZEN origin recorded
     /// when the leg armed, reused every frame so the walk doesn't drift toward
@@ -253,6 +253,16 @@ impl WalkState {
     /// Set down at `at`, to walk home from there.
     pub(crate) fn set_down(&mut self, at: Point) {
         self.lifted = Some(Lifted::Dropped(at));
+    }
+
+    /// On a new layout: fresh, as a floor fitted there directly finds it, but
+    /// for where a pointer holds or set it down, which is the pointer's.
+    pub(crate) fn relaid(&mut self) {
+        let lifted = self.lifted.take().filter(|l| !matches!(l, Lifted::Home(_)));
+        *self = Self {
+            lifted,
+            ..Self::default()
+        };
     }
 }
 
