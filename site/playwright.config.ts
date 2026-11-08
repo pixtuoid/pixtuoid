@@ -25,10 +25,10 @@ export default defineConfig({
     // for the same reason: a squatted port must fail loud, never quietly test
     // old bytes. Readiness stays Playwright's URL poll because Astro's
     // /_astro/status health endpoint is DEV-SERVER-ONLY; `astro preview` 404s it.
-    command: 'node node_modules/astro/bin/astro.mjs preview --port 4321',
-    // Astro backgrounds `preview` under an agentic environment, and a server
-    // that daemonizes reads to Playwright as one that exited early.
-    env: { ASTRO_PREVIEW_BACKGROUND: 'false' },
+    // Under an agent astro daemonizes `preview`, which Playwright reads as an early
+    // exit; `--ignore-lock` keeps it a foreground child (withastro/astro#17903,
+    // node_modules/astro/dist/cli/preview/index.js:42-45).
+    command: 'node node_modules/astro/bin/astro.mjs preview --port 4321 --ignore-lock',
     url: 'http://localhost:4321/',
     reuseExistingServer: false,
     timeout: 30_000,

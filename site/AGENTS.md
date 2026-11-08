@@ -75,8 +75,6 @@ the status endpoint is dev-server only (astro's `core/create-vite.js`, at
 preview` daemonizes too but has nothing to poll), and dev/preview share port
 4321 — stop the daemon before `just site-e2e` (its webServer fails loud on a
 squatted port).
-`npm run lighthouse` needs 4321 AND `collect.previewPort` free: its preview
-moves there so the gzip proxy can take the audited port.
 
 ## Gates
 
@@ -97,11 +95,9 @@ watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
   greens a binary audit that failed one run). Collect URLs pin `?theme=day`
   (otherwise the wall clock picks the palette — half of CI runs would audit
   each). **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
-  doubled collect list. The audit runs THROUGH `startPagesLikeProxy`, which
-  gzips the wasm as GitHub Pages does and `astro preview` doesn't. LCP,
-  `interactive` and `speed-index` are sized at the office's wasm padded to its
-  `just gen-wasm-check` cap, plus run spread (#1124; the first two again for
-  pixtuoid-lofi 0.3, whose code, not its bytes, cost them time).
+  doubled collect list. LCP, `interactive` and `speed-index` are CI's median
+  plus run spread; the office's wasm is fetched by its worker, which
+  Lighthouse's simulation drops, so `just gen-wasm-check` alone gates it (#1124).
 - **Fonts**: WOFF2, `font-display: optional`, loaded before use (a preload;
   the captions' face: OfficeBackdrop's boot) — never `swap` (Ubuntu cold
   visits reflow past the CLS budget; `font-layout.spec.ts` reproduces it).

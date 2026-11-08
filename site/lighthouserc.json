@@ -2,8 +2,6 @@
   "ci": {
     "collect": {
       "startServerCommand": "npm run preview",
-      "previewPort": 4320,
-      "startServerReadyPattern": "http://localhost",
       "startServerReadyTimeout": 20000,
       "numberOfRuns": 5,
       "url": [
@@ -26,10 +24,10 @@
         ],
         "largest-contentful-paint": [
           "error",
-          { "maxNumericValue": 5800, "aggregationMethod": "median" }
+          { "maxNumericValue": 3100, "aggregationMethod": "median" }
         ],
         "speed-index": ["error", { "maxNumericValue": 4300, "aggregationMethod": "median" }],
-        "interactive": ["error", { "maxNumericValue": 5800, "aggregationMethod": "median" }],
+        "interactive": ["error", { "maxNumericValue": 3100, "aggregationMethod": "median" }],
         "total-blocking-time": ["error", { "maxNumericValue": 200, "aggregationMethod": "median" }],
         "cumulative-layout-shift": [
           "error",
