@@ -257,7 +257,7 @@ impl World {
         let port = line
             .split(';')
             .next()
-            .and_then(|addr| addr.rsplit(':').next())
+            .and_then(|addr| addr.rsplit([':', ' ']).next())
             .and_then(|port| port.parse().ok())
             .unwrap_or_else(|| panic!("no port in {line:?}"));
         (server, port)
@@ -552,6 +552,31 @@ fn a_second_server_on_a_port_says_so_and_leaves() {
     assert!(!second.status.success());
     let stderr = String::from_utf8_lossy(&second.stderr);
     assert!(stderr.contains("already running"), "{stderr}");
+}
+
+/// Whatever this machine's network, the greeting never says 0.0.0.0 and agrees
+/// with `pair`'s default: its host, or the port alone when `pair` finds none. It
+/// reads the real network because only running `serve` and `pair` shows they share `local_host`.
+#[test]
+fn the_greeting_names_the_host_pair_defaults_to() {
+    let world = World::new();
+    let (server, port) = world.serve();
+    let greeting = server.line_with("listening on");
+    assert!(!greeting.contains("0.0.0.0"), "{greeting}");
+    let paired = world.run(&["pair", "--port", &port.to_string()]);
+    let greeted = if paired.status.success() {
+        let said = String::from_utf8_lossy(&paired.stdout);
+        let link: PairLink = said
+            .lines()
+            .find(|line| line.starts_with(PAIR_LINK))
+            .expect("pair prints the link")
+            .parse()
+            .expect("a link");
+        format!("listening on {}:{port};", link.host)
+    } else {
+        format!("listening on port {port};")
+    };
+    assert!(greeting.starts_with(&greeted), "{greeting} / {paired:?}");
 }
 
 /// Only a link by address says it can move: a name follows its machine.
