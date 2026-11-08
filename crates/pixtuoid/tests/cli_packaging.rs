@@ -96,7 +96,7 @@ const HOSTILE_THEME: &str = "x\u{1b}[31m\u{202e}";
 /// dir, so the developer's own config.toml plays no part.
 fn refused_run(config: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_pixtuoid"));
-    cmd.args(["--theme", HOSTILE_THEME, "run", "--headless"])
+    cmd.args(["run", "--headless", "--theme", HOSTILE_THEME])
         .env_remove("RUST_LOG")
         .env_remove("PIXTUOID_LOG")
         .env("XDG_CONFIG_HOME", config)

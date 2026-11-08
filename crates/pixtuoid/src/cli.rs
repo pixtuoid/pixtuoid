@@ -20,16 +20,20 @@ pub(crate) struct Cli {
     /// ($RUST_LOG remains the escape hatch for full directive syntax.)
     #[arg(long, global = true, value_enum, default_value = "info")]
     pub log_level: LogLevel,
+}
 
-    #[arg(long, global = true, help = theme_help())]
-    pub theme: Option<String>,
+/// The flags every painter takes, flattened into `run` and `floating`.
+#[derive(Debug, Default, clap::Args)]
+pub(crate) struct PaintArgs {
+    // A `String`, not a typed enum: `config::resolve_theme` is the one place a
+    // theme name is validated.
+    #[arg(long, help = theme_help())]
+    pub(crate) theme: Option<String>,
 }
 
 /// `--theme`'s help text, DERIVED from the `ALL_THEMES` registry rather than
 /// hand-copied: this clap tree is what `--help`, the generated shell completions
-/// AND the packaged man page all render from. The flag stays an untyped
-/// `Option<String>` on purpose — `config::resolve_theme` is the ONE place a theme
-/// name is validated.
+/// AND the packaged man page all render from.
 fn theme_help() -> String {
     let names: Vec<&str> = pixtuoid_scene::theme::ALL_THEMES
         .iter()
@@ -54,13 +58,14 @@ pub(crate) struct LookArgs {
     pub(crate) protocol: Option<crate::graphics::ImageProtocol>,
 }
 
-/// The source-input flags shared VERBATIM by `run` and `floating` (the two
-/// commands that wire sources → reducer → renderer), flattened into both so
-/// they can't drift.
+/// The source-input flags shared VERBATIM by `run`, `floating` and `serve` (the
+/// commands that wire sources → reducer → scene), flattened into each so they
+/// can't drift.
 #[derive(Debug, clap::Args)]
 pub(crate) struct SourceArgs {
-    /// Empty/whitespace is rejected: an explicit override deserves a loud
-    /// answer, and bind("") would strand a relative `.lock` in the CWD.
+    /// Listen for agent hooks on this socket instead of the default.
+    // Empty/whitespace is rejected: an explicit override deserves a loud
+    // answer, and bind("") would strand a relative `.lock` in the CWD.
     #[arg(long, value_parser = parse_nonempty_path, value_hint = clap::ValueHint::FilePath)]
     pub socket: Option<PathBuf>,
 }
@@ -72,9 +77,10 @@ pub(crate) enum Cmd {
         #[command(flatten)]
         source: SourceArgs,
         /// Cap desks per floor, ≥ 1 (auto-computed from terminal size if
-        /// unset). 0 is rejected: it would permanently zero every floor's
-        /// capacity and silently drop every agent (the boot atomics only
-        /// grow via fetch_max, gated on capacity > 0).
+        /// unset).
+        // 0 is rejected: it would permanently zero every floor's capacity and
+        // silently drop every agent (the boot atomics only grow via fetch_max,
+        // gated on capacity > 0).
         #[arg(long, hide = true, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
         max_desks: Option<usize>,
         /// Skip the TUI entirely — useful for CI / scripting.
@@ -84,20 +90,24 @@ pub(crate) enum Cmd {
         headless: bool,
         #[command(flatten)]
         look: LookArgs,
+        #[command(flatten)]
+        paint: PaintArgs,
     },
-    /// Render the live office in a frameless, always-on-top desktop window
-    /// (no TUI). Shares the same source flags as `run`.
+    /// Render the live office in a frameless, always-on-top desktop window.
     Floating {
         #[command(flatten)]
         source: SourceArgs,
+        #[command(flatten)]
+        paint: PaintArgs,
     },
-    /// Serve the office to paired devices on your local network, with no TUI
-    /// needed. Agent status, model, usage, repo names, which agent CLIs you have
-    /// and how each is connected, and the machine's name and OS leave it, never
-    /// paths, prompts, tool input or transcripts, and it announces the machine's
-    /// name and its key's SPKI hash on the network. A paired
-    /// device can also connect or disconnect those CLIs. Nothing listens on a
-    /// network unless this runs.
+    /// Serve the office to paired devices on your local network.
+    ///
+    /// It needs no TUI. Agent status, model, usage, repo names, which agent CLIs
+    /// you have and how each is connected, and the machine's name and OS leave
+    /// it, never paths, prompts, tool input or transcripts, and it announces the
+    /// machine's name and its key's SPKI hash on the network. A paired device can
+    /// also connect or disconnect those CLIs. Nothing listens on a network unless
+    /// this runs.
     #[cfg(feature = "serve")]
     Serve {
         #[command(flatten)]
@@ -126,8 +136,9 @@ pub(crate) enum Cmd {
         #[arg(long, conflicts_with_all = ["host", "port"])]
         reset: bool,
     },
-    /// Diagnose source health: connection, hooks, and decode drift recorded in
-    /// the log. Changes no config.
+    /// Diagnose source health: connection, hooks, and decode drift.
+    ///
+    /// It reads decode drift from the log. Changes no config.
     Doctor {
         /// The look the `graphics:` row plans, as `run --look` takes it.
         /// Defaults to `cutaway` whatever the `look` config key says: the row
@@ -139,18 +150,20 @@ pub(crate) enum Cmd {
         #[arg(long, value_enum, conflicts_with = "look")]
         protocol: Option<crate::graphics::ImageProtocol>,
     },
-    /// List agent sources + their connection state, or apply a set. The
-    /// scriptable twin of the in-TUI Sources panel (Raycast / automation).
+    /// List agent sources + their connection state, or apply a set.
+    ///
+    /// The scriptable twin of the in-TUI Sources panel.
     Sources {
         #[command(subcommand)]
         action: Option<SourcesAction>,
-        /// Emit machine-readable JSON instead of a table. `global` so it's
-        /// honored both before and after `set` (`sources --json set …` ==
-        /// `sources set … --json`) — the natural Raycast/script form.
+        /// Emit machine-readable JSON instead of a table.
+        // `global` so it's honored both before and after `set` (`sources --json
+        // set …` == `sources set … --json`), the natural Raycast/script form.
         #[arg(long, global = true)]
         json: bool,
     },
     /// Connect one or more sources: install their hooks + persist the choice.
+    ///
     /// A running office reflects it on its next launch.
     Connect {
         /// Source ids, e.g. `claude-code codex`.
@@ -167,20 +180,22 @@ pub(crate) enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// First-run setup: detect installed agent CLIs and connect them — the headless
-    /// twin of the in-TUI onboarding (for Raycast / CI / scripting). Without
-    /// `--yes` it's a DRY RUN that only prints what it would connect (writing to
-    /// another tool's config is opt-in).
+    /// First-run setup: detect installed agent CLIs and connect them.
+    ///
+    /// The headless twin of the in-TUI onboarding. Without `--yes` it's a DRY RUN
+    /// that only prints what it would connect.
     Setup {
         /// Apply: actually connect the detected CLIs (install their hooks). Without
         /// it, `setup` only previews the detected set.
+        // Opt-in: applying writes to another tool's config.
         #[arg(long)]
         yes: bool,
     },
-    /// Print a shell completion script to stdout, e.g.
-    /// `pixtuoid completions zsh > ~/.zfunc/_pixtuoid`. Package managers install
-    /// these automatically; this command lets `cargo install` / `npm` users do it
-    /// themselves for any shell.
+    /// Print a shell completion script to stdout.
+    ///
+    /// For example `pixtuoid completions zsh > ~/.zfunc/_pixtuoid`. Package
+    /// managers install these automatically; this command lets `cargo install` /
+    /// `npm` users do it themselves for any shell.
     // Maintainer note stays a `//`: a `///` here would be SHIPPED PRODUCT COPY
     // (clap renders it as this subcommand's long help). homebrew-core's `install`
     // block calls `generate_completions_from_executable(bin/"pixtuoid",
@@ -190,8 +205,9 @@ pub(crate) enum Cmd {
         /// Target shell.
         shell: clap_complete::Shell,
     },
-    /// Print the roff man page to stdout (`pixtuoid man > pixtuoid.1`). A
-    /// packaging interface — generated from the same clap definitions as `--help`.
+    /// Print the roff man page to stdout.
+    ///
+    /// For example `pixtuoid man > pixtuoid.1`.
     // Also a `//`: `hide = true` drops this from the PARENT listing, not from
     // `pixtuoid man --help`. homebrew-core's `install` captures it via
     // `Utils.safe_popen_read` — see the contract note on `Completions`.
@@ -201,9 +217,8 @@ pub(crate) enum Cmd {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum SourcesAction {
-    /// Make the connected set EXACTLY these ids (declarative — everything else
-    /// disconnects). Backs the Raycast multi-select checkbox-form. `--json` is
-    /// the global flag on `sources` (works before or after `set`).
+    /// Make these ids the connected set: every other source disconnects.
+    // Declarative: it backs the Raycast multi-select checkbox-form.
     Set {
         #[arg(required = true)]
         ids: Vec<String>,
@@ -236,16 +251,15 @@ impl LogLevel {
 }
 
 impl Cli {
-    pub(crate) fn cmd_or_default(self) -> (LogLevel, Option<String>, Cmd) {
-        let level = self.log_level;
-        let theme = self.theme;
+    pub(crate) fn cmd_or_default(self) -> (LogLevel, Cmd) {
         let cmd = self.cmd.unwrap_or(Cmd::Run {
             source: SourceArgs { socket: None },
             max_desks: None,
             headless: false,
             look: LookArgs::default(),
+            paint: PaintArgs::default(),
         });
-        (level, theme, cmd)
+        (self.log_level, cmd)
     }
 }
 
@@ -433,11 +447,9 @@ mod tests {
         let cli = Cli {
             cmd: None,
             log_level: LogLevel::Info,
-            theme: None,
         };
-        let (level, theme, cmd) = cli.cmd_or_default();
+        let (level, cmd) = cli.cmd_or_default();
         assert_eq!(level, LogLevel::Info);
-        assert!(theme.is_none());
         assert!(matches!(
             cmd,
             Cmd::Run {
@@ -447,6 +459,7 @@ mod tests {
                     look: None,
                     protocol: None
                 },
+                paint: PaintArgs { theme: None },
                 ..
             }
         ));
@@ -460,11 +473,9 @@ mod tests {
                 protocol: None,
             }),
             log_level: LogLevel::Debug,
-            theme: Some("cyberpunk".into()),
         };
-        let (level, theme, cmd) = cli.cmd_or_default();
+        let (level, cmd) = cli.cmd_or_default();
         assert_eq!(level, LogLevel::Debug);
-        assert_eq!(theme.as_deref(), Some("cyberpunk"));
         assert!(matches!(cmd, Cmd::Doctor { .. }));
     }
 
@@ -475,6 +486,7 @@ mod tests {
             cli.cmd,
             Some(Cmd::Floating {
                 source: SourceArgs { socket: Some(_) },
+                ..
             })
         ));
     }
@@ -559,6 +571,8 @@ mod tests {
         use clap::CommandFactory;
         let cmd = Cli::command();
         let help = cmd
+            .find_subcommand("run")
+            .expect("a subcommand")
             .get_arguments()
             .find(|a| a.get_id() == "theme")
             .and_then(|a| a.get_help())
@@ -571,6 +585,69 @@ mod tests {
                  ALL_THEMES authority, not a copy",
                 t.name
             );
+        }
+    }
+
+    /// `--theme` is taken only where a theme is painted, so any other command
+    /// refuses it rather than dropping it.
+    #[test]
+    fn only_the_painters_take_theme() {
+        const PAINTERS: [&str; 2] = ["run", "floating"];
+        // Unbuilt: a build adds `help`, whose children reuse every command's name.
+        let mut commands = vec![<Cli as clap::CommandFactory>::command()];
+        while let Some(command) = commands.pop() {
+            let name = command.get_name();
+            let takes = command.get_arguments().any(|a| a.get_id() == "theme");
+            assert_eq!(takes, PAINTERS.contains(&name), "{name}");
+            commands.extend(command.get_subcommands().cloned());
+        }
+        for args in [
+            &["pixtuoid", "doctor", "--theme", "normal"][..],
+            &["pixtuoid", "--theme", "normal", "doctor"],
+        ] {
+            let err = Cli::try_parse_from(args).unwrap_err();
+            assert_eq!(
+                (err.kind(), err.exit_code()),
+                (clap::error::ErrorKind::UnknownArgument, 2),
+                "{args:?}"
+            );
+        }
+        // Reaching the painter, not merely parsing.
+        for painter in PAINTERS {
+            let cli = Cli::try_parse_from(["pixtuoid", painter, "--theme", "normal"]);
+            match cli.expect("parses").cmd {
+                Some(Cmd::Run { paint, .. } | Cmd::Floating { paint, .. }) => {
+                    assert_eq!(paint.theme.as_deref(), Some("normal"), "{painter}");
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+
+    /// Each command a `--help` lists gets one line: its doc's first paragraph,
+    /// the rest being its own `--help`.
+    #[test]
+    fn every_listed_summary_fits_one_help_line() {
+        // clap's own help width where it can't read the terminal's
+        // (`clap::Command::term_width`).
+        const HELP_WIDTH: usize = 100;
+        let mut root = <Cli as clap::CommandFactory>::command();
+        root.build();
+        let mut parents = vec![root];
+        while let Some(mut parent) = parents.pop() {
+            let help = parent.render_long_help().to_string();
+            let listing = help
+                .split_once("Commands:\n")
+                .and_then(|(_, rest)| rest.split("\n\n").next())
+                .unwrap_or_default();
+            for line in listing.lines() {
+                assert!(
+                    line.chars().count() <= HELP_WIDTH,
+                    "`{} --help` lists:\n{line}",
+                    parent.get_name()
+                );
+            }
+            parents.extend(parent.get_subcommands().cloned());
         }
     }
 

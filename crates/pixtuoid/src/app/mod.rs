@@ -22,7 +22,7 @@ use clap::Parser;
 /// [`crate::fatal_error_text`].
 pub fn run() -> Result<()> {
     crash::install_crash_hook();
-    let (log_level, cli_theme, cmd) = Cli::parse().cmd_or_default();
+    let (log_level, cmd) = Cli::parse().cmd_or_default();
 
     // Only the terminal `run` TUI needs the terminal's color: `floating` paints
     // real RGB through its GPU surface, and every other command is plain text.
@@ -104,15 +104,9 @@ pub fn run() -> Result<()> {
             max_desks: cli_max_desks,
             headless,
             look,
+            paint,
         } => {
-            let rc = build_run_config(
-                cli_theme.as_deref(),
-                source,
-                cli_max_desks,
-                headless,
-                look,
-                drift,
-            )?;
+            let rc = build_run_config(paint, source, cli_max_desks, headless, look, drift)?;
             // After every Drop the run held: the unwind is done, so the signal can now
             // end the process the way it would have.
             if let Some(signal) = runtime::run(rc)? {
@@ -120,10 +114,10 @@ pub fn run() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Floating { source } => {
+        Cmd::Floating { source, paint } => {
             // No desk cap: floating seeds its capacity from the window.
             let rc = build_run_config(
-                cli_theme.as_deref(),
+                paint,
                 source,
                 None,
                 false,
@@ -140,7 +134,7 @@ pub fn run() -> Result<()> {
             // Headless's boot: no painter, and no adoption, whose consent is an
             // interactive launch.
             let rc = build_run_config(
-                cli_theme.as_deref(),
+                crate::cli::PaintArgs::default(),
                 source,
                 None,
                 true,
@@ -208,7 +202,7 @@ pub fn run() -> Result<()> {
 /// Resolve the shared [`runtime::RunConfig`] — the common prelude for `run`
 /// (TUI), `floating` (window) and `serve`.
 fn build_run_config(
-    cli_theme: Option<&str>,
+    cli_paint: crate::cli::PaintArgs,
     source: SourceArgs,
     cli_max_desks: Option<usize>,
     headless: bool,
@@ -219,7 +213,7 @@ fn build_run_config(
     let cfg_path = config::config_path();
     let mut cfg_warnings = Vec::new();
     let (cfg, load_degraded) = config::load_with_status(&cfg_path, &mut cfg_warnings);
-    let theme = config::resolve_theme(&cfg, cli_theme, &mut cfg_warnings)?;
+    let theme = config::resolve_theme(&cfg, cli_paint.theme.as_deref(), &mut cfg_warnings)?;
     let desk_cap = config::resolve_desk_cap(&cfg, cli_max_desks, &mut cfg_warnings);
     let pets = config::resolve_pets(&cfg, &mut cfg_warnings);
     let look = crate::graphics::LookChoice::new(
