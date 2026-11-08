@@ -25,22 +25,44 @@ fn every_published_crate_carries_the_root_license_text() {
     let members = workspace["workspace"]["members"]
         .as_array()
         .expect("workspace members");
-    let published: Vec<&str> = members
+    let published: Vec<(&str, toml::Table)> = members
         .iter()
         .map(|m| m.as_str().expect("member path"))
-        .filter(|m| {
-            manifest(&root.join(m))["package"]
-                .get("publish")
-                .and_then(toml::Value::as_bool)
-                != Some(false)
+        .map(|m| (m, manifest(&root.join(m))))
+        .filter(|(_, man)| {
+            man["package"].get("publish").and_then(toml::Value::as_bool) != Some(false)
         })
         .collect();
     assert!(!published.is_empty(), "the workspace publishes no crate");
-    for member in published {
+    for (member, man) in published {
         let text = std::fs::read_to_string(root.join(member).join("LICENSE")).ok();
         assert!(
             text.as_deref() == Some(license.as_str()),
-            "{member} would publish without the LICENSE text"
+            "{member}'s LICENSE is not the root's text"
+        );
+        // The package list too: an `include`/`exclude` edit drops a present file.
+        let name = man["package"]["name"].as_str().expect("package name");
+        let out = std::process::Command::new(env!("CARGO"))
+            .args([
+                "package",
+                "--list",
+                "--allow-dirty",
+                "--offline",
+                "-p",
+                name,
+            ])
+            .current_dir(&root)
+            .output()
+            .expect("run cargo package --list");
+        assert!(
+            out.status.success(),
+            "cargo package --list -p {name} failed"
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .any(|l| l == "LICENSE"),
+            "{name} would publish without its LICENSE"
         );
     }
 }
