@@ -164,7 +164,7 @@ fix with its pinning test) runs as an **arc**: design → build → gate → wra
    the rest don't).
 4. **Spec** — synthesize into `docs/superpowers/specs/` (LOCAL, git-ignored),
    planned against [`REVIEW.md`](../REVIEW.md)'s lenses; the PR body states
-   the change's claims, which the correctness lens holds it to.
+   the change's claims, which the review's Claims lens holds it to.
 5. **Mock gate** (taste/visual work only) — ratify the AFTER visual before code
    (`beautify-decoration` skill).
 6. **Build** — TDD: failing test → minimal impl → commit.
@@ -200,9 +200,8 @@ step is the session's to keep.
 
 Every [`.mergify.yml`](../.mergify.yml) `queue_conditions` check green at the
 final head; every finding's review thread resolved by its disposition; zero
-open confirmed blocking finding. Each [must-run](../REVIEW.md#must-run) item
-the change touches has its result in the PR body. A finding with no thread gets
-one: a [local review](../.claude/skills/local-review/SKILL.md)'s, and a bot's
+open confirmed blocking finding. A finding with no thread gets one: a
+[local review](../.claude/skills/local-review/SKILL.md)'s, and a bot's
 posted only in its review body. A refuted blocking finding needs no push:
 resolve its thread with the disposition and re-run the review
 (`gh run rerun <id> --failed`), whose verifier judges the refutation once.
@@ -220,12 +219,12 @@ what no review sees: `media-regen.yml`'s images, `hermetic-nightly.yml`'s whole
 diff, fixtures included.
 
 The review skips a fork's or a bot's PR, and its skipped check passes. A
-maintainer reviews a fork's or Dependabot's PR by hand before queueing it; a
-fork's author can resolve their own threads, so read each thread's
-`resolvedBy` and its reply. To run the review on a fork's commits once its diff
-is read and touches no workflow, open them as a same-repo PR and close it unmerged:
-merging it would take the author's credit. Its checks share the fork PR's commit,
-so force-cancelling its other runs shows them cancelled there too.
+maintainer reviews a fork's or Dependabot's PR by hand, holding it to its claims and
+must-run results, before queueing it; a fork's author can resolve their own threads,
+so read each thread's `resolvedBy` and its reply. To run the review on a fork's
+commits once its diff is read and touches no workflow, open them as a same-repo PR and
+close it unmerged: merging it would take the author's credit. Its checks share the
+fork PR's commit, so force-cancelling its other runs shows them cancelled there too.
 
 ### Dispositions
 

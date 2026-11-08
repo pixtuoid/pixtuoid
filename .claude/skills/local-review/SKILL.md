@@ -25,15 +25,14 @@ contract; fill briefs from them, never a paraphrase here.
    and `verifier` prompts and models verbatim from the shared workflow
    (`gh api repos/pixtuoid/.github/contents/.github/workflows/claude-review.yml --jq .content | base64 -d`),
    with three overrides: their GitHub tools become local read-only ones
-   (`git diff <base>...<head>`, the worktree's files), since no PR may exist
-   yet; the scope is `<base>...<head>`; and a reviewer may fetch the docs a
+   (`git diff <base>...<head>`, the worktree's files, and
+   `gh pr view <N> --json title,body` or the planned title and body), since no PR
+   may exist yet; the scope is `<base>...<head>`; and a reviewer may fetch the docs a
    best-practice question needs, which CI can't. Spawn the two reviewers in
    parallel, then one verifier per candidate. Run each must-run item the
    change touches as its own lens, with Bash,
    `model: sonnet` when it is mechanical, reporting each exit code as
    observed, never through a pipe.
-   Give every brief the change's claims, from the PR body or, before it
-   exists, the spec: a lazily filled brief turns every lens generic.
 3. **Collect and verify.** A one-word or placeholder return is a STUB, not a
    review: re-run that lens alone. Verify every kept finding's premise
    yourself before coding a fix — read the comments on the item it names
