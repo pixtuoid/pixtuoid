@@ -12,13 +12,13 @@ use pixtuoid_core::AgentId;
 use pixtuoid_core::state::AgentSlot;
 
 use crate::anim::Motion;
-use crate::layout::{HomeDesk, Point, SceneLayout, WaypointKind, desk_walk_anchor_facing};
+use crate::layout::{HomeDesk, Point, SceneLayout, WaypointKind};
 use crate::pathfind::Router;
-use crate::pose::{PoseHistory, desk_leg_endpoint, route_jittered};
 use crate::pose::{
     SpotClaims, WANDER_DWELL_EST_MS, dwell_ms, est_wander_cycle_ms, seated_dwell_ms,
     stale_resume_gap_ms, takes_trip,
 };
+use crate::pose::{desk_leg_endpoint, route_jittered};
 
 /// Frozen A* polyline for one in-flight walk leg. Snapshotted when the leg's
 /// `(from, to)` first appear and reused unchanged: per-frame occupancy churn
@@ -62,6 +62,9 @@ pub(crate) struct WanderFrame {
     /// The current trip's kind — the seat cell + waypoint identity the walk /
     /// at-waypoint arms need.
     pub kind: WanderKind,
+    /// When a dwell's phase ends and its next leg sets off, drawn as begun
+    /// then; `None` while a leg is walked, and under a tier no leg takes time.
+    pub turns_at: Option<SystemTime>,
 }
 
 /// A one-shot walk leg (entry / exit / snap-back / walk home).
@@ -283,7 +286,6 @@ pub(crate) fn advance_wander(
     desk: HomeDesk,
     planner: &mut Planner<'_>,
     walks: &mut HashMap<AgentId, WalkState>,
-    history: &mut PoseHistory,
 ) -> WanderFrame {
     let id = slot.agent_id;
     // Claims must be snapshotted BEFORE this agent's `&mut` — the two borrows of
@@ -339,7 +341,7 @@ pub(crate) fn advance_wander(
         WanderPhase::Seated => {
             if may_transition && elapsed_phase >= seated_dur {
                 // None sets off under Still, its clock still keeping time.
-                if !planner.motion.walks_take_time()
+                if !planner.motion.motions_take_time()
                     || !takes_trip(id, walk.wander.cycle_n)
                     || layout.waypoints.is_empty()
                 {
@@ -391,9 +393,6 @@ pub(crate) fn advance_wander(
                 let back = planner.timed(back);
                 if walk_arrived(&back, 0) {
                     sit_down(walk, 0);
-                    // Drawn at its chair from this frame, where a walk out starts.
-                    let chair = desk_walk_anchor_facing(desk.at, desk.facing, layout.inner);
-                    history.record(id, chair, now);
                 } else {
                     walk.wander.phase = WanderPhase::WalkingBack(back);
                 }
@@ -419,11 +418,19 @@ pub(crate) fn advance_wander(
     // `result.0` == `walk.wander.phase` in every arm, so the frame's
     // `dest`/`kind` always describe the returned phase.
     let (phase, progress) = result;
+    let dwell = match phase {
+        WanderPhase::Seated => Some(seated_dur),
+        WanderPhase::AtWaypoint(_) => Some(dwell_dur),
+        WanderPhase::WalkingOut(_) | WanderPhase::WalkingBack(_) => None,
+    };
     WanderFrame {
         phase,
         progress,
         dest: walk.wander.target.dest,
         kind: walk.wander.target.kind,
+        turns_at: dwell
+            .filter(|_| planner.motion.motions_take_time())
+            .map(|ms| walk.wander.phase_started_at + Duration::from_millis(ms)),
     }
 }
 
@@ -567,9 +574,9 @@ pub(crate) struct Planner<'a> {
 
 impl Planner<'_> {
     /// `profile` for a walk set off now: [`WalkProfile::INSTANT`] where none
-    /// takes time ([`Motion::walks_take_time`]).
+    /// takes time ([`Motion::motions_take_time`]).
     pub(crate) fn timed(&self, profile: WalkProfile) -> WalkProfile {
-        if self.motion.walks_take_time() {
+        if self.motion.motions_take_time() {
             profile
         } else {
             WalkProfile::INSTANT

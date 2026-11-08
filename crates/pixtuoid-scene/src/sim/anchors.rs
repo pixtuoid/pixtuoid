@@ -2,7 +2,7 @@
 //!
 //! Pure geometry — no `RgbBuffer`, no rendering.
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crate::layout::{Bounds, Pivot, SEAT_RENDER_Y_OFF, SceneLayout, Size, WALKING_Y_OFF};
 use pixtuoid_core::AgentSlot;
@@ -192,53 +192,88 @@ pub(crate) fn compute_door_frame_idx<'a>(
     now: SystemTime,
     door_anim_max_ms: u64,
 ) -> usize {
-    fn frame_for_progress(elapsed_ms: u64, total_ms: u64) -> usize {
-        if elapsed_ms < DOOR_TRANSITION_MS {
-            if elapsed_ms < DOOR_TRANSITION_MS / 2 {
-                1
-            } else {
-                2
-            }
-        } else if elapsed_ms + DOOR_TRANSITION_MS > total_ms {
-            let remaining = total_ms.saturating_sub(elapsed_ms);
-            if remaining < DOOR_TRANSITION_MS / 2 {
-                0
-            } else {
-                1
-            }
-        } else {
-            2
-        }
-    }
+    door_windows(agents, now, door_anim_max_ms)
+        .map(|window| door_at(window.elapsed_ms, window.total_ms).0)
+        .max()
+        .unwrap_or(0)
+}
+
+/// When the door [`compute_door_frame_idx`] draws next changes frame, its
+/// agents' windows running on: a door still swinging once its walker is gone
+/// steps between beats.
+pub(crate) fn door_changes_at<'a>(
+    agents: impl IntoIterator<Item = &'a AgentSlot>,
+    now: SystemTime,
+    door_anim_max_ms: u64,
+) -> Option<SystemTime> {
+    door_windows(agents, now, door_anim_max_ms)
+        .map(|window| {
+            let (_, next_ms) = door_at(window.elapsed_ms, window.total_ms);
+            window.opened_at + Duration::from_millis(next_ms)
+        })
+        .min()
+}
+
+/// One agent's pass through the elevator: when its door window opened, how far
+/// in it is, and how long it runs.
+struct DoorWindow {
+    opened_at: SystemTime,
+    elapsed_ms: u64,
+    total_ms: u64,
+}
+
+/// Each of `agents`' door windows running at `now`: an arrival's for its entry
+/// walk, a leaver's until the reducer drops its slot.
+fn door_windows<'a>(
+    agents: impl IntoIterator<Item = &'a AgentSlot>,
+    now: SystemTime,
+    door_anim_max_ms: u64,
+) -> impl Iterator<Item = DoorWindow> {
     let entry_window_ms = if door_anim_max_ms > 0 {
         door_anim_max_ms
     } else {
         pose::ENTRY_ANIMATION_MS
     };
+    // The same window the reducer uses to GC exiting slots, so the door closes
+    // right as the agent's slot disappears.
+    let exit_window_ms = pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW.as_millis() as u64;
+    agents.into_iter().flat_map(move |a| {
+        let entry = a
+            .arrived_at
+            .filter(|_| a.exiting_at.is_none())
+            .map(|at| (at, entry_window_ms));
+        let exit = a.exiting_at.map(|at| (at, exit_window_ms));
+        [entry, exit]
+            .into_iter()
+            .flatten()
+            .filter_map(move |(opened_at, total_ms)| {
+                let elapsed_ms = now.duration_since(opened_at).ok()?.as_millis() as u64;
+                (elapsed_ms < total_ms).then_some(DoorWindow {
+                    opened_at,
+                    elapsed_ms,
+                    total_ms,
+                })
+            })
+    })
+}
 
-    let mut max_frame: usize = 0;
-    for a in agents {
-        if a.exiting_at.is_none()
-            && let Some(arrived) = a.arrived_at
-            && let Ok(d) = now.duration_since(arrived)
-        {
-            let ms = d.as_millis() as u64;
-            if ms < entry_window_ms {
-                max_frame = max_frame.max(frame_for_progress(ms, entry_window_ms));
-            }
+/// The door's frame `elapsed_ms` into a `total_ms` window, and the first
+/// elapsed ms it may show another at.
+fn door_at(elapsed_ms: u64, total_ms: u64) -> (usize, u64) {
+    if elapsed_ms < DOOR_TRANSITION_MS {
+        if elapsed_ms < DOOR_TRANSITION_MS / 2 {
+            (1, DOOR_TRANSITION_MS / 2)
+        } else {
+            (2, DOOR_TRANSITION_MS)
         }
-        if let Some(exit_at) = a.exiting_at
-            && let Ok(d) = now.duration_since(exit_at)
-        {
-            let ms = d.as_millis() as u64;
-            // The same window the reducer uses to GC exiting slots, so the
-            // door closes right as the agent's slot disappears.
-            let exit_window_ms =
-                pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW.as_millis() as u64;
-            if ms < exit_window_ms {
-                max_frame = max_frame.max(frame_for_progress(ms, exit_window_ms));
-            }
+    } else if elapsed_ms + DOOR_TRANSITION_MS > total_ms {
+        let remaining = total_ms.saturating_sub(elapsed_ms);
+        if remaining < DOOR_TRANSITION_MS / 2 {
+            (0, total_ms)
+        } else {
+            (1, total_ms - DOOR_TRANSITION_MS / 2 + 1)
         }
+    } else {
+        (2, total_ms - DOOR_TRANSITION_MS + 1)
     }
-    max_frame
 }

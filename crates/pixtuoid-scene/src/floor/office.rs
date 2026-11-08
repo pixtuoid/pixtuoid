@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crate::pack::OfficeArt;
 use crate::sprite::{Rgb, RgbBuffer};
@@ -31,6 +31,9 @@ pub(crate) struct FloorView {
     last_flash: crate::screen::FlashPhase,
     /// Where the last frame may differ from the one before it.
     last_dirty: crate::look::Dirty,
+    /// The tier the last render stepped under, its picture held or not;
+    /// `None` before the first.
+    last_motion: Option<crate::anim::Motion>,
 }
 
 impl FloorView {
@@ -41,6 +44,7 @@ impl FloorView {
             last_occupied: HashSet::new(),
             last_flash: crate::screen::FlashPhase::default(),
             last_dirty: crate::look::Dirty::All,
+            last_motion: None,
         }
     }
 
@@ -52,6 +56,7 @@ impl FloorView {
         look: crate::look::Look,
         inputs: crate::look::RenderInputs<'_>,
     ) {
+        self.last_motion = Some(inputs.world.floor.motion);
         match crate::look::render(&mut self.floor, office.stores(), look, inputs) {
             Some(frame) => {
                 self.last_hits = Some(frame.hits);
@@ -300,6 +305,15 @@ fn compose_slide(
         }
     }
 }
+
+/// How far past its beat's turn, or a change it scheduled, an office next
+/// paints: a painter arms the wait on the monotonic clock while both fall on
+/// the wall clock, and the frame must land past them.
+pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
+/// How often an office whose beat never turns paints: never 0fps, since its
+/// clock and sky still move with the wall and a frozen one reads as a dead
+/// window.
+pub(super) const REST_TICK: Duration = Duration::from_secs(1);
 
 /// A painter's office of up to [`MAX_FLOORS`](super::MAX_FLOORS) floors:
 /// each floor's view, the office-wide state they share (a cup of
@@ -600,12 +614,33 @@ impl OfficeSession {
     }
 
     /// Whether the floor showing's last frame changes between beats: someone
-    /// walks, or the sign's or the room's light is mid-fade. Everything else a
-    /// painter draws holds one frame per beat
-    /// (`both_painters_paint_one_frame_per_beat`), so a painter may sleep to the
-    /// next beat only while this is false.
-    #[doc(hidden)]
-    pub fn moves_off_beat(&self) -> bool {
+    /// walks, the sign's or the room's light is mid-fade, a token sheet falls or
+    /// a petted pet's hearts rise. Otherwise its frame holds per beat
+    /// (`both_painters_paint_one_frame_per_beat`) but for a change its floor
+    /// scheduled, so [`Self::until_next_paint`] waits for the sooner of the two
+    /// only while this is false.
+    pub(crate) fn moves_off_beat(&self) -> bool {
         self.views[self.nav.current()].moves_off_beat()
+    }
+
+    /// How long after `wall` this office next needs painting by itself: `None`
+    /// while it moves between beats, on its floor or sliding to another (paint
+    /// every frame, at [`PAINT_FPS`](crate::anim::PAINT_FPS)), else just past the next turn of the beat its last frame
+    /// was drawn on, or a rest tick where that beat never turns, or just past a
+    /// change its floor scheduled for sooner. Events a painter wakes for itself
+    /// (input, a dropped frame, new feed) are its own.
+    pub fn until_next_paint(&self, wall: SystemTime) -> Option<Duration> {
+        let view = &self.views[self.nav.current()];
+        let motion = view.last_motion?;
+        if self.moves_off_beat() || self.nav.transition().is_some() {
+            return None;
+        }
+        let beat = (motion.until_next_beat(wall)).map_or(REST_TICK, |until| until + PAST_THE_TURN);
+        // One the wall has passed with no step past it (a paused clock) is
+        // no reason to paint again.
+        let change = (view.floor.ctx.next_change())
+            .and_then(|at| at.duration_since(wall).ok())
+            .map(|until| until + PAST_THE_TURN);
+        Some(change.map_or(beat, |change| change.min(beat)))
     }
 }

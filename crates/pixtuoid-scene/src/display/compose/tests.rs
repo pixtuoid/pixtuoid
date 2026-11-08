@@ -815,6 +815,7 @@ pub(crate) fn empty_frame(layout: &SceneLayout) -> SimFrame {
         desks: vec![Default::default(); layout.home_desks.len()],
         door_frame: 0,
         occasion: Default::default(),
+        next_change: None,
     }
 }
 

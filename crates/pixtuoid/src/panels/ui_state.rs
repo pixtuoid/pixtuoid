@@ -262,13 +262,20 @@ impl UiState {
         }
     }
 
-    /// This frame's wall clock: real time, or the frozen instant while paused.
+    /// This frame's time: [`Self::wall`], or the instant the pause began.
     pub(crate) fn now(&mut self) -> SystemTime {
-        let wall = self
-            .fake_now
-            .and_then(|(read, at)| at.checked_add(read.elapsed()))
-            .unwrap_or_else(SystemTime::now);
+        let wall = self.wall();
         self.pause.now(wall)
+    }
+
+    /// `$PIXTUOID_FAKE_NOW`'s clock or the real one, running on while paused:
+    /// an office's wait read against the frozen instant would never pass a
+    /// change scheduled just after it, and repaint at that gap for the whole
+    /// pause.
+    pub(crate) fn wall(&self) -> SystemTime {
+        self.fake_now
+            .and_then(|(read, at)| at.checked_add(read.elapsed()))
+            .unwrap_or_else(SystemTime::now)
     }
 
     pub(crate) fn toggle_pause(&mut self) {
@@ -470,12 +477,15 @@ impl UiState {
         self.onboarding_opened_at.is_some()
     }
 
-    /// Whether the backdrop's dim is moving: through the open ramp, or the
-    /// close fade, which every frame shows a step of.
-    pub(crate) fn dim_moving(&self) -> bool {
-        self.onboarding_opened_at.is_some_and(|opened| {
-            opened.elapsed() < std::time::Duration::from_millis(welcome::DIM_RAMP_MS)
-        }) || self.onboarding_closing_at.is_some()
+    /// Whether an overlay that moves with the clock shows: the onboarding,
+    /// its dim ramping, its text typing and its caret blinking while it is
+    /// open, and its dim fading after; or the dashboard's or Sources panel's
+    /// marquee.
+    pub(crate) fn overlay_moves(&self) -> bool {
+        self.onboarding_opened_at.is_some()
+            || self.onboarding_closing_at.is_some()
+            || self.dashboard.open
+            || self.connection.open
     }
 
     /// Confirm/skip both end the overlay the same way: card gone, close fade
@@ -655,6 +665,7 @@ mod tests {
 
     /// `$PIXTUOID_FAKE_NOW`'s clock runs on from its instant, and holds still
     /// while paused, as the wall clock does: pace-check's sky rests on both.
+    /// The clock an office's wait reads runs on through the pause.
     #[test]
     fn a_fake_clock_runs_from_its_instant_and_holds_when_paused() {
         let mut ui = ui();
@@ -667,9 +678,11 @@ mod tests {
         assert!(later > first, "it advances");
         ui.toggle_pause();
         let held = ui.now();
+        let running = ui.wall();
         std::thread::sleep(std::time::Duration::from_millis(5));
         assert_eq!(ui.now(), held, "it holds while paused");
         assert!(held >= later);
+        assert!(ui.wall() > running, "the wait's clock runs on while paused");
     }
 
     #[test]
@@ -724,10 +737,10 @@ mod tests {
         assert!(!m.connection_open && !m.connection_confirm);
     }
 
-    /// The backdrop's dim moves through the open ramp and the close fade, and
-    /// only then.
+    /// The onboarding moves while it shows: its dim ramping, its text typing
+    /// past the ramp, and its dim fading once closed.
     #[test]
-    fn the_dim_moves_through_its_ramps_only() {
+    fn the_onboarding_moves_while_it_shows() {
         use std::time::Duration;
         let mut ui = UiState::new(
             ALL_THEMES[0],
@@ -736,18 +749,47 @@ mod tests {
             None,
             crate::doctor::DriftSeen::default(),
         );
-        assert!(ui.dim_moving(), "the open ramp");
+        assert!(ui.overlay_moves(), "the open ramp");
         let ramped = Duration::from_millis(welcome::DIM_RAMP_MS);
         ui.onboarding_opened_at = Instant::now().checked_sub(ramped);
-        assert!(!ui.dim_moving(), "dimmed, the card waits");
+        assert!(ui.overlay_moves(), "dimmed, the card types");
         ui.close_onboarding();
-        assert!(ui.dim_moving(), "the close fade");
+        assert!(ui.overlay_moves(), "the close fade");
         let (_, from) = ui.onboarding_closing_at.expect("the fade is armed");
         let faded = Duration::from_millis(welcome::DIM_FADE_OUT_MS);
         ui.onboarding_closing_at = Instant::now().checked_sub(faded).map(|at| (at, from));
         ui.build_frames(SystemTime::now(), &SceneState::new([0; 10]), &[]);
-        assert!(!ui.dim_moving(), "faded back");
-        assert!(!self::ui().dim_moving(), "no onboarding");
+        assert!(!ui.overlay_moves(), "faded back");
+        assert!(!self::ui().overlay_moves(), "no onboarding");
+    }
+
+    /// The dashboard's marquee moves while it is open.
+    #[test]
+    fn the_dashboard_moves_while_open() {
+        let mut ui = ui();
+        let scene = SceneState::new([0; 10]);
+        ui.toggle_dashboard(&scene);
+        assert!(ui.overlay_moves(), "open");
+        ui.toggle_dashboard(&scene);
+        assert!(!ui.overlay_moves(), "closed");
+    }
+
+    /// The Sources panel's marquee moves while it is open.
+    #[test]
+    fn the_sources_panel_moves_while_open() {
+        let mut ui = ui();
+        ui.open_connection(vec![ConnectionRow {
+            source_id: "codex",
+            label_prefix: "cx",
+            display_name: "Codex",
+            state: connection::ConnState::Connected,
+            config_path: None,
+            target: None,
+            health: None,
+        }]);
+        assert!(ui.overlay_moves(), "open");
+        ui.close_connection();
+        assert!(!ui.overlay_moves(), "closed");
     }
 
     #[test]

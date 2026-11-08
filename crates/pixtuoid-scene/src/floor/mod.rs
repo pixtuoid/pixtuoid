@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crate::pack::OfficeArt;
 use crate::physics::{WalkProfile, walk_arrived};
@@ -157,6 +157,9 @@ pub struct FloorCtx {
     /// Whether the last stepped frame changes between beats: see
     /// [`OfficeSession::moves_off_beat`].
     off_beat: bool,
+    /// The earliest change the last step scheduled
+    /// ([`SelfChange`](crate::sim::SelfChange)).
+    next_change: Option<SystemTime>,
     /// Memo of the last per-frame layout, keyed by the ONLY inputs
     /// `SceneLayout::compute` reads on the frame path. Rebuilding it every
     /// frame re-allocs + re-stamps the walkable mask and re-runs the coarse BFS
@@ -184,6 +187,7 @@ impl FloorCtx {
             grip: crate::interact::Grip::default(),
             door_anim_max_ms: 0,
             off_beat: false,
+            next_change: None,
             layout_memo: None,
         }
     }
@@ -191,6 +195,12 @@ impl FloorCtx {
     /// [`OfficeSession::moves_off_beat`] for this floor.
     pub(crate) fn moves_off_beat(&self) -> bool {
         self.off_beat
+    }
+
+    /// The earliest change this floor's last step scheduled, for
+    /// [`OfficeSession::until_next_paint`].
+    pub(crate) fn next_change(&self) -> Option<SystemTime> {
+        self.next_change
     }
 
     /// This floor's stores for one `sim_step`, beside the office's `chitchat`.
@@ -679,7 +689,10 @@ pub(crate) fn step_floor(
         .any(|pose| matches!(pose, crate::pose::Pose::Walking { .. }))
         || fctx.creatures.values().any(|w| w.walks_at(world.now))
         || fctx.neon.fading(world.now)
-        || fctx.vacancy_dim.easing();
+        || fctx.vacancy_dim.easing()
+        || frame.desks.iter().any(|desk| desk.sheet_fall.is_some())
+        || frame.pet.as_ref().is_some_and(|pet| pet.hearts_rise);
+    fctx.next_change = frame.next_change;
     Some(SteppedFloor { layout, frame })
 }
 
@@ -738,6 +751,12 @@ impl VacancyDim {
         self.level != target
     }
 
+    /// When a vacant floor waiting out its debounce starts to fade.
+    pub(crate) fn fades_at(&self) -> Option<SystemTime> {
+        let since = self.vacant_since.filter(|_| !self.dimmed)?;
+        Some(since + Duration::from_millis(Self::VACANCY_DEBOUNCE_MS))
+    }
+
     /// Force the steady-state vacant look, bypassing the debounce + ease — static
     /// snapshots want it, not frame-0 of the fade. The debounce is back-dated too,
     /// so the next tick still JUDGES the floor vacant instead of re-arming it.
@@ -750,16 +769,30 @@ impl VacancyDim {
     /// Advance the fade one frame. Returns the new lit level in
     /// `[MIN_LEVEL, 1.0]`.
     pub(crate) fn tick(&mut self, vacant: bool, now: SystemTime) -> f32 {
+        // Each ease runs from the instant its target switched, not from
+        // whenever the floor was last drawn before it: a vacant floor's from
+        // its debounce's end, a refilled one's from the tick that sees it full.
+        // A floor nobody drew for longer than its sign's fade has nothing to
+        // ease from, and snaps lit as the sign does.
         let target = if vacant {
             let since = *self.vacant_since.get_or_insert(now);
-            let elapsed = crate::anim::elapsed_ms(now, since);
-            if elapsed >= Self::VACANCY_DEBOUNCE_MS {
+            let fades_at = since + Duration::from_millis(Self::VACANCY_DEBOUNCE_MS);
+            if now >= fades_at {
+                self.last_update = self.last_update.map(|last| last.max(fades_at));
                 Self::MIN_LEVEL
             } else {
                 1.0
             }
         } else {
-            self.vacant_since = None;
+            if self.vacant_since.take().is_some() {
+                let fade = u64::from(NeonState::FADE_MS);
+                if (self.last_update).is_some_and(|last| crate::anim::elapsed_ms(now, last) <= fade)
+                {
+                    self.last_update = Some(now);
+                } else {
+                    self.level = 1.0;
+                }
+            }
             1.0
         };
         self.dimmed = target < 1.0;
@@ -933,9 +966,9 @@ impl NeonState {
 
     /// Whether a mood change is still crossing over at `now`.
     pub(crate) fn fading(&self, now: SystemTime) -> bool {
-        self.fade
-            .as_ref()
-            .is_some_and(|f| crate::anim::elapsed_ms(now, f.started_at) < u64::from(Self::FADE_MS))
+        self.fade.as_ref().is_some_and(|f| {
+            f.from != f.to && crate::anim::elapsed_ms(now, f.started_at) < u64::from(Self::FADE_MS)
+        })
     }
 
     fn stutter_flash(beat: crate::anim::Beat) -> bool {

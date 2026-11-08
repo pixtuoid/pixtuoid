@@ -65,9 +65,12 @@ impl OfficeRenderer {
         self.session.navigate(target, now);
     }
 
-    /// [`OfficeSession::moves_off_beat`].
-    pub(crate) fn moves_off_beat(&self) -> bool {
-        self.session.moves_off_beat()
+    /// [`OfficeSession::until_next_paint`].
+    pub(crate) fn until_next_paint(
+        &self,
+        wall: std::time::SystemTime,
+    ) -> Option<std::time::Duration> {
+        self.session.until_next_paint(wall)
     }
 
     pub(crate) fn set_audio(&mut self, audio: crate::audio::AudioHandle) {

@@ -3297,6 +3297,7 @@ fn creatures() -> (SceneLayout, SimFrame) {
         anim_name: PackPiece::CatWalk,
         frame_idx: 1,
         effects: crate::effects::pet_hearts(cat, 300).collect(),
+        hearts_rise: false,
     });
     frame.mascots = vec![crate::sim::MascotPlacement {
         pos: lobster,
@@ -3428,6 +3429,7 @@ fn a_pet_painted_over_an_agent_is_the_hover() {
         anim_name: PackPiece::CatWalk,
         frame_idx: 0,
         effects: Vec::new(),
+        hearts_rise: false,
     };
     let target = cat.target();
     frame.pet = Some(cat);
