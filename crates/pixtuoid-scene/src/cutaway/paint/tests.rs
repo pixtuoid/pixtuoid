@@ -2,8 +2,8 @@ use super::*;
 use crate::anim::Motion;
 use crate::atmosphere::Moment;
 use crate::display::compose::tests::{
-    base_size, empty_frame, kind_name, list_at, lively_office, many_layouts, queued, quiet_board,
-    showing, sit_down, sit_down_as, sit_down_in,
+    base_size, cap_rider, empty_frame, kind_name, list_at, lively_office, many_layouts, queued,
+    quiet_board, showing, sit_down, sit_down_as, sit_down_in,
 };
 use crate::display::compose::{compose_at, ground_shadow, push_windows};
 use crate::display::pen::test_density;
@@ -1203,21 +1203,6 @@ fn painted_by(
         }
     });
     px
-}
-
-/// The cap rider in `list`.
-fn cap_rider(list: &crate::display::DisplayList<'_>) -> crate::display::effects::Riding {
-    list.pieces()
-        .iter()
-        .find_map(|p| match p.kind {
-            PieceKind::Effect(r)
-                if matches!(r.effect.kind, crate::effects::EffectKind::SubagentCap(_)) =>
-            {
-                Some(r)
-            }
-            _ => None,
-        })
-        .expect("the cap")
 }
 
 /// A subagent's cap puts its brim on the brow, its head mark's row, in every
