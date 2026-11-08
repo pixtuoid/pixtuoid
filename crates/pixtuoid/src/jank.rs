@@ -273,7 +273,6 @@ impl Jank {
         let over = self.over;
         let hitch_ms = self.hitch.as_secs_f64() * 1000.0;
         let scheduled = self.scheduled;
-        let interval_ms = PAINT_FRAME.as_secs_f64() * 1000.0;
         let span_ms = now.saturating_duration_since(since).as_secs_f64() * 1000.0;
         let Painter {
             look,
@@ -283,9 +282,9 @@ impl Jank {
             sync,
         } = &self.painter;
         if janks > 0 {
-            tracing::warn!(target: TARGET, look, scale, tmux, terminal = ?terminal, sync, frames, over, janks, scheduled, hitch_ms, interval_ms, span_ms, p50, p99, max, "frame pacing");
+            tracing::warn!(target: TARGET, look, scale, tmux, terminal = ?terminal, sync, frames, over, janks, scheduled, hitch_ms, span_ms, p50, p99, max, "frame pacing");
         } else {
-            tracing::info!(target: TARGET, look, scale, tmux, terminal = ?terminal, sync, frames, over, janks, scheduled, hitch_ms, interval_ms, span_ms, p50, p99, max, "frame pacing");
+            tracing::info!(target: TARGET, look, scale, tmux, terminal = ?terminal, sync, frames, over, janks, scheduled, hitch_ms, span_ms, p50, p99, max, "frame pacing");
         }
     }
 }
@@ -402,11 +401,6 @@ mod tests {
         let late = ms(11).as_secs_f64() * 1000.0;
         assert!(line.contains(&format!("hitch_ms={late:?} ")), "{line}");
         assert!(line.contains("scheduled=4 "), "{line}");
-        let interval = PAINT_FRAME.as_secs_f64() * 1000.0;
-        assert!(
-            line.contains(&format!("interval_ms={interval:?}")),
-            "{line}"
-        );
     }
 
     /// A window that closes reports its frames' spread and janks, then starts

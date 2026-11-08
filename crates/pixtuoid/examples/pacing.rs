@@ -224,7 +224,6 @@ fn run(
     pack: &Arc<pixtuoid_scene::pack::OfficeArt>,
     pace: Pace,
 ) -> Result<Vec<Frame>> {
-    let tick = PAINT_FRAME;
     let pets = vec![Pet::defaulted(PetKind::Cat), Pet::defaulted(PetKind::Dog)];
     let (mut r, wire) = renderer(
         case.protocol,
@@ -240,13 +239,13 @@ fn run(
     let scene = office(start);
     // By frame index: `PAINT_FRAME` is truncated to whole ns, so no multiple
     // of it lands exactly on a whole second.
-    let frame_at = |d: Duration| d.as_nanos() / tick.as_nanos();
+    let frame_at = |d: Duration| d.as_nanos() / PAINT_FRAME.as_nanos();
     let frames = frame_at(SCENARIO);
     let (mut slid, mut resized) = (false, false);
     let mut out = Vec::new();
-    let pacer = Pacer::new(pace, tick);
+    let pacer = Pacer::new(pace, PAINT_FRAME);
     for n in 0..frames {
-        let now = start + tick * u32::try_from(n)?;
+        let now = start + PAINT_FRAME * u32::try_from(n)?;
         pacer.wait();
         if n == frame_at(SLIDE_AT) {
             r.navigate_floor(1, now);
@@ -290,7 +289,6 @@ fn run(
 fn real_clock(
     pack: &Arc<pixtuoid_scene::pack::OfficeArt>,
 ) -> Result<(Vec<Duration>, Vec<Duration>, &'static str)> {
-    let tick = PAINT_FRAME;
     let (mut r, _wire) = renderer(
         Protocol::HalfBlock,
         TERMINAL.0,
@@ -319,8 +317,8 @@ fn real_clock(
         // The loop's own wait is crossterm's input poll; a CI runner has no
         // terminal to poll, so it sleeps.
         if !polls {
-            std::thread::sleep(tick);
-        } else if crossterm::event::poll(tick)? {
+            std::thread::sleep(PAINT_FRAME);
+        } else if crossterm::event::poll(PAINT_FRAME)? {
             crossterm::event::read()?;
         }
     }
@@ -543,7 +541,6 @@ fn hitch(path: &Path) -> Result<()> {
             == OWNER_OFFICE),
         "the owner's terminal no longer gives the owner's office exactly: its runs stop being comparable"
     );
-    let tick = PAINT_FRAME;
     let real_secs = pixtuoid_core::platform::text_env("HITCH_REAL_SECS")
         .map(|s| s.parse().with_context(|| format!("HITCH_REAL_SECS={s:?}")))
         .transpose()?
@@ -556,7 +553,7 @@ fn hitch(path: &Path) -> Result<()> {
             name: "noon clear",
             weather: WeatherPolicy::Forced(Weather::Clear),
             start: Some(noon),
-            step: tick,
+            step: PAINT_FRAME,
             length: Duration::from_secs(60),
             whole: false,
             music: false,
@@ -566,7 +563,7 @@ fn hitch(path: &Path) -> Result<()> {
             name: "noon overcast",
             weather: WeatherPolicy::Forced(Weather::Overcast),
             start: Some(noon),
-            step: tick,
+            step: PAINT_FRAME,
             length: Duration::from_secs(60),
             whole: false,
             music: false,
@@ -576,7 +573,7 @@ fn hitch(path: &Path) -> Result<()> {
             name: "noon storm",
             weather: WeatherPolicy::Forced(Weather::Storm),
             start: Some(noon),
-            step: tick,
+            step: PAINT_FRAME,
             length: Duration::from_secs(120),
             whole: false,
             music: false,
@@ -588,7 +585,7 @@ fn hitch(path: &Path) -> Result<()> {
             name: "night on Calm, 33 ms",
             weather: WeatherPolicy::Forced(Weather::Clear),
             start: Some(pixtuoid_scene::localclock::at_hour_min(21, 30)),
-            step: tick,
+            step: PAINT_FRAME,
             length: Duration::from_secs(60),
             whole: false,
             music: false,
@@ -611,7 +608,7 @@ fn hitch(path: &Path) -> Result<()> {
                 pixtuoid_scene::sky::first_transition_after(noon)
                     .context("the clock's weather never changes")?,
             ),
-            step: tick,
+            step: PAINT_FRAME,
             length: Duration::from_secs(120),
             whole: false,
             music: false,
@@ -621,7 +618,7 @@ fn hitch(path: &Path) -> Result<()> {
             name: "stress: storm, every frame whole",
             weather: WeatherPolicy::Forced(Weather::Storm),
             start: Some(noon),
-            step: tick,
+            step: PAINT_FRAME,
             length: Duration::from_secs(30),
             whole: true,
             music: false,
@@ -631,7 +628,7 @@ fn hitch(path: &Path) -> Result<()> {
             name: "stress: storm, every frame whole, music rendering",
             weather: WeatherPolicy::Forced(Weather::Storm),
             start: Some(noon),
-            step: tick,
+            step: PAINT_FRAME,
             length: Duration::from_secs(30),
             whole: true,
             music: true,
@@ -642,7 +639,7 @@ fn hitch(path: &Path) -> Result<()> {
         name: "real clock 10 min, clock weather",
         weather: WeatherPolicy::Clock,
         start: None,
-        step: tick,
+        step: PAINT_FRAME,
         length: Duration::from_secs(real_secs),
         whole: false,
         music: false,
@@ -745,7 +742,7 @@ fn hitch(path: &Path) -> Result<()> {
         } else {
             Pace::Paced
         };
-        let pacer = Pacer::new(pace, tick);
+        let pacer = Pacer::new(pace, PAINT_FRAME);
         loop {
             pacer.wait();
             let offset = match run.start {
@@ -827,7 +824,7 @@ fn hitch(path: &Path) -> Result<()> {
                 ms(renders.iter().copied().max().unwrap_or_default())
             );
         }
-        let over = totals.iter().filter(|&&t| t > tick).count();
+        let over = totals.iter().filter(|&&t| t > PAINT_FRAME).count();
         let _ = writeln!(
             stdout,
             "{:<20} {:<32} frames {:>6}  p50 {:>6.2}  p99 {:>6.2}  max {:>7.2} ms  over {:.1} ms: {}",
@@ -837,7 +834,7 @@ fn hitch(path: &Path) -> Result<()> {
             ms(pct(&totals, 50.0)),
             ms(pct(&totals, 99.0)),
             ms(totals.iter().copied().max().unwrap_or_default()),
-            ms(tick),
+            ms(PAINT_FRAME),
             over
         );
     }
@@ -886,12 +883,11 @@ fn main() -> Result<()> {
     );
     tracing::subscriber::set_global_default(subscriber)?;
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack()?);
-    let tick = PAINT_FRAME;
     let mut stdout = std::io::stdout().lock();
     let _ = writeln!(
         stdout,
         "paint interval {:.1} ms (PAINT_FRAME); frames paced on its ticks, hot p99 back to back; intervals and jitter are COMPUTED from render times\n",
-        ms(tick)
+        ms(PAINT_FRAME)
     );
     let _ = writeln!(
         stdout,
@@ -921,9 +917,10 @@ fn main() -> Result<()> {
             .collect();
         let col = |f: fn(&Frame) -> Duration| frames.iter().map(f).collect::<Vec<_>>();
         let total = col(|f| f.total);
-        let over = total.iter().filter(|&&t| t > tick).count() as f64 * 100.0 / total.len() as f64;
-        let now_loop = sleep_loop(&total, tick);
-        let deadline = deadline_loop(&total, tick);
+        let over =
+            total.iter().filter(|&&t| t > PAINT_FRAME).count() as f64 * 100.0 / total.len() as f64;
+        let now_loop = sleep_loop(&total, PAINT_FRAME);
+        let deadline = deadline_loop(&total, PAINT_FRAME);
         let jitter = |xs: &[Duration]| pct(xs, 95.0).saturating_sub(pct(xs, 50.0));
         let mut bytes: Vec<u64> = frames.iter().map(|f| f.bytes).collect();
         bytes.sort_unstable();
@@ -971,7 +968,7 @@ fn main() -> Result<()> {
         }));
     }
     let (renders, observed, waited) = real_clock(&pack)?;
-    let modeled = sleep_loop(&renders, tick);
+    let modeled = sleep_loop(&renders, PAINT_FRAME);
     let _ = writeln!(
         stdout,
         "\nreal-clock half-block Full (waits on {waited}): interval OBSERVED p50/p95/p99 {:.2}/{:.2}/{:.2} ms vs COMPUTED {:.2}/{:.2}/{:.2} ms",
@@ -999,7 +996,7 @@ fn main() -> Result<()> {
     std::fs::write(
         &path,
         serde_json::to_string_pretty(&serde_json::json!({
-            "paint_interval_ms": ms(tick),
+            "paint_interval_ms": ms(PAINT_FRAME),
             "scenario_s": SCENARIO.as_secs_f64(),
             "intervals_are": "computed from render times, but for the real-clock case",
             "frames_are": "paced on the wall clock as the TUI's; frame_hot back to back",
