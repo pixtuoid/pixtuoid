@@ -21,11 +21,8 @@ use crate::install::target::MergeOutcome;
 
 const PLUGIN_ID: &str = "pixtuoid";
 
-/// OpenClaw's state-dir names, MODERN first (the clawdbot→openclaw rebrand).
-const STATE_DIRS: [&str; 2] = [".openclaw", ".clawdbot"];
-/// Config filenames inside a state dir, MODERN first — `resolveConfigPath`'s own
-/// search order.
-const CONFIG_FILES: [&str; 2] = ["openclaw.json", "clawdbot.json"];
+const STATE_DIR: &str = ".openclaw";
+const CONFIG_FILE: &str = "openclaw.json";
 #[cfg(test)]
 const SENTINEL: &str = "@pixtuoid-openclaw-plugin";
 pub(crate) const PLUGIN_TEMPLATE: &str = include_str!("openclaw_plugin.js");
@@ -66,14 +63,13 @@ const PACKAGE: &str = r#"{
 "#;
 
 /// OpenClaw's state dir (holds `openclaw.json` + `plugins/`), mirroring its own
-/// `resolveStateDir`: the `OPENCLAW_STATE_DIR` override wins; else
-/// `<effective-home>/.openclaw`, where the effective home is `OPENCLAW_HOME`, then
-/// **`$HOME`, then `%USERPROFILE%`** — HOME-FIRST, NOT pixtuoid's generic
-/// `USERPROFILE`-first `io::home_relative`. A Windows user who exports `HOME` (Git
-/// Bash / MSYS2 / Cygwin) has the gateway read `%HOME%\.openclaw\`, so writing to
-/// `%USERPROFILE%\.openclaw\` would leave our plugin where the gateway never loads
-/// it. The legacy `.clawdbot` dir is preferred when `.openclaw` is absent and it
-/// exists — don't shadow the user's real config.
+/// `resolveStateDir` (openclaw `src/config/state-dir.ts` @ v2026.11.2): the
+/// `OPENCLAW_STATE_DIR` override wins; else `<effective-home>/.openclaw`, where
+/// the effective home is `OPENCLAW_HOME`, then **`$HOME`, then `%USERPROFILE%`** —
+/// HOME-FIRST, NOT pixtuoid's generic `USERPROFILE`-first `io::home_relative`. A
+/// Windows user who exports `HOME` (Git Bash / MSYS2 / Cygwin) has the gateway
+/// read `%HOME%\.openclaw\`, so writing to `%USERPROFILE%\.openclaw\` would leave
+/// our plugin where the gateway never loads it.
 fn openclaw_state_dir() -> Result<PathBuf> {
     // OpenClaw `~`-expands both env vars against its OS home, so mirror that before
     // the path logic.
@@ -84,17 +80,15 @@ fn openclaw_state_dir() -> Result<PathBuf> {
         pixtuoid_core::platform::path_env("OPENCLAW_HOME")
             .map(|v| io::expand_tilde(&v, home.as_deref())),
         home,
-        |p| p.exists(),
     )
 }
 
 /// Pure core for [`openclaw_state_dir`] — inputs injected so the precedence is
-/// unit-testable without env/FS mutation.
+/// unit-testable without env mutation.
 fn resolve_openclaw_state_dir(
     state_dir_env: Option<PathBuf>,
     openclaw_home_env: Option<PathBuf>,
     os_home_first: Option<PathBuf>,
-    exists: impl Fn(&Path) -> bool,
 ) -> Result<PathBuf> {
     if let Some(d) = state_dir_env {
         return Ok(d);
@@ -105,79 +99,20 @@ fn resolve_openclaw_state_dir(
             "OPENCLAW_STATE_DIR/OPENCLAW_HOME/HOME/USERPROFILE",
         )
     })?;
-    let candidates = state_dir_candidates(&home);
-    Ok(candidates
-        .iter()
-        .find(|c| exists(c))
-        .cloned()
-        // Nothing exists yet ⇒ a fresh install lands in the MODERN dir; never
-        // shadow a real legacy one, which is why `find` runs first.
-        .unwrap_or_else(|| candidates[0].clone()))
+    Ok(home.join(STATE_DIR))
 }
 
-fn state_dir_candidates(home: &Path) -> Vec<PathBuf> {
-    STATE_DIRS.iter().map(|d| home.join(d)).collect()
-}
-
-/// The config file we merge into, mirroring OpenClaw's `resolveConfigPath`: the
-/// `OPENCLAW_CONFIG_PATH` override (a FULL config-file path, assumed absolute)
-/// wins; else the first EXISTING of the four modern/legacy dir × file candidates;
-/// else `<modern-dir>/openclaw.json` for a fresh install — never shadow a real
-/// config the gateway still reads.
+/// The config file we merge into, mirroring OpenClaw's `resolveConfigPath`
+/// (`src/config/paths.ts` @ v2026.11.2): the `OPENCLAW_CONFIG_PATH` override (a
+/// FULL config-file path), else `<state-dir>/openclaw.json`.
 pub(crate) fn default_config_path() -> Result<PathBuf> {
-    let home = pixtuoid_core::platform::home_first_dir();
-    let state_env = pixtuoid_core::platform::path_env("OPENCLAW_STATE_DIR");
-    // An explicit OPENCLAW_STATE_DIR points AT the dir and bypasses home resolution,
-    // so it gets NO legacy sibling search — the operator named the scope.
-    let legacy_home = match state_env {
-        Some(_) => None,
-        None => pixtuoid_core::platform::path_env("OPENCLAW_HOME")
-            .map(|v| io::expand_tilde(&v, home.as_deref()))
-            .or_else(|| home.clone()),
-    };
-    Ok(resolve_openclaw_config_path(
-        pixtuoid_core::platform::path_env("OPENCLAW_CONFIG_PATH")
-            .map(|v| io::expand_tilde(&v, home.as_deref())),
-        openclaw_state_dir()?,
-        legacy_home,
-        |p| p.exists(),
-    ))
-}
-
-/// Pure core for [`default_config_path`], inputs injected.
-///
-/// The candidate list is FLAT across both dirs, not "pick a dir, then pick a file
-/// in it" (upstream searches the same way). The nested form had a real hole: with
-/// `~/.openclaw` PRESENT (so it wins as the state dir) but the actual config at
-/// `~/.clawdbot/openclaw.json`, we resolved a path the gateway never reads —
-/// installing hooks into a file nobody loads, with `doctor` reporting green.
-/// `home` only contributes the legacy SIBLING (`None` ⇒ just the state dir's two).
-fn resolve_openclaw_config_path(
-    config_path_env: Option<PathBuf>,
-    state_dir: PathBuf,
-    home: Option<PathBuf>,
-    exists: impl Fn(&Path) -> bool,
-) -> PathBuf {
-    if let Some(p) = config_path_env {
-        return p;
+    if let Some(p) = pixtuoid_core::platform::path_env("OPENCLAW_CONFIG_PATH") {
+        return Ok(io::expand_tilde(
+            &p,
+            pixtuoid_core::platform::home_first_dir().as_deref(),
+        ));
     }
-    let mut dirs = vec![state_dir.clone()];
-    if let Some(h) = home {
-        for legacy_dir in state_dir_candidates(&h) {
-            if legacy_dir != state_dir {
-                dirs.push(legacy_dir);
-            }
-        }
-    }
-    for dir in &dirs {
-        for file in CONFIG_FILES {
-            let cand = dir.join(file);
-            if exists(&cand) {
-                return cand;
-            }
-        }
-    }
-    state_dir.join(CONFIG_FILES[0])
+    Ok(openclaw_state_dir()?.join(CONFIG_FILE))
 }
 
 fn plugin_dir() -> Result<PathBuf> {
@@ -188,35 +123,7 @@ fn plugin_dir() -> Result<PathBuf> {
 /// Sources panel OFFERS it? Probes OpenClaw's OWN dir, NOT our plugin/config —
 /// keying on our artifact would chicken-and-egg.
 pub(crate) fn detect_installed() -> bool {
-    // The SAME env vars the SAME way `openclaw_state_dir()` does: without the
-    // `~`-expansion an override installs into the EXPANDED dir but probes the
-    // literal `~/…`, so the panel never offers the OpenClaw it just wrote to.
-    let home = pixtuoid_core::platform::home_first_dir();
-    resolve_openclaw_detect(
-        pixtuoid_core::platform::path_env("OPENCLAW_STATE_DIR")
-            .map(|v| io::expand_tilde(&v, home.as_deref())),
-        pixtuoid_core::platform::path_env("OPENCLAW_HOME")
-            .map(|v| io::expand_tilde(&v, home.as_deref())),
-        home,
-        |p| p.exists(),
-    )
-}
-
-/// Pure core for [`detect_installed`] — parallels [`resolve_openclaw_state_dir`]
-/// but answers "does ANY OpenClaw state dir exist" instead of picking one.
-fn resolve_openclaw_detect(
-    state_dir_env: Option<PathBuf>,
-    openclaw_home_env: Option<PathBuf>,
-    os_home_first: Option<PathBuf>,
-    exists: impl Fn(&Path) -> bool,
-) -> bool {
-    if let Some(d) = state_dir_env {
-        return exists(&d);
-    }
-    let Some(home) = openclaw_home_env.or(os_home_first) else {
-        return false;
-    };
-    state_dir_candidates(&home).iter().any(|c| exists(c))
+    openclaw_state_dir().is_ok_and(|d| d.exists())
 }
 
 /// The shim's absolute path, baked into the plugin — the gateway runs it under
@@ -498,20 +405,24 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
              an included file, which pixtuoid does not read"
         ));
     }
-    // Separator-tolerant so a Windows backslash path still matches.
+    // THIS state dir's plugin dir, compared as a `Path`: `verify_beside` stats only
+    // that dir, so a path a relocated state dir left behind would verify green
+    // while the gateway loads nothing (dsh's mount check, for the same reason).
+    let ours = plugin_dir();
     let registered = root["plugins"]["load"]["paths"]
         .as_array()
         .is_some_and(|paths| {
-            paths.iter().any(|p| {
-                p.as_str().is_some_and(|s| {
-                    s.replace('\\', "/")
-                        .ends_with(&format!("plugins/{PLUGIN_ID}"))
-                })
-            })
+            paths
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|s| ours.as_deref().is_ok_and(|d| Path::new(s) == d))
         });
     if !registered {
-        issues
-            .push("openclaw.json `load.paths` no longer registers the pixtuoid plugin dir".into());
+        issues.push(format!(
+            "openclaw.json `load.paths` does not register this state dir's pixtuoid plugin \
+             dir — {}",
+            reconnect(pixtuoid_core::source::openclaw::SOURCE_NAME)
+        ));
     }
     SchemaParse {
         issues,
@@ -524,13 +435,46 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
 mod tests {
     use super::*;
 
+    const STATE: &str = "/state/openclaw";
+
+    /// Pins the state dir every config op derives `plugin_dir()` from, so no test
+    /// reads the developer's own OpenClaw env or home.
+    fn in_state_dir<R>(f: impl FnOnce() -> R) -> R {
+        temp_env::with_vars(
+            [
+                ("OPENCLAW_STATE_DIR", Some(STATE)),
+                ("OPENCLAW_HOME", None),
+                ("OPENCLAW_CONFIG_PATH", None),
+            ],
+            f,
+        )
+    }
+
+    #[test]
+    fn verify_wants_this_state_dirs_plugin_path_not_any_pixtuoid_path() {
+        in_state_dir(|| {
+            let installed = merge_install("{}", "").unwrap();
+            assert!(verify_schema(&installed.content).issues.is_empty());
+            let mut moved: Value = serde_json::from_str(&installed.content).unwrap();
+            moved["plugins"]["load"]["paths"] = json!(["/old/state/plugins/pixtuoid"]);
+            let verdict = verify_schema(&moved.to_string());
+            assert!(
+                verdict
+                    .issues
+                    .iter()
+                    .any(|i| i.contains("`load.paths` does not register")),
+                "a path left by another state dir must not verify green: {:?}",
+                verdict.issues
+            );
+        });
+    }
+
     #[test]
     fn openclaw_state_dir_override_wins_outright() {
         let p = resolve_openclaw_state_dir(
             Some("/custom/state".into()),
             Some("/ignored/home".into()),
             Some(PathBuf::from("/ignored/oshome")),
-            |_| panic!("exists() must not be consulted when OPENCLAW_STATE_DIR is set"),
         )
         .unwrap();
         assert_eq!(p, PathBuf::from("/custom/state"));
@@ -542,121 +486,78 @@ mod tests {
             None,
             Some(r"D:\claw".into()),
             Some(PathBuf::from(r"C:\Users\me")),
-            |_| false,
         )
         .unwrap();
         assert_eq!(p, PathBuf::from(r"D:\claw").join(".openclaw"));
         let p =
-            resolve_openclaw_state_dir(None, None, Some(PathBuf::from(r"C:\Users\me")), |_| false)
-                .unwrap();
+            resolve_openclaw_state_dir(None, None, Some(PathBuf::from(r"C:\Users\me"))).unwrap();
         assert_eq!(p, PathBuf::from(r"C:\Users\me").join(".openclaw"));
     }
 
     #[test]
-    fn openclaw_state_dir_prefers_legacy_clawdbot_only_when_modern_absent() {
-        let home = PathBuf::from("/home/u");
-        let modern = home.join(".openclaw");
-        let legacy = home.join(".clawdbot");
-        let p =
-            resolve_openclaw_state_dir(None, None, Some(home.clone()), |q| q == modern).unwrap();
-        assert_eq!(p, modern);
-        let p =
-            resolve_openclaw_state_dir(None, None, Some(home.clone()), |q| q == legacy).unwrap();
-        assert_eq!(p, legacy);
-        let p = resolve_openclaw_state_dir(None, None, Some(home), |_| false).unwrap();
-        assert_eq!(p, modern);
-    }
-
-    #[test]
-    fn openclaw_config_path_override_and_legacy_file_preference() {
-        let home = PathBuf::from("/home/u");
-        let state = home.join(".openclaw");
-        let modern = state.join("openclaw.json");
-        let legacy = state.join("clawdbot.json");
-        let h = || Some(home.clone());
-        let p = resolve_openclaw_config_path(
-            Some("/custom/oc.json".into()),
-            state.clone(),
-            h(),
-            |_| panic!("exists() must not be consulted when OPENCLAW_CONFIG_PATH is set"),
-        );
-        assert_eq!(p, PathBuf::from("/custom/oc.json"));
+    fn openclaw_state_dir_is_the_modern_dir_whatever_else_exists_beside_it() {
+        let home = tempfile::tempdir().expect("temp home");
+        std::fs::create_dir(home.path().join(".clawdbot")).expect("a leftover pre-rename dir");
         assert_eq!(
-            resolve_openclaw_config_path(None, state.clone(), h(), |q| q == modern),
-            modern
-        );
-        assert_eq!(
-            resolve_openclaw_config_path(None, state.clone(), h(), |q| q == legacy),
-            legacy
-        );
-        assert_eq!(
-            resolve_openclaw_config_path(None, state.clone(), h(), |_| false),
-            modern
+            resolve_openclaw_state_dir(None, None, Some(home.path().to_path_buf())).unwrap(),
+            home.path().join(".openclaw"),
+            "upstream's resolveStateDir never falls back to .clawdbot"
         );
     }
 
     #[test]
-    fn openclaw_config_path_finds_a_config_in_the_legacy_dir_sibling() {
-        let home = PathBuf::from("/home/u");
-        let state = home.join(".openclaw"); // present, but holds no config
-        let real = home.join(".clawdbot").join("openclaw.json");
-        assert_eq!(
-            resolve_openclaw_config_path(None, state.clone(), Some(home.clone()), |q| q == real),
-            real,
-            "the legacy dir's config must win over a config-less modern dir"
+    fn the_config_is_the_override_else_openclaw_json_in_the_state_dir() {
+        let home = tempfile::tempdir().expect("temp home");
+        let state = home.path().join(".openclaw");
+        std::fs::create_dir(&state).expect("state dir");
+        std::fs::write(state.join("clawdbot.json"), "{}").expect("a pre-rename config file");
+        let custom = home.path().join("custom").join("oc.json");
+        let custom = custom.to_str().expect("utf-8 temp path");
+        let home_str = home.path().to_str().expect("utf-8 temp path");
+        temp_env::with_vars(
+            [
+                ("HOME", Some(home_str)),
+                ("USERPROFILE", None),
+                ("OPENCLAW_HOME", None),
+                ("OPENCLAW_STATE_DIR", None),
+                ("OPENCLAW_CONFIG_PATH", Some(custom)),
+            ],
+            || assert_eq!(default_config_path().unwrap(), PathBuf::from(custom)),
         );
-        let modern = state.join("openclaw.json");
-        assert_eq!(
-            resolve_openclaw_config_path(None, state.clone(), Some(home.clone()), |q| q == real
-                || q == modern),
-            modern
-        );
-        // `legacy_home: None` is what `default_config_path` passes when
-        // OPENCLAW_STATE_DIR is set.
-        let overridden = PathBuf::from("/custom/state");
-        assert_eq!(
-            resolve_openclaw_config_path(None, overridden.clone(), None, |q| q == real),
-            overridden.join("openclaw.json"),
-            "an overridden state dir outranks the legacy home sibling"
+        temp_env::with_vars(
+            [
+                ("HOME", Some(home_str)),
+                ("USERPROFILE", None),
+                ("OPENCLAW_HOME", None),
+                ("OPENCLAW_STATE_DIR", None),
+                ("OPENCLAW_CONFIG_PATH", None),
+            ],
+            || assert_eq!(default_config_path().unwrap(), state.join("openclaw.json")),
         );
     }
 
     #[test]
-    fn openclaw_detect_probes_the_same_resolved_dirs_as_install() {
-        let home = PathBuf::from("/home/u");
-        assert!(resolve_openclaw_detect(
-            Some(home.join("claw")),
-            None,
-            None,
-            |q| q == home.join("claw"),
-        ));
-        assert!(!resolve_openclaw_detect(
-            Some(home.join("claw")),
-            None,
-            None,
-            |_| false
-        ));
-        let claw_home = PathBuf::from("/expanded/claw");
-        assert!(resolve_openclaw_detect(
-            None,
-            Some(claw_home.clone()),
-            Some(home.clone()),
-            |q| q == claw_home.join(".clawdbot"),
-        ));
-        assert!(resolve_openclaw_detect(
-            None,
-            None,
-            Some(home.clone()),
-            |q| q == home.join(".openclaw")
-        ));
-        assert!(!resolve_openclaw_detect(None, None, None, |_| panic!(
-            "exists() must not be consulted when no home resolves"
-        )));
+    fn detect_probes_the_dir_install_writes_to() {
+        let home = tempfile::tempdir().expect("temp home");
+        let state = home.path().join("claw");
+        let state_str = state.to_str().expect("utf-8 temp path");
+        let probe = || {
+            temp_env::with_vars(
+                [
+                    ("OPENCLAW_STATE_DIR", Some(state_str)),
+                    ("OPENCLAW_HOME", None),
+                ],
+                detect_installed,
+            )
+        };
+        assert!(!probe(), "no state dir yet");
+        std::fs::create_dir(&state).expect("state dir");
+        assert!(probe());
     }
 
     #[test]
     fn openclaw_state_dir_errors_when_nothing_resolves() {
-        let err = resolve_openclaw_state_dir(None, None, None, |_| false).unwrap_err();
+        let err = resolve_openclaw_state_dir(None, None, None).unwrap_err();
         assert!(
             err.to_string().ends_with("unset); set one and reconnect"),
             "unresolvable home must surface the actionable error: {err}"
@@ -685,9 +586,7 @@ mod tests {
 
     #[test]
     fn install_renders_plugin_with_baked_shim_path_and_sentinel() {
-        // Serialized with the tests that unset HOME and USERPROFILE, under which
-        // `home_first_dir()` returns None.
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let arts = plugin_artifacts("/opt/bin/pixtuoid-hook").unwrap();
             assert_eq!(arts.len(), 3, "manifest + package.json + index.js");
             let index = &arts
@@ -738,7 +637,7 @@ mod tests {
 
     #[test]
     fn merge_install_adds_load_path_enabled_and_the_grant() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let out = merge_install("{}", "/opt/bin/pixtuoid-hook").unwrap();
             assert!(out.changed);
             let v: Value = serde_json::from_str(&out.content).unwrap();
@@ -749,58 +648,18 @@ mod tests {
                 json!(true),
                 "the running-tell grant"
             );
-            let paths = v["plugins"]["load"]["paths"].as_array().unwrap();
-            assert!(
-                paths.iter().any(|p| {
-                    p.as_str()
-                        .unwrap()
-                        .replace('\\', "/")
-                        .ends_with("plugins/pixtuoid")
-                }),
-                "load.paths points at the plugin dir"
-            );
-        });
-    }
-
-    /// Drives the env-wiring WRAPPER, not the pure core the cases above inject
-    /// into. Asserts a shape invariant that holds under any ambient env, so it
-    /// needs no env mutation; the env→argument MAPPING itself is covered by the
-    /// openclaw e2e scripts.
-    #[test]
-    fn default_config_path_is_always_a_real_openclaw_config_file() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
-            let p = default_config_path().expect("a dev machine resolves a home");
-            assert!(
-                !p.as_os_str().is_empty(),
-                "an empty path would be merged into, and created, at the filesystem root"
-            );
-            let name = p
-                .file_name()
-                .and_then(|n| n.to_str())
-                .expect("a config FILE, not a directory");
-            assert!(
-                CONFIG_FILES.contains(&name),
-                "must be one of OpenClaw's own config filenames {CONFIG_FILES:?} — got {name}"
-            );
-            let parent = p.parent().expect("the config sits inside a state dir");
-            let dir = parent
-                .file_name()
-                .and_then(|n| n.to_str())
-                .expect("a named state dir");
-            assert!(
-                STATE_DIRS.contains(&dir),
-                "must sit in one of OpenClaw's own state dirs {STATE_DIRS:?} — got {dir}"
-            );
-            assert!(
-                p.is_absolute(),
-                "a relative path would resolve against the CLI's cwd at merge time"
+            let ours = Path::new(STATE).join("plugins").join(PLUGIN_ID);
+            assert_eq!(
+                v["plugins"]["load"]["paths"],
+                json!([ours.to_str().unwrap()]),
+                "load.paths points at the state dir's plugin dir"
             );
         });
     }
 
     #[test]
     fn merge_install_is_idempotent() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let a = merge_install("{}", "/x").unwrap();
             let b = merge_install(&a.content, "/x").unwrap();
             assert!(!b.changed, "re-install of the same state is a no-op");
@@ -809,7 +668,7 @@ mod tests {
 
     #[test]
     fn merge_install_preserves_foreign_config() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let foreign = r#"{"gateway":{"mode":"local"},"plugins":{"entries":{"anthropic":{"enabled":true}},"load":{"paths":["/some/other/plugin"]}}}"#;
             let out = merge_install(foreign, "/x").unwrap();
             let v: Value = serde_json::from_str(&out.content).unwrap();
@@ -828,7 +687,7 @@ mod tests {
 
     #[test]
     fn include_is_detected_at_any_depth_and_only_when_present() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             for clean in [
                 json!({}),
                 json!({"gateway": {"port": 18789}}),
@@ -881,7 +740,7 @@ mod tests {
 
     #[test]
     fn removing_only_our_load_path_still_counts_as_ours() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             // A full install, then hand-drop the entry so ONLY the path identifies us.
             let installed = merge_install(r#"{"plugins":{"allow":["anthropic"]}}"#, "").unwrap();
             let mut v: Value = serde_json::from_str(&installed.content).unwrap();
@@ -920,7 +779,7 @@ mod tests {
 
     #[test]
     fn install_joins_a_curated_allowlist_but_never_an_empty_one() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let curated = merge_install(r#"{"plugins":{"allow":["anthropic"]}}"#, "").unwrap();
             let v: Value = serde_json::from_str(&curated.content).unwrap();
             let allow = v["plugins"]["allow"].as_array().unwrap();
@@ -973,7 +832,7 @@ mod tests {
 
     #[test]
     fn verify_flags_every_fail_closed_switch_that_silently_stops_the_plugin() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let installed = merge_install("{}", "").unwrap();
             let with = |mutate: &dyn Fn(&mut Value)| {
                 let mut v: Value = serde_json::from_str(&installed.content).unwrap();
@@ -1050,7 +909,7 @@ mod tests {
 
     #[test]
     fn verify_flags_an_allowlist_that_omits_us_and_notes_json5_and_include() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let installed = merge_install("{}", "").unwrap();
             assert!(verify_schema(&installed.content).issues.is_empty());
 
@@ -1092,7 +951,7 @@ mod tests {
 
     #[test]
     fn a_reload_mode_that_never_applies_our_write_is_noted_but_not_a_break() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let installed = merge_install("{}", "").unwrap();
             let with_mode = |mode: &str| {
                 let mut v: Value = serde_json::from_str(&installed.content).unwrap();
@@ -1136,7 +995,7 @@ mod tests {
 
     #[test]
     fn uninstall_prunes_its_own_husk_but_keeps_anything_foreign() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let installed = merge_install("{}", "").unwrap();
             let removed = merge_uninstall(&installed.content).unwrap();
             assert!(removed.changed);
@@ -1157,7 +1016,7 @@ mod tests {
 
     #[test]
     fn uninstall_revokes_the_grant_but_keeps_foreign_entries() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let installed = merge_install(
                 r#"{"plugins":{"entries":{"anthropic":{"enabled":true}}}}"#,
                 "/x",
@@ -1189,7 +1048,7 @@ mod tests {
 
     #[test]
     fn uninstall_of_unmanaged_config_is_a_no_op() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             // `changed` IS the `has_hooks` signal, so any shape we did not write must
             // report false — including the empty containers our own prune produces.
             for unmanaged in [
@@ -1212,7 +1071,7 @@ mod tests {
 
     #[test]
     fn uninstall_undoes_the_allowlist_join_without_ever_emptying_it() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let joined = merge_install(r#"{"plugins":{"allow":["anthropic"]}}"#, "").unwrap();
             let v: Value = serde_json::from_str(&merge_uninstall(&joined.content).unwrap().content)
                 .expect("valid json");
@@ -1246,7 +1105,7 @@ mod tests {
 
     #[test]
     fn uninstall_never_empties_the_allowlist_even_when_every_entry_is_ours() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             // Upstream trims, so a padded copy is the SAME id — the first two inputs are
             // lists whose every entry is ours.
             for input in [
@@ -1268,7 +1127,7 @@ mod tests {
 
     #[test]
     fn merge_refuses_a_json5_document_instead_of_dropping_its_comments() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             // VALID JSON5 that serde_json cannot represent: a comment plus a trailing
             // comma.
             let json5 = "{\n  // my gateway notes — DO NOT LOSE\n  \"gateway\": { \"port\": 19789 },\n  \"plugins\": {},\n}\n";
@@ -1287,7 +1146,7 @@ mod tests {
 
     #[test]
     fn install_then_uninstall_round_trips() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let installed = merge_install("{}", "/x").unwrap();
             let removed = merge_uninstall(&installed.content).unwrap();
             let v: Value = serde_json::from_str(&removed.content).unwrap();
@@ -1297,7 +1156,7 @@ mod tests {
 
     #[test]
     fn empty_content_is_treated_as_empty_document() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        in_state_dir(|| {
             let out = merge_install("", "/x").unwrap();
             assert!(out.changed);
             assert!(serde_json::from_str::<Value>(&out.content).is_ok());
