@@ -100,9 +100,14 @@ pub(crate) const CALM_TICK_MS: u64 = 500;
 ///
 /// [`OfficeSession::until_next_paint`]: crate::floor::OfficeSession::until_next_paint
 pub const PAINT_FPS: u32 = 30;
-/// One [`PAINT_FPS`] frame, in whole ms.
+/// One [`PAINT_FPS`] frame.
+pub const PAINT_FRAME: Duration = match Duration::from_secs(1).checked_div(PAINT_FPS) {
+    Some(frame) => frame,
+    None => panic!("PAINT_FPS is zero"),
+};
+/// [`PAINT_FRAME`] truncated to whole ms.
 #[doc(hidden)]
-pub const PAINT_FRAME_MS: u64 = 1000 / PAINT_FPS as u64;
+pub const PAINT_FRAME_MS: u64 = PAINT_FRAME.as_millis() as u64;
 
 /// The least any phase of a flash — a strike's level, a starved neon's catch,
 /// the dark between — lasts in loop time: the project's own floor, beside

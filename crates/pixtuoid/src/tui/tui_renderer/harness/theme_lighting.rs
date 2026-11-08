@@ -73,7 +73,7 @@ fn occupied_floor_stays_lit() {
 fn each_strike_phase_holds_the_floor_on_screen_in_half_blocks() {
     use crate::test_flash::{assert_each_phase_holds_the_floor, frame_grid, lead, storm_strike};
     let strike = storm_strike();
-    let tick = crate::tui::frame_tick();
+    let tick = pixtuoid_scene::anim::PAINT_FRAME;
     for (frame, offset) in frame_grid(tick) {
         let (cols, rows) = crate::tui::renderer::min_terminal_size();
         let (mut r, screen, _) = half_blocks_on_screen(cols, rows);
@@ -289,7 +289,7 @@ fn each_stutter_phase_holds_the_floor_on_screen_in_half_blocks() {
         assert_each_phase_holds_the_floor, frame_grid, lead, neon_tube, starved_stutter,
     };
     let stutter = starved_stutter();
-    let tick = crate::tui::frame_tick();
+    let tick = pixtuoid_scene::anim::PAINT_FRAME;
     let scene = scene_with(vec![], 16);
     for (frame, offset) in frame_grid(tick) {
         let (cols, rows) = crate::tui::renderer::min_terminal_size();

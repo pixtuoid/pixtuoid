@@ -7,7 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use pixtuoid_scene::anim::PAINT_FRAME_MS;
+use pixtuoid_scene::anim::{PAINT_FRAME, PAINT_FRAME_MS};
 use pixtuoid_scene::look::FrameNote;
 
 /// The target every report logs under, whatever module this is:
@@ -156,7 +156,7 @@ impl Jank {
             due: None,
             since: None,
             painter: Painter::default(),
-            interval: Duration::from_millis(PAINT_FRAME_MS),
+            interval: PAINT_FRAME,
         }
     }
 

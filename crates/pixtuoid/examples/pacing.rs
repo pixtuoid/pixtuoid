@@ -41,7 +41,7 @@ use anyhow::{Context, Result};
 use pixtuoid::dev::{Protocol, renderer};
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
-use pixtuoid_scene::anim::{Motion, PAINT_FPS};
+use pixtuoid_scene::anim::{Motion, PAINT_FRAME};
 use pixtuoid_scene::look::spans;
 use pixtuoid_scene::pet::{Pet, PetKind};
 use pixtuoid_scene::sky::{Weather, WeatherPolicy, first_strike_after};
@@ -224,7 +224,7 @@ fn run(
     pack: &Arc<pixtuoid_scene::pack::OfficeArt>,
     pace: Pace,
 ) -> Result<Vec<Frame>> {
-    let tick = Duration::from_secs(1) / PAINT_FPS;
+    let tick = PAINT_FRAME;
     let pets = vec![Pet::defaulted(PetKind::Cat), Pet::defaulted(PetKind::Dog)];
     let (mut r, wire) = renderer(
         case.protocol,
@@ -290,7 +290,7 @@ fn run(
 fn real_clock(
     pack: &Arc<pixtuoid_scene::pack::OfficeArt>,
 ) -> Result<(Vec<Duration>, Vec<Duration>, &'static str)> {
-    let tick = Duration::from_secs(1) / PAINT_FPS;
+    let tick = PAINT_FRAME;
     let (mut r, _wire) = renderer(
         Protocol::HalfBlock,
         TERMINAL.0,
@@ -543,7 +543,7 @@ fn hitch(path: &Path) -> Result<()> {
             == OWNER_OFFICE),
         "the owner's terminal no longer gives the owner's office exactly: its runs stop being comparable"
     );
-    let tick = Duration::from_secs(1) / PAINT_FPS;
+    let tick = PAINT_FRAME;
     let real_secs = pixtuoid_core::platform::text_env("HITCH_REAL_SECS")
         .map(|s| s.parse().with_context(|| format!("HITCH_REAL_SECS={s:?}")))
         .transpose()?
@@ -886,11 +886,11 @@ fn main() -> Result<()> {
     );
     tracing::subscriber::set_global_default(subscriber)?;
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack()?);
-    let tick = Duration::from_secs(1) / PAINT_FPS;
+    let tick = PAINT_FRAME;
     let mut stdout = std::io::stdout().lock();
     let _ = writeln!(
         stdout,
-        "paint interval {:.1} ms (1 s / PAINT_FPS); frames paced on its ticks, hot p99 back to back; intervals and jitter are COMPUTED from render times\n",
+        "paint interval {:.1} ms (PAINT_FRAME); frames paced on its ticks, hot p99 back to back; intervals and jitter are COMPUTED from render times\n",
         ms(tick)
     );
     let _ = writeln!(

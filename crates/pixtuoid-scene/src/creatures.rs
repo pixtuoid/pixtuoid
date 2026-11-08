@@ -656,15 +656,12 @@ mod tests {
             "the sweep must reach furniture, saw {checked}"
         );
     }
-    use crate::anim::{Motion, PAINT_FPS};
+    use crate::anim::{Motion, PAINT_FPS, PAINT_FRAME_MS};
     use crate::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs};
     use crate::pathfind::{AStarRouter, point_in_walkable_cell};
     use crate::pet::{Pet, PetState};
     use crate::sim::SimFrame;
     use crate::walkable::OccupancyOverlay;
-
-    /// One paint, as a painter repaints.
-    const PAINT_MS: u64 = 1_000 / PAINT_FPS as u64;
 
     fn test_pack() -> OfficeArt {
         crate::pack::test_office()
@@ -718,7 +715,7 @@ mod tests {
             },
         };
         (from_ms..to_ms)
-            .step_by(PAINT_MS as usize)
+            .step_by(PAINT_FRAME_MS as usize)
             .map(|ms| walk.step(roam, &mut ground, motion.timing(at(ms))))
             .collect()
     }
@@ -752,7 +749,7 @@ mod tests {
     #[test]
     fn no_creature_outpaces_its_stride() {
         // a second of paints
-        const PAINTS: usize = (1_000 / PAINT_MS) as usize;
+        const PAINTS: usize = PAINT_FPS as usize;
         let pack = test_pack();
         let l = layout(192, 80);
         // the travel progress rounds at each end of a span, on a path about
@@ -770,7 +767,8 @@ mod tests {
                 stride as f32 / (ticks * FULL_TICK_MS) as f32,
                 "{anim} cruises off its {ticks}-tick cadence"
             );
-            let cadence = u64::from(stride) * PAINTS as u64 * PAINT_MS / (ticks * FULL_TICK_MS);
+            let cadence =
+                u64::from(stride) * PAINTS as u64 * PAINT_FRAME_MS / (ticks * FULL_TICK_MS);
             let mut walked = 0;
             for seed in 0..4 {
                 let mut walk = CreatureWalk::at_home(&l, seed, at(0));
@@ -901,14 +899,20 @@ mod tests {
             .position(|s| s.is_some_and(|s| s.walking.is_some()))
             .expect("the cat sets off");
         let mut walk = CreatureWalk::at_home(&l, 3, at(0));
-        let start = off as u64 * PAINT_MS;
-        drive(&mut walk, roam, &l, Motion::Full, (0, start + PAINT_MS));
+        let start = off as u64 * PAINT_FRAME_MS;
+        drive(
+            &mut walk,
+            roam,
+            &l,
+            Motion::Full,
+            (0, start + PAINT_FRAME_MS),
+        );
         let still = drive(
             &mut walk,
             roam,
             &l,
             Motion::Still,
-            (start + PAINT_MS, start + 120_000),
+            (start + PAINT_FRAME_MS, start + 120_000),
         );
         let last = still.last().copied().flatten().expect("still on the floor");
         assert_eq!(last.walking, None, "the walk arrived");
@@ -1032,7 +1036,7 @@ mod tests {
         let scene = SceneState::default();
         let cat = Pet::defaulted(PetKind::Cat);
         let walking_at = (0..120_000)
-            .step_by(PAINT_MS as usize)
+            .step_by(PAINT_FRAME_MS as usize)
             .find(|&ms| {
                 office
                     .frame(&scene, Some(&cat), None, ms)
@@ -1041,16 +1045,16 @@ mod tests {
             })
             .expect("the cat sets off");
         let held = office
-            .frame(&scene, Some(&cat), None, walking_at + PAINT_MS)
+            .frame(&scene, Some(&cat), None, walking_at + PAINT_FRAME_MS)
             .pet
             .expect("drawn");
         let petting = PetState {
-            petted_at: at(walking_at + PAINT_MS),
+            petted_at: at(walking_at + PAINT_FRAME_MS),
             kind: PetKind::Cat,
             floor_idx: 0,
         };
-        let pet_ms = walking_at + PAINT_MS;
-        for ms in (pet_ms..pet_ms + crate::pet::PET_DURATION_MS).step_by(PAINT_MS as usize) {
+        let pet_ms = walking_at + PAINT_FRAME_MS;
+        for ms in (pet_ms..pet_ms + crate::pet::PET_DURATION_MS).step_by(PAINT_FRAME_MS as usize) {
             let p = office
                 .frame(&scene, Some(&cat), Some(&petting), ms)
                 .pet
@@ -1143,7 +1147,7 @@ mod tests {
         let mut walk = CreatureWalk::at_home(&l, 3, at(0));
         let mut ms = 0;
         let held = loop {
-            ms += PAINT_MS;
+            ms += PAINT_FRAME_MS;
             let s = walk
                 .step(roam, &mut ground, Motion::Full.timing(at(ms)))
                 .expect("drawn");
@@ -1154,7 +1158,7 @@ mod tests {
         };
         let until = ms + crate::pet::PET_DURATION_MS;
         while ms < until {
-            ms += PAINT_MS;
+            ms += PAINT_FRAME_MS;
             walk.hold(at(ms));
             let s = walk
                 .step(roam, &mut ground, Motion::Full.timing(at(ms)))
@@ -1162,7 +1166,7 @@ mod tests {
             assert_eq!(s.at, held.at, "it moved while petted");
         }
         let rest = loop {
-            ms += PAINT_MS;
+            ms += PAINT_FRAME_MS;
             let s = walk
                 .step(roam, &mut ground, Motion::Full.timing(at(ms)))
                 .expect("drawn");
@@ -1185,7 +1189,7 @@ mod tests {
         let scene = SceneState::default();
         let cat = Pet::defaulted(PetKind::Cat);
         let (mut rested, mut walked) = (false, false);
-        for ms in (0..120_000).step_by(PAINT_MS as usize) {
+        for ms in (0..120_000).step_by(PAINT_FRAME_MS as usize) {
             let walking = office
                 .frame(&scene, Some(&cat), None, ms)
                 .pet
@@ -1246,7 +1250,7 @@ mod tests {
         let dog = Pet::defaulted(PetKind::Dog);
         let (mut west, mut east, mut slept) = (0, 0, 0);
         let mut last: Option<(Point, bool)> = None;
-        for ms in (0..300_000).step_by(PAINT_MS as usize) {
+        for ms in (0..300_000).step_by(PAINT_FRAME_MS as usize) {
             let p = office
                 .frame(&scene, Some(&dog), None, ms)
                 .pet
@@ -1319,7 +1323,7 @@ mod tests {
                 |pose: Option<&Option<Pose>>| matches!(pose, Some(Some(Pose::Walking { .. })));
             let mut seen = [false; SEEN.len()];
             let mut rests_at = None;
-            for ms in (0..60_000).step_by(PAINT_MS as usize) {
+            for ms in (0..60_000).step_by(PAINT_FRAME_MS as usize) {
                 let scene = if ms < exit_ms { &before } else { &after };
                 let f = office.frame(scene, Some(&cat), None, ms);
                 let pet = f.pet.as_ref().expect("the cat is drawn");
@@ -1389,12 +1393,12 @@ mod tests {
         let mut ms = delay;
         let mut stood = pos;
         while ms < 60_000 {
-            ms += PAINT_MS;
+            ms += PAINT_FRAME_MS;
             stood = lobsters(&office.frame(&up, None, None, ms))[0].0;
         }
         let mut down = SceneState::default();
         gateway(&mut down, "18789", DaemonLiveness::Down, 0, ms);
-        ms += PAINT_MS;
+        ms += PAINT_FRAME_MS;
         let (out, anim) = lobsters(&office.frame(&down, None, None, ms))[0];
         assert_eq!(anim, Piece::LobsterWalk, "it walks out");
         assert!(
@@ -1405,7 +1409,7 @@ mod tests {
         let gone = SceneState::default();
         let mut walking_out = 0;
         loop {
-            ms += PAINT_MS;
+            ms += PAINT_FRAME_MS;
             let f = office.frame(&gone, None, None, ms);
             match lobsters(&f)[..] {
                 [] => break,
@@ -1419,7 +1423,7 @@ mod tests {
             );
             walking_out += 1;
             assert!(
-                walking_out < 120_000 / PAINT_MS,
+                walking_out < 120_000 / PAINT_FRAME_MS,
                 "it never reached the elevator"
             );
         }
@@ -1429,7 +1433,7 @@ mod tests {
             "and its walk with it"
         );
         assert!(
-            lobsters(&office.frame(&down, None, None, ms + PAINT_MS)).is_empty(),
+            lobsters(&office.frame(&down, None, None, ms + PAINT_FRAME_MS)).is_empty(),
             "a gone gateway does not walk back in"
         );
     }
@@ -1447,20 +1451,20 @@ mod tests {
         gateway(&mut up, "18789", DaemonLiveness::UP, 0, 0);
         let mut ms = delay;
         while ms < 60_000 {
-            ms += PAINT_MS;
+            ms += PAINT_FRAME_MS;
             office.frame(&up, None, None, ms);
         }
         let mut down = SceneState::default();
         gateway(&mut down, "18789", DaemonLiveness::Down, 0, ms);
         for _ in 0..3 {
-            ms += PAINT_MS;
+            ms += PAINT_FRAME_MS;
             assert_eq!(
                 lobsters(&office.frame(&down, None, None, ms))[0].1,
                 Piece::LobsterWalk
             );
         }
 
-        let back = ms + PAINT_MS;
+        let back = ms + PAINT_FRAME_MS;
         let mut again = SceneState::default();
         gateway(&mut again, "18789", DaemonLiveness::UP, back, back);
         assert!(
@@ -1529,7 +1533,7 @@ mod tests {
             .session
             .floor_mut()
             .grip(&Gesture::Lift { figure, at: over });
-        ms += PAINT_MS;
+        ms += PAINT_FRAME_MS;
         assert_eq!(
             lobsters(&office.frame(&up, None, None, ms))[0].1,
             Piece::LobsterRest,
@@ -1538,7 +1542,7 @@ mod tests {
 
         let mut down = SceneState::default();
         gateway(&mut down, "18789", DaemonLiveness::Down, 0, ms);
-        ms += PAINT_MS;
+        ms += PAINT_FRAME_MS;
         let out = lobsters(&office.frame(&down, None, None, ms));
         let [(pos, anim)] = out[..] else {
             panic!("it walks out, not vanishes: {out:?}");
@@ -1553,15 +1557,15 @@ mod tests {
             pixtuoid_core::source::openclaw::SOURCE_NAME,
             &DaemonInstanceId::new("18789").expect("non-empty"),
         ));
-        let back = ms + PAINT_MS;
+        let back = ms + PAINT_FRAME_MS;
         let mut again = SceneState::default();
         gateway(&mut again, "18789", DaemonLiveness::UP, back, back);
-        for ms in (back..=back + delay).step_by(PAINT_MS as usize) {
+        for ms in (back..=back + delay).step_by(PAINT_FRAME_MS as usize) {
             office.session.floor_mut().grip(&Gesture::Carry(over));
             office.frame(&again, None, None, ms);
         }
         office.session.floor_mut().grip(&Gesture::Carry(over));
-        let first = lobsters(&office.frame(&again, None, None, back + delay + PAINT_MS));
+        let first = lobsters(&office.frame(&again, None, None, back + delay + PAINT_FRAME_MS));
         assert_eq!(
             first.first().map(|&(_, anim)| anim),
             Some(Piece::LobsterWalk),
@@ -1642,7 +1646,7 @@ mod tests {
             gateway(&mut scene, port, DaemonLiveness::UP, 0, 0);
         }
         let mut both = 0;
-        for ms in (0..6_000).step_by(PAINT_MS as usize) {
+        for ms in (0..6_000).step_by(PAINT_FRAME_MS as usize) {
             let f = office.frame(&scene, None, None, ms);
             // a sibling still in its stagger is a sibling: the port shows
             assert!(

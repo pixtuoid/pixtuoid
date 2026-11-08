@@ -738,7 +738,7 @@ mod tests {
             assert_each_phase_holds_the_floor, frame_grid, lead, storm_strike,
         };
         let strike = storm_strike();
-        for (frame, offset) in frame_grid(super::super::cadence::frame()) {
+        for (frame, offset) in frame_grid(pixtuoid_scene::anim::PAINT_FRAME) {
             let mut window = Window::new(strike.weather);
             let now = strike.start - lead(frame) + offset;
             let mut shown = window.present(now);
@@ -779,7 +779,7 @@ mod tests {
                 .map(|(x, y)| buf.get(x, y))
                 .collect()
         };
-        for (frame, offset) in frame_grid(super::super::cadence::frame()) {
+        for (frame, offset) in frame_grid(pixtuoid_scene::anim::PAINT_FRAME) {
             let mut window = Window::new(stutter.weather);
             for at in stutter.setup {
                 window.present(at);
