@@ -1,6 +1,6 @@
 reviews:
-  # Its default writes into the PR body, the claims REVIEW.md's correctness lens
-  # holds the diff to.
+  # Its default writes into the PR body (coderabbit.ai/integrations/schema.v2.json),
+  # which the review judges as the author's.
   high_level_summary: false
   auto_review:
     # The Claude review judges every push, stacked PRs included.
