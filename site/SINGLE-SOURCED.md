@@ -53,7 +53,7 @@ Notes no gate carries:
   model (the web `labels == badges` test): a badge's name in its activity tone
   on its plate, ringed in its CLI's hue and framed by the engine's
   `badge_insets`, never a copy of its numbers. Rules:
-  captions fade in only after the roll settles; `JSON.parse` try/caught;
+  captions pop in only after the roll settles; `JSON.parse` try/caught;
   `.textContent` never `innerHTML` (cwds are untrusted); reduced-motion is
   `display:none`; the board's legibility is HALO-carried by design (raw hues are
   deliberately not WCAG-gated against office pixels). Pinned by

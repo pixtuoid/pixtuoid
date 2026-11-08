@@ -1168,10 +1168,24 @@ test('the dracula sequence honours the keyboard-shortcut off-switch (WCAG 2.1.4)
 
 test('crisp AA captions overlay the live office (name badges + neon board)', async ({ page }) => {
   const errors = watchErrors(page);
+  // Lighthouse's color-contrast grades the captions at whatever opacity it meets them, so none is partial.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __captionsOnAt?: string };
+    const on = new MutationObserver(() => {
+      const overlay = document.getElementById('office-overlay');
+      if (!overlay?.classList.contains('is-on')) return;
+      on.disconnect();
+      w.__captionsOnAt = getComputedStyle(overlay).opacity;
+    });
+    on.observe(document, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  });
   await gotoLive(page);
-  // The caption layer fades in only AFTER the reveal roll settles, so wait on
-  // is-on, not merely is-live.
+  // The captions turn on only AFTER the reveal roll settles: wait on is-on, not merely is-live.
   await expect(page.locator('#office-overlay.is-on')).toBeAttached({ timeout: 10_000 });
+  expect(
+    await page.evaluate(() => (window as unknown as { __captionsOnAt?: string }).__captionsOnAt),
+    'the captions turned on part-way through a fade'
+  ).toBe('1');
   // 10s covers the cast's staggered walk-in at loop start.
   const label = page.locator('#office-overlay .ov-label').first();
   await expect(label).toHaveText(/\S/, { timeout: 10_000 });
