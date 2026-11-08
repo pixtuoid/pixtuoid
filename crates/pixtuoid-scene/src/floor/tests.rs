@@ -15,8 +15,8 @@ fn frame_layout_memo_matches_fresh_compute_across_hits_resizes_and_none() {
     let fresh =
         crate::layout::SceneLayout::compute(crate::layout::Viewport::full(192, 156), None, 0)
             .unwrap();
-    let a = ctx.frame_layout(Viewport::full(192, 156), 0).unwrap();
-    let b = ctx.frame_layout(Viewport::full(192, 156), 0).unwrap();
+    let a = ctx.frame_layout(Viewport::full(192, 156), 0, t0()).unwrap();
+    let b = ctx.frame_layout(Viewport::full(192, 156), 0, t0()).unwrap();
     // Pointer identity first: the value-equality below would still pass a reverted
     // `Arc::new((**l).clone())`.
     assert!(
@@ -28,28 +28,31 @@ fn frame_layout_memo_matches_fresh_compute_across_hits_resizes_and_none() {
         assert_eq!(l.reachable, fresh.reachable);
         assert_eq!(l.home_desks.len(), fresh.home_desks.len());
     }
-    let resized = ctx.frame_layout(Viewport::full(120, 100), 0).unwrap();
+    let resized = ctx.frame_layout(Viewport::full(120, 100), 0, t0()).unwrap();
     let fresh_resized =
         crate::layout::SceneLayout::compute(crate::layout::Viewport::full(120, 100), None, 0)
             .unwrap();
     assert_eq!(resized.walkable, fresh_resized.walkable);
     // A too-small buffer is None and must not poison the memo.
-    assert!(ctx.frame_layout(Viewport::full(3, 3), 0).is_none());
+    assert!(ctx.frame_layout(Viewport::full(3, 3), 0, t0()).is_none());
     assert_eq!(
-        ctx.frame_layout(Viewport::full(192, 156), 0)
+        ctx.frame_layout(Viewport::full(192, 156), 0, t0())
             .unwrap()
             .walkable,
         fresh.walkable
     );
 }
 
-/// A new layout drops the router's cached paths, a height-only resize's too:
-/// `route` revalidates a cached path against the overlay alone, never the
-/// mask, so a stale one would walk through the new layout's walls.
+/// A new layout drops the router's cached paths, a height-only resize's and
+/// an inset change's that keeps the corridor too: `route` revalidates a cached
+/// path against the overlay alone, never the mask, so a stale one would walk
+/// through the new layout's walls.
 #[test]
 fn a_new_layout_drops_the_routers_cached_paths() {
+    use crate::layout::Insets;
     use crate::pathfind::Router;
     use crate::walkable::OccupancyOverlay;
+    let now = t0();
     let cache_a_route = |ctx: &mut FloorCtx, l: &crate::layout::SceneLayout| {
         let mut walkable = (0..l.buf_h)
             .flat_map(|y| (0..l.buf_w).map(move |x| crate::layout::Point { x, y }))
@@ -61,18 +64,21 @@ fn a_new_layout_drops_the_routers_cached_paths() {
         assert!(!ctx.router.is_empty(), "the route was cached");
     };
     let mut ctx = FloorCtx::new();
-    let l = ctx.frame_layout(Viewport::full(192, 156), 0).unwrap();
+    let l = ctx.frame_layout(Viewport::full(192, 156), 0, now).unwrap();
     cache_a_route(&mut ctx, &l);
-    ctx.frame_layout(Viewport::full(192, 156), 0).unwrap();
+    ctx.frame_layout(Viewport::full(192, 156), 0, now).unwrap();
     assert!(!ctx.router.is_empty(), "the same layout keeps its paths");
-    ctx.frame_layout(Viewport::full(120, 100), 0).unwrap();
+    ctx.frame_layout(Viewport::full(120, 100), 0, now).unwrap();
     assert!(ctx.router.is_empty(), "a new layout drops its paths");
     for h in 40..=240 {
-        let Some(l) = ctx.frame_layout(Viewport::full(192, h), 0) else {
+        let Some(l) = ctx.frame_layout(Viewport::full(192, h), 0, now) else {
             continue;
         };
         cache_a_route(&mut ctx, &l);
-        if ctx.frame_layout(Viewport::full(192, h + 1), 0).is_some() {
+        if ctx
+            .frame_layout(Viewport::full(192, h + 1), 0, now)
+            .is_some()
+        {
             assert!(
                 ctx.router.is_empty(),
                 "192x{h} to 192x{} kept its paths",
@@ -80,6 +86,20 @@ fn a_new_layout_drops_the_routers_cached_paths() {
             );
         }
     }
+    let bare = Viewport::full(150, 163);
+    let l = ctx.frame_layout(bare, 0, now).expect("lays out");
+    cache_a_route(&mut ctx, &l);
+    let inset = Viewport {
+        insets: Insets {
+            top: 1,
+            ..Insets::default()
+        },
+        ..bare
+    };
+    let moved = ctx.frame_layout(inset, 0, now).expect("lays out");
+    assert_eq!(moved.corridor, l.corridor, "setup: the corridor holds");
+    assert_ne!(moved.walkable, l.walkable, "setup: the mask moves");
+    assert!(ctx.router.is_empty(), "an inset change kept its paths");
 }
 
 #[test]
@@ -717,8 +737,8 @@ fn a_change_of_insets_alone_re_lays_the_office_out() {
         },
         ..bare
     };
-    let a = ctx.frame_layout(bare, 0).expect("lays out");
-    let b = ctx.frame_layout(inset, 0).expect("lays out");
+    let a = ctx.frame_layout(bare, 0, t0()).expect("lays out");
+    let b = ctx.frame_layout(inset, 0, t0()).expect("lays out");
     assert_ne!(a.inner, b.inner, "the memo served the bare layout");
     let fresh = crate::layout::SceneLayout::compute(inset, None, 0).expect("lays out");
     assert_eq!(b.inner, fresh.inner);
@@ -1100,7 +1120,7 @@ fn step_hands_back_the_layout_the_sim_stepped_on() {
     let memoized = session
         .floor_mut()
         .ctx
-        .frame_layout(viewport, meta.floor_seed)
+        .frame_layout(viewport, meta.floor_seed, t0())
         .expect("the memoized layout");
     assert!(Arc::ptr_eq(&stepped.layout, &memoized));
 }
@@ -3965,4 +3985,226 @@ fn a_lifted_pet_rests_where_it_is_set_down() {
         set_down.x.abs_diff(held.x) <= 8 && set_down.y.abs_diff(held.y) <= 8,
         "on the floor near the drop: {set_down:?} vs held {held:?}"
     );
+}
+
+/// The App's office on a phone, `top_px` of its device pixels under the
+/// chrome: a top deeper than the wall's share of the canvas moves the floor,
+/// while the canvas, and with it the walkable mask, keeps its size.
+fn phone_office(top_px: u16) -> Viewport {
+    use crate::layout::{Insets, Size};
+    let density = crate::pack::test_office().max_density_variant();
+    let insets = Insets {
+        top: top_px,
+        bottom: 258,
+        ..Insets::default()
+    };
+    let per_point = std::num::NonZeroU16::new(3).expect("nonzero");
+    Viewport::fitted(Size { w: 1206, h: 2622 }, insets, density, per_point)
+        .expect("fits")
+        .viewport
+}
+
+/// Each figure `session` draws of `scene` at `now` on `viewport` moving at
+/// `motion`, `pet` the floor's.
+fn figures_on(
+    session: &mut FloorSession,
+    scene: &SceneState,
+    viewport: Viewport,
+    motion: Motion,
+    pet: Option<&Pet>,
+    now: SystemTime,
+) -> Vec<(crate::hit::HoverTarget, crate::layout::Bounds)> {
+    session.render(
+        crate::look::Look::HALF_BLOCKS,
+        crate::look::RenderInputs {
+            world: FloorInputs {
+                scene,
+                now,
+                floor: FloorMeta::ground().with_motion(motion),
+                pets: PetInputs { pet, petting: None },
+            },
+            theme: crate::theme::theme_by_name("normal").expect("theme"),
+            viewport,
+            place: crate::look::Place {
+                gateway: crate::tally::office_gateway(scene),
+                floor: None,
+            },
+            debug_walkable: false,
+            dim: crate::look::Dim::NONE,
+        },
+    );
+    let picture = session.picture().expect("lays out");
+    picture
+        .hits
+        .figures()
+        .map(|(who, at)| (who.clone(), at))
+        .collect()
+}
+
+/// A refit that moves the floor re-seats the pet and the gateway's mascot
+/// where a floor fitted there directly seats them: in one jump or in steps,
+/// down or up. Under Still, which starts no roam to carry them off a seat
+/// left on the last layout.
+#[test]
+fn a_refit_that_moves_the_floor_re_seats_its_creatures_where_a_direct_fit_does() {
+    use crate::hit::HoverTarget;
+    let pack = Arc::new(crate::pack::test_office());
+    let cat = Pet {
+        kind: crate::pet::PetKind::Cat,
+        name: "Mochi".into(),
+    };
+    let mut scene = make_scene(3, 8);
+    let gateway = crate::creatures::openclaw_key("18789");
+    scene.insert_daemon(
+        gateway.source(),
+        gateway.instance().clone(),
+        pixtuoid_core::state::DaemonPresence {
+            liveness: pixtuoid_core::state::DaemonLiveness::UP,
+            active_sessions: 0,
+            last_seen: SystemTime::UNIX_EPOCH,
+            entered_at: SystemTime::UNIX_EPOCH,
+            in_flight_turns: Default::default(),
+            current_pid: Some(1),
+        },
+    );
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let creatures = |session: &mut FloorSession, top_px: u16, now| {
+        let mut drawn = figures_on(
+            session,
+            &scene,
+            phone_office(top_px),
+            Motion::Still,
+            Some(&cat),
+            now,
+        );
+        drawn.retain(|(who, _)| matches!(who, HoverTarget::Pet(_) | HoverTarget::Mascot(_)));
+        drawn
+    };
+    let direct = |top_px, now| creatures(&mut FloorSession::new(Arc::clone(&pack)), top_px, now);
+    let (deep, shallow) = (direct(474, t0), direct(348, t0));
+    assert_eq!(deep.len(), 2, "setup: the pet and the mascot: {deep:?}");
+    // One pet and one mascot, so the kind of target names the creature.
+    let kind = std::mem::discriminant::<HoverTarget>;
+    for (who, at) in &deep {
+        assert!(
+            (shallow.iter()).any(|(w, other)| kind(w) == kind(who) && other != at),
+            "setup: the refit moves {who:?}'s seat"
+        );
+    }
+    let refits: [&[u16]; 3] = [&[474, 348], &[474, 427, 395, 363, 348], &[348, 474]];
+    let stale: Vec<_> = (refits.iter())
+        .filter_map(|tops| {
+            let mut session = FloorSession::new(Arc::clone(&pack));
+            let mut now = t0;
+            for &top in *tops {
+                for _ in 0..3 {
+                    creatures(&mut session, top, now);
+                    now += FRAME;
+                }
+            }
+            let last = tops[tops.len() - 1];
+            let (refit, fresh) = (creatures(&mut session, last, now), direct(last, now));
+            (refit != fresh).then_some((tops, refit, fresh))
+        })
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "refit through px, then fitted directly: {stale:#?}"
+    );
+}
+
+/// A refit mid-walk re-arms every walk on the new layout as a floor fitted
+/// there directly arms it, keeping no point of the last: one walking in from
+/// the elevator, one walking out to it, and one out on an errand each stand
+/// where a direct fit draws them.
+#[test]
+fn a_refit_mid_walk_draws_every_walker_where_a_direct_fit_does() {
+    use crate::hit::HoverTarget;
+    use crate::walk::WanderPhase;
+    let pack = Arc::new(crate::pack::test_office());
+    let (deep, shallow) = (700, 348);
+    let people = |session: &mut FloorSession, scene: &SceneState, top_px, now| {
+        let mut drawn = figures_on(
+            session,
+            scene,
+            phone_office(top_px),
+            Motion::Full,
+            None,
+            now,
+        );
+        drawn.retain(|(who, _)| matches!(who, HoverTarget::Agent(_)));
+        drawn
+    };
+    let direct = |scene: &SceneState, top_px, now| {
+        people(
+            &mut FloorSession::new(Arc::clone(&pack)),
+            scene,
+            top_px,
+            now,
+        )
+    };
+    // `session`, drawn on `deep` up to `at`, then on `shallow` for a few
+    // frames: what it draws, and what a direct fit draws.
+    let refit = |mut session: FloorSession, scene: &SceneState, at: SystemTime| {
+        let mut now = at;
+        for _ in 0..3 {
+            people(&mut session, scene, shallow, now);
+            now += FRAME;
+        }
+        let drawn = people(&mut session, scene, shallow, now);
+        (drawn, direct(scene, shallow, now))
+    };
+
+    let t_refit = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let set_off = t_refit - Duration::from_secs(1);
+    let mut doors = make_scene(2, 8);
+    let mut slots = doors.agents.values_mut();
+    let entering = slots.next().expect("two agents");
+    (entering.created_at, entering.arrived_at) = (set_off, Some(set_off));
+    entering.state_started_at = set_off;
+    let leaving = slots.next().expect("two agents");
+    leaving.created_at = t_refit - Duration::from_secs(3_600);
+    leaving.arrived_at = Some(leaving.created_at);
+    leaving.exiting_at = Some(set_off);
+    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut now = set_off;
+    while now < t_refit {
+        people(&mut session, &doors, deep, now);
+        now += FRAME;
+    }
+    let (deep_fit, shallow_fit) = (direct(&doors, deep, now), direct(&doors, shallow, now));
+    assert!(
+        deep_fit.len() == 2 && deep_fit.iter().all(|w| !shallow_fit.contains(w)),
+        "setup: the refit moves both walkers: {deep_fit:?} vs {shallow_fit:?}"
+    );
+    let (drawn, fresh) = refit(session, &doors, now);
+    assert_eq!(drawn, fresh, "through the door");
+
+    let mut idle = make_scene(4, 8);
+    for slot in idle.agents.values_mut() {
+        slot.created_at = t_refit - Duration::from_secs(3_600);
+        slot.arrived_at = Some(slot.created_at);
+        slot.state_started_at = slot.created_at;
+    }
+    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut now = t_refit;
+    let out = |session: &FloorSession| {
+        (session.floor().ctx.walks.values())
+            .any(|w| matches!(w.wander.phase, WanderPhase::WalkingOut(_)))
+    };
+    while !out(&session) {
+        assert!(
+            now < t_refit + Duration::from_secs(600),
+            "setup: no one sets off"
+        );
+        people(&mut session, &idle, deep, now);
+        now += FRAME;
+    }
+    for _ in 0..10 {
+        people(&mut session, &idle, deep, now);
+        now += FRAME;
+    }
+    assert!(out(&session), "setup: still out when the refit lands");
+    let (drawn, fresh) = refit(session, &idle, now);
+    assert_eq!(drawn, fresh, "out on an errand");
 }

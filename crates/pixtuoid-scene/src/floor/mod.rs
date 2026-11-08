@@ -221,29 +221,42 @@ impl FloorCtx {
         }
     }
 
-    /// The per-frame layout — memoized `compute(viewport, None, seed)` + the router
-    /// corridor re-point, the ONE frame prologue every painter rides. Returns a cheap
-    /// `Arc` handle so callers can hold it across later `&mut self` uses without
-    /// re-cloning the whole `SceneLayout` every frame. A viewport that lays out no
-    /// office returns `None` without poisoning the memo.
+    /// The per-frame layout — memoized `compute(viewport, None, seed)`, the ONE
+    /// frame prologue every painter rides; a new one, at `now`, is
+    /// [relaid](Self::relaid) first. Returns a cheap `Arc` handle so callers can
+    /// hold it across later `&mut self` uses without re-cloning the whole
+    /// `SceneLayout` every frame. A viewport that lays out no office returns
+    /// `None` without poisoning the memo.
     pub(crate) fn frame_layout(
         &mut self,
         viewport: Viewport,
         floor_seed: u64,
+        now: SystemTime,
     ) -> Option<Arc<crate::layout::SceneLayout>> {
         let key = (viewport, floor_seed);
-        let layout = match &self.layout_memo {
-            Some((k, l)) if *k == key => Arc::clone(l),
-            _ => {
-                let l = Arc::new(crate::layout::SceneLayout::compute(
-                    viewport, None, floor_seed,
-                )?);
-                self.layout_memo = Some((key, Arc::clone(&l)));
-                l
-            }
-        };
-        self.router.set_preferred_zone(Some(layout.corridor));
+        if let Some((k, l)) = &self.layout_memo
+            && *k == key
+        {
+            return Some(Arc::clone(l));
+        }
+        let layout = Arc::new(crate::layout::SceneLayout::compute(
+            viewport, None, floor_seed,
+        )?);
+        self.layout_memo = Some((key, Arc::clone(&layout)));
+        self.relaid(&layout, now);
         Some(layout)
+    }
+
+    /// Puts every point a store keeps across steps on `layout`, or it would
+    /// stand on the last one: the walks and the router as a floor fitted there
+    /// directly holds them, each creature at its latest draw.
+    fn relaid(&mut self, layout: &crate::layout::SceneLayout, now: SystemTime) {
+        self.router.new_layout(Some(layout.corridor));
+        self.history = PoseHistory::new();
+        self.walks.values_mut().for_each(WalkState::relaid);
+        for creature in self.creatures.values_mut() {
+            creature.reseat(layout, now);
+        }
     }
 
     /// Drop per-agent render state for agents no longer in `scene`. Load-bearing
@@ -664,7 +677,7 @@ pub(crate) fn step_floor(
     viewport: Viewport,
 ) -> Option<SteppedFloor> {
     let PerFloor { ctx: fctx, raster } = floor;
-    let layout = fctx.frame_layout(viewport, world.floor.floor_seed)?;
+    let layout = fctx.frame_layout(viewport, world.floor.floor_seed, world.now)?;
     let door_anim_max_ms = fctx.door_anim_max_ms;
     let frame = sim_step(
         &mut fctx.sim_stores(chitchat),

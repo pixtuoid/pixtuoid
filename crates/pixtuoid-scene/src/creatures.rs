@@ -249,12 +249,6 @@ pub(crate) struct CreatureWalk {
     /// The roams begun: the next destination is draw `roams + 1`.
     roams: u64,
     advanced_at: SystemTime,
-    /// The walkable mask's size its points are on.
-    ground_size: (u16, u16),
-}
-
-fn ground_size(layout: &SceneLayout) -> (u16, u16) {
-    (layout.walkable.width(), layout.walkable.height())
 }
 
 impl CreatureWalk {
@@ -269,7 +263,6 @@ impl CreatureWalk {
             seed,
             roams: 0,
             advanced_at: now,
-            ground_size: ground_size(layout),
         }
     }
 
@@ -398,14 +391,28 @@ impl CreatureWalk {
         })
     }
 
+    /// Re-seated at its latest draw on `layout` from `now`, its points stale,
+    /// rather than replaying the walks that would have taken it there.
+    pub(crate) fn reseat(&mut self, layout: &SceneLayout, now: SystemTime) {
+        self.phase = match self.phase {
+            Phase::Leaving(_) | Phase::Gone => Phase::Gone,
+            // the pointer still holds it
+            Phase::Carried { at } => Phase::Carried { at },
+            _ => Phase::Resting {
+                at: walkable_target(layout, self.seed, self.roams),
+                since: now,
+                walked_ms: 0,
+            },
+        };
+    }
+
     /// Advanced to `timing`; `None` once a leaving creature is out.
     ///
     /// A leg that arrived rests where it ended, and the next roam sets off on
     /// the beat ([`Phase::Resting`]): a still tier starts none, while a walk
-    /// under way finishes on the wall clock. Unadvanced
-    /// past [`STALE_RESUME_GAP_BASE_MS`] its floor was off screen, and on a
-    /// resized floor its points are stale: either way it re-seats at its
-    /// latest draw rather than replaying the walks it missed.
+    /// under way finishes on the wall clock. Unadvanced past
+    /// [`STALE_RESUME_GAP_BASE_MS`] its floor was off screen, and it
+    /// [re-seats](Self::reseat).
     pub(crate) fn step(
         &mut self,
         roam: Roam,
@@ -413,20 +420,8 @@ impl CreatureWalk {
         timing: Timing,
     ) -> Option<Stance> {
         let Timing { now, beat } = timing;
-        let size = ground_size(ground.layout);
-        if elapsed_ms(now, self.advanced_at) > STALE_RESUME_GAP_BASE_MS || size != self.ground_size
-        {
-            self.ground_size = size;
-            self.phase = match self.phase {
-                Phase::Leaving(_) | Phase::Gone => Phase::Gone,
-                // the pointer still holds it
-                Phase::Carried { at } => Phase::Carried { at },
-                _ => Phase::Resting {
-                    at: walkable_target(ground.layout, self.seed, self.roams),
-                    since: now,
-                    walked_ms: 0,
-                },
-            };
+        if elapsed_ms(now, self.advanced_at) > STALE_RESUME_GAP_BASE_MS {
+            self.reseat(ground.layout, now);
         }
         self.advanced_at = now;
         match &self.phase {
@@ -1381,7 +1376,7 @@ mod tests {
                 .session
                 .floor_mut()
                 .ctx
-                .frame_layout(office.viewport, office.floor.floor_seed)
+                .frame_layout(office.viewport, office.floor.floor_seed, at(delay))
                 .expect("lays out"),
         )
         .expect("an elevator");
@@ -1478,7 +1473,7 @@ mod tests {
                 .session
                 .floor_mut()
                 .ctx
-                .frame_layout(office.viewport, office.floor.floor_seed)
+                .frame_layout(office.viewport, office.floor.floor_seed, at(back + delay))
                 .expect("lays out"),
         )
         .expect("an elevator");
@@ -1515,7 +1510,7 @@ mod tests {
             .session
             .floor_mut()
             .ctx
-            .frame_layout(office.viewport, office.floor.floor_seed)
+            .frame_layout(office.viewport, office.floor.floor_seed, at(ms))
             .expect("lays out");
         // Over a desk, on ground no leg stands on.
         let (over, reach) = layout

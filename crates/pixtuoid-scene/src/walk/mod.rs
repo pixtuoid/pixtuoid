@@ -254,6 +254,16 @@ impl WalkState {
     pub(crate) fn set_down(&mut self, at: Point) {
         self.lifted = Some(Lifted::Dropped(at));
     }
+
+    /// On a new layout: fresh, as a floor fitted there directly finds it, but
+    /// for where a pointer holds or set it down, which is the pointer's.
+    pub(crate) fn relaid(&mut self) {
+        let lifted = self.lifted.take().filter(|l| !matches!(l, Lifted::Home(_)));
+        *self = Self {
+            lifted,
+            ..Self::default()
+        };
+    }
 }
 
 impl WanderState {

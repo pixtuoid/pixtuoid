@@ -37,10 +37,11 @@ pub trait Router: std::fmt::Debug {
         to: Point,
     ) -> Vec<Point>;
 
-    /// Optional: bias the cost function toward a preferred zone (e.g. the office
-    /// corridor) so paths hug the hallway instead of cutting across the cubicle
-    /// floor. Default impl is a no-op.
-    fn set_preferred_zone(&mut self, zone: Option<Bounds>) {
+    /// Route over a new layout from here, keeping nothing routed over the
+    /// last, and bias the cost function toward `zone` (the office corridor) so
+    /// paths hug the hallway instead of cutting across the cubicle floor.
+    /// Default impl is a no-op.
+    fn new_layout(&mut self, zone: Option<Bounds>) {
         let _ = zone;
     }
 }
@@ -59,8 +60,7 @@ const PATH_CACHE_CAP: usize = 512;
 pub struct AStarRouter {
     paths: HashMap<(Point, Point), Vec<Point>>,
     last_overlay_sig: u64,
-    /// Cells inside this zone get a cost discount during A*. Changing it drops
-    /// the cached paths — a different zone means a different optimal route.
+    /// Cells inside this zone get a cost discount during A*.
     preferred_zone: Option<Bounds>,
 }
 
@@ -118,11 +118,11 @@ impl Router for AStarRouter {
         }
     }
 
-    fn set_preferred_zone(&mut self, zone: Option<Bounds>) {
-        if self.preferred_zone != zone {
-            self.paths.clear();
-            self.preferred_zone = zone;
-        }
+    fn new_layout(&mut self, zone: Option<Bounds>) {
+        // `route` revalidates a cached path against the overlay alone, never
+        // the mask, so one routed over the last layout could cross a wall.
+        self.paths.clear();
+        self.preferred_zone = zone;
     }
 }
 
