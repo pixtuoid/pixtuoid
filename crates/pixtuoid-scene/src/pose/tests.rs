@@ -619,7 +619,7 @@ fn snap_back_skipped_past_its_window() {
 }
 
 #[test]
-fn snap_back_skipped_without_recent_history() {
+fn snap_back_skipped_without_history() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = running_slot(now, now - Duration::from_secs(60));
@@ -2844,6 +2844,6 @@ fn the_resurrect_check_reads_the_same_compressed_clock_as_the_exit_render() {
     assert_eq!(
         leg.from, l.door_threshold,
         "past the COMPRESSED arrival the sprite is gone — the door is the only \
-         honest origin, and raw elapsed would resume it mid-corridor"
+         honest origin, and raw elapsed would re-enter from where the walkout was last drawn"
     );
 }
