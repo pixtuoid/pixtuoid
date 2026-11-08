@@ -588,8 +588,6 @@ pub mod codewhale;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
-/// The shared, daemon-agnostic presence layer (state machine + lifecycle for
-/// every daemon-style source); per-daemon wire decode stays in its own module.
 pub mod daemon;
 pub mod decoder;
 pub mod drift;

@@ -10,11 +10,11 @@
 //! channel), carrying `PresenceMsg { key: DaemonInstanceKey, delta }` so N daemons
 //! AND N instances of one daemon land in DISTINCT `SceneState::daemons` entries.
 //! The reducer task merges them via
-//! [`apply_presence`](crate::source::daemon::apply_presence), NEVER through
+//! [`apply_presence`], NEVER through
 //! `Reducer::apply` (which is `AgentId`-pure).
 //!
 //! **The two identity concepts are deliberately separate.** The
-//! [`DaemonInstanceId`](crate::state::DaemonInstanceId) is STABLE — a gateway
+//! [`DaemonInstanceId`] is STABLE — a gateway
 //! restarting on the same port keeps its mascot — while
 //! `DaemonPresence::current_pid` is the PROCESS incarnation, rebound by each
 //! `GatewayUp`, so a late exit receipt for a replaced process is a no-op instead
