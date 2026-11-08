@@ -145,10 +145,11 @@ pub(crate) fn send_line(_bound: &TimeBound, endpoint: &std::path::Path, line: &[
     }
 }
 
-/// The pipe's client end at `SecurityIdentification`: without the flag a
-/// server impersonates at `SecurityImpersonation`
+/// The pipe's client end at `SecurityIdentification`: once a server has read our
+/// line it impersonates at `SecurityImpersonation` by default
 /// (<https://learn.microsoft.com/en-us/windows/win32/ipc/impersonating-a-named-pipe-client>),
-/// so a squatter could act as us before [`peer::server_is_us`] runs.
+/// and an explicit `PIXTUOID_SOCKET` pipe never passes [`peer::server_is_us`]; at
+/// this level a server can identify us, never act as us.
 #[cfg(windows)]
 fn open_pipe(endpoint: &std::path::Path) -> std::io::Result<std::fs::File> {
     use std::os::windows::fs::OpenOptionsExt;
@@ -274,8 +275,8 @@ mod win_peer_tests {
         );
     }
 
-    /// What a squatting server gets from the shim's connect, read the way one
-    /// would: impersonate, then inspect the thread token's level.
+    /// What a pipe server gets once it has read the shim's line, read the way a
+    /// hostile one would: impersonate, then inspect the thread token's level.
     #[tokio::test]
     async fn the_pipe_server_can_identify_the_shim_but_never_act_as_it() {
         use std::io::Write;
