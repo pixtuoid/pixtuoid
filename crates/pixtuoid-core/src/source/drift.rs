@@ -95,14 +95,27 @@ pub fn unknown_dispatch(source: &str, tool: &str) {
 /// message stays a constant and no value is cut to fit another's length.
 #[derive(Debug, Clone, Copy)]
 pub enum Shape<'a> {
-    /// A registry entry parses as JSON, but `key`, which we read, is missing or
-    /// mistyped.
-    RegistryKey { path: &'a Path, key: &'static str },
-    /// A registry file does not parse. `truncated` when the read hit its cap:
-    /// that is ours, not an upstream format change.
-    RegistryUnparsed { path: &'a Path, truncated: bool },
+    /// A registry entry parses as JSON, but a key we read is missing or mistyped.
+    RegistryKey {
+        /// The entry's file.
+        path: &'a Path,
+        /// The key that no longer reads.
+        key: &'static str,
+    },
+    /// A registry file does not parse.
+    RegistryUnparsed {
+        /// The registry's file.
+        path: &'a Path,
+        /// The read hit its cap: ours, not an upstream format change.
+        truncated: bool,
+    },
     /// A SubagentStop's transcript stem is not its prefixed agent id.
-    SubagentStem { stem: &'a str, agent_id: &'a str },
+    SubagentStem {
+        /// The transcript's stem, which the decode keys on.
+        stem: &'a str,
+        /// The prefixed agent id the hook carried.
+        agent_id: &'a str,
+    },
 }
 
 /// A consumed upstream data SHAPE drifted: a registry or transcript value that
