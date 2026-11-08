@@ -12,7 +12,7 @@ section and with its contract's lenses, so [Correctness](#correctness) and
 only its hunks), against the base tree: a defect anywhere in it is in scope,
 pre-existing when the diff did not introduce it. The review only reads, so it
 never attempts a [must-run](#must-run) item, and skipping one is not partial
-coverage; its summary names each must-run item the diff touches.
+coverage.
 
 ## Do not flag
 
@@ -32,8 +32,7 @@ coverage; its summary names each must-run item the diff touches.
 
 ### Correctness
 
-Hold the diff to each claim the PR body makes, flagging scope beyond what it
-states and new behavior without a test, and a fix to its REPORTED scenario,
+Flag new behavior without a test, and hold a fix to its REPORTED scenario,
 ordering included, never one rebuilt from the state the fix left. Name any
 CI-only gate the diff can turn red (`--lib` builds neither bin modules nor
 examples).
