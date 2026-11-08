@@ -56,7 +56,8 @@ fn every_published_crate_carries_the_root_license_text() {
             .expect("run cargo package --list");
         assert!(
             out.status.success(),
-            "cargo package --list -p {name} failed"
+            "cargo package --list -p {name} failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
         );
         assert!(
             String::from_utf8_lossy(&out.stdout)
