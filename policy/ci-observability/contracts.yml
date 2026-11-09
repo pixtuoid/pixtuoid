@@ -197,27 +197,34 @@
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .with["save-if"] = "true" else . end)
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .uses = "actions/cache@v5" else . end)
 
-- id: only-main-saves-the-mise-cache
+- id: only-main-saves-the-mise-cache-per-tool-set
   covers: jdx/mise-action@
   file: .github/actions/setup-tools/action.yml
   expected: ${{ github.ref == 'refs/heads/main' }}
   why: >-
     As only-main-saves-the-rust-cache's: every ref restores main's copy, so a
-    save on any other ref only spends the quota main's entries need.
+    save on any other ref only spends the quota main's entries need. The key
+    adds `tools:`, which the default leaves out (mise-action README, "Install a
+    subset of configured tools"); without it jobs with other tool sets share
+    one entry and download the rest on every run.
   assert: |
-    [.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with.cache_save] == [$expected]
+    [.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with] as $with
+    | [$with[].cache_save] == [$expected]
+      and $with[0].cache_key == "{{default}}-${{ inputs.tools }}"
   break:
     - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with) |= del(.cache_save)
     - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with.cache_save) = "true"
+    - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with) |= del(.cache_key)
+    - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with.cache_key) = "{{default}}"
 
-- id: only-main-saves-the-wasm-tools
+- id: only-main-saves-the-binaryen-tarball
   covers: actions/cache/save@
   file: .github/actions/gen-wasm/action.yml
   expected: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
   why: >-
     As only-main-saves-the-rust-cache's. The save repeats the restore's key and
-    paths, which are part of the cache version (actions/cache README, "Cache
-    Version"): any difference saves an entry no restore hits.
+    paths, the paths being part of the cache version (actions/cache README,
+    "Cache Version"): any difference saves an entry no restore hits.
   assert: |
     [.runs.steps[] | select((.uses // "") | startswith("actions/cache/"))] as $c
     | [$c[] | select(.uses | startswith("actions/cache/save@"))] as $save
@@ -227,8 +234,8 @@
   break:
     - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@"))) |= del(.if)
     - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@")) | .if) = "steps.cache.outputs.cache-hit != 'true'"
-    - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@")) | .with.key) = "gen-wasm-tools"
-    - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@")) | .with.path) |= sub("wasm-bindgen"; "wasm-opt")
+    - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@")) | .with.key) = "binaryen"
+    - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@")) | .with.path) = "/tmp/other.tar.gz"
 
 - id: hermetic-caches-restore-only-but-their-one-writer
   file:
