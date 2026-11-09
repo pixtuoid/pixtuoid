@@ -98,7 +98,7 @@ struct SourceDecoders {
 /// The `IdDeriver` behind its only legal caller.
 ///
 /// Every id in the watcher must be derived from a path folded through
-/// [`walk::id_path`], or the consumer computes it in a different id-space than
+/// [`id_path`](crate::source::decoder::id_path), or the consumer computes it in a different id-space than
 /// the producer. The fn pointer lives in a module the sibling
 /// `walk`/`liveness`/`unclaim` modules are not inside, so an un-folded
 /// derivation is a compile error rather than a review catch.
@@ -115,7 +115,7 @@ mod folded {
 
         /// The id for `path`, folded. THE only way to reach the deriver.
         pub(super) fn id_for(&self, path: &Path) -> String {
-            (self.0)(&super::walk::id_path(path))
+            (self.0)(&crate::source::decoder::id_path(path))
         }
     }
 }

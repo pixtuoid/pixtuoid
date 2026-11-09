@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{CwdExtractor, LineDecoder, ParentExtractor, SUBAGENTS_DIR};
+use crate::source::decoder::{CwdExtractor, LineDecoder, ParentExtractor, first_sight_start};
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
@@ -21,14 +21,6 @@ use super::{
 
 /// Oversized-span skip threshold: a pending span past this is never replayed.
 pub(super) const MAX_PENDING_BYTES: u64 = 1 << 20;
-
-/// The path form EVERY id derivation runs on. The `normalize_path_key` fold
-/// lives HERE at the seam, not inside each deriver, so every lane mints ONE id
-/// per file on Windows while the fixture-fed conformance goldens stay
-/// platform-invariant. Identity on Unix.
-pub(super) fn id_path(path: &Path) -> std::path::PathBuf {
-    std::path::PathBuf::from(crate::id::normalize_path_key(&path.to_string_lossy()))
-}
 
 /// First-sight decision, shared by EVERY path that can be the first to see a
 /// file: seed the cursor at EOF — suppressing SessionStart — when the session
@@ -544,31 +536,21 @@ async fn emit_first_sight(
     if already_claimed {
         return;
     }
-    // Same deriver as the AgentId: hook slots carry the bare session UUID and
-    // `backfill_identity` never heals a non-empty session_id, so a raw file-stem
-    // here disagrees with the hook-created twin forever.
-    let session_id = decoders.id_derive.id_for(path);
-    let id = AgentId::from_parts(source, &session_id);
     // Content-derived cwd wins; the PATH deriver covers sources carrying none, an
     // empty cwd being what puts a slot on the unknown-cwd short reap.
     let cwd = head
         .cwd
         .or_else(|| (decoders.cwd_derive)(path))
         .unwrap_or_default();
-    let parent_id = detect_parent_id(path, source)
-        .or_else(|| head.parent.map(|p| AgentId::from_parts(source, &p)));
-    let _ = tx
-        .send((
-            Transport::Jsonl,
-            AgentEvent::SessionStart {
-                agent_id: id,
-                source: source.to_string(),
-                session_id,
-                cwd: cwd.clone(),
-                parent_id,
-            },
-        ))
-        .await;
+    let start = first_sight_start(
+        path,
+        source,
+        decoders.id_derive.id_for(path),
+        cwd.clone(),
+        head.parent,
+    );
+    let id = start.agent_id();
+    let _ = tx.send((Transport::Jsonl, start)).await;
 
     // A head-read name beats the cwd deriver: it is the session's OWN title,
     // while the cwd basename is shared by every concurrent session in a repo.
@@ -685,22 +667,6 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
             return;
         }
     }
-}
-
-/// Detect a CC subagent by the `subagents` path component and link it to its
-/// parent via the directory component immediately before it (`<parent-uuid>`).
-/// That UUID equals the parent's own id, so the link resolves even when the
-/// subagent transcript lands under a DIFFERENT project dir than the parent (a
-/// git-worktree cwd-split). CC-layout-specific.
-pub(super) fn detect_parent_id(path: &Path, source: &str) -> Option<AgentId> {
-    let mut prev: Option<&str> = None;
-    for c in path.components() {
-        if c.as_os_str() == SUBAGENTS_DIR {
-            return prev.map(|uuid| AgentId::from_parts(source, uuid));
-        }
-        prev = c.as_os_str().to_str();
-    }
-    None
 }
 
 /// Walk a byte span's JSONL lines, handing each parsed line to `visit` until it

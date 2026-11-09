@@ -4,14 +4,9 @@
 //! flat, so the hooks and the rollout head's `parent_thread_id` carry the
 //! parent link. The hooks carry no item, only the calls each one has pending.
 
-use std::time::SystemTime;
-
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::{Drive, Driven};
-use pixtuoid_core::source::decoder::decode_hook_payload;
-use pixtuoid_core::source::{AgentEvent, Transport};
-use pixtuoid_core::state::SceneState;
-use pixtuoid_core::state::reducer::Reducer;
+use pixtuoid_core::source::AgentEvent;
 use serde_json::Value;
 
 fn hook_lines() -> Vec<String> {
@@ -127,45 +122,24 @@ fn a_spawn_returning_after_its_child_started_leaves_the_child_running() {
     );
 }
 
-fn captured_hook_events() -> Vec<AgentEvent> {
-    hook_lines()
-        .iter()
-        .flat_map(|l| {
-            decode_hook_payload(parsed(l)).expect("captured Codex hook payload must decode")
-        })
-        .collect()
-}
-
 // A SubagentStop decoded before its SubagentStart tombstones the unknown child
 // id: Codex has no further end signal of any kind, so a phantom slot registered
 // by the late Start would ride the stale sweeps forever (#242).
 #[test]
 fn codex_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
     let (parent, child) = ids();
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let now = SystemTime::now();
-
-    let (stops, rest): (Vec<_>, Vec<_>) = captured_hook_events()
-        .into_iter()
-        .partition(|ev| matches!(ev, AgentEvent::SessionEnd { as_child: true, .. }));
-    for ev in stops {
-        r.apply(&mut scene, ev, now, Transport::Hook);
-    }
-    let later = now + std::time::Duration::from_millis(50);
+    let mut lines = hook_lines();
     // Short of the root's own end, which the capture closes with.
-    for ev in rest
-        .into_iter()
-        .filter(|ev| !matches!(ev, AgentEvent::SessionEnd { .. }))
-    {
-        r.apply(&mut scene, ev, later, Transport::Hook);
-    }
+    lines.truncate(line_of(&lines, "SessionEnd", false));
+    let stop = lines.remove(line_of(&lines, "SubagentStop", true));
+    lines.insert(0, stop);
+    let d = drive(&lines);
 
     assert!(
-        !scene.agents.contains_key(&child),
+        !d.scene.agents.contains_key(&child),
         "a SubagentStart reordered after its own Stop must not register"
     );
-    let parent_slot = scene.agents.get(&parent).expect("parent registered");
+    let parent_slot = d.scene.agents.get(&parent).expect("parent registered");
     assert!(
         parent_slot.exiting_at.is_none(),
         "the child's tombstone must not affect the parent"

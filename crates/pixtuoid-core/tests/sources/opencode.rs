@@ -3,13 +3,9 @@
 //! two sprites, which the conformance harness's one-AgentId rule cannot hold
 //! (the same reason `grok.rs` exists).
 
-use std::time::{Duration, SystemTime};
-
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::{Drive, Driven};
-use pixtuoid_core::source::{AgentEvent, Transport};
-use pixtuoid_core::state::SceneState;
-use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer};
+use pixtuoid_core::source::AgentEvent;
 
 fn hooks() -> Driven {
     let d = Drive::hooks().lines(super::captures::fixture_lines(
@@ -63,22 +59,13 @@ fn the_child_registers_under_its_parent() {
 }
 
 /// Its drain says nothing about the child, a session of its own: still standing
-/// past the b1 grace.
+/// past the b1 grace, which the fold's tick after each event crosses.
 #[test]
 fn the_dispatch_end_leaves_its_child_standing() {
     let d = hooks();
     let (child, _) = child_of(&d);
-    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for ev in d.events {
-        r.apply(&mut scene, ev, t0, Transport::Hook);
-    }
-    r.tick(
-        &mut scene,
-        t0 + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1),
-    );
     assert!(
-        scene
+        d.scene
             .agents
             .get(&child)
             .is_some_and(|s| s.exiting_at.is_none()),

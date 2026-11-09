@@ -13,8 +13,8 @@
 //! 1. **Registration comes from the WATCHER, not the decoder.** A JSONL event
 //!    for an unknown id is a documented no-op, so a transcript driven with no
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
-//!    in for `emit_first_sight`, keyed by the SAME registry row the watcher
-//!    reads, so the seed can't drift from production.
+//!    in for `emit_first_sight`, built by the SAME `first_sight_start` from the
+//!    SAME registry row, so the seed can't drift from production.
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
 //!    so it is not a free parameter.
 
@@ -24,7 +24,9 @@ use std::time::{Duration, SystemTime};
 use serde_json::Value;
 
 use crate::source::daemon::{PresenceMsg, apply_presence};
-use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
+use crate::source::decoder::{
+    DecodeError, LineDecoder, decode_hook_payload, display_safe, first_sight_start, id_path,
+};
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
@@ -125,14 +127,15 @@ impl std::fmt::Display for LineFailure {
 pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
-    /// Every decoded event in wire order, seed first when there is one.
+    /// Every decoded event in the order fed, each seed ahead of its
+    /// transcript's lines.
     pub events: Vec<AgentEvent>,
-    /// Every daemon envelope's presence deltas, which [`Drive::fold`] merges into
-    /// `scene` on their own channel, never through the reducer.
+    /// Every daemon envelope's presence deltas, which [`Session::feed`] merges
+    /// into `scene` on their own channel, never through the reducer.
     pub(crate) presence: Vec<PresenceMsg>,
-    /// How many leading `events` are the first-sight SEED, not the wire's own
-    /// output (0 or 1). A census must report [`Self::wire_events`] instead — the
-    /// seed registers a slot unconditionally, so counting it scores garbage 1/1.
+    /// How many `events` are a first-sight SEED, not the wire's own output. A
+    /// census must report [`Self::wire_events`] instead — the seed registers a
+    /// slot unconditionally, so counting it scores garbage 1/1.
     pub(crate) seed_events: usize,
     /// Non-blank lines driven (blank lines are skipped, not counted).
     pub lines: usize,
@@ -365,8 +368,8 @@ impl Drive {
         }
     }
 
-    /// Prepend the `SessionStart` the watcher's `emit_first_sight` would emit
-    /// for this transcript, keyed by the source's registry row.
+    /// Lead the transcript's first feed with the `SessionStart` the watcher's
+    /// `emit_first_sight` would emit for it, keyed by the source's registry row.
     ///
     /// Not a free choice: a transcript carrying no `SessionStart` of its own is
     /// registered in production by the watcher, so an offline driver must seed
@@ -386,65 +389,29 @@ impl Drive {
         self
     }
 
-    fn seed_id(source: &str, logical: &str) -> AgentId {
-        AgentId::from_parts(
-            source,
-            &registry::id_deriver_for(source)(Path::new(logical)),
-        )
-    }
-
-    /// Drive `lines` end to end: blank lines skipped, every other line parsed,
-    /// decoded, and the decoded stream folded through a
-    /// real `Reducer`.
+    /// Drive `lines` end to end, at one instant: one [`Session`] fed them all.
     pub fn lines<I, S>(&self, lines: I) -> Driven
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.run(lines.into_iter().map(Some))
+        let mut session = Session::default();
+        session.feed(self, lines, self.now);
+        session.finish()
     }
 
     /// [`Self::lines`] over a transcript's bytes, cut into lines as the watcher
     /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
     pub fn body(&self, body: &[u8]) -> Driven {
         use crate::source::admit::{lines, whole};
-        self.run(lines(whole(body)).map(Result::ok))
+        let mut session = Session::default();
+        session.run(self, lines(whole(body)).map(Result::ok), self.now);
+        session.finish()
     }
 
-    /// `None` is a line whose bytes are not UTF-8, so not JSON either.
-    fn run<I, S>(&self, lines: I) -> Driven
-    where
-        I: IntoIterator<Item = Option<S>>,
-        S: AsRef<str>,
-    {
-        let mut d = Driven::empty();
-        let sink = BreadcrumbSink::default();
-        tracing::subscriber::with_default(sink.clone(), || self.drive(lines, &mut d));
-        d.breadcrumbs = sink.take();
-        d
-    }
-
-    fn drive<I, S>(&self, lines: I, d: &mut Driven)
-    where
-        I: IntoIterator<Item = Option<S>>,
-        S: AsRef<str>,
-    {
-        if let Some(seed) = self.seed() {
-            d.seed_events = 1;
-            d.events.push(seed);
-        }
-        for line in lines {
-            if let Some(events) = self
-                .decode
-                .line(line.as_ref().map(AsRef::as_ref), d, |_| {})
-            {
-                d.events.extend(events);
-            }
-        }
-        self.fold(d);
-    }
-
-    /// The `SessionStart` [`Self::seeded`] prepends, when it does.
+    /// The `SessionStart` [`Self::seeded`] leads with, when it does: the
+    /// watcher's own, but for the head read it runs on a native build only, so
+    /// no head-borne cwd, parent or title.
     fn seed(&self) -> Option<AgentEvent> {
         let Decode::Transcript {
             source, logical, ..
@@ -452,28 +419,107 @@ impl Drive {
         else {
             return None;
         };
-        self.seeded.then(|| AgentEvent::SessionStart {
-            agent_id: Self::seed_id(source, logical),
-            source: source.clone(),
-            session_id: format!("{source}-harness-seed"),
-            cwd: PathBuf::from(SEED_CWD),
-            parent_id: None,
+        let path = Path::new(logical);
+        self.seeded.then(|| {
+            first_sight_start(
+                path,
+                source,
+                registry::id_deriver_for(source)(&id_path(path)),
+                PathBuf::from(SEED_CWD),
+                None,
+            )
         })
     }
+}
 
-    /// Each event is observed BEFORE and AFTER a cascade tick, so a transient
-    /// class a later event resolves still counts as reached.
-    fn fold(&self, d: &mut Driven) {
-        let mut reducer = Reducer::new();
-        for ev in &d.events {
-            reducer.apply(&mut d.scene, ev.clone(), self.now, self.transport);
-            note_reached(&d.scene, &mut d.reaches);
-            reducer.tick(&mut d.scene, self.now + CASCADE_TICK);
-            note_reached(&d.scene, &mut d.reaches);
+/// One reducer fed over time: batches of lines from any drives, each at its
+/// own instant, and ticks between them.
+#[derive(Debug)]
+pub struct Session {
+    reducer: Reducer,
+    driven: Driven,
+    /// The seeds already led with: the watcher's first sight fires once per
+    /// transcript.
+    sighted: Vec<AgentId>,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self {
+            reducer: Reducer::new(),
+            driven: Driven::empty(),
+            sighted: Vec::new(),
         }
-        for msg in &d.presence {
-            apply_presence(&mut d.scene, &msg.key, msg.delta.clone(), self.now);
-        }
+    }
+}
+
+impl Session {
+    /// Decode `lines` through `drive` (blank lines skipped, every other line
+    /// parsed and decoded) and fold what they decode to at `at`.
+    pub fn feed<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.run(drive, lines.into_iter().map(Some), at);
+    }
+
+    /// Advance to `at` with no line: past a grace window, its sweep fires.
+    pub fn tick(&mut self, at: SystemTime) {
+        self.reducer.tick(&mut self.driven.scene, at);
+        note_reached(&self.driven.scene, &mut self.driven.reaches);
+    }
+
+    /// Everything observed so far.
+    pub fn driven(&self) -> &Driven {
+        &self.driven
+    }
+
+    /// Everything observed.
+    pub fn finish(self) -> Driven {
+        self.driven
+    }
+
+    /// `None` is a line whose bytes are not UTF-8, so not JSON either.
+    fn run<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
+    where
+        I: IntoIterator<Item = Option<S>>,
+        S: AsRef<str>,
+    {
+        let sink = BreadcrumbSink::default();
+        tracing::subscriber::with_default(sink.clone(), || {
+            let fed = self.driven.events.len()..;
+            let presence = self.driven.presence.len()..;
+            let d = &mut self.driven;
+            if let Some(seed) = drive.seed()
+                && !self.sighted.contains(&seed.agent_id())
+            {
+                self.sighted.push(seed.agent_id());
+                d.seed_events += 1;
+                d.events.push(seed);
+            }
+            for line in lines {
+                if let Some(events) = drive
+                    .decode
+                    .line(line.as_ref().map(AsRef::as_ref), d, |_| {})
+                {
+                    d.events.extend(events);
+                }
+            }
+            // Each event is observed BEFORE and AFTER a cascade tick, so a
+            // transient class a later event resolves still counts as reached.
+            for ev in &d.events[fed] {
+                self.reducer
+                    .apply(&mut d.scene, ev.clone(), at, drive.transport);
+                note_reached(&d.scene, &mut d.reaches);
+                self.reducer.tick(&mut d.scene, at + CASCADE_TICK);
+                note_reached(&d.scene, &mut d.reaches);
+            }
+            for msg in &d.presence[presence] {
+                apply_presence(&mut d.scene, &msg.key, msg.delta.clone(), at);
+            }
+        });
+        self.driven.breadcrumbs.extend(sink.take());
     }
 }
 
@@ -639,6 +685,16 @@ mod tests {
             .lines([tool_line()]);
         assert_eq!(d.registered(), 1);
         assert_eq!(d.reached(), vec![Reach::Running]);
+    }
+
+    #[test]
+    fn a_transcript_fed_twice_is_first_sighted_once() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS);
+        let mut session = Session::default();
+        session.feed(&drive, [tool_line()], at);
+        session.feed(&drive, [tool_line()], at);
+        assert_eq!(session.finish().seed_events, 1);
     }
 
     #[test]

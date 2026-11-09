@@ -4,13 +4,11 @@ use std::time::Instant;
 use super::health::FailureLatch;
 use super::liveness::{ProbeLadder, ProbeSnapshot, emit_session_exit, revouch_gated_files};
 use super::unclaim::drain_child_end_unclaims;
-use super::walk::{
-    SKIP_RESCAN_BYTES, detect_parent_id, park_if_truncated_below_cursor, scan_root, walk_jsonl,
-};
+use super::walk::{SKIP_RESCAN_BYTES, park_if_truncated_below_cursor, scan_root, walk_jsonl};
 use super::*;
 use crate::AgentId;
 use crate::source::claude_code::{cc_activity_recency, cc_session_ended, decode_cc_line};
-use crate::source::decoder::{accept_all_paths, default_id_from_path};
+use crate::source::decoder::{accept_all_paths, default_id_from_path, detect_parent_id};
 use crate::source::registry::cwd_extractor_for;
 use crate::source::{AgentEvent, Transport};
 

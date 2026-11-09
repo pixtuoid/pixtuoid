@@ -53,9 +53,9 @@ whichever test reads them.
 ## The one pipeline
 
 Real wire bytes ride `pixtuoid_core::harness::Drive` (dev-only `harness`
-feature): `conformance.rs`, `merge.rs`, `sources/{grok,cursor,opencode,copilot,delegation}.rs`,
-`pixtuoid/tests/wire_to_pixels.rs`, `fuzz/fuzz_targets/`, and the on-demand
-`corpus_check`. A shell supplies bytes and asserts;
+feature): every `tests/sources/` shell over captured bytes, `pixtuoid/tests/wire_to_pixels.rs`,
+`fuzz/fuzz_targets/`, and the on-demand `corpus_check`. A shell supplies LINES,
+reordered or cut, never decoded events, over time through a `harness::Session`, and asserts;
 it does NOT re-roll decode→reduce and never re-derives the first-sight seed's
 `AgentId` (that comes from the source's `DESCRIPTOR`; a driver
 keyed off anything else registers NOTHING).

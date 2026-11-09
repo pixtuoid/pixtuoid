@@ -171,6 +171,55 @@ pub(crate) fn is_subagent_path(path: &Path) -> bool {
     path.components().any(|c| c.as_os_str() == SUBAGENTS_DIR)
 }
 
+/// Detect a CC subagent by the `subagents` path component and link it to its
+/// parent via the directory component immediately before it (`<parent-uuid>`).
+/// That UUID equals the parent's own id, so the link resolves even when the
+/// subagent transcript lands under a DIFFERENT project dir than the parent (a
+/// git-worktree cwd-split). CC-layout-specific.
+#[cfg(any(feature = "native", feature = "harness"))]
+pub(crate) fn detect_parent_id(path: &Path, source: &str) -> Option<AgentId> {
+    let mut prev: Option<&str> = None;
+    for c in path.components() {
+        if c.as_os_str() == SUBAGENTS_DIR {
+            return prev.map(|uuid| AgentId::from_parts(source, uuid));
+        }
+        prev = c.as_os_str().to_str();
+    }
+    None
+}
+
+/// The path form EVERY id derivation runs on. The `normalize_path_key` fold
+/// lives HERE at the seam, not inside each deriver, so every lane mints ONE id
+/// per file on Windows while the fixture-fed conformance goldens stay
+/// platform-invariant. Identity on Unix.
+#[cfg(any(feature = "native", feature = "harness"))]
+pub(crate) fn id_path(path: &Path) -> PathBuf {
+    PathBuf::from(normalize_path_key(&path.to_string_lossy()))
+}
+
+/// The `SessionStart` a transcript's first sight registers, keyed by
+/// `session_id` — its id deriver's output over [`id_path`]: hook slots carry
+/// the bare session UUID and `backfill_identity` never heals a non-empty
+/// session_id, so a raw file-stem here disagrees with the hook-created twin
+/// forever. Its `subagents/` nesting names the parent before its head does.
+#[cfg(any(feature = "native", feature = "harness"))]
+pub(crate) fn first_sight_start(
+    path: &Path,
+    source: &str,
+    session_id: String,
+    cwd: PathBuf,
+    head_parent: Option<String>,
+) -> AgentEvent {
+    AgentEvent::SessionStart {
+        agent_id: AgentId::from_parts(source, &session_id),
+        source: source.to_string(),
+        session_id,
+        cwd,
+        parent_id: detect_parent_id(path, source)
+            .or_else(|| head_parent.map(|p| AgentId::from_parts(source, &p))),
+    }
+}
+
 /// `"{prefix}·{basename}"` from a working directory, or `None` when `cwd` has no
 /// final component (empty / the filesystem root). The cwd is untrusted
 /// transcript/hook content and a slashless crafted value makes the WHOLE string the

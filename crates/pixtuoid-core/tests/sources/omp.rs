@@ -8,12 +8,24 @@
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::harness::Drive;
+use pixtuoid_core::harness::{Drive, Session};
 use pixtuoid_core::id::normalize_path_key;
-use pixtuoid_core::source::omp::{decode_omp_line, omp_id_from_path};
-use pixtuoid_core::source::{AgentEvent, Transport};
-use pixtuoid_core::state::SceneState;
-use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, Reducer};
+use pixtuoid_core::source::AgentEvent;
+use pixtuoid_core::source::omp::omp_id_from_path;
+use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, HOOK_WINS_WINDOW};
+
+fn t0() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000)
+}
+
+/// Past the exit grace of a walkout that started at [`t0`].
+fn walked_out() -> SystemTime {
+    t0() + EXIT_GRACE_WINDOW + Duration::from_secs(1)
+}
+
+fn parsed(line: &str) -> serde_json::Value {
+    serde_json::from_str(line).expect("valid json")
+}
 
 /// A raw path's session key through the decoder's own fold — the ONE way an
 /// expectation may be spelled here (a literal holds on Unix and reds only in
@@ -50,7 +62,7 @@ fn events(scenario: &str) -> Vec<AgentEvent> {
 fn switched(key: &str) -> AgentId {
     let raw: Vec<serde_json::Value> = lines("new-session-hermetic")
         .iter()
-        .map(|l| serde_json::from_str(l).expect("valid json"))
+        .map(|l| parsed(l))
         .collect();
     let switch = raw
         .iter()
@@ -66,33 +78,22 @@ fn switched(key: &str) -> AgentId {
 /// round quits before prompting it.
 #[test]
 fn an_empty_session_round_registers_then_leaves_on_the_exit_grace() {
-    let evs = events("new-session-hermetic");
     let id = switched("sessionFile");
-    let last = evs.len() as u64;
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for (i, ev) in evs.into_iter().enumerate() {
-        r.apply(
-            &mut scene,
-            ev,
-            t0 + Duration::from_secs(i as u64),
-            Transport::Hook,
-        );
-    }
+    let mut session = Session::default();
+    session.feed(&Drive::hooks(), lines("new-session-hermetic"), t0());
+    session.driven().assert_clean("new-session-hermetic");
     assert!(
-        scene
+        session
+            .driven()
+            .scene
             .agents
             .get(&id)
             .is_some_and(|s| s.exiting_at.is_some()),
         "the bridge shutdown must start the walkout"
     );
-    r.tick(
-        &mut scene,
-        t0 + Duration::from_secs(last) + EXIT_GRACE_WINDOW + Duration::from_secs(1),
-    );
+    session.tick(walked_out());
     assert!(
-        !scene.agents.contains_key(&id),
+        !session.finish().scene.agents.contains_key(&id),
         "an empty session leaves on the exit grace, not the stale sweep"
     );
 }
@@ -102,42 +103,35 @@ fn an_empty_session_round_registers_then_leaves_on_the_exit_grace() {
 /// through ordinary parentless re-registration (registry row doc).
 #[test]
 fn a_resumed_session_re_registers_after_its_earlier_end() {
-    let evs = events("resume-hermetic");
-    let id = evs[0].agent_id();
-    let resumed = evs
+    let lines = lines("resume-hermetic");
+    let resumed = lines
         .iter()
-        .rposition(|e| matches!(e, AgentEvent::SessionStart { .. }))
+        .rposition(|l| parsed(l)["type"] == "session_start")
         .filter(|&at| at > 0)
         .expect("the resume fires its own session_start");
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let (hooks, mut session) = (Drive::hooks(), Session::default());
 
     // First life: the recorded round up to the resume; let the slot leave.
-    for (i, ev) in evs[..resumed].iter().cloned().enumerate() {
-        r.apply(
-            &mut scene,
-            ev,
-            t0 + Duration::from_secs(i as u64),
-            Transport::Hook,
-        );
-    }
-    r.tick(
-        &mut scene,
-        t0 + Duration::from_secs(resumed as u64) + EXIT_GRACE_WINDOW + Duration::from_secs(1),
+    session.feed(&hooks, &lines[..resumed], t0());
+    let id = session.driven().events[0].agent_id();
+    session.tick(walked_out());
+    assert!(
+        !session.driven().scene.agents.contains_key(&id),
+        "first life left"
     );
-    assert!(!scene.agents.contains_key(&id), "first life left");
 
     // Second life: the resume's start must register the SAME id again.
-    assert_eq!(
-        evs[resumed].agent_id(),
-        id,
-        "the resume keys on the same file"
-    );
-    let t1 = t0 + Duration::from_secs(600);
-    r.apply(&mut scene, evs[resumed].clone(), t1, Transport::Hook);
+    session.feed(&hooks, &lines[resumed..=resumed], walked_out());
+    let d = session.finish();
+    d.assert_clean("resume-hermetic");
+    let restart = d
+        .events
+        .iter()
+        .rfind(|e| matches!(e, AgentEvent::SessionStart { .. }))
+        .expect("the resume's start");
+    assert_eq!(restart.agent_id(), id, "the resume keys on the same file");
     assert!(
-        scene.agents.contains_key(&id),
+        d.scene.agents.contains_key(&id),
         "a resume's session_start re-registers the ended id"
     );
 }
@@ -172,10 +166,7 @@ fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
         panic!("expected a parentless start then a linked child start: {starts:?}");
     };
     assert_eq!(linked, parent, "the child links to the parent by path");
-    let raw: Vec<serde_json::Value> = lines_at(TASK)
-        .iter()
-        .map(|l| serde_json::from_str(l).expect("valid json"))
-        .collect();
+    let raw: Vec<serde_json::Value> = lines_at(TASK).iter().map(|l| parsed(l)).collect();
     let files: Vec<&str> = raw
         .iter()
         .filter(|v| v["type"] == "session_start")
@@ -247,6 +238,7 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             .next()
             .expect("each relocated round ships its transcript");
         let tpath = normalize_path_key(&transcript.to_string_lossy());
+        let (hooks, hook_lines) = (Drive::hooks(), lines(scenario));
         let hook_events = events(scenario);
         let id = hook_events[0].agent_id();
         assert_eq!(
@@ -255,14 +247,11 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             "{scenario}: the hook id must be the transcript file's own folded key"
         );
 
-        let jsonl: Vec<AgentEvent> = super::captures::fixture_lines(&transcript)
-            .into_iter()
-            .flat_map(|line| {
-                let v: serde_json::Value = serde_json::from_str(&line).expect("fixture json");
-                decode_omp_line(&tpath, "omp", v)
-            })
-            .collect();
-        for ev in &jsonl {
+        let rollout = Drive::transcript_at("omp", &transcript).expect("omp has a line decoder");
+        let jsonl_lines = super::captures::fixture_lines(&transcript);
+        let jsonl = rollout.lines(&jsonl_lines);
+        jsonl.assert_clean(scenario);
+        for ev in &jsonl.events {
             assert_eq!(ev.agent_id(), id, "{scenario}: transcript half split");
         }
         for ev in &hook_events {
@@ -271,34 +260,26 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
 
         // The recorded human ordering: whole-transcript-first would end the
         // FIRST life, making the hook round a resurrect that restarts counting.
-        let cut = jsonl
+        let cut = jsonl_lines
             .iter()
-            .position(|e| matches!(e, AgentEvent::ToolUseEnd { .. }))
-            .unwrap_or(jsonl.len());
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        let mut at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-        let hook_tail = hook_events.len().saturating_sub(1);
-        let mut apply = |r: &mut Reducer, scene: &mut SceneState, ev: AgentEvent, tp| {
-            r.apply(scene, ev, at, tp);
-            at += Duration::from_secs(1);
-        };
-        apply(&mut r, &mut scene, hook_events[0].clone(), Transport::Hook);
-        for ev in &jsonl[..cut] {
-            apply(&mut r, &mut scene, ev.clone(), Transport::Jsonl);
+            .position(|l| parsed(l)["message"]["role"] == "toolResult")
+            .unwrap_or(jsonl_lines.len());
+        let tail = hook_lines.len().saturating_sub(1);
+        let mut session = Session::default();
+        let mut at = t0();
+        for (drive, part) in [
+            (&hooks, &hook_lines[..1]),
+            (&rollout, &jsonl_lines[..cut]),
+            (&hooks, &hook_lines[1..tail]),
+            (&rollout, &jsonl_lines[cut..]),
+            (&hooks, &hook_lines[tail..]),
+        ] {
+            session.feed(drive, part, at);
+            // The twins sit apart by human approval latency, which no dedup
+            // window spans.
+            at += HOOK_WINS_WINDOW;
         }
-        for ev in &hook_events[1..hook_tail] {
-            apply(&mut r, &mut scene, ev.clone(), Transport::Hook);
-        }
-        for ev in &jsonl[cut..] {
-            apply(&mut r, &mut scene, ev.clone(), Transport::Jsonl);
-        }
-        apply(
-            &mut r,
-            &mut scene,
-            hook_events[hook_tail].clone(),
-            Transport::Hook,
-        );
+        let scene = session.finish().scene;
         if scenario != "tool-run-hermetic" {
             // One gated bash call per round; the cross-transport twins and the
             // approval resume must fold into ONE count.

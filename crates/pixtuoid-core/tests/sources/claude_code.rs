@@ -5,11 +5,8 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::source::claude_code::decode_cc_line;
-use pixtuoid_core::source::decoder::decode_hook_payload;
-use pixtuoid_core::source::{AgentEvent, Transport};
-use pixtuoid_core::state::SceneState;
-use pixtuoid_core::state::reducer::Reducer;
+use pixtuoid_core::harness::{Drive, Driven, Session};
+use pixtuoid_core::source::AgentEvent;
 use serde_json::json;
 
 // The filename stem "parent" IS the session UUID the hook carries, so hook and
@@ -18,6 +15,13 @@ const PARENT_PATH: &str = "/proj/parent.jsonl";
 // `detect_parent_id` keys on the `<parent-uuid>` path component — i.e. exactly
 // the parent's own AgentId — while the subagent's id is its own stem.
 const SUB_PATH: &str = "/proj/parent/subagents/agent-1.jsonl";
+
+/// The watcher's first sight of a transcript, before any line of it decodes.
+const FIRST_SIGHT: [&str; 0] = [];
+
+fn t0() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000)
+}
 
 fn parent_id() -> AgentId {
     AgentId::from_parts("claude-code", "parent")
@@ -28,92 +32,77 @@ fn sub_id() -> AgentId {
 
 #[test]
 fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let now = SystemTime::now();
-
-    for ev in decode_hook_payload(json!({
-        "hook_event_name": "SessionStart",
-        "session_id": "parent",
-        "transcript_path": PARENT_PATH,
-        "cwd": "/home/user/demo-project"
-    }))
-    .unwrap()
-    {
-        r.apply(&mut scene, ev, now, Transport::Hook);
-    }
-    assert!(scene.agents.contains_key(&parent_id()), "parent created");
-
-    // Real CC names the dispatch tool "Agent", not "Task" — Task-detection
-    // must still fire so the reducer records a task in flight.
-    for ev in decode_hook_payload(json!({
-        "hook_event_name": "PreToolUse",
-        "session_id": "parent",
-        "transcript_path": PARENT_PATH,
-        "tool_name": "Agent",
-        "tool_input": {"description": "explore", "subagent_type": "general-purpose"},
-        "tool_use_id": "task-1"
-    }))
-    .unwrap()
-    {
-        r.apply(&mut scene, ev, now, Transport::Hook);
-    }
-
-    // Mirrors the watcher's emission when the subagent's own transcript
-    // appears, with parent_id derived from the `/subagents/` path.
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: sub_id(),
-            source: "claude-code".into(),
-            session_id: "parent".into(),
-            cwd: PathBuf::from("/home/user/demo-project"),
-            parent_id: Some(parent_id()),
-        },
-        now,
-        Transport::Jsonl,
+    let (hooks, mut session) = (Drive::hooks(), Session::default());
+    session.feed(
+        &hooks,
+        [
+            json!({
+                "hook_event_name": "SessionStart",
+                "session_id": "parent",
+                "transcript_path": PARENT_PATH,
+                "cwd": "/home/user/demo-project"
+            }),
+            // Real CC names the dispatch tool "Agent", not "Task" — Task-detection
+            // must still fire so the reducer records a task in flight.
+            json!({
+                "hook_event_name": "PreToolUse",
+                "session_id": "parent",
+                "transcript_path": PARENT_PATH,
+                "tool_name": "Agent",
+                "tool_input": {"description": "explore", "subagent_type": "general-purpose"},
+                "tool_use_id": "task-1"
+            }),
+        ]
+        .map(|v| v.to_string()),
+        t0(),
+    );
+    assert!(
+        session.driven().scene.agents.contains_key(&parent_id()),
+        "parent created"
     );
 
-    for ev in decode_cc_line(
-        SUB_PATH,
-        "claude-code",
-        json!({
-            "type": "assistant",
-            "attributionAgent": "general-purpose",
-            "message": {"content": [
-                {"type": "tool_use", "id": "s1", "name": "Read", "input": {"file_path": "/x"}}
-            ]}
-        }),
-    ) {
-        r.apply(&mut scene, ev, now, Transport::Jsonl);
-    }
-
-    let sub = scene.agents.get(&sub_id()).expect("subagent present");
+    // The subagent's own transcript appears: the watcher's first sight derives
+    // its parent from the `/subagents/` path.
+    let sub = Drive::transcript("claude-code", SUB_PATH)
+        .expect("claude-code has a line decoder")
+        .seeded();
+    let read = json!({
+        "type": "assistant",
+        "attributionAgent": "general-purpose",
+        "message": {"content": [
+            {"type": "tool_use", "id": "s1", "name": "Read", "input": {"file_path": "/x"}}
+        ]}
+    });
+    session.feed(&sub, [read.to_string()], t0());
+    let linked = &session.driven().scene.agents[&sub_id()];
     assert_eq!(
-        sub.parent_id,
+        linked.parent_id,
         Some(parent_id()),
         "subagent linked to its parent via the /subagents/ path"
     );
     assert_eq!(
-        &*sub.label, "general-purpose",
+        &*linked.label, "general-purpose",
         "attributionAgent renames the subagent sprite"
     );
 
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionEnd {
-            agent_id: parent_id(),
-            as_child: false,
-        },
-        now,
-        Transport::Hook,
+    session.feed(
+        &hooks,
+        [json!({
+            "hook_event_name": "SessionEnd",
+            "session_id": "parent",
+            "transcript_path": PARENT_PATH
+        })
+        .to_string()],
+        t0(),
     );
+    let d = session.finish();
+    d.assert_clean("claude-code subagent lifecycle");
     assert!(
-        scene.agents.get(&parent_id()).unwrap().exiting_at.is_some(),
+        d.scene.agents[&parent_id()].exiting_at.is_some(),
         "parent exiting"
     );
     assert!(
-        scene.agents.get(&sub_id()).unwrap().exiting_at.is_some(),
+        d.scene.agents[&sub_id()].exiting_at.is_some(),
         "CC subagent cascades out with its parent"
     );
 }
@@ -122,219 +111,57 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
 /// below is read off them.
 const RECORDED_HOOKS: &str = "claude_code/fixtures/subagent-hermetic/hook-payloads.jsonl";
 
-fn recorded_hooks() -> Vec<serde_json::Value> {
+/// The recording's `events` payloads, in file order.
+fn recorded_lines(events: &[&str]) -> Vec<String> {
     super::captures::fixture_lines(&super::captures::sources_root().join(RECORDED_HOOKS))
-        .iter()
-        .map(|l| serde_json::from_str(l).expect("valid hook json"))
-        .collect()
-}
-
-/// The recording's `events` payloads, decoded in file order.
-fn recorded_events(events: &[&str]) -> Vec<AgentEvent> {
-    recorded_hooks()
         .into_iter()
-        .filter(|v| {
-            v["hook_event_name"]
+        .filter(|l| {
+            serde_json::from_str::<serde_json::Value>(l).expect("valid hook json")
+                ["hook_event_name"]
                 .as_str()
                 .is_some_and(|e| events.contains(&e))
         })
-        .flat_map(|v| decode_hook_payload(v).expect("a recorded CC hook payload decodes"))
         .collect()
 }
 
-/// Its SubagentStart/Stop pair alone: hooks carry the child's whole lifecycle.
-fn lifecycle_events() -> Vec<AgentEvent> {
-    recorded_events(&["SubagentStart", "SubagentStop"])
-}
-
-/// The child's registration as its SubagentStart decodes it: its id, the
-/// session it names, and the parent it links.
-fn recorded_child() -> (AgentId, String, AgentId) {
-    lifecycle_events()
-        .into_iter()
+/// The recorded root: its own SessionStart names no parent.
+fn root_of(d: &Driven) -> AgentId {
+    d.events
+        .iter()
         .find_map(|e| match e {
             AgentEvent::SessionStart {
                 agent_id,
-                session_id,
+                parent_id: None,
+                ..
+            } => Some(*agent_id),
+            _ => None,
+        })
+        .expect("the recording starts a session")
+}
+
+/// The child a linked SessionStart registers, and the parent it links.
+fn child_of(d: &Driven) -> (AgentId, AgentId) {
+    d.events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
                 parent_id: Some(parent),
                 ..
-            } => Some((agent_id, session_id, parent)),
+            } => Some((*agent_id, *parent)),
             _ => None,
         })
         .expect("SubagentStart registers a linked child")
 }
 
-/// Registers the recorded root through its own SessionStart, returning its id.
-fn start_parent(r: &mut Reducer, scene: &mut SceneState, now: SystemTime) -> AgentId {
-    let start = recorded_events(&["SessionStart"]);
-    let root = start
-        .first()
-        .expect("the recording starts a session")
-        .agent_id();
-    for ev in start {
-        r.apply(scene, ev, now, Transport::Hook);
-    }
-    root
+/// The child the recording's SubagentStart registers, as its hooks key it.
+fn hook_child() -> AgentId {
+    child_of(&Drive::hooks().lines(recorded_lines(&["SubagentStart"]))).0
 }
 
-#[test]
-fn cc_subagent_hook_pair_registers_links_and_exits_its_child() {
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let now = SystemTime::now();
-    let root = start_parent(&mut r, &mut scene, now);
-    let (child, _, linked) = recorded_child();
-    assert_eq!(linked, root, "SubagentStart links the recorded root");
-
-    for ev in lifecycle_events() {
-        r.apply(&mut scene, ev, now, Transport::Hook);
-    }
-
-    let slot = scene
-        .agents
-        .get(&child)
-        .expect("SubagentStart must register the child");
-    assert_eq!(slot.parent_id, Some(root), "the child links to its parent");
-    assert!(
-        slot.exiting_at.is_some(),
-        "SubagentStop must mark the child exiting (the Workflow-fleet \
-         desk-starvation fix — no b1, no stale-sweep wait)"
-    );
-    assert!(
-        scene
-            .agents
-            .get(&root)
-            .expect("parent still present")
-            .exiting_at
-            .is_none(),
-        "parent must keep running after its subagent stops"
-    );
-}
-
-#[test]
-fn cc_jsonl_registered_subagent_exits_cleanly_on_hook_subagent_stop() {
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let now = SystemTime::now();
-    let root = start_parent(&mut r, &mut scene, now);
-    let (child, session_id, _) = recorded_child();
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "claude-code".into(),
-            session_id,
-            cwd: PathBuf::from("/home/user/demo-project"),
-            parent_id: Some(root),
-        },
-        now,
-        Transport::Jsonl,
-    );
-    assert!(scene.agents.contains_key(&child), "JSONL registered it");
-
-    for ev in lifecycle_events() {
-        r.apply(&mut scene, ev, now, Transport::Hook);
-    }
-    assert!(
-        scene
-            .agents
-            .get(&child)
-            .expect("the hook events must coalesce onto the JSONL slot, not mint a twin")
-            .exiting_at
-            .is_some(),
-        "hook SubagentStop must exit the JSONL-registered subagent slot"
-    );
-    let bare = recorded_hooks()
-        .into_iter()
-        .find_map(|v| (v["hook_event_name"] == "SubagentStart").then(|| v["agent_id"].clone()))
-        .and_then(|id| id.as_str().map(str::to_owned))
-        .expect("SubagentStart names its agent");
-    assert!(
-        !scene
-            .agents
-            .contains_key(&AgentId::from_parts("claude-code", &bare)),
-        "no bare-keyed phantom twin"
-    );
-}
-
-#[test]
-fn cc_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let now = SystemTime::now();
-    let root = start_parent(&mut r, &mut scene, now);
-
-    let (stops, starts): (Vec<_>, Vec<_>) = lifecycle_events()
-        .into_iter()
-        .partition(|ev| matches!(ev, AgentEvent::SessionEnd { .. }));
-    for ev in stops {
-        r.apply(&mut scene, ev, now, Transport::Hook);
-    }
-    // Applied TWICE: the gate must not consume the tombstone.
-    for ev in starts.iter().chain(starts.iter()).cloned() {
-        r.apply(
-            &mut scene,
-            ev,
-            now + Duration::from_millis(50),
-            Transport::Hook,
-        );
-    }
-
-    assert!(
-        !scene.agents.contains_key(&recorded_child().0),
-        "a SubagentStart reordered after its own Stop must not register"
-    );
-    let parent = scene.agents.get(&root).expect("parent untouched");
-    assert!(
-        parent.exiting_at.is_none(),
-        "the child's tombstone must not affect the parent"
-    );
-}
-
-#[test]
-fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let now = SystemTime::now();
-    let root = start_parent(&mut r, &mut scene, now);
-
-    for ev in lifecycle_events() {
-        if matches!(ev, AgentEvent::SessionStart { .. }) {
-            r.apply(&mut scene, ev, now, Transport::Hook);
-        }
-    }
-    let (child, session_id, _) = recorded_child();
-    assert!(scene.agents.contains_key(&child), "hook registered it");
-    let count_before = scene.agents.len();
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "claude-code".into(),
-            session_id,
-            cwd: PathBuf::from("/home/user/demo-project"),
-            parent_id: Some(root),
-        },
-        now,
-        Transport::Jsonl,
-    );
-    assert_eq!(
-        scene.agents.len(),
-        count_before,
-        "the JSONL SessionStart must coalesce (no twin sprite)"
-    );
-    assert_eq!(
-        scene.agents.get(&child).unwrap().parent_id,
-        Some(root),
-        "parent link survives the duplicate"
-    );
-}
-
-/// The child's own transcript names its agent type, which relabels its sprite;
-/// the root's never carries it.
-#[test]
-fn a_recorded_childs_transcript_names_its_agent() {
+/// The recording's child transcript, and the logical path the watcher finds
+/// it at: nested under its root's session.
+fn child_transcript() -> (PathBuf, String) {
     let dir = super::captures::sources_root().join("claude_code/fixtures/subagent-hermetic");
     let transcripts = super::captures::transcripts_in(&dir);
     let stem = |t: &std::path::Path| {
@@ -348,24 +175,164 @@ fn a_recorded_childs_transcript_names_its_agent() {
     let ([child], [root]) = (&child[..], &root[..]) else {
         panic!("a root's and a child's transcript: {transcripts:?}");
     };
-    let lines = super::captures::fixture_lines(child);
+    let logical = format!("/proj/{}/subagents/{}.jsonl", stem(root), stem(child));
+    (child.to_path_buf(), logical)
+}
+
+fn child_drive() -> Drive {
+    Drive::transcript("claude-code", &child_transcript().1)
+        .expect("claude-code has a line decoder")
+        .seeded()
+}
+
+#[test]
+fn cc_subagent_hook_pair_registers_links_and_exits_its_child() {
+    let d = Drive::hooks().lines(recorded_lines(&[
+        "SessionStart",
+        "SubagentStart",
+        "SubagentStop",
+    ]));
+    d.assert_clean("claude-code subagent hook pair");
+    let root = root_of(&d);
+    let (child, linked) = child_of(&d);
+    assert_eq!(linked, root, "SubagentStart links the recorded root");
+
+    let slot = d
+        .scene
+        .agents
+        .get(&child)
+        .expect("SubagentStart must register the child");
+    assert_eq!(slot.parent_id, Some(root), "the child links to its parent");
+    assert!(
+        slot.exiting_at.is_some(),
+        "SubagentStop must mark the child exiting (the Workflow-fleet \
+         desk-starvation fix — no b1, no stale-sweep wait)"
+    );
+    assert!(
+        d.scene
+            .agents
+            .get(&root)
+            .expect("parent still present")
+            .exiting_at
+            .is_none(),
+        "parent must keep running after its subagent stops"
+    );
+}
+
+#[test]
+fn cc_jsonl_registered_subagent_exits_cleanly_on_hook_subagent_stop() {
+    let child = hook_child();
+    let (hooks, mut session) = (Drive::hooks(), Session::default());
+    session.feed(&hooks, recorded_lines(&["SessionStart"]), t0());
+    session.feed(&child_drive(), FIRST_SIGHT, t0());
+    assert!(
+        session.driven().scene.agents.contains_key(&child),
+        "JSONL registered it"
+    );
+
+    session.feed(
+        &hooks,
+        recorded_lines(&["SubagentStart", "SubagentStop"]),
+        t0(),
+    );
+    let d = session.finish();
+    d.assert_clean("claude-code JSONL-registered subagent");
+    assert!(
+        d.scene
+            .agents
+            .get(&child)
+            .expect("the hook events must coalesce onto the JSONL slot, not mint a twin")
+            .exiting_at
+            .is_some(),
+        "hook SubagentStop must exit the JSONL-registered subagent slot"
+    );
+    let bare = recorded_lines(&["SubagentStart"])
+        .iter()
+        .find_map(|l| {
+            let v: serde_json::Value = serde_json::from_str(l).expect("valid hook json");
+            v["agent_id"].as_str().map(str::to_owned)
+        })
+        .expect("SubagentStart names its agent");
+    assert!(
+        !d.scene
+            .agents
+            .contains_key(&AgentId::from_parts("claude-code", &bare)),
+        "no bare-keyed phantom twin"
+    );
+}
+
+#[test]
+fn cc_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
+    let start = recorded_lines(&["SubagentStart"]);
+    let mut lines = recorded_lines(&["SessionStart"]);
+    lines.extend(recorded_lines(&["SubagentStop"]));
+    // Applied TWICE: the gate must not consume the tombstone.
+    lines.extend(start.iter().chain(&start).cloned());
+    let d = Drive::hooks().lines(&lines);
+    d.assert_clean("claude-code reordered subagent hooks");
+
+    assert!(
+        !d.scene.agents.contains_key(&child_of(&d).0),
+        "a SubagentStart reordered after its own Stop must not register"
+    );
+    let parent = d.scene.agents.get(&root_of(&d)).expect("parent untouched");
+    assert!(
+        parent.exiting_at.is_none(),
+        "the child's tombstone must not affect the parent"
+    );
+}
+
+#[test]
+fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
+    let (hooks, mut session) = (Drive::hooks(), Session::default());
+    session.feed(
+        &hooks,
+        recorded_lines(&["SessionStart", "SubagentStart"]),
+        t0(),
+    );
+    let (child, root) = child_of(session.driven());
+    assert!(
+        session.driven().scene.agents.contains_key(&child),
+        "hook registered it"
+    );
+    let count_before = session.driven().scene.agents.len();
+
+    session.feed(&child_drive(), FIRST_SIGHT, t0());
+    let d = session.finish();
+    d.assert_clean("claude-code hook-first subagent");
+    assert_eq!(
+        d.scene.agents.len(),
+        count_before,
+        "the JSONL SessionStart must coalesce (no twin sprite)"
+    );
+    assert_eq!(
+        d.scene.agents[&child].parent_id,
+        Some(root),
+        "parent link survives the duplicate"
+    );
+}
+
+/// The child's own transcript names its agent type, which relabels its sprite;
+/// the root's never carries it.
+#[test]
+fn a_recorded_childs_transcript_names_its_agent() {
+    let (child, _) = child_transcript();
+    let lines = super::captures::fixture_lines(&child);
     let named = lines
         .iter()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
         .find_map(|v| v["attributionAgent"].as_str().map(str::to_owned))
         .expect("the child names its agent");
-    let d = pixtuoid_core::harness::Drive::transcript(
-        "claude-code",
-        &format!("/proj/{}/subagents/{}.jsonl", stem(root), stem(child)),
-    )
-    .expect("claude-code has a line decoder")
-    .seeded()
-    .lines(lines);
+    let d = child_drive().lines(lines);
     d.assert_clean("claude-code child transcript");
+    let stem = child
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let slot = d
         .scene
         .agents
-        .get(&AgentId::from_parts("claude-code", &stem(child)))
+        .get(&AgentId::from_parts("claude-code", &stem))
         .expect("the child registers");
     assert_eq!(&*slot.label, named);
 }
@@ -376,7 +343,7 @@ fn a_recorded_childs_transcript_names_its_agent() {
 fn a_recorded_background_childs_tools_land_on_the_child() {
     let lines =
         super::captures::fixture_lines(&super::captures::sources_root().join(RECORDED_HOOKS));
-    let d = pixtuoid_core::harness::Drive::hooks().lines(lines);
+    let d = Drive::hooks().lines(lines);
     d.assert_clean("claude-code delegation hooks");
     let (child, root) = d
         .events
@@ -447,7 +414,7 @@ fn the_meter_is_the_sum_per_message_of_a_recorded_run() {
         "no message spans two lines here, so this recording proves nothing"
     );
 
-    let driven = pixtuoid_core::harness::Drive::transcript_at("claude-code", &transcript)
+    let driven = Drive::transcript_at("claude-code", &transcript)
         .expect("a transcript source")
         .seeded()
         .body(body.as_bytes());

@@ -119,9 +119,9 @@ impl ProbeSnapshot {
                 continue;
             }
             if recognize(&path) {
-                // Folded at the seam (`walk::id_path`), NOT in each source's
+                // Folded at the seam (`decoder::id_path`), NOT in each source's
                 // deriver — one id-space no new fd-probe source can forget.
-                let id = (id_derive)(&super::walk::id_path(&path));
+                let id = (id_derive)(&crate::source::decoder::id_path(&path));
                 debug!(
                     pid,
                     path = ?path,
