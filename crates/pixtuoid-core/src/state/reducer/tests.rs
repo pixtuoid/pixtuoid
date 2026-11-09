@@ -1166,6 +1166,64 @@ fn the_stale_sweep_logs_the_wire_label_escaped() {
     );
 }
 
+/// Every tick walks every live slot's scope, so its work must stay linear in
+/// them: a per-slot rescan of the scene made it quadratic.
+#[test]
+fn a_tick_walks_scope_in_linear_work() {
+    use super::STALE_BLOCKED_TIMEOUT;
+    use crate::source::{AgentEvent, Transport};
+    use crate::state::scope::VISITS;
+    use crate::{AgentId, Reducer, SceneState};
+    use std::time::{Duration, SystemTime};
+
+    /// The slots one tick's scope walks visit, over `slots` independent roots
+    /// or one lineage `slots` deep, each past its window so both the
+    /// exemption pass and the cascade walk all of them.
+    fn tick_visits(slots: usize, deep: bool) -> usize {
+        let mut scene = SceneState::uniform(slots);
+        let mut r = Reducer::new();
+        let mut parent_id = None;
+        for i in 0..slots {
+            let agent_id = AgentId::from_parts("claude-code", &format!("s{i}"));
+            r.apply(
+                &mut scene,
+                AgentEvent::SessionStart {
+                    agent_id,
+                    source: "claude-code".into(),
+                    session_id: format!("s{i}"),
+                    cwd: "/repo".into(),
+                    parent_id,
+                },
+                SystemTime::UNIX_EPOCH,
+                Transport::Hook,
+            );
+            if deep {
+                parent_id = Some(agent_id);
+            }
+        }
+        assert_eq!(scene.agents.len(), slots);
+        VISITS.with(|v| v.set(0));
+        r.tick(
+            &mut scene,
+            SystemTime::UNIX_EPOCH + STALE_BLOCKED_TIMEOUT + Duration::from_secs(1),
+        );
+        assert!(scene.agents.values().all(|s| s.exiting_at.is_some()));
+        VISITS.with(std::cell::Cell::get)
+    }
+
+    // Visits, never wall clock: a loaded runner can't flake a count.
+    const SLOTS: usize = 128;
+    for deep in [false, true] {
+        let (once, twice) = (tick_visits(SLOTS, deep), tick_visits(2 * SLOTS, deep));
+        assert!(
+            twice <= 2 * once,
+            "doubling the slots must at most double the tick's work \
+             (deep: {deep}): {once} visits for {SLOTS} slots, {twice} for {}",
+            2 * SLOTS
+        );
+    }
+}
+
 /// An open turn showing no item is the agent between items, alive by its
 /// turn: it is reaped on neither the tool's window alone nor the idle one.
 #[test]

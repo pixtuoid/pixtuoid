@@ -345,9 +345,7 @@ impl Reducer {
             .filter(|s| s.exiting_at.is_none() && !connected.contains(s.source.as_ref()))
             .map(|s| s.agent_id)
             .collect();
-        for id in ids {
-            scope::cascade_exit(scene, id, scope::StampRoot::Yes, now);
-        }
+        scope::cascade_exit(scene, ids, scope::StampRoot::Yes, now);
     }
 
     /// Fold one `AgentEvent` into the scene at `now`, tagged with the
@@ -995,7 +993,7 @@ impl Reducer {
         now: SystemTime,
     ) {
         self.corr.note_end(agent_id, from, as_child, now);
-        scope::cascade_exit(scene, agent_id, scope::StampRoot::Yes, now);
+        scope::cascade_exit(scene, [agent_id], scope::StampRoot::Yes, now);
     }
 
     /// The `ProofOfLife` arm — #220: refresh the sweep exemption, and NOTHING
@@ -1227,8 +1225,6 @@ impl Reducer {
             if !link_would_apply {
                 return true;
             }
-            // #238: a 2-cycle of BOTH-RequiresAction nodes would mutually satisfy
-            // `has_requires_action_ancestor` and escape `sweep_stale` forever.
             let cycle = scope::would_create_cycle(&scene.agents, agent_id, p);
             if cycle {
                 tracing::warn!(
@@ -1627,6 +1623,7 @@ impl Reducer {
             .filter(|(_, armed)| elapsed_at_least(now, **armed, B1_CASCADE_GRACE))
             .map(|(id, _)| *id)
             .collect();
+        let mut fired = Vec::with_capacity(due.len());
         for id in due {
             self.pending_b1_cascades.remove(&id);
             if self
@@ -1638,9 +1635,10 @@ impl Reducer {
                 continue;
             }
             tracing::debug!(agent_id = ?id, "b1 grace elapsed — cascading completed subtree");
-            // The delegating parent keeps running; only its subtree walks out.
-            scope::cascade_exit(scene, id, scope::StampRoot::No, now);
+            fired.push(id);
         }
+        // The delegating parent keeps running; only its subtree walks out.
+        scope::cascade_exit(scene, fired, scope::StampRoot::No, now);
     }
 
     /// Mark agents as exiting when they haven't emitted any event for longer
@@ -1648,57 +1646,48 @@ impl Reducer {
     /// liveness signal, NOT `state_started_at`, which only tracks the current
     /// state's age.
     fn sweep_stale(&mut self, scene: &mut SceneState, now: SystemTime) {
-        // A node gated by a `RequiresAction` relative is blocked with it, not dead: a
-        // subagent under a requires-action parent, or a parent over a requires-action subagent.
-        // A requires-action descendant never exempts a requires-action node, so a requires-action pair
-        // can't exempt each other (#238).
         let agents = &scene.agents;
-        let stale: Vec<(AgentId, Duration, Duration)> = agents
+        let tree = scope::Tree::of(agents);
+        let requires_action =
+            |slot: &AgentSlot| matches!(slot.state, ActivityState::RequiresAction { .. });
+        // A node gated by a `RequiresAction` relative is blocked with it, not dead: a
+        // subagent under a requires-action parent (its own permission event can land
+        // there, leaving it Running), or a parent over a requires-action subagent.
+        let under_requires_action = tree.descendants_of(requires_action);
+        let over_requires_action = tree.ancestors_of(requires_action);
+        // A vouched ancestor's DELEGATED subtree inherits it: the probe
+        // never vouches subagent ids, and a parked parent reads Running.
+        let under_vouched_delegation = tree.descendants_of(|a| {
+            self.corr.vouch_fresh(&a.agent_id, now)
+                && self
+                    .corr
+                    .tasks_in_flight
+                    .get(&a.agent_id)
+                    .is_some_and(|t| !t.is_empty())
+        });
+        let stale: Vec<AgentId> = agents
             .values()
             .filter(|slot| slot.exiting_at.is_none())
             .filter_map(|slot| {
-                let requires_action = matches!(slot.state, ActivityState::RequiresAction { .. });
-                if scope::has_requires_action_ancestor(agents, slot.agent_id)
-                    || (!requires_action
-                        && scope::has_requires_action_descendant(agents, slot.agent_id))
+                let id = slot.agent_id;
+                // A requires-action descendant never exempts a requires-action node, so a
+                // requires-action pair can't exempt each other (#238).
+                if under_requires_action.contains(&id)
+                    || (!requires_action(slot) && over_requires_action.contains(&id))
                 {
                     return None;
                 }
                 // Probe-vouched (#220): a recent ProofOfLife means the process
                 // is alive RIGHT NOW, so event silence is not death.
-                if self.corr.vouch_fresh(&slot.agent_id, now) {
-                    return None;
-                }
-                // A vouched ancestor's DELEGATED subtree inherits it: the probe
-                // never vouches subagent ids, and a parked parent reads Running.
-                if scope::has_ancestor_where(agents, slot.agent_id, |a| {
-                    self.corr.vouch_fresh(&a.agent_id, now)
-                        && self
-                            .corr
-                            .tasks_in_flight
-                            .get(&a.agent_id)
-                            .is_some_and(|t| !t.is_empty())
-                }) {
+                if self.corr.vouch_fresh(&id, now) || under_vouched_delegation.contains(&id) {
                     return None;
                 }
                 let age = now
                     .duration_since(slot.last_event_at)
                     .unwrap_or(Duration::ZERO);
                 let threshold = stale_threshold(slot);
-                (age > threshold).then_some((slot.agent_id, age, threshold))
-            })
-            .collect();
-
-        // Cascading keeps a stale-swept (or SessionEnd-less) parent from leaving
-        // orphans; the skip below keeps `exiting_at` and the log write-once.
-        for (id, age, threshold) in stale {
-            {
-                let slot = scene
-                    .agents
-                    .get_mut(&id)
-                    .expect("cascade_exit only marks exiting; no slot leaves between the passes");
-                if slot.exiting_at.is_some() {
-                    continue;
+                if age <= threshold {
+                    return None;
                 }
                 tracing::info!(
                     agent_id = ?id,
@@ -1707,9 +1696,11 @@ impl Reducer {
                     threshold_secs = threshold.as_secs(),
                     "stale agent — marking exiting"
                 );
-            }
-            scope::cascade_exit(scene, id, scope::StampRoot::Yes, now);
-        }
+                Some(id)
+            })
+            .collect();
+        // Cascading keeps a stale-swept (or SessionEnd-less) parent from leaving orphans.
+        scope::cascade_exit(scene, stale, scope::StampRoot::Yes, now);
     }
 
     /// Drop the per-slot correlation a departing agent id owns, reclaimed on

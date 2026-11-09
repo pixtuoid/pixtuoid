@@ -7,80 +7,147 @@
 //!   subtree.
 //! - **liveness flows UP** — [`refresh_lineage`]: a working descendant keeps its
 //!   ancestors alive, so a blocked-but-delegating parent isn't stale-swept.
-//! - **readiness, queried both ways** — [`has_requires_action_ancestor`] and
-//!   [`has_requires_action_descendant`]: a node gated by a `RequiresAction` relative is "not ready", not dead.
+//! - **readiness, queried both ways** — [`Tree::descendants_of`] and
+//!   [`Tree::ancestors_of`]: a node gated by a `RequiresAction` relative is "not ready", not dead.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::SystemTime;
 
 use crate::AgentId;
-use crate::state::{ActivityState, AgentSlot, SceneState, fsm};
+use crate::state::{AgentSlot, SceneState, fsm};
 
-/// Whether [`cascade_exit`] also marks the `root` seed itself exiting — EXPLICIT
+#[cfg(test)]
+thread_local! {
+    /// The slots the scope walks have visited on this thread: a pass's work,
+    /// which a test bounds by the slot count, never by wall clock.
+    pub(crate) static VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn visit() {
+    #[cfg(test)]
+    VISITS.with(|v| v.set(v.get() + 1));
+}
+
+/// The scene's `parent_id` links, indexed once so a pass asks every slot's
+/// scope question of it instead of rescanning the scene per slot.
+pub(crate) struct Tree<'a> {
+    agents: &'a BTreeMap<AgentId, AgentSlot>,
+    /// Keyed by every `parent_id`, a dangling one too: a cascade from a removed
+    /// parent still reaches the orphans it left.
+    children: HashMap<AgentId, Vec<&'a AgentSlot>>,
+}
+
+impl<'a> Tree<'a> {
+    pub(crate) fn of(agents: &'a BTreeMap<AgentId, AgentSlot>) -> Self {
+        let mut children: HashMap<AgentId, Vec<&AgentSlot>> = HashMap::new();
+        for slot in agents.values() {
+            visit();
+            if let Some(parent) = slot.parent_id {
+                children.entry(parent).or_default().push(slot);
+            }
+        }
+        Self { agents, children }
+    }
+
+    fn children(&self, id: AgentId) -> &[&'a AgentSlot] {
+        visit();
+        self.children.get(&id).map_or(&[], Vec::as_slice)
+    }
+
+    /// Every slot under a root, after the parent it hangs from (`None` for a
+    /// root). A parent cycle has no root, so no walk enters one: a member can't
+    /// count another, or itself, as its relative (#238).
+    fn lineage(&self) -> Vec<(&'a AgentSlot, Option<&'a AgentSlot>)> {
+        let mut frontier: Vec<_> = self
+            .agents
+            .values()
+            .filter(|s| s.parent_id.is_none_or(|p| !self.agents.contains_key(&p)))
+            .map(|s| (s, None))
+            .collect();
+        let mut order = Vec::with_capacity(self.agents.len());
+        while let Some((slot, parent)) = frontier.pop() {
+            order.push((slot, parent));
+            frontier.extend(
+                self.children(slot.agent_id)
+                    .iter()
+                    .map(|&child| (child, Some(slot))),
+            );
+        }
+        order
+    }
+
+    /// Every descendant of a slot satisfying `pred`.
+    pub(crate) fn descendants_of(&self, pred: impl Fn(&AgentSlot) -> bool) -> HashSet<AgentId> {
+        let mut out = HashSet::new();
+        for (slot, parent) in self.lineage() {
+            if parent.is_some_and(|p| out.contains(&p.agent_id) || pred(p)) {
+                out.insert(slot.agent_id);
+            }
+        }
+        out
+    }
+
+    /// Every ancestor of a slot satisfying `pred`.
+    pub(crate) fn ancestors_of(&self, pred: impl Fn(&AgentSlot) -> bool) -> HashSet<AgentId> {
+        let mut out = HashSet::new();
+        // Children first, so a slot's verdict is whole before its parent reads it.
+        for (slot, parent) in self.lineage().into_iter().rev() {
+            if let Some(p) = parent
+                && (out.contains(&slot.agent_id) || pred(slot))
+            {
+                out.insert(p.agent_id);
+            }
+        }
+        out
+    }
+}
+
+/// Whether [`cascade_exit`] also marks each root seed itself exiting — EXPLICIT
 /// at each call site, replacing the old implicit "did the caller stamp
 /// `root.exiting_at` before calling?" convention that had no assertion to catch
 /// a caller that forgot.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum StampRoot {
-    /// The whole tree leaves together — `root` is marked exiting too.
+    /// The whole tree leaves together — the root is marked exiting too.
     Yes,
-    /// Only the subtree leaves; `root` keeps running (the subagent-completion
+    /// Only the subtree leaves; the root keeps running (the subagent-completion
     /// cascade: the parent stays alive as its finished children walk out).
     No,
 }
 
-/// Mark every not-yet-exiting descendant of `root` exiting, over `parent_id`
-/// links — and, when `stamp_root` is [`StampRoot::Yes`], mark `root` itself
-/// exiting first (via [`fsm::mark_exiting`], so the earliest `exiting_at` wins).
-/// Idempotent through that write-once stamp, NOT by pruning the walk: an
-/// already-exiting node keeps its original `exiting_at` but is still traversed,
-/// so a descendant registered under it after it started exiting is reached.
+/// Mark every not-yet-exiting descendant of each of `roots` exiting, over
+/// `parent_id` links — and, when `stamp_root` is [`StampRoot::Yes`], each root
+/// itself (via [`fsm::mark_exiting`], so the earliest `exiting_at` wins).
+/// Idempotent through that write-once stamp, NOT by pruning the walk at an
+/// exiting node: one keeps its original `exiting_at` but is still traversed, so
+/// a descendant registered under it after it started exiting is reached.
 pub(crate) fn cascade_exit(
     scene: &mut SceneState,
-    root: AgentId,
+    roots: impl IntoIterator<Item = AgentId>,
     stamp_root: StampRoot,
     now: SystemTime,
 ) {
-    if stamp_root == StampRoot::Yes
-        && let Some(slot) = scene.agents.get_mut(&root)
-    {
-        fsm::mark_exiting(slot, now);
-    }
-    for cid in descendants(&scene.agents, root) {
-        if let Some(slot) = scene.agents.get_mut(&cid) {
-            fsm::mark_exiting(slot, now);
+    let tree = Tree::of(&scene.agents);
+    let mut doomed: HashSet<AgentId> = HashSet::new();
+    for root in roots {
+        // A doomed root's subtree is doomed already, so the roots share one walk.
+        if stamp_root == StampRoot::Yes && !doomed.insert(root) {
+            continue;
         }
-    }
-}
-
-/// Every descendant of `root` over `parent_id` links; a cycle is walked once.
-fn descendants(agents: &BTreeMap<AgentId, AgentSlot>, root: AgentId) -> Vec<AgentId> {
-    let mut visited: HashSet<AgentId> = HashSet::new();
-    visited.insert(root);
-    let mut frontier = vec![root];
-    let mut out = Vec::new();
-    while let Some(parent) = frontier.pop() {
-        for child in agents.values().filter(|s| s.parent_id == Some(parent)) {
-            if visited.insert(child.agent_id) {
-                out.push(child.agent_id);
-                frontier.push(child.agent_id);
+        let mut frontier = vec![root];
+        while let Some(parent) = frontier.pop() {
+            for child in tree.children(parent) {
+                if doomed.insert(child.agent_id) {
+                    frontier.push(child.agent_id);
+                }
             }
         }
     }
-    out
-}
-
-/// True if any descendant of `id` is in `RequiresAction` state: a parent whose
-/// subagent is blocked on a human gate waits with it, not dead.
-pub(crate) fn has_requires_action_descendant(
-    agents: &BTreeMap<AgentId, AgentSlot>,
-    id: AgentId,
-) -> bool {
-    descendants(agents, id).into_iter().any(|d| {
-        agents
-            .get(&d)
-            .is_some_and(|s| matches!(s.state, ActivityState::RequiresAction { .. }))
-    })
+    for id in doomed {
+        if let Some(slot) = scene.agents.get_mut(&id) {
+            fsm::mark_exiting(slot, now);
+        }
+    }
 }
 
 /// Refresh `last_event_at` for `id` and every ancestor, so a parent isn't
@@ -106,41 +173,11 @@ pub(crate) fn refresh_lineage(scene: &mut SceneState, id: AgentId, now: SystemTi
     }
 }
 
-/// True if any ancestor of `id` (walking `parent_id`, the node itself excluded)
-/// satisfies `pred` — the ONE ancestor walk behind the readiness queries, so the
-/// cycle guard and dangling-parent tolerance can't fork. Takes `&BTreeMap`
-/// rather than `&SceneState` so it can be called inside `sweep_stale`'s pass-1
-/// closure while `&scene.agents` is already borrowed immutably.
-pub(crate) fn has_ancestor_where(
-    agents: &BTreeMap<AgentId, AgentSlot>,
-    id: AgentId,
-    pred: impl Fn(&AgentSlot) -> bool,
-) -> bool {
-    // Seeded with the start node: in a parent cycle the walk returns to `id` and
-    // would otherwise run `pred` on it before the guard breaks — a RequiresAction cycle
-    // member counting as its own RequiresAction ancestor self-exempts from sweep_stale
-    // forever.
-    let mut visited: HashSet<AgentId> = HashSet::from([id]);
-    let mut cur = agents.get(&id).and_then(|s| s.parent_id);
-    while let Some(pid) = cur {
-        if !visited.insert(pid) {
-            break;
-        }
-        match agents.get(&pid) {
-            Some(p) if pred(p) => return true,
-            Some(p) => cur = p.parent_id,
-            None => break,
-        }
-    }
-    false
-}
-
 /// True if linking `child.parent_id = proposed_parent` would close a
 /// `parent_id` cycle. The reducer calls this at every seam that sets or enriches
 /// `parent_id` and REFUSES the link (degrading to parentless), so a cycle can
-/// never EXIST: a 2-cycle whose members are BOTH `RequiresAction` would mutually
-/// satisfy [`has_requires_action_ancestor`] and exempt each other from the stale sweep
-/// forever — an immortal pair (#238).
+/// never EXIST: it has no root, so every walk down from the roots ([`Tree`]'s
+/// readiness queries, the dashboard's rows) would drop its members.
 pub(crate) fn would_create_cycle(
     agents: &BTreeMap<AgentId, AgentSlot>,
     child: AgentId,
@@ -163,22 +200,10 @@ pub(crate) fn would_create_cycle(
     false
 }
 
-/// True if any ancestor of `id` is in `RequiresAction` state. A subagent's permission
-/// event that lands on an ancestor leaves the blocked subagent `Running` — paused
-/// on a human gate, not dead, so `sweep_stale` exempts it from the aggressive
-/// `STALE_TOOL_TIMEOUT`.
-pub(crate) fn has_requires_action_ancestor(
-    agents: &BTreeMap<AgentId, AgentSlot>,
-    id: AgentId,
-) -> bool {
-    has_ancestor_where(agents, id, |p| {
-        matches!(p.state, ActivityState::RequiresAction { .. })
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::ActivityState;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -235,18 +260,45 @@ mod tests {
         );
     }
 
-    #[test]
-    fn has_requires_action_ancestor_false_when_parent_id_dangling() {
-        let child = AgentId::from_transcript_path("/p/child.jsonl");
-        let missing = AgentId::from_transcript_path("/p/never-created.jsonl");
-        let mut scene = SceneState::uniform(4);
-        scene
-            .agents
-            .insert(child, slot(child, Some(missing), ActivityState::Idle));
+    fn is_requires_action(slot: &AgentSlot) -> bool {
+        matches!(slot.state, ActivityState::RequiresAction { .. })
+    }
 
-        assert!(
-            !has_requires_action_ancestor(&scene.agents, child),
-            "a dangling parent_id is not a RequiresAction ancestor — the walk breaks safely"
+    #[test]
+    fn readiness_reaches_every_relative_but_never_the_slot_itself() {
+        let id = |name: &str| AgentId::from_transcript_path(&format!("/p/{name}.jsonl"));
+        let [top, parent, gate, child, grandchild, uncle, orphan, missing] = [
+            "top",
+            "parent",
+            "gate",
+            "child",
+            "grandchild",
+            "uncle",
+            "orphan",
+            "missing",
+        ]
+        .map(id);
+        let mut scene = SceneState::uniform(8);
+        for (agent, parent_id, state) in [
+            (top, None, ActivityState::Idle),
+            (parent, Some(top), ActivityState::Idle),
+            (gate, Some(parent), requires_action()),
+            (child, Some(gate), ActivityState::Idle),
+            (grandchild, Some(child), ActivityState::Idle),
+            (uncle, Some(top), ActivityState::Idle),
+            (orphan, Some(missing), ActivityState::Idle),
+        ] {
+            scene.agents.insert(agent, slot(agent, parent_id, state));
+        }
+
+        let tree = Tree::of(&scene.agents);
+        assert_eq!(
+            tree.descendants_of(is_requires_action),
+            HashSet::from([child, grandchild])
+        );
+        assert_eq!(
+            tree.ancestors_of(is_requires_action),
+            HashSet::from([parent, top])
         );
     }
 
@@ -278,27 +330,21 @@ mod tests {
     }
 
     #[test]
-    fn has_requires_action_ancestor_breaks_on_cycle_with_no_requires_action_node() {
-        let (scene, a, _b) = cycle_scene(ActivityState::Idle, ActivityState::Idle);
-        assert!(
-            !has_requires_action_ancestor(&scene.agents, a),
-            "a cycle with no RequiresAction node must terminate and return false"
-        );
-    }
+    fn readiness_never_walks_into_a_parent_cycle() {
+        let (mut scene, _a, _b) = cycle_scene(ActivityState::Idle, requires_action());
+        let x = AgentId::from_transcript_path("/p/self.jsonl");
+        scene.agents.insert(x, slot(x, Some(x), requires_action()));
 
-    #[test]
-    fn has_requires_action_ancestor_true_via_cyclic_ancestor() {
-        let (scene, a, _b) = cycle_scene(ActivityState::Idle, requires_action());
-        assert!(has_requires_action_ancestor(&scene.agents, a));
-    }
-
-    #[test]
-    fn has_requires_action_ancestor_excludes_self_reached_via_cycle() {
-        let (scene, _a, b) = cycle_scene(ActivityState::Idle, requires_action());
-        assert!(
-            !has_requires_action_ancestor(&scene.agents, b),
-            "a node must never count as its own RequiresAction ancestor through a parent cycle"
-        );
+        let tree = Tree::of(&scene.agents);
+        for (query, gated) in [
+            ("descendants_of", tree.descendants_of(is_requires_action)),
+            ("ancestors_of", tree.ancestors_of(is_requires_action)),
+        ] {
+            assert!(
+                gated.is_empty(),
+                "{query}: no cycle member may count another, or itself, as its relative: {gated:?}"
+            );
+        }
     }
 
     #[test]
@@ -377,7 +423,7 @@ mod tests {
         fsm::mark_exiting(scene.agents.get_mut(&mid).unwrap(), t_mid);
 
         let t_root = t_mid + Duration::from_secs(2);
-        cascade_exit(&mut scene, root, StampRoot::Yes, t_root);
+        cascade_exit(&mut scene, [root], StampRoot::Yes, t_root);
 
         assert_eq!(scene.agents[&root].exiting_at, Some(t_root));
         assert_eq!(
@@ -394,13 +440,48 @@ mod tests {
     }
 
     #[test]
-    fn has_requires_action_ancestor_excludes_self_parented_node() {
-        let x = AgentId::from_transcript_path("/p/self.jsonl");
+    fn a_subtree_only_cascade_exits_a_root_nested_under_another_in_either_order() {
+        let root = AgentId::from_transcript_path("/p/root.jsonl");
+        let mid = AgentId::from_transcript_path("/p/mid.jsonl");
+        let leaf = AgentId::from_transcript_path("/p/leaf.jsonl");
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000);
+        for roots in [[root, mid], [mid, root]] {
+            let mut scene = SceneState::uniform(8);
+            scene
+                .agents
+                .insert(root, slot(root, None, ActivityState::Idle));
+            scene
+                .agents
+                .insert(mid, slot(mid, Some(root), ActivityState::Idle));
+            scene
+                .agents
+                .insert(leaf, slot(leaf, Some(mid), ActivityState::Idle));
+
+            cascade_exit(&mut scene, roots, StampRoot::No, now);
+
+            assert_eq!(scene.agents[&root].exiting_at, None, "{roots:?}");
+            assert_eq!(
+                scene.agents[&mid].exiting_at,
+                Some(now),
+                "{roots:?}: a root under another root's subtree leaves with it"
+            );
+            assert_eq!(scene.agents[&leaf].exiting_at, Some(now), "{roots:?}");
+        }
+    }
+
+    #[test]
+    fn a_cascade_from_a_parent_with_no_slot_reaches_the_orphans_naming_it() {
+        let orphan = AgentId::from_transcript_path("/p/orphan.jsonl");
+        let missing = AgentId::from_transcript_path("/p/never-created.jsonl");
         let mut scene = SceneState::uniform(4);
-        scene.agents.insert(x, slot(x, Some(x), requires_action()));
-        assert!(
-            !has_requires_action_ancestor(&scene.agents, x),
-            "a self-parented RequiresAction node is not its own ancestor"
-        );
+        scene
+            .agents
+            .insert(orphan, slot(orphan, Some(missing), ActivityState::Idle));
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000);
+
+        cascade_exit(&mut scene, [missing], StampRoot::Yes, now);
+
+        assert_eq!(scene.agents[&orphan].exiting_at, Some(now));
+        assert!(!scene.agents.contains_key(&missing));
     }
 }
