@@ -225,6 +225,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorTransi
 pub struct pixtuoid_scene::floor::OfficeSession
 impl pixtuoid_scene::floor::OfficeSession
 pub fn pixtuoid_scene::floor::OfficeSession::grip(&mut self, &pixtuoid_scene::interact::Gesture)
+pub fn pixtuoid_scene::floor::OfficeSession::hear(&mut self, &pixtuoid_core::state::SceneState, pixtuoid_scene::floor::FloorMeta, std::time::SystemTime) -> pixtuoid_scene::audio::AudioFrame
 pub fn pixtuoid_scene::floor::OfficeSession::n_floors(&self) -> usize
 pub fn pixtuoid_scene::floor::OfficeSession::nav(&self) -> &pixtuoid_scene::floor::FloorNav
 pub fn pixtuoid_scene::floor::OfficeSession::navigate(&mut self, usize, std::time::SystemTime) -> bool
@@ -329,6 +330,7 @@ impl core::marker::Unpin for pixtuoid_scene::floor::VacancyDim
 impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::VacancyDim
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::VacancyDim
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::VacancyDim
+pub const pixtuoid_scene::floor::REST_TICK: core::time::Duration
 pub fn pixtuoid_scene::floor::floor_capacity(pixtuoid_scene::layout::Viewport, u64) -> usize
 pub fn pixtuoid_scene::floor::floor_seed(usize) -> u64
 pub fn pixtuoid_scene::floor::num_floors(&pixtuoid_core::state::SceneState) -> usize

@@ -3,7 +3,7 @@
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::sprite::RgbBuffer;
 
-use pixtuoid_scene::floor::{FloorInputs, OfficeSession};
+use pixtuoid_scene::floor::{FloorInputs, FloorMeta, OfficeSession};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
 use pixtuoid_scene::interact::{Gesture, Pointer, Pressed};
 use pixtuoid_scene::look::RenderInputs;
@@ -75,6 +75,17 @@ impl OfficeRenderer {
 
     pub(crate) fn set_audio(&mut self, audio: crate::audio::AudioHandle) {
         self.audio = audio;
+    }
+
+    /// Feed the audio a frame of the office without drawing one
+    /// ([`OfficeSession::hear`]), in `scene` at `now` under `floor`.
+    pub(crate) fn hear(
+        &mut self,
+        scene: &SceneState,
+        floor: FloorMeta,
+        now: std::time::SystemTime,
+    ) {
+        self.audio.frame(self.session.hear(scene, floor, now));
     }
 
     /// Render the office's floor showing, or its slide to another, into the
@@ -442,7 +453,7 @@ mod tests {
     use super::super::overlays::footer_budget;
     use super::*;
     use pixtuoid_scene::cutaway::glyph_cell;
-    use pixtuoid_scene::floor::{FloorMeta, PetInputs};
+    use pixtuoid_scene::floor::PetInputs;
     use pixtuoid_scene::sprite::Rgb;
     use winit::dpi::PhysicalSize;
 
@@ -1177,26 +1188,25 @@ mod tests {
         assert!(!calm.contains("decode drift"), "{calm}");
     }
 
-    #[test]
-    fn floating_appliance_cues_fire_from_the_sessions_occupancy() {
-        // Deterministic: fixed agent id + a hand-stepped clock; the loop bound mirrors
-        // the scene crate's occupancy sim pin.
+    /// The first of `budget` steps whose frame fires a printer or vending
+    /// cue, an idle agent wandering an office drawn every two seconds, and
+    /// heard undrawn just before step `heard_before`, if one is named.
+    /// Deterministic: fixed agent id + a hand-stepped clock.
+    fn first_appliance_cue(budget: u64, heard_before: Option<u64>) -> Option<u64> {
         use pixtuoid_scene::audio::OneShot;
-        let pack = std::sync::Arc::new(
-            pixtuoid_scene::pack::load_bundled_pack().expect("bundled pack loads"),
-        );
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let now0 = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         let mut idle = running_on("/w/wanderer.jsonl", 0, 0);
         idle.state = pixtuoid_core::state::ActivityState::Idle;
         let scene = scene_with(vec![idle], 16);
-        let mut renderer = OfficeRenderer::new(pack);
+        let mut renderer = OfficeRenderer::new(crate::test_flash::pack_arc());
         let (handle, rx) = crate::audio::AudioHandle::test_pair();
         renderer.set_audio(handle);
-        let mut heard = Vec::new();
-        // A BUDGET, not part of the assertion: the wait rides random wander over live desk positions.
-        for step in 0..9_000u64 {
+        (0..budget).find(|&step| {
             let now = now0 + std::time::Duration::from_secs(2 * step);
+            if heard_before == Some(step) {
+                renderer.hear(&scene, FloorMeta::ground(), now);
+            }
             // 192x160: tall enough that the corridor hosts BOTH appliances
             // (the vending/printer height gates in layout::compute).
             renderer.render(
@@ -1213,24 +1223,29 @@ mod tests {
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             );
-            heard.extend(
-                crate::audio::drain_frames(&rx)
-                    .into_iter()
-                    .flat_map(|f| f.events),
-            );
-            if heard
-                .iter()
+            crate::audio::drain_frames(&rx)
+                .into_iter()
+                .flat_map(|f| f.events)
                 .any(|e| matches!(e, OneShot::PrinterWhir | OneShot::VendingDrop))
-            {
-                break;
-            }
-        }
+        })
+    }
+
+    #[test]
+    fn floating_appliance_cues_fire_from_the_sessions_occupancy() {
+        // A BUDGET, not part of the assertion: the wait rides random wander over live desk positions.
         assert!(
-            heard
-                .iter()
-                .any(|e| matches!(e, OneShot::PrinterWhir | OneShot::VendingDrop)),
-            "a wander through the appliance strip must fire a printer/vending cue; heard: {heard:?}"
+            first_appliance_cue(9_000, None).is_some(),
+            "a wander through the appliance strip must fire a printer/vending cue"
         );
+    }
+
+    /// The frame drawn after the office was heard undrawn, as a window no
+    /// longer occluded draws, fires no cue for an appliance reached
+    /// meanwhile.
+    #[test]
+    fn a_frame_drawn_after_hearing_fires_no_stale_appliance_cue() {
+        let cue = first_appliance_cue(9_000, None).expect("a wander fires a cue");
+        assert_eq!(first_appliance_cue(cue + 1, Some(cue)), None);
     }
 
     #[test]
@@ -1313,6 +1328,50 @@ mod tests {
         assert!(
             on_floor.contains(&pixtuoid_scene::audio::OneShot::DoorChime),
             "a ground-floor walk-in must chime the floating window: {on_floor:?}"
+        );
+    }
+
+    /// An office heard without being drawn, as an occluded window hears it,
+    /// still chimes a walk-in.
+    #[test]
+    fn an_office_heard_undrawn_chimes_a_walk_in() {
+        let cap = 16;
+        let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
+        let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        let mut renderer = OfficeRenderer::new(crate::test_flash::pack_arc());
+        let (handle, rx) = crate::audio::AudioHandle::test_pair();
+        renderer.set_audio(handle);
+        let mut agents = vec![running_on("/h/f0.jsonl", 0, 0)];
+        let scene = scene_with(agents.clone(), cap);
+        renderer.render(
+            cutaway(Size { w: 160, h: 96 }),
+            WindowFrame {
+                world: FloorInputs {
+                    scene: &scene,
+                    now,
+                    floor: FloorMeta::ground(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                place: pixtuoid_scene::look::Place::default(),
+                dim: pixtuoid_scene::look::Dim::NONE,
+            },
+        );
+        crate::audio::drain_frames(&rx); // discard the priming frames
+        agents.push(running_on("/h/f0-new.jsonl", 0, 1));
+        let scene = scene_with(agents, cap);
+        renderer.hear(
+            &scene,
+            FloorMeta::ground(),
+            now + pixtuoid_scene::floor::REST_TICK,
+        );
+        let heard: Vec<_> = crate::audio::drain_frames(&rx)
+            .into_iter()
+            .flat_map(|f| f.events)
+            .collect();
+        assert!(
+            heard.contains(&pixtuoid_scene::audio::OneShot::DoorChime),
+            "{heard:?}"
         );
     }
 

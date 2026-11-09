@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::floating::geometry::Zoom;
+use crate::floating::geometry::{DesktopSpot, Zoom};
 
 /// One `[[pets]]` stanza. `kind` is an OPTIONAL raw `String` (NOT a serde-derived
 /// `PetKind`) on purpose: an unknown or typo'd value is warn-skipped in
@@ -85,7 +85,7 @@ pub(crate) struct FloatingConfig {
     pub width: u32,
     pub height: u32,
     /// `None` lets the OS place the window.
-    pub position: Option<(i32, i32)>,
+    pub position: Option<DesktopSpot>,
     pub zoom: Zoom,
 }
 
@@ -107,7 +107,7 @@ pub(crate) fn resolve_floating(config: &AppConfig) -> FloatingConfig {
     FloatingConfig {
         width: raw.width.unwrap_or(FLOATING_DEFAULT_W),
         height: raw.height.unwrap_or(FLOATING_DEFAULT_H),
-        position: raw.x.zip(raw.y),
+        position: raw.x.zip(raw.y).map(|(x, y)| DesktopSpot { x, y }),
         zoom: Zoom::new(
             raw.zoom
                 .map_or(0, |z| z.clamp(i64::from(i8::MIN), i64::from(i8::MAX)) as i8),
@@ -405,12 +405,12 @@ pub(crate) fn save_flag_sources(
 }
 
 /// What the floating window keeps of itself across runs: its logical size,
-/// its physical position when the OS reports one, and its zoom.
+/// its position when the OS reports one, and its zoom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatingSave {
     pub(crate) width: u32,
     pub(crate) height: u32,
-    pub(crate) position: Option<(i32, i32)>,
+    pub(crate) position: Option<DesktopSpot>,
     pub(crate) zoom: Zoom,
 }
 
@@ -430,8 +430,8 @@ pub(crate) fn save_floating(path: &Path, save: &FloatingSave) -> Result<()> {
         // let the OS place the window. No zoom is no key, as an unset one reads.
         let zoom = (zoom != Zoom::default()).then(|| i32::from(zoom.steps()));
         for (key, val) in [
-            ("x", position.map(|p| p.0)),
-            ("y", position.map(|p| p.1)),
+            ("x", position.map(|p| p.x)),
+            ("y", position.map(|p| p.y)),
             ("zoom", zoom),
         ] {
             match val {
