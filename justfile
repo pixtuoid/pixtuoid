@@ -618,7 +618,7 @@ doc-check: (_targets DOC_TARGETS)
 _targets +targets:
     rustup target add {{ targets }}
 
-[doc('Coverage + JUnit XML — ci-tests.yml runs it on every tier, the full one uploading it (needs llvm-cov + nextest)')]
+[doc('Coverage — ci-tests.yml runs it on every tier, the full one uploading it (needs llvm-cov + nextest)')]
 [group('rust')]
 coverage *args:
     TZ={{ TEST_TZ }} cargo llvm-cov nextest --workspace --codecov --output-path codecov.json --profile ci "$@"
