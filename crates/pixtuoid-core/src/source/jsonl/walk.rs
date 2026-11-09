@@ -121,10 +121,16 @@ fn window_life(
     decoders: SourceDecoders,
 ) -> Option<Life> {
     let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
-    let decoded: Vec<AgentEvent> = crate::source::admit::window_lines(window)
-        .filter_map(|line| serde_json::from_str(line.ok()?).ok())
-        .flat_map(|v| (decoders.decode_line)(&transcript, source, v))
-        .collect();
+    // A verdict, not a read: the read that sends these lines' events
+    // breadcrumbs their drift, and a line no read sends costs no events, the
+    // condition a breadcrumb names (`source/drift.rs:13-14`).
+    let decoded: Vec<AgentEvent> =
+        tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+            crate::source::admit::window_lines(window)
+                .filter_map(|line| serde_json::from_str(line.ok()?).ok())
+                .flat_map(|v| (decoders.decode_line)(&transcript, source, v))
+                .collect()
+        });
     last_life(&decoded, own_agent(path, source, decoders))
 }
 
@@ -139,7 +145,7 @@ pub(super) async fn tail_life(
 }
 
 /// The agent `path` is the transcript of.
-fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
+pub(super) fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
     AgentId::from_parts(source, &decoders.id_derive.id_for(path))
 }
 

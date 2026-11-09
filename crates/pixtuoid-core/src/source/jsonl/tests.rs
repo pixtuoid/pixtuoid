@@ -2288,6 +2288,56 @@ async fn probe_live_ended_first_sight_stays_unregistered() {
     );
 }
 
+/// [`t_decode`], breadcrumbing a drift for every line it decodes.
+fn drifting(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
+    crate::source::drift::missing_field(s, "probe", "field");
+    t_decode(t, s, v)
+}
+
+/// A first sight's verdict on its tail decodes silently: the read that sends
+/// those lines' events breadcrumbs each line's drift once.
+#[tokio::test]
+async fn a_first_sights_verdict_leaves_drift_to_the_read() {
+    let (logs, _guard) = crate::test_capture::capture_warns();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fresh.jsonl");
+    let lines = "{\"type\":\"assistant\",\"cwd\":\"/repo\"}\n{\"type\":\"assistant\"}\n";
+    tokio::fs::write(&path, lines).await.unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    let events = walk_once_with(&path, Duration::from_secs(3600), drifting, &cursors, &seen).await;
+    assert!(
+        (events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
+        "{events:?}"
+    );
+    let logs = logs.contents();
+    let breadcrumbs = logs.matches(crate::source::drift::TARGET).count();
+    assert_eq!(breadcrumbs, lines.lines().count(), "{logs}");
+}
+
+/// The oversized twin: its verdicts on the skipped span's tail decode
+/// silently, and the rescan that seeds from that tail breadcrumbs each of its
+/// lines once.
+#[tokio::test]
+async fn an_oversized_skips_verdicts_leave_drift_to_the_rescan() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("claimed-big.jsonl");
+    tokio::fs::write(&path, HEAD_LINE).await.unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    walk_once_with(&path, Duration::from_secs(3600), drifting, &cursors, &seen).await;
+    let full = oversized_body(&[]);
+    tokio::fs::write(&path, &full).await.unwrap();
+
+    let (logs, _guard) = crate::test_capture::capture_warns();
+    walk_once_with(&path, Duration::from_secs(3600), drifting, &cursors, &seen).await;
+    let window = &full.as_bytes()[full.len() - SKIP_RESCAN_BYTES as usize..];
+    let rescanned = crate::source::admit::window_lines(window).count();
+    let logs = logs.contents();
+    let breadcrumbs = logs.matches(crate::source::drift::TARGET).count();
+    assert_eq!(breadcrumbs, rescanned, "{logs}");
+}
+
 #[tokio::test]
 async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
     use std::sync::atomic::{AtomicUsize, Ordering};

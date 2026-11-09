@@ -68,7 +68,7 @@ impl SceneSink {
         match self {
             // A scene equal to the one its readers hold notifies nobody: each
             // notification is a floating repaint and a frame per `serve` device,
-            // and a sweep tick or a read's `Backlog` changes nothing they show.
+            // and a quiet sweep tick or a read's `Backlog` changes nothing they show.
             Self::Latest(tx) => {
                 tx.send_if_modified(|held| {
                     let changed = **held != *scene;

@@ -218,10 +218,10 @@ pub enum AgentEvent {
         /// The vouched-live agent whose sweep-exemption to refresh.
         agent_id: AgentId,
     },
-    /// Identity context a hook decoder attaches IMMEDIATELY AHEAD of a
-    /// tool/permission activity event: hook payloads carry source/session_id/
-    /// cwd that the activity variants don't, so this, not the activity,
-    /// registers an unknown id. The reducer registers-or-back-fills from it on
+    /// Identity context a hook decoder attaches IMMEDIATELY AHEAD of a hook
+    /// event that may be its session's first sight (an activity event or a
+    /// turn end): hook payloads carry source/session_id/cwd that those
+    /// variants don't, so this, not the event, registers an unknown id. The reducer registers-or-back-fills from it on
     /// the Hook transport ONLY (a JSONL `Identity` is a structural no-op — a
     /// transcript line can be a historical replay).
     Identity {

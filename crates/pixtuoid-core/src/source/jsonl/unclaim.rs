@@ -6,7 +6,7 @@ use tracing::debug;
 
 use crate::AgentId;
 
-use super::walk::{park_if_truncated_below_cursor, walk_jsonl};
+use super::walk::{own_agent, park_if_truncated_below_cursor, walk_jsonl};
 use super::{Sight, SourceDecoders, WatchCtx};
 
 /// How long an un-drained [`ChildEndUnclaims`] entry survives. Bounds the set:
@@ -141,13 +141,7 @@ pub(super) async fn drain_child_end_unclaims(
     let claimed: Vec<(PathBuf, AgentId, Sight)> = {
         let seen = ctx.seen.lock().await;
         seen.iter()
-            .map(|(p, sight)| {
-                (
-                    p.clone(),
-                    AgentId::from_parts(ctx.source, &decoders.id_derive.id_for(p)),
-                    sight.clone(),
-                )
-            })
+            .map(|(p, sight)| (p.clone(), own_agent(p, ctx.source, decoders), sight.clone()))
             .collect()
     };
     // Consume ids matching ANY of this watcher's known paths, held or already

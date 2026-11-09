@@ -1020,9 +1020,9 @@ impl Reducer {
     }
 
     /// The `Identity` arm — #221: the identity context a hook decoder attaches
-    /// ahead of a tool/permission event. Register-or-back-fill, NOTHING else:
-    /// no label change, no activity-state change, no `last_event_at` refresh.
-    /// The paired activity event right behind it carries those.
+    /// ahead of an event that may be its session's first sight. Register-or-
+    /// back-fill, NOTHING else: no label change, no activity-state change, no
+    /// `last_event_at` refresh. The paired event right behind it carries those.
     fn apply_identity(
         &mut self,
         scene: &mut SceneState,
