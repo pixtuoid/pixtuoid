@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ToolUse, Tree};
+use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ScopeTree, ToolUse};
 use pixtuoid_scene::nameplate::{FloorNamesakes, Nameplate};
 
 /// Roots with more than this many direct subagents render collapsed by default,
@@ -86,7 +86,7 @@ impl DashboardFolds {
 /// subtree, and nesting deeper than two levels is walked too, so nothing is
 /// ever silently dropped.
 pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<DashboardRow> {
-    let tree = Tree::of(&scene.agents);
+    let tree = ScopeTree::of(&scene.agents);
     let mut roots: Vec<&AgentSlot> = tree.roots().collect();
     roots.sort_by_key(|s| s.desk_index);
 
@@ -99,7 +99,7 @@ pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<D
 }
 
 fn push_subtree(
-    tree: &Tree<'_>,
+    tree: &ScopeTree<'_>,
     folds: &DashboardFolds,
     namesakes: &FloorNamesakes<'_>,
     node: &AgentSlot,

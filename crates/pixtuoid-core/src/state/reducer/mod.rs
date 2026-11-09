@@ -1647,7 +1647,7 @@ impl Reducer {
     /// state's age.
     fn sweep_stale(&mut self, scene: &mut SceneState, now: SystemTime) {
         let agents = &scene.agents;
-        let tree = scope::Tree::of(agents);
+        let tree = scope::ScopeTree::of(agents);
         let requires_action =
             |slot: &AgentSlot| matches!(slot.state, ActivityState::RequiresAction { .. });
         // A node gated by a `RequiresAction` relative is blocked with it, not dead: a

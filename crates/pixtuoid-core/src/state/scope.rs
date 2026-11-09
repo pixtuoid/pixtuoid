@@ -7,8 +7,8 @@
 //!   subtree.
 //! - **liveness flows UP** — [`refresh_lineage`]: a working descendant keeps its
 //!   ancestors alive, so a blocked-but-delegating parent isn't stale-swept.
-//! - **readiness, queried both ways** — [`Tree::descendants_of`] and
-//!   [`Tree::ancestors_of`]: a node gated by a `RequiresAction` relative is "not ready", not dead.
+//! - **readiness, queried both ways** — [`ScopeTree::descendants_of`] and
+//!   [`ScopeTree::ancestors_of`]: a node gated by a `RequiresAction` relative is "not ready", not dead.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::SystemTime;
@@ -31,14 +31,14 @@ fn visit() {
 /// The scene's `parent_id` links, indexed once so a pass asks every slot's
 /// scope question of it instead of rescanning the scene per slot.
 #[derive(Debug)]
-pub struct Tree<'a> {
+pub struct ScopeTree<'a> {
     agents: &'a BTreeMap<AgentId, AgentSlot>,
     /// Keyed by every `parent_id`, a dangling one too: a cascade from a removed
     /// parent still reaches the orphans it left.
     children: HashMap<AgentId, Vec<&'a AgentSlot>>,
 }
 
-impl<'a> Tree<'a> {
+impl<'a> ScopeTree<'a> {
     /// Indexes `agents`.
     pub fn of(agents: &'a BTreeMap<AgentId, AgentSlot>) -> Self {
         let mut children: HashMap<AgentId, Vec<&AgentSlot>> = HashMap::new();
@@ -135,7 +135,7 @@ pub(crate) fn cascade_exit(
     if roots.is_empty() {
         return;
     }
-    let tree = Tree::of(&scene.agents);
+    let tree = ScopeTree::of(&scene.agents);
     let mut doomed: HashSet<AgentId> = HashSet::new();
     for &root in roots {
         // A doomed root's subtree is doomed already, so the roots share one walk.
@@ -299,7 +299,7 @@ mod tests {
             scene.agents.insert(agent, slot(agent, parent_id, state));
         }
 
-        let tree = Tree::of(&scene.agents);
+        let tree = ScopeTree::of(&scene.agents);
         assert_eq!(
             tree.descendants_of(is_requires_action),
             HashSet::from([child, grandchild])
@@ -343,7 +343,7 @@ mod tests {
         let x = AgentId::from_transcript_path("/p/self.jsonl");
         scene.agents.insert(x, slot(x, Some(x), requires_action()));
 
-        let tree = Tree::of(&scene.agents);
+        let tree = ScopeTree::of(&scene.agents);
         for (query, gated) in [
             ("descendants_of", tree.descendants_of(is_requires_action)),
             ("ancestors_of", tree.ancestors_of(is_requires_action)),
