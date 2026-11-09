@@ -19,6 +19,7 @@
 /// passthrough): it is sized for the slowest link a reply crosses, an ssh
 /// session's round trip, not for the normal case.
 #[cfg(unix)]
+#[doc(hidden)]
 pub const QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// True iff `$COLORTERM` advertises 24-bit color (`truecolor` or `24bit`).

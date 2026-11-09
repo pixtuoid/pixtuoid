@@ -253,8 +253,9 @@ fn bytes_queued_behind_the_last_reply_never_reach_the_office_as_keys() {
 }
 
 /// A link slower than one budget but within two: the truecolor probe gives up,
-/// and its reply, landing while the sync probe waits out its own budget, is
-/// read there rather than reaching the office as keys.
+/// and its late reply, DA1 included, ends the sync probe's read rather than
+/// reaching the office as keys; the sync probe's own late reply (CSI only)
+/// lands after the flush, where crossterm keeps it as an internal event.
 #[test]
 fn a_reply_that_outlives_its_probe_is_read_by_the_next_one() {
     let run = run_office(pixtuoid::dev::QUERY_TIMEOUT * 3 / 2, |row| {
