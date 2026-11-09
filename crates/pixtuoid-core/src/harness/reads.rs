@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::host::SANDBOX_HOMES;
+use super::host::{SANDBOX_DIR, SANDBOX_HOMES};
 use super::provenance::{Deidentified, Provenance};
 use super::{Capture, Drive, LineFailure, captures};
 use crate::source::daemon::DecodedPresence;
@@ -117,25 +117,25 @@ fn strip_with(source: &str, drive: &Drive, file: &Path, lines: &mut [Value]) -> 
 /// convention for a home path a decoder reads.
 pub const HOME_PLACEHOLDER: &str = "/Users/dev";
 
-/// A capture sandbox's home inside a string: an absolute path to a dir
-/// `tempfile` names by default (`.tmp` and six alphanumerics: tempfile 3.27.0
-/// `lib.rs:195,230-231`, `util.rs:15`), then [`SANDBOX_HOMES`]' `HOME`, ending
-/// the path or followed by a separator.
+/// A capture sandbox's home inside a string: an absolute path to a
+/// [`SANDBOX_DIR`], then [`SANDBOX_HOMES`]' `HOME`, ending the path or followed
+/// by a separator. A path component stops at whitespace, so a match never
+/// swallows the words before a path in a command string.
 static SANDBOX_HOME: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     let (_, home) = SANDBOX_HOMES
         .iter()
         .find(|(var, _)| *var == "HOME")
         .expect("SANDBOX_HOMES sets HOME");
     regex::Regex::new(&format!(
-        r#"(?:/[^/\s"']+)*/\.tmp[A-Za-z0-9]{{6}}/{}(?P<end>[^A-Za-z0-9._-]|$)"#,
+        r#"(?:/[^/\s"']+)*/{SANDBOX_DIR}/{}(?P<end>[^A-Za-z0-9._-]|$)"#,
         regex::escape(home)
     ))
     .expect("the sandbox-home pattern compiles")
 });
 
 /// Every string in `v` with each [`SANDBOX_HOME`] made [`HOME_PLACEHOLDER`],
-/// and how many were: a capture is recorded only on Unix, where the sandbox's
-/// home is a temp dir whose path names the recording account.
+/// and how many were: the sandbox's home is the recording host's temp path,
+/// whose `/home/` `pixtuoid-foreign-home` (`.gitleaks-identity.toml`) flags.
 fn placehold_homes(v: &mut Value) -> usize {
     match v {
         Value::String(s) => {
@@ -1134,6 +1134,21 @@ mod tests {
                 "workspace": kept["workspace"],
             })
         );
+    }
+
+    /// The home a sandbox really gets, not a spelling of it: a `tempfile` or
+    /// layout change [`SANDBOX_HOME`] would miss reds here, not in a capture.
+    /// Unix only, as a recording is.
+    #[cfg(unix)]
+    #[test]
+    fn the_home_a_sandbox_gets_becomes_the_placeholder() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let env =
+            crate::harness::host::SandboxEnv::new(d.path(), std::iter::empty(), &[]).expect("env");
+        let home = PathBuf::from(env.var_os("HOME").expect("HOME"));
+        let mut v = Value::String(format!("{}/.cursor/a.jsonl", home.display()));
+        assert_eq!(placehold_homes(&mut v), 1, "{v}");
+        assert_eq!(v, format!("{HOME_PLACEHOLDER}/.cursor/a.jsonl"));
     }
 
     #[test]

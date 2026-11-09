@@ -45,6 +45,11 @@ impl KnownFolder {
     }
 }
 
+/// The name a sandbox's dir gets from `tempfile::tempdir`, as a pattern:
+/// `.tmp` and six alphanumerics (tempfile 3.27.0 `lib.rs:195,230-231`,
+/// `util.rs:15`).
+pub(crate) const SANDBOX_DIR: &str = r"\.tmp[0-9A-Za-z]{6}";
+
 /// Every home a CLI or pixtuoid may resolve, each a directory of a sandbox. All
 /// are set on every platform: a variable no reader there reads is inert.
 pub const SANDBOX_HOMES: &[(&str, &str)] = &[

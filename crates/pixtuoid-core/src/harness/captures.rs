@@ -571,7 +571,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "recorder-sandbox",
-        pattern: r"\.tmp[0-9A-Za-z]{6}",
+        pattern: super::host::SANDBOX_DIR,
         seen_in: "omp/fixtures/subagent-hermetic",
         renamed: &[("/T/.tmpbelEXY/homes", "/T/.tmpLZD2ds/homes")],
     },
