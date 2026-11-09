@@ -240,7 +240,8 @@ impl Listener {
             Ok(meta) => Some(meta),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => {
-                return Err(anyhow::Error::new(e).context(format!("reading {}", path.display())));
+                return Err(e)
+                    .with_context(|| format!("inspecting hook socket at {}", path.display()));
             }
         };
         if let Some(meta) = existing {
@@ -261,9 +262,8 @@ impl Listener {
             // names included, is not ours to unlink.
             anyhow::ensure!(
                 std::os::unix::fs::FileTypeExt::is_socket(&meta.file_type()),
-                "{} exists and is not a socket, so it is not replaced: run this with {} pointing at a different path",
-                path.display(),
-                super::SOCKET_ENV
+                "{} exists and is not a socket, so it is not replaced: point this one at a different socket path",
+                path.display()
             );
             let _ = tokio::fs::remove_file(path).await;
         }

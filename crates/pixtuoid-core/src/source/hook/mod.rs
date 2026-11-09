@@ -114,8 +114,8 @@ impl std::fmt::Display for SocketBusy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "another pixtuoid instance is listening on {} — close it first, or run this one \
-             with {SOCKET_ENV} pointing at a different path",
+            "another pixtuoid instance is listening on {} — close it first, or point this one \
+             at a different socket path",
             self.path.display()
         )
     }
