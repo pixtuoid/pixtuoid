@@ -1,5 +1,5 @@
-//! What a device's [`Ask::Change`](super::Ask::Change) did, and the words every
-//! surface that changes a source shows for it.
+//! What a connect or disconnect of a source did, a device's
+//! [`Ask::Change`](super::Ask::Change) included, and the words shown for it.
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -84,8 +84,8 @@ impl Changed {
         self.outcome
     }
 
-    /// The sentence every surface shows for it, the source named `display_name`,
-    /// but a failure's, which the machine that made the change words with its reason.
+    /// The sentence the Sources panel, the onboarding and a paired device show for
+    /// it, the source named `display_name`. A failure is worded with its reason.
     pub fn line(&self, display_name: &str) -> String {
         let Self {
             source,

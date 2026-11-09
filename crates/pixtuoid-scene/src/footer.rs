@@ -97,7 +97,7 @@ pub enum FooterTone {
     Tool(ToolKind),
     /// The gateway `⬢gw` chip — hue by daemon liveness.
     Gateway(DaemonState),
-    /// Source-death / decode-drift warning — uses the `label_warn` alarm hue.
+    /// The painter's pre-merged warning — uses the `label_warn` alarm hue.
     Warning,
 }
 
@@ -652,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn death_tier_pins_the_requires_action_alarm_through_the_narrowest_width() {
+    fn warning_tier_pins_the_requires_action_alarm_through_the_narrowest_width() {
         let mut scene = SceneState::uniform(16);
         let slot = requires_action_slot("/p/wait.jsonl");
         scene.agents.insert(slot.agent_id, slot);
@@ -697,7 +697,7 @@ mod tests {
                     build_footer(&inputs(&empty, &[], false, None, None), w),
                 ),
                 (
-                    "death",
+                    "warning",
                     build_footer(
                         &inputs(&office, &[], false, None, Some("transport died")),
                         w,
