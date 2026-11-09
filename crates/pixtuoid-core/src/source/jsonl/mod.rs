@@ -36,7 +36,8 @@ pub(crate) use root_watch::{Nudge, Reconciled, RootWatch, Wake, absolute_root};
 use unclaim::drain_child_end_unclaims;
 use walk::{RootRead, scan_root, walk_jsonl};
 
-use crate::source::decoder::{HeadLabel, LineDecoder};
+use crate::source::decoder::LineDecoder;
+use crate::source::first_sight::HeadLabel;
 
 pub use crate::source::decoder::PathFilter;
 pub use crate::source::decoder::{IdDeriver, TailActivity};

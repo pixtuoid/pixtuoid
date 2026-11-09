@@ -27,10 +27,8 @@ use std::time::{Duration, SystemTime};
 use serde_json::Value;
 
 use crate::source::daemon::{PresenceMsg, apply_presence};
-use crate::source::decoder::{
-    DecodeError, LineDecoder, decode_hook_payload, display_safe, extract_head_fields,
-    first_sight_start,
-};
+use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
+use crate::source::first_sight::{extract_head_fields, first_sight_start};
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
@@ -239,10 +237,14 @@ impl Driven {
     }
 }
 
-/// The fixed wall clock the fold runs at: with one instant for every event, no
-/// sweep's elapsed-time threshold can fire mid-drive and reap a slot the caller
-/// is about to assert on.
+/// The instant [`Drive::lines`] and [`Drive::body`] fold at: with one instant
+/// for every event, no sweep's elapsed-time threshold can fire mid-drive and reap
+/// a slot the caller is about to assert on.
 const DEFAULT_NOW_EPOCH_SECS: u64 = 1_800_000_000;
+
+fn default_now() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS)
+}
 
 /// How far past `now` the cascade tick runs: past a deferred b1 cascade's
 /// grace, so it fires, and inside the exit grace, so a wire carrying its own
@@ -275,7 +277,6 @@ pub struct Drive {
     transport: Transport,
     decode: Decode,
     seeded: bool,
-    now: SystemTime,
 }
 
 /// Private so the decoder↔transport pairing stays a constructor's job, never a
@@ -374,7 +375,6 @@ impl Drive {
                 logical: crate::id::normalize_key_inner(windows, logical),
             },
             seeded: false,
-            now: SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS),
         })
     }
 
@@ -390,7 +390,6 @@ impl Drive {
             transport: Transport::Hook,
             decode: Decode::Hooks,
             seeded: false,
-            now: SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS),
         }
     }
 
@@ -407,32 +406,22 @@ impl Drive {
         self
     }
 
-    /// Fold at `now` instead of the default fixed instant. Only a caller that
-    /// RENDERS the resulting scene needs this — the render must read the same
-    /// clock the fold wrote.
-    #[must_use]
-    pub fn at(mut self, now: SystemTime) -> Self {
-        self.now = now;
-        self
-    }
-
-    /// Drive `lines` end to end, at one instant: one [`Fold`] fed them all.
+    /// Drive `lines` end to end, at one instant: one [`Fold`] fed them all. A
+    /// caller that renders the scene feeds a [`Fold`] at its render's instant.
     pub fn lines<I, S>(&self, lines: I) -> Driven
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
         let mut fold = Fold::default();
-        fold.feed(self, lines, self.now);
+        fold.feed(self, lines, default_now());
         fold.finish()
     }
 
-    /// [`Self::lines`] over a transcript's bytes, cut into lines as the watcher
-    /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
+    /// [`Self::lines`] over a transcript's bytes ([`Fold::feed_body`]).
     pub fn body(&self, body: &[u8]) -> Driven {
-        use crate::source::admit::{lines, whole};
         let mut fold = Fold::default();
-        fold.run(self, lines(whole(body)).map(Result::ok), self.now);
+        fold.feed_body(self, body, default_now());
         fold.finish()
     }
 
@@ -505,6 +494,13 @@ impl Fold {
         S: AsRef<str>,
     {
         self.run(drive, lines.into_iter().map(Some), at);
+    }
+
+    /// [`Self::feed`] over a transcript's bytes, cut into lines as the watcher
+    /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
+    pub fn feed_body(&mut self, drive: &Drive, body: &[u8], at: SystemTime) {
+        use crate::source::admit::{lines, whole};
+        self.run(drive, lines(whole(body)).map(Result::ok), at);
     }
 
     /// Advance to `at` with no line: past a grace window, its sweep fires.
@@ -750,7 +746,7 @@ mod tests {
     #[test]
     fn a_transcript_fed_twice_is_first_sighted_once() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
-        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS);
+        let at = default_now();
         let mut fold = Fold::default();
         fold.feed(&drive, [tool_line()], at);
         fold.feed(&drive, [tool_line()], at);
@@ -762,7 +758,7 @@ mod tests {
     #[test]
     fn an_ended_transcript_showing_activity_again_is_first_sighted_again() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
-        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS);
+        let at = default_now();
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
         let mut fold = Fold::default();
         fold.feed(&drive, [tool_line(), exit.to_string()], at);

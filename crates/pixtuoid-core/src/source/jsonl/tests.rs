@@ -8,7 +8,8 @@ use super::walk::{SKIP_RESCAN_BYTES, park_if_truncated_below_cursor, scan_root, 
 use super::*;
 use crate::AgentId;
 use crate::source::claude_code::{cc_activity_recency, cc_session_ended, decode_cc_line};
-use crate::source::decoder::{accept_all_paths, default_id_from_path, detect_parent_id};
+use crate::source::decoder::{accept_all_paths, default_id_from_path};
+use crate::source::first_sight::detect_parent_id;
 use crate::source::registry::cwd_extractor_for;
 use crate::source::{AgentEvent, Transport};
 
@@ -308,24 +309,36 @@ fn detect_parent_id_handles_backslash_paths() {
 fn the_head_scan_dispatches_the_scanned_sources_shape() {
     let top = br#"{"cwd":"/repo/a"}"#;
     assert_eq!(
-        crate::source::decoder::extract_head_fields(top, cwd_extractor_for("omp"), None, None).cwd,
+        crate::source::first_sight::extract_head_fields(top, cwd_extractor_for("omp"), None, None)
+            .cwd,
         Some(PathBuf::from("/repo/a"))
     );
     assert_eq!(
-        crate::source::decoder::extract_head_fields(top, cwd_extractor_for("test"), None, None).cwd,
+        crate::source::first_sight::extract_head_fields(top, cwd_extractor_for("test"), None, None)
+            .cwd,
         Some(PathBuf::from("/repo/a")),
         "an unregistered harness source keeps the shared top-level default"
     );
     let nested = br#"{"type":"session_meta","payload":{"cwd":"/repo/b","id":"u"}}"#;
     assert_eq!(
-        crate::source::decoder::extract_head_fields(nested, cwd_extractor_for("codex"), None, None)
-            .cwd,
+        crate::source::first_sight::extract_head_fields(
+            nested,
+            cwd_extractor_for("codex"),
+            None,
+            None
+        )
+        .cwd,
         Some(PathBuf::from("/repo/b"))
     );
     let mixed = b"not-json\n{\"type\":\"noise\"}\n{\"cwd\":\"/repo/c\"}\n";
     assert_eq!(
-        crate::source::decoder::extract_head_fields(mixed, cwd_extractor_for("omp"), None, None)
-            .cwd,
+        crate::source::first_sight::extract_head_fields(
+            mixed,
+            cwd_extractor_for("omp"),
+            None,
+            None
+        )
+        .cwd,
         Some(PathBuf::from("/repo/c"))
     );
 }
@@ -334,7 +347,7 @@ fn the_head_scan_dispatches_the_scanned_sources_shape() {
 fn cc_head_scan_ignores_codex_shaped_payload_cwd() {
     let codex_shaped = br#"{"type":"session_meta","payload":{"cwd":"/foreign/repo","id":"u"}}"#;
     assert_eq!(
-        crate::source::decoder::extract_head_fields(
+        crate::source::first_sight::extract_head_fields(
             codex_shaped,
             cwd_extractor_for("claude-code"),
             None,
@@ -904,11 +917,12 @@ fn t_head_label(v: &serde_json::Value) -> Option<String> {
 
 /// Both head fields come back from ONE pass, and a source with no head label
 /// still gets its cwd. (The scan's STOP point — the cost half of this seam — is
-/// pinned by `walk::stop_tests`, where the predicate is directly observable.)
+/// pinned by `first_sight::tests::head_scan_stops_on_cwd_alone_when_the_source_has_no_head_label`,
+/// where the predicate is directly observable.)
 #[test]
 fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
     let plain = "{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n{\"type\":\"assistant\"}\n";
-    let head = crate::source::decoder::extract_head_fields(
+    let head = crate::source::first_sight::extract_head_fields(
         plain.as_bytes(),
         cwd_extractor_for("test"),
         None,
@@ -921,7 +935,7 @@ fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
     );
 
     let titled = "{\"type\":\"title\",\"title\":\"Ship it\"}\n{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
-    let head = crate::source::decoder::extract_head_fields(
+    let head = crate::source::first_sight::extract_head_fields(
         titled.as_bytes(),
         cwd_extractor_for("test"),
         Some(t_head_label),
@@ -934,7 +948,7 @@ fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
     // read must fall through to the cwd-basename deriver, not name it "".
     let empty =
         "{\"type\":\"title\",\"title\":\"\"}\n{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
-    let head = crate::source::decoder::extract_head_fields(
+    let head = crate::source::first_sight::extract_head_fields(
         empty.as_bytes(),
         cwd_extractor_for("test"),
         Some(t_head_label),

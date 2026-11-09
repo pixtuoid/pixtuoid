@@ -8,7 +8,8 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{HeadFields, LineDecoder, extract_head_fields, first_sight_start};
+use crate::source::decoder::LineDecoder;
+use crate::source::first_sight::{HEAD_BYTES, HeadFields, extract_head_fields, first_sight_start};
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
@@ -365,7 +366,7 @@ pub(super) async fn walk_jsonl(
         if sight != Some(Sight::Claimed) && !metadata_only && revives {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
-            let head = match read_head(path, MAX_PENDING_BYTES).await {
+            let head = match read_head(path).await {
                 Some(head) => extract_head_fields(
                     &head,
                     cwd_extractor_for(source),
@@ -425,7 +426,7 @@ pub(super) async fn walk_jsonl(
     let mut first_sight = extract_head_fields(new_bytes, extract, None, parent);
     if (first_sight.cwd.is_none() || (parent.is_some() && first_sight.parent.is_none()))
         && seen.lock().await.get(path) != Some(&Sight::Claimed)
-        && let Some(head) = read_head(path, MAX_PENDING_BYTES).await
+        && let Some(head) = read_head(path).await
     {
         first_sight = extract_head_fields(&head, extract, decoders.head_label, parent);
     }
@@ -574,14 +575,14 @@ async fn emit_first_sight(
         .await;
 }
 
-/// Read at most `limit` bytes from the START of a file, so registration never
-/// reads a whole multi-MB transcript. Returned raw because first-sight pulls
+/// Read a file's first [`HEAD_BYTES`]. Returned raw because first-sight pulls
 /// TWO fields out of the same bytes (`cwd`, and the head label for a source
 /// that names its session there) — one read, not one per field.
-async fn read_head(path: &Path, limit: u64) -> Option<Vec<u8>> {
+async fn read_head(path: &Path) -> Option<Vec<u8>> {
     let file_len = tokio::fs::metadata(path).await.ok()?.len();
     let mut file = tokio::fs::File::open(path).await.ok()?;
-    let mut head = vec![0u8; limit.min(file_len) as usize];
+    let len = usize::try_from(file_len).map_or(HEAD_BYTES, |len| len.min(HEAD_BYTES));
+    let mut head = vec![0u8; len];
     let n = file.read(&mut head).await.ok()?;
     head.truncate(n);
     Some(head)

@@ -246,9 +246,10 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             "{scenario}: the hook id must be the transcript file's own folded key"
         );
 
-        let rollout = Drive::transcript_at("omp", &transcript).expect("omp has a line decoder");
+        let transcript_drive =
+            Drive::transcript_at("omp", &transcript).expect("omp has a line decoder");
         let jsonl_lines = super::captures::fixture_lines(&transcript);
-        let jsonl = rollout.lines(&jsonl_lines);
+        let jsonl = transcript_drive.lines(&jsonl_lines);
         jsonl.assert_clean(scenario);
         for ev in &jsonl.events {
             assert_eq!(ev.agent_id(), id, "{scenario}: transcript half split");
@@ -267,9 +268,9 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
         let mut fold = Fold::default();
         for (drive, part) in [
             (&hooks, &hook_lines[..1]),
-            (&rollout, &jsonl_lines[..cut]),
+            (&transcript_drive, &jsonl_lines[..cut]),
             (&hooks, &hook_lines[1..tail]),
-            (&rollout, &jsonl_lines[cut..]),
+            (&transcript_drive, &jsonl_lines[cut..]),
             (&hooks, &hook_lines[tail..]),
         ] {
             fold.feed(drive, part, t0());
