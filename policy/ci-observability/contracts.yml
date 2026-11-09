@@ -272,19 +272,23 @@
     - '(.jobs[] | select(.steps != null)).env = {"RUST_BACKTRACE": "1"}'
     - '(.jobs[].steps[]? | select((.uses // "") == "./.github/actions/setup-cargo-just") | .with["shared-key"]) = "other"'
 
-- id: hermetic-build-saves-the-mise-key-run-restores
+- id: hermetic-build-saves-the-mise-key-every-reader-restores
   file: .github/workflows/hermetic-nightly.yml
   against: .github/workflows/hermetic.yml
   why: >-
-    `run`'s legs only read, and setup-tools keys the mise cache on `tools:`, so
-    they hit what `build`, the one writer, saves only while both pass the same
-    list; any other list downloads every tool on every leg, with nothing red.
+    Every other job in both workflows only reads, and setup-tools keys the mise
+    cache on `tools:`, so each hits what `build`, the one writer, saves only
+    while it passes the same list; any other list downloads on every run, with
+    nothing red.
   assert: |
-    [.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools]
-    == [$against.jobs.run.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools]
+    [.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools] as $build
+    | ($build | length == 1)
+      and ([(.jobs[].steps[]?, $against.jobs[].steps[]?)
+            | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools] | unique) == $build
   break:
     - (.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with) |= del(.tools)
     - (.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools) = "uv jq"
+    - (.jobs.triage.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with) |= del(.tools)
 
 - id: hermetic-build-covers-every-run-os
   file:
