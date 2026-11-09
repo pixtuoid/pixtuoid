@@ -323,10 +323,13 @@ fn unwind_after<W: std::io::Write>(
     let images = out
         .write_all(END_SYNC)
         .and_then(|()| out.write_all(prelude));
-    let seq = execute!(out, DisableMouseCapture, LeaveAlternateScreen, Show);
+    let seq = execute!(out, DisableMouseCapture, LeaveAlternateScreen);
+    // Its own write: `execute!` stops at the first failed command.
+    let cursor = execute!(out, Show);
     let raw = disable_raw();
     images?;
     seq?;
+    cursor?;
     raw?;
     Ok(())
 }
@@ -915,6 +918,33 @@ mod teardown_tests {
     const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
     #[cfg(unix)]
     const SHOW_CURSOR: &str = "\x1b[?25h";
+
+    #[cfg(unix)]
+    #[test]
+    fn the_cursor_is_shown_even_when_leaving_the_alt_screen_fails() {
+        struct RefusesTheLeave(Vec<u8>);
+        impl std::io::Write for RefusesTheLeave {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                if buf
+                    .windows(LEAVE_ALT_SCREEN.len())
+                    .any(|w| w == LEAVE_ALT_SCREEN.as_bytes())
+                {
+                    return Err(std::io::Error::other("leave refused"));
+                }
+                self.0.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut out = RefusesTheLeave(Vec::new());
+        assert!(unwind_after(&[], &mut out, || Ok(())).is_err());
+        assert!(
+            String::from_utf8_lossy(&out.0).contains(SHOW_CURSOR),
+            "every step runs even when an earlier one fails"
+        );
+    }
 
     #[cfg(unix)]
     #[test]
