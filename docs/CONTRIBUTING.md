@@ -190,8 +190,8 @@ step is the session's to keep.
 - **Fold before opening** — a change to a surface an open PR already touches
   folds into it.
 - **The queue never idles** — it checks one batch at a time (`.mergify.yml`'s
-  `max_parallel_checks`), so queue every PR as soon as [the gate](#the-merge-gate)
-  says and dequeue one only when it would jump a green priority PR.
+  `max_parallel_checks`), so queue every PR once what no check can confirm holds
+  and dequeue one only when it would jump a green priority PR.
 
 ## Pull requests
 
