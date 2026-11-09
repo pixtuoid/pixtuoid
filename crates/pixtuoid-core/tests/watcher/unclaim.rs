@@ -11,9 +11,8 @@ use pixtuoid_core::source::Transport;
 use pixtuoid_core::source::codex::CodexSource;
 use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 
-use crate::{
-    Fold, append, fast_watch, recorded, spawn_copilot, split_before_last, stage, write_lines,
-};
+use crate::today::spawn_source;
+use crate::{Fold, append, fast_watch, recorded, split_before_last, stage, write_lines};
 
 #[tokio::test]
 async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
@@ -157,9 +156,10 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
     watcher_task.abort();
 }
 
-/// C37: the reducer forgets a claimed copilot session on its own (the stale
-/// sweep, a disconnect's reconcile, a desk it refused), and the session's next
-/// read that shows life registers it again, renamed only by its first sight.
+/// C37: the reducer forgets a claimed session on its own (the stale sweep, a
+/// disconnect's reconcile, a desk it refused), and the session's next read that
+/// shows life registers it again, renaming nothing yet under the label its
+/// reads last gave it: omp's is its transcript's title.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
     use std::collections::HashSet;
@@ -169,16 +169,6 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
     use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, Reducer, STALE_BLOCKED_TIMEOUT};
 
     const DESKS: usize = 8;
-    let (transcript, dir) = recorded("copilot", "tool-run-hermetic");
-    let is_call = |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { .. });
-    let (head, tail) = split_before_last("copilot", &transcript, is_call);
-    let calls = Drive::transcript_at("copilot", &transcript)
-        .expect("a transcript source")
-        .lines(tail.lines())
-        .events
-        .iter()
-        .filter(|e| is_call(e))
-        .count();
     /// What forgets the session, and the desks first sight meets.
     type Forget = (&'static str, usize, fn(&mut Fold));
     let forgets: [Forget; 3] = [
@@ -198,38 +188,61 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
             fold.scene.floor_capacities = SceneState::uniform(DESKS).floor_capacities;
         }),
     ];
-    for (forget, desks, forgotten) in forgets {
-        let (root, path) = stage(&transcript, &dir, &head);
-        let (tx, rx) = mpsc::channel(64);
-        let handle = spawn_copilot(root.path().to_path_buf(), tx);
-        let mut fold = Fold::new(rx, Reducer::new(), SystemTime::now());
-        fold.scene = SceneState::uniform(desks);
-        let mut events = fold
-            .until(forget, |e| matches!(e, AgentEvent::SessionStart { .. }))
-            .await;
-        let id = events
-            .iter()
-            .find_map(|e| match e {
-                AgentEvent::SessionStart { agent_id, .. } => Some(*agent_id),
-                _ => None,
-            })
-            .expect("first sight declares it");
-        forgotten(&mut fold);
-        assert!(fold.scene.agents.is_empty(), "{forget}: not forgotten");
-
-        append(&path, &tail);
-        events.extend(fold.until(forget, is_call).await);
-        handle.abort();
-        let calls_seen = fold
-            .scene
-            .agents
-            .get(&id)
-            .map(|s| s.tool_call_count as usize);
-        assert_eq!(calls_seen, Some(calls), "{forget}: {events:?}");
-        let renames = events
-            .iter()
-            .filter(|e| matches!(e, AgentEvent::Rename { agent_id, .. } if *agent_id == id))
+    let is_call = |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { .. });
+    for (source, scenario) in [("copilot", "tool-run-hermetic"), ("omp", "ask-hermetic")] {
+        let (transcript, dir) = recorded(source, scenario);
+        let (head, tail) = split_before_last(source, &transcript, is_call);
+        let drive = Drive::transcript_at(source, &transcript).expect("a transcript source");
+        let renames = |line: &str| {
+            (drive.lines([line]).events.iter()).any(|e| matches!(e, AgentEvent::Rename { .. }))
+        };
+        // Cut where the transcript names its session again, so only the
+        // re-registration can name the slot it brings back.
+        let tail: String = (tail.lines().take_while(|line| !renames(line)))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        let calls = (drive.lines(tail.lines()).events.iter())
+            .filter(|e| is_call(e))
             .count();
-        assert_eq!(renames, 1, "{forget}: a re-registration renames nothing");
+        for (forget, desks, forgotten) in forgets {
+            let case = format!("{source}, {forget}");
+            let (root, path) = stage(&transcript, &dir, &head);
+            let (tx, rx) = mpsc::channel(64);
+            let handle = spawn_source(source, root.path().to_path_buf(), tx);
+            let mut fold = Fold::new(rx, Reducer::new(), SystemTime::now());
+            fold.scene = SceneState::uniform(desks);
+            let first_sight = fold
+                .until(&case, |e| matches!(e, AgentEvent::SessionStart { .. }))
+                .await;
+            let id = first_sight
+                .iter()
+                .find_map(|e| match e {
+                    AgentEvent::SessionStart { agent_id, .. } => Some(*agent_id),
+                    _ => None,
+                })
+                .expect("first sight registers it");
+            let named = |events: &[AgentEvent]| {
+                events.iter().rev().find_map(|e| match e {
+                    AgentEvent::Rename { agent_id, label } if *agent_id == id => {
+                        Some(label.clone())
+                    }
+                    _ => None,
+                })
+            };
+            let label = named(&first_sight).expect("first sight names it");
+            forgotten(&mut fold);
+            assert!(fold.scene.agents.is_empty(), "{case}: not forgotten");
+
+            append(&path, &tail);
+            let again = fold.until(&case, is_call).await;
+            handle.abort();
+            let slot = fold.scene.agents.get(&id);
+            assert_eq!(
+                slot.map(|s| (s.tool_call_count as usize, s.label.text())),
+                Some((calls, label.as_str().into())),
+                "{case}: {again:?}"
+            );
+            assert_eq!(named(&again), None, "{case}: a re-registration renames");
+        }
     }
 }

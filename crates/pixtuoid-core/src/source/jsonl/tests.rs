@@ -3347,6 +3347,7 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
     let claimed = Sight::Claimed(Registration {
         cwd: PathBuf::from("/repo"),
         parent_id: None,
+        label: "cc·repo".into(),
     });
     let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), claimed)])));
 
@@ -4407,18 +4408,20 @@ mod backlog {
     enum Sent {
         Start,
         Rename,
+        Hint,
         Usage,
         Tool,
         End,
         Opens,
         Closes,
     }
-    use Sent::{Closes, End, Opens, Rename, Start, Tool, Usage};
+    use Sent::{Closes, End, Hint, Opens, Rename, Start, Tool, Usage};
 
     fn sent(event: &AgentEvent) -> Sent {
         match event {
             AgentEvent::SessionStart { .. } => Start,
             AgentEvent::Rename { .. } => Rename,
+            AgentEvent::LabelHint { .. } => Hint,
             AgentEvent::Usage { .. } => Usage,
             AgentEvent::ToolUseStart { .. } => Tool,
             AgentEvent::SessionEnd { .. } => End,
@@ -4698,7 +4701,7 @@ mod backlog {
                         Boot,
                         &[Start, Rename, Closes, Usage, Tool, Opens],
                     ),
-                    (Append(TOOL), Walk, &[Start, Opens, Tool]),
+                    (Append(TOOL), Walk, &[Start, Hint, Opens, Tool]),
                 ],
             ),
             (
@@ -4717,8 +4720,8 @@ mod backlog {
                 "a truncation replays between a close and an open",
                 &[
                     (Append(WORK), Walk, &[Start, Rename, Opens, Usage, Tool]),
-                    (Rewrite(TOOL), Walk, &[Start, Closes, Tool, Opens]),
-                    (Append(TOOL), Walk, &[Start, Opens, Tool]),
+                    (Rewrite(TOOL), Walk, &[Start, Hint, Closes, Tool, Opens]),
+                    (Append(TOOL), Walk, &[Start, Hint, Opens, Tool]),
                 ],
             ),
             (
@@ -4748,7 +4751,7 @@ mod backlog {
                 "an oversized skip replays nothing and its next read opens",
                 &[
                     (Oversized, Boot, &[Start, Rename]),
-                    (Append(TOOL), Walk, &[Start, Opens, Tool]),
+                    (Append(TOOL), Walk, &[Start, Hint, Opens, Tool]),
                 ],
             ),
         ];

@@ -1027,6 +1027,9 @@ pub pixtuoid_core::source::AgentEvent::Identity::cwd: core::option::Option<std::
 pub pixtuoid_core::source::AgentEvent::Identity::pid: core::option::Option<pixtuoid_core::source::PidIdentity>
 pub pixtuoid_core::source::AgentEvent::Identity::session_id: alloc::string::String
 pub pixtuoid_core::source::AgentEvent::Identity::source: alloc::string::String
+pub pixtuoid_core::source::AgentEvent::LabelHint
+pub pixtuoid_core::source::AgentEvent::LabelHint::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::LabelHint::label: alloc::string::String
 pub pixtuoid_core::source::AgentEvent::ModelInfo
 pub pixtuoid_core::source::AgentEvent::ModelInfo::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::ModelInfo::effort: core::option::Option<alloc::string::String>
@@ -1785,6 +1788,9 @@ pub pixtuoid_core::AgentEvent::Identity::cwd: core::option::Option<std::path::Pa
 pub pixtuoid_core::AgentEvent::Identity::pid: core::option::Option<pixtuoid_core::source::PidIdentity>
 pub pixtuoid_core::AgentEvent::Identity::session_id: alloc::string::String
 pub pixtuoid_core::AgentEvent::Identity::source: alloc::string::String
+pub pixtuoid_core::AgentEvent::LabelHint
+pub pixtuoid_core::AgentEvent::LabelHint::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::LabelHint::label: alloc::string::String
 pub pixtuoid_core::AgentEvent::ModelInfo
 pub pixtuoid_core::AgentEvent::ModelInfo::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::ModelInfo::effort: core::option::Option<alloc::string::String>

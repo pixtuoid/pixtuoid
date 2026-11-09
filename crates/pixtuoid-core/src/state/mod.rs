@@ -257,6 +257,12 @@ impl SlotLabel {
     pub(crate) fn yields_to(&self, incoming: &Self) -> bool {
         incoming.provenance == LabelProvenance::Renamed || self.is_upgradable()
     }
+
+    /// Whether a [`LabelHint`](crate::AgentEvent::LabelHint)'s `hint` replaces
+    /// this label: as [`yields_to`](Self::yields_to), unless a rename named it.
+    pub(crate) fn yields_to_hint(&self, hint: &Self) -> bool {
+        self.provenance != LabelProvenance::Renamed && self.yields_to(hint)
+    }
 }
 
 impl std::ops::Deref for SlotLabel {

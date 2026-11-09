@@ -137,6 +137,9 @@ pub(super) enum Sight {
 pub(super) struct Registration {
     cwd: PathBuf,
     parent_id: Option<AgentId>,
+    /// The label its reads last gave the session: first sight's, then any
+    /// `Rename` a read decoded for it since.
+    label: String,
 }
 
 #[derive(Clone, Copy)]

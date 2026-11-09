@@ -518,6 +518,13 @@ pub(super) async fn walk_jsonl(
         };
         emit_registration(path, source, decoders, seen, tx, head).await;
     }
+    if let Some(label) = (decoded.iter().rev()).find_map(|ev| match ev {
+        AgentEvent::Rename { agent_id, label } if *agent_id == own => Some(label),
+        _ => None,
+    }) && let Some(Sight::Claimed(registration)) = seen.lock().await.get_mut(path)
+    {
+        registration.label.clone_from(label);
+    }
 
     let verdict = last_life(&decoded, own);
     // A known file's read from the top follows a truncation or a re-vouch.
@@ -564,7 +571,7 @@ pub(super) async fn park_if_truncated_below_cursor(path: &Path, ctx: &WatchCtx<'
 }
 
 /// Emit `path`'s registration as a `SessionStart`: the one its first sight
-/// claimed, else one resolved from `head`, awaited only then, which a `Rename`
+/// claimed, else one resolved from `head`, awaited only then, which its label
 /// follows. Shared by the normal tail-read path and the oversized path so the
 /// two emit IDENTICAL events from one place. A `None`/empty `cwd` falls back to
 /// the project-dir label in `derive_label`.
@@ -580,10 +587,8 @@ async fn emit_registration(
         Some(Sight::Claimed(registration)) => Some(registration.clone()),
         _ => None,
     };
-    let (registration, label) = match claimed {
-        // No `Rename`: it would clobber a label the transcript decoded since
-        // (`SlotLabel::yields_to`).
-        Some(registration) => (registration, None),
+    let (registration, first_sight) = match claimed {
+        Some(registration) => (registration, false),
         None => {
             let head = head.await;
             // Content-derived cwd wins; the PATH deriver covers sources carrying
@@ -600,11 +605,15 @@ async fn emit_registration(
                 .unwrap_or_else(|| (decoders.derive_label)(path, source, &cwd));
             let parent_id = detect_parent_id(path, source)
                 .or_else(|| head.parent.map(|p| AgentId::from_parts(source, &p)));
-            let registration = Registration { cwd, parent_id };
+            let registration = Registration {
+                cwd,
+                parent_id,
+                label,
+            };
             seen.lock()
                 .await
                 .insert(path.to_path_buf(), Sight::Claimed(registration.clone()));
-            (registration, Some(label))
+            (registration, true)
         }
     };
     // Same deriver as the AgentId: hook slots carry the bare session UUID and
@@ -624,17 +633,22 @@ async fn emit_registration(
             },
         ))
         .await;
-    if let Some(label) = label {
-        let _ = tx
-            .send((
-                Transport::Jsonl,
-                AgentEvent::Rename {
-                    agent_id: id,
-                    label,
-                },
-            ))
-            .await;
-    }
+    let label = registration.label;
+    // A first sight renames even a slot a hook created first. A claimed path
+    // only hints: a `Rename` would clobber a label the transcript decoded since
+    // (`SlotLabel::yields_to`).
+    let named = if first_sight {
+        AgentEvent::Rename {
+            agent_id: id,
+            label,
+        }
+    } else {
+        AgentEvent::LabelHint {
+            agent_id: id,
+            label,
+        }
+    };
+    let _ = tx.send((Transport::Jsonl, named)).await;
 }
 
 /// Read at most `limit` bytes from the START of a file, so registration never

@@ -36,7 +36,11 @@ fn utc_day(now: SystemTime) -> NaiveDate {
 }
 
 /// Transcript source `name` over `root`, short of production's unclaims and omp's profiles.
-fn spawn_source(name: &str, root: PathBuf, tx: TaggedSender) -> JoinHandle<anyhow::Result<()>> {
+pub(crate) fn spawn_source(
+    name: &str,
+    root: PathBuf,
+    tx: TaggedSender,
+) -> JoinHandle<anyhow::Result<()>> {
     fast_watch();
     let source: Box<dyn DynSource> = match name {
         "claude-code" => {
