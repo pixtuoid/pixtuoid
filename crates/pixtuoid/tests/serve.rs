@@ -551,7 +551,7 @@ async fn an_address_says_one_hello_at_a_time() {
 
 /// Each peer takes its own address's turn, so another address pairs beside a
 /// silent one. Linux makes all of loopback's /8 local (`fib_add_ifaddr` in
-/// net/ipv4/fib_frontend.c), where macOS's lo0 holds 127.0.0.1 alone.
+/// net/ipv4/fib_frontend.c).
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "multi_thread")]
 async fn another_address_pairs_beside_a_silent_one() {

@@ -467,16 +467,19 @@ mod tests {
         served: tokio::task::JoinHandle<Result<()>>,
     }
 
+    /// A [`duplex`] buffer no line fills, so neither side waits on the other.
+    const ROOMY: usize = 64 * 1024;
+
     impl Peer {
         /// Admitted by an [`Admission`] of its own, so no other connection is
         /// in its way.
         fn connect(devices: &Devices) -> Self {
             let admitted = Admission::new().admit(Ipv4Addr::LOCALHOST);
-            Self::admitted(devices, admitted.expect("an empty admission's slot"))
+            Self::admitted(devices, admitted.expect("an empty admission's slot"), ROOMY)
         }
 
-        fn admitted(devices: &Devices, admitted: Admitted) -> Self {
-            let (ours, theirs) = duplex(64 * 1024);
+        fn admitted(devices: &Devices, admitted: Admitted, room: usize) -> Self {
+            let (ours, theirs) = duplex(room);
             let devices = devices.clone();
             let served = tokio::spawn(async move {
                 let Admitted { slot: _slot, hello } = admitted;
@@ -694,18 +697,18 @@ mod tests {
         let admission = Admission::new();
         let silent: Vec<Peer> = (0..MAX_CONNS)
             .filter_map(|_| admission.admit(STRANGER).ok())
-            .map(|admitted| Peer::admitted(&fixture.devices, admitted))
+            .map(|admitted| Peer::admitted(&fixture.devices, admitted, ROOMY))
             .collect();
         assert_eq!(silent.len(), 1);
         let token = paired(&fixture);
         let admitted = admission.admit(PHONE).expect("a slot for the phone");
-        let mut phone = Peer::admitted(&fixture.devices, admitted);
+        let mut phone = Peer::admitted(&fixture.devices, admitted, ROOMY);
         phone.hello(&Hello::Resume { token }).await;
         assert_eq!(phone.reply().await, Reply::Resumed);
     }
 
-    /// An address's turn ends at its hello's verdict, before the reply, whether
-    /// the device streams on or is refused.
+    /// An address's turn ends at its hello's verdict, before the reply is
+    /// written, whether the device then streams or is refused.
     #[tokio::test]
     async fn an_addresss_turn_ends_at_its_hellos_verdict() {
         const PEER: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 20);
@@ -717,15 +720,19 @@ mod tests {
             (stranger, Reply::Refused),
         ] {
             let admitted = admission.admit(PEER).expect("the address's turn");
-            let mut peer = Peer::admitted(&fixture.devices, admitted);
+            // A byte of room, so the reply's write is still under way once its
+            // first byte has arrived.
+            let mut peer = Peer::admitted(&fixture.devices, admitted, 1);
             let second = admission.admit(PEER);
             assert!(
                 matches!(second, Err(NotAdmitted::Unanswered)),
                 "{verdict:?}"
             );
             peer.hello(&Hello::Resume { token }).await;
-            assert_eq!(peer.reply().await, verdict);
+            let begun = peer.lines.fill_buf().await.expect("it reads");
+            assert!(!begun.is_empty(), "a reply begins");
             assert!(admission.admit(PEER).is_ok(), "{verdict:?}");
+            assert_eq!(peer.reply().await, verdict);
         }
     }
 
