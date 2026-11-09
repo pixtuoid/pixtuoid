@@ -157,7 +157,7 @@ struct Shown {
     star: Option<Bounds>,
     /// Each drawn agent's badge.
     badges: Arc<[crate::display::Badge]>,
-    /// The world text it left to the host, if it baked none.
+    /// The world text it left to the host, if any.
     host_text: Option<crate::display::text::HostRuns>,
 }
 
@@ -197,7 +197,8 @@ impl CutawayCanvas {
         let mut list = tracing::trace_span!("canvas.compose")
             .in_scope(|| compose(&stepped.frame, office, showing, (&mut self.lights, outside)));
         let badges = Arc::clone(list.badges());
-        let host_text = (text == crate::look::WorldText::Host).then(|| list.host_text());
+        let taken = (!text.in_image()).then(|| list.take_text());
+        let host_text = taken.filter(|_| text.left_to_host());
         let epoch = Epoch {
             backdrop: list.backdrop().clone(),
             recolours: list.recolours().clone(),
@@ -306,7 +307,7 @@ impl CutawayCanvas {
     }
 
     /// The world text the last frame left to the host; `None` before the
-    /// first or when it baked its own.
+    /// first or when it left none.
     pub(crate) fn host_text(&self) -> Option<crate::display::HostText<'_>> {
         let shown = self.shown.as_ref()?;
         shown.host_text.as_ref().map(|w| w.view(shown.epoch.dim))
@@ -1256,7 +1257,7 @@ mod tests {
         );
         let baked: Vec<crate::display::TextRun> = list.texts().cloned().collect();
         assert!(!baked.is_empty(), "premise: the frame has text");
-        let handed = list.host_text();
+        let handed = list.take_text();
         assert_eq!(list.texts().count(), 0, "a text piece stays to be painted");
         for run in &baked {
             let handed = match run.role {
