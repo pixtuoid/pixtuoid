@@ -7,11 +7,12 @@ mod announce;
 mod device;
 mod store;
 
+use std::collections::HashSet;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use std::pin::pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
@@ -22,7 +23,7 @@ use qrcode::render::unicode::Dense1x2;
 use qrcode::{EcLevel, QrCode};
 use rcgen::{CertificateParams, KeyPair};
 use tokio::net::TcpListener;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::crypto::ring::default_provider;
 use tokio_rustls::rustls::pki_types::PrivatePkcs8KeyDer;
@@ -41,7 +42,73 @@ use store::{CODE_LIFETIME, Store, spki_pin};
 pub(crate) const DEFAULT_PORT: u16 = 47_820;
 
 /// Connections at once, a stranger's handshake included.
-pub const MAX_CONNS: usize = 8;
+const MAX_CONNS: usize = 8;
+
+/// Who gets a connection: [`MAX_CONNS`] at once, and from each address one at a
+/// time until its hello is answered, so one host's silent connections can't hold
+/// every slot (sshd_config(5)'s `PerSourceMaxStartups`). Before TLS a peer is
+/// only its address, an IPv4 one while [`lan_peer`] admits no other: a v6 key
+/// must choose how many of an address's bits it covers (`PerSourceNetBlockSize`).
+struct Admission {
+    slots: Arc<Semaphore>,
+    unanswered: Arc<Mutex<HashSet<Ipv4Addr>>>,
+}
+
+/// Why [`Admission::admit`] turned a peer away.
+#[derive(Debug)]
+enum NotAdmitted {
+    /// Its address already holds an [`Unanswered`].
+    Unanswered,
+    /// Every slot is held.
+    Full,
+}
+
+impl Admission {
+    fn new() -> Self {
+        Self {
+            slots: Arc::new(Semaphore::new(MAX_CONNS)),
+            unanswered: Arc::default(),
+        }
+    }
+
+    fn admit(&self, peer: Ipv4Addr) -> Result<Admitted, NotAdmitted> {
+        let mut unanswered = self.unanswered.lock().unwrap_or_else(|e| e.into_inner());
+        if unanswered.contains(&peer) {
+            return Err(NotAdmitted::Unanswered);
+        }
+        let slot = Arc::clone(&self.slots)
+            .try_acquire_owned()
+            .map_err(|_| NotAdmitted::Full)?;
+        unanswered.insert(peer);
+        Ok(Admitted {
+            slot,
+            hello: Unanswered {
+                peer,
+                set: Arc::clone(&self.unanswered),
+            },
+        })
+    }
+}
+
+/// A connection's place: its slot for as long as it lasts, and its address's
+/// turn to say hello until `hello` drops.
+struct Admitted {
+    slot: OwnedSemaphorePermit,
+    hello: Unanswered,
+}
+
+/// An address's one unanswered hello, given back on drop.
+struct Unanswered {
+    peer: Ipv4Addr,
+    set: Arc<Mutex<HashSet<Ipv4Addr>>>,
+}
+
+impl Drop for Unanswered {
+    fn drop(&mut self) {
+        let mut set = self.set.lock().unwrap_or_else(|e| e.into_inner());
+        set.remove(&self.peer);
+    }
+}
 
 /// The pause after a failed `accept`, whose usual cause (out of descriptors)
 /// would otherwise spin.
@@ -124,7 +191,7 @@ async fn serve(
     let machine = Machine::new(&machine_name(), Os::here());
     let _announcement = announce::announce(machine.name(), port, &spki_pin(&key));
     let devices = Devices::new(store, machine, scene, rows, change);
-    let slots = Arc::new(Semaphore::new(MAX_CONNS));
+    let admission = Admission::new();
     let mut deaths_seen = 0;
     let mut accept_failing = false;
     loop {
@@ -132,19 +199,21 @@ async fn serve(
             accepted = listener.accept() => match accepted {
                 Ok((tcp, peer)) => {
                     accept_failing = false;
-                    if !lan_peer(peer.ip()) {
+                    let Some(ip) = lan_peer(peer.ip()) else {
                         tracing::debug!(peer = ?peer, "refused a peer outside the LAN");
                         continue;
-                    }
-                    let Ok(slot) = Arc::clone(&slots).try_acquire_owned() else {
-                        tracing::debug!(peer = ?peer, "refused a peer over the connection cap");
-                        continue;
+                    };
+                    let admitted = match admission.admit(ip) {
+                        Ok(admitted) => admitted,
+                        Err(reason) => {
+                            tracing::debug!(peer = ?peer, reason = ?reason, "refused a peer");
+                            continue;
+                        }
                     };
                     let devices = devices.clone();
                     let acceptor = acceptor.clone();
                     tokio::spawn(async move {
-                        let _slot = slot;
-                        if let Err(error) = devices.serve(tcp, acceptor).await {
+                        if let Err(error) = devices.serve(tcp, acceptor, admitted).await {
                             tracing::debug!(peer = ?peer, error = ?error, "connection ended");
                         }
                     });
@@ -180,15 +249,15 @@ fn greeting(host: Result<String>, port: u16) -> String {
     }
 }
 
-/// Whether `ip` is in a local range: private, link-local or loopback. Only a
-/// range can be judged before TLS, so this keeps out the internet and a tailnet's
-/// [`100.64/10`](https://tailscale.com/kb/1015/100.x-addresses); within the
-/// ranges, pairing is the gate. Bound to IPv4 only, so there is no v6 peer to
+/// `ip`'s v4 address if it is in a local range: private, link-local or loopback.
+/// Only a range can be judged before TLS, so this keeps out the internet and a
+/// tailnet's [`100.64/10`](https://tailscale.com/kb/1015/100.x-addresses); within
+/// the ranges, pairing is the gate. Bound to IPv4 only, so there is no v6 peer to
 /// judge.
-fn lan_peer(ip: IpAddr) -> bool {
+fn lan_peer(ip: IpAddr) -> Option<Ipv4Addr> {
     match ip {
-        IpAddr::V4(v4) => on_a_local_network(v4) || v4.is_loopback(),
-        IpAddr::V6(_) => false,
+        IpAddr::V4(v4) => (on_a_local_network(v4) || v4.is_loopback()).then_some(v4),
+        IpAddr::V6(_) => None,
     }
 }
 
@@ -339,7 +408,8 @@ mod tests {
             "169.254.0.2",
             "127.0.0.1",
         ] {
-            assert!(lan_peer(ip.parse().expect("an IP")), "{ip}");
+            let ip: Ipv4Addr = ip.parse().expect("an IP");
+            assert_eq!(lan_peer(ip.into()), Some(ip), "{ip}");
         }
         for ip in [
             "100.64.0.1",
@@ -350,8 +420,25 @@ mod tests {
             "fe80::1",
             "fd00::1",
         ] {
-            assert!(!lan_peer(ip.parse().expect("an IP")), "{ip}");
+            assert_eq!(lan_peer(ip.parse().expect("an IP")), None, "{ip}");
         }
+    }
+
+    /// The cap holds across addresses, and a slot given back is one for the
+    /// address the cap turned away.
+    #[test]
+    fn every_address_shares_the_cap() {
+        let mut addresses = (1..=u8::MAX).map(|n| Ipv4Addr::new(10, 0, 0, n));
+        let admission = Admission::new();
+        let mut held: Vec<Admitted> = addresses
+            .by_ref()
+            .take(MAX_CONNS)
+            .map(|peer| admission.admit(peer).expect("a slot"))
+            .collect();
+        let late = addresses.next().expect("an address past the cap");
+        assert!(matches!(admission.admit(late), Err(NotAdmitted::Full)));
+        held.pop();
+        assert!(admission.admit(late).is_ok());
     }
 
     /// A default host is one a device on the same network can be sent to: no

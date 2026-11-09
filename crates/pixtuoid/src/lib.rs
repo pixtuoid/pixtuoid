@@ -53,8 +53,6 @@ pub mod dev {
     };
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
     pub use crate::panels::widgets::{footer_context, grid_of};
-    #[cfg(feature = "serve")]
-    pub use crate::serve::MAX_CONNS;
     pub use crate::sources::{ConnState, ConnectionRow};
     pub use crate::tui::cutaway::ImageCells;
     pub use crate::tui::frame_clock;

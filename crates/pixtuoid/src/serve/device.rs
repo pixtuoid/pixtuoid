@@ -21,10 +21,12 @@ use tokio::time::{Instant, interval_at, sleep, sleep_until, timeout, timeout_at}
 use tokio_rustls::TlsAcceptor;
 
 use super::store::{Hashed, Store};
+use super::{Admitted, Unanswered};
 use crate::runtime::SceneRx;
 
 /// What a peer gets to finish the TLS handshake and say hello, before it has
-/// proved anything and while it holds a [`super::MAX_CONNS`] slot.
+/// proved anything and while it holds a [`super::MAX_CONNS`] slot and its
+/// address's [`Unanswered`].
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The longest line a device may write, its newline included: a hello is a token
@@ -98,25 +100,34 @@ impl Devices {
     }
 
     /// Serve the peer on `tcp` until either side ends it.
-    pub(super) async fn serve(self, tcp: TcpStream, acceptor: TlsAcceptor) -> Result<()> {
+    pub(super) async fn serve(
+        self,
+        tcp: TcpStream,
+        acceptor: TlsAcceptor,
+        admitted: Admitted,
+    ) -> Result<()> {
+        let Admitted { slot: _slot, hello } = admitted;
         let deadline = Instant::now() + HELLO_TIMEOUT;
         let tls = timeout_at(deadline, acceptor.accept(tcp))
             .await
             .context("the TLS handshake timed out")??;
         let mut stream = tokio::io::BufReader::new(tls);
-        let served = self.converse(&mut stream, deadline).await;
+        let served = self.converse(&mut stream, deadline, hello).await;
         // A close_notify, so a refusal's reader sees an end and not a cut.
         let _ = timeout(WRITE_TIMEOUT, stream.shutdown()).await;
         served
     }
 
-    async fn converse<S>(&self, stream: &mut S, deadline: Instant) -> Result<()>
+    async fn converse<S>(&self, stream: &mut S, deadline: Instant, hello: Unanswered) -> Result<()>
     where
         S: AsyncBufRead + AsyncRead + AsyncWrite + Unpin,
     {
-        let (reply, device) = timeout_at(deadline, self.greet(stream))
-            .await
-            .context("no hello in time")??;
+        let greeted = timeout_at(deadline, self.greet(stream)).await;
+        // At the verdict, not the close, so a device's stale stream can't refuse
+        // the reconnect that ends it; before the reply, so a device that reads it
+        // may connect again at once.
+        drop(hello);
+        let (reply, device) = greeted.context("no hello in time")??;
         write_line(stream, &reply).await?;
         match device {
             Some(device) => self.stream(stream, device).await,
@@ -330,6 +341,7 @@ async fn write_line(stream: &mut (impl AsyncWrite + Unpin), line: &str) -> Resul
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
     use std::sync::Arc;
 
     use pixtuoid_core::SceneState;
@@ -338,6 +350,7 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
+    use crate::serve::{Admission, MAX_CONNS, NotAdmitted};
 
     /// Each change the fixture's devices made: the device, the source and `on`.
     type Made = Arc<Mutex<Vec<(String, String, bool)>>>;
@@ -455,13 +468,21 @@ mod tests {
     }
 
     impl Peer {
+        /// Admitted by an [`Admission`] of its own, so no other connection is
+        /// in its way.
         fn connect(devices: &Devices) -> Self {
+            let admitted = Admission::new().admit(Ipv4Addr::LOCALHOST);
+            Self::admitted(devices, admitted.expect("an empty admission's slot"))
+        }
+
+        fn admitted(devices: &Devices, admitted: Admitted) -> Self {
             let (ours, theirs) = duplex(64 * 1024);
             let devices = devices.clone();
             let served = tokio::spawn(async move {
+                let Admitted { slot: _slot, hello } = admitted;
                 let mut stream = BufReader::new(theirs);
                 let deadline = Instant::now() + HELLO_TIMEOUT;
-                devices.converse(&mut stream, deadline).await
+                devices.converse(&mut stream, deadline, hello).await
             });
             let (reader, writer) = split(ours);
             Self {
@@ -661,6 +682,51 @@ mod tests {
         let started = Instant::now();
         assert!(peer.ended().await.is_err());
         assert_eq!(started.elapsed(), HELLO_TIMEOUT);
+    }
+
+    /// One host's silent connections, however many it opens, leave a paired
+    /// device on another address a slot.
+    #[tokio::test]
+    async fn a_hosts_silent_connections_leave_a_paired_device_a_slot() {
+        const STRANGER: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 66);
+        const PHONE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 20);
+        let fixture = fixture();
+        let admission = Admission::new();
+        let silent: Vec<Peer> = (0..MAX_CONNS)
+            .filter_map(|_| admission.admit(STRANGER).ok())
+            .map(|admitted| Peer::admitted(&fixture.devices, admitted))
+            .collect();
+        assert_eq!(silent.len(), 1);
+        let token = paired(&fixture);
+        let admitted = admission.admit(PHONE).expect("a slot for the phone");
+        let mut phone = Peer::admitted(&fixture.devices, admitted);
+        phone.hello(&Hello::Resume { token }).await;
+        assert_eq!(phone.reply().await, Reply::Resumed);
+    }
+
+    /// An address's turn ends at its hello's verdict, before the reply, whether
+    /// the device streams on or is refused.
+    #[tokio::test]
+    async fn an_addresss_turn_ends_at_its_hellos_verdict() {
+        const PEER: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 20);
+        let fixture = fixture();
+        let admission = Admission::new();
+        let stranger = "not-a-token".to_owned();
+        for (token, verdict) in [
+            (paired(&fixture), Reply::Resumed),
+            (stranger, Reply::Refused),
+        ] {
+            let admitted = admission.admit(PEER).expect("the address's turn");
+            let mut peer = Peer::admitted(&fixture.devices, admitted);
+            let second = admission.admit(PEER);
+            assert!(
+                matches!(second, Err(NotAdmitted::Unanswered)),
+                "{verdict:?}"
+            );
+            peer.hello(&Hello::Resume { token }).await;
+            assert_eq!(peer.reply().await, verdict);
+            assert!(admission.admit(PEER).is_ok(), "{verdict:?}");
+        }
     }
 
     /// The clock pauses so that only a change can deliver within half a beat.

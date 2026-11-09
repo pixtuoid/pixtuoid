@@ -5,6 +5,7 @@
 #![cfg(feature = "serve")]
 
 use std::io::{BufRead, BufReader};
+use std::net::Ipv4Addr;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -17,7 +18,7 @@ use pixtuoid_core::remote::{
 use pixtuoid_core::state::MAX_FLOORS;
 use ring::digest::{SHA256, digest};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream};
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::rustls::client::danger::{
@@ -106,6 +107,11 @@ struct Device {
 
 impl Device {
     async fn connect(link: &PairLink) -> Self {
+        Self::connect_from(link, Ipv4Addr::LOCALHOST).await
+    }
+
+    /// From `local`, the address the server knows this device by.
+    async fn connect_from(link: &PairLink, local: Ipv4Addr) -> Self {
         let provider = Arc::new(default_provider());
         let verifier = PinnedTo {
             spki: link.spki.clone(),
@@ -117,7 +123,10 @@ impl Device {
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(verifier))
             .with_no_client_auth();
-        let tcp = TcpStream::connect(("127.0.0.1", link.port))
+        let socket = TcpSocket::new_v4().expect("a socket");
+        socket.bind((local, 0).into()).expect("a local address");
+        let tcp = socket
+            .connect((Ipv4Addr::LOCALHOST, link.port).into())
             .await
             .expect("the server listens");
         let name = ServerName::try_from("pixtuoid.local").expect("a name");
@@ -511,27 +520,24 @@ async fn a_server_shares_the_hook_plane_in_either_order_and_survives_either_exit
         .await;
 }
 
-/// A connection the cap turned away ends at once, and a stranger's slot comes
-/// back when it leaves.
+/// An address's second connection while its first says nothing ends at once,
+/// and its turn comes back when the first leaves.
 #[tokio::test(flavor = "multi_thread")]
-async fn connections_are_capped_and_a_slot_comes_back() {
+async fn an_address_says_one_hello_at_a_time() {
     let world = World::new();
     let (_server, port) = world.serve();
     let link = world.pair(port);
     let connect = || TcpStream::connect(("127.0.0.1", port));
 
-    let mut silent = Vec::new();
-    for _ in 0..pixtuoid::dev::MAX_CONNS {
-        silent.push(connect().await.expect("the server listens"));
-    }
-    // Past every accept above, or the next could overtake one of them.
+    let silent = connect().await.expect("the server listens");
+    // Past its accept, or the next could overtake it.
     tokio::time::sleep(Duration::from_millis(200)).await;
     let mut refused = connect().await.expect("the backlog takes it");
     let mut unread = [0; 1];
     let closed = tokio::time::timeout(AT_ONCE, refused.read(&mut unread)).await;
     assert!(
         matches!(closed, Ok(Ok(0) | Err(_))),
-        "over the cap is closed unanswered: {closed:?}"
+        "a second unanswered hello is closed unanswered: {closed:?}"
     );
 
     drop(silent);
@@ -540,6 +546,29 @@ async fn connections_are_capped_and_a_slot_comes_back() {
         code: link.code.clone(),
     };
     let reply = Device::connect(&link).await.hello(&hello).await;
+    assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
+}
+
+/// Each peer takes its own address's turn, so another address pairs beside a
+/// silent one. Linux makes all of loopback's /8 local (`fib_add_ifaddr` in
+/// net/ipv4/fib_frontend.c), where macOS's lo0 holds 127.0.0.1 alone.
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread")]
+async fn another_address_pairs_beside_a_silent_one() {
+    let world = World::new();
+    let (_server, port) = world.serve();
+    let link = world.pair(port);
+
+    let _silent = TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("the server listens");
+    // Past its accept, or the device could overtake it.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let hello = Hello::Pair {
+        code: link.code.clone(),
+    };
+    let device = Device::connect_from(&link, Ipv4Addr::new(127, 0, 0, 2));
+    let reply = device.await.hello(&hello).await;
     assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
 }
 
