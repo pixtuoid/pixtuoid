@@ -705,17 +705,23 @@ fn shrinking_mid_slide_lands_on_the_destination() {
 fn a_slide_the_office_cannot_lay_out_lands_at_once() {
     let (mut r, _wire) = kitty(120, 40);
     let scene = two_floor_scene();
-    r.render(&scene, t0()).expect("render");
+    let mut now = t0();
+    r.render(&scene, now).expect("render");
+    // Both floors drawn, so each keeps a canvas a slide could compose.
+    for floor in [1, 0] {
+        r.navigate_floor(floor, now);
+        render_until_settled(&mut r, &scene, &mut now, floor);
+    }
     let (cols, rows) = too_small_terminal();
     r.terminal.backend_mut().resize(cols, rows);
-    r.render(&scene, t0()).expect("render");
+    r.render(&scene, now).expect("render");
     assert_eq!(
         r.drawn_look(),
         LookKind::Cutaway,
         "premise: the cutaway fits, and the office refuses"
     );
-    r.navigate_floor(1, t0());
-    r.render(&scene, t0() + PAINT_FRAME).expect("render");
+    r.navigate_floor(1, now);
+    r.render(&scene, now + PAINT_FRAME).expect("render");
     assert_eq!((r.transition().is_none(), r.current_floor()), (true, 1));
     assert!(frame_text(r.frame_buffer()).contains("too small"));
 }
