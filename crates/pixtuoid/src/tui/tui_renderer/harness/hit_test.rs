@@ -458,8 +458,10 @@ where
     );
 }
 
-/// The dashboard opened mid-carry withholds no part of the gesture: the
-/// figure follows the pointer under it and is set down on release.
+/// A move with no button held carries nothing, even after a press on a
+/// figure; the drag lifts it. The dashboard opened mid-carry then withholds no
+/// part of the gesture: the figure follows the pointer under it and is set
+/// down on release.
 #[test]
 fn a_panel_opened_mid_carry_still_sets_the_figure_down() {
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -518,13 +520,18 @@ fn a_panel_opened_mid_carry_still_sets_the_figure_down() {
         MouseEventKind::Down(MouseButton::Left),
         on_agent,
     );
+    send(&mut r, &mut ui, MouseEventKind::Moved, away);
+    assert!(
+        !r.pointer.carrying(),
+        "a move with no button held lifts nothing"
+    );
     send(
         &mut r,
         &mut ui,
         MouseEventKind::Drag(MouseButton::Left),
         away,
     );
-    assert!(r.pointer.carrying(), "premise: the agent is lifted");
+    assert!(r.pointer.carrying(), "the drag lifts the agent");
     ui.toggle_dashboard(&scene);
     send(
         &mut r,

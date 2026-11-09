@@ -230,7 +230,6 @@ pub(crate) enum ModalMouse {
 pub(crate) enum PointerEvent {
     /// The left button pressed.
     Press,
-    /// The pointer moved.
     Move,
     /// The left button released.
     Release,
@@ -1677,8 +1676,6 @@ mod dispatch_tests {
     }
 }
 
-/// An office that notes each event the ladder hands it, and clicks `click`
-/// on a release.
 #[cfg(test)]
 #[derive(Debug, Default)]
 pub(crate) struct NotedOffice {

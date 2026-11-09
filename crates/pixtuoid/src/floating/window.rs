@@ -136,11 +136,19 @@ pub(crate) struct Appearance {
     pub(crate) motion: pixtuoid_scene::anim::Motion,
 }
 
-/// The window's office under the pointer at `cursor` (physical px), at
-/// `now` with `petting` the last one.
+/// Drag the frameless window's frame, or resize it from `corner`. A platform
+/// may refuse either outside a real press, and the window then stays as it is.
+fn drag_frame(window: &Window, corner: Option<ResizeDirection>) {
+    let _ = match corner {
+        Some(corner) => window.drag_resize_window(corner),
+        None => window.drag_window(),
+    };
+}
+
 struct WindowOffice<'a> {
     renderer: &'a mut OfficeRenderer,
     window: &'a Window,
+    /// Physical px.
     cursor: (f64, f64),
     petting: Option<&'a pixtuoid_scene::pet::PetState>,
     now: std::time::SystemTime,
@@ -149,8 +157,7 @@ struct WindowOffice<'a> {
 impl crate::panels::Office for WindowOffice<'_> {
     /// Resize from the corner, hand the pointer what the frame on screen
     /// shows under it (a click or a drag follows), or drag the frameless
-    /// window. Errors are non-fatal — some platforms refuse a drag outside a
-    /// real press.
+    /// window.
     fn press(&mut self) {
         use super::offscreen::Press;
         let size = self.window.inner_size();
@@ -164,12 +171,8 @@ impl crate::panels::Office for WindowOffice<'_> {
             },
         );
         match press {
-            Press::Resize => {
-                let _ = self.window.drag_resize_window(ResizeDirection::SouthEast);
-            }
-            Press::Drag => {
-                let _ = self.window.drag_window();
-            }
+            Press::Resize => drag_frame(self.window, Some(ResizeDirection::SouthEast)),
+            Press::Drag => drag_frame(self.window, None),
             Press::Pointer => {}
         }
     }
@@ -360,7 +363,6 @@ impl FloatingApp {
         ))
     }
 
-    /// A left press, its drag's error non-fatal as in [`WindowOffice`]'s.
     fn press(&mut self) {
         use crate::panels::ModalMouse;
         match self.mouse(crate::panels::PointerEvent::Press) {
@@ -368,7 +370,7 @@ impl FloatingApp {
             // A panel the press did nothing in leaves the window to drag.
             Some((ModalMouse::Inert, _)) => {
                 if let Some(window) = &self.window {
-                    let _ = window.drag_window();
+                    drag_frame(window, None);
                 }
             }
             Some((ModalMouse::Took, _)) => self.request_redraw(),

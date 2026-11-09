@@ -387,7 +387,6 @@ pub(crate) struct TuiSession {
     pub first_run: bool,
 }
 
-/// The terminal's office under the pointer at cell `at`, at `now`.
 struct TuiOffice<'r, B: ratatui::backend::Backend<Error: Send + Sync + 'static>> {
     renderer: &'r mut TuiRenderer<B>,
     at: (u16, u16),
