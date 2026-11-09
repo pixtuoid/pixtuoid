@@ -1056,14 +1056,26 @@ stage-notices dir:
 deb target:
     #!/usr/bin/env bash
     set -euo pipefail
-    # The asset dir pixtuoid's [package.metadata.deb] names.
-    docs=crates/pixtuoid/target/deb
-    mkdir -p "$docs"
-    cli() { cargo run -q -p pixtuoid --bin pixtuoid {{ LINUX_RELEASE_FEATURES }} -- "$@"; }
-    cli man >"$docs/pixtuoid.1"
-    cli completions bash >"$docs/pixtuoid.bash"
-    cli completions zsh >"$docs/_pixtuoid"
-    cli completions fish >"$docs/pixtuoid.fish"
+    crate=crates/pixtuoid
+    # Every `target/deb/` source pixtuoid's [package.metadata.deb] names,
+    # written by the subcommand its path names.
+    sources=$(cargo metadata --no-deps --format-version 1 --locked |
+        jq -r '.packages[] | select(.name == "pixtuoid") | .metadata.deb.assets[][0] | select(startswith("target/deb/"))')
+    while IFS= read -r src; do
+        case "$src" in
+        target/deb/man/*) args=(man) ;;
+        target/deb/completions/*/*)
+            shell=${src#target/deb/completions/}
+            args=(completions "${shell%%/*}")
+            ;;
+        *)
+            echo "deb: no subcommand writes $src" >&2
+            exit 1
+            ;;
+        esac
+        mkdir -p "$crate/${src%/*}"
+        cargo run -q -p pixtuoid --bin pixtuoid {{ LINUX_RELEASE_FEATURES }} -- "${args[@]}" >"$crate/$src"
+    done <<<"$sources"
     cargo deb -p pixtuoid --no-build --no-strip --target "$1"
 
 # The npm packages' tests, their only run before a tag-push, and every

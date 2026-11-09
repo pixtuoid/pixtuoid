@@ -228,13 +228,18 @@ assets = [
     ["../../LICENSE", "usr/share/doc/pixtuoid/", "644"],
     # The embedded fonts' notices, globbed as `just stage-notices` does.
     ["../*/fonts/**/*.txt", "usr/share/doc/pixtuoid/licenses/", "644"],
-    # What `just deb` generates from the CLI. Outside `target/release/`, so
-    # cargo-deb gzips the page as Debian Policy 12.1 asks.
-    ["target/deb/pixtuoid.1", "usr/share/man/man1/", "644"],
-    ["target/deb/pixtuoid.bash", "usr/share/bash-completion/completions/", "644"],
-    ["target/deb/_pixtuoid", "usr/share/zsh/vendor-completions/", "644"],
-    ["target/deb/pixtuoid.fish", "usr/share/fish/vendor_completions.d/", "644"],
+    # What `just deb` generates, each from the subcommand its path names.
+    # Outside `target/release/`, so cargo-deb gzips the page as Debian Policy
+    # 12.1 asks.
+    ["target/deb/man/pixtuoid.1", "usr/share/man/man1/", "644"],
+    ["target/deb/completions/bash/pixtuoid.bash", "usr/share/bash-completion/completions/", "644"],
+    ["target/deb/completions/zsh/_pixtuoid", "usr/share/zsh/vendor-completions/", "644"],
+    ["target/deb/completions/fish/pixtuoid.fish", "usr/share/fish/vendor_completions.d/", "644"],
 ]
+# The shim above was the pixtuoid-hook package's file, which dpkg hands over
+# only to a package that Replaces it (Debian Policy 7.6.1).
+replaces = "pixtuoid-hook"
+breaks = "pixtuoid-hook"
 extended-description = "Terminal-native, multi-agent pixel-art visualizer for AI coding agents. Each running Claude Code session appears as an animated sprite in a top-down ASCII office."
 
 [[bench]]

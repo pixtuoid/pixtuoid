@@ -310,7 +310,7 @@ pub(crate) fn render_man(w: &mut dyn std::io::Write) -> std::io::Result<()> {
 }
 
 /// man(7) nests only `.SS` under `.SH`, so a subcommand's own sections become
-/// subsections of its heading, the command line that runs it.
+/// subsections of its heading.
 fn render_subcommand_sections(
     cmd: &clap::Command,
     line: &str,
@@ -318,9 +318,7 @@ fn render_subcommand_sections(
 ) -> std::io::Result<()> {
     for sub in cmd.get_subcommands().filter(|s| !s.is_hide_set()) {
         let line = format!("{line} {}", sub.get_name());
-        clap_mangen::roff::Roff::new()
-            .control("SH", [line.to_uppercase().as_str()])
-            .to_writer(w)?;
+        w.write_all(subcommand_heading(&line).as_bytes())?;
         // A global option is documented once, where it is declared.
         let inherited = |a: &clap::Arg| {
             a.is_global_set() && cmd.get_arguments().any(|p| p.get_id() == a.get_id())
@@ -346,6 +344,14 @@ fn render_subcommand_sections(
         render_subcommand_sections(sub, &line, w)?;
     }
     Ok(())
+}
+
+/// The `.SH` a subcommand's sections sit under, named by the command line that
+/// runs it.
+fn subcommand_heading(line: &str) -> String {
+    clap_mangen::roff::Roff::new()
+        .control("SH", [line.to_uppercase().as_str()])
+        .to_roff()
 }
 
 fn parse_nonempty_path(s: &str) -> Result<PathBuf, String> {
@@ -799,41 +805,79 @@ mod tests {
     }
 
     /// Every visible subcommand, nested ones included.
-    fn visible_subcommands(cmd: &clap::Command) -> Vec<&clap::Command> {
+    /// Every visible subcommand, nested ones included, with the command line
+    /// that runs it and its parent.
+    fn visible_subcommands<'a>(
+        cmd: &'a clap::Command,
+        line: &str,
+    ) -> Vec<(String, &'a clap::Command, &'a clap::Command)> {
         cmd.get_subcommands()
             .filter(|s| !s.is_hide_set())
-            .flat_map(|s| std::iter::once(s).chain(visible_subcommands(s)))
+            .flat_map(|s| {
+                let line = format!("{line} {}", s.get_name());
+                let nested = visible_subcommands(s, &line);
+                std::iter::once((line, s, cmd)).chain(nested)
+            })
+            .collect()
+    }
+
+    /// Its visible long flags, less the global ones its parent declares.
+    fn own_flags<'a>(cmd: &'a clap::Command, parent: Option<&clap::Command>) -> Vec<&'a str> {
+        cmd.get_arguments()
+            .filter(|a| !a.is_hide_set())
+            .filter(|a| {
+                !(a.is_global_set()
+                    && parent
+                        .is_some_and(|p| p.get_arguments().any(|pa| pa.get_id() == a.get_id())))
+            })
+            .filter_map(clap::Arg::get_long)
             .collect()
     }
 
     #[test]
-    fn the_man_page_documents_every_subcommand_and_names_no_other_page() {
+    fn the_man_page_documents_each_subcommand_in_its_own_section_and_names_no_other_page() {
         let mut page = Vec::new();
         render_man(&mut page).expect("man render");
         let page = String::from_utf8(page).expect("man page is utf-8");
         // roff writes a hyphen as `\-`.
         let roff = |s: &str| s.replace('-', "\\-");
+        // An OPTIONS entry is a `.TP` tag naming the flag in bold; the synopsis
+        // names every flag too, so a bare mention proves nothing.
+        let documents = |section: &str, flag: &str| {
+            let tag = format!("\\fB{}\\fR", roff(&format!("--{flag}")));
+            section
+                .lines()
+                .zip(section.lines().skip(1))
+                .any(|(tp, entry)| tp == ".TP" && entry.contains(&tag))
+        };
         let cmd = man_command();
-        let subs = visible_subcommands(&cmd);
-        assert!(!subs.is_empty(), "the CLI has no visible subcommand");
-        for sub in subs {
-            let name = sub.get_bin_name().expect("built");
-            assert!(page.contains(&roff(name)), "{name} has no section");
+        let subs = visible_subcommands(&cmd, cmd.get_name());
+        let first = subs.first().expect("the CLI has a visible subcommand");
+        let root = &page[..page
+            .find(&subcommand_heading(&first.0))
+            .expect("the first subcommand has a section")];
+        for flag in own_flags(&cmd, None) {
+            assert!(documents(root, flag), "--{flag} is undocumented");
+        }
+        for (line, sub, parent) in &subs {
+            let heading = subcommand_heading(line);
+            let at = page
+                .find(&heading)
+                .unwrap_or_else(|| panic!("{line} has no section"));
+            let rest = &page[at + heading.len()..];
+            let section = &rest[..rest.find("\n.SH ").unwrap_or(rest.len())];
+            assert!(
+                section.contains(&roff(line)),
+                "{line}'s section has no synopsis"
+            );
+            for flag in own_flags(sub, Some(parent)) {
+                assert!(documents(section, flag), "{line}'s section lacks --{flag}");
+            }
             let own_page = format!("{}(", roff(sub.get_display_name().expect("built")));
             assert!(
                 !page.contains(&own_page),
                 "the page points to {own_page}…), which nothing installs"
             );
-            for flag in sub
-                .get_arguments()
-                .filter(|a| !a.is_hide_set())
-                .filter_map(clap::Arg::get_long)
-            {
-                assert!(
-                    page.contains(&roff(&format!("--{flag}"))),
-                    "{name}'s --{flag} is undocumented"
-                );
-            }
         }
     }
 }
