@@ -27,7 +27,7 @@ tests/
 │   ├── <module>.rs      a source's unique behavior: claude_code codex codewhale cursor grok
 │   │                    opencode reasonix (DELEGATING runs, two sprites), copilot (refusal
 │   │                    endings, a failed child's own end), omp (bridge rounds whose hook
-│   │                    keys FOLD per OS, #951), kimi (a turn end registers its session)
+│   │                    keys FOLD per OS, #951)
 │   ├── delegation.rs    the NAME-KEYED family (a tool literally called `task` — `subagent`
 │   │                    for dsh and opencode): copilot, omp, dsh, opencode — one rule, one table
 │   └── hermetic/aimock/ the scripted model's npm lock, shared by every profile
