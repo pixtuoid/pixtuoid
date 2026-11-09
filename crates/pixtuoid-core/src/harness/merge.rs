@@ -28,11 +28,7 @@ pub struct Step {
     /// first-sight seed rides in with the transcript's first line.
     pub line: usize,
     /// When it reached the reducer.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "its test pins the arrival rule")
-    )]
-    pub(crate) at: SystemTime,
+    pub at: SystemTime,
     /// The event.
     pub event: AgentEvent,
     /// Its agent's state once it applied; `None` with no slot to hold it.
@@ -240,7 +236,8 @@ impl Merges {
         let sink = BreadcrumbSink::default();
         tracing::subscriber::with_default(sink.clone(), || {
             // Each line at its arrival instant, never `Fold::feed`'s cascade tick
-            // after each event: that tick would leap past the next arrival.
+            // after each event: that tick's gc expires `HOOK_WINS_WINDOW` before
+            // the other transport's twin arrives.
             for &(transport, w, at) in &arrivals {
                 fold.tick(at);
                 for event in &w.events {
