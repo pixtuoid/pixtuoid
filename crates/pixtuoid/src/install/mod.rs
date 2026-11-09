@@ -546,6 +546,11 @@ fn install_target_from(
         .unwrap_or_else(|| (t.default_config_path)())?;
     let (binary, explicit_hook) = resolve_hook_binary_from(t, env_hook, io::default_hook_binary)?;
     let hook_cmd = (t.hook_command)(&binary, explicit_hook)?;
+    // Before the lock creates the first file: failing after it leaves a plugin root
+    // no manifest names, which no disconnect removes.
+    if let Some(host) = t.host {
+        host.cli.require()?;
+    }
     // Lost-update TOCTOU: two concurrent pixtuoid runs would otherwise interleave
     // read(A)→write(B)→write(A), and A's rename clobbers B's change.
     let lock = io::lock_config(&path)?;
@@ -612,9 +617,8 @@ fn install_target_from(
 
 /// Strip what an older pixtuoid merged into the CLI's own config, then register. A
 /// registration that fails after the strip leaves neither firing, which is what a
-/// failed connect reads as; a CLI that isn't on PATH fails it before the strip.
+/// failed connect reads as; a CLI that isn't on PATH failed it before any write.
 fn connect_host(host: &target::HostRegistration, primary: &std::path::Path) -> Result<()> {
-    host.cli.require()?;
     strip_legacy(host)?;
     (host.register)(primary)
 }

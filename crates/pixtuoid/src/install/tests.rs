@@ -1959,8 +1959,8 @@ fn codex_connect_re_adds_a_marketplace_codex_records_from_a_moved_root() {
     });
 }
 
-/// A host CLI off PATH fails a connect before it touches the legacy config, so the
-/// hooks an older pixtuoid merged keep firing.
+/// A host CLI off PATH fails a connect before it touches any file, so the hooks an
+/// older pixtuoid merged keep firing and no plugin root is left that no disconnect removes.
 #[test]
 fn a_connect_without_the_host_cli_leaves_the_legacy_hooks() {
     with_fake_hosts(|fake| {
@@ -1978,6 +1978,7 @@ fn a_connect_without_the_host_cli_leaves_the_legacy_hooks() {
             CODEX_LEGACY_HOOK
         );
         assert!(!has_hooks(&CODEX, Some(hooks)));
+        assert!(!tmp.path().join("marketplace").exists());
     });
 }
 
