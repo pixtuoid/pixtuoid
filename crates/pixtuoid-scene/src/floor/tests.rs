@@ -1114,7 +1114,7 @@ fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
         weather: storm,
         ..FloorMeta::ground()
     };
-    let frame = obs.frame(&scene, &occupied, |_| None, floor, now);
+    let frame = obs.frame(&scene, Some(&occupied), |_| None, floor, now);
     let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), storm);
     let counts = crate::tally::per_floor_counts(&scene)[0];
     assert_eq!(
@@ -1155,7 +1155,7 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
 
     let _ = obs.frame(
         &scene,
-        &std::collections::HashSet::new(),
+        Some(&std::collections::HashSet::new()),
         printer,
         FloorMeta::ground(),
         now,
@@ -1165,7 +1165,13 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
     // Switch to floor 1 with an appliance ALREADY occupied — this would fire
     // PrinterWhir without the reprime.
     let occ0: std::collections::HashSet<usize> = [0usize].into_iter().collect();
-    let switch = obs.frame(&scene, &occ0, printer, FloorMeta::for_floor(1, 2), now);
+    let switch = obs.frame(
+        &scene,
+        Some(&occ0),
+        printer,
+        FloorMeta::for_floor(1, 2),
+        now,
+    );
     assert_eq!(obs.primed_floor(), Some(1));
     assert!(
         switch.events.is_empty(),
@@ -1173,7 +1179,13 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
     );
 
     let occ01: std::collections::HashSet<usize> = [0usize, 1usize].into_iter().collect();
-    let next = obs.frame(&scene, &occ01, printer, FloorMeta::for_floor(1, 2), now);
+    let next = obs.frame(
+        &scene,
+        Some(&occ01),
+        printer,
+        FloorMeta::for_floor(1, 2),
+        now,
+    );
     assert!(
         next.events.contains(&crate::audio::OneShot::PrinterWhir),
         "after the reprime, a newly occupied printer still fires"
@@ -1190,13 +1202,13 @@ fn audio_observer_keeps_cue_edges_warm_so_delivery_resume_fires_no_volley() {
     let occ = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
 
-    let _ = obs.frame(&empty, &occ, |_| None, FloorMeta::ground(), now);
-    let arrival = obs.frame(&one, &occ, |_| None, FloorMeta::ground(), now);
+    let _ = obs.frame(&empty, Some(&occ), |_| None, FloorMeta::ground(), now);
+    let arrival = obs.frame(&one, Some(&occ), |_| None, FloorMeta::ground(), now);
     assert!(
         arrival.events.contains(&crate::audio::OneShot::DoorChime),
         "an arrival chimes on the frame it happens"
     );
-    let resumed = obs.frame(&one, &occ, |_| None, FloorMeta::ground(), now);
+    let resumed = obs.frame(&one, Some(&occ), |_| None, FloorMeta::ground(), now);
     assert!(
         !resumed.events.contains(&crate::audio::OneShot::DoorChime),
         "no volley on resume — the observer saw the agent while muted"
@@ -2456,6 +2468,32 @@ fn an_office_never_rendered_paints_now() {
     assert_eq!(
         office.until_next_paint(crate::localclock::at_hour(12)),
         None
+    );
+}
+
+/// Hearing settles the office as drawing does: once the floor showing empties
+/// out of the building, a walk-in on the floor it lands on chimes.
+#[test]
+fn hearing_settles_the_floor_showing_as_drawing_does() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000 + 3_600);
+    let look = crate::look::Look::HALF_BLOCKS;
+    // Desks 0 and 2 of two-desk floors: one agent downstairs, one upstairs.
+    let mut two_floors = make_scene(3, 2);
+    two_floors
+        .agents
+        .remove(&AgentId::from_transcript_path("/p/1.jsonl"));
+    let mut office = office_drawn_at(look, &two_floors, Motion::Still, t0);
+    assert!(office.navigate(1, t0));
+    let landed = t0 + Duration::from_millis(TRANSITION_DURATION_MS + 1);
+    render_office(&mut office, look, &two_floors, Motion::Still, landed);
+    assert_eq!(office.nav().current(), 1);
+    let _ = office.hear(&make_scene(1, 2), FloorMeta::ground(), landed);
+    assert_eq!(office.nav().current(), 0, "floor 1 emptied out");
+    let walk_in = office.hear(&make_scene(2, 2), FloorMeta::ground(), landed);
+    assert!(
+        walk_in.events.contains(&crate::audio::OneShot::DoorChime),
+        "{:?}",
+        walk_in.events
     );
 }
 

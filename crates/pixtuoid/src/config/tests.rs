@@ -730,7 +730,10 @@ fn floating_config_defaults_and_explicit_roundtrip() {
     let cfg: AppConfig =
         toml::from_str("[floating]\nwidth = 480\nheight = 300\nx = 10\ny = 20\n").unwrap();
     let f = resolve_floating(&cfg);
-    assert_eq!((f.width, f.height, f.position), (480, 300, Some((10, 20))));
+    assert_eq!(
+        (f.width, f.height, f.position),
+        (480, 300, Some(DesktopSpot { x: 10, y: 20 }))
+    );
     let cfg: AppConfig = toml::from_str("[floating]\nx = 10\n").unwrap();
     assert_eq!(
         resolve_floating(&cfg).position,
@@ -754,14 +757,17 @@ fn save_floating_roundtrips_geometry_and_preserves_other_settings() {
         &FloatingSave {
             width: 480,
             height: 320,
-            position: Some((12, 34)),
+            position: Some(DesktopSpot { x: 12, y: 34 }),
             zoom: Zoom::default(),
         },
     )
     .unwrap();
     let cfg = load(&path, &mut Vec::new());
     let f = resolve_floating(&cfg);
-    assert_eq!((f.width, f.height, f.position), (480, 320, Some((12, 34))));
+    assert_eq!(
+        (f.width, f.height, f.position),
+        (480, 320, Some(DesktopSpot { x: 12, y: 34 }))
+    );
     assert_eq!(cfg.theme.as_deref(), Some("normal"));
 }
 
@@ -777,7 +783,7 @@ fn save_floating_clears_stale_position_when_os_cannot_report_it() {
         &FloatingSave {
             width: 480,
             height: 320,
-            position: Some((12, 34)),
+            position: Some(DesktopSpot { x: 12, y: 34 }),
             zoom: Zoom::default(),
         },
     )
@@ -826,7 +832,7 @@ fn save_floating_writes_a_zoom_and_drops_a_reset_one() {
         &FloatingSave {
             width: 480,
             height: 320,
-            position: Some((1, 2)),
+            position: Some(DesktopSpot { x: 1, y: 2 }),
             zoom: Zoom::new(3),
         },
     )
@@ -840,7 +846,7 @@ fn save_floating_writes_a_zoom_and_drops_a_reset_one() {
         &FloatingSave {
             width: 480,
             height: 320,
-            position: Some((1, 2)),
+            position: Some(DesktopSpot { x: 1, y: 2 }),
             zoom: Zoom::default(),
         },
     )
