@@ -966,8 +966,8 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
 
 #[test]
 fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
-    use std::path::{Path, PathBuf};
-    let sources = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources");
+    use std::path::PathBuf;
+    let sources = pixtuoid_core::harness::sources_root();
     // A recording names its transcript after its session, which every
     // re-record changes.
     let transcript_of = |source: &str, capture: &str| {

@@ -67,8 +67,8 @@ impl SceneSink {
     pub(super) fn publish(&mut self, scene: &SceneState) -> bool {
         match self {
             // A scene equal to the one its readers hold notifies nobody: each
-            // notification is a repaint and a frame to every `serve` device, and
-            // a sweep tick or a read's `Backlog` changes nothing they show.
+            // notification is a floating repaint and a frame per `serve` device,
+            // and a sweep tick or a read's `Backlog` changes nothing they show.
             Self::Latest(tx) => {
                 tx.send_if_modified(|held| {
                     let changed = **held != *scene;
@@ -168,7 +168,7 @@ mod tests {
         );
     }
 
-    /// C39: the 1-Hz sweep of a quiet office, a read's re-declared start and its
+    /// C39: the 1-Hz sweep of a quiet office, a read's re-registered start and its
     /// backlog each publish a scene equal to the one the reader holds.
     #[test]
     fn a_publish_reaches_the_reader_only_when_the_scene_changed() {
@@ -199,7 +199,7 @@ mod tests {
         apply(&mut reducer, &mut scene, start(), at);
         assert!(
             !notified(&scene),
-            "a re-declared start at its slot's own clock"
+            "a re-registered start at its slot's own clock"
         );
         let backlog = AgentEvent::Backlog {
             agent_id: id,

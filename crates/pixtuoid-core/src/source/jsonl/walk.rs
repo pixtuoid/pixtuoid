@@ -88,7 +88,7 @@ pub(super) const TAIL_BYTES: u64 = 8192;
 /// What a decoded event says of its transcript's session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Life {
-    /// A start, or work ([`AgentEvent::shows_activity`]), whoever it names.
+    /// A start, or work ([`AgentEvent::is_work`]), whoever it names.
     Lives,
     /// An end of the path's own agent: a child's end in its parent's
     /// transcript ends only the child.
@@ -99,7 +99,7 @@ fn evidence(ev: &AgentEvent, own: AgentId) -> Option<Life> {
     match ev {
         AgentEvent::SessionEnd { .. } if ev.agent_id() == own => Some(Life::Ended),
         AgentEvent::SessionStart { .. } => Some(Life::Lives),
-        _ => ev.shows_activity().then_some(Life::Lives),
+        _ => ev.is_work().then_some(Life::Lives),
     }
 }
 
@@ -414,10 +414,10 @@ pub(super) async fn walk_jsonl(
         );
         // A seen path's life is judged on the window `rescan_skipped_tail`
         // reads, wide enough to hold a tool result's whole line.
-        let declares = !metadata_only
+        let emits_registration = !metadata_only
             && (!seen_before
                 || tail_life(path, SKIP_RESCAN_BYTES, source, decoders).await == Some(Life::Lives));
-        if declares {
+        if emits_registration {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
             let head = async {
@@ -431,7 +431,7 @@ pub(super) async fn walk_jsonl(
                     None => HeadFields::default(),
                 }
             };
-            declare(path, source, decoders, seen, tx, head).await;
+            emit_registration(path, source, decoders, seen, tx, head).await;
         }
         // #222: the skipped span may bury an IN-FLIGHT Task dispatch, or its
         // turn's end. Only when registered — JSONL events for an unknown id are
@@ -489,7 +489,7 @@ pub(super) async fn walk_jsonl(
         decoded.extend(decode_line(&transcript_path_str, source, v));
     }
 
-    // A seen path declares again only on a read that shows life: a trailer
+    // A seen path registers again only on a read that shows life: a trailer
     // flushed after the end line (grok's `hook_execution{stop}`) proves none.
     let own = own_agent(path, source, decoders);
     let holds_life = decoded
@@ -516,7 +516,7 @@ pub(super) async fn walk_jsonl(
             }
             read
         };
-        declare(path, source, decoders, seen, tx, head).await;
+        emit_registration(path, source, decoders, seen, tx, head).await;
     }
 
     let verdict = last_life(&decoded, own);
@@ -563,12 +563,12 @@ pub(super) async fn park_if_truncated_below_cursor(path: &Path, ctx: &WatchCtx<'
     }
 }
 
-/// Declare `path`'s registration as a `SessionStart`: the one its first sight
+/// Emit `path`'s registration as a `SessionStart`: the one its first sight
 /// claimed, else one resolved from `head`, awaited only then, which a `Rename`
 /// follows. Shared by the normal tail-read path and the oversized path so the
 /// two emit IDENTICAL events from one place. A `None`/empty `cwd` falls back to
 /// the project-dir label in `derive_label`.
-async fn declare(
+async fn emit_registration(
     path: &Path,
     source: &Arc<str>,
     decoders: SourceDecoders,

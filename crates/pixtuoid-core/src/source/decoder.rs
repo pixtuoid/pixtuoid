@@ -207,12 +207,6 @@ pub(crate) fn first_present_str<'a>(obj: &'a Value, keys: &[&str]) -> Option<&'a
     keys.iter().find_map(|k| m.get(*k).and_then(|v| v.as_str()))
 }
 
-/// Parse every COMPLETE line of a tail-scan window as JSON, silently dropping
-/// empty, torn, and non-JSON lines.
-pub(crate) fn parsed_tail_lines(tail: &[u8]) -> impl Iterator<Item = Value> + '_ {
-    crate::source::admit::lines(tail).filter_map(|line| serde_json::from_str(line.ok()?).ok())
-}
-
 /// What a transcript tail says about when its SESSION last wrote — the per-source
 /// refinement of the file mtime the first-sight gate used to trust outright. Three
 /// states, `non_exhaustive` while unpublished because a fourth is plausible.
@@ -872,27 +866,6 @@ mod tests {
         assert_eq!(
             rfc3339_to_epoch_secs("2026-07-16T17:30:05+05:30"),
             Some(utc)
-        );
-    }
-
-    #[test]
-    fn parsed_tail_lines_yields_only_complete_parseable_lines() {
-        // A tail byte-window can begin mid-line (torn leading partial), carry
-        // CRLF terminators, and hold empty/torn segments.
-        let tail = b"3,\"torn\":tru\n{\"type\":\"a\"}\n{\"type\":\"b\"}\r\n\n{\"type\":\"c\"";
-        let kinds: Vec<String> = parsed_tail_lines(tail)
-            .filter_map(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
-            .collect();
-        assert_eq!(kinds, vec!["a".to_owned(), "b".to_owned()]);
-        assert_eq!(
-            parsed_tail_lines(b"").count(),
-            0,
-            "empty tail yields nothing"
-        );
-        assert_eq!(
-            parsed_tail_lines(b"not json at all\n").count(),
-            0,
-            "non-JSON lines are skipped, never panic",
         );
     }
 

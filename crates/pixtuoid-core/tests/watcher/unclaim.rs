@@ -230,6 +230,6 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
             .iter()
             .filter(|e| matches!(e, AgentEvent::Rename { agent_id, .. } if *agent_id == id))
             .count();
-        assert_eq!(renames, 1, "{forget}: a re-declaration renames nothing");
+        assert_eq!(renames, 1, "{forget}: a re-registration renames nothing");
     }
 }

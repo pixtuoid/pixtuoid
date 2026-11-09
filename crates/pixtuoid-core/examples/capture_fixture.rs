@@ -43,7 +43,7 @@ mod recorder {
         DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, ProcessExit,
         SecondTurn, ServerStop, canonical_capture, capture_base, capture_workspace,
         capture_workspace_tail, files_under, jsonl_files_under, outlived, required_version_probe,
-        slashed_under, version_answer, wait_until,
+        slashed_under, sources_root, version_answer, wait_until,
     };
 
     /// The driver's own part of the recorder's scratch, apart from everything the
@@ -1492,10 +1492,6 @@ mod recorder {
         std::fs::read_to_string(p)
             .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
             .unwrap_or(0)
-    }
-
-    fn sources_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
     }
 
     /// The library strips and records; printing the outcome is the CLI's job.

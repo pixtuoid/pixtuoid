@@ -2745,9 +2745,9 @@ async fn oversized_attach_ended_session_skips_task_scan() {
 }
 
 /// The oversized twin of a live read: a claimed path whose skipped append shows
-/// life declares its first sight's registration again, renaming nothing.
+/// life emits its first sight's registration again, renaming nothing.
 #[tokio::test]
-async fn a_claimed_paths_oversized_live_append_declares_again() {
+async fn a_claimed_paths_oversized_live_append_emits_its_registration_again() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("claimed-big.jsonl");
     tokio::fs::write(&path, HEAD_LINE).await.unwrap();
@@ -2758,7 +2758,7 @@ async fn a_claimed_paths_oversized_live_append_declares_again() {
     let full = oversized_body(&[task_dispatch_line("tu_task")]);
     tokio::fs::write(&path, &full).await.unwrap();
     let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
-    let declared: Vec<_> = (events.iter())
+    let registration: Vec<_> = (events.iter())
         .filter(|(_, e)| {
             matches!(
                 e,
@@ -2767,7 +2767,7 @@ async fn a_claimed_paths_oversized_live_append_declares_again() {
         })
         .collect();
     assert!(
-        matches!(declared[..], [(_, AgentEvent::SessionStart { .. })]),
+        matches!(registration[..], [(_, AgentEvent::SessionStart { .. })]),
         "{events:?}"
     );
     assert_eq!(task_start_tuids(&events), ["tu_task"], "{events:?}");

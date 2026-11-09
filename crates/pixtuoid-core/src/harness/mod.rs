@@ -13,7 +13,7 @@
 //! 1. **Registration comes from the WATCHER, not the decoder.** A JSONL event
 //!    for an unknown id is a documented no-op, so a transcript driven with no
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
-//!    in for `emit_first_sight`, keyed by the SAME registry row the watcher
+//!    in for `emit_registration`, keyed by the SAME registry row the watcher
 //!    reads, so the seed can't drift from production.
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
 //!    so it is not a free parameter.
@@ -354,8 +354,9 @@ impl Drive {
     /// source: the dispatcher routes by the envelope's own `_pixtuoid_source`
     /// stamp.
     ///
-    /// There is no seed here by construction — a hook carries its session's
-    /// identity (`SessionStart`/`Identity`), so hook bytes never need one.
+    /// There is no seed here by construction: a hook that may register carries
+    /// its identity (`SessionStart`/`Identity`), and a seed would hide one that
+    /// doesn't.
     pub fn hooks() -> Self {
         Self {
             transport: Transport::Hook,
@@ -365,7 +366,7 @@ impl Drive {
         }
     }
 
-    /// Prepend the `SessionStart` the watcher's `emit_first_sight` would emit
+    /// Prepend the `SessionStart` the watcher's `emit_registration` would emit
     /// for this transcript, keyed by the source's registry row.
     ///
     /// Not a free choice: a transcript carrying no `SessionStart` of its own is

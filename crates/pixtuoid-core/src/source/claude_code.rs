@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, cwd_basename_label, ellipsize, extract_top_level_cwd,
-    make_tool_detail, non_empty, parsed_tail_lines,
+    make_tool_detail, non_empty,
 };
 
 use crate::AgentId;
@@ -428,6 +428,13 @@ fn classifies_as_turn(v: &Value) -> Option<bool> {
     Some(ACTIVITY_TYPES.contains(&ty) || is_turn_record(obj))
 }
 
+/// Parse every COMPLETE line of a tail-scan window as JSON, silently dropping
+/// empty, torn, and non-JSON lines.
+#[cfg(any(feature = "native", test))]
+fn parsed_tail_lines(tail: &[u8]) -> impl Iterator<Item = Value> + '_ {
+    crate::source::admit::lines(tail).filter_map(|line| serde_json::from_str(line.ok()?).ok())
+}
+
 /// When this transcript's SESSION last wrote, read from its tail — the honest
 /// TIGHTENING of the file's mtime in the first-sight recency gate (`ACTIVITY_TYPES`
 /// documents the write that made mtime lie). Widening the tail window is NOT an
@@ -505,6 +512,27 @@ mod tests {
     use super::*;
     use crate::source::decoder::test_obj;
     use serde_json::json;
+
+    #[test]
+    fn parsed_tail_lines_yields_only_complete_parseable_lines() {
+        // A tail byte-window can begin mid-line (torn leading partial), carry
+        // CRLF terminators, and hold empty/torn segments.
+        let tail = b"3,\"torn\":tru\n{\"type\":\"a\"}\n{\"type\":\"b\"}\r\n\n{\"type\":\"c\"";
+        let kinds: Vec<String> = parsed_tail_lines(tail)
+            .filter_map(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
+            .collect();
+        assert_eq!(kinds, vec!["a".to_owned(), "b".to_owned()]);
+        assert_eq!(
+            parsed_tail_lines(b"").count(),
+            0,
+            "empty tail yields nothing"
+        );
+        assert_eq!(
+            parsed_tail_lines(b"not json at all\n").count(),
+            0,
+            "non-JSON lines are skipped, never panic",
+        );
+    }
 
     /// A subagent's tool hook names it in `agent_id` (hooks.md;
     /// `claude_code/fixtures/subagent-hermetic`): every event it decodes to lands on

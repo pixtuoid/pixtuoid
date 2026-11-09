@@ -538,7 +538,7 @@ impl Reducer {
 
         // `refresh_lineage` stamps the ACTOR too, yet the per-arm `last_event_at`
         // writes are NOT droppable: Rename and SessionStart never reach here.
-        if event.refreshes_lineage() {
+        if event.is_work() {
             scope::refresh_lineage(scene, id, now);
         }
 

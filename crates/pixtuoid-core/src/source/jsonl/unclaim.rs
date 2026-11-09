@@ -159,7 +159,7 @@ pub(super) async fn drain_child_end_unclaims(
                 continue;
             }
             // Drain pending bytes to EOF while the claim is still held (a
-            // straggler showing life re-declares onto the slot the hook just
+            // straggler showing life re-registers onto the slot the hook just
             // ended, which a transcript start never revives), THEN end it. The
             // end only DOWNGRADES an entry that still exists: a drain that met
             // NotFound retired the claim, and a blind insert would bring it

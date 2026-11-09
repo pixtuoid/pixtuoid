@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use pixtuoid_core::harness::provenance::{Deidentified, NonEmpty, Provenance, Recorded};
+pub(crate) use pixtuoid_core::harness::sources_root;
 use pixtuoid_core::source::decoder::SOURCE_STAMP;
 use pixtuoid_core::source::registry;
 
@@ -102,10 +103,6 @@ pub(crate) fn fixture_lines(path: &Path) -> Vec<String> {
         .filter(|l| !l.trim().is_empty())
         .map(str::to_string)
         .collect()
-}
-
-pub(crate) fn sources_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
 /// Every conformance scenario as `(source, dir)`, sorted: the walk's captures

@@ -42,8 +42,8 @@ examples).
   one caller of a shared fn: `rg` and verify the full set and every call site,
   and, since a guard protects an OUTCOME, every ordering when it is
   timing-dependent (boot-then-write vs write-then-boot); each is guarded,
-  guarded elsewhere, or exempt with its reason (`emit_first_sight`'s second
-  caller left the first-sight gate dead).
+  guarded elsewhere, or exempt with its reason (#823's first-sight gate left
+  its fn's second caller unguarded).
 - **Wire format** — a decoder vs the recorded upstream shape; every literal a
   decoder reads is in a scenario's fixture, owed by its profile (`not_yet*`)
   or exempt with its reason (`hermetic::literals`'s census).

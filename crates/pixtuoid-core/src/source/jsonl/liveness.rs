@@ -335,7 +335,7 @@ impl ProbeLadder {
 
 /// ONE exit path for every watcher-synthesized session end, shared by the
 /// negative-vouch and instant-exit arms so the two can't fork. Drain FIRST,
-/// then un-claim (which lets a LATER append re-register via `emit_first_sight`):
+/// then un-claim (which lets a LATER append re-register via `emit_registration`):
 /// an instant exit can beat a pre-death write's notify, and un-claiming with
 /// bytes pending re-enters that chunk as a first-sight — a ghost, every rung disarmed.
 pub(super) async fn emit_session_exit(id: &str, decoders: SourceDecoders, ctx: &WatchCtx<'_>) {

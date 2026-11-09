@@ -106,8 +106,8 @@ enum Wire {
         seeded: bool,
     },
     /// The fixture is a `hook-payloads.jsonl`, driven through the shared
-    /// `decode_hook_payload` on `Transport::Hook`. Never seeded: a hook carries
-    /// its session's identity, which registers it.
+    /// `decode_hook_payload` on `Transport::Hook`. Never seeded: a hook that may
+    /// register carries its identity, and a seed would hide one that doesn't.
     Hooks,
 }
 

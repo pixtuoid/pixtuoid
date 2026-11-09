@@ -9,8 +9,8 @@ use pixtuoid_core::state::{SceneState, Today};
 use crate::start;
 
 use Beat::{
-    Both, Call, Day, End, HookCall, HookCallEnd, HookDispatch, HookTokens, Live, Message, Reap,
-    Replay, Slot, Start, Tick, Tokens,
+    Both, Call, Day, End, HookCall, HookCallEnd, HookDispatch, HookTokens, Identity, Live, Message,
+    Reap, Replay, Slot, Start, Tick, Tokens,
 };
 
 const A_DAY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -95,6 +95,8 @@ fn slot_of(scene: &SceneState, a: AgentId) -> (u64, u32) {
 #[derive(Clone, Copy)]
 enum Beat {
     Start,
+    /// A hook's identity, which seats an unknown agent as a start does.
+    Identity,
     End,
     /// A tick past the exit grace, which reaps an ended slot.
     Reap,
@@ -151,6 +153,16 @@ fn play(rows: &[(&str, &[Beat])]) {
                     assert_eq!(counted(&scene), (tokens, u64::from(calls)), "{row}");
                     assert_eq!(slot_of(&scene, a), (tokens, calls), "{row}");
                     continue;
+                }
+                Identity => {
+                    let event = AgentEvent::Identity {
+                        agent_id: a,
+                        source: "claude-code".into(),
+                        session_id: "a".into(),
+                        cwd: Some("/repo".into()),
+                        pid: None,
+                    };
+                    (event, HOOK)
                 }
                 End => {
                     let event = AgentEvent::SessionEnd {
@@ -265,6 +277,10 @@ fn work_counts_for_a_seated_agent() {
         (
             "a hook's bare call seats nobody",
             &[HookCall("t1"), Day(0, 0)],
+        ),
+        (
+            "a hook's identity seats its agent",
+            &[Identity, HookCall("t1"), Day(0, 1)],
         ),
         (
             "a transcript's seats nobody, nor does a backlog",

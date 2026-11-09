@@ -472,35 +472,11 @@ impl AgentEvent {
         }
     }
 
-    /// Whether this event shows its session working now: a transcript's
-    /// evidence of life after its end. A session start carries its own
-    /// authority, and a session end, a model, usage or title line shows
-    /// nothing, nor does [`Backlog`](Self::Backlog), the reader's own word, or
-    /// [`ProofOfLife`](Self::ProofOfLife), which vouches a visible slot past
-    /// the sweeps and must never create one.
-    pub(crate) fn shows_activity(&self) -> bool {
-        match self {
-            AgentEvent::ToolUseStart { .. }
-            | AgentEvent::ToolUseEnd { .. }
-            | AgentEvent::ToolUsePending { .. }
-            | AgentEvent::TurnStart { .. }
-            | AgentEvent::TurnEnd { .. }
-            | AgentEvent::UserActionRequest { .. }
-            | AgentEvent::UserActionResolved { .. } => true,
-            AgentEvent::SessionStart { .. }
-            | AgentEvent::Rename { .. }
-            | AgentEvent::SessionEnd { .. }
-            | AgentEvent::ProofOfLife { .. }
-            | AgentEvent::Identity { .. }
-            | AgentEvent::ModelInfo { .. }
-            | AgentEvent::Usage { .. }
-            | AgentEvent::Backlog { .. } => false,
-        }
-    }
-
-    /// Whether this event is its session's work, which keeps the session and
-    /// its ancestors past the stale sweep.
-    pub(crate) fn refreshes_lineage(&self) -> bool {
+    /// Whether this event is its session's work: a call, a turn edge, or a
+    /// request for the user and its answer; never [`Backlog`](Self::Backlog),
+    /// the reader's own word, nor [`ProofOfLife`](Self::ProofOfLife), which
+    /// vouches a visible slot and must never create one.
+    pub(crate) fn is_work(&self) -> bool {
         match self {
             AgentEvent::ToolUseStart { .. }
             | AgentEvent::ToolUseEnd { .. }
@@ -579,6 +555,7 @@ pub(crate) fn read_bounded_bytes(path: &std::path::Path, cap: u64) -> std::io::R
     file.take(cap).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
+#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) mod admit;
 /// Claude Code transcript source: line/hook decoders + the `Source` adapter.
 pub mod claude_code;
