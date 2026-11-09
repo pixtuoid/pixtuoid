@@ -153,11 +153,9 @@ invariant-breaking sequence against:
    three painters for a width almost never hit is low ROI; an invariant held
    by prose where a type could make the failure impossible (#1142), and a
    check outside [its own layer](docs/CONTRIBUTING.md#convergence-contract),
-   are hard to maintain. A
-   mechanism the diff extends is judged as if new against AGENTS.md's [upkeep
-   rule](AGENTS.md#org-rules); one that fails it draws "delete it". A defense
+   are hard to maintain. The lens's "delete it" spares a defense
    [Traps](#traps-the-obvious-reading-is-wrong-here) or [Security](#security)
-   names, and the documented liveness ladders, stay.
+   names, and the documented liveness ladders.
 7. **Words** (the contract's lens), here: names include `pub(crate)` items and
    modules, docs elsewhere include `.github/` and `.claude/`, one concept keeps
    one name across crates and painters (`rg` before coining), compass words
