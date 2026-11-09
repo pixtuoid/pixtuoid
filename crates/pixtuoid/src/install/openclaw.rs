@@ -16,7 +16,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
 use crate::install::io;
-use crate::install::merge::{prune_empty, prune_empty_root};
+use crate::install::merge::{emit_json, prune_empty, prune_empty_root};
 use crate::install::target::MergeOutcome;
 
 const PLUGIN_ID: &str = "pixtuoid";
@@ -277,7 +277,7 @@ pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutco
     let changed = root != before;
     Ok(MergeOutcome {
         changed,
-        content: serde_json::to_string_pretty(&root)? + "\n",
+        content: emit_json(content, &root)?,
     })
 }
 
@@ -335,7 +335,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     let changed = root != before;
     Ok(MergeOutcome {
         changed,
-        content: serde_json::to_string_pretty(&root)? + "\n",
+        content: emit_json(content, &root)?,
     })
 }
 
@@ -1091,6 +1091,20 @@ mod tests {
                     .any(|p| p.as_str().is_some_and(|s| s.ends_with("plugins/pixtuoid")))),
                 "our load.path removed, got {paths:?}"
             );
+        });
+    }
+
+    #[test]
+    fn a_crlf_config_stays_crlf() {
+        in_state_dir(|| {
+            let installed = merge_install("{\r\n  \"gateway\": {}\r\n}\r\n", "/x").unwrap();
+            let removed = merge_uninstall(&installed.content).unwrap();
+            for out in [installed.content, removed.content] {
+                assert!(
+                    out.ends_with("\r\n") && !out.replace("\r\n", "").contains('\n'),
+                    "{out:?}"
+                );
+            }
         });
     }
 

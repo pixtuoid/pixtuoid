@@ -89,24 +89,56 @@ fn retarget(hooks: &mut toml_edit::Table, ours: Option<&str>) {
                     hooks.insert(event, toml_edit::value(ours));
                 }
             }
-            Some(toml_edit::Value::Array(commands)) => {
-                commands.retain(|command| !managed(command));
-                commands.extend(ours);
-            }
+            Some(list) if list.is_array() => retarget_list(list, ours, managed),
             Some(command) if managed(command) => match ours {
                 Some(ours) => *command = ours.into(),
                 None => {
                     hooks.remove(event);
                 }
             },
-            // Fresh, not the old value moved in: its line comment would swallow the
-            // comma after it.
+            // The old value moves in bare, since its line comment would swallow the
+            // comma after it; the comment goes on the list.
             Some(foreign) => {
-                if let (Some(theirs), Some(ours)) = (foreign.as_str(), ours) {
-                    *foreign = toml_edit::Value::from_iter([theirs, ours]);
+                if let Some(ours) = ours
+                    && foreign.is_str()
+                {
+                    let decor = std::mem::take(foreign.decor_mut());
+                    let mut list = toml_edit::Value::from_iter([
+                        foreign.clone(),
+                        toml_edit::Value::from(ours),
+                    ]);
+                    *list.decor_mut() = decor;
+                    *foreign = list;
                 }
             }
         }
+    }
+}
+
+/// [`retarget`] over an event's list. One an uninstall leaves holding a single
+/// command goes back to that command, the list's comment with it: Jcode reads the
+/// two alike and writes a list of one as its command (`HookCommands`,
+/// jcode-config-types `src/lib.rs:883-912` @ v0.99.1), so that is the form an
+/// install widened it from, and an owner's own list of one reads the same to Jcode.
+fn retarget_list(
+    list: &mut toml_edit::Value,
+    ours: Option<&str>,
+    managed: impl Fn(&toml_edit::Value) -> bool,
+) {
+    let Some(commands) = list.as_array_mut() else {
+        return;
+    };
+    let before = commands.len();
+    commands.retain(|command| !managed(command));
+    commands.extend(ours);
+    if ours.is_some() || commands.len() != 1 || commands.len() == before {
+        return;
+    }
+    let decor = commands.decor().clone();
+    let only = commands.iter().next().cloned();
+    if let Some(mut only) = only {
+        *only.decor_mut() = decor;
+        *list = only;
     }
 }
 
@@ -242,8 +274,7 @@ mod tests {
         assert_eq!(doc["hooks"]["pre_tool"].as_array().unwrap().len(), 2);
         let removed = merge_uninstall(&installed.content).unwrap();
         let doc: Value = toml::from_str(&removed.content).unwrap();
-        assert_eq!(doc["hooks"]["pre_tool"].as_array().unwrap().len(), 1);
-        assert_eq!(doc["hooks"]["pre_tool"][0].as_str(), Some("foreign"));
+        assert_eq!(doc["hooks"]["pre_tool"].as_str(), Some("foreign"));
     }
 
     #[test]
@@ -304,10 +335,18 @@ mod tests {
 
     #[test]
     fn jcode_promotes_a_commented_foreign_command_to_an_array() {
-        let installed = merge_install("[hooks]\npre_tool = 'gate' # note\n", &command()).unwrap();
+        let original = "[hooks]\npre_tool = 'gate' # note\n";
+        let installed = merge_install(original, &command()).unwrap();
         let doc: Value = toml::from_str(&installed.content).unwrap();
         assert_eq!(doc["hooks"]["pre_tool"][0].as_str(), Some("gate"));
         assert_eq!(doc["hooks"]["pre_tool"].as_array().unwrap().len(), 2);
+        assert!(
+            installed.content.contains("] # note\n"),
+            "{}",
+            installed.content
+        );
+        let removed = merge_uninstall(&installed.content).unwrap();
+        assert_eq!(removed.content, original);
     }
 
     #[test]

@@ -14,8 +14,8 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow, bail};
-use saphyr::{MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
+use anyhow::{Context, Result, bail};
+use saphyr::{MappingOwned, ScalarOwned, YamlOwned};
 
 use crate::install::SENTINEL_KEY;
 use crate::install::host_plugin::{self, NAME};
@@ -216,16 +216,9 @@ fn parse_root_mapping(content: &str) -> Result<MappingOwned> {
     }
 }
 
-/// Strips saphyr's leading `---` document-start marker for a cleaner diff; Hermes parses
-/// it either way, and a hand-written config.yaml has none.
-fn emit(root: &MappingOwned) -> Result<String> {
-    let doc = YamlOwned::Mapping(root.clone());
-    let borrowed = Yaml::from(&doc);
-    let mut out = String::new();
-    YamlEmitter::new(&mut out)
-        .dump(&borrowed)
-        .map_err(|e| anyhow!("emitting config.yaml: {e}"))?;
-    Ok(out.strip_prefix("---\n").map(str::to_string).unwrap_or(out))
+/// `root` as the config.yaml `source` held.
+fn emit(source: &str, root: &MappingOwned) -> Result<String> {
+    merge::emit_yaml(source, &YamlOwned::Mapping(root.clone()), "config.yaml")
 }
 
 fn is_managed(entry: &YamlOwned) -> bool {
@@ -239,7 +232,7 @@ pub(crate) fn strip_shell_hooks(content: &str) -> Result<MergeOutcome> {
     let hooks_key = ystr("hooks");
     let Some(YamlOwned::Mapping(hooks)) = root.get_mut(&hooks_key) else {
         return Ok(MergeOutcome {
-            content: emit(&root)?,
+            content: emit(content, &root)?,
             changed: false,
         });
     };
@@ -267,7 +260,7 @@ pub(crate) fn strip_shell_hooks(content: &str) -> Result<MergeOutcome> {
     }
 
     Ok(MergeOutcome {
-        content: emit(&root)?,
+        content: emit(content, &root)?,
         changed,
     })
 }
@@ -279,6 +272,21 @@ mod tests {
 
     /// What an older pixtuoid merged, beside a user's own hook and key.
     const LEGACY: &str = "model: gpt\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh\n    - command: \"'/opt/pixtuoid-hook' --source hermes\"\n      timeout: 5\n      _pixtuoid: true\n  on_session_finalize:\n    - command: \"'/opt/pixtuoid-hook' --source hermes\"\n      timeout: 5\n      _pixtuoid: true\n";
+
+    #[test]
+    fn the_legacy_strip_ends_with_a_newline_in_the_files_line_ending() {
+        for ending in ["\n", "\r\n"] {
+            let out = strip_shell_hooks(&LEGACY.replace('\n', ending)).unwrap();
+            assert!(out.changed);
+            assert!(out.content.ends_with(ending), "{:?}", out.content);
+            assert_eq!(
+                out.content.matches('\n').count(),
+                out.content.matches(ending).count(),
+                "{:?}",
+                out.content
+            );
+        }
+    }
 
     #[test]
     fn the_legacy_strip_refuses_a_second_document_rather_than_dropping_it() {

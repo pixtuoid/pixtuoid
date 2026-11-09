@@ -13,8 +13,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use saphyr::{MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
+use saphyr::{MappingOwned, ScalarOwned, YamlOwned};
 
+use crate::install::merge;
 use crate::install::target::MergeOutcome;
 use crate::install::verify::{SchemaParse, ShimRef, reconnect};
 
@@ -86,11 +87,11 @@ pub(crate) fn detect_installed() -> bool {
 /// dsh runs plugins under Node and the plugin spawns the shim by embedded
 /// path — always absolute, `_explicit` is irrelevant.
 pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
-    crate::install::merge::hook_path_str(resolved).map(str::to_string)
+    merge::hook_path_str(resolved).map(str::to_string)
 }
 
 pub(crate) fn plugin_artifacts(hook_path: &str) -> Result<Vec<(PathBuf, String)>> {
-    let rendered = crate::install::merge::bake_hook_path(PLUGIN_TEMPLATE, hook_path, "dsh")?;
+    let rendered = merge::bake_hook_path(PLUGIN_TEMPLATE, hook_path, "dsh")?;
     Ok(vec![(plugin_path()?, rendered)])
 }
 
@@ -101,7 +102,7 @@ fn ystr(s: &str) -> YamlOwned {
 /// Parse the patch file as its top-level array; empty content is the empty
 /// document. A non-array top level is a config we must not touch.
 fn parse_rows(content: &str) -> Result<Vec<YamlOwned>> {
-    match crate::install::merge::single_yaml_doc(content, "cordis.patch.yml")? {
+    match merge::single_yaml_doc(content, "cordis.patch.yml")? {
         None => Ok(Vec::new()),
         Some(YamlOwned::Sequence(rows)) => Ok(rows),
         Some(_) => bail!(
@@ -111,23 +112,18 @@ fn parse_rows(content: &str) -> Result<Vec<YamlOwned>> {
     }
 }
 
-fn emit_rows(rows: &[YamlOwned]) -> Result<String> {
+/// `rows` as the patch file `source` held.
+fn emit_rows(source: &str, rows: &[YamlOwned]) -> Result<String> {
     // dsh reads an empty file as no array and refuses to boot; only a missing
     // one is "no patches" (`@deepseek-ai/dsh-app-boot` `parsePatchList`, dsh-v0.2.0-rc.2).
     if rows.is_empty() {
-        return Ok("[]\n".into());
+        return Ok(merge::in_source_line_ending(source, "[]".into()));
     }
-    let doc = YamlOwned::Sequence(rows.to_vec());
-    let borrowed = Yaml::from(&doc);
-    let mut out = String::new();
-    YamlEmitter::new(&mut out)
-        .dump(&borrowed)
-        .map_err(|e| anyhow::anyhow!("emitting cordis.patch.yml: {e}"))?;
-    let mut out = out.strip_prefix("---\n").map(str::to_string).unwrap_or(out);
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    Ok(out)
+    merge::emit_yaml(
+        source,
+        &YamlOwned::Sequence(rows.to_vec()),
+        "cordis.patch.yml",
+    )
 }
 
 /// Our whole patch row: `- insert: [{id: pixtuoid, name: <plugin path>}]`.
@@ -259,7 +255,7 @@ pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutco
     let (mut kept, _) = strip_our_entries(&rows);
     kept.push(wanted);
     Ok(MergeOutcome {
-        content: emit_rows(&kept)?,
+        content: emit_rows(content, &kept)?,
         changed: true,
     })
 }
@@ -278,7 +274,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
         });
     }
     Ok(MergeOutcome {
-        content: emit_rows(&kept)?,
+        content: emit_rows(content, &kept)?,
         changed: true,
     })
 }
@@ -590,6 +586,19 @@ mod tests {
     fn merge_refuses_a_non_list_config_rather_than_rewriting_it() {
         assert!(merge_install("just: a mapping\n", "/unused").is_err());
         assert!(merge_uninstall("just: a mapping\n").is_err());
+    }
+
+    #[test]
+    fn a_crlf_patch_file_stays_crlf() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_var("DSH_HOME", Some(home.path()), || {
+            let foreign = "- insert:\r\n    - id: timer\r\n      name: t\r\n";
+            let merged = merge_install(foreign, "/unused").unwrap();
+            let removed = merge_uninstall(&merged.content).unwrap();
+            for out in [merged.content, removed.content] {
+                assert!(!out.replace("\r\n", "").contains('\n'), "{out:?}");
+            }
+        });
     }
 
     #[test]

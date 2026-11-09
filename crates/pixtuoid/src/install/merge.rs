@@ -243,7 +243,7 @@ pub(crate) fn flat_json_merge_outcome_install(
     let merged = Value::Object(mutate(root)?);
     let changed = merged != doc;
     Ok(MergeOutcome {
-        content: serde_json::to_string_pretty(&merged)?,
+        content: emit_json(content, &merged)?,
         changed,
     })
 }
@@ -266,7 +266,7 @@ pub(crate) fn flat_json_merge_outcome_uninstall(
     let cleaned = mutate(doc.clone());
     let changed = cleaned != doc;
     Ok(MergeOutcome {
-        content: serde_json::to_string_pretty(&cleaned)?,
+        content: emit_json(content, &cleaned)?,
         changed,
     })
 }
@@ -280,16 +280,46 @@ pub(crate) fn toml_merge_outcome(
     let before = parse_toml(content)?;
     let mut doc: toml_edit::DocumentMut = content.parse()?;
     mutate(&mut doc)?;
-    let mut out = doc.to_string();
+    let out = doc.to_string();
     let changed = parse_toml(&out)? != before;
-    // toml_edit writes LF; a file that was all-CRLF stays so.
-    if content.contains("\r\n") && !content.replace("\r\n", "").contains('\n') {
-        out = out.replace("\r\n", "\n").replace('\n', "\r\n");
-    }
     Ok(MergeOutcome {
-        content: out,
+        content: in_source_line_ending(content, out),
         changed,
     })
+}
+
+/// `value` as pretty JSON for the file `source` held, in [`in_source_line_ending`].
+pub(crate) fn emit_json(source: &str, value: &Value) -> anyhow::Result<String> {
+    Ok(in_source_line_ending(
+        source,
+        serde_json::to_string_pretty(value)?,
+    ))
+}
+
+/// `doc` as YAML for the file `source` held, in [`in_source_line_ending`] and
+/// without the emitter's leading `---`, which no hand-written config carries and
+/// every reader parses alike. `file` names it in the error.
+pub(crate) fn emit_yaml(source: &str, doc: &YamlOwned, file: &str) -> anyhow::Result<String> {
+    let mut out = String::new();
+    saphyr::YamlEmitter::new(&mut out)
+        .dump(&saphyr::Yaml::from(doc))
+        .map_err(|e| anyhow::anyhow!("emitting {file}: {e}"))?;
+    let out = out.strip_prefix("---\n").map(str::to_string).unwrap_or(out);
+    Ok(in_source_line_ending(source, out))
+}
+
+/// `out` ending in a newline, in `source`'s line ending: CRLF when `source` broke
+/// every line with one, the emitters all writing LF. A rewrite so keeps the file's
+/// line ending and final newline, as npm's `package.json` save does
+/// (npm/package-json `lib/index.js:249-256` @ v8.0.0). An empty `out` stays empty.
+pub(crate) fn in_source_line_ending(source: &str, mut out: String) -> String {
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    if source.contains("\r\n") && !source.replace("\r\n", "").contains('\n') {
+        out = out.replace("\r\n", "\n").replace('\n', "\r\n");
+    }
+    out
 }
 
 #[cfg(test)]
@@ -422,6 +452,31 @@ mod tests {
         })
         .unwrap();
         assert_eq!(out.content, "# note\r\na = 1\r\nb = 2\r\n");
+    }
+
+    #[test]
+    fn a_json_rewrite_ends_with_a_newline_in_the_files_line_ending() {
+        let add = |mut d: Map<String, Value>| {
+            d.insert("b".into(), json!(2));
+            Ok(d)
+        };
+        for (before, kept, added) in [
+            (
+                "{\r\n  \"a\": 1\r\n}\r\n",
+                "{\r\n  \"a\": 1\r\n}\r\n",
+                "{\r\n  \"a\": 1,\r\n  \"b\": 2\r\n}\r\n",
+            ),
+            (
+                "{\"a\": 1}",
+                "{\n  \"a\": 1\n}\n",
+                "{\n  \"a\": 1,\n  \"b\": 2\n}\n",
+            ),
+        ] {
+            let out = flat_json_merge_outcome_install(before, "c", add).unwrap();
+            assert_eq!(out.content, added);
+            let out = flat_json_merge_outcome_uninstall(before, |d| d).unwrap();
+            assert_eq!(out.content, kept);
+        }
     }
 
     /// A merge rewrites only what it changed: the owner's comments, on the keys,
