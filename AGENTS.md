@@ -123,7 +123,7 @@ Repo skills (committed): `local-review`, `beautify-decoration`,
 
 ## Conventions
 
-- **Mechanism upkeep and reuse** (org rule): extending a mechanism re-adds it, so one you touch that can't name its failure is deleted, not polished; the load-bearing defenses [REVIEW.md](REVIEW.md#design)'s Proportion row lists have named theirs. A reuse is skipped only when its own cost is larger (wasm32, a version freeze), and the PR names that cost.
+- **Mechanism upkeep and reuse** (org rule): extending a mechanism re-adds it, so one you touch that can't name its failure is deleted, not polished, but one whose deletion would remove a user-facing feature is proposed to the owner, never deleted outright; the load-bearing defenses [REVIEW.md](REVIEW.md#design)'s Proportion row lists have named theirs. A reuse is skipped only when its own cost is larger (wasm32, a version freeze), and the PR names that cost.
 - **Chibi figures and pets stay round**, the head flowing into the body.
 - **`#[allow(clippy::too_many_arguments)]` is a last resort** — group related parameters into a struct first.
 - **Comments** (org rule): a workflow or manifest comment, a justfile recipe header and a CI contract's `why` are in scope too. Every sentence adds what the earlier ones don't, the first being the whole answer. A rationale stays on the statement, struct-literal field or match arm it governs, never hoisted to the declaration to shorten a body. A change leaves the net comment volume of what it touches no larger unless each added line earns its place. An intra-doc link to the authority also turns a rename into a `doc-check` red, private items included.
