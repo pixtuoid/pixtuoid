@@ -36,7 +36,7 @@ pub(super) fn fit(
     Fitted {
         viewport: Viewport {
             size: Size {
-                // The layout runs inside the insets, so the floor is the area
+                // The layout runs inside the insets, so FITTED_MIN_W is counted
                 // inside them.
                 w: w.max(
                     FITTED_MIN_W
