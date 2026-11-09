@@ -270,20 +270,14 @@ impl OfficeRenderer {
         self.pointer.carrying()
     }
 
-    /// [`release`](Self::release) under the panels `modal`: a carried figure
-    /// is set down either way, and the click lands only with none open.
-    pub(crate) fn release_under(
-        &mut self,
-        cursor: (f64, f64),
-        modal: &crate::panels::ModalState,
-    ) -> Option<pixtuoid_scene::hit::HitAction> {
-        self.release(cursor).filter(|_| !modal.any_open())
-    }
-
-    /// Whether a pointer `cursor_in` the window shows its tooltip: not over a
-    /// figure in hand, nor over the office under a panel.
-    pub(crate) fn tooltip_shows(&self, cursor_in: bool, modal: &crate::panels::ModalState) -> bool {
-        cursor_in && !self.carrying() && !modal.any_open()
+    /// Whether a pointer `cursor_in` the window shows its tooltip under
+    /// `panels`: not over a figure in hand, nor over the office under a panel.
+    pub(crate) fn tooltip_shows(
+        &self,
+        cursor_in: bool,
+        panels: &crate::panels::OverlayFrame<'_>,
+    ) -> bool {
+        cursor_in && !self.carrying() && !panels.any_open()
     }
 
     /// What the frame on screen shows the pointer at `cursor` (physical px).
@@ -1020,48 +1014,28 @@ mod tests {
         assert!(renderer.carrying());
         assert_eq!(renderer.release(away), None, "a drop clicks nothing");
         assert!(!renderer.carrying());
-        // Under a panel a carry still sets down, and a click lands nowhere.
-        let open = crate::panels::ModalState {
+        let help = crate::panels::ui_state::RenderFrames {
             help_open: true,
-            ..crate::panels::ModalState::closed()
+            ..Default::default()
         };
-        assert!(renderer.tooltip_shows(true, &crate::panels::ModalState::closed()));
+        let closed = crate::panels::OverlayFrame::closed();
+        assert!(renderer.tooltip_shows(true, &closed));
         assert!(
-            !renderer.tooltip_shows(true, &open),
+            !renderer.tooltip_shows(true, &help.overlays(0.0, &[])),
             "no tooltip under a panel"
         );
-        assert!(!renderer.tooltip_shows(false, &crate::panels::ModalState::closed()));
-        let press = |renderer: &mut OfficeRenderer| {
-            renderer.press_at(
-                on_agent,
-                size,
-                Pressing {
-                    scale_factor: 1.0,
-                    petting: None,
-                    now,
-                },
-            )
-        };
-        press(&mut renderer);
+        assert!(!renderer.tooltip_shows(false, &closed));
+        renderer.press_at(
+            on_agent,
+            size,
+            Pressing {
+                scale_factor: 1.0,
+                petting: None,
+                now,
+            },
+        );
         assert!(renderer.pointer_moved(away));
-        assert!(
-            !renderer.tooltip_shows(true, &crate::panels::ModalState::closed()),
-            "nor in hand"
-        );
-        assert_eq!(renderer.release_under(away, &open), None);
-        assert!(
-            !renderer.carrying(),
-            "a panel opened mid-carry sets it down"
-        );
-        press(&mut renderer);
-        assert_eq!(renderer.release_under(on_agent, &open), None);
-        press(&mut renderer);
-        assert!(
-            renderer
-                .release_under(on_agent, &crate::panels::ModalState::closed())
-                .is_some(),
-            "with no panel the click lands"
-        );
+        assert!(!renderer.tooltip_shows(true, &closed), "nor in hand");
         // A carry whose release goes elsewhere is set down when the window
         // loses focus, or at the next press.
         renderer.press_at(

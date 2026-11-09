@@ -873,6 +873,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::hook::SocketBusy
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::hook::SocketBusy
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::SocketBusy
 pub const pixtuoid_core::source::hook::SOCKET_ENV: &str
+pub const pixtuoid_core::source::hook::SOCKET_FLAG: &str
 pub async fn pixtuoid_core::source::hook::endpoint_status(&std::path::Path) -> pixtuoid_core::source::hook::EndpointStatus
 pub fn pixtuoid_core::source::hook::private_endpoint(&std::path::Path, &str) -> std::path::PathBuf
 pub mod pixtuoid_core::source::jcode

@@ -1,8 +1,9 @@
 //! The modal panels both painters show: the dashboard, the Sources panel, the
 //! help, the appearance picker, the version popup and the onboarding, with the one
 //! key dispatch that drives them ([`dispatch_key`] decodes, [`apply_key_action`]
-//! applies). A painter draws them through [`widgets`] into a ratatui frame and
-//! carries out what only it can through [`Host`].
+//! applies) and the one [`mouse_ladder`]. A painter draws them through
+//! [`widgets`] into a ratatui frame and carries out what only it can through
+//! [`Host`] and [`Office`].
 
 pub(crate) mod connection;
 pub(crate) mod dashboard;
@@ -220,8 +221,61 @@ pub(crate) enum ModalMouse {
     Office,
     /// A panel acted on it: the help closed, or the popup's link opened.
     Took,
-    /// A panel swallowed it and did nothing.
+    /// A panel is open and did nothing with it.
     Inert,
+}
+
+/// A pointer event, as [`mouse_ladder`] reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PointerEvent {
+    /// The left button pressed.
+    Press,
+    Move,
+    /// The left button released.
+    Release,
+}
+
+/// The office behind the panels, as a painter's pointer drives it.
+pub(crate) trait Office {
+    /// A left press the panels left it.
+    fn press(&mut self);
+    /// The pointer moved: a figure in hand follows.
+    fn moved(&mut self);
+    /// The left button released: the click's action; a figure in hand is set
+    /// down.
+    fn release(&mut self) -> Option<pixtuoid_scene::hit::HitAction>;
+}
+
+/// The mouse ladder both painters run: [`modal_mouse`], then `office`. Only a
+/// press waits on the panels; the move and release of a gesture the office
+/// began reach it whatever opened since, so a figure lifted before a panel
+/// opened still follows the pointer and is set down. A release's click, the
+/// painter's to carry out, lands only with no panel open. `at` is the cell
+/// the pointer is on, read for a press.
+pub(crate) fn mouse_ladder(
+    ui: &mut ui_state::UiState,
+    popup_scale: f32,
+    event: PointerEvent,
+    at: Option<(u16, u16)>,
+    screen: impl FnOnce() -> Option<(u16, u16)>,
+    office: &mut impl Office,
+) -> (ModalMouse, Option<pixtuoid_scene::hit::HitAction>) {
+    let left_down = at.filter(|_| event == PointerEvent::Press);
+    let modal = modal_mouse(ui, popup_scale, left_down, screen);
+    let click = match event {
+        PointerEvent::Press => {
+            if modal == ModalMouse::Office {
+                office.press();
+            }
+            None
+        }
+        PointerEvent::Move => {
+            office.moved();
+            None
+        }
+        PointerEvent::Release => office.release().filter(|_| modal == ModalMouse::Office),
+    };
+    (modal, click)
 }
 
 /// The modal half of the mouse ladder, in order: the onboarding swallows
@@ -232,7 +286,7 @@ pub(crate) enum ModalMouse {
 /// where a coffee-machine or branding hit launches a browser. `left_down` is
 /// the cell a left press landed on; `popup_scale` the popup's painted scale;
 /// `screen` the surface's size in cells, read only for a press on the popup.
-pub(crate) fn modal_mouse(
+fn modal_mouse(
     ui: &mut ui_state::UiState,
     popup_scale: f32,
     left_down: Option<(u16, u16)>,
@@ -1623,8 +1677,35 @@ mod dispatch_tests {
 }
 
 #[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct NotedOffice {
+    pub(crate) got: Vec<PointerEvent>,
+    pub(crate) click: Option<pixtuoid_scene::hit::HitAction>,
+}
+
+#[cfg(test)]
+impl Office for NotedOffice {
+    fn press(&mut self) {
+        self.got.push(PointerEvent::Press);
+    }
+
+    fn moved(&mut self) {
+        self.got.push(PointerEvent::Move);
+    }
+
+    fn release(&mut self) -> Option<pixtuoid_scene::hit::HitAction> {
+        self.got.push(PointerEvent::Release);
+        self.click
+    }
+}
+
+#[cfg(test)]
 mod mouse_tests {
-    use super::{ModalMouse, modal_mouse, ui_state::UiState, welcome::WelcomeUi};
+    use super::{
+        ModalMouse, NotedOffice, PointerEvent, modal_mouse, mouse_ladder, ui_state::UiState,
+        welcome::WelcomeUi,
+    };
+    use pixtuoid_scene::hit::HitAction;
 
     fn ui() -> UiState {
         UiState::new(
@@ -1655,6 +1736,51 @@ mod mouse_tests {
             ModalMouse::Inert
         );
         assert!(ui.appearance.is_some(), "a click never closes the picker");
+    }
+
+    /// A panel opened mid-gesture withholds a press and a click from the
+    /// office, never the gesture's move or release, so a figure in hand still
+    /// follows and is set down.
+    #[test]
+    fn a_panel_withholds_the_press_and_the_click_but_not_the_gesture() {
+        use PointerEvent::{Move, Press, Release};
+        fn send(
+            ui: &mut UiState,
+            office: &mut NotedOffice,
+            event: PointerEvent,
+        ) -> (ModalMouse, Option<HitAction>) {
+            mouse_ladder(ui, 0.0, event, Some((0, 0)), no_screen, office)
+        }
+        let focus = HitAction::Focus(pixtuoid_core::AgentId::from_parts("claude-code", "s"));
+        let mut ui = ui();
+        let mut office = NotedOffice {
+            click: Some(focus),
+            ..NotedOffice::default()
+        };
+        assert_eq!(
+            send(&mut ui, &mut office, Press),
+            (ModalMouse::Office, None)
+        );
+        assert_eq!(send(&mut ui, &mut office, Move), (ModalMouse::Office, None));
+        ui.open_appearance();
+        assert_eq!(send(&mut ui, &mut office, Move), (ModalMouse::Inert, None));
+        assert_eq!(
+            send(&mut ui, &mut office, Release),
+            (ModalMouse::Inert, None),
+            "under a panel the click lands nowhere"
+        );
+        assert_eq!(send(&mut ui, &mut office, Press), (ModalMouse::Inert, None));
+        assert_eq!(
+            office.got,
+            [Press, Move, Move, Release],
+            "the gesture's move and release reach the office, the press under the panel does not"
+        );
+        ui.cancel_appearance();
+        assert_eq!(
+            send(&mut ui, &mut office, Release),
+            (ModalMouse::Office, Some(focus)),
+            "with no panel the click lands"
+        );
     }
 
     /// A left press closes the help; a move over it does not.
