@@ -38,7 +38,7 @@ pub(crate) const CURSOR_EVENTS: &[&str] = &[
 /// The home base is `USERPROFILE`-first (Node `os.homedir`), NOT the Electron
 /// IDE's `%APPDATA%\Cursor`.
 pub(crate) fn default_config_path() -> Result<PathBuf> {
-    io::home_relative_checked(".cursor/hooks.json")
+    io::home_relative(".cursor/hooks.json")
 }
 
 /// cursor-agent's CLI config dir (`cli-config.json`), which a first run creates:

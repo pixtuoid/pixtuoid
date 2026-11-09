@@ -6,8 +6,8 @@
 //! file. `uninstall` replaces it with a sentinel-free empty stub because
 //! the write-only orchestrator cannot delete.
 //!
-//! **Source attribution rides the handler `env` map** (`PIXTUOID_SOURCE:
-//! "grok"`), NOT a command argument: grok's runner injects handler env into the
+//! **Source attribution rides the handler `env` map** ([`SOURCE_ENV`] set to
+//! `"grok"`), NOT a command argument: grok's runner injects handler env into the
 //! hook process on every platform, and an argument-less absolute path is
 //! DIRECT-exec'd, avoiding grok's shell heuristic entirely.
 

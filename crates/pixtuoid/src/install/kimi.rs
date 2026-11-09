@@ -112,7 +112,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     })
 }
 
-/// The `PIXTUOID_SOURCE=kimi` env-prefix marker (Unix `shell_hook_command` form).
+/// [`SOURCE_ENV`](crate::install::hook_cmd::SOURCE_ENV)`=kimi`, the Unix `shell_hook_command` prefix.
 fn env_marker() -> String {
     format!("{}={SOURCE_NAME}", crate::install::hook_cmd::SOURCE_ENV)
 }

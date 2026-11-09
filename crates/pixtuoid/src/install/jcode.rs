@@ -134,12 +134,25 @@ fn retarget_list(
     if ours.is_some() || commands.len() != 1 || commands.len() == before {
         return;
     }
-    let decor = commands.decor().clone();
-    let only = commands.iter().next().cloned();
-    if let Some(mut only) = only {
-        *only.decor_mut() = decor;
-        *list = only;
+    let Some(only) = commands.get(0) else {
+        return;
+    };
+    // The command takes the list's decor, so a comment inside the list would go.
+    let inner = [
+        only.decor().prefix(),
+        only.decor().suffix(),
+        Some(commands.trailing()),
+    ];
+    if inner
+        .into_iter()
+        .flatten()
+        .any(|raw| raw.as_str().is_some_and(|s| s.contains('#')))
+    {
+        return;
     }
+    let mut only = only.clone();
+    *only.decor_mut() = commands.decor().clone();
+    *list = only;
 }
 
 pub(crate) fn merge_install(content: &str, command: &str) -> Result<MergeOutcome> {
@@ -347,6 +360,19 @@ mod tests {
         );
         let removed = merge_uninstall(&installed.content).unwrap();
         assert_eq!(removed.content, original);
+    }
+
+    #[test]
+    fn jcode_disconnect_keeps_a_list_of_one_whose_comment_a_command_cannot_hold() {
+        for original in [
+            "[hooks]\npre_tool = [\n  # why\n  'gate',\n]\n",
+            "[hooks]\npre_tool = [\n  'gate' # why\n]\n",
+            "[hooks]\npre_tool = [\n  'gate',\n  # why\n]\n",
+        ] {
+            let installed = merge_install(original, &command()).unwrap();
+            let removed = merge_uninstall(&installed.content).unwrap();
+            assert_eq!(removed.content, original);
+        }
     }
 
     #[test]

@@ -283,40 +283,40 @@ pub(crate) fn toml_merge_outcome(
     let out = doc.to_string();
     let changed = parse_toml(&out)? != before;
     Ok(MergeOutcome {
-        content: in_source_line_ending(content, out),
+        content: end_lines_like(content, out),
         changed,
     })
 }
 
-/// `value` as pretty JSON for the file `source` held, in [`in_source_line_ending`].
-pub(crate) fn emit_json(source: &str, value: &Value) -> anyhow::Result<String> {
-    Ok(in_source_line_ending(
-        source,
+/// `value` as pretty JSON for the file `content` held, by [`end_lines_like`].
+pub(crate) fn emit_json(content: &str, value: &Value) -> anyhow::Result<String> {
+    Ok(end_lines_like(
+        content,
         serde_json::to_string_pretty(value)?,
     ))
 }
 
-/// `doc` as YAML for the file `source` held, in [`in_source_line_ending`] and
-/// without the emitter's leading `---`, which no hand-written config carries and
-/// every reader parses alike. `file` names it in the error.
-pub(crate) fn emit_yaml(source: &str, doc: &YamlOwned, file: &str) -> anyhow::Result<String> {
+/// `doc` as YAML for the file `content` held, by [`end_lines_like`] and without
+/// the emitter's leading `---`, which every reader parses alike either way. `file`
+/// names it in the error.
+pub(crate) fn emit_yaml(content: &str, doc: &YamlOwned, file: &str) -> anyhow::Result<String> {
     let mut out = String::new();
     saphyr::YamlEmitter::new(&mut out)
         .dump(&saphyr::Yaml::from(doc))
         .map_err(|e| anyhow::anyhow!("emitting {file}: {e}"))?;
     let out = out.strip_prefix("---\n").map(str::to_string).unwrap_or(out);
-    Ok(in_source_line_ending(source, out))
+    Ok(end_lines_like(content, out))
 }
 
-/// `out` ending in a newline, in `source`'s line ending: CRLF when `source` broke
+/// `out` ending in a newline, in `content`'s line ending: CRLF when `content` broke
 /// every line with one, the emitters all writing LF. A rewrite so keeps the file's
-/// line ending and final newline, as npm's `package.json` save does
+/// line ending and always ends in a newline, as npm's `package.json` save does
 /// (npm/package-json `lib/index.js:249-256` @ v8.0.0). An empty `out` stays empty.
-pub(crate) fn in_source_line_ending(source: &str, mut out: String) -> String {
+pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
     }
-    if source.contains("\r\n") && !source.replace("\r\n", "").contains('\n') {
+    if content.contains("\r\n") && !content.replace("\r\n", "").contains('\n') {
         out = out.replace("\r\n", "\n").replace('\n', "\r\n");
     }
     out

@@ -216,9 +216,9 @@ fn parse_root_mapping(content: &str) -> Result<MappingOwned> {
     }
 }
 
-/// `root` as the config.yaml `source` held.
-fn emit(source: &str, root: &MappingOwned) -> Result<String> {
-    merge::emit_yaml(source, &YamlOwned::Mapping(root.clone()), "config.yaml")
+/// `root` as the config.yaml `content` held.
+fn emit(content: &str, root: &MappingOwned) -> Result<String> {
+    merge::emit_yaml(content, &YamlOwned::Mapping(root.clone()), "config.yaml")
 }
 
 fn is_managed(entry: &YamlOwned) -> bool {

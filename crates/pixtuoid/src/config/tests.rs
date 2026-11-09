@@ -632,6 +632,16 @@ fn update_config_refuses_a_type_invalid_config() {
 }
 
 #[test]
+fn update_config_names_a_config_it_cannot_read_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::create_dir(&p).unwrap();
+    let err = save_appearance(&p, "cyberpunk", None).expect_err("a dir is no readable config");
+    let msg = format!("{err:#}");
+    assert_eq!(msg.matches(&p.display().to_string()).count(), 1, "{msg}");
+}
+
+#[test]
 fn update_config_refuses_to_overwrite_a_malformed_config() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");

@@ -112,15 +112,15 @@ fn parse_rows(content: &str) -> Result<Vec<YamlOwned>> {
     }
 }
 
-/// `rows` as the patch file `source` held.
-fn emit_rows(source: &str, rows: &[YamlOwned]) -> Result<String> {
-    // dsh reads an empty file as no array and refuses to boot; only a missing
-    // one is "no patches" (`@deepseek-ai/dsh-app-boot` `parsePatchList`, dsh-v0.2.0-rc.2).
+/// `rows` as the patch file `content` held.
+fn emit_rows(content: &str, rows: &[YamlOwned]) -> Result<String> {
+    // dsh reads an empty file as no array and refuses to boot; only a missing one is "no
+    // patches" (`parsePatchList`, `packages/boot/app-boot/src/index.ts:576-582` @ dsh-v0.2.2-rc.1).
     if rows.is_empty() {
-        return Ok(merge::in_source_line_ending(source, "[]".into()));
+        return Ok(merge::end_lines_like(content, "[]".into()));
     }
     merge::emit_yaml(
-        source,
+        content,
         &YamlOwned::Sequence(rows.to_vec()),
         "cordis.patch.yml",
     )

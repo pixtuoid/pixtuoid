@@ -28,8 +28,8 @@ pub(crate) const SOURCE_FLAG: &str = " --source ";
 pub(crate) const EVENT_FLAG: &str = " --event ";
 pub(crate) const HOOK_EVENT_FLAG: &str = " --hook-event ";
 
-/// The env var the Unix form stamps the source in, read by the shim when no
-/// `--source` rides: a copy the same test pins.
+/// The env var the shim reads the source from when no `--source` rides;
+/// `the_shim_parses_every_flag_its_writers_spell` pins the shim's copy.
 pub(crate) const SOURCE_ENV: &str = "PIXTUOID_SOURCE";
 
 /// POSIX single-quote a string so a shell treats it as one literal token: an
@@ -43,7 +43,7 @@ pub(crate) fn shell_single_quote(s: &str) -> String {
 /// The OS-correct hook `command` string for a shell-running CLI — the single OS
 /// fork for that strategy.
 ///
-/// - **Unix**: env-prefix form `PIXTUOID_SOURCE=<source> '<path>'`.
+/// - **Unix**: env-prefix form [`SOURCE_ENV`]`=<source> '<path>'`.
 /// - **Windows**: BARE exec form `<path> --source <source>` — cmd.exe can't
 ///   express the env-prefix, so the source rides the shim's `--source` flag and a
 ///   space/metacharacter path tries its DOS 8.3 short form (`windows_short_path`).

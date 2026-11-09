@@ -56,7 +56,7 @@ fn settings_path() -> Result<PathBuf> {
     if let Some(dir) = claude_config_dir() {
         return Ok(dir.join("settings.json"));
     }
-    io::home_relative_checked(".claude/settings.json")
+    io::home_relative(".claude/settings.json")
 }
 
 /// Claude Code is present when its config dir exists; the hooks file is ours, so

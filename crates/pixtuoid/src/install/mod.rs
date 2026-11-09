@@ -367,10 +367,7 @@ fn converge_files(
 /// CLI that never loaded the rewrite still runs, so the next convergence redoes it.
 pub(crate) fn put_back(rewritten: &[(PathBuf, String)]) -> Result<()> {
     for (p, replaced) in rewritten {
-        restore(
-            &io::lock_config(p)?,
-            (!replaced.is_empty()).then_some(replaced.as_str()),
-        )?;
+        io::lock_config(p)?.restore((!replaced.is_empty()).then_some(replaced.as_str()))?;
     }
     Ok(())
 }
@@ -600,7 +597,7 @@ fn install_target_from(
         && let Err(e) = connect_host(host, &path)
     {
         if outcome.changed
-            && let Err(undo) = restore(&lock, prior.as_deref())
+            && let Err(undo) = lock.restore(prior.as_deref())
         {
             return Err(e.context(format!("the hooks it wrote stay in place: {undo:#}")));
         }
@@ -639,23 +636,6 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
         path.display()
     );
     strip_managed(legacy.strip, &path)
-}
-
-/// Put the locked file back as an install found it: `prior`, or no file at all.
-fn restore(lock: &io::ConfigLock, prior: Option<&str>) -> Result<()> {
-    // A host's failed registration may have taken the file's dir with it.
-    match prior {
-        Some(content) => {
-            if let Some(dir) = lock.target().parent() {
-                std::fs::create_dir_all(dir)?;
-            }
-            lock.write_atomic(content)
-        }
-        None => match std::fs::remove_file(lock.target()) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
-            _ => Ok(()),
-        },
-    }
 }
 
 /// Remove the entries `uninstall` recognizes from `path` under its lock; whether

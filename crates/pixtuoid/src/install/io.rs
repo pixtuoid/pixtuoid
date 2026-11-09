@@ -44,7 +44,7 @@ pub(crate) fn expand_tilde(value: &Path, home: Option<&Path>) -> PathBuf {
 
 /// `rel` under the home, an error when none resolves: a CWD-relative stand-in
 /// names a file the CLI's global-scope loader never reads.
-pub(crate) fn home_relative_checked(rel: &str) -> Result<PathBuf> {
+pub(crate) fn home_relative(rel: &str) -> Result<PathBuf> {
     checked_home_join(pixtuoid_core::platform::user_home_opt(), rel)
 }
 
@@ -210,9 +210,9 @@ fn read_resolved(target: &Path) -> Result<String> {
 
 /// Rename `from` onto `to`, with a Windows-only bounded retry: `fs::rename` onto
 /// a file another process holds open raises ERROR_SHARING_VIOLATION (os error
-/// 32), and Claude Code keeps `settings.json` open briefly, so a bare rename can
-/// lose the write. On Unix the rename succeeds atomically even while a reader
-/// holds the old fd, so a single attempt is correct there.
+/// 32), so a bare rename can lose the write. That Claude Code holds
+/// `settings.json` open so is unverified. On Unix the rename succeeds atomically
+/// even while a reader holds the old fd, so a single attempt is correct there.
 fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     return retry_rename(|| std::fs::rename(from, to), std::thread::sleep);
@@ -223,7 +223,7 @@ fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
 #[cfg(any(windows, test))]
 const RENAME_ATTEMPTS: u32 = 3;
 
-/// CC's typical hold on `settings.json`.
+/// An unmeasured guess at how long a holder keeps the file, as is [`RENAME_ATTEMPTS`].
 #[cfg(any(windows, test))]
 const RENAME_RETRY_SLEEP: Duration = Duration::from_millis(50);
 
@@ -291,16 +291,22 @@ pub(crate) struct ConfigLock {
 /// rather than blocking.
 pub(crate) fn lock_config(path: &Path) -> Result<ConfigLock> {
     let target = resolve_symlink(path);
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
+    create_parent(&target)?;
     let lock_path = sibling(&target, "lock");
     let file = open_lock_sidecar(&lock_path)
         .with_context(|| format!("opening {}", lock_path.display()))?;
     file.try_lock()
         .map_err(|e| anyhow!("could not lock {}: {e}", lock_path.display()))?;
     Ok(ConfigLock { target, file })
+}
+
+fn create_parent(target: &Path) -> Result<()> {
+    match target.parent() {
+        Some(dir) => {
+            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))
+        }
+        None => Ok(()),
+    }
 }
 
 /// Open (creating) the advisory-lock sidecar: `O_NOFOLLOW` so a symlink
@@ -365,6 +371,23 @@ impl ConfigLock {
             .with_context(|| format!("replacing {}", self.target.display()))?;
         sync_parent_after_rename(&self.target);
         Ok(())
+    }
+
+    /// Put the locked file back as an install found it: `prior`, or no file at all.
+    pub(crate) fn restore(&self, prior: Option<&str>) -> Result<()> {
+        match prior {
+            Some(content) => {
+                // A host's failed registration may have taken the file's dir with it.
+                create_parent(&self.target)?;
+                self.write_atomic(content)
+            }
+            None => match std::fs::remove_file(&self.target) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    Err(e).with_context(|| format!("removing {}", self.target.display()))
+                }
+                _ => Ok(()),
+            },
+        }
     }
 }
 
@@ -771,6 +794,7 @@ mod tests {
         let guard = lock_config(&target).unwrap();
         names(&chain(guard.read().map(drop)), "reading", &target);
         names(&chain(guard.write_atomic("{}")), "replacing", &target);
+        names(&chain(guard.restore(None)), "removing", &target);
     }
 
     #[cfg(unix)]
