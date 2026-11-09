@@ -26,7 +26,8 @@ use tokio::time::MissedTickBehavior;
 use tui_renderer::TuiRenderer;
 
 use crate::panels::{
-    FloorNav, KeyAction, KeyCtx, ModalState, apply_key_action, dispatch_key, ui_state,
+    FloorNav, KeyAction, KeyCtx, ModalState, PointerEvent, apply_key_action, dispatch_key,
+    mouse_ladder, ui_state,
 };
 use crate::runtime::{QuitArms, QuitSignal, SceneRx};
 use pixtuoid_scene::hit::HitAction;
@@ -386,8 +387,34 @@ pub(crate) struct TuiSession {
     pub first_run: bool,
 }
 
-/// The mouse hit-test LADDER: the panels' half first ([`crate::panels::modal_mouse`]), then
-/// the scene.
+/// The terminal's office under the pointer at cell `at`, at `now`.
+struct TuiOffice<'r, B: ratatui::backend::Backend<Error: Send + Sync + 'static>> {
+    renderer: &'r mut TuiRenderer<B>,
+    at: (u16, u16),
+    /// Whether the left button is held: a bare move carries nothing.
+    held: bool,
+    now: SystemTime,
+}
+
+impl<B: ratatui::backend::Backend<Error: Send + Sync + 'static>> crate::panels::Office
+    for TuiOffice<'_, B>
+{
+    fn press(&mut self) {
+        self.renderer.press(self.at.0, self.at.1, self.now);
+    }
+
+    fn moved(&mut self) {
+        if self.held {
+            self.renderer.drag(self.at.0, self.at.1);
+        }
+    }
+
+    fn release(&mut self) -> Option<HitAction> {
+        self.renderer.release(self.at.0, self.at.1)
+    }
+}
+
+/// `m` through the mouse ladder ([`crate::panels::mouse_ladder`]).
 fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     m: crossterm::event::MouseEvent,
     ui: &mut ui_state::UiState,
@@ -396,49 +423,47 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     focus: impl FnOnce(&pixtuoid_core::AgentSlot),
     now: SystemTime,
 ) {
-    let left_down =
-        matches!(m.kind, MouseEventKind::Down(MouseButton::Left)).then_some((m.column, m.row));
-    if crate::panels::modal_mouse(ui, renderer.last_popup_scale(), left_down, || {
-        crossterm::terminal::size().ok()
-    }) != crate::panels::ModalMouse::Office
-    {
-        return;
-    }
-    match m.kind {
-        MouseEventKind::Moved => {
-            renderer.set_mouse_pos(Some((m.column, m.row)));
-        }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            renderer.set_mouse_pos(Some((m.column, m.row)));
-            renderer.drag(m.column, m.row);
-        }
-        MouseEventKind::Down(MouseButton::Left) => {
-            renderer.set_mouse_pos(Some((m.column, m.row)));
-            renderer.press(m.column, m.row, now);
-        }
-        MouseEventKind::Up(MouseButton::Left) => {
-            renderer.set_mouse_pos(Some((m.column, m.row)));
-            match renderer.release(m.column, m.row) {
-                Some(HitAction::Focus(id)) => {
-                    let slot = scene_rx.borrow().agents.get(&id).cloned();
-                    if let Some(slot) = slot {
-                        focus(&slot);
-                    }
-                }
-                Some(HitAction::Pet(kind)) => {
-                    renderer.set_active_pet(Some(renderer::PetState {
-                        petted_at: now,
-                        kind,
-                        floor_idx: renderer.current_floor(),
-                    }));
-                }
-                Some(HitAction::Open(url)) => {
-                    crate::open_url(url);
-                }
-                None => {}
+    let event = match m.kind {
+        MouseEventKind::Down(MouseButton::Left) => PointerEvent::Press,
+        MouseEventKind::Moved | MouseEventKind::Drag(MouseButton::Left) => PointerEvent::Move,
+        MouseEventKind::Up(MouseButton::Left) => PointerEvent::Release,
+        _ => return,
+    };
+    let at = (m.column, m.row);
+    let popup_scale = renderer.last_popup_scale();
+    let mut office = TuiOffice {
+        renderer: &mut *renderer,
+        at,
+        held: matches!(m.kind, MouseEventKind::Drag(MouseButton::Left)),
+        now,
+    };
+    let (_, click) = mouse_ladder(
+        ui,
+        popup_scale,
+        event,
+        Some(at),
+        || crossterm::terminal::size().ok(),
+        &mut office,
+    );
+    renderer.set_mouse_pos(Some(at));
+    match click {
+        Some(HitAction::Focus(id)) => {
+            let slot = scene_rx.borrow().agents.get(&id).cloned();
+            if let Some(slot) = slot {
+                focus(&slot);
             }
         }
-        _ => {}
+        Some(HitAction::Pet(kind)) => {
+            renderer.set_active_pet(Some(renderer::PetState {
+                petted_at: now,
+                kind,
+                floor_idx: renderer.current_floor(),
+            }));
+        }
+        Some(HitAction::Open(url)) => {
+            crate::open_url(url);
+        }
+        None => {}
     }
 }
 
