@@ -6,5 +6,4 @@ extensions:
       extensible: barrierModel
     data:
       - ["pixtuoid_core::source::decoder::hook_session_id", "ReturnValue", "log-injection", "manual"]
-      - ["pixtuoid_core::source::kimi::kimi_session_id", "ReturnValue", "log-injection", "manual"]
       - ["pixtuoid_core::source::cc_probe::live_cc_session_ids", "ReturnValue", "log-injection", "manual"]

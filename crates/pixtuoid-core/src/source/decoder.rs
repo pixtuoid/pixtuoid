@@ -379,10 +379,11 @@ pub(crate) fn hook_session_id(
         .map(str::to_string)
 }
 
-/// The identity context the tool/permission arms attach ahead of their activity
-/// event. `cwd` is on the wire for CC tool hooks but absent on e.g. Codex
-/// `PermissionRequest` — absent or empty maps to `None`, so the reducer's cwd-less
-/// registration path (ordinal label, reap-exempt) applies.
+/// The identity context a hook arm attaches ahead of an event that may be its
+/// session's first sight (an activity event or a turn end). `cwd` is on the
+/// wire for CC tool hooks but absent on e.g. Codex `PermissionRequest` — absent
+/// or empty maps to `None`, so the reducer's cwd-less registration path
+/// (ordinal label, reap-exempt) applies.
 pub(crate) fn hook_identity(
     agent_id: AgentId,
     source: &str,
