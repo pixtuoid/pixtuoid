@@ -95,10 +95,9 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 ## Workflow
 
 Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
-each step there before taking it, never from recall. Merging is
-`@mergifyio queue`, which a session comments itself once
-[the merge gate](docs/CONTRIBUTING.md#the-merge-gate) holds, and a release PR
-merges by hand. The CI review applies REVIEW.md on every push;
+each step there before taking it, never from recall. Merging is a session's own
+`@mergifyio queue` ([the merge gate](docs/CONTRIBUTING.md#the-merge-gate)); a
+release PR merges by hand. The CI review applies REVIEW.md on every push;
 [arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says when the `local-review`
 skill runs it first.
 
