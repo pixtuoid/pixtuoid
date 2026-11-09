@@ -219,7 +219,13 @@ pub(crate) fn state_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn config_path() -> PathBuf {
-    config_base().map_or_else(
+    config_path_under(config_base())
+}
+
+/// [`config_path`] under a resolved base, so the no-home arm tests without the
+/// passwd lookup the home read makes.
+fn config_path_under(base: Option<PathBuf>) -> PathBuf {
+    base.map_or_else(
         || PathBuf::from(".config/pixtuoid/config.toml"),
         |base| base.join("pixtuoid").join("config.toml"),
     )

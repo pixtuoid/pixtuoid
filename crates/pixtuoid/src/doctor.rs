@@ -246,9 +246,9 @@ pub fn footer_warning(
 
 /// Windows "installed but no sprite": `HOME` set and differing from
 /// `%USERPROFILE%` can put hooks where the CLI never reads. A SAFETY NET only —
-/// `platform::home_first_dir` already mirrors the HOME-first CLIs, so this
-/// catches a residual resolver mismatch. Pure (env + platform injected) so it
-/// unit-tests on any host.
+/// the CodeWhale and OpenClaw targets already mirror their HOME-first
+/// resolvers, so this catches a residual mismatch. Pure (env + platform
+/// injected) so it unit-tests on any host.
 pub(crate) fn home_split_advisory(
     is_windows: bool,
     home: Option<&str>,

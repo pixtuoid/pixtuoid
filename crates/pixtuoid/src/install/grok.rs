@@ -62,7 +62,10 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
         pixtuoid_core::platform::path_env("GROK_HOME").as_deref(),
         pixtuoid_core::platform::user_home_opt().as_deref(),
     ) {
-        return Err(io::home_unset("grok's home", "GROK_HOME/HOME/USERPROFILE"));
+        return Err(io::home_unset(
+            "grok's home",
+            &format!("GROK_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
+        ));
     }
     Ok(pixtuoid_core::source::grok::grok_home()
         .join("hooks")
@@ -124,16 +127,16 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     }
     #[cfg(windows)]
     {
-        // The 8.3 short name is metachar-free by construction, so the command
-        // drops back to the direct-exec path — immune to grok's shell cascade.
+        // A short form free of the route's metacharacters drops the command back
+        // to the direct-exec path — immune to grok's shell cascade.
         if let Some(short) = crate::install::hook_cmd::windows_short_path(path)
             && !needs_shell_route(&short)
         {
             return Ok(short);
         }
-        // 8.3 disabled on the volume: the PowerShell call-operator form, correct
-        // for grok's DEFAULT shells. A Git-Bash or `GROK_SHELL=cmd` setup with a
-        // spacey shim path on an 8.3-less volume is the accepted residual.
+        // No such short form: the PowerShell call-operator form, correct for
+        // grok's DEFAULT shells. A Git-Bash or `GROK_SHELL=cmd` setup with a
+        // spacey shim path and no clean short form is the accepted residual.
         Ok(format!("& '{}'", path.replace('\'', "''")))
     }
 }
