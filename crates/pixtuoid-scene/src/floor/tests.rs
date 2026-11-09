@@ -3010,6 +3010,67 @@ fn a_frame_without_the_office_forgets_the_last() {
     assert!(office.heard_occupied().is_empty());
 }
 
+/// A frame that draws no office ends a slide at once on its destination,
+/// whichever refuses it: a viewport the scene can't lay out, in either look,
+/// or a screen its painter finds too small. No slide of the last frames
+/// drawn runs on unseen.
+#[test]
+fn a_frame_without_the_office_ends_a_slide_on_its_destination() {
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+    let scene = make_scene(3, 2);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mid = t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2);
+    let min = crate::layout::min_layout_size();
+    let refused = Viewport::full(min.w, min.h - 1);
+    let render = |office: &mut OfficeSession, look, viewport, now| {
+        let _ = office.render(
+            look,
+            crate::look::RenderInputs {
+                world: FloorInputs {
+                    scene: &scene,
+                    now,
+                    floor: FloorMeta::ground(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                viewport,
+                place: crate::look::Place::default(),
+                debug_walkable: false,
+                dim: crate::look::Dim::NONE,
+            },
+            &[],
+            theme.surface.bg_fallback,
+        );
+    };
+    let sliding = |look| {
+        let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+        render(&mut office, look, PAINTED, t0);
+        assert!(office.navigate(1, t0), "a second floor to slide to");
+        render(&mut office, look, PAINTED, t0);
+        assert!(
+            matches!(office.picture(), Some(crate::look::Picture::Slide(_))),
+            "{look:?}: premise: a slide that lays out composes"
+        );
+        office
+    };
+    let landed = |office: &OfficeSession| {
+        (
+            office.picture().is_none(),
+            office.nav().transition().is_none(),
+            office.nav().current(),
+        )
+    };
+    for look in looks() {
+        let mut office = sliding(look);
+        render(&mut office, look, refused, mid);
+        assert_eq!(landed(&office), (true, true, 1), "{look:?}");
+    }
+    let [look, _] = looks();
+    let mut office = sliding(look);
+    let _ = office.drew_no_office(&scene, FloorMeta::ground(), mid);
+    assert_eq!(landed(&office), (true, true, 1), "a painter's refusal");
+}
+
 /// An office whose upper floor empties shows one floor: the count and the
 /// breadcrumb follow the live scene, not the views kept.
 #[test]

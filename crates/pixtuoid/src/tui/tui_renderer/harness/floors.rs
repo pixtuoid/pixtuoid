@@ -219,10 +219,12 @@ fn transition_at_narrow_terminal_paints_no_agents_no_panic() {
     now += PAINT_FRAME;
     r.render(&scene, now)
         .expect("transition render at a narrow terminal must not panic");
-    assert!(
-        r.transition().is_some(),
-        "the slide is still active this frame"
+    assert_eq!(
+        (r.transition().is_none(), r.current_floor()),
+        (true, 1),
+        "a slide it can't lay out lands at once"
     );
+    assert!(frame_text(r.frame_buffer()).contains("too small"));
 
     let bg = normal_theme().surface.bg_fallback;
     let from = r.floor_buf(0).expect("floor-0 buffer allocated");

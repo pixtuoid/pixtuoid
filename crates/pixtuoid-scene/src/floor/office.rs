@@ -116,7 +116,9 @@ impl FloorView {
         self.last_flash
     }
 
+    /// The last frame's pixels; `None` when it drew no office.
     pub(super) fn buf(&self) -> Option<&RgbBuffer> {
+        self.last_hits.as_ref()?;
         self.floor.raster.pixels()
     }
 
@@ -436,6 +438,13 @@ impl OfficeSession {
         self.nav.cancel(self.n_floors);
     }
 
+    /// End a slide no frame shows: it lands on its destination, and its last
+    /// composed frame goes too, since the frame on screen is not it.
+    fn drop_slide(&mut self) {
+        self.cancel_slide();
+        self.slide = None;
+    }
+
     /// Floor `floor`'s stores and raster, once a frame has grown it.
     #[doc(hidden)]
     pub fn floor(&self, floor: usize) -> Option<&PerFloor> {
@@ -512,16 +521,20 @@ impl OfficeSession {
             let (from, to, t) = (tr.from_floor, tr.to_floor, tr.t(now));
             draw(&mut self.views, &mut self.office, from, look);
             draw(&mut self.views, &mut self.office, to, look);
-            let (slide, flashes) = self
-                .slide
-                .get_or_insert_with(|| (RgbBuffer::filled(0, 0, gap), Default::default()));
             if let (Some(leaving), Some(arriving)) = (self.views[from].buf(), self.views[to].buf())
             {
+                let (slide, flashes) = self
+                    .slide
+                    .get_or_insert_with(|| (RgbBuffer::filled(0, 0, gap), Default::default()));
                 compose_slide(slide, (leaving, arriving), t, to > from, inputs.dim.of(gap));
                 *flashes = crate::screen::Flashes::of_slide(
                     self.views[from].flash(),
                     self.views[to].flash(),
                 );
+            } else {
+                // A slide no screen shows would run its course unseen, its
+                // pixels the last frames drawn.
+                self.drop_slide();
             }
         } else {
             self.slide = None;
@@ -552,9 +565,10 @@ impl OfficeSession {
             .map(crate::look::Picture::Floor)
     }
 
-    /// A frame drew no office (a painter's too-small screen): the floor
-    /// showing keeps nothing of its last. Its audio, the empty floor's, is
-    /// the caller's to feed.
+    /// A frame drew no office (a painter's too-small screen): a slide ends on
+    /// its destination, as [`Self::render`] ends one it can't lay out, and the
+    /// floor showing keeps nothing of its last. Its audio, the empty floor's,
+    /// is the caller's to feed.
     #[must_use]
     #[doc(hidden)]
     pub fn drew_no_office(
@@ -563,6 +577,7 @@ impl OfficeSession {
         office_floor: FloorMeta,
         now: SystemTime,
     ) -> AudioFrame {
+        self.drop_slide();
         let current = self.nav.current();
         self.views[current].forget();
         // The empty floor's by construction, whatever the view still holds.

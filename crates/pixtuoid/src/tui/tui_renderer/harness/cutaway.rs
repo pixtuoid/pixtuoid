@@ -698,6 +698,28 @@ fn shrinking_mid_slide_lands_on_the_destination() {
     assert_eq!(r.scene_area_at(small_cols / 2, small_rows / 2), None);
 }
 
+/// A floor key pressed where the cutaway fits but the office can't lay out
+/// lands its slide at once: the notice shows, not a slide of the floors drawn
+/// before the terminal shrank.
+#[test]
+fn a_slide_the_office_cannot_lay_out_lands_at_once() {
+    let (mut r, _wire) = kitty(120, 40);
+    let scene = two_floor_scene();
+    r.render(&scene, t0()).expect("render");
+    let (cols, rows) = too_small_terminal();
+    r.terminal.backend_mut().resize(cols, rows);
+    r.render(&scene, t0()).expect("render");
+    assert_eq!(
+        r.drawn_look(),
+        LookKind::Cutaway,
+        "premise: the cutaway fits, and the office refuses"
+    );
+    r.navigate_floor(1, t0());
+    r.render(&scene, t0() + PAINT_FRAME).expect("render");
+    assert_eq!((r.transition().is_none(), r.current_floor()), (true, 1));
+    assert!(frame_text(r.frame_buffer()).contains("too small"));
+}
+
 #[test]
 fn a_modal_over_the_image_shows_its_text() {
     let (mut r, _wire) = kitty(120, 40);

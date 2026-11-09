@@ -744,8 +744,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         Ok(())
     }
 
-    /// The footer-only frame of a terminal too small for the office; a slide
-    /// it would hide ends at once rather than run its course unseen. Its
+    /// The footer-only frame of a terminal too small for the office. Its
     /// audio is the empty floor's unless the office `stepped` for it.
     fn draw_too_small(
         &mut self,
@@ -754,7 +753,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         stepped: bool,
     ) -> Result<Option<FrameNote>> {
         self.session.prepare(scene, now);
-        self.cancel_transition();
         let footer_scene = self.session.footer_scene(scene);
         let footer = pixtuoid_scene::footer::FooterInputs::new(
             &footer_scene,
@@ -872,14 +870,11 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             Size { w: buf_w, h: buf_h },
             self.debug_walkable,
         );
-        if self.session.nav().transition().is_some() {
-            return self.flush_classic_slide(scene, now).map(|()| drawn);
-        }
         let Some(picture) = self.session.picture() else {
             return self.draw_too_small(scene, now, true);
         };
         let Picture::Floor(floor) = &picture else {
-            return self.draw_too_small(scene, now, true);
+            return self.flush_classic_slide(scene, now).map(|()| drawn);
         };
         let current = self.session.nav().current();
         let footer_scene = self.session.footer_scene(scene);
