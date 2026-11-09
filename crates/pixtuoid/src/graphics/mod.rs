@@ -48,17 +48,6 @@ pub(crate) struct TileShape {
     pub(crate) rows: u16,
 }
 
-/// How long each wait of the capability probe may take: the query start to
-/// finish.
-///
-/// The query ends with a device-status request ([`wire::ask`]), so a terminal
-/// that answers ends the wait the moment its reply is complete; the budget is
-/// only spent where no reply comes (a hidden tmux pane refusing passthrough),
-/// which is why it can outlast [`crate::term::TRUECOLOR_PROBE_TIMEOUT`], whose
-/// query has no such terminator.
-#[cfg(unix)]
-pub(crate) const GRAPHICS_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
-
 /// How a kitty image's pixels reach the terminal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Medium {

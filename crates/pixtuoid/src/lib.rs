@@ -56,6 +56,8 @@ pub mod dev {
     #[cfg(feature = "serve")]
     pub use crate::serve::MAX_CONNS;
     pub use crate::sources::{ConnState, ConnectionRow};
+    #[cfg(unix)]
+    pub use crate::term::{QUERY_TIMEOUT, TTY_READ_CHUNK};
     pub use crate::tui::cutaway::ImageCells;
     pub use crate::tui::frame_clock;
     pub use crate::tui::renderer::{
