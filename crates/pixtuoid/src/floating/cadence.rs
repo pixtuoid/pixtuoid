@@ -44,8 +44,8 @@ impl FrameClock {
         }
     }
 
-    /// The window was occluded, or no longer is at `now`, when it paints at
-    /// once.
+    /// Records whether the window is occluded; leaving occlusion arms an
+    /// immediate paint at `now`.
     pub(crate) fn set_occluded(&mut self, occluded: bool, now: Instant) {
         self.occluded = occluded;
         if !occluded {

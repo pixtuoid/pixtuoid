@@ -2521,6 +2521,32 @@ fn an_office_never_rendered_paints_now() {
     );
 }
 
+/// Hearing settles the office as drawing does: once the floor showing empties
+/// out of the building, a walk-in on the floor it lands on chimes.
+#[test]
+fn hearing_settles_the_floor_showing_as_drawing_does() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000 + 3_600);
+    let look = crate::look::Look::HALF_BLOCKS;
+    // Desks 0 and 2 of two-desk floors: one agent downstairs, one upstairs.
+    let mut two_floors = make_scene(3, 2);
+    two_floors
+        .agents
+        .remove(&AgentId::from_transcript_path("/p/1.jsonl"));
+    let mut office = office_drawn_at(look, &two_floors, Motion::Still, t0);
+    assert!(office.navigate(1, t0));
+    let landed = t0 + Duration::from_millis(TRANSITION_DURATION_MS + 1);
+    render_office(&mut office, look, &two_floors, Motion::Still, landed);
+    assert_eq!(office.nav().current(), 1);
+    let _ = office.hear(&make_scene(1, 2), FloorMeta::ground(), landed);
+    assert_eq!(office.nav().current(), 0, "floor 1 emptied out");
+    let walk_in = office.hear(&make_scene(2, 2), FloorMeta::ground(), landed);
+    assert!(
+        walk_in.events.contains(&crate::audio::OneShot::DoorChime),
+        "{:?}",
+        walk_in.events
+    );
+}
+
 /// An office paints every frame of a slide between two floors.
 #[test]
 fn an_office_mid_slide_paints_every_frame() {

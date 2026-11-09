@@ -808,8 +808,9 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
         }
     }
 
-    /// The loop is ending, by any quit or by the OS (macOS's terminate, which
-    /// Cmd-Q and logout send, exits the process right after this returns).
+    /// The loop is ending, by a quit or by AppKit's terminate, which exits the
+    /// process once this returns (winit-0.30.13 `macos/menu.rs:66-72` binds
+    /// Cmd-Q to it, `macos/app_state.rs:166-171`).
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         super::lifecycle::tear_down(self);
     }

@@ -587,6 +587,7 @@ impl OfficeSession {
         office_floor: FloorMeta,
         now: SystemTime,
     ) -> AudioFrame {
+        self.prepare(scene, now);
         let floor = floor_meta(office_floor, self.nav.current(), self.n_floors);
         self.office.audio.frame(scene, None, |_| None, floor, now)
     }
