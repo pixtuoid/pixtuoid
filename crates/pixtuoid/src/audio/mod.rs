@@ -159,8 +159,8 @@ impl AudioController {
             self.flash_at = Some(now);
         }
         persist.muted.then(|| {
-            let saved = crate::config::save_audio_muted(&self.config_path, self.ui.muted);
-            SaveOutcome::of(Setting::Mute, saved)
+            let save = crate::config::save_audio_muted(&self.config_path, self.ui.muted);
+            SaveOutcome::of(Setting::Mute, save)
         })
     }
 
@@ -191,8 +191,8 @@ impl AudioController {
 
     fn save_volume(&mut self) -> SaveOutcome {
         self.volume_dirty = false;
-        let saved = crate::config::save_audio_volume(&self.config_path, self.ui.volume);
-        SaveOutcome::of(Setting::Volume, saved)
+        let save = crate::config::save_audio_volume(&self.config_path, self.ui.volume);
+        SaveOutcome::of(Setting::Volume, save)
     }
 
     pub(crate) fn set_paused(&mut self, paused: bool) {
