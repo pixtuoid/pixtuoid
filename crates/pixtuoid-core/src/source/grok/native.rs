@@ -51,19 +51,12 @@ pub(crate) fn live_grok_session_ids(grok_root: &Path) -> Option<ProbeSnapshot> {
             let truncated = bytes.len() as u64 == MAX_SESSION_REGISTRY_BYTES;
             static SHAPE_DRIFT_WARNED: std::sync::Once = std::sync::Once::new();
             SHAPE_DRIFT_WARNED.call_once(|| {
-                let cause = if truncated {
-                    "was TRUNCATED at the read cap, so it cannot parse"
-                } else {
-                    "does not parse as the expected [{session_id,pid,cwd,opened_at}] \
-                     array — the registry shape changed upstream"
-                };
                 crate::source::drift::shape_drift(
                     SOURCE_NAME,
-                    &format!(
-                        "active_sessions.json at {} {cause}; liveness degraded to \
-                         mtime gating",
-                        path.display()
-                    ),
+                    crate::source::drift::ShapeDrift::RegistryUnparsed {
+                        path: &path,
+                        truncated,
+                    },
                 );
             });
             None
@@ -323,22 +316,16 @@ mod tests {
         /// The drift breadcrumb must name the RIGHT cause: a truncation
         /// reported as upstream drift sends the reader hunting a format change
         /// that never happened.
-        ///
-        /// Rooted in `/tmp` deliberately. `shape_drift` caps its detail at
-        /// `MAX_DECODED_FIELD_CHARS` (80) and the message spends 24 on its
-        /// prefix, so the cause survives only while the PATH stays short — the
-        /// default `$TMPDIR` on macOS is ~55 chars on its own and truncates the
-        /// cause away entirely.
         #[test]
         fn an_unparseable_registry_reports_drift_not_truncation() {
-            let dir = tempfile::Builder::new().tempdir_in("/tmp").unwrap();
+            let dir = tempfile::tempdir().unwrap();
             std::fs::write(dir.path().join("active_sessions.json"), "not json {{{").unwrap();
             let logs = crate::test_capture::capture_logs(|| {
                 assert!(live_grok_session_ids(dir.path()).is_none());
             });
             assert!(logs.contains("does not parse"), "got:\n{logs}");
             assert!(
-                !logs.contains("TRUNCATED"),
+                logs.contains("truncated=false"),
                 "a 12-byte file cannot have hit the cap, got:\n{logs}"
             );
         }

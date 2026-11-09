@@ -67,6 +67,8 @@ impl UnknownDriftKind {
     }
 }
 
+use std::path::Path;
+
 use crate::source::decoder::display_safe;
 
 /// A hook/transcript event we don't handle and that isn't a registered custom
@@ -89,10 +91,47 @@ pub fn unknown_dispatch(source: &str, tool: &str) {
     tracing::warn!(target: TARGET, source = %display_safe(source), kind = <&str>::from(DriftKind::UnknownDispatch), tool = %display_safe(tool));
 }
 
-/// A consumed upstream data SHAPE drifted — a registry/transcript field that
-/// still parses but lost a key we read. `detail` carries the specifics.
-pub fn shape_drift(source: &str, detail: &str) {
-    tracing::warn!(target: TARGET, source = %display_safe(source), kind = <&str>::from(DriftKind::ShapeDrift), detail = %display_safe(detail));
+/// What a [`shape_drift`] breadcrumb reports. Each carries its own fields, so the
+/// message stays a constant and no value is cut to fit another's length.
+#[derive(Debug, Clone, Copy)]
+#[expect(missing_docs, reason = "a field is its log field's name")]
+pub enum ShapeDrift<'a> {
+    /// A registry entry parses as JSON, but a key we read is missing or mistyped.
+    RegistryKey { path: &'a Path, key: &'static str },
+    /// A registry file does not parse.
+    RegistryUnparsed {
+        path: &'a Path,
+        /// The read hit its cap: ours, not an upstream format change.
+        truncated: bool,
+    },
+    /// A SubagentStop's transcript stem is not its prefixed agent id.
+    SubagentStem {
+        /// The transcript's stem, which the decode keys on.
+        stem: &'a str,
+        agent_id: &'a str,
+    },
+}
+
+/// A consumed upstream data SHAPE drifted: a registry or transcript value that
+/// still arrives but no longer reads as the shape we decode.
+pub fn shape_drift(source: &str, shape: ShapeDrift<'_>) {
+    let source = display_safe(source);
+    let kind = <&str>::from(DriftKind::ShapeDrift);
+    match shape {
+        ShapeDrift::RegistryKey { path, key } => tracing::warn!(
+            target: TARGET, source = %source, kind, path = ?path, key,
+            "a registry entry parses, but a key we read is missing or mistyped; liveness falls back to mtime gating"
+        ),
+        ShapeDrift::RegistryUnparsed { path, truncated } => tracing::warn!(
+            target: TARGET, source = %source, kind, path = ?path, truncated,
+            "a registry file does not parse; liveness falls back to mtime gating"
+        ),
+        ShapeDrift::SubagentStem { stem, agent_id } => tracing::warn!(
+            target: TARGET, source = %source, kind,
+            stem = ?display_safe(stem), agent_id = ?display_safe(agent_id),
+            "a SubagentStop transcript stem is not its prefixed agent id; keying on the stem"
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -108,7 +147,13 @@ mod tests {
             unknown_event("codex", "e");
             missing_field("codex", "e", "f");
             unknown_dispatch("codex", "t");
-            shape_drift("codex", "d");
+            shape_drift(
+                "codex",
+                ShapeDrift::SubagentStem {
+                    stem: "s",
+                    agent_id: "a",
+                },
+            );
         });
         for &kind in <DriftKind as strum::VariantArray>::VARIANTS {
             assert!(
@@ -136,7 +181,13 @@ mod tests {
             unknown_event(source, "ev\u{1b}]0;PWNED\u{7}il\u{202e}Z");
             unknown_dispatch(source, "De\u{1b}[31mlegateZ");
             missing_field(source, "to\u{1b}olZ", "na\u{202e}meZ");
-            shape_drift(source, &"x".repeat(1000));
+            shape_drift(
+                source,
+                ShapeDrift::SubagentStem {
+                    stem: &"x".repeat(1000),
+                    agent_id: "a\u{202e}b",
+                },
+            );
         });
         for bad in ['\u{1b}', '\u{7}', '\u{202e}'] {
             assert!(
@@ -159,5 +210,34 @@ mod tests {
             !out.contains(&"x".repeat(200)),
             "an uncapped value became an uncapped log line:\n{out}"
         );
+        // A `?` field escapes U+202E on its own; only the stripped value
+        // proves `display_safe` ran.
+        assert!(out.contains("agent_id=\"ab\""), "{out}");
+    }
+
+    /// The diagnostic survives a long home path: what drifted, and whether the
+    /// read was cut by our own cap, each ride their own field.
+    #[test]
+    fn a_long_path_never_hides_what_drifted() {
+        let path = std::path::PathBuf::from(format!("/Users/{}/4242.json", "a".repeat(100)));
+        let out = capture(|| {
+            shape_drift(
+                "claude-code",
+                ShapeDrift::RegistryKey {
+                    path: &path,
+                    key: "startedAt",
+                },
+            );
+            shape_drift(
+                "grok",
+                ShapeDrift::RegistryUnparsed {
+                    path: &path,
+                    truncated: true,
+                },
+            );
+        });
+        assert!(out.contains("key=\"startedAt\""), "{out}");
+        assert!(out.contains("truncated=true"), "{out}");
+        assert!(out.contains(&"a".repeat(100)), "the path is whole:\n{out}");
     }
 }

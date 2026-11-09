@@ -2444,7 +2444,13 @@ mod tests {
             drift::unknown_event("copilot", "NewHookV2");
             drift::missing_field("copilot", "tool.execution_start", "toolName");
             drift::unknown_dispatch("copilot", "AgentV3");
-            drift::shape_drift("copilot", "registry missing pid");
+            drift::shape_drift(
+                "copilot",
+                drift::ShapeDrift::RegistryKey {
+                    path: std::path::Path::new("/r/1.json"),
+                    key: "pid",
+                },
+            );
             drift::unknown_event("codex", "OtherHook");
         });
         let r = scan_log_for_source(&log, "copilot");
