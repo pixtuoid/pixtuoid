@@ -27,18 +27,25 @@ pub(super) fn fit(
         crate::render_scale::PixelFit::at_most_high(FITTED_MAX_H, (density, per_point), surface_px);
     let units = |px: u16| px.div_ceil(fit.scale().get());
     let Size { w, h } = fit.logical();
+    let insets = Insets {
+        top: units(insets_px.top),
+        right: units(insets_px.right),
+        bottom: units(insets_px.bottom),
+        left: units(insets_px.left),
+    };
     Fitted {
         viewport: Viewport {
             size: Size {
-                w: w.max(FITTED_MIN_W),
+                // The layout runs inside the insets, so the floor is the area
+                // inside them.
+                w: w.max(
+                    FITTED_MIN_W
+                        .saturating_add(insets.left)
+                        .saturating_add(insets.right),
+                ),
                 h,
             },
-            insets: Insets {
-                top: units(insets_px.top),
-                right: units(insets_px.right),
-                bottom: units(insets_px.bottom),
-                left: units(insets_px.left),
-            },
+            insets,
         },
         upscale: fit.upscale(),
     }
