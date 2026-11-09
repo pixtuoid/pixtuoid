@@ -801,21 +801,19 @@ mod tests {
             sandbox,
             "no per-run part"
         );
-        let root = sandbox.parent().expect("under the capture root");
         #[cfg(unix)]
-        assert_eq!(
-            std::fs::canonicalize(root).expect("the root exists"),
-            root,
-            "a CLI that realpaths its home records what one reading it does"
-        );
+        {
+            let root = sandbox.parent().expect("under the capture root");
+            assert_eq!(
+                std::fs::canonicalize(root).expect("the root exists"),
+                root,
+                "a CLI that realpaths its home records what one reading it does"
+            );
+        }
+        // dunce, not std: std's Windows form is `\\?\`, which the sandbox never
+        // starts with, so the assert below would hold whatever the sandbox was.
         let base = capture_base(&capture_workspace().expect("the workspace"))
-            .and_then(|b| {
-                Some(
-                    std::fs::canonicalize(b.parent()?)
-                        .ok()?
-                        .join(b.file_name()?),
-                )
-            })
+            .and_then(|b| Some(dunce::canonicalize(b.parent()?).ok()?.join(b.file_name()?)))
             .expect("the workspace base");
         assert!(
             !sandbox.starts_with(&base),

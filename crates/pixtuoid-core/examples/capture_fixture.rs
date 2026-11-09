@@ -31,7 +31,7 @@ mod recorder {
 
     use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs, TURN_BUDGET};
     use pixtuoid_core::harness::host::{
-        HeldDir, SandboxEnv, built, connect, fresh_private_dir, warmed_shim_dir,
+        DirReaders, HeldDir, SandboxEnv, built, connect, fresh_private_dir, warmed_shim_dir,
     };
     use pixtuoid_core::harness::plan::{
         AbsPath, CapturePlan, DaemonPlan, Invocation, KEYCHAINS, Operator, Sink,
@@ -40,9 +40,9 @@ mod recorder {
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
         DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, ProcessExit,
-        SecondTurn, ServerStop, canonical_capture, capture_base, capture_sandbox,
-        capture_workspace, capture_workspace_tail, files_under, jsonl_files_under, outlived,
-        required_version_probe, slashed_under, version_answer, wait_until,
+        SecondTurn, ServerStop, canonical_capture, capture_base, capture_workspace,
+        capture_workspace_tail, files_under, jsonl_files_under, outlived, required_version_probe,
+        slashed_under, version_answer, wait_until,
     };
 
     /// The driver's own part of the recorder's scratch, apart from everything the
@@ -326,7 +326,7 @@ mod recorder {
     /// reaches.
     fn isolated(plan: &CapturePlan, operator: Operator) -> std::io::Result<()> {
         let (pixtuoid, shim) = (built("pixtuoid")?, built("pixtuoid-hook")?);
-        let dir = HeldDir::fresh(capture_sandbox()?)?;
+        let dir = HeldDir::capture_sandbox()?;
         let bin = dir.path().join("bin");
         warmed_shim_dir(&bin, &shim)?;
         let env = SandboxEnv::new(dir.path(), hermetic::home_vars(&plan.source), &[&bin])?;
@@ -991,7 +991,7 @@ mod recorder {
         })?;
         // Read off the base, never `capture_root`: on Windows that resolves
         // ProgramData, which the recorder's cleared environment can't.
-        let lock = fresh_private_dir(base)?;
+        let lock = fresh_private_dir(base, DirReaders::Users)?;
         std::fs::create_dir(&ws)?;
         fill_workspace(&ws, seed)?;
         init_repo(&ws)?;
@@ -1541,9 +1541,10 @@ mod recorder {
                     .expect("a capture base")
                     .to_path_buf()
             };
-            let held = fresh_private_dir(&base(d.path())).expect("the canonical lock");
-            let replay =
-                fresh_private_dir(&base(&own)).expect("a replay never waits on a recording");
+            let held =
+                fresh_private_dir(&base(d.path()), DirReaders::Users).expect("the canonical lock");
+            let replay = fresh_private_dir(&base(&own), DirReaders::Users)
+                .expect("a replay never waits on a recording");
             let other = std::fs::File::open(lock_beside(&base(d.path()))).expect("the lock file");
             assert!(other.try_lock().is_err(), "a second recording waits");
             drop(held);

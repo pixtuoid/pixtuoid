@@ -56,9 +56,8 @@ mod run {
     use pixtuoid_core::harness::provenance::NonEmpty;
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_sandbox,
-        capture_workspace, capture_workspace_tail, required_version_probe, version_answer,
-        wait_until,
+        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_workspace,
+        capture_workspace_tail, required_version_probe, version_answer, wait_until,
     };
     use semver::Version;
 
@@ -1511,7 +1510,7 @@ mod run {
     impl SandboxDir {
         fn of_run(record: bool) -> std::io::Result<Self> {
             if record {
-                return Ok(Self::Recording(HeldDir::fresh(capture_sandbox()?)?));
+                return Ok(Self::Recording(HeldDir::capture_sandbox()?));
             }
             // Under the temp root's long form: a Windows runner's TEMP is an 8.3
             // short path, which a CLI's realpath disagrees with, and openclaw's
@@ -2254,6 +2253,7 @@ mod run {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use pixtuoid_core::harness::capture_sandbox;
         use pixtuoid_core::harness::host::SANDBOX_HOMES;
         use pixtuoid_core::harness::plan::Resolved;
         use strum::VariantArray;
@@ -3393,6 +3393,28 @@ mod run {
             let (none, canonical) = run_workspace(true).expect("a recording's workspace");
             assert!(none.is_none());
             assert_eq!(canonical, capture_workspace().expect("the canonical one"));
+        }
+
+        /// In this order, a replay wrongly on the canonical lock fails the first
+        /// `assert_ne` before a second one would wait on it forever.
+        #[test]
+        fn a_replay_sandboxes_in_a_dir_of_its_own_and_a_recording_in_the_canonical_one() {
+            let canonical = capture_sandbox().expect("the canonical one");
+            let recording = SandboxDir::of_run(true).expect("a recording's sandbox");
+            assert_eq!(recording.path(), canonical);
+            drop(recording);
+            let first = SandboxDir::of_run(false).expect("a replay's sandbox");
+            assert_ne!(
+                first.path(),
+                canonical,
+                "a replay never waits on a recording"
+            );
+            let second = SandboxDir::of_run(false).expect("another's");
+            assert_ne!(
+                first.path(),
+                second.path(),
+                "two replays at once would share their homes"
+            );
         }
 
         #[test]

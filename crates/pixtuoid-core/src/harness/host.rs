@@ -289,12 +289,40 @@ pub fn known_folders_expanded(path: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
-/// Owner, SYSTEM and Administrators in full, Users read and execute, nothing
-/// inherited: a parent like ProgramData would otherwise pass every local user
-/// its create right. Users must keep read: on windows-latest, codex's
-/// unelevated sandbox token could not read the workspace without it.
+/// Owner, SYSTEM and Administrators in full, nothing inherited: a parent like
+/// ProgramData would otherwise pass every local user its create right.
 #[cfg(windows)]
-const PRIVATE_DIR: &str = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)(A;OICI;FRFX;;;BU)";
+const PRIVATE_DIR: &str = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)";
+
+/// Who besides its owner reads a directory [`fresh_private_dir`] makes.
+#[derive(Clone, Copy, Debug)]
+pub enum DirReaders {
+    /// No one: a capture's sandbox holds its operator's identity, in the
+    /// capture plan.
+    Owner,
+    /// Every local user too, on Windows: on windows-latest, codex's unelevated
+    /// sandbox token could not read the workspace without it.
+    Users,
+}
+
+impl DirReaders {
+    /// The new directory's DACL, its ACEs inherited by all it holds.
+    #[cfg(windows)]
+    fn sddl(self) -> String {
+        match self {
+            Self::Owner => PRIVATE_DIR.to_owned(),
+            Self::Users => format!("{PRIVATE_DIR}(A;OICI;FRFX;;;BU)"),
+        }
+    }
+
+    #[cfg(not(windows))]
+    const fn mode(self) -> u32 {
+        match self {
+            // A Unix CLI's own sandbox runs as the owner, so Users needs no more.
+            Self::Owner | Self::Users => 0o700,
+        }
+    }
+}
 
 /// Create `path`, one level, where no other local user can write, as one
 /// call: refuses one that already exists.
@@ -302,12 +330,12 @@ const PRIVATE_DIR: &str = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)(A
 /// # Errors
 ///
 /// `AlreadyExists` for an existing entry, or the create's own failure.
-pub fn create_private_dir(path: &Path) -> std::io::Result<()> {
+pub(crate) fn create_private_dir(path: &Path, readers: DirReaders) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
 
-        let sd = crate::win32::SecurityDescriptor::from_sddl(PRIVATE_DIR)?;
+        let sd = crate::win32::SecurityDescriptor::from_sddl(&readers.sddl())?;
         let wide = nul_terminated(path.as_os_str());
         // SAFETY: `wide` is NUL-terminated, and `sd` outlives the call, which
         // copies the descriptor onto the new directory.
@@ -319,14 +347,14 @@ pub fn create_private_dir(path: &Path) -> std::io::Result<()> {
     #[cfg(not(windows))]
     {
         use std::os::unix::fs::DirBuilderExt;
-        std::fs::DirBuilder::new().mode(0o700).create(path)
+        std::fs::DirBuilder::new().mode(readers.mode()).create(path)
     }
 }
 
 /// Whether this process owns the entry at `path`, a link judged as itself and
 /// never by its target: a planted link to a directory of ours is still not
 /// ours. False whenever that cannot be read.
-pub fn owned_by_us(path: &Path) -> bool {
+pub(crate) fn owned_by_us(path: &Path) -> bool {
     #[cfg(windows)]
     {
         windows_owned(path).unwrap_or(false)
@@ -392,7 +420,7 @@ pub fn lock_beside(dir: &Path) -> PathBuf {
 ///
 /// `PermissionDenied` for an entry that is not ours, or the lock's, the
 /// remove's or the create's own failure.
-pub fn fresh_private_dir(dir: &Path) -> std::io::Result<std::fs::File> {
+pub fn fresh_private_dir(dir: &Path, readers: DirReaders) -> std::io::Result<std::fs::File> {
     let lock = hold_lock(&lock_beside(dir))?;
     if std::fs::symlink_metadata(dir).is_ok() {
         if !owned_by_us(dir) {
@@ -408,7 +436,7 @@ pub fn fresh_private_dir(dir: &Path) -> std::io::Result<std::fs::File> {
     }
     // One call no other local user can write into, refused if anyone re-made
     // it since the remove.
-    create_private_dir(dir)?;
+    create_private_dir(dir, readers)?;
     Ok(lock)
 }
 
@@ -431,10 +459,7 @@ impl RunDir {
 
 impl Drop for RunDir {
     fn drop(&mut self) {
-        if let Err(e) = remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.0))
-        {
-            let _ = writeln!(std::io::stderr(), "left {}: {e}", self.0.display());
-        }
+        remove_run_dir(&self.0);
     }
 }
 
@@ -442,34 +467,49 @@ impl Drop for RunDir {
 /// it drops, when it goes as a [`RunDir`] does.
 #[derive(Debug)]
 pub struct HeldDir {
-    // Before the lock, so it goes first: another recording that took the lock
-    // sooner would re-make the dir under the removal.
-    dir: RunDir,
+    dir: PathBuf,
     _lock: std::fs::File,
 }
 
 impl HeldDir {
-    /// `path` made afresh and held.
+    /// [`capture_sandbox`](crate::harness::capture_sandbox) made afresh and
+    /// held.
     ///
     /// # Errors
     ///
-    /// As [`fresh_private_dir`].
-    pub fn fresh(path: PathBuf) -> std::io::Result<Self> {
-        let lock = fresh_private_dir(&path)?;
-        Ok(Self {
-            dir: RunDir::new(path),
-            _lock: lock,
-        })
+    /// As `capture_sandbox` and [`fresh_private_dir`].
+    pub fn capture_sandbox() -> std::io::Result<Self> {
+        Self::fresh(crate::harness::capture_sandbox()?)
+    }
+
+    fn fresh(dir: PathBuf) -> std::io::Result<Self> {
+        let lock = fresh_private_dir(&dir, DirReaders::Owner)?;
+        Ok(Self { dir, _lock: lock })
     }
 
     /// Where it is.
     pub fn path(&self) -> &Path {
-        self.dir.path()
+        &self.dir
+    }
+}
+
+impl Drop for HeldDir {
+    fn drop(&mut self) {
+        // Here, before the lock drops with the fields: a recording that took it
+        // sooner would re-make the dir under the removal.
+        remove_run_dir(&self.dir);
+    }
+}
+
+/// `dir` removed once released, or a notice that it was left.
+fn remove_run_dir(dir: &Path) {
+    if let Err(e) = remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(dir)) {
+        let _ = writeln!(std::io::stderr(), "left {}: {e}", dir.display());
     }
 }
 
 /// How long a removal waits for another process to let go of its tree.
-pub const RELEASE_PATIENCE: Duration = Duration::from_secs(60);
+pub(crate) const RELEASE_PATIENCE: Duration = Duration::from_secs(60);
 /// How often it asks meanwhile.
 const RELEASE_POLL: Duration = Duration::from_millis(250);
 
@@ -486,7 +526,7 @@ const SHARING_VIOLATION: i32 = windows_sys::Win32::Foundation::ERROR_SHARING_VIO
 /// # Errors
 ///
 /// `remove`'s last failure.
-pub fn remove_once_released(
+pub(crate) fn remove_once_released(
     patience: Duration,
     mut remove: impl FnMut() -> std::io::Result<()>,
 ) -> std::io::Result<()> {
@@ -850,9 +890,9 @@ mod tests {
     fn a_private_dir_is_made_once_and_never_reused() {
         let d = tempfile::tempdir().expect("tempdir");
         let dir = d.path().join("base");
-        create_private_dir(&dir).expect("create");
+        create_private_dir(&dir, DirReaders::Owner).expect("create");
         assert!(owned_by_us(&dir));
-        let again = create_private_dir(&dir).expect_err("it exists");
+        let again = create_private_dir(&dir, DirReaders::Owner).expect_err("it exists");
         assert_eq!(again.kind(), std::io::ErrorKind::AlreadyExists);
     }
 
@@ -889,14 +929,17 @@ mod tests {
     fn a_private_dir_is_the_owners_alone() {
         use std::os::unix::fs::PermissionsExt;
         let d = tempfile::tempdir().expect("tempdir");
-        let dir = d.path().join("base");
-        create_private_dir(&dir).expect("create");
-        let mode = std::fs::metadata(&dir).expect("stat").permissions().mode();
-        assert_eq!(mode & 0o777, 0o700);
+        for (name, readers) in [("owner", DirReaders::Owner), ("users", DirReaders::Users)] {
+            let dir = d.path().join(name);
+            create_private_dir(&dir, readers).expect("create");
+            let mode = std::fs::metadata(&dir).expect("stat").permissions().mode();
+            assert_eq!(mode & 0o777, 0o700, "{readers:?}");
+        }
     }
 
-    /// The DACL read back off the directory: a create that dropped the
-    /// descriptor would read ProgramData's inherited ACEs here.
+    /// The DACL read back off each directory: a create that dropped the
+    /// descriptor would read ProgramData's inherited ACEs here. A sandbox's
+    /// alone grants Users nothing.
     #[cfg(windows)]
     #[test]
     fn a_private_dir_holds_exactly_its_protected_dacl() {
@@ -906,19 +949,27 @@ mod tests {
         use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
 
         let d = tempfile::tempdir().expect("tempdir");
-        let dir = d.path().join("base");
-        create_private_dir(&dir).expect("create");
-        let handle = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-            .open(&dir)
-            .expect("open the directory");
-        let held = crate::win32::test_support::held_dacl(handle.as_raw_handle(), SE_FILE_OBJECT);
-        let meant = crate::win32::SecurityDescriptor::from_sddl(PRIVATE_DIR)
-            .expect("sddl")
-            .dacl();
-        assert_eq!(held, meant);
-        assert!(held.starts_with("D:P"), "protected: {held}");
+        let workspace = d.path().join("base");
+        create_private_dir(&workspace, DirReaders::Users).expect("create");
+        let sandbox = HeldDir::fresh(d.path().join("sandbox")).expect("held");
+        for (dir, readers, users_read) in [
+            (workspace.as_path(), DirReaders::Users, true),
+            (sandbox.path(), DirReaders::Owner, false),
+        ] {
+            let handle = std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(dir)
+                .expect("open the directory");
+            let held =
+                crate::win32::test_support::held_dacl(handle.as_raw_handle(), SE_FILE_OBJECT);
+            let meant = crate::win32::SecurityDescriptor::from_sddl(&readers.sddl())
+                .expect("sddl")
+                .dacl();
+            assert_eq!(held, meant, "{readers:?}");
+            assert!(held.starts_with("D:P"), "protected: {held}");
+            assert_eq!(held.contains(";;;BU)"), users_read, "{readers:?}: {held}");
+        }
     }
 
     #[cfg(windows)]
