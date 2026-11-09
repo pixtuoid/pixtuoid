@@ -1388,11 +1388,8 @@ fn requires_action_parent_cycle_is_still_reaped_by_the_stale_sweep() {
     }
 }
 
-// A 2-cycle whose members are BOTH RequiresAction would mutually exempt — each has
-// the OTHER as a genuine RequiresAction ancestor, so `has_requires_action_ancestor` skips
-// both every sweep tick (#238). The fix is upstream of the sweep: the
-// SessionStart arm refuses a cycle-closing parent link, so the sweep itself
-// needs no cycle awareness.
+// #238: the SessionStart arm refuses a cycle-closing parent link (why:
+// `scope::would_create_cycle`).
 #[test]
 fn mutual_requires_action_parent_cycle_is_refused_at_the_link_seam_and_reaped() {
     use pixtuoid_core::state::reducer::STALE_BLOCKED_TIMEOUT;

@@ -1635,6 +1635,20 @@ impl core::marker::Unpin for pixtuoid_core::state::SceneState
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::SceneState
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::SceneState
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::SceneState
+pub struct pixtuoid_core::state::ScopeTree<'a>
+impl<'a> pixtuoid_core::state::ScopeTree<'a>
+pub fn pixtuoid_core::state::ScopeTree<'a>::children(&self, pixtuoid_core::id::AgentId) -> &[&'a pixtuoid_core::state::AgentSlot]
+pub fn pixtuoid_core::state::ScopeTree<'a>::of(&'a alloc::collections::btree::map::BTreeMap<pixtuoid_core::id::AgentId, pixtuoid_core::state::AgentSlot>) -> Self
+pub fn pixtuoid_core::state::ScopeTree<'a>::roots(&self) -> impl core::iter::traits::iterator::Iterator<Item = &'a pixtuoid_core::state::AgentSlot>
+impl<'a> core::fmt::Debug for pixtuoid_core::state::ScopeTree<'a>
+pub fn pixtuoid_core::state::ScopeTree<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::marker::Send for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::marker::Sync for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::marker::Unpin for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::marker::UnsafeUnpin for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::ScopeTree<'a>
 pub struct pixtuoid_core::state::SlotLabel
 impl pixtuoid_core::state::SlotLabel
 pub const pixtuoid_core::state::SlotLabel::SEP: char
