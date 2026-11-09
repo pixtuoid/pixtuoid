@@ -67,8 +67,9 @@ fn published() -> Vec<Published> {
     crates
 }
 
-/// The package list too: an `include`/`exclude` edit drops a present file.
-fn packages(name: &str, file: &str) -> bool {
+/// Whether `cargo package --list -p name` holds `file`: an `include`/`exclude`
+/// edit can drop a file that is present on disk.
+fn ships(name: &str, file: &str) -> bool {
     cargo(&["package", "--list", "--allow-dirty", "-p", name])
         .lines()
         .any(|l| l == file)
@@ -85,7 +86,7 @@ fn every_published_crate_carries_the_root_license_text() {
             "{name}'s LICENSE is not the root's text"
         );
         assert!(
-            packages(name, "LICENSE"),
+            ships(name, "LICENSE"),
             "{name} would publish without its LICENSE"
         );
     }
@@ -97,25 +98,115 @@ fn every_published_crate_carries_the_root_license_text() {
 /// so a README shared from the root breaks every relative link and image.
 #[test]
 fn every_published_crate_carries_a_readme_crates_io_renders_whole() {
+    let prefixes = RepoPrefixes::of(&repository());
     for krate in published() {
         let name = &krate.name;
         let readme = krate
             .readme
             .unwrap_or_else(|| panic!("{name} has no `readme`, so its crates.io page is blank"));
         assert!(
-            packages(name, "README.md"),
+            ships(name, "README.md"),
             "{name} would publish without its README"
         );
         let text = std::fs::read_to_string(&readme)
             .unwrap_or_else(|e| panic!("read {name}'s readme {readme:?}: {e}"));
-        let relative: Vec<&str> = link_targets(&text)
-            .into_iter()
-            .filter(|t| !is_absolute(t))
+        let targets = link_targets(&text);
+        let relative: Vec<&str> = targets
+            .iter()
+            .copied()
+            .filter(|t| !resolves_off_crate_dir(t))
             .collect();
         assert!(
             relative.is_empty(),
             "{name}'s readme {readme:?} links {relative:?} relatively"
         );
+        let off_head: Vec<&str> = targets
+            .iter()
+            .copied()
+            .filter(|t| prefixes.names_a_tree_file_off_head(t))
+            .collect();
+        assert!(
+            off_head.is_empty(),
+            "{name}'s readme links {off_head:?} into this tree at a ref `just links` doesn't check"
+        );
+    }
+}
+
+/// The prefixes are copied into gen-readme.mjs, which writes the generated
+/// images by one, and into the `links` recipe, which remaps both onto the tree.
+#[test]
+fn every_copy_of_the_readme_link_prefixes_is_the_repositorys() {
+    let prefixes = RepoPrefixes::of(&repository());
+    let read = |file: &str| std::fs::read_to_string(root().join(file)).expect("read the copy");
+    let raw = prefixes.raw.trim_end_matches('/');
+    assert!(
+        read("scripts/gen-readme.mjs").contains(&format!("const RAW = '{raw}';")),
+        "gen-readme.mjs's RAW is not {raw}"
+    );
+    let justfile = read("justfile");
+    for prefix in [&prefixes.blob, &prefixes.raw] {
+        let escaped: String = prefix
+            .chars()
+            .flat_map(|c| {
+                r".^$|?*+()[]{}\"
+                    .contains(c)
+                    .then_some('\\')
+                    .into_iter()
+                    .chain([c])
+            })
+            .collect();
+        assert!(
+            justfile.contains(&format!("--remap '^{escaped} file://")),
+            "`just links` does not remap {prefix} onto the tree"
+        );
+    }
+}
+
+/// `[workspace.package] repository`, which every published crate inherits.
+fn repository() -> String {
+    let manifest: toml::Table = std::fs::read_to_string(root().join("Cargo.toml"))
+        .expect("read the root manifest")
+        .parse()
+        .expect("parse the root manifest");
+    manifest["workspace"]["package"]["repository"]
+        .as_str()
+        .expect("a workspace repository")
+        .to_owned()
+}
+
+/// How the README links a file of this tree, at `HEAD` as crates.io links what
+/// it resolves (crates_io_markdown's `raw/HEAD` and `blob/HEAD`).
+struct RepoPrefixes {
+    blob: String,
+    raw: String,
+}
+
+impl RepoPrefixes {
+    fn of(repository: &str) -> Self {
+        let slug = repository
+            .strip_prefix("https://github.com/")
+            .expect("a GitHub repository");
+        Self {
+            blob: format!("{repository}/blob/HEAD/"),
+            raw: format!("https://raw.githubusercontent.com/{slug}/HEAD/"),
+        }
+    }
+
+    /// A link to a file this tree holds, at a ref other than `HEAD`, which is
+    /// all `just links` checks. A ref holding files the tree lacks, a generated
+    /// image's own branch, is out of its reach at any ref.
+    fn names_a_tree_file_off_head(&self, target: &str) -> bool {
+        [&self.blob, &self.raw].into_iter().any(|head| {
+            let any_ref = head.trim_end_matches('/').trim_end_matches("HEAD");
+            target.strip_prefix(any_ref).is_some_and(|rest| {
+                !target.starts_with(head.as_str())
+                    && rest.split_once('/').is_some_and(|(_, path)| {
+                        root()
+                            .join(path.split(['#', '?']).next().unwrap_or(path))
+                            .exists()
+                    })
+            })
+        })
     }
 }
 
@@ -151,7 +242,7 @@ fn first_word(s: &str) -> &str {
 
 /// A fragment stays on the page; anything else must name its scheme (RFC 3986
 /// §3.1: a letter, then letters, digits, `+`, `-` or `.`).
-fn is_absolute(target: &str) -> bool {
+fn resolves_off_crate_dir(target: &str) -> bool {
     target.starts_with('#')
         || target.split_once(':').is_some_and(|(scheme, _)| {
             scheme.starts_with(|c: char| c.is_ascii_alphabetic())

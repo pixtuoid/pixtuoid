@@ -116,11 +116,6 @@ short window shows the tops of the towers and a tall one shows them whole. Every
 looks out on one city, the pack's buildings standing in front of plain blocks
 on the horizon.
 
-## The corpus census
-
-`just corpus-all` drives every local transcript through the real render seam;
-what it reports and why it doesn't gate: `examples/corpus_check.rs`'s `//!` header.
-
 ## When refactoring
 
 Changes to `derive_with_routing`, `WalkState`, or the pixel passes add or

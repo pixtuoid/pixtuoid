@@ -219,6 +219,10 @@ name = "snapshot"
 path = "examples/snapshot/main.rs"
 test = true
 
+[[example]]
+name = "corpus_check"
+test = true
+
 [package.metadata.deb]
 section = "utils"
 assets = [

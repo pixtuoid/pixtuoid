@@ -53,9 +53,6 @@ toml       = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-# `examples/corpus_check.rs` drives `harness` (dev-only, see core's manifest)
-# over a root `native` resolves, so both stay out of the engine's own graph.
-pixtuoid-core = { path = "../pixtuoid-core", version = "0.22.0", default-features = false, features = ["harness", "native"] }
 anyhow     = { workspace = true }
 proptest   = { workspace = true }
 tempfile   = { workspace = true }
@@ -76,7 +73,3 @@ criterion  = { workspace = true }
 [[bench]]
 name = "render_frame"
 harness = false
-
-[[example]]
-name = "corpus_check"
-test = true
