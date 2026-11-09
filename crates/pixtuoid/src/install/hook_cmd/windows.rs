@@ -48,16 +48,17 @@ fn resolve_windows_command(
     let Some(bad) = first_cmd_unsafe_char(path) else {
         return Ok(format!("{path}{}{source}", super::SOURCE_FLAG));
     };
-    // The short form can keep the metacharacter (`windows_short_path`).
-    if let Some(s) = short_path(path)
-        && first_cmd_unsafe_char(&s).is_none()
-    {
-        return Ok(format!("{s}{}{source}", super::SOURCE_FLAG));
-    }
+    // The short form can keep a metacharacter (`windows_short_path`).
+    let short = short_path(path);
+    let kept = match short.as_deref().map(|s| (s, first_cmd_unsafe_char(s))) {
+        Some((s, None)) => return Ok(format!("{s}{}{source}", super::SOURCE_FLAG)),
+        Some((_, Some(c))) => c,
+        None => bad,
+    };
     anyhow::bail!(
         "pixtuoid-hook is at a path containing {bad:?} ({path}) that the cmd.exe /C hook \
-         runner can't safely invoke, and no DOS 8.3 short form of it is free of that \
-         character (the volume may keep no 8.3 names, or the component already fits 8.3). \
+         runner can't safely invoke, and no DOS 8.3 short form of it is free of {kept:?} \
+         (the volume may keep no 8.3 names, or the component already fits 8.3). \
          Install pixtuoid to a path of ordinary characters (e.g. %USERPROFILE%\\.cargo\\bin \
          or the npm global prefix) and reconnect the target in pixtuoid's Sources panel. \
          (Tracking: #195.)"
@@ -137,6 +138,16 @@ mod tests {
             err.contains("keep no 8.3 names") && err.contains("already fits 8.3"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn the_refusal_names_the_character_the_short_form_keeps() {
+        let err = resolve_windows_command(r"C:\Users\John Smith\R&D\h.exe", "codex", |_| {
+            Some(r"C:\Users\JOHNSM~1\R&D\h.exe".to_string())
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("free of '&'"), "{err}");
     }
 
     #[test]

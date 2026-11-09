@@ -59,7 +59,10 @@ pub(crate) const AG_EVENTS: &[(&str, bool)] = &[
 
 fn config_dir() -> Result<PathBuf> {
     if pixtuoid_core::platform::go_user_home_dir().is_none() {
-        return Err(io::home_unset("the home directory", "HOME/USERPROFILE"));
+        return Err(io::home_unset(
+            "the home directory",
+            pixtuoid_core::platform::HOME_VAR,
+        ));
     }
     Ok(gemini_dir().join("config"))
 }
@@ -259,7 +262,8 @@ mod tests {
             },
         );
         temp_env::with_vars([(own, None), (other, Some("/elsewhere"))], || {
-            assert!(config_dir().is_err(), "Go's os.UserHomeDir has no fallback");
+            let err = config_dir().unwrap_err().to_string();
+            assert!(err.contains(&format!("({own} unset)")), "{err}");
         });
     }
 

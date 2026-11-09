@@ -101,14 +101,18 @@ fn packages_path() -> Result<PathBuf> {
 /// Windows misses it. Erroring mirrors the sibling home-anchored targets instead of
 /// silently reading a CWD-relative file Reasonix never writes.
 fn home() -> Result<PathBuf> {
-    let read = if cfg!(windows) {
-        "REASONIX_HOME/APPDATA/USERPROFILE"
+    let config = if cfg!(windows) {
+        "APPDATA/"
     } else if cfg!(target_os = "macos") {
-        "REASONIX_HOME/HOME"
+        ""
     } else {
-        "REASONIX_HOME/XDG_CONFIG_HOME/HOME"
+        "XDG_CONFIG_HOME/"
     };
-    reasonix_home().ok_or_else(|| io::home_unset("Reasonix's home", read))
+    let read = format!(
+        "REASONIX_HOME/{config}{}",
+        pixtuoid_core::platform::HOME_VAR
+    );
+    reasonix_home().ok_or_else(|| io::home_unset("Reasonix's home", &read))
 }
 
 /// `REASONIX_HOME`, else upstream's `defaultHomeDir`

@@ -297,11 +297,16 @@ fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::C
             command.env(kept, value);
         }
     }
+    // Codex's default Windows home is the profile dir, which no variable moves,
+    // and it honors `CODEX_HOME` only when that dir exists.
+    let codex = home.join(".codex");
+    std::fs::create_dir_all(&codex).expect("codex home");
     command
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env("XDG_CONFIG_HOME", home)
         .env("XDG_STATE_HOME", home)
+        .env("CODEX_HOME", &codex)
         .env(hook::SOCKET_ENV, endpoint)
         .env("PIXTUOID_HOOK", built_shim());
     command

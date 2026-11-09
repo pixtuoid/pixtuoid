@@ -71,7 +71,7 @@ pub(crate) fn owner_only_create(opts: &mut OpenOptions) -> &mut OpenOptions {
 
 fn checked_home_join(home: Option<PathBuf>, rel: &str) -> Result<PathBuf> {
     home.map(|h| h.join(rel))
-        .ok_or_else(|| home_unset("the home directory", "HOME/USERPROFILE"))
+        .ok_or_else(|| home_unset("the home directory", pixtuoid_core::platform::HOME_VAR))
 }
 
 pub(crate) const HOOK_OVERRIDE_ENV: &str = "PIXTUOID_HOOK";
@@ -971,9 +971,10 @@ mod tests {
     #[test]
     fn checked_home_join_errors_without_home() {
         let err = checked_home_join(None, ".reasonix/settings.json").unwrap_err();
+        let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
         assert_eq!(
             err.to_string(),
-            "cannot resolve the home directory (HOME/USERPROFILE unset); set one and reconnect"
+            format!("cannot resolve the home directory ({var} unset); set one and reconnect")
         );
     }
 

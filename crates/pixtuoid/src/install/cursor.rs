@@ -41,7 +41,7 @@ pub(crate) const CURSOR_EVENTS: &[&str] = &[
 pub(crate) fn default_config_path() -> Result<PathBuf> {
     cursor_config_dir()
         .map(|d| d.join("hooks.json"))
-        .ok_or_else(|| io::home_unset("the home directory", "HOME/USERPROFILE"))
+        .ok_or_else(|| io::home_unset("the home directory", pixtuoid_core::platform::HOME_VAR))
 }
 
 fn cursor_config_dir() -> Option<PathBuf> {

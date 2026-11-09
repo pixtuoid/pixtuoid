@@ -62,7 +62,10 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
         pixtuoid_core::platform::path_env("GROK_HOME").as_deref(),
         pixtuoid_core::platform::user_home_opt().as_deref(),
     ) {
-        return Err(io::home_unset("grok's home", "GROK_HOME/HOME/USERPROFILE"));
+        return Err(io::home_unset(
+            "grok's home",
+            &format!("GROK_HOME/{}", pixtuoid_core::platform::HOME_VAR),
+        ));
     }
     Ok(pixtuoid_core::source::grok::grok_home()
         .join("hooks")

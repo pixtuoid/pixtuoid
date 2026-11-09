@@ -71,7 +71,7 @@ fn resolve_config_dir(
 pub(crate) fn default_config_path() -> Result<PathBuf> {
     kimi_config_dir()
         .map(|d| d.join("config.toml"))
-        .ok_or_else(|| io::home_unset("the home directory", "HOME/USERPROFILE"))
+        .ok_or_else(|| io::home_unset("the home directory", pixtuoid_core::platform::HOME_VAR))
 }
 
 /// Presence probe for auto-detection. Kimi may not create `config.toml` until the

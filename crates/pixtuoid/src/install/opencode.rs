@@ -60,7 +60,7 @@ fn config_dir_from(oc: Option<&Path>, xdg: Option<&Path>, home: Option<&Path>) -
         return Ok(xdg.join("opencode"));
     }
     home.map(|h| h.join(".config").join("opencode"))
-        .ok_or_else(|| io::home_unset("the home directory", "HOME/USERPROFILE"))
+        .ok_or_else(|| io::home_unset("the home directory", pixtuoid_core::platform::HOME_VAR))
 }
 
 /// opencode auto-discovers `<config>/{plugin,plugins}/*.{ts,js}`

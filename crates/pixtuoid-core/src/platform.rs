@@ -78,11 +78,15 @@ pub fn user_home_opt() -> Option<PathBuf> {
     std::env::home_dir()
 }
 
-/// `~` as a Go CLI resolves it, Go's `os.UserHomeDir`: `USERPROFILE` on
-/// Windows, `HOME` elsewhere, and no OS fallback, so `None` where Go errors
-/// (golang/go `src/os/file.go:605-623` @ be57ebb0f3).
+/// The variable [`user_home_opt`] and [`go_user_home_dir`] both read, so the
+/// one an unresolved-home error names.
+pub const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+
+/// `~` as a Go CLI resolves it, Go's `os.UserHomeDir`: [`HOME_VAR`] and no OS
+/// fallback, so `None` where Go errors (golang/go `src/os/file.go:605-623` @
+/// be57ebb0f3).
 pub fn go_user_home_dir() -> Option<PathBuf> {
-    path_env(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+    path_env(HOME_VAR)
 }
 
 /// `~` as a CLI on the `dirs` crate resolves it (dirs 6.0.0 @ 00511bdc25,
@@ -275,12 +279,14 @@ mod tests {
         temp_env::with_vars([(own, Some("/own")), (other, Some("/other"))], || {
             assert_eq!(user_home_opt(), s("/own"));
         });
-        // With `USERPROFILE` unset, std asks Windows for the profile dir.
-        #[cfg(windows)]
-        temp_env::with_vars(
-            [("USERPROFILE", None), ("HOME", Some("/c/Users/me"))],
-            || assert_ne!(user_home_opt(), s("/c/Users/me")),
-        );
+        // Unset, std asks the OS: the profile dir on Windows, passwd elsewhere.
+        temp_env::with_vars([(own, None), (other, Some("/other"))], || {
+            let home = user_home_opt();
+            assert!(home.is_some() && home != s("/other"), "{home:?}");
+            assert_ne!(home, Some(or_host_fallback(None)));
+            #[cfg(windows)]
+            assert_eq!(home, dirs_home_dir());
+        });
     }
 
     #[test]

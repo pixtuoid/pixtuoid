@@ -33,6 +33,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::id::AgentId
 pub mod pixtuoid_core::platform
+pub const pixtuoid_core::platform::HOME_VAR: &str
 pub fn pixtuoid_core::platform::dirs_home_dir() -> core::option::Option<std::path::PathBuf>
 pub fn pixtuoid_core::platform::go_user_home_dir() -> core::option::Option<std::path::PathBuf>
 pub fn pixtuoid_core::platform::path_env(&str) -> core::option::Option<std::path::PathBuf>
