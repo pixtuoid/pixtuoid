@@ -33,14 +33,12 @@ pub(crate) const CURSOR_EVENTS: &[&str] = &[
 ];
 
 /// cursor-agent reads user hooks from `os.homedir()/.cursor/hooks.json` only
-/// (`userConfigPath`, `1841.index.js` in the pinned 2026.10.22 build);
+/// (`userConfigPath`, `1841.index.js:1` at cursor-agent 2026.10.22);
 /// `CURSOR_CONFIG_DIR` and `XDG_CONFIG_HOME` move its CLI config, not its hooks.
 /// The home base is `USERPROFILE`-first (Node `os.homedir`), NOT the Electron
 /// IDE's `%APPDATA%\Cursor`.
 pub(crate) fn default_config_path() -> Result<PathBuf> {
-    pixtuoid_core::platform::user_home_opt()
-        .map(|h| h.join(".cursor").join("hooks.json"))
-        .ok_or_else(|| io::home_unset("the home directory", "HOME/USERPROFILE"))
+    io::home_relative_checked(".cursor/hooks.json")
 }
 
 /// cursor-agent's CLI config dir (`cli-config.json`), which a first run creates:
