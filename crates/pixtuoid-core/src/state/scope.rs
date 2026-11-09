@@ -30,7 +30,8 @@ fn visit() {
 
 /// The scene's `parent_id` links, indexed once so a pass asks every slot's
 /// scope question of it instead of rescanning the scene per slot.
-pub(crate) struct Tree<'a> {
+#[derive(Debug)]
+pub struct Tree<'a> {
     agents: &'a BTreeMap<AgentId, AgentSlot>,
     /// Keyed by every `parent_id`, a dangling one too: a cascade from a removed
     /// parent still reaches the orphans it left.
@@ -38,7 +39,8 @@ pub(crate) struct Tree<'a> {
 }
 
 impl<'a> Tree<'a> {
-    pub(crate) fn of(agents: &'a BTreeMap<AgentId, AgentSlot>) -> Self {
+    /// Indexes `agents`.
+    pub fn of(agents: &'a BTreeMap<AgentId, AgentSlot>) -> Self {
         let mut children: HashMap<AgentId, Vec<&AgentSlot>> = HashMap::new();
         for slot in agents.values() {
             visit();
@@ -49,7 +51,15 @@ impl<'a> Tree<'a> {
         Self { agents, children }
     }
 
-    fn children(&self, id: AgentId) -> &[&'a AgentSlot] {
+    /// The slots with no parent slot, a dangling `parent_id`'s included.
+    pub fn roots(&self) -> impl Iterator<Item = &'a AgentSlot> {
+        self.agents
+            .values()
+            .filter(|s| s.parent_id.is_none_or(|p| !self.agents.contains_key(&p)))
+    }
+
+    /// The slots whose `parent_id` is `id`.
+    pub fn children(&self, id: AgentId) -> &[&'a AgentSlot] {
         visit();
         self.children.get(&id).map_or(&[], Vec::as_slice)
     }
@@ -57,13 +67,8 @@ impl<'a> Tree<'a> {
     /// Every slot under a root, after the parent it hangs from (`None` for a
     /// root). A parent cycle has no root, so no walk enters one: a member can't
     /// count another, or itself, as its relative (#238).
-    fn lineage(&self) -> Vec<(&'a AgentSlot, Option<&'a AgentSlot>)> {
-        let mut frontier: Vec<_> = self
-            .agents
-            .values()
-            .filter(|s| s.parent_id.is_none_or(|p| !self.agents.contains_key(&p)))
-            .map(|s| (s, None))
-            .collect();
+    fn preorder(&self) -> Vec<(&'a AgentSlot, Option<&'a AgentSlot>)> {
+        let mut frontier: Vec<_> = self.roots().map(|s| (s, None)).collect();
         let mut order = Vec::with_capacity(self.agents.len());
         while let Some((slot, parent)) = frontier.pop() {
             order.push((slot, parent));
@@ -79,7 +84,7 @@ impl<'a> Tree<'a> {
     /// Every descendant of a slot satisfying `pred`.
     pub(crate) fn descendants_of(&self, pred: impl Fn(&AgentSlot) -> bool) -> HashSet<AgentId> {
         let mut out = HashSet::new();
-        for (slot, parent) in self.lineage() {
+        for (slot, parent) in self.preorder() {
             if parent.is_some_and(|p| out.contains(&p.agent_id) || pred(p)) {
                 out.insert(slot.agent_id);
             }
@@ -91,7 +96,7 @@ impl<'a> Tree<'a> {
     pub(crate) fn ancestors_of(&self, pred: impl Fn(&AgentSlot) -> bool) -> HashSet<AgentId> {
         let mut out = HashSet::new();
         // Children first, so a slot's verdict is whole before its parent reads it.
-        for (slot, parent) in self.lineage().into_iter().rev() {
+        for (slot, parent) in self.preorder().into_iter().rev() {
             if let Some(p) = parent
                 && (out.contains(&slot.agent_id) || pred(slot))
             {
@@ -123,13 +128,16 @@ pub(crate) enum StampRoot {
 /// a descendant registered under it after it started exiting is reached.
 pub(crate) fn cascade_exit(
     scene: &mut SceneState,
-    roots: impl IntoIterator<Item = AgentId>,
+    roots: &[AgentId],
     stamp_root: StampRoot,
     now: SystemTime,
 ) {
+    if roots.is_empty() {
+        return;
+    }
     let tree = Tree::of(&scene.agents);
     let mut doomed: HashSet<AgentId> = HashSet::new();
-    for root in roots {
+    for &root in roots {
         // A doomed root's subtree is doomed already, so the roots share one walk.
         if stamp_root == StampRoot::Yes && !doomed.insert(root) {
             continue;
@@ -176,8 +184,8 @@ pub(crate) fn refresh_lineage(scene: &mut SceneState, id: AgentId, now: SystemTi
 /// True if linking `child.parent_id = proposed_parent` would close a
 /// `parent_id` cycle. The reducer calls this at every seam that sets or enriches
 /// `parent_id` and REFUSES the link (degrading to parentless), so a cycle can
-/// never EXIST: it has no root, so every walk down from the roots ([`Tree`]'s
-/// readiness queries, the dashboard's rows) would drop its members.
+/// never EXIST: it has no root, so the dashboard's walk down from the roots
+/// would drop its members.
 pub(crate) fn would_create_cycle(
     agents: &BTreeMap<AgentId, AgentSlot>,
     child: AgentId,
@@ -423,7 +431,7 @@ mod tests {
         fsm::mark_exiting(scene.agents.get_mut(&mid).unwrap(), t_mid);
 
         let t_root = t_mid + Duration::from_secs(2);
-        cascade_exit(&mut scene, [root], StampRoot::Yes, t_root);
+        cascade_exit(&mut scene, &[root], StampRoot::Yes, t_root);
 
         assert_eq!(scene.agents[&root].exiting_at, Some(t_root));
         assert_eq!(
@@ -457,7 +465,7 @@ mod tests {
                 .agents
                 .insert(leaf, slot(leaf, Some(mid), ActivityState::Idle));
 
-            cascade_exit(&mut scene, roots, StampRoot::No, now);
+            cascade_exit(&mut scene, &roots, StampRoot::No, now);
 
             assert_eq!(scene.agents[&root].exiting_at, None, "{roots:?}");
             assert_eq!(
@@ -479,7 +487,7 @@ mod tests {
             .insert(orphan, slot(orphan, Some(missing), ActivityState::Idle));
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000);
 
-        cascade_exit(&mut scene, [missing], StampRoot::Yes, now);
+        cascade_exit(&mut scene, &[missing], StampRoot::Yes, now);
 
         assert_eq!(scene.agents[&orphan].exiting_at, Some(now));
         assert!(!scene.agents.contains_key(&missing));

@@ -2,11 +2,11 @@
 //! parent→subagent row list, plus the fold + selection logic. PURE — no
 //! ratatui (the painter lives in `panels::widgets::dashboard`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ToolUse};
+use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ToolUse, Tree};
 use pixtuoid_scene::nameplate::{FloorNamesakes, Nameplate};
 
 /// Roots with more than this many direct subagents render collapsed by default,
@@ -86,32 +86,20 @@ impl DashboardFolds {
 /// subtree, and nesting deeper than two levels is walked too, so nothing is
 /// ever silently dropped.
 pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<DashboardRow> {
-    let mut children: HashMap<AgentId, Vec<&AgentSlot>> = HashMap::new();
-    for slot in scene.agents.values() {
-        if let Some(parent) = slot.parent_id
-            && scene.agents.contains_key(&parent)
-        {
-            children.entry(parent).or_default().push(slot);
-        }
-    }
-
-    let mut roots: Vec<&AgentSlot> = scene
-        .agents
-        .values()
-        .filter(|s| s.parent_id.is_none_or(|p| !scene.agents.contains_key(&p)))
-        .collect();
+    let tree = Tree::of(&scene.agents);
+    let mut roots: Vec<&AgentSlot> = tree.roots().collect();
     roots.sort_by_key(|s| s.desk_index);
 
     let namesakes = FloorNamesakes::of(scene);
     let mut rows = Vec::new();
     for root in roots {
-        push_subtree(&children, folds, &namesakes, root, 0, None, &mut rows);
+        push_subtree(&tree, folds, &namesakes, root, 0, None, &mut rows);
     }
     rows
 }
 
 fn push_subtree(
-    children: &HashMap<AgentId, Vec<&AgentSlot>>,
+    tree: &Tree<'_>,
     folds: &DashboardFolds,
     namesakes: &FloorNamesakes<'_>,
     node: &AgentSlot,
@@ -119,7 +107,7 @@ fn push_subtree(
     parent_id: Option<AgentId>,
     rows: &mut Vec<DashboardRow>,
 ) {
-    let mut kids = children.get(&node.agent_id).cloned().unwrap_or_default();
+    let mut kids = tree.children(node.agent_id).to_vec();
     let child_count = kids.len();
     let collapsed = depth == 0 && folds.is_collapsed(node.agent_id, child_count);
     rows.push(row_for(
@@ -137,7 +125,7 @@ fn push_subtree(
     kids.sort_by_key(|s| s.desk_index);
     for kid in kids {
         push_subtree(
-            children,
+            tree,
             folds,
             namesakes,
             kid,

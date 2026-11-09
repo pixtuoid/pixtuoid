@@ -1389,7 +1389,7 @@ fn requires_action_parent_cycle_is_still_reaped_by_the_stale_sweep() {
 }
 
 // #238: the SessionStart arm refuses a cycle-closing parent link (why:
-// `scope::would_create_cycle`), so the sweep itself needs no cycle awareness.
+// `scope::would_create_cycle`).
 #[test]
 fn mutual_requires_action_parent_cycle_is_refused_at_the_link_seam_and_reaped() {
     use pixtuoid_core::state::reducer::STALE_BLOCKED_TIMEOUT;
