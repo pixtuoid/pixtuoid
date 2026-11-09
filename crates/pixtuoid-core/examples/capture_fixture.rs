@@ -31,8 +31,7 @@ mod recorder {
 
     use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs, TURN_BUDGET};
     use pixtuoid_core::harness::host::{
-        RELEASE_PATIENCE, SandboxEnv, built, connect, create_private_dir, hold_lock, owned_by_us,
-        remove_once_released, warmed_shim_dir,
+        DirReaders, HeldDir, SandboxEnv, built, connect, fresh_private_dir, warmed_shim_dir,
     };
     use pixtuoid_core::harness::plan::{
         AbsPath, CapturePlan, DaemonPlan, Invocation, KEYCHAINS, Operator, Sink,
@@ -41,7 +40,7 @@ mod recorder {
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
         DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, ProcessExit,
-        SecondTurn, ServerStop, canonical_capture, capture_base, capture_workspace,
+        SecondTurn, ServerStop, canonical_capture, capture_base, capture_root, capture_workspace,
         capture_workspace_tail, files_under, jsonl_files_under, outlived, required_version_probe,
         slashed_under, version_answer, wait_until,
     };
@@ -327,7 +326,7 @@ mod recorder {
     /// reaches.
     fn isolated(plan: &CapturePlan, operator: Operator) -> std::io::Result<()> {
         let (pixtuoid, shim) = (built("pixtuoid")?, built("pixtuoid-hook")?);
-        let dir = tempfile::tempdir()?;
+        let dir = HeldDir::capture_sandbox(&capture_root()?)?;
         let bin = dir.path().join("bin");
         warmed_shim_dir(&bin, &shim)?;
         let env = SandboxEnv::new(dir.path(), hermetic::home_vars(&plan.source), &[&bin])?;
@@ -622,7 +621,7 @@ mod recorder {
             slashed_under(&dest, &file)
         })?;
         report_not_json(&not_json);
-        write_provenance(
+        let record_path = write_provenance(
             &dest,
             Recorded {
                 prompt: prompt.clone(),
@@ -637,7 +636,7 @@ mod recorder {
         let Deidentified::Stripped { blanked } = &deidentified;
         println!("blanked {blanked} subtrees no decoder reads");
         let pii = match &plan.operator {
-            Some(operator) => refuse_on_pii(&wrote, &operator.identity),
+            Some(operator) => refuse_on_pii(&wrote, &record_path, &operator.identity),
             None => Err(std::io::Error::other(NO_OPERATOR)),
         };
         if end != ProcessExit::Exited(0) {
@@ -826,8 +825,8 @@ mod recorder {
             std::fs::copy(staged_file, &to)?;
             wrote.push(to);
         }
-        write_provenance(&dest, fresh_record)?;
-        refuse_on_pii(&wrote, needles)?;
+        let record_path = write_provenance(&dest, fresh_record)?;
+        refuse_on_pii(&wrote, &record_path, needles)?;
         println!("recorded {named} into {}", dest.display());
         Ok(())
     }
@@ -980,20 +979,9 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
-    /// The file, beside a capture base, whose lock a capture there holds.
-    const RECORD_LOCK: &str = "pixtuoid-capture.lock";
-
-    /// The lock a capture in `base` holds until it ends, in the directory the
-    /// base sits in: the capture root for the canonical workspace, which every
-    /// recording clears, so they take turns; a replay's own root for its own,
-    /// which nothing else locks.
-    fn record_lock(base: &Path) -> std::io::Result<std::fs::File> {
-        // Read off the base, never `capture_root`: on Windows that resolves
-        // ProgramData, which the recorder's cleared environment can't.
-        hold_lock(&base.with_file_name(RECORD_LOCK))
-    }
-
-    /// `ws` made afresh, and the lock held while the capture uses it.
+    /// `ws` made afresh, and the lock held while the capture uses it: the
+    /// canonical workspace's base is every recording's, so they take turns; a
+    /// replay's is its own root's, which nothing else locks.
     fn prepare_workspace(
         ws: PathBuf,
         seed: Option<&NonEmpty>,
@@ -1001,24 +989,9 @@ mod recorder {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
         })?;
-        let lock = record_lock(base)?;
-        // A fixed name in a shared directory is pre-plantable; a foreign owner is
-        // refused, not removed — under the sticky bit the remove fails and the
-        // capture lands in theirs. Asked of the entry, so a dangling planted link
-        // is refused too.
-        if std::fs::symlink_metadata(base).is_ok() {
-            if !owned_by_us(base) {
-                eprintln!(
-                    "{} exists and is not yours — remove it or run as its owner",
-                    base.display()
-                );
-                std::process::exit(2);
-            }
-            remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(base))?;
-        }
-        // Made in one call no other local user can write into, and refused if
-        // anyone re-created it since the remove.
-        create_private_dir(base)?;
+        // Read off the base, never `capture_root`: on Windows that resolves
+        // ProgramData, which the recorder's cleared environment can't.
+        let lock = fresh_private_dir(base, DirReaders::Users)?;
         std::fs::create_dir(&ws)?;
         fill_workspace(&ws, seed)?;
         init_repo(&ws)?;
@@ -1374,8 +1347,11 @@ mod recorder {
         NonEmpty::try_from(value).map_err(|e| std::io::Error::other(format!("{key}: {e}")))
     }
 
-    fn write_provenance(dest: &Path, record: Recorded) -> std::io::Result<()> {
-        Provenance::Recorded(Box::new(record)).write_to(&no_clobber(dest.join(PROVENANCE)))
+    /// Where it wrote `record`: `.new` beside a committed one.
+    fn write_provenance(dest: &Path, record: Recorded) -> std::io::Result<PathBuf> {
+        let at = no_clobber(dest.join(PROVENANCE));
+        Provenance::Recorded(Box::new(record)).write_to(&at)?;
+        Ok(at)
     }
 
     fn today() -> String {
@@ -1471,11 +1447,20 @@ mod recorder {
         found
     }
 
+    /// Refuses the capture when its `wire` or the `record` written beside it
+    /// embeds a needle: a record's `dropped` keeps text the strip took out of
+    /// the wire.
+    ///
     /// A REFUSAL, not a warning. The old form printed to stderr and left the exit
     /// code at 0 on a run that had already written into the repo tree, so the
     /// capturer had to notice a line scrolling past — and twice did not.
-    fn refuse_on_pii(files: &[PathBuf], needles: &BTreeSet<String>) -> std::io::Result<()> {
-        let found = scan_for_pii(files, needles);
+    fn refuse_on_pii(
+        wire: &[PathBuf],
+        record: &Path,
+        needles: &BTreeSet<String>,
+    ) -> std::io::Result<()> {
+        let files: Vec<PathBuf> = wire.iter().cloned().chain([record.to_path_buf()]).collect();
+        let found = scan_for_pii(&files, needles);
         if found.is_empty() {
             return Ok(());
         }
@@ -1539,6 +1524,7 @@ mod recorder {
         use std::time::Duration;
 
         use super::*;
+        use pixtuoid_core::harness::host::lock_beside;
         use pixtuoid_core::harness::plan::Argv;
         use std::collections::BTreeMap;
 
@@ -1555,9 +1541,11 @@ mod recorder {
                     .expect("a capture base")
                     .to_path_buf()
             };
-            let held = record_lock(&base(d.path())).expect("the canonical lock");
-            let replay = record_lock(&base(&own)).expect("a replay never waits on a recording");
-            let other = std::fs::File::open(d.path().join(RECORD_LOCK)).expect("the lock file");
+            let held =
+                fresh_private_dir(&base(d.path()), DirReaders::Users).expect("the canonical lock");
+            let replay = fresh_private_dir(&base(&own), DirReaders::Users)
+                .expect("a replay never waits on a recording");
+            let other = std::fs::File::open(lock_beside(&base(d.path()))).expect("the lock file");
             assert!(other.try_lock().is_err(), "a second recording waits");
             drop(held);
             assert!(other.try_lock().is_ok());
@@ -1775,6 +1763,22 @@ mod recorder {
                 matches!(&notices.lines().collect::<Vec<_>>()[..], [n] if n.starts_with(&named)),
                 "{notices}"
             );
+        }
+
+        /// A record's `dropped` copies text the strip blanked from the bytes,
+        /// so the bytes' scan alone cannot see it.
+        #[test]
+        fn the_operator_in_the_written_record_is_refused_like_one_in_the_bytes() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let wire = d.path().join(HOOK_PAYLOADS);
+            std::fs::write(&wire, "{}\n").expect("wire");
+            let record = d.path().join(PROVENANCE);
+            let dropped =
+                serde_json::json!({"dropped": {"at": {"/title": [format!("{OPERATOR}'s note")]}}});
+            std::fs::write(&record, dropped.to_string()).expect("record");
+            assert!(refuse_on_pii(std::slice::from_ref(&wire), &record, &needles()).is_err());
+            std::fs::write(&record, "{}").expect("record");
+            assert!(refuse_on_pii(std::slice::from_ref(&wire), &record, &needles()).is_ok());
         }
 
         #[test]

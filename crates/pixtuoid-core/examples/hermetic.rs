@@ -48,8 +48,7 @@ mod run {
         STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG, installer_build,
     };
     use pixtuoid_core::harness::host::{
-        RELEASE_PATIENCE, SandboxEnv, built, connect, hold_lock, inherited, remove_once_released,
-        warmed_shim_dir,
+        HeldDir, RunDir, SandboxEnv, built, connect, hold_lock, inherited, warmed_shim_dir,
     };
     use pixtuoid_core::harness::plan::{
         AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Sink, Word,
@@ -1494,25 +1493,52 @@ mod run {
 
     /// One sandbox ([`SandboxEnv`]), with the profile's own env and config.
     struct Sandbox {
-        dir: tempfile::TempDir,
+        dir: SandboxDir,
         env: SandboxEnv,
         /// Where the headless pixtuoid listens and the recorder tees to.
         scene: Endpoint,
     }
 
+    /// Where a run's sandbox sits: the fixed one when it records, whose paths
+    /// the fixtures carry, else one of its own, so a replay never waits on a
+    /// recording.
+    enum SandboxDir {
+        Recording(HeldDir),
+        Replay(tempfile::TempDir),
+    }
+
+    impl SandboxDir {
+        /// `root`: the capture root a recording's fixed sandbox sits under.
+        fn of_run(record: bool, root: &Path) -> std::io::Result<Self> {
+            if record {
+                return Ok(Self::Recording(HeldDir::capture_sandbox(root)?));
+            }
+            // Under the temp root's long form: a Windows runner's TEMP is an 8.3
+            // short path, which a CLI's realpath disagrees with, and openclaw's
+            // plugin copy then refuses its plugin (`@openclaw/fs-safe`
+            // `src/copy-root-file-sync.ts:57`, `:77-79` at v0.24.2).
+            Ok(Self::Replay(tempfile::tempdir_in(dunce::canonicalize(
+                std::env::temp_dir(),
+            )?)?))
+        }
+
+        fn path(&self) -> &Path {
+            match self {
+                Self::Recording(held) => held.path(),
+                Self::Replay(own) => own.path(),
+            }
+        }
+    }
+
     impl Sandbox {
         fn new(
+            dir: SandboxDir,
             p: &Profile,
             shim_dir: &Path,
             cli_bin: &Path,
             ports: Ports,
             workspace: &Path,
         ) -> std::io::Result<Self> {
-            // Under the temp root's long form: a Windows runner's TEMP is an 8.3
-            // short path, which a CLI's realpath disagrees with, and openclaw's
-            // plugin copy then refuses its plugin (`@openclaw/fs-safe`
-            // `src/copy-root-file-sync.ts:57`, `:77-79` at v0.24.2).
-            let dir = tempfile::tempdir_in(dunce::canonicalize(std::env::temp_dir())?)?;
             let mut env = SandboxEnv::new(dir.path(), p.home_vars(), &[shim_dir, cli_bin])?;
             let expand = |t: &str| expanded(t, ports);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
@@ -1594,27 +1620,9 @@ mod run {
     /// The file in the tier whose lock each invocation holds.
     const TIER_LOCK: &str = "hermetic.lock";
 
-    /// A replay's own workspace root, removed when its run drops, waiting out
-    /// a process still holding it as the recorder waits for the canonical one.
-    struct ReplayRoot(PathBuf);
-
-    impl Drop for ReplayRoot {
-        fn drop(&mut self) {
-            if let Err(e) =
-                remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.0))
-            {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "hermetic: left {}: {e}",
-                    self.0.display()
-                );
-            }
-        }
-    }
-
     /// The workspace a run's CLI works in: the canonical one when it records,
     /// whose path the fixtures carry, else one of its own under the same root.
-    fn run_workspace(record: bool) -> std::io::Result<(Option<ReplayRoot>, PathBuf)> {
+    fn run_workspace(record: bool) -> std::io::Result<(Option<RunDir>, PathBuf)> {
         if record {
             return Ok((None, capture_workspace()?));
         }
@@ -1623,7 +1631,7 @@ mod run {
             .tempdir_in(capture_root()?)?
             .keep();
         let workspace = own.join(capture_workspace_tail());
-        Ok((Some(ReplayRoot(own)), workspace))
+        Ok((Some(RunDir::new(own)), workspace))
     }
 
     /// `p`'s CLI at `version` installed and sandboxed, with the workspace it
@@ -1633,7 +1641,7 @@ mod run {
         p: &Profile,
         version: &Version,
         ports: Ports,
-    ) -> std::io::Result<((PathBuf, Option<ReplayRoot>), Installed, Sandbox)> {
+    ) -> std::io::Result<((PathBuf, Option<RunDir>), Installed, Sandbox)> {
         let (own, workspace) = run_workspace(ctx.record)?;
         if let Some(found) = outside_config(
             p.system_config.here(),
@@ -1647,7 +1655,14 @@ mod run {
             )));
         }
         let cli = install_cli(&ctx.tier, p, version)?;
-        let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, ports, &workspace)?;
+        let sandbox = Sandbox::new(
+            SandboxDir::of_run(ctx.record, &capture_root()?)?,
+            p,
+            &ctx.shim_dir,
+            &cli.bin,
+            ports,
+            &workspace,
+        )?;
         Ok(((workspace, own), cli, sandbox))
     }
 
@@ -1683,7 +1698,7 @@ mod run {
     struct Sandboxed {
         ports: Ports,
         workspace: PathBuf,
-        _workspace_root: Option<ReplayRoot>,
+        _workspace_root: Option<RunDir>,
         cli: Installed,
         sandbox: Sandbox,
     }
@@ -2239,6 +2254,7 @@ mod run {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use pixtuoid_core::harness::capture_sandbox;
         use pixtuoid_core::harness::host::SANDBOX_HOMES;
         use pixtuoid_core::harness::plan::Resolved;
         use strum::VariantArray;
@@ -2899,6 +2915,7 @@ mod run {
                 )])
             );
             let sandbox = Sandbox::new(
+                SandboxDir::of_run(false, Path::new("/nowhere")).expect("own dir"),
                 p,
                 Path::new("/nowhere/shims"),
                 Path::new("/nowhere/bin"),
@@ -3042,6 +3059,7 @@ mod run {
         #[test]
         fn a_sandboxs_home_is_its_own_canonical_path() {
             let sandbox = Sandbox::new(
+                SandboxDir::of_run(false, Path::new("/nowhere")).expect("own dir"),
                 &PROFILES[0],
                 Path::new("/nowhere/shims"),
                 Path::new("/nowhere/bin"),
@@ -3063,6 +3081,7 @@ mod run {
             };
             for p in PROFILES {
                 let sandbox = Sandbox::new(
+                    SandboxDir::of_run(false, Path::new("/nowhere")).expect("own dir"),
                     p,
                     Path::new("/nowhere/shims"),
                     Path::new("/nowhere/bin"),
@@ -3363,7 +3382,11 @@ mod run {
                     "the recorder clears only a capture base: {ws:?}"
                 );
             }
-            let root = second.as_ref().expect("a replay owns its root").0.clone();
+            let root = second
+                .as_ref()
+                .expect("a replay owns its root")
+                .path()
+                .to_path_buf();
             assert!(root.is_dir());
             drop(second);
             assert!(!root.exists(), "a replay's root goes with it");
@@ -3371,6 +3394,32 @@ mod run {
             let (none, canonical) = run_workspace(true).expect("a recording's workspace");
             assert!(none.is_none());
             assert_eq!(canonical, capture_workspace().expect("the canonical one"));
+        }
+
+        /// In this order, a replay wrongly on the fixed lock fails the first
+        /// `assert_ne` before a second one would wait on it forever.
+        #[test]
+        fn a_replay_sandboxes_in_a_dir_of_its_own_and_a_recording_in_the_fixed_one() {
+            let root = tempfile::tempdir().expect("a capture root");
+            let fixed = capture_sandbox(root.path()).expect("the fixed one");
+            let recording = SandboxDir::of_run(true, root.path()).expect("a recording's sandbox");
+            assert_eq!(recording.path(), fixed);
+            // Resolved on both sides: `capture_sandbox` resolves its root on
+            // Unix, and a tempdir's path need not be resolved.
+            let resolved = |p: &Path| dunce::canonicalize(p).expect("it exists");
+            assert!(
+                resolved(recording.path()).starts_with(resolved(root.path())),
+                "a recording's sandbox sits under the root it was given, never the real one"
+            );
+            drop(recording);
+            let first = SandboxDir::of_run(false, root.path()).expect("a replay's sandbox");
+            assert_ne!(first.path(), fixed, "a replay never waits on a recording");
+            let second = SandboxDir::of_run(false, root.path()).expect("another's");
+            assert_ne!(
+                first.path(),
+                second.path(),
+                "two replays at once would share their homes"
+            );
         }
 
         #[test]
