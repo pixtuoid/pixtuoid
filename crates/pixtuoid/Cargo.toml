@@ -171,9 +171,8 @@ x11rb = "0.13"
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 zbus = { version = "6.2", default-features = false, features = ["tokio", "proxy"], optional = true }
 
-# GetShortPathNameW for the Codex Windows hook path: a
-# space/metacharacter-bearing install path resolves to its DOS 8.3 short form so
-# cmd.exe /C can invoke it.
+# GetShortPathNameW, to try a hook path's DOS 8.3 short form when cmd.exe /C or
+# grok's shell can't invoke the long one.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
     "Win32_Storage_FileSystem",

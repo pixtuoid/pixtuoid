@@ -33,10 +33,11 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::id::AgentId
 pub mod pixtuoid_core::platform
-pub fn pixtuoid_core::platform::home_first_dir() -> core::option::Option<std::path::PathBuf>
+pub const pixtuoid_core::platform::USER_HOME_VAR: &str
+pub fn pixtuoid_core::platform::dirs_home_dir() -> core::option::Option<std::path::PathBuf>
+pub fn pixtuoid_core::platform::go_user_home_dir() -> core::option::Option<std::path::PathBuf>
 pub fn pixtuoid_core::platform::path_env(&str) -> core::option::Option<std::path::PathBuf>
 pub fn pixtuoid_core::platform::path_env_trimmed(&str) -> core::option::Option<std::path::PathBuf>
-pub fn pixtuoid_core::platform::resolve_user_config_dir(&str, core::option::Option<std::path::PathBuf>, core::option::Option<std::path::PathBuf>, &std::path::Path) -> std::path::PathBuf
 pub fn pixtuoid_core::platform::text_env(&str) -> core::option::Option<alloc::string::String>
 pub fn pixtuoid_core::platform::user_home_opt() -> core::option::Option<std::path::PathBuf>
 pub mod pixtuoid_core::remote

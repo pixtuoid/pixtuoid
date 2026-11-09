@@ -1,16 +1,15 @@
-//! Cross-platform home-dir resolution.
+//! Cross-platform home-dir resolution, one resolver per runtime rule a CLI uses.
 //!
 //! On native Windows `HOME` is normally unset, and when Git Bash *does* export
 //! one it is a POSIX-form path (`/c/Users/me`) that native Rust code must not
-//! join onto — so `USERPROFILE` must win on Windows, or the watcher watches a
+//! join onto — so no resolver here reads it on Windows, or the watcher watches a
 //! path no session ever writes to. On Unix, `HOME` stays authoritative.
 //!
 //! Every path env filter here is TRIM-based — empty or whitespace-only counts as
-//! unset, so `XDG_CONFIG_HOME="   "` can't be unset for the app config but set
-//! for the CLI config-dir resolution.
+//! unset. The home reads follow std and Go, which drop only an empty value.
 
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// A PATH-valued env var, read as BYTES. `env::var` returns `Err` on a value
 /// that is not UTF-8 — and a filesystem path is not required to be, on any
@@ -57,21 +56,50 @@ fn is_blank(v: &OsStr) -> bool {
     v.to_string_lossy().trim().is_empty()
 }
 
-/// USERPROFILE-first on Windows, HOME on Unix. See module doc for WHY.
+/// [`user_home_opt`], else [`or_host_fallback`]'s root.
 pub(crate) fn user_home() -> PathBuf {
-    resolve_home(
-        cfg!(windows),
-        path_env("USERPROFILE"),
-        path_env("HOME"),
-        std::env::temp_dir(),
-    )
+    or_host_fallback(user_home_opt())
 }
 
-/// `Option` variant of `user_home`: the SAME USERPROFILE-vs-HOME rule, but
-/// with no host-level fallback — `None` when nothing is set, so a caller can
-/// supply its own.
+/// `home`, else the host's temp root.
+pub(crate) fn or_host_fallback(home: Option<PathBuf>) -> PathBuf {
+    resolve_host_fallback(cfg!(windows), home, std::env::temp_dir())
+}
+
+/// `~` as a CLI on Node's `os.homedir` or Rust's `std::env::home_dir` resolves
+/// it, with no host-level fallback: `None` when nothing resolves, so a caller
+/// can supply its own. It is std's own: `USERPROFILE`, else the profile dir
+/// `GetUserProfileDirectoryW` reports, on Windows; `HOME`, else the passwd
+/// database, elsewhere (std 1.99.1 `sys/paths/windows.rs:174-179`,
+/// `sys/paths/unix.rs:430-484`), the reads libuv's `uv_os_homedir` makes too
+/// (node v26.13.0 `deps/uv/src/win/util.c:970-990`,
+/// `deps/uv/src/unix/core.c:1265-1281`).
 pub fn user_home_opt() -> Option<PathBuf> {
-    resolve_user_home_opt(cfg!(windows), path_env("USERPROFILE"), path_env("HOME"))
+    std::env::home_dir()
+}
+
+/// The variable [`user_home_opt`] and [`go_user_home_dir`] both read, so the
+/// one an unresolved-home error names.
+pub const USER_HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+
+/// `~` as a Go CLI resolves it, Go's `os.UserHomeDir`: [`USER_HOME_VAR`] and no
+/// OS fallback, so `None` where Go errors (golang/go `src/os/file.go:605-623` @
+/// be57ebb0f3).
+pub fn go_user_home_dir() -> Option<PathBuf> {
+    std::env::var_os(USER_HOME_VAR)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// `~` as a CLI on the `dirs` crate resolves it (dirs 6.0.0 @ 00511bdc25,
+/// dirs-sys 0.5.0 @ 8bcd4aa2c3): on Windows `FOLDERID_Profile`, which no
+/// variable moves (`src/win.rs:5`, `src/lib.rs:172-173`); elsewhere a copy of
+/// std's `home_dir` (`src/lib.rs:33-37`), so [`user_home_opt`].
+pub fn dirs_home_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    return crate::win32::known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).ok();
+    #[cfg(not(windows))]
+    user_home_opt()
 }
 
 /// Hand back a CLI's env home override unchanged, warning when it is RELATIVE.
@@ -93,100 +121,16 @@ pub(crate) fn warn_if_relative_override(var: &str, dir: PathBuf) -> PathBuf {
     dir
 }
 
-/// `HOME`-FIRST home resolution, then `USERPROFILE` on Windows — the OPPOSITE
-/// of pixtuoid's generic `user_home`, and load-bearing: a Windows user who
-/// exports `HOME` (Git Bash / MSYS2 / Cygwin) has these CLIs read their config
-/// under `%HOME%\…`, so writing hooks to `%USERPROFILE%\…` would land them where
-/// the CLI never loads them — installed, but no sprite. `None` when nothing
-/// resolves.
-///
-/// Source-verified HOME-first CLIs (the only consumers):
-/// - **CodeWhale** — `paths::user_home` = `$HOME ?? $USERPROFILE ??
-///   HOMEDRIVE+HOMEPATH ?? dirs::home_dir()`. We mirror the first two; the
-///   Windows-pair rung is unmirrored but fails loud with an error, never
-///   silently to a wrong dir.
-/// - **OpenClaw** — `infra/home-dir.ts::resolveRawOsHomeDir` = `$HOME ??
-///   $USERPROFILE ?? os.homedir()`.
-///
-/// Every OTHER CLI uses its language stdlib (all `USERPROFILE`-first/only on
-/// Windows), so they correctly use the generic `user_home`, NOT this; one on the
-/// `dirs` crate uses `profile_dir`.
-pub fn home_first_dir() -> Option<PathBuf> {
-    resolve_home_first(cfg!(windows), path_env("HOME"), path_env("USERPROFILE"))
-}
-
-/// `FOLDERID_Profile`: `~` for a CLI on the `dirs` crate, which reads no variable
-/// on Windows.
-#[cfg(windows)]
-pub fn profile_dir() -> Option<PathBuf> {
-    crate::win32::known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).ok()
-}
-
-/// Pure precedence core (`HOME`-first, then `USERPROFILE` on Windows), separated
-/// so the Windows arm is unit-testable on any host. Unix with no `HOME` →
-/// `None`: we deliberately don't reach for `dirs::home_dir`'s getpwuid fallback.
-fn resolve_home_first(
-    windows: bool,
-    home: Option<PathBuf>,
-    userprofile: Option<PathBuf>,
-) -> Option<PathBuf> {
-    home.or(if windows { userprofile } else { None })
-}
-
-/// Pure mapping of Go's `os.UserConfigDir()` for the platforms we ship, with
-/// the OS and env values injected so every arm (incl. macOS) is unit-testable
-/// on any host — the runtime `cfg!(target_os)` if-else couldn't test its
-/// non-host arms. Pass `std::env::consts::OS` for `os`; `home` is the
-/// already-resolved user home used for the relative fallbacks.
-///
-/// `appdata`/`xdg` must ALREADY be blank-filtered — [`path_env`] owns that, so a
-/// blank `PathBuf` handed in here is taken as a real path.
-pub fn resolve_user_config_dir(
-    os: &str,
-    appdata: Option<PathBuf>,
-    xdg: Option<PathBuf>,
-    home: &Path,
-) -> PathBuf {
-    match os {
-        "macos" => home.join("Library/Application Support"),
-        "windows" => appdata.unwrap_or_else(|| home.join("AppData/Roaming")),
-        _ => xdg.unwrap_or_else(|| home.join(".config")),
-    }
-}
-
-/// Pure resolution core, separated so the Windows branch is unit-testable
-/// on any platform. Layers the host-level fallback over the shared `Option`
-/// precedence, so the USERPROFILE-vs-HOME rule lives in ONE place.
-fn resolve_home(
-    windows: bool,
-    userprofile: Option<PathBuf>,
-    home: Option<PathBuf>,
-    temp_dir: PathBuf,
-) -> PathBuf {
-    resolve_user_home_opt(windows, userprofile, home).unwrap_or_else(|| {
+/// Pure core of [`or_host_fallback`], separated so the Windows arm is
+/// unit-testable on any host.
+fn resolve_host_fallback(windows: bool, home: Option<PathBuf>, temp_dir: PathBuf) -> PathBuf {
+    home.unwrap_or_else(|| {
         if windows {
             temp_dir
         } else {
             PathBuf::from("/tmp")
         }
     })
-}
-
-/// The single USERPROFILE-vs-HOME precedence, in its purest form: USERPROFILE
-/// then HOME on Windows, HOME only on Unix, with empty strings treated as
-/// unset. Both `resolve_home` and [`user_home_opt`] derive from this — pure, so
-/// the Windows arm is unit-testable on any host.
-pub(crate) fn resolve_user_home_opt(
-    windows: bool,
-    userprofile: Option<PathBuf>,
-    home: Option<PathBuf>,
-) -> Option<PathBuf> {
-    if windows {
-        // USERPROFILE is effectively always set on Windows; a lone HOME here
-        // was set deliberately (MSYS users exporting a real Windows path).
-        return userprofile.or(home);
-    }
-    home
 }
 
 #[cfg(test)]
@@ -328,100 +272,58 @@ mod tests {
     }
 
     #[test]
-    fn windows_prefers_userprofile_over_home() {
-        let got = resolve_home(true, s(r"C:\Users\me"), s("/c/Users/me"), t());
-        assert_eq!(got, PathBuf::from(r"C:\Users\me"));
+    fn the_generic_home_reads_its_platform_variable_and_never_a_git_bash_home() {
+        let (own, other) = if cfg!(windows) {
+            ("USERPROFILE", "HOME")
+        } else {
+            ("HOME", "USERPROFILE")
+        };
+        temp_env::with_vars([(own, Some("/own")), (other, Some("/other"))], || {
+            assert_eq!(user_home_opt(), s("/own"));
+        });
+        // Unset, std asks the OS: the profile dir on Windows, passwd elsewhere.
+        temp_env::with_vars([(own, None), (other, Some("/other"))], || {
+            let home = user_home_opt();
+            assert!(home.is_some() && home != s("/other"), "{home:?}");
+            assert_ne!(home, Some(or_host_fallback(None)));
+            #[cfg(windows)]
+            assert_eq!(home, dirs_home_dir());
+        });
     }
 
     #[test]
-    fn windows_falls_back_to_home_then_tempdir() {
+    fn an_unresolved_home_falls_back_to_the_host_temp_root() {
+        assert_eq!(resolve_host_fallback(true, None, t()), t());
         assert_eq!(
-            resolve_home(true, None, s("/c/Users/me"), t()),
-            PathBuf::from("/c/Users/me")
+            resolve_host_fallback(false, None, t()),
+            PathBuf::from("/tmp")
         );
-        assert_eq!(resolve_home(true, None, None, t()), t());
-    }
-
-    #[test]
-    fn unix_home_stays_authoritative() {
         assert_eq!(
-            resolve_home(false, s(r"C:\ignored"), s("/Users/me"), t()),
-            PathBuf::from("/Users/me")
-        );
-        assert_eq!(resolve_home(false, None, None, t()), PathBuf::from("/tmp"));
-    }
-
-    #[test]
-    fn user_home_opt_has_no_host_fallback() {
-        assert_eq!(resolve_user_home_opt(true, None, None), None);
-        assert_eq!(resolve_user_home_opt(false, None, None), None);
-    }
-
-    #[test]
-    fn user_config_dir_macos_is_application_support() {
-        assert_eq!(
-            resolve_user_config_dir(
-                "macos",
-                Some(r"C:\ignored".into()),
-                Some("/ignored".into()),
-                Path::new("/Users/me")
-            ),
-            PathBuf::from("/Users/me/Library/Application Support")
+            resolve_host_fallback(true, s(r"C:\Users\me"), t()),
+            PathBuf::from(r"C:\Users\me")
         );
     }
 
     #[test]
-    fn user_config_dir_windows_prefers_appdata_then_roaming_fallback() {
-        assert_eq!(
-            resolve_user_config_dir(
-                "windows",
-                s(r"C:\Users\ada\AppData\Roaming"),
-                None,
-                Path::new(r"C:\Users\ada")
-            ),
-            PathBuf::from(r"C:\Users\ada\AppData\Roaming")
+    fn go_user_home_dir_reads_its_platform_variable_alone() {
+        let (own, other) = if cfg!(windows) {
+            ("USERPROFILE", "HOME")
+        } else {
+            ("HOME", "USERPROFILE")
+        };
+        temp_env::with_vars([(own, None), (other, Some("/elsewhere"))], || {
+            assert_eq!(go_user_home_dir(), None, "Go has no OS fallback");
+        });
+        temp_env::with_vars(
+            [(own, Some("/home/u")), (other, Some("/elsewhere"))],
+            || {
+                assert_eq!(go_user_home_dir(), s("/home/u"));
+            },
         );
-        assert_eq!(
-            resolve_user_config_dir("windows", None, None, Path::new(r"C:\Users\ada")),
-            PathBuf::from(r"C:\Users\ada").join("AppData/Roaming")
-        );
-    }
-
-    #[test]
-    fn user_config_dir_linux_prefers_xdg_then_dot_config() {
-        assert_eq!(
-            resolve_user_config_dir("linux", None, s("/xdg/cfg"), Path::new("/home/u")),
-            PathBuf::from("/xdg/cfg")
-        );
-        assert_eq!(
-            resolve_user_config_dir("linux", None, None, Path::new("/home/u")),
-            PathBuf::from("/home/u/.config")
-        );
-        assert_eq!(
-            resolve_user_config_dir("freebsd", None, s("/xdg/cfg"), Path::new("/home/u")),
-            PathBuf::from("/xdg/cfg")
-        );
-    }
-
-    #[test]
-    fn home_first_is_home_then_userprofile_on_windows() {
-        assert_eq!(
-            resolve_home_first(true, s(r"C:\Users\me"), s(r"C:\Users\other")),
-            s(r"C:\Users\me")
-        );
-        assert_eq!(
-            resolve_home_first(true, None, s(r"C:\Users\me")),
-            s(r"C:\Users\me")
-        );
-        assert_eq!(resolve_home_first(true, None, None), None);
-    }
-
-    #[test]
-    fn home_first_is_home_only_on_unix() {
-        assert_eq!(
-            resolve_home_first(false, s("/Users/me"), s(r"C:\ignored")),
-            s("/Users/me")
-        );
-        assert_eq!(resolve_home_first(false, None, s(r"C:\ignored")), None);
+        for (value, want) in [("", None), ("   ", s("   "))] {
+            temp_env::with_var(USER_HOME_VAR, Some(value), || {
+                assert_eq!(go_user_home_dir(), want, "Go drops only an empty {value:?}");
+            });
+        }
     }
 }

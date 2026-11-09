@@ -273,46 +273,45 @@ fn config_path_xdg_home_and_relative_branches() {
         "/xdg/base"
     };
 
-    // Clear USERPROFILE for the whole test: on Windows it outranks HOME in
-    // user_home(), so both the HOME arm and the relative-fallback arm need it
-    // absent to reach their branches.
-    temp_env::with_var_unset("USERPROFILE", || {
-        temp_env::with_vars(
-            [
-                ("XDG_CONFIG_HOME", Some(abs_xdg)),
-                ("HOME", Some("/home/u")),
-            ],
-            || {
+    // The generic home's own variable: Windows reads `USERPROFILE`, never `HOME`.
+    let home_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+
+    temp_env::with_vars(
+        [
+            ("XDG_CONFIG_HOME", Some(abs_xdg)),
+            (home_var, Some("/home/u")),
+        ],
+        || {
+            assert_eq!(
+                config_path(),
+                PathBuf::from(abs_xdg).join("pixtuoid").join("config.toml")
+            );
+        },
+    );
+
+    temp_env::with_var(home_var, Some("/home/u"), || {
+        for invalid in ["", "   ", "rel/xdg"] {
+            temp_env::with_var("XDG_CONFIG_HOME", Some(invalid), || {
                 assert_eq!(
                     config_path(),
-                    PathBuf::from(abs_xdg).join("pixtuoid").join("config.toml")
-                );
-            },
-        );
-
-        temp_env::with_var("HOME", Some("/home/u"), || {
-            for invalid in ["", "   ", "rel/xdg"] {
-                temp_env::with_var("XDG_CONFIG_HOME", Some(invalid), || {
-                    assert_eq!(
-                        config_path(),
-                        PathBuf::from("/home/u/.config/pixtuoid/config.toml"),
-                        "invalid XDG_CONFIG_HOME {invalid:?} must fall to $HOME/.config"
-                    );
-                });
-            }
-
-            temp_env::with_var_unset("XDG_CONFIG_HOME", || {
-                assert_eq!(
-                    config_path(),
-                    PathBuf::from("/home/u/.config/pixtuoid/config.toml")
+                    PathBuf::from("/home/u/.config/pixtuoid/config.toml"),
+                    "invalid XDG_CONFIG_HOME {invalid:?} must fall to $HOME/.config"
                 );
             });
-        });
+        }
 
-        temp_env::with_vars_unset(["XDG_CONFIG_HOME", "HOME"], || {
-            assert_eq!(config_path(), PathBuf::from(".config/pixtuoid/config.toml"));
+        temp_env::with_var_unset("XDG_CONFIG_HOME", || {
+            assert_eq!(
+                config_path(),
+                PathBuf::from("/home/u/.config/pixtuoid/config.toml")
+            );
         });
     });
+
+    assert_eq!(
+        config_path_under(None),
+        PathBuf::from(".config/pixtuoid/config.toml")
+    );
 }
 
 #[test]
