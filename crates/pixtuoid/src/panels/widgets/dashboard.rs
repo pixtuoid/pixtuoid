@@ -106,19 +106,31 @@ fn dashboard_line(
         marquee_or_truncate(&name, LABEL_W, is_selected, now)
     );
 
-    let (glyph, text, color) = match &row.state {
-        RowState::Running(Some(detail)) => ('●', detail.to_string(), theme.ui.label_running),
-        RowState::Running(None) => ('●', "running".to_string(), theme.ui.label_running),
-        RowState::RequiresAction(Some(reason)) => {
-            ('◐', reason.to_string(), theme.ui.label_requires_action)
-        }
+    use pixtuoid_scene::footer::RungKind;
+    let (kind, text, color) = match &row.state {
+        RowState::Running(Some(detail)) => (
+            RungKind::Running,
+            detail.to_string(),
+            theme.ui.label_running,
+        ),
+        RowState::Running(None) => (
+            RungKind::Running,
+            "running".to_string(),
+            theme.ui.label_running,
+        ),
+        RowState::RequiresAction(Some(reason)) => (
+            RungKind::RequiresAction,
+            reason.to_string(),
+            theme.ui.label_requires_action,
+        ),
         RowState::RequiresAction(None) => (
-            '◐',
+            RungKind::RequiresAction,
             "requires action".to_string(),
             theme.ui.label_requires_action,
         ),
-        RowState::Idle => ('○', "idle".to_string(), theme.ui.label_idle),
+        RowState::Idle => (RungKind::Idle, "idle".to_string(), theme.ui.label_idle),
     };
+    let glyph = kind.glyph();
     let state_cell = format!(
         "{glyph} {}",
         marquee_or_truncate(&text, STATE_W, is_selected, now)

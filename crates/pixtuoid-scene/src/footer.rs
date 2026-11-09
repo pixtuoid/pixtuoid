@@ -534,6 +534,23 @@ mod tests {
     const KEYS_STATS: &str = " [?]help [p]ause [t]heme [q]uit ";
     const KEYS_ALERT: &str = " [q]uit ";
 
+    /// `cols` counts chars, so every glyph the footer borrows from `Icon` must be
+    /// one column, read at the source an icon edit would change.
+    #[test]
+    fn the_icon_glyphs_the_footer_writes_are_single_column() {
+        let borrowed = RungKind::ALL
+            .iter()
+            .map(|k| k.glyph())
+            .chain([Icon::Alert.terminal(), Icon::Gateway.terminal()]);
+        for g in borrowed {
+            assert_eq!(
+                usize::from(crate::display::text::cells(g)),
+                cols(g),
+                "{g:?} is wider than `cols` counts it"
+            );
+        }
+    }
+
     fn running_slot(id: &str, detail: &str, kind: ToolKind) -> AgentSlot {
         AgentSlot {
             agent_id: AgentId::from_transcript_path(id),

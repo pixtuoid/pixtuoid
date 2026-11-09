@@ -716,9 +716,8 @@ pub(crate) fn display_safe(s: &str) -> String {
     ellipsize(&stripped, MAX_DECODED_FIELD_CHARS)
 }
 
-/// A character that can drive a terminal or reorder the text it shows: the one
-/// predicate every display sink strips with, the binary's terminal egress
-/// included.
+/// A character that can drive a terminal or reorder the text it shows: what
+/// terminal egress strips, or escapes in log fields.
 #[doc(hidden)]
 pub fn is_terminal_unsafe(c: char) -> bool {
     c.is_control() || is_bidi_control(c)

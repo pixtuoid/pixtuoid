@@ -145,7 +145,9 @@ fn every_width_is_the_cells_the_buffer_writes() {
 
 #[test]
 fn footer_vocabulary_is_single_column_so_scene_chars_count_matches_cells() {
-    let vocab = "\u{b7}\u{d7}\u{2191}\u{2193}\u{25cf}\u{25d0}\u{25cb}\u{25cc}\u{2b22}\u{25b2}\u{2669}\u{26a0}\u{2026}";
+    // The state glyphs, the alarm and the gateway mark come from `Icon`, and
+    // scene's footer tests pin those at their source.
+    let vocab = "\u{b7}\u{d7}\u{2191}\u{2193}\u{2669}\u{26a0}\u{2026}";
     for c in vocab.chars() {
         let s = c.to_string();
         assert_eq!(
