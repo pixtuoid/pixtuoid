@@ -67,7 +67,7 @@ pub const CLI_APP_DATA_DIR: &str = "antigravity-cli";
 /// never `%APPDATA%`): its app data dir and its global `config/` both sit here.
 #[cfg(feature = "native")]
 pub fn gemini_dir() -> std::path::PathBuf {
-    crate::platform::user_home().join(".gemini")
+    crate::platform::or_host_fallback(crate::platform::go_user_home_dir()).join(".gemini")
 }
 
 /// Antigravity-cli writes one conversation's `step_index` stream several times

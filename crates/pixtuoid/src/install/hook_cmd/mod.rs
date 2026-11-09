@@ -7,10 +7,11 @@ use anyhow::Result;
 // resolver injected) unit-tests on macOS; only the Win32 FFI is `#[cfg(windows)]`.
 mod windows;
 
-/// The DOS 8.3 short name for an existing path (metachar-free by construction) —
-/// `None` when 8.3 generation is disabled on the volume. Also used by targets
-/// whose hook runner is NOT cmd.exe: a short name needs no quoting under ANY
-/// shell.
+/// The DOS 8.3 short form of an existing path, `None` when the call fails. It
+/// can keep a metacharacter: a component with no short name comes back long,
+/// and one that already fits 8.3 is its own short name (`GetShortPathNameW`
+/// Remarks, learn.microsoft.com; [MS-FSCC] "8.3 Filename" bars only space, a
+/// second `.`, non-ASCII and length). So every consumer re-checks it.
 #[cfg(windows)]
 pub(crate) fn windows_short_path(long: &str) -> Option<String> {
     windows::short_path_windows(long)

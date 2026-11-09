@@ -48,8 +48,7 @@ fn resolve_windows_command(
     let Some(bad) = first_cmd_unsafe_char(path) else {
         return Ok(format!("{path}{}{source}", super::SOURCE_FLAG));
     };
-    // With 8.3 generation disabled on the volume GetShortPathNameW returns the
-    // long path unchanged, so the short form is re-checked before it is accepted.
+    // The short form can keep the metacharacter (`windows_short_path`).
     if let Some(s) = short_path(path)
         && first_cmd_unsafe_char(&s).is_none()
     {
@@ -57,10 +56,11 @@ fn resolve_windows_command(
     }
     anyhow::bail!(
         "pixtuoid-hook is at a path containing {bad:?} ({path}) that the cmd.exe /C hook \
-         runner can't safely invoke, and no DOS 8.3 short name is available (8.3 \
-         generation is disabled on this volume). Install pixtuoid to a path of ordinary \
-         characters (e.g. %USERPROFILE%\\.cargo\\bin or the npm global prefix) and \
-         reconnect the target in pixtuoid's Sources panel. (Tracking: #195.)"
+         runner can't safely invoke, and no DOS 8.3 short form of it is free of that \
+         character (the volume may keep no 8.3 names, or the component already fits 8.3). \
+         Install pixtuoid to a path of ordinary characters (e.g. %USERPROFILE%\\.cargo\\bin \
+         or the npm global prefix) and reconnect the target in pixtuoid's Sources panel. \
+         (Tracking: #195.)"
     );
 }
 
@@ -123,6 +123,19 @@ mod tests {
         assert!(
             err.contains("cmd.exe") && err.contains("ordinary characters"),
             "reject message must stay actionable: {err}"
+        );
+    }
+
+    #[test]
+    fn a_short_form_that_keeps_its_metachar_is_rejected_naming_both_causes() {
+        // `a&b` already fits 8.3, so GetShortPathNameW hands it back unchanged
+        // even where the volume generates 8.3 names.
+        let err = resolve_windows_command(r"C:\a&b\h.exe", "codex", |p| Some(p.to_string()))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("keep no 8.3 names") && err.contains("already fits 8.3"),
+            "{err}"
         );
     }
 

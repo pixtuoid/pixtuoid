@@ -65,15 +65,15 @@ const PACKAGE: &str = r#"{
 /// OpenClaw's state dir (holds `openclaw.json` + `plugins/`), mirroring its own
 /// `resolveStateDir` (openclaw `src/config/state-dir.ts` @ v2026.11.2): the
 /// `OPENCLAW_STATE_DIR` override wins; else `<effective-home>/.openclaw`, where
-/// the effective home is `OPENCLAW_HOME`, then **`$HOME`, then `%USERPROFILE%`** —
-/// HOME-FIRST, NOT pixtuoid's generic `USERPROFILE`-first `io::home_relative`. A
-/// Windows user who exports `HOME` (Git Bash / MSYS2 / Cygwin) has the gateway
-/// read `%HOME%\.openclaw\`, so writing to `%USERPROFILE%\.openclaw\` would leave
-/// our plugin where the gateway never loads it.
+/// the effective home is `OPENCLAW_HOME`, then [`os_home`] — HOME-FIRST, NOT
+/// pixtuoid's generic `USERPROFILE`-first `user_home_opt`. A Windows user who
+/// exports `HOME` (Git Bash / MSYS2 / Cygwin) has the gateway read
+/// `%HOME%\.openclaw\`, so writing to `%USERPROFILE%\.openclaw\` would leave our
+/// plugin where the gateway never loads it.
 fn openclaw_state_dir() -> Result<PathBuf> {
     // OpenClaw `~`-expands both env vars against its OS home, so mirror that before
     // the path logic.
-    let home = pixtuoid_core::platform::home_first_dir();
+    let home = os_home();
     resolve_openclaw_state_dir(
         pixtuoid_core::platform::path_env("OPENCLAW_STATE_DIR")
             .map(|v| io::expand_tilde(&v, home.as_deref())),
@@ -102,15 +102,37 @@ fn resolve_openclaw_state_dir(
     Ok(home.join(STATE_DIR))
 }
 
+/// OpenClaw's OS home, its `resolveRawOsHomeDir`
+/// (`packages/normalization-core/src/home-dir.ts:28-35` @ v2026.11.2): `HOME`,
+/// then `USERPROFILE`, each trimmed and unset when it reads `undefined` or
+/// `null` (`:4-7`), then Node's `os.homedir()`.
+fn os_home() -> Option<PathBuf> {
+    use pixtuoid_core::platform::{path_env_trimmed, user_home_opt};
+    resolve_os_home(
+        path_env_trimmed("HOME"),
+        path_env_trimmed("USERPROFILE"),
+        user_home_opt,
+    )
+}
+
+/// Pure core of [`os_home`], the reads injected so every rung unit-tests.
+fn resolve_os_home(
+    home: Option<PathBuf>,
+    userprofile: Option<PathBuf>,
+    os_homedir: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    let set = |p: &PathBuf| !matches!(p.to_str(), Some("undefined" | "null"));
+    home.filter(set)
+        .or_else(|| userprofile.filter(set))
+        .or_else(|| os_homedir().filter(set))
+}
+
 /// The config file we merge into, mirroring OpenClaw's `resolveConfigPath`
 /// (`src/config/paths.ts` @ v2026.11.2): the `OPENCLAW_CONFIG_PATH` override (a
 /// FULL config-file path), else `<state-dir>/openclaw.json`.
 pub(crate) fn default_config_path() -> Result<PathBuf> {
     if let Some(p) = pixtuoid_core::platform::path_env("OPENCLAW_CONFIG_PATH") {
-        return Ok(io::expand_tilde(
-            &p,
-            pixtuoid_core::platform::home_first_dir().as_deref(),
-        ));
+        return Ok(io::expand_tilde(&p, os_home().as_deref()));
     }
     Ok(openclaw_state_dir()?.join(CONFIG_FILE))
 }
@@ -492,6 +514,30 @@ mod tests {
         let p =
             resolve_openclaw_state_dir(None, None, Some(PathBuf::from(r"C:\Users\me"))).unwrap();
         assert_eq!(p, PathBuf::from(r"C:\Users\me").join(".openclaw"));
+    }
+
+    #[test]
+    fn os_home_is_home_then_userprofile_then_os_homedir_skipping_js_nullish() {
+        let s = |v: &str| Some(PathBuf::from(v));
+        let unreached = || -> Option<PathBuf> { panic!("a set HOME or USERPROFILE decides") };
+        assert_eq!(resolve_os_home(s("/h"), s("/up"), unreached), s("/h"));
+        assert_eq!(resolve_os_home(None, s("/up"), unreached), s("/up"));
+        assert_eq!(
+            resolve_os_home(s("undefined"), s("/up"), unreached),
+            s("/up")
+        );
+        assert_eq!(resolve_os_home(s("null"), None, || s("/os")), s("/os"));
+        assert_eq!(
+            resolve_os_home(None, s("undefined"), || s("undefined")),
+            None
+        );
+    }
+
+    #[test]
+    fn os_home_trims_as_upstream_does() {
+        temp_env::with_vars([("HOME", Some(" /srv/h ")), ("USERPROFILE", None)], || {
+            assert_eq!(os_home(), Some(PathBuf::from("/srv/h")));
+        });
     }
 
     #[test]

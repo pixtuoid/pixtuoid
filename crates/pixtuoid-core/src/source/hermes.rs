@@ -124,9 +124,9 @@ fn resolve_hermes_home(
 /// `os.path.expanduser(os.path.expandvars(raw))`, hermes's expansion of
 /// `HERMES_HOME` (`hermes_constants.py:46-48` at v0.22.5), in the host's flavour:
 /// CPython 3.14.8's `Lib/posixpath.py:229-334` or `Lib/ntpath.py:345-468`. On
-/// Unix, where Python asks the passwd database, which core never reads
-/// (`platform::resolve_home_first`), a `~user` and a `~` with no `HOME` stay as
-/// written. A variable whose value is not UTF-8 stays as its reference.
+/// Unix, where Python asks the passwd database and [`crate::platform::user_home_opt`]
+/// doesn't, a `~user` and a `~` with no `HOME` stay as written. A variable whose
+/// value is not UTF-8 stays as its reference.
 fn expand_home(raw: &str, windows: bool, var: &dyn Fn(&str) -> Option<OsString>) -> PathBuf {
     let text = |name: &str| {
         var(name)

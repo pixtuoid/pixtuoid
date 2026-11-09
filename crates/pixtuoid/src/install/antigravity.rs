@@ -58,7 +58,7 @@ pub(crate) const AG_EVENTS: &[(&str, bool)] = &[
 ];
 
 fn config_dir() -> Result<PathBuf> {
-    if pixtuoid_core::platform::user_home_opt().is_none() {
+    if pixtuoid_core::platform::go_user_home_dir().is_none() {
         return Err(io::home_unset("the home directory", "HOME/USERPROFILE"));
     }
     Ok(gemini_dir().join("config"))
