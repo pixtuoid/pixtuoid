@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::manager::SourceDeath;
 use pixtuoid_core::source::registry::SourceDescriptor;
-use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex};
+use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk};
 
 use crate::install::target::Target;
 
@@ -35,8 +35,7 @@ fn mk_slot(id: AgentId, source: &str, last_event_at: SystemTime) -> AgentSlot {
         arrived_at: Some(SystemTime::UNIX_EPOCH),
         last_event_at,
         exiting_at: None,
-        desk_index: GlobalDeskIndex(0),
-        floor_idx: 0,
+        home_desk: Some(FloorDesk::new(0, 0)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

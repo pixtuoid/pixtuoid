@@ -100,9 +100,8 @@ pub(crate) enum Cmd {
         source: SourceArgs,
         /// Cap desks per floor, ≥ 1 (auto-computed from terminal size if
         /// unset).
-        // 0 is rejected: it would permanently zero every floor's capacity and
-        // silently drop every agent (the boot atomics only grow via fetch_max,
-        // gated on capacity > 0).
+        // 0 is rejected: it would zero every floor's capacity, so every agent
+        // would wait for a desk forever.
         #[arg(long, hide = true, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
         max_desks: Option<usize>,
         /// Skip the TUI entirely — useful for CI / scripting.

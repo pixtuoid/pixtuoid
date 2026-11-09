@@ -605,9 +605,9 @@ fn a_subagents_card_names_its_lead_from_any_floor() {
     let lead = place("lead", "cc\u{b7}api", (0, 0), None);
     let lead_id = lead.agent_id;
     let here = place("here", "subagent", (0, 1), Some(lead_id));
-    let there = place("there", "subagent", (1, cap), Some(lead_id));
+    let there = place("there", "subagent", (1, 0), Some(lead_id));
     let (here_id, there_id) = (here.agent_id, there.agent_id);
-    let namesake = place("namesake", "cc\u{b7}api", (1, cap + 1), None);
+    let namesake = place("namesake", "cc\u{b7}api", (1, 1), None);
     let scene = scene_with(vec![lead, here, there, namesake], cap);
     let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
     let projection = floor_scene.scene();

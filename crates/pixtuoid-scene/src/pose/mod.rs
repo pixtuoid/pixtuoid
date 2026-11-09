@@ -256,7 +256,7 @@ fn routed_pose(
     layout: &SceneLayout,
     rctx: &mut RouteCtx<'_>,
 ) -> Option<(Pose, Option<Point>)> {
-    let desk = layout.home_desk(slot.desk_index.single_floor_local())?;
+    let desk = layout.home_desk_of(slot)?;
 
     if let Some(exit_time) = slot.exiting_at {
         let door_target = layout.door_threshold;

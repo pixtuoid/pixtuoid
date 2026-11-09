@@ -194,7 +194,7 @@ impl<R: Router> WanderRig<R> {
     fn advance(&mut self, now: SystemTime) {
         let desk = self
             .layout
-            .home_desk(self.slot.desk_index.single_floor_local())
+            .home_desk_of(&self.slot)
             .expect("the slot's desk exists in the standard layout");
         advance_wander(
             &self.slot,
@@ -808,7 +808,7 @@ fn wander_dest_for_pantry_is_the_home_desk_stand_point() {
     let now = t0();
     let mut rig = WanderRig {
         layout: l,
-        ..WanderRig::new(idle_slot(&path, now), Straight) // desk_index 0
+        ..WanderRig::new(idle_slot(&path, now), Straight) // desk 0
     };
     rig.advance(now);
     rig.advance_until_leaves(now, PhaseKind::Seated, 120_000);

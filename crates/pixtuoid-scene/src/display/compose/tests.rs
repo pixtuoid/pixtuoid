@@ -335,7 +335,7 @@ pub(crate) fn sit_down_as(
             created_at: now0,
             arrived_at: Some(now0),
             last_event_at: now0,
-            desk_index: pixtuoid_core::GlobalDeskIndex(home),
+            home_desk: Some(pixtuoid_core::FloorDesk::new(0, home)),
             ..make_slot(
                 id,
                 ActivityState::Running {

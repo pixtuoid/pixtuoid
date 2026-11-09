@@ -501,9 +501,12 @@ fn monitor_halos(layout: &SceneLayout, inputs: &LightInputs<'_>) -> Vec<Emitter>
     inputs
         .agents
         .iter()
-        .filter(|agent| agent.exiting_at.is_none() && agent.floor_idx == inputs.floor_idx)
+        .filter(|agent| agent.exiting_at.is_none())
         .filter_map(|agent| {
-            let local = agent.desk_index.single_floor_local();
+            let local = agent
+                .home_desk
+                .filter(|desk| desk.floor == inputs.floor_idx)?
+                .index;
             let seated = inputs.seated.get(&local).copied().unwrap_or(false);
             let desk = layout.home_desk(local)?;
             let work = lit_screen(agent, desk.facing, seated)?;

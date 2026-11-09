@@ -24,8 +24,7 @@ pub(crate) fn make_slot(
         last_event_at: now,
         exiting_at: None,
 
-        desk_index: pixtuoid_core::state::GlobalDeskIndex(0),
-        floor_idx: 0,
+        home_desk: Some(pixtuoid_core::state::FloorDesk::new(0, 0)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

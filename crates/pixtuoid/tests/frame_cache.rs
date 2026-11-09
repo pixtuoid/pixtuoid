@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use pixtuoid_core::state::ActivityState;
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, SceneState};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk, SceneState};
 use pixtuoid_scene::frame_cache::{FrameCache, FrameKey};
 use pixtuoid_scene::pack::Piece;
 use pixtuoid_scene::sprite::{Frame, Rgb};
@@ -46,8 +46,7 @@ fn make_slot(id: AgentId) -> AgentSlot {
         last_event_at: now,
         exiting_at: None,
 
-        desk_index: GlobalDeskIndex(0),
-        floor_idx: 0,
+        home_desk: Some(FloorDesk::new(0, 0)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

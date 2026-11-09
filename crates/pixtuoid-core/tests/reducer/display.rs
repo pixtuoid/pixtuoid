@@ -6,7 +6,7 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
-use crate::{sess_end, start, tool_use_start};
+use crate::{start, tool_use_start};
 
 #[test]
 fn session_start_with_cwd_derives_label_from_basename() {
@@ -136,72 +136,6 @@ fn ghost_label_counter_is_contiguous_after_named_sessions() {
     );
     assert_eq!(&*scene.agents.get(&named).unwrap().label, "cc·pixtuoid");
     assert_eq!(&*scene.agents.get(&ghost).unwrap().label, "cc#1");
-}
-
-#[test]
-fn capacity_dropped_unknown_cwd_session_consumes_no_ghost_ordinal() {
-    use pixtuoid_core::state::MAX_FLOORS;
-    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
-    let mut caps = [0usize; MAX_FLOORS];
-    caps[0] = 1;
-    let mut scene = SceneState::new(caps);
-    let mut r = Reducer::new();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    let occupant = AgentId::from_transcript_path("/p/occupant.jsonl");
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: occupant,
-            source: "claude-code".into(),
-            session_id: "o".into(),
-            cwd: PathBuf::from("/Users/me/proj"),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-
-    let dropped = AgentId::from_transcript_path("/p/dropped.jsonl");
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: dropped,
-            source: "claude-code".into(),
-            session_id: "d".into(),
-            cwd: PathBuf::from(""),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-    assert!(
-        !scene.agents.contains_key(&dropped),
-        "no free desk → the session is dropped, not seated"
-    );
-
-    sess_end(&mut r, &mut scene, occupant, false, t0, Transport::Hook);
-    r.tick(&mut scene, t0 + EXIT_GRACE_WINDOW + Duration::from_secs(1));
-    assert!(!scene.agents.contains_key(&occupant), "occupant reaped");
-
-    let ghost = AgentId::from_transcript_path("/p/ghost.jsonl");
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: ghost,
-            source: "claude-code".into(),
-            session_id: "g".into(),
-            cwd: PathBuf::from(""),
-            parent_id: None,
-        },
-        t0 + EXIT_GRACE_WINDOW + Duration::from_secs(2),
-        Transport::Hook,
-    );
-    assert_eq!(
-        &*scene.agents.get(&ghost).unwrap().label,
-        "cc#1",
-        "a capacity-dropped unknown-cwd session must consume no ghost ordinal"
-    );
 }
 
 #[test]

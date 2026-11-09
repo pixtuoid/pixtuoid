@@ -261,7 +261,7 @@ mod tests {
     }
 
     fn slot(id: AgentId) -> pixtuoid_core::AgentSlot {
-        use pixtuoid_core::state::{ActivityState, GlobalDeskIndex};
+        use pixtuoid_core::state::{ActivityState, FloorDesk};
         use std::path::PathBuf;
         use std::sync::Arc;
         use std::time::SystemTime;
@@ -278,8 +278,7 @@ mod tests {
             arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(0),
-            floor_idx: 0,
+            home_desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,

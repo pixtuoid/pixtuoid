@@ -23,7 +23,7 @@ fn coffee_state_is_evicted_during_a_floor_transition() {
     let cap = 16;
     let a = AgentId::from_transcript_path("/cof/slide0.jsonl");
     let b = AgentId::from_transcript_path("/cof/slide1.jsonl");
-    let scene = scene_with(vec![slot(a, 0, 0, t0()), slot(b, 1, cap, t0())], cap);
+    let scene = scene_with(vec![slot(a, 0, 0, t0()), slot(b, 1, 0, t0())], cap);
     let mut r = build(100, 40, vec![]);
     r.inject_coffee(a, t0());
     let mut now = t0();
@@ -33,7 +33,7 @@ fn coffee_state_is_evicted_during_a_floor_transition() {
 
     now += PAINT_FRAME;
     r.navigate_floor(1, now);
-    let gone = scene_with(vec![slot(b, 1, cap, t0())], cap);
+    let gone = scene_with(vec![slot(b, 1, 0, t0())], cap);
     now += PAINT_FRAME;
     r.evict_missing(&gone);
     r.render(&gone, now).expect("render");

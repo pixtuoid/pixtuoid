@@ -225,7 +225,7 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
     };
     let at_desk = |path: &str, desk: usize, state: pixtuoid_core::state::ActivityState| {
         let mut a = crate::character::test_support::make_slot(id(path), state);
-        a.desk_index = pixtuoid_core::state::GlobalDeskIndex(desk);
+        a.home_desk = Some(pixtuoid_core::state::FloorDesk::new(0, desk));
         a
     };
     let agents = [

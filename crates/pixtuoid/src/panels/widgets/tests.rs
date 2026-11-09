@@ -1,7 +1,7 @@
 use super::*;
 use footer::{build_status_spans, build_status_summary, footer_context};
 use pixtuoid_core::state::{ActivityState, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, SceneState};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk, SceneState};
 use pixtuoid_scene::display::text::cells;
 use pixtuoid_scene::footer::{FooterFloor, FooterInputs};
 use pixtuoid_scene::tally::{StateCounts, gateway_rollup, per_floor_counts, scene_stats};
@@ -22,8 +22,7 @@ fn stat_slot(path: &str, state: ActivityState, exiting: bool) -> AgentSlot {
         arrived_at: Some(now),
         last_event_at: now,
         exiting_at: exiting.then_some(now),
-        desk_index: GlobalDeskIndex(0),
-        floor_idx: 0,
+        home_desk: Some(FloorDesk::new(0, 0)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,
@@ -227,7 +226,7 @@ fn gateway_rollup_is_worst_of() {
 }
 
 #[test]
-fn per_floor_buckets_by_floor_idx() {
+fn per_floor_buckets_by_home_desk_floor_and_counts_a_waiter_on_none() {
     use pixtuoid_core::state::ToolKind;
     let running = || ActivityState::Running {
         item: Some(ToolUse {
@@ -239,7 +238,7 @@ fn per_floor_buckets_by_floor_idx() {
     let mut scene = SceneState::uniform(16);
     let add = |scene: &mut SceneState, path, state, exiting, floor: usize| {
         let mut s = stat_slot(path, state, exiting);
-        s.floor_idx = floor;
+        s.home_desk = Some(FloorDesk::new(floor, 0));
         scene.agents.insert(s.agent_id, s);
     };
     add(&mut scene, "/f0a.jsonl", running(), false, 0);
@@ -255,8 +254,16 @@ fn per_floor_buckets_by_floor_idx() {
     );
     add(&mut scene, "/f1x.jsonl", running(), true, 1); // exiting on floor 1
     add(&mut scene, "/f2i.jsonl", ActivityState::Idle, false, 2);
+    let mut waiting = stat_slot("/waits.jsonl", ActivityState::Idle, false);
+    waiting.home_desk = None;
+    scene.agents.insert(waiting.agent_id, waiting);
 
     let pf = per_floor_counts(&scene);
+    assert_eq!(
+        pf.iter().map(|f| f.total).sum::<usize>(),
+        5,
+        "the waiter is on no floor"
+    );
     assert_eq!((pf[0].running, pf[0].total), (2, 2));
     assert_eq!(
         (pf[1].requires_action, pf[1].exiting, pf[1].total),
@@ -350,8 +357,7 @@ pub(super) fn slot_with(state: ActivityState, label: &str) -> AgentSlot {
         last_event_at: SystemTime::UNIX_EPOCH,
         exiting_at: None,
 
-        desk_index: GlobalDeskIndex(0),
-        floor_idx: 0,
+        home_desk: Some(FloorDesk::new(0, 0)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

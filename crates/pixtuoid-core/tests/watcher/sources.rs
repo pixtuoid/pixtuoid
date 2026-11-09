@@ -760,9 +760,6 @@ async fn codex_permission_hermetic_fixture_drives_the_reducer_through_its_turn()
     // events arrive in file order without a flaky per-line sleep.
     tokio::fs::write(&transcript, &body).await.unwrap();
 
-    // `SceneState::uniform` — NOT `default()`, whose all-zero floor_capacities
-    // make `total_capacity()` 0 so `register_slot` refuses every SessionStart
-    // and the scene stays silently empty.
     let mut scene = SceneState::uniform(8);
     let mut reducer = Reducer::new();
     let mut states: Vec<ActivityState> = Vec::new();

@@ -2,8 +2,6 @@
 //! `window.rs`'s `winit` handler that don't need a live `ActiveEventLoop` /
 //! cursor, so they can be unit-tested.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use pixtuoid_core::state::MAX_FLOORS;
 use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::layout::Size;
@@ -211,11 +209,11 @@ pub(crate) fn floor_caps_for_buffer(buf_w: u16, buf_h: u16) -> [usize; MAX_FLOOR
 /// Per-floor boot desk-capacities for the FLOATING window, from the REAL
 /// `window.inner_size()`. Do NOT reuse the TUI's `runtime::boot_capacities_for` — it
 /// subtracts a footer row AND ignores the window upscale, so it OVER-seeds: in the
-/// sub-frame boot race before the first redraw, a `SessionStart` could land at a
-/// `desk_index` the smaller real layout lacks (invisible-but-alive until a resize).
+/// sub-frame boot race before the first redraw, a `SessionStart` could take a desk
+/// the smaller real layout lacks.
 ///
 /// There is deliberately NO `cap == 0 → FALLBACK_DESKS` clause: `sync_floor_caps`
-/// `store`s the honest 0 for a window too small to lay out, and a fallback points the
+/// publishes the honest 0 for a window too small to lay out, and a fallback points the
 /// WRONG way, admitting `FALLBACK_DESKS` agents onto desks that do not exist.
 pub(crate) fn boot_capacities_for_window(
     size: PhysicalSize<u32>,
@@ -226,16 +224,10 @@ pub(crate) fn boot_capacities_for_window(
     floor_caps_for_buffer(office.w, office.h)
 }
 
-/// Publish [`floor_caps_for_buffer`]'s answer into the reducer's per-floor capacity
-/// atomics, keeping admission in lockstep with the office actually rendered at
+/// Publish [`floor_caps_for_buffer`]'s answer as the reducer's per-floor capacities,
+/// keeping the reducer's desks in lockstep with the office actually rendered at
 /// `buf_w`×`buf_h`. Returns whether it recomputed — `false` means `last` already held
 /// this buffer size and the publish was skipped.
-///
-/// `store`, NOT the TUI's monotone `fetch_max`: the floating window's pixel size is
-/// exact and authoritative on every redraw, so a shrink genuinely LOWERS capacity and
-/// the reducer must stop admitting agents onto desks that no longer exist. Don't
-/// "harmonize" the two — the direction is deliberate, and pinned by
-/// `a_shrink_lowers_the_published_capacity_it_is_store_not_fetch_max`.
 ///
 /// The resize DETECTION rides along with the publish because `floor_capacity` runs a
 /// full layout compute per floor, so this must not run per frame. Both live here rather
@@ -243,7 +235,7 @@ pub(crate) fn boot_capacities_for_window(
 /// codecov and cargo-mutants, so a guard there is measured by nothing.
 pub(crate) fn sync_floor_caps(
     last: &mut Option<(u16, u16)>,
-    floor_caps: &[AtomicUsize; MAX_FLOORS],
+    floor_caps: &tokio::sync::watch::Sender<[usize; MAX_FLOORS]>,
     buf_w: u16,
     buf_h: u16,
 ) -> bool {
@@ -251,9 +243,7 @@ pub(crate) fn sync_floor_caps(
         return false;
     }
     *last = Some((buf_w, buf_h));
-    for (cap, capacity) in floor_caps.iter().zip(floor_caps_for_buffer(buf_w, buf_h)) {
-        cap.store(capacity, Ordering::Relaxed);
-    }
+    crate::runtime::pipeline::publish_floor_caps(floor_caps, floor_caps_for_buffer(buf_w, buf_h));
     true
 }
 
@@ -477,8 +467,8 @@ mod tests {
     }
 
     #[test]
-    fn a_shrink_lowers_the_published_capacity_it_is_store_not_fetch_max() {
-        let caps: [AtomicUsize; MAX_FLOORS] = std::array::from_fn(|_| AtomicUsize::new(0));
+    fn a_shrink_lowers_the_published_capacity() {
+        let (caps, held) = tokio::sync::watch::channel([0; MAX_FLOORS]);
         let (big, small) = ((360u16, 240u16), (240u16, 160u16));
         let want_big = floor_caps_for_buffer(big.0, big.1);
         let want_small = floor_caps_for_buffer(small.0, small.1);
@@ -491,23 +481,14 @@ mod tests {
 
         let mut last = None;
         sync_floor_caps(&mut last, &caps, big.0, big.1);
-        for (floor, want) in want_big.iter().enumerate() {
-            assert_eq!(
-                caps[floor].load(Ordering::Relaxed),
-                *want,
-                "floor {floor} must publish the layout's own capacity at {big:?}"
-            );
-        }
+        assert_eq!(
+            *held.borrow(),
+            want_big,
+            "the layout's own capacity at {big:?}"
+        );
 
         sync_floor_caps(&mut last, &caps, small.0, small.1);
-        for (floor, want) in want_small.iter().enumerate() {
-            assert_eq!(
-                caps[floor].load(Ordering::Relaxed),
-                *want,
-                "floor {floor} must FALL to the smaller window's capacity — a `fetch_max` \
-                 publish would strand it at the larger one"
-            );
-        }
+        assert_eq!(*held.borrow(), want_small, "the smaller window's capacity");
     }
 
     /// One fixture per divergence class: the derived sub-floor window is the only one that
@@ -528,13 +509,12 @@ mod tests {
         let zooms = [Zoom::default(), Zoom::new(1), Zoom::new(-1)];
         for (window, zoom) in windows.into_iter().flat_map(|w| zooms.map(|z| (w, z))) {
             let seed = boot_capacities_for_window(window, density(), zoom);
-            let caps: [AtomicUsize; MAX_FLOORS] = std::array::from_fn(|_| AtomicUsize::new(0));
+            let (caps, held) = tokio::sync::watch::channel([0; MAX_FLOORS]);
             let office = window_geometry(window, density(), zoom).logical();
             sync_floor_caps(&mut None, &caps, office.w, office.h);
-            let published: [usize; MAX_FLOORS] =
-                std::array::from_fn(|i| caps[i].load(Ordering::Relaxed));
             assert_eq!(
-                published, seed,
+                *held.borrow(),
+                seed,
                 "the first redraw's publish must store what {window:?} at {zoom:?} seeded"
             );
         }
@@ -542,7 +522,7 @@ mod tests {
 
     #[test]
     fn the_resize_memo_publishes_on_a_change_and_skips_a_repeat() {
-        let caps: [AtomicUsize; MAX_FLOORS] = std::array::from_fn(|_| AtomicUsize::new(0));
+        let (caps, held) = tokio::sync::watch::channel([0; MAX_FLOORS]);
         let mut last = None;
         assert!(
             sync_floor_caps(&mut last, &caps, 360, 240),
@@ -561,12 +541,12 @@ mod tests {
             sync_floor_caps(&mut last, &caps, 240, 160),
             "a resize must republish"
         );
-        caps[0].store(999, Ordering::Relaxed);
+        caps.send_modify(|caps| caps[0] = 999);
         assert!(!sync_floor_caps(&mut last, &caps, 240, 160));
         assert_eq!(
-            caps[0].load(Ordering::Relaxed),
+            held.borrow()[0],
             999,
-            "a skipped publish must not touch the atomics"
+            "a skipped publish must not touch the capacities"
         );
     }
 

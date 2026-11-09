@@ -62,7 +62,7 @@ pub(crate) use coarse::{
 };
 
 use crate::walkable::WalkableMask;
-use pixtuoid_core::state::FloorLocalDeskIndex;
+use pixtuoid_core::state::{AgentSlot, FloorLocalDeskIndex};
 
 /// The column or row past a box `len` long from `at`, in u32: it can lie one
 /// past `u16::MAX`.
@@ -603,10 +603,15 @@ impl SceneLayout {
     }
 
     /// Typed accessor for a floor's home desk. `home_desks` is a
-    /// FLOOR-LOCAL vector — index it through a `FloorLocalDeskIndex`, never
-    /// with an `AgentSlot.desk_index` directly.
+    /// FLOOR-LOCAL vector — index it through a `FloorLocalDeskIndex`.
     pub fn home_desk(&self, i: FloorLocalDeskIndex) -> Option<HomeDesk> {
         self.home_desks.get(i.0).copied()
+    }
+
+    /// The home desk of `agent`, one of the floor this lays out
+    /// ([`FloorScene`](crate::floor::FloorScene)); `None` while it waits for one.
+    pub(crate) fn home_desk_of(&self, agent: &AgentSlot) -> Option<HomeDesk> {
+        self.home_desk(agent.home_desk?.index)
     }
 
     /// Is `p` clear of the furniture sprites that PAINT OVER it? Walkable is the

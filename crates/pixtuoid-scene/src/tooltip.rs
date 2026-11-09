@@ -541,8 +541,7 @@ mod tests {
         let id = AgentId::from_transcript_path(&format!("/p/{key}.jsonl"));
         let mut a = crate::character::test_support::make_slot(id, ActivityState::Idle);
         a.label = label.into();
-        a.desk_index = pixtuoid_core::state::GlobalDeskIndex(desk);
-        a.floor_idx = floor;
+        a.home_desk = Some(pixtuoid_core::state::FloorDesk::new(floor, desk));
         a.parent_id = lead;
         office.agents.insert(id, a);
         id
@@ -590,7 +589,7 @@ mod tests {
         let mut office = two_floor_office();
         let lead = seat(&mut office, ("lead", "cc\u{b7}api"), (0, 0), None);
         let sub = seat(&mut office, ("sub", "subagent"), (1, 0), Some(lead));
-        seat(&mut office, ("upstairs", "cc\u{b7}api"), (4, 1), None);
+        seat(&mut office, ("upstairs", "cc\u{b7}api"), (0, 1), None);
         let named = floor_nameplate(&office, 0, lead);
         assert_eq!(lineage(&office, sub), [format!("\u{21b3} under {named}")]);
     }

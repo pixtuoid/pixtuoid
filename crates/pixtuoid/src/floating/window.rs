@@ -66,8 +66,8 @@ pub(crate) struct FloatingApp {
     /// reach that state because `resumed` sets `live` BEFORE `window` and
     /// `redraw`'s window guard runs first. Don't reorder those assignments.
     live: Option<super::LivePipeline>,
-    /// The buffer size the capacity atomics were last synced for — capacity only changes
-    /// with the window size, so re-sync only on a size change (not every frame).
+    /// The buffer size the floor capacities were last published for — capacity only
+    /// changes with the window size, so re-publish only on a size change (not every frame).
     last_caps_size: Option<(u16, u16)>,
     /// Latest cursor position (physical px) — for the corner resize hit-test on click.
     cursor: PhysicalPosition<f64>,
@@ -410,7 +410,7 @@ impl FloatingApp {
         let Some((scene, floor_caps)) = self
             .live
             .as_ref()
-            .map(|l| (l.scene_rx.borrow().clone(), Arc::clone(&l.floor_caps)))
+            .map(|l| (l.scene_rx.borrow().clone(), l.floor_caps.clone()))
         else {
             return;
         };

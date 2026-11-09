@@ -65,8 +65,8 @@ pub use source::{AgentEvent, ToolDetail, Transport};
 pub use source::{Source, TaggedReceiver, TaggedSender};
 pub use state::reducer::Reducer;
 pub use state::{
-    ActivityState, AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, SceneState, SlotLabel,
-    ToolKind, ToolUse,
+    ActivityState, AgentSlot, FloorDesk, FloorLocalDeskIndex, SceneState, SlotLabel, ToolKind,
+    ToolUse,
 };
 
 #[cfg(test)]

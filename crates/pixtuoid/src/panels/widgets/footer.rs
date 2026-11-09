@@ -75,7 +75,7 @@ pub(crate) fn build_status_summary(inputs: &FooterInputs<'_>, term_width: u16) -
 mod tests {
     use super::*;
     use pixtuoid_core::state::{ActivityState, ToolUse};
-    use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
+    use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
     use pixtuoid_scene::footer::{FooterTone, RungKind};
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -102,8 +102,7 @@ mod tests {
             arrived_at: Some(SystemTime::UNIX_EPOCH),
             last_event_at: SystemTime::UNIX_EPOCH,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(0),
-            floor_idx: 0,
+            home_desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,

@@ -468,7 +468,7 @@ mod tests {
             scene.agents.len()
         );
         let desks: std::collections::HashSet<_> =
-            scene.agents.values().map(|a| a.desk_index.0).collect();
+            scene.agents.values().filter_map(|a| a.home_desk).collect();
         assert_eq!(
             desks.len(),
             scene.agents.len(),

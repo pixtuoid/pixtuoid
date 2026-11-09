@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::Result;
 use pixtuoid_core::source::{AgentEvent, claude_code};
 use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, Reducer, SceneState, Transport};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk, Reducer, SceneState, Transport};
 use tokio::sync::{RwLock, mpsc};
 
 pub(crate) async fn capture_live_scene(
@@ -73,10 +73,10 @@ pub(crate) async fn capture_live_scene(
     );
     for (id, slot) in &snapshot.agents {
         println!(
-            "  {} ({}) at desk {}: {:?} model={:?} effort={:?}",
+            "  {} ({}) at desk {:?}: {:?} model={:?} effort={:?}",
             slot.label,
             id,
-            slot.desk_index.0,
+            slot.home_desk,
             slot.state,
             slot.model,
             slot.effort.as_ref().map(|e| e.value.clone())
@@ -201,6 +201,7 @@ pub(crate) fn inject_openclaw_presence(
 const TIER_EXEMPLARS: [u64; 4] = [0, 400_000, 3_000_000, 20_000_000];
 
 fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Range<usize>) {
+    let cap = s.floor_capacities()[0];
     debug_assert!(
         TIER_EXEMPLARS
             .iter()
@@ -343,9 +344,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
                 last_event_at: now - *since_event,
                 exiting_at: None,
 
-                desk_index: GlobalDeskIndex(i),
-                // Hardcoding 0 here would leave overflow agents invisible.
-                floor_idx: s.floor_of(GlobalDeskIndex(i)),
+                home_desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -510,6 +509,7 @@ pub(crate) fn meeting_scene(
     let warmup_ms = min_dwell.saturating_sub(MEETING_WARMUP_LEAD_MS);
 
     let mut s = SceneState::uniform(max_desks);
+    let cap = max_desks;
     for (i, c) in staged.iter().enumerate() {
         let wp = l.waypoints[c.wp_idx];
         eprintln!(
@@ -546,8 +546,7 @@ pub(crate) fn meeting_scene(
                 arrived_at: Some(now - back_date),
                 last_event_at: now - back_date,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx: s.floor_of(GlobalDeskIndex(i)),
+                home_desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -586,6 +585,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
     );
 
     let mut s = SceneState::uniform(12);
+    let cap = s.floor_capacities()[0];
 
     let cc_root_id = AgentId::from_transcript_path("/demo/dash_cc_root.jsonl");
 
@@ -667,8 +667,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
                 arrived_at: Some(now - D::from_secs(*desk_index as u64)),
                 last_event_at: now,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(*desk_index),
-                floor_idx: s.floor_of(GlobalDeskIndex(*desk_index)),
+                home_desk: Some(FloorDesk::new(*desk_index / cap, *desk_index % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -847,8 +846,7 @@ pub(crate) fn anim_scene(
             arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(desk_idx),
-            floor_idx: 0,
+            home_desk: Some(FloorDesk::new(0, desk_idx)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -876,11 +874,13 @@ mod tests {
         let mut got: Vec<_> = scene
             .agents
             .values()
-            .map(|a| (a.desk_index.0, a.label.to_string()))
+            .map(|a| (a.home_desk, a.label.to_string()))
             .collect();
         got.sort();
         let team = |i| pixtuoid_scene::DEMO_REPOS[i % pixtuoid_scene::DEMO_TEAMS];
-        let want: Vec<_> = (0..12).map(|i| (i, format!("cc·{}", team(i)))).collect();
+        let want: Vec<_> = (0..12)
+            .map(|i| (Some(FloorDesk::new(0, i)), format!("cc·{}", team(i))))
+            .collect();
         assert_eq!(got, want);
         let teams: std::collections::HashSet<_> = got.iter().map(|(_, l)| l).collect();
         assert!(teams.len() < got.len(), "no two sample agents share a team");
@@ -933,7 +933,11 @@ mod tests {
         let mut rooms = Vec::new();
         let mut dwells = Vec::new();
         for slot in &staged {
-            assert!(slot.desk_index.0 < 3, "staged agents take desks 0..n");
+            assert!(
+                slot.home_desk
+                    .is_some_and(|desk| desk.floor == 0 && desk.index.0 < 3),
+                "staged agents take desks 0..n"
+            );
             let id = slot.agent_id;
             let elapsed_ms = now
                 .duration_since(slot.state_started_at)

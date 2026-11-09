@@ -134,7 +134,7 @@ pub(crate) fn furniture_crop(
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
     let layout = pixtuoid_scene::layout::SceneLayout::compute(
         pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
-        Some(scene.floor_capacities[0]),
+        Some(scene.floor_capacities()[0]),
         args.floor_seed,
     )
     .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;

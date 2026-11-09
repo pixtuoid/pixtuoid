@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::decoder::decode_hook_payload;
-use pixtuoid_core::source::{AgentEvent, ToolDetail, Transport};
+use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, HOOK_WINS_WINDOW, Reducer};
 use pixtuoid_core::state::{ActivityState, SceneState, ToolUse};
 use serde_json::json;
@@ -1852,40 +1852,6 @@ fn task_drain_while_parent_requires_action_keeps_requires_action() {
         "parent's permission must stay RequiresAction through a Task drain, got {:?}",
         scene.agents[&id].state
     );
-}
-
-#[test]
-fn desk_exhausted_task_dispatch_leaves_no_ghost_slot() {
-    let mut scene = SceneState::new([1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let mut r = Reducer::new();
-    let seated = AgentId::from_transcript_path("/proj/seated.jsonl");
-    start(&mut r, &mut scene, seated);
-    assert_eq!(scene.agents.len(), 1, "the single desk is occupied");
-
-    let t0 = SystemTime::now();
-    let orphan = AgentId::from_transcript_path("/proj/orphan.jsonl");
-    r.apply(
-        &mut scene,
-        AgentEvent::tool_use_start(orphan, Some("t1".into()), Some(ToolDetail::Task)),
-        t0,
-        Transport::Hook,
-    );
-    assert!(
-        !scene.agents.contains_key(&orphan),
-        "the desk-starved dispatch mints no ghost slot"
-    );
-    assert_eq!(
-        scene.agents.len(),
-        1,
-        "the orphan never registered a session"
-    );
-
-    r.tick(&mut scene, t0 + Duration::from_secs(2));
-    assert!(
-        !scene.agents.contains_key(&orphan),
-        "tick introduced no ghost slot for the orphan"
-    );
-    assert_eq!(scene.agents.len(), 1, "the seated agent is untouched");
 }
 
 /// The `handled_by_task_tracking` guard's REMOVAL was invisible to all 36 test

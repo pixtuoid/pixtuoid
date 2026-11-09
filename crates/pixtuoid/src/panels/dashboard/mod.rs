@@ -41,7 +41,8 @@ pub struct DashboardRow {
     pub depth: u8,
     pub name: Nameplate,
     pub source: Arc<str>,
-    pub floor_idx: usize,
+    /// `None` while the agent waits for a desk.
+    pub floor: Option<usize>,
     pub state: RowState,
     pub child_count: usize,
     pub collapsed: bool,
@@ -80,8 +81,8 @@ impl DashboardFolds {
     }
 }
 
-/// Flatten the scene into a tree-ordered row list: roots sorted by
-/// `desk_index`, each immediately followed by its visible subagents. An agent
+/// Flatten the scene into a tree-ordered row list: roots sorted by home desk,
+/// each immediately followed by its visible subagents. An agent
 /// whose `parent_id` is absent from the scene (an orphan) anchors its own
 /// subtree, and nesting deeper than two levels is walked too, so nothing is
 /// ever silently dropped.
@@ -100,7 +101,7 @@ pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<D
         .values()
         .filter(|s| s.parent_id.is_none_or(|p| !scene.agents.contains_key(&p)))
         .collect();
-    roots.sort_by_key(|s| s.desk_index);
+    roots.sort_by_key(|s| s.home_desk);
 
     let namesakes = FloorNamesakes::of(scene);
     let mut rows = Vec::new();
@@ -134,7 +135,7 @@ fn push_subtree(
         return;
     }
 
-    kids.sort_by_key(|s| s.desk_index);
+    kids.sort_by_key(|s| s.home_desk);
     for kid in kids {
         push_subtree(
             children,
@@ -162,7 +163,7 @@ fn row_for(
         depth,
         name: namesakes.nameplate(slot),
         source: slot.source.clone(),
-        floor_idx: slot.floor_idx,
+        floor: slot.home_desk.map(|desk| desk.floor),
         state: row_state(&slot.state),
         child_count,
         collapsed,
@@ -210,7 +211,7 @@ pub(crate) fn reanchor_selection(
 pub(crate) fn resolve_floor(rows: &[DashboardRow], selected: AgentId) -> Option<usize> {
     rows.iter()
         .find(|r| r.agent_id == selected)
-        .map(|r| r.floor_idx)
+        .and_then(|r| r.floor)
 }
 
 pub(crate) fn clamp_scroll(

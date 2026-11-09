@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid::dev::{RenderFrames, TuiRenderer};
 use pixtuoid_core::state::{ActivityState, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, SceneState};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk, SceneState};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pack::load_bundled_pack;
 use ratatui::Terminal;
@@ -24,8 +24,7 @@ fn agent_slot(
     id: AgentId,
     session: &str,
     label: &str,
-    desk: GlobalDeskIndex,
-    floor: usize,
+    desk: FloorDesk,
     state: ActivityState,
     now: SystemTime,
 ) -> AgentSlot {
@@ -41,8 +40,7 @@ fn agent_slot(
         arrived_at: Some(now - Duration::from_secs(60)),
         last_event_at: now - Duration::from_secs(60),
         exiting_at: None,
-        desk_index: desk,
-        floor_idx: floor,
+        home_desk: Some(desk),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,
@@ -66,8 +64,7 @@ fn tui_renderer_render_paints_a_full_frame() {
             id,
             "s-1",
             "demo",
-            GlobalDeskIndex(0),
-            0,
+            FloorDesk::new(0, 0),
             ActivityState::Running {
                 item: Some(ToolUse {
                     tool_use_id: Some(std::sync::Arc::from("t1")),
@@ -118,8 +115,7 @@ fn tui_renderer_transition_paints_pets_and_coffee() {
                 id,
                 &format!("s-{i}"),
                 name,
-                GlobalDeskIndex(i * 8),
-                i,
+                FloorDesk::new(i, 0),
                 ActivityState::Idle,
                 now,
             ),
@@ -368,8 +364,7 @@ fn cancel_transition_lands_on_destination_floor() {
                 id,
                 &format!("s-{i}"),
                 name,
-                GlobalDeskIndex(i * 8),
-                i,
+                FloorDesk::new(i, 0),
                 ActivityState::Idle,
                 now,
             ),

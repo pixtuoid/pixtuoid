@@ -4,7 +4,7 @@ use crate::anim::{Motion, frames_in};
 use crate::character::test_support::make_slot;
 use crate::layout::Viewport;
 use pixtuoid_core::id::AgentId;
-use pixtuoid_core::state::{ActivityState, ToolUse};
+use pixtuoid_core::state::{ActivityState, FloorDesk, ToolUse};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -106,7 +106,6 @@ fn a_new_layout_drops_the_routers_cached_paths() {
 fn daemons_projects_onto_the_ground_floor_only() {
     use pixtuoid_core::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence};
     let mut scene = SceneState::uniform(16);
-    scene.floor_capacities[1] = 16;
     // TWO gateways of one source, so the projection is also pinned to carry the
     // WHOLE roster (an `Option`-shaped projection would drop the second lobster).
     for port in ["18789", "19789"] {
@@ -151,13 +150,18 @@ fn every_floor_carries_the_days_count() {
 }
 
 /// A floor past the building's projects as an empty one, agreeing with
-/// `build_floor_scene`: the last real floor's agents don't leak through.
+/// `floor_agents`: the last real floor's agents don't leak through.
 #[test]
 fn a_floor_past_the_building_projects_empty() {
     use pixtuoid_core::state::MAX_FLOORS;
     let scene = make_scene(2 * MAX_FLOORS, 2);
-    assert!(scene.agents.values().any(|a| a.floor_idx == MAX_FLOORS - 1));
-    assert!(build_floor_scene(&scene, MAX_FLOORS).is_empty());
+    assert!(
+        scene
+            .agents
+            .values()
+            .any(|a| a.home_desk.is_some_and(|s| s.floor == MAX_FLOORS - 1))
+    );
+    assert!(floor_agents(&scene, MAX_FLOORS).next().is_none());
     let past = project_floor_scene(&scene, MAX_FLOORS);
     assert!(past.scene().agents.is_empty());
     assert_eq!(past.scene().total_capacity(), 0);
@@ -214,7 +218,6 @@ fn make_scene(n: usize, max_desks: usize) -> SceneState {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for i in 0..n {
         let id = AgentId::from_transcript_path(&format!("/p/{i}.jsonl"));
-        let floor_idx = s.floor_of(GlobalDeskIndex(i));
         s.agents.insert(
             id,
             AgentSlot {
@@ -226,8 +229,7 @@ fn make_scene(n: usize, max_desks: usize) -> SceneState {
                 created_at: now,
                 arrived_at: Some(now),
                 last_event_at: now,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx,
+                home_desk: Some(FloorDesk::new(i / max_desks, i % max_desks)),
                 ..make_slot(id, ActivityState::Idle)
             },
         );
@@ -254,79 +256,22 @@ fn num_floors_empty() {
 }
 
 #[test]
-fn build_floor_scene_filters_and_remaps() {
+fn a_floors_projection_holds_its_agents_at_their_own_desks() {
     let scene = make_scene(20, 16);
-
-    let floor0 = build_floor_scene(&scene, 0);
-    assert_eq!(floor0.len(), 16);
-    for p in &floor0 {
-        assert!(p.desk.0 < 16, "local desk {} out of range", p.desk.0);
+    for (floor, indices) in [(0, 0..16), (1, 0..4)] {
+        let projected = project_floor_scene(&scene, floor);
+        let mut desks: Vec<_> = projected
+            .scene()
+            .agents
+            .values()
+            .map(|a| a.home_desk)
+            .collect();
+        desks.sort();
+        let want: Vec<_> = indices
+            .map(|index| Some(FloorDesk::new(floor, index)))
+            .collect();
+        assert_eq!(desks, want, "floor {floor}");
     }
-
-    let floor1 = build_floor_scene(&scene, 1);
-    assert_eq!(floor1.len(), 4);
-    let mut indices: Vec<usize> = floor1.iter().map(|p| p.desk.0).collect();
-    indices.sort();
-    assert_eq!(indices, vec![0, 1, 2, 3]);
-    // The slot's GLOBAL desk_index is untouched: floor 1's agents keep their real
-    // allocation until project_floor_scene's documented re-host.
-    let mut globals: Vec<usize> = floor1.iter().map(|p| p.slot.desk_index.0).collect();
-    globals.sort();
-    assert_eq!(globals, vec![16, 17, 18, 19]);
-}
-
-#[test]
-fn build_floor_scene_remap_is_local_global_coincident() {
-    // Within a projected `uniform(cap)` scene the global desk space coincides with
-    // its only floor's local space — what makes `single_floor_local` an identity.
-    let scene = make_scene(20, 16);
-    for floor_idx in 0..num_floors(&scene) {
-        let floor_scene = project_floor_scene(&scene, floor_idx);
-        let projected = floor_scene.scene();
-        for slot in projected.agents.values() {
-            assert_eq!(projected.floor_of(slot.desk_index), 0);
-            assert_eq!(
-                projected.floor_local_desk(slot.desk_index).0,
-                slot.desk_index.0,
-                "projected scene: bridge must be the identity"
-            );
-            assert_eq!(
-                projected.floor_local_desk(slot.desk_index),
-                slot.desk_index.single_floor_local(),
-                "typed bridge and identity cast must agree in a projection"
-            );
-        }
-    }
-}
-
-#[test]
-fn build_floor_scene_skips_agent_below_grown_offset() {
-    // Desk 5 is assigned on floor 1 while floor 0 has capacity 4; floor 0 then
-    // grows to 8, so `floor_range(1).start` passes the agent's own desk.
-    let mut s = SceneState::new([4, 4, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let id = AgentId::from_transcript_path("/p/stale.jsonl");
-    s.agents.insert(
-        id,
-        AgentSlot {
-            source: Arc::from("cc"),
-            cwd: Arc::from(Path::new("/repo")),
-            label: "stale".into(),
-            state_started_at: now,
-            created_at: now,
-            arrived_at: Some(now),
-            last_event_at: now,
-            desk_index: GlobalDeskIndex(5),
-            floor_idx: 1,
-            ..make_slot(id, ActivityState::Idle)
-        },
-    );
-    s.floor_capacities = [8, 4, 0, 0, 0, 0, 0, 0, 0, 0];
-    let floor1 = build_floor_scene(&s, 1);
-    assert!(
-        floor1.is_empty(),
-        "agent below grown offset must be skipped, not mapped to desk 0"
-    );
 }
 
 #[test]
@@ -336,7 +281,6 @@ fn num_floors_variable_capacities() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for i in 0..6 {
         let id = AgentId::from_transcript_path(&format!("/p/{i}.jsonl"));
-        let floor_idx = s.floor_of(GlobalDeskIndex(i));
         s.agents.insert(
             id,
             AgentSlot {
@@ -348,8 +292,11 @@ fn num_floors_variable_capacities() {
                 created_at: now,
                 arrived_at: Some(now),
                 last_event_at: now,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx,
+                home_desk: Some(if i < 4 {
+                    FloorDesk::new(0, i)
+                } else {
+                    FloorDesk::new(1, i - 4)
+                }),
                 ..make_slot(id, ActivityState::Idle)
             },
         );
@@ -1131,7 +1078,10 @@ fn step_hands_back_the_layout_the_sim_stepped_on() {
 fn stepping_a_projected_floor_keeps_other_floors_coffee() {
     let scene = make_scene(17, 16);
     let downstairs = AgentId::from_transcript_path("/p/0.jsonl");
-    assert_eq!(scene.agents[&downstairs].floor_idx, 0);
+    assert_eq!(
+        scene.agents[&downstairs].home_desk.map(|s| s.floor),
+        Some(0)
+    );
     let mut office = PerOffice::new();
     office.coffee.insert(downstairs, t0());
     let mut upstairs = PerFloor::new(Arc::new(crate::pack::test_office()));
@@ -3113,7 +3063,7 @@ fn a_lifted_agent_hangs_from_the_pointer_and_walks_home_when_set_down() {
     let landed = step(&mut session, t0 + Duration::from_millis(300));
     let desk = landed
         .layout
-        .home_desk(scene.agents[&id].desk_index.single_floor_local())
+        .home_desk_of(&scene.agents[&id])
         .expect("a desk");
     let home = crate::pose::desk_leg_endpoint(desk, &landed.layout).0;
     match landed.frame.poses[&id] {
@@ -3622,7 +3572,7 @@ mod figure_box {
                         created_at: idle,
                         arrived_at: Some(idle),
                         last_event_at: idle,
-                        desk_index: GlobalDeskIndex(desk),
+                        home_desk: Some(FloorDesk::new(0, desk)),
                         ..make_slot(id, ActivityState::Idle)
                     },
                 );
@@ -3774,8 +3724,7 @@ mod figure_box {
         let now = t0 + Duration::from_secs(60);
         for twin in &mut twins {
             let slot = twin.agents.get_mut(&west).expect("west");
-            slot.desk_index = GlobalDeskIndex(16);
-            slot.floor_idx = 1;
+            slot.home_desk = Some(FloorDesk::new(1, 0));
             twin.agents.remove(&east);
         }
         for (look, offices) in looks.iter().zip(&mut offices) {

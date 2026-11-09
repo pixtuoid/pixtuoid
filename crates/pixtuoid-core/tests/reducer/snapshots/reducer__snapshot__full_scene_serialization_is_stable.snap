@@ -30,8 +30,9 @@ agents:
       secs_since_epoch: 0
       nanos_since_epoch: 0
     exiting_at: ~
-    desk_index: 0
-    floor_idx: 0
+    home_desk:
+      floor: 0
+      index: 0
     tool_call_count: 0
     running_ms: 0
     unknown_cwd: false
@@ -60,8 +61,9 @@ agents:
     exiting_at:
       secs_since_epoch: 8
       nanos_since_epoch: 0
-    desk_index: 4
-    floor_idx: 0
+    home_desk:
+      floor: 0
+      index: 4
     tool_call_count: 1
     running_ms: 1000
     unknown_cwd: false
@@ -90,8 +92,9 @@ agents:
       secs_since_epoch: 3
       nanos_since_epoch: 0
     exiting_at: ~
-    desk_index: 2
-    floor_idx: 0
+    home_desk:
+      floor: 0
+      index: 2
     tool_call_count: 0
     running_ms: 0
     unknown_cwd: false
@@ -118,8 +121,9 @@ agents:
       secs_since_epoch: 5
       nanos_since_epoch: 0
     exiting_at: ~
-    desk_index: 3
-    floor_idx: 0
+    home_desk:
+      floor: 0
+      index: 3
     tool_call_count: 0
     running_ms: 0
     unknown_cwd: false
@@ -151,8 +155,9 @@ agents:
       secs_since_epoch: 1
       nanos_since_epoch: 0
     exiting_at: ~
-    desk_index: 1
-    floor_idx: 0
+    home_desk:
+      floor: 0
+      index: 1
     tool_call_count: 1
     running_ms: 0
     unknown_cwd: false

@@ -20,7 +20,7 @@ use anyhow::{Context, Result, anyhow};
 use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid::dev::{OfficeRenderer, WindowFrame, XrgbSurface, window_geometry};
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
 use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
 use pixtuoid_scene::theme::theme_by_name;
@@ -28,6 +28,7 @@ use pixtuoid_scene::theme::theme_by_name;
 /// The two `cc` labels are a DELIBERATE collision, so the snapshot exercises the
 /// `·xxxx` suffix as well as every label tone.
 fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
+    let cap = scene.floor_capacities()[0];
     let archetypes: [(&str, ActivityState); 6] = [
         (
             "claude-code",
@@ -91,8 +92,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
                 arrived_at: Some(seated_since),
                 last_event_at: recent,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx: scene.floor_of(GlobalDeskIndex(i)),
+                home_desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,

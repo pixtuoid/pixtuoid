@@ -147,11 +147,9 @@ impl<'a> Namesakes<'a> {
 pub struct FloorNamesakes<'a>(Vec<Namesakes<'a>>);
 
 impl<'a> FloorNamesakes<'a> {
-    /// The floors of `scene`, the whole office: a floor's
-    /// [projection](crate::floor::project_floor_scene) re-hosts its desks, so
-    /// it reads as no floor's.
+    /// The floors of `scene`, the whole office.
     pub fn of(scene: &'a SceneState) -> Self {
-        let floors = 0..scene.floor_capacities.len();
+        let floors = 0..pixtuoid_core::state::MAX_FLOORS;
         Self(
             floors
                 .map(|floor| Namesakes::of(crate::floor::floor_agents(scene, floor)))
@@ -162,9 +160,8 @@ impl<'a> FloorNamesakes<'a> {
     /// `agent`'s name as its floor's badges read it; an agent no floor draws
     /// is counted on none.
     pub fn nameplate(&self, agent: &AgentSlot) -> Nameplate {
-        let shared = self
-            .0
-            .get(agent.floor_idx)
+        let shared = (agent.home_desk)
+            .and_then(|desk| self.0.get(desk.floor))
             .is_some_and(|floor| floor.shares(agent));
         Nameplate::of(agent, shared)
     }
@@ -202,7 +199,9 @@ mod tests {
         let label = "cc\u{b7}a-very-long-project-name";
         let a = agent(label, "a");
         let mut b = agent(label, "b");
-        b.floor_idx = a.floor_idx + 1;
+        b.home_desk = a
+            .home_desk
+            .map(|desk| pixtuoid_core::state::FloorDesk::new(desk.floor + 1, desk.index.0));
         let all = [a.clone(), b.clone()];
         let namesakes = Namesakes::of(&all);
         let want_a = format!("{label}{}", Suffix::of(a.agent_id).tail());

@@ -4674,7 +4674,7 @@ fn full_office(viewport: crate::layout::Viewport) -> (SceneLayout, SimFrame) {
         .map(|i| {
             let id = pixtuoid_core::AgentId::from_transcript_path(&format!("/lit/{i}.jsonl"));
             pixtuoid_core::AgentSlot {
-                desk_index: pixtuoid_core::state::GlobalDeskIndex(i),
+                home_desk: Some(pixtuoid_core::state::FloorDesk::new(0, i)),
                 ..crate::character::test_support::make_slot(id, running.clone())
             }
         })

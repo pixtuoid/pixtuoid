@@ -2082,7 +2082,6 @@ fn a_named_classic_boots_in_the_classic_with_the_cutaway_at_hand() {
 /// agent seated.
 #[test]
 fn seats_never_outnumber_the_desks_of_a_look_to_return_to() {
-    use std::sync::atomic::AtomicUsize;
     let cell = CellSize { w: 6, h: 12 };
     let (cols, rows) = (120, 40);
     let mut r = TuiRenderer::new(
@@ -2118,16 +2117,14 @@ fn seats_never_outnumber_the_desks_of_a_look_to_return_to() {
         classic.iter().zip(&cutaway).any(|(c, k)| c > k),
         "premise: the classic seats more here"
     );
-    let caps: [AtomicUsize; pixtuoid_core::state::MAX_FLOORS] =
-        std::array::from_fn(|_| AtomicUsize::new(0));
+    let (caps, held) = tokio::sync::watch::channel([0; pixtuoid_core::state::MAX_FLOORS]);
     let mut sweep = crate::tui::FloorCapacitySweep::new();
     let scene = office();
     let cadence = ImageProtocol::Kitty.cadence();
     let mut frame = |r: &mut TuiRenderer<Window>, n: u32, note: &str| {
         r.render(&scene, t0() + cadence * n).expect("render");
         sweep.publish(r.seat_extents(), None, &caps);
-        for (i, (slot, &desks)) in caps.iter().zip(&cutaway).enumerate() {
-            let seats = slot.load(std::sync::atomic::Ordering::Relaxed);
+        for (i, (&seats, &desks)) in held.borrow().iter().zip(&cutaway).enumerate() {
             assert!(seats <= desks, "{note}: floor {i} seats {seats} of {desks}");
         }
     };

@@ -4,14 +4,14 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind, ToolUse};
+use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, ToolKind, ToolUse};
 
 /// Build a slot with the fields the dashboard reads; the rest are inert.
 fn mk_slot(
     id: AgentId,
     label: &str,
-    desk_index: usize,
-    floor_idx: usize,
+    desk: usize,
+    floor: usize,
     parent_id: Option<AgentId>,
     state: ActivityState,
 ) -> AgentSlot {
@@ -28,8 +28,7 @@ fn mk_slot(
         arrived_at: Some(now),
         last_event_at: now,
         exiting_at: None,
-        desk_index: GlobalDeskIndex(desk_index),
-        floor_idx,
+        home_desk: Some(FloorDesk::new(floor, desk)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,
@@ -47,13 +46,13 @@ fn id(p: &str) -> AgentId {
 }
 
 #[test]
-fn rows_are_tree_ordered_roots_by_desk_index_children_following_parent() {
+fn rows_are_tree_ordered_roots_by_desk_children_following_parent() {
     let a = id("/p/a.jsonl");
     let b = id("/p/b.jsonl");
     let a_sub = id("/p/a/subagents/agent-x.jsonl");
 
     let mut scene = SceneState::uniform(8);
-    // Inserted out of desk order, and the child has a HIGHER desk_index than root `b`
+    // Inserted out of desk order, and the child has a LATER home desk than root `b`
     // — so BTreeMap/AgentId order would give a different answer.
     scene
         .agents
@@ -75,7 +74,7 @@ fn rows_are_tree_ordered_roots_by_desk_index_children_following_parent() {
     assert_eq!(depths, [0, 1, 0]);
 
     assert_eq!(rows[1].parent_id, Some(a));
-    assert_eq!(rows[1].floor_idx, 1);
+    assert_eq!(rows[1].floor, Some(1));
     assert_eq!(rows[0].child_count, 1);
     assert_eq!(rows[2].child_count, 0);
 }
@@ -122,7 +121,7 @@ fn orphan_whose_parent_is_absent_is_treated_as_root() {
         rows[0].parent_id, None,
         "an orphan shows as a root, no visible parent"
     );
-    assert_eq!(rows[0].floor_idx, 2);
+    assert_eq!(rows[0].floor, Some(2));
 }
 
 #[test]
@@ -173,7 +172,7 @@ fn fold_all_then_unfold_all_flip_every_root() {
     assert!(!build_dashboard_rows(&scene, &folds)[0].collapsed);
 }
 
-/// `n` flat root agents at desks/floors `0..n` — `floor_idx == desk_index` here so
+/// `n` flat root agents at desks/floors `0..n` — `floor == desk` here so
 /// `resolve_floor` is checkable, and rows come back in desk order (`rows[i] == i`).
 fn flat_rows(n: usize) -> Vec<DashboardRow> {
     let mut scene = SceneState::uniform(n.max(1));
@@ -332,7 +331,7 @@ fn build_rows_carries_requires_action_and_running_state() {
 fn namesake_rows_read_their_floors_nameplates() {
     let (a, b, up) = (id("/p/a.jsonl"), id("/p/b.jsonl"), id("/p/up.jsonl"));
     let mut scene = SceneState::uniform(2);
-    for (agent, desk, floor) in [(a, 0, 0), (b, 1, 0), (up, 2, 1)] {
+    for (agent, desk, floor) in [(a, 0, 0), (b, 1, 0), (up, 0, 1)] {
         let slot = mk_slot(agent, "cc·api", desk, floor, None, ActivityState::Idle);
         scene.agents.insert(agent, slot);
     }
@@ -351,31 +350,6 @@ fn namesake_rows_read_their_floors_nameplates() {
     }
     assert_ne!(row(a), row(b));
     assert_eq!(row(up).to_string(), "cc·api");
-}
-
-/// An agent left below floor 1's offset when floor 0 grew is drawn on no
-/// floor, so a namesake seated on floor 1 since reads its badge's bare name.
-#[test]
-fn a_row_counts_its_floor_as_the_floors_badges_do() {
-    let mut capacities = [0; pixtuoid_core::state::MAX_FLOORS];
-    capacities[..2].copy_from_slice(&[4, 4]);
-    let mut scene = SceneState::new(capacities);
-    let (left, seated) = (id("/p/left.jsonl"), id("/p/seated.jsonl"));
-    let slot = mk_slot(left, "cc·api", 4, 1, None, ActivityState::Idle);
-    scene.agents.insert(left, slot);
-    scene.floor_capacities[0] = 8;
-    let slot = mk_slot(seated, "cc·api", 8, 1, None, ActivityState::Idle);
-    scene.agents.insert(seated, slot);
-    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
-    let row = rows
-        .iter()
-        .find(|r| r.agent_id == seated)
-        .expect("the seated agent's row");
-    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 1);
-    let projection = floor_scene.scene();
-    let badge = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values())
-        .nameplate(&projection.agents[&seated]);
-    assert_eq!(row.name, badge);
 }
 
 #[test]

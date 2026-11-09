@@ -4,10 +4,11 @@
 //! diverge there:
 //! - **`boot_caps`**: the TUI measures the terminal (footer-subtracting,
 //!   cap-clamped, headless arms); floating measures its window pixels — a
-//!   deliberate divergence (reusing the TUI math over-seeds and strands agents on
-//!   non-existent desks), so the pipeline takes the seed as a PARAMETER and must
-//!   never compute it. It is also WHEN they diverge: floating cannot seed until a
-//!   real window exists, so it calls this from `window::resumed`, not at boot.
+//!   deliberate divergence (reusing the TUI math over-seeds, seating agents at
+//!   desks the first redraw takes away), so the pipeline takes the seed as a
+//!   PARAMETER and must never compute it. It is also WHEN they diverge:
+//!   floating cannot seed until a real window exists, so it calls this from
+//!   `window::resumed`, not at boot.
 //! - **socket resolution + `ConnectedSources`**: both values outlive the boot (the
 //!   Sources panel displays the path and mutates the live set), so the callers own
 //!   them and hand in a clone.
@@ -18,7 +19,6 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 
 use pixtuoid_core::source::daemon;
 use pixtuoid_core::source::manager::{SourceDeath, SourceManager};
@@ -79,12 +79,24 @@ impl SceneSink {
 /// through the [`SceneSink`] it handed in.
 pub(crate) struct Pipeline {
     pub(crate) health_rx: watch::Receiver<Vec<SourceDeath>>,
-    pub(crate) floor_caps: Arc<[AtomicUsize; MAX_FLOORS]>,
+    /// Where the run's one painter publishes ([`publish_floor_caps`]) the
+    /// capacities [`reducer_task`] seats against.
+    pub(crate) floor_caps: watch::Sender<[usize; MAX_FLOORS]>,
+}
+
+/// A painter's new floor capacities, a smaller one included: the reducer
+/// re-seats on it ([`SceneState::set_capacities`]), so whoever lost a desk waits
+/// for one instead of sitting where nothing is drawn. An unchanged one wakes no one.
+pub(crate) fn publish_floor_caps(
+    floor_caps: &watch::Sender<[usize; MAX_FLOORS]>,
+    caps: [usize; MAX_FLOORS],
+) {
+    floor_caps.send_if_modified(|held| std::mem::replace(held, caps) != caps);
 }
 
 /// Wire and spawn the whole live pipeline: presence channel + exit watch →
 /// [`build_source_set`] → event/health channels → boot-seeded floor-caps
-/// atomics → [`reducer_task`] publishing to `scene` →
+/// watch → [`reducer_task`] publishing to `scene` →
 /// `SourceManager::spawn_with_health`.
 pub(crate) fn spawn_pipeline(
     socket_path: PathBuf,
@@ -101,12 +113,11 @@ pub(crate) fn spawn_pipeline(
 
     let (tx, rx) =
         mpsc::channel::<(Transport, AgentEvent)>(pixtuoid_core::source::EVENT_CHANNEL_CAPACITY);
-    let floor_caps: Arc<[AtomicUsize; MAX_FLOORS]> =
-        Arc::new(std::array::from_fn(|i| AtomicUsize::new(boot_caps[i])));
+    let (floor_caps, caps_rx) = watch::channel(boot_caps);
     tokio::spawn(reducer_task(
         rx,
         scene,
-        Arc::clone(&floor_caps),
+        caps_rx,
         connected,
         presence_rx,
         presence_exit_watch,

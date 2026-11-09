@@ -39,7 +39,7 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{Context, Result};
 use pixtuoid::dev::{Protocol, frame_clock, renderer};
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
 use pixtuoid_scene::anim::{Motion, PAINT_FRAME, frames_in};
 use pixtuoid_scene::look::spans;
 use pixtuoid_scene::pet::{Pet, PetKind};
@@ -157,6 +157,7 @@ fn cases() -> Vec<Case> {
 /// at their desks (and so wandering), the rest working.
 fn office(start: SystemTime) -> SceneState {
     let mut scene = SceneState::uniform(FLOOR_DESKS);
+    let cap = FLOOR_DESKS;
     let long_ago = start - Duration::from_secs(600);
     for i in 0..AGENTS {
         let id = AgentId::from_transcript_path(&format!("/pacing/a{i}.jsonl"));
@@ -192,8 +193,7 @@ fn office(start: SystemTime) -> SceneState {
                 arrived_at: Some(started),
                 last_event_at: started,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx: scene.floor_of(GlobalDeskIndex(i)),
+                home_desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,

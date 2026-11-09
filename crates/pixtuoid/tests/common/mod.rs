@@ -23,7 +23,7 @@ macro_rules! make_draw_ctx {
 
 pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneState {
     use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
-    use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
+    use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
     use std::sync::Arc;
 
     let mut s = pixtuoid_core::SceneState::uniform(12);
@@ -66,8 +66,7 @@ pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneS
                 arrived_at: Some(created_at),
                 exiting_at: None,
 
-                desk_index: GlobalDeskIndex(i),
-                floor_idx: 0,
+                home_desk: Some(FloorDesk::new(0, i)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,

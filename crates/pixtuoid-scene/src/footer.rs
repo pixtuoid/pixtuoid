@@ -525,7 +525,7 @@ fn finish_tier(mut tier: Vec<FooterSegment>, quit: &str, budget: u16) -> FooterM
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pixtuoid_core::state::GlobalDeskIndex;
+    use pixtuoid_core::state::FloorDesk;
     use pixtuoid_core::{AgentId, AgentSlot};
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -570,8 +570,7 @@ mod tests {
             arrived_at: Some(SystemTime::UNIX_EPOCH),
             last_event_at: SystemTime::UNIX_EPOCH,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(0),
-            floor_idx: 0,
+            home_desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -764,7 +763,7 @@ mod tests {
         use pixtuoid_core::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence};
         let mut scene = SceneState::uniform(16);
         let mut upstairs = requires_action_slot("/p/up.jsonl");
-        upstairs.floor_idx = 1;
+        upstairs.home_desk = Some(pixtuoid_core::state::FloorDesk::new(1, 0));
         scene.agents.insert(upstairs.agent_id, upstairs);
         scene.insert_daemon(
             pixtuoid_core::source::openclaw::SOURCE_NAME,

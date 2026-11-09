@@ -14,6 +14,8 @@ use crate::panels::dashboard::{DASHBOARD_VIEWPORT_ROWS, DashboardFrame, Dashboar
 use pixtuoid_scene::theme::Theme;
 
 const LABEL_W: usize = 32;
+/// The floor cell of an agent waiting for a desk, on no floor yet.
+const WAITING: &str = "—";
 const STATE_W: usize = 28;
 const POPUP_W: u16 = 76;
 
@@ -134,7 +136,11 @@ fn dashboard_line(
         Span::raw(" "),
         Span::styled(label_cell, base.fg(to_color(color))),
         Span::styled(
-            format!(" F{:<2} ", row.floor_idx + 1),
+            format!(
+                " {:<3} ",
+                row.floor
+                    .map_or_else(|| WAITING.to_owned(), |f| format!("F{}", f + 1))
+            ),
             base.fg(to_color(theme.ui.neon_brand)),
         ),
         Span::styled(state_cell, base.fg(to_color(color))),
@@ -164,11 +170,23 @@ mod tests {
             depth: 0,
             name,
             source: Arc::from(source),
-            floor_idx: 0,
+            floor: Some(0),
             state,
             child_count: 0,
             collapsed: false,
         }
+    }
+
+    #[test]
+    fn the_floor_cell_reads_the_floor_or_a_dash_while_waiting_for_a_desk() {
+        let mut row = make_row("cc", RowState::Idle, "cc\u{b7}a");
+        let cell = |row: &DashboardRow| {
+            let line = dashboard_line(row, false, SystemTime::UNIX_EPOCH, &NORMAL);
+            line.spans[3].content.to_string()
+        };
+        assert_eq!(cell(&row), " F1  ");
+        row.floor = None;
+        assert_eq!(cell(&row), " \u{2014}   ");
     }
 
     /// A lone label one char past the column keeps its source prefix: only a

@@ -83,8 +83,7 @@ pub(crate) fn route_key<B: ratatui::backend::Backend<Error: Send + Sync + 'stati
 /// `floor_capacity` runs a FULL `SceneLayout::compute` — walkable-mask stamp plus
 /// coarse BFS, quadratic in buffer area — once per floor and office, and keeps the
 /// fewest `home_desks.len()`. It is a pure function of the run's [`Offices`] and
-/// `desk_cap`, and the publish is a monotone `fetch_max`, so a repeat with identical
-/// inputs could only rewrite the same values.
+/// `desk_cap`, so a repeat with identical inputs could only publish the same values.
 struct FloorCapacitySweep {
     last: Option<(Offices, Option<usize>)>,
 }
@@ -103,22 +102,15 @@ impl FloorCapacitySweep {
         &mut self,
         offices: Offices,
         desk_cap: Option<usize>,
-        caps: &[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS],
+        caps: &tokio::sync::watch::Sender<[usize; pixtuoid_core::state::MAX_FLOORS]>,
     ) -> bool {
         if self.last == Some((offices, desk_cap)) {
             return false;
         }
         self.last = Some((offices, desk_cap));
-        let seats = crate::runtime::floor_capacities(&offices);
-        for (cap_slot, mut capacity) in caps.iter().zip(seats) {
-            if let Some(cap) = desk_cap {
-                capacity = capacity.min(cap);
-            }
-            // `fetch_max` keeps capacity monotone: a shrink would shift the
-            // cumulative offsets and remap floor-1+ agents onto the wrong
-            // desks (they go invisible).
-            cap_slot.fetch_max(capacity, std::sync::atomic::Ordering::Relaxed);
-        }
+        let seats = crate::runtime::floor_capacities(&offices)
+            .map(|capacity| desk_cap.map_or(capacity, |cap| capacity.min(cap)));
+        crate::runtime::pipeline::publish_floor_caps(caps, seats);
         true
     }
 }
@@ -365,7 +357,7 @@ pub(crate) struct TuiSession {
     /// How the office moves in each look, which `boot_tui` resolved beside
     /// the plan.
     pub motions: enum_map::EnumMap<pixtuoid_scene::look::LookKind, pixtuoid_scene::anim::Motion>,
-    pub floor_caps: Arc<[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS]>,
+    pub floor_caps: tokio::sync::watch::Sender<[usize; pixtuoid_core::state::MAX_FLOORS]>,
     pub theme: &'static theme::Theme,
     pub config_path: std::path::PathBuf,
     pub desk_cap: Option<usize>,
@@ -770,10 +762,13 @@ mod frame_clock_tests {
 mod capacity_sweep_tests {
     use super::FloorCapacitySweep;
     use pixtuoid_core::state::MAX_FLOORS;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::watch;
 
-    fn caps() -> [AtomicUsize; MAX_FLOORS] {
-        std::array::from_fn(|_| AtomicUsize::new(0))
+    fn published() -> (
+        watch::Sender<[usize; MAX_FLOORS]>,
+        watch::Receiver<[usize; MAX_FLOORS]>,
+    ) {
+        watch::channel([0; MAX_FLOORS])
     }
 
     // A 192x80 terminal, i.e. a 192x158 buffer.
@@ -796,9 +791,9 @@ mod capacity_sweep_tests {
         let small = pixtuoid_scene::layout::Size { w: W / 2, h: H / 2 };
         let mut offices = classic(W, H);
         offices[LookKind::Cutaway] = Some(small);
-        let caps = caps();
+        let (caps, held) = published();
         FloorCapacitySweep::new().publish(offices, None, &caps);
-        for (i, slot) in caps.iter().enumerate() {
+        for (i, &got) in held.borrow().iter().enumerate() {
             let seed = pixtuoid_scene::floor::floor_seed(i);
             let want = pixtuoid_scene::floor::floor_capacity(
                 pixtuoid_scene::layout::Viewport::full(W, H),
@@ -808,24 +803,41 @@ mod capacity_sweep_tests {
                 pixtuoid_scene::layout::Viewport::from(small),
                 seed,
             ));
-            assert_eq!(slot.load(Ordering::Relaxed), want, "floor {i}");
+            assert_eq!(got, want, "floor {i}");
         }
+    }
+
+    /// R2-C32: a shrunk terminal lowers what the reducer seats against, which
+    /// re-seats whoever it displaces.
+    #[test]
+    fn a_shrunk_terminal_lowers_the_published_capacity() {
+        let (caps, held) = published();
+        let mut sweep = FloorCapacitySweep::new();
+        sweep.publish(classic(W, H), None, &caps);
+        let big = held.borrow()[0];
+        let small = pixtuoid_scene::floor::floor_capacity(
+            pixtuoid_scene::layout::Viewport::full(W / 2, H),
+            pixtuoid_scene::floor::floor_seed(0),
+        );
+        assert!(small < big && small > 0, "premise: {big} → {small}");
+        sweep.publish(classic(W / 2, H), None, &caps);
+        assert_eq!(held.borrow()[0], small);
     }
 
     #[test]
     fn a_repeat_frame_serves_the_memo_instead_of_recomputing() {
-        let caps = caps();
+        let (caps, held) = published();
         let mut sweep = FloorCapacitySweep::new();
         assert!(
             sweep.publish(classic(W, H), None, &caps),
             "first frame computes"
         );
-        let published: Vec<usize> = caps.iter().map(|c| c.load(Ordering::Relaxed)).collect();
+        let published = *held.borrow();
         assert!(
             !sweep.publish(classic(W, H), None, &caps),
             "an unchanged frame must skip the whole MAX_FLOORS layout sweep"
         );
-        let after: Vec<usize> = caps.iter().map(|c| c.load(Ordering::Relaxed)).collect();
+        let after = *held.borrow();
         assert_eq!(
             published, after,
             "the memo hit must publish the same values"
@@ -834,7 +846,7 @@ mod capacity_sweep_tests {
 
     #[test]
     fn a_resize_or_a_new_cap_recomputes() {
-        let caps = caps();
+        let (caps, _held) = published();
         let mut sweep = FloorCapacitySweep::new();
         sweep.publish(classic(W, H), None, &caps);
         assert!(
@@ -849,27 +861,25 @@ mod capacity_sweep_tests {
 
     #[test]
     fn published_capacities_are_the_per_floor_auto_capacity_clamped_by_the_cap() {
-        let caps = caps();
+        let (caps, held) = published();
         let mut sweep = FloorCapacitySweep::new();
         sweep.publish(classic(W, H), None, &caps);
-        for (i, slot) in caps.iter().enumerate() {
+        for (i, &got) in held.borrow().iter().enumerate() {
             let want = pixtuoid_scene::floor::floor_capacity(
                 pixtuoid_scene::layout::Viewport::full(W, H),
                 pixtuoid_scene::floor::floor_seed(i),
             );
-            assert_eq!(slot.load(Ordering::Relaxed), want, "floor {i}");
+            assert_eq!(got, want, "floor {i}");
             assert!(want > 0, "floor {i} must seat someone at 192x80");
         }
-        let capped: [AtomicUsize; MAX_FLOORS] = std::array::from_fn(|_| AtomicUsize::new(0));
+        let (capped, held) = published();
         let mut sweep = FloorCapacitySweep::new();
         sweep.publish(classic(W, H), Some(3), &capped);
-        for (i, slot) in capped.iter().enumerate() {
-            assert_eq!(
-                slot.load(Ordering::Relaxed),
-                3,
-                "floor {i} clamped to the cap"
-            );
-        }
+        assert_eq!(
+            *held.borrow(),
+            [3; MAX_FLOORS],
+            "every floor clamped to the cap"
+        );
     }
 }
 

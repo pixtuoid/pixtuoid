@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use pixtuoid_core::state::{ActivityState, GlobalDeskIndex};
+use pixtuoid_core::state::{ActivityState, FloorDesk};
 use pixtuoid_core::{AgentId, AgentSlot, SceneState};
 
 use super::*;
@@ -37,7 +37,7 @@ fn office(t0: SystemTime) -> SceneState {
                 created_at: started,
                 arrived_at: Some(started),
                 last_event_at: started,
-                desk_index: GlobalDeskIndex(i),
+                home_desk: Some(FloorDesk::new(0, i)),
                 ..make_slot(id, ActivityState::Idle)
             },
         );

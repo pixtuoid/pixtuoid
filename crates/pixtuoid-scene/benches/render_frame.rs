@@ -24,7 +24,7 @@ use std::time::{Duration, SystemTime};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_main};
 use pixtuoid_core::id::AgentId;
-use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind, ToolUse};
+use pixtuoid_core::state::{ActivityState, FloorDesk, ToolKind, ToolUse};
 use pixtuoid_core::{AgentSlot, SceneState};
 use pixtuoid_scene::cutaway::canvas::CutawayCanvas;
 use pixtuoid_scene::cutaway::paint::render_cutaway;
@@ -108,7 +108,6 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
         } else {
             idle_epoch
         };
-        let floor_idx = s.floor_of(GlobalDeskIndex(i));
         s.agents.insert(
             id,
             AgentSlot {
@@ -123,8 +122,7 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
                 arrived_at: Some(stamp),
                 last_event_at: stamp,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx,
+                home_desk: Some(FloorDesk::new(i / max_desks, i % max_desks)),
                 tool_call_count: if busy { i as u32 * 7 } else { 0 },
                 running_ms: 0,
                 unknown_cwd: false,

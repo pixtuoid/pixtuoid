@@ -15,7 +15,7 @@ use anyhow::{Context, Result, anyhow};
 use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid_core::source::claude_code;
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
 use pixtuoid_scene::floor::{FloorMeta, FloorSession};
 use pixtuoid_scene::layout::Viewport;
 use pixtuoid_scene::look::{Look, Place, RenderInputs};
@@ -36,6 +36,7 @@ const _: () = assert!(
 );
 
 fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String]) {
+    let cap = scene.floor_capacities()[0];
     let seated = now.checked_sub(Duration::from_secs(120)).unwrap_or(now);
     let recent = now.checked_sub(Duration::from_secs(3)).unwrap_or(now);
     for i in 0..n {
@@ -72,8 +73,7 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
                 arrived_at: Some(seated),
                 last_event_at: recent,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx: scene.floor_of(GlobalDeskIndex(i)),
+                home_desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,

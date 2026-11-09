@@ -575,11 +575,10 @@ impl Office {
     }
 
     /// Keep the reducer's desk capacity in lockstep with the office actually
-    /// rendered at these units. Without it an admitted agent's desk index
-    /// can exceed the canvas layout's desk count, so it paints NOWHERE (its
-    /// anchors return `None`) while staying alive in the scene. A shrink lowers
-    /// capacity for FUTURE admissions only; already-seated excess agents stay
-    /// alive-but-offscreen, same as the TUI on terminal shrink.
+    /// rendered at these units. Without it an admitted agent's desk can lie
+    /// past the canvas layout's desk count, so it paints NOWHERE (its anchors
+    /// return `None`) while staying alive in the scene. A shrink re-seats
+    /// ([`SceneState::set_capacities`]), as the TUI's does.
     fn sync_capacity(&mut self, units_w: u16, units_h: u16) {
         if self.caps_units == Some((units_w, units_h)) {
             return;
@@ -590,7 +589,8 @@ impl Office {
             pixtuoid_scene::layout::Viewport::full(units_w, units_h),
             self.seed,
         );
-        self.scene.floor_capacities = std::array::from_fn(|i| if i == 0 { cap } else { 0 });
+        self.scene
+            .set_capacities(std::array::from_fn(|i| if i == 0 { cap } else { 0 }));
         self.caps_units = Some((units_w, units_h));
     }
 
@@ -1493,12 +1493,12 @@ mod tests {
             "reducer capacity derives from the SAME layout the canvas renders"
         );
         for a in o.scene.agents.values() {
-            let local = o.scene.floor_local_desk(a.desk_index);
             assert!(
-                layout.home_desk(local).is_some(),
-                "agent {:?} at desk {:?} has no paintable anchor in the canvas layout",
+                a.home_desk
+                    .is_some_and(|desk| layout.home_desk(desk.index).is_some()),
+                "agent {:?} at {:?} has no paintable anchor in the canvas layout",
                 a.agent_id,
-                a.desk_index
+                a.home_desk
             );
         }
         assert_eq!(
@@ -1522,7 +1522,11 @@ mod tests {
             "premise: this width seats no more than the cast"
         );
         assert_eq!(
-            o.scene.agents.len(),
+            o.scene
+                .agents
+                .values()
+                .filter(|a| a.home_desk.is_some())
+                .count(),
             o.scene.total_capacity(),
             "the cast fills every desk the narrow canvas lays out"
         );

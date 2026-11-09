@@ -3,9 +3,7 @@
 use super::*;
 use crate::panels::ui_state::RenderFrames;
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{
-    ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
-};
+use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, SceneState, ToolKind, ToolUse};
 use pixtuoid_scene::anim::PAINT_FRAME;
 use pixtuoid_scene::hit::PetHover;
 use pixtuoid_scene::pet::PetKind;
@@ -15,12 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub(super) fn slot(
-    id: AgentId,
-    floor_idx: usize,
-    desk_index: usize,
-    started: SystemTime,
-) -> AgentSlot {
+pub(super) fn slot(id: AgentId, floor: usize, desk: usize, started: SystemTime) -> AgentSlot {
     AgentSlot {
         agent_id: id,
         source: Arc::from("cc"),
@@ -33,8 +26,7 @@ pub(super) fn slot(
         arrived_at: Some(started),
         last_event_at: started,
         exiting_at: None,
-        desk_index: GlobalDeskIndex(desk_index),
-        floor_idx,
+        home_desk: Some(FloorDesk::new(floor, desk)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,
@@ -339,7 +331,7 @@ pub(super) fn two_floor_scene() -> SceneState {
     scene_with(
         vec![
             idle("/n/0.jsonl", 0, t0() - Duration::from_secs(120)),
-            slot(AgentId::from_transcript_path("/n/1.jsonl"), 1, cap, t0()),
+            slot(AgentId::from_transcript_path("/n/1.jsonl"), 1, 0, t0()),
         ],
         cap,
     )

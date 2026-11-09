@@ -371,7 +371,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         {
             continue;
         }
-        let Some(origin) = layout.home_desk(agent.desk_index.single_floor_local()) else {
+        let Some(origin) = layout.home_desk_of(agent) else {
             continue;
         };
         let Some(pose) = pose::derive(agent, now, layout) else {
@@ -400,11 +400,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // absent — an exiting agent's pose is still needed to place its character.
     let poses: HashMap<AgentId, Option<Pose>> = agents
         .iter()
-        .filter(|a| {
-            layout
-                .home_desk(a.desk_index.single_floor_local())
-                .is_some()
-        })
+        .filter(|a| layout.home_desk_of(a).is_some())
         .map(|a| {
             let p = pose::derive_with_routing(
                 a,
@@ -429,15 +425,13 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // ceiling halos share one gate.
     let seated_agents: HashMap<FloorLocalDeskIndex, bool> = agents
         .iter()
-        .filter(|a| {
-            layout
-                .home_desk(a.desk_index.single_floor_local())
-                .is_some()
-                && a.exiting_at.is_none()
-        })
-        .map(|a| {
+        .filter(|a| a.exiting_at.is_none())
+        .filter_map(|a| {
+            let desk = a
+                .home_desk
+                .filter(|desk| layout.home_desk(desk.index).is_some())?;
             let seated = matches!(poses.get(&a.agent_id), Some(Some(Pose::SeatedTyping)));
-            (a.desk_index.single_floor_local(), seated)
+            Some((desk.index, seated))
         })
         .collect();
 
@@ -995,7 +989,7 @@ pub(crate) fn resolve_characters(
     let mut wp_rank: HashMap<usize, usize> = HashMap::new();
     let mut waypoint_visitors: Vec<chitchat::Visitor> = Vec::new();
     for (agent_idx, agent) in agents.iter().enumerate() {
-        let Some(desk) = layout.home_desk(agent.desk_index.single_floor_local()) else {
+        let Some(desk) = layout.home_desk_of(agent) else {
             continue;
         };
         let Some(p) = poses.get(&agent.agent_id).copied().flatten() else {
@@ -1243,7 +1237,7 @@ pub(crate) fn desk_occupant(
 ) -> Option<&AgentSlot> {
     agents
         .iter()
-        .find(|a| a.desk_index.single_floor_local() == local && a.exiting_at.is_none())
+        .find(|a| a.home_desk.is_some_and(|desk| desk.index == local) && a.exiting_at.is_none())
 }
 
 /// Deterministic seed from a lowercased cwd basename: byte-fold, then the

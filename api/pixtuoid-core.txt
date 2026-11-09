@@ -1434,10 +1434,9 @@ pub pixtuoid_core::state::AgentSlot::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::state::AgentSlot::arrived_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::state::AgentSlot::created_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
-pub pixtuoid_core::state::AgentSlot::desk_index: pixtuoid_core::state::GlobalDeskIndex
 pub pixtuoid_core::state::AgentSlot::effort: core::option::Option<pixtuoid_core::state::EffortObservation>
 pub pixtuoid_core::state::AgentSlot::exiting_at: core::option::Option<std::time::SystemTime>
-pub pixtuoid_core::state::AgentSlot::floor_idx: usize
+pub pixtuoid_core::state::AgentSlot::home_desk: core::option::Option<pixtuoid_core::state::FloorDesk>
 pub pixtuoid_core::state::AgentSlot::label: pixtuoid_core::state::SlotLabel
 pub pixtuoid_core::state::AgentSlot::last_event_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::last_usage: core::option::Option<pixtuoid_core::state::UsageObservation>
@@ -1550,6 +1549,37 @@ impl core::marker::Unpin for pixtuoid_core::state::EffortObservation
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::EffortObservation
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::EffortObservation
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::EffortObservation
+pub struct pixtuoid_core::state::FloorDesk
+pub pixtuoid_core::state::FloorDesk::floor: usize
+pub pixtuoid_core::state::FloorDesk::index: pixtuoid_core::state::FloorLocalDeskIndex
+impl pixtuoid_core::state::FloorDesk
+pub const fn pixtuoid_core::state::FloorDesk::new(usize, usize) -> Self
+impl core::clone::Clone for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::state::FloorDesk
+impl core::cmp::Ord for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_core::state::FloorDesk
+impl core::marker::StructuralPartialEq for pixtuoid_core::state::FloorDesk
+impl serde_core::ser::Serialize for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::state::FloorDesk
+impl core::marker::Send for pixtuoid_core::state::FloorDesk
+impl core::marker::Sync for pixtuoid_core::state::FloorDesk
+impl core::marker::Unpin for pixtuoid_core::state::FloorDesk
+impl core::marker::UnsafeUnpin for pixtuoid_core::state::FloorDesk
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::FloorDesk
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::FloorDesk
 pub struct pixtuoid_core::state::FloorLocalDeskIndex(pub usize)
 impl core::clone::Clone for pixtuoid_core::state::FloorLocalDeskIndex
 pub fn pixtuoid_core::state::FloorLocalDeskIndex::clone(&self) -> Self
@@ -1566,6 +1596,10 @@ impl core::hash::Hash for pixtuoid_core::state::FloorLocalDeskIndex
 pub fn pixtuoid_core::state::FloorLocalDeskIndex::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::marker::StructuralPartialEq for pixtuoid_core::state::FloorLocalDeskIndex
+impl serde_core::ser::Serialize for pixtuoid_core::state::FloorLocalDeskIndex
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::FloorLocalDeskIndex
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 impl core::marker::Freeze for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::marker::Send for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::marker::Sync for pixtuoid_core::state::FloorLocalDeskIndex
@@ -1573,48 +1607,16 @@ impl core::marker::Unpin for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::FloorLocalDeskIndex
-pub struct pixtuoid_core::state::GlobalDeskIndex(pub usize)
-impl pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::single_floor_local(self) -> pixtuoid_core::state::FloorLocalDeskIndex
-impl core::clone::Clone for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_core::state::GlobalDeskIndex
-impl core::cmp::Ord for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::cmp(&self, &Self) -> core::cmp::Ordering
-impl core::cmp::PartialEq for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::eq(&self, &Self) -> bool
-impl core::cmp::PartialOrd for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::StructuralPartialEq for pixtuoid_core::state::GlobalDeskIndex
-impl serde_core::ser::Serialize for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::Send for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::Sync for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::Unpin for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::UnsafeUnpin for pixtuoid_core::state::GlobalDeskIndex
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::GlobalDeskIndex
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::GlobalDeskIndex
 pub struct pixtuoid_core::state::SceneState
 pub pixtuoid_core::state::SceneState::agents: alloc::collections::btree::map::BTreeMap<pixtuoid_core::id::AgentId, pixtuoid_core::state::AgentSlot>
-pub pixtuoid_core::state::SceneState::floor_capacities: [usize; 10]
 pub pixtuoid_core::state::SceneState::today: core::option::Option<pixtuoid_core::state::Today>
 impl pixtuoid_core::state::SceneState
 pub fn pixtuoid_core::state::SceneState::daemon(&self, &str, &pixtuoid_core::state::DaemonInstanceId) -> core::option::Option<&pixtuoid_core::state::DaemonPresence>
 pub fn pixtuoid_core::state::SceneState::daemons(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &pixtuoid_core::state::DaemonInstanceId, &pixtuoid_core::state::DaemonPresence)> + '_
 impl pixtuoid_core::state::SceneState
-pub fn pixtuoid_core::state::SceneState::floor_local_desk(&self, pixtuoid_core::state::GlobalDeskIndex) -> pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::SceneState::floor_of(&self, pixtuoid_core::state::GlobalDeskIndex) -> usize
-pub fn pixtuoid_core::state::SceneState::floor_range(&self, usize) -> core::ops::range::Range<usize>
+pub fn pixtuoid_core::state::SceneState::floor_capacities(&self) -> &[usize; 10]
 pub fn pixtuoid_core::state::SceneState::new([usize; 10]) -> Self
-pub fn pixtuoid_core::state::SceneState::next_free_desk(&self) -> core::option::Option<pixtuoid_core::state::GlobalDeskIndex>
+pub fn pixtuoid_core::state::SceneState::set_capacities(&mut self, [usize; 10])
 pub fn pixtuoid_core::state::SceneState::total_capacity(&self) -> usize
 pub fn pixtuoid_core::state::SceneState::uniform(usize) -> Self
 impl core::clone::Clone for pixtuoid_core::state::SceneState
@@ -1964,10 +1966,9 @@ pub pixtuoid_core::AgentSlot::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentSlot::arrived_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::AgentSlot::created_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
-pub pixtuoid_core::AgentSlot::desk_index: pixtuoid_core::state::GlobalDeskIndex
 pub pixtuoid_core::AgentSlot::effort: core::option::Option<pixtuoid_core::state::EffortObservation>
 pub pixtuoid_core::AgentSlot::exiting_at: core::option::Option<std::time::SystemTime>
-pub pixtuoid_core::AgentSlot::floor_idx: usize
+pub pixtuoid_core::AgentSlot::home_desk: core::option::Option<pixtuoid_core::state::FloorDesk>
 pub pixtuoid_core::AgentSlot::label: pixtuoid_core::state::SlotLabel
 pub pixtuoid_core::AgentSlot::last_event_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::last_usage: core::option::Option<pixtuoid_core::state::UsageObservation>
@@ -1997,6 +1998,37 @@ impl core::marker::Unpin for pixtuoid_core::state::AgentSlot
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::AgentSlot
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::AgentSlot
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::AgentSlot
+pub struct pixtuoid_core::FloorDesk
+pub pixtuoid_core::FloorDesk::floor: usize
+pub pixtuoid_core::FloorDesk::index: pixtuoid_core::state::FloorLocalDeskIndex
+impl pixtuoid_core::state::FloorDesk
+pub const fn pixtuoid_core::state::FloorDesk::new(usize, usize) -> Self
+impl core::clone::Clone for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::state::FloorDesk
+impl core::cmp::Ord for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_core::state::FloorDesk
+impl core::marker::StructuralPartialEq for pixtuoid_core::state::FloorDesk
+impl serde_core::ser::Serialize for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::FloorDesk
+pub fn pixtuoid_core::state::FloorDesk::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::state::FloorDesk
+impl core::marker::Send for pixtuoid_core::state::FloorDesk
+impl core::marker::Sync for pixtuoid_core::state::FloorDesk
+impl core::marker::Unpin for pixtuoid_core::state::FloorDesk
+impl core::marker::UnsafeUnpin for pixtuoid_core::state::FloorDesk
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::FloorDesk
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::FloorDesk
 pub struct pixtuoid_core::FloorLocalDeskIndex(pub usize)
 impl core::clone::Clone for pixtuoid_core::state::FloorLocalDeskIndex
 pub fn pixtuoid_core::state::FloorLocalDeskIndex::clone(&self) -> Self
@@ -2013,6 +2045,10 @@ impl core::hash::Hash for pixtuoid_core::state::FloorLocalDeskIndex
 pub fn pixtuoid_core::state::FloorLocalDeskIndex::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::marker::StructuralPartialEq for pixtuoid_core::state::FloorLocalDeskIndex
+impl serde_core::ser::Serialize for pixtuoid_core::state::FloorLocalDeskIndex
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::FloorLocalDeskIndex
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 impl core::marker::Freeze for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::marker::Send for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::marker::Sync for pixtuoid_core::state::FloorLocalDeskIndex
@@ -2020,35 +2056,6 @@ impl core::marker::Unpin for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::FloorLocalDeskIndex
-pub struct pixtuoid_core::GlobalDeskIndex(pub usize)
-impl pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::single_floor_local(self) -> pixtuoid_core::state::FloorLocalDeskIndex
-impl core::clone::Clone for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_core::state::GlobalDeskIndex
-impl core::cmp::Ord for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::cmp(&self, &Self) -> core::cmp::Ordering
-impl core::cmp::PartialEq for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::eq(&self, &Self) -> bool
-impl core::cmp::PartialOrd for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::StructuralPartialEq for pixtuoid_core::state::GlobalDeskIndex
-impl serde_core::ser::Serialize for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::Send for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::Sync for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::Unpin for pixtuoid_core::state::GlobalDeskIndex
-impl core::marker::UnsafeUnpin for pixtuoid_core::state::GlobalDeskIndex
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::GlobalDeskIndex
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::GlobalDeskIndex
 pub struct pixtuoid_core::Reducer
 impl pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::apply(&mut self, &mut pixtuoid_core::state::SceneState, pixtuoid_core::source::AgentEvent, std::time::SystemTime, pixtuoid_core::source::Transport)
@@ -2069,17 +2076,14 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::reducer::
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::reducer::Reducer
 pub struct pixtuoid_core::SceneState
 pub pixtuoid_core::SceneState::agents: alloc::collections::btree::map::BTreeMap<pixtuoid_core::id::AgentId, pixtuoid_core::state::AgentSlot>
-pub pixtuoid_core::SceneState::floor_capacities: [usize; 10]
 pub pixtuoid_core::SceneState::today: core::option::Option<pixtuoid_core::state::Today>
 impl pixtuoid_core::state::SceneState
 pub fn pixtuoid_core::state::SceneState::daemon(&self, &str, &pixtuoid_core::state::DaemonInstanceId) -> core::option::Option<&pixtuoid_core::state::DaemonPresence>
 pub fn pixtuoid_core::state::SceneState::daemons(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &pixtuoid_core::state::DaemonInstanceId, &pixtuoid_core::state::DaemonPresence)> + '_
 impl pixtuoid_core::state::SceneState
-pub fn pixtuoid_core::state::SceneState::floor_local_desk(&self, pixtuoid_core::state::GlobalDeskIndex) -> pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::SceneState::floor_of(&self, pixtuoid_core::state::GlobalDeskIndex) -> usize
-pub fn pixtuoid_core::state::SceneState::floor_range(&self, usize) -> core::ops::range::Range<usize>
+pub fn pixtuoid_core::state::SceneState::floor_capacities(&self) -> &[usize; 10]
 pub fn pixtuoid_core::state::SceneState::new([usize; 10]) -> Self
-pub fn pixtuoid_core::state::SceneState::next_free_desk(&self) -> core::option::Option<pixtuoid_core::state::GlobalDeskIndex>
+pub fn pixtuoid_core::state::SceneState::set_capacities(&mut self, [usize; 10])
 pub fn pixtuoid_core::state::SceneState::total_capacity(&self) -> usize
 pub fn pixtuoid_core::state::SceneState::uniform(usize) -> Self
 impl core::clone::Clone for pixtuoid_core::state::SceneState

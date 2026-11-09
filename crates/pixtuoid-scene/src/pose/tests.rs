@@ -4,7 +4,7 @@ use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, octile_distance, octile_path_len, walk_profile};
 use crate::walk::settle_len;
 use crate::walkable::WalkableMask;
-use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind, ToolUse};
+use pixtuoid_core::state::{ActivityState, FloorDesk, ToolKind, ToolUse};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -542,7 +542,7 @@ fn snap_back_routes_via_the_approach_cell_then_settles_onto_the_chair() {
     let approach = desk_approach_cell(desk, &l).expect("approach cell");
 
     let mut slot = running_slot(now, now - Duration::from_secs(60));
-    slot.desk_index = GlobalDeskIndex(desk_index);
+    slot.home_desk = Some(FloorDesk::new(0, desk_index));
     slot.agent_id = AgentId::from_transcript_path("/snapapproach/slot.jsonl");
     // Far from the chair (≥ SNAP_BACK_MIN_DIST) so the snap-back arms.
     let prev = Point {
@@ -692,7 +692,7 @@ fn delegates_to_derive_for_oob_desk() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let mut slot = running_slot(now, now - Duration::from_secs(60));
-    slot.desk_index = GlobalDeskIndex(999);
+    slot.home_desk = Some(FloorDesk::new(0, 999));
     let mut rig = RouteRig::new(StubRouter::straight());
     assert!(derive_with_routing(&slot, now, &l, &mut rig.rctx()).is_none());
 }
@@ -819,13 +819,13 @@ fn snap_back_rearms_on_new_state_transition() {
 fn entry_slot_near(arrived_at: SystemTime) -> AgentSlot {
     let mut s = running_slot(arrived_at, arrived_at);
     s.state = pixtuoid_core::state::ActivityState::Idle;
-    s.desk_index = GlobalDeskIndex(0);
+    s.home_desk = Some(FloorDesk::new(0, 0));
     s
 }
 
 fn entry_slot_far(arrived_at: SystemTime, desk_index: usize) -> AgentSlot {
     let mut s = entry_slot_near(arrived_at);
-    s.desk_index = GlobalDeskIndex(desk_index);
+    s.home_desk = Some(FloorDesk::new(0, desk_index));
     // Give each far slot a distinct agent_id so speed_mult differs.
     s.agent_id = AgentId::from_transcript_path(&format!("/far/{desk_index}.jsonl"));
     s
@@ -1240,7 +1240,7 @@ fn wander_legs_approach_the_desk_via_an_allowed_side_not_through_the_front() {
     let old = now - Duration::from_secs(120);
     let mut slot = entry_slot(old);
     slot.agent_id = trip_id;
-    slot.desk_index = GlobalDeskIndex(desk_index);
+    slot.home_desk = Some(FloorDesk::new(0, desk_index));
     slot.last_event_at = old;
 
     let mut rig = RouteRig::new(AStarRouter::new());
@@ -1321,7 +1321,7 @@ fn exit_from_desk_rises_off_the_chair_via_the_approach_cell() {
     let approach = desk_approach_cell(desk, &l).expect("approach cell");
 
     let mut slot = exiting_slot(now, now - Duration::from_secs(300));
-    slot.desk_index = GlobalDeskIndex(desk_index);
+    slot.home_desk = Some(FloorDesk::new(0, desk_index));
     slot.agent_id = AgentId::from_transcript_path("/exitdesk/slot.jsonl");
 
     let mut rig = RouteRig::new(StubRouter::straight());
@@ -1993,7 +1993,7 @@ fn wander_continuous_across_layouts_and_agents() {
             let old = now - Duration::from_secs(120);
             let mut slot = entry_slot(old);
             slot.agent_id = id;
-            slot.desk_index = GlobalDeskIndex(k);
+            slot.home_desk = Some(FloorDesk::new(0, k));
             slot.last_event_at = old;
             // ~20 s ⇒ 2–3 full wander cycles per agent.
             let (max_step, _) = max_top_left_step(&slot, &l, now, 600, true);
@@ -2117,7 +2117,7 @@ fn multiple_agents_share_overlay_without_teleport() {
         .map(|k| {
             let mut s = entry_slot(old);
             s.agent_id = AgentId::from_transcript_path(&format!("/multi/{k}.jsonl"));
-            s.desk_index = GlobalDeskIndex(k);
+            s.home_desk = Some(FloorDesk::new(0, k));
             s.last_event_at = old;
             s
         })

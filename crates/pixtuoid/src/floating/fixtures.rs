@@ -27,12 +27,8 @@ pub(super) fn cutaway(size: Size) -> PixelFit {
 
 /// Local twin of the TUI harness's `running_on` — `tui` and `floating` are sibling
 /// painters that don't share code, test helpers included.
-pub(super) fn running_on(
-    path: &str,
-    floor_idx: usize,
-    desk: usize,
-) -> pixtuoid_core::state::AgentSlot {
-    use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind, ToolUse};
+pub(super) fn running_on(path: &str, floor: usize, desk: usize) -> pixtuoid_core::state::AgentSlot {
+    use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, ToolKind, ToolUse};
     use std::sync::Arc;
     let started = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
     AgentSlot {
@@ -53,8 +49,7 @@ pub(super) fn running_on(
         arrived_at: Some(started),
         last_event_at: started,
         exiting_at: None,
-        desk_index: GlobalDeskIndex(desk),
-        floor_idx,
+        home_desk: Some(FloorDesk::new(floor, desk)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

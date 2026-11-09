@@ -559,7 +559,7 @@ mod tests {
         fn with_a_floor_above(weather: pixtuoid_scene::sky::WeatherPolicy) -> Self {
             let cap = 8;
             Self {
-                scene: scene_with(vec![running_on("/p/upstairs.jsonl", 1, cap)], cap),
+                scene: scene_with(vec![running_on("/p/upstairs.jsonl", 1, 0)], cap),
                 ..Self::new(weather)
             }
         }
@@ -1097,9 +1097,9 @@ mod tests {
         let scene = scene_with(
             vec![
                 running_on("/a/f0.jsonl", 0, 0),
-                running_on("/a/f1a.jsonl", 1, cap),
-                running_on("/a/f1b.jsonl", 1, cap + 1),
-                running_on("/a/f1c.jsonl", 1, cap + 2),
+                running_on("/a/f1a.jsonl", 1, 0),
+                running_on("/a/f1b.jsonl", 1, 1),
+                running_on("/a/f1c.jsonl", 1, 2),
             ],
             cap,
         );
@@ -1138,9 +1138,9 @@ mod tests {
         let scene = scene_with(
             vec![
                 running_on("/a/f0.jsonl", 0, 0),
-                running_on("/a/f1a.jsonl", 1, cap),
-                running_on("/a/f1b.jsonl", 1, cap + 1),
-                running_on("/a/f1c.jsonl", 1, cap + 2),
+                running_on("/a/f1a.jsonl", 1, 0),
+                running_on("/a/f1b.jsonl", 1, 1),
+                running_on("/a/f1c.jsonl", 1, 2),
             ],
             cap,
         );
@@ -1289,7 +1289,7 @@ mod tests {
         );
         crate::audio::drain_frames(&rx); // discard the priming frames
 
-        agents.push(running_on("/d/f1-new.jsonl", 1, cap));
+        agents.push(running_on("/d/f1-new.jsonl", 1, 0));
         let scene = scene_with(agents.clone(), cap);
         now += pixtuoid_scene::anim::PAINT_FRAME;
         renderer.render(

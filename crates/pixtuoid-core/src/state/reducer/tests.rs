@@ -932,9 +932,6 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     ];
 
     let mut r = super::Reducer::new();
-    // 32 desks comfortably exceeds the un-swept working set: a slot lives until
-    // `sweep_exited` removes it ~EXIT_GRACE_WINDOW after its end, so only a
-    // handful are concurrent at ~1s/iter.
     let mut scene = SceneState::uniform(32);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
@@ -1035,8 +1032,9 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             now,
             Transport::Hook,
         );
-        // An ORPHAN Task (no SessionStart, so no slot) leaves an tasks_in_flight
-        // entry reaped ONLY by tick's slot-removal retain.
+        // An ORPHAN Task (no SessionStart, and a transcript line registers no
+        // slot) leaves a tasks_in_flight entry reaped ONLY by tick's
+        // slot-removal retain.
         r.apply(
             &mut scene,
             AgentEvent::ToolUseStart {
@@ -1046,7 +1044,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
                 copy_id: None,
             },
             now,
-            Transport::Hook,
+            Transport::Jsonl,
         );
 
         // The interleaved tick is the ONLY reaper of the non-TTL orphan retains.
@@ -1077,49 +1075,6 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         assert!(
             *p > 0,
             "Correlation map `{name}` was never populated — its bound check was vacuous"
-        );
-    }
-}
-
-/// A session id and cwd arrive from another agent's process, so the reducer's
-/// warn lines carry them as `?` fields — a `%` field would write their bytes raw.
-#[test]
-fn desks_full_warn_escapes_the_wire_session_id_and_cwd() {
-    use crate::source::{AgentEvent, Transport};
-    use crate::test_capture::capture_logs;
-    use crate::{AgentId, Reducer, SceneState};
-    use std::time::SystemTime;
-    let mut scene = SceneState::uniform(1);
-    let mut r = Reducer::new();
-    let start = |sid: &str, cwd: &str| AgentEvent::SessionStart {
-        agent_id: AgentId::from_parts("claude-code", sid),
-        source: "claude-code".into(),
-        session_id: sid.into(),
-        cwd: cwd.into(),
-        parent_id: None,
-    };
-    for i in 0..scene.total_capacity() {
-        r.apply(
-            &mut scene,
-            start(&format!("s{i}"), "/p"),
-            SystemTime::UNIX_EPOCH,
-            Transport::Hook,
-        );
-    }
-    let hostile = "\u{1b}]0;pwned\u{7}\u{202e}";
-    let out = capture_logs(|| {
-        r.apply(
-            &mut scene,
-            start(hostile, hostile),
-            SystemTime::UNIX_EPOCH,
-            Transport::Hook,
-        );
-    });
-    assert!(out.contains("dropped SessionStart"), "got {out:?}");
-    for raw in ['\u{1b}', '\u{7}', '\u{202e}'] {
-        assert!(
-            !out.contains(raw),
-            "{raw:?} must not reach the log raw: {out:?}"
         );
     }
 }

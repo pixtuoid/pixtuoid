@@ -844,7 +844,7 @@ mod tests {
         use std::sync::Arc;
         use std::time::{Duration, SystemTime};
 
-        use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex};
+        use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk};
         use pixtuoid_core::{AgentId, SceneState};
 
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
@@ -862,8 +862,7 @@ mod tests {
             arrived_at: Some(now - Duration::from_secs(2)),
             last_event_at: now,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(0),
-            floor_idx: 0,
+            home_desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -932,7 +931,7 @@ mod tests {
         use std::sync::Arc;
         use std::time::{Duration, SystemTime};
 
-        use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind, ToolUse};
+        use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, ToolKind, ToolUse};
         use pixtuoid_core::{AgentId, SceneState};
 
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
@@ -952,8 +951,7 @@ mod tests {
                 arrived_at: Some(now - Duration::from_secs(2)),
                 last_event_at: now,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(0),
-                floor_idx: 0,
+                home_desk: Some(FloorDesk::new(0, 0)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,

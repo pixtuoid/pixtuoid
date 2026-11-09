@@ -109,7 +109,7 @@ mod tests {
     use crate::nameplate::{Namesakes, Suffix};
     use pixtuoid_core::AgentId;
     use pixtuoid_core::state::{
-        ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
+        ActivityState, AgentSlot, FloorDesk, SceneState, ToolKind, ToolUse,
     };
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -132,8 +132,7 @@ mod tests {
             created_at: SystemTime::UNIX_EPOCH,
             arrived_at: Some(SystemTime::UNIX_EPOCH),
             exiting_at: None,
-            desk_index: GlobalDeskIndex(desk),
-            floor_idx: 0,
+            home_desk: Some(FloorDesk::new(0, desk)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,

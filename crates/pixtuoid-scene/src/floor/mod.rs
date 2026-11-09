@@ -13,7 +13,7 @@ use crate::physics::{WalkProfile, walk_arrived};
 use crate::sprite::Rgb;
 use crate::walkable::OccupancyOverlay;
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, SceneState};
+use pixtuoid_core::state::{AgentSlot, SceneState};
 
 use crate::audio::{AudioCueTracker, AudioFrame};
 use crate::chitchat::{ActiveChitchat, VenueKey};
@@ -480,11 +480,7 @@ impl AudioObserver {
         let counts = crate::tally::per_floor_counts(scene)[floor_idx.min(MAX_FLOORS - 1)];
         let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), floor.weather);
         let rain = sky.rain();
-        let floor_ids = scene
-            .agents
-            .iter()
-            .filter(|(_, slot)| slot.floor_idx == floor_idx)
-            .map(|(id, _)| id);
+        let floor_ids = floor_agents(scene, floor_idx).map(|slot| &slot.agent_id);
         let events = self.cues.observe(floor_ids, occupied, waypoint_kind);
         AudioFrame {
             stems: crate::audio::stem_levels(&counts, rain),
@@ -1134,51 +1130,19 @@ impl FloorTransition {
 
 /// The floors `scene`'s agents sit on: one past the highest, at least one.
 pub fn num_floors(scene: &SceneState) -> usize {
-    scene
-        .agents
-        .values()
-        .map(|a| a.floor_idx + 1)
+    (scene.agents.values())
+        .filter_map(|a| a.home_desk)
+        .map(|desk| desk.floor + 1)
         .max()
         .unwrap_or(1)
 }
 
-/// One agent projected onto a floor by [`build_floor_scene`]. The floor-local
-/// offset rides a SEPARATE `desk` field rather than being written back into
-/// `AgentSlot.desk_index`, which keeps that field's GLOBAL type honest until
-/// [`project_floor_scene`] re-hosts the slot.
-#[derive(Debug)]
-pub(crate) struct ProjectedSlot {
-    /// The projected agent — its `desk_index` still the ORIGINAL global allocation.
-    pub(crate) slot: AgentSlot,
-    /// The agent's desk remapped into this floor's local `[0..capacity)` space.
-    pub(crate) desk: FloorLocalDeskIndex,
-}
-
-/// The agents floor `floor_idx` draws. It goes by each slot's stored
-/// `floor_idx`, so capacity growth never migrates agents between floors, and
-/// leaves out one a lower floor's growth left below its offset
-/// ([`SceneState::floor_of`]).
+/// The agents floor `floor_idx` draws: those seated on it.
 pub(crate) fn floor_agents(
     scene: &SceneState,
     floor_idx: usize,
 ) -> impl Iterator<Item = &AgentSlot> + '_ {
-    let offset = scene.floor_range(floor_idx).start;
-    scene
-        .agents
-        .values()
-        .filter(move |a| a.floor_idx == floor_idx && a.desk_index.0 >= offset)
-}
-
-/// Each of [`floor_agents`], paired with its desk remapped into the floor's
-/// `[0..capacity)` LOCAL space so the layout engine sees a self-contained floor.
-pub(crate) fn build_floor_scene(scene: &SceneState, floor_idx: usize) -> Vec<ProjectedSlot> {
-    let offset = scene.floor_range(floor_idx).start;
-    floor_agents(scene, floor_idx)
-        .map(|a| ProjectedSlot {
-            slot: a.clone(),
-            desk: FloorLocalDeskIndex(a.desk_index.0 - offset),
-        })
-        .collect()
+    (scene.agents.values()).filter(move |a| a.home_desk.is_some_and(|desk| desk.floor == floor_idx))
 }
 
 /// One floor's [projection](project_floor_scene), the scene that floor is drawn
@@ -1194,20 +1158,14 @@ impl FloorScene {
     }
 }
 
-/// Build a self-contained `SceneState` for one floor: a `uniform(cap)` scene, so
-/// floor arithmetic stays self-consistent with the remapped desk indices in
-/// `[0..cap)`. A floor past the building's is an empty one.
+/// Build a self-contained `SceneState` for one floor: the agents seated on it,
+/// at the desks they hold, in a `uniform(cap)` scene. A floor past the building's is
+/// an empty one.
 pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> FloorScene {
-    let cap = scene.floor_capacities.get(floor_idx).copied().unwrap_or(0);
+    let cap = (scene.floor_capacities().get(floor_idx).copied()).unwrap_or(0);
     let mut s = SceneState::uniform(cap);
-    for p in build_floor_scene(scene, floor_idx) {
-        let mut slot = p.slot;
-        // The RE-HOST, not a space mix-up: this `uniform(cap)` single-floor
-        // scene's global desk space coincides with its floor-0 local space by
-        // construction, so the floor-local desk IS a genuinely valid
-        // `GlobalDeskIndex` FOR THIS SMALLER SCENE.
-        slot.desk_index = GlobalDeskIndex(p.desk.0);
-        s.agents.insert(slot.agent_id, slot);
+    for slot in floor_agents(scene, floor_idx) {
+        s.agents.insert(slot.agent_id, slot.clone());
     }
     // Daemon presences are global, not per-desk — ground floor only, so the
     // mascot renders exactly once.

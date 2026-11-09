@@ -667,7 +667,7 @@ fn dashboard_scrolls_to_keep_a_deep_selection_visible() {
     for i in 0..20 {
         let mut s = idle(&format!("/h/r{i}.jsonl"), i, t0());
         s.label = format!("row{i:02}").into();
-        s.floor_idx = i % 10;
+        s.home_desk = Some(FloorDesk::new(i / 3, i % 3));
         agents.push(s);
     }
     let scene = scene_with(agents, 16);
@@ -822,7 +822,7 @@ fn dashboard_overflow_cue_appears_below_when_more_than_viewport() {
     for i in 0..20 {
         let mut s = idle(&format!("/h/r{i}.jsonl"), i % 16, t0());
         s.label = format!("overflow{i:02}").into();
-        s.floor_idx = i % 10;
+        s.home_desk = Some(FloorDesk::new(i / 3, i % 3));
         agents.push(s);
     }
     let scene = scene_with(agents, 32);
@@ -887,7 +887,7 @@ fn dashboard_overflow_cue_keeps_a_bottom_navigated_selection_visible() {
     for i in 0..25 {
         let mut s = idle(&format!("/h/r{i}.jsonl"), i, t0());
         s.label = format!("row{i:02}").into();
-        s.floor_idx = i % 10;
+        s.home_desk = Some(FloorDesk::new(i / 3, i % 3));
         agents.push(s);
     }
     let scene = scene_with(agents, 16);
@@ -926,7 +926,7 @@ fn dashboard_overflow_no_blank_line_when_selection_is_last_row() {
     for i in 0..17 {
         let mut s = idle(&format!("/h/r{i}.jsonl"), i, t0());
         s.label = format!("row{i:02}").into();
-        s.floor_idx = i % 10;
+        s.home_desk = Some(FloorDesk::new(i / 3, i % 3));
         agents.push(s);
     }
     let scene = scene_with(agents, 16);

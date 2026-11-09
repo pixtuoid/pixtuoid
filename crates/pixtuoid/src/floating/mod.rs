@@ -152,8 +152,7 @@ pub(crate) struct PipelineBoot {
 /// The pipeline handles, available only once [`PipelineBoot::spawn`] has run.
 pub(crate) struct LivePipeline {
     pub(crate) scene_rx: tokio::sync::watch::Receiver<std::sync::Arc<pixtuoid_core::SceneState>>,
-    pub(crate) floor_caps:
-        std::sync::Arc<[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS]>,
+    pub(crate) floor_caps: tokio::sync::watch::Sender<[usize; pixtuoid_core::state::MAX_FLOORS]>,
     health_rx: tokio::sync::watch::Receiver<Vec<pixtuoid_core::source::manager::SourceDeath>>,
     drift: crate::doctor::DriftSeen,
 }
