@@ -2,6 +2,7 @@
 //! by line, with an answer to whatever it asks, until it leaves.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -70,6 +71,9 @@ pub(super) struct Devices {
     /// lost its Wi-Fi sends no FIN, so its old connection would hold a slot until
     /// TCP gave up on it.
     streams: Arc<Mutex<HashMap<Hashed, oneshot::Sender<()>>>>,
+    /// Set once a newer device's version has been warned about: the claim is an
+    /// unauthenticated peer's, so a peer that repeats it must not flood the log.
+    newer_warned: Arc<AtomicBool>,
 }
 
 impl Devices {
@@ -89,6 +93,7 @@ impl Devices {
             gate: Arc::new(Semaphore::new(1)),
             last_write: Arc::default(),
             streams: Arc::default(),
+            newer_warned: Arc::default(),
         }
     }
 
@@ -132,7 +137,7 @@ impl Devices {
             Ok(hello) => hello,
             // An older device shows its own update line.
             Err(WireError::Incompatible { v }) => {
-                if v > VERSION {
+                if v > VERSION && !self.newer_warned.swap(true, Ordering::Relaxed) {
                     tracing::warn!(
                         device_version = v,
                         server_version = VERSION,
@@ -612,6 +617,11 @@ mod tests {
         assert!(
             newer.contains("update pixtuoid on this computer"),
             "{newer}"
+        );
+        let again = meet(VERSION + 1);
+        assert!(
+            !again.contains("WARN"),
+            "an unauthenticated peer's claim warns once a run, not once a connection: {again}"
         );
         let older = meet(VERSION - 1);
         assert!(!older.contains("update pixtuoid"), "{older}");
