@@ -143,7 +143,10 @@ impl LookKind {
 }
 
 /// Who sets a look's world text: the badges, bubbles, wall board and floor
-/// indicator.
+/// indicator. Not [`non_exhaustive`], since a match on it outside this crate
+/// would then need a wildcard arm, which a new variant passes unnoticed.
+///
+/// [`non_exhaustive`]: https://doc.rust-lang.org/reference/attributes/type_system.html#the-non_exhaustive-attribute
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorldText {
     /// The image, in the scene's pixel font.
