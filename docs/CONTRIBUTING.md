@@ -198,10 +198,10 @@ step is the session's to keep.
 ### The merge gate
 
 Every [`.mergify.yml`](../.mergify.yml) `queue_conditions` check green at the
-final head, and what no check can confirm: every review of that head read, every
-finding's thread resolved by its disposition, zero open confirmed blocking
-finding, the must-run results in the body. A finding with no thread gets one: a
-[local review](../.claude/skills/local-review/SKILL.md)'s, and a bot's
+final head, and what no check can confirm: every review of that head posted and
+read, every finding's thread resolved by its disposition, zero open confirmed
+blocking finding, the must-run results in the body. A finding with no thread gets
+one: a [local review](../.claude/skills/local-review/SKILL.md)'s, and a bot's
 posted only in its review body. A refuted blocking finding needs no push:
 resolve its thread with the disposition and re-run the review
 (`gh run rerun <id> --failed`), whose verifier judges the refutation once.
