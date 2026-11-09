@@ -102,8 +102,9 @@ pub fn capture_root() -> std::io::Result<PathBuf> {
 /// As [`capture_root`], or if the root cannot be resolved.
 pub fn capture_sandbox() -> std::io::Result<PathBuf> {
     let root = capture_root()?;
-    // ProgramData is already the long path, and std's Windows form would be a
-    // verbatim `\\?\` one no CLI writes.
+    // Unix only: std's Windows form is an extended-length `\\?\` path
+    // (doc.rust-lang.org/std/fs/fn.canonicalize.html), and no Windows run
+    // records the corpus (`CORPUS_REFUSAL`).
     #[cfg(unix)]
     let root = std::fs::canonicalize(root)?;
     Ok(root.join(CAPTURE_SANDBOX))

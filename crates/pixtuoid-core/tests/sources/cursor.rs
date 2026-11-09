@@ -3,15 +3,13 @@
 //! is an INDEPENDENT session — two sprites, which the conformance harness's
 //! one-AgentId rule cannot hold.
 //!
-//! It pins that the child is a session of its own, linked to its parent by its
-//! post, and that the parent's `Task` dispatch ends on its own post.
+//! It pins that the child is a session of its own and that the parent's `Task`
+//! dispatch ends on its own post.
 
 use std::collections::BTreeSet;
 
-use pixtuoid_core::AgentId;
-use pixtuoid_core::harness::{Drive, Driven};
+use pixtuoid_core::harness::Drive;
 use pixtuoid_core::source::{AgentEvent, ToolDetail};
-use serde_json::Value;
 
 fn lines() -> Vec<String> {
     super::captures::fixture_lines(
@@ -19,24 +17,29 @@ fn lines() -> Vec<String> {
     )
 }
 
-/// Each `SessionStart` in `d`: its agent, its parent and its wire session.
-fn starts(d: &Driven) -> Vec<(AgentId, Option<AgentId>, &str)> {
-    d.events
-        .iter()
-        .filter_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id,
-                session_id,
-                ..
-            } => Some((*agent_id, *parent_id, session_id.as_str())),
-            _ => None,
-        })
-        .collect()
+#[test]
+fn a_delegating_run_is_two_sessions_only_the_parent_starts() {
+    let mut ids = BTreeSet::new();
+    let mut starts = 0;
+    let d = Drive::hooks().lines(lines());
+    d.assert_clean("cursor delegation hooks");
+    for ev in d.events {
+        ids.insert(ev.agent_id());
+        if let AgentEvent::SessionStart { parent_id, .. } = ev {
+            starts += 1;
+            assert_eq!(parent_id, None, "the parent is a root");
+        }
+    }
+    assert_eq!(ids.len(), 2, "parent + subagent, keyed apart by session_id");
+    assert_eq!(starts, 1, "only the parent's sessionStart is registered");
 }
 
-/// The parent's `Task` dispatch in `d`: its agent and wire id.
-fn dispatch(d: &Driven) -> (AgentId, String) {
+/// The parent leaves Delegating when its child is done: the post that ends
+/// the dispatch carries the id its start does.
+#[test]
+fn a_task_dispatch_ends_on_the_post_that_carries_its_id() {
+    let d = Drive::hooks().lines(lines());
+    d.assert_clean("cursor delegation hooks");
     let (parent, id) = d
         .events
         .iter()
@@ -50,41 +53,7 @@ fn dispatch(d: &Driven) -> (AgentId, String) {
             _ => None,
         })
         .expect("the parent dispatches a Task");
-    (parent, id.expect("the dispatch carries its wire id"))
-}
-
-/// `lines` through the first payload `stop_at` accepts.
-fn through(lines: &[String], stop_at: impl Fn(&Value) -> bool) -> &[String] {
-    let at = lines
-        .iter()
-        .position(|l| stop_at(&serde_json::from_str(l).expect("a recorded payload is JSON")))
-        .expect("the recording holds that payload");
-    &lines[..=at]
-}
-
-#[test]
-fn a_delegating_run_is_two_sessions_the_child_starting_under_its_parent() {
-    let d = Drive::hooks().lines(lines());
-    d.assert_clean("cursor delegation hooks");
-    let ids: BTreeSet<AgentId> = d.events.iter().map(AgentEvent::agent_id).collect();
-    assert_eq!(ids.len(), 2, "parent + subagent, keyed apart by session_id");
-    let (parent, _) = dispatch(&d);
-    let child = ids.into_iter().find(|id| *id != parent).expect("the child");
-    let starts: Vec<_> = starts(&d).into_iter().map(|(a, p, _)| (a, p)).collect();
-    assert_eq!(
-        starts,
-        [(parent, None), (child, Some(parent))],
-        "the parent is a root; the child's sessionStart never fires, so its nested post starts it"
-    );
-}
-
-/// The parent leaves Delegating when its child is done: the post that ends
-/// the dispatch carries the id its start does.
-#[test]
-fn a_task_dispatch_ends_on_the_post_that_carries_its_id() {
-    let d = Drive::hooks().lines(lines());
-    d.assert_clean("cursor delegation hooks");
-    let (parent, id) = dispatch(&d);
+    let id = id.expect("the dispatch carries its wire id");
     assert!(
         d.events.iter().any(|e| matches!(
             e,
@@ -95,33 +64,46 @@ fn a_task_dispatch_ends_on_the_post_that_carries_its_id() {
 }
 
 /// The child appears on its first tool event, before the wire names its
-/// parent; its post, whose transcript nests under the parent's, links it then,
-/// and the parent's `Task` post ends it before the parent's `sessionEnd` could.
+/// parent; the post whose transcript nests under the parent's links it then,
+/// and the parent's `Task` post ends it.
 #[test]
-fn a_child_is_linked_by_its_nested_post_and_ended_by_the_parents_task_post() {
-    let lines = lines();
-    let d = Drive::hooks().lines(&lines);
-    let starts = starts(&d);
-    let [(parent, _, _), (child, _, child_session)] = starts.as_slice() else {
-        panic!("a parent and a child start: {starts:?}");
+fn a_child_is_linked_to_its_parent_once_its_post_names_the_nested_transcript() {
+    let parent = "38e379e1-c3e2-4c41-bb40-1be6466c5b84";
+    let child = "22810a37-661d-41dd-a514-367c266a5f39";
+    let line = |event: &str, session: &str, tool: &str, path: Option<&str>| {
+        serde_json::json!({
+            "hook_event_name": event, "session_id": session, "_pixtuoid_source": "cursor",
+            "workspace_roots": ["/repo"], "tool_name": tool, "tool_use_id": tool,
+            "transcript_path": path.map(|p| format!(
+                "/Users/dev/.cursor/projects/repo/agent-transcripts/{parent}/{p}"
+            )),
+        })
+        .to_string()
     };
-    let (_, task) = dispatch(&d);
-    let post = |v: &Value| v["hook_event_name"] == "postToolUse";
-    let linked = Drive::hooks().lines(through(&lines, |v| {
-        post(v) && v["session_id"] == *child_session
-    }));
+    let nested = format!("subagents/{child}.jsonl");
+    let child_id = pixtuoid_core::AgentId::from_parts("cursor", child);
+    let lines = [
+        line("sessionStart", parent, "", None),
+        line("preToolUse", parent, "Task", None),
+        line("preToolUse", child, "Read", None),
+        line("postToolUse", child, "Read", Some(&nested)),
+    ];
+    let d = Drive::hooks().lines(lines.clone());
+    d.assert_clean("a nested child's post");
     assert_eq!(
-        linked.scene.agents.get(child).map(|s| s.parent_id),
-        Some(Some(*parent))
+        d.scene.agents.get(&child_id).map(|s| s.parent_id),
+        Some(Some(pixtuoid_core::AgentId::from_parts("cursor", parent)))
     );
-    let ended = Drive::hooks().lines(through(&lines, |v| {
-        post(v) && v["tool_use_id"] == task.as_str()
-    }));
+    let done = Drive::hooks().lines(lines.into_iter().chain([line(
+        "postToolUse",
+        parent,
+        "Task",
+        Some(&format!("{parent}.jsonl")),
+    )]));
     assert!(
-        ended
-            .scene
+        done.scene
             .agents
-            .get(child)
+            .get(&child_id)
             .is_none_or(|s| s.exiting_at.is_some()),
         "the parent's Task post ends its child"
     );

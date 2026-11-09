@@ -48,19 +48,20 @@ impl KnownFolder {
 /// Every home a CLI or pixtuoid may resolve, each a directory of a sandbox. All
 /// are set on every platform: a variable no reader there reads is inert.
 pub const SANDBOX_HOMES: &[(&str, &str)] = &[
-    // Never `home`: a path a CLI writes under it rides the bytes, and the
-    // identity scan reads any `/home/<name>` as a person's.
-    ("HOME", "operator"),
-    ("USERPROFILE", "operator"),
-    ("APPDATA", "operator/AppData/Roaming"),
-    ("LOCALAPPDATA", "operator/AppData/Local"),
+    // At `homes/HOME`, as each per-CLI home sits at `homes/<VAR>`, never at
+    // `home`: a path a CLI writes under it rides the bytes, and the identity
+    // scan reads any `/home/<name>` as a person's.
+    ("HOME", "homes/HOME"),
+    ("USERPROFILE", "homes/HOME"),
+    ("APPDATA", "homes/HOME/AppData/Roaming"),
+    ("LOCALAPPDATA", "homes/HOME/AppData/Local"),
     // Each at its default under the home: reasonix refuses to link a
     // plugin from outside it
     // (`internal/ext/installsource/plugin_package.go:480-481` at v2.39.0).
-    ("XDG_CONFIG_HOME", "operator/.config"),
-    ("XDG_DATA_HOME", "operator/.local/share"),
-    ("XDG_STATE_HOME", "operator/.local/state"),
-    ("XDG_CACHE_HOME", "operator/.cache"),
+    ("XDG_CONFIG_HOME", "homes/HOME/.config"),
+    ("XDG_DATA_HOME", "homes/HOME/.local/share"),
+    ("XDG_STATE_HOME", "homes/HOME/.local/state"),
+    ("XDG_CACHE_HOME", "homes/HOME/.cache"),
 ];
 
 /// The variables a sandboxed CLI inherits from the host, with each platform's
@@ -411,11 +412,39 @@ pub fn fresh_private_dir(dir: &Path) -> std::io::Result<std::fs::File> {
     Ok(lock)
 }
 
-/// A recording's fixed directory, made by [`fresh_private_dir`] and held: it
-/// goes, and its lock with it, when this drops, as a temp dir would.
+/// A directory one run made, removed when it drops, waiting out a process
+/// still holding it.
+#[derive(Debug)]
+pub struct RunDir(PathBuf);
+
+impl RunDir {
+    /// `path`, removed when this drops.
+    pub fn new(path: PathBuf) -> Self {
+        Self(path)
+    }
+
+    /// Where it is.
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for RunDir {
+    fn drop(&mut self) {
+        if let Err(e) = remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.0))
+        {
+            let _ = writeln!(std::io::stderr(), "left {}: {e}", self.0.display());
+        }
+    }
+}
+
+/// A recording's fixed directory, made by [`fresh_private_dir`] and held until
+/// it drops, when it goes as a [`RunDir`] does.
 #[derive(Debug)]
 pub struct HeldDir {
-    path: PathBuf,
+    // Before the lock, so it goes first: another recording that took the lock
+    // sooner would re-make the dir under the removal.
+    dir: RunDir,
     _lock: std::fs::File,
 }
 
@@ -427,22 +456,15 @@ impl HeldDir {
     /// As [`fresh_private_dir`].
     pub fn fresh(path: PathBuf) -> std::io::Result<Self> {
         let lock = fresh_private_dir(&path)?;
-        Ok(Self { path, _lock: lock })
+        Ok(Self {
+            dir: RunDir::new(path),
+            _lock: lock,
+        })
     }
 
     /// Where it is.
     pub fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for HeldDir {
-    fn drop(&mut self) {
-        if let Err(e) =
-            remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.path))
-        {
-            let _ = writeln!(std::io::stderr(), "left {}: {e}", self.path.display());
-        }
+        self.dir.path()
     }
 }
 

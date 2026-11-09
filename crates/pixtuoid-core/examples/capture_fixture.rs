@@ -981,9 +981,7 @@ mod recorder {
 
     /// `ws` made afresh, and the lock held while the capture uses it: the
     /// canonical workspace's base is every recording's, so they take turns; a
-    /// replay's is its own root's, which nothing else locks. Read off the base,
-    /// never `capture_root`: on Windows that resolves ProgramData, which the
-    /// recorder's cleared environment can't.
+    /// replay's is its own root's, which nothing else locks.
     fn prepare_workspace(
         ws: PathBuf,
         seed: Option<&NonEmpty>,
@@ -991,6 +989,8 @@ mod recorder {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
         })?;
+        // Read off the base, never `capture_root`: on Windows that resolves
+        // ProgramData, which the recorder's cleared environment can't.
         let lock = fresh_private_dir(base)?;
         std::fs::create_dir(&ws)?;
         fill_workspace(&ws, seed)?;
@@ -1447,12 +1447,13 @@ mod recorder {
         found
     }
 
+    /// Refuses the capture when its `wire` or the `record` written beside it
+    /// embeds a needle: a record's `dropped` keeps text the strip took out of
+    /// the wire.
+    ///
     /// A REFUSAL, not a warning. The old form printed to stderr and left the exit
     /// code at 0 on a run that had already written into the repo tree, so the
     /// capturer had to notice a line scrolling past — and twice did not.
-    /// The capture's `wire` and the `record` written beside it, refused if
-    /// either embeds a needle: a record's `dropped` keeps text the strip took
-    /// out of the wire.
     fn refuse_on_pii(
         wire: &[PathBuf],
         record: &Path,

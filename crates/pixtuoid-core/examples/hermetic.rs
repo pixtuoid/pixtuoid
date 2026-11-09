@@ -48,8 +48,7 @@ mod run {
         STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG, installer_build,
     };
     use pixtuoid_core::harness::host::{
-        HeldDir, RELEASE_PATIENCE, SandboxEnv, built, connect, hold_lock, inherited,
-        remove_once_released, warmed_shim_dir,
+        HeldDir, RunDir, SandboxEnv, built, connect, hold_lock, inherited, warmed_shim_dir,
     };
     use pixtuoid_core::harness::plan::{
         AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Sink, Word,
@@ -1621,27 +1620,9 @@ mod run {
     /// The file in the tier whose lock each invocation holds.
     const TIER_LOCK: &str = "hermetic.lock";
 
-    /// A replay's own workspace root, removed when its run drops, waiting out
-    /// a process still holding it as the recorder waits for the canonical one.
-    struct ReplayRoot(PathBuf);
-
-    impl Drop for ReplayRoot {
-        fn drop(&mut self) {
-            if let Err(e) =
-                remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.0))
-            {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "hermetic: left {}: {e}",
-                    self.0.display()
-                );
-            }
-        }
-    }
-
     /// The workspace a run's CLI works in: the canonical one when it records,
     /// whose path the fixtures carry, else one of its own under the same root.
-    fn run_workspace(record: bool) -> std::io::Result<(Option<ReplayRoot>, PathBuf)> {
+    fn run_workspace(record: bool) -> std::io::Result<(Option<RunDir>, PathBuf)> {
         if record {
             return Ok((None, capture_workspace()?));
         }
@@ -1650,7 +1631,7 @@ mod run {
             .tempdir_in(capture_root()?)?
             .keep();
         let workspace = own.join(capture_workspace_tail());
-        Ok((Some(ReplayRoot(own)), workspace))
+        Ok((Some(RunDir::new(own)), workspace))
     }
 
     /// `p`'s CLI at `version` installed and sandboxed, with the workspace it
@@ -1660,7 +1641,7 @@ mod run {
         p: &Profile,
         version: &Version,
         ports: Ports,
-    ) -> std::io::Result<((PathBuf, Option<ReplayRoot>), Installed, Sandbox)> {
+    ) -> std::io::Result<((PathBuf, Option<RunDir>), Installed, Sandbox)> {
         let (own, workspace) = run_workspace(ctx.record)?;
         if let Some(found) = outside_config(
             p.system_config.here(),
@@ -1717,7 +1698,7 @@ mod run {
     struct Sandboxed {
         ports: Ports,
         workspace: PathBuf,
-        _workspace_root: Option<ReplayRoot>,
+        _workspace_root: Option<RunDir>,
         cli: Installed,
         sandbox: Sandbox,
     }
@@ -3400,7 +3381,11 @@ mod run {
                     "the recorder clears only a capture base: {ws:?}"
                 );
             }
-            let root = second.as_ref().expect("a replay owns its root").0.clone();
+            let root = second
+                .as_ref()
+                .expect("a replay owns its root")
+                .path()
+                .to_path_buf();
             assert!(root.is_dir());
             drop(second);
             assert!(!root.exists(), "a replay's root goes with it");

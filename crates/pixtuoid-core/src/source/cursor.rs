@@ -28,9 +28,9 @@
 //!   child's parent (`3863.index.js:1` `setTranscriptParentConversationId`),
 //!   the first is `<parent>/subagents/<child>.jsonl` (cursor-agent
 //!   2026.10.22: `1841.index.js:1` `getTranscriptPathIfExists`,
-//!   `7923.index.js:1` `agent-transcript/dist/paths.js`). That path, which the
-//!   committed delegation's child post carries, links the child
-//!   (`nested_parent`), and its parent's `Task` post then ends it.
+//!   `7923.index.js:1` `agent-transcript/dist/paths.js`). That path links the
+//!   child (`nested_parent`), and its parent's `Task` post then ends it; the
+//!   committed delegation's child posts carry null, so its child ages out.
 //! - `sessionEnd` FIRES on clean completion; `stop` is turn-end and did NOT fire
 //!   under `-p`. An abrupt exit rides the shim's `_pid` BEST-EFFORT: the walk
 //!   skips the `$SHELL -c` wrapper Cursor `eval`s hooks inside, but some hooks
