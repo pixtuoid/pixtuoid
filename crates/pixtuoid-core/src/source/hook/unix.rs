@@ -164,10 +164,10 @@ fn max_socket_path_len() -> usize {
         - 1
 }
 
-/// Clear `path` for the bind, the one rule for every path bind unlinks: absent
-/// is clear, and a socket nobody answers on is a dead owner's residue, so it
+/// Reclaim `path` for the bind, the one rule for every path bind unlinks: absent
+/// is free, and a socket nobody answers on is a dead owner's residue, so it
 /// goes. A live one is `busy`'s error, and anything else is not ours to unlink.
-async fn clear(path: &Path, busy: impl FnOnce() -> anyhow::Error) -> Result<()> {
+async fn reclaim(path: &Path, busy: impl FnOnce() -> anyhow::Error) -> Result<()> {
     // `symlink_metadata`, not `try_exists`: a dangling symlink at the path
     // exists, and is no more ours to replace than a file is.
     let meta = match tokio::fs::symlink_metadata(path).await {
@@ -291,7 +291,7 @@ impl Listener {
         };
         // Lock acquired ⇒ the previous owner is dead, so a socket at the path is
         // residue; the probe still catches an owner predating the lock protocol.
-        clear(path, || {
+        reclaim(path, || {
             anyhow::Error::new(super::SocketBusy {
                 path: path.to_path_buf(),
             })
@@ -299,16 +299,15 @@ impl Listener {
         .await?;
         // The lock covers only `path`, so a live socket at the temp is another
         // endpoint's, not this one's to subscribe to.
-        clear(&tmp, || {
+        reclaim(&tmp, || {
             anyhow::anyhow!(
-                "{} is a live hook socket, and bind for {} listens there first: {} a different \
-                 path",
+                "{} is a live hook socket: {} a different path",
                 tmp.display(),
-                path.display(),
                 super::Repoint
             )
         })
-        .await?;
+        .await
+        .with_context(|| format!("bind for {} listens at its temp name first", path.display()))?;
         let listener = UnixListener::bind(&tmp)
             .with_context(|| format!("binding hook socket at {}", tmp.display()))?;
         if let Err(e) =

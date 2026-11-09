@@ -285,8 +285,7 @@ async fn bind_refuses_to_replace_a_dangling_symlink() {
 }
 
 // bind goes through a `.tmp` sibling, so a path that fits a unix socket
-// alone can still be too long; the refusal names the user's own path and the
-// budget it leaves, which both sides of the boundary are pinned against.
+// alone can still be too long.
 #[tokio::test]
 async fn bind_takes_a_path_of_its_budget_and_refuses_one_byte_more() {
     let dir = TempDir::new().unwrap();
@@ -342,8 +341,6 @@ async fn bind_refuses_a_trailing_slash_path_without_panicking() {
         .expect_err("a socket path can't end in a slash");
 }
 
-// The lock covers only the endpoint, so its temp name gets the endpoint's own
-// rule: another endpoint living at that name is left alone, and so is a file.
 #[tokio::test]
 async fn bind_leaves_a_live_socket_at_its_temp_name_alone() {
     let dir = TempDir::new().unwrap();
@@ -352,7 +349,8 @@ async fn bind_leaves_a_live_socket_at_its_temp_name_alone() {
     let owner = HookSocketListener::bind(other.clone()).await.unwrap();
     let handle = tokio::spawn(async move { owner.run(tx).await });
     sleep(Duration::from_millis(20)).await;
-    let err = HookSocketListener::bind(dir.path().join("foo"))
+    let endpoint = dir.path().join("foo");
+    let err = HookSocketListener::bind(endpoint.clone())
         .await
         .expect_err("the temp name is another endpoint's live socket");
     assert!(
@@ -360,7 +358,16 @@ async fn bind_leaves_a_live_socket_at_its_temp_name_alone() {
             .is_none(),
         "another endpoint's owner is not this one's to subscribe to: {err:#}"
     );
-    assert_names_both_settings(&format!("{err:#}"));
+    let text = format!("{err:#}");
+    assert!(
+        text.contains(&format!(
+            "bind for {} listens at its temp name first: {} is a live hook socket",
+            endpoint.display(),
+            other.display()
+        )),
+        "{text}"
+    );
+    assert_names_both_settings(&text);
     UnixStream::connect(&other)
         .await
         .expect("the other endpoint still answers");
@@ -372,11 +379,19 @@ async fn bind_refuses_to_reclaim_a_file_at_its_temp_name() {
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("notes.tmp");
     std::fs::write(&file, "precious").unwrap();
-    let err = HookSocketListener::bind(dir.path().join("notes"))
+    let endpoint = dir.path().join("notes");
+    let err = HookSocketListener::bind(endpoint.clone())
         .await
         .expect_err("a regular file at the temp name is not a stale socket");
     let text = format!("{err:#}");
-    assert!(text.contains("notes.tmp"), "{text}");
+    assert!(
+        text.contains(&format!(
+            "bind for {} listens at its temp name first: {} exists and is not a socket",
+            endpoint.display(),
+            file.display()
+        )),
+        "{text}"
+    );
     assert_names_both_settings(&text);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "precious");
 }

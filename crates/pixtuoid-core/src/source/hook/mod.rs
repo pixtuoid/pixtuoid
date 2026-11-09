@@ -157,7 +157,9 @@ impl HookSocketListener {
     ///
     /// # Errors
     ///
-    /// If the socket directory is not an owner-only directory we own, or the lock or bind fails (a live owner yields [`SocketBusy`]).
+    /// If the socket directory is not an owner-only directory we own, the path is too long,
+    /// anything but a dead owner's socket holds the path or its temp name, or the lock or bind
+    /// fails. A live owner of the path yields [`SocketBusy`].
     pub async fn bind(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
         let inner = imp::Listener::bind(&path).await?;
