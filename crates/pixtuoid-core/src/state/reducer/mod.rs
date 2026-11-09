@@ -345,7 +345,7 @@ impl Reducer {
             .filter(|s| s.exiting_at.is_none() && !connected.contains(s.source.as_ref()))
             .map(|s| s.agent_id)
             .collect();
-        scope::cascade_exit(scene, &ids, scope::StampRoot::Yes, now);
+        scope::cascade_exit(scene, &ids, scope::StampSeed::Yes, now);
     }
 
     /// Fold one `AgentEvent` into the scene at `now`, tagged with the
@@ -993,7 +993,7 @@ impl Reducer {
         now: SystemTime,
     ) {
         self.corr.note_end(agent_id, from, as_child, now);
-        scope::cascade_exit(scene, &[agent_id], scope::StampRoot::Yes, now);
+        scope::cascade_exit(scene, &[agent_id], scope::StampSeed::Yes, now);
     }
 
     /// The `ProofOfLife` arm — #220: refresh the sweep exemption, and NOTHING
@@ -1638,7 +1638,7 @@ impl Reducer {
             fired.push(id);
         }
         // The delegating parent keeps running; only its subtree walks out.
-        scope::cascade_exit(scene, &fired, scope::StampRoot::No, now);
+        scope::cascade_exit(scene, &fired, scope::StampSeed::No, now);
     }
 
     /// Mark agents as exiting when they haven't emitted any event for longer
@@ -1700,7 +1700,7 @@ impl Reducer {
             })
             .collect();
         // Cascading keeps a stale-swept (or SessionEnd-less) parent from leaving orphans.
-        scope::cascade_exit(scene, &stale, scope::StampRoot::Yes, now);
+        scope::cascade_exit(scene, &stale, scope::StampSeed::Yes, now);
     }
 
     /// Drop the per-slot correlation a departing agent id owns, reclaimed on

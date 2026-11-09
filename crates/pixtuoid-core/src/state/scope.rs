@@ -112,7 +112,7 @@ impl<'a> ScopeTree<'a> {
 /// `seed.exiting_at` before calling?" convention that had no assertion to catch
 /// a caller that forgot.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum StampRoot {
+pub(crate) enum StampSeed {
     /// The whole tree leaves together — the seed is marked exiting too.
     Yes,
     /// Only the subtree leaves; the seed keeps running (the subagent-completion
@@ -121,7 +121,7 @@ pub(crate) enum StampRoot {
 }
 
 /// Mark every not-yet-exiting descendant of each of `seeds` exiting, over
-/// `parent_id` links — and, when `stamp_root` is [`StampRoot::Yes`], each seed
+/// `parent_id` links — and, when `stamp_seed` is [`StampSeed::Yes`], each seed
 /// itself (via [`fsm::mark_exiting`], so the earliest `exiting_at` wins).
 /// Idempotent through that write-once stamp, NOT by pruning the walk at an
 /// exiting node: one keeps its original `exiting_at` but is still traversed, so
@@ -129,7 +129,7 @@ pub(crate) enum StampRoot {
 pub(crate) fn cascade_exit(
     scene: &mut SceneState,
     seeds: &[AgentId],
-    stamp_root: StampRoot,
+    stamp_seed: StampSeed,
     now: SystemTime,
 ) {
     if seeds.is_empty() {
@@ -139,7 +139,7 @@ pub(crate) fn cascade_exit(
     let mut doomed: HashSet<AgentId> = HashSet::new();
     for &seed in seeds {
         // A doomed seed's subtree is doomed already, so the seeds share one walk.
-        if stamp_root == StampRoot::Yes && !doomed.insert(seed) {
+        if stamp_seed == StampSeed::Yes && !doomed.insert(seed) {
             continue;
         }
         let mut frontier = vec![seed];
@@ -431,7 +431,7 @@ mod tests {
         fsm::mark_exiting(scene.agents.get_mut(&mid).unwrap(), t_mid);
 
         let t_root = t_mid + Duration::from_secs(2);
-        cascade_exit(&mut scene, &[root], StampRoot::Yes, t_root);
+        cascade_exit(&mut scene, &[root], StampSeed::Yes, t_root);
 
         assert_eq!(scene.agents[&root].exiting_at, Some(t_root));
         assert_eq!(
@@ -465,7 +465,7 @@ mod tests {
                 .agents
                 .insert(leaf, slot(leaf, Some(mid), ActivityState::Idle));
 
-            cascade_exit(&mut scene, &seeds, StampRoot::No, now);
+            cascade_exit(&mut scene, &seeds, StampSeed::No, now);
 
             assert_eq!(scene.agents[&root].exiting_at, None, "{seeds:?}");
             assert_eq!(
@@ -487,7 +487,7 @@ mod tests {
             .insert(orphan, slot(orphan, Some(missing), ActivityState::Idle));
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000);
 
-        cascade_exit(&mut scene, &[missing], StampRoot::Yes, now);
+        cascade_exit(&mut scene, &[missing], StampSeed::Yes, now);
 
         assert_eq!(scene.agents[&orphan].exiting_at, Some(now));
         assert!(!scene.agents.contains_key(&missing));
