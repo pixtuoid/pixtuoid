@@ -470,7 +470,7 @@ impl OfficeSession {
 
     /// Render one frame of `inputs.world.scene` in `look`: the floor showing,
     /// or both floors of a slide composed into one, `gap` between them dimmed
-    /// as the floors are and their world text baked whatever `look` says.
+    /// as the floors are and their world text baked unless `look` hides it.
     /// `inputs.world.scene` is the FULL live scene: the office evicts against
     /// it and projects each floor out of it. `inputs.world.floor` carries what
     /// its floors share, `inputs.place.gateway` its gateway; each
@@ -508,7 +508,7 @@ impl OfficeSession {
         if let Some(tr) = self.nav.transition() {
             self.shown = None;
             // A slide has no one layout for a host to set text on.
-            let look = look.baked();
+            let look = look.on_slide();
             let (from, to, t) = (tr.from_floor, tr.to_floor, tr.t(now));
             draw(&mut self.views, &mut self.office, from, look);
             draw(&mut self.views, &mut self.office, to, look);
