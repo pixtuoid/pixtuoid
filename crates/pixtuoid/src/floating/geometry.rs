@@ -12,15 +12,15 @@ use pixtuoid_scene::sprite::format::Density;
 use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position};
 
 /// The unit the window's position is saved, checked and restored in: the
-/// one the platform places windows by, which winit reports scaled by some
-/// screen's factor.
+/// one the platform places windows by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DesktopUnit {
-    /// macOS's points, the one space under winit-0.30.13's three factors
-    /// (`macos/window_delegate.rs:923-926`, `:509-523`, `macos/monitor.rs:234-249`).
+    /// macOS's points: winit-0.30.13 scales a window's position by its screen's
+    /// factor (`macos/window_delegate.rs:923-926`), a new window's by the main
+    /// screen's (`:509-523`) and a monitor's by its own (`macos/monitor.rs:234-249`).
     Points,
-    /// One physical-pixel desktop, set unscaled (winit-0.30.13 `windows/dpi.rs:20-26`,
-    /// `windows/window.rs:186-188`, `x11/window.rs:199-200`).
+    /// The one physical-pixel desktop, which winit-0.30.13 sets unscaled
+    /// (`windows/dpi.rs:20-26`, `windows/window.rs:186-188`, `x11/window.rs:199-200`).
     Pixels,
 }
 
