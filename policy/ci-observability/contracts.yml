@@ -197,6 +197,19 @@
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .with["save-if"] = "true" else . end)
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .uses = "actions/cache@v5" else . end)
 
+- id: only-main-saves-the-mise-cache
+  covers: jdx/mise-action@
+  file: .github/actions/setup-tools/action.yml
+  expected: ${{ github.ref == 'refs/heads/main' }}
+  why: >-
+    As only-main-saves-the-rust-cache's: every ref restores main's copy, so a
+    save on any other ref only spends the quota main's entries need.
+  assert: |
+    [.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with.cache_save] == [$expected]
+  break:
+    - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with) |= del(.cache_save)
+    - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with.cache_save) = "true"
+
 - id: hermetic-caches-restore-only-but-their-one-writer
   file:
     - .github/workflows/hermetic.yml
@@ -428,8 +441,8 @@
     with RELEASE_PLZ_TOKEN in scope, `release` with the publish OIDC claim too.
     zizmor's cache-poisoning audit reads only a job's own steps, never a local
     composite's (zizmorcore/zizmor v1.30.0
-    crates/zizmor/src/audit/cache_poisoning.rs:796-813), and setup-cargo-just
-    restores by default; only `cache-mode` scopes the token under it.
+    crates/zizmor/src/audit/cache_poisoning.rs:796-813), and setup-tools and
+    setup-cargo-just restore by default; only `cache-mode` scopes the token under it.
   assert: |
     .["cache-mode"] == "none" and all(.jobs[]; (.["cache-mode"] // "none") == "none")
   break:
