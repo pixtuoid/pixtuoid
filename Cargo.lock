@@ -3069,6 +3069,7 @@ dependencies = [
  "pixtuoid-scene",
  "png",
  "pollster",
+ "portable-pty",
  "proc-macro2",
  "process-wrap",
  "qrcode",

@@ -12,15 +12,14 @@
 //! skip the round-trip, and `$PIXTUOID_NO_TRUECOLOR_WARN` is an explicit user
 //! override; neither is a heuristic.
 
-/// Default round-trip budget for the `DECRQSS` probe: long enough for a laggy SSH
-/// link to answer, short enough that a terminal which never answers only costs
-/// this once at startup.
-pub(crate) const TRUECOLOR_PROBE_TIMEOUT: std::time::Duration =
-    std::time::Duration::from_millis(100);
-
-/// The synchronized-output probe's budget: [`TRUECOLOR_PROBE_TIMEOUT`]'s, for
-/// the same round trip. Its DA1 ends the wait as soon as the terminal answers.
-pub(crate) const SYNC_OUTPUT_PROBE_TIMEOUT: std::time::Duration = TRUECOLOR_PROBE_TIMEOUT;
+/// How long [`query_tty`] waits for a reply. Each query ends on a request the
+/// terminal answers last ([`DA1`], or the graphics probe's device status), so
+/// an answering terminal ends the wait as soon as its reply is in, and the
+/// budget is spent only where nothing answers (a hidden tmux pane refusing
+/// passthrough): it is sized for the slowest link a reply crosses, an ssh
+/// session's round trip, not for the normal case.
+#[cfg(unix)]
+pub const QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// True iff `$COLORTERM` advertises 24-bit color (`truecolor` or `24bit`).
 /// Case-sensitive, as S-Lang matches them (<https://github.com/termstandard/colors#checking-for-colorterm>).
@@ -129,20 +128,22 @@ pub(crate) fn color_status_row(pf: ColorPreflight) -> Option<&'static str> {
     }
 }
 
-/// Parse a `DECRQSS`-for-SGR reply to our truecolor probe (background set to
-/// `48;2;1;2;3`). `Some(true)` when our exact RGB triple came back,
-/// `Some(false)` for a valid-but-downsampled reply, and `None` for no valid reply
-/// (`0$r`, empty, or a timeout) — which the caller treats as "warn".
+/// Parse the `DECRQSS`-for-SGR reply to our truecolor probe (background set to
+/// `48;2;1;2;3`) out of the reply read through DA1's. `Some(true)` when our
+/// exact RGB triple came back, `Some(false)` for a valid-but-downsampled reply,
+/// and `None` for no valid reply (`0$r`, none, or a timeout) — which the caller
+/// treats as "warn".
 #[cfg(unix)]
-fn parse_decrqss_truecolor(resp: &[u8]) -> Option<bool> {
-    let s = String::from_utf8_lossy(resp);
-    // A valid SGR reply is `DCS 1 $ r ... m ST`; `0 $ r` = request not honored.
-    if !s.contains("1$r") {
-        return None;
-    }
+fn parse_decrqss_truecolor(reply: &[u8]) -> Option<bool> {
+    let s = String::from_utf8_lossy(reply);
+    // A valid request's reply is `DCS 1 $ r Pt ST`, an invalid one's `DCS 0 $ r
+    // ST` (xterm's ctlseqs, DECRQSS); `Pt` stops at the ST (`ESC \`, or BEL), so
+    // the DA1 reply after it is never read as SGR.
+    let (_, rest) = s.split_once("1$r")?;
+    let sgr = rest.find(['\x1b', '\x07']).map_or(rest, |st| &rest[..st]);
     // Tolerate `:` / `;` separators and an optional empty colorspace-id field
     // (`48:2::1:2:3`) — both are spec-legal ways to echo our triple back.
-    let normalized = s.replace(';', ":");
+    let normalized = sgr.replace(';', ":");
     Some(normalized.contains("48:2:1:2:3") || normalized.contains("48:2::1:2:3"))
 }
 
@@ -210,51 +211,48 @@ const DECRQSS_TRUECOLOR_PROBE: &[u8] = b"\x1b[48;2;1;2;3m\x1bP$qm\x1b\\\x1b[0m";
 
 /// Ask the terminal whether it is truecolor by querying it directly.
 #[cfg(unix)]
-pub(crate) fn query_truecolor(timeout: std::time::Duration) -> Truecolor {
-    let mut reply = Vec::new();
-    let asked = query_tty(
-        DECRQSS_TRUECOLOR_PROBE,
-        timeout,
-        MAX_DECRQSS_RESPONSE_BYTES,
-        |chunk| {
-            reply.extend_from_slice(chunk);
-            response_terminated(&reply)
-        },
-    );
-    match asked {
-        None => Truecolor::CantAsk,
-        Some(_) => parse_decrqss_truecolor(&reply).map_or(Truecolor::NoAnswer, Truecolor::Answered),
-    }
+pub(crate) fn query_truecolor() -> Truecolor {
+    ask_until_da1(DECRQSS_TRUECOLOR_PROBE).map_or(Truecolor::CantAsk, |reply| {
+        parse_decrqss_truecolor(&reply).map_or(Truecolor::NoAnswer, Truecolor::Answered)
+    })
 }
 
-/// DECRQM for synchronized output (mode 2026), then DA1: a terminal that
-/// doesn't know the mode answers nothing to the first, and every terminal
-/// answers the second, so its reply ends the wait either way
+/// DECRQM for synchronized output (mode 2026), which a terminal that doesn't
+/// know the mode leaves unanswered
 /// (<https://github.com/contour-terminal/vt-extensions/blob/master/synchronized-output.md>,
 /// "Feature detection").
 #[cfg(unix)]
-const SYNC_OUTPUT_PROBE: &[u8] = b"\x1b[?2026$p\x1b[c";
+const SYNC_OUTPUT_PROBE: &[u8] = b"\x1b[?2026$p";
 
 /// Whether the terminal holds a frame between `CSI ? 2026 h` and `CSI ? 2026 l`
 /// and shows it whole: its DECRPM for mode 2026 is set (1) or reset (2).
 #[cfg(unix)]
-pub(crate) fn query_sync_output(timeout: std::time::Duration) -> bool {
-    let mut reply = Vec::new();
-    let asked = query_tty(
-        SYNC_OUTPUT_PROBE,
-        timeout,
-        MAX_DECRQSS_RESPONSE_BYTES,
-        |chunk| {
-            reply.extend_from_slice(chunk);
-            da1_answered(&reply)
-        },
-    );
-    asked.is_some() && sync_output_reported(&reply)
+pub(crate) fn query_sync_output() -> bool {
+    ask_until_da1(SYNC_OUTPUT_PROBE).is_some_and(|reply| sync_output_reported(&reply))
 }
 
 #[cfg(not(unix))]
-pub(crate) fn query_sync_output(_timeout: std::time::Duration) -> bool {
+pub(crate) fn query_sync_output() -> bool {
     false
+}
+
+/// The primary device attributes request, which a terminal answers after the
+/// queries ahead of it, so its reply ends the wait whether or not they were
+/// answered: the detection kitty's protocols prescribe
+/// (<https://sw.kovidgoyal.net/kitty/keyboard-protocol/#detection-of-support-for-this-protocol>).
+#[cfg(unix)]
+const DA1: &[u8] = b"\x1b[c";
+
+/// The terminal's reply to `query`, read through DA1's; `None` when the
+/// terminal could not be asked.
+#[cfg(unix)]
+fn ask_until_da1(query: &[u8]) -> Option<Vec<u8>> {
+    let mut reply = Vec::new();
+    query_tty(&[query, DA1].concat(), MAX_DA1_REPLY_BYTES, |chunk| {
+        reply.extend_from_slice(chunk);
+        da1_answered(&reply)
+    })?;
+    Some(reply)
 }
 
 /// A DA1 reply, `CSI ? Ps ; ... c`, has arrived.
@@ -277,11 +275,21 @@ fn sync_output_reported(reply: &[u8]) -> bool {
         .any(|answer| reply.windows(answer.len()).any(|w| w == *answer))
 }
 
+/// Set once a reply misses [`QUERY_TIMEOUT`]: every query ends on a request the
+/// terminal answers, so one that went unanswered marks a terminal that answers
+/// none, and [`query_tty`] asks it nothing more — a mute terminal costs the
+/// startup one budget, not one per query. The exception: a tmux pane hidden
+/// from passthrough drops the graphics query yet would answer the sync probe,
+/// which this skips.
+#[cfg(unix)]
+static UNANSWERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Write `query` to the controlling terminal and hand each chunk of its reply
 /// to `on_reply` until that returns `true`. `Some(true)` when it did;
-/// `Some(false)` when the reply never completed — `timeout` elapsed, more than
-/// `cap` bytes arrived, or the read failed; `None` when the terminal could not
-/// be opened, put in raw mode, or written to.
+/// `Some(false)` when the reply never completed — [`QUERY_TIMEOUT`] elapsed,
+/// on this query or, which skips it, an earlier one; more than `cap` bytes
+/// arrived; or the read failed; `None` when the terminal could not be opened,
+/// put in raw mode, or written to.
 ///
 /// The controlling terminal (`/dev/tty`), so a piped stdout never receives the
 /// escapes; in raw mode, so the reply isn't echoed and arrives un-buffered; and
@@ -291,13 +299,15 @@ fn sync_output_reported(reply: &[u8]) -> bool {
 #[cfg(unix)]
 pub(crate) fn query_tty(
     query: &[u8],
-    timeout: std::time::Duration,
     cap: usize,
     on_reply: impl FnMut(&[u8]) -> bool,
 ) -> Option<bool> {
     use std::io::Write;
     use std::os::fd::AsRawFd;
 
+    if UNANSWERED.load(std::sync::atomic::Ordering::Relaxed) {
+        return Some(false);
+    }
     let mut tty = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -325,7 +335,7 @@ pub(crate) fn query_tty(
     tty.write_all(query).ok()?;
     tty.flush().ok()?;
 
-    Some(read_reply(&mut tty, fd, timeout, cap, on_reply))
+    Some(read_reply(&mut tty, fd, cap, on_reply))
 }
 
 /// RAII restore of the terminal's saved `termios` — fires on return, `?`, and
@@ -347,19 +357,18 @@ impl Drop for TermiosRestore {
 /// Per-`read` chunk: a longer reply arrives over several reads, within the one
 /// budget.
 #[cfg(unix)]
-const TTY_READ_CHUNK: usize = 64;
-/// Hard cap on the DECRQSS reply before giving up — the bound just stops a
-/// chatty/garbage stream from looping.
+pub const TTY_READ_CHUNK: usize = 64;
+/// Hard cap on a reply read through DA1's before giving up — the bound just
+/// stops a chatty/garbage stream from looping.
 #[cfg(unix)]
-const MAX_DECRQSS_RESPONSE_BYTES: usize = 1024;
+const MAX_DA1_REPLY_BYTES: usize = 1024;
 
-/// Read the terminal's reply into `on_reply`, bounded by `timeout` and `cap`:
-/// `true` when `on_reply` reported it complete.
+/// Read the terminal's reply into `on_reply`, bounded by [`QUERY_TIMEOUT`] and
+/// `cap`: `true` when `on_reply` reported it complete.
 #[cfg(unix)]
 fn read_reply(
     tty: &mut std::fs::File,
     fd: std::os::fd::RawFd,
-    timeout: std::time::Duration,
     cap: usize,
     mut on_reply: impl FnMut(&[u8]) -> bool,
 ) -> bool {
@@ -377,10 +386,10 @@ fn read_reply(
     let mut chunk = [0u8; TTY_READ_CHUNK];
     loop {
         let elapsed = start.elapsed();
-        if elapsed >= timeout {
-            return false;
+        if elapsed >= QUERY_TIMEOUT {
+            return went_unanswered();
         }
-        let remaining = timeout - elapsed;
+        let remaining = QUERY_TIMEOUT - elapsed;
         #[cfg_attr(
             not(target_vendor = "apple"),
             expect(
@@ -421,7 +430,7 @@ fn read_reply(
         }
         // SAFETY: `rfds` was populated by `select`; checking our fd's membership.
         if ready == 0 || !unsafe { libc::FD_ISSET(fd, &rfds) } {
-            return false;
+            return went_unanswered();
         }
         match tty.read(&mut chunk) {
             Ok(0) => return false,
@@ -440,17 +449,38 @@ fn read_reply(
     }
 }
 
-/// A `DCS` reply ends with the string terminator `ESC \` (some terminals use
-/// `BEL`); either means the reply is complete.
+/// The budget ran out: the terminal is [`UNANSWERED`], and the reply incomplete.
 #[cfg(unix)]
-fn response_terminated(buf: &[u8]) -> bool {
-    buf.windows(2).any(|w| w == [0x1b, b'\\']) || buf.contains(&0x07)
+fn went_unanswered() -> bool {
+    UNANSWERED.store(true, std::sync::atomic::Ordering::Relaxed);
+    false
+}
+
+/// Drop whatever the terminal sent that no query read — a reply that outlived
+/// its [`QUERY_TIMEOUT`], which raw-mode input would take for keys: TCIFLUSH
+/// discards "data received but not read"
+/// (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/tcflush.html>).
+#[cfg(unix)]
+pub(crate) fn discard_unread_replies() {
+    use std::os::fd::AsRawFd;
+
+    // Unopenable, it took no query either: `query_tty` opens this same path.
+    let Ok(tty) = std::fs::File::open("/dev/tty") else {
+        return;
+    };
+    // SAFETY: `tcflush` on the open tty fd.
+    if unsafe { libc::tcflush(tty.as_raw_fd(), libc::TCIFLUSH) } != 0 {
+        tracing::warn!(
+            error = %std::io::Error::last_os_error(),
+            "unread terminal replies not discarded"
+        );
+    }
 }
 
 /// Non-Unix stub: Windows hard-gates VT separately in `tui::mod`, so there is no
 /// preflight query there.
 #[cfg(not(unix))]
-pub(crate) fn query_truecolor(_timeout: std::time::Duration) -> Truecolor {
+pub(crate) fn query_truecolor() -> Truecolor {
     Truecolor::CantAsk
 }
 
@@ -576,18 +606,27 @@ mod tests {
             Some(false)
         );
         assert_eq!(parse_decrqss_truecolor(b"\x1bP1$r0m\x1b\\"), Some(false));
+        assert_eq!(parse_decrqss_truecolor(b"\x1bP1$r0m\x07"), Some(false));
         assert_eq!(parse_decrqss_truecolor(b"\x1bP0$r\x1b\\"), None);
         assert_eq!(parse_decrqss_truecolor(b""), None);
     }
 
-    // `response_terminated` is `#[cfg(unix)]`, so its test must be gated too —
-    // else `check-windows` fails to compile.
+    /// The DA1 reply that ends the wait is never read as the SGR, and one
+    /// alone — a terminal that ignores DECRQSS — is no answer. The bare replies
+    /// are tmux 3.8's and GNU screen's, recorded in a pty.
     #[cfg(unix)]
     #[test]
-    fn response_terminated_on_st_or_bel() {
-        assert!(response_terminated(b"\x1bP1$r0m\x1b\\"));
-        assert!(response_terminated(b"\x1bP1$r0m\x07"));
-        assert!(!response_terminated(b"\x1bP1$r0m"));
+    fn parse_decrqss_reads_only_the_dcs_before_the_da1() {
+        assert_eq!(
+            parse_decrqss_truecolor(b"\x1bP1$r48;5;16m\x1b\\\x1b[?62;48;2;1;2;3c"),
+            Some(false)
+        );
+        assert_eq!(
+            parse_decrqss_truecolor(b"\x1bP1$r0;48;2;1;2;3m\x1b\\\x1b[?62;22c"),
+            Some(true)
+        );
+        assert_eq!(parse_decrqss_truecolor(b"\x1bP0$r\x1b\\\x1b[?1;2;4c"), None);
+        assert_eq!(parse_decrqss_truecolor(b"\x1b[?1;2c"), None);
     }
 
     #[test]
@@ -636,7 +675,7 @@ mod tests {
     #[cfg(not(unix))]
     #[test]
     fn off_unix_the_truecolor_query_cannot_ask() {
-        assert_eq!(query_truecolor(TRUECOLOR_PROBE_TIMEOUT), Truecolor::CantAsk);
+        assert_eq!(query_truecolor(), Truecolor::CantAsk);
     }
 
     #[test]

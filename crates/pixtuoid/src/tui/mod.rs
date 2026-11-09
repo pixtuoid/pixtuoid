@@ -495,10 +495,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     let arms = QuitArms::arm();
     // Asked before raw mode is on: the query takes the terminal's own for
     // its reply.
-    let out = FrameOut::new(
-        stdout(),
-        crate::term::query_sync_output(crate::term::SYNC_OUTPUT_PROBE_TIMEOUT),
-    );
+    let out = FrameOut::new(stdout(), crate::term::query_sync_output());
     let term = setup_terminal(out.clone(), &arms)?;
     let quit = arms.signalled();
     tokio::pin!(quit);
@@ -525,6 +522,9 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     let mut fired = None;
     let result: Result<()> = (async {
         let mut frames = frame_clock(pixtuoid_scene::anim::PAINT_FRAME);
+        // As late as possible: a reply arriving after it reaches the dispatch.
+        #[cfg(unix)]
+        crate::term::discard_unread_replies();
         let mut events = EventStream::new();
         let mut snapshot = scene_rx.borrow().clone();
         let mut now = ui.now();

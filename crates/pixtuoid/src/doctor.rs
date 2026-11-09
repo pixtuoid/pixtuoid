@@ -894,8 +894,7 @@ fn probe_terminal_caps(
     look: crate::graphics::LookChoice,
     max_density: pixtuoid_scene::sprite::format::Density,
 ) -> (Option<crate::term::Truecolor>, crate::graphics::Plan) {
-    let truecolor_probe =
-        probe_ok.then(|| crate::term::query_truecolor(crate::term::TRUECOLOR_PROBE_TIMEOUT));
+    let truecolor_probe = probe_ok.then(crate::term::query_truecolor);
     let graphics_plan = crate::graphics::plan_this_terminal(look, max_density, probe_ok);
     (truecolor_probe, graphics_plan)
 }
