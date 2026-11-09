@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -26,6 +27,9 @@ PLUGIN_SOURCE = INSTALL_DIR / ROW["file"]
 HOOK_PLACEHOLDER = CONTRACT["hook_placeholder"]
 POSIX = os.name == "posix"
 JITTER_S = 1.5
+# Long past any spawn delay a loaded machine adds, so a hook that returns while
+# the leftover still lives has not waited on it.
+LEFTOVER_S = 30
 
 
 class FakeCtx:
@@ -185,13 +189,13 @@ class PluginTest(unittest.TestCase):
     ):
         # The leftover holds whatever stdio it inherited: a pipe there would make
         # the plugin wait on it, long past the shim's own exit.
-        hook = self.hook("cat >/dev/null\n(sleep 5 &)\nexit 0\n")
+        done = shlex.quote(str(self.dir / "leftover-done"))
+        hook = self.hook(f"cat >/dev/null\n(sleep {LEFTOVER_S}; : >{done}) &\nexit 0\n")
         _, ctx = self.plugin(hook)
-        start = time.monotonic()
         self.assertIsNone(
             ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal")
         )
-        self.assertLess(time.monotonic() - start, JITTER_S)
+        self.assertFalse((self.dir / "leftover-done").exists())
 
     def test_an_absent_shim_neither_raises_nor_waits(self):
         _, ctx = self.plugin(self.dir / "absent")
