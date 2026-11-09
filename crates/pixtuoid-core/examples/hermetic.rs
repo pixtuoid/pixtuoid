@@ -3404,6 +3404,13 @@ mod run {
             let fixed = capture_sandbox(root.path()).expect("the fixed one");
             let recording = SandboxDir::of_run(true, root.path()).expect("a recording's sandbox");
             assert_eq!(recording.path(), fixed);
+            // Resolved on both sides: `capture_sandbox` resolves its root on
+            // Unix, and a tempdir's path need not be resolved.
+            let resolved = |p: &Path| dunce::canonicalize(p).expect("it exists");
+            assert!(
+                resolved(recording.path()).starts_with(resolved(root.path())),
+                "a recording's sandbox sits under the root it was given, never the real one"
+            );
             drop(recording);
             let first = SandboxDir::of_run(false, root.path()).expect("a replay's sandbox");
             assert_ne!(first.path(), fixed, "a replay never waits on a recording");
