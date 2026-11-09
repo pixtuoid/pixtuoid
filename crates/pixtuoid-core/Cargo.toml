@@ -27,6 +27,7 @@ exclude                = [
     "tests/socket_path_parity.rs",
     "tests/supported_sources_manifest.rs",
     "tests/pair_link_site.rs",
+    "tests/published_license.rs",
 ]
 
 [lints]

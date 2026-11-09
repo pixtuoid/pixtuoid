@@ -43,7 +43,7 @@ tests/
 │                        `watcher`'s process-wide `fast_watch()` polling can't reach them
 ├── transport/main.rs    relay (both) · #[cfg(unix)] socket / #[cfg(windows)] pipe
 └── socket_path_parity.rs · supported_sources_manifest.rs · pinned_by_claims.rs ·
-    lang_gates.rs · shim_stamp_parity.rs · pair_link_site.rs
+    lang_gates.rs · shim_stamp_parity.rs · pair_link_site.rs · published_license.rs
                          FLAT + publish-excluded (see Cargo.toml's `exclude`; `sources/` is excluded whole)
 ```
 
