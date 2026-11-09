@@ -618,7 +618,7 @@ doc-check: (_targets DOC_TARGETS)
 _targets +targets:
     rustup target add {{ targets }}
 
-[doc('Coverage + JUnit XML — ci-tests.yml runs it on every tier, the full one uploading it (needs llvm-cov + nextest)')]
+[doc('Coverage — ci-tests.yml runs it on every tier, the full one uploading it (needs llvm-cov + nextest)')]
 [group('rust')]
 coverage *args:
     TZ={{ TEST_TZ }} cargo llvm-cov nextest --workspace --codecov --output-path codecov.json --profile ci "$@"
@@ -1177,6 +1177,8 @@ fixture-pii-selftest:
     printf 'C:\\Users\\bob\n'  > "$d/probe/identity-win.txt"
     printf -- '--Users-carol-Desktop-proj--\n' > "$d/probe/identity-dashed.txt"
     printf 'mcp__internal_tracker\n' > "$d/probe/identity-mcp.txt"
+    printf '/private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/.tmpAbC123\n' \
+        > "$d/probe/identity-usertemp.txt"
     printf '{"user_email":"a.person@gmail.com"}\n' > "$d/probe/identity-email.txt"
     # The one identity class with no shape of its own — reachable only under the
     # label a CLI renders it beneath.
@@ -1210,7 +1212,7 @@ fixture-pii-selftest:
     }
     fail=0
     for spec in ".gitleaks.toml=cred-aws.txt,cred-disguised.txt" \
-                ".gitleaks-identity.toml=identity-bearer.txt,identity-dashed.txt,identity-email.txt,identity-gituser.txt,identity-home.txt,identity-mcp.txt,identity-prefix.txt,identity-users.txt,identity-win.txt"; do
+                ".gitleaks-identity.toml=identity-bearer.txt,identity-dashed.txt,identity-email.txt,identity-gituser.txt,identity-home.txt,identity-mcp.txt,identity-prefix.txt,identity-users.txt,identity-usertemp.txt,identity-win.txt"; do
         cfg=${spec%%=*}; want=${spec#*=}
         got=$(fired "$cfg" "$d/probe")
         if [ "$got" != "$want" ]; then

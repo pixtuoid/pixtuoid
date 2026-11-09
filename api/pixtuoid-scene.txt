@@ -1386,6 +1386,7 @@ impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Pictu
 impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::Picture<'a>
 pub enum pixtuoid_scene::look::WorldText
 pub pixtuoid_scene::look::WorldText::Baked
+pub pixtuoid_scene::look::WorldText::Hidden
 impl core::clone::Clone for pixtuoid_scene::look::WorldText
 pub fn pixtuoid_scene::look::WorldText::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::look::WorldText

@@ -60,8 +60,6 @@ jobs:
     uses: ./.github/workflows/ci-tests.yml
     with:
       full: ${{ needs.tier.outputs.full == 'true' }}
-    secrets:
-      MERGIFY_TOKEN: ${{ secrets.MERGIFY_TOKEN }}
 
   site:
     name: Site

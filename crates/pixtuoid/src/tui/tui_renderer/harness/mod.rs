@@ -121,7 +121,7 @@ pub(super) fn scene_with(agents: Vec<AgentSlot>, cap: usize) -> SceneState {
 }
 /// Flatten the ratatui frame into one newline-joined string for substring
 /// assertions on rendered text.
-pub(super) fn frame_text(buf: &ratatui::buffer::Buffer) -> String {
+pub(in crate::tui) fn frame_text(buf: &ratatui::buffer::Buffer) -> String {
     let area = buf.area;
     let mut out = String::new();
     for y in area.y..area.y + area.height {

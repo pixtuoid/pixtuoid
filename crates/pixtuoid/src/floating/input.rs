@@ -384,6 +384,37 @@ mod tests {
         assert!(!std::ptr::eq(k.theme, pixtuoid_scene::theme::ALL_THEMES[0]));
     }
 
+    /// A refused save reaches `RenderFrames.warning` and the footer tier, within
+    /// the window's budget and never at the cost of `[q]`.
+    #[test]
+    fn a_refused_save_shows_in_the_windows_footer() {
+        use crossterm::event::KeyCode;
+        let mut k = Keys::new();
+        std::fs::write(&k.config_path, "not = [valid").expect("write");
+        for code in [
+            KeyCode::Char('t'),
+            KeyCode::Char('j'),
+            KeyCode::Enter,
+            KeyCode::Char('m'),
+        ] {
+            assert!(!k.press(code));
+        }
+        let frames = k.ui.build_frames(SystemTime::UNIX_EPOCH, &k.snapshot, &[]);
+        let at = super::super::geometry::window_geometry(
+            winit::dpi::PhysicalSize::new(960, 640),
+            crate::test_flash::pack_arc().max_density_variant(),
+            Zoom::default(),
+        );
+        let budget =
+            super::super::overlays::footer_budget(960, pixtuoid_scene::cutaway::chrome_cell(at));
+        let footer = k
+            .renderer
+            .footer(&k.snapshot, budget, true, None, frames.warning.as_deref())
+            .text();
+        assert!(footer.contains("appearance, mute not saved"), "{footer}");
+        assert!(footer.contains("[q]"), "{footer}");
+    }
+
     /// Esc closes an open panel before it quits the window.
     #[test]
     fn esc_closes_a_panel_before_it_quits() {

@@ -29,7 +29,7 @@ use crate::state::{
 
 mod change;
 
-pub use change::{Changed, Outcome, not_detected, nothing_to_do, plugin_left_registered};
+pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 
 /// The wire version this build writes and reads, as `v` on every hello, reply
 /// and office line and in every pairing link: the one field no version may

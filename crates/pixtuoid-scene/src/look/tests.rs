@@ -441,9 +441,9 @@ fn painted_units(
 }
 
 /// Each agent a frame draws hangs its badge where [`Hits::badge`] says, in
-/// both looks at each scale, the same whether it bakes its text or its host
-/// sets it: on the units its plate's painter writes. An agent the floor
-/// doesn't draw has none.
+/// both looks at each scale, the same whoever sets its text, or if no one
+/// does: on the units its plate's painter writes. An agent the floor doesn't
+/// draw has none.
 #[test]
 fn each_drawn_agent_names_the_plate_its_badge_is_drawn_on() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
@@ -458,15 +458,17 @@ fn each_drawn_agent_names_the_plate_its_badge_is_drawn_on() {
     ];
     for scale in [RenderScale::ONE, dense] {
         for look in looks {
-            let [baked, host] = [WorldText::Baked, WorldText::Host].map(|text| {
-                let look = look(scale, text);
-                let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
-                let rendered = render(&mut floor, office.stores(), look, inputs(&scene, now))
-                    .expect("lays out");
-                assert_eq!(rendered.hits.badge(&absent), None, "{look:?}");
-                (look, rendered.hits)
-            });
-            let ((look, hits), (host_look, host_hits)) = (baked, host);
+            let [baked, host, hidden] =
+                [WorldText::Baked, WorldText::Host, WorldText::Hidden].map(|text| {
+                    let look = look(scale, text);
+                    let (mut floor, mut office) =
+                        (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+                    let rendered = render(&mut floor, office.stores(), look, inputs(&scene, now))
+                        .expect("lays out");
+                    assert_eq!(rendered.hits.badge(&absent), None, "{look:?}");
+                    (look, rendered.hits)
+                });
+            let (look, hits) = baked;
             let agents: HashSet<AgentId> = hits
                 .figures()
                 .filter_map(|(target, _)| match target {
@@ -488,12 +490,14 @@ fn each_drawn_agent_names_the_plate_its_badge_is_drawn_on() {
                     "{look:?}: {:?}",
                     badge.agent
                 );
-                assert_eq!(
-                    host_hits.badge(&badge.agent),
-                    plate,
-                    "{host_look:?}: {:?}",
-                    badge.agent
-                );
+                for (unbaked, unbaked_hits) in [&host, &hidden] {
+                    assert_eq!(
+                        unbaked_hits.badge(&badge.agent),
+                        plate,
+                        "{unbaked:?}: {:?}",
+                        badge.agent
+                    );
+                }
             }
         }
     }
@@ -1086,12 +1090,21 @@ fn the_baked_classic_sets_the_star_the_cutaway_does() {
     assert_eq!(star(Look::HALF_BLOCKS), None);
 }
 
-/// A slide bakes every look's text but the half-blocks', which no glyph
-/// fits.
+/// A slide bakes the text of every look that leaves it to its host but the
+/// half-blocks', which no glyph fits, and leaves every other look as it is.
 #[test]
-fn a_slide_bakes_every_look_but_the_half_blocks() {
+fn a_slide_bakes_every_hosts_text_but_the_half_blocks() {
     let (_, scale) = bundled();
-    assert_eq!(Look::HALF_BLOCKS.baked(), Look::HALF_BLOCKS);
+    assert_eq!(Look::HALF_BLOCKS.on_slide(), Look::HALF_BLOCKS);
+    for text in [WorldText::Baked, WorldText::Hidden] {
+        for look in [
+            scaled(RenderScale::ONE, text),
+            scaled(scale, text),
+            Look::Cutaway { scale, text },
+        ] {
+            assert_eq!(look.on_slide(), look);
+        }
+    }
     for look in [
         scaled(scale, WorldText::Host),
         Look::Cutaway {
@@ -1099,7 +1112,7 @@ fn a_slide_bakes_every_look_but_the_half_blocks() {
             text: WorldText::Host,
         },
     ] {
-        let baked = look.baked();
+        let baked = look.on_slide();
         assert_eq!(baked.kind(), look.kind());
         assert!(
             matches!(
@@ -1113,6 +1126,89 @@ fn a_slide_bakes_every_look_but_the_half_blocks() {
                 }
             ),
             "{look:?} → {baked:?}"
+        );
+    }
+}
+
+/// A look hiding its world text draws none of it: in either look its frame is
+/// the one whose host sets the text, which bakes none, where the baked frame
+/// differs over a badge, a bubble, the board and the floor indicator; no host
+/// is handed any, and no star is found.
+#[test]
+fn a_look_hiding_its_text_draws_none_of_it() {
+    use crate::display::{TextRole, TextRun};
+    let (pack, scale) = bundled();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let scene = office(t0);
+    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+    let now = (0..1_200u64)
+        .map(|step| t0 + Duration::from_millis(step * 500))
+        .find(|&now| {
+            render(
+                &mut floor,
+                office.stores(),
+                Look::HALF_BLOCKS,
+                inputs(&scene, now),
+            )
+            .expect("lays out");
+            (floor.raster.host_text()).is_some_and(|text| !text.bubbles.is_empty())
+        })
+        .expect("two wanderers stop to chat");
+    let looks: [fn(RenderScale, WorldText) -> Look; 2] = [
+        |scale, text| Look::Classic { scale, text },
+        |scale, text| Look::Cutaway { scale, text },
+    ];
+    let pen = crate::display::pen::Pen::for_pack(scale, &pack);
+    let k = scale.get();
+    for look in looks {
+        let mut frame = |text| {
+            render(
+                &mut floor,
+                office.stores(),
+                look(scale, text),
+                inputs(&scene, now),
+            )
+            .expect("lays out");
+            let runs: Option<Vec<TextRun>> = floor.raster.host_text().map(|text| {
+                (text.badges.iter().map(crate::display::Badge::run))
+                    .chain(text.bubbles.iter().cloned())
+                    .chain(text.signs.iter().cloned())
+                    .collect()
+            });
+            let pixels = floor.raster.pixels().expect("drawn").clone();
+            (pixels, runs, floor.raster.star())
+        };
+        let (baked, _, _) = frame(WorldText::Baked);
+        let (host, runs, _) = frame(WorldText::Host);
+        let (hidden, handed, star) = frame(WorldText::Hidden);
+        let look = look(scale, WorldText::Hidden);
+        assert_eq!(handed, None, "{look:?}: a host is handed its text");
+        assert_eq!(star, None, "{look:?}: a pointer finds a star");
+        assert!(
+            hidden.as_slice() == host.as_slice(),
+            "{look:?}: the frame draws text"
+        );
+        let differs = |b: Bounds| {
+            let (xs, ys) = (
+                b.x * k..(b.right() * k).min(baked.width()),
+                b.y * k..(b.bottom() * k).min(baked.height()),
+            );
+            ys.clone()
+                .any(|y| xs.clone().any(|x| baked.get(x, y) != hidden.get(x, y)))
+        };
+        let baked_over: HashSet<&str> = (runs.expect("the host's text").iter())
+            .filter(|run| differs(crate::display::compose::run_box(run, pen)))
+            .map(|run| match run.role {
+                TextRole::Badge(_) => "badge",
+                TextRole::Bubble(_) => "bubble",
+                TextRole::Brand | TextRole::Star | TextRole::Board => "board",
+                TextRole::Indicator => "indicator",
+            })
+            .collect();
+        assert_eq!(
+            baked_over,
+            HashSet::from(["badge", "bubble", "board", "indicator"]),
+            "{look:?}: premise: the baked frame draws each"
         );
     }
 }

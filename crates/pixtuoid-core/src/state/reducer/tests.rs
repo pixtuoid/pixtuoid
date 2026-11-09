@@ -1121,6 +1121,108 @@ fn the_stale_sweep_logs_the_wire_label_escaped() {
     );
 }
 
+/// Each stale slot logs its own line once, a slot its stale parent's cascade
+/// takes in the same tick included.
+#[test]
+fn a_stale_child_under_a_stale_parent_logs_once() {
+    use super::STALE_IDLE_TIMEOUT;
+    use crate::source::{AgentEvent, Transport};
+    use crate::test_capture::capture_logs;
+    use crate::{AgentId, Reducer, SceneState};
+    use std::time::{Duration, SystemTime};
+    let mut scene = SceneState::uniform(2);
+    let mut r = Reducer::new();
+    // The child sorts after its parent, so the parent's cascade reaches it first.
+    let mut ids = ["p", "c"].map(|sid| AgentId::from_parts("claude-code", sid));
+    ids.sort();
+    let [parent, child] = ids;
+    for (agent_id, parent_id) in [(parent, None), (child, Some(parent))] {
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id,
+                source: "claude-code".into(),
+                session_id: format!("{agent_id:?}"),
+                cwd: "/repo".into(),
+                parent_id,
+            },
+            SystemTime::UNIX_EPOCH,
+            Transport::Hook,
+        );
+    }
+    let stale_at = SystemTime::UNIX_EPOCH + STALE_IDLE_TIMEOUT + Duration::from_secs(1);
+
+    let out = capture_logs(|| r.tick(&mut scene, stale_at));
+    for id in [parent, child] {
+        let field = format!("agent_id={id:?}");
+        let lines = out
+            .lines()
+            .filter(|l| l.contains("stale agent") && l.contains(&field))
+            .count();
+        assert_eq!(lines, 1, "{id:?}: {out}");
+    }
+    let out = capture_logs(|| r.tick(&mut scene, stale_at + Duration::from_secs(1)));
+    assert!(!out.contains("stale agent"), "{out}");
+}
+
+/// Every tick walks every live slot's scope, so its work must stay linear in
+/// them: a per-slot rescan of the scene made it quadratic.
+#[test]
+fn a_tick_walks_scope_in_linear_work() {
+    use super::STALE_BLOCKED_TIMEOUT;
+    use crate::source::{AgentEvent, Transport};
+    use crate::state::scope::VISITS;
+    use crate::{AgentId, Reducer, SceneState};
+    use std::time::{Duration, SystemTime};
+
+    /// The slots one tick's scope walks visit, over `slots` independent roots
+    /// or one lineage `slots` deep, each past its window so both the
+    /// exemption pass and the cascade walk all of them.
+    fn tick_visits(slots: usize, deep: bool) -> usize {
+        let mut scene = SceneState::uniform(slots);
+        let mut r = Reducer::new();
+        let mut parent_id = None;
+        for i in 0..slots {
+            let agent_id = AgentId::from_parts("claude-code", &format!("s{i}"));
+            r.apply(
+                &mut scene,
+                AgentEvent::SessionStart {
+                    agent_id,
+                    source: "claude-code".into(),
+                    session_id: format!("s{i}"),
+                    cwd: "/repo".into(),
+                    parent_id,
+                },
+                SystemTime::UNIX_EPOCH,
+                Transport::Hook,
+            );
+            if deep {
+                parent_id = Some(agent_id);
+            }
+        }
+        assert_eq!(scene.agents.len(), slots);
+        VISITS.with(|v| v.set(0));
+        r.tick(
+            &mut scene,
+            SystemTime::UNIX_EPOCH + STALE_BLOCKED_TIMEOUT + Duration::from_secs(1),
+        );
+        assert!(scene.agents.values().all(|s| s.exiting_at.is_some()));
+        VISITS.with(std::cell::Cell::get)
+    }
+
+    // Visits, never wall clock: a loaded runner can't flake a count.
+    const SLOTS: usize = 128;
+    for deep in [false, true] {
+        let (once, twice) = (tick_visits(SLOTS, deep), tick_visits(2 * SLOTS, deep));
+        assert!(
+            twice <= 2 * once,
+            "doubling the slots must at most double the tick's work \
+             (deep: {deep}): {once} visits for {SLOTS} slots, {twice} for {}",
+            2 * SLOTS
+        );
+    }
+}
+
 /// An open turn showing no item is the agent between items, alive by its
 /// turn: it is reaped on neither the tool's window alone nor the idle one.
 #[test]

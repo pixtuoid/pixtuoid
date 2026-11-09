@@ -22,19 +22,27 @@ pub struct Overlays {
     pub panels: Option<CellGrid>,
 }
 
+/// `frames`' panels as the window shows them: the popup drawn whole, the
+/// help listing the window's zoom keys.
+pub(crate) fn window_panels(
+    frames: &crate::panels::ui_state::RenderFrames,
+) -> crate::panels::OverlayFrame<'_> {
+    frames.overlays(
+        crate::panels::ui_state::popup_whole(frames.version_popup.open),
+        super::input::ZOOM_SHORTCUTS,
+    )
+}
+
 /// `frames`' open panels over a window `cols`×`rows` screen cells big, as
-/// the TUI paints them over its terminal with the window's zoom keys in the
-/// help, read back as a grid; `None` when none is open.
+/// the TUI paints them over its terminal ([`window_panels`]), read back as a
+/// grid; `None` when none is open.
 pub(crate) fn panels_grid(
     frames: &crate::panels::ui_state::RenderFrames,
     (cols, rows): (u16, u16),
     now: std::time::SystemTime,
     theme: &Theme,
 ) -> Option<CellGrid> {
-    let overlays = frames.overlays(
-        crate::panels::ui_state::popup_whole(frames.version_popup.open),
-        super::input::ZOOM_SHORTCUTS,
-    );
+    let overlays = window_panels(frames);
     if !overlays.any_open() {
         return None;
     }
@@ -60,23 +68,33 @@ pub(crate) fn cell_at((x, y): (f64, f64), cell: CellPx) -> (u16, u16) {
     (at(x, cell.w), at(y, cell.h))
 }
 
-/// What the open panels make of a left press at window point `cursor` on a
-/// `window`-px window showing `shown`: [`crate::panels::modal_mouse`] in its
-/// panel cells, the popup drawn whole.
-pub(crate) fn modal_press(
+/// [`crate::panels::mouse_ladder`] for the pointer at window point `cursor`
+/// on a `window`-px window showing `shown`: in its panel cells, the popup
+/// drawn whole.
+pub(crate) fn mouse_ladder(
     ui: &mut crate::panels::ui_state::UiState,
+    event: crate::panels::PointerEvent,
     cursor: (f64, f64),
     window: (u32, u32),
     shown: Option<PixelFit>,
-) -> crate::panels::ModalMouse {
+    office: &mut impl crate::panels::Office,
+) -> (
+    crate::panels::ModalMouse,
+    Option<pixtuoid_scene::hit::HitAction>,
+) {
     let cells = shown.map(|at| {
         let cell = chrome_cell(at);
         (cell_at(cursor, cell), panel_cells(window, cell))
     });
     let popup_scale = crate::panels::ui_state::popup_whole(ui.modal().version_popup_open);
-    crate::panels::modal_mouse(ui, popup_scale, cells.map(|(at, _)| at), || {
-        cells.map(|(_, screen)| screen)
-    })
+    crate::panels::mouse_ladder(
+        ui,
+        popup_scale,
+        event,
+        cells.map(|(at, _)| at),
+        || cells.map(|(_, screen)| screen),
+        office,
+    )
 }
 
 /// A tooltip's card where it opens: its top-left in window px, and the card.
@@ -576,7 +594,7 @@ mod tests {
     /// on it, and the popup, drawn whole, swallows a press off its link.
     #[test]
     fn a_press_meets_the_open_panels_first() {
-        use crate::panels::ModalMouse;
+        use crate::panels::{ModalMouse, NotedOffice, PointerEvent};
         let window = (960, 640);
         let shown = Some(window_geometry(
             PhysicalSize::new(window.0, window.1),
@@ -596,27 +614,30 @@ mod tests {
             }
             ui
         };
-        let corner = (1.0, 1.0);
+        let mut office = NotedOffice::default();
+        let mut press = |ui: &mut crate::panels::ui_state::UiState| {
+            mouse_ladder(
+                ui,
+                PointerEvent::Press,
+                (1.0, 1.0),
+                window,
+                shown,
+                &mut office,
+            )
+            .0
+        };
         let mut ui = boot(false);
-        assert_eq!(
-            modal_press(&mut ui, corner, window, shown),
-            ModalMouse::Office
-        );
+        assert_eq!(press(&mut ui), ModalMouse::Office);
         ui.toggle_help();
-        assert_eq!(
-            modal_press(&mut ui, corner, window, shown),
-            ModalMouse::Took
-        );
+        assert_eq!(press(&mut ui), ModalMouse::Took);
         assert!(!ui.help_open());
         ui.open_appearance();
+        assert_eq!(press(&mut ui), ModalMouse::Inert);
+        assert_eq!(press(&mut boot(true)), ModalMouse::Inert);
         assert_eq!(
-            modal_press(&mut ui, corner, window, shown),
-            ModalMouse::Inert
-        );
-        let mut ui = boot(true);
-        assert_eq!(
-            modal_press(&mut ui, corner, window, shown),
-            ModalMouse::Inert
+            office.got,
+            [PointerEvent::Press],
+            "only the first reached the office"
         );
     }
 

@@ -16,14 +16,14 @@ pub fn footer_context<'a>(
     floor: Option<FooterFloor>,
     audio_audible: bool,
     volume_flash: Option<u8>,
-    source_warning: Option<&'a str>,
+    warning: Option<&'a str>,
 ) -> FooterContext<'a> {
     FooterContext::new(
         office,
         floor,
         audio_audible,
         volume_flash,
-        source_warning,
+        warning,
         KEYS_STATS,
         KEYS_ALERT,
     )

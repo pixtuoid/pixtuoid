@@ -121,19 +121,73 @@ impl Stop {
 }
 
 /// What the run keeps beside the office: the config it persists to, its
-/// audio, the log the Sources panel's drift history comes from, and whether
-/// this is the first run, which opens the onboarding.
+/// audio, the log the Sources panel's drift history comes from, whether
+/// this is the first run, which opens the onboarding, and the drift the footer
+/// names.
 pub(crate) struct Settings {
     pub(crate) config_path: PathBuf,
     pub(crate) audio: config::AudioConfig,
     pub(crate) log: crate::run_log::LogLocation,
     pub(crate) first_run: bool,
+    pub(crate) drift: crate::doctor::DriftSeen,
 }
 
 /// How the office looks and moves.
 pub(crate) struct Appearance {
     pub(crate) theme: &'static Theme,
     pub(crate) motion: pixtuoid_scene::anim::Motion,
+}
+
+/// Move the window, or resize it from `corner`. A platform may refuse either
+/// outside a real press, and the window then stays as it is.
+fn move_or_resize(window: &Window, corner: Option<ResizeDirection>) {
+    let _ = match corner {
+        Some(corner) => window.drag_resize_window(corner),
+        None => window.drag_window(),
+    };
+}
+
+struct WindowOffice<'a> {
+    renderer: &'a mut OfficeRenderer,
+    window: &'a Window,
+    /// Physical px.
+    cursor: (f64, f64),
+    petting: Option<&'a pixtuoid_scene::pet::PetState>,
+    now: std::time::SystemTime,
+}
+
+impl crate::panels::Office for WindowOffice<'_> {
+    /// Resize from the corner, hand the pointer what the frame on screen
+    /// shows under it (a click or a drag follows), or drag the frameless
+    /// window.
+    fn press(&mut self) {
+        use super::offscreen::Press;
+        let size = self.window.inner_size();
+        let press = self.renderer.press_at(
+            self.cursor,
+            (size.width, size.height),
+            super::offscreen::Pressing {
+                scale_factor: self.window.scale_factor(),
+                petting: self.petting,
+                now: self.now,
+            },
+        );
+        match press {
+            Press::Resize => move_or_resize(self.window, Some(ResizeDirection::SouthEast)),
+            Press::Drag => move_or_resize(self.window, None),
+            Press::Pointer => {}
+        }
+    }
+
+    fn moved(&mut self) {
+        if self.renderer.pointer_moved(self.cursor) {
+            self.window.request_redraw();
+        }
+    }
+
+    fn release(&mut self) -> Option<pixtuoid_scene::hit::HitAction> {
+        self.renderer.release(self.cursor)
+    }
 }
 
 impl FloatingApp {
@@ -147,6 +201,7 @@ impl FloatingApp {
             audio,
             log,
             first_run,
+            drift,
         }: Settings,
         boot: super::PipelineBoot,
     ) -> Self {
@@ -162,7 +217,7 @@ impl FloatingApp {
             config_path: &config_path,
             socket_path: boot.socket_path.clone(),
             log,
-            drift: boot.drift.clone(),
+            drift,
             connected: &boot.connected.snapshot(),
             look: None,
         });
@@ -280,66 +335,59 @@ impl FloatingApp {
         }
     }
 
-    /// A left press: the open panels' first, as the TUI's ladder
-    /// ([`crate::panels::modal_mouse`]); then resize from the corner, hand the
-    /// pointer what the frame on screen shows under it (a click or a drag
-    /// follows), or drag the frameless window. Errors are non-fatal — some
-    /// platforms refuse a drag outside a real press.
-    fn press(&mut self) {
-        use super::offscreen::Press;
-        use crate::panels::ModalMouse;
-        let Some(window) = &self.window else {
-            return;
-        };
+    /// `event` at the pointer through the mouse ladder, as the TUI's
+    /// ([`super::overlays::mouse_ladder`]); `None` with no window.
+    fn mouse(
+        &mut self,
+        event: crate::panels::PointerEvent,
+    ) -> Option<(
+        crate::panels::ModalMouse,
+        Option<pixtuoid_scene::hit::HitAction>,
+    )> {
+        let window = self.window.as_deref()?;
         let size = window.inner_size();
         let cursor = (self.cursor.x, self.cursor.y);
-        match super::overlays::modal_press(
-            &mut self.ui,
-            cursor,
-            (size.width, size.height),
-            self.renderer.shown_fit(),
-        ) {
-            ModalMouse::Office => {}
-            // A panel the press did nothing in leaves the window to drag.
-            ModalMouse::Inert => {
-                let _ = window.drag_window();
-                return;
-            }
-            ModalMouse::Took => {
-                window.request_redraw();
-                return;
-            }
-        }
         let now = self.ui.now();
-        let press = self.renderer.press_at(
+        let shown = self.renderer.shown_fit();
+        let mut office = WindowOffice {
+            renderer: &mut self.renderer,
+            window,
+            cursor,
+            petting: self.petting.as_ref(),
+            now,
+        };
+        Some(super::overlays::mouse_ladder(
+            &mut self.ui,
+            event,
             cursor,
             (size.width, size.height),
-            super::offscreen::Pressing {
-                scale_factor: window.scale_factor(),
-                petting: self.petting.as_ref(),
-                now,
-            },
-        );
-        match press {
-            Press::Resize => {
-                let _ = window.drag_resize_window(ResizeDirection::SouthEast);
+            shown,
+            &mut office,
+        ))
+    }
+
+    fn press(&mut self) {
+        use crate::panels::ModalMouse;
+        match self.mouse(crate::panels::PointerEvent::Press) {
+            Some((ModalMouse::Office, _)) | None => {}
+            // A panel the press did nothing in leaves the window to drag.
+            Some((ModalMouse::Inert, _)) => {
+                if let Some(window) = &self.window {
+                    move_or_resize(window, None);
+                }
             }
-            Press::Drag => {
-                let _ = window.drag_window();
-            }
-            Press::Pointer => {}
+            Some((ModalMouse::Took, _)) => self.request_redraw(),
         }
     }
 
-    /// The left button released: carry out a click as the TUI's does, or set
-    /// a carried figure down, even one a panel opened over mid-carry.
+    /// The left button released: carry out its click.
     fn release(&mut self) {
         use pixtuoid_scene::hit::HitAction;
-        let action = self
-            .renderer
-            .release_under((self.cursor.x, self.cursor.y), &self.ui.modal());
+        let click = self
+            .mouse(crate::panels::PointerEvent::Release)
+            .and_then(|(_, click)| click);
         let now = self.ui.now();
-        match action {
+        match click {
             Some(HitAction::Focus(id)) => {
                 let slot = self
                     .live
@@ -361,9 +409,7 @@ impl FloatingApp {
             }
             None => {}
         }
-        if let Some(window) = &self.window {
-            window.request_redraw();
-        }
+        self.request_redraw();
     }
 
     /// A pressed key, through the TUI's dispatch and its panels; whether it
@@ -414,10 +460,9 @@ impl FloatingApp {
         else {
             return;
         };
-        let audio_now = Instant::now();
-        self.audio_ctl.tick(audio_now);
+        let volume_flash =
+            crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
         let audio_audible = self.audio_ctl.handle().is_audible();
-        let volume_flash = self.audio_ctl.volume_flash(audio_now);
         let at = super::geometry::window_geometry(size, self.pack.max_density_variant(), self.zoom);
         super::geometry::sync_floor_caps(
             &mut self.last_caps_size,
@@ -478,14 +523,11 @@ impl FloatingApp {
                 super::overlays::footer_budget(win_w as usize, chrome_cell(at)),
                 audio_audible,
                 volume_flash,
-                self.live
-                    .as_ref()
-                    .and_then(super::LivePipeline::footer_warning)
-                    .as_deref(),
+                frames.warning.as_deref(),
             ),
             tooltip: self
                 .renderer
-                .tooltip_shows(self.cursor_in, &self.ui.modal())
+                .tooltip_shows(self.cursor_in, &super::overlays::window_panels(&frames))
                 .then(|| self.renderer.drawn_hit_at(cursor, at))
                 .flatten()
                 .and_then(|hit| {
@@ -726,10 +768,7 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = position;
                 self.cursor_in = true;
-                let carried = self.renderer.pointer_moved((position.x, position.y));
-                if carried && let Some(window) = &self.window {
-                    window.request_redraw();
-                }
+                self.mouse(crate::panels::PointerEvent::Move);
                 self.rehover();
             }
             WindowEvent::CursorLeft { .. } => {

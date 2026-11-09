@@ -39,6 +39,8 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
+          # The mise key every read-only job here and in hermetic.yml restores.
+          tools: uv
       - run: just hermetic-build
 
   drift:
@@ -69,6 +71,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
+          tools: uv
       - run: cargo build --release -q -p pixtuoid-core --example bump
       - id: plan
         env:
@@ -136,6 +139,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
+          tools: uv
       # Built before any patch is on the runner, outside the workspace.
       - run: cargo build --release -q -p pixtuoid-core --example bump
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -216,6 +220,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
+          tools: uv
       # Built before any leg's verdicts are on the runner, outside the workspace.
       - run: cargo build --release -q -p pixtuoid-core --example issues --example hermetic
       # The unprofiled CLIs' latest releases, which no leg installs.

@@ -50,7 +50,7 @@ impl Scaled {
         std::mem::swap(&mut self.buf, &mut self.was);
         blow_up(unit, scale, &mut self.buf);
         self.star = None;
-        if text == WorldText::Baked {
+        if text.in_image() {
             let pen = Pen::for_pack(scale, pack);
             for run in runs(host, pen) {
                 if run.role == TextRole::Star {

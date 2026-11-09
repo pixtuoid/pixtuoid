@@ -33,10 +33,11 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::id::AgentId
 pub mod pixtuoid_core::platform
-pub fn pixtuoid_core::platform::home_first_dir() -> core::option::Option<std::path::PathBuf>
+pub const pixtuoid_core::platform::USER_HOME_VAR: &str
+pub fn pixtuoid_core::platform::dirs_home_dir() -> core::option::Option<std::path::PathBuf>
+pub fn pixtuoid_core::platform::go_user_home_dir() -> core::option::Option<std::path::PathBuf>
 pub fn pixtuoid_core::platform::path_env(&str) -> core::option::Option<std::path::PathBuf>
 pub fn pixtuoid_core::platform::path_env_trimmed(&str) -> core::option::Option<std::path::PathBuf>
-pub fn pixtuoid_core::platform::resolve_user_config_dir(&str, core::option::Option<std::path::PathBuf>, core::option::Option<std::path::PathBuf>, &std::path::Path) -> std::path::PathBuf
 pub fn pixtuoid_core::platform::text_env(&str) -> core::option::Option<alloc::string::String>
 pub fn pixtuoid_core::platform::user_home_opt() -> core::option::Option<std::path::PathBuf>
 pub mod pixtuoid_core::remote
@@ -263,6 +264,7 @@ impl pixtuoid_core::remote::Changed
 pub fn pixtuoid_core::remote::Changed::line(&self, &str) -> alloc::string::String
 pub fn pixtuoid_core::remote::Changed::new(&'static str, bool, pixtuoid_core::remote::Outcome, bool, core::option::Option<&'static str>, core::option::Option<&'static str>) -> Self
 pub fn pixtuoid_core::remote::Changed::no_cli(&'static str) -> Self
+pub fn pixtuoid_core::remote::Changed::notes(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn pixtuoid_core::remote::Changed::on(&self) -> bool
 pub fn pixtuoid_core::remote::Changed::outcome(&self) -> pixtuoid_core::remote::Outcome
 pub fn pixtuoid_core::remote::Changed::source(&self) -> &str
@@ -383,7 +385,6 @@ pub fn pixtuoid_core::remote::encode(&pixtuoid_core::state::SceneState, &pixtuoi
 pub fn pixtuoid_core::remote::is_host(&str) -> bool
 pub fn pixtuoid_core::remote::not_detected(&str) -> alloc::string::String
 pub fn pixtuoid_core::remote::nothing_to_do(&str) -> alloc::string::String
-pub fn pixtuoid_core::remote::plugin_left_registered(&str) -> alloc::string::String
 pub fn pixtuoid_core::remote::version_reply() -> serde_json::error::Result<alloc::string::String>
 pub mod pixtuoid_core::source
 pub mod pixtuoid_core::source::antigravity
@@ -873,6 +874,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::hook::SocketBusy
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::hook::SocketBusy
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::SocketBusy
 pub const pixtuoid_core::source::hook::SOCKET_ENV: &str
+pub const pixtuoid_core::source::hook::SOCKET_FLAG: &str
 pub async fn pixtuoid_core::source::hook::endpoint_status(&std::path::Path) -> pixtuoid_core::source::hook::EndpointStatus
 pub fn pixtuoid_core::source::hook::private_endpoint(&std::path::Path, &str) -> std::path::PathBuf
 pub mod pixtuoid_core::source::jcode
@@ -1636,6 +1638,20 @@ impl core::marker::Unpin for pixtuoid_core::state::SceneState
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::SceneState
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::SceneState
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::SceneState
+pub struct pixtuoid_core::state::ScopeTree<'a>
+impl<'a> pixtuoid_core::state::ScopeTree<'a>
+pub fn pixtuoid_core::state::ScopeTree<'a>::children(&self, pixtuoid_core::id::AgentId) -> &[&'a pixtuoid_core::state::AgentSlot]
+pub fn pixtuoid_core::state::ScopeTree<'a>::of(&'a alloc::collections::btree::map::BTreeMap<pixtuoid_core::id::AgentId, pixtuoid_core::state::AgentSlot>) -> Self
+pub fn pixtuoid_core::state::ScopeTree<'a>::roots(&self) -> impl core::iter::traits::iterator::Iterator<Item = &'a pixtuoid_core::state::AgentSlot>
+impl<'a> core::fmt::Debug for pixtuoid_core::state::ScopeTree<'a>
+pub fn pixtuoid_core::state::ScopeTree<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::marker::Send for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::marker::Sync for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::marker::Unpin for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::marker::UnsafeUnpin for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::ScopeTree<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::ScopeTree<'a>
 pub struct pixtuoid_core::state::SlotLabel
 impl pixtuoid_core::state::SlotLabel
 pub const pixtuoid_core::state::SlotLabel::SEP: char
