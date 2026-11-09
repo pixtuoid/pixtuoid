@@ -234,7 +234,16 @@ impl Listener {
             let path = path.to_path_buf();
             tokio::task::spawn_blocking(move || acquire_bind_lock(&path)).await??
         };
-        if tokio::fs::try_exists(path).await.unwrap_or(false) {
+        // `symlink_metadata`, not `try_exists`: a dangling symlink at the path
+        // exists, and is no more ours to replace than a file is.
+        let existing = match tokio::fs::symlink_metadata(path).await {
+            Ok(meta) => Some(meta),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                return Err(anyhow::Error::new(e).context(format!("reading {}", path.display())));
+            }
+        };
+        if let Some(meta) = existing {
             // Lock acquired ⇒ the previous owner is dead ⇒ the socket is residue.
             // Probe anyway: a connect that succeeds, or backlogs (WouldBlock only
             // happens on a live listener), proves an owner predating the lock
@@ -250,13 +259,11 @@ impl Listener {
             }
             // Residue is a socket. Anything else there, a file a mistyped path
             // names included, is not ours to unlink.
-            let is_socket = tokio::fs::symlink_metadata(path)
-                .await
-                .is_ok_and(|m| std::os::unix::fs::FileTypeExt::is_socket(&m.file_type()));
             anyhow::ensure!(
-                is_socket,
-                "{} exists and is not a socket, so it is not replaced: point the endpoint elsewhere",
-                path.display()
+                std::os::unix::fs::FileTypeExt::is_socket(&meta.file_type()),
+                "{} exists and is not a socket, so it is not replaced: run this with {} pointing at a different path",
+                path.display(),
+                super::SOCKET_ENV
             );
             let _ = tokio::fs::remove_file(path).await;
         }

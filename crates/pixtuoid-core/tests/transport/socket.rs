@@ -250,9 +250,8 @@ async fn bind_reclaims_a_stale_socket_file() {
     handle.abort();
 }
 
-// Residue is a socket; a regular file at a mistyped `--socket` or
-// `PIXTUOID_SOCKET` is the user's data (REVIEW.md: a pre-existing endpoint is
-// hostile), so bind refuses it, naming the path, and leaves it intact.
+// A mistyped `--socket` or `PIXTUOID_SOCKET` can name the user's own file
+// (REVIEW.md: a pre-existing endpoint is hostile).
 #[tokio::test]
 async fn bind_refuses_to_reclaim_a_file_that_is_not_a_socket() {
     let dir = TempDir::new().unwrap();
@@ -263,6 +262,23 @@ async fn bind_refuses_to_reclaim_a_file_that_is_not_a_socket() {
         .expect_err("a regular file is not a stale socket");
     assert!(format!("{err:#}").contains("notes.txt"), "{err:#}");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "precious");
+}
+
+#[tokio::test]
+async fn bind_refuses_to_replace_a_dangling_symlink() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("pixtuoid.sock");
+    std::os::unix::fs::symlink(dir.path().join("gone"), &path).unwrap();
+    HookSocketListener::bind(path.clone())
+        .await
+        .expect_err("a dangling symlink is not a stale socket");
+    assert!(
+        std::fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the symlink is left as it was"
+    );
 }
 
 // The socket must be owner-only 0600 the moment it is reachable at the public
