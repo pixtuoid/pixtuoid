@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use saphyr::{LoadableYamlNode, MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
+use saphyr::{MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
 
 use crate::install::target::MergeOutcome;
 use crate::install::verify::{SchemaParse, ShimRef, reconnect};
@@ -101,12 +101,7 @@ fn ystr(s: &str) -> YamlOwned {
 /// Parse the patch file as its top-level array; empty content is the empty
 /// document. A non-array top level is a config we must not touch.
 fn parse_rows(content: &str) -> Result<Vec<YamlOwned>> {
-    if content.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    let docs = YamlOwned::load_from_str(content)
-        .map_err(|e| anyhow::anyhow!("cordis.patch.yml does not parse as YAML: {e}"))?;
-    match docs.into_iter().next() {
+    match crate::install::merge::single_yaml_doc(content, "cordis.patch.yml")? {
         None => Ok(Vec::new()),
         Some(YamlOwned::Sequence(rows)) => Ok(rows),
         Some(_) => bail!(
@@ -595,6 +590,30 @@ mod tests {
     fn merge_refuses_a_non_list_config_rather_than_rewriting_it() {
         assert!(merge_install("just: a mapping\n", "/unused").is_err());
         assert!(merge_uninstall("just: a mapping\n").is_err());
+    }
+
+    #[test]
+    fn a_second_document_is_refused_rather_than_dropped() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_var("DSH_HOME", Some(home.path()), || {
+            let two = "- insert:\n    - id: pixtuoid\n      name: /old/pixtuoid-dsh.mjs\n---\n- id: timer\n  enabled: false\n";
+            for err in [
+                merge_install(two, "/unused").unwrap_err(),
+                merge_uninstall(two).unwrap_err(),
+            ] {
+                assert!(
+                    err.to_string().contains("more than one YAML document"),
+                    "{err}"
+                );
+            }
+            let v = verify_schema(two);
+            assert!(
+                v.issues
+                    .iter()
+                    .any(|i| i.contains("more than one YAML document")),
+                "{v:?}"
+            );
+        });
     }
 
     #[test]

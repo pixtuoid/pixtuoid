@@ -15,7 +15,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use saphyr::{LoadableYamlNode, MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
+use saphyr::{MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
 
 use crate::install::SENTINEL_KEY;
 use crate::install::host_plugin::{self, NAME};
@@ -209,12 +209,7 @@ fn ybool(b: bool) -> YamlOwned {
 }
 
 fn parse_root_mapping(content: &str) -> Result<MappingOwned> {
-    if content.trim().is_empty() {
-        return Ok(MappingOwned::new());
-    }
-    let docs = YamlOwned::load_from_str(content)
-        .map_err(|e| anyhow!("config.yaml no longer parses as YAML: {e}"))?;
-    match docs.into_iter().next() {
+    match merge::single_yaml_doc(content, "config.yaml")? {
         None => Ok(MappingOwned::new()),
         Some(YamlOwned::Mapping(m)) => Ok(m),
         Some(_) => bail!("config.yaml is valid YAML but its root is not a mapping"),
@@ -284,6 +279,15 @@ mod tests {
 
     /// What an older pixtuoid merged, beside a user's own hook and key.
     const LEGACY: &str = "model: gpt\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh\n    - command: \"'/opt/pixtuoid-hook' --source hermes\"\n      timeout: 5\n      _pixtuoid: true\n  on_session_finalize:\n    - command: \"'/opt/pixtuoid-hook' --source hermes\"\n      timeout: 5\n      _pixtuoid: true\n";
+
+    #[test]
+    fn the_legacy_strip_refuses_a_second_document_rather_than_dropping_it() {
+        let err = strip_shell_hooks(&format!("{LEGACY}---\nmodel: other\n")).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("more than one YAML document"),
+            "{err:#}"
+        );
+    }
 
     #[test]
     fn the_legacy_strip_removes_only_managed_hooks_and_keeps_the_users() {

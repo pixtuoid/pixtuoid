@@ -1,4 +1,4 @@
-//! Install-WRITE shared helpers — the config parse/merge core every JSON/TOML
+//! Install-WRITE shared helpers — the config parse/merge core every JSON/TOML/YAML
 //! target's `merge_install`/`merge_uninstall` rides. These fns MUTATE;
 //! `verify.rs` next door is the READ-only soundness detector. Per-target FORMAT
 //! knowledge stays in each `install/<target>.rs` (invariant #3); only the
@@ -6,6 +6,7 @@
 
 use crate::install::target::MergeOutcome;
 use anyhow::Context;
+use saphyr::{LoadableYamlNode, YamlOwned};
 use serde_json::{Map, Value, json};
 
 /// Parse JSON config content, treating empty/whitespace-only as the empty
@@ -68,6 +69,23 @@ pub(crate) fn hook_path_str(p: &std::path::Path) -> anyhow::Result<&str> {
 
 fn parse_toml(content: &str) -> anyhow::Result<toml::Table> {
     toml::from_str(content).context("not valid TOML — refusing to overwrite")
+}
+
+/// The one YAML document `content` holds, `None` when it holds none; `file` names
+/// it in the error. A second is refused: the CLIs whose YAML pixtuoid rewrites
+/// load exactly one and reject the file otherwise (dsh's js-yaml `load`,
+/// `lib/loader.js:1791-1799` @ 4.3.2; Hermes's ruamel `Composer.get_single_node`,
+/// `composer.py:65-83` @ 0.18.16), so a rewrite would drop every later document.
+pub(crate) fn single_yaml_doc(content: &str, file: &str) -> anyhow::Result<Option<YamlOwned>> {
+    let mut docs = YamlOwned::load_from_str(content)
+        .map_err(|e| anyhow::anyhow!("{file} does not parse as YAML: {e}"))?;
+    if docs.len() > 1 {
+        anyhow::bail!(
+            "{file} holds more than one YAML document, which its CLI refuses to load — \
+             refusing to overwrite"
+        );
+    }
+    Ok(docs.pop())
 }
 
 /// `item` as a table, an inline one opened up so a nested array of tables fits in
@@ -357,6 +375,21 @@ mod tests {
                 assert!(!out.changed, "{doc}");
                 assert_eq!(out.content, doc);
             }
+        }
+    }
+
+    #[test]
+    fn a_yaml_file_holds_at_most_one_document() {
+        for none in ["", "  \n", "# only a note\n"] {
+            assert_eq!(single_yaml_doc(none, "c.yml").unwrap(), None, "{none:?}");
+        }
+        assert!(single_yaml_doc("a: 1\n", "c.yml").unwrap().is_some());
+        for two in ["a: 1\n---\nb: 2\n", "- a\n---\n"] {
+            let err = single_yaml_doc(two, "c.yml").unwrap_err().to_string();
+            assert!(
+                err.starts_with("c.yml") && err.contains("more than one YAML document"),
+                "{two:?}: {err}"
+            );
         }
     }
 
