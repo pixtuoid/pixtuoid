@@ -250,8 +250,9 @@ impl Listener {
         anyhow::ensure!(
             path.as_os_str().len() <= max,
             "{} is too long for a hook socket: a path here holds at most {max} bytes, since \
-             bind first listens at a name {extra} bytes longer beside it",
-            path.display()
+             bind first listens at a name {extra} bytes longer beside it; {} a shorter one",
+            path.display(),
+            super::Repoint
         );
         let lock = {
             let path = path.to_path_buf();
@@ -285,8 +286,9 @@ impl Listener {
             // names included, is not ours to unlink.
             anyhow::ensure!(
                 std::os::unix::fs::FileTypeExt::is_socket(&meta.file_type()),
-                "{} exists and is not a socket, so it is not replaced: point this one at a different socket path",
-                path.display()
+                "{} exists and is not a socket, so it is not replaced: {} a different path",
+                path.display(),
+                super::Repoint
             );
             let _ = tokio::fs::remove_file(path).await;
         }

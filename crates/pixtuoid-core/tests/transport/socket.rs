@@ -10,7 +10,7 @@ use tokio::net::UnixStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
-use pixtuoid_core::source::hook::{HookRouter, HookSocketListener};
+use pixtuoid_core::source::hook::{HookRouter, HookSocketListener, SOCKET_ENV, SOCKET_FLAG};
 use pixtuoid_core::source::{AgentEvent, Source, Transport};
 
 #[tokio::test]
@@ -185,6 +185,7 @@ async fn bind_bails_when_a_live_listener_holds_the_path() {
         msg.contains(&path.display().to_string()),
         "error must name the contended path: {msg}"
     );
+    assert_names_both_settings(&msg);
 
     // The losing bind must be side-effect-free — the owner keeps serving.
     let mut s = UnixStream::connect(&path).await.unwrap();
@@ -260,7 +261,9 @@ async fn bind_refuses_to_reclaim_a_file_that_is_not_a_socket() {
     let err = HookSocketListener::bind(path.clone())
         .await
         .expect_err("a regular file is not a stale socket");
-    assert!(format!("{err:#}").contains("notes.txt"), "{err:#}");
+    let text = format!("{err:#}");
+    assert!(text.contains("notes.txt"), "{text}");
+    assert_names_both_settings(&text);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "precious");
 }
 
@@ -306,6 +309,14 @@ async fn bind_names_the_users_path_when_its_temp_sibling_cannot_fit() {
         text.contains(&format!("{} is too long", path.display())),
         "{text}"
     );
+    assert_names_both_settings(&text);
+}
+
+/// A refusal can't know whether the flag or the variable chose the path, so it
+/// names both.
+fn assert_names_both_settings(text: &str) {
+    assert!(text.contains(&format!("--{SOCKET_FLAG}")), "{text}");
+    assert!(text.contains(SOCKET_ENV), "{text}");
 }
 
 // The socket must be owner-only 0600 the moment it is reachable at the public
