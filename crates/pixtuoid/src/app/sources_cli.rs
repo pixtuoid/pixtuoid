@@ -9,6 +9,10 @@ use std::path::Path;
 
 use crate::{config, sources};
 use anyhow::Result;
+use pixtuoid_core::remote::Changed;
+
+/// One source's change in a batch: what it did, or why it failed.
+type Done = (&'static str, Result<Changed>);
 
 /// `pixtuoid setup [--yes]` — the headless onboarding twin. Without `--yes` it is
 /// a DRY RUN: writing to another tool's config is opt-in. Exits non-zero if any
@@ -34,19 +38,7 @@ pub(crate) fn run_setup(yes: bool) -> Result<()> {
         return Ok(());
     }
     let cfg = config::config_path();
-    let mut any_failed = false;
-    for (id, oc) in sources::connect_each(&cfg, &detected) {
-        let oc = sources::ChangeOutcome::from(oc);
-        if matches!(oc, sources::ChangeOutcome::Failed(_)) {
-            any_failed = true;
-        }
-        let row = sources::OutcomeRow::new(id, &oc);
-        writeln!(out, "{}", text_line(&row))?;
-        if let Some(hint) = hint_line(&row) {
-            writeln!(out, "{hint}")?;
-        }
-    }
-    if any_failed {
+    if emit_outcomes(&sources::connect_each(&cfg, &detected), false)? {
         anyhow::bail!("one or more sources failed to connect (see the rows above)");
     }
     Ok(())
@@ -92,100 +84,102 @@ pub(crate) fn run_sources_set(ids: &[String], json: bool) -> Result<()> {
         .iter()
         .map(|id| sources::registered_id(id).map(String::from))
         .collect::<Result<_>>()?;
-    let rows: Vec<sources::OutcomeRow> = sources::reconcile_to(&cfg, &desired)
-        .into_iter()
-        .map(|(id, oc)| sources::OutcomeRow::new(id, &oc))
-        .collect();
-    report_batch(&rows, json)
+    report_batch(&sources::reconcile_to(&cfg, &desired), json)
 }
 
-/// Shared `connect`/`disconnect` presenter. `op` returns the SUCCESS outcome; an
-/// `Err` becomes a `failed` row AND makes the whole command exit non-zero, after
-/// emitting all rows.
+/// Shared `connect`/`disconnect` presenter. An `Err` from `op` becomes a
+/// `failed` row AND makes the whole command exit non-zero, after emitting all
+/// rows.
 pub(crate) fn run_change(
     ids: &[String],
     json: bool,
-    op: impl Fn(&Path, &str) -> Result<sources::ChangeOutcome>,
+    op: impl Fn(&Path, &str) -> Result<Changed>,
 ) -> Result<()> {
     let cfg = config::config_path();
     let sids: Vec<&'static str> = ids
         .iter()
         .map(|id| sources::registered_id(id))
         .collect::<Result<_>>()?;
-    let rows: Vec<sources::OutcomeRow> = sids
-        .into_iter()
-        .map(|sid| {
-            let oc =
-                op(&cfg, sid).unwrap_or_else(|e| sources::ChangeOutcome::Failed(format!("{e:#}")));
-            sources::OutcomeRow::new(sid.to_string(), &oc)
-        })
-        .collect();
+    let rows: Vec<Done> = sids.into_iter().map(|sid| (sid, op(&cfg, sid))).collect();
     report_batch(&rows, json)
 }
 
 /// Emit the batch, then fail the command if any row failed. Emits BEFORE bailing:
-/// the `--json` rows must reach stdout even on the non-zero exit, and the failure
-/// flag is DERIVED from the rows so the two can't disagree.
-fn report_batch(rows: &[sources::OutcomeRow], json: bool) -> Result<()> {
-    emit_outcomes(rows, json)?;
-    if rows
-        .iter()
-        .any(|r| r.outcome == sources::WireOutcome::Failed)
-    {
+/// the `--json` rows must reach stdout even on the non-zero exit.
+fn report_batch(rows: &[Done], json: bool) -> Result<()> {
+    if emit_outcomes(rows, json)? {
         anyhow::bail!("one or more sources failed (see the rows above)");
     }
     Ok(())
 }
 
-/// Print an [`sources::OutcomeRow`] batch as a text table or the `--json` array —
-/// the schema-backed envelope the Raycast extension parses back.
-fn emit_outcomes(rows: &[sources::OutcomeRow], json: bool) -> Result<()> {
+/// Print a batch as a text table or the `--json` array — the schema-backed
+/// envelope the Raycast extension parses back — and say whether a row failed,
+/// DERIVED from the rows printed so the two can't disagree.
+fn emit_outcomes(rows: &[Done], json: bool) -> Result<bool> {
+    let wire: Vec<sources::OutcomeRow> = rows
+        .iter()
+        .map(|(id, done)| sources::OutcomeRow::new(id, done))
+        .collect();
     let mut out = crate::cli_stdout();
     if json {
-        writeln!(out, "{}", serde_json::to_string_pretty(rows)?)?;
+        writeln!(out, "{}", serde_json::to_string_pretty(&wire)?)?;
+        let mut err = std::io::stderr();
+        for note in json_notes(rows) {
+            let _ = writeln!(err, "{note}");
+        }
     } else {
-        for row in rows {
-            writeln!(out, "{}", text_line(row))?;
-            if let Some(hint) = hint_line(row) {
-                writeln!(out, "{hint}")?;
-            }
+        for line in text_lines(rows) {
+            writeln!(out, "{line}")?;
         }
     }
-    Ok(())
+    Ok(wire
+        .iter()
+        .any(|r| r.outcome == sources::WireOutcome::Failed))
 }
 
-/// The ONE human (non-`--json`) row form, shared by `emit_outcomes` and
-/// `run_setup`: `id: token`, with the failure detail appended.
-fn text_line(row: &sources::OutcomeRow) -> String {
-    match &row.message {
-        Some(m) => format!("{}: {}: {m}", row.id, row.outcome),
-        None => format!("{}: {}", row.id, row.outcome),
+/// The ONE human (non-`--json`) form of a batch: each row as `id: token`, with
+/// the failure detail appended, and under it what its change still asks of the
+/// user or warns of (OpenClaw's running gateway must restart before it loads
+/// the plugin).
+fn text_lines(rows: &[Done]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (id, done) in rows {
+        let row = sources::OutcomeRow::new(id, done);
+        lines.push(match &row.message {
+            Some(m) => format!("{}: {}: {m}", row.id, row.outcome),
+            None => format!("{}: {}", row.id, row.outcome),
+        });
+        for note in done.iter().flat_map(Changed::notes) {
+            lines.push(format!("  \u{21b3} {note}"));
+        }
     }
+    lines
 }
 
-/// The optional SECOND human line under a row — the target's post-install step,
-/// because connecting is not always the last one (OpenClaw's running gateway must
-/// restart before it loads the plugin). HUMAN output only: in the `--json`
-/// envelope `message` means FAILURE, so an advisory there would change its meaning.
-fn hint_line(row: &sources::OutcomeRow) -> Option<String> {
-    (row.outcome == sources::WireOutcome::Connected)
-        .then(|| sources::post_install_hint(&row.id))
-        .flatten()
-        .map(|hint| format!("  \u{21b3} {hint}"))
+/// A `--json` batch's notes, for stderr: in the envelope `message` means
+/// FAILURE, so a note there would change its meaning.
+fn json_notes(rows: &[Done]) -> Vec<String> {
+    rows.iter()
+        .flat_map(|(id, done)| {
+            done.iter()
+                .flat_map(Changed::notes)
+                .map(move |note| format!("{id}: {note}"))
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pixtuoid_core::remote::Outcome;
 
     #[test]
     fn outcome_envelope_is_the_id_outcome_raycast_contract() {
+        let connected = Changed::new("codewhale", true, Outcome::Connected, false, None, None);
         let rows = vec![
-            sources::OutcomeRow::new("codewhale".to_string(), &sources::ChangeOutcome::Connected),
-            sources::OutcomeRow::new(
-                "cursor".to_string(),
-                &sources::ChangeOutcome::Failed("boom".into()),
-            ),
+            sources::OutcomeRow::new("codewhale", &Ok(connected)),
+            sources::OutcomeRow::new("cursor", &Err(anyhow::anyhow!("boom"))),
         ];
         assert_eq!(
             serde_json::to_string(&rows).unwrap(),
@@ -193,39 +187,90 @@ mod tests {
         );
     }
 
+    /// What a change still asks or warns of rides under its row: a connect
+    /// isn't always the last step, and a hook off PATH or a plugin left
+    /// registered never fires.
     #[test]
-    fn the_post_install_hint_line_rides_a_connected_row_only() {
-        let row =
-            |id: &str, oc: sources::ChangeOutcome| sources::OutcomeRow::new(id.to_string(), &oc);
-
-        let line = hint_line(&row("openclaw", sources::ChangeOutcome::Connected))
-            .expect("openclaw declares a post-install step");
-        assert!(
-            line.starts_with("  \u{21b3} "),
-            "the hint is an indented continuation of its row — got {line:?}"
+    fn a_changes_notes_ride_under_its_row() {
+        let step = sources::post_install_hint("openclaw").expect("openclaw declares a step");
+        let rows: Vec<Done> = vec![
+            (
+                "openclaw",
+                Ok(Changed::new(
+                    "openclaw",
+                    true,
+                    Outcome::Connected,
+                    true,
+                    Some(step),
+                    None,
+                )),
+            ),
+            (
+                "codex",
+                Ok(Changed::new(
+                    "codex",
+                    false,
+                    Outcome::Disconnected,
+                    false,
+                    None,
+                    Some("codex"),
+                )),
+            ),
+            ("cursor", Err(anyhow::anyhow!("boom"))),
+        ];
+        assert_eq!(
+            text_lines(&rows),
+            [
+                "openclaw: connected".to_owned(),
+                "  \u{21b3} \u{26a0} pixtuoid-hook not on PATH".to_owned(),
+                format!("  \u{21b3} {step}"),
+                "codex: disconnected".to_owned(),
+                "  \u{21b3} \u{26a0} plugin left registered (codex not on PATH)".to_owned(),
+                "cursor: failed: boom".to_owned(),
+            ]
         );
         assert_eq!(
-            line.trim_start_matches([' ', '\u{21b3}']),
-            sources::post_install_hint("openclaw").expect("declared"),
-            "the line carries the target's own hint verbatim, never a re-worded copy"
+            json_notes(&rows),
+            [
+                "openclaw: \u{26a0} pixtuoid-hook not on PATH".to_owned(),
+                format!("openclaw: {step}"),
+                "codex: \u{26a0} plugin left registered (codex not on PATH)".to_owned(),
+            ]
         );
+    }
 
-        // `no_op` especially: a re-run of `setup --yes` must not nag about a
-        // gateway the user already restarted.
-        for oc in [
-            sources::ChangeOutcome::NoOp,
-            sources::ChangeOutcome::Disconnected,
-            sources::ChangeOutcome::Failed("boom".into()),
-        ] {
-            assert!(
-                hint_line(&row("openclaw", oc.clone())).is_none(),
-                "{oc:?} is not a completed install — no step to announce"
-            );
-        }
-
-        assert!(
-            hint_line(&row("claude-code", sources::ChangeOutcome::Connected)).is_none(),
-            "claude-code's hooks take effect on its next run — nothing to add"
+    /// `no_op` especially: a re-run of `sources set` must not nag about a
+    /// gateway the user already restarted.
+    #[test]
+    fn a_change_with_nothing_to_say_is_its_row_alone() {
+        let rows: Vec<Done> = vec![
+            (
+                "openclaw",
+                Ok(Changed::new(
+                    "openclaw",
+                    true,
+                    Outcome::NoOp,
+                    false,
+                    None,
+                    None,
+                )),
+            ),
+            (
+                "claude-code",
+                Ok(Changed::new(
+                    "claude-code",
+                    true,
+                    Outcome::Connected,
+                    false,
+                    None,
+                    None,
+                )),
+            ),
+        ];
+        assert_eq!(
+            text_lines(&rows),
+            ["openclaw: no_op", "claude-code: connected"]
         );
+        assert!(json_notes(&rows).is_empty());
     }
 }

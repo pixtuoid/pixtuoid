@@ -59,55 +59,25 @@ impl From<WireOutcome> for Outcome {
     }
 }
 
+/// A device's outcome as this build's token; a newer server's, which it can't
+/// name, comes back as the error.
+impl TryFrom<Outcome> for WireOutcome {
+    type Error = Outcome;
+
+    fn try_from(outcome: Outcome) -> Result<Self, Outcome> {
+        match outcome {
+            Outcome::Connected => Ok(WireOutcome::Connected),
+            Outcome::Disconnected => Ok(WireOutcome::Disconnected),
+            Outcome::NoOp => Ok(WireOutcome::NoOp),
+            Outcome::Failed => Ok(WireOutcome::Failed),
+            Outcome::Unknown => Err(outcome),
+        }
+    }
+}
+
 impl std::fmt::Display for WireOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.token())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ChangeOutcome {
-    Connected,
-    Disconnected,
-    NoOp,
-    Failed(String),
-}
-
-impl ChangeOutcome {
-    /// Kept separate from the enum's `Debug` so the JSON contract can't drift
-    /// if a variant is renamed.
-    pub(crate) fn wire_outcome(&self) -> WireOutcome {
-        match self {
-            ChangeOutcome::Connected => WireOutcome::Connected,
-            ChangeOutcome::Disconnected => WireOutcome::Disconnected,
-            ChangeOutcome::NoOp => WireOutcome::NoOp,
-            ChangeOutcome::Failed(_) => WireOutcome::Failed,
-        }
-    }
-
-    pub(crate) fn message(&self) -> Option<&str> {
-        match self {
-            ChangeOutcome::Failed(msg) => Some(msg),
-            _ => None,
-        }
-    }
-}
-
-/// An attempted connect or disconnect — [`ChangeOutcome`] without its `NoOp`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum AppliedChange {
-    Connected,
-    Disconnected,
-    Failed(String),
-}
-
-impl From<AppliedChange> for ChangeOutcome {
-    fn from(c: AppliedChange) -> Self {
-        match c {
-            AppliedChange::Connected => ChangeOutcome::Connected,
-            AppliedChange::Disconnected => ChangeOutcome::Disconnected,
-            AppliedChange::Failed(e) => ChangeOutcome::Failed(e),
-        }
     }
 }
 
@@ -133,15 +103,27 @@ pub(crate) struct OutcomeRow {
 }
 
 impl OutcomeRow {
-    /// The message is control-char-stripped HERE, where the untrusted value
-    /// enters the row: it folds another CLI's config content verbatim (a failed
-    /// `connect codewhale` embeds the RAW offending source line) and
-    /// `sources_cli::text_line` prints it to a real terminal (R0615-06).
-    pub(crate) fn new(id: String, outcome: &ChangeOutcome) -> Self {
+    /// `done`'s row. A failure's reason is control-char-stripped HERE, where the
+    /// untrusted value enters the row: it folds another CLI's config content
+    /// verbatim (a failed `connect codewhale` embeds the RAW offending source
+    /// line) and `sources_cli::text_lines` prints it to a real terminal (R0615-06).
+    pub(crate) fn new(id: &str, done: &Result<Changed>) -> Self {
+        let (outcome, message) = match done {
+            // Only a newer server makes an outcome this build can't name, and
+            // what it can't name it doesn't report as a success.
+            Ok(changed) => (
+                WireOutcome::try_from(changed.outcome()).unwrap_or(WireOutcome::Failed),
+                None,
+            ),
+            Err(e) => (
+                WireOutcome::Failed,
+                Some(crate::strip_control_chars(&format!("{e:#}"))),
+            ),
+        };
         OutcomeRow {
-            id,
-            outcome: outcome.wire_outcome(),
-            message: outcome.message().map(crate::strip_control_chars),
+            id: id.to_owned(),
+            outcome,
+            message,
         }
     }
 }
@@ -438,7 +420,8 @@ fn write_flags(cfg: &Path, sid: &str, change: Option<bool>) -> Result<()> {
     config::save_flag_sources(cfg, &keep, change.map(|on| (sid, on)))
 }
 
-/// Connect a source: install its hooks, or turn on a flag-only source's flag.
+/// Connect a source: install its hooks, or turn on a flag-only source's flag;
+/// what that did, which every surface that connects one words.
 ///
 /// **Honors the explicit id — it does NOT gate on CLI presence.** Unlike the
 /// in-TUI panel (which renders an absent CLI as `NoCli` and refuses the toggle),
@@ -450,9 +433,9 @@ fn write_flags(cfg: &Path, sid: &str, change: Option<bool>) -> Result<()> {
 /// # Errors
 ///
 /// If `id` is not a registered source, rewriting `[sources]` fails, or the hook install fails.
-pub(crate) fn connect(cfg: &Path, id: &str) -> Result<ConnectOutcome> {
+pub(crate) fn connect(cfg: &Path, id: &str) -> Result<Changed> {
     let sid = registered_id(id)?;
-    connect_target(cfg, sid, by_source(sid))
+    connect_target(cfg, sid, by_source(sid)).map(|done| connected_change(sid, done))
 }
 
 /// The core of [`connect`], with `target` passed EXPLICITLY so tests can inject
@@ -471,15 +454,15 @@ fn connect_target(
     Ok(ConnectOutcome::Installed(installed))
 }
 
-/// Disconnect a source: uninstall its hooks, or turn off a flag-only source's
-/// flag.
+/// [`connect`]'s disconnect: uninstall its hooks, or turn off a flag-only
+/// source's flag.
 ///
 /// # Errors
 ///
 /// If `id` is not a registered source, rewriting `[sources]` fails, or the hook removal fails.
-pub(crate) fn disconnect(cfg: &Path, id: &str) -> Result<DisconnectOutcome> {
+pub(crate) fn disconnect(cfg: &Path, id: &str) -> Result<Changed> {
     let sid = registered_id(id)?;
-    disconnect_target(cfg, sid, by_source(sid))
+    disconnect_target(cfg, sid, by_source(sid)).map(|done| disconnected_change(sid, done))
 }
 
 fn disconnect_target(
@@ -525,7 +508,10 @@ pub(crate) fn plan_reconcile(
 
 /// Declarative apply: make the connected set EXACTLY `desired`, reporting each
 /// source (a failed item doesn't abort the batch).
-pub(crate) fn reconcile_to(cfg: &Path, desired: &HashSet<String>) -> Vec<(String, ChangeOutcome)> {
+pub(crate) fn reconcile_to(
+    cfg: &Path,
+    desired: &HashSet<String>,
+) -> Vec<(&'static str, Result<Changed>)> {
     let app = config::load(cfg, &mut Vec::new());
     reconcile_from(
         cfg,
@@ -552,28 +538,23 @@ fn reconcile_from(
     cfg: &Path,
     current: &HashSet<String>,
     desired: &HashSet<String>,
-) -> Vec<(String, ChangeOutcome)> {
+) -> Vec<(&'static str, Result<Changed>)> {
     plan_reconcile(current, desired)
         .into_iter()
-        .map(|(sid, action)| (sid.to_string(), apply_one(cfg, sid, action)))
+        .map(|(sid, action)| {
+            let done = match action {
+                Action::Connect => connect(cfg, sid),
+                Action::Disconnect => disconnect(cfg, sid),
+                Action::NoOp => Ok(unchanged(sid, desired.contains(sid))),
+            };
+            (sid, done)
+        })
         .collect()
 }
 
-fn apply_one(cfg: &Path, sid: &'static str, action: Action) -> ChangeOutcome {
-    match action {
-        Action::Connect => apply_want(cfg, sid, true).into(),
-        Action::Disconnect => apply_want(cfg, sid, false).into(),
-        Action::NoOp => ChangeOutcome::NoOp,
-    }
-}
-
-fn apply_want(cfg: &Path, sid: &'static str, want: bool) -> AppliedChange {
-    let done = if want {
-        connect(cfg, sid).map(|_| AppliedChange::Connected)
-    } else {
-        disconnect(cfg, sid).map(|_| AppliedChange::Disconnected)
-    };
-    done.unwrap_or_else(|e| AppliedChange::Failed(format!("{e:#}")))
+/// A change of `sid` to `on` that had nothing to do.
+fn unchanged(sid: &'static str, on: bool) -> Changed {
+    Changed::new(sid, on, WireOutcome::NoOp.into(), false, None, None)
 }
 
 /// Re-read `source_id`'s connection into the live gate after a change, whatever its
@@ -582,8 +563,8 @@ pub(crate) fn refresh_gate(config_path: &Path, connected: &ConnectedSources, sou
     connected.set(source_id, is_connected(config_path, source_id));
 }
 
-/// Connect `sid` and re-read the live gate: what that did, which the Sources panel
-/// and a paired device word alike.
+/// [`connect`] `sid` and re-read the live gate, as the Sources panel and a
+/// paired device change a running instance's sources.
 ///
 /// # Errors
 ///
@@ -595,7 +576,7 @@ pub(crate) fn connect_source(
 ) -> Result<Changed> {
     let done = connect(cfg, sid);
     refresh_gate(cfg, connected, sid);
-    Ok(connected_change(sid, done?))
+    done
 }
 
 /// Both install outcomes read as connected, the flag flip being the real action;
@@ -625,7 +606,7 @@ pub(crate) fn disconnect_source(
 ) -> Result<Changed> {
     let done = disconnect(cfg, sid);
     refresh_gate(cfg, connected, sid);
-    Ok(disconnected_change(sid, done?))
+    done
 }
 
 /// [`connected_change`]'s disconnect.
@@ -712,7 +693,7 @@ fn change_from(
         ToggleIntent::Connect if on => {}
         ToggleIntent::Disconnect if !on => {}
         ToggleIntent::Hint if on => return Changed::no_cli(sid),
-        _ => return Changed::new(sid, on, WireOutcome::NoOp.into(), false, None, None),
+        _ => return unchanged(sid, on),
     }
     let done = if on {
         connect_source(cfg, connected, sid)
@@ -729,22 +710,16 @@ fn change_from(
 /// wire's `unknown` for an outcome only a newer server makes.
 #[cfg(feature = "serve")]
 fn audit_token(outcome: Outcome) -> &'static str {
-    let wire = match outcome {
-        Outcome::Connected => WireOutcome::Connected,
-        Outcome::Disconnected => WireOutcome::Disconnected,
-        Outcome::NoOp => WireOutcome::NoOp,
-        Outcome::Failed => WireOutcome::Failed,
-        Outcome::Unknown => return "unknown",
-    };
-    wire.token()
+    WireOutcome::try_from(outcome).map_or("unknown", WireOutcome::token)
 }
 
 /// Connect each of `ids` — onboarding's confirm and `setup --yes`. Nothing is
 /// connected on a first run, so an id left out needs no change.
-pub(crate) fn connect_each(cfg: &Path, ids: &[&'static str]) -> Vec<(String, AppliedChange)> {
-    ids.iter()
-        .map(|&sid| (sid.to_string(), apply_want(cfg, sid, true)))
-        .collect()
+pub(crate) fn connect_each(
+    cfg: &Path,
+    ids: &[&'static str],
+) -> Vec<(&'static str, Result<Changed>)> {
+    ids.iter().map(|&sid| (sid, connect(cfg, sid))).collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1710,11 +1685,11 @@ mod tests {
     fn connect_each_connects_only_the_ids_it_is_given() {
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
-        let outcomes = connect_each(&cfg, &["copilot"]);
-        assert_eq!(
-            outcomes,
-            vec![("copilot".to_string(), AppliedChange::Connected)]
-        );
+        let outcomes: Vec<_> = connect_each(&cfg, &["copilot"])
+            .into_iter()
+            .map(|(id, done)| (id, done.unwrap().outcome()))
+            .collect();
+        assert_eq!(outcomes, [("copilot", Outcome::Connected)]);
         let app = config::load(&cfg, &mut Vec::new());
         assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
     }
@@ -1886,10 +1861,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
 
-        assert!(matches!(
+        assert_eq!(
             connect(&cfg, "copilot").unwrap(),
-            ConnectOutcome::FlagOnly
-        ));
+            Changed::new("copilot", true, Outcome::Connected, false, None, None)
+        );
         let app = config::load(&cfg, &mut Vec::new());
         assert_eq!(
             app.sources.get("copilot"),
@@ -1897,10 +1872,10 @@ mod tests {
             "flag persisted true"
         );
 
-        assert!(matches!(
+        assert_eq!(
             disconnect(&cfg, "copilot").unwrap(),
-            DisconnectOutcome::FlagOnly
-        ));
+            Changed::new("copilot", false, Outcome::Disconnected, false, None, None)
+        );
         let app = config::load(&cfg, &mut Vec::new());
         assert_eq!(app.sources.get("copilot"), None, "an off flag is not kept");
     }
@@ -1983,28 +1958,38 @@ mod tests {
 
     #[test]
     fn change_outcome_wire_tokens_are_stable() {
-        assert_eq!(ChangeOutcome::Connected.wire_outcome().token(), "connected");
+        for (outcome, token) in [
+            (WireOutcome::Connected, "connected"),
+            (WireOutcome::Disconnected, "disconnected"),
+            (WireOutcome::NoOp, "no_op"),
+            (WireOutcome::Failed, "failed"),
+        ] {
+            assert_eq!(outcome.token(), token);
+            assert_eq!(WireOutcome::try_from(Outcome::from(outcome)), Ok(outcome));
+        }
         assert_eq!(
-            ChangeOutcome::Disconnected.wire_outcome().token(),
-            "disconnected"
+            WireOutcome::try_from(Outcome::Unknown),
+            Err(Outcome::Unknown)
         );
-        assert_eq!(ChangeOutcome::NoOp.wire_outcome().token(), "no_op");
-        assert_eq!(
-            ChangeOutcome::Failed("boom".into()).wire_outcome().token(),
-            "failed"
-        );
-        assert_eq!(ChangeOutcome::Failed("boom".into()).message(), Some("boom"));
-        assert_eq!(ChangeOutcome::Connected.message(), None);
     }
 
+    /// A step never rides the envelope, whose `message` means failure.
     #[test]
     fn outcome_row_json_shape_is_the_raycast_contract() {
-        let ok = OutcomeRow::new("codex".into(), &ChangeOutcome::Connected);
-        let failed = OutcomeRow::new("cursor".into(), &ChangeOutcome::Failed("boom".into()));
+        let row = |outcome, step| {
+            let changed = Changed::new("codex", true, outcome, false, step, None);
+            serde_json::to_string(&OutcomeRow::new("codex", &Ok(changed))).unwrap()
+        };
         assert_eq!(
-            serde_json::to_string(&ok).unwrap(),
+            row(Outcome::Connected, Some("restart it")),
             r#"{"id":"codex","outcome":"connected"}"#
         );
+        assert_eq!(
+            row(Outcome::Unknown, None),
+            r#"{"id":"codex","outcome":"failed"}"#,
+            "an outcome this build can't name is no success"
+        );
+        let failed = OutcomeRow::new("cursor", &Err(anyhow::anyhow!("boom")));
         assert_eq!(
             serde_json::to_string(&failed).unwrap(),
             r#"{"id":"cursor","outcome":"failed","message":"boom"}"#
@@ -2014,14 +1999,14 @@ mod tests {
     #[test]
     fn outcome_row_message_is_control_char_stripped_at_the_authority() {
         let row = OutcomeRow::new(
-            "codex".into(),
-            &ChangeOutcome::Failed("bad\u{1b}]0;PWNED\u{7}key\u{202e}txet".into()),
+            "codex",
+            &Err(anyhow::anyhow!("bad\u{1b}]0;PWNED\u{7}key\u{202e}txet")),
         );
         assert_eq!(row.message.as_deref(), Some("bad]0;PWNEDkeytxet"));
 
         let clean = "processing /home/u/.codex/config.toml: not valid TOML";
         assert_eq!(
-            OutcomeRow::new("codex".into(), &ChangeOutcome::Failed(clean.into()))
+            OutcomeRow::new("codex", &Err(anyhow::anyhow!(clean)))
                 .message
                 .as_deref(),
             Some(clean)
@@ -2065,12 +2050,13 @@ mod tests {
         let outcomes: std::collections::HashMap<_, _> =
             reconcile_from(&cfg, &set(&["copilot"]), &HashSet::new())
                 .into_iter()
+                .map(|(id, done)| (id, done.unwrap().outcome()))
                 .collect();
 
-        assert_eq!(outcomes["copilot"], ChangeOutcome::Disconnected);
+        assert_eq!(outcomes["copilot"], Outcome::Disconnected);
         assert_eq!(
             outcomes["codex"],
-            ChangeOutcome::NoOp,
+            Outcome::NoOp,
             "not connected → no change"
         );
         let app = config::load(&cfg, &mut Vec::new());

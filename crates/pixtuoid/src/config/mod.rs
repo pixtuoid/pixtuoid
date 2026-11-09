@@ -138,6 +138,33 @@ pub(crate) fn resolve_audio(config: &AppConfig) -> AudioConfig {
     }
 }
 
+/// A setting a painter saves the moment the user changes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, enum_map::Enum)]
+pub(crate) enum Setting {
+    Appearance,
+    Mute,
+    Volume,
+}
+
+impl Setting {
+    /// How the footer names it while it isn't saved.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Setting::Appearance => "appearance",
+            Setting::Mute => "mute",
+            Setting::Volume => "volume",
+        }
+    }
+}
+
+/// A save of `setting`, and whether it `landed`: one that didn't leaves the
+/// run's choice to revert at the next launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Saved {
+    pub(crate) setting: Setting,
+    pub(crate) landed: bool,
+}
+
 pub(crate) fn save_audio_muted(path: &Path, muted: bool) -> Result<()> {
     update_config(path, |doc| {
         doc["audio"]["muted"] = toml_edit::value(muted);

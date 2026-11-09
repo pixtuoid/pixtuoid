@@ -178,7 +178,7 @@ impl Chrome {
             session.footer_floor(scene),
             self.audio.is_audible(),
             self.volume_flash,
-            self.frames.source_warning.as_deref(),
+            self.frames.warning.as_deref(),
         )
     }
 }

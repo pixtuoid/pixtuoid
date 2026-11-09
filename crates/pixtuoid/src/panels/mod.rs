@@ -364,48 +364,56 @@ fn change_line(
 /// The source id rides along so the panel can put its selection — and the offered `t`
 /// retry — on the row that actually failed.
 #[derive(Debug)]
-struct OnboardingFailure {
-    source_id: String,
+struct OnboardingNotice {
+    source_id: &'static str,
     line: String,
+    failed: bool,
 }
 
-/// One presentable failure per failed onboarding connect: in TUI mode the alternate
-/// screen owns the terminal, so the warn-floor log is not a user surface.
-fn onboarding_failures(
-    outcomes: &[(String, crate::sources::AppliedChange)],
-) -> Vec<OnboardingFailure> {
-    let mut failures = Vec::new();
-    for (id, oc) in outcomes {
-        if let crate::sources::AppliedChange::Failed(e) = oc {
-            tracing::warn!(source = %id, error = ?e, "onboarding: connect failed");
-            let name = pixtuoid_core::source::display_name(id).unwrap_or(id);
-            failures.push(OnboardingFailure {
-                source_id: id.clone(),
-                line: connection::format_failure(connection::FailedOp::Connect, name, e),
-            });
-        }
+/// One presentable line per onboarding connect the user must still hear about —
+/// a failure, or a success whose change asks a step or warns: in TUI mode the
+/// alternate screen owns the terminal, so the warn-floor log is not a user surface.
+fn onboarding_notices(
+    outcomes: &[(&'static str, anyhow::Result<pixtuoid_core::remote::Changed>)],
+) -> Vec<OnboardingNotice> {
+    let mut notices = Vec::new();
+    for &(id, ref done) in outcomes {
+        let name = pixtuoid_core::source::display_name(id).unwrap_or(id);
+        let line = match done {
+            Err(e) => {
+                tracing::warn!(source = %id, error = ?e, "onboarding: connect failed");
+                connection::format_failure(connection::FailedOp::Connect, name, &format!("{e:#}"))
+            }
+            Ok(changed) if !changed.notes().is_empty() => changed.line(name),
+            Ok(_) => continue,
+        };
+        notices.push(OnboardingNotice {
+            source_id: id,
+            line,
+            failed: done.is_err(),
+        });
     }
-    failures
+    notices
 }
 
-/// Open the Sources panel ON the first failed row and seed its result line, so the `t`
-/// retry is one keystroke away on the right source.
-fn surface_onboarding_failures(
+/// Open the Sources panel ON the first failed row, else the first noted one, and seed
+/// its result line, so the `t` retry is one keystroke away on the right source.
+fn surface_onboarding_notices(
     ui: &mut ui_state::UiState,
     connected: &crate::runtime::ConnectedSources,
-    failures: Vec<OnboardingFailure>,
+    notices: Vec<OnboardingNotice>,
 ) {
-    let Some(first) = failures.first() else {
+    let Some(first) = notices.iter().find(|n| n.failed).or(notices.first()) else {
         return;
     };
-    let first_id = first.source_id.clone();
+    let first_id = first.source_id;
     let rows = connection::build_rows(&connected.snapshot(), &ui.read_conn_log());
     ui.open_connection(rows);
-    ui.select_connection_source(&first_id);
+    ui.select_connection_source(first_id);
     ui.connection.last_result = Some(
-        failures
+        notices
             .into_iter()
-            .map(|f| f.line)
+            .map(|n| n.line)
             .collect::<Vec<_>>()
             .join("  \u{b7}  "),
     );
@@ -440,6 +448,17 @@ fn step_look(
 fn set_look<H: Host>(host: &mut H, look: pixtuoid_scene::look::LookKind) {
     if let Err(e) = host.set_look(look) {
         tracing::warn!(error = ?e, "look switch failed");
+    }
+}
+
+/// Run an audio gesture, noting the save it ran for the footer.
+fn audio<H: Host>(cx: &mut KeyCtx<'_, H>, action: crate::audio::AudioAction) {
+    let paused = cx.ui.paused();
+    if let Some(saved) = cx
+        .audio_ctl
+        .apply(action, paused, Instant::now(), cx.respawn)
+    {
+        cx.ui.note_save(saved);
     }
 }
 
@@ -614,10 +633,14 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::AppearanceCommit => {
             if let Some(committed) = cx.ui.commit_appearance() {
                 let name = theme::ALL_THEMES[committed.theme].name;
-                if let Err(e) = crate::config::save_appearance(cx.config_path, name, committed.look)
-                {
+                let saved = crate::config::save_appearance(cx.config_path, name, committed.look);
+                if let Err(e) = &saved {
                     tracing::warn!(error = ?e, "failed to persist the appearance");
                 }
+                cx.ui.note_save(crate::config::Saved {
+                    setting: crate::config::Setting::Appearance,
+                    landed: saved.is_ok(),
+                });
             }
         }
         KeyAction::AppearanceCancel => {
@@ -630,22 +653,8 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::NavigateFloor(target) => {
             cx.host.navigate_floor(target, cx.now);
         }
-        KeyAction::ToggleAudioMute => {
-            cx.audio_ctl.apply(
-                crate::audio::AudioAction::ToggleMute,
-                cx.ui.paused(),
-                Instant::now(),
-                cx.respawn,
-            );
-        }
-        KeyAction::AdjustVolume(up) => {
-            cx.audio_ctl.apply(
-                crate::audio::AudioAction::Volume(up),
-                cx.ui.paused(),
-                Instant::now(),
-                cx.respawn,
-            );
-        }
+        KeyAction::ToggleAudioMute => audio(cx, crate::audio::AudioAction::ToggleMute),
+        KeyAction::AdjustVolume(up) => audio(cx, crate::audio::AudioAction::Volume(up)),
         KeyAction::ToggleDashboard => cx.ui.toggle_dashboard(cx.snapshot),
         KeyAction::DashboardClose => cx.ui.close_dashboard(),
         KeyAction::DashboardUp => cx.ui.dashboard_move(cx.snapshot, -1),
@@ -752,9 +761,9 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
             for (id, _) in &outcomes {
                 crate::sources::refresh_gate(cx.config_path, cx.connected, id);
             }
-            let failed = onboarding_failures(&outcomes);
+            let notices = onboarding_notices(&outcomes);
             cx.ui.close_onboarding();
-            surface_onboarding_failures(cx.ui, cx.connected, failed);
+            surface_onboarding_notices(cx.ui, cx.connected, notices);
         }
         KeyAction::OnboardingSkip => cx.ui.close_onboarding(),
         KeyAction::Redraw => {
@@ -1536,50 +1545,66 @@ mod dispatch_tests {
         );
     }
 
+    /// A failure's reason and a success's step both reach the user, each in the
+    /// panel's own words; a change with nothing to say stays quiet.
     #[test]
-    fn a_failed_onboarding_connect_reports_the_reason_to_the_caller() {
-        use crate::sources::AppliedChange;
+    fn onboarding_reports_each_failure_and_each_step() {
+        use pixtuoid_core::remote::{Changed, Outcome};
+        let step = crate::sources::post_install_hint("openclaw").expect("openclaw declares one");
+        let reason = "settings is valid JSON but not an object";
         let outcomes = vec![
             (
-                "cursor".to_string(),
-                AppliedChange::Failed("settings is valid JSON but not an object".into()),
+                "openclaw",
+                Ok(Changed::new(
+                    "openclaw",
+                    true,
+                    Outcome::Connected,
+                    false,
+                    Some(step),
+                    None,
+                )),
             ),
-            ("antigravity".to_string(), AppliedChange::Connected),
+            ("cursor", Err(anyhow::anyhow!(reason))),
+            (
+                "antigravity",
+                Ok(Changed::new(
+                    "antigravity",
+                    true,
+                    Outcome::Connected,
+                    false,
+                    None,
+                    None,
+                )),
+            ),
         ];
-        let failures = super::onboarding_failures(&outcomes);
+        let name = |id| pixtuoid_core::source::display_name(id).expect("a registered source");
+        let notices: Vec<_> = super::onboarding_notices(&outcomes)
+            .into_iter()
+            .map(|n| (n.source_id, n.line, n.failed))
+            .collect();
         assert_eq!(
-            failures.len(),
-            1,
-            "only the failed row reports: {failures:?}"
-        );
-        let line = &failures[0].line;
-        assert!(
-            line.contains("settings is valid JSON but not an object"),
-            "the REASON must survive — it is the whole point: {line}"
-        );
-        let display_name =
-            pixtuoid_core::source::display_name("cursor").expect("cursor is a registered source");
-        assert!(
-            line.contains(display_name),
-            "the row must be named the way every other surface names it: {line}"
-        );
-        assert_eq!(
-            line,
-            &connection::format_failure(
-                connection::FailedOp::Connect,
-                display_name,
-                "settings is valid JSON but not an object",
-            ),
-            "the panel's own wording, from the panel's own formatter: {line}"
-        );
-        assert_eq!(
-            failures[0].source_id, "cursor",
-            "the failure carries the row it belongs to, so the panel can select it"
+            notices,
+            [
+                (
+                    "openclaw",
+                    format!("\u{2713} {} connected \u{b7} {step}", name("openclaw")),
+                    false
+                ),
+                (
+                    "cursor",
+                    connection::format_failure(
+                        connection::FailedOp::Connect,
+                        name("cursor"),
+                        reason
+                    ),
+                    true
+                ),
+            ]
         );
     }
 
     #[test]
-    fn onboarding_failures_open_the_sources_panel_on_the_failed_row() {
+    fn onboarding_notices_open_the_sources_panel_on_the_failed_row() {
         let connected = crate::runtime::ConnectedSources::default();
         let mut ui = crate::panels::ui_state::UiState::new(
             pixtuoid_scene::theme::ALL_THEMES[0],
@@ -1590,30 +1615,41 @@ mod dispatch_tests {
         );
         assert!(!ui.modal().connection_open, "panel starts closed");
 
-        super::surface_onboarding_failures(&mut ui, &connected, Vec::new());
+        super::surface_onboarding_notices(&mut ui, &connected, Vec::new());
         assert!(
             !ui.modal().connection_open,
             "a clean apply must not pop the panel"
         );
 
-        super::surface_onboarding_failures(
+        super::surface_onboarding_notices(
             &mut ui,
             &connected,
-            vec![super::OnboardingFailure {
-                source_id: "cursor".into(),
-                line: "Cursor: connect failed \u{2014} boom".into(),
-            }],
+            vec![
+                super::OnboardingNotice {
+                    source_id: "openclaw",
+                    line: "\u{2713} OpenClaw connected \u{b7} restart it".into(),
+                    failed: false,
+                },
+                super::OnboardingNotice {
+                    source_id: "cursor",
+                    line: "Cursor: connect failed \u{2014} boom".into(),
+                    failed: true,
+                },
+            ],
         );
-        assert!(ui.modal().connection_open, "a failure opens the panel");
+        assert!(ui.modal().connection_open, "a notice opens the panel");
         assert_eq!(
             ui.connection.last_result.as_deref(),
-            Some("Cursor: connect failed \u{2014} boom"),
-            "the reason rides the panel's own result line"
+            Some(
+                "\u{2713} OpenClaw connected \u{b7} restart it  \u{b7}  Cursor: connect failed \u{2014} boom"
+            ),
+            "every notice rides the panel's own result line"
         );
         let selected = ui.connection.rows[ui.connection.selected].source_id;
         assert_eq!(
             selected, "cursor",
-            "the panel must open ON the failed row — `t` acts on the SELECTED one"
+            "the panel must open ON the failed row, not the first noted one — \
+             `t` acts on the SELECTED one"
         );
         assert_ne!(
             ui.connection.selected, 0,

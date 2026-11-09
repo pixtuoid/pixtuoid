@@ -11,6 +11,7 @@ use std::sync::mpsc;
 #[cfg(feature = "audio")]
 use std::time::Instant;
 
+use crate::config::{Saved, Setting};
 use pixtuoid_scene::audio::AudioFrame;
 #[cfg(all(feature = "audio", test))]
 use pixtuoid_scene::audio::OneShot;
@@ -142,24 +143,31 @@ impl AudioController {
         }
     }
 
-    /// Run one gesture: the shared transition, then persist — mute NOW, volume debounced.
+    /// Run one gesture: the shared transition, then persist — mute NOW, volume
+    /// debounced. The save it ran now, if any.
+    #[must_use = "a failed save must reach the footer"]
     pub(crate) fn apply(
         &mut self,
         action: AudioAction,
         paused: bool,
         now: std::time::Instant,
         respawn: impl FnOnce(&AudioHandle, f32),
-    ) {
+    ) -> Option<Saved> {
         let persist = apply_audio_action(&mut self.ui, action, paused, respawn);
-        if persist.muted
-            && let Err(e) = crate::config::save_audio_muted(&self.config_path, self.ui.muted)
-        {
-            tracing::warn!(error = ?e, "failed to persist audio mute");
-        }
         if persist.volume_nudged {
             self.volume_dirty = true;
             self.flash_at = Some(now);
         }
+        persist.muted.then(|| {
+            let saved = crate::config::save_audio_muted(&self.config_path, self.ui.muted);
+            if let Err(e) = &saved {
+                tracing::warn!(error = ?e, "failed to persist audio mute");
+            }
+            Saved {
+                setting: Setting::Mute,
+                landed: saved.is_ok(),
+            }
+        })
     }
 
     fn flashing(&self, now: std::time::Instant) -> bool {
@@ -173,23 +181,29 @@ impl AudioController {
             .then(|| (self.ui.volume * 100.0).round() as u8)
     }
 
-    /// Per frame: flush the debounced volume save once its window has elapsed.
-    pub(crate) fn tick(&mut self, now: std::time::Instant) {
-        if self.volume_dirty && !self.flashing(now) {
-            self.save_volume();
-        }
+    /// Per frame: flush the debounced volume save once its window has elapsed,
+    /// which it returns.
+    #[must_use = "a failed save must reach the footer"]
+    pub(crate) fn tick(&mut self, now: std::time::Instant) -> Option<Saved> {
+        (self.volume_dirty && !self.flashing(now)).then(|| self.save_volume())
     }
 
     fn flush_on_exit(&mut self) {
         if self.volume_dirty {
-            self.save_volume();
+            // The run ends: the log is all that's left to tell.
+            let _ = self.save_volume();
         }
     }
 
-    fn save_volume(&mut self) {
+    fn save_volume(&mut self) -> Saved {
         self.volume_dirty = false;
-        if let Err(e) = crate::config::save_audio_volume(&self.config_path, self.ui.volume) {
+        let saved = crate::config::save_audio_volume(&self.config_path, self.ui.volume);
+        if let Err(e) = &saved {
             tracing::warn!(error = ?e, "failed to persist audio volume");
+        }
+        Saved {
+            setting: Setting::Volume,
+            landed: saved.is_ok(),
         }
     }
 
@@ -306,7 +320,7 @@ mod controller_tests {
                 let _ = done.set(install_slow_fake_device(h));
             },
         );
-        c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
+        let _ = c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         c.stop();
         assert!(done.get().unwrap().load(Ordering::SeqCst), "stop joins");
         assert!(
@@ -326,7 +340,13 @@ mod controller_tests {
     fn mute_persists_immediately_and_does_not_arm_the_volume_flash() {
         let (mut c, _d) = ctl(false, 0.4);
         let t0 = Instant::now();
-        c.apply(AudioAction::ToggleMute, false, t0, |_, _| {});
+        assert_eq!(
+            c.apply(AudioAction::ToggleMute, false, t0, |_, _| {}),
+            Some(Saved {
+                setting: Setting::Mute,
+                landed: true
+            })
+        );
         assert!(
             std::fs::read_to_string(&c.config_path)
                 .unwrap()
@@ -341,19 +361,28 @@ mod controller_tests {
         let (mut c, _d) = ctl(false, 0.50);
         let t0 = Instant::now();
         let saved = |c: &AudioController| std::fs::read_to_string(&c.config_path).unwrap();
-        c.apply(AudioAction::Volume(true), false, t0, |_, _| {});
+        assert_eq!(
+            c.apply(AudioAction::Volume(true), false, t0, |_, _| {}),
+            None
+        );
         assert_eq!(c.volume_flash(t0), Some(55), "readout armed immediately");
         assert!(
             !saved(&c).contains("volume"),
             "volume NOT persisted mid-flash (debounced, not per-repeat)"
         );
-        c.tick(t0 + Duration::from_millis(500));
+        assert_eq!(c.tick(t0 + Duration::from_millis(500)), None);
         assert!(
             !saved(&c).contains("volume"),
             "still within the window → no flush"
         );
         let after = t0 + Duration::from_millis(VOLUME_FLASH_MS as u64 + 50);
-        c.tick(after);
+        assert_eq!(
+            c.tick(after),
+            Some(Saved {
+                setting: Setting::Volume,
+                landed: true
+            })
+        );
         assert!(
             saved(&c).contains("volume"),
             "window elapsed → debounced save flushes"
@@ -361,10 +390,34 @@ mod controller_tests {
         assert_eq!(c.volume_flash(after), None, "readout expired");
     }
 
+    /// A config the save refuses to rewrite fails each save, which says so.
+    #[test]
+    fn a_refused_save_says_it_did_not_land() {
+        let (mut c, _d) = ctl(false, 0.50);
+        std::fs::write(&c.config_path, "not = [valid").unwrap();
+        let failed = |setting| {
+            Some(Saved {
+                setting,
+                landed: false,
+            })
+        };
+        let t0 = Instant::now();
+        assert_eq!(
+            c.apply(AudioAction::Volume(false), false, t0, |_, _| {}),
+            None
+        );
+        let after = t0 + Duration::from_millis(VOLUME_FLASH_MS as u64 + 50);
+        assert_eq!(c.tick(after), failed(Setting::Volume));
+        assert_eq!(
+            c.apply(AudioAction::ToggleMute, false, after, |_, _| {}),
+            failed(Setting::Mute)
+        );
+    }
+
     #[test]
     fn flush_on_exit_writes_a_pending_nudge() {
         let (mut c, _d) = ctl(false, 0.50);
-        c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
+        let _ = c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         c.flush_on_exit();
         assert!(
             std::fs::read_to_string(&c.config_path)
@@ -378,7 +431,7 @@ mod controller_tests {
     fn drop_persists_a_pending_nudge_even_without_the_q_path() {
         let (mut c, _dir) = ctl(false, 0.50);
         let path = c.config_path.clone();
-        c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
+        let _ = c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         assert!(
             !std::fs::read_to_string(&path).unwrap().contains("volume"),
             "not yet persisted — still inside the debounce window"

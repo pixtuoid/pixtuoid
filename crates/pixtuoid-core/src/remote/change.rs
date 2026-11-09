@@ -1,5 +1,5 @@
-//! What a device's [`Ask::Change`](super::Ask::Change) did, and the words a
-//! device and the Sources panel show for it.
+//! What a device's [`Ask::Change`](super::Ask::Change) did, and the words every
+//! surface that changes a source shows for it.
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -91,9 +91,9 @@ impl Changed {
             on,
             outcome,
             no_cli,
-            hook_off_path,
-            step,
-            plugin_left,
+            hook_off_path: _,
+            step: _,
+            plugin_left: _,
         } = self;
         let mut line = match outcome {
             Outcome::Connected => format!("\u{2713} {display_name} connected"),
@@ -108,18 +108,35 @@ impl Changed {
             }
             Outcome::Unknown => format!("{display_name}: done"),
         };
-        if *hook_off_path {
-            line.push_str(" \u{00b7} \u{26a0} pixtuoid-hook not on PATH");
-        }
-        if let Some(step) = step {
+        for note in self.notes() {
             line.push_str(" \u{00b7} ");
-            line.push_str(step);
-        }
-        if let Some(cli) = plugin_left {
-            line.push_str(" \u{00b7} \u{26a0} ");
-            line.push_str(&plugin_left_registered(cli));
+            line.push_str(&note);
         }
         line
+    }
+
+    /// What it still asks of the user or warns of, each a phrase [`Self::line`]
+    /// appends.
+    pub fn notes(&self) -> Vec<String> {
+        let Self {
+            source: _,
+            on: _,
+            outcome: _,
+            no_cli: _,
+            hook_off_path,
+            step,
+            plugin_left,
+        } = self;
+        [
+            hook_off_path.then(|| "\u{26a0} pixtuoid-hook not on PATH".to_owned()),
+            step.clone(),
+            plugin_left
+                .as_deref()
+                .map(|cli| format!("\u{26a0} {}", plugin_left_registered(cli))),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 }
 
@@ -282,6 +299,36 @@ mod tests {
                 format!("Codex: {op} failed \u{2014} `pixtuoid {op} codex` on the server says why")
             );
         }
+    }
+
+    #[test]
+    fn what_a_change_still_asks_reads_as_its_notes() {
+        let warned = Changed::new(
+            "openclaw",
+            true,
+            Outcome::Connected,
+            true,
+            Some("restart it"),
+            None,
+        );
+        assert_eq!(
+            warned.notes(),
+            ["\u{26a0} pixtuoid-hook not on PATH", "restart it"]
+        );
+        let stranded = Changed::new(
+            "codex",
+            false,
+            Outcome::Disconnected,
+            false,
+            None,
+            Some("codex"),
+        );
+        assert_eq!(
+            stranded.notes(),
+            ["\u{26a0} plugin left registered (codex not on PATH)"]
+        );
+        let plain = Changed::new("codex", true, Outcome::Connected, false, None, None);
+        assert!(plain.notes().is_empty());
     }
 
     #[test]

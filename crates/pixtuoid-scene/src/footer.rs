@@ -246,8 +246,9 @@ pub struct FooterContext<'a> {
     /// Transient +/- readout: `Some(percent)` just after a volume nudge —
     /// renders as `♩ N%`.
     pub(crate) volume_flash: Option<u8>,
-    /// Pre-merged one-line death>drift warning; `None` while healthy.
-    pub(crate) source_warning: Option<&'a str>,
+    /// The painter's one-line warning, pre-merged by its priority; `None` while
+    /// healthy.
+    pub(crate) warning: Option<&'a str>,
     /// The stats-tier right keybind tail.
     pub(crate) keys_stats: &'a str,
     /// The alert-tier right keybind tail.
@@ -261,7 +262,7 @@ impl<'a> FooterContext<'a> {
         floor: Option<FooterFloor>,
         audio_audible: bool,
         volume_flash: Option<u8>,
-        source_warning: Option<&'a str>,
+        warning: Option<&'a str>,
         keys_stats: &'a str,
         keys_alert: &'a str,
     ) -> Self {
@@ -271,7 +272,7 @@ impl<'a> FooterContext<'a> {
             floor,
             audio_audible,
             volume_flash,
-            source_warning,
+            warning,
             keys_stats,
             keys_alert,
         }
@@ -308,7 +309,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     // A dead source outranks the stats: the counts go stale once a transport is
     // gone, so the warning IS the status until restart — truncated to fit rather
     // than tiered away.
-    if let Some(warn) = ctx.source_warning {
+    if let Some(warn) = ctx.warning {
         let w = budget as usize;
         // Clipped, never dropped: a row with no `[q]` is a user stuck in the
         // alternate screen.
@@ -578,7 +579,7 @@ mod tests {
         tools: &[ToolTally],
         audio_audible: bool,
         volume_flash: Option<u8>,
-        source_warning: Option<&'a str>,
+        warning: Option<&'a str>,
     ) -> FooterInputs<'a> {
         FooterInputs {
             counts: crate::tally::scene_stats(scene),
@@ -589,7 +590,7 @@ mod tests {
                 floor: None,
                 audio_audible,
                 volume_flash,
-                source_warning,
+                warning,
                 keys_stats: KEYS_STATS,
                 keys_alert: KEYS_ALERT,
             },

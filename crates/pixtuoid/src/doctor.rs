@@ -202,10 +202,12 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DriftSeen {
 }
 
 /// The one footer warning every painter shows: a source's death (HIGHEST
-/// priority — the office is partially frozen), else a passive decode-drift
-/// nudge naming each `drifted` source prefix.
+/// priority — the office is partially frozen), else each setting named
+/// `unsaved`, which the user just changed and which reverts at the next launch,
+/// else a passive decode-drift nudge naming each `drifted` source prefix.
 pub fn footer_warning(
     deaths: &[pixtuoid_core::source::manager::SourceDeath],
+    unsaved: &[&str],
     drifted: &[&str],
 ) -> Option<String> {
     match deaths {
@@ -222,6 +224,12 @@ pub fn footer_warning(
                 many.len()
             ));
         }
+    }
+    if !unsaved.is_empty() {
+        return Some(format!(
+            "{} not saved — reverts at the next launch (see log)",
+            unsaved.join(", ")
+        ));
     }
     if drifted.is_empty() {
         return None;
@@ -2809,14 +2817,14 @@ mod tests {
         assert_eq!(d, vec!["cc".to_string(), "cx".to_string()]);
         let died = |s: &str| pixtuoid_core::source::manager::SourceDeath::new(s, "boom");
         assert_eq!(
-            footer_warning(&[died("claude-code")], &d).as_deref(),
+            footer_warning(&[died("claude-code")], &[], &d).as_deref(),
             Some("claude-code source died — its agents are frozen; restart pixtuoid (see log)")
         );
         assert_eq!(
-            footer_warning(&[died("claude-code"), died("codex")], &d).as_deref(),
+            footer_warning(&[died("claude-code"), died("codex")], &[], &d).as_deref(),
             Some("2 sources died — restart pixtuoid (see log)")
         );
-        let w = footer_warning(&[], &d).unwrap();
+        let w = footer_warning(&[], &[], &d).unwrap();
         assert!(
             w.contains("cc·") && w.contains("cx·") && w.contains("doctor"),
             "{w}"
@@ -2824,9 +2832,26 @@ mod tests {
         // The footer painter (`footer.rs` `" ⚠ {warn} "`) owns the warning glyph;
         // an embedded one double-prints (`⚠ ⚠ …`).
         assert!(!w.contains('⚠'), "drift msg must not embed ⚠: {w}");
-        let dw = footer_warning(&[died("claude-code")], &d).unwrap();
+        let dw = footer_warning(&[died("claude-code")], &[], &d).unwrap();
         assert!(!dw.contains('⚠'), "death msg must not embed ⚠: {dw}");
-        assert_eq!(footer_warning(&[], &[]), None);
+        assert_eq!(footer_warning(&[], &[], &[]), None);
+    }
+
+    /// A setting the user just changed outranks the passive drift nudge, which
+    /// lasts the run, and yields only to a death.
+    #[test]
+    fn an_unsaved_setting_outranks_drift_and_yields_to_a_death() {
+        let died = pixtuoid_core::source::manager::SourceDeath::new("codex", "boom");
+        let drifted = ["cc"];
+        let unsaved = footer_warning(&[], &["appearance", "volume"], &drifted);
+        assert_eq!(
+            unsaved.as_deref(),
+            Some("appearance, volume not saved — reverts at the next launch (see log)")
+        );
+        assert_eq!(
+            footer_warning(std::slice::from_ref(&died), &["appearance"], &drifted),
+            footer_warning(&[died], &[], &[])
+        );
     }
 
     #[test]
