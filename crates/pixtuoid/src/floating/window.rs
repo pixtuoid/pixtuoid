@@ -136,9 +136,9 @@ pub(crate) struct Appearance {
     pub(crate) motion: pixtuoid_scene::anim::Motion,
 }
 
-/// Drag the frameless window's frame, or resize it from `corner`. A platform
-/// may refuse either outside a real press, and the window then stays as it is.
-fn drag_frame(window: &Window, corner: Option<ResizeDirection>) {
+/// Move the window, or resize it from `corner`. A platform may refuse either
+/// outside a real press, and the window then stays as it is.
+fn move_or_resize(window: &Window, corner: Option<ResizeDirection>) {
     let _ = match corner {
         Some(corner) => window.drag_resize_window(corner),
         None => window.drag_window(),
@@ -171,8 +171,8 @@ impl crate::panels::Office for WindowOffice<'_> {
             },
         );
         match press {
-            Press::Resize => drag_frame(self.window, Some(ResizeDirection::SouthEast)),
-            Press::Drag => drag_frame(self.window, None),
+            Press::Resize => move_or_resize(self.window, Some(ResizeDirection::SouthEast)),
+            Press::Drag => move_or_resize(self.window, None),
             Press::Pointer => {}
         }
     }
@@ -370,7 +370,7 @@ impl FloatingApp {
             // A panel the press did nothing in leaves the window to drag.
             Some((ModalMouse::Inert, _)) => {
                 if let Some(window) = &self.window {
-                    drag_frame(window, None);
+                    move_or_resize(window, None);
                 }
             }
             Some((ModalMouse::Took, _)) => self.request_redraw(),
