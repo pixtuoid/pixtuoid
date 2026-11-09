@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde_json::{Value, json};
 
+use crate::install::hook_cmd::SOURCE_ENV;
 use crate::install::io;
 use crate::install::target::MergeOutcome;
 use crate::install::verify::{SchemaParse, ShimRef, reconnect};
@@ -174,7 +175,7 @@ pub(crate) fn render_hooks(hook_cmd: &str) -> Result<String> {
                     "type": "command",
                     "command": hook_cmd,
                     "timeout": HOOK_TIMEOUT_SECS,
-                    "env": { "PIXTUOID_SOURCE": pixtuoid_core::source::grok::SOURCE_NAME }
+                    "env": { SOURCE_ENV: pixtuoid_core::source::grok::SOURCE_NAME }
                 }]
             }]),
         );
@@ -220,12 +221,12 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
                 .flatten()
             {
                 if handler
-                    .pointer("/env/PIXTUOID_SOURCE")
+                    .pointer(&format!("/env/{SOURCE_ENV}"))
                     .and_then(|v| v.as_str())
                     != Some(pixtuoid_core::source::grok::SOURCE_NAME)
                 {
                     issues.push(format!(
-                        "grok event {event}'s handler lost its PIXTUOID_SOURCE env — events \
+                        "grok event {event}'s handler lost its {SOURCE_ENV} env — events \
                          would attribute to claude-code and be dropped; {reconnect}"
                     ));
                 }

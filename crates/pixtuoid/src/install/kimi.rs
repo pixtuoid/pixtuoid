@@ -114,7 +114,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
 
 /// The `PIXTUOID_SOURCE=kimi` env-prefix marker (Unix `shell_hook_command` form).
 fn env_marker() -> String {
-    format!("PIXTUOID_SOURCE={SOURCE_NAME}")
+    format!("{}={SOURCE_NAME}", crate::install::hook_cmd::SOURCE_ENV)
 }
 
 /// The ` --source kimi` flag marker (Windows bare form + any `--source` form).
@@ -171,11 +171,13 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
     // The shared `assemble` no-managed message names the `_pixtuoid` sentinel
     // Kimi can't carry, so word this one here.
     if entries.is_empty() {
-        return SchemaParse::broken(
+        return SchemaParse::broken(format!(
             "no managed pixtuoid hook entries in [[hooks]] (the pixtuoid source marker \
-             `PIXTUOID_SOURCE=kimi` / `--source kimi` is absent — the config was hand-edited \
-             or hooks were never installed)",
-        );
+             `{}` / `{}` is absent — the config was hand-edited or hooks were never \
+             installed)",
+            env_marker(),
+            flag_marker().trim()
+        ));
     }
     let mut missing = Vec::new();
     let mut shim = ShimRef::Unknown;

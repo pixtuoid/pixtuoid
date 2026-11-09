@@ -28,6 +28,10 @@ pub(crate) const SOURCE_FLAG: &str = " --source ";
 pub(crate) const EVENT_FLAG: &str = " --event ";
 pub(crate) const HOOK_EVENT_FLAG: &str = " --hook-event ";
 
+/// The env var the Unix form stamps the source in, read by the shim when no
+/// `--source` rides: a copy the same test pins.
+pub(crate) const SOURCE_ENV: &str = "PIXTUOID_SOURCE";
+
 /// POSIX single-quote a string so a shell treats it as one literal token: an
 /// unquoted path containing spaces would split into multiple args and the hook
 /// would never be found. On Windows, shell-running targets use
@@ -54,7 +58,7 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     #[cfg(unix)]
     {
         Ok(format!(
-            "PIXTUOID_SOURCE={source} {}",
+            "{SOURCE_ENV}={source} {}",
             shell_single_quote(path)
         ))
     }
@@ -98,6 +102,7 @@ mod tests {
             "/opt/it's mine/pixtuoid-hook",
             "/a'b'c/pixtuoid-hook",
             "/weird; path,&(x)/pixtuoid-hook",
+            r"/opt/a\b/pixtuoid-hook",
         ] {
             assert_eq!(
                 posix_unquote(&shell_single_quote(p)),
@@ -123,7 +128,7 @@ mod tests {
 
 #[cfg(test)]
 mod parity {
-    use super::{EVENT_FLAG, HOOK_EVENT_FLAG, SOURCE_FLAG};
+    use super::{EVENT_FLAG, HOOK_EVENT_FLAG, SOURCE_ENV, SOURCE_FLAG};
 
     /// The hook writers splice the source name unquoted into a shell or cmd.exe
     /// command line.
@@ -144,7 +149,7 @@ mod parity {
     #[test]
     fn the_shim_parses_every_flag_its_writers_spell() {
         let shim = include_str!("../../../../pixtuoid-hook/src/main.rs");
-        for flag in [SOURCE_FLAG, EVENT_FLAG, HOOK_EVENT_FLAG] {
+        for flag in [SOURCE_FLAG, EVENT_FLAG, HOOK_EVENT_FLAG, SOURCE_ENV] {
             let bare = format!("\"{}\"", flag.trim());
             assert!(shim.contains(&bare), "the shim parses no {bare}");
         }

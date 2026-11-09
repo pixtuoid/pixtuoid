@@ -1109,6 +1109,23 @@ mod tests {
     }
 
     #[test]
+    fn uninstall_keeps_a_foreign_load_path() {
+        in_state_dir(|| {
+            let installed = merge_install(
+                r#"{"plugins":{"load":{"paths":["/some/other/plugin"]}}}"#,
+                "/x",
+            )
+            .unwrap();
+            let removed = merge_uninstall(&installed.content).unwrap();
+            let v: Value = serde_json::from_str(&removed.content).unwrap();
+            assert_eq!(
+                v,
+                json!({"plugins": {"load": {"paths": ["/some/other/plugin"]}}})
+            );
+        });
+    }
+
+    #[test]
     fn uninstall_of_unmanaged_config_is_a_no_op() {
         in_state_dir(|| {
             // `changed` IS the `has_hooks` signal, so any shape we did not write must
