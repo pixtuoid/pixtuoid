@@ -6,7 +6,6 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::{Drive, Fold, Reach};
-use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 
 #[test]
@@ -24,18 +23,10 @@ fn codewhale_subagent_outlives_its_dispatch_and_ends_on_its_own_complete() {
     fold.feed(&hooks, &lines[..complete], t0);
     let running = fold.driven();
     running.assert_clean("codewhale child-error hooks");
-    let registered = |root: bool| {
-        running.events.iter().find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id,
-                ..
-            } if parent_id.is_none() == root => Some(*agent_id),
-            _ => None,
-        })
-    };
-    let parent = registered(true).expect("the session registers");
-    let child = registered(false).expect("subagent_spawn registers a child");
+    let parent = running.root().expect("the session registers");
+    let (child, _) = running
+        .linked_child()
+        .expect("subagent_spawn registers a child");
     assert_ne!(parent, child, "the child is a sprite of its own");
     // What makes the run tell the inferences apart: the dispatch returned, so
     // the parent held no Task through the fold's ticks past the b1 grace.

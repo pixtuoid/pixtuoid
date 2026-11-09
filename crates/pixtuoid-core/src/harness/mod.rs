@@ -20,6 +20,7 @@
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
 //!    so it is not a free parameter.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -186,6 +187,30 @@ impl Driven {
     /// Slots the fold registered — "did the wire reach the scene at all".
     pub fn registered(&self) -> usize {
         self.scene.agents.len()
+    }
+
+    /// The first session the events start with no parent: the run's root.
+    pub fn root(&self) -> Option<AgentId> {
+        self.events.iter().find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: None,
+                ..
+            } => Some(*agent_id),
+            _ => None,
+        })
+    }
+
+    /// The first session the events start under a parent, and that parent.
+    pub fn linked_child(&self) -> Option<(AgentId, AgentId)> {
+        self.events.iter().find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: Some(parent),
+                ..
+            } => Some((*agent_id, *parent)),
+            _ => None,
+        })
     }
 
     /// Events the WIRE produced, excluding the first-sight seed — the honest
@@ -369,8 +394,9 @@ impl Drive {
         }
     }
 
-    /// Lead the transcript's first feed with the `SessionStart` the watcher's
-    /// `emit_first_sight` would emit for it, keyed by the source's registry row.
+    /// Lead each life's first feed of the transcript with the `SessionStart` the
+    /// watcher's `emit_first_sight` would emit for it, keyed by the source's
+    /// registry row.
     ///
     /// Not a free choice: a transcript carrying no `SessionStart` of its own is
     /// registered in production by the watcher, so an offline driver must seed
@@ -446,9 +472,18 @@ impl Drive {
 pub struct Fold {
     reducer: Reducer,
     driven: Driven,
-    /// The seeds already led with: the watcher's first sight fires once per
-    /// transcript.
-    sighted: Vec<AgentId>,
+    /// Each seeded transcript's first sight, once per life as the watcher's
+    /// (`walk_jsonl`).
+    sights: HashMap<AgentId, Sight>,
+}
+
+/// What a transcript's first sight still holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sight {
+    /// Its seed led: later feeds decode without one.
+    Claimed,
+    /// Its session ended: a feed showing activity is a new life, seeded again.
+    Ended,
 }
 
 impl Default for Fold {
@@ -456,7 +491,7 @@ impl Default for Fold {
         Self {
             reducer: Reducer::new(),
             driven: Driven::empty(),
-            sighted: Vec::new(),
+            sights: HashMap::new(),
         }
     }
 }
@@ -507,20 +542,32 @@ impl Fold {
         let sink = BreadcrumbSink::default();
         tracing::subscriber::with_default(sink.clone(), || {
             let presence = self.driven.presence.len()..;
-            let mut fed = Vec::new();
-            if let Some(seed) = drive.seed(lines.iter().flatten().map(AsRef::as_ref))
-                && !self.sighted.contains(&seed.agent_id())
-            {
-                self.sighted.push(seed.agent_id());
-                self.driven.seed_events += 1;
-                fed.push(seed);
-            }
+            let mut decoded = Vec::new();
             for line in &lines {
                 let line = line.as_ref().map(AsRef::as_ref);
                 if let Some(events) = drive.decode.line(line, &mut self.driven, |_| {}) {
-                    fed.extend(events);
+                    decoded.extend(events);
                 }
             }
+            let mut fed = Vec::new();
+            if let Some(seed) = drive.seed(lines.iter().flatten().map(AsRef::as_ref)) {
+                let id = seed.agent_id();
+                let leads = match self.sights.get(&id) {
+                    None => true,
+                    Some(Sight::Claimed) => false,
+                    Some(Sight::Ended) => decoded.iter().any(AgentEvent::shows_activity),
+                };
+                if leads {
+                    self.sights.insert(id, Sight::Claimed);
+                    self.driven.seed_events += 1;
+                    fed.push(seed);
+                }
+                let ends = |e: &AgentEvent| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == id);
+                if decoded.iter().any(ends) {
+                    self.sights.insert(id, Sight::Ended);
+                }
+            }
+            fed.extend(decoded);
             for event in fed {
                 self.apply(drive.transport, event, at);
                 // Each event is observed BEFORE and AFTER a cascade tick, so a
@@ -708,6 +755,24 @@ mod tests {
         fold.feed(&drive, [tool_line()], at);
         fold.feed(&drive, [tool_line()], at);
         assert_eq!(fold.finish().seed_events, 1);
+    }
+
+    /// An ended session's transcript showing activity again is a new life,
+    /// which the watcher first-sights again.
+    #[test]
+    fn an_ended_transcript_showing_activity_again_is_first_sighted_again() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS);
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let mut fold = Fold::default();
+        fold.feed(&drive, [tool_line(), exit.to_string()], at);
+        let resumed = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
+        fold.tick(resumed);
+        assert_eq!(fold.driven().registered(), 0, "the first life walked out");
+        fold.feed(&drive, [tool_line()], resumed);
+        let d = fold.finish();
+        assert_eq!(d.seed_events, 2);
+        assert_eq!(d.registered(), 1, "the second life registers");
     }
 
     /// Under the Windows fold, which rewrites `TRANSCRIPT`'s case, the seed

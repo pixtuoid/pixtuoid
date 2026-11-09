@@ -230,18 +230,9 @@ fn dsh_s_dispatch_end_leaves_its_running_child_standing() {
     let (hooks, mut fold) = (Drive::hooks(), Fold::default());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     fold.feed(&hooks, &lines[..ends], t0);
-    let child = fold
+    let (child, _) = fold
         .driven()
-        .events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: Some(_),
-                ..
-            } => Some(*agent_id),
-            _ => None,
-        })
+        .linked_child()
         .expect("the recording's child session");
     assert!(
         fold.driven()

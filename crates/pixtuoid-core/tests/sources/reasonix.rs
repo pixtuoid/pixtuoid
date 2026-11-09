@@ -94,18 +94,7 @@ fn a_skill_calls_return_walks_its_child_out() {
     );
     let d = Drive::hooks().lines(lines);
     d.assert_clean("reasonix explore hooks");
-    let child = d
-        .events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: Some(_),
-                ..
-            } => Some(*agent_id),
-            _ => None,
-        })
-        .expect("the recording's child session");
+    let (child, _) = d.linked_child().expect("the recording's child session");
     assert!(
         d.scene
             .agents

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::harness::{Drive, Driven, Fold};
+use pixtuoid_core::harness::{Drive, Fold};
 use pixtuoid_core::source::AgentEvent;
 use serde_json::json;
 
@@ -124,39 +124,13 @@ fn recorded_lines(events: &[&str]) -> Vec<String> {
         .collect()
 }
 
-/// The recorded root: its own SessionStart names no parent.
-fn root_of(d: &Driven) -> AgentId {
-    d.events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: None,
-                ..
-            } => Some(*agent_id),
-            _ => None,
-        })
-        .expect("the recording starts a session")
-}
-
-/// The child a linked SessionStart registers, and the parent it links.
-fn child_of(d: &Driven) -> (AgentId, AgentId) {
-    d.events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: Some(parent),
-                ..
-            } => Some((*agent_id, *parent)),
-            _ => None,
-        })
-        .expect("SubagentStart registers a linked child")
-}
-
 /// The child the recording's SubagentStart registers, as its hooks key it.
 fn hook_child() -> AgentId {
-    child_of(&Drive::hooks().lines(recorded_lines(&["SubagentStart"]))).0
+    Drive::hooks()
+        .lines(recorded_lines(&["SubagentStart"]))
+        .linked_child()
+        .expect("SubagentStart registers a linked child")
+        .0
 }
 
 /// The recording's child transcript, and the logical path the watcher finds
@@ -193,8 +167,10 @@ fn cc_subagent_hook_pair_registers_links_and_exits_its_child() {
         "SubagentStop",
     ]));
     d.assert_clean("claude-code subagent hook pair");
-    let root = root_of(&d);
-    let (child, linked) = child_of(&d);
+    let root = d.root().expect("the recording starts a session");
+    let (child, linked) = d
+        .linked_child()
+        .expect("SubagentStart registers a linked child");
     assert_eq!(linked, root, "SubagentStart links the recorded root");
 
     let slot = d
@@ -272,10 +248,16 @@ fn cc_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
     d.assert_clean("claude-code reordered subagent hooks");
 
     assert!(
-        !d.scene.agents.contains_key(&child_of(&d).0),
+        !d.scene
+            .agents
+            .contains_key(&d.linked_child().expect("a linked child").0),
         "a SubagentStart reordered after its own Stop must not register"
     );
-    let parent = d.scene.agents.get(&root_of(&d)).expect("parent untouched");
+    let parent = d
+        .scene
+        .agents
+        .get(&d.root().expect("the recording starts a session"))
+        .expect("parent untouched");
     assert!(
         parent.exiting_at.is_none(),
         "the child's tombstone must not affect the parent"
@@ -290,7 +272,10 @@ fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
         recorded_lines(&["SessionStart", "SubagentStart"]),
         t0(),
     );
-    let (child, root) = child_of(fold.driven());
+    let (child, root) = fold
+        .driven()
+        .linked_child()
+        .expect("SubagentStart registers a linked child");
     assert!(
         fold.driven().scene.agents.contains_key(&child),
         "hook registered it"
@@ -345,18 +330,7 @@ fn a_recorded_background_childs_tools_land_on_the_child() {
         super::captures::fixture_lines(&super::captures::sources_root().join(RECORDED_HOOKS));
     let d = Drive::hooks().lines(lines);
     d.assert_clean("claude-code delegation hooks");
-    let (child, root) = d
-        .events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: Some(p),
-                ..
-            } => Some((*agent_id, *p)),
-            _ => None,
-        })
-        .expect("the run spawns a child");
+    let (child, root) = d.linked_child().expect("the run spawns a child");
     let tools_on = |id: AgentId| {
         d.events
             .iter()

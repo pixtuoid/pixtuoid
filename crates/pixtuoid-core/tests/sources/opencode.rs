@@ -3,9 +3,7 @@
 //! two sprites, which the conformance harness's one-AgentId rule cannot hold
 //! (the same reason `grok.rs` exists).
 
-use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::{Drive, Driven};
-use pixtuoid_core::source::AgentEvent;
 
 fn hooks() -> Driven {
     let d = Drive::hooks().lines(super::captures::fixture_lines(
@@ -16,37 +14,11 @@ fn hooks() -> Driven {
     d
 }
 
-/// The recording's child and the parent its registration names.
-fn child_of(d: &Driven) -> (AgentId, AgentId) {
-    d.events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: Some(parent),
-                ..
-            } => Some((*agent_id, *parent)),
-            _ => None,
-        })
-        .expect("the recording's child session")
-}
-
 #[test]
 fn the_child_registers_under_its_parent() {
     let d = hooks();
-    let root = d
-        .events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: None,
-                ..
-            } => Some(*agent_id),
-            _ => None,
-        })
-        .expect("the root's first start registers it");
-    let (child, linked) = child_of(&d);
+    let root = d.root().expect("the root's first start registers it");
+    let (child, linked) = d.linked_child().expect("the recording's child session");
     assert_eq!(linked, root, "the child names the root as its parent");
     assert_eq!(
         d.scene
@@ -63,7 +35,7 @@ fn the_child_registers_under_its_parent() {
 #[test]
 fn the_dispatch_end_leaves_its_child_standing() {
     let d = hooks();
-    let (child, _) = child_of(&d);
+    let (child, _) = d.linked_child().expect("the recording's child session");
     assert!(
         d.scene
             .agents
