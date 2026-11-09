@@ -117,11 +117,7 @@ pub(crate) fn verify_target(
                 );
             }
         }
-        ShimRef::Unknown => {
-            // SOFT, not hard: a novel-but-valid command shape lands here, and the
-            // genuine no-hooks case is already a HARD issue from the primary's verify.
-            notes.push("could not read the shim path from the managed hook command".into());
-        }
+        ShimRef::Unknown => {}
     }
     let name = t.display_name();
     if let Primary::Config {
@@ -130,6 +126,12 @@ pub(crate) fn verify_target(
     } = t.primary
     {
         verify_beside(render, name, &mut issues, &mut notes, &mut shims);
+    }
+    // SOFT, not hard: a novel-but-valid command shape lands here, and the genuine
+    // no-hooks case is already a HARD issue from the primary's verify. A beside
+    // file that bakes the shim answers for a config that carries none.
+    if shims.iter().all(|s| *s == ShimRef::Unknown) {
+        notes.push("could not read the shim path from the managed hook command".into());
     }
     if let Some(files) = t.primary.owned_files() {
         verify_owned_drift(t, files, &path, &mut issues, &mut notes);

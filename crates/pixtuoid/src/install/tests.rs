@@ -815,9 +815,10 @@ fn verify_target_hard_flags_a_missing_beside_file_for_every_beside_target() {
                 let tmp = tempfile::TempDir::new().unwrap();
                 let cfg = tmp.path().join("config");
                 install_target_from(t, Some(cfg.clone()), Some(exe.clone())).unwrap();
+                let fresh = verify_target(t, Some(cfg.clone()));
                 assert!(
-                    verify_target(t, Some(cfg.clone())).is_sound(),
-                    "{}: a fresh install must verify sound",
+                    fresh.is_sound() && fresh.notes.is_empty(),
+                    "{}: a fresh install must verify clean — got {fresh:?}",
                     t.name
                 );
                 for (p, _) in make(exe.to_str().unwrap()).unwrap() {

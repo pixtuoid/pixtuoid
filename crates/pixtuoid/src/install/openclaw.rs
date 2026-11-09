@@ -341,7 +341,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
 
 /// Install-schema check — the "silent-dead source" detector. The shim path lives
 /// in the SEPARATE plugin `index.js`, NOT this config, so the shim ref is
-/// `Unknown` and `verify_target` downgrades that to a soft note. The HARD checks
+/// `Unknown` and `verify_target` reads it from that file instead. The HARD checks
 /// are the two config-level facts only WE write: the enabled `entries.pixtuoid`
 /// entry + its `load.paths` dir registration.
 pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaParse {
