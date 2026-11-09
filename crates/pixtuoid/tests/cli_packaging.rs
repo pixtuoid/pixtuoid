@@ -137,6 +137,37 @@ fn a_fatal_error_into_a_broken_pipe_still_exits_1() {
     assert_eq!(status.code(), Some(1), "{status:?}");
 }
 
+/// A terminal the office can't paint is refused before it is touched, and the
+/// refusal is a failure: `pixtuoid && …` must not go on, nor a terminal profile
+/// close as on a clean exit, as if the office had run.
+#[test]
+fn a_color_refusal_exits_1_with_its_reason() {
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    for (var, value, reason) in [
+        ("NO_COLOR", "1", "$NO_COLOR is set"),
+        ("TERM", "dumb", "$TERM=dumb"),
+    ] {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_pixtuoid"))
+            .arg("run")
+            .env_remove("RUST_LOG")
+            .env_remove("PIXTUOID_LOG")
+            .env_remove("NO_COLOR")
+            .env_remove("CLICOLOR_FORCE")
+            .env("TERM", "xterm-256color")
+            .env(var, value)
+            .env("XDG_CONFIG_HOME", tmp.path())
+            .env("XDG_STATE_HOME", tmp.path())
+            .output()
+            .expect("run pixtuoid");
+        assert_eq!(out.status.code(), Some(1), "{var}={value}: {out:?}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.starts_with("Error: ") && stderr.contains(reason),
+            "{stderr:?}"
+        );
+    }
+}
+
 /// Every platform: these read no home, so they need no env isolation, and
 /// Windows reports a gone reader through its own error code.
 #[test]

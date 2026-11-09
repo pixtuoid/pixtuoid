@@ -1568,24 +1568,66 @@ fn a_fitted_office_takes_bigger_pixels_rather_than_grow_past_its_cap() {
     }
 }
 
-/// The fitted width keeps every meeting room's furniture: on every seed, at
-/// each height a [`FITTED_SURFACES`] surface lays out, every meeting room of
-/// an office that narrow seats its sofa and table.
+/// Every fitted office keeps every meeting room's furniture, on every seed:
+/// [`FITTED_MIN_W`] wide at each height a [`FITTED_SURFACES`] surface lays out,
+/// and each surface's own fitted viewport, bare and under side insets.
 #[test]
 fn a_fitted_office_keeps_every_meeting_rooms_furniture() {
+    let art = crate::sprite::format::Density::new(4).expect("nonzero");
+    // Wide enough at every surface's scale (up to 16 px a unit) to leave a
+    // Dense floor's meeting rooms bare inside a minimum-width viewport, in odd
+    // pixel counts that round up to a unit.
+    let side = |left: u16, right: u16| Insets {
+        top: 0,
+        right,
+        bottom: 0,
+        left,
+    };
+    let insets_px = [
+        Insets::default(),
+        side(101, 101),
+        side(0, 209),
+        side(209, 0),
+        Insets {
+            top: 101,
+            right: 101,
+            bottom: 101,
+            left: 101,
+        },
+    ];
     let mut rooms = 0;
-    for h in FITTED_SURFACES.map(|surface| surface.units.1) {
+    let mut furnished = |viewport: Viewport, case: &dyn std::fmt::Display| {
         for seed in 0..48 {
-            let layout = SceneLayout::compute(Viewport::full(FITTED_MIN_W, h), None, seed)
-                .expect("lays out");
+            let layout = SceneLayout::compute(viewport, None, seed).expect("lays out");
             for room in &layout.meeting_rooms {
                 assert!(
                     room.trio.is_some(),
-                    "{h} units high, seed {seed}: a bare meeting room at {:?}",
+                    "{case}, seed {seed}: a bare meeting room at {:?}",
                     room.bounds
                 );
                 rooms += 1;
             }
+        }
+    };
+    for surface in FITTED_SURFACES {
+        let h = surface.units.1;
+        furnished(
+            Viewport::full(FITTED_MIN_W, h),
+            &format_args!("{FITTED_MIN_W} wide, {h} high"),
+        );
+        let per_point = std::num::NonZeroU16::new(surface.per_point).expect("nonzero");
+        let px = Size {
+            w: surface.px.0,
+            h: surface.px.1,
+        };
+        for insets in insets_px {
+            let Some(fitted) = Viewport::fitted(px, insets, art, per_point) else {
+                continue;
+            };
+            furnished(
+                fitted.viewport,
+                &format_args!("{} under {insets:?} px", surface.name),
+            );
         }
     }
     assert!(

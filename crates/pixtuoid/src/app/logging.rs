@@ -96,7 +96,7 @@ where
 /// (tracing-subscriber's `fmt/format/escape.rs`). It works on each value, not
 /// on the written line, where the formatter's own SGR would look injected.
 ///
-/// [terminal-unsafe]: crate::is_terminal_unsafe
+/// [terminal-unsafe]: pixtuoid_core::source::decoder::is_terminal_unsafe
 pub(crate) struct EscapedFields;
 
 impl<'w> tracing_subscriber::fmt::FormatFields<'w> for EscapedFields {
@@ -184,7 +184,7 @@ impl std::fmt::Write for EscapingWriter<'_, '_> {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
         let mut clean = 0;
         for (at, c) in s.char_indices() {
-            if crate::is_terminal_unsafe(c) {
+            if pixtuoid_core::source::decoder::is_terminal_unsafe(c) {
                 self.0.write_str(&s[clean..at])?;
                 write!(self.0, "{}", c.escape_debug())?;
                 clean = at + c.len_utf8();
@@ -231,7 +231,7 @@ mod tests {
     /// Every character a field value is escaped of.
     fn terminal_unsafe() -> String {
         ('\0'..='\u{2069}')
-            .filter(|c| crate::is_terminal_unsafe(*c))
+            .filter(|c| pixtuoid_core::source::decoder::is_terminal_unsafe(*c))
             .collect()
     }
 
@@ -282,7 +282,12 @@ mod tests {
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines.len(), 4, "a value broke its line: {out:?}");
         for line in lines {
-            assert!(!line.chars().any(crate::is_terminal_unsafe), "{line:?}");
+            assert!(
+                !line
+                    .chars()
+                    .any(pixtuoid_core::source::decoder::is_terminal_unsafe),
+                "{line:?}"
+            );
         }
         for carrier in [
             format!("span{{field={escaped}}}"),
