@@ -902,10 +902,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
         let mouse_pos = self.tooltip_pos(&overlays);
-        let (geometry, star) = crate::tui::renderer::classic_placement(term_size, floor);
+        let placement = crate::tui::renderer::classic_placement(term_size, floor);
         if !self
             .screen
-            .admit(&picture, term_size, geometry, star)
+            .admit(&picture, term_size, placement.0, placement.1)
             .written()
         {
             // The terminal still shows the last frame, and its hit targets.
@@ -919,6 +919,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             now,
             pets: world.pets,
             mouse_pos,
+            placement,
         };
         crate::tui::renderer::flush_classic(&mut self.terminal, &frame, floor)?;
         // The popup's click rect derives from the terminal bounds — NOT the

@@ -270,6 +270,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
         now,
         pets: world.pets,
         mouse_pos: ctx.mouse_pos,
+        placement: classic_placement(term_size, &picture),
     };
     flush_classic(term, &frame, &picture)?;
     Ok(Some(picture.hits.clone()))
@@ -361,6 +362,8 @@ pub(crate) struct ClassicFrame<'f> {
     /// The floor's pet, which a tooltip names.
     pub(crate) pets: PetInputs<'f>,
     pub(crate) mouse_pos: Option<(u16, u16)>,
+    /// The frame's [`classic_placement`], which the pointer hits through.
+    pub(crate) placement: (SceneGeometry, Option<pixtuoid_scene::layout::Bounds>),
 }
 
 /// Flush the classic `picture` to `term` with `frame`'s footer, text and
@@ -368,7 +371,7 @@ pub(crate) struct ClassicFrame<'f> {
 ///
 /// # Errors
 ///
-/// If querying the terminal size or drawing to the backend fails.
+/// If drawing to the backend fails.
 pub(crate) fn flush_classic<B: Backend<Error: Send + Sync + 'static>>(
     term: &mut Terminal<B>,
     frame: &ClassicFrame<'_>,
@@ -382,9 +385,9 @@ pub(crate) fn flush_classic<B: Backend<Error: Send + Sync + 'static>>(
         now,
         pets,
         mouse_pos,
+        placement: (geometry, star),
     } = frame;
     let pixels = picture.pixels;
-    let (geometry, star) = classic_placement(term.size()?, picture);
     let hit =
         mouse_pos.and_then(|(mx, my)| picture.hits.at(geometry.area_at(mx, my)?.bounds(), star));
     let hovered = match hit {
@@ -394,7 +397,7 @@ pub(crate) fn flush_classic<B: Backend<Error: Send + Sync + 'static>>(
 
     term.draw(|f| {
         // Re-derive rects from the actual frame buffer to guard against
-        // terminal resize between term.size() and term.draw().
+        // terminal resize between the frame's size read and term.draw().
         let actual_full = f.area();
         let actual_scene = crate::tui::renderer::scene_rect(actual_full);
         paint_footer(f, footer, actual_full, theme);
