@@ -82,6 +82,13 @@ HAWK_VERSION := "0.1.15"
 HAWK_RUST := "1.99.0"
 HAWK_INSTALLER_SHA256 := "4e1b85fc15d3d4efa9b3bd7c62620655cc5504b7164272292043e3794f54111f"
 
+# Every Linux release artifact drops `audio` (musl can't link ALSA statically;
+# the aarch64 cross image has no ALSA headers), so prebuilt Linux binaries ship
+# SILENT and Linux audio is a from-source feature (#633; see
+# docs/CONFIGURATION.md). Every other default feature rides `portable`
+# (pixtuoid's Cargo.toml).
+LINUX_RELEASE_FEATURES := "--no-default-features --features portable"
+
 # The non-linux triples `doc-check` renders, one per OS release.yml ships.
 # rustdoc links nothing, so a triple's std is all it needs while no dependency on
 # it builds C (`cargo doc` still runs build scripts).
@@ -1012,16 +1019,12 @@ build-target target cross="false":
     set -euo pipefail
     target="$1"
     use_cross="$2"
-    # Every LINUX artifact drops `audio` (musl can't link ALSA statically; the
-    # aarch64 cross image has no ALSA headers), so prebuilt Linux binaries ship
-    # SILENT and Linux audio is a from-source feature (#633; see
-    # docs/CONFIGURATION.md). Every other default feature rides `portable`
-    # (pixtuoid's Cargo.toml). Derived here, not passed: the flags are a
-    # property of the target. $flags stays UNQUOTED below — quoting the empty
-    # non-Linux case would pass cargo an empty positional arg.
+    # Derived here, not passed: the flags are a property of the target. $flags
+    # stays UNQUOTED below — quoting the empty non-Linux case would pass cargo
+    # an empty positional arg.
     flags=""
     case "$target" in
-    *linux*) flags="--no-default-features --features portable" ;;
+    *linux*) flags="{{ LINUX_RELEASE_FEATURES }}" ;;
     esac
     if [ "$use_cross" = "true" ]; then
         cross build --release --target "$target" $flags
@@ -1045,17 +1048,28 @@ stage-notices dir:
     done
 
 # `--no-build`: the target is already built by `build-target`. Needs cargo-deb
-# (CI installs it via taiki-e/install-action with `tool: cargo-deb`).
+# (CI installs it via taiki-e/install-action with `tool: cargo-deb`). The man
+# page and completions come from a host build with the target's features: no
+# CLI argument depends on the target, and a cross-built binary can't run here.
 [doc('Package the .deb for ONE already-built target (release.yml deb job)')]
 [group('release')]
 deb target:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The asset dir pixtuoid's [package.metadata.deb] names.
+    docs=crates/pixtuoid/target/deb
+    mkdir -p "$docs"
+    cli() { cargo run -q -p pixtuoid --bin pixtuoid {{ LINUX_RELEASE_FEATURES }} -- "$@"; }
+    cli man >"$docs/pixtuoid.1"
+    cli completions bash >"$docs/pixtuoid.bash"
+    cli completions zsh >"$docs/_pixtuoid"
+    cli completions fish >"$docs/pixtuoid.fish"
     cargo deb -p pixtuoid --no-build --no-strip --target "$1"
-    cargo deb -p pixtuoid-hook --no-build --no-strip --target "$1"
 
-# The npm package generator's tests, its only run before a tag-push, and every
+# The npm packages' tests, their only run before a tag-push, and every
 # plugin's selftest, which executes it against `plugin-contract.json`; a
 # selftest is found by its name, the one the census pairs with its plugin.
-[doc('Node tests: the npm package generator and every plugin selftest (CI)')]
+[doc('Node tests: the npm generator and launcher, and every plugin selftest (CI)')]
 [group('release')]
 npm-check:
     node --test 'npm/*.test.mjs' 'scripts/*.test.mjs'

@@ -575,10 +575,8 @@
       |= sub("just stage-notices \"\\$DIR\""; "cp LICENSE \"$DIR/\"")
     - .jobs.build.steps |= map(select(.name != "Package (Unix)"))
 
-- id: debs-ship-the-license
-  file:
-    - crates/pixtuoid/Cargo.toml
-    - crates/pixtuoid-hook/Cargo.toml
+- id: deb-ships-the-license
+  file: crates/pixtuoid/Cargo.toml
   why: >-
     cargo-deb's generated copyright file names the license without its text,
     which MIT requires in every copy; without this row a .deb ships none.
@@ -608,6 +606,30 @@
     - |
       (.package.metadata.deb.assets[] | select(.[0] | contains("fonts")) | .[0])
       = "../pixtuoid/fonts/*.txt"
+
+- id: deb-ships-what-brew-installs
+  file: crates/pixtuoid/Cargo.toml
+  why: >-
+    Homebrew installs the hook shim every hook pixtuoid writes runs, the man
+    page and the bash, zsh and fish completions; a .deb without one installs
+    hooks that all fail, a `man pixtuoid` with no entry or a shell that
+    completes nothing.
+  assert: |
+    .package.metadata.deb.assets as $assets
+    | all(
+        ["target/release/pixtuoid-hook", "usr/bin/", "755"],
+        ["target/deb/pixtuoid.1", "usr/share/man/man1/", "644"],
+        ["target/deb/pixtuoid.bash", "usr/share/bash-completion/completions/", "644"],
+        ["target/deb/_pixtuoid", "usr/share/zsh/vendor-completions/", "644"],
+        ["target/deb/pixtuoid.fish", "usr/share/fish/vendor_completions.d/", "644"];
+        . as $want | $assets | any(. == $want))
+  break:
+    - .package.metadata.deb.assets |= map(select(.[0] != "target/release/pixtuoid-hook"))
+    - |
+      (.package.metadata.deb.assets[] | select(.[0] == "target/release/pixtuoid-hook") | .[2])
+      = "644"
+    - .package.metadata.deb.assets |= map(select(.[0] != "target/deb/pixtuoid.1"))
+    - .package.metadata.deb.assets |= map(select(.[0] != "target/deb/_pixtuoid"))
 
 - id: queue-merge-conditions-are-ci-gate
   file: .mergify.yml

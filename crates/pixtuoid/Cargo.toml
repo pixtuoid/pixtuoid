@@ -222,10 +222,18 @@ test = true
 section = "utils"
 assets = [
     ["target/release/pixtuoid", "usr/bin/", "755"],
+    # The shim its hooks run, from the same build, so no version can skew.
+    ["target/release/pixtuoid-hook", "usr/bin/", "755"],
     # cargo-deb's generated copyright names the license; MIT wants its text.
     ["../../LICENSE", "usr/share/doc/pixtuoid/", "644"],
     # The embedded fonts' notices, globbed as `just stage-notices` does.
     ["../*/fonts/**/*.txt", "usr/share/doc/pixtuoid/licenses/", "644"],
+    # What `just deb` generates from the CLI. Outside `target/release/`, so
+    # cargo-deb gzips the page as Debian Policy 12.1 asks.
+    ["target/deb/pixtuoid.1", "usr/share/man/man1/", "644"],
+    ["target/deb/pixtuoid.bash", "usr/share/bash-completion/completions/", "644"],
+    ["target/deb/_pixtuoid", "usr/share/zsh/vendor-completions/", "644"],
+    ["target/deb/pixtuoid.fish", "usr/share/fish/vendor_completions.d/", "644"],
 ]
 extended-description = "Terminal-native, multi-agent pixel-art visualizer for AI coding agents. Each running Claude Code session appears as an animated sprite in a top-down ASCII office."
 

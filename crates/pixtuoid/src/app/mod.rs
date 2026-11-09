@@ -193,8 +193,7 @@ pub fn run() -> Result<()> {
             Ok(())
         }
         Cmd::Man => {
-            use clap::CommandFactory;
-            clap_mangen::Man::new(Cli::command()).render(&mut crate::cli_stdout())?;
+            crate::cli::render_man(&mut crate::cli_stdout())?;
             Ok(())
         }
     }

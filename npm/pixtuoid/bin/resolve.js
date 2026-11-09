@@ -9,24 +9,24 @@
 const fs = require("fs");
 const path = require("path");
 
-// The matrix is ASYMMETRIC, so there is no runtime gnu-vs-musl choice here:
-// linux-x64 ships a STATIC musl build and declares no `libc`; linux-arm64 ships
-// a glibc build and declares `libc:["glibc"]`, so npm skips it on musl/Alpine
-// rather than installing a binary that would crash. The os/cpu/libc filtering
-// happens at npm INSTALL time; here we just map.
-/** @type {Record<string, string>} */
-const PACKAGE = {
-  "darwin arm64": "@pixtuoid/cli-darwin-arm64",
-  "darwin x64": "@pixtuoid/cli-darwin-x64",
-  "linux x64": "@pixtuoid/cli-linux-x64",
-  "linux arm64": "@pixtuoid/cli-linux-arm64",
-  "win32 x64": "@pixtuoid/cli-win32-x64",
-  "win32 arm64": "@pixtuoid/cli-win32-arm64",
-};
+// npm matches `os`/`cpu` against `process.platform`/`process.arch`
+// (https://docs.npmjs.com/cli/v11/configuring-npm/package-json#os), and
+// generate.mjs names each package it publishes here, so this names the one npm
+// installed. One package per os/cpu pair means no runtime gnu-vs-musl choice.
+/**
+ * @param {string} platform
+ * @param {string} arch
+ */
+function packageName(platform, arch) {
+  return "@pixtuoid/cli-" + platform + "-" + arch;
+}
 
-/** @param {string} bin */
-function exeName(bin) {
-  return bin + (process.platform === "win32" ? ".exe" : "");
+/**
+ * @param {string} bin
+ * @param {string} [platform]
+ */
+function exeName(bin, platform = process.platform) {
+  return bin + (platform === "win32" ? ".exe" : "");
 }
 
 // Returns null if this platform isn't shipped — callers decide how to handle
@@ -54,13 +54,11 @@ function binaryPath(bin) {
     if (fs.existsSync(p)) return p;
   }
 
-  const pkg = PACKAGE[process.platform + " " + process.arch];
-  if (!pkg) return null;
   try {
-    return require.resolve(pkg + "/" + exeName(bin));
+    return require.resolve(packageName(process.platform, process.arch) + "/" + exeName(bin));
   } catch (_e) {
     return null;
   }
 }
 
-module.exports = { binaryPath, exeName };
+module.exports = { binaryPath, exeName, packageName };

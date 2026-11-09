@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Tests for generate.mjs — the per-platform package generator; ci-lint.yml's
-// `npm-gen` job runs them via `just npm-check`.
+// Tests for generate.mjs — the per-platform package generator — and the
+// launcher that runs what it packages; ci-lint.yml's `npm-gen` job runs them via
+// `just npm-check`.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -11,6 +12,7 @@ import {
   readFileSync,
   existsSync,
   rmSync,
+  cpSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -33,6 +35,11 @@ const TARGETS = [
 // A release archive's notices as `just stage-notices` lays them out.
 const NOTICE_FILES = ["LICENSE", join("licenses", "pixtuoid", "fonts", "OFL-Font.txt")];
 
+// A stand-in binary: it records its argv and stdin where $RECORD names, and
+// fails, which the hook shim must not pass on.
+const FAKE_STATUS = 3;
+const FAKE_BINARY = `#!/bin/sh\nprintf '%s\\n' "$*" > "$RECORD"\ncat >> "$RECORD"\nexit ${FAKE_STATUS}\n`;
+
 /**
  * @param {import("node:test").TestContext} t
  * @param {{ skip?: string, skipNotices?: string }} [omit]
@@ -52,7 +59,8 @@ function scaffold(t, { skip, skipNotices } = {}) {
         license: "MIT",
         repository: { type: "git", url: "git+https://example/x.git" },
         homepage: "https://example/x",
-        optionalDependencies: {},
+        // A target since dropped: the generator owns the whole list.
+        optionalDependencies: { "@pixtuoid/cli-retired": "0.0.0" },
       },
       null,
       2,
@@ -65,8 +73,8 @@ function scaffold(t, { skip, skipNotices } = {}) {
     const tdir = join(artifacts, tg.rust);
     mkdirSync(tdir, { recursive: true });
     const ext = tg.win ? ".exe" : "";
-    writeFileSync(join(tdir, "pixtuoid" + ext), "fake-tui");
-    writeFileSync(join(tdir, "pixtuoid-hook" + ext), "fake-hook");
+    writeFileSync(join(tdir, "pixtuoid" + ext), FAKE_BINARY);
+    writeFileSync(join(tdir, "pixtuoid-hook" + ext), FAKE_BINARY);
     if (tg.rust === skipNotices) continue;
     for (const f of NOTICE_FILES) {
       mkdirSync(dirname(join(tdir, f)), { recursive: true });
@@ -104,6 +112,11 @@ test("stamps launcher + all 6 platform packages with the asymmetric libc gate", 
 
   const launcher = JSON.parse(readFileSync(join(npmDir, "pixtuoid", "package.json"), "utf8"));
   assert.equal(launcher.version, "1.2.3", "launcher version stamped");
+  assert.deepEqual(
+    Object.keys(launcher.optionalDependencies).sort(),
+    TARGETS.map((tg) => `@pixtuoid/cli-${tg.pkg}`).sort(),
+    "the launcher depends on exactly the packages generated",
+  );
 
   for (const tg of TARGETS) {
     const name = `@pixtuoid/cli-${tg.pkg}`;
@@ -198,3 +211,36 @@ test("release.yml build matrix targets == npm TARGETS (npm ships every built pla
       "generator doesn't know ships NOWHERE on npm (silent). Update both.",
   );
 });
+
+const host = TARGETS.find((tg) => tg.os === process.platform && tg.cpu === process.arch);
+
+test(
+  "the launcher runs the binaries generate.mjs packages for this host",
+  { skip: !host ? "no target ships for this host" : host.win && "the stand-in binary is a shell script" },
+  (t) => {
+    assert.ok(host);
+    const { dir, npmDir, artifacts } = scaffold(t);
+    assert.equal(run(npmDir, artifacts, "1.2.3").status, 0);
+    // What `npm i -g pixtuoid` leaves here: the launcher beside the one package
+    // whose os/cpu match.
+    const modules = join(dir, "node_modules");
+    const pkg = join("@pixtuoid", `cli-${host.pkg}`);
+    cpSync(join(dirname(SCRIPT), "pixtuoid", "bin"), join(modules, "pixtuoid", "bin"), { recursive: true });
+    cpSync(join(npmDir, pkg), join(modules, pkg), { recursive: true });
+
+    for (const [shim, status] of /** @type {const} */ ([
+      ["pixtuoid", FAKE_STATUS],
+      ["pixtuoid-hook", 0],
+    ])) {
+      const record = join(dir, `${shim}.record`);
+      const r = spawnSync(process.execPath, [join(modules, "pixtuoid", "bin", `${shim}.js`), "--source", "x"], {
+        input: "payload",
+        env: { PATH: process.env.PATH, HOME: dir, RECORD: record },
+        encoding: "utf8",
+      });
+      assert.equal(r.status, status, `${shim}: ${r.stderr}`);
+      assert.equal(r.stderr, "", `${shim} writes nothing of its own to stderr`);
+      assert.equal(readFileSync(record, "utf8"), "--source x\npayload", `${shim} forwards argv and stdin`);
+    }
+  },
+);
