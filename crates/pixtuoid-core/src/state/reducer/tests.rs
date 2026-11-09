@@ -1032,9 +1032,9 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             now,
             Transport::Hook,
         );
-        // An ORPHAN Task (no SessionStart, and a transcript line registers no
-        // slot) leaves a tasks_in_flight entry reaped ONLY by tick's
-        // slot-removal retain.
+        // An ORPHAN Task (no SessionStart): its hook registers a slot waiting
+        // for a desk, so its tasks_in_flight entry lives until the stale sweep
+        // removes that slot.
         r.apply(
             &mut scene,
             AgentEvent::ToolUseStart {
@@ -1044,7 +1044,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
                 copy_id: None,
             },
             now,
-            Transport::Jsonl,
+            Transport::Hook,
         );
 
         // The interleaved tick is the ONLY reaper of the non-TTL orphan retains.

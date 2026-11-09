@@ -1713,6 +1713,10 @@ impl Reducer {
             .iter()
             .filter_map(|(id, slot)| slot.walked_out(now).then_some(*id))
             .collect();
+        // Only a slot leaving frees a desk, and every apply sweeps.
+        if expired.is_empty() {
+            return;
+        }
         for id in expired {
             scene.agents.remove(&id);
             // Runs on the apply path too, where `tick`'s `retain` doesn't.
