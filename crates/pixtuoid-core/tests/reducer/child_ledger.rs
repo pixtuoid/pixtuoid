@@ -573,8 +573,9 @@ fn a_readmitted_childs_next_end_gates_from_that_end() {
 }
 
 /// A child's own SessionEnd is its CLI's word whether or not the decoder can
-/// say `as_child` (opencode's `session.deleted`): a hook activity inside its
-/// straggler window stays refused, one past it readmits under its parent.
+/// say `as_child` (opencode's `session.deleted`): a hook payload (its
+/// `Identity` and call) inside its straggler window stays refused; one past it
+/// readmits under its parent.
 #[test]
 fn a_known_childs_own_end_is_reported_without_as_child() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
@@ -623,11 +624,10 @@ fn a_known_childs_own_end_is_reported_without_as_child() {
     );
 }
 
-/// Inside the end gate, a hook activity of an ended child readmits it under its
-/// remembered parent, never blank and parentless; with that parent gone it
-/// registers nothing.
+/// Inside the end gate, a hook's `Identity` of an ended child readmits it under
+/// its remembered parent; with that parent gone it registers nothing.
 #[test]
-fn inside_the_end_gate_a_hook_activity_readmits_an_ended_child_only_under_its_parent() {
+fn inside_the_end_gate_an_identity_readmits_an_ended_child_only_under_its_parent() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
     for parent_left in [false, true] {
         let mut scene = SceneState::uniform(4);

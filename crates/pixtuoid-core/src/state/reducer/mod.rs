@@ -981,9 +981,9 @@ impl Reducer {
         }
     }
 
-    /// Minted as the `Rename` that first named the session, so a slot brought
-    /// back looks as first sight left it. No liveness: the start it rides
-    /// behind already wrote that.
+    /// Minted as a `Rename` is, so a slot brought back carries the label its
+    /// transcript last gave it. No liveness: the start it rides behind already
+    /// wrote that.
     fn apply_label_hint(scene: &mut SceneState, agent_id: AgentId, label: &str) {
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let label = classify_rename(label, &slot.source);
