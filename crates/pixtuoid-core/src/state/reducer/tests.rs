@@ -1210,8 +1210,8 @@ fn a_stale_child_under_a_stale_parent_logs_once() {
     assert!(!out.contains("stale agent"), "{out}");
 }
 
-/// Every tick walks every live slot's scope, so its work must stay linear in
-/// them: a per-slot rescan of the scene made it quadratic.
+/// A tick's scope passes read every live slot, so a per-slot call of a
+/// `ScopeTree` pass, or one cascade per seed, would make its work quadratic.
 #[test]
 fn a_tick_walks_scope_in_linear_work() {
     use super::STALE_BLOCKED_TIMEOUT;
@@ -1220,7 +1220,7 @@ fn a_tick_walks_scope_in_linear_work() {
     use crate::{AgentId, Reducer, SceneState};
     use std::time::{Duration, SystemTime};
 
-    /// The slots one tick's scope walks visit, over `slots` independent roots
+    /// The elements one tick's scope loops read, over `slots` independent roots
     /// or one lineage `slots` deep, each past its window so both the
     /// exemption pass and the cascade walk all of them.
     fn tick_visits(slots: usize, deep: bool) -> usize {
@@ -1255,13 +1255,18 @@ fn a_tick_walks_scope_in_linear_work() {
         VISITS.with(std::cell::Cell::get)
     }
 
-    // Visits, never wall clock: a loaded runner can't flake a count.
     const SLOTS: usize = 128;
+    // Linear work doubles, quadratic quadruples: a strict 3 splits them and allows a constant.
+    const LINEAR_CEILING: usize = 3;
     for deep in [false, true] {
         let (once, twice) = (tick_visits(SLOTS, deep), tick_visits(2 * SLOTS, deep));
         assert!(
-            twice <= 2 * once,
-            "doubling the slots must at most double the tick's work \
+            once > 0,
+            "the tick must reach the scope loops (deep: {deep})"
+        );
+        assert!(
+            twice < LINEAR_CEILING * once,
+            "doubling the slots must keep the tick's work under {LINEAR_CEILING}x \
              (deep: {deep}): {once} visits for {SLOTS} slots, {twice} for {}",
             2 * SLOTS
         );

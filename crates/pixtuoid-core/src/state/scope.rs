@@ -18,8 +18,8 @@ use crate::state::{AgentSlot, SceneState, fsm};
 
 #[cfg(test)]
 thread_local! {
-    /// The slots the scope walks have visited on this thread: a pass's work,
-    /// which a test bounds by the slot count, never by wall clock.
+    /// One per slot read from the slot map and per child reference read from the
+    /// index, in the loops a tick pass reaches: work a test bounds, never wall clock.
     pub(crate) static VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -53,14 +53,14 @@ impl<'a> ScopeTree<'a> {
 
     /// The slots with no parent slot, a dangling `parent_id`'s included.
     pub fn roots(&self) -> impl Iterator<Item = &'a AgentSlot> {
-        self.agents
-            .values()
-            .filter(|s| s.parent_id.is_none_or(|p| !self.agents.contains_key(&p)))
+        self.agents.values().filter(|s| {
+            visit();
+            s.parent_id.is_none_or(|p| !self.agents.contains_key(&p))
+        })
     }
 
     /// The slots whose `parent_id` is `id`.
     pub fn children(&self, id: AgentId) -> &[&'a AgentSlot] {
-        visit();
         self.children.get(&id).map_or(&[], Vec::as_slice)
     }
 
@@ -72,11 +72,10 @@ impl<'a> ScopeTree<'a> {
         let mut order = Vec::with_capacity(self.agents.len());
         while let Some((slot, parent)) = frontier.pop() {
             order.push((slot, parent));
-            frontier.extend(
-                self.children(slot.agent_id)
-                    .iter()
-                    .map(|&child| (child, Some(slot))),
-            );
+            frontier.extend(self.children(slot.agent_id).iter().map(|&child| {
+                visit();
+                (child, Some(slot))
+            }));
         }
         order
     }
@@ -145,6 +144,7 @@ pub(crate) fn cascade_exit(
         let mut frontier = vec![seed];
         while let Some(parent) = frontier.pop() {
             for child in tree.children(parent) {
+                visit();
                 if doomed.insert(child.agent_id) {
                     frontier.push(child.agent_id);
                 }
@@ -152,6 +152,7 @@ pub(crate) fn cascade_exit(
         }
     }
     for id in doomed {
+        visit();
         if let Some(slot) = scene.agents.get_mut(&id) {
             fsm::mark_exiting(slot, now);
         }
