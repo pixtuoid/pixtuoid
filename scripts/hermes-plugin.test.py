@@ -12,7 +12,6 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -26,7 +25,6 @@ ROW = next(p for p in CONTRACT["plugins"] if p["source"] == "hermes")
 PLUGIN_SOURCE = INSTALL_DIR / ROW["file"]
 HOOK_PLACEHOLDER = CONTRACT["hook_placeholder"]
 POSIX = os.name == "posix"
-JITTER_S = 1.5
 # Long past any spawn delay a loaded machine adds, so a hook that returns while
 # the leftover still lives has not waited on it.
 LEFTOVER_S = 30
@@ -197,13 +195,20 @@ class PluginTest(unittest.TestCase):
         )
         self.assertFalse((self.dir / "leftover-done").exists())
 
-    def test_an_absent_shim_neither_raises_nor_waits(self):
+    def test_an_absent_shim_does_not_raise(self):
         _, ctx = self.plugin(self.dir / "absent")
-        start = time.monotonic()
         self.assertIsNone(
             ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal")
         )
-        self.assertLess(time.monotonic() - start, JITTER_S)
+
+    def test_the_shim_inherits_no_pipe_the_run_could_wait_on(self):
+        # A bounded wait on a pipe would still return before the leftover's
+        # marker; only the spawn's own streams say the run can't wait at all.
+        _, ctx = self.plugin(self.dir / "absent")
+        with mock.patch.object(subprocess, "run") as run:
+            ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal")
+        self.assertEqual(run.call_args.kwargs["stdout"], subprocess.DEVNULL)
+        self.assertEqual(run.call_args.kwargs["stderr"], subprocess.DEVNULL)
 
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
     def test_nothing_raises_out_of_a_callback(self):
