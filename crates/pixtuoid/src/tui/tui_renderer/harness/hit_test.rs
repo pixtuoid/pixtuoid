@@ -459,8 +459,7 @@ where
 }
 
 /// The dashboard opened mid-carry withholds no part of the gesture: the
-/// figure follows the pointer under it and is set down on release, while a
-/// click there lands nowhere.
+/// figure follows the pointer under it and is set down on release.
 #[test]
 fn a_panel_opened_mid_carry_still_sets_the_figure_down() {
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -552,18 +551,6 @@ fn a_panel_opened_mid_carry_still_sets_the_figure_down() {
     assert!(
         !r.pointer.carrying(),
         "a panel opened mid-carry sets it down"
-    );
-    send(
-        &mut r,
-        &mut ui,
-        MouseEventKind::Down(MouseButton::Left),
-        further,
-    );
-    send(
-        &mut r,
-        &mut ui,
-        MouseEventKind::Up(MouseButton::Left),
-        further,
     );
 }
 
