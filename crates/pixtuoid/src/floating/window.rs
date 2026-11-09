@@ -582,8 +582,8 @@ impl super::lifecycle::Redraw for FloatingApp {
         &mut self.jank
     }
 
-    fn paints(&self) -> bool {
-        self.clock.paints()
+    fn occluded(&self) -> bool {
+        self.clock.occluded()
     }
 
     fn paint(&mut self) {
@@ -773,7 +773,7 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
                 self.request_redraw();
             }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
-            WindowEvent::Occluded(occluded) => self.clock.occlude(occluded, Instant::now()),
+            WindowEvent::Occluded(occluded) => self.clock.set_occluded(occluded, Instant::now()),
             WindowEvent::RedrawRequested => super::lifecycle::redraw(self),
             WindowEvent::Resized(_) => self.request_redraw(),
             WindowEvent::CursorMoved { position, .. } => {

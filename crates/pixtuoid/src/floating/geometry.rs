@@ -32,6 +32,15 @@ pub(crate) const DESKTOP_UNIT: DesktopUnit = if cfg!(target_os = "macos") {
     DesktopUnit::Pixels
 };
 
+/// A window's position in a [`DesktopUnit`], the one it is saved, checked
+/// and restored in: its own type, so a position in another unit can't pass
+/// for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DesktopSpot {
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+}
+
 /// A connected monitor, as winit reports it.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Monitor {
@@ -42,11 +51,12 @@ pub(crate) struct Monitor {
 
 impl DesktopUnit {
     /// `p`, reported scaled by `scale`, in this unit.
-    pub(crate) fn spot(self, p: PhysicalPosition<i32>, scale: f64) -> (i32, i32) {
-        match self {
+    pub(crate) fn spot(self, p: PhysicalPosition<i32>, scale: f64) -> DesktopSpot {
+        let (x, y) = match self {
             Self::Points => p.to_logical::<i32>(scale).into(),
             Self::Pixels => p.into(),
-        }
+        };
+        DesktopSpot { x, y }
     }
 
     /// `size`, reported scaled by `scale`, in this unit.
@@ -59,7 +69,7 @@ impl DesktopUnit {
 
     /// Where winit opens a window saved at `spot`: tagged in this unit, so
     /// no screen's factor converts it.
-    pub(crate) fn place(self, (x, y): (i32, i32)) -> Position {
+    pub(crate) fn place(self, DesktopSpot { x, y }: DesktopSpot) -> Position {
         match self {
             Self::Points => LogicalPosition::new(x, y).into(),
             Self::Pixels => PhysicalPosition::new(x, y).into(),
@@ -76,15 +86,15 @@ impl DesktopUnit {
     /// second-guessing the OS.
     pub(crate) fn on_a_monitor(
         self,
-        spot: (i32, i32),
+        spot: DesktopSpot,
         size: LogicalSize<u32>,
         monitors: impl IntoIterator<Item = Monitor>,
     ) -> bool {
-        let (win_l, win_t) = (i64::from(spot.0), i64::from(spot.1));
+        let (win_l, win_t) = (i64::from(spot.x), i64::from(spot.y));
         let mut any_monitor = false;
         for m in monitors {
             any_monitor = true;
-            let (mx, my) = self.spot(m.position, m.scale);
+            let DesktopSpot { x: mx, y: my } = self.spot(m.position, m.scale);
             let (mw, mh) = self.extent(m.size, m.scale);
             let (ww, wh) = self.extent(size.to_physical(m.scale), m.scale);
             let (win_r, win_b) = (win_l + i64::from(ww), win_t + i64::from(wh));
@@ -344,7 +354,7 @@ mod tests {
         monitors: impl IntoIterator<Item = (i32, i32, u32, u32)>,
     ) -> bool {
         let monitors = monitors.into_iter().map(|(x, y, w, h)| at_1x(x, y, w, h));
-        DesktopUnit::Pixels.on_a_monitor((x, y), LogicalSize::new(w, h), monitors)
+        DesktopUnit::Pixels.on_a_monitor(DesktopSpot { x, y }, LogicalSize::new(w, h), monitors)
     }
 
     #[test]
@@ -380,24 +390,36 @@ mod tests {
         assert!(on_1x_monitors((100, 100, 800, 600), []));
     }
 
+    /// A macOS screen: its rect in points, and its scale.
+    type Screen = ((i32, i32, u32, u32), f64);
+
+    /// Screen pairs, main first: a 1x main screen beside a 2x one, and the
+    /// other way round.
+    const MIXED_SCALES: [[Screen; 2]; 2] = [
+        [((0, 0, 1920, 1080), 1.0), ((1920, 0, 1728, 1117), 2.0)],
+        [((0, 0, 1728, 1117), 2.0), ((1728, 0, 1920, 1080), 1.0)],
+    ];
+
+    /// `screens` as winit reports them, each at its own scale.
+    fn reported(screens: [Screen; 2]) -> [Monitor; 2] {
+        screens.map(|((x, y, w, h), scale)| Monitor {
+            position: LogicalPosition::new(x, y).to_physical(scale),
+            size: LogicalSize::new(w, h).to_physical(scale),
+            scale,
+        })
+    }
+
     /// A spot saved on either of two screens of different scales passes the
     /// check and reopens exactly there, whichever screen's factor winit
-    /// converts the restored position by: macOS's points, with a 1x main
-    /// screen beside a 2x one and the other way round, and one physical
-    /// desktop.
+    /// converts the restored position by: macOS's points over
+    /// [`MIXED_SCALES`], and one physical desktop.
     #[test]
     fn a_saved_spot_round_trips_across_monitor_scales() {
         let size = LogicalSize::new(480, 320);
-        for (main, other) in [
-            (((0, 0, 1920, 1080), 1.0), ((1920, 0, 1728, 1117), 2.0)),
-            (((0, 0, 1728, 1117), 2.0), ((1728, 0, 1920, 1080), 1.0)),
-        ] {
-            let monitors = [main, other].map(|((x, y, w, h), scale)| Monitor {
-                position: LogicalPosition::new(x, y).to_physical(scale),
-                size: LogicalSize::new(w, h).to_physical(scale),
-                scale,
-            });
-            for ((x, y, _, _), scale) in [main, other] {
+        for screens in MIXED_SCALES {
+            let [main, other] = screens;
+            let monitors = reported(screens);
+            for ((x, y, _, _), scale) in screens {
                 let at = LogicalPosition::new(x + 100, y + 100);
                 // `outer_position` scales by the window's own screen's factor.
                 let spot = DesktopUnit::Points.spot(at.to_physical(scale), scale);
@@ -429,6 +451,31 @@ mod tests {
             for by in monitors.map(|m| m.scale) {
                 assert_eq!(placed.to_physical::<i32>(by), at, "converted by {by}");
             }
+        }
+    }
+
+    /// Under points a 2x screen's edge refuses a spot as a 1x one's does: a
+    /// window with one point on the screen shows, one touching its bottom
+    /// edge does not, nor one a window's height below it.
+    #[test]
+    fn a_spot_past_a_mixed_scale_screens_edge_is_refused() {
+        let size = LogicalSize::new(480, 320);
+        for screens in MIXED_SCALES {
+            let ((x, y, _, h), _) = screens
+                .into_iter()
+                .find(|&(_, scale)| scale > 1.0)
+                .expect("a 2x screen");
+            let bottom = y + h as i32;
+            let shows = |dy: i32| {
+                let spot = DesktopSpot {
+                    x: x + 100,
+                    y: bottom + dy,
+                };
+                DesktopUnit::Points.on_a_monitor(spot, size, reported(screens))
+            };
+            assert!(shows(-1), "one point on the 2x screen");
+            assert!(!shows(0), "touching its edge");
+            assert!(!shows(size.height as i32), "a window past its edge");
         }
     }
 

@@ -19,7 +19,7 @@ use pixtuoid_scene::floor::REST_TICK;
 pub(crate) enum Due {
     /// Paint the frame that fell due at this instant.
     Paint(Instant),
-    /// Feed the audio without painting: the window is out of sight.
+    /// Feed the audio without painting: the window is occluded.
     Hear,
 }
 
@@ -27,7 +27,7 @@ pub(crate) struct FrameClock {
     next: Instant,
     /// Whether the frame last due was held back by the flash hold.
     retry: bool,
-    /// Whether the window is out of sight ([`winit::event::WindowEvent::Occluded`]):
+    /// Whether the window is occluded ([`winit::event::WindowEvent::Occluded`]):
     /// nothing paints, and the audio still hears the office each
     /// [`REST_TICK`], as a resting office's paints feed it.
     occluded: bool,
@@ -44,18 +44,18 @@ impl FrameClock {
         }
     }
 
-    /// The window went out of sight, or came back at `now`, where it paints
-    /// at once.
-    pub(crate) fn occlude(&mut self, occluded: bool, now: Instant) {
+    /// The window was occluded, or no longer is at `now`, when it paints at
+    /// once.
+    pub(crate) fn set_occluded(&mut self, occluded: bool, now: Instant) {
         self.occluded = occluded;
         if !occluded {
             self.next = now;
         }
     }
 
-    /// Whether a redraw may paint: not while the window is out of sight.
-    pub(crate) fn paints(&self) -> bool {
-        !self.occluded
+    /// Whether the window is occluded, where a redraw paints nothing.
+    pub(crate) fn occluded(&self) -> bool {
+        self.occluded
     }
 
     /// The frame last due was held back: the next poll retries it a
@@ -209,16 +209,16 @@ mod tests {
         );
     }
 
-    /// An out-of-sight window paints nothing, however busy its office, but
-    /// hears it each rest tick, sleeping between; seen again, it paints at
+    /// An occluded window paints nothing, however busy its office, but hears
+    /// it each rest tick, sleeping between; no longer occluded, it paints at
     /// once.
     #[test]
-    fn an_occluded_window_hears_each_rest_tick_and_paints_once_seen() {
+    fn an_occluded_window_hears_each_rest_tick_then_paints_at_once() {
         let t0 = Instant::now();
         let mut clock = FrameClock::new(t0);
         assert_eq!(clock.poll(t0, None).0, Some(Due::Paint(t0)));
-        clock.occlude(true, t0);
-        assert!(!clock.paints());
+        clock.set_occluded(true, t0);
+        assert!(clock.occluded());
         let step = Duration::from_millis(1);
         let span = 3 * REST_TICK;
         let mut heard = Vec::new();
@@ -239,9 +239,9 @@ mod tests {
         for pair in heard.windows(2) {
             assert_eq!(pair[1] - pair[0], REST_TICK);
         }
-        let seen = t0 + span + step;
-        clock.occlude(false, seen);
-        assert!(clock.paints());
-        assert_eq!(clock.poll(seen, None).0, Some(Due::Paint(seen)));
+        let unoccluded = t0 + span + step;
+        clock.set_occluded(false, unoccluded);
+        assert!(!clock.occluded());
+        assert_eq!(clock.poll(unoccluded, None).0, Some(Due::Paint(unoccluded)));
     }
 }

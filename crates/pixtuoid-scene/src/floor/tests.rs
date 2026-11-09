@@ -1164,7 +1164,7 @@ fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
         weather: storm,
         ..FloorMeta::ground()
     };
-    let frame = obs.frame(&scene, &occupied, |_| None, floor, now);
+    let frame = obs.frame(&scene, Some(&occupied), |_| None, floor, now);
     let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), storm);
     let counts = crate::tally::per_floor_counts(&scene)[0];
     assert_eq!(
@@ -1205,7 +1205,7 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
 
     let _ = obs.frame(
         &scene,
-        &std::collections::HashSet::new(),
+        Some(&std::collections::HashSet::new()),
         printer,
         FloorMeta::ground(),
         now,
@@ -1215,7 +1215,13 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
     // Switch to floor 1 with an appliance ALREADY occupied — this would fire
     // PrinterWhir without the reprime.
     let occ0: std::collections::HashSet<usize> = [0usize].into_iter().collect();
-    let switch = obs.frame(&scene, &occ0, printer, FloorMeta::for_floor(1, 2), now);
+    let switch = obs.frame(
+        &scene,
+        Some(&occ0),
+        printer,
+        FloorMeta::for_floor(1, 2),
+        now,
+    );
     assert_eq!(obs.primed_floor(), Some(1));
     assert!(
         switch.events.is_empty(),
@@ -1223,7 +1229,13 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
     );
 
     let occ01: std::collections::HashSet<usize> = [0usize, 1usize].into_iter().collect();
-    let next = obs.frame(&scene, &occ01, printer, FloorMeta::for_floor(1, 2), now);
+    let next = obs.frame(
+        &scene,
+        Some(&occ01),
+        printer,
+        FloorMeta::for_floor(1, 2),
+        now,
+    );
     assert!(
         next.events.contains(&crate::audio::OneShot::PrinterWhir),
         "after the reprime, a newly occupied printer still fires"
@@ -1240,13 +1252,13 @@ fn audio_observer_keeps_cue_edges_warm_so_delivery_resume_fires_no_volley() {
     let occ = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
 
-    let _ = obs.frame(&empty, &occ, |_| None, FloorMeta::ground(), now);
-    let arrival = obs.frame(&one, &occ, |_| None, FloorMeta::ground(), now);
+    let _ = obs.frame(&empty, Some(&occ), |_| None, FloorMeta::ground(), now);
+    let arrival = obs.frame(&one, Some(&occ), |_| None, FloorMeta::ground(), now);
     assert!(
         arrival.events.contains(&crate::audio::OneShot::DoorChime),
         "an arrival chimes on the frame it happens"
     );
-    let resumed = obs.frame(&one, &occ, |_| None, FloorMeta::ground(), now);
+    let resumed = obs.frame(&one, Some(&occ), |_| None, FloorMeta::ground(), now);
     assert!(
         !resumed.events.contains(&crate::audio::OneShot::DoorChime),
         "no volley on resume — the observer saw the agent while muted"

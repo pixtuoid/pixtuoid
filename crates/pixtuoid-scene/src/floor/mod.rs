@@ -458,11 +458,12 @@ impl AudioObserver {
     /// the cross-frame cue edges. Call it EVERY world-frame regardless of mute
     /// (the painter gates only DELIVERY): a muted stretch keeps
     /// `seen_agents`/`occupied` warm, so re-enabling never fires a
-    /// door/appliance volley for what arrived while silent.
+    /// door/appliance volley for what arrived while silent. `occupied` is
+    /// `None` for a frame heard but not drawn ([`AudioCueTracker::observe`]).
     pub(crate) fn frame(
         &mut self,
         scene: &SceneState,
-        occupied: &std::collections::HashSet<usize>,
+        occupied: Option<&std::collections::HashSet<usize>>,
         waypoint_kind: impl Fn(usize) -> Option<crate::layout::WaypointKind>,
         floor: FloorMeta,
         now: SystemTime,

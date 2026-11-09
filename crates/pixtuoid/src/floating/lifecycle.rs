@@ -7,21 +7,20 @@ use crate::jank::Jank;
 /// What one redraw touches.
 pub(super) trait Redraw {
     fn jank(&mut self) -> &mut Jank;
-    /// Whether a frame painted now would be seen
-    /// ([`FrameClock::paints`](super::cadence::FrameClock::paints)).
-    fn paints(&self) -> bool;
+    /// [`FrameClock::occluded`](super::cadence::FrameClock::occluded).
+    fn occluded(&self) -> bool;
     /// Paint one frame, recording it with [`Jank::record`] once it has tried to
     /// present.
     fn paint(&mut self);
     fn recursor(&mut self);
 }
 
-/// One redraw: the frame, unless it would not be seen, then the cursor it
+/// One redraw: the frame, unless the window is occluded, then the cursor it
 /// leaves under the pointer. Every way `paint` returns before it records, or
 /// is skipped, skips `record`, the only thing that spends a scheduled
 /// redraw's due, so it is spent here.
 pub(super) fn redraw(app: &mut impl Redraw) {
-    if app.paints() {
+    if !app.occluded() {
         app.paint();
     }
     app.jank().spend_due();
@@ -65,7 +64,7 @@ mod tests {
         jank: Jank,
         log: Vec<&'static str>,
         presents: bool,
-        in_sight: bool,
+        occluded: bool,
         /// When a recorded frame showed.
         shown_at: Instant,
     }
@@ -74,8 +73,8 @@ mod tests {
         fn jank(&mut self) -> &mut Jank {
             &mut self.jank
         }
-        fn paints(&self) -> bool {
-            self.in_sight
+        fn occluded(&self) -> bool {
+            self.occluded
         }
         fn paint(&mut self) {
             self.log.push("paint");
@@ -104,7 +103,7 @@ mod tests {
                 jank: Jank::new(),
                 log: Vec::new(),
                 presents: false,
-                in_sight: true,
+                occluded: false,
                 shown_at: t0 + 2 * PAINT_FRAME,
             };
             app.jank.due_at(t0);
@@ -130,7 +129,7 @@ mod tests {
                 jank: Jank::new(),
                 log: Vec::new(),
                 presents: true,
-                in_sight: true,
+                occluded: false,
                 shown_at: Instant::now(),
             };
             app.jank.due_at(Instant::now());
@@ -140,23 +139,23 @@ mod tests {
         assert!(logged.contains("scheduled=1 "), "{logged}");
     }
 
-    /// A redraw asked for while the window is out of sight paints nothing,
-    /// and spends the due of a frame scheduled before it went.
+    /// A redraw asked for while the window is occluded paints nothing, and
+    /// spends the due of a frame scheduled before it was.
     #[test]
-    fn an_out_of_sight_redraw_paints_nothing_and_spends_its_due() {
+    fn an_occluded_redraw_paints_nothing_and_spends_its_due() {
         let t0 = Instant::now();
         let logged = crate::test_capture::capture(|| {
             let mut app = Fake {
                 jank: Jank::new(),
                 log: Vec::new(),
                 presents: true,
-                in_sight: false,
+                occluded: true,
                 shown_at: t0 + 2 * PAINT_FRAME,
             };
             app.jank.due_at(t0);
             redraw(&mut app);
             assert_eq!(app.log, ["recursor"]);
-            app.in_sight = true;
+            app.occluded = false;
             redraw(&mut app);
             app.jank.finish(t0);
         });

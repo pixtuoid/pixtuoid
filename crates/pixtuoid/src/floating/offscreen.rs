@@ -77,16 +77,15 @@ impl OfficeRenderer {
         self.audio = audio;
     }
 
-    /// Feed the audio a frame of the office without drawing one: the floor
-    /// showing's last frame, heard in `scene` at `now` under `floor`.
+    /// Feed the audio a frame of the office without drawing one
+    /// ([`OfficeSession::hear`]), in `scene` at `now` under `floor`.
     pub(crate) fn hear(
         &mut self,
         scene: &SceneState,
         floor: FloorMeta,
         now: std::time::SystemTime,
     ) {
-        self.audio
-            .frame(self.session.audio_frame(scene, floor, now));
+        self.audio.frame(self.session.hear(scene, floor, now));
     }
 
     /// Render the office's floor showing, or its slide to another, into the
@@ -1189,26 +1188,25 @@ mod tests {
         assert!(!calm.contains("decode drift"), "{calm}");
     }
 
-    #[test]
-    fn floating_appliance_cues_fire_from_the_sessions_occupancy() {
-        // Deterministic: fixed agent id + a hand-stepped clock; the loop bound mirrors
-        // the scene crate's occupancy sim pin.
+    /// The first of `budget` steps whose frame fires a printer or vending
+    /// cue, an idle agent wandering an office drawn every two seconds, and
+    /// heard undrawn just before step `heard_before`, if one is named.
+    /// Deterministic: fixed agent id + a hand-stepped clock.
+    fn first_appliance_cue(budget: u64, heard_before: Option<u64>) -> Option<u64> {
         use pixtuoid_scene::audio::OneShot;
-        let pack = std::sync::Arc::new(
-            pixtuoid_scene::pack::load_bundled_pack().expect("bundled pack loads"),
-        );
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let now0 = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         let mut idle = running_on("/w/wanderer.jsonl", 0, 0);
         idle.state = pixtuoid_core::state::ActivityState::Idle;
         let scene = scene_with(vec![idle], 16);
-        let mut renderer = OfficeRenderer::new(pack);
+        let mut renderer = OfficeRenderer::new(crate::test_flash::pack_arc());
         let (handle, rx) = crate::audio::AudioHandle::test_pair();
         renderer.set_audio(handle);
-        let mut heard = Vec::new();
-        // A BUDGET, not part of the assertion: the wait rides random wander over live desk positions.
-        for step in 0..9_000u64 {
+        (0..budget).find(|&step| {
             let now = now0 + std::time::Duration::from_secs(2 * step);
+            if heard_before == Some(step) {
+                renderer.hear(&scene, FloorMeta::ground(), now);
+            }
             // 192x160: tall enough that the corridor hosts BOTH appliances
             // (the vending/printer height gates in layout::compute).
             renderer.render(
@@ -1225,24 +1223,29 @@ mod tests {
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             );
-            heard.extend(
-                crate::audio::drain_frames(&rx)
-                    .into_iter()
-                    .flat_map(|f| f.events),
-            );
-            if heard
-                .iter()
+            crate::audio::drain_frames(&rx)
+                .into_iter()
+                .flat_map(|f| f.events)
                 .any(|e| matches!(e, OneShot::PrinterWhir | OneShot::VendingDrop))
-            {
-                break;
-            }
-        }
+        })
+    }
+
+    #[test]
+    fn floating_appliance_cues_fire_from_the_sessions_occupancy() {
+        // A BUDGET, not part of the assertion: the wait rides random wander over live desk positions.
         assert!(
-            heard
-                .iter()
-                .any(|e| matches!(e, OneShot::PrinterWhir | OneShot::VendingDrop)),
-            "a wander through the appliance strip must fire a printer/vending cue; heard: {heard:?}"
+            first_appliance_cue(9_000, None).is_some(),
+            "a wander through the appliance strip must fire a printer/vending cue"
         );
+    }
+
+    /// The frame drawn after the office was heard undrawn, as a window no
+    /// longer occluded draws, fires no cue for an appliance reached
+    /// meanwhile.
+    #[test]
+    fn a_frame_drawn_after_hearing_fires_no_stale_appliance_cue() {
+        let cue = first_appliance_cue(9_000, None).expect("a wander fires a cue");
+        assert_eq!(first_appliance_cue(cue + 1, Some(cue)), None);
     }
 
     #[test]
@@ -1328,8 +1331,8 @@ mod tests {
         );
     }
 
-    /// An office heard without being drawn, as a window out of sight hears
-    /// it, still chimes a walk-in.
+    /// An office heard without being drawn, as an occluded window hears it,
+    /// still chimes a walk-in.
     #[test]
     fn an_office_heard_undrawn_chimes_a_walk_in() {
         let cap = 16;
