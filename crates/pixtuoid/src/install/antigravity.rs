@@ -61,7 +61,7 @@ fn config_dir() -> Result<PathBuf> {
     if pixtuoid_core::platform::go_user_home_dir().is_none() {
         return Err(io::home_unset(
             "the home directory",
-            pixtuoid_core::platform::HOME_VAR,
+            pixtuoid_core::platform::USER_HOME_VAR,
         ));
     }
     Ok(gemini_dir().join("config"))

@@ -64,7 +64,7 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     ) {
         return Err(io::home_unset(
             "grok's home",
-            &format!("GROK_HOME/{}", pixtuoid_core::platform::HOME_VAR),
+            &format!("GROK_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
         ));
     }
     Ok(pixtuoid_core::source::grok::grok_home()

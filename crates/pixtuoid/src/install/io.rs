@@ -71,7 +71,7 @@ pub(crate) fn owner_only_create(opts: &mut OpenOptions) -> &mut OpenOptions {
 
 fn checked_home_join(home: Option<PathBuf>, rel: &str) -> Result<PathBuf> {
     home.map(|h| h.join(rel))
-        .ok_or_else(|| home_unset("the home directory", pixtuoid_core::platform::HOME_VAR))
+        .ok_or_else(|| home_unset("the home directory", pixtuoid_core::platform::USER_HOME_VAR))
 }
 
 pub(crate) const HOOK_OVERRIDE_ENV: &str = "PIXTUOID_HOOK";

@@ -110,7 +110,7 @@ fn home() -> Result<PathBuf> {
     };
     let read = format!(
         "REASONIX_HOME/{config}{}",
-        pixtuoid_core::platform::HOME_VAR
+        pixtuoid_core::platform::USER_HOME_VAR
     );
     reasonix_home().ok_or_else(|| io::home_unset("Reasonix's home", &read))
 }

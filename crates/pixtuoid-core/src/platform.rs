@@ -80,13 +80,13 @@ pub fn user_home_opt() -> Option<PathBuf> {
 
 /// The variable [`user_home_opt`] and [`go_user_home_dir`] both read, so the
 /// one an unresolved-home error names.
-pub const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+pub const USER_HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
 
-/// `~` as a Go CLI resolves it, Go's `os.UserHomeDir`: [`HOME_VAR`] and no OS
-/// fallback, so `None` where Go errors (golang/go `src/os/file.go:605-623` @
+/// `~` as a Go CLI resolves it, Go's `os.UserHomeDir`: [`USER_HOME_VAR`] and no
+/// OS fallback, so `None` where Go errors (golang/go `src/os/file.go:605-623` @
 /// be57ebb0f3).
 pub fn go_user_home_dir() -> Option<PathBuf> {
-    path_env(HOME_VAR)
+    path_env(USER_HOME_VAR)
 }
 
 /// `~` as a CLI on the `dirs` crate resolves it (dirs 6.0.0 @ 00511bdc25,

@@ -297,8 +297,8 @@ fn doctor(home: &std::path::Path, endpoint: &std::path::Path) -> std::process::C
             command.env(kept, value);
         }
     }
-    // Codex's default Windows home is the profile dir, which no variable moves,
-    // and it honors `CODEX_HOME` only when that dir exists.
+    // `pixtuoid_core::source::codex::codex_home` defaults under the Windows profile
+    // dir, which no variable moves, and takes `CODEX_HOME` only when it names an existing dir.
     let codex = home.join(".codex");
     std::fs::create_dir_all(&codex).expect("codex home");
     command
