@@ -188,17 +188,87 @@ pub(crate) fn detect_parent_id(path: &Path, source: &str) -> Option<AgentId> {
     None
 }
 
-/// The path form EVERY id derivation runs on. The `normalize_path_key` fold
-/// lives HERE at the seam, not inside each deriver, so every lane mints ONE id
-/// per file on Windows while the fixture-fed conformance goldens stay
-/// platform-invariant. Identity on Unix.
+/// Pulls a display label out of ONE decoded head line, for a source that names
+/// its session in the transcript HEAD rather than only in the tail stream.
+/// `None` on a source's registry row means it has no such name — which is
+/// load-bearing, not merely absent: it lets the head scan stop at the first
+/// `cwd` instead of reading on for a label that can never arrive. **omp** is
+/// the one override; see its `omp_head_title`.
 #[cfg(any(feature = "native", feature = "harness"))]
-pub(crate) fn id_path(path: &Path) -> PathBuf {
-    PathBuf::from(normalize_path_key(&path.to_string_lossy()))
+pub(crate) type HeadLabel = fn(&Value) -> Option<String>;
+
+/// Walk a byte span's JSONL lines, handing each parsed line to `visit` until it
+/// returns `true`. A line that does not parse is skipped.
+#[cfg(any(feature = "native", feature = "harness"))]
+fn scan_jsonl(bytes: &[u8], mut visit: impl FnMut(&Value) -> bool) {
+    let parsed = crate::source::admit::lines(bytes)
+        .filter_map(|line| serde_json::from_str::<Value>(line.ok()?).ok());
+    for v in parsed {
+        if visit(&v) {
+            return;
+        }
+    }
+}
+
+/// Whether a head scan can stop: everything it is ABLE to find, it has found.
+///
+/// `wants_label` is the whole reason `head_label` is an `Option`. A source with
+/// no head name can never satisfy a label term, so folding one in unconditionally
+/// turns its first-line stop into a full up-to-`MAX_PENDING_BYTES` parse — on a
+/// path every transcript source rides.
+#[cfg(any(feature = "native", feature = "harness"))]
+fn head_scan_complete(cwd: Option<&Path>, label: Option<&str>, wants_label: bool) -> bool {
+    cwd.is_some() && (!wants_label || label.is_some())
+}
+
+/// The first-sight fields a HEAD read yields, pulled in ONE parse pass: scanning
+/// a 1 MiB head once per field is a real cost. Each comes from the SCANNED
+/// source's own extractor (invariant #3): an if-chain trying every source's
+/// shape against every transcript lets a foreign-shaped line label a session
+/// with a foreign, identity-bearing cwd. For a TITLED omp root — the only
+/// source with a head label — the two land on adjacent lines (`title`, then
+/// `session`) and the scan stops there. A title-less head (every subagent, and
+/// legacy files with no slot) has no label to find, so it scans to the byte cap:
+/// bounded, once per first sight, and off the reducer thread.
+#[cfg(any(feature = "native", feature = "harness"))]
+pub(crate) fn extract_head_fields(
+    bytes: &[u8],
+    extract: CwdExtractor,
+    head_label: Option<HeadLabel>,
+    head_parent: Option<ParentExtractor>,
+) -> HeadFields {
+    let mut head = HeadFields::default();
+    scan_jsonl(bytes, |v| {
+        if head.cwd.is_none() {
+            head.cwd = extract(v);
+        }
+        if let (Some(f), None) = (head_label, &head.label) {
+            head.label = f(v);
+        }
+        if let (Some(f), None) = (head_parent, &head.parent) {
+            head.parent = f(v);
+        }
+        head_scan_complete(
+            head.cwd.as_deref(),
+            head.label.as_deref(),
+            head_label.is_some(),
+        )
+    });
+    head
+}
+
+/// What a first sight reads off a transcript's head, or off a revived file's
+/// new bytes.
+#[cfg(any(feature = "native", feature = "harness"))]
+#[derive(Debug, Default)]
+pub(crate) struct HeadFields {
+    pub(crate) cwd: Option<PathBuf>,
+    pub(crate) label: Option<String>,
+    pub(crate) parent: Option<String>,
 }
 
 /// The `SessionStart` a transcript's first sight registers, keyed by
-/// `session_id` — its id deriver's output over [`id_path`]: hook slots carry
+/// `session_id` — its id deriver's output over the folded path: hook slots carry
 /// the bare session UUID and `backfill_identity` never heals a non-empty
 /// session_id, so a raw file-stem here disagrees with the hook-created twin
 /// forever. Its `subagents/` nesting names the parent before its head does.
@@ -798,6 +868,23 @@ pub(crate) fn ellipsize(s: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The truth table the scan's cost depends on. The `wants_label = false`
+    /// row is load-bearing: it is the difference between stopping on the first
+    /// `cwd` line and parsing the entire head.
+    #[cfg(any(feature = "native", feature = "harness"))]
+    #[test]
+    fn head_scan_stops_on_cwd_alone_when_the_source_has_no_head_label() {
+        let cwd = Path::new("/repo");
+
+        assert!(head_scan_complete(Some(cwd), None, false));
+        assert!(head_scan_complete(Some(cwd), Some("t"), false));
+        assert!(!head_scan_complete(None, Some("t"), false));
+
+        assert!(!head_scan_complete(Some(cwd), None, true));
+        assert!(head_scan_complete(Some(cwd), Some("t"), true));
+        assert!(!head_scan_complete(None, None, true));
+    }
 
     /// Every wire string a `DecodeError` carries is [`display_safe`]d, so a
     /// raw-stderr log of one can't carry a terminal escape.

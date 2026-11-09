@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::harness::{Drive, Driven, Session};
+use pixtuoid_core::harness::{Drive, Driven, Fold};
 use pixtuoid_core::source::AgentEvent;
 use serde_json::json;
 
@@ -32,8 +32,8 @@ fn sub_id() -> AgentId {
 
 #[test]
 fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
-    let (hooks, mut session) = (Drive::hooks(), Session::default());
-    session.feed(
+    let (hooks, mut fold) = (Drive::hooks(), Fold::default());
+    fold.feed(
         &hooks,
         [
             json!({
@@ -57,7 +57,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
         t0(),
     );
     assert!(
-        session.driven().scene.agents.contains_key(&parent_id()),
+        fold.driven().scene.agents.contains_key(&parent_id()),
         "parent created"
     );
 
@@ -73,8 +73,8 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
             {"type": "tool_use", "id": "s1", "name": "Read", "input": {"file_path": "/x"}}
         ]}
     });
-    session.feed(&sub, [read.to_string()], t0());
-    let linked = &session.driven().scene.agents[&sub_id()];
+    fold.feed(&sub, [read.to_string()], t0());
+    let linked = &fold.driven().scene.agents[&sub_id()];
     assert_eq!(
         linked.parent_id,
         Some(parent_id()),
@@ -85,7 +85,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
         "attributionAgent renames the subagent sprite"
     );
 
-    session.feed(
+    fold.feed(
         &hooks,
         [json!({
             "hook_event_name": "SessionEnd",
@@ -95,7 +95,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
         .to_string()],
         t0(),
     );
-    let d = session.finish();
+    let d = fold.finish();
     d.assert_clean("claude-code subagent lifecycle");
     assert!(
         d.scene.agents[&parent_id()].exiting_at.is_some(),
@@ -222,20 +222,20 @@ fn cc_subagent_hook_pair_registers_links_and_exits_its_child() {
 #[test]
 fn cc_jsonl_registered_subagent_exits_cleanly_on_hook_subagent_stop() {
     let child = hook_child();
-    let (hooks, mut session) = (Drive::hooks(), Session::default());
-    session.feed(&hooks, recorded_lines(&["SessionStart"]), t0());
-    session.feed(&child_drive(), FIRST_SIGHT, t0());
+    let (hooks, mut fold) = (Drive::hooks(), Fold::default());
+    fold.feed(&hooks, recorded_lines(&["SessionStart"]), t0());
+    fold.feed(&child_drive(), FIRST_SIGHT, t0());
     assert!(
-        session.driven().scene.agents.contains_key(&child),
+        fold.driven().scene.agents.contains_key(&child),
         "JSONL registered it"
     );
 
-    session.feed(
+    fold.feed(
         &hooks,
         recorded_lines(&["SubagentStart", "SubagentStop"]),
         t0(),
     );
-    let d = session.finish();
+    let d = fold.finish();
     d.assert_clean("claude-code JSONL-registered subagent");
     assert!(
         d.scene
@@ -284,21 +284,21 @@ fn cc_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
 
 #[test]
 fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
-    let (hooks, mut session) = (Drive::hooks(), Session::default());
-    session.feed(
+    let (hooks, mut fold) = (Drive::hooks(), Fold::default());
+    fold.feed(
         &hooks,
         recorded_lines(&["SessionStart", "SubagentStart"]),
         t0(),
     );
-    let (child, root) = child_of(session.driven());
+    let (child, root) = child_of(fold.driven());
     assert!(
-        session.driven().scene.agents.contains_key(&child),
+        fold.driven().scene.agents.contains_key(&child),
         "hook registered it"
     );
-    let count_before = session.driven().scene.agents.len();
+    let count_before = fold.driven().scene.agents.len();
 
-    session.feed(&child_drive(), FIRST_SIGHT, t0());
-    let d = session.finish();
+    fold.feed(&child_drive(), FIRST_SIGHT, t0());
+    let d = fold.finish();
     d.assert_clean("claude-code hook-first subagent");
     assert_eq!(
         d.scene.agents.len(),

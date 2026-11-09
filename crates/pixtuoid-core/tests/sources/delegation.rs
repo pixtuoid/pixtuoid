@@ -215,7 +215,7 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
 fn dsh_s_dispatch_end_leaves_its_running_child_standing() {
     use std::time::{Duration, SystemTime};
 
-    use pixtuoid_core::harness::Session;
+    use pixtuoid_core::harness::Fold;
 
     let lines = lines("dsh", "hook-payloads.jsonl");
     let raw: Vec<serde_json::Value> = lines
@@ -227,10 +227,10 @@ fn dsh_s_dispatch_end_leaves_its_running_child_standing() {
         .iter()
         .position(|v| v["type"] == "session_end" && v["sessionId"] != raw[0]["sessionId"])
         .expect("the child's own end");
-    let (hooks, mut session) = (Drive::hooks(), Session::default());
+    let (hooks, mut fold) = (Drive::hooks(), Fold::default());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    session.feed(&hooks, &lines[..ends], t0);
-    let child = session
+    fold.feed(&hooks, &lines[..ends], t0);
+    let child = fold
         .driven()
         .events
         .iter()
@@ -244,8 +244,7 @@ fn dsh_s_dispatch_end_leaves_its_running_child_standing() {
         })
         .expect("the recording's child session");
     assert!(
-        session
-            .driven()
+        fold.driven()
             .scene
             .agents
             .get(&child)
@@ -253,8 +252,8 @@ fn dsh_s_dispatch_end_leaves_its_running_child_standing() {
         "the dispatch's drain walked its running child out"
     );
     // Its own end alone: the root's, later, would cascade it out regardless.
-    session.feed(&hooks, &lines[ends..=ends], t0);
-    let d = session.finish();
+    fold.feed(&hooks, &lines[ends..=ends], t0);
+    let d = fold.finish();
     d.assert_clean("dsh delegation hooks");
     assert!(
         d.scene.agents[&child].exiting_at.is_some(),

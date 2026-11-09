@@ -8,19 +8,25 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{CwdExtractor, LineDecoder, ParentExtractor, first_sight_start};
+use crate::source::decoder::{HeadFields, LineDecoder, extract_head_fields, first_sight_start};
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
 use super::health::FailureLatch;
 use super::liveness::{probe_admits, revouch_gated_files};
 use super::root_watch::{DirId, dir_id};
-use super::{
-    ActivityRecency, HeadLabel, SessionEndChecker, Sight, SourceDecoders, TailActivity, WatchCtx,
-};
+use super::{ActivityRecency, SessionEndChecker, Sight, SourceDecoders, TailActivity, WatchCtx};
 
 /// Oversized-span skip threshold: a pending span past this is never replayed.
 pub(super) const MAX_PENDING_BYTES: u64 = 1 << 20;
+
+/// The path form EVERY id derivation runs on. The `normalize_path_key` fold
+/// lives HERE at the seam, not inside each deriver, so every lane mints ONE id
+/// per file on Windows while the fixture-fed conformance goldens stay
+/// platform-invariant. Identity on Unix.
+pub(super) fn id_path(path: &Path) -> std::path::PathBuf {
+    std::path::PathBuf::from(crate::id::normalize_path_key(&path.to_string_lossy()))
+}
 
 /// First-sight decision, shared by EVERY path that can be the first to see a
 /// file: seed the cursor at EOF — suppressing SessionStart — when the session
@@ -666,92 +672,5 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
         if ctx.tx.send((Transport::Jsonl, ev)).await.is_err() {
             return;
         }
-    }
-}
-
-/// Walk a byte span's JSONL lines, handing each parsed line to `visit` until it
-/// returns `true`. A line that does not parse is skipped.
-fn scan_jsonl(bytes: &[u8], mut visit: impl FnMut(&serde_json::Value) -> bool) {
-    let parsed = crate::source::admit::lines(bytes)
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
-    for v in parsed {
-        if visit(&v) {
-            return;
-        }
-    }
-}
-
-/// Whether a head scan can stop: everything it is ABLE to find, it has found.
-///
-/// `wants_label` is the whole reason `head_label` is an `Option`. A source with
-/// no head name can never satisfy a label term, so folding one in unconditionally
-/// turns its first-line stop into a full up-to-`MAX_PENDING_BYTES` parse — on a
-/// path every transcript source rides.
-fn head_scan_complete(cwd: Option<&Path>, label: Option<&str>, wants_label: bool) -> bool {
-    cwd.is_some() && (!wants_label || label.is_some())
-}
-
-/// The first-sight fields a HEAD read yields, pulled in ONE parse pass: scanning
-/// a 1 MiB head once per field is a real cost. Each comes from the SCANNED
-/// source's own extractor (invariant #3): an if-chain trying every source's
-/// shape against every transcript lets a foreign-shaped line label a session
-/// with a foreign, identity-bearing cwd. For a TITLED omp root — the only
-/// source with a head label — the two land on adjacent lines (`title`, then
-/// `session`) and the scan stops there. A title-less head (every subagent, and
-/// legacy files with no slot) has no label to find, so it scans to the byte cap:
-/// bounded, once per first sight, and off the reducer thread.
-pub(super) fn extract_head_fields(
-    bytes: &[u8],
-    extract: CwdExtractor,
-    head_label: Option<HeadLabel>,
-    head_parent: Option<ParentExtractor>,
-) -> HeadFields {
-    let mut head = HeadFields::default();
-    scan_jsonl(bytes, |v| {
-        if head.cwd.is_none() {
-            head.cwd = extract(v);
-        }
-        if let (Some(f), None) = (head_label, &head.label) {
-            head.label = f(v);
-        }
-        if let (Some(f), None) = (head_parent, &head.parent) {
-            head.parent = f(v);
-        }
-        head_scan_complete(
-            head.cwd.as_deref(),
-            head.label.as_deref(),
-            head_label.is_some(),
-        )
-    });
-    head
-}
-
-/// What a first sight reads off a transcript's head, or off a revived file's
-/// new bytes.
-#[derive(Debug, Default)]
-pub(super) struct HeadFields {
-    pub(super) cwd: Option<PathBuf>,
-    pub(super) label: Option<String>,
-    pub(super) parent: Option<String>,
-}
-
-#[cfg(test)]
-mod stop_tests {
-    use super::*;
-
-    /// The truth table the scan's cost depends on. The `wants_label = false`
-    /// row is load-bearing: it is the difference between stopping on the first
-    /// `cwd` line and parsing the entire head.
-    #[test]
-    fn head_scan_stops_on_cwd_alone_when_the_source_has_no_head_label() {
-        let cwd = Path::new("/repo");
-
-        assert!(head_scan_complete(Some(cwd), None, false));
-        assert!(head_scan_complete(Some(cwd), Some("t"), false));
-        assert!(!head_scan_complete(None, Some("t"), false));
-
-        assert!(!head_scan_complete(Some(cwd), None, true));
-        assert!(head_scan_complete(Some(cwd), Some("t"), true));
-        assert!(!head_scan_complete(None, None, true));
     }
 }

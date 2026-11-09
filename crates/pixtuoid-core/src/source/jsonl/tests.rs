@@ -308,22 +308,24 @@ fn detect_parent_id_handles_backslash_paths() {
 fn the_head_scan_dispatches_the_scanned_sources_shape() {
     let top = br#"{"cwd":"/repo/a"}"#;
     assert_eq!(
-        super::walk::extract_head_fields(top, cwd_extractor_for("omp"), None, None).cwd,
+        crate::source::decoder::extract_head_fields(top, cwd_extractor_for("omp"), None, None).cwd,
         Some(PathBuf::from("/repo/a"))
     );
     assert_eq!(
-        super::walk::extract_head_fields(top, cwd_extractor_for("test"), None, None).cwd,
+        crate::source::decoder::extract_head_fields(top, cwd_extractor_for("test"), None, None).cwd,
         Some(PathBuf::from("/repo/a")),
         "an unregistered harness source keeps the shared top-level default"
     );
     let nested = br#"{"type":"session_meta","payload":{"cwd":"/repo/b","id":"u"}}"#;
     assert_eq!(
-        super::walk::extract_head_fields(nested, cwd_extractor_for("codex"), None, None).cwd,
+        crate::source::decoder::extract_head_fields(nested, cwd_extractor_for("codex"), None, None)
+            .cwd,
         Some(PathBuf::from("/repo/b"))
     );
     let mixed = b"not-json\n{\"type\":\"noise\"}\n{\"cwd\":\"/repo/c\"}\n";
     assert_eq!(
-        super::walk::extract_head_fields(mixed, cwd_extractor_for("omp"), None, None).cwd,
+        crate::source::decoder::extract_head_fields(mixed, cwd_extractor_for("omp"), None, None)
+            .cwd,
         Some(PathBuf::from("/repo/c"))
     );
 }
@@ -332,7 +334,7 @@ fn the_head_scan_dispatches_the_scanned_sources_shape() {
 fn cc_head_scan_ignores_codex_shaped_payload_cwd() {
     let codex_shaped = br#"{"type":"session_meta","payload":{"cwd":"/foreign/repo","id":"u"}}"#;
     assert_eq!(
-        super::walk::extract_head_fields(
+        crate::source::decoder::extract_head_fields(
             codex_shaped,
             cwd_extractor_for("claude-code"),
             None,
@@ -906,8 +908,12 @@ fn t_head_label(v: &serde_json::Value) -> Option<String> {
 #[test]
 fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
     let plain = "{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n{\"type\":\"assistant\"}\n";
-    let head =
-        super::walk::extract_head_fields(plain.as_bytes(), cwd_extractor_for("test"), None, None);
+    let head = crate::source::decoder::extract_head_fields(
+        plain.as_bytes(),
+        cwd_extractor_for("test"),
+        None,
+        None,
+    );
     assert_eq!(head.cwd.as_deref(), Some(Path::new("/repo/head")));
     assert_eq!(
         head.label, None,
@@ -915,7 +921,7 @@ fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
     );
 
     let titled = "{\"type\":\"title\",\"title\":\"Ship it\"}\n{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
-    let head = super::walk::extract_head_fields(
+    let head = crate::source::decoder::extract_head_fields(
         titled.as_bytes(),
         cwd_extractor_for("test"),
         Some(t_head_label),
@@ -928,7 +934,7 @@ fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
     // read must fall through to the cwd-basename deriver, not name it "".
     let empty =
         "{\"type\":\"title\",\"title\":\"\"}\n{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
-    let head = super::walk::extract_head_fields(
+    let head = crate::source::decoder::extract_head_fields(
         empty.as_bytes(),
         cwd_extractor_for("test"),
         Some(t_head_label),

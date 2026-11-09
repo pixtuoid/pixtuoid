@@ -145,3 +145,39 @@ fn codex_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
         "the child's tombstone must not affect the parent"
     );
 }
+
+/// The child's rollout names its parent and cwd only in its head, which the
+/// watcher's first sight reads: the seed carries both.
+#[test]
+fn a_seeded_child_rollout_starts_under_the_parent_its_head_names() {
+    let (parent, child) = ids();
+    let dir = super::captures::sources_root().join("codex/fixtures/subagent-hermetic");
+    let lines = super::captures::transcripts_in(&dir)
+        .into_iter()
+        .map(|t| (super::captures::fixture_lines(&t), t))
+        .find(|(lines, _)| parsed(&lines[0])["payload"]["parent_thread_id"].is_string())
+        .expect("the child's rollout");
+    let (lines, rollout) = lines;
+    let head = parsed(&lines[0]);
+    let d = Drive::transcript_at("codex", &rollout)
+        .expect("codex has a line decoder")
+        .seeded()
+        .lines(&lines);
+    d.assert_clean("codex child rollout");
+    let AgentEvent::SessionStart {
+        agent_id,
+        cwd,
+        parent_id,
+        ..
+    } = &d.events[0]
+    else {
+        panic!("the seed leads: {:?}", d.events.first());
+    };
+    assert_eq!(*agent_id, child);
+    assert_eq!(*parent_id, Some(parent), "the head's parent_thread_id");
+    assert_eq!(
+        cwd,
+        std::path::Path::new(head["payload"]["cwd"].as_str().expect("a head cwd")),
+        "the head's cwd"
+    );
+}

@@ -36,7 +36,7 @@ pub(crate) use root_watch::{Nudge, Reconciled, RootWatch, Wake, absolute_root};
 use unclaim::drain_child_end_unclaims;
 use walk::{RootRead, scan_root, walk_jsonl};
 
-use crate::source::decoder::LineDecoder;
+use crate::source::decoder::{HeadLabel, LineDecoder};
 
 pub use crate::source::decoder::PathFilter;
 pub use crate::source::decoder::{IdDeriver, TailActivity};
@@ -75,14 +75,6 @@ fn no_cwd_from_path(_p: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Pulls a display label out of ONE decoded head line, for a source that names
-/// its session in the transcript HEAD rather than only in the tail stream.
-/// `None` on a source's registry row means it has no such name — which is
-/// load-bearing, not merely absent: it lets the head scan stop at the first
-/// `cwd` instead of reading on for a label that can never arrive. **omp** is
-/// the one override; see its `omp_head_title`.
-pub(crate) type HeadLabel = fn(&serde_json::Value) -> Option<String>;
-
 #[derive(Clone, Copy)]
 struct SourceDecoders {
     decode_line: LineDecoder,
@@ -98,7 +90,7 @@ struct SourceDecoders {
 /// The `IdDeriver` behind its only legal caller.
 ///
 /// Every id in the watcher must be derived from a path folded through
-/// [`id_path`](crate::source::decoder::id_path), or the consumer computes it in a different id-space than
+/// [`walk::id_path`], or the consumer computes it in a different id-space than
 /// the producer. The fn pointer lives in a module the sibling
 /// `walk`/`liveness`/`unclaim` modules are not inside, so an un-folded
 /// derivation is a compile error rather than a review catch.
@@ -115,7 +107,7 @@ mod folded {
 
         /// The id for `path`, folded. THE only way to reach the deriver.
         pub(super) fn id_for(&self, path: &Path) -> String {
-            (self.0)(&crate::source::decoder::id_path(path))
+            (self.0)(&super::walk::id_path(path))
         }
     }
 }

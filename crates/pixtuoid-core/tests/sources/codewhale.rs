@@ -5,7 +5,7 @@
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::harness::{Drive, Reach, Session};
+use pixtuoid_core::harness::{Drive, Fold, Reach};
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 
@@ -19,10 +19,10 @@ fn codewhale_subagent_outlives_its_dispatch_and_ends_on_its_own_complete() {
         .iter()
         .position(|l| l.contains(r#""event":"subagent_complete""#))
         .expect("the child completes");
-    let (hooks, mut session) = (Drive::hooks(), Session::default());
+    let (hooks, mut fold) = (Drive::hooks(), Fold::default());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    session.feed(&hooks, &lines[..complete], t0);
-    let running = session.driven();
+    fold.feed(&hooks, &lines[..complete], t0);
+    let running = fold.driven();
     running.assert_clean("codewhale child-error hooks");
     let registered = |root: bool| {
         running.events.iter().find_map(|e| match e {
@@ -63,8 +63,8 @@ fn codewhale_subagent_outlives_its_dispatch_and_ends_on_its_own_complete() {
         "the child walked out before its own subagent_complete"
     );
 
-    session.feed(&hooks, &lines[complete..=complete], t0);
-    let d = session.finish();
+    fold.feed(&hooks, &lines[complete..=complete], t0);
+    let d = fold.finish();
     let child_slot = &d.scene.agents[&child];
     assert_eq!(
         child_slot.parent_id,

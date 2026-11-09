@@ -8,11 +8,11 @@
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::harness::{Drive, Session};
+use pixtuoid_core::harness::{Drive, Fold};
 use pixtuoid_core::id::normalize_path_key;
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::omp::omp_id_from_path;
-use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, HOOK_WINS_WINDOW};
+use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
 
 fn t0() -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000)
@@ -79,21 +79,20 @@ fn switched(key: &str) -> AgentId {
 #[test]
 fn an_empty_session_round_registers_then_leaves_on_the_exit_grace() {
     let id = switched("sessionFile");
-    let mut session = Session::default();
-    session.feed(&Drive::hooks(), lines("new-session-hermetic"), t0());
-    session.driven().assert_clean("new-session-hermetic");
+    let mut fold = Fold::default();
+    fold.feed(&Drive::hooks(), lines("new-session-hermetic"), t0());
+    fold.driven().assert_clean("new-session-hermetic");
     assert!(
-        session
-            .driven()
+        fold.driven()
             .scene
             .agents
             .get(&id)
             .is_some_and(|s| s.exiting_at.is_some()),
         "the bridge shutdown must start the walkout"
     );
-    session.tick(walked_out());
+    fold.tick(walked_out());
     assert!(
-        !session.finish().scene.agents.contains_key(&id),
+        !fold.finish().scene.agents.contains_key(&id),
         "an empty session leaves on the exit grace, not the stale sweep"
     );
 }
@@ -109,20 +108,20 @@ fn a_resumed_session_re_registers_after_its_earlier_end() {
         .rposition(|l| parsed(l)["type"] == "session_start")
         .filter(|&at| at > 0)
         .expect("the resume fires its own session_start");
-    let (hooks, mut session) = (Drive::hooks(), Session::default());
+    let (hooks, mut fold) = (Drive::hooks(), Fold::default());
 
     // First life: the recorded round up to the resume; let the slot leave.
-    session.feed(&hooks, &lines[..resumed], t0());
-    let id = session.driven().events[0].agent_id();
-    session.tick(walked_out());
+    fold.feed(&hooks, &lines[..resumed], t0());
+    let id = fold.driven().events[0].agent_id();
+    fold.tick(walked_out());
     assert!(
-        !session.driven().scene.agents.contains_key(&id),
+        !fold.driven().scene.agents.contains_key(&id),
         "first life left"
     );
 
     // Second life: the resume's start must register the SAME id again.
-    session.feed(&hooks, &lines[resumed..=resumed], walked_out());
-    let d = session.finish();
+    fold.feed(&hooks, &lines[resumed..=resumed], walked_out());
+    let d = fold.finish();
     d.assert_clean("resume-hermetic");
     let restart = d
         .events
@@ -265,8 +264,7 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             .position(|l| parsed(l)["message"]["role"] == "toolResult")
             .unwrap_or(jsonl_lines.len());
         let tail = hook_lines.len().saturating_sub(1);
-        let mut session = Session::default();
-        let mut at = t0();
+        let mut fold = Fold::default();
         for (drive, part) in [
             (&hooks, &hook_lines[..1]),
             (&rollout, &jsonl_lines[..cut]),
@@ -274,12 +272,9 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             (&rollout, &jsonl_lines[cut..]),
             (&hooks, &hook_lines[tail..]),
         ] {
-            session.feed(drive, part, at);
-            // The twins sit apart by human approval latency, which no dedup
-            // window spans.
-            at += HOOK_WINS_WINDOW;
+            fold.feed(drive, part, t0());
         }
-        let scene = session.finish().scene;
+        let scene = fold.finish().scene;
         if scenario != "tool-run-hermetic" {
             // One gated bash call per round; the cross-transport twins and the
             // approval resume must fold into ONE count.

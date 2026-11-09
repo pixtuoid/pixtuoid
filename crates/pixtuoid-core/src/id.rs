@@ -48,7 +48,7 @@ pub fn normalize_path_key(s: &str) -> String {
 }
 
 /// Pure core, separated so the Windows arm is unit-testable on any platform.
-fn normalize_key_inner(windows: bool, s: &str) -> String {
+pub(crate) fn normalize_key_inner(windows: bool, s: &str) -> String {
     if !windows {
         return s.to_string();
     }
