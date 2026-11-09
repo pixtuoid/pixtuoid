@@ -2290,6 +2290,8 @@ async fn probe_live_ended_first_sight_stays_unregistered() {
 
 #[tokio::test]
 async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(format!("{LIVE_UUID}.jsonl"));
     tokio::fs::write(
@@ -2306,8 +2308,13 @@ async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
         Arc::new(Mutex::new(HashSet::from([LIVE_UUID.to_string()])));
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
     let source: Arc<str> = Arc::from("test");
+    static TAIL_DECODES: AtomicUsize = AtomicUsize::new(0);
+    fn counted(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
+        TAIL_DECODES.fetch_add(1, Ordering::SeqCst);
+        t_decode_stem_keyed(t, s, v)
+    }
     let decoders = SourceDecoders {
-        decode_line: t_decode_stem_keyed,
+        decode_line: counted,
         id_derive: super::folded::FoldedDeriver::new(crate::source::claude_code::cc_id_from_path),
         ..t_decoders()
     };
@@ -2338,6 +2345,11 @@ async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
         Some(file_len),
         "the ended transcript's cursor must stay parked at EOF (no reset-to-0 replay)"
     );
+    // Refused once, it leaves the candidates: a decode per pass re-warns any
+    // drift its tail holds, since a breadcrumb has no dedup.
+    let refused = TAIL_DECODES.load(Ordering::SeqCst);
+    scan_root(dir.path(), decoders, &ctx, &mut read).await;
+    assert_eq!(TAIL_DECODES.load(Ordering::SeqCst), refused);
 }
 
 #[tokio::test]
