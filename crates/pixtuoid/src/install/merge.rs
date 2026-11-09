@@ -394,6 +394,27 @@ mod tests {
     }
 
     #[test]
+    fn prune_empty_drops_only_an_empty_container() {
+        let mut parent = json!({
+            "paths": ["/some/other/plugin"],
+            "entries": {"anthropic": {}},
+            "none": [],
+            "nothing": {},
+            "scalar": 0,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        for key in ["paths", "entries", "none", "nothing", "scalar", "absent"] {
+            prune_empty(&mut parent, key);
+        }
+        assert_eq!(
+            Value::Object(parent),
+            json!({"paths": ["/some/other/plugin"], "entries": {"anthropic": {}}, "scalar": 0})
+        );
+    }
+
+    #[test]
     fn a_crlf_file_stays_crlf() {
         let out = toml_merge_outcome("# note\r\na = 1\r\n", |d| {
             d["b"] = toml_edit::value(2);
