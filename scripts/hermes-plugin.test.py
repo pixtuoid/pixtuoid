@@ -26,7 +26,7 @@ PLUGIN_SOURCE = INSTALL_DIR / ROW["file"]
 HOOK_PLACEHOLDER = CONTRACT["hook_placeholder"]
 POSIX = os.name == "posix"
 # Long past any spawn delay a loaded machine adds, so a hook that returns while
-# the leftover still lives has not waited on it.
+# the leftover still lives did not wait for it to exit.
 LEFTOVER_S = 30
 
 
