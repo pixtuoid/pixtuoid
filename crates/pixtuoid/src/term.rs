@@ -275,21 +275,11 @@ fn sync_output_reported(reply: &[u8]) -> bool {
         .any(|answer| reply.windows(answer.len()).any(|w| w == *answer))
 }
 
-/// Set once a reply misses [`QUERY_TIMEOUT`]: every query ends on a request the
-/// terminal answers, so one that went unanswered marks a terminal that answers
-/// none, and [`query_tty`] asks it nothing more — a mute terminal costs the
-/// startup one budget, not one per query. The exception: a tmux pane hidden
-/// from passthrough drops the graphics query yet would answer the sync probe,
-/// which this skips.
-#[cfg(unix)]
-static UNANSWERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
 /// Write `query` to the controlling terminal and hand each chunk of its reply
 /// to `on_reply` until that returns `true`. `Some(true)` when it did;
 /// `Some(false)` when the reply never completed — [`QUERY_TIMEOUT`] elapsed,
-/// on this query or, which skips it, an earlier one; more than `cap` bytes
-/// arrived; or the read failed; `None` when the terminal could not be opened,
-/// put in raw mode, or written to.
+/// more than `cap` bytes arrived, or the read failed; `None` when the terminal
+/// could not be opened, put in raw mode, or written to.
 ///
 /// The controlling terminal (`/dev/tty`), so a piped stdout never receives the
 /// escapes; in raw mode, so the reply isn't echoed and arrives un-buffered; and
@@ -305,9 +295,6 @@ pub(crate) fn query_tty(
     use std::io::Write;
     use std::os::fd::AsRawFd;
 
-    if UNANSWERED.load(std::sync::atomic::Ordering::Relaxed) {
-        return Some(false);
-    }
     let mut tty = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -387,7 +374,7 @@ fn read_reply(
     loop {
         let elapsed = start.elapsed();
         if elapsed >= QUERY_TIMEOUT {
-            return went_unanswered();
+            return false;
         }
         let remaining = QUERY_TIMEOUT - elapsed;
         #[cfg_attr(
@@ -430,7 +417,7 @@ fn read_reply(
         }
         // SAFETY: `rfds` was populated by `select`; checking our fd's membership.
         if ready == 0 || !unsafe { libc::FD_ISSET(fd, &rfds) } {
-            return went_unanswered();
+            return false;
         }
         match tty.read(&mut chunk) {
             Ok(0) => return false,
@@ -447,13 +434,6 @@ fn read_reply(
             Err(_) => return false,
         }
     }
-}
-
-/// The budget ran out: the terminal is [`UNANSWERED`], and the reply incomplete.
-#[cfg(unix)]
-fn went_unanswered() -> bool {
-    UNANSWERED.store(true, std::sync::atomic::Ordering::Relaxed);
-    false
 }
 
 /// Drop whatever the terminal sent that no query read — a reply that outlived

@@ -1,5 +1,5 @@
 //! The TUI's startup on a real pty, with this test playing the terminal: what
-//! only a terminal answering the startup queries, or not, shows.
+//! only a terminal answering the startup queries shows.
 #![cfg(unix)]
 
 use std::io::{Read, Write};
@@ -42,8 +42,8 @@ const BUDGET: Duration = Duration::from_secs(20);
 const RETYPE: Duration = Duration::from_millis(500);
 const POLL: Duration = Duration::from_millis(20);
 
-/// The reply to each [`ANSWERS`] row asked, if any.
-type Answer = fn(usize) -> Option<Vec<u8>>;
+/// The reply to each [`ANSWERS`] row asked.
+type Answer = fn(usize) -> Vec<u8>;
 
 /// What the terminal has seen of the office's output.
 #[derive(Default)]
@@ -159,10 +159,8 @@ fn run_office(answer: Answer) -> Run {
                 while let Some((row, end)) = next_query(&out[scanned..]) {
                     let mut s = seen.lock().expect("seen");
                     s.asked.push(row);
-                    if let Some(reply) = answer(row) {
-                        s.pending += 1;
-                        let _ = send.send((Instant::now() + LINK_RTT, reply, true));
-                    }
+                    s.pending += 1;
+                    let _ = send.send((Instant::now() + LINK_RTT, answer(row), true));
                     scanned += end;
                 }
                 if out.windows(ALT_SCREEN.len()).any(|w| w == ALT_SCREEN) {
@@ -215,7 +213,7 @@ fn a_slow_terminals_startup_replies_never_reach_the_office_as_keys() {
         LINK_RTT < pixtuoid::dev::QUERY_TIMEOUT,
         "the query budget no longer covers the link this test models"
     );
-    let run = run_office(|row| Some(ANSWERS[row].1.to_vec()));
+    let run = run_office(|row| ANSWERS[row].1.to_vec());
     assert_eq!(
         run.config, run.seeded,
         "a late reply reached the office as keys"
@@ -245,25 +243,11 @@ fn bytes_queued_behind_the_last_reply_never_reach_the_office_as_keys() {
             }
             reply.extend(tail);
         }
-        Some(reply)
+        reply
     });
     assert_eq!(
         run.config, run.seeded,
         "a stale reply reached the office as keys"
     );
     assert!(run.status.success(), "{:?}", run.status);
-}
-
-/// A terminal that answers nothing is asked once: the startup waits out one
-/// budget, not one per query, and still starts.
-#[test]
-fn a_mute_terminal_is_asked_once() {
-    let run = run_office(|_| None);
-    assert_eq!(
-        run.asked,
-        [DECRQSS, DA1],
-        "a query after the unanswered one"
-    );
-    assert!(run.status.success(), "{:?}", run.status);
-    assert_eq!(run.config, run.seeded);
 }
