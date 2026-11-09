@@ -123,6 +123,24 @@ fn only_the_blocking_spawn_carries_the_task_detail() {
     );
 }
 
+/// A swept or never-seen session's turn end, its tool run's own `stop`: an end
+/// carries no identity, so it creates nothing (a nameless ghost before).
+#[test]
+fn a_bare_stop_for_an_unknown_session_registers_nothing() {
+    let lines =
+        fixture_lines(&sources_root().join("grok/fixtures/tool-run-hermetic/hook-payloads.jsonl"));
+    let stop = lines
+        .iter()
+        .find(|l| {
+            serde_json::from_str::<serde_json::Value>(l).expect("valid json")["hookEventName"]
+                == "stop"
+        })
+        .expect("the tool run ends its turn");
+    let d = Drive::hooks().lines([stop]);
+    d.assert_clean("grok's stop");
+    assert_eq!(d.registered(), 0, "{:?}", d.events);
+}
+
 #[test]
 fn subagent_stop_ends_the_child_and_stamps_it_as_a_child() {
     // grok puts the CHILD's own sessionId on `subagent_stop` — the parent's

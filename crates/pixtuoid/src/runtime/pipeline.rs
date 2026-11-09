@@ -66,7 +66,19 @@ impl SceneSink {
     /// `false` once the reader is gone or stalled.
     pub(super) fn publish(&mut self, scene: &SceneState) -> bool {
         match self {
-            Self::Latest(tx) => tx.send(Arc::new(scene.clone())).is_ok(),
+            // A scene equal to the one its readers hold notifies nobody: each
+            // notification is a repaint and a frame to every `serve` device, and
+            // a sweep tick or a read's `Backlog` changes nothing they show.
+            Self::Latest(tx) => {
+                tx.send_if_modified(|held| {
+                    let changed = **held != *scene;
+                    if changed {
+                        *held = Arc::new(scene.clone());
+                    }
+                    changed
+                });
+                !tx.is_closed()
+            }
             Self::Transitions(queue, log) => match log.line(scene) {
                 Some(line) => queue.push(line),
                 None => !queue.is_closed(),
@@ -126,5 +138,74 @@ pub(crate) fn spawn_pipeline(
     Pipeline {
         health_rx,
         floor_caps,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+    use std::time::SystemTime;
+
+    use pixtuoid_core::{AgentId, Reducer};
+
+    use super::*;
+    use crate::runtime::gate;
+
+    fn connected() -> ConnectedSources {
+        ConnectedSources::new(["claude-code".to_string()].into())
+    }
+
+    fn apply(reducer: &mut Reducer, scene: &mut SceneState, ev: AgentEvent, at: SystemTime) {
+        gate::apply_gated_event(
+            reducer,
+            scene,
+            ev,
+            Transport::Jsonl,
+            &connected(),
+            at,
+            &mut HashSet::new(),
+        );
+    }
+
+    /// C39: the 1-Hz sweep of a quiet office, a read's re-declared start and its
+    /// backlog each publish a scene equal to the one the reader holds.
+    #[test]
+    fn a_publish_reaches_the_reader_only_when_the_scene_changed() {
+        let caps = [8; MAX_FLOORS];
+        let (mut sink, mut rx) = SceneSink::latest(caps);
+        let mut notified = |scene: &SceneState| {
+            assert!(sink.publish(scene), "the reader lives");
+            let changed = rx.has_changed().expect("the sink lives");
+            rx.borrow_and_update();
+            changed
+        };
+        let id = AgentId::from_parts("claude-code", "s");
+        let start = || AgentEvent::SessionStart {
+            agent_id: id,
+            source: "claude-code".into(),
+            session_id: "s".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        };
+        let at = SystemTime::now();
+        let mut reducer = Reducer::new();
+        let mut scene = SceneState::new(caps);
+
+        apply(&mut reducer, &mut scene, start(), at);
+        assert!(notified(&scene), "a registration is a change");
+        gate::reconcile_sweep_tick(&mut reducer, &mut scene, &connected(), at);
+        assert!(!notified(&scene), "the sweep tick of a quiet office");
+        apply(&mut reducer, &mut scene, start(), at);
+        assert!(
+            !notified(&scene),
+            "a re-declared start at its slot's own clock"
+        );
+        let backlog = AgentEvent::Backlog {
+            agent_id: id,
+            replaying: false,
+        };
+        apply(&mut reducer, &mut scene, backlog, at);
+        assert!(!notified(&scene), "a read's backlog");
     }
 }

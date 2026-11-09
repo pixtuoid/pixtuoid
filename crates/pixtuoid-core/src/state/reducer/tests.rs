@@ -289,10 +289,7 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
         at(AttemptKind::Start, None),
         at(AttemptKind::Start, Some(parent)),
     );
-    let (identity, activity) = (
-        at(AttemptKind::Identity, None),
-        at(AttemptKind::HookActivity, None),
-    );
+    let identity = at(AttemptKind::Identity, None);
     let (hook, jsonl) = (Transport::Hook, Transport::Jsonl);
     use Verdict::{Create, Refuse};
 
@@ -304,7 +301,6 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                 (root, jsonl, t0, Create),
                 (child, jsonl, t0, Create),
                 (identity, hook, t0, Create),
-                (activity, hook, t0, Create),
             ],
         ),
         (
@@ -330,13 +326,6 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                     t0 + STRAGGLER_TTL - ms,
                     Refuse(Refusal::Straggler),
                 ),
-                (
-                    activity,
-                    hook,
-                    t0 + STRAGGLER_TTL - ms,
-                    Refuse(Refusal::Straggler),
-                ),
-                (activity, hook, t0 + STRAGGLER_TTL, Create),
                 (identity, hook, t0 + STRAGGLER_TTL, Create),
             ],
         ),
@@ -344,12 +333,6 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
             Some(true),
             vec![
                 (root, jsonl, t0 + STRAGGLER_TTL - ms, Create),
-                (
-                    activity,
-                    hook,
-                    t0 + STRAGGLER_TTL - ms,
-                    Refuse(Refusal::Straggler),
-                ),
                 (
                     child,
                     jsonl,
@@ -363,12 +346,12 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                     Refuse(Refusal::Straggler),
                 ),
                 (
-                    activity,
+                    identity,
                     hook,
                     t0 + STRAGGLER_TTL,
                     Refuse(Refusal::ChildEnded),
                 ),
-                (activity, hook, t0 + CHILD_END_GATE_TTL, Create),
+                (identity, hook, t0 + CHILD_END_GATE_TTL, Create),
                 (
                     child,
                     jsonl,
@@ -427,7 +410,6 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
         (child, hook, Create),
         (child, jsonl, Refuse(Refusal::ChildEnded)),
         (remembered(AttemptKind::Identity), hook, Create),
-        (remembered(AttemptKind::HookActivity), hook, Create),
     ] {
         assert_eq!(
             r.authorizes(&scene, id, attempt, from, t0 + ms),

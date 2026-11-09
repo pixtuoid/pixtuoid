@@ -7,77 +7,41 @@ use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, Reducer, STRAGGLER_TTL};
 
 use crate::{
-    HOOK_AND_TRANSCRIPT, sess_end, start, start_as, tool_use_end, tool_use_start, turn_end,
+    HOOK_AND_TRANSCRIPT, identity, sess_end, start, start_as, tool_use_end, tool_use_start,
+    turn_end,
 };
 
 #[test]
-fn hook_session_end_blocks_reordered_trailing_event_synthesis() {
+fn hook_session_end_blocks_a_reordered_trailing_events_registration() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "exited-invisible");
     let other = AgentId::from_parts("claude-code", "still-alive");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let trailing = t0 + Duration::from_millis(50);
 
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        id,
-        None,
-        t0 + Duration::from_millis(50),
-        Transport::Hook,
-    );
+    identity(&mut r, &mut scene, id, "claude-code", trailing);
+    tool_use_end(&mut r, &mut scene, id, None, trailing, Transport::Hook);
     assert!(
         !scene.agents.contains_key(&id),
         "a reordered trailing event must not resurrect a session that just ended"
     );
 
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        other,
-        None,
-        t0 + Duration::from_millis(50),
-        Transport::Hook,
-    );
+    identity(&mut r, &mut scene, other, "claude-code", trailing);
     assert!(
         scene.agents.contains_key(&other),
-        "the straggler window must be per-id, not a global synthesis gate"
+        "the straggler window must be per-id, not a global registration gate"
     );
 }
 
+/// The 5 s straggler window is the ONLY guard on a hook's `Identity`, and past
+/// it the ended id registers again: hermes has no other reaper
+/// (`resurrects_on_prompt: false`), so a turn finishing after the user rotates
+/// with `/new` leaves the outgoing id on the floor until the 30-minute stale
+/// sweep. A bare turn end, carrying no identity, registers nothing.
 #[test]
-fn hook_event_after_the_straggler_window_synthesizes_again() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_parts("claude-code", "revived-later");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        None,
-        t0 + STRAGGLER_TTL + Duration::from_secs(1),
-        Transport::Hook,
-    );
-    assert!(
-        scene.agents.contains_key(&id),
-        "past the TTL a hook event is fresh proof of life and must synthesize"
-    );
-}
-
-/// The 5 s straggler window is the ONLY guard, and past it nothing cares
-/// which arm arrives: a turn-boundary `TurnEnd` re-registers exactly as an
-/// `Identity` does. hermes has no other reaper (`resurrects_on_prompt: false`),
-/// so a turn finishing after the user rotates with `/new` leaves the outgoing id
-/// on the floor until the 30-minute stale sweep — the cost of "a hook is proof of
-/// life" for a source with no short reap, NOT something the `identity()` on that
-/// arm introduced.
-#[test]
-fn past_the_straggler_window_any_hook_arm_re_registers_including_a_turn_boundary_end() {
+fn past_the_straggler_window_only_an_identity_re_registers() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let ended = AgentId::from_parts("hermes", "turn-after-finalize");
@@ -87,27 +51,13 @@ fn past_the_straggler_window_any_hook_arm_re_registers_including_a_turn_boundary
     sess_end(&mut r, &mut scene, ended, false, t0, Transport::Hook);
     turn_end(&mut r, &mut scene, ended, past, Transport::Hook);
     assert!(
-        scene.agents.contains_key(&ended),
-        "a TurnEnd past the TTL re-registers — the pre-existing behaviour"
+        !scene.agents.contains_key(&ended),
+        "a bare TurnEnd registered"
     );
-
-    let with_id = AgentId::from_parts("hermes", "same-but-with-identity");
-    sess_end(&mut r, &mut scene, with_id, false, t0, Transport::Hook);
-    r.apply(
-        &mut scene,
-        AgentEvent::Identity {
-            agent_id: with_id,
-            source: "hermes".into(),
-            session_id: "same-but-with-identity".into(),
-            cwd: Some(PathBuf::from("/repo")),
-            pid: None,
-        },
-        past,
-        Transport::Hook,
-    );
+    identity(&mut r, &mut scene, ended, "hermes", past);
     assert!(
-        scene.agents.contains_key(&with_id),
-        "and so does an Identity — the two arms are not distinguishable here"
+        scene.agents.contains_key(&ended),
+        "an Identity past the TTL"
     );
 }
 
@@ -518,46 +468,24 @@ fn a_hook_start_re_admits_a_child_whose_end_was_only_inferred() {
     }
 }
 
-/// A hook that leads with Identity (dsh, opencode), or with a bare activity,
-/// brings back a child whose end was only inferred as a start does, under the
-/// parent it remembers.
+/// A hook that leads with Identity brings back a child whose end was only
+/// inferred as a start does, under the parent it remembers.
 #[test]
-fn an_identity_or_bare_activity_re_admits_an_inferred_child_under_its_parent() {
-    for led_by_identity in [true, false] {
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        let (parent, child, gone) = walked_out_child(&mut r, &mut scene);
-        let back = gone + Duration::from_secs(1);
-        if led_by_identity {
-            r.apply(
-                &mut scene,
-                AgentEvent::Identity {
-                    agent_id: child,
-                    source: "reasonix".into(),
-                    session_id: "s".into(),
-                    cwd: Some(PathBuf::from("/repo")),
-                    pid: None,
-                },
-                back,
-                Transport::Hook,
-            );
-        } else {
-            tool_use_start(
-                &mut r,
-                &mut scene,
-                child,
-                None,
-                Some("read_file"),
-                back,
-                Transport::Hook,
-            );
-        }
-        assert_eq!(
-            scene.agents.get(&child).map(|s| s.parent_id),
-            Some(Some(parent)),
-            "led by identity: {led_by_identity}"
-        );
-    }
+fn an_identity_re_admits_an_inferred_child_under_its_parent() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (parent, child, gone) = walked_out_child(&mut r, &mut scene);
+    identity(
+        &mut r,
+        &mut scene,
+        child,
+        "reasonix",
+        gone + Duration::from_secs(1),
+    );
+    assert_eq!(
+        scene.agents.get(&child).map(|s| s.parent_id),
+        Some(Some(parent))
+    );
 }
 
 /// A re-admission takes its parent through the #240 cycle refusal: under
@@ -580,15 +508,12 @@ fn a_readmission_under_a_parent_that_would_close_a_cycle_comes_back_parentless()
         Transport::Hook,
     );
     assert_eq!(scene.agents[&parent].parent_id, Some(child), "precondition");
-    let back = gone + Duration::from_secs(1);
-    tool_use_start(
+    identity(
         &mut r,
         &mut scene,
         child,
-        None,
-        Some("read_file"),
-        back,
-        Transport::Hook,
+        "reasonix",
+        gone + Duration::from_secs(1),
     );
     assert_eq!(scene.agents.get(&child).map(|s| s.parent_id), Some(None));
 }
@@ -598,78 +523,53 @@ fn a_readmission_under_a_parent_that_would_close_a_cycle_comes_back_parentless()
 #[test]
 fn a_readmitted_childs_next_end_gates_from_that_end() {
     use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW};
-    for led_by_identity in [true, false] {
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        let (parent, child, gone) = walked_out_child(&mut r, &mut scene);
-        let back = gone + Duration::from_secs(1);
-        if led_by_identity {
-            r.apply(
-                &mut scene,
-                AgentEvent::Identity {
-                    agent_id: child,
-                    source: "reasonix".into(),
-                    session_id: "s".into(),
-                    cwd: Some(PathBuf::from("/repo")),
-                    pid: None,
-                },
-                back,
-                Transport::Hook,
-            );
-        } else {
-            tool_use_start(
-                &mut r,
-                &mut scene,
-                child,
-                None,
-                Some("read_file"),
-                back,
-                Transport::Hook,
-            );
-        }
-        assert!(scene.agents.contains_key(&child), "re-admitted");
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (parent, child, gone) = walked_out_child(&mut r, &mut scene);
+    let back = gone + Duration::from_secs(1);
+    identity(&mut r, &mut scene, child, "reasonix", back);
+    assert!(scene.agents.contains_key(&child), "re-admitted");
 
-        let dispatch = back + CHILD_END_GATE_TTL;
-        tool_use_start(
-            &mut r,
-            &mut scene,
-            parent,
-            Some("call_2"),
-            Some("Agent"),
-            dispatch,
-            Transport::Hook,
-        );
-        let drain = dispatch + Duration::from_secs(1);
-        tool_use_end(
-            &mut r,
-            &mut scene,
-            parent,
-            Some("call_2"),
-            drain,
-            Transport::Hook,
-        );
-        r.tick(&mut scene, drain + B1_CASCADE_GRACE);
-        let swept = drain + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1);
-        r.tick(&mut scene, swept);
-        assert!(!scene.agents.contains_key(&child), "walked out again");
+    let dispatch = back + CHILD_END_GATE_TTL;
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("call_2"),
+        Some("Agent"),
+        dispatch,
+        Transport::Hook,
+    );
+    let drain = dispatch + Duration::from_secs(1);
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("call_2"),
+        drain,
+        Transport::Hook,
+    );
+    r.tick(&mut scene, drain + B1_CASCADE_GRACE);
+    let swept = drain + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+    r.tick(&mut scene, swept);
+    assert!(!scene.agents.contains_key(&child), "walked out again");
 
-        r.apply(
-            &mut scene,
-            AgentEvent::SessionStart {
-                agent_id: child,
-                source: "reasonix".into(),
-                session_id: "s".into(),
-                cwd: PathBuf::from("/repo"),
-                parent_id: Some(parent),
-            },
-            swept + Duration::from_secs(30),
-            Transport::Jsonl,
-        );
-        assert!(
-            !scene.agents.contains_key(&child),
-            "the second end's echo registered (identity: {led_by_identity})"
-        );
-    }
+    r.apply(
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: child,
+            source: "reasonix".into(),
+            session_id: "s".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: Some(parent),
+        },
+        swept + Duration::from_secs(30),
+        Transport::Jsonl,
+    );
+    assert!(
+        !scene.agents.contains_key(&child),
+        "the second end's echo registered"
+    );
 }
 
 /// A child's own SessionEnd is its CLI's word whether or not the decoder can
@@ -704,6 +604,7 @@ fn a_known_childs_own_end_is_reported_without_as_child() {
     r.tick(&mut scene, gone);
     assert!(gone < end + STRAGGLER_TTL);
     let straggle = |r: &mut Reducer, scene: &mut SceneState, at| {
+        identity(r, scene, child, "opencode", at);
         tool_use_start(r, scene, child, None, Some("read"), at, Transport::Hook);
     };
     straggle(&mut r, &mut scene, gone);
@@ -739,14 +640,12 @@ fn inside_the_end_gate_a_hook_activity_readmits_an_ended_child_only_under_its_pa
                 stop + EXIT_GRACE_WINDOW + Duration::from_secs(1),
             );
         }
-        tool_use_start(
+        identity(
             &mut r,
             &mut scene,
             child,
-            None,
-            Some("read_file"),
+            "reasonix",
             stop + Duration::from_secs(30),
-            Transport::Hook,
         );
         let readmitted = scene.agents.get(&child).map(|s| s.parent_id);
         let want = (!parent_left).then_some(Some(parent));

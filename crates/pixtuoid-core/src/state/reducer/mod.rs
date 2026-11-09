@@ -185,8 +185,6 @@ enum AttemptKind {
     Start,
     /// A hook `Identity` (#221), which names no parent.
     Identity,
-    /// A hook tool or permission event that shows activity, synthesizing a slot.
-    HookActivity,
 }
 
 /// What [`Reducer::authorizes`] lets an attempt do.
@@ -329,10 +327,8 @@ impl Reducer {
     /// Mark exiting every non-exiting slot whose source is NOT connected, then
     /// cascade to its subtree. Driven by the Sources panel's DISCONNECT toggle —
     /// an explicit user action, not transcript content, so it does NOT violate
-    /// the "content never drives lifecycle" invariant. Keying on the COMPLEMENT
-    /// of the connected set also evicts a BLANK-source slot synthesized for an
-    /// identity-less hook event that slipped the per-event gate; already-exiting
-    /// slots stay untouched so a re-reconcile can't reset their walkout clock.
+    /// the "content never drives lifecycle" invariant. Already-exiting slots stay
+    /// untouched so a re-reconcile can't reset their walkout clock.
     pub fn reconcile_connected(
         &self,
         scene: &mut SceneState,
@@ -540,10 +536,6 @@ impl Reducer {
         self.corr.gc(now);
         self.sweep_exited(scene, now);
 
-        if from == Transport::Hook {
-            self.synthesize_hook_registration(scene, event, id, now);
-        }
-
         // `refresh_lineage` stamps the ACTOR too, yet the per-arm `last_event_at`
         // writes are NOT droppable: Rename and SessionStart never reach here.
         if event.refreshes_lineage() {
@@ -625,7 +617,7 @@ impl Reducer {
             return Preprocessed::Drop;
         }
 
-        // Gated on the slot EXISTING: a synthesis REFUSED for desk exhaustion
+        // Gated on the slot EXISTING: an `Identity` refused for desk exhaustion
         // would leave a record that dedup-eats the JSONL registration's Start.
         if from == Transport::Hook
             && scene.agents.contains_key(&id)
@@ -999,7 +991,7 @@ impl Reducer {
     }
 
     /// The `ProofOfLife` arm — #220: refresh the sweep exemption, and NOTHING
-    /// else. No slot synthesis (this only vouches for already-visible slots),
+    /// else. No registration (this only vouches for already-visible slots),
     /// no state change, no `last_event_at` refresh. An exiting slot is left
     /// alone so the vouch can't tug against SessionEnd/cascade_exit.
     fn apply_proof_of_life(&mut self, scene: &SceneState, agent_id: AgentId, now: SystemTime) {
@@ -1026,7 +1018,7 @@ impl Reducer {
         now: SystemTime,
     ) {
         // No in-tree JSONL path emits Identity today; the guard IS the
-        // boundary, not dead code (replay hazard: see hook synthesis).
+        // boundary, not dead code: a transcript line can be a historical replay.
         if from != Transport::Hook {
             tracing::debug!(?agent_id, "ignoring Identity on a non-hook transport");
             return;
@@ -1173,7 +1165,7 @@ impl Reducer {
                                 .exiting_at
                                 .is_some_and(|exit| !corr.child_ended_since(id, exit))
                     }
-                    AttemptKind::Identity | AttemptKind::HookActivity => false,
+                    AttemptKind::Identity => false,
                 };
             return Verdict::Enrich { revive };
         }
@@ -1266,8 +1258,8 @@ impl Reducer {
             slot.parent_id = Some(p);
             self.corr.link_applied_parent(agent_id, p);
         }
-        // A slot can exist with MISSING identity: hook synthesis registers from
-        // the AgentId alone, and a Codex revive ghost has an empty cwd.
+        // A slot can exist with MISSING identity: an `Identity` may name no cwd,
+        // and a Codex revive ghost has an empty cwd.
         if let Some(base) = backfill_identity(slot, ctx) {
             // `base` BYPASSES the `cwd_basename_label` chokepoint, so the
             // same decode-boundary cap is applied here.
@@ -1293,46 +1285,6 @@ impl Reducer {
             if let Some(p) = slot.parent_id {
                 self.corr.link_applied_parent(agent_id, p);
             }
-        }
-    }
-
-    /// A hook event is PROOF OF LIFE, so a tool/permission event whose id has no
-    /// slot registers one — that session's transcript was gated at first sight.
-    /// JSONL must NOT synthesize: a transcript line can be a historical replay.
-    /// Only an event that [`AgentEvent::shows_activity`] qualifies. Since #221 decoders
-    /// attach an `Identity` ahead, leaving this the identity-less fallback.
-    fn synthesize_hook_registration(
-        &mut self,
-        scene: &mut SceneState,
-        event: &AgentEvent,
-        id: AgentId,
-        now: SystemTime,
-    ) {
-        if !event.shows_activity() {
-            return;
-        }
-        let ctx = IdentityCtx {
-            source: "",
-            session_id: "",
-            cwd: std::path::Path::new(""),
-        };
-        // A blank Idle ghost of a DEAD session is unremovable.
-        let Some(parent) = self.parent_to_create(
-            scene,
-            id,
-            ctx,
-            AttemptKind::HookActivity,
-            Transport::Hook,
-            now,
-        ) else {
-            return;
-        };
-        if self.register_and_link(scene, id, ctx, parent, now)
-            && let Some(slot) = scene.agents.get_mut(&id)
-        {
-            // NOT an unknown-cwd ghost: that reap targets startup
-            // JSONL-seeding artifacts, and a hook proves this one alive.
-            slot.unknown_cwd = false;
         }
     }
 
@@ -1371,10 +1323,9 @@ impl Reducer {
         registered
     }
 
-    /// The slot-creation half of the `SessionStart` arm, shared with
-    /// [`Reducer::synthesize_hook_registration`] so both run the same
-    /// desk-capacity gate and label derivation. Returns `false` when all desks
-    /// are occupied.
+    /// The slot-creation half of the `SessionStart` and `Identity` arms, so both
+    /// run the same desk-capacity gate and label derivation. Returns `false`
+    /// when all desks are occupied.
     fn register_slot(
         &mut self,
         scene: &mut SceneState,

@@ -304,8 +304,7 @@ pub const DETAIL_KEYS: &[&str] = KEYS;
 /// bails, so plugin-vs-decoder drift is loud.
 ///
 /// The activity arms prepend an [`AgentEvent::Identity`] because Hermes is HOOK-ONLY:
-/// a slot the reducer synthesizes mid-turn has no transcript back-fill path, so
-/// without the attached identity it would stay a blank `#N` ghost.
+/// the identity is the one claim that registers a session first seen mid-turn.
 ///
 /// # Errors
 ///
@@ -390,8 +389,8 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         //
         // An ACTIVITY arm, so it takes that class's Identity with it: for a
         // tool-less chat turn this is the ONLY event the session emits, and a
-        // daemon attaching mid-session would otherwise get the blank `#N` ghost
-        // the decode fn's doc names, until the next tool call.
+        // daemon attaching mid-session would otherwise not see the session
+        // until the next tool call.
         ON_SESSION_END => vec![identity(), AgentEvent::turn_end(agent_id)],
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);

@@ -3,20 +3,9 @@ use std::path::PathBuf;
 use anyhow::{Context as _, Result};
 
 use super::{SOURCE_NAME, copilot_home};
-use crate::source::decoder::parsed_tail_lines;
 use crate::source::jsonl::JsonlWatcher;
 use crate::source::registry::{Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
-
-/// Copilot persists a real [`super::SESSION_SHUTDOWN`] event, so a transcript
-/// that has already ended carries that marker — the first-sight gate uses it to
-/// avoid resurrecting a finished session. Anchored on the structural top-level
-/// `type`: copilot persists tool `arguments` verbatim in events.jsonl, so a
-/// substring scan would let a grep for the marker end a live session.
-fn copilot_session_ended(tail: &[u8]) -> bool {
-    parsed_tail_lines(tail)
-        .any(|v| v.get("type").and_then(|t| t.as_str()) == Some(super::SESSION_SHUTDOWN))
-}
 
 /// Source that watches the Copilot session-state directory.
 #[derive(Debug)]
@@ -48,7 +37,6 @@ impl Source for CopilotSource {
 }
 
 pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
-    check_ended: copilot_session_ended,
     activity_recency: None,
     head_label: None,
     derive_label: None,
@@ -62,51 +50,4 @@ pub(crate) const NATIVE: Native = Native {
 
 fn sessions_root() -> Option<PathBuf> {
     Some(CopilotSource::default_paths().sessions_root)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn session_ended_marker_is_anchored_on_the_type_field() {
-        assert!(copilot_session_ended(
-            br#"{"type":"session.shutdown","data":{}}"#
-        ));
-        assert!(!copilot_session_ended(
-            br#"{"type":"tool.execution_complete","data":{"result":{"content":"run session.shutdown the cluster"}}}"#
-        ));
-        assert!(!copilot_session_ended(
-            br#"{"type":"tool.execution_start"}"#
-        ));
-    }
-
-    /// Copilot's event schema names no `session_end` (the release asset's
-    /// `schemas/session-events.schema.json`), so a line typed so is not its end.
-    #[test]
-    fn a_session_end_type_copilot_never_writes_does_not_end_it() {
-        assert!(!copilot_session_ended(
-            br#"{"type":"session_end","data":{}}"#
-        ));
-    }
-
-    #[test]
-    fn session_ended_matches_marker_after_a_partial_first_tail_line() {
-        assert!(copilot_session_ended(
-            b"...tail-fragment\"}\n{\"type\":\"session.shutdown\",\"data\":{}}\n"
-        ));
-    }
-
-    #[test]
-    fn session_ended_ignores_marker_bytes_inside_tool_arguments() {
-        assert!(!copilot_session_ended(
-            br#"{"type":"tool.execution_start","data":{"toolName":"grep","arguments":{"pattern":"session_end"}}}"#
-        ));
-        assert!(!copilot_session_ended(
-            br#"{"type":"tool.execution_start","data":{"arguments":{"pattern":"\"type\":\"session.shutdown\""}}}"#
-        ));
-        assert!(!copilot_session_ended(
-            br#"{"type":"tool.execution_complete","data":{"result":{"type":"session_end"}}}"#
-        ));
-    }
 }

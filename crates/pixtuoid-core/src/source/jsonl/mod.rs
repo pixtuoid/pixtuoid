@@ -8,6 +8,7 @@ use notify::RecursiveMode;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
+use crate::AgentId;
 use crate::source::exit_watch::ExitWatch;
 use crate::source::{DEFAULT_POLL_INTERVAL, TaggedSender};
 
@@ -50,10 +51,6 @@ fn default_prefixed_label(_path: &Path, source: &str, cwd: &Path) -> String {
     crate::source::decoder::derive_prefixed_label(source, cwd)
 }
 
-/// Predicate on a transcript's raw bytes: `true` when they carry a session-end
-/// marker, so the first-sight gate never seeds an already-ended transcript.
-pub(crate) type SessionEndChecker = fn(&[u8]) -> bool;
-
 /// Reads a transcript tail into a [`TailActivity`] verdict. Only **CC**
 /// supplies one (see `claude_code::cc_activity_recency` for the write that made
 /// mtime lie); every other source keeps the mtime proxy until such a write is
@@ -87,7 +84,6 @@ pub(crate) type HeadLabel = fn(&serde_json::Value) -> Option<String>;
 struct SourceDecoders {
     decode_line: LineDecoder,
     derive_label: LabelDeriver,
-    check_ended: SessionEndChecker,
     activity_recency: ActivityRecency,
     id_derive: folded::FoldedDeriver,
     path_filter: PathFilter,
@@ -122,16 +118,25 @@ mod folded {
 
 /// What the watcher's first sight of a transcript still holds. Absent = never
 /// registered, or fully retired by an exit un-claim.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Sight {
-    /// Registered: appends decode without re-registering.
-    Claimed,
-    /// Its session ended: a DECODED terminator, an oversized span whose tail
-    /// its [`SessionEndChecker`] matches, or a child-end un-claim: the path
+    /// Registered as first sight resolved it: every read showing life
+    /// re-declares it, so a slot the reducer forgot on its own comes back.
+    Claimed(Registration),
+    /// Its session ended: the last lifecycle evidence of a read or of an
+    /// oversized span's tail is its end, or a child-end un-claim: the path
     /// stays KNOWN, so [`revouch_gated_files`](liveness::revouch_gated_files)
     /// won't replay it however live the probe says the (still-open) rollout is,
-    /// and only an append that shows activity re-registers it.
+    /// and only an append that shows life re-registers it.
     Ended,
+}
+
+/// What a first sight resolved of its session, kept so a re-declaration reads
+/// no head.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Registration {
+    cwd: PathBuf,
+    parent_id: Option<AgentId>,
 }
 
 #[derive(Clone, Copy)]
@@ -228,7 +233,6 @@ impl JsonlWatcher {
             decoders: SourceDecoders {
                 decode_line: row.line_decoder,
                 derive_label: native.derive_label.unwrap_or(default_prefixed_label),
-                check_ended: native.check_ended,
                 activity_recency: native.activity_recency.unwrap_or(no_activity_recency),
                 id_derive: folded::FoldedDeriver::new(row.id_from_path),
                 path_filter: row.path_filter,
@@ -445,7 +449,7 @@ impl JsonlWatcher {
         let decoders = self.decoders;
 
         // The initial seed rides the same `scan_root` → `walk_jsonl` path every
-        // later scan uses, so a file is gated identically (recency + session_end)
+        // later scan uses, so a file is gated identically (recency + its end)
         // no matter which pass first sees it (#85).
         {
             let ctx = WatchCtx {

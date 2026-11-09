@@ -8,9 +8,7 @@ use crate::source::decoder::DecodeResult as Result;
 #[cfg(feature = "native")]
 use crate::source::decoder::TailActivity;
 #[cfg(feature = "native")]
-use crate::source::jsonl::{
-    ActivityRecency, CwdDeriver, HeadLabel, LabelDeriver, SessionEndChecker,
-};
+use crate::source::jsonl::{ActivityRecency, CwdDeriver, HeadLabel, LabelDeriver};
 use serde_json::{Map, Value};
 
 use crate::source::decoder::{
@@ -302,7 +300,6 @@ impl Native {
 #[cfg(feature = "native")]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct NativeTranscript {
-    pub(crate) check_ended: SessionEndChecker,
     pub(crate) activity_recency: Option<ActivityRecency>,
     pub(crate) head_label: Option<HeadLabel>,
     pub(crate) derive_label: Option<LabelDeriver>,

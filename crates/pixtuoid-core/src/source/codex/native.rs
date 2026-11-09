@@ -10,11 +10,6 @@ use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
 
-/// Codex writes no session-end marker — defer to the mtime window + stale-sweep.
-fn codex_session_ended(_tail: &[u8]) -> bool {
-    false
-}
-
 /// Codex's liveness probe: the rollout UUIDs (in `codex_id_from_path` id-space,
 /// so they join the watcher's first-sight gate directly) of every rollout under
 /// `sessions_root` held OPEN by a running `codex` process, plus the owning pid
@@ -81,7 +76,6 @@ impl Source for CodexSource {
 }
 
 pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
-    check_ended: codex_session_ended,
     activity_recency: None,
     head_label: None,
     derive_label: None,
@@ -118,12 +112,6 @@ fn pid_for_session(sessions_root: &Path, uuid: &str) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn codex_session_ended_is_always_false() {
-        assert!(!codex_session_ended(b"anything"));
-        assert!(!codex_session_ended(b""));
-    }
 
     const UUID: &str = "019e7762-9ded-7e33-be41-946ecf105bf4";
 

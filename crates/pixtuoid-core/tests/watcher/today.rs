@@ -9,7 +9,6 @@ use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use pixtuoid_core::harness::{Drive, transcript_in};
 use pixtuoid_core::source::antigravity::AntigravitySource;
 use pixtuoid_core::source::claude_code::ClaudeCodeSource;
 use pixtuoid_core::source::codex::CodexSource;
@@ -20,13 +19,14 @@ use pixtuoid_core::source::registry::{descriptor_for, registered_source_names};
 use pixtuoid_core::source::{AgentEvent, DynSource, TaggedSender, Transport};
 use pixtuoid_core::{Reducer, SceneState};
 
-use crate::{codex_meta_line, codex_work_line, fast_watch, write_lines};
+use crate::{
+    Fold, append, codex_meta_line, codex_work_line, collect_until, fast_watch, recorded,
+    split_before_last, stage, write_lines,
+};
 
 /// Past the watcher's default first-sight window: no clock may be what tells a
 /// replay from live work.
 const HELD_PAST_ANY_WINDOW: Duration = Duration::from_secs(2 * 60 * 60);
-const DEADLINE: Duration = Duration::from_secs(15);
-const QUIET: Duration = Duration::from_millis(300);
 
 fn utc_day(now: SystemTime) -> NaiveDate {
     let secs = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -71,56 +71,11 @@ fn counts(event: &AgentEvent) -> bool {
     }
 }
 
-/// A counting reducer folding a source's stream, every event at one instant far
-/// past the boot.
-struct Fold {
-    rx: mpsc::Receiver<(Transport, AgentEvent)>,
-    reducer: Reducer,
-    scene: SceneState,
-    at: SystemTime,
-}
-
-impl Fold {
-    fn new(rx: mpsc::Receiver<(Transport, AgentEvent)>) -> Self {
-        Self {
-            rx,
-            reducer: Reducer::new().counting(utc_day),
-            scene: SceneState::uniform(8),
-            at: SystemTime::now() + HELD_PAST_ANY_WINDOW,
-        }
-    }
-
-    /// Folds what [`collect_until`] gathers.
-    async fn until(&mut self, what: &str, done: impl Fn(&AgentEvent) -> bool) {
-        for (transport, event) in collect_until(&mut self.rx, what, done).await {
-            self.reducer
-                .apply(&mut self.scene, event, self.at, transport);
-        }
-    }
-
-    /// The slots' own totals: fresh tokens and tool calls.
-    fn totals(&self) -> (u64, u64) {
-        self.scene
-            .agents
-            .values()
-            .fold((0, 0), |(tokens, calls), s| {
-                (tokens + s.tokens_used, calls + u64::from(s.tool_call_count))
-            })
-    }
-}
-
-/// `transcript`'s lines before the last one the day counts, and the rest.
-fn split_at_the_last_counted_line(source: &str, transcript: &Path) -> (String, String) {
-    let body = std::fs::read_to_string(transcript).expect("a committed transcript");
-    let drive = Drive::transcript_at(source, transcript).expect("a transcript source");
-    let lines: Vec<&str> = body.lines().collect();
-    let last = lines
-        .iter()
-        .rposition(|line| drive.lines([*line]).events.iter().any(counts))
-        .unwrap_or_else(|| panic!("{source}: its tool run counts nothing"));
-    assert!(last > 0, "{source}: nothing to replay");
-    let text = |part: &[&str]| part.iter().map(|l| format!("{l}\n")).collect();
-    (text(&lines[..last]), text(&lines[last..]))
+/// The slots' own totals: fresh tokens and tool calls.
+fn totals(scene: &SceneState) -> (u64, u64) {
+    scene.agents.values().fold((0, 0), |(tokens, calls), s| {
+        (tokens + s.tokens_used, calls + u64::from(s.tool_call_count))
+    })
 }
 
 /// `head` as a session active now wrote it: claude-code's first sight judges a
@@ -155,44 +110,34 @@ async fn every_transcript_source_replays_uncounted_and_then_reaches_live() {
         .collect();
     let mut replayed_tokens = 0;
     for source in sources {
-        let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources");
-        let recorded =
-            pixtuoid_core::harness::fixtures_dir(&corpus, source).join("tool-run-hermetic");
-        let transcript = transcript_in(source, &recorded)
-            .unwrap_or_else(|found| panic!("{source}: one recorded transcript, found {found:?}"));
-        let (head, tail) = split_at_the_last_counted_line(source, &transcript);
-
-        let dir = TempDir::new().unwrap();
-        let path = dir
-            .path()
-            .join(transcript.strip_prefix(&recorded).expect("under it"));
-        std::fs::create_dir_all(path.parent().expect("a parent")).unwrap();
+        let (transcript, recorded) = recorded(source, "tool-run-hermetic");
+        let (head, tail) = split_before_last(source, &transcript, counts);
         let head = if source == "claude-code" {
             stamped_now(&head)
         } else {
             head
         };
-        std::fs::write(&path, head).unwrap();
+        let (dir, path) = stage(&transcript, &recorded, &head);
 
         let (tx, rx) = mpsc::channel(64);
         let handle = spawn_source(source, dir.path().to_path_buf(), tx);
-        let mut fold = Fold::new(rx);
+        let mut fold = Fold::new(
+            rx,
+            Reducer::new().counting(utc_day),
+            SystemTime::now() + HELD_PAST_ANY_WINDOW,
+        );
         fold.until(source, |e| matches!(e, AgentEvent::SessionStart { .. }))
             .await;
         assert!(!fold.scene.agents.is_empty(), "{source}: nobody registered");
         assert_eq!(fold.scene.today, None, "{source}: its replay counted");
-        let (tokens, calls) = fold.totals();
+        let (tokens, calls) = totals(&fold.scene);
         replayed_tokens += tokens;
 
-        let mut file = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&path)
-            .unwrap();
-        std::io::Write::write_all(&mut file, tail.as_bytes()).unwrap();
+        append(&path, &tail);
         fold.until(source, counts).await;
         handle.abort();
 
-        let (tokens_after, calls_after) = fold.totals();
+        let (tokens_after, calls_after) = totals(&fold.scene);
         let today = fold.scene.today.expect("the appended line counts");
         assert_eq!(today.day, utc_day(fold.at), "{source}");
         assert_eq!(
@@ -215,29 +160,6 @@ fn backlogs(events: &[(Transport, AgentEvent)]) -> Vec<bool> {
             _ => None,
         })
         .collect()
-}
-
-/// Every event up to the stream's first quiet after `done` accepts one.
-async fn collect_until(
-    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-    what: &str,
-    done: impl Fn(&AgentEvent) -> bool,
-) -> Vec<(Transport, AgentEvent)> {
-    let deadline = tokio::time::Instant::now() + DEADLINE;
-    let mut events = Vec::new();
-    let mut reached = false;
-    loop {
-        match tokio::time::timeout(QUIET, rx.recv()).await {
-            Ok(Some(tagged)) => {
-                reached |= done(&tagged.1);
-                events.push(tagged);
-            }
-            Ok(None) => panic!("{what}: the stream closed"),
-            Err(_) if reached => return events,
-            Err(_) => {}
-        }
-        assert!(tokio::time::Instant::now() < deadline, "{what}: no end");
-    }
 }
 
 const UUID: &str = "0a0a0a0a-0b0b-7c0c-8d0d-0e0e0e0e0e0e";

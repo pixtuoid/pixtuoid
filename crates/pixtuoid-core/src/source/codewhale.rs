@@ -108,8 +108,8 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
 /// bails: registered-vs-decoded drift must be loud, not a silent drop.
 ///
 /// The activity arms prepend an [`AgentEvent::Identity`]: CodeWhale is
-/// HOOK-ONLY, so a slot the reducer's proof-of-life pre-pass synthesizes
-/// mid-turn has no JSONL back-fill path.
+/// HOOK-ONLY, so the identity is the one claim that registers a session first
+/// seen mid-turn.
 ///
 /// # Errors
 ///

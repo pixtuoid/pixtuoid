@@ -224,10 +224,13 @@ async fn a_relative_root_keys_each_transcript_once() {
     while let Ok(Some((_, e))) = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
         events.push(e);
     }
-    let starts = events.iter().filter(|e| is_start(e, &id)).count();
+    // A first sight, unlike a re-declaration, names its session.
+    let first_sights = (events.iter())
+        .filter(|e| matches!(e, AgentEvent::Rename { agent_id, .. } if *agent_id == id))
+        .count();
     let activities = events.iter().filter(|e| is_activity(e)).count();
     assert_eq!(
-        (starts, activities),
+        (first_sights, activities),
         (1, 1),
         "one transcript must decode under one cursor: {events:?}"
     );

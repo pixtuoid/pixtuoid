@@ -82,7 +82,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: crate::source::registry::Native::NONE,
 };
 
-/// Decode Kimi's two failure-variant hook events (no CC equivalent) and DECLINE
+/// Decode the hook events Kimi needs read unlike CC's, and DECLINE
 /// (`Ok(None)`) for the rest, so the CC-shaped remainder falls through to
 /// `decoder::decode_hook_payload`'s shared arms.
 ///
@@ -90,30 +90,29 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 ///   `PostToolUse`; it must close the activity or the tool's `ToolUseStart`
 ///   lingers Running. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
 ///   on an already-idle slot.
-/// - `StopFailure` — a failed turn end; settle to idle like `Stop`.
-///   Identity-less: an end alone proves too little to label a session, so an
-///   unknown id registers blank (`shows_activity`).
+/// - `Stop`, and `StopFailure`, a failed turn end — kimi's only per-turn
+///   hooks (`KIMI_EVENTS`), so each claims its session: a chat-only session
+///   running before the office, or swept since, registers on its next turn
+///   end. Claimed here, not in the shared `Stop` arm, whose CC children an
+///   `Identity` would re-create past their cascade.
 pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    match obj.get("hook_event_name").and_then(|s| s.as_str()) {
-        Some("PostToolUseFailure") => {
-            let session_id = kimi_session_id(obj)?;
-            let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
-            let cwd = kimi_cwd(obj);
-            let tool_use_id = kimi_tool_call_id(obj);
-            Ok(Some(vec![
-                AgentEvent::identity(agent_id, SOURCE_NAME, session_id, cwd),
-                AgentEvent::ToolUseEnd {
-                    agent_id,
-                    tool_use_id,
-                },
-            ]))
-        }
-        Some("StopFailure") => {
-            let agent_id = AgentId::from_parts(SOURCE_NAME, &kimi_session_id(obj)?);
-            Ok(Some(vec![AgentEvent::turn_end(agent_id)]))
-        }
-        _ => Ok(None),
-    }
+    let Some(event) = obj.get("hook_event_name").and_then(|s| s.as_str()) else {
+        return Ok(None);
+    };
+    let end: fn(AgentId, &HookObject) -> AgentEvent = match event {
+        "PostToolUseFailure" => |agent_id, obj| AgentEvent::ToolUseEnd {
+            agent_id,
+            tool_use_id: kimi_tool_call_id(obj),
+        },
+        "Stop" | "StopFailure" => |agent_id, _| AgentEvent::turn_end(agent_id),
+        _ => return Ok(None),
+    };
+    let session_id = kimi_session_id(obj, event)?;
+    let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
+    Ok(Some(vec![
+        AgentEvent::identity(agent_id, SOURCE_NAME, session_id, kimi_cwd(obj)),
+        end(agent_id, obj),
+    ]))
 }
 
 /// Kimi's per-call id, read through the registry variant the shared arms read —
@@ -132,17 +131,17 @@ fn kimi_cwd(obj: &Map<String, Value>) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// The non-empty `session_id` a claimed failure event keys on — the SAME key the
-/// shared arms derive, so a failure event coalesces with the session's other
+/// The non-empty `session_id` a claimed `event` keys on — the SAME key the
+/// shared arms derive, so a claimed event coalesces with the session's other
 /// events. `Err` rather than `Ok(None)` on a missing/empty id: having claimed
 /// the event, falling through would hit the shared arms' "unsupported
 /// hook_event_name" bail with a misleading message.
-fn kimi_session_id(obj: &Map<String, Value>) -> Result<String> {
+fn kimi_session_id(obj: &Map<String, Value>, event: &str) -> Result<String> {
     obj.get("session_id")
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
         .map(String::from)
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, "failure-hook", "session_id"))
+        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "session_id"))
 }
 
 #[cfg(test)]
@@ -212,23 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn stop_failure_is_a_turn_end_without_identity() {
-        let evs = decode_kimi_hook_custom(test_obj(&json!({
-            "hook_event_name": "StopFailure",
-            "session_id": "s"
-        })))
-        .unwrap()
-        .unwrap();
-        assert_eq!(evs.len(), 1);
-        assert!(
-            matches!(&evs[0], AgentEvent::TurnEnd { agent_id, .. }
-                if *agent_id == AgentId::from_parts(SOURCE_NAME, "s")),
-            "got {evs:?}"
-        );
-    }
-
-    #[test]
-    fn non_failure_events_decline_to_the_shared_arms() {
+    fn unclaimed_events_decline_to_the_shared_arms() {
         // SubagentStart is deliberately UNregistered — included to pin that the
         // custom decoder declines it too.
         for ev in [
@@ -236,7 +219,6 @@ mod tests {
             "PreToolUse",
             "PostToolUse",
             "PermissionRequest",
-            "Stop",
             "SessionEnd",
             "UserPromptSubmit",
             "SubagentStart",
@@ -255,8 +237,8 @@ mod tests {
     }
 
     #[test]
-    fn claimed_failure_event_without_session_id_errs() {
-        for ev in ["PostToolUseFailure", "StopFailure"] {
+    fn a_claimed_event_without_session_id_errs() {
+        for ev in ["PostToolUseFailure", "Stop", "StopFailure"] {
             assert!(
                 decode_kimi_hook_custom(test_obj(
                     &json!({ "hook_event_name": ev, "cwd": "/repo" })

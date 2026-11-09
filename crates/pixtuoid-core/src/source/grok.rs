@@ -95,8 +95,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: native::NATIVE,
 };
 
-/// xAI's private JSON-RPC method namespace, named once so the decode arm and
-/// the session-end scan cannot drift apart.
+/// xAI's private JSON-RPC method namespace.
 const XAI_SESSION_UPDATE_METHOD: &str = "_x.ai/session/update";
 
 const XAI_SUBAGENT_SPAWNED: &str = "subagent_spawned";
@@ -259,8 +258,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 }
             }
         }
-        // Identity-less: an end alone proves too little to label a session, so
-        // an unknown id registers blank (`shows_activity`). All three of
+        // Identity-less: an end alone registers nothing. All three of
         // upstream's turn-end causes land here.
         "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "subagent_start" => {
@@ -511,24 +509,6 @@ fn is_blocking_spawn(tool: &str, args: Option<&Value>) -> bool {
             .and_then(|a| a.get("background"))
             .and_then(Value::as_bool)
             == Some(false)
-}
-
-/// The first-sight gate's session-ended checker: an ended grok session is
-/// recognizable ONLY by the best-effort `hook_execution{event_name:
-/// "session_end"}` line our own installed hook causes. The per-line parse must
-/// stay STRUCTURAL — a substring scan would false-positive on a tool result
-/// QUOTING this marker inside a JSON string.
-#[cfg(feature = "native")]
-pub(crate) fn grok_session_ended(tail: &[u8]) -> bool {
-    crate::source::decoder::parsed_tail_lines(tail).any(|v| {
-        v.get("method").and_then(|m| m.as_str()) == Some(XAI_SESSION_UPDATE_METHOD)
-            && v.pointer("/params/update/sessionUpdate")
-                .and_then(|t| t.as_str())
-                == Some("hook_execution")
-            && v.pointer("/params/update/event_name")
-                .and_then(|e| e.as_str())
-                == Some("session_end")
-    })
 }
 
 /// Only `updates.jsonl` is the tailable transcript. Every session dir carries
@@ -1293,41 +1273,19 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "native")]
+    /// A tool result QUOTING the end's line is content.
     #[test]
-    fn session_ended_checker_matches_only_the_structural_marker() {
-        let end_line = serde_json::to_string(&xai_line(json!({
-            "sessionUpdate": "hook_execution",
-            "event_name": "session_end",
-            "runs": []
-        })))
-        .unwrap();
-        let stop_line = serde_json::to_string(&xai_line(json!({
-            "sessionUpdate": "hook_execution",
-            "event_name": "stop",
-            "runs": []
-        })))
-        .unwrap();
-        assert!(grok_session_ended(end_line.as_bytes()));
-        assert!(!grok_session_ended(stop_line.as_bytes()));
-        let tail = format!("{stop_line}\n{end_line}\n");
-        assert!(grok_session_ended(tail.as_bytes()));
-        // A torn leading line must not break the scan.
-        let torn = format!("truncated-garbage}}\n{end_line}\n");
-        assert!(grok_session_ended(torn.as_bytes()));
-    }
-
-    #[cfg(feature = "native")]
-    #[test]
-    fn session_ended_checker_is_immune_to_quoted_content() {
-        let quoted = serde_json::to_string(&acp_line(json!({
+    fn an_end_line_quoted_in_a_tool_result_ends_nothing() {
+        let quoted = acp_line(json!({
             "sessionUpdate": "tool_call_update",
             "toolCallId": "c",
             "rawOutput": {"text":
                 "{\"method\":\"_x.ai/session/update\",\"params\":{\"update\":{\"sessionUpdate\":\"hook_execution\",\"event_name\":\"session_end\"}}}"}
-        })))
-        .unwrap();
-        assert!(!grok_session_ended(quoted.as_bytes()));
+        }));
+        let ends = decode_line(quoted)
+            .into_iter()
+            .any(|e| matches!(e, AgentEvent::SessionEnd { .. }));
+        assert!(!ends);
     }
 
     #[test]

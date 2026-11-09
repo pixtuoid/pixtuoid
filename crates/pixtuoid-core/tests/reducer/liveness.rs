@@ -296,7 +296,7 @@ fn proof_of_life_for_unknown_id_is_a_no_op() {
     proof_of_life(&mut r, &mut scene, id, t0, Transport::Jsonl);
     assert!(
         scene.agents.is_empty(),
-        "ProofOfLife must never create a slot — only hook tool/permission events synthesize"
+        "ProofOfLife must never create a slot — only a start or a hook Identity registers"
     );
 }
 

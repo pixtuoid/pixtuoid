@@ -258,13 +258,13 @@ fn work_counts_once() {
     ]);
 }
 
-/// Only a slot counts, and a hook is proof of life enough to take one.
+/// Only a slot counts, and only a start or a hook's `Identity` takes one.
 #[test]
 fn work_counts_for_a_seated_agent() {
     play(&[
         (
-            "a hook's call seats its agent",
-            &[HookCall("t1"), Day(0, 1)],
+            "a hook's bare call seats nobody",
+            &[HookCall("t1"), Day(0, 0)],
         ),
         (
             "a transcript's seats nobody, nor does a backlog",

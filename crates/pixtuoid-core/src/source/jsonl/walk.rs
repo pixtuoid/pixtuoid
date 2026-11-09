@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,16 +9,14 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{CwdExtractor, LineDecoder, ParentExtractor, SUBAGENTS_DIR};
+use crate::source::decoder::{CwdExtractor, ParentExtractor, SUBAGENTS_DIR};
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
 use super::health::FailureLatch;
 use super::liveness::{probe_admits, revouch_gated_files};
 use super::root_watch::{DirId, dir_id};
-use super::{
-    ActivityRecency, HeadLabel, SessionEndChecker, Sight, SourceDecoders, TailActivity, WatchCtx,
-};
+use super::{HeadLabel, Registration, Sight, SourceDecoders, TailActivity, WatchCtx};
 
 /// Oversized-span skip threshold: a pending span past this is never replayed.
 pub(super) const MAX_PENDING_BYTES: u64 = 1 << 20;
@@ -36,17 +35,17 @@ pub(super) fn id_path(path: &Path) -> std::path::PathBuf {
 /// here is the #85 fix: a later scan used to bypass it and
 /// resurrect an ended/stale session as a phantom live sprite.
 ///
-/// `probe_live` (the liveness vouch) exempts only the RECENCY half — a
-/// structural end marker is the source's own first-hand report that no vouch
-/// outranks: a vouch answers "is the owning process alive", never "is this
-/// session over" (omp's fd vouch fires for a bun tool merely READING an old
-/// transcript).
+/// `probe_live` (the liveness vouch) exempts only the RECENCY half — the
+/// transcript's own last word, an end, is the source's first-hand report that
+/// no vouch outranks: a vouch answers "is the owning process alive", never "is
+/// this session over" (omp's fd vouch fires for a bun tool merely READING an
+/// old transcript).
 async fn should_seed_at_eof(
     meta: &std::fs::Metadata,
     window: Duration,
     path: &Path,
-    check_ended: SessionEndChecker,
-    activity_recency: ActivityRecency,
+    source: &Arc<str>,
+    decoders: SourceDecoders,
     probe_live: bool,
 ) -> bool {
     let mtime_recent = meta.modified().ok().is_some_and(|m| within(m, window));
@@ -57,7 +56,7 @@ async fn should_seed_at_eof(
         // An unreadable tail is no evidence that the session is over.
         return false;
     };
-    if check_ended(&tail) {
+    if window_life(&tail, path, source, decoders) == Some(Life::Ended) {
         return true;
     }
     if probe_live {
@@ -65,7 +64,7 @@ async fn should_seed_at_eof(
     }
     // Recent-but-unvouched: were those recent bytes the SESSION writing — the
     // only thing mtime ever proxied, and the half CC falsifies?
-    match activity_recency(&tail) {
+    match (decoders.activity_recency)(&tail) {
         TailActivity::At(secs) => !within(
             std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(secs),
             window,
@@ -82,9 +81,67 @@ fn within(t: std::time::SystemTime, window: Duration) -> bool {
 }
 
 /// How far back from EOF the first-sight predicates read. ONE value for both
-/// the end-marker scan and the activity-recency probe — a split would let a
+/// the lifecycle fold and the activity-recency probe — a split would let a
 /// transcript be "ended" and "active" over different bytes.
 pub(super) const TAIL_BYTES: u64 = 8192;
+
+/// What a decoded event says of its transcript's session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Life {
+    /// A start, or work ([`AgentEvent::shows_activity`]), whoever it names.
+    Lives,
+    /// An end of the path's own agent: a child's end in its parent's
+    /// transcript ends only the child.
+    Ended,
+}
+
+fn evidence(ev: &AgentEvent, own: AgentId) -> Option<Life> {
+    match ev {
+        AgentEvent::SessionEnd { .. } if ev.agent_id() == own => Some(Life::Ended),
+        AgentEvent::SessionStart { .. } => Some(Life::Lives),
+        _ => ev.shows_activity().then_some(Life::Lives),
+    }
+}
+
+/// The session's verdict over `events`, in order: its last evidence, so a start
+/// or work after an end is a resume.
+pub(super) fn last_life<'a>(
+    events: impl IntoIterator<Item = &'a AgentEvent>,
+    own: AgentId,
+) -> Option<Life> {
+    events.into_iter().filter_map(|ev| evidence(ev, own)).last()
+}
+
+/// [`last_life`] of a tail `window`'s whole lines, decoded as a read decodes
+/// them, so the source's decoder is the one authority on its end.
+fn window_life(
+    window: &[u8],
+    path: &Path,
+    source: &Arc<str>,
+    decoders: SourceDecoders,
+) -> Option<Life> {
+    let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
+    let decoded: Vec<AgentEvent> = crate::source::admit::window_lines(window)
+        .filter_map(|line| serde_json::from_str(line.ok()?).ok())
+        .flat_map(|v| (decoders.decode_line)(&transcript, source, v))
+        .collect();
+    last_life(&decoded, own_agent(path, source, decoders))
+}
+
+/// [`window_life`] of `path`'s last `bytes`; `None` when they can't be read.
+pub(super) async fn tail_life(
+    path: &Path,
+    bytes: u64,
+    source: &Arc<str>,
+    decoders: SourceDecoders,
+) -> Option<Life> {
+    window_life(&read_tail(path, bytes).await?, path, source, decoders)
+}
+
+/// The agent `path` is the transcript of.
+fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
+    AgentId::from_parts(source, &decoders.id_derive.id_for(path))
+}
 
 #[derive(Default)]
 pub(super) struct RootRead {
@@ -210,11 +267,7 @@ pub(super) async fn walk_jsonl(
         live: _,
         follower,
     } = *ctx;
-    let SourceDecoders {
-        decode_line,
-        check_ended,
-        ..
-    } = decoders;
+    let SourceDecoders { decode_line, .. } = decoders;
     // symlink_metadata, not metadata: a directory symlink under the root would
     // recurse unboundedly, or walk foreign `.jsonl` trees into this source's id
     // space. The ROOT itself may still be a symlink — only entries are checked.
@@ -278,8 +331,8 @@ pub(super) async fn walk_jsonl(
             &meta,
             window,
             path,
-            check_ended,
-            decoders.activity_recency,
+            source,
+            decoders,
             probe_admits(path, decoders, ctx).await,
         )
         .await
@@ -321,17 +374,18 @@ pub(super) async fn walk_jsonl(
             max = MAX_PENDING_BYTES,
             "pending bytes over the cap; skipping backlog to end"
         );
-        // A skipped span may bury the session-end marker, leaving the slot to the
+        // A skipped span may bury the session's end, leaving the slot to the
         // slow stale-sweep. Unconditional (a KNOWN file's span can end mid-skip) and
         // cursor-independent, so it must run before the seed below.
-        let ended_in_skip = check_session_ended(path, check_ended).await;
+        let ended_in_skip =
+            tail_life(path, TAIL_BYTES, source, decoders).await == Some(Life::Ended);
         // Seed to EOF BEFORE the awaited head-read below, so a concurrent
         // walk_jsonl sees `known` and won't re-enter this branch.
         cursors.lock().await.insert(path.to_path_buf(), file_len);
         if ended_in_skip {
             // An already-ENDED span stays unregistered: a SessionStart or seeded
             // Task after the SessionEnd just sent would animate a ghost.
-            let id = AgentId::from_parts(source, &decoders.id_derive.id_for(path));
+            let id = own_agent(path, source, decoders);
             let _ = tx
                 .send((
                     Transport::Jsonl,
@@ -350,7 +404,7 @@ pub(super) async fn walk_jsonl(
         // stays invisible until its next small append; the backlog is not replayed.
         // Keys on `seen`, NOT `!known` — a first-sight-GATED file is already `known`,
         // and keying on `!known` left it invisible until a later ≤1 MiB append.
-        let sight = seen.lock().await.get(path).copied();
+        let seen_before = seen.lock().await.contains_key(path);
         // The span is too big to hold, so the tail is the instrument — a
         // metadata run always lands at the end.
         let tail = read_tail(path, TAIL_BYTES).await;
@@ -358,30 +412,31 @@ pub(super) async fn walk_jsonl(
             tail.as_deref().map(decoders.activity_recency),
             Some(super::TailActivity::SidecarOnly)
         );
-        // Judged on the window `rescan_skipped_tail` reads, wide enough to hold
-        // a tool result's whole line.
-        let revives = sight != Some(Sight::Ended)
-            || read_tail(path, SKIP_RESCAN_BYTES)
-                .await
-                .is_some_and(|t| tail_shows_activity(&t, path, source, decoders.decode_line));
-        if sight != Some(Sight::Claimed) && !metadata_only && revives {
+        // A seen path's life is judged on the window `rescan_skipped_tail`
+        // reads, wide enough to hold a tool result's whole line.
+        let declares = !metadata_only
+            && (!seen_before
+                || tail_life(path, SKIP_RESCAN_BYTES, source, decoders).await == Some(Life::Lives));
+        if declares {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
-            let head = match read_head(path, MAX_PENDING_BYTES).await {
-                Some(head) => extract_head_fields(
-                    &head,
-                    cwd_extractor_for(source),
-                    decoders.head_label,
-                    parent_extractor_for(source),
-                ),
-                None => HeadFields::default(),
+            let head = async {
+                match read_head(path, MAX_PENDING_BYTES).await {
+                    Some(head) => extract_head_fields(
+                        &head,
+                        cwd_extractor_for(source),
+                        decoders.head_label,
+                        parent_extractor_for(source),
+                    ),
+                    None => HeadFields::default(),
+                }
             };
-            emit_first_sight(path, source, decoders, seen, tx, head).await;
+            declare(path, source, decoders, seen, tx, head).await;
         }
         // #222: the skipped span may bury an IN-FLIGHT Task dispatch, or its
         // turn's end. Only when registered — JSONL events for an unknown id are
         // reducer no-ops.
-        if seen.lock().await.get(path) == Some(&Sight::Claimed) {
+        if matches!(seen.lock().await.get(path), Some(Sight::Claimed(_))) {
             rescan_skipped_tail(path, decoders, ctx).await;
         }
         return;
@@ -418,24 +473,6 @@ pub(super) async fn walk_jsonl(
     // per-line key disagree and every JSONL event lands on a phantom id.
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
 
-    // A revived GATED file reads only the tail, which may lack what only a head
-    // carries: Codex's `session_meta` cwd and parent, and the title. Without
-    // them the revive registers empty-cwd onto the short reap, or a child as a
-    // root.
-    let extract = cwd_extractor_for(source);
-    let parent = parent_extractor_for(source);
-    let mut first_sight = extract_head_fields(new_bytes, extract, None, parent);
-    if (first_sight.cwd.is_none() || (parent.is_some() && first_sight.parent.is_none()))
-        && seen.lock().await.get(path) != Some(&Sight::Claimed)
-        && let Some(head) = read_head(path, MAX_PENDING_BYTES).await
-    {
-        first_sight = extract_head_fields(&head, extract, decoders.head_label, parent);
-    }
-
-    let path_agent_id = AgentId::from_parts(source, &decoders.id_derive.id_for(path));
-    let ends_this_agent = |ev: &AgentEvent| {
-        matches!(ev, AgentEvent::SessionEnd { .. }) && ev.agent_id() == path_agent_id
-    };
     let mut decoded = Vec::new();
     for line in crate::source::admit::lines(new_bytes) {
         let Ok(s) = line else {
@@ -452,19 +489,37 @@ pub(super) async fn walk_jsonl(
         decoded.extend(decode_line(&transcript_path_str, source, v));
     }
 
-    // A trailer flushed after the end line (grok's `hook_execution{stop}`)
-    // proves no revival.
-    let ended = seen.lock().await.get(path) == Some(&Sight::Ended);
-    if (!ended || decoded.iter().any(|ev| ev.shows_activity()))
+    // A seen path declares again only on a read that shows life: a trailer
+    // flushed after the end line (grok's `hook_execution{stop}`) proves none.
+    let own = own_agent(path, source, decoders);
+    let holds_life = decoded
+        .iter()
+        .any(|ev| evidence(ev, own) == Some(Life::Lives));
+    if (!seen.lock().await.contains_key(path) || holds_life)
         && !matches!(
             (decoders.activity_recency)(new_bytes),
             super::TailActivity::SidecarOnly
         )
     {
-        emit_first_sight(path, source, decoders, seen, tx, first_sight).await;
+        // A revived GATED file reads only the tail, which may lack what only a
+        // head carries: Codex's `session_meta` cwd and parent, and the title.
+        // Without them the revive registers empty-cwd onto the short reap, or a
+        // child as a root.
+        let head = async {
+            let extract = cwd_extractor_for(source);
+            let parent = parent_extractor_for(source);
+            let read = extract_head_fields(new_bytes, extract, None, parent);
+            if (read.cwd.is_none() || (parent.is_some() && read.parent.is_none()))
+                && let Some(head) = read_head(path, MAX_PENDING_BYTES).await
+            {
+                return extract_head_fields(&head, extract, decoders.head_label, parent);
+            }
+            read
+        };
+        declare(path, source, decoders, seen, tx, head).await;
     }
 
-    let session_ended = decoded.iter().any(ends_this_agent);
+    let verdict = last_life(&decoded, own);
     // A known file's read from the top follows a truncation or a re-vouch.
     let replays = if known { cursor_now == 0 } else { replaying };
     // Declared per read, and per agent a read names: a transcript carries its
@@ -483,25 +538,9 @@ pub(super) async fn walk_jsonl(
             return;
         }
     }
-    if session_ended {
+    if verdict == Some(Life::Ended) {
         seen.lock().await.insert(path.to_path_buf(), Sight::Ended);
     }
-}
-
-/// Whether `tail`'s whole lines decode to an event that shows activity: the
-/// evidence an ended claim's oversized append is judged on, since its skipped
-/// span is never decoded.
-fn tail_shows_activity(
-    tail: &[u8],
-    path: &Path,
-    source: &Arc<str>,
-    decode_line: LineDecoder,
-) -> bool {
-    let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
-    crate::source::admit::window_lines(tail)
-        .filter_map(|line| serde_json::from_str(line.ok()?).ok())
-        .flat_map(|v| decode_line(&transcript, source, v))
-        .any(|ev| ev.shows_activity())
 }
 
 /// Pre-drain guard for the exit-path drains: a transcript truncated/recreated
@@ -524,39 +563,55 @@ pub(super) async fn park_if_truncated_below_cursor(path: &Path, ctx: &WatchCtx<'
     }
 }
 
-/// Claim first-sight for `path` and, if this is the first pass to see it, emit
-/// the synthesized `SessionStart` + `Rename`. Shared by the normal tail-read
-/// path and the oversized-first-sight path so the two emit IDENTICAL events
-/// from one place. A `None`/empty `cwd` falls back to the project-dir label in
-/// `derive_label`.
-async fn emit_first_sight(
+/// Declare `path`'s registration as a `SessionStart`: the one its first sight
+/// claimed, else one resolved from `head`, awaited only then, which a `Rename`
+/// follows. Shared by the normal tail-read path and the oversized path so the
+/// two emit IDENTICAL events from one place. A `None`/empty `cwd` falls back to
+/// the project-dir label in `derive_label`.
+async fn declare(
     path: &Path,
     source: &Arc<str>,
     decoders: SourceDecoders,
     seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
     tx: &TaggedSender,
-    head: HeadFields,
+    head: impl Future<Output = HeadFields>,
 ) {
-    // An `Ended` claim registers like an absent one: the walk calls here for it
-    // only on an append that shows activity.
-    let already_claimed =
-        seen.lock().await.insert(path.to_path_buf(), Sight::Claimed) == Some(Sight::Claimed);
-    if already_claimed {
-        return;
-    }
+    let claimed = match seen.lock().await.get(path) {
+        Some(Sight::Claimed(registration)) => Some(registration.clone()),
+        _ => None,
+    };
+    let (registration, label) = match claimed {
+        // No `Rename`: it would clobber a label the transcript decoded since
+        // (`SlotLabel::yields_to`).
+        Some(registration) => (registration, None),
+        None => {
+            let head = head.await;
+            // Content-derived cwd wins; the PATH deriver covers sources carrying
+            // none, an empty cwd being what puts a slot on the unknown-cwd short reap.
+            let cwd = head
+                .cwd
+                .or_else(|| (decoders.cwd_derive)(path))
+                .unwrap_or_default();
+            // A head-read name beats the cwd deriver: it is the session's OWN
+            // title, while the cwd basename is shared by every concurrent session
+            // in a repo.
+            let label = head
+                .label
+                .unwrap_or_else(|| (decoders.derive_label)(path, source, &cwd));
+            let parent_id = detect_parent_id(path, source)
+                .or_else(|| head.parent.map(|p| AgentId::from_parts(source, &p)));
+            let registration = Registration { cwd, parent_id };
+            seen.lock()
+                .await
+                .insert(path.to_path_buf(), Sight::Claimed(registration.clone()));
+            (registration, Some(label))
+        }
+    };
     // Same deriver as the AgentId: hook slots carry the bare session UUID and
     // `backfill_identity` never heals a non-empty session_id, so a raw file-stem
     // here disagrees with the hook-created twin forever.
     let session_id = decoders.id_derive.id_for(path);
     let id = AgentId::from_parts(source, &session_id);
-    // Content-derived cwd wins; the PATH deriver covers sources carrying none, an
-    // empty cwd being what puts a slot on the unknown-cwd short reap.
-    let cwd = head
-        .cwd
-        .or_else(|| (decoders.cwd_derive)(path))
-        .unwrap_or_default();
-    let parent_id = detect_parent_id(path, source)
-        .or_else(|| head.parent.map(|p| AgentId::from_parts(source, &p)));
     let _ = tx
         .send((
             Transport::Jsonl,
@@ -564,26 +619,22 @@ async fn emit_first_sight(
                 agent_id: id,
                 source: source.to_string(),
                 session_id,
-                cwd: cwd.clone(),
-                parent_id,
+                cwd: registration.cwd,
+                parent_id: registration.parent_id,
             },
         ))
         .await;
-
-    // A head-read name beats the cwd deriver: it is the session's OWN title,
-    // while the cwd basename is shared by every concurrent session in a repo.
-    let label = head
-        .label
-        .unwrap_or_else(|| (decoders.derive_label)(path, source, &cwd));
-    let _ = tx
-        .send((
-            Transport::Jsonl,
-            AgentEvent::Rename {
-                agent_id: id,
-                label,
-            },
-        ))
-        .await;
+    if let Some(label) = label {
+        let _ = tx
+            .send((
+                Transport::Jsonl,
+                AgentEvent::Rename {
+                    agent_id: id,
+                    label,
+                },
+            ))
+            .await;
+    }
 }
 
 /// Read at most `limit` bytes from the START of a file, so registration never
@@ -610,13 +661,6 @@ async fn read_tail(path: &Path, bytes: u64) -> Option<Vec<u8>> {
     let mut buf = Vec::with_capacity(bytes.min(file_len) as usize);
     file.read_to_end(&mut buf).await.ok()?;
     Some(buf)
-}
-
-pub(super) async fn check_session_ended(path: &Path, checker: SessionEndChecker) -> bool {
-    match read_tail(path, TAIL_BYTES).await {
-        Some(buf) => checker(&buf),
-        None => false,
-    }
 }
 
 /// How far back from EOF an oversized skip is rescanned for what it buried.

@@ -855,7 +855,6 @@ mod tests {
         item("claude_code.rs", "admits_transcript", PATH_AXIS),
         item("claude_code.rs", "subagent_session", PATH_AXIS),
         item("claude_code.rs", "ACTIVITY_TYPES", TAIL_READ),
-        item("claude_code.rs", "cc_session_ended", TAIL_READ),
         literal(
             "claude_code.rs",
             "<synthetic>",

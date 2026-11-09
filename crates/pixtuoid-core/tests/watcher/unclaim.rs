@@ -11,7 +11,9 @@ use pixtuoid_core::source::Transport;
 use pixtuoid_core::source::codex::CodexSource;
 use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 
-use crate::{fast_watch, write_lines};
+use crate::{
+    Fold, append, fast_watch, recorded, spawn_copilot, split_before_last, stage, write_lines,
+};
 
 #[tokio::test]
 async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
@@ -153,4 +155,81 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
          ledger), not register as an orphan"
     );
     watcher_task.abort();
+}
+
+/// C37: the reducer forgets a claimed copilot session on its own (the stale
+/// sweep, a disconnect's reconcile, a desk it refused), and the session's next
+/// read that shows life registers it again, renamed only by its first sight.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
+    use std::collections::HashSet;
+
+    use pixtuoid_core::SceneState;
+    use pixtuoid_core::harness::Drive;
+    use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, Reducer, STALE_BLOCKED_TIMEOUT};
+
+    const DESKS: usize = 8;
+    let (transcript, dir) = recorded("copilot", "tool-run-hermetic");
+    let is_call = |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { .. });
+    let (head, tail) = split_before_last("copilot", &transcript, is_call);
+    let calls = Drive::transcript_at("copilot", &transcript)
+        .expect("a transcript source")
+        .lines(tail.lines())
+        .events
+        .iter()
+        .filter(|e| is_call(e))
+        .count();
+    /// What forgets the session, and the desks first sight meets.
+    type Forget = (&'static str, usize, fn(&mut Fold));
+    let forgets: [Forget; 3] = [
+        ("the stale sweep", DESKS, |fold| {
+            let swept = fold.at + STALE_BLOCKED_TIMEOUT * 2;
+            fold.reducer.tick(&mut fold.scene, swept);
+            fold.at = swept + EXIT_GRACE_WINDOW * 2;
+            fold.reducer.tick(&mut fold.scene, fold.at);
+        }),
+        ("a disconnect's reconcile", DESKS, |fold| {
+            fold.reducer
+                .reconcile_connected(&mut fold.scene, &HashSet::new(), fold.at);
+            fold.at += EXIT_GRACE_WINDOW * 2;
+            fold.reducer.tick(&mut fold.scene, fold.at);
+        }),
+        ("a desk refusal", 0, |fold| {
+            fold.scene.floor_capacities = SceneState::uniform(DESKS).floor_capacities;
+        }),
+    ];
+    for (forget, desks, forgotten) in forgets {
+        let (root, path) = stage(&transcript, &dir, &head);
+        let (tx, rx) = mpsc::channel(64);
+        let handle = spawn_copilot(root.path().to_path_buf(), tx);
+        let mut fold = Fold::new(rx, Reducer::new(), SystemTime::now());
+        fold.scene = SceneState::uniform(desks);
+        let mut events = fold
+            .until(forget, |e| matches!(e, AgentEvent::SessionStart { .. }))
+            .await;
+        let id = events
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::SessionStart { agent_id, .. } => Some(*agent_id),
+                _ => None,
+            })
+            .expect("first sight declares it");
+        forgotten(&mut fold);
+        assert!(fold.scene.agents.is_empty(), "{forget}: not forgotten");
+
+        append(&path, &tail);
+        events.extend(fold.until(forget, is_call).await);
+        handle.abort();
+        let calls_seen = fold
+            .scene
+            .agents
+            .get(&id)
+            .map(|s| s.tool_call_count as usize);
+        assert_eq!(calls_seen, Some(calls), "{forget}: {events:?}");
+        let renames = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Rename { agent_id, .. } if *agent_id == id))
+            .count();
+        assert_eq!(renames, 1, "{forget}: a re-declaration renames nothing");
+    }
 }

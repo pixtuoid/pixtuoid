@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
 
-use super::{SOURCE_NAME, cc_derive_label, cc_session_ended, claude_config_dir};
+use super::{SOURCE_NAME, cc_derive_label, claude_config_dir};
 use crate::source::cc_probe::cc_sessions_dir;
 pub use crate::source::cc_probe::live_cc_session_ids;
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher};
@@ -97,7 +97,6 @@ impl Source for ClaudeCodeSource {
 }
 
 pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
-    check_ended: cc_session_ended,
     activity_recency: Some(super::cc_activity_recency),
     head_label: None,
     derive_label: Some(cc_derive_label),

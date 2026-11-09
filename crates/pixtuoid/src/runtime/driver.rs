@@ -515,6 +515,31 @@ mod tests {
         )
     }
 
+    /// The session's start: a call registers nothing without it.
+    fn session_start() -> (pixtuoid_core::Transport, pixtuoid_core::AgentEvent) {
+        (
+            pixtuoid_core::Transport::Hook,
+            pixtuoid_core::AgentEvent::SessionStart {
+                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/proj"),
+                parent_id: None,
+            },
+        )
+    }
+
+    /// Until a tick has saved `calls`, so the next tick is a second off.
+    async fn saved_by_a_tick(path: &std::path::Path, calls: u64) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while saved_at(path).map(|today| today.tool_calls) != Some(calls) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("a tick writes the count while the run goes on");
+    }
+
     /// The reader gone, the event that finds it so ends the loop before its top
     /// notes the count.
     #[tokio::test]
@@ -522,16 +547,15 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("today.json");
         let (tx, rx) = tokio::sync::mpsc::channel(8);
-        let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+        let (sink, scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
         let run = tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
-        // The boot's publish and the first tick's, the next tick a second off.
-        for _ in 0..2 {
-            scene.changed().await.expect("the reducer publishes");
-        }
+        tx.send(session_start()).await.expect("it queues");
+        tx.send(hook_call("first")).await.expect("it queues");
+        saved_by_a_tick(&path, 1).await;
         drop(scene);
-        tx.send(hook_call("t")).await.expect("it queues");
+        tx.send(hook_call("last")).await.expect("it queues");
         run.await.expect("the reducer stops on its reader");
-        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
+        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(2));
     }
 
     /// `run` drops its runtime as `run_async` returns, cancelling the reducer's
@@ -550,25 +574,9 @@ mod tests {
             let (tx, rx) = tokio::sync::mpsc::channel(8);
             let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
             tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
-            // The slot's source: on a hook's blank one the gate drops the next call.
-            let start = pixtuoid_core::AgentEvent::SessionStart {
-                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
-                source: "claude-code".into(),
-                session_id: "s".into(),
-                cwd: PathBuf::from("/proj"),
-                parent_id: None,
-            };
-            tx.send((pixtuoid_core::Transport::Hook, start))
-                .await
-                .expect("it queues");
+            tx.send(session_start()).await.expect("it queues");
             tx.send(hook_call("first")).await.expect("it queues");
-            tokio::time::timeout(Duration::from_secs(5), async {
-                while saved_at(&path).is_none() {
-                    tokio::time::sleep(Duration::from_millis(20)).await;
-                }
-            })
-            .await
-            .expect("a tick writes the count while the run goes on");
+            saved_by_a_tick(&path, 1).await;
             tx.send(hook_call("last")).await.expect("it queues");
             scene
                 .wait_for(|scene| scene.today.is_some_and(|today| today.tool_calls == 2))

@@ -208,10 +208,7 @@ pub(crate) fn first_present_str<'a>(obj: &'a Value, keys: &[&str]) -> Option<&'a
 }
 
 /// Parse every COMPLETE line of a tail-scan window as JSON, silently dropping
-/// empty, torn, and non-JSON lines. The ONE tail-parse scaffold the per-source
-/// `*_session_ended` checkers share — each passes only its own STRUCTURAL
-/// end-marker predicate, never a substring scan (user-controllable content — a
-/// tool result QUOTING the marker — must not drive lifecycle).
+/// empty, torn, and non-JSON lines.
 pub(crate) fn parsed_tail_lines(tail: &[u8]) -> impl Iterator<Item = Value> + '_ {
     crate::source::admit::lines(tail).filter_map(|line| serde_json::from_str(line.ok()?).ok())
 }
@@ -433,10 +430,10 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 ///
 /// The tool/permission arms (PreToolUse / PostToolUse / Notification /
 /// PermissionRequest) lead with an [`AgentEvent::Identity`] carrying the payload's
-/// source/session_id/cwd (#221), so the reducer's proof-of-life registration for an
-/// unknown id lands with REAL identity instead of a blank `#N` slot. The
-/// session-lifecycle and custom Subagent arms deliberately do NOT: SessionStart
-/// already carries identity, and an end for an unknown agent proves nothing.
+/// source/session_id/cwd (#221), the claim an unknown id registers from: the
+/// activity alone registers nothing. The session-lifecycle and custom Subagent
+/// arms deliberately do NOT: SessionStart already carries identity, and an end
+/// for an unknown agent proves nothing.
 ///
 /// # Errors
 ///

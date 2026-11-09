@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
 
-use super::{SOURCE_NAME, grok_cwd_from_path, grok_home, grok_session_ended};
+use super::{SOURCE_NAME, grok_cwd_from_path, grok_home};
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
@@ -193,7 +193,6 @@ impl Source for GrokSource {
 }
 
 pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
-    check_ended: grok_session_ended,
     activity_recency: None,
     head_label: None,
     derive_label: None,

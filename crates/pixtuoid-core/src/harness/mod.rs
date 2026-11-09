@@ -53,7 +53,7 @@ pub use captures::{
 };
 
 /// The committed corpus: every recorded capture, fixture and hermetic script.
-pub(crate) fn sources_root() -> PathBuf {
+pub fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
@@ -354,8 +354,8 @@ impl Drive {
     /// source: the dispatcher routes by the envelope's own `_pixtuoid_source`
     /// stamp.
     ///
-    /// There is no seed here by construction — a hook for an unknown id
-    /// REGISTERS it (hooks are proof of life), so hook bytes never need one.
+    /// There is no seed here by construction — a hook carries its session's
+    /// identity (`SessionStart`/`Identity`), so hook bytes never need one.
     pub fn hooks() -> Self {
         Self {
             transport: Transport::Hook,

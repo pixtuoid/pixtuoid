@@ -467,28 +467,6 @@ pub(crate) fn cc_activity_recency(tail: &[u8]) -> TailActivity {
     }
 }
 
-/// CC session-end checker: structural lifecycle markers only, never a byte
-/// scan of message content.
-pub fn cc_session_ended(tail: &[u8]) -> bool {
-    // Last-marker-wins: a later `session_start` resets a `session_end` earlier
-    // in the window, so this can't reduce to a simple `.any(predicate)`.
-    let mut last_is_end = false;
-    for v in parsed_tail_lines(tail) {
-        let subtype = v.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
-        let hook = v
-            .get("hook_event_name")
-            .and_then(|s| s.as_str())
-            .unwrap_or("");
-        if subtype == "session_start" {
-            last_is_end = false;
-        }
-        if subtype == "session_end" || hook == "SessionEnd" {
-            last_is_end = true;
-        }
-    }
-    last_is_end
-}
-
 /// CC label: subagent paths → "subagent", else "cc·" + cwd basename. With `cwd`
 /// unknown (a seed line carrying no `cwd` still fires the JSONL Rename), fall back
 /// to the CC **project dir**, whose name encodes the cwd with '/'→'-' — or an
@@ -1163,16 +1141,6 @@ mod tests {
         assert!(
             events.is_empty(),
             "quoting the wrapper must not emit SessionEnd: {events:?}"
-        );
-
-        let tail = serde_json::json!({
-            "type": "user",
-            "message": { "role": "user", "content": prose }
-        })
-        .to_string();
-        assert!(
-            !cc_session_ended(tail.as_bytes()),
-            "tail scan must not end a session on quoted wrapper text"
         );
     }
 

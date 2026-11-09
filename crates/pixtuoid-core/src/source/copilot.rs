@@ -779,6 +779,25 @@ mod tests {
         }
     }
 
+    /// Copilot persists tool `arguments` and results verbatim, so its end's
+    /// marker in them is content, and its event schema names no `session_end`
+    /// (the release asset's `schemas/session-events.schema.json`).
+    #[test]
+    fn an_end_marker_in_content_ends_nothing() {
+        for line in [
+            r#"{"type":"tool.execution_complete","data":{"toolCallId":"t1","result":{"content":"run session.shutdown the cluster"}}}"#,
+            r#"{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"grep","arguments":{"pattern":"session_end"}}}"#,
+            r#"{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"grep","arguments":{"pattern":"\"type\":\"session.shutdown\""}}}"#,
+            r#"{"type":"tool.execution_complete","data":{"toolCallId":"t1","result":{"type":"session_end"}}}"#,
+            r#"{"type":"session_end","data":{}}"#,
+        ] {
+            let ends = decode(line)
+                .into_iter()
+                .any(|e| matches!(e, AgentEvent::SessionEnd { .. }));
+            assert!(!ends, "{line}");
+        }
+    }
+
     #[test]
     fn a_usage_record_with_no_fresh_tokens_reads_nothing() {
         // A reading of zero would be pushed into a monotone accumulator.

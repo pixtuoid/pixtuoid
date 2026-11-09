@@ -211,12 +211,10 @@ pub enum AgentEvent {
     },
     /// Identity context a hook decoder attaches IMMEDIATELY AHEAD of a
     /// tool/permission activity event: hook payloads carry source/session_id/
-    /// cwd that the activity variants don't, so without this a proof-of-life
-    /// registration for an unknown id starts BLANK until the next real
-    /// `SessionStart` — for a hook-only source, the whole rest of the turn.
-    /// The reducer registers-or-back-fills from it on the Hook transport ONLY
-    /// (a JSONL `Identity` is a structural no-op — transcript lines can be
-    /// historical replays and must never synthesize).
+    /// cwd that the activity variants don't, so this, not the activity,
+    /// registers an unknown id. The reducer registers-or-back-fills from it on
+    /// the Hook transport ONLY (a JSONL `Identity` is a structural no-op — a
+    /// transcript line can be a historical replay).
     Identity {
         /// The agent this identity context describes.
         agent_id: AgentId,
@@ -474,12 +472,12 @@ impl AgentEvent {
         }
     }
 
-    /// Whether this event shows its session working now: the creation
-    /// polarity's evidence for a slot no start announced. A session start
-    /// carries its own authority, and a session end, a model, usage or title
-    /// line shows nothing, nor does [`Backlog`](Self::Backlog), the reader's own
-    /// word, or [`ProofOfLife`](Self::ProofOfLife), which vouches a visible slot
-    /// past the sweeps and must never create one.
+    /// Whether this event shows its session working now: a transcript's
+    /// evidence of life after its end. A session start carries its own
+    /// authority, and a session end, a model, usage or title line shows
+    /// nothing, nor does [`Backlog`](Self::Backlog), the reader's own word, or
+    /// [`ProofOfLife`](Self::ProofOfLife), which vouches a visible slot past
+    /// the sweeps and must never create one.
     pub(crate) fn shows_activity(&self) -> bool {
         match self {
             AgentEvent::ToolUseStart { .. }
