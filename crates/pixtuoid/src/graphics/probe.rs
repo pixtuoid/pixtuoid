@@ -273,12 +273,9 @@ pub(crate) fn probe(ask: bool) -> Probe {
     }
     let query = hints.query();
     let mut reader = Reader::new(KITTY_QUERY_ID);
-    match crate::term::query_tty(
-        query.as_bytes(),
-        super::GRAPHICS_PROBE_TIMEOUT,
-        MAX_REPLY_BYTES,
-        |chunk| reader.feed(chunk),
-    ) {
+    match crate::term::query_tty(query.as_bytes(), MAX_REPLY_BYTES, |chunk| {
+        reader.feed(chunk)
+    }) {
         None => Probe::NotQueried,
         Some(false) => unanswered(&hints, window_cell()),
         Some(true) => {
@@ -305,12 +302,9 @@ fn reads_shared_memory() -> bool {
         Passthrough::new(false),
     );
     let mut reader = Reader::new(id);
-    let answered = crate::term::query_tty(
-        query.as_bytes(),
-        super::GRAPHICS_PROBE_TIMEOUT,
-        MAX_REPLY_BYTES,
-        |chunk| reader.feed(chunk),
-    );
+    let answered = crate::term::query_tty(query.as_bytes(), MAX_REPLY_BYTES, |chunk| {
+        reader.feed(chunk)
+    });
     // The terminal unlinks what it read; this unlinks what it didn't.
     super::shm::unlink_all();
     answered == Some(true) && reader.answer().kitty

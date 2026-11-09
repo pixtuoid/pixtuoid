@@ -135,8 +135,8 @@ audio = ["dep:rodio", "dep:rtrb"]
 # target, whose headers the cross-lints don't have, so they leave this out.
 serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami", "dep:zbus"]
 
-# termios/select for `term::query_tty` (the truecolor and graphics probes),
-# O_NOFOLLOW in install/io.rs, the stderr dup in audio/sink.rs.
+# termios/select/tcflush for `term`'s terminal queries, O_NOFOLLOW in
+# install/io.rs, the stderr dup in audio/sink.rs.
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 # The kitty `t=s` objects (graphics/shm.rs), whose `shm_open` libc types
@@ -211,6 +211,11 @@ insta    = { workspace = true }
 serde_json = { workspace = true }
 # `benches/render_tiles.rs`.
 criterion  = { workspace = true }
+
+# `tests/tui_startup.rs` plays the terminal on the TUI's pty; the startup
+# queries it answers are Unix-only.
+[target.'cfg(unix)'.dev-dependencies]
+portable-pty = { workspace = true }
 
 [[example]]
 name = "snapshot"
