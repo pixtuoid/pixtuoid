@@ -300,15 +300,15 @@ fn clip_cols(s: &str, budget: usize) -> String {
 /// chosen tier already right-flushed to `budget`, so a painter renders the runs
 /// with zero policy.
 ///
-/// Tiers: **death** (preempts all; the `▲N need you` alarm stays PINNED through
+/// Tiers: **warning** (preempts all; the `▲N need you` alarm stays PINNED through
 /// body truncation) → **full** → **medium** → **minimal** → **fallback** (only
 /// the keybind tail).
 pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let counts = inputs.counts;
     let ctx = &inputs.context;
-    // A dead source outranks the stats: the counts go stale once a transport is
-    // gone, so the warning IS the status until restart — truncated to fit rather
-    // than tiered away.
+    // A warning outranks the stats: it is what the user must act on, a dead
+    // source's counts gone stale with it, so it IS the status while it lasts —
+    // truncated to fit rather than tiered away.
     if let Some(warn) = ctx.warning {
         let w = budget as usize;
         // Clipped, never dropped: a row with no `[q]` is a user stuck in the

@@ -417,12 +417,9 @@ impl FloatingApp {
         else {
             return;
         };
-        let audio_now = Instant::now();
-        if let Some(saved) = self.audio_ctl.tick(audio_now) {
-            self.ui.note_save(saved);
-        }
+        let volume_flash =
+            crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
         let audio_audible = self.audio_ctl.handle().is_audible();
-        let volume_flash = self.audio_ctl.volume_flash(audio_now);
         let at = super::geometry::window_geometry(size, self.pack.max_density_variant(), self.zoom);
         super::geometry::sync_floor_caps(
             &mut self.last_caps_size,

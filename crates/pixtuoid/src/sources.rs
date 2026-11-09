@@ -87,7 +87,7 @@ impl std::fmt::Display for WireOutcome {
 /// Treat this wire as PUBLISHED: installed Raycast store copies parse it
 /// independently of the binary's version, so a further shape change needs a
 /// version handshake, never another flag-day edit. The token spelling is pinned
-/// by `change_outcome_wire_tokens_are_stable`.
+/// by `wire_outcome_tokens_are_stable_and_round_trip`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 // `deny_unknown_fields` ⇒ `additionalProperties: false` (rationale on `SourceStatus`).
 #[cfg_attr(test, derive(schemars::JsonSchema), schemars(deny_unknown_fields))]
@@ -484,6 +484,9 @@ pub(crate) enum Action {
     NoOp,
 }
 
+/// One source of a batch and its change: what it did, or why it failed.
+pub(crate) type SourceChange = (&'static str, Result<Changed>);
+
 /// PURE diff of the CURRENT connected-set against the DESIRED one — the
 /// declarative "connected set = exactly these" semantics `sources set` needs.
 /// Ids outside the source registry are ignored here; the I/O wrapper validates
@@ -508,10 +511,7 @@ pub(crate) fn plan_reconcile(
 
 /// Declarative apply: make the connected set EXACTLY `desired`, reporting each
 /// source (a failed item doesn't abort the batch).
-pub(crate) fn reconcile_to(
-    cfg: &Path,
-    desired: &HashSet<String>,
-) -> Vec<(&'static str, Result<Changed>)> {
+pub(crate) fn reconcile_to(cfg: &Path, desired: &HashSet<String>) -> Vec<SourceChange> {
     let app = config::load(cfg, &mut Vec::new());
     reconcile_from(
         cfg,
@@ -538,7 +538,7 @@ fn reconcile_from(
     cfg: &Path,
     current: &HashSet<String>,
     desired: &HashSet<String>,
-) -> Vec<(&'static str, Result<Changed>)> {
+) -> Vec<SourceChange> {
     plan_reconcile(current, desired)
         .into_iter()
         .map(|(sid, action)| {
@@ -715,10 +715,7 @@ fn audit_token(outcome: Outcome) -> &'static str {
 
 /// Connect each of `ids` — onboarding's confirm and `setup --yes`. Nothing is
 /// connected on a first run, so an id left out needs no change.
-pub(crate) fn connect_each(
-    cfg: &Path,
-    ids: &[&'static str],
-) -> Vec<(&'static str, Result<Changed>)> {
+pub(crate) fn connect_each(cfg: &Path, ids: &[&'static str]) -> Vec<SourceChange> {
     ids.iter().map(|&sid| (sid, connect(cfg, sid))).collect()
 }
 
@@ -1957,7 +1954,7 @@ mod tests {
     }
 
     #[test]
-    fn change_outcome_wire_tokens_are_stable() {
+    fn wire_outcome_tokens_are_stable_and_round_trip() {
         for (outcome, token) in [
             (WireOutcome::Connected, "connected"),
             (WireOutcome::Disconnected, "disconnected"),

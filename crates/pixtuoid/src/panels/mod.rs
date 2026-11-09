@@ -338,9 +338,7 @@ pub(crate) enum KeyAction {
     Redraw,
 }
 
-/// The panel's line for connecting `source_id` when `on`, else disconnecting it:
-/// [`Changed::line`](pixtuoid_core::remote::Changed::line)'s, which a paired device
-/// shows too, or on a failure its reason.
+/// The panel's line for connecting `source_id` when `on`, else disconnecting it.
 fn change_line(
     config_path: &std::path::Path,
     connected: &crate::runtime::ConnectedSources,
@@ -355,14 +353,25 @@ fn change_line(
         let done = crate::sources::disconnect_source(config_path, connected, source_id);
         (done, connection::FailedOp::Disconnect)
     };
+    result_line(&done, op, display_name)
+}
+
+/// How the panel words a change of the source named `name`:
+/// [`Changed::line`](pixtuoid_core::remote::Changed::line)'s, which a paired device
+/// shows too, or on a failure of `op` its reason.
+fn result_line(
+    done: &anyhow::Result<pixtuoid_core::remote::Changed>,
+    op: connection::FailedOp,
+    name: &str,
+) -> String {
     match done {
-        Ok(changed) => changed.line(display_name),
-        Err(e) => connection::format_failure(op, display_name, &format!("{e:#}")),
+        Ok(changed) => changed.line(name),
+        Err(e) => connection::format_failure(op, name, &format!("{e:#}")),
     }
 }
 
-/// The source id rides along so the panel can put its selection — and the offered `t`
-/// retry — on the row that actually failed.
+/// An onboarding connect's line, and the row it is about, which the panel
+/// selects: on a failed row `t` retries the connect.
 #[derive(Debug)]
 struct OnboardingNotice {
     source_id: &'static str,
@@ -373,31 +382,26 @@ struct OnboardingNotice {
 /// One presentable line per onboarding connect the user must still hear about —
 /// a failure, or a success whose change asks a step or warns: in TUI mode the
 /// alternate screen owns the terminal, so the warn-floor log is not a user surface.
-fn onboarding_notices(
-    outcomes: &[(&'static str, anyhow::Result<pixtuoid_core::remote::Changed>)],
-) -> Vec<OnboardingNotice> {
+fn onboarding_notices(outcomes: &[crate::sources::SourceChange]) -> Vec<OnboardingNotice> {
     let mut notices = Vec::new();
     for &(id, ref done) in outcomes {
+        match done {
+            Err(e) => tracing::warn!(source = %id, error = ?e, "onboarding: connect failed"),
+            Ok(changed) if changed.notes().is_empty() => continue,
+            Ok(_) => {}
+        }
         let name = pixtuoid_core::source::display_name(id).unwrap_or(id);
-        let line = match done {
-            Err(e) => {
-                tracing::warn!(source = %id, error = ?e, "onboarding: connect failed");
-                connection::format_failure(connection::FailedOp::Connect, name, &format!("{e:#}"))
-            }
-            Ok(changed) if !changed.notes().is_empty() => changed.line(name),
-            Ok(_) => continue,
-        };
         notices.push(OnboardingNotice {
             source_id: id,
-            line,
+            line: result_line(done, connection::FailedOp::Connect, name),
             failed: done.is_err(),
         });
     }
     notices
 }
 
-/// Open the Sources panel ON the first failed row, else the first noted one, and seed
-/// its result line, so the `t` retry is one keystroke away on the right source.
+/// Open the Sources panel on the first failed row, where `t` retries it, else on
+/// the first noted one, and seed its result line with every notice.
 fn surface_onboarding_notices(
     ui: &mut ui_state::UiState,
     connected: &crate::runtime::ConnectedSources,
@@ -460,6 +464,19 @@ fn audio<H: Host>(cx: &mut KeyCtx<'_, H>, action: crate::audio::AudioAction) {
     {
         cx.ui.note_save(saved);
     }
+}
+
+/// A painter's frame of audio: flush the debounced volume save, noting it for the
+/// footer, and return the `♩ N%` readout to draw.
+pub(crate) fn tick_audio(
+    ui: &mut ui_state::UiState,
+    audio_ctl: &mut crate::audio::AudioController,
+    now: Instant,
+) -> Option<u8> {
+    if let Some(saved) = audio_ctl.tick(now) {
+        ui.note_save(saved);
+    }
+    audio_ctl.volume_flash(now)
 }
 
 /// Modal precedence, highest first, is the body's early-return order.
@@ -634,13 +651,10 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
             if let Some(committed) = cx.ui.commit_appearance() {
                 let name = theme::ALL_THEMES[committed.theme].name;
                 let saved = crate::config::save_appearance(cx.config_path, name, committed.look);
-                if let Err(e) = &saved {
-                    tracing::warn!(error = ?e, "failed to persist the appearance");
-                }
-                cx.ui.note_save(crate::config::Saved {
-                    setting: crate::config::Setting::Appearance,
-                    landed: saved.is_ok(),
-                });
+                cx.ui.note_save(crate::config::SaveOutcome::of(
+                    crate::config::Setting::Appearance,
+                    saved,
+                ));
             }
         }
         KeyAction::AppearanceCancel => {

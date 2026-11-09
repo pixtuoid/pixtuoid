@@ -535,12 +535,13 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     now = ui.now();
                     snapshot = scene_rx.borrow_and_update().clone();
                     let health = source_health.borrow_and_update().clone();
-                    let audio_now = std::time::Instant::now();
-                    if let Some(saved) = audio_ctl.tick(audio_now) {
-                        ui.note_save(saved);
-                    }
+                    let volume_flash = crate::panels::tick_audio(
+                        &mut ui,
+                        &mut audio_ctl,
+                        std::time::Instant::now(),
+                    );
                     renderer.set_frames(ui.build_frames(now, &snapshot, &health), now);
-                    renderer.set_volume_flash(audio_ctl.volume_flash(audio_now));
+                    renderer.set_volume_flash(volume_flash);
                     renderer.render(&snapshot, now)?;
 
                     if renderer.cached_layout().is_some() {
@@ -1274,11 +1275,7 @@ mod apply_key_action_tests {
             let frames = self.ui.build_frames(now, &self.snapshot, &[]);
             self.renderer.set_frames(frames, now);
             self.renderer.render(&self.snapshot, now).expect("render");
-            let buf = self.renderer.frame_buffer();
-            (0..buf.area.height)
-                .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect())
-                .collect::<Vec<String>>()
-                .join("\n")
+            crate::tui::tui_renderer::harness::frame_text(self.renderer.frame_buffer())
         }
 
         /// The footer row of [`Self::frame`].
@@ -1385,6 +1382,24 @@ mod apply_key_action_tests {
         h.apply(KeyAction::ToggleAudioMute);
         let footer = h.footer();
         assert!(!footer.contains("not saved"), "{footer}");
+    }
+
+    /// A volume nudge saves once its readout fades, in the frame's audio step,
+    /// and a refusal there reaches the footer too.
+    #[test]
+    fn a_refused_volume_save_shows_in_the_footer() {
+        let mut h = Harness::new();
+        std::fs::write(&h.config_path, "not = [valid").unwrap();
+        h.apply(KeyAction::AdjustVolume(false));
+        let faded = std::time::Instant::now()
+            + std::time::Duration::from_millis(crate::audio::VOLUME_FLASH_MS as u64 + 50);
+        assert_eq!(
+            crate::panels::tick_audio(&mut h.ui, &mut h.audio_ctl, faded),
+            None,
+            "the readout has faded"
+        );
+        let footer = h.footer();
+        assert!(footer.contains("volume not saved"), "{footer}");
     }
 
     /// `v` reopens the popup with the notices due against the LIVE connections:

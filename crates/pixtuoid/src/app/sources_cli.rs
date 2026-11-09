@@ -7,12 +7,10 @@
 use std::io::Write;
 use std::path::Path;
 
-use crate::{config, sources};
+use crate::config;
+use crate::sources::{self, SourceChange};
 use anyhow::Result;
 use pixtuoid_core::remote::Changed;
-
-/// One source's change in a batch: what it did, or why it failed.
-type Done = (&'static str, Result<Changed>);
 
 /// `pixtuoid setup [--yes]` — the headless onboarding twin. Without `--yes` it is
 /// a DRY RUN: writing to another tool's config is opt-in. Exits non-zero if any
@@ -100,13 +98,13 @@ pub(crate) fn run_change(
         .iter()
         .map(|id| sources::registered_id(id))
         .collect::<Result<_>>()?;
-    let rows: Vec<Done> = sids.into_iter().map(|sid| (sid, op(&cfg, sid))).collect();
+    let rows: Vec<SourceChange> = sids.into_iter().map(|sid| (sid, op(&cfg, sid))).collect();
     report_batch(&rows, json)
 }
 
 /// Emit the batch, then fail the command if any row failed. Emits BEFORE bailing:
 /// the `--json` rows must reach stdout even on the non-zero exit.
-fn report_batch(rows: &[Done], json: bool) -> Result<()> {
+fn report_batch(rows: &[SourceChange], json: bool) -> Result<()> {
     if emit_outcomes(rows, json)? {
         anyhow::bail!("one or more sources failed (see the rows above)");
     }
@@ -116,7 +114,7 @@ fn report_batch(rows: &[Done], json: bool) -> Result<()> {
 /// Print a batch as a text table or the `--json` array — the schema-backed
 /// envelope the Raycast extension parses back — and say whether a row failed,
 /// DERIVED from the rows printed so the two can't disagree.
-fn emit_outcomes(rows: &[Done], json: bool) -> Result<bool> {
+fn emit_outcomes(rows: &[SourceChange], json: bool) -> Result<bool> {
     let wire: Vec<sources::OutcomeRow> = rows
         .iter()
         .map(|(id, done)| sources::OutcomeRow::new(id, done))
@@ -142,7 +140,7 @@ fn emit_outcomes(rows: &[Done], json: bool) -> Result<bool> {
 /// the failure detail appended, and under it what its change still asks of the
 /// user or warns of (OpenClaw's running gateway must restart before it loads
 /// the plugin).
-fn text_lines(rows: &[Done]) -> Vec<String> {
+fn text_lines(rows: &[SourceChange]) -> Vec<String> {
     let mut lines = Vec::new();
     for (id, done) in rows {
         let row = sources::OutcomeRow::new(id, done);
@@ -159,7 +157,7 @@ fn text_lines(rows: &[Done]) -> Vec<String> {
 
 /// A `--json` batch's notes, for stderr: in the envelope `message` means
 /// FAILURE, so a note there would change its meaning.
-fn json_notes(rows: &[Done]) -> Vec<String> {
+fn json_notes(rows: &[SourceChange]) -> Vec<String> {
     rows.iter()
         .flat_map(|(id, done)| {
             done.iter()
@@ -193,7 +191,7 @@ mod tests {
     #[test]
     fn a_changes_notes_ride_under_its_row() {
         let step = sources::post_install_hint("openclaw").expect("openclaw declares a step");
-        let rows: Vec<Done> = vec![
+        let rows: Vec<SourceChange> = vec![
             (
                 "openclaw",
                 Ok(Changed::new(
@@ -243,7 +241,7 @@ mod tests {
     /// gateway the user already restarted.
     #[test]
     fn a_change_with_nothing_to_say_is_its_row_alone() {
-        let rows: Vec<Done> = vec![
+        let rows: Vec<SourceChange> = vec![
             (
                 "openclaw",
                 Ok(Changed::new(

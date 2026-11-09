@@ -11,8 +11,9 @@ fn display_safe_some<'de, D: Deserializer<'de>>(text: D) -> Result<Option<String
     Option::<String>::deserialize(text).map(|text| text.as_deref().map(display_safe))
 }
 
-/// What an [`Ask::Change`](super::Ask::Change) did. A failure's reason stays on
-/// the server: it can quote another CLI's config.
+/// What a connect or disconnect of a source did, a device's
+/// [`Ask::Change`](super::Ask::Change) included. A failure's reason stays with
+/// the machine that made the change: it can quote another CLI's config.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Changed {
     #[serde(deserialize_with = "display_safe_text")]
@@ -83,8 +84,8 @@ impl Changed {
         self.outcome
     }
 
-    /// The sentence a device shows for it, the source named `display_name`: the
-    /// Sources panel's own, but a failure's, which the panel words with its reason.
+    /// The sentence every surface shows for it, the source named `display_name`,
+    /// but a failure's, which the machine that made the change words with its reason.
     pub fn line(&self, display_name: &str) -> String {
         let Self {
             source,
@@ -132,7 +133,7 @@ impl Changed {
             step.clone(),
             plugin_left
                 .as_deref()
-                .map(|cli| format!("\u{26a0} {}", plugin_left_registered(cli))),
+                .map(|cli| format!("\u{26a0} plugin left registered ({cli} not on PATH)")),
         ]
         .into_iter()
         .flatten()
@@ -149,12 +150,6 @@ pub fn nothing_to_do(display_name: &str) -> String {
 /// to connect.
 pub fn not_detected(display_name: &str) -> String {
     format!("{display_name} not detected on this machine")
-}
-
-/// How a disconnect that couldn't reach `command` to deregister the plugin
-/// reads, which stays registered with that CLI.
-pub fn plugin_left_registered(command: &str) -> String {
-    format!("plugin left registered ({command} not on PATH)")
 }
 
 /// What a change came to, as the binary's `--json` tokens spell it.

@@ -11,7 +11,7 @@ use std::sync::mpsc;
 #[cfg(feature = "audio")]
 use std::time::Instant;
 
-use crate::config::{Saved, Setting};
+use crate::config::{SaveOutcome, Setting};
 use pixtuoid_scene::audio::AudioFrame;
 #[cfg(all(feature = "audio", test))]
 use pixtuoid_scene::audio::OneShot;
@@ -152,7 +152,7 @@ impl AudioController {
         paused: bool,
         now: std::time::Instant,
         respawn: impl FnOnce(&AudioHandle, f32),
-    ) -> Option<Saved> {
+    ) -> Option<SaveOutcome> {
         let persist = apply_audio_action(&mut self.ui, action, paused, respawn);
         if persist.volume_nudged {
             self.volume_dirty = true;
@@ -160,13 +160,7 @@ impl AudioController {
         }
         persist.muted.then(|| {
             let saved = crate::config::save_audio_muted(&self.config_path, self.ui.muted);
-            if let Err(e) = &saved {
-                tracing::warn!(error = ?e, "failed to persist audio mute");
-            }
-            Saved {
-                setting: Setting::Mute,
-                landed: saved.is_ok(),
-            }
+            SaveOutcome::of(Setting::Mute, saved)
         })
     }
 
@@ -184,7 +178,7 @@ impl AudioController {
     /// Per frame: flush the debounced volume save once its window has elapsed,
     /// which it returns.
     #[must_use = "a failed save must reach the footer"]
-    pub(crate) fn tick(&mut self, now: std::time::Instant) -> Option<Saved> {
+    pub(crate) fn tick(&mut self, now: std::time::Instant) -> Option<SaveOutcome> {
         (self.volume_dirty && !self.flashing(now)).then(|| self.save_volume())
     }
 
@@ -195,16 +189,10 @@ impl AudioController {
         }
     }
 
-    fn save_volume(&mut self) -> Saved {
+    fn save_volume(&mut self) -> SaveOutcome {
         self.volume_dirty = false;
         let saved = crate::config::save_audio_volume(&self.config_path, self.ui.volume);
-        if let Err(e) = &saved {
-            tracing::warn!(error = ?e, "failed to persist audio volume");
-        }
-        Saved {
-            setting: Setting::Volume,
-            landed: saved.is_ok(),
-        }
+        SaveOutcome::of(Setting::Volume, saved)
     }
 
     pub(crate) fn set_paused(&mut self, paused: bool) {
@@ -342,7 +330,7 @@ mod controller_tests {
         let t0 = Instant::now();
         assert_eq!(
             c.apply(AudioAction::ToggleMute, false, t0, |_, _| {}),
-            Some(Saved {
+            Some(SaveOutcome {
                 setting: Setting::Mute,
                 landed: true
             })
@@ -378,7 +366,7 @@ mod controller_tests {
         let after = t0 + Duration::from_millis(VOLUME_FLASH_MS as u64 + 50);
         assert_eq!(
             c.tick(after),
-            Some(Saved {
+            Some(SaveOutcome {
                 setting: Setting::Volume,
                 landed: true
             })
@@ -396,7 +384,7 @@ mod controller_tests {
         let (mut c, _d) = ctl(false, 0.50);
         std::fs::write(&c.config_path, "not = [valid").unwrap();
         let failed = |setting| {
-            Some(Saved {
+            Some(SaveOutcome {
                 setting,
                 landed: false,
             })

@@ -1043,7 +1043,7 @@ impl TuiRenderer<ratatui::backend::CrosstermBackend<crate::tui::FrameOut>> {
 }
 
 #[cfg(test)]
-mod harness;
+pub(super) mod harness;
 
 /// The pixel a cell showing `bounds` points at: its middle.
 fn centre(bounds: pixtuoid_scene::layout::Bounds) -> pixtuoid_scene::layout::Point {

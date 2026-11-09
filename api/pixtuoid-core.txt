@@ -384,7 +384,6 @@ pub fn pixtuoid_core::remote::encode(&pixtuoid_core::state::SceneState, &pixtuoi
 pub fn pixtuoid_core::remote::is_host(&str) -> bool
 pub fn pixtuoid_core::remote::not_detected(&str) -> alloc::string::String
 pub fn pixtuoid_core::remote::nothing_to_do(&str) -> alloc::string::String
-pub fn pixtuoid_core::remote::plugin_left_registered(&str) -> alloc::string::String
 pub fn pixtuoid_core::remote::version_reply() -> serde_json::error::Result<alloc::string::String>
 pub mod pixtuoid_core::source
 pub mod pixtuoid_core::source::antigravity
