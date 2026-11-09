@@ -224,8 +224,12 @@ json-schemas:
 [group('rust')]
 links:
     # Source CSS uses Vite package specifiers; its module graph belongs to the
-    # site build, while this gate owns documentation links and anchors.
-    lychee --offline --include-fragments --extensions md --hidden .
+    # site build, while this gate owns documentation links and anchors. The
+    # README links this repo absolutely (gen-readme.mjs's RAW says why), so
+    # those links are remapped onto this tree to stay checked.
+    lychee --offline --include-fragments --extensions md --hidden \
+        --remap '^https://github\.com/pixtuoid/pixtuoid/blob/HEAD/ file://{{ justfile_directory() }}/' \
+        --remap '^https://raw\.githubusercontent\.com/pixtuoid/pixtuoid/HEAD/ file://{{ justfile_directory() }}/' .
 
 [doc('Lint and format-check the Python (ruff)')]
 [group('rust')]

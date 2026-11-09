@@ -7,6 +7,7 @@ license.workspace      = true
 repository.workspace   = true
 authors.workspace      = true
 homepage.workspace     = true
+readme.workspace       = true
 keywords.workspace     = true
 categories.workspace   = true
 # A workspace-only test: it include_str!'s a sibling crate's source, which is
@@ -48,3 +49,5 @@ assets = [
     # cargo-deb's generated copyright names the license; MIT wants its text.
     ["../../LICENSE", "usr/share/doc/pixtuoid-hook/", "644"],
 ]
+# Without one, cargo-deb takes the crate's readme: the whole repo README.
+extended-description = "The hook shim pixtuoid writes into each agent CLI's hooks: it relays the hook event to the running office and always exits 0, so it never blocks the agent."

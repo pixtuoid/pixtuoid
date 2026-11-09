@@ -20,6 +20,10 @@ const readmePath = join(root, 'README.md');
 // MUST match `site` in site/astro.config.mjs — a hand-kept copy (importing the
 // astro config here would pull @astrojs/*), and nothing gates the two.
 const SITE = 'https://pixtuoid.dev';
+// Absolute: each published crate's crates.io page is this README, and crates.io
+// resolves a relative link against the crate's own directory
+// (crates/pixtuoid-core/tests/published_package.rs).
+const RAW = 'https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD';
 const check = process.argv.includes('--check');
 let readme = readFileSync(readmePath, 'utf8');
 const errors = [];
@@ -92,7 +96,7 @@ const pixDims = (/** @type {string} */ pix) => {
 };
 /** @param {(typeof features)[number]} f */
 const iconCell = (f) =>
-  f.pix ? `<img src="docs/images/pix-icons/${cell(f.pix)}.svg" alt=""${pixDims(f.pix)}>` : cell(f.icon);
+  f.pix ? `<img src="${RAW}/docs/images/pix-icons/${cell(f.pix)}.svg" alt=""${pixDims(f.pix)}>` : cell(f.icon);
 const featuredFeatures = features.filter((f) => f.featured !== false);
 const featureRows = featuredFeatures.map(
   (f) => `| ${iconCell(f)} | **${cell(f.name)}** | ${cell(featureText(f.desc, f))} |`
@@ -172,7 +176,7 @@ for (const job of captioned) {
   // (https://www.w3.org/WAI/tutorials/images/decorative/, Example 3).
   const href = 'href' in job ? new URL(String(job.href), SITE) : null;
   const alt = href ? `${href.host}${href.pathname}`.replace(/\/$/, '') : '';
-  const img = `<img src="${file}" alt="${esc(alt)}" width="${README_IMAGE_WIDTH}" />`;
+  const img = `<img src="${RAW}/${file}" alt="${esc(alt)}" width="${README_IMAGE_WIDTH}" />`;
   const linked = href ? `<a href="${esc(href)}">${img}</a>` : img;
   regenSection(
     `${job.id} image`,

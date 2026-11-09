@@ -16,6 +16,7 @@ license      = "MIT"
 repository   = "https://github.com/pixtuoid/pixtuoid"
 authors      = ["Ivan Wang <ivanwng97@icloud.com>"]
 homepage     = "https://pixtuoid.dev"
+readme       = "README.md"
 keywords     = ["terminal", "tui", "pixel-art", "ai-agents", "claude"]
 categories   = ["command-line-utilities", "visualization"]
 

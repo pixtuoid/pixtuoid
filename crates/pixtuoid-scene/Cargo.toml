@@ -11,6 +11,7 @@ license                = "MIT AND OFL-1.1"
 repository.workspace   = true
 authors.workspace      = true
 homepage.workspace     = true
+readme.workspace       = true
 keywords.workspace     = true
 categories.workspace   = true
 
@@ -21,10 +22,7 @@ categories.workspace   = true
 workspace = true
 
 [features]
-default        = ["native", "pixel-font"]
-# Without it the render engine builds for wasm32 (no tokio/notify): the
-# WebAssembly office hero.
-native         = ["pixtuoid-core/native"]
+default        = ["pixel-font"]
 # The Fusion Pixel face the cutaway sets baked world text and the floating
 # window's screen text (`paint_grid`) in. A painter that sets the world text
 # itself (`WorldText::Host`) still bakes it during a floor slide.
@@ -55,9 +53,9 @@ toml       = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-# `harness` is dev-only (see core's manifest), so `examples/corpus_check.rs`
-# requests it here rather than in [dependencies].
-pixtuoid-core = { path = "../pixtuoid-core", version = "0.22.0", default-features = false, features = ["harness"] }
+# `examples/corpus_check.rs` drives `harness` (dev-only, see core's manifest)
+# over a root `native` resolves, so both stay out of the engine's own graph.
+pixtuoid-core = { path = "../pixtuoid-core", version = "0.22.0", default-features = false, features = ["harness", "native"] }
 anyhow     = { workspace = true }
 proptest   = { workspace = true }
 tempfile   = { workspace = true }
@@ -81,5 +79,4 @@ harness = false
 
 [[example]]
 name = "corpus_check"
-required-features = ["native"]
 test = true
