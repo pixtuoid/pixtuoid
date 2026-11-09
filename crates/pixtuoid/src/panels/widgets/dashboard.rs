@@ -106,30 +106,15 @@ fn dashboard_line(
         marquee_or_truncate(&name, LABEL_W, is_selected, now)
     );
 
-    use pixtuoid_scene::footer::RungKind;
-    let (kind, text, color) = match &row.state {
-        RowState::Running(Some(detail)) => (
-            RungKind::Running,
-            detail.to_string(),
-            theme.ui.label_running,
-        ),
-        RowState::Running(None) => (
-            RungKind::Running,
-            "running".to_string(),
-            theme.ui.label_running,
-        ),
-        RowState::RequiresAction(Some(reason)) => (
-            RungKind::RequiresAction,
-            reason.to_string(),
-            theme.ui.label_requires_action,
-        ),
-        RowState::RequiresAction(None) => (
-            RungKind::RequiresAction,
-            "requires action".to_string(),
-            theme.ui.label_requires_action,
-        ),
-        RowState::Idle => (RungKind::Idle, "idle".to_string(), theme.ui.label_idle),
+    use pixtuoid_scene::footer::{FooterTone, RungKind};
+    let (kind, text) = match &row.state {
+        RowState::Running(Some(detail)) => (RungKind::Running, detail.to_string()),
+        RowState::Running(None) => (RungKind::Running, "running".to_string()),
+        RowState::RequiresAction(Some(reason)) => (RungKind::RequiresAction, reason.to_string()),
+        RowState::RequiresAction(None) => (RungKind::RequiresAction, "requires action".to_string()),
+        RowState::Idle => (RungKind::Idle, "idle".to_string()),
     };
+    let color = FooterTone::Rung(kind).rgb(theme);
     let glyph = kind.glyph();
     let state_cell = format!(
         "{glyph} {}",
