@@ -350,8 +350,8 @@ pub(crate) fn save_flag_sources(
     })
 }
 
-/// What the floating window keeps of itself across runs: its logical size,
-/// its physical position when the OS reports one, and its zoom.
+/// What the floating window keeps of itself across runs: its logical size, its
+/// [`DesktopUnit`](crate::floating::geometry::DesktopUnit) position if the OS reports one, and its zoom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatingSave {
     pub(crate) width: u32,

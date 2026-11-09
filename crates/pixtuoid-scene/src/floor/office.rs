@@ -313,7 +313,7 @@ pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
 /// How often an office whose beat never turns paints: never 0fps, since its
 /// clock and sky still move with the wall and a frozen one reads as a dead
 /// window.
-pub(super) const REST_TICK: Duration = Duration::from_secs(1);
+pub const REST_TICK: Duration = Duration::from_secs(1);
 
 /// A painter's office of up to [`MAX_FLOORS`](super::MAX_FLOORS) floors:
 /// each floor's view, the office-wide state they share (a cup of
@@ -579,8 +579,10 @@ impl OfficeSession {
     }
 
     /// One frame of audio intent for the floor showing, in `scene` (the FULL
-    /// live scene) under `office_floor`.
-    fn audio_frame(
+    /// live scene) under `office_floor`, heard from the frame it last drew:
+    /// [`Self::render`] returns one with each frame, and a painter that skips
+    /// drawing asks here.
+    pub fn audio_frame(
         &mut self,
         scene: &SceneState,
         office_floor: FloorMeta,

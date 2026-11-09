@@ -52,7 +52,7 @@ pub(crate) struct RunConfig {
     /// The sources this run's decode drift has named, for the footer nudge.
     pub(crate) drift: crate::doctor::DriftSeen,
     /// Nothing is connected over a config that loaded (`sources::is_first_run`) —
-    /// the TUI plays the onboarding "move-in" overlay. Ignored by headless + `floating`.
+    /// the onboarding "move-in" overlay plays. Ignored by headless.
     pub(crate) first_run: bool,
     /// Resolved `[audio]` settings — muted defaults TRUE (the lazy spawn waits for the
     /// first `m`), volume pre-clamped by `config::resolve_audio`. Headless ignores it.

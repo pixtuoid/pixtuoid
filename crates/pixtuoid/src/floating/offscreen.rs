@@ -3,7 +3,7 @@
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::sprite::RgbBuffer;
 
-use pixtuoid_scene::floor::{FloorInputs, OfficeSession};
+use pixtuoid_scene::floor::{FloorInputs, FloorMeta, OfficeSession};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
 use pixtuoid_scene::interact::{Gesture, Pointer, Pressed};
 use pixtuoid_scene::look::RenderInputs;
@@ -75,6 +75,18 @@ impl OfficeRenderer {
 
     pub(crate) fn set_audio(&mut self, audio: crate::audio::AudioHandle) {
         self.audio = audio;
+    }
+
+    /// Feed the audio a frame of the office without drawing one: the floor
+    /// showing's last frame, heard in `scene` at `now` under `floor`.
+    pub(crate) fn hear(
+        &mut self,
+        scene: &SceneState,
+        floor: FloorMeta,
+        now: std::time::SystemTime,
+    ) {
+        self.audio
+            .frame(self.session.audio_frame(scene, floor, now));
     }
 
     /// Render the office's floor showing, or its slide to another, into the
@@ -448,7 +460,7 @@ mod tests {
     use super::super::overlays::footer_budget;
     use super::*;
     use pixtuoid_scene::cutaway::glyph_cell;
-    use pixtuoid_scene::floor::{FloorMeta, PetInputs};
+    use pixtuoid_scene::floor::PetInputs;
     use pixtuoid_scene::sprite::Rgb;
     use winit::dpi::PhysicalSize;
 
@@ -1339,6 +1351,50 @@ mod tests {
         assert!(
             on_floor.contains(&pixtuoid_scene::audio::OneShot::DoorChime),
             "a ground-floor walk-in must chime the floating window: {on_floor:?}"
+        );
+    }
+
+    /// An office heard without being drawn, as a window out of sight hears
+    /// it, still chimes a walk-in.
+    #[test]
+    fn an_office_heard_undrawn_chimes_a_walk_in() {
+        let cap = 16;
+        let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
+        let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        let mut renderer = OfficeRenderer::new(crate::test_flash::pack_arc());
+        let (handle, rx) = crate::audio::AudioHandle::test_pair();
+        renderer.set_audio(handle);
+        let mut agents = vec![running_on("/h/f0.jsonl", 0, 0)];
+        let scene = scene_with(agents.clone(), cap);
+        renderer.render(
+            cutaway(Size { w: 160, h: 96 }),
+            WindowFrame {
+                world: FloorInputs {
+                    scene: &scene,
+                    now,
+                    floor: FloorMeta::ground(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                place: pixtuoid_scene::look::Place::default(),
+                dim: pixtuoid_scene::look::Dim::NONE,
+            },
+        );
+        crate::audio::drain_frames(&rx); // discard the priming frames
+        agents.push(running_on("/h/f0-new.jsonl", 0, 1));
+        let scene = scene_with(agents, cap);
+        renderer.hear(
+            &scene,
+            FloorMeta::ground(),
+            now + pixtuoid_scene::floor::REST_TICK,
+        );
+        let heard: Vec<_> = crate::audio::drain_frames(&rx)
+            .into_iter()
+            .flat_map(|f| f.events)
+            .collect();
+        assert!(
+            heard.contains(&pixtuoid_scene::audio::OneShot::DoorChime),
+            "{heard:?}"
         );
     }
 

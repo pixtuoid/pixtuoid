@@ -9,34 +9,93 @@ use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::render_scale::PixelFit;
 use pixtuoid_scene::sprite::format::Density;
-use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position};
 
-/// Does the saved window rect `(x, y, w, h)` overlap ANY currently-connected monitor?
-///
-/// Guards against restoring onto a now-disconnected monitor: frameless +
-/// always-on-top + no taskbar means a fully off-screen window can never be dragged
-/// back. `w`/`h` are the saved LOGICAL dims, used here only as an approximate
-/// extent — a few px of HiDPI slop is irrelevant for an on/off-screen test. An
-/// edge-touching window with a zero-area intersection does NOT count, and an EMPTY
-/// monitor iterator returns `true` so we honor the saved position rather than
-/// second-guessing the OS.
-pub(crate) fn window_visible_on_monitors(
-    win: (i32, i32, u32, u32),
-    monitors: impl IntoIterator<Item = (i32, i32, u32, u32)>,
-) -> bool {
-    let (wx, wy, ww, wh) = win;
-    let (win_l, win_t) = (i64::from(wx), i64::from(wy));
-    let (win_r, win_b) = (win_l + i64::from(ww), win_t + i64::from(wh));
-    let mut any_monitor = false;
-    for (mx, my, mw, mh) in monitors {
-        any_monitor = true;
-        let (mon_l, mon_t) = (i64::from(mx), i64::from(my));
-        let (mon_r, mon_b) = (mon_l + i64::from(mw), mon_t + i64::from(mh));
-        if win_l < mon_r && win_r > mon_l && win_t < mon_b && win_b > mon_t {
-            return true;
+/// The unit the window's position is saved, checked and restored in: the
+/// one the platform places windows by. winit reports every position as
+/// physical, scaled by some screen's factor on the way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DesktopUnit {
+    /// macOS's points: winit scales a window's position by its screen's
+    /// factor, a monitor's by that monitor's, and a new window's by the
+    /// main screen's, so only the points under them are one space.
+    Points,
+    /// One physical-pixel desktop, which winit hands over unscaled
+    /// (Windows, X11).
+    Pixels,
+}
+
+/// The desktop unit of the platform this builds for.
+pub(crate) const DESKTOP_UNIT: DesktopUnit = if cfg!(target_os = "macos") {
+    DesktopUnit::Points
+} else {
+    DesktopUnit::Pixels
+};
+
+/// A connected monitor, as winit reports it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Monitor {
+    pub(crate) position: PhysicalPosition<i32>,
+    pub(crate) size: PhysicalSize<u32>,
+    pub(crate) scale: f64,
+}
+
+impl DesktopUnit {
+    /// `p`, reported scaled by `scale`, in this unit.
+    pub(crate) fn spot(self, p: PhysicalPosition<i32>, scale: f64) -> (i32, i32) {
+        match self {
+            Self::Points => p.to_logical::<i32>(scale).into(),
+            Self::Pixels => p.into(),
         }
     }
-    !any_monitor
+
+    /// `size`, reported scaled by `scale`, in this unit.
+    fn extent(self, size: PhysicalSize<u32>, scale: f64) -> (u32, u32) {
+        match self {
+            Self::Points => size.to_logical::<u32>(scale).into(),
+            Self::Pixels => size.into(),
+        }
+    }
+
+    /// Where winit opens a window saved at `spot`: tagged in this unit, so
+    /// no screen's factor converts it.
+    pub(crate) fn place(self, (x, y): (i32, i32)) -> Position {
+        match self {
+            Self::Points => LogicalPosition::new(x, y).into(),
+            Self::Pixels => PhysicalPosition::new(x, y).into(),
+        }
+    }
+
+    /// Whether a `size` window saved at `spot` overlaps any of `monitors`,
+    /// at the size it opens at on each.
+    ///
+    /// Guards against restoring onto a now-disconnected monitor: frameless +
+    /// always-on-top + no taskbar means a fully off-screen window can never be dragged
+    /// back. An edge-touching window with a zero-area intersection does NOT count, and an EMPTY
+    /// monitor iterator returns `true` so we honor the saved position rather than
+    /// second-guessing the OS.
+    pub(crate) fn on_a_monitor(
+        self,
+        spot: (i32, i32),
+        size: LogicalSize<u32>,
+        monitors: impl IntoIterator<Item = Monitor>,
+    ) -> bool {
+        let (win_l, win_t) = (i64::from(spot.0), i64::from(spot.1));
+        let mut any_monitor = false;
+        for m in monitors {
+            any_monitor = true;
+            let (mx, my) = self.spot(m.position, m.scale);
+            let (mw, mh) = self.extent(m.size, m.scale);
+            let (ww, wh) = self.extent(size.to_physical(m.scale), m.scale);
+            let (win_r, win_b) = (win_l + i64::from(ww), win_t + i64::from(wh));
+            let (mon_l, mon_t) = (i64::from(mx), i64::from(my));
+            let (mon_r, mon_b) = (mon_l + i64::from(mw), mon_t + i64::from(mh));
+            if win_l < mon_r && win_r > mon_l && win_t < mon_b && win_b > mon_t {
+                return true;
+            }
+        }
+        !any_monitor
+    }
 }
 
 /// Is the cursor `(cx, cy)` within `corner_px` of the bottom-right corner of a `(w, h)`
@@ -268,31 +327,49 @@ mod tests {
     use super::super::offscreen::unit_in;
     use super::*;
 
+    /// A 1x monitor at `(x, y)`, `w`×`h`.
+    fn at_1x(x: i32, y: i32, w: u32, h: u32) -> Monitor {
+        Monitor {
+            position: PhysicalPosition::new(x, y),
+            size: PhysicalSize::new(w, h),
+            scale: 1.0,
+        }
+    }
+
     const HD: (i32, i32, u32, u32) = (0, 0, 1920, 1080);
+
+    /// Whether a `w`×`h` window at `(x, y)` shows on 1x `monitors`.
+    fn on_1x_monitors(
+        (x, y, w, h): (i32, i32, u32, u32),
+        monitors: impl IntoIterator<Item = (i32, i32, u32, u32)>,
+    ) -> bool {
+        let monitors = monitors.into_iter().map(|(x, y, w, h)| at_1x(x, y, w, h));
+        DesktopUnit::Pixels.on_a_monitor((x, y), LogicalSize::new(w, h), monitors)
+    }
 
     #[test]
     fn overlapping_window_is_visible() {
-        assert!(window_visible_on_monitors((100, 100, 800, 600), [HD]));
+        assert!(on_1x_monitors((100, 100, 800, 600), [HD]));
     }
 
     #[test]
     fn fully_offscreen_after_a_monitor_disconnect_is_not_visible() {
-        assert!(!window_visible_on_monitors((3000, 0, 800, 600), [HD]));
+        assert!(!on_1x_monitors((3000, 0, 800, 600), [HD]));
     }
 
     #[test]
     fn partial_overlap_counts_as_visible() {
-        assert!(window_visible_on_monitors((1800, 100, 400, 300), [HD]));
+        assert!(on_1x_monitors((1800, 100, 400, 300), [HD]));
     }
 
     #[test]
     fn edge_touching_is_not_overlap() {
-        assert!(!window_visible_on_monitors((1920, 0, 100, 100), [HD]));
+        assert!(!on_1x_monitors((1920, 0, 100, 100), [HD]));
     }
 
     #[test]
     fn lands_on_a_negative_origin_second_monitor() {
-        assert!(window_visible_on_monitors(
+        assert!(on_1x_monitors(
             (-1500, 100, 400, 300),
             [HD, (-1920, 0, 1920, 1080)],
         ));
@@ -300,8 +377,59 @@ mod tests {
 
     #[test]
     fn empty_monitor_list_honors_the_saved_position() {
-        let none: [(i32, i32, u32, u32); 0] = [];
-        assert!(window_visible_on_monitors((100, 100, 800, 600), none));
+        assert!(on_1x_monitors((100, 100, 800, 600), []));
+    }
+
+    /// A spot saved on either of two screens of different scales passes the
+    /// check and reopens exactly there, whichever screen's factor winit
+    /// converts the restored position by: macOS's points, with a 1x main
+    /// screen beside a 2x one and the other way round, and one physical
+    /// desktop.
+    #[test]
+    fn a_saved_spot_round_trips_across_monitor_scales() {
+        let size = LogicalSize::new(480, 320);
+        for (main, other) in [
+            (((0, 0, 1920, 1080), 1.0), ((1920, 0, 1728, 1117), 2.0)),
+            (((0, 0, 1728, 1117), 2.0), ((1728, 0, 1920, 1080), 1.0)),
+        ] {
+            let monitors = [main, other].map(|((x, y, w, h), scale)| Monitor {
+                position: LogicalPosition::new(x, y).to_physical(scale),
+                size: LogicalSize::new(w, h).to_physical(scale),
+                scale,
+            });
+            for ((x, y, _, _), scale) in [main, other] {
+                let at = LogicalPosition::new(x + 100, y + 100);
+                // `outer_position` scales by the window's own screen's factor.
+                let spot = DesktopUnit::Points.spot(at.to_physical(scale), scale);
+                assert!(
+                    DesktopUnit::Points.on_a_monitor(spot, size, monitors),
+                    "{spot:?}"
+                );
+                let placed = DesktopUnit::Points.place(spot);
+                for by in [main.1, other.1] {
+                    assert_eq!(placed.to_logical::<i32>(by), at, "converted by {by}");
+                }
+            }
+        }
+        let monitors = [
+            Monitor {
+                scale: 2.0,
+                ..at_1x(0, 0, 3840, 2160)
+            },
+            at_1x(3840, 0, 1920, 1080),
+        ];
+        for m in monitors {
+            let at = PhysicalPosition::new(m.position.x + 100, m.position.y + 100);
+            let spot = DesktopUnit::Pixels.spot(at, m.scale);
+            assert!(
+                DesktopUnit::Pixels.on_a_monitor(spot, size, monitors),
+                "{spot:?}"
+            );
+            let placed = DesktopUnit::Pixels.place(spot);
+            for by in monitors.map(|m| m.scale) {
+                assert_eq!(placed.to_physical::<i32>(by), at, "converted by {by}");
+            }
+        }
     }
 
     #[test]

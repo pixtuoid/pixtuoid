@@ -28,7 +28,7 @@ use crate::walk::WalkState;
 
 mod office;
 use office::FloorView;
-pub use office::{Feed, FloorNav, OfficeSession};
+pub use office::{Feed, FloorNav, OfficeSession, REST_TICK};
 
 pub use pixtuoid_core::state::MAX_FLOORS;
 

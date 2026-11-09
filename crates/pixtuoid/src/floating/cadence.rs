@@ -12,11 +12,25 @@
 use std::time::{Duration, Instant};
 
 use pixtuoid_scene::anim::PAINT_FRAME;
+use pixtuoid_scene::floor::REST_TICK;
+
+/// What one `about_to_wait` pass is to do now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Due {
+    /// Paint the frame that fell due at this instant.
+    Paint(Instant),
+    /// Feed the audio without painting: the window is out of sight.
+    Hear,
+}
 
 pub(crate) struct FrameClock {
     next: Instant,
     /// Whether the frame last due was held back by the flash hold.
     retry: bool,
+    /// Whether the window is out of sight ([`winit::event::WindowEvent::Occluded`]):
+    /// nothing paints, and the audio still hears the office each
+    /// [`REST_TICK`], as a resting office's paints feed it.
+    occluded: bool,
 }
 
 impl FrameClock {
@@ -26,7 +40,22 @@ impl FrameClock {
         Self {
             next: now,
             retry: false,
+            occluded: false,
         }
+    }
+
+    /// The window went out of sight, or came back at `now`, where it paints
+    /// at once.
+    pub(crate) fn occlude(&mut self, occluded: bool, now: Instant) {
+        self.occluded = occluded;
+        if !occluded {
+            self.next = now;
+        }
+    }
+
+    /// Whether a redraw may paint: not while the window is out of sight.
+    pub(crate) fn paints(&self) -> bool {
+        !self.occluded
     }
 
     /// The frame last due was held back: the next poll retries it a
@@ -38,22 +67,25 @@ impl FrameClock {
 
     /// One `about_to_wait` pass at `now`, the office next needing a paint
     /// `until` later ([`OfficeSession::until_next_paint`], `None` each
-    /// [`PAINT_FRAME`]): `(paint, deadline)` — the instant the frame to redraw
-    /// NOW was due, if one is, and the instant the loop should wait until.
+    /// [`PAINT_FRAME`]): `(due, deadline)` — what to do NOW, if anything, and
+    /// the instant the loop should wait until.
     ///
     /// [`OfficeSession::until_next_paint`]: pixtuoid_scene::floor::OfficeSession::until_next_paint
-    pub(crate) fn poll(
-        &mut self,
-        now: Instant,
-        until: Option<Duration>,
-    ) -> (Option<Instant>, Instant) {
-        let wait = if std::mem::take(&mut self.retry) {
+    pub(crate) fn poll(&mut self, now: Instant, until: Option<Duration>) -> (Option<Due>, Instant) {
+        let retry = std::mem::take(&mut self.retry);
+        let wait = if self.occluded {
+            REST_TICK
+        } else if retry {
             PAINT_FRAME
         } else {
             until.unwrap_or(PAINT_FRAME)
         };
         if now >= self.next {
-            let due = self.next;
+            let due = if self.occluded {
+                Due::Hear
+            } else {
+                Due::Paint(self.next)
+            };
             self.next = now + wait;
             return (Some(due), self.next);
         }
@@ -77,7 +109,7 @@ mod tests {
         let mut painted = Vec::new();
         let mut elapsed = Duration::ZERO;
         while elapsed <= span {
-            if clock.poll(t0 + elapsed, until).0.is_some() {
+            if let (Some(Due::Paint(_)), _) = clock.poll(t0 + elapsed, until) {
                 painted.push(elapsed);
             }
             elapsed += step;
@@ -89,7 +121,10 @@ mod tests {
     fn the_first_pass_paints_so_the_window_is_never_blank() {
         let t0 = Instant::now();
         let mut clock = FrameClock::new(t0);
-        assert_eq!(clock.poll(t0, None), (Some(t0), t0 + PAINT_FRAME));
+        assert_eq!(
+            clock.poll(t0, None),
+            (Some(Due::Paint(t0)), t0 + PAINT_FRAME)
+        );
     }
 
     #[test]
@@ -152,7 +187,7 @@ mod tests {
         let retried = soon + PAINT_FRAME;
         assert_eq!(
             clock.poll(retried, Some(rest)),
-            (Some(retried), retried + rest)
+            (Some(Due::Paint(retried)), retried + rest)
         );
     }
 
@@ -169,8 +204,44 @@ mod tests {
         );
         assert_eq!(
             clock.poll(deadline, None).0,
-            Some(deadline),
+            Some(Due::Paint(deadline)),
             "due when armed"
         );
+    }
+
+    /// An out-of-sight window paints nothing, however busy its office, but
+    /// hears it each rest tick, sleeping between; seen again, it paints at
+    /// once.
+    #[test]
+    fn an_occluded_window_hears_each_rest_tick_and_paints_once_seen() {
+        let t0 = Instant::now();
+        let mut clock = FrameClock::new(t0);
+        assert_eq!(clock.poll(t0, None).0, Some(Due::Paint(t0)));
+        clock.occlude(true, t0);
+        assert!(!clock.paints());
+        let step = Duration::from_millis(1);
+        let span = 3 * REST_TICK;
+        let mut heard = Vec::new();
+        let mut elapsed = step;
+        while elapsed <= span {
+            let now = t0 + elapsed;
+            match clock.poll(now, None) {
+                (Some(Due::Hear), deadline) => {
+                    assert_eq!(deadline, now + REST_TICK, "it sleeps till the next hearing");
+                    heard.push(elapsed);
+                }
+                (Some(paint), _) => panic!("an occluded window painted: {paint:?}"),
+                (None, _) => {}
+            }
+            elapsed += step;
+        }
+        assert_eq!(heard.len(), 3, "{heard:?}");
+        for pair in heard.windows(2) {
+            assert_eq!(pair[1] - pair[0], REST_TICK);
+        }
+        let seen = t0 + span + step;
+        clock.occlude(false, seen);
+        assert!(clock.paints());
+        assert_eq!(clock.poll(seen, None).0, Some(Due::Paint(seen)));
     }
 }
