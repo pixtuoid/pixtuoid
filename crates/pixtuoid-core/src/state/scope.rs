@@ -18,8 +18,8 @@ use crate::state::{AgentSlot, SceneState, fsm};
 
 #[cfg(test)]
 thread_local! {
-    /// One per slot read from the slot map and per child reference read from the
-    /// index, in the loops a tick pass reaches: work a test bounds, never wall clock.
+    /// One per slot this module's index and walks read from the slot map, and per
+    /// child reference they read from the index: work a test bounds, never wall clock.
     pub(crate) static VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 

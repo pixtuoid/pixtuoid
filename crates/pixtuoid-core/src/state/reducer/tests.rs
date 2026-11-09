@@ -1256,7 +1256,7 @@ fn a_tick_walks_scope_in_linear_work() {
     }
 
     const SLOTS: usize = 128;
-    // Linear work doubles, quadratic quadruples: a strict 3 splits them and allows a constant.
+    // Between linear's 2x and quadratic's 4x, with room for a linear count's fixed offset.
     const LINEAR_CEILING: usize = 3;
     for deep in [false, true] {
         let (once, twice) = (tick_visits(SLOTS, deep), tick_visits(2 * SLOTS, deep));
