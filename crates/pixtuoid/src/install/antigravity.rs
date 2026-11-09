@@ -242,6 +242,27 @@ mod tests {
 
     const CMD: &str = "PIXTUOID_SOURCE=antigravity '/opt/pixtuoid-hook'";
 
+    #[test]
+    fn config_dir_sits_under_go_s_home_and_needs_its_variable() {
+        let (own, other) = if cfg!(windows) {
+            ("USERPROFILE", "HOME")
+        } else {
+            ("HOME", "USERPROFILE")
+        };
+        temp_env::with_vars(
+            [(own, Some("/home/u")), (other, Some("/elsewhere"))],
+            || {
+                assert_eq!(
+                    config_dir().unwrap(),
+                    PathBuf::from("/home/u").join(".gemini").join("config")
+                );
+            },
+        );
+        temp_env::with_vars([(own, None), (other, Some("/elsewhere"))], || {
+            assert!(config_dir().is_err(), "Go's os.UserHomeDir has no fallback");
+        });
+    }
+
     fn rendered() -> Value {
         serde_json::from_str(&render_hooks(CMD).expect("render")).expect("json")
     }

@@ -88,12 +88,12 @@ fn openclaw_state_dir() -> Result<PathBuf> {
 fn resolve_openclaw_state_dir(
     state_dir_env: Option<PathBuf>,
     openclaw_home_env: Option<PathBuf>,
-    os_home_first: Option<PathBuf>,
+    os_home: Option<PathBuf>,
 ) -> Result<PathBuf> {
     if let Some(d) = state_dir_env {
         return Ok(d);
     }
-    let home = openclaw_home_env.or(os_home_first).ok_or_else(|| {
+    let home = openclaw_home_env.or(os_home).ok_or_else(|| {
         io::home_unset(
             "OpenClaw's home",
             "OPENCLAW_STATE_DIR/OPENCLAW_HOME/HOME/USERPROFILE",
@@ -104,8 +104,9 @@ fn resolve_openclaw_state_dir(
 
 /// OpenClaw's OS home, its `resolveRawOsHomeDir`
 /// (`packages/normalization-core/src/home-dir.ts:28-35` @ v2026.11.2): `HOME`,
-/// then `USERPROFILE`, each trimmed and unset when it reads `undefined` or
-/// `null` (`:4-7`), then Node's `os.homedir()`.
+/// then `USERPROFILE`, then Node's `os.homedir()`, each unset when it trims to
+/// nothing, `undefined` or `null` (`:4-15`). Not mirrored: its Termux rung
+/// (`:17-26`), which needs Android's `ANDROID_DATA`.
 fn os_home() -> Option<PathBuf> {
     use pixtuoid_core::platform::{path_env_trimmed, user_home_opt};
     resolve_os_home(
@@ -121,7 +122,7 @@ fn resolve_os_home(
     userprofile: Option<PathBuf>,
     os_homedir: impl FnOnce() -> Option<PathBuf>,
 ) -> Option<PathBuf> {
-    let set = |p: &PathBuf| !matches!(p.to_str(), Some("undefined" | "null"));
+    let set = |p: &PathBuf| !matches!(p.to_str().map(str::trim), Some("" | "undefined" | "null"));
     home.filter(set)
         .or_else(|| userprofile.filter(set))
         .or_else(|| os_homedir().filter(set))
@@ -503,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn openclaw_state_dir_honors_openclaw_home_then_os_home_first() {
+    fn openclaw_state_dir_honors_openclaw_home_then_os_home() {
         let p = resolve_openclaw_state_dir(
             None,
             Some(r"D:\claw".into()),
@@ -531,6 +532,7 @@ mod tests {
             resolve_os_home(None, s("undefined"), || s("undefined")),
             None
         );
+        assert_eq!(resolve_os_home(None, None, || s("   ")), None);
     }
 
     #[test]

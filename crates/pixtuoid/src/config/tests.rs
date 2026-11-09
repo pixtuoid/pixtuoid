@@ -308,11 +308,10 @@ fn config_path_xdg_home_and_relative_branches() {
         });
     });
 
-    // An unset `USERPROFILE` still leaves Windows its profile dir.
-    #[cfg(not(windows))]
-    temp_env::with_vars_unset(["XDG_CONFIG_HOME", "HOME"], || {
-        assert_eq!(config_path(), PathBuf::from(".config/pixtuoid/config.toml"));
-    });
+    assert_eq!(
+        config_path_under(None),
+        PathBuf::from(".config/pixtuoid/config.toml")
+    );
 }
 
 #[test]

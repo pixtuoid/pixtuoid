@@ -101,8 +101,12 @@ fn packages_path() -> Result<PathBuf> {
 /// Windows misses it. Erroring mirrors the sibling home-anchored targets instead of
 /// silently reading a CWD-relative file Reasonix never writes.
 fn home() -> Result<PathBuf> {
-    reasonix_home()
-        .ok_or_else(|| io::home_unset("Reasonix's home", "REASONIX_HOME/APPDATA/HOME/USERPROFILE"))
+    reasonix_home().ok_or_else(|| {
+        io::home_unset(
+            "Reasonix's home",
+            "REASONIX_HOME/APPDATA/XDG_CONFIG_HOME/HOME/USERPROFILE",
+        )
+    })
 }
 
 /// `REASONIX_HOME`, else upstream's `defaultHomeDir`
@@ -374,6 +378,68 @@ mod tests {
             "Go's os.UserConfigDir errors on a relative $XDG_CONFIG_HOME"
         );
         assert_eq!(resolve_reasonix_home(None, false, None, None), None);
+    }
+
+    #[test]
+    fn reasonix_home_reads_its_platform_s_variables_and_names_them_when_none_resolves() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, other) = (dir.path().join("d"), dir.path().join("other"));
+        let vars = [
+            "REASONIX_HOME",
+            "APPDATA",
+            "XDG_CONFIG_HOME",
+            "HOME",
+            "USERPROFILE",
+        ];
+        temp_env::with_vars_unset(vars, || {
+            let err = home().unwrap_err().to_string();
+            for var in vars {
+                assert!(err.contains(var), "{var} missing from: {err}");
+            }
+        });
+        #[cfg(windows)]
+        {
+            temp_env::with_vars(
+                [
+                    ("REASONIX_HOME", None),
+                    ("APPDATA", Some(&d)),
+                    ("USERPROFILE", Some(&other)),
+                ],
+                || assert_eq!(reasonix_home(), Some(d.join("reasonix"))),
+            );
+            temp_env::with_vars(
+                [
+                    ("REASONIX_HOME", None),
+                    ("APPDATA", None),
+                    ("USERPROFILE", None),
+                    ("HOME", Some(&other)),
+                ],
+                || assert_eq!(reasonix_home(), None, "Go reads no HOME on Windows"),
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            temp_env::with_vars(
+                [
+                    ("REASONIX_HOME", None),
+                    ("HOME", Some(&d)),
+                    ("XDG_CONFIG_HOME", Some(&other)),
+                    ("APPDATA", Some(&other)),
+                ],
+                || assert_eq!(reasonix_home(), Some(d.join(".reasonix"))),
+            );
+            temp_env::with_vars(
+                [
+                    ("REASONIX_HOME", None),
+                    ("HOME", None),
+                    ("XDG_CONFIG_HOME", Some(&d)),
+                ],
+                || {
+                    let want = (!cfg!(target_os = "macos")).then(|| d.join("reasonix"));
+                    assert_eq!(reasonix_home(), want);
+                },
+            );
+        }
     }
 
     #[test]

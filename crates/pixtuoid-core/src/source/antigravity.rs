@@ -63,8 +63,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// which shares the global hooks file but is not this source.
 pub const CLI_APP_DATA_DIR: &str = "antigravity-cli";
 
-/// agy's `.gemini` dir, home-rooted on every platform (Go's `os.UserHomeDir`,
-/// never `%APPDATA%`): its app data dir and its global `config/` both sit here.
+/// agy's `.gemini` dir, under Go's `os.UserHomeDir` on every platform (agy 1.5.3
+/// `fs/local.GeminiDir`): its app data dir and its global `config/` both sit here.
 #[cfg(feature = "native")]
 pub fn gemini_dir() -> std::path::PathBuf {
     crate::platform::or_host_fallback(crate::platform::go_user_home_dir()).join(".gemini")
@@ -327,6 +327,31 @@ fn ag_tool_target(args: Option<&Value>) -> Option<String> {
 mod tests {
     use super::*;
     use crate::source::decoder::test_obj;
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn gemini_dir_sits_under_go_s_home_and_never_reads_the_other_variable() {
+        let (own, other) = if cfg!(windows) {
+            ("USERPROFILE", "HOME")
+        } else {
+            ("HOME", "USERPROFILE")
+        };
+        temp_env::with_vars(
+            [(own, Some("/home/u")), (other, Some("/elsewhere"))],
+            || {
+                assert_eq!(
+                    gemini_dir(),
+                    std::path::PathBuf::from("/home/u").join(".gemini")
+                );
+            },
+        );
+        temp_env::with_vars([(own, None), (other, Some("/elsewhere"))], || {
+            assert_eq!(
+                gemini_dir(),
+                crate::platform::or_host_fallback(None).join(".gemini")
+            );
+        });
+    }
 
     #[test]
     fn negative_step_index_is_skipped_not_minted() {

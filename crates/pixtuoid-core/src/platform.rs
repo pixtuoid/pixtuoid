@@ -64,19 +64,19 @@ pub(crate) fn user_home() -> PathBuf {
 
 /// `home`, else the host's temp root.
 pub(crate) fn or_host_fallback(home: Option<PathBuf>) -> PathBuf {
-    resolve_home(cfg!(windows), home, std::env::temp_dir())
+    resolve_host_fallback(cfg!(windows), home, std::env::temp_dir())
 }
 
 /// `~` as a CLI on Node's `os.homedir` or Rust's `std::env::home_dir` resolves
 /// it, with no host-level fallback: `None` when nothing resolves, so a caller
-/// can supply its own. On Windows that is std's own: `USERPROFILE`, else the
-/// profile dir `GetUserProfileDirectoryW` reports (std
-/// `sys/paths/windows.rs:174-179` @ 1.99.1), the rule libuv's `uv_os_homedir`
-/// shares (node v26.13.0 `deps/uv/src/win/util.c:970-990`). On Unix `HOME`
-/// alone: both ask the passwd database next, but `HOME` is effectively always
-/// set, and a caller errors when it is not.
+/// can supply its own. It is std's own: `USERPROFILE`, else the profile dir
+/// `GetUserProfileDirectoryW` reports, on Windows; `HOME`, else the passwd
+/// database, elsewhere (std 1.99.1 `sys/paths/windows.rs:174-179`,
+/// `sys/paths/unix.rs:430-484`), the reads libuv's `uv_os_homedir` makes too
+/// (node v26.13.0 `deps/uv/src/win/util.c:970-990`,
+/// `deps/uv/src/unix/core.c:1265-1281`).
 pub fn user_home_opt() -> Option<PathBuf> {
-    resolve_user_home_opt(cfg!(windows), path_env("HOME"), std::env::home_dir)
+    std::env::home_dir()
 }
 
 /// `~` as a Go CLI resolves it, Go's `os.UserHomeDir`: `USERPROFILE` on
@@ -89,12 +89,12 @@ pub fn go_user_home_dir() -> Option<PathBuf> {
 /// `~` as a CLI on the `dirs` crate resolves it (dirs 6.0.0 @ 00511bdc25,
 /// dirs-sys 0.5.0 @ 8bcd4aa2c3): on Windows `FOLDERID_Profile`, which no
 /// variable moves (`src/win.rs:5`, `src/lib.rs:172-173`); elsewhere a copy of
-/// std's `home_dir` (`src/lib.rs:33-37`), passwd fallback included.
+/// std's `home_dir` (`src/lib.rs:33-37`), so [`user_home_opt`].
 pub fn dirs_home_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     return crate::win32::known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).ok();
     #[cfg(not(windows))]
-    std::env::home_dir()
+    user_home_opt()
 }
 
 /// Hand back a CLI's env home override unchanged, warning when it is RELATIVE.
@@ -118,7 +118,7 @@ pub(crate) fn warn_if_relative_override(var: &str, dir: PathBuf) -> PathBuf {
 
 /// Pure core of [`or_host_fallback`], separated so the Windows arm is
 /// unit-testable on any host.
-fn resolve_home(windows: bool, home: Option<PathBuf>, temp_dir: PathBuf) -> PathBuf {
+fn resolve_host_fallback(windows: bool, home: Option<PathBuf>, temp_dir: PathBuf) -> PathBuf {
     home.unwrap_or_else(|| {
         if windows {
             temp_dir
@@ -126,16 +126,6 @@ fn resolve_home(windows: bool, home: Option<PathBuf>, temp_dir: PathBuf) -> Path
             PathBuf::from("/tmp")
         }
     })
-}
-
-/// Pure core of [`user_home_opt`], separated so the Windows arm is
-/// unit-testable on any host.
-fn resolve_user_home_opt(
-    windows: bool,
-    home: Option<PathBuf>,
-    std_home: impl FnOnce() -> Option<PathBuf>,
-) -> Option<PathBuf> {
-    if windows { std_home() } else { home }
 }
 
 #[cfg(test)]
@@ -277,30 +267,32 @@ mod tests {
     }
 
     #[test]
-    fn windows_asks_std_and_never_reads_a_git_bash_home() {
-        assert_eq!(
-            resolve_user_home_opt(true, s("/c/Users/me"), || s(r"C:\Users\me")),
-            s(r"C:\Users\me")
+    fn the_generic_home_reads_its_platform_variable_and_never_a_git_bash_home() {
+        let (own, other) = if cfg!(windows) {
+            ("USERPROFILE", "HOME")
+        } else {
+            ("HOME", "USERPROFILE")
+        };
+        temp_env::with_vars([(own, Some("/own")), (other, Some("/other"))], || {
+            assert_eq!(user_home_opt(), s("/own"));
+        });
+        // With `USERPROFILE` unset, std asks Windows for the profile dir.
+        #[cfg(windows)]
+        temp_env::with_vars(
+            [("USERPROFILE", None), ("HOME", Some("/c/Users/me"))],
+            || assert_ne!(user_home_opt(), s("/c/Users/me")),
         );
-        assert_eq!(resolve_user_home_opt(true, s("/c/Users/me"), || None), None);
-    }
-
-    #[test]
-    fn unix_reads_home_alone() {
-        let unreached = || -> Option<PathBuf> { panic!("Unix never asks std's passwd lookup") };
-        assert_eq!(
-            resolve_user_home_opt(false, s("/Users/me"), unreached),
-            s("/Users/me")
-        );
-        assert_eq!(resolve_user_home_opt(false, None, unreached), None);
     }
 
     #[test]
     fn an_unresolved_home_falls_back_to_the_host_temp_root() {
-        assert_eq!(resolve_home(true, None, t()), t());
-        assert_eq!(resolve_home(false, None, t()), PathBuf::from("/tmp"));
+        assert_eq!(resolve_host_fallback(true, None, t()), t());
         assert_eq!(
-            resolve_home(true, s(r"C:\Users\me"), t()),
+            resolve_host_fallback(false, None, t()),
+            PathBuf::from("/tmp")
+        );
+        assert_eq!(
+            resolve_host_fallback(true, s(r"C:\Users\me"), t()),
             PathBuf::from(r"C:\Users\me")
         );
     }

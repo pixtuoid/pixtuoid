@@ -42,7 +42,7 @@ pub(crate) fn shell_single_quote(s: &str) -> String {
 /// - **Unix**: env-prefix form `PIXTUOID_SOURCE=<source> '<path>'`.
 /// - **Windows**: BARE exec form `<path> --source <source>` — cmd.exe can't
 ///   express the env-prefix, so the source rides the shim's `--source` flag and a
-///   space/metacharacter path falls back to its DOS 8.3 short name.
+///   space/metacharacter path tries its DOS 8.3 short form (`windows_short_path`).
 ///
 /// `source` is a registered source name: `every_registered_source_name_is_a_plain_identifier`
 /// pins it shell/cmd-safe, so it splices unquoted.
