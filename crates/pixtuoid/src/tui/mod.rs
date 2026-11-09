@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
+use crossterm::cursor::Show;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind,
     MouseButton, MouseEventKind,
@@ -289,7 +290,8 @@ pub(crate) fn setup_terminal(out: FrameOut, _armed: &QuitArms) -> Result<Term> {
 
 /// THE terminal-mode unwind: the ONE definition of the order every exit path takes,
 /// the panic hook in `app/crash.rs` included. It also unlinks every shared-memory
-/// object this process published.
+/// object this process published, and shows the cursor: release builds abort on
+/// panic, so `Terminal`'s Drop, which would show it, never runs.
 ///
 /// Every step runs even when an earlier one fails and the FIRST error is returned — a `?`
 /// after the escape write would skip `disable_raw` exactly when it is needed most. And
@@ -299,7 +301,7 @@ pub(crate) fn setup_terminal(out: FrameOut, _armed: &QuitArms) -> Result<Term> {
 ///
 /// # Errors
 ///
-/// If writing the graphics unwind, the mouse-capture and alternate-screen escapes, or `disable_raw` fails; every step still runs.
+/// If writing the graphics unwind, the mouse-capture, alternate-screen and cursor escapes, or `disable_raw` fails; every step still runs.
 pub(crate) fn unwind_terminal_modes<W: std::io::Write>(
     out: &mut W,
     disable_raw: impl FnOnce() -> std::io::Result<()>,
@@ -322,9 +324,12 @@ fn unwind_after<W: std::io::Write>(
         .write_all(END_SYNC)
         .and_then(|()| out.write_all(prelude));
     let seq = execute!(out, DisableMouseCapture, LeaveAlternateScreen);
+    // Its own write: `execute!` stops at the first failed command.
+    let cursor = execute!(out, Show);
     let raw = disable_raw();
     images?;
     seq?;
+    cursor?;
     raw?;
     Ok(())
 }
@@ -336,7 +341,8 @@ fn unwind_after<W: std::io::Write>(
 /// If restoring the terminal modes or showing the cursor fails.
 pub(crate) fn teardown_terminal(term: &mut Term, out: Option<&FrameOut>) -> Result<()> {
     let modes = unwind_terminal_modes(term.backend_mut(), disable_raw_mode);
-    // Unconditional: a failed mode restore must not ALSO leave the cursor hidden.
+    // The unwind's `Show` bypasses `Terminal`, whose hidden flag only its own
+    // `show_cursor` clears; unconditional, so a failed mode restore leaves it clear.
     let cursor = term.show_cursor();
     if let (Err(_), Some(out)) = (&cursor, out) {
         // `Terminal`'s Drop shows the cursor again while its flag says hidden and
@@ -910,6 +916,35 @@ mod teardown_tests {
     /// no console, no `TERM`) — these go to the console API and no writer sees a byte.
     #[cfg(unix)]
     const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
+    #[cfg(unix)]
+    const SHOW_CURSOR: &str = "\x1b[?25h";
+
+    #[cfg(unix)]
+    #[test]
+    fn the_cursor_is_shown_even_when_leaving_the_alt_screen_fails() {
+        struct RefusesTheLeave(Vec<u8>);
+        impl std::io::Write for RefusesTheLeave {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                if buf
+                    .windows(LEAVE_ALT_SCREEN.len())
+                    .any(|w| w == LEAVE_ALT_SCREEN.as_bytes())
+                {
+                    return Err(std::io::Error::other("leave refused"));
+                }
+                self.0.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut out = RefusesTheLeave(Vec::new());
+        assert!(unwind_after(&[], &mut out, || Ok(())).is_err());
+        assert!(
+            String::from_utf8_lossy(&out.0).contains(SHOW_CURSOR),
+            "every step runs even when an earlier one fails"
+        );
+    }
 
     #[cfg(unix)]
     #[test]
@@ -920,6 +955,11 @@ mod teardown_tests {
         assert!(
             s.contains(LEAVE_ALT_SCREEN),
             "the unwind must reach the writer handed to it, not a fixed stream: {s:?}"
+        );
+        assert!(
+            s.contains(SHOW_CURSOR),
+            "release builds abort on panic, so Terminal's Drop never shows the \
+             cursor again; the unwind itself must: {s:?}"
         );
     }
 
