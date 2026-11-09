@@ -10,7 +10,7 @@ git-cliff). No `postinstall`, no download-on-install, `--ignore-scripts`-safe.
 npm i -g pixtuoid
   └─ pixtuoid (launcher, pure JS — installs everywhere)
        optionalDependencies, one per generate.mjs TARGETS entry (npm installs
-       ONLY the one matching os/cpu/libc):
+       ONLY the one matching os/cpu):
          @pixtuoid/cli-<os>-<cpu>     named by process.platform / process.arch
 ```
 

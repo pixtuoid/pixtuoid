@@ -11,8 +11,8 @@ const path = require("path");
 
 // npm matches `os`/`cpu` against `process.platform`/`process.arch`
 // (https://docs.npmjs.com/cli/v11/configuring-npm/package-json#os), and
-// generate.mjs names each package it publishes here, so this names the one npm
-// installed. One package per os/cpu pair means no runtime gnu-vs-musl choice.
+// generate.mjs names each package it publishes here, so this names the one
+// npm installed.
 /**
  * @param {string} platform
  * @param {string} arch
