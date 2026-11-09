@@ -98,10 +98,10 @@ fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
 }
 
 /// Start the office on a pty whose terminal replies with `answer`, each reply
-/// [`LINK_RTT`] after its query, in order; once it is past its queries and
-/// every reply is in, type `q` until it quits. Over ssh, where the graphics
-/// probe isn't asked: the truecolor and sync queries are the whole startup.
-fn run_office(answer: Answer) -> Run {
+/// `link_rtt` after its query, in order; once it is past its queries and every
+/// reply is in, type `q` until it quits. Over ssh, where the graphics probe
+/// isn't asked: the truecolor and sync queries are the whole startup.
+fn run_office(link_rtt: Duration, answer: Answer) -> Run {
     let home = tempfile::tempdir().expect("home");
     let config = home.path().join(".config/pixtuoid/config.toml");
     std::fs::create_dir_all(config.parent().expect("config dir")).expect("config dir");
@@ -160,7 +160,7 @@ fn run_office(answer: Answer) -> Run {
                     let mut s = seen.lock().expect("seen");
                     s.asked.push(row);
                     s.pending += 1;
-                    let _ = send.send((Instant::now() + LINK_RTT, answer(row), true));
+                    let _ = send.send((Instant::now() + link_rtt, answer(row), true));
                     scanned += end;
                 }
                 if out.windows(ALT_SCREEN.len()).any(|w| w == ALT_SCREEN) {
@@ -213,7 +213,7 @@ fn a_slow_terminals_startup_replies_never_reach_the_office_as_keys() {
         LINK_RTT < pixtuoid::dev::QUERY_TIMEOUT,
         "the query budget no longer covers the link this test models"
     );
-    let run = run_office(|row| ANSWERS[row].1.to_vec());
+    let run = run_office(LINK_RTT, |row| ANSWERS[row].1.to_vec());
     assert_eq!(
         run.config, run.seeded,
         "a late reply reached the office as keys"
@@ -230,7 +230,7 @@ fn a_slow_terminals_startup_replies_never_reach_the_office_as_keys() {
 /// discarded before the office reads its first key.
 #[test]
 fn bytes_queued_behind_the_last_reply_never_reach_the_office_as_keys() {
-    let run = run_office(|row| {
+    let run = run_office(LINK_RTT, |row| {
         let mut reply = ANSWERS[row].1.to_vec();
         if row == DECRQM {
             reply.extend_from_slice(ANSWERS[DA1].1);
@@ -250,4 +250,24 @@ fn bytes_queued_behind_the_last_reply_never_reach_the_office_as_keys() {
         "a stale reply reached the office as keys"
     );
     assert!(run.status.success(), "{:?}", run.status);
+}
+
+/// A link slower than one budget but within two: the truecolor probe gives up,
+/// and its reply, landing while the sync probe waits out its own budget, is
+/// read there rather than reaching the office as keys.
+#[test]
+fn a_reply_that_outlives_its_probe_is_read_by_the_next_one() {
+    let run = run_office(pixtuoid::dev::QUERY_TIMEOUT * 3 / 2, |row| {
+        ANSWERS[row].1.to_vec()
+    });
+    assert_eq!(
+        run.config, run.seeded,
+        "a reply that outlived its probe reached the office as keys"
+    );
+    assert!(run.status.success(), "{:?}", run.status);
+    assert_eq!(
+        run.asked,
+        [DECRQSS, DA1, DECRQM, DA1],
+        "the sync query, asked after the truecolor one went unanswered"
+    );
 }

@@ -137,8 +137,8 @@ pub(crate) fn color_status_row(pf: ColorPreflight) -> Option<&'static str> {
 fn parse_decrqss_truecolor(reply: &[u8]) -> Option<bool> {
     let s = String::from_utf8_lossy(reply);
     // A valid request's reply is `DCS 1 $ r Pt ST`, an invalid one's `DCS 0 $ r
-    // ST` (xterm's ctlseqs, DECRQSS); `Pt` stops at the ST (`ESC \`, or BEL), so
-    // the DA1 reply after it is never read as SGR.
+    // ST` (xterm's ctlseqs, DECRQSS); `Pt` stops at the ST (`ESC \`; some
+    // terminals send BEL instead), so the DA1 reply after it is never read as SGR.
     let (_, rest) = s.split_once("1$r")?;
     let sgr = rest.find(['\x1b', '\x07']).map_or(rest, |st| &rest[..st]);
     // Tolerate `:` / `;` separators and an optional empty colorspace-id field
@@ -217,8 +217,9 @@ pub(crate) fn query_truecolor() -> Truecolor {
     })
 }
 
-/// DECRQM for synchronized output (mode 2026), which a terminal that doesn't
-/// know the mode leaves unanswered
+/// DECRQM for synchronized output (mode 2026), which a terminal answers 0 (not
+/// recognized) when it doesn't know the mode, or leaves unanswered without
+/// DECRQM
 /// (<https://github.com/contour-terminal/vt-extensions/blob/master/synchronized-output.md>,
 /// "Feature detection").
 #[cfg(unix)]
@@ -592,8 +593,9 @@ mod tests {
     }
 
     /// The DA1 reply that ends the wait is never read as the SGR, and one
-    /// alone — a terminal that ignores DECRQSS — is no answer. The bare replies
-    /// are tmux 3.8's and GNU screen's, recorded in a pty.
+    /// alone — a terminal that ignores DECRQSS — is no answer. The last two are
+    /// tmux 3.8's and GNU screen's replies, recorded in a pty; the first two are
+    /// composed, one with a DA1 that carries the probe's triple.
     #[cfg(unix)]
     #[test]
     fn parse_decrqss_reads_only_the_dcs_before_the_da1() {

@@ -522,7 +522,8 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     let mut fired = None;
     let result: Result<()> = (async {
         let mut frames = frame_clock(pixtuoid_scene::anim::PAINT_FRAME);
-        // As late as possible: a reply arriving after it reaches the dispatch.
+        // Right before input is read: a probe reply landing after this flush
+        // reaches the key dispatch as keys.
         #[cfg(unix)]
         crate::term::discard_unread_replies();
         let mut events = EventStream::new();
