@@ -707,8 +707,8 @@ mod tests {
         assert_eq!(phone.reply().await, Reply::Resumed);
     }
 
-    /// An address's turn ends at its hello's verdict, before the reply is
-    /// written, whether the device then streams or is refused.
+    /// An address's turn lasts until its hello's verdict and ends before the
+    /// reply is written, whether the device then streams or is refused.
     #[tokio::test]
     async fn an_addresss_turn_ends_at_its_hellos_verdict() {
         const PEER: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 20);
@@ -720,15 +720,18 @@ mod tests {
             (stranger, Reply::Refused),
         ] {
             let admitted = admission.admit(PEER).expect("the address's turn");
-            // A byte of room, so the reply's write is still under way once its
-            // first byte has arrived.
+            // A byte of room: a write here ends only once the served task reads
+            // all but its last byte, and the reply's write is still under way
+            // once its first byte has arrived.
             let mut peer = Peer::admitted(&fixture.devices, admitted, 1);
-            let second = admission.admit(PEER);
+            let hello = Hello::Resume { token }.line().expect("it encodes");
+            let (unended, newline) = hello.as_bytes().split_at(hello.len() - 1);
+            peer.writer.write_all(unended).await.expect("sent");
             assert!(
-                matches!(second, Err(NotAdmitted::Unanswered)),
-                "{verdict:?}"
+                matches!(admission.admit(PEER), Err(NotAdmitted::Unanswered)),
+                "held while the hello is read: {verdict:?}"
             );
-            peer.hello(&Hello::Resume { token }).await;
+            peer.writer.write_all(newline).await.expect("sent");
             let begun = peer.lines.fill_buf().await.expect("it reads");
             assert!(!begun.is_empty(), "a reply begins");
             assert!(admission.admit(PEER).is_ok(), "{verdict:?}");
