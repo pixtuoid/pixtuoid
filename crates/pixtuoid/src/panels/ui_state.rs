@@ -360,8 +360,8 @@ impl UiState {
     /// Hold a failed save in the footer until a later save of its setting lands:
     /// in TUI mode the alternate screen owns the terminal, so the warn-floor log
     /// is not a user surface.
-    pub(crate) fn note_save(&mut self, saved: crate::config::SaveOutcome) {
-        self.unsaved[saved.setting] = !saved.landed;
+    pub(crate) fn note_save(&mut self, outcome: crate::config::SaveOutcome) {
+        self.unsaved[outcome.setting] = !outcome.landed;
     }
 
     pub(crate) fn toggle_dashboard(&mut self, scene: &SceneState) {

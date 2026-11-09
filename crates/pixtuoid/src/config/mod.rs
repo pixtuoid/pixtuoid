@@ -167,9 +167,9 @@ pub(crate) struct SaveOutcome {
 }
 
 impl SaveOutcome {
-    /// What `saved`, a save of `setting`, came to, its failure logged.
-    pub(crate) fn of(setting: Setting, saved: Result<()>) -> Self {
-        if let Err(e) = &saved {
+    /// What `save`, a save of `setting`, came to, its failure logged.
+    pub(crate) fn of(setting: Setting, save: Result<()>) -> Self {
+        if let Err(e) = &save {
             // A message is the log's stable grep key, so each keeps its own.
             match setting {
                 Setting::Appearance => {
@@ -181,7 +181,7 @@ impl SaveOutcome {
         }
         Self {
             setting,
-            landed: saved.is_ok(),
+            landed: save.is_ok(),
         }
     }
 }

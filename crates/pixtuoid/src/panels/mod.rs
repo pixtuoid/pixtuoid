@@ -458,11 +458,11 @@ fn set_look<H: Host>(host: &mut H, look: pixtuoid_scene::look::LookKind) {
 /// Run an audio gesture, noting the save it ran for the footer.
 fn audio<H: Host>(cx: &mut KeyCtx<'_, H>, action: crate::audio::AudioAction) {
     let paused = cx.ui.paused();
-    if let Some(saved) = cx
+    if let Some(outcome) = cx
         .audio_ctl
         .apply(action, paused, Instant::now(), cx.respawn)
     {
-        cx.ui.note_save(saved);
+        cx.ui.note_save(outcome);
     }
 }
 
@@ -473,8 +473,8 @@ pub(crate) fn tick_audio(
     audio_ctl: &mut crate::audio::AudioController,
     now: Instant,
 ) -> Option<u8> {
-    if let Some(saved) = audio_ctl.tick(now) {
-        ui.note_save(saved);
+    if let Some(outcome) = audio_ctl.tick(now) {
+        ui.note_save(outcome);
     }
     audio_ctl.volume_flash(now)
 }
@@ -650,10 +650,10 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::AppearanceCommit => {
             if let Some(committed) = cx.ui.commit_appearance() {
                 let name = theme::ALL_THEMES[committed.theme].name;
-                let saved = crate::config::save_appearance(cx.config_path, name, committed.look);
+                let save = crate::config::save_appearance(cx.config_path, name, committed.look);
                 cx.ui.note_save(crate::config::SaveOutcome::of(
                     crate::config::Setting::Appearance,
-                    saved,
+                    save,
                 ));
             }
         }

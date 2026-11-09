@@ -384,8 +384,8 @@ mod tests {
         assert!(!std::ptr::eq(k.theme, pixtuoid_scene::theme::ALL_THEMES[0]));
     }
 
-    /// A refused save shows in the window's own footer, built as the window
-    /// builds it, and never at the cost of `[q]`.
+    /// A refused save reaches `RenderFrames.warning` and the footer tier, within
+    /// the window's budget and never at the cost of `[q]`.
     #[test]
     fn a_refused_save_shows_in_the_windows_footer() {
         use crossterm::event::KeyCode;
