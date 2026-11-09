@@ -4,33 +4,54 @@ description: 'Runs `just gen-wasm` into site/public/wasm/, on the Rust toolchain
 runs:
   using: 'composite'
   steps:
-    - id: bindgen
+    - id: versions
       shell: bash
       run: |
         set -euo pipefail
-        ver="$(just _wasm-bindgen-version)"
-        echo "version=$ver" >> "$GITHUB_OUTPUT"
+        bindgen="$(just _wasm-bindgen-version)"
+        binaryen="$(yq -e -p toml -oy '.tools["aqua:WebAssembly/binaryen"]' mise.toml)"
+        printf 'bindgen=%s\nbinaryen=%s\ntarball=%s\n' "$bindgen" "$binaryen" /tmp/binaryen.tar.gz >>"$GITHUB_OUTPUT"
+    # binaryen's tarball, not wasm-opt, so a restored copy still meets its sha256 check.
+    - id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/bin/wasm-bindgen
+          ${{ steps.versions.outputs.tarball }}
+        key: gen-wasm-tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.bindgen }}-${{ steps.versions.outputs.binaryen }}
     # The pinned install-action knows only the wasm-bindgen versions released
     # by its own date, and Cargo.lock moves on its own lane: a fallback keeps a
     # lock bump from reddening this step. cargo-install, not the default
     # cargo-binstall, which gets the job token and runs prebuilt third-party
     # binaries in a job whose artifact is deployed (install-action README, Security).
-    - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+    - if: steps.cache.outputs.cache-hit != 'true'
+      uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
       with:
-        tool: wasm-bindgen@${{ steps.bindgen.outputs.version }}
+        tool: wasm-bindgen@${{ steps.versions.outputs.bindgen }}
         fallback: cargo-install
 
     # Not via taiki-e/install-action: binaryen is not in its TOOLS.md (checked).
     - name: Install wasm-opt
       shell: bash
+      env:
+        VER: ${{ steps.versions.outputs.binaryen }}
+        TARBALL: ${{ steps.versions.outputs.tarball }}
       run: |
         set -euo pipefail
-        ver="$(yq -e -p toml -oy '.tools["aqua:WebAssembly/binaryen"]' mise.toml)"
-        url="https://github.com/WebAssembly/binaryen/releases/download/version_$ver/binaryen-version_${ver}-x86_64-linux.tar.gz"
-        curl -fsSL --retry 5 --retry-all-errors "$url" -o /tmp/binaryen.tar.gz
-        echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  /tmp/binaryen.tar.gz" | sha256sum -c -
-        tar -xzf /tmp/binaryen.tar.gz -C /tmp "binaryen-version_$ver/bin/wasm-opt"
-        sudo install -m 0755 "/tmp/binaryen-version_$ver/bin/wasm-opt" /usr/local/bin/wasm-opt
+        url="https://github.com/WebAssembly/binaryen/releases/download/version_$VER/binaryen-version_${VER}-x86_64-linux.tar.gz"
+        [[ -f "$TARBALL" ]] || curl -fsSL --retry 5 --retry-all-errors "$url" -o "$TARBALL"
+        echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  $TARBALL" | sha256sum -c -
+        tar -xzf "$TARBALL" -C /tmp "binaryen-version_$VER/bin/wasm-opt"
+        sudo install -m 0755 "/tmp/binaryen-version_$VER/bin/wasm-opt" /usr/local/bin/wasm-opt
+
+    # As setup-cargo-just's: only main's copy is ever restored by others.
+    - if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/bin/wasm-bindgen
+          ${{ steps.versions.outputs.tarball }}
+        key: ${{ steps.cache.outputs.cache-primary-key }}
 
     - shell: bash
       run: just gen-wasm

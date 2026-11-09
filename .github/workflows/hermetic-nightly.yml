@@ -39,6 +39,8 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
+          # The mise cache `run`'s read-only legs restore.
+          tools: uv
       - run: just hermetic-build
 
   drift:

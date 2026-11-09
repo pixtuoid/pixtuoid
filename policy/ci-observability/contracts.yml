@@ -210,6 +210,26 @@
     - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with) |= del(.cache_save)
     - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with.cache_save) = "true"
 
+- id: only-main-saves-the-wasm-tools
+  covers: actions/cache/save@
+  file: .github/actions/gen-wasm/action.yml
+  expected: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+  why: >-
+    As only-main-saves-the-rust-cache's. The save repeats the restore's key and
+    paths, which are part of the cache version (actions/cache README, "Cache
+    Version"): any difference saves an entry no restore hits.
+  assert: |
+    [.runs.steps[] | select((.uses // "") | startswith("actions/cache/"))] as $c
+    | [$c[] | select(.uses | startswith("actions/cache/save@"))] as $save
+    | ([$save[].if] == [$expected])
+      and $save[0].with.key == "${{ steps.cache.outputs.cache-primary-key }}"
+      and ([$c[].with.path] | length == 2 and .[0] == .[1])
+  break:
+    - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@"))) |= del(.if)
+    - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@")) | .if) = "steps.cache.outputs.cache-hit != 'true'"
+    - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@")) | .with.key) = "gen-wasm-tools"
+    - (.runs.steps[] | select((.uses // "") | startswith("actions/cache/save@")) | .with.path) |= sub("wasm-bindgen"; "wasm-opt")
+
 - id: hermetic-caches-restore-only-but-their-one-writer
   file:
     - .github/workflows/hermetic.yml
@@ -244,6 +264,20 @@
     - '.env = {"CARGO_TERM_COLOR": "always"}'
     - '(.jobs[] | select(.steps != null)).env = {"RUST_BACKTRACE": "1"}'
     - '(.jobs[].steps[]? | select((.uses // "") == "./.github/actions/setup-cargo-just") | .with["shared-key"]) = "other"'
+
+- id: hermetic-build-saves-the-mise-key-run-restores
+  file: .github/workflows/hermetic-nightly.yml
+  against: .github/workflows/hermetic.yml
+  why: >-
+    `run`'s legs only read, and setup-tools keys the mise cache on `tools:`, so
+    they hit what `build`, the one writer, saves only while both pass the same
+    list; any other list downloads every tool on every leg, with nothing red.
+  assert: |
+    [.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools]
+    == [$against.jobs.run.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools]
+  break:
+    - (.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with) |= del(.tools)
+    - (.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools) = "uv jq"
 
 - id: hermetic-build-covers-every-run-os
   file:
