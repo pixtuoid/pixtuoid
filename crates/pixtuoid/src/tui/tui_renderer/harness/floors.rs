@@ -245,7 +245,7 @@ fn footer_shows_source_death_warning() {
     let scene = scene_with(vec![idle("/f/0.jsonl", 0, t0())], 16);
     let mut r = build(140, 44, vec![]);
     let frames = RenderFrames {
-        source_warning: Some(
+        warning: Some(
             "claude-code source died — its agents are frozen; restart pixtuoid (see log)".into(),
         ),
         ..Default::default()
@@ -275,7 +275,7 @@ fn source_death_warning_survives_floor_transition() {
     r.render(&scene, now).unwrap();
     r.set_frames(
         RenderFrames {
-            source_warning: Some(
+            warning: Some(
                 "claude-code source died — its agents are frozen; restart pixtuoid (see log)"
                     .into(),
             ),

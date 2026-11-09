@@ -12,7 +12,7 @@
  * Treat this wire as PUBLISHED: installed Raycast store copies parse it
  * independently of the binary's version, so a further shape change needs a
  * version handshake, never another flag-day edit. The token spelling is pinned
- * by `change_outcome_wire_tokens_are_stable`.
+ * by `wire_outcome_tokens_are_stable_and_round_trip`.
  */
 export interface OutcomeRow {
   /**
