@@ -6,8 +6,7 @@
 //! path no session ever writes to. On Unix, `HOME` stays authoritative.
 //!
 //! Every path env filter here is TRIM-based — empty or whitespace-only counts as
-//! unset, so `XDG_CONFIG_HOME="   "` can't be unset for the app config but set
-//! for the CLI config-dir resolution.
+//! unset. The home read follows std, which drops only an empty `HOME`.
 
 use std::ffi::OsStr;
 use std::path::PathBuf;

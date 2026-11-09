@@ -101,12 +101,14 @@ fn packages_path() -> Result<PathBuf> {
 /// Windows misses it. Erroring mirrors the sibling home-anchored targets instead of
 /// silently reading a CWD-relative file Reasonix never writes.
 fn home() -> Result<PathBuf> {
-    reasonix_home().ok_or_else(|| {
-        io::home_unset(
-            "Reasonix's home",
-            "REASONIX_HOME/APPDATA/XDG_CONFIG_HOME/HOME/USERPROFILE",
-        )
-    })
+    let read = if cfg!(windows) {
+        "REASONIX_HOME/APPDATA/USERPROFILE"
+    } else if cfg!(target_os = "macos") {
+        "REASONIX_HOME/HOME"
+    } else {
+        "REASONIX_HOME/XDG_CONFIG_HOME/HOME"
+    };
+    reasonix_home().ok_or_else(|| io::home_unset("Reasonix's home", read))
 }
 
 /// `REASONIX_HOME`, else upstream's `defaultHomeDir`
@@ -393,9 +395,22 @@ mod tests {
         ];
         temp_env::with_vars_unset(vars, || {
             let err = home().unwrap_err().to_string();
-            for var in vars {
-                assert!(err.contains(var), "{var} missing from: {err}");
-            }
+            let listed: Vec<&str> = err
+                .split_once('(')
+                .and_then(|(_, rest)| rest.split_once(" unset)"))
+                .map(|(list, _)| list.split('/').collect())
+                .unwrap_or_default();
+            let read: &[&str] = if cfg!(windows) {
+                &["REASONIX_HOME", "APPDATA", "USERPROFILE"]
+            } else if cfg!(target_os = "macos") {
+                &["REASONIX_HOME", "HOME"]
+            } else {
+                &["REASONIX_HOME", "XDG_CONFIG_HOME", "HOME"]
+            };
+            assert_eq!(
+                listed, read,
+                "names exactly what this platform reads: {err}"
+            );
         });
         #[cfg(windows)]
         {
