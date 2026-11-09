@@ -155,6 +155,47 @@ fn socket_sibling(path: &Path, suffix: &str) -> std::path::PathBuf {
     ))
 }
 
+/// The longest path a unix socket binds at: `sun_path` less its terminating NUL.
+fn max_socket_path_len() -> usize {
+    // SAFETY: `sockaddr_un` is plain old data, for which all-zero is a valid value.
+    unsafe { std::mem::zeroed::<libc::sockaddr_un>() }
+        .sun_path
+        .len()
+        - 1
+}
+
+/// Reclaim `path` for the bind, the one rule for every path bind unlinks: absent
+/// is free, and a socket nobody answers on is a dead owner's residue, so it
+/// goes. A live one is `busy`'s error, and anything else is not ours to unlink.
+async fn reclaim(path: &Path, busy: impl FnOnce() -> anyhow::Error) -> Result<()> {
+    // `symlink_metadata`, not `try_exists`: a dangling symlink at the path
+    // exists, and is no more ours to replace than a file is.
+    let meta = match tokio::fs::symlink_metadata(path).await {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => {
+            return Err(e).with_context(|| format!("inspecting hook socket at {}", path.display()));
+        }
+    };
+    // A connect that succeeds, or backlogs (WouldBlock only happens on a live
+    // listener), is an owner. Any OTHER error is not evidence of life.
+    let alive = match tokio::net::UnixStream::connect(path).await {
+        Ok(_stream) => true,
+        Err(e) => e.kind() == std::io::ErrorKind::WouldBlock,
+    };
+    if alive {
+        return Err(busy());
+    }
+    anyhow::ensure!(
+        std::os::unix::fs::FileTypeExt::is_socket(&meta.file_type()),
+        "{} exists and is not a socket, so it is not replaced: {} a different path",
+        path.display(),
+        super::Repoint
+    );
+    let _ = tokio::fs::remove_file(path).await;
+    Ok(())
+}
+
 /// Arbitrate the bind on `<path>.lock`: harden the owned fallback dir, then take
 /// the exclusive lock, or [`super::SocketBusy`]. Synchronous file IO, so
 /// [`Listener::bind`] runs it on tokio's blocking pool.
@@ -230,34 +271,43 @@ pub(super) struct Listener {
 
 impl Listener {
     pub(super) async fn bind(path: &Path) -> Result<Self> {
-        let lock = {
-            let path = path.to_path_buf();
-            tokio::task::spawn_blocking(move || acquire_bind_lock(&path)).await??
-        };
-        if tokio::fs::try_exists(path).await.unwrap_or(false) {
-            // Lock acquired ⇒ the previous owner is dead ⇒ the socket is residue.
-            // Probe anyway: a connect that succeeds, or backlogs (WouldBlock only
-            // happens on a live listener), proves an owner predating the lock
-            // protocol. Any OTHER error is not evidence of life — reclaim.
-            let alive = match tokio::net::UnixStream::connect(path).await {
-                Ok(_stream) => true,
-                Err(e) => e.kind() == std::io::ErrorKind::WouldBlock,
-            };
-            if alive {
-                return Err(anyhow::Error::new(super::SocketBusy {
-                    path: path.to_path_buf(),
-                }));
-            }
-            let _ = tokio::fs::remove_file(path).await;
-        }
         // Bind at a temp name, chmod, then rename onto the final path (which does
         // not disturb the listening inode), so the socket is never reachable there
         // looser than 0600 — and without a process-global umask, which would race
         // every other tokio worker's file creation.
-        let tmp = socket_sibling(path, &format!("{}.tmp", std::process::id()));
-        // A leftover temp can only be ours-by-name from a crashed prior run
-        // that had this very pid — never a live socket.
-        let _ = tokio::fs::remove_file(&tmp).await;
+        let tmp = socket_sibling(path, "tmp");
+        let extra = tmp.as_os_str().len().saturating_sub(path.as_os_str().len());
+        anyhow::ensure!(
+            tmp.as_os_str().len() <= max_socket_path_len(),
+            "{} is too long for a hook socket: a path here holds at most {} bytes, since \
+             bind first listens at a name {extra} bytes longer beside it; {} a shorter one",
+            path.display(),
+            max_socket_path_len().saturating_sub(extra),
+            super::Repoint
+        );
+        let lock = {
+            let path = path.to_path_buf();
+            tokio::task::spawn_blocking(move || acquire_bind_lock(&path)).await??
+        };
+        // Lock acquired ⇒ the previous owner is dead, so a socket at the path is
+        // residue; the probe still catches an owner predating the lock protocol.
+        reclaim(path, || {
+            anyhow::Error::new(super::SocketBusy {
+                path: path.to_path_buf(),
+            })
+        })
+        .await?;
+        // The lock covers only `path`, so a live socket at the temp is another
+        // endpoint's, not this one's to subscribe to.
+        reclaim(&tmp, || {
+            anyhow::anyhow!(
+                "{} is a live hook socket: {} a different path",
+                tmp.display(),
+                super::Repoint
+            )
+        })
+        .await
+        .with_context(|| format!("bind for {} listens at its temp name first", path.display()))?;
         let listener = UnixListener::bind(&tmp)
             .with_context(|| format!("binding hook socket at {}", tmp.display()))?;
         if let Err(e) =

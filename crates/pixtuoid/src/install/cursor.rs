@@ -1,4 +1,4 @@
-//! Cursor CLI hook install target — the GLOBAL `<cursor-config-dir>/hooks.json`.
+//! Cursor CLI hook install target — the GLOBAL `~/.cursor/hooks.json`.
 //! The `cursor-agent` CLI reads both that file and a project
 //! `<repo>/.cursor/hooks.json`; we install user-global so it covers every project.
 //!
@@ -32,49 +32,44 @@ pub(crate) const CURSOR_EVENTS: &[&str] = &[
     "sessionEnd",
 ];
 
-/// Mirrors Cursor's documented resolution: `CURSOR_CONFIG_DIR` (all platforms)
-/// wins; else on **Linux/BSD** a set `XDG_CONFIG_HOME` gives
-/// `$XDG_CONFIG_HOME/cursor`; else `~/.cursor`. Without honoring those, a user who
-/// sets one has Cursor read the overridden dir while pixtuoid wrote `~/.cursor`
-/// (installed, but no sprite). The home base is `USERPROFILE`-first (Node
-/// `os.homedir`), NOT the Electron IDE's `%APPDATA%\Cursor`.
+/// cursor-agent reads user hooks from `os.homedir()/.cursor/hooks.json` only
+/// (`userConfigPath`, `dist-package/6139.index.js` at cursor-agent 2026.11.05);
+/// `CURSOR_CONFIG_DIR` and `XDG_CONFIG_HOME` move its CLI config, not its hooks.
+/// The home base is `USERPROFILE`-first (Node `os.homedir`), NOT the Electron
+/// IDE's `%APPDATA%\Cursor`.
 pub(crate) fn default_config_path() -> Result<PathBuf> {
-    cursor_config_dir()
-        .map(|d| d.join("hooks.json"))
-        .ok_or_else(|| io::home_unset("the home directory", pixtuoid_core::platform::HOME_VAR))
+    io::home_relative_checked(".cursor/hooks.json")
 }
 
-fn cursor_config_dir() -> Option<PathBuf> {
-    resolve_config_dir(
+/// cursor-agent's CLI config dir (`cli-config.json`), which a first run creates:
+/// `CURSOR_CONFIG_DIR`, else `$XDG_CONFIG_HOME/cursor`, else `~/.cursor`, on
+/// every platform, a blank value counting as unset (`a()` beside `d()`'s
+/// `cli-config.json`, `dist-package/index.js` at cursor-agent 2026.11.05).
+fn cli_config_dir() -> Option<PathBuf> {
+    resolve_cli_config_dir(
         pixtuoid_core::platform::path_env("CURSOR_CONFIG_DIR"),
         pixtuoid_core::platform::path_env("XDG_CONFIG_HOME"),
-        cfg!(all(unix, not(target_os = "macos"))),
         pixtuoid_core::platform::user_home_opt(),
     )
 }
 
-/// Pure core for [`cursor_config_dir`] — env overrides, the Linux/BSD XDG flag, and
-/// the home are injected so every arm unit-tests on any host.
-fn resolve_config_dir(
+/// Pure core for [`cli_config_dir`] — env overrides and the home are injected
+/// so every arm unit-tests on any host.
+fn resolve_cli_config_dir(
     cursor_config_dir_env: Option<PathBuf>,
     xdg_config_home_env: Option<PathBuf>,
-    xdg_applies: bool,
     home: Option<PathBuf>,
 ) -> Option<PathBuf> {
-    if let Some(d) = cursor_config_dir_env {
-        return Some(d);
-    }
-    if let Some(xdg) = xdg_config_home_env.filter(|_| xdg_applies) {
-        return Some(xdg.join("cursor"));
-    }
-    home.map(|h| h.join(".cursor"))
+    cursor_config_dir_env
+        .or_else(|| xdg_config_home_env.map(|xdg| xdg.join("cursor")))
+        .or_else(|| home.map(|h| h.join(".cursor")))
 }
 
 /// Presence probe for auto-detection. Cursor never creates `hooks.json` itself (it
 /// is purely user-authored), so a file-exists check on it would never fire — probe
 /// Cursor's own config dir (created on first run) instead.
 pub(crate) fn detect_installed() -> bool {
-    cursor_config_dir().is_some_and(|d| d.exists()) || io::home_relative(".cursor").exists()
+    cli_config_dir().is_some_and(|d| d.exists()) || io::home_relative(".cursor").exists()
 }
 
 /// Cursor runs the `command` under a shell, so the OS forms are
@@ -149,34 +144,45 @@ mod tests {
     }
 
     #[test]
-    fn config_dir_honors_cursor_config_dir_then_xdg_on_linux_else_dot_cursor() {
+    fn the_hooks_file_is_home_dot_cursor_whatever_moves_the_cli_config() {
+        let home = tempfile::tempdir().expect("temp home");
+        let home_str = home.path().to_str().expect("utf-8 temp path");
+        temp_env::with_vars(
+            [
+                ("HOME", Some(home_str)),
+                ("USERPROFILE", Some(home_str)),
+                ("CURSOR_CONFIG_DIR", Some("/elsewhere/cursor")),
+                ("XDG_CONFIG_HOME", Some("/elsewhere/xdg")),
+            ],
+            || {
+                assert_eq!(
+                    default_config_path().unwrap(),
+                    home.path().join(".cursor").join("hooks.json")
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn cli_config_dir_honors_cursor_config_dir_then_xdg_then_dot_cursor_everywhere() {
         assert_eq!(
-            resolve_config_dir(
+            resolve_cli_config_dir(
                 Some("/custom/cur".into()),
                 Some("/xdg".into()),
-                true,
                 Some("/h".into())
             ),
             Some(PathBuf::from("/custom/cur"))
         );
         assert_eq!(
-            resolve_config_dir(None, Some("/xdg".into()), true, Some("/home/u".into())),
-            Some(PathBuf::from("/xdg").join("cursor"))
+            resolve_cli_config_dir(None, Some("/xdg".into()), Some(r"C:\Users\me".into())),
+            Some(PathBuf::from("/xdg").join("cursor")),
+            "XDG_CONFIG_HOME moves it on every platform, Windows and macOS included"
         );
         assert_eq!(
-            resolve_config_dir(None, None, true, Some("/home/u".into())),
+            resolve_cli_config_dir(None, None, Some("/home/u".into())),
             Some(PathBuf::from("/home/u").join(".cursor"))
         );
-        assert_eq!(
-            resolve_config_dir(
-                None,
-                Some("/xdg".into()),
-                false,
-                Some(r"C:\Users\me".into())
-            ),
-            Some(PathBuf::from(r"C:\Users\me").join(".cursor"))
-        );
-        assert_eq!(resolve_config_dir(None, None, false, None), None);
+        assert_eq!(resolve_cli_config_dir(None, None, None), None);
     }
 
     fn json_merge_uninstall(doc: Value) -> Value {
