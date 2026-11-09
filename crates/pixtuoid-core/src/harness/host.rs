@@ -45,25 +45,22 @@ impl KnownFolder {
     }
 }
 
-/// The name a sandbox's dir gets from `tempfile::tempdir`, as a pattern:
-/// `.tmp` and six alphanumerics (tempfile 3.27.0 `lib.rs:195,230-231`,
-/// `util.rs:15`).
-pub(crate) const SANDBOX_DIR: &str = r"\.tmp[0-9A-Za-z]{6}";
-
 /// Every home a CLI or pixtuoid may resolve, each a directory of a sandbox. All
 /// are set on every platform: a variable no reader there reads is inert.
 pub const SANDBOX_HOMES: &[(&str, &str)] = &[
-    ("HOME", "home"),
-    ("USERPROFILE", "home"),
-    ("APPDATA", "home/AppData/Roaming"),
-    ("LOCALAPPDATA", "home/AppData/Local"),
+    // Never `home`: a path a CLI writes under it rides the bytes, and the
+    // identity scan reads any `/home/<name>` as a person's.
+    ("HOME", "operator"),
+    ("USERPROFILE", "operator"),
+    ("APPDATA", "operator/AppData/Roaming"),
+    ("LOCALAPPDATA", "operator/AppData/Local"),
     // Each at its default under the home: reasonix refuses to link a
     // plugin from outside it
     // (`internal/ext/installsource/plugin_package.go:480-481` at v2.39.0).
-    ("XDG_CONFIG_HOME", "home/.config"),
-    ("XDG_DATA_HOME", "home/.local/share"),
-    ("XDG_STATE_HOME", "home/.local/state"),
-    ("XDG_CACHE_HOME", "home/.cache"),
+    ("XDG_CONFIG_HOME", "operator/.config"),
+    ("XDG_DATA_HOME", "operator/.local/share"),
+    ("XDG_STATE_HOME", "operator/.local/state"),
+    ("XDG_CACHE_HOME", "operator/.cache"),
 ];
 
 /// The variables a sandboxed CLI inherits from the host, with each platform's
@@ -376,6 +373,79 @@ pub fn hold_lock(path: &Path) -> std::io::Result<std::fs::File> {
     Ok(lock)
 }
 
+/// The lock beside a recording's fixed `dir`, `<name>.lock`, which every user
+/// of `dir` holds: each recording there takes its turn.
+pub fn lock_beside(dir: &Path) -> PathBuf {
+    let mut lock = dir.as_os_str().to_owned();
+    lock.push(".lock");
+    PathBuf::from(lock)
+}
+
+/// `dir`, a fixed name in a shared directory, made afresh for one recording,
+/// with its [`lock_beside`] held until the returned file drops. A fixed name is
+/// pre-plantable, so an entry another user owns is refused, never removed:
+/// under the sticky bit the remove fails and the recording lands in theirs.
+/// Asked of the entry, so a dangling planted link is refused too.
+///
+/// # Errors
+///
+/// `PermissionDenied` for an entry that is not ours, or the lock's, the
+/// remove's or the create's own failure.
+pub fn fresh_private_dir(dir: &Path) -> std::io::Result<std::fs::File> {
+    let lock = hold_lock(&lock_beside(dir))?;
+    if std::fs::symlink_metadata(dir).is_ok() {
+        if !owned_by_us(dir) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!(
+                    "{} exists and is not yours — remove it or run as its owner",
+                    dir.display()
+                ),
+            ));
+        }
+        remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(dir))?;
+    }
+    // One call no other local user can write into, refused if anyone re-made
+    // it since the remove.
+    create_private_dir(dir)?;
+    Ok(lock)
+}
+
+/// A recording's fixed directory, made by [`fresh_private_dir`] and held: it
+/// goes, and its lock with it, when this drops, as a temp dir would.
+#[derive(Debug)]
+pub struct HeldDir {
+    path: PathBuf,
+    _lock: std::fs::File,
+}
+
+impl HeldDir {
+    /// `path` made afresh and held.
+    ///
+    /// # Errors
+    ///
+    /// As [`fresh_private_dir`].
+    pub fn fresh(path: PathBuf) -> std::io::Result<Self> {
+        let lock = fresh_private_dir(&path)?;
+        Ok(Self { path, _lock: lock })
+    }
+
+    /// Where it is.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for HeldDir {
+    fn drop(&mut self) {
+        if let Err(e) =
+            remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.path))
+        {
+            let _ = writeln!(std::io::stderr(), "left {}: {e}", self.path.display());
+        }
+    }
+}
+
 /// How long a removal waits for another process to let go of its tree.
 pub const RELEASE_PATIENCE: Duration = Duration::from_secs(60);
 /// How often it asks meanwhile.
@@ -539,6 +609,56 @@ pub fn registry_key_exists(hive: Hive, sub: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A file under each home a recording's sandbox sets, read by the identity
+    /// scan's own rule: one that reads as a person's home would refuse the
+    /// capture's every path under it.
+    #[test]
+    fn no_sandbox_home_reads_as_a_persons_home() {
+        let config = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.gitleaks-identity.toml"),
+        )
+        .expect(".gitleaks-identity.toml");
+        let config: toml::Table = toml::from_str(&config).expect("toml");
+        let rule = config["rules"]
+            .as_array()
+            .and_then(|rules| {
+                rules
+                    .iter()
+                    .find(|r| r["id"].as_str() == Some("pixtuoid-foreign-home"))
+            })
+            .and_then(|r| r["regex"].as_str())
+            .expect("the foreign-home rule");
+        let foreign = regex::Regex::new(rule).expect("the rule compiles here too");
+        let sandbox = crate::harness::capture_sandbox().expect("the sandbox");
+        for (var, rel) in SANDBOX_HOMES {
+            let file = sandbox.join(rel).join(".cursor");
+            let file = file.to_string_lossy();
+            assert!(!foreign.is_match(&file), "{var}: {file}");
+        }
+    }
+
+    #[test]
+    fn a_held_dir_is_made_afresh_and_private_and_waited_on_until_it_goes() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let dir = d.path().join("fixed");
+        std::fs::create_dir(&dir).expect("a previous run's");
+        std::fs::write(dir.join("stale"), "x").expect("stale");
+        let held = HeldDir::fresh(dir.clone()).expect("held");
+        assert_eq!(held.path(), dir);
+        assert!(dir.is_dir() && !dir.join("stale").exists(), "made afresh");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&dir).expect("stat").permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "no other local user writes into it");
+        }
+        let other = std::fs::File::open(lock_beside(&dir)).expect("the lock file");
+        assert!(other.try_lock().is_err(), "a second recording waits");
+        drop(held);
+        assert!(!dir.exists(), "it goes with its holder");
+        assert!(other.try_lock().is_ok());
+    }
 
     /// What `CLAUDE_CONFIG_DIR` did to a billed capture that inherited the
     /// operator's env: `connect` wrote their real config.

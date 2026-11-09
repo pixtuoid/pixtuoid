@@ -48,8 +48,8 @@ mod run {
         STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG, installer_build,
     };
     use pixtuoid_core::harness::host::{
-        RELEASE_PATIENCE, SandboxEnv, built, connect, hold_lock, inherited, remove_once_released,
-        warmed_shim_dir,
+        HeldDir, RELEASE_PATIENCE, SandboxEnv, built, connect, hold_lock, inherited,
+        remove_once_released, warmed_shim_dir,
     };
     use pixtuoid_core::harness::plan::{
         AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Sink, Word,
@@ -57,8 +57,9 @@ mod run {
     use pixtuoid_core::harness::provenance::NonEmpty;
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_workspace,
-        capture_workspace_tail, required_version_probe, version_answer, wait_until,
+        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_sandbox,
+        capture_workspace, capture_workspace_tail, required_version_probe, version_answer,
+        wait_until,
     };
     use semver::Version;
 
@@ -1494,25 +1495,51 @@ mod run {
 
     /// One sandbox ([`SandboxEnv`]), with the profile's own env and config.
     struct Sandbox {
-        dir: tempfile::TempDir,
+        dir: SandboxDir,
         env: SandboxEnv,
         /// Where the headless pixtuoid listens and the recorder tees to.
         scene: Endpoint,
     }
 
+    /// Where a run's sandbox sits: the fixed one when it records, whose paths
+    /// the fixtures carry, else one of its own, so a replay never waits on a
+    /// recording.
+    enum SandboxDir {
+        Recording(HeldDir),
+        Replay(tempfile::TempDir),
+    }
+
+    impl SandboxDir {
+        fn of_run(record: bool) -> std::io::Result<Self> {
+            if record {
+                return Ok(Self::Recording(HeldDir::fresh(capture_sandbox()?)?));
+            }
+            // Under the temp root's long form: a Windows runner's TEMP is an 8.3
+            // short path, which a CLI's realpath disagrees with, and openclaw's
+            // plugin copy then refuses its plugin (`@openclaw/fs-safe`
+            // `src/copy-root-file-sync.ts:57`, `:77-79` at v0.24.2).
+            Ok(Self::Replay(tempfile::tempdir_in(dunce::canonicalize(
+                std::env::temp_dir(),
+            )?)?))
+        }
+
+        fn path(&self) -> &Path {
+            match self {
+                Self::Recording(held) => held.path(),
+                Self::Replay(own) => own.path(),
+            }
+        }
+    }
+
     impl Sandbox {
         fn new(
+            dir: SandboxDir,
             p: &Profile,
             shim_dir: &Path,
             cli_bin: &Path,
             ports: Ports,
             workspace: &Path,
         ) -> std::io::Result<Self> {
-            // Under the temp root's long form: a Windows runner's TEMP is an 8.3
-            // short path, which a CLI's realpath disagrees with, and openclaw's
-            // plugin copy then refuses its plugin (`@openclaw/fs-safe`
-            // `src/copy-root-file-sync.ts:57`, `:77-79` at v0.24.2).
-            let dir = tempfile::tempdir_in(dunce::canonicalize(std::env::temp_dir())?)?;
             let mut env = SandboxEnv::new(dir.path(), p.home_vars(), &[shim_dir, cli_bin])?;
             let expand = |t: &str| expanded(t, ports);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
@@ -1647,7 +1674,14 @@ mod run {
             )));
         }
         let cli = install_cli(&ctx.tier, p, version)?;
-        let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, ports, &workspace)?;
+        let sandbox = Sandbox::new(
+            SandboxDir::of_run(ctx.record)?,
+            p,
+            &ctx.shim_dir,
+            &cli.bin,
+            ports,
+            &workspace,
+        )?;
         Ok(((workspace, own), cli, sandbox))
     }
 
@@ -2899,6 +2933,7 @@ mod run {
                 )])
             );
             let sandbox = Sandbox::new(
+                SandboxDir::of_run(false).expect("own dir"),
                 p,
                 Path::new("/nowhere/shims"),
                 Path::new("/nowhere/bin"),
@@ -3042,6 +3077,7 @@ mod run {
         #[test]
         fn a_sandboxs_home_is_its_own_canonical_path() {
             let sandbox = Sandbox::new(
+                SandboxDir::of_run(false).expect("own dir"),
                 &PROFILES[0],
                 Path::new("/nowhere/shims"),
                 Path::new("/nowhere/bin"),
@@ -3063,6 +3099,7 @@ mod run {
             };
             for p in PROFILES {
                 let sandbox = Sandbox::new(
+                    SandboxDir::of_run(false).expect("own dir"),
                     p,
                     Path::new("/nowhere/shims"),
                     Path::new("/nowhere/bin"),

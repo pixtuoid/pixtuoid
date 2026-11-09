@@ -91,6 +91,27 @@ pub fn capture_root() -> std::io::Result<PathBuf> {
     Ok(root)
 }
 
+/// Where a recording's sandbox sits, its homes among it: fixed and generic as
+/// [`capture_workspace`] is, since a path a CLI writes under its home rides the
+/// bytes too. Canonical, so a CLI that realpaths its home records what one
+/// reading `HOME` does. Beside the workspace's base, not in it: the recorder
+/// clears that base after the sandbox is made.
+///
+/// # Errors
+///
+/// As [`capture_root`], or if the root cannot be resolved.
+pub fn capture_sandbox() -> std::io::Result<PathBuf> {
+    let root = capture_root()?;
+    // ProgramData is already the long path, and std's Windows form would be a
+    // verbatim `\\?\` one no CLI writes.
+    #[cfg(unix)]
+    let root = std::fs::canonicalize(root)?;
+    Ok(root.join(CAPTURE_SANDBOX))
+}
+
+/// [`capture_sandbox`]'s own name under the root.
+const CAPTURE_SANDBOX: &str = "pixtuoid-sandbox";
+
 /// The end every [`capture_workspace`] path has, whatever the host's root: the
 /// part [`capture_base`] checks.
 pub fn capture_workspace_tail() -> PathBuf {
@@ -570,12 +591,6 @@ const ID_FAMILIES: &[IdFamily] = &[
         )],
     },
     IdFamily {
-        name: "recorder-sandbox",
-        pattern: super::host::SANDBOX_DIR,
-        seen_in: "omp/fixtures/subagent-hermetic",
-        renamed: &[("/T/.tmpbelEXY/homes", "/T/.tmpLZD2ds/homes")],
-    },
-    IdFamily {
         name: "shim-pid",
         pattern: r#""_pid":(\d+)"#,
         seen_in: "dsh/fixtures/tool-run-hermetic",
@@ -776,6 +791,37 @@ pub fn captures(root: &Path) -> Vec<Capture> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_recordings_sandbox_is_fixed_canonical_and_outside_the_workspace_base() {
+        let sandbox = capture_sandbox().expect("the sandbox");
+        assert_eq!(
+            capture_sandbox().expect("again"),
+            sandbox,
+            "no per-run part"
+        );
+        let root = sandbox.parent().expect("under the capture root");
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::canonicalize(root).expect("the root exists"),
+            root,
+            "a CLI that realpaths its home records what one reading it does"
+        );
+        let base = capture_base(&capture_workspace().expect("the workspace"))
+            .and_then(|b| {
+                Some(
+                    std::fs::canonicalize(b.parent()?)
+                        .ok()?
+                        .join(b.file_name()?),
+                )
+            })
+            .expect("the workspace base");
+        assert!(
+            !sandbox.starts_with(&base),
+            "the recorder clears {} after the sandbox is made",
+            base.display()
+        );
+    }
 
     /// `sort` reads its stdin to the end before it writes, on every host.
     #[cfg(feature = "native")]

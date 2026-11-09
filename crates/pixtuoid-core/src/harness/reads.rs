@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::host::{SANDBOX_DIR, SANDBOX_HOMES};
 use super::provenance::{Deidentified, Provenance};
 use super::{Capture, Drive, LineFailure, captures};
 use crate::source::daemon::DecodedPresence;
@@ -22,8 +21,6 @@ use crate::source::registry;
 pub struct Strip {
     /// Subtrees blanked across every file.
     pub blanked: usize,
-    /// Sandbox homes rewritten to [`HOME_PLACEHOLDER`] across every file.
-    pub homes: usize,
     /// Files left whole, each with its first parse error: half-rewriting one
     /// would corrupt the bytes. The committed-tree gate refuses to skip such a
     /// line at all (`no_identity_key_holds_a_value`).
@@ -63,9 +60,8 @@ pub fn strip_unread(source: &str, files: &[PathBuf]) -> std::io::Result<Strip> {
         );
         let mut out = String::new();
         for (i, here) in per_line.into_iter().enumerate() {
-            strip.blanked += here.blanked;
-            strip.homes += here.homes;
-            if here.blanked == 0 && here.homes == 0 {
+            strip.blanked += here;
+            if here == 0 {
                 out.push_str(&raw[i]);
             } else {
                 out.push_str(&serde_json::to_string(&lines[i])?);
@@ -87,70 +83,13 @@ pub(crate) fn strip_lines(source: &str, file: &Path, lines: &mut [Value]) -> boo
     true
 }
 
-/// What [`strip_with`] did to one line.
-struct LineStrip {
-    blanked: usize,
-    homes: usize,
-}
-
-/// Each line's strip, `lines` rewritten in place. Homes go after every probe:
-/// a line rewritten sooner would move the base the later lines are probed
-/// against, and a home in a subtree blanked later would count a rewrite the
-/// bytes no longer hold.
-fn strip_with(source: &str, drive: &Drive, file: &Path, lines: &mut [Value]) -> Vec<LineStrip> {
+/// Each line's count of subtrees blanked, `lines` rewritten in place.
+fn strip_with(source: &str, drive: &Drive, file: &Path, lines: &mut [Value]) -> Vec<usize> {
     let stamped = is_hook_envelope(file);
     let base = events_of(source, drive, lines, !stamped);
-    let blanked: Vec<usize> = (0..lines.len())
+    (0..lines.len())
         .map(|i| probe(source, drive, lines, &base, i, "", stamped))
-        .collect();
-    blanked
-        .into_iter()
-        .zip(lines.iter_mut())
-        .map(|(blanked, line)| LineStrip {
-            blanked,
-            homes: placehold_homes(line),
-        })
         .collect()
-}
-
-/// What the strip writes over a capture sandbox's home: the fixtures README's
-/// convention for a home path a decoder reads.
-pub const HOME_PLACEHOLDER: &str = "/Users/dev";
-
-/// A capture sandbox's home inside a string: an absolute path to a
-/// [`SANDBOX_DIR`], then [`SANDBOX_HOMES`]' `HOME`, ending the path or followed
-/// by a separator. A path component stops at whitespace, so a match never
-/// swallows the words before a path in a command string.
-static SANDBOX_HOME: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    let (_, home) = SANDBOX_HOMES
-        .iter()
-        .find(|(var, _)| *var == "HOME")
-        .expect("SANDBOX_HOMES sets HOME");
-    regex::Regex::new(&format!(
-        r#"(?:/[^/\s"']+)*/{SANDBOX_DIR}/{}(?P<end>[^A-Za-z0-9._-]|$)"#,
-        regex::escape(home)
-    ))
-    .expect("the sandbox-home pattern compiles")
-});
-
-/// Every string in `v` with each [`SANDBOX_HOME`] made [`HOME_PLACEHOLDER`],
-/// and how many were: the sandbox's home is the recording host's temp path,
-/// whose `/home/` `pixtuoid-foreign-home` (`.gitleaks-identity.toml`) flags.
-fn placehold_homes(v: &mut Value) -> usize {
-    match v {
-        Value::String(s) => {
-            let n = SANDBOX_HOME.find_iter(s).count();
-            if n > 0 {
-                *s = SANDBOX_HOME
-                    .replace_all(s, format!("{HOME_PLACEHOLDER}${{end}}"))
-                    .into_owned();
-            }
-            n
-        }
-        Value::Array(a) => a.iter_mut().map(placehold_homes).sum(),
-        Value::Object(m) => m.values_mut().map(placehold_homes).sum(),
-        _ => 0,
-    }
 }
 
 /// What a leaf [`blank_of`] could have blanked holds while the decoders are
@@ -253,9 +192,9 @@ fn sibling_of(file: &Path) -> PathBuf {
 }
 
 /// Strip every capture under `root` in place — local and unbilled — and
-/// record the counts in its provenance: a pass adds what it blanked and
-/// rewrote to the record's `blanked` and `homes`, and one that changes nothing
-/// leaves them alone.
+/// record the count in its provenance.
+/// `blanked` counts every subtree blanked from the original recording: a pass
+/// adds to the record's count, and one that blanks nothing leaves it alone.
 /// `report` hears each capture as soon as its rewrite lands, so a later failure
 /// cannot hide one that already happened.
 ///
@@ -273,11 +212,10 @@ pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> st
         }
         let strip = strip_unread(&capture.source, &files)?;
         let mut changed = false;
-        if strip.blanked > 0 || strip.homes > 0 {
-            let Deidentified::Stripped { blanked, homes } = r.deidentified;
+        if strip.blanked > 0 {
+            let Deidentified::Stripped { blanked } = r.deidentified;
             r.deidentified = Deidentified::Stripped {
                 blanked: blanked + strip.blanked,
-                homes: homes + strip.homes,
             };
             changed = true;
         }
@@ -931,11 +869,9 @@ mod tests {
                 .expect("a committed record parses")
                 .is_some();
             assert!(
-                !recorded || (strip.blanked, strip.homes) == (0, 0),
-                "{label}: {} subtrees no decoder reads any more and {} sandbox homes; \
-                 `just restrip-fixtures`",
-                strip.blanked,
-                strip.homes
+                !recorded || strip.blanked == 0,
+                "{label}: {} subtrees no decoder reads any more; `just restrip-fixtures`",
+                strip.blanked
             );
             walked.insert(label);
         }
@@ -1104,94 +1040,6 @@ mod tests {
             bytes_of(&scenario),
             once,
             "a second pass finds nothing and rewrites nothing"
-        );
-    }
-
-    /// A macOS capture sandbox's home, its account hash invented.
-    const SANDBOX: &str = "/var/folders/ab/0123456789abcdefghijklmnop0000gn/T/.tmpAbC123/home";
-
-    #[test]
-    fn a_sandbox_home_becomes_the_placeholder_wherever_a_string_holds_it() {
-        use serde_json::json;
-        let mut v = json!({
-            "transcript_path": format!("{SANDBOX}/.cursor/a.jsonl"),
-            "command": "ls -la /tmp/.tmpZz9Yy8/home && pwd",
-            "nested": [{"bare": SANDBOX}],
-            "homes": "/private/var/folders/ab/c/T/.tmp0uwwXl/homes/PI_CODING_AGENT_DIR/s",
-            "longer": "/tmp/.tmpAbC123/homework",
-            "workspace": "/private/tmp/pixtuoid-capture/proj",
-        });
-        let kept = v.clone();
-        assert_eq!(placehold_homes(&mut v), 3);
-        assert_eq!(
-            v,
-            json!({
-                "transcript_path": format!("{HOME_PLACEHOLDER}/.cursor/a.jsonl"),
-                "command": format!("ls -la {HOME_PLACEHOLDER} && pwd"),
-                "nested": [{"bare": HOME_PLACEHOLDER}],
-                "homes": kept["homes"],
-                "longer": kept["longer"],
-                "workspace": kept["workspace"],
-            })
-        );
-    }
-
-    /// The home a sandbox really gets, not a spelling of it: a `tempfile` or
-    /// layout change [`SANDBOX_HOME`] would miss reds here, not in a capture.
-    /// Unix only, as a recording is.
-    #[cfg(unix)]
-    #[test]
-    fn the_home_a_sandbox_gets_becomes_the_placeholder() {
-        let d = tempfile::tempdir().expect("tempdir");
-        let env =
-            crate::harness::host::SandboxEnv::new(d.path(), std::iter::empty(), &[]).expect("env");
-        let home = PathBuf::from(env.var_os("HOME").expect("HOME"));
-        let mut v = Value::String(format!("{}/.cursor/a.jsonl", home.display()));
-        assert_eq!(placehold_homes(&mut v), 1, "{v}");
-        assert_eq!(v, format!("{HOME_PLACEHOLDER}/.cursor/a.jsonl"));
-    }
-
-    #[test]
-    fn strip_corpus_makes_a_read_sandbox_home_the_placeholder_and_counts_it() {
-        use serde_json::json;
-        let d = tempfile::tempdir().expect("tempdir");
-        let scenario = corpus_copy(d.path(), "cursor/fixtures/tool-run");
-        let hooks = scenario.join(crate::harness::HOOK_PAYLOADS);
-        let nested = |home: &str| {
-            format!("{home}/.cursor/projects/p/agent-transcripts/parent/subagents/child.jsonl")
-        };
-        // A post: its nested `transcript_path` links a child, so the strip keeps it.
-        let lines: Vec<String> = std::fs::read_to_string(&hooks)
-            .expect("read")
-            .lines()
-            .map(|l| {
-                let mut v: Value = serde_json::from_str(l).expect("json");
-                if v["hook_event_name"] == "postToolUse" {
-                    v["transcript_path"] = json!(nested(SANDBOX));
-                }
-                serde_json::to_string(&v).expect("json")
-            })
-            .collect();
-        let posts = lines.iter().filter(|l| l.contains(SANDBOX)).count();
-        assert!(posts > 0, "the scenario has a post");
-        std::fs::write(&hooks, lines.join("\n") + "\n").expect("write");
-
-        strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
-        let wire = std::fs::read_to_string(&hooks).expect("read");
-        assert!(!wire.contains(SANDBOX), "{wire}");
-        assert_eq!(wire.matches(&nested(HOME_PLACEHOLDER)).count(), posts);
-        let prov: Value = serde_json::from_str(
-            &std::fs::read_to_string(scenario.join("provenance.json")).expect("read"),
-        )
-        .expect("json");
-        assert_eq!(prov["deidentified"]["homes"].as_u64(), Some(posts as u64));
-
-        let once = bytes_of(&scenario);
-        strip_corpus(d.path(), |_, _| {}).expect("strip corpus again");
-        assert_eq!(
-            bytes_of(&scenario),
-            once,
-            "a placeholder is no sandbox home"
         );
     }
 

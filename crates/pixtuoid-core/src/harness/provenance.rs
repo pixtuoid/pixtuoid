@@ -63,23 +63,12 @@ pub struct Recorded {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "method", deny_unknown_fields)]
 pub enum Deidentified {
-    /// Subtrees blanked because no decoder reads them, and sandbox homes made
-    /// [`HOME_PLACEHOLDER`](super::reads::HOME_PLACEHOLDER).
+    /// Subtrees blanked because no decoder reads them.
     #[serde(rename = "decoder-allowlist")]
     Stripped {
-        /// How many subtrees, summed over every pass.
+        /// How many, summed over every pass.
         blanked: usize,
-        /// How many homes, summed over every pass: the placeholder's count the
-        /// recorder disclosed, so only one past it is a hand edit's.
-        #[serde(default, skip_serializing_if = "is_zero")]
-        homes: usize,
     },
-}
-
-/// Whether `n` is zero, for serde: a capture whose strip met no sandbox home
-/// records no count.
-fn is_zero(n: &usize) -> bool {
-    *n == 0
 }
 
 /// What a recording's decoders dropped, by discriminator; derived and judged

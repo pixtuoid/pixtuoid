@@ -4,10 +4,10 @@
   "version": "2026.11.05-86047df",
   "captured": "2026-11-09",
   "command": "cursor-agent -p --trust --model auto {prompt}",
+  "note": "Redacted by hand: line 4's transcript_path began with the capture sandbox's home, inside the recording host's temp dir, which is replaced with /Users/dev.",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 44,
-    "homes": 1
+    "blanked": 44
   },
   "prompt": "Use the Task tool to dispatch one subagent that reads NOTE.txt and reports its text back to you. Do not read NOTE.txt yourself.",
   "sentinel_reads": {
