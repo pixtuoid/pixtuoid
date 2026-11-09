@@ -1079,6 +1079,43 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     }
 }
 
+/// A transcript line registers no slot, yet a Task it starts and a backlog
+/// marker it carries are kept by id: the tick reaps both while no slot holds it.
+#[test]
+fn the_tick_reaps_what_an_id_no_slot_holds_left() {
+    use crate::AgentId;
+    use crate::source::{AgentEvent, ToolDetail, Transport};
+    use crate::state::SceneState;
+    use std::time::{Duration, SystemTime};
+
+    let mut r = super::Reducer::new();
+    let mut scene = SceneState::uniform(4);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let id = AgentId::from_parts("claude-code", "never-registered");
+    let task = AgentEvent::ToolUseStart {
+        agent_id: id,
+        tool_use_id: Some("task1".into()),
+        detail: Some(ToolDetail::Task),
+        copy_id: None,
+    };
+    r.apply(&mut scene, task, t0, Transport::Jsonl);
+    let backlog = AgentEvent::Backlog {
+        agent_id: id,
+        replaying: false,
+    };
+    r.apply(&mut scene, backlog, t0, Transport::Jsonl);
+    assert!(!scene.agents.contains_key(&id), "premise: no slot");
+    assert!(
+        r.corr.tasks_in_flight.contains_key(&id),
+        "premise: a Task kept"
+    );
+    assert!(r.corr.caught_up.contains(&id), "premise: a marker kept");
+
+    r.tick(&mut scene, t0);
+    assert!(!r.corr.tasks_in_flight.contains_key(&id));
+    assert!(!r.corr.caught_up.contains(&id));
+}
+
 /// A label carries its cwd's basename, wire content, so the stale sweep logs it
 /// as a `?` field.
 #[test]

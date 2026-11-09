@@ -307,23 +307,16 @@ impl Reducer {
         {
             scene.today = None;
         }
-        // Reap entries for agents that never got a SessionStart — a Task event
-        // can arrive before JSONL creates the slot.
+        // What no slot holds: a transcript's Task or backlog marker for an id
+        // that never registered, and a gone slot's newest turn position, which
+        // `remove_agent_correlation` keeps through a revive.
         self.corr
             .tasks_in_flight
             .retain(|id, _| scene.agents.contains_key(id));
-        self.corr
-            .action_requests
-            .retain(|id| scene.agents.contains_key(id));
         self.corr.turns.retain(|id| scene.agents.contains_key(id));
-        self.corr
-            .item_started_on
-            .retain(|id, _| scene.agents.contains_key(id));
         self.corr
             .caught_up
             .retain(|id| scene.agents.contains_key(id));
-        self.pending_b1_cascades
-            .retain(|id, _| scene.agents.contains_key(id));
     }
 
     /// Mark exiting every non-exiting slot whose source is NOT connected, then

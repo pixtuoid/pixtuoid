@@ -187,6 +187,116 @@ fn a_shrunk_layout_keeps_every_agent_and_seats_each_as_a_desk_frees() {
     );
 }
 
+/// A one-desk office: `ids` registered in order, a second apart from `t0`.
+fn one_desk_office(r: &mut Reducer, ids: &[AgentId], t0: SystemTime) -> SceneState {
+    let mut caps = [0; pixtuoid_core::state::MAX_FLOORS];
+    caps[0] = 1;
+    let mut scene = SceneState::new(caps);
+    for (i, &id) in ids.iter().enumerate() {
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "claude-code".into(),
+                session_id: format!("s{i}"),
+                cwd: PathBuf::from("/repo"),
+                parent_id: None,
+            },
+            t0 + Duration::from_secs(i as u64),
+            Transport::Hook,
+        );
+    }
+    scene
+}
+
+/// Any apply sweeps out a walked-out slot, so the waiter takes its desk on
+/// that same apply, not at the next tick.
+#[test]
+fn a_waiter_takes_the_desk_on_the_apply_where_its_holder_walks_out() {
+    let mut r = Reducer::new();
+    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let holder = AgentId::from_transcript_path("/p/holder.jsonl");
+    let waiter = AgentId::from_transcript_path("/p/waiter.jsonl");
+    let mut scene = one_desk_office(&mut r, &[holder, waiter], t0);
+    assert_eq!(scene.agents[&waiter].home_desk, None, "premise: one desk");
+
+    let t1 = t0 + Duration::from_secs(2);
+    sess_end(&mut r, &mut scene, holder, false, t1, Transport::Hook);
+    let walked_out = t1 + EXIT_GRACE_WINDOW + Duration::from_millis(100);
+    proof_of_life(&mut r, &mut scene, waiter, walked_out, Transport::Hook);
+    assert!(!scene.agents.contains_key(&holder), "premise: swept out");
+    assert_eq!(scene.agents[&waiter].home_desk, desk(0, 0));
+}
+
+/// Seating runs only when a desk can have freed, never on every apply: a
+/// waiter beside a free desk, which no production path leaves, stays waiting
+/// through an apply where no slot leaves.
+#[test]
+fn an_apply_where_no_slot_leaves_seats_no_waiter() {
+    let mut r = Reducer::new();
+    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let id = AgentId::from_transcript_path("/p/a.jsonl");
+    let mut scene = one_desk_office(&mut r, &[id], t0);
+    scene.agents.get_mut(&id).expect("registered").home_desk = None;
+
+    proof_of_life(
+        &mut r,
+        &mut scene,
+        id,
+        t0 + Duration::from_secs(1),
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&id].home_desk, None);
+}
+
+/// A gone slot's newest turn position goes at the tick that finds the slot
+/// gone, so a new life of the same id opens a lower-numbered turn.
+#[test]
+fn a_gone_slots_turn_position_goes_with_it() {
+    use pixtuoid_core::state::TurnKey;
+    let mut r = Reducer::new();
+    let mut scene = SceneState::uniform(4);
+    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let id = AgentId::from_parts("opencode", "ses_p");
+    let begin = |r: &mut Reducer, scene: &mut SceneState, at: SystemTime| {
+        r.apply(
+            scene,
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "opencode".into(),
+                session_id: "ses_p".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id: None,
+            },
+            at,
+            Transport::Hook,
+        );
+    };
+    let turn = |r: &mut Reducer, scene: &mut SceneState, seq: u64, at: SystemTime| {
+        let start = AgentEvent::TurnStart {
+            agent_id: id,
+            turn: TurnKey::Seq(seq),
+        };
+        r.apply(scene, start, at, Transport::Hook);
+    };
+
+    begin(&mut r, &mut scene, t0);
+    turn(&mut r, &mut scene, 5, t0);
+    sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
+    let gone = t0 + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+    r.tick(&mut scene, gone);
+    assert!(!scene.agents.contains_key(&id), "premise: swept out");
+
+    let next_life = gone + Duration::from_secs(1);
+    begin(&mut r, &mut scene, next_life);
+    turn(&mut r, &mut scene, 3, next_life);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: None },
+        "the old life's position must not refuse the new life's turn"
+    );
+}
+
 #[test]
 fn session_start_on_exiting_slot_resurrects_in_place() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
