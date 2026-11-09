@@ -123,13 +123,15 @@ impl Stop {
 }
 
 /// What the run keeps beside the office: the config it persists to, its
-/// audio, the log the Sources panel's drift history comes from, and whether
-/// this is the first run, which opens the onboarding.
+/// audio, the log the Sources panel's drift history comes from, whether
+/// this is the first run, which opens the onboarding, and the drift the footer
+/// names.
 pub(crate) struct Settings {
     pub(crate) config_path: PathBuf,
     pub(crate) audio: config::AudioConfig,
     pub(crate) log: crate::run_log::LogLocation,
     pub(crate) first_run: bool,
+    pub(crate) drift: crate::doctor::DriftSeen,
 }
 
 /// How the office looks and moves.
@@ -201,6 +203,7 @@ impl FloatingApp {
             audio,
             log,
             first_run,
+            drift,
         }: Settings,
         boot: super::PipelineBoot,
     ) -> Self {
@@ -216,7 +219,7 @@ impl FloatingApp {
             config_path: &config_path,
             socket_path: boot.socket_path.clone(),
             log,
-            drift: boot.drift.clone(),
+            drift,
             connected: &boot.connected.snapshot(),
             look: None,
         });
@@ -423,7 +426,7 @@ impl FloatingApp {
         let Some(scene) = self.live.as_ref().map(|l| l.scene_rx.borrow().clone()) else {
             return;
         };
-        self.audio_ctl.tick(Instant::now());
+        crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
         self.renderer.hear(&scene, self.floor_meta(), self.ui.now());
     }
 
@@ -445,10 +448,9 @@ impl FloatingApp {
         else {
             return;
         };
-        let audio_now = Instant::now();
-        self.audio_ctl.tick(audio_now);
+        let volume_flash =
+            crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
         let audio_audible = self.audio_ctl.handle().is_audible();
-        let volume_flash = self.audio_ctl.volume_flash(audio_now);
         let at = super::geometry::window_geometry(size, self.pack.max_density_variant(), self.zoom);
         super::geometry::sync_floor_caps(
             &mut self.last_caps_size,
@@ -507,10 +509,7 @@ impl FloatingApp {
                 super::overlays::footer_budget(win_w as usize, chrome_cell(at)),
                 audio_audible,
                 volume_flash,
-                self.live
-                    .as_ref()
-                    .and_then(super::LivePipeline::footer_warning)
-                    .as_deref(),
+                frames.warning.as_deref(),
             ),
             tooltip: self
                 .renderer

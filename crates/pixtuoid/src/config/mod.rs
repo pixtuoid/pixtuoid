@@ -138,6 +138,54 @@ pub(crate) fn resolve_audio(config: &AppConfig) -> AudioConfig {
     }
 }
 
+/// A setting a painter saves when the user changes it (volume once its readout
+/// fades).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, enum_map::Enum)]
+pub(crate) enum Setting {
+    Appearance,
+    Mute,
+    Volume,
+}
+
+impl Setting {
+    /// How the footer names it while it isn't saved.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Setting::Appearance => "appearance",
+            Setting::Mute => "mute",
+            Setting::Volume => "volume",
+        }
+    }
+}
+
+/// A save of `setting`, and whether it `landed`: one that didn't leaves the
+/// run's choice to revert at the next launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SaveOutcome {
+    pub(crate) setting: Setting,
+    pub(crate) landed: bool,
+}
+
+impl SaveOutcome {
+    /// What `save`, a save of `setting`, came to, its failure logged.
+    pub(crate) fn of(setting: Setting, save: Result<()>) -> Self {
+        if let Err(e) = &save {
+            // A message is the log's stable grep key, so each keeps its own.
+            match setting {
+                Setting::Appearance => {
+                    tracing::warn!(error = ?e, "failed to persist the appearance")
+                }
+                Setting::Mute => tracing::warn!(error = ?e, "failed to persist audio mute"),
+                Setting::Volume => tracing::warn!(error = ?e, "failed to persist audio volume"),
+            }
+        }
+        Self {
+            setting,
+            landed: save.is_ok(),
+        }
+    }
+}
+
 pub(crate) fn save_audio_muted(path: &Path, muted: bool) -> Result<()> {
     update_config(path, |doc| {
         doc["audio"]["muted"] = toml_edit::value(muted);
