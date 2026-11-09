@@ -250,6 +250,21 @@ async fn bind_reclaims_a_stale_socket_file() {
     handle.abort();
 }
 
+// Residue is a socket; a regular file at a mistyped `--socket` or
+// `PIXTUOID_SOCKET` is the user's data (REVIEW.md: a pre-existing endpoint is
+// hostile), so bind refuses it, naming the path, and leaves it intact.
+#[tokio::test]
+async fn bind_refuses_to_reclaim_a_file_that_is_not_a_socket() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("notes.txt");
+    std::fs::write(&path, "precious").unwrap();
+    let err = HookSocketListener::bind(path.clone())
+        .await
+        .expect_err("a regular file is not a stale socket");
+    assert!(format!("{err:#}").contains("notes.txt"), "{err:#}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "precious");
+}
+
 // The socket must be owner-only 0600 the moment it is reachable at the public
 // path (temp-name bind + chmod + atomic rename, no umask mutation).
 #[tokio::test]

@@ -248,6 +248,16 @@ impl Listener {
                     path: path.to_path_buf(),
                 }));
             }
+            // Residue is a socket. Anything else there, a file a mistyped path
+            // names included, is not ours to unlink.
+            let is_socket = tokio::fs::symlink_metadata(path)
+                .await
+                .is_ok_and(|m| std::os::unix::fs::FileTypeExt::is_socket(&m.file_type()));
+            anyhow::ensure!(
+                is_socket,
+                "{} exists and is not a socket, so it is not replaced: point the endpoint elsewhere",
+                path.display()
+            );
             let _ = tokio::fs::remove_file(path).await;
         }
         // Bind at a temp name, chmod, then rename onto the final path (which does
