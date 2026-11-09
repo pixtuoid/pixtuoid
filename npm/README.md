@@ -41,21 +41,7 @@ The per-platform packages are **generated, not committed** (see `.gitignore`).
 
 On a stable `v*` tag (skipped for `-rc`/`-win` pre-releases, like crates.io +
 homebrew): download the `artifact-<target>` tarballs the build matrix already
-produced → extract both binaries per target → `node generate.mjs --version <tag>
---artifacts <dir>` → `npm publish` the platform packages first, the launcher
-last. The version is sourced from the git tag (single source of truth, same as
-the crates.io publish) — never a separate `package.json`.
-
-## Local dry-run (no publish)
-
-```bash
-just build --release                                  # produces target/release/{pixtuoid,pixtuoid-hook}
-mkdir -p /tmp/a/aarch64-apple-darwin
-cp target/release/pixtuoid target/release/pixtuoid-hook /tmp/a/aarch64-apple-darwin/
-node npm/generate.mjs --version 0.6.0 --artifacts /tmp/a   # (needs every TARGETS entry present; fake the others to test)
-# exercise the shim against a real binary without publishing:
-PIXTUOID_BINARY="$PWD/target/release" node npm/pixtuoid/bin/pixtuoid.js --version
-```
-
-For a full registry round-trip, publish the generated packages to a local
-[verdaccio](https://verdaccio.org/) and `npm i -g pixtuoid --registry http://localhost:4873`.
+produced → extract each target's binaries and notices → `node generate.mjs
+--version <tag> --artifacts <dir>` → `npm publish` the platform packages first,
+the launcher last. The version is sourced from the git tag (single source of
+truth, same as the crates.io publish) — never a separate `package.json`.
