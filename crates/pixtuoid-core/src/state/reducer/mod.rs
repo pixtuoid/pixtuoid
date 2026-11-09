@@ -144,17 +144,11 @@ struct IdentityCtx<'a> {
     cwd: &'a std::path::Path,
 }
 
-/// First-wins identity back-fill (#221): heal EMPTY source/session_id/cwd — an
-/// established value is never overwritten. Returns the healed cwd's basename
-/// when THIS call healed the cwd; only the SessionStart arm upgrades a fallback
-/// label from it, since `Identity` carries no label authority.
-fn backfill_identity<'a>(slot: &mut AgentSlot, ctx: IdentityCtx<'a>) -> Option<&'a str> {
-    if slot.source.is_empty() && !ctx.source.is_empty() {
-        slot.source = Arc::<str>::from(ctx.source);
-    }
-    if slot.session_id.is_empty() && !ctx.session_id.is_empty() {
-        slot.session_id = Arc::<str>::from(ctx.session_id);
-    }
+/// First-wins cwd back-fill (#221): heal a MISSING cwd, never overwrite an
+/// established one. Returns the healed cwd's basename when THIS call healed it;
+/// only the SessionStart arm upgrades a fallback label from it, since
+/// `Identity` carries no label authority.
+fn backfill_cwd<'a>(slot: &mut AgentSlot, ctx: IdentityCtx<'a>) -> Option<&'a str> {
     if (slot.unknown_cwd || slot.cwd.as_os_str().is_empty())
         && let Some(base) = ctx
             .cwd
@@ -1039,7 +1033,7 @@ impl Reducer {
             return;
         }
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            backfill_identity(slot, ctx);
+            backfill_cwd(slot, ctx);
             // A pid-less Identity must never DOWNGRADE a cached Some (e.g. an
             // opencode plugin event following a shim-stamped one).
             if pid.is_some() {
@@ -1275,7 +1269,7 @@ impl Reducer {
         }
         // A slot can exist with MISSING identity: an `Identity` may name no cwd,
         // and a Codex revive ghost has an empty cwd.
-        if let Some(base) = backfill_identity(slot, ctx) {
+        if let Some(base) = backfill_cwd(slot, ctx) {
             // `base` BYPASSES the `cwd_basename_label` chokepoint, so the
             // same decode-boundary cap is applied here.
             let derived = crate::state::SlotLabel::cwd_derived(crate::state::SlotLabel::join(

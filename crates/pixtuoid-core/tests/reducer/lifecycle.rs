@@ -869,18 +869,17 @@ fn a_bare_prefix_rename_never_replaces_a_cwd_label() {
 }
 
 #[test]
-fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
+fn two_step_backfill_a_cwd_less_start_then_a_cwd_still_upgrades_the_label() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    // A peer's hook stamped with an empty `_pixtuoid_source`.
     r.apply(
         &mut scene,
         AgentEvent::Identity {
             agent_id: id,
-            source: String::new(),
+            source: "claude-code".into(),
             session_id: "gated-sess".into(),
             cwd: None,
             pid: None,
@@ -901,8 +900,7 @@ fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
         Transport::Hook,
     );
     let slot = scene.agents.get(&id).unwrap();
-    assert_eq!(&*slot.source, "claude-code", "source back-filled first");
-    assert_eq!(&*slot.label, "#1", "no cwd yet — label unchanged");
+    assert_eq!(&*slot.label, "cc#1", "no cwd yet — label unchanged");
 
     r.apply(
         &mut scene,
@@ -920,7 +918,7 @@ fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
     assert_eq!(&*slot.cwd, std::path::Path::new("/Users/me/repo"));
     assert_eq!(
         &*slot.label, "cc·repo",
-        "fallback still upgrades after the two-step heal"
+        "fallback still upgrades once a start names the cwd"
     );
 }
 

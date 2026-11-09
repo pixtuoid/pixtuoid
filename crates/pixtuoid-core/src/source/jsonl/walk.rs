@@ -623,8 +623,8 @@ async fn emit_registration(
         }
     };
     // Same deriver as the AgentId: hook slots carry the bare session UUID and
-    // `backfill_identity` never heals a non-empty session_id, so a raw file-stem
-    // here disagrees with the hook-created twin forever.
+    // nothing heals a slot's session_id, so a raw file-stem here disagrees with
+    // the hook-created twin forever.
     let session_id = decoders.id_derive.id_for(path);
     let id = own_agent(path, source, decoders);
     let _ = tx
@@ -641,8 +641,10 @@ async fn emit_registration(
         .await;
     let label = registration.label;
     // A first sight renames even a slot a hook created first. A claimed path
-    // only hints: a `Rename` would clobber a label the transcript decoded since
-    // (`SlotLabel::yields_to`).
+    // only hints: a `Rename` on every live read would clobber a name another
+    // producer gave the session since (a parent's `subagent_spawned`, a
+    // `subagent_start` hook), which `Registration.label` never holds
+    // (`SlotLabel::yields_to_hint`).
     let named = if first_sight {
         AgentEvent::Rename {
             agent_id: id,
