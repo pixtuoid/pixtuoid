@@ -645,7 +645,7 @@ async fn the_registry_row_filters_the_untruncated_copy_and_the_builder_overrides
     );
 }
 
-/// C1: a resumed copilot session sits idle with its pre-resume shutdown still
+/// A resumed copilot session sits idle with its pre-resume shutdown still
 /// in its tail; its last word is the resume, so first sight registers it live.
 #[tokio::test]
 async fn a_resumed_session_is_live_at_first_sight() {

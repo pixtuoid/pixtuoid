@@ -459,8 +459,7 @@ pub(super) async fn revouch_gated_files(decoders: SourceDecoders, ctx: &WatchCtx
         }
         // Last, so the bounded tail read costs only the vouched candidates. An
         // ENDED one is refused here — resetting undoes the terminator gate — and
-        // leaves the candidates, or every pass decodes its tail again, re-warning
-        // each drift breadcrumb in it.
+        // leaves the candidates, or every pass reads and decodes its tail again.
         if tail_life(&path, TAIL_BYTES, ctx.source, decoders).await == Some(Life::Ended) {
             ctx.seen.lock().await.entry(path).or_insert(Sight::Ended);
             continue;

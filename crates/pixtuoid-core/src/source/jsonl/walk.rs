@@ -122,8 +122,8 @@ fn window_life(
 ) -> Option<Life> {
     let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
     // A verdict, not a read: the read that sends these lines' events
-    // breadcrumbs their drift, and a line no read sends costs no events, the
-    // condition a breadcrumb names (`source/drift.rs:13-14`).
+    // breadcrumbs their drift, and a line no read sends costs no events
+    // (`source::drift`: "Breadcrumb the condition that costs events").
     let decoded: Vec<AgentEvent> =
         tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
             crate::source::admit::window_lines(window)
@@ -626,7 +626,7 @@ async fn emit_registration(
     // `backfill_identity` never heals a non-empty session_id, so a raw file-stem
     // here disagrees with the hook-created twin forever.
     let session_id = decoders.id_derive.id_for(path);
-    let id = AgentId::from_parts(source, &session_id);
+    let id = own_agent(path, source, decoders);
     let _ = tx
         .send((
             Transport::Jsonl,

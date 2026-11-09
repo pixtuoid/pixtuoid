@@ -66,8 +66,8 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
             cwd: cwd.unwrap_or_default(),
             parent_id: None,
         }],
-        // Any of these is proof-of-life in the shared reducer too. Identity honors
-        // its tombstones while avoiding a nameless slot when the office joins late.
+        // The Identity is the one claim that registers a session the office joined
+        // late: the activity alone registers nothing. It honors its tombstones.
         "pre_tool" | "post_tool" | "turn_end" => {
             vec![AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd)]
         }

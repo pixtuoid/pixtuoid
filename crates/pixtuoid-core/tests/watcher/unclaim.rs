@@ -156,7 +156,7 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
     watcher_task.abort();
 }
 
-/// C37: the reducer forgets a claimed session on its own (the stale sweep, a
+/// The reducer forgets a claimed session on its own (the stale sweep, a
 /// disconnect's reconcile, a desk it refused), and the session's next read that
 /// shows life registers it again, renaming nothing yet under the label its
 /// reads last gave it: omp's is its transcript's title.

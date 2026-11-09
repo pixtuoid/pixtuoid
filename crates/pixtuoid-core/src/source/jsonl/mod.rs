@@ -120,7 +120,7 @@ mod folded {
 /// registered, or fully retired by an exit un-claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Sight {
-    /// Registered as first sight resolved it: every read showing life
+    /// Registered as its reads last resolved it: every read showing life
     /// re-registers it, so a slot the reducer forgot on its own comes back.
     Claimed(Registration),
     /// Its session ended: the last lifecycle evidence of a read or of an
@@ -131,8 +131,9 @@ pub(super) enum Sight {
     Ended,
 }
 
-/// What a first sight resolved of its session, kept so a re-registration
-/// reads no head.
+/// What the path's reads resolved of its session (first sight's cwd and
+/// parent, and the label they last gave it), kept so a re-registration reads
+/// no head.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Registration {
     cwd: PathBuf,

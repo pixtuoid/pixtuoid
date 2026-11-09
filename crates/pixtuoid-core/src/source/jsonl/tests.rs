@@ -2395,8 +2395,7 @@ async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
         Some(file_len),
         "the ended transcript's cursor must stay parked at EOF (no reset-to-0 replay)"
     );
-    // Refused once, it leaves the candidates: a decode per pass re-warns any
-    // drift its tail holds, since a breadcrumb has no dedup.
+    // A pass after the refusal must decode nothing.
     let refused = TAIL_DECODES.load(Ordering::SeqCst);
     scan_root(dir.path(), decoders, &ctx, &mut read).await;
     assert_eq!(TAIL_DECODES.load(Ordering::SeqCst), refused);
