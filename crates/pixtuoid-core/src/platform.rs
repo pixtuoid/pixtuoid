@@ -6,7 +6,7 @@
 //! path no session ever writes to. On Unix, `HOME` stays authoritative.
 //!
 //! Every path env filter here is TRIM-based — empty or whitespace-only counts as
-//! unset. The home read follows std, which drops only an empty `HOME`.
+//! unset. The home reads follow std and Go, which drop only an empty value.
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
@@ -86,7 +86,9 @@ pub const USER_HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME"
 /// OS fallback, so `None` where Go errors (golang/go `src/os/file.go:605-623` @
 /// be57ebb0f3).
 pub fn go_user_home_dir() -> Option<PathBuf> {
-    path_env(USER_HOME_VAR)
+    std::env::var_os(USER_HOME_VAR)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
 }
 
 /// `~` as a CLI on the `dirs` crate resolves it (dirs 6.0.0 @ 00511bdc25,
@@ -318,5 +320,10 @@ mod tests {
                 assert_eq!(go_user_home_dir(), s("/home/u"));
             },
         );
+        for (value, want) in [("", None), ("   ", s("   "))] {
+            temp_env::with_var(USER_HOME_VAR, Some(value), || {
+                assert_eq!(go_user_home_dir(), want, "Go drops only an empty {value:?}");
+            });
+        }
     }
 }
