@@ -7,9 +7,6 @@ on:
         description: 'False on a PR outside the merge queue: only the jobs without `if: inputs.full` run'
         type: boolean
         required: true
-    secrets:
-      MERGIFY_TOKEN:
-        required: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -48,9 +45,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    env:
-      # A fork's PR gets no secrets; its results simply aren't uploaded.
-      HAS_MERGIFY_TOKEN: ${{ secrets.MERGIFY_TOKEN != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,8 +58,7 @@ jobs:
       # Both tiers run the instrumented suite: rust-cache keys a job's cache on
       # the job and toolchain, not the build, and a PR restores what main's full
       # tier saved, so a plain PR build recompiled the whole graph.
-      - name: Unit tests under coverage + JUnit XML
-        id: tests
+      - name: Unit tests under coverage
         run: just coverage
       - name: Upload coverage to Codecov
         if: ${{ inputs.full }}
@@ -73,12 +66,3 @@ jobs:
         with:
           file: codecov.json
           flag: ${{ matrix.flag }}
-      - name: Upload test results to Mergify CI Insights
-        if: ${{ !cancelled() && env.HAS_MERGIFY_TOKEN == 'true' }}
-        uses: Mergifyio/gha-mergify-ci@392d123d84a27960993927aec1f2cbb059fb95c1 # v27
-        with:
-          action: junit-process
-          token: ${{ secrets.MERGIFY_TOKEN }}
-          report_path: target/nextest/ci/junit.xml
-          job_name: ${{ matrix.platform }}-test
-          test_step_outcome: ${{ steps.tests.outcome }}

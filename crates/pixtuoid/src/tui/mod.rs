@@ -26,7 +26,8 @@ use tokio::time::MissedTickBehavior;
 use tui_renderer::TuiRenderer;
 
 use crate::panels::{
-    FloorNav, KeyAction, KeyCtx, ModalState, apply_key_action, dispatch_key, ui_state,
+    FloorNav, KeyAction, KeyCtx, ModalState, PointerEvent, apply_key_action, dispatch_key,
+    mouse_ladder, ui_state,
 };
 use crate::runtime::{QuitArms, QuitSignal, SceneRx};
 use pixtuoid_scene::hit::HitAction;
@@ -386,8 +387,33 @@ pub(crate) struct TuiSession {
     pub first_run: bool,
 }
 
-/// The mouse hit-test LADDER: the panels' half first ([`crate::panels::modal_mouse`]), then
-/// the scene.
+struct TuiOffice<'r, B: ratatui::backend::Backend<Error: Send + Sync + 'static>> {
+    renderer: &'r mut TuiRenderer<B>,
+    at: (u16, u16),
+    /// Whether the left button is held: a bare move carries nothing.
+    held: bool,
+    now: SystemTime,
+}
+
+impl<B: ratatui::backend::Backend<Error: Send + Sync + 'static>> crate::panels::Office
+    for TuiOffice<'_, B>
+{
+    fn press(&mut self) {
+        self.renderer.press(self.at.0, self.at.1, self.now);
+    }
+
+    fn moved(&mut self) {
+        if self.held {
+            self.renderer.drag(self.at.0, self.at.1);
+        }
+    }
+
+    fn release(&mut self) -> Option<HitAction> {
+        self.renderer.release(self.at.0, self.at.1)
+    }
+}
+
+/// `m` through the mouse ladder ([`crate::panels::mouse_ladder`]).
 fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     m: crossterm::event::MouseEvent,
     ui: &mut ui_state::UiState,
@@ -396,49 +422,47 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     focus: impl FnOnce(&pixtuoid_core::AgentSlot),
     now: SystemTime,
 ) {
-    let left_down =
-        matches!(m.kind, MouseEventKind::Down(MouseButton::Left)).then_some((m.column, m.row));
-    if crate::panels::modal_mouse(ui, renderer.last_popup_scale(), left_down, || {
-        crossterm::terminal::size().ok()
-    }) != crate::panels::ModalMouse::Office
-    {
-        return;
-    }
-    match m.kind {
-        MouseEventKind::Moved => {
-            renderer.set_mouse_pos(Some((m.column, m.row)));
-        }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            renderer.set_mouse_pos(Some((m.column, m.row)));
-            renderer.drag(m.column, m.row);
-        }
-        MouseEventKind::Down(MouseButton::Left) => {
-            renderer.set_mouse_pos(Some((m.column, m.row)));
-            renderer.press(m.column, m.row, now);
-        }
-        MouseEventKind::Up(MouseButton::Left) => {
-            renderer.set_mouse_pos(Some((m.column, m.row)));
-            match renderer.release(m.column, m.row) {
-                Some(HitAction::Focus(id)) => {
-                    let slot = scene_rx.borrow().agents.get(&id).cloned();
-                    if let Some(slot) = slot {
-                        focus(&slot);
-                    }
-                }
-                Some(HitAction::Pet(kind)) => {
-                    renderer.set_active_pet(Some(renderer::PetState {
-                        petted_at: now,
-                        kind,
-                        floor_idx: renderer.current_floor(),
-                    }));
-                }
-                Some(HitAction::Open(url)) => {
-                    crate::open_url(url);
-                }
-                None => {}
+    let event = match m.kind {
+        MouseEventKind::Down(MouseButton::Left) => PointerEvent::Press,
+        MouseEventKind::Moved | MouseEventKind::Drag(MouseButton::Left) => PointerEvent::Move,
+        MouseEventKind::Up(MouseButton::Left) => PointerEvent::Release,
+        _ => return,
+    };
+    let at = (m.column, m.row);
+    let popup_scale = renderer.last_popup_scale();
+    let mut office = TuiOffice {
+        renderer: &mut *renderer,
+        at,
+        held: matches!(m.kind, MouseEventKind::Drag(MouseButton::Left)),
+        now,
+    };
+    let (_, click) = mouse_ladder(
+        ui,
+        popup_scale,
+        event,
+        Some(at),
+        || crossterm::terminal::size().ok(),
+        &mut office,
+    );
+    renderer.set_mouse_pos(Some(at));
+    match click {
+        Some(HitAction::Focus(id)) => {
+            let slot = scene_rx.borrow().agents.get(&id).cloned();
+            if let Some(slot) = slot {
+                focus(&slot);
             }
         }
-        _ => {}
+        Some(HitAction::Pet(kind)) => {
+            renderer.set_active_pet(Some(renderer::PetState {
+                petted_at: now,
+                kind,
+                floor_idx: renderer.current_floor(),
+            }));
+        }
+        Some(HitAction::Open(url)) => {
+            crate::open_url(url);
+        }
+        None => {}
     }
 }
 
@@ -535,10 +559,13 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     now = ui.now();
                     snapshot = scene_rx.borrow_and_update().clone();
                     let health = source_health.borrow_and_update().clone();
+                    let volume_flash = crate::panels::tick_audio(
+                        &mut ui,
+                        &mut audio_ctl,
+                        std::time::Instant::now(),
+                    );
                     renderer.set_frames(ui.build_frames(now, &snapshot, &health), now);
-                    let audio_now = std::time::Instant::now();
-                    audio_ctl.tick(audio_now);
-                    renderer.set_volume_flash(audio_ctl.volume_flash(audio_now));
+                    renderer.set_volume_flash(volume_flash);
                     renderer.render(&snapshot, now)?;
 
                     if renderer.cached_layout().is_some() {
@@ -1266,6 +1293,20 @@ mod apply_key_action_tests {
     }
 
     impl Harness {
+        /// The frame the loop paints next, a line of text per row.
+        fn frame(&mut self) -> String {
+            let now = SystemTime::UNIX_EPOCH;
+            let frames = self.ui.build_frames(now, &self.snapshot, &[]);
+            self.renderer.set_frames(frames, now);
+            self.renderer.render(&self.snapshot, now).expect("render");
+            crate::tui::tui_renderer::harness::frame_text(self.renderer.frame_buffer())
+        }
+
+        /// The footer row of [`Self::frame`].
+        fn footer(&mut self) -> String {
+            self.frame().lines().last().unwrap_or_default().to_owned()
+        }
+
         /// Onboarding open on `welcome`, as a first run shows it.
         fn onboarding(welcome: crate::panels::welcome::WelcomeUi) -> Self {
             let mut h = Self::new();
@@ -1308,6 +1349,81 @@ mod apply_key_action_tests {
         assert!(h.connected.is_connected("copilot"));
         let cfg = crate::config::load(&h.config_path, &mut Vec::new());
         assert_eq!(cfg.sources, [("copilot".to_string(), true)].into());
+    }
+
+    /// A connect that still asks a step opens the Sources panel on it: OpenClaw's
+    /// running gateway loads the plugin only once it restarts.
+    #[test]
+    fn confirming_onboarding_shows_the_step_a_connect_still_asks() {
+        let state = tempfile::tempdir().expect("tempdir");
+        let hook = std::env::current_exe().expect("an existing file to embed");
+        temp_env::with_vars(
+            [
+                ("OPENCLAW_STATE_DIR", Some(state.path().as_os_str())),
+                ("OPENCLAW_CONFIG_PATH", None),
+                ("PIXTUOID_HOOK", Some(hook.as_os_str())),
+            ],
+            || {
+                let mut h =
+                    Harness::onboarding(crate::panels::welcome::WelcomeUi::from_ids(&["openclaw"]));
+                h.apply(KeyAction::OnboardingConfirm);
+                assert!(h.connected.is_connected("openclaw"));
+                let step = crate::sources::post_install_hint("openclaw").expect("declared");
+                assert_eq!(
+                    h.ui.connection.last_result,
+                    Some(format!("\u{2713} OpenClaw connected \u{b7} {step}"))
+                );
+                let frame = h.frame();
+                assert!(frame.contains("Sources"), "{frame}");
+                assert!(frame.contains("\u{2713} OpenClaw connected"), "{frame}");
+            },
+        );
+    }
+
+    /// A choice the config refuses still shows this run, and the footer says it
+    /// reverts at the next launch until a later save of it lands.
+    #[test]
+    fn a_refused_save_shows_in_the_footer_until_one_lands() {
+        let mut h = Harness::new();
+        std::fs::write(&h.config_path, "not = [valid").unwrap();
+        h.apply(KeyAction::OpenAppearance);
+        h.apply(KeyAction::ThemePreview(1));
+        h.apply(KeyAction::AppearanceCommit);
+        let footer = h.footer();
+        assert!(
+            footer.contains("appearance not saved \u{2014} reverts at the next launch (see log)"),
+            "{footer}"
+        );
+        h.apply(KeyAction::ToggleAudioMute);
+        let footer = h.footer();
+        assert!(footer.contains("appearance, mute not saved"), "{footer}");
+
+        std::fs::write(&h.config_path, "").unwrap();
+        h.apply(KeyAction::OpenAppearance);
+        h.apply(KeyAction::AppearanceCommit);
+        let footer = h.footer();
+        assert!(footer.contains(" mute not saved"), "{footer}");
+        h.apply(KeyAction::ToggleAudioMute);
+        let footer = h.footer();
+        assert!(!footer.contains("not saved"), "{footer}");
+    }
+
+    /// A volume nudge saves once its readout fades, in the frame's audio step,
+    /// and a refusal there reaches the footer too.
+    #[test]
+    fn a_refused_volume_save_shows_in_the_footer() {
+        let mut h = Harness::new();
+        std::fs::write(&h.config_path, "not = [valid").unwrap();
+        h.apply(KeyAction::AdjustVolume(false));
+        let faded = std::time::Instant::now()
+            + std::time::Duration::from_millis(crate::audio::VOLUME_FLASH_MS as u64 + 50);
+        assert_eq!(
+            crate::panels::tick_audio(&mut h.ui, &mut h.audio_ctl, faded),
+            None,
+            "the readout has faded"
+        );
+        let footer = h.footer();
+        assert!(footer.contains("volume not saved"), "{footer}");
     }
 
     /// `v` reopens the popup with the notices due against the LIVE connections:

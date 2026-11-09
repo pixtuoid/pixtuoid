@@ -99,7 +99,7 @@ pub enum FooterTone {
     Tool(ToolKind),
     /// The gateway `⬢gw` chip — hue by daemon liveness.
     Gateway(DaemonState),
-    /// Source-death / decode-drift warning — uses the `label_warn` alarm hue.
+    /// The painter's pre-merged warning — uses the `label_warn` alarm hue.
     Warning,
 }
 
@@ -248,8 +248,9 @@ pub struct FooterContext<'a> {
     /// Transient +/- readout: `Some(percent)` just after a volume nudge —
     /// renders as `♩ N%`.
     pub(crate) volume_flash: Option<u8>,
-    /// Pre-merged one-line death>drift warning; `None` while healthy.
-    pub(crate) source_warning: Option<&'a str>,
+    /// The painter's one-line warning, pre-merged by its priority; `None` while
+    /// healthy.
+    pub(crate) warning: Option<&'a str>,
     /// The stats-tier right keybind tail.
     pub(crate) keys_stats: &'a str,
     /// The alert-tier right keybind tail.
@@ -263,7 +264,7 @@ impl<'a> FooterContext<'a> {
         floor: Option<FooterFloor>,
         audio_audible: bool,
         volume_flash: Option<u8>,
-        source_warning: Option<&'a str>,
+        warning: Option<&'a str>,
         keys_stats: &'a str,
         keys_alert: &'a str,
     ) -> Self {
@@ -273,7 +274,7 @@ impl<'a> FooterContext<'a> {
             floor,
             audio_audible,
             volume_flash,
-            source_warning,
+            warning,
             keys_stats,
             keys_alert,
         }
@@ -301,16 +302,16 @@ fn clip_cols(s: &str, budget: usize) -> String {
 /// chosen tier already right-flushed to `budget`, so a painter renders the runs
 /// with zero policy.
 ///
-/// Tiers: **death** (preempts all; the `▲N need you` alarm stays PINNED through
+/// Tiers: **warning** (preempts all; the `▲N need you` alarm stays PINNED through
 /// body truncation) → **full** → **medium** → **minimal** → **fallback** (only
 /// the keybind tail).
 pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let counts = inputs.counts;
     let ctx = &inputs.context;
-    // A dead source outranks the stats: the counts go stale once a transport is
-    // gone, so the warning IS the status until restart — truncated to fit rather
-    // than tiered away.
-    if let Some(warn) = ctx.source_warning {
+    // A warning outranks the stats: it is what the user must act on, a dead
+    // source's counts gone stale with it, so it IS the status while it lasts —
+    // truncated to fit rather than tiered away.
+    if let Some(warn) = ctx.warning {
         let w = budget as usize;
         // Clipped, never dropped: a row with no `[q]` is a user stuck in the
         // alternate screen.
@@ -597,7 +598,7 @@ mod tests {
         tools: &[ToolTally],
         audio_audible: bool,
         volume_flash: Option<u8>,
-        source_warning: Option<&'a str>,
+        warning: Option<&'a str>,
     ) -> FooterInputs<'a> {
         FooterInputs {
             counts: crate::tally::scene_stats(scene),
@@ -608,7 +609,7 @@ mod tests {
                 floor: None,
                 audio_audible,
                 volume_flash,
-                source_warning,
+                warning,
                 keys_stats: KEYS_STATS,
                 keys_alert: KEYS_ALERT,
             },
@@ -670,7 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn death_tier_pins_the_requires_action_alarm_through_the_narrowest_width() {
+    fn warning_tier_pins_the_requires_action_alarm_through_the_narrowest_width() {
         let mut scene = SceneState::uniform(16);
         let slot = requires_action_slot("/p/wait.jsonl");
         scene.agents.insert(slot.agent_id, slot);
@@ -715,7 +716,7 @@ mod tests {
                     build_footer(&inputs(&empty, &[], false, None, None), w),
                 ),
                 (
-                    "death",
+                    "warning",
                     build_footer(
                         &inputs(&office, &[], false, None, Some("transport died")),
                         w,

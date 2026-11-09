@@ -74,6 +74,9 @@ const CLI: io::HostCli = io::HostCli {
 
 const MANIFEST: &str = "reasonix-plugin.json";
 
+const HOME_DIR: &str = ".reasonix";
+const CONFIG_SUBDIR: &str = "reasonix";
+
 const HOOKS_AT: host_plugin::HooksAt = host_plugin::HooksAt {
     hooks: "/contributes/hooks",
     command: "/command",
@@ -98,18 +101,38 @@ fn packages_path() -> Result<PathBuf> {
 /// Windows misses it. Erroring mirrors the sibling home-anchored targets instead of
 /// silently reading a CWD-relative file Reasonix never writes.
 fn home() -> Result<PathBuf> {
-    reasonix_home()
-        .ok_or_else(|| io::home_unset("Reasonix's home", "REASONIX_HOME/APPDATA/HOME/USERPROFILE"))
+    let config = if cfg!(windows) {
+        "APPDATA/"
+    } else if cfg!(target_os = "macos") {
+        ""
+    } else {
+        "XDG_CONFIG_HOME/"
+    };
+    let read = format!(
+        "REASONIX_HOME/{config}{}",
+        pixtuoid_core::platform::USER_HOME_VAR
+    );
+    reasonix_home().ok_or_else(|| io::home_unset("Reasonix's home", &read))
 }
 
-/// `REASONIX_HOME` → Windows `%APPDATA%\reasonix` → else `<home>/.reasonix`.
+/// `REASONIX_HOME`, else upstream's `defaultHomeDir`
+/// (`internal/contract/config/storage_roots.go:252-270` @ v2.39.0, unchanged at
+/// v2.58.1), with Go's `os.UserHomeDir` as the home.
 fn reasonix_home() -> Option<PathBuf> {
-    let home = pixtuoid_core::platform::user_home_opt();
+    use pixtuoid_core::platform::{go_user_home_dir, path_env, text_env};
+    let home = go_user_home_dir();
+    let config_dir = if cfg!(windows) {
+        path_env("APPDATA")
+    } else if cfg!(target_os = "macos") {
+        // Go's `os.UserConfigDir` there needs the `HOME` whose absence reached it.
+        None
+    } else {
+        path_env("XDG_CONFIG_HOME")
+    };
     resolve_reasonix_home(
-        pixtuoid_core::platform::path_env("REASONIX_HOME")
-            .map(|v| expand_dir_value(&v, home.as_deref(), pixtuoid_core::platform::text_env)),
+        path_env("REASONIX_HOME").map(|v| expand_dir_value(&v, home.as_deref(), text_env)),
         cfg!(windows),
-        user_config_dir(),
+        config_dir,
         home,
     )
 }
@@ -161,68 +184,35 @@ fn expand_vars(s: &str, var: impl Fn(&str) -> Option<String>) -> String {
 }
 
 /// Pure core for [`reasonix_home`] — everything is injected so BOTH platform arms
-/// unit-test on any host. `None` only when neither `%APPDATA%` nor a home
-/// resolves, and the legacy strip and the registration probe then error rather
-/// than read a CWD-relative file Reasonix never writes.
+/// unit-test on any host. `config_dir` is what Go's `os.UserConfigDir` reads:
+/// `%AppData%`, or a `$XDG_CONFIG_HOME` it refuses unless absolute (golang/go
+/// `src/os/file.go:557-594` @ be57ebb0f3). `None` when upstream's is `""`, and
+/// the legacy strip and the registration probe then error rather than read a
+/// CWD-relative file Reasonix never writes.
 fn resolve_reasonix_home(
     reasonix_home_env: Option<PathBuf>,
     windows: bool,
-    windows_config_dir: Option<PathBuf>,
-    unix_home: Option<PathBuf>,
+    config_dir: Option<PathBuf>,
+    home: Option<PathBuf>,
 ) -> Option<PathBuf> {
     if let Some(h) = reasonix_home_env {
         return Some(h);
     }
+    let config_dir = config_dir.filter(|d| windows || d.is_absolute());
     if windows {
-        return windows_config_dir.map(|d| d.join("reasonix"));
+        return config_dir
+            .or_else(|| home.map(|h| h.join("AppData").join("Roaming")))
+            .map(|d| d.join(CONFIG_SUBDIR));
     }
-    unix_home.map(|h| h.join(".reasonix"))
+    home.map(|h| h.join(HOME_DIR))
+        .or_else(|| config_dir.map(|d| d.join(CONFIG_SUBDIR)))
 }
 
 /// Reasonix is present when its home dir is — and hook/trust users additionally
 /// have a `~/.reasonix` even on Windows, so probe both.
 pub(crate) fn detect_installed() -> bool {
-    reasonix_home().is_some_and(|d| d.exists()) || io::home_relative(".reasonix").exists()
-}
-
-/// Rust mapping of Go's `os.UserConfigDir()`: macOS `$HOME/Library/Application
-/// Support`, **Windows `%APPDATA%`** (Roaming — without this arm `detect_installed`
-/// probes `~/.config/reasonix` on Windows, which Reasonix never creates, so
-/// auto-detection would always miss), else `$XDG_CONFIG_HOME` or `~/.config`.
-/// `None` when the selected arm needs a home and none resolves, rather than the
-/// CWD-relative path `home_relative("")` would fabricate.
-fn user_config_dir() -> Option<PathBuf> {
-    user_config_dir_checked(
-        std::env::consts::OS,
-        pixtuoid_core::platform::path_env("APPDATA"),
-        pixtuoid_core::platform::path_env("XDG_CONFIG_HOME"),
-        pixtuoid_core::platform::user_home_opt(),
-    )
-}
-
-/// Pure core for [`user_config_dir`]: `None` when the arm the OS/env select would
-/// fall back to a home join and no home resolves.
-fn user_config_dir_checked(
-    os: &str,
-    appdata: Option<PathBuf>,
-    xdg: Option<PathBuf>,
-    home: Option<PathBuf>,
-) -> Option<PathBuf> {
-    // Blank values were already filtered at the read (`platform::path_env`).
-    let env_decides = match os {
-        "windows" => appdata.is_some(),
-        "macos" => false,
-        _ => xdg.is_some(),
-    };
-    if !env_decides && home.is_none() {
-        return None;
-    }
-    // The home base is only read by the fallback arms, which the gate above
-    // guarantees have a real home when reached.
-    let home_base = home.unwrap_or_default();
-    Some(pixtuoid_core::platform::resolve_user_config_dir(
-        os, appdata, xdg, &home_base,
-    ))
+    reasonix_home().is_some_and(|d| d.exists())
+        || pixtuoid_core::platform::go_user_home_dir().is_some_and(|h| h.join(HOME_DIR).exists())
 }
 
 /// The shim's absolute path, exec form; the source rides as `--source` in `args`.
@@ -358,47 +348,117 @@ mod tests {
     }
 
     #[test]
-    fn reasonix_home_is_appdata_on_windows_but_dot_reasonix_elsewhere() {
+    fn reasonix_home_on_windows_is_appdata_then_the_roaming_dir_under_home() {
         let appdata = PathBuf::from(r"C:\Users\me\AppData\Roaming");
+        let home = PathBuf::from(r"C:\Users\me");
         assert_eq!(
-            resolve_reasonix_home(
-                None,
-                true,
-                Some(appdata.clone()),
-                Some(r"C:\Users\me".into())
-            ),
+            resolve_reasonix_home(None, true, Some(appdata.clone()), Some(home.clone())),
             Some(appdata.join("reasonix"))
         );
         assert_eq!(
-            resolve_reasonix_home(None, false, Some(appdata), Some("/home/u".into())),
-            Some(PathBuf::from("/home/u").join(".reasonix"))
-        );
-        assert_eq!(
-            resolve_reasonix_home(None, false, Some(PathBuf::from("/ignored")), None),
-            None
+            resolve_reasonix_home(None, true, None, Some(home.clone())),
+            Some(home.join("AppData").join("Roaming").join("reasonix"))
         );
         assert_eq!(resolve_reasonix_home(None, true, None, None), None);
     }
 
     #[test]
-    fn user_config_dir_checked_refuses_a_homeless_fallback_arm() {
+    fn reasonix_home_elsewhere_is_dot_reasonix_then_an_absolute_xdg_config_home() {
+        let xdg = if cfg!(windows) {
+            PathBuf::from(r"C:\xdg")
+        } else {
+            PathBuf::from("/xdg")
+        };
+        let home = PathBuf::from("/home/u");
         assert_eq!(
-            user_config_dir_checked("windows", Some(r"C:\AppData".into()), None, None),
-            Some(PathBuf::from(r"C:\AppData"))
+            resolve_reasonix_home(None, false, Some(xdg.clone()), Some(home.clone())),
+            Some(home.join(".reasonix"))
         );
         assert_eq!(
-            user_config_dir_checked("linux", None, Some("/xdg".into()), None),
-            Some(PathBuf::from("/xdg"))
+            resolve_reasonix_home(None, false, Some(xdg.clone()), None),
+            Some(xdg.join("reasonix"))
         );
-        // A blank env value counts as unset — filtered at the READ, so this core
-        // only ever sees real paths.
-        assert_eq!(user_config_dir_checked("windows", None, None, None), None);
-        assert_eq!(user_config_dir_checked("macos", None, None, None), None);
-        assert_eq!(user_config_dir_checked("linux", None, None, None), None);
         assert_eq!(
-            user_config_dir_checked("windows", None, None, Some(r"C:\Users\me".into())),
-            Some(PathBuf::from(r"C:\Users\me").join("AppData/Roaming"))
+            resolve_reasonix_home(None, false, Some("rel/xdg".into()), None),
+            None,
+            "Go's os.UserConfigDir errors on a relative $XDG_CONFIG_HOME"
         );
+        assert_eq!(resolve_reasonix_home(None, false, None, None), None);
+    }
+
+    #[test]
+    fn reasonix_home_reads_its_platform_s_variables_and_names_them_when_none_resolves() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, other) = (dir.path().join("d"), dir.path().join("other"));
+        let vars = [
+            "REASONIX_HOME",
+            "APPDATA",
+            "XDG_CONFIG_HOME",
+            "HOME",
+            "USERPROFILE",
+        ];
+        temp_env::with_vars_unset(vars, || {
+            let err = home().unwrap_err().to_string();
+            let listed: Vec<&str> = err
+                .split_once('(')
+                .and_then(|(_, rest)| rest.split_once(" unset)"))
+                .map(|(list, _)| list.split('/').collect())
+                .unwrap_or_default();
+            let read: &[&str] = if cfg!(windows) {
+                &["REASONIX_HOME", "APPDATA", "USERPROFILE"]
+            } else if cfg!(target_os = "macos") {
+                &["REASONIX_HOME", "HOME"]
+            } else {
+                &["REASONIX_HOME", "XDG_CONFIG_HOME", "HOME"]
+            };
+            assert_eq!(
+                listed, read,
+                "names exactly what this platform reads: {err}"
+            );
+        });
+        #[cfg(windows)]
+        {
+            temp_env::with_vars(
+                [
+                    ("REASONIX_HOME", None),
+                    ("APPDATA", Some(&d)),
+                    ("USERPROFILE", Some(&other)),
+                ],
+                || assert_eq!(reasonix_home(), Some(d.join("reasonix"))),
+            );
+            temp_env::with_vars(
+                [
+                    ("REASONIX_HOME", None),
+                    ("APPDATA", None),
+                    ("USERPROFILE", None),
+                    ("HOME", Some(&other)),
+                ],
+                || assert_eq!(reasonix_home(), None, "Go reads no HOME on Windows"),
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            temp_env::with_vars(
+                [
+                    ("REASONIX_HOME", None),
+                    ("HOME", Some(&d)),
+                    ("XDG_CONFIG_HOME", Some(&other)),
+                    ("APPDATA", Some(&other)),
+                ],
+                || assert_eq!(reasonix_home(), Some(d.join(".reasonix"))),
+            );
+            temp_env::with_vars(
+                [
+                    ("REASONIX_HOME", None),
+                    ("HOME", None),
+                    ("XDG_CONFIG_HOME", Some(&d)),
+                ],
+                || {
+                    let want = (!cfg!(target_os = "macos")).then(|| d.join("reasonix"));
+                    assert_eq!(reasonix_home(), want);
+                },
+            );
+        }
     }
 
     #[test]
@@ -523,17 +583,6 @@ mod tests {
         let user = r#"{ "hooks": { "Stop": [ { "command": "notify-send done" } ] } }"#;
         let out = merge::flat_json_uninstall(user).unwrap();
         assert!(!out.changed, "no managed entries → semantic no-op");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn user_config_dir_uses_appdata_on_windows() {
-        temp_env::with_var("APPDATA", Some(r"C:\Users\ada\AppData\Roaming"), || {
-            assert_eq!(
-                user_config_dir(),
-                Some(PathBuf::from(r"C:\Users\ada\AppData\Roaming"))
-            );
-        });
     }
 
     #[test]

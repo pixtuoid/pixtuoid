@@ -106,13 +106,13 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> 
             audio,
             log,
             first_run,
+            drift,
         },
         PipelineBoot {
             socket_path,
             connected,
             proxy,
             rt: rt.handle().clone(),
-            drift,
         },
     );
     let ran = event_loop.run_app(&mut app);
@@ -146,7 +146,6 @@ pub(crate) struct PipelineBoot {
     /// (`PipelineBoot::spawn`): `run` holds no guard, and a `tokio::spawn`
     /// outside a runtime panics.
     rt: tokio::runtime::Handle,
-    drift: crate::doctor::DriftSeen,
 }
 
 /// The pipeline handles, available only once [`PipelineBoot::spawn`] has run.
@@ -155,19 +154,12 @@ pub(crate) struct LivePipeline {
     pub(crate) floor_caps:
         std::sync::Arc<[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS]>,
     health_rx: tokio::sync::watch::Receiver<Vec<pixtuoid_core::source::manager::SourceDeath>>,
-    drift: crate::doctor::DriftSeen,
 }
 
 impl LivePipeline {
     /// The sources that died, for the Sources panel and the footer.
     pub(crate) fn health(&self) -> Vec<pixtuoid_core::source::manager::SourceDeath> {
         self.health_rx.borrow().clone()
-    }
-
-    /// The footer's warning now: [`crate::doctor::footer_warning`], as the
-    /// TUI's.
-    pub(crate) fn footer_warning(&self) -> Option<String> {
-        crate::doctor::footer_warning(&self.health_rx.borrow(), &self.drift.prefixes())
     }
 }
 
@@ -237,7 +229,6 @@ impl PipelineBoot {
             scene_rx,
             floor_caps,
             health_rx,
-            drift: self.drift,
         }
     }
 }

@@ -95,10 +95,9 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 ## Workflow
 
 Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
-each step there before taking it, never from recall. Merging is
-`@mergifyio queue`, which a session comments itself once
-[the merge gate](docs/CONTRIBUTING.md#the-merge-gate) holds, and a release PR
-merges by hand. The CI review applies REVIEW.md on every push;
+each step there before taking it, never from recall. Merging is a session's own
+`@mergifyio queue` ([the merge gate](docs/CONTRIBUTING.md#the-merge-gate)); a
+release PR merges by hand. The CI review applies REVIEW.md on every push;
 [arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says when the `local-review`
 skill runs it first.
 
@@ -136,7 +135,7 @@ Repo skills (committed): `local-review`, `beautify-decoration`,
 - **Evidence** (org rule): a hermetic profile scenario that reaches the surface (`just hermetic`) counts as a source too, and the population is the whole upstream repo (`gh api .../git/trees/<ref>?recursive=1`), not one plausible file.
 - **Review findings** (org rule): a refutation adds a code comment only for an EXTERNAL fact (another CLI's wire bytes, an OS semantic), on the narrowest thing it constrains. **A real finding ends FIXED, RE-SCOPED → #N or FOLLOW-UP → #N before the PR merges; which applies, the four terminal states and what #N may be are defined once in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#dispositions). Agents never file issues.**
 - **Only the latest released version of each agent CLI is supported.** When upstream renames or reshapes a wire name, repoint the decoder and the plugin at the CURRENT declaration and DELETE the old one — no dual-listening beside a replacement, no legacy-format arm kept "just in case". Every superseded arm is a second copy of a wire contract that drifts silently. Two things this does NOT govern: OUR OWN upgrade path (an arm for an artifact an older pixtuoid wrote is ours to keep or drop, not upstream's — #457), and mirroring a resolver upstream itself still branches on.
-- **Path asserts compare `PathBuf` structurally**, never `to_string_lossy()` with a hardcoded separator — string asserts pass on Unix and fail only in `windows-test`. Resolution POLICY (HOME vs USERPROFILE, %APPDATA% vs `~/.config`) is per-CLI: mirror each CLI's own resolver (`platform::home_first_dir`).
+- **Path asserts compare `PathBuf` structurally**, never `to_string_lossy()` with a hardcoded separator — string asserts pass on Unix and fail only in `windows-test`. Resolution POLICY (HOME vs USERPROFILE, %APPDATA% vs `~/.config`) is per-CLI: mirror each CLI's own resolver (a runtime's in `platform`, else beside its target).
 
 ## Architecture invariants (load-bearing)
 

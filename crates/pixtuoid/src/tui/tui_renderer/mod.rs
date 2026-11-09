@@ -178,7 +178,7 @@ impl Chrome {
             session.footer_floor(scene),
             self.audio.is_audible(),
             self.volume_flash,
-            self.frames.source_warning.as_deref(),
+            self.frames.warning.as_deref(),
         )
     }
 }
@@ -571,10 +571,11 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         }
     }
 
-    /// Where a tooltip follows the pointer: nowhere while it carries a
-    /// figure, which has none.
-    fn tooltip_pos(&self) -> Option<(u16, u16)> {
-        self.mouse_pos.filter(|_| !self.pointer.carrying())
+    /// Where a tooltip follows the pointer under `panels`: nowhere while it
+    /// carries a figure, which has none, nor over the office under a panel.
+    fn tooltip_pos(&self, panels: &crate::panels::OverlayFrame<'_>) -> Option<(u16, u16)> {
+        self.mouse_pos
+            .filter(|_| !self.pointer.carrying() && !panels.any_open())
     }
 
     fn grip(&mut self, gesture: &pixtuoid_scene::interact::Gesture) {
@@ -887,7 +888,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             self.chrome.footer(&self.session, scene),
         );
         let popup_scale = self.version_popup_scale(now);
-        let mouse_pos = self.tooltip_pos();
         let floor_scene = project_floor_scene(scene, current);
         let world = self
             .chrome
@@ -895,6 +895,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
+        let mouse_pos = self.tooltip_pos(&overlays);
         let (geometry, star) = crate::tui::renderer::classic_placement(term_size, floor);
         if !self
             .screen
@@ -955,7 +956,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         );
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
-        let mouse_pos = self.tooltip_pos();
         let floor_scene = project_floor_scene(scene, current);
         let world = self
             .chrome
@@ -963,6 +963,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
+        let mouse_pos = self.tooltip_pos(&overlays);
         let geometry = fitted.geometry();
         let floor = match &picture {
             Picture::Floor(floor) => Some(floor),
@@ -1043,7 +1044,7 @@ impl TuiRenderer<ratatui::backend::CrosstermBackend<crate::tui::FrameOut>> {
 }
 
 #[cfg(test)]
-mod harness;
+pub(super) mod harness;
 
 /// The pixel a cell showing `bounds` points at: its middle.
 fn centre(bounds: pixtuoid_scene::layout::Bounds) -> pixtuoid_scene::layout::Point {
