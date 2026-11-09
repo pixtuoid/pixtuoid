@@ -67,9 +67,11 @@ fn resolve_cli_config_dir(
 
 /// Presence probe for auto-detection. Cursor never creates `hooks.json` itself (it
 /// is purely user-authored), so a file-exists check on it would never fire — probe
-/// Cursor's own config dir (created on first run) instead.
+/// Cursor's own config dir (created on first run) instead, and the hooks file's
+/// dir, which `CURSOR_CONFIG_DIR` or `XDG_CONFIG_HOME` moves the config dir off.
 pub(crate) fn detect_installed() -> bool {
-    cli_config_dir().is_some_and(|d| d.exists()) || io::home_relative(".cursor").exists()
+    cli_config_dir().is_some_and(|d| d.exists())
+        || default_config_path().is_ok_and(|hooks| hooks.parent().is_some_and(Path::exists))
 }
 
 /// Cursor runs the `command` under a shell, so the OS forms are
@@ -159,6 +161,24 @@ mod tests {
                     default_config_path().unwrap(),
                     home.path().join(".cursor").join("hooks.json")
                 );
+            },
+        );
+    }
+
+    #[test]
+    fn detection_also_finds_the_dir_the_hooks_file_lives_in() {
+        let home = tempfile::tempdir().expect("temp home");
+        let moved = home.path().join("moved");
+        temp_env::with_vars(
+            [
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+                ("CURSOR_CONFIG_DIR", Some(moved.as_path())),
+            ],
+            || {
+                assert!(!detect_installed());
+                std::fs::create_dir(home.path().join(".cursor")).unwrap();
+                assert!(detect_installed());
             },
         );
     }

@@ -42,16 +42,8 @@ pub(crate) fn expand_tilde(value: &Path, home: Option<&Path>) -> PathBuf {
     }
 }
 
-/// Resolve a `$HOME`-relative path, falling back to the CWD when no home dir
-/// is resolvable. Only safe for read-only PROBES: WRITE paths must use
-/// [`home_relative_checked`] — installing into `./.reasonix/...` produces a
-/// file the CLI's global-scope loader never reads.
-pub(crate) fn home_relative(rel: &str) -> PathBuf {
-    pixtuoid_core::platform::user_home_opt()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(rel)
-}
-
+/// `rel` under the home, an error when none resolves: a CWD-relative stand-in
+/// names a file the CLI's global-scope loader never reads.
 pub(crate) fn home_relative_checked(rel: &str) -> Result<PathBuf> {
     checked_home_join(pixtuoid_core::platform::user_home_opt(), rel)
 }
@@ -213,36 +205,42 @@ fn read_resolved(target: &Path) -> Result<String> {
     if !target.exists() {
         return Ok(String::new());
     }
-    let mut s = String::new();
-    File::open(target)?.read_to_string(&mut s)?;
-    Ok(s)
+    std::fs::read_to_string(target).with_context(|| format!("reading {}", target.display()))
 }
 
 /// Rename `from` onto `to`, with a Windows-only bounded retry: `fs::rename` onto
 /// a file another process holds open raises ERROR_SHARING_VIOLATION (os error
 /// 32), and Claude Code keeps `settings.json` open briefly, so a bare rename can
-/// lose the write. The sleeps match CC's typical hold duration. On Unix the
-/// rename succeeds atomically even while a reader holds the old fd, so a single
-/// attempt is correct there.
+/// lose the write. On Unix the rename succeeds atomically even while a reader
+/// holds the old fd, so a single attempt is correct there.
 fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
-    {
-        const MAX_ATTEMPTS: u32 = 3;
-        const RENAME_RETRY_SLEEP_MS: u64 = 50;
-        for _ in 1..MAX_ATTEMPTS {
-            match std::fs::rename(from, to) {
-                Ok(()) => return Ok(()),
-                Err(_) => {
-                    std::thread::sleep(std::time::Duration::from_millis(RENAME_RETRY_SLEEP_MS))
-                }
-            }
-        }
-        std::fs::rename(from, to)
-    }
+    return retry_rename(|| std::fs::rename(from, to), std::thread::sleep);
     #[cfg(not(windows))]
-    {
-        std::fs::rename(from, to)
+    std::fs::rename(from, to)
+}
+
+#[cfg(any(windows, test))]
+const RENAME_ATTEMPTS: u32 = 3;
+
+/// CC's typical hold on `settings.json`.
+#[cfg(any(windows, test))]
+const RENAME_RETRY_SLEEP: Duration = Duration::from_millis(50);
+
+/// [`rename_with_retry`]'s Windows loop, its rename and sleep injected so it runs
+/// under test on every host.
+#[cfg(any(windows, test))]
+fn retry_rename(
+    mut rename: impl FnMut() -> std::io::Result<()>,
+    mut sleep: impl FnMut(Duration),
+) -> std::io::Result<()> {
+    for _ in 1..RENAME_ATTEMPTS {
+        if rename().is_ok() {
+            return Ok(());
+        }
+        sleep(RENAME_RETRY_SLEEP);
     }
+    rename()
 }
 
 /// Create `path` for writing with the config-dir hardening every atomic write
@@ -294,10 +292,12 @@ pub(crate) struct ConfigLock {
 pub(crate) fn lock_config(path: &Path) -> Result<ConfigLock> {
     let target = resolve_symlink(path);
     if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
     }
     let lock_path = sibling(&target, "lock");
-    let file = open_lock_sidecar(&lock_path)?;
+    let file = open_lock_sidecar(&lock_path)
+        .with_context(|| format!("opening {}", lock_path.display()))?;
     file.try_lock()
         .map_err(|e| anyhow!("could not lock {}: {e}", lock_path.display()))?;
     Ok(ConfigLock { target, file })
@@ -347,20 +347,22 @@ impl ConfigLock {
     /// file defaults tight rather than umask-default.
     pub(crate) fn write_atomic(&self, contents: &str) -> Result<()> {
         let tmp = sibling(&self.target, "tmp");
+        let at_tmp = || format!("writing {}", tmp.display());
         {
-            let mut f = create_hardened_tmp(&tmp)?;
+            let mut f = create_hardened_tmp(&tmp).with_context(at_tmp)?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 let perms = std::fs::metadata(&self.target)
                     .map(|m| m.permissions())
                     .unwrap_or_else(|_| std::fs::Permissions::from_mode(0o600));
-                f.set_permissions(perms)?;
+                f.set_permissions(perms).with_context(at_tmp)?;
             }
-            f.write_all(contents.as_bytes())?;
-            f.sync_all()?;
+            f.write_all(contents.as_bytes()).with_context(at_tmp)?;
+            f.sync_all().with_context(at_tmp)?;
         }
-        rename_with_retry(&tmp, &self.target)?;
+        rename_with_retry(&tmp, &self.target)
+            .with_context(|| format!("replacing {}", self.target.display()))?;
         sync_parent_after_rename(&self.target);
         Ok(())
     }
@@ -717,6 +719,58 @@ mod tests {
         rename_with_retry(&from, &to).unwrap();
         assert!(!from.exists());
         assert_eq!(std::fs::read_to_string(&to).unwrap(), "hello");
+    }
+
+    #[test]
+    fn a_rename_retries_through_its_last_attempt_and_no_further() {
+        for fails in [RENAME_ATTEMPTS - 1, RENAME_ATTEMPTS] {
+            let (mut calls, mut slept) = (0, Vec::new());
+            let out = retry_rename(
+                || {
+                    calls += 1;
+                    if calls > fails {
+                        Ok(())
+                    } else {
+                        Err(std::io::ErrorKind::PermissionDenied.into())
+                    }
+                },
+                |pause| slept.push(pause),
+            );
+            assert_eq!(out.is_ok(), fails < RENAME_ATTEMPTS, "{fails} failures");
+            assert_eq!(calls, RENAME_ATTEMPTS, "{fails} failures");
+            let pauses = usize::try_from(RENAME_ATTEMPTS - 1).unwrap();
+            assert_eq!(slept, vec![RENAME_RETRY_SLEEP; pauses], "{fails} failures");
+        }
+    }
+
+    /// A bare "Permission denied" leaves the user guessing between the CLI's
+    /// config, its lock and its temp file.
+    #[test]
+    fn each_failing_write_step_names_its_file() {
+        let dir = TempDir::new().unwrap();
+        let chain = |r: Result<()>| format!("{:#}", r.unwrap_err());
+        let names = |err: &str, step: &str, p: &Path| {
+            assert!(err.contains(&format!("{step} {}", p.display())), "{err}");
+        };
+        // A file where a directory must go, and directories where files must go.
+        let file = dir.path().join("file");
+        std::fs::write(&file, "").unwrap();
+        let parent = file.join("sub");
+        let err = chain(lock_config(&parent.join("c.json")).map(drop));
+        names(&err, "creating", &parent);
+        let locked = dir.path().join("locked.json");
+        std::fs::create_dir(sibling(&locked, "lock")).unwrap();
+        let err = chain(lock_config(&locked).map(drop));
+        names(&err, "opening", &sibling(&locked, "lock"));
+        let tmp = dir.path().join("tmp.json");
+        std::fs::create_dir(sibling(&tmp, "tmp")).unwrap();
+        let err = chain(lock_config(&tmp).unwrap().write_atomic("{}"));
+        names(&err, "writing", &sibling(&tmp, "tmp"));
+        let target = dir.path().join("dir.json");
+        std::fs::create_dir_all(target.join("kept")).unwrap();
+        let guard = lock_config(&target).unwrap();
+        names(&chain(guard.read().map(drop)), "reading", &target);
+        names(&chain(guard.write_atomic("{}")), "replacing", &target);
     }
 
     #[cfg(unix)]

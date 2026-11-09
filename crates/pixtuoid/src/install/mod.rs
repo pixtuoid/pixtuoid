@@ -742,8 +742,7 @@ fn write_owned_file(
     }
     // Atomic (temp-in-dir → fsync → rename), NOT a plain `fs::write`: a torn write
     // leaves a half-rendered plugin the gateway then fails to load.
-    lock.write_atomic(&want)
-        .with_context(|| format!("writing {}", p.display()))?;
+    lock.write_atomic(&want)?;
     Ok(Some(replaced))
 }
 
