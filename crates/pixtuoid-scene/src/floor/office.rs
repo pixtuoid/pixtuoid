@@ -470,7 +470,7 @@ impl OfficeSession {
 
     /// Render one frame of `inputs.world.scene` in `look`: the floor showing,
     /// or both floors of a slide composed into one, `gap` between them dimmed
-    /// as the floors are and their world text baked unless `look` hides it.
+    /// as the floors are.
     /// `inputs.world.scene` is the FULL live scene: the office evicts against
     /// it and projects each floor out of it. `inputs.world.floor` carries what
     /// its floors share, `inputs.place.gateway` its gateway; each

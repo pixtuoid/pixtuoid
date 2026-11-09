@@ -258,9 +258,9 @@ impl<'a> DisplayList<'a> {
         &self.hovers
     }
 
-    /// Lift the world text off the frame: no text piece paints, and none
+    /// Take the world text off the frame: no text piece paints, and none
     /// counts toward what changed. Returns the text.
-    pub(crate) fn lift_text(&mut self) -> super::text::HostRuns {
+    pub(crate) fn take_text(&mut self) -> super::text::HostRuns {
         self.pieces
             .retain(|p| !matches!(p.kind, PieceKind::Text { .. }));
         std::mem::take(&mut self.host_text)

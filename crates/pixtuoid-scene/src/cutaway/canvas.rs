@@ -197,8 +197,8 @@ impl CutawayCanvas {
         let mut list = tracing::trace_span!("canvas.compose")
             .in_scope(|| compose(&stepped.frame, office, showing, (&mut self.lights, outside)));
         let badges = Arc::clone(list.badges());
-        let lifted = (!text.in_image()).then(|| list.lift_text());
-        let host_text = lifted.filter(|_| text.left_to_host());
+        let taken = (!text.in_image()).then(|| list.take_text());
+        let host_text = taken.filter(|_| text.left_to_host());
         let epoch = Epoch {
             backdrop: list.backdrop().clone(),
             recolours: list.recolours().clone(),
@@ -1257,7 +1257,7 @@ mod tests {
         );
         let baked: Vec<crate::display::TextRun> = list.texts().cloned().collect();
         assert!(!baked.is_empty(), "premise: the frame has text");
-        let handed = list.lift_text();
+        let handed = list.take_text();
         assert_eq!(list.texts().count(), 0, "a text piece stays to be painted");
         for run in &baked {
             let handed = match run.role {
