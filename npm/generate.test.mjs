@@ -212,32 +212,46 @@ test("release.yml build matrix targets == npm TARGETS (npm ships every built pla
   );
 });
 
-const host = TARGETS.find((tg) => tg.os === process.platform && tg.cpu === process.arch);
+// A unix target: the stand-in binary is a shell script.
+const shipped = TARGETS.find((tg) => !tg.win);
 
 test(
-  "the launcher runs the binaries generate.mjs packages for this host",
-  { skip: !host ? "no target ships for this host" : host.win && "the stand-in binary is a shell script" },
+  "the launcher runs the binaries generate.mjs packages for a shipped target",
+  { skip: process.platform === "win32" && "the stand-in binary is a shell script" },
   (t) => {
-    assert.ok(host);
+    assert.ok(shipped, "the release ships a unix target");
     const { dir, npmDir, artifacts } = scaffold(t);
     assert.equal(run(npmDir, artifacts, "1.2.3").status, 0);
-    // What `npm i -g pixtuoid` leaves here: the launcher beside the one package
-    // whose os/cpu match.
+    // What `npm i -g pixtuoid` leaves on that target's host: the launcher
+    // beside the one package whose os/cpu match.
     const modules = join(dir, "node_modules");
-    const pkg = join("@pixtuoid", `cli-${host.pkg}`);
+    const pkg = join("@pixtuoid", `cli-${shipped.pkg}`);
     cpSync(join(dirname(SCRIPT), "pixtuoid", "bin"), join(modules, "pixtuoid", "bin"), { recursive: true });
     cpSync(join(npmDir, pkg), join(modules, pkg), { recursive: true });
+    // The launcher runs as on that host, whichever this one is: a `--require`
+    // preload (https://nodejs.org/api/cli.html#-r---require-module) sets the
+    // platform and arch it names its package by.
+    const host = join(dir, "host.cjs");
+    writeFileSync(
+      host,
+      `Object.defineProperty(process, "platform", { value: ${JSON.stringify(shipped.os)} });\n` +
+        `Object.defineProperty(process, "arch", { value: ${JSON.stringify(shipped.cpu)} });\n`,
+    );
 
     for (const [shim, status] of /** @type {const} */ ([
       ["pixtuoid", FAKE_STATUS],
       ["pixtuoid-hook", 0],
     ])) {
       const record = join(dir, `${shim}.record`);
-      const r = spawnSync(process.execPath, [join(modules, "pixtuoid", "bin", `${shim}.js`), "--source", "x"], {
-        input: "payload",
-        env: { PATH: process.env.PATH, HOME: dir, RECORD: record },
-        encoding: "utf8",
-      });
+      const r = spawnSync(
+        process.execPath,
+        ["--require", host, join(modules, "pixtuoid", "bin", `${shim}.js`), "--source", "x"],
+        {
+          input: "payload",
+          env: { PATH: process.env.PATH, HOME: dir, RECORD: record },
+          encoding: "utf8",
+        },
+      );
       assert.equal(r.status, status, `${shim}: ${r.stderr}`);
       assert.equal(r.stderr, "", `${shim} writes nothing of its own to stderr`);
       assert.equal(readFileSync(record, "utf8"), "--source x\npayload", `${shim} forwards argv and stdin`);
