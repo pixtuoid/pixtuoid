@@ -634,8 +634,11 @@ mod recorder {
         for p in &wrote {
             println!("wrote {} ({} lines)", p.display(), count_lines(p));
         }
-        let Deidentified::Stripped { blanked } = &deidentified;
-        println!("blanked {blanked} subtrees no decoder reads");
+        let Deidentified::Stripped { blanked, homes } = &deidentified;
+        println!(
+            "blanked {blanked} subtrees no decoder reads, made {homes} sandbox homes {}",
+            reads::HOME_PLACEHOLDER
+        );
         let pii = match &plan.operator {
             Some(operator) => refuse_on_pii(&wrote, &operator.identity),
             None => Err(std::io::Error::other(NO_OPERATOR)),
@@ -669,14 +672,18 @@ mod recorder {
         named: impl Fn(&Path) -> std::io::Result<String>,
     ) -> std::io::Result<Stripped> {
         let strip = reads::strip_unread(source, files)?;
-        let blanked = strip.blanked;
+        let (blanked, homes) = (strip.blanked, strip.homes);
         let reads = strip
             .sentinel_reads
             .into_iter()
             .filter(|(_, read)| !read.is_empty())
             .map(|(file, read)| Ok((named(&file)?, read)))
             .collect::<std::io::Result<_>>()?;
-        Ok((Deidentified::Stripped { blanked }, strip.not_json, reads))
+        Ok((
+            Deidentified::Stripped { blanked, homes },
+            strip.not_json,
+            reads,
+        ))
     }
 
     /// [`promote`] on this host: refused where it may not write the corpus.
@@ -1503,13 +1510,14 @@ mod recorder {
         reads::strip_corpus(root, |capture, strip| {
             report_not_json(&strip.not_json);
             println!(
-                "{}: blanked {}",
+                "{}: blanked {}, homes {}",
                 capture
                     .dir
                     .strip_prefix(root)
                     .unwrap_or(&capture.dir)
                     .display(),
-                strip.blanked
+                strip.blanked,
+                strip.homes
             );
         })
     }
@@ -1675,7 +1683,7 @@ mod recorder {
             let (bytes, record) = written(&p.dest);
             assert!(!bytes.contains("unread"), "the planted key is stripped");
             assert!(
-                matches!(record.deidentified, Deidentified::Stripped { blanked } if blanked > 0),
+                matches!(record.deidentified, Deidentified::Stripped { blanked, .. } if blanked > 0),
                 "{record:?}"
             );
             assert_eq!(record.aimock.as_ref().map(NonEmpty::as_str), Some("1.43.0"));

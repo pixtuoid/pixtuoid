@@ -3,46 +3,46 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 14583226451153653581
+    agent_id: 11587442134139320338
     source: cursor
-    session_id: ff740776-ffca-4a8f-8224-719c362e0665
+    session_id: e7ad67ea-30c1-4963-840e-1ddac0d53351
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 14583226451153653581
+    agent_id: 11587442134139320338
     model: default
     effort: ~
 - Identity:
-    agent_id: 14583226451153653581
+    agent_id: 11587442134139320338
     source: cursor
-    session_id: ff740776-ffca-4a8f-8224-719c362e0665
+    session_id: e7ad67ea-30c1-4963-840e-1ddac0d53351
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 14583226451153653581
-    tool_use_id: "call-e2c81508-ebc2-47e0-96b1-a4d375038e99-0\nfc_d5b570dd-26d8-9e4c-8a90-47331e1e5071_0"
+    agent_id: 11587442134139320338
+    tool_use_id: "call-37177fe4-bb44-4f72-b50e-368b12a45497-0\nfc_b1bc1a17-0a4c-9d68-9877-33909f7544d0_0"
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/does-…"
 - ModelInfo:
-    agent_id: 14583226451153653581
+    agent_id: 11587442134139320338
     model: default
     effort: ~
 - Identity:
-    agent_id: 14583226451153653581
+    agent_id: 11587442134139320338
     source: cursor
-    session_id: ff740776-ffca-4a8f-8224-719c362e0665
+    session_id: e7ad67ea-30c1-4963-840e-1ddac0d53351
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 14583226451153653581
-    tool_use_id: "call-e2c81508-ebc2-47e0-96b1-a4d375038e99-0\nfc_d5b570dd-26d8-9e4c-8a90-47331e1e5071_0"
+    agent_id: 11587442134139320338
+    tool_use_id: "call-37177fe4-bb44-4f72-b50e-368b12a45497-0\nfc_b1bc1a17-0a4c-9d68-9877-33909f7544d0_0"
 - ModelInfo:
-    agent_id: 14583226451153653581
+    agent_id: 11587442134139320338
     model: default
     effort: ~
 - SessionEnd:
-    agent_id: 14583226451153653581
+    agent_id: 11587442134139320338
     as_child: false
 - ModelInfo:
-    agent_id: 14583226451153653581
+    agent_id: 11587442134139320338
     model: default
     effort: ~

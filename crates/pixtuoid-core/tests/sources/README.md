@@ -26,13 +26,13 @@ redacted cwd and an invented one look alike. `origin` is `recorded`, and no othe
 | `recorded` | `cli`, `version`, `captured`, `command`, `deidentified` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads; the recorder writes this file itself. |
 
 **The recorder blanks what no decoder reads before the bytes land**, and
-`deidentified` in the provenance says how many subtrees went. A plugin roster, a
-global-instruction attachment, a stray home path all ride fields the decoders
-never touch, so they leave without anyone naming them, and what stays decodes to
-the same events. The allowlist is derived by probing the decoders, never listed,
-so it cannot drift from them. `/Users/dev` remains the convention for a home
-path a decoder DOES read, and a capture redacted by hand says so in its `note`:
-without it a reader cannot tell an edited capture from an untouched one, which is
+`deidentified` counts the subtrees that went and, as `homes`, the sandbox homes
+made `/Users/dev`, the convention for a home path a decoder DOES read. A plugin
+roster, a global-instruction attachment, a stray home path all ride fields the
+decoders never touch, so they leave without anyone naming them, and what stays
+decodes to the same events. The allowlist is derived by probing the decoders, never
+listed, so it cannot drift from them. A capture redacted by hand says so in its
+`note`: without it a reader cannot tell an edited capture from an untouched one,
 the distinction the whole mechanism exists to make. A field blanked today stays
 blank in that fixture: a decoder later extended to read it meets the neutral value
 there and its golden encodes "absent", so `no_capture_blanked_a_field_a_decoder_now_reads`

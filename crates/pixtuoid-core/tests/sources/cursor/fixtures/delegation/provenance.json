@@ -1,12 +1,13 @@
 {
   "origin": "recorded",
   "cli": "cursor-agent",
-  "version": "2026.10.22-27dcf5f",
-  "captured": "2026-10-27",
+  "version": "2026.11.05-86047df",
+  "captured": "2026-11-09",
   "command": "cursor-agent -p --trust --model auto {prompt}",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 43
+    "blanked": 44,
+    "homes": 1
   },
   "prompt": "Use the Task tool to dispatch one subagent that reads NOTE.txt and reports its text back to you. Do not read NOTE.txt yourself.",
   "sentinel_reads": {

@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use pixtuoid_core::harness::provenance::{Deidentified, NonEmpty, Provenance, Recorded};
+use pixtuoid_core::harness::reads::HOME_PLACEHOLDER;
 use pixtuoid_core::source::decoder::SOURCE_STAMP;
 use pixtuoid_core::source::registry;
 
@@ -392,7 +393,7 @@ fn no_identity_key_holds_a_value() {
 fn a_stripped_record_does_not_call_its_bytes_verbatim() {
     for c in every_capture() {
         let prov = &c.provenance_path;
-        let Deidentified::Stripped { blanked } = c.recorded().deidentified;
+        let Deidentified::Stripped { blanked, .. } = c.recorded().deidentified;
         let note = c.note().unwrap_or("");
         assert!(
             blanked == 0 || !note.to_ascii_lowercase().contains("verbatim"),
@@ -407,8 +408,8 @@ fn a_stripped_record_does_not_call_its_bytes_verbatim() {
 /// so a redaction sentinel with a silent `note` is the one state the mechanism
 /// cannot tolerate. Sentinels, not a `/Users/dev` grep: the sweep that keyed on
 /// that alone missed kimi's, whose redaction is a captured `ls -la`'s owner column.
-/// HAND edits only: the recorder's own strip plants no sentinel and discloses
-/// itself through `deidentified` in the provenance, not through `note`.
+/// HAND edits only: the recorder's strip discloses itself through `deidentified`,
+/// so its `homes` excuse exactly that many of the placeholder it writes.
 #[test]
 fn a_recorded_capture_that_was_edited_says_so() {
     // Placeholders READ from the scanner's own allowlist, never copied: a hand-copy
@@ -458,19 +459,26 @@ fn a_recorded_capture_that_was_edited_says_so() {
         ]
         .map(String::from),
     );
+    assert!(
+        sentinels.iter().any(|s| s == HOME_PLACEHOLDER),
+        "the recorder's placeholder {HOME_PLACEHOLDER} is none of the scanner's: {sentinels:?}"
+    );
     // A path sentinel must end at a real boundary: bare `contains` let a longer
     // account name that merely STARTS with a placeholder excuse itself.
-    let hit = |body: &str, s: &str| {
-        body.match_indices(s).any(|(at, _)| {
-            !s.starts_with('/')
-                || body[at + s.len()..].chars().next().is_none_or(
-                    |c| !matches!(c, 'A'..='Z' | 'a'..='z' | '0'..='9' | '.' | '_' | '-'),
-                )
-        })
+    let hits = |body: &str, s: &str| {
+        body.match_indices(s)
+            .filter(|(at, _)| {
+                !s.starts_with('/')
+                    || body[at + s.len()..].chars().next().is_none_or(
+                        |c| !matches!(c, 'A'..='Z' | 'a'..='z' | '0'..='9' | '.' | '_' | '-'),
+                    )
+            })
+            .count()
     };
     // A word ending the clause right before "redact" that inverts it.
     const NEGATIONS: &[&str] = &["no", "not", "nothing", "never", "without"];
     let mut silent = Vec::new();
+    let mut overcounted = Vec::new();
     for (c, _) in recordings(&every_capture()) {
         let note = c.note().unwrap_or_default().to_ascii_lowercase();
         // "verbatim" USED to satisfy this, and a bare `contains` re-opens that hole
@@ -481,13 +489,23 @@ fn a_recorded_capture_that_was_edited_says_so() {
                 !before.ends_with("un") && !NEGATIONS.iter().any(|n| before.ends_with(n))
             })
         });
-        let edited = c.wire_files().iter().any(|p| {
-            std::fs::read_to_string(p)
-                .map(|b| sentinels.iter().any(|s| hit(&b, s)))
-                .unwrap_or(false)
-        });
+        let bodies: Vec<String> = c
+            .wire_files()
+            .iter()
+            .filter_map(|p| std::fs::read_to_string(p).ok())
+            .collect();
+        let count = |s: &str| bodies.iter().map(|b| hits(b, s)).sum::<usize>();
+        let Deidentified::Stripped { homes, .. } = c.recorded().deidentified;
+        let placeheld = count(HOME_PLACEHOLDER);
+        let edited = placeheld > homes
+            || sentinels
+                .iter()
+                .any(|s| s != HOME_PLACEHOLDER && count(s) > 0);
         if edited && !declares {
             silent.push(c.label());
+        }
+        if placeheld < homes {
+            overcounted.push(format!("{}: {homes} vs {placeheld}", c.label()));
         }
     }
     assert!(
@@ -495,6 +513,11 @@ fn a_recorded_capture_that_was_edited_says_so() {
         "these `recorded` fixtures carry a redaction sentinel and no `note` claiming a \
          redaction — a reader cannot tell an edited capture from an untouched one, and a \
          note calling these bytes verbatim is worse than a silent one: {silent:?}"
+    );
+    assert!(
+        overcounted.is_empty(),
+        "these records count more rewritten homes than their bytes hold placeholders, so \
+         an edit took one out: {overcounted:?}"
     );
 }
 
