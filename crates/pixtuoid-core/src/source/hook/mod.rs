@@ -46,13 +46,13 @@ pub use router::HookRouter;
 /// The variable naming the hook endpoint: [`super::claude_code::ClaudeCodeSource::default_socket_path`]
 /// reads it, and so does the shim's parity-pinned twin (`tests/socket_path_parity.rs`).
 pub const SOCKET_ENV: &str = "PIXTUOID_SOCKET";
-/// The long flag a host command takes for the hook endpoint, read before
-/// [`SOCKET_ENV`]. The binary's clap names it from here, so a refusal's
-/// [`Repoint`] never names a flag that isn't there.
+/// The long flag the serving commands take for the hook endpoint, read before
+/// [`SOCKET_ENV`]: the binary's clap names it from here, so the flag a refusal
+/// names is the one they parse.
 pub const SOCKET_FLAG: &str = "socket";
 
-/// How every endpoint refusal ends: the two settings that choose the
-/// endpoint, since core can't tell which of them supplied this one.
+/// How a bind refusal that moving the endpoint fixes ends: both settings that
+/// choose it, since core can't tell which of them supplied this one.
 pub(crate) struct Repoint;
 
 impl std::fmt::Display for Repoint {

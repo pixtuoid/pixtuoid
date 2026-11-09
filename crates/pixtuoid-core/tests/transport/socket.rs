@@ -285,31 +285,100 @@ async fn bind_refuses_to_replace_a_dangling_symlink() {
 }
 
 // bind goes through a `.tmp` sibling, so a path that fits a unix socket
-// alone can still be too long; the refusal must name the user's own path.
+// alone can still be too long; the refusal names the user's own path and the
+// budget it leaves, which both sides of the boundary are pinned against.
 #[tokio::test]
-async fn bind_names_the_users_path_when_its_temp_sibling_cannot_fit() {
+async fn bind_takes_a_path_of_its_budget_and_refuses_one_byte_more() {
     let dir = TempDir::new().unwrap();
     // SAFETY: sockaddr_un is plain old data; all-zero is a valid value.
     let sun_path = unsafe { std::mem::zeroed::<libc::sockaddr_un>() }
         .sun_path
         .len();
-    let base = dir.path().join("s");
-    let fill = (sun_path - 1).saturating_sub(base.as_os_str().len());
-    let path = dir.path().join(format!("s{}", "x".repeat(fill)));
-    assert_eq!(
-        path.as_os_str().len(),
-        sun_path - 1,
-        "premise: the path itself fits"
-    );
-    let err = HookSocketListener::bind(path.clone())
+    let of_len = |n: usize| {
+        let base = dir.path().join("s");
+        let fill = n.saturating_sub(base.as_os_str().len());
+        let path = dir.path().join(format!("s{}", "x".repeat(fill)));
+        assert_eq!(path.as_os_str().len(), n, "premise: the path is {n} bytes");
+        path
+    };
+    let too_long = of_len(sun_path - 1);
+    let err = HookSocketListener::bind(too_long.clone())
         .await
         .expect_err("its temp sibling cannot fit");
     let text = format!("{err:#}");
     assert!(
-        text.contains(&format!("{} is too long", path.display())),
+        text.contains(&format!("{} is too long", too_long.display())),
         "{text}"
     );
     assert_names_both_settings(&text);
+    let budget: usize = text
+        .split("at most ")
+        .nth(1)
+        .and_then(|rest| rest.split(' ').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("the refusal states its budget: {text}"));
+    HookSocketListener::bind(of_len(budget))
+        .await
+        .expect("a path of exactly the budget binds");
+    let over = of_len(budget + 1);
+    let err = HookSocketListener::bind(over.clone())
+        .await
+        .expect_err("one byte over the budget");
+    assert!(
+        format!("{err:#}").contains(&format!("{} is too long", over.display())),
+        "{err:#}"
+    );
+}
+
+// A path the temp name is shorter than (trailing slashes) fails as an error,
+// never as an arithmetic panic in the length check.
+#[tokio::test]
+async fn bind_refuses_a_trailing_slash_path_without_panicking() {
+    let dir = TempDir::new().unwrap();
+    let mut path = dir.path().join("x").into_os_string();
+    path.push("//////");
+    HookSocketListener::bind(std::path::PathBuf::from(path))
+        .await
+        .expect_err("a socket path can't end in a slash");
+}
+
+// The lock covers only the endpoint, so its temp name gets the endpoint's own
+// rule: another endpoint living at that name is left alone, and so is a file.
+#[tokio::test]
+async fn bind_leaves_a_live_socket_at_its_temp_name_alone() {
+    let dir = TempDir::new().unwrap();
+    let other = dir.path().join("foo.tmp");
+    let (tx, _rx) = mpsc::channel::<(Transport, AgentEvent)>(16);
+    let owner = HookSocketListener::bind(other.clone()).await.unwrap();
+    let handle = tokio::spawn(async move { owner.run(tx).await });
+    sleep(Duration::from_millis(20)).await;
+    let err = HookSocketListener::bind(dir.path().join("foo"))
+        .await
+        .expect_err("the temp name is another endpoint's live socket");
+    assert!(
+        err.downcast_ref::<pixtuoid_core::source::hook::SocketBusy>()
+            .is_none(),
+        "another endpoint's owner is not this one's to subscribe to: {err:#}"
+    );
+    assert_names_both_settings(&format!("{err:#}"));
+    UnixStream::connect(&other)
+        .await
+        .expect("the other endpoint still answers");
+    handle.abort();
+}
+
+#[tokio::test]
+async fn bind_refuses_to_reclaim_a_file_at_its_temp_name() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("notes.tmp");
+    std::fs::write(&file, "precious").unwrap();
+    let err = HookSocketListener::bind(dir.path().join("notes"))
+        .await
+        .expect_err("a regular file at the temp name is not a stale socket");
+    let text = format!("{err:#}");
+    assert!(text.contains("notes.tmp"), "{text}");
+    assert_names_both_settings(&text);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "precious");
 }
 
 /// A refusal can't know whether the flag or the variable chose the path, so it
