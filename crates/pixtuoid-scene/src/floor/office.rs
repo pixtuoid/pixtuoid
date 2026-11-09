@@ -105,7 +105,7 @@ impl FloorView {
         let layout = self.last_hits.as_ref().map(|hits| &**hits.layout());
         office.audio.frame(
             scene,
-            &self.last_occupied,
+            Some(&self.last_occupied),
             |idx| waypoint_kind_of(layout, idx),
             floor,
             now,
@@ -313,7 +313,7 @@ pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
 /// How often an office whose beat never turns paints: never 0fps, since its
 /// clock and sky still move with the wall and a frozen one reads as a dead
 /// window.
-pub(super) const REST_TICK: Duration = Duration::from_secs(1);
+pub const REST_TICK: Duration = Duration::from_secs(1);
 
 /// A painter's office of up to [`MAX_FLOORS`](super::MAX_FLOORS) floors:
 /// each floor's view, the office-wide state they share (a cup of
@@ -569,13 +569,27 @@ impl OfficeSession {
         let floor = floor_meta(office_floor, current, self.n_floors);
         self.office
             .audio
-            .frame(scene, &HashSet::new(), |_| None, floor, now)
+            .frame(scene, Some(&HashSet::new()), |_| None, floor, now)
     }
 
     /// The waypoints the floor showing's audio reads as occupied.
     #[cfg(test)]
     pub(super) fn heard_occupied(&self) -> &HashSet<usize> {
         &self.views[self.nav.current()].last_occupied
+    }
+
+    /// One frame of audio intent for the floor showing, heard in `scene` (the
+    /// FULL live scene) under `office_floor` without drawing it: a walk-in
+    /// chimes, and the next frame drawn re-primes the appliance cues' edge.
+    pub fn hear(
+        &mut self,
+        scene: &SceneState,
+        office_floor: FloorMeta,
+        now: SystemTime,
+    ) -> AudioFrame {
+        self.prepare(scene, now);
+        let floor = floor_meta(office_floor, self.nav.current(), self.n_floors);
+        self.office.audio.frame(scene, None, |_| None, floor, now)
     }
 
     /// One frame of audio intent for the floor showing, in `scene` (the FULL
