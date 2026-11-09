@@ -281,6 +281,33 @@ async fn bind_refuses_to_replace_a_dangling_symlink() {
     );
 }
 
+// bind goes through a `.tmp` sibling, so a path that fits a unix socket
+// alone can still be too long; the refusal must name the user's own path.
+#[tokio::test]
+async fn bind_names_the_users_path_when_its_temp_sibling_cannot_fit() {
+    let dir = TempDir::new().unwrap();
+    // SAFETY: sockaddr_un is plain old data; all-zero is a valid value.
+    let sun_path = unsafe { std::mem::zeroed::<libc::sockaddr_un>() }
+        .sun_path
+        .len();
+    let base = dir.path().join("s");
+    let fill = (sun_path - 1).saturating_sub(base.as_os_str().len());
+    let path = dir.path().join(format!("s{}", "x".repeat(fill)));
+    assert_eq!(
+        path.as_os_str().len(),
+        sun_path - 1,
+        "premise: the path itself fits"
+    );
+    let err = HookSocketListener::bind(path.clone())
+        .await
+        .expect_err("its temp sibling cannot fit");
+    let text = format!("{err:#}");
+    assert!(
+        text.contains(&format!("{} is too long", path.display())),
+        "{text}"
+    );
+}
+
 // The socket must be owner-only 0600 the moment it is reachable at the public
 // path (temp-name bind + chmod + atomic rename, no umask mutation).
 #[tokio::test]

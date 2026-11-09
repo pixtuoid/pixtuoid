@@ -155,6 +155,15 @@ fn socket_sibling(path: &Path, suffix: &str) -> std::path::PathBuf {
     ))
 }
 
+/// The longest path a unix socket binds at: `sun_path` less its terminating NUL.
+fn max_socket_path_len() -> usize {
+    // SAFETY: `sockaddr_un` is plain old data, for which all-zero is a valid value.
+    unsafe { std::mem::zeroed::<libc::sockaddr_un>() }
+        .sun_path
+        .len()
+        - 1
+}
+
 /// Arbitrate the bind on `<path>.lock`: harden the owned fallback dir, then take
 /// the exclusive lock, or [`super::SocketBusy`]. Synchronous file IO, so
 /// [`Listener::bind`] runs it on tokio's blocking pool.
@@ -230,6 +239,20 @@ pub(super) struct Listener {
 
 impl Listener {
     pub(super) async fn bind(path: &Path) -> Result<Self> {
+        // Bind at a temp name, chmod, then rename onto the final path (which does
+        // not disturb the listening inode), so the socket is never reachable there
+        // looser than 0600 — and without a process-global umask, which would race
+        // every other tokio worker's file creation. One name serves every run: the
+        // lock below admits one binder per path.
+        let tmp = socket_sibling(path, "tmp");
+        let extra = tmp.as_os_str().len() - path.as_os_str().len();
+        let max = max_socket_path_len() - extra;
+        anyhow::ensure!(
+            path.as_os_str().len() <= max,
+            "{} is too long for a hook socket: a path here holds at most {max} bytes, since \
+             bind first listens at a name {extra} bytes longer beside it",
+            path.display()
+        );
         let lock = {
             let path = path.to_path_buf();
             tokio::task::spawn_blocking(move || acquire_bind_lock(&path)).await??
@@ -267,13 +290,7 @@ impl Listener {
             );
             let _ = tokio::fs::remove_file(path).await;
         }
-        // Bind at a temp name, chmod, then rename onto the final path (which does
-        // not disturb the listening inode), so the socket is never reachable there
-        // looser than 0600 — and without a process-global umask, which would race
-        // every other tokio worker's file creation.
-        let tmp = socket_sibling(path, &format!("{}.tmp", std::process::id()));
-        // A leftover temp can only be ours-by-name from a crashed prior run
-        // that had this very pid — never a live socket.
+        // Lock held ⇒ a leftover temp is a crashed bind's residue, never a live socket.
         let _ = tokio::fs::remove_file(&tmp).await;
         let listener = UnixListener::bind(&tmp)
             .with_context(|| format!("binding hook socket at {}", tmp.display()))?;
