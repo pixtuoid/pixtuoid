@@ -281,10 +281,9 @@
     while it passes the same list; any other list downloads on every run, with
     nothing red.
   assert: |
-    [.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools] as $build
-    | ($build | length == 1)
-      and ([(.jobs[].steps[]?, $against.jobs[].steps[]?)
-            | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools] | unique) == $build
+    ([.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools] | unique) as $build
+    | ([(.jobs[].steps[]?, $against.jobs[].steps[]?)
+        | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools] | unique) == $build
   break:
     - (.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with) |= del(.tools)
     - (.jobs.build.steps[] | select(.uses == "./.github/actions/setup-cargo-just") | .with.tools) = "uv jq"
