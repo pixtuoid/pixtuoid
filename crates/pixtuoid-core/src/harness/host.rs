@@ -318,7 +318,6 @@ impl DirReaders {
     #[cfg(not(windows))]
     const fn mode(self) -> u32 {
         match self {
-            // A Unix CLI's own sandbox runs as the owner, so Users needs no more.
             Self::Owner | Self::Users => 0o700,
         }
     }
@@ -472,14 +471,14 @@ pub struct HeldDir {
 }
 
 impl HeldDir {
-    /// [`capture_sandbox`](crate::harness::capture_sandbox) made afresh and
-    /// held.
+    /// [`capture_sandbox`](crate::harness::capture_sandbox) under `root` made
+    /// afresh and held.
     ///
     /// # Errors
     ///
     /// As `capture_sandbox` and [`fresh_private_dir`].
-    pub fn capture_sandbox() -> std::io::Result<Self> {
-        Self::fresh(crate::harness::capture_sandbox()?)
+    pub fn capture_sandbox(root: &Path) -> std::io::Result<Self> {
+        Self::fresh(crate::harness::capture_sandbox(root)?)
     }
 
     fn fresh(dir: PathBuf) -> std::io::Result<Self> {
@@ -692,7 +691,8 @@ mod tests {
             .and_then(|r| r["regex"].as_str())
             .expect("the foreign-home rule");
         let foreign = regex::Regex::new(rule).expect("the rule compiles here too");
-        let sandbox = crate::harness::capture_sandbox().expect("the sandbox");
+        let root = crate::harness::capture_root().expect("the capture root");
+        let sandbox = crate::harness::capture_sandbox(&root).expect("the sandbox");
         for (var, rel) in SANDBOX_HOMES {
             let file = sandbox.join(rel).join(".cursor");
             let file = file.to_string_lossy();
@@ -938,8 +938,8 @@ mod tests {
     }
 
     /// The DACL read back off each directory: a create that dropped the
-    /// descriptor would read ProgramData's inherited ACEs here. A sandbox's
-    /// alone grants Users nothing.
+    /// descriptor would read ProgramData's inherited ACEs here. The BU check
+    /// pins `sddl()` itself, which `meant` is read from.
     #[cfg(windows)]
     #[test]
     fn a_private_dir_holds_exactly_its_protected_dacl() {

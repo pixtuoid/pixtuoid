@@ -40,7 +40,7 @@ mod recorder {
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
         DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, ProcessExit,
-        SecondTurn, ServerStop, canonical_capture, capture_base, capture_workspace,
+        SecondTurn, ServerStop, canonical_capture, capture_base, capture_root, capture_workspace,
         capture_workspace_tail, files_under, jsonl_files_under, outlived, required_version_probe,
         slashed_under, version_answer, wait_until,
     };
@@ -326,7 +326,7 @@ mod recorder {
     /// reaches.
     fn isolated(plan: &CapturePlan, operator: Operator) -> std::io::Result<()> {
         let (pixtuoid, shim) = (built("pixtuoid")?, built("pixtuoid-hook")?);
-        let dir = HeldDir::capture_sandbox()?;
+        let dir = HeldDir::capture_sandbox(&capture_root()?)?;
         let bin = dir.path().join("bin");
         warmed_shim_dir(&bin, &shim)?;
         let env = SandboxEnv::new(dir.path(), hermetic::home_vars(&plan.source), &[&bin])?;

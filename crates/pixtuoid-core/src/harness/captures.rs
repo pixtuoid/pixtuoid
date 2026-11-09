@@ -91,17 +91,17 @@ pub fn capture_root() -> std::io::Result<PathBuf> {
     Ok(root)
 }
 
-/// Where a recording's sandbox sits, its homes among it: fixed and generic as
-/// [`capture_workspace`] is, since a path a CLI writes under its home rides the
-/// bytes too. Canonical, so a CLI that realpaths its home records what one
-/// reading `HOME` does. Beside the workspace's base, not in it: the recorder
-/// clears that base after the sandbox is made.
+/// Where a recording's sandbox sits under the capture `root`
+/// ([`capture_root`], which a test replaces), its homes among it: fixed and
+/// generic as [`capture_workspace`] is, since a path a CLI writes under its
+/// home rides the bytes too. Canonical, so a CLI that realpaths its home
+/// records what one reading `HOME` does. Beside the workspace's base, not in
+/// it: the recorder clears that base after the sandbox is made.
 ///
 /// # Errors
 ///
-/// As [`capture_root`], or if the root cannot be resolved.
-pub fn capture_sandbox() -> std::io::Result<PathBuf> {
-    let root = capture_root()?;
+/// If `root` cannot be resolved.
+pub fn capture_sandbox(root: &Path) -> std::io::Result<PathBuf> {
     // Unix only: std's Windows form is an extended-length `\\?\` path
     // (doc.rust-lang.org/std/fs/fn.canonicalize.html), and no Windows run
     // records the corpus (`CORPUS_REFUSAL`).
@@ -795,18 +795,19 @@ mod tests {
 
     #[test]
     fn a_recordings_sandbox_is_fixed_canonical_and_outside_the_workspace_base() {
-        let sandbox = capture_sandbox().expect("the sandbox");
+        let root = capture_root().expect("the capture root");
+        let sandbox = capture_sandbox(&root).expect("the sandbox");
         assert_eq!(
-            capture_sandbox().expect("again"),
+            capture_sandbox(&root).expect("again"),
             sandbox,
             "no per-run part"
         );
         #[cfg(unix)]
         {
-            let root = sandbox.parent().expect("under the capture root");
+            let parent = sandbox.parent().expect("under the capture root");
             assert_eq!(
-                std::fs::canonicalize(root).expect("the root exists"),
-                root,
+                std::fs::canonicalize(parent).expect("the root exists"),
+                parent,
                 "a CLI that realpaths its home records what one reading it does"
             );
         }

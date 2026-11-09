@@ -1508,9 +1508,10 @@ mod run {
     }
 
     impl SandboxDir {
-        fn of_run(record: bool) -> std::io::Result<Self> {
+        /// `root`: the capture root a recording's fixed sandbox sits under.
+        fn of_run(record: bool, root: &Path) -> std::io::Result<Self> {
             if record {
-                return Ok(Self::Recording(HeldDir::capture_sandbox()?));
+                return Ok(Self::Recording(HeldDir::capture_sandbox(root)?));
             }
             // Under the temp root's long form: a Windows runner's TEMP is an 8.3
             // short path, which a CLI's realpath disagrees with, and openclaw's
@@ -1655,7 +1656,7 @@ mod run {
         }
         let cli = install_cli(&ctx.tier, p, version)?;
         let sandbox = Sandbox::new(
-            SandboxDir::of_run(ctx.record)?,
+            SandboxDir::of_run(ctx.record, &capture_root()?)?,
             p,
             &ctx.shim_dir,
             &cli.bin,
@@ -2914,7 +2915,7 @@ mod run {
                 )])
             );
             let sandbox = Sandbox::new(
-                SandboxDir::of_run(false).expect("own dir"),
+                SandboxDir::of_run(false, Path::new("/nowhere")).expect("own dir"),
                 p,
                 Path::new("/nowhere/shims"),
                 Path::new("/nowhere/bin"),
@@ -3058,7 +3059,7 @@ mod run {
         #[test]
         fn a_sandboxs_home_is_its_own_canonical_path() {
             let sandbox = Sandbox::new(
-                SandboxDir::of_run(false).expect("own dir"),
+                SandboxDir::of_run(false, Path::new("/nowhere")).expect("own dir"),
                 &PROFILES[0],
                 Path::new("/nowhere/shims"),
                 Path::new("/nowhere/bin"),
@@ -3080,7 +3081,7 @@ mod run {
             };
             for p in PROFILES {
                 let sandbox = Sandbox::new(
-                    SandboxDir::of_run(false).expect("own dir"),
+                    SandboxDir::of_run(false, Path::new("/nowhere")).expect("own dir"),
                     p,
                     Path::new("/nowhere/shims"),
                     Path::new("/nowhere/bin"),
@@ -3395,21 +3396,18 @@ mod run {
             assert_eq!(canonical, capture_workspace().expect("the canonical one"));
         }
 
-        /// In this order, a replay wrongly on the canonical lock fails the first
+        /// In this order, a replay wrongly on the fixed lock fails the first
         /// `assert_ne` before a second one would wait on it forever.
         #[test]
-        fn a_replay_sandboxes_in_a_dir_of_its_own_and_a_recording_in_the_canonical_one() {
-            let canonical = capture_sandbox().expect("the canonical one");
-            let recording = SandboxDir::of_run(true).expect("a recording's sandbox");
-            assert_eq!(recording.path(), canonical);
+        fn a_replay_sandboxes_in_a_dir_of_its_own_and_a_recording_in_the_fixed_one() {
+            let root = tempfile::tempdir().expect("a capture root");
+            let fixed = capture_sandbox(root.path()).expect("the fixed one");
+            let recording = SandboxDir::of_run(true, root.path()).expect("a recording's sandbox");
+            assert_eq!(recording.path(), fixed);
             drop(recording);
-            let first = SandboxDir::of_run(false).expect("a replay's sandbox");
-            assert_ne!(
-                first.path(),
-                canonical,
-                "a replay never waits on a recording"
-            );
-            let second = SandboxDir::of_run(false).expect("another's");
+            let first = SandboxDir::of_run(false, root.path()).expect("a replay's sandbox");
+            assert_ne!(first.path(), fixed, "a replay never waits on a recording");
+            let second = SandboxDir::of_run(false, root.path()).expect("another's");
             assert_ne!(
                 first.path(),
                 second.path(),
