@@ -28,7 +28,8 @@ pub struct RenderFrames {
     pub appearance: AppearanceFrame,
     pub version_popup: VersionPopupFrame,
     pub help_open: bool,
-    pub source_warning: Option<String>,
+    /// [`crate::doctor::footer_warning`]'s.
+    pub warning: Option<String>,
     pub dashboard: DashboardFrame,
     pub connection: ConnectionFrame,
     pub onboarding: OnboardingFrame,
@@ -117,6 +118,8 @@ pub(crate) struct UiState {
     pub(crate) saved: AppearancePick,
     pub(crate) dashboard: DashboardUi,
     pub(crate) connection: ConnectionUi,
+    /// The settings changed this run whose last save failed.
+    unsaved: enum_map::EnumMap<crate::config::Setting, bool>,
     drift: crate::doctor::DriftSeen,
     socket_path: std::path::PathBuf,
     /// Where the warn-floor log lives, for the Sources panel; `None` for a
@@ -242,6 +245,7 @@ impl UiState {
             saved: AppearancePick { theme, look: None },
             dashboard: DashboardUi::default(),
             connection: ConnectionUi::default(),
+            unsaved: enum_map::EnumMap::default(),
             drift,
             socket_path,
             log,
@@ -351,6 +355,13 @@ impl UiState {
     pub(crate) fn cancel_appearance(&mut self) -> AppearancePick {
         self.appearance = None;
         self.saved
+    }
+
+    /// Hold a failed save in the footer until a later save of its setting lands:
+    /// in TUI mode the alternate screen owns the terminal, so the warn-floor log
+    /// is not a user surface.
+    pub(crate) fn note_save(&mut self, outcome: crate::config::SaveOutcome) {
+        self.unsaved[outcome.setting] = !outcome.landed;
     }
 
     pub(crate) fn toggle_dashboard(&mut self, scene: &SceneState) {
@@ -508,7 +519,13 @@ impl UiState {
         scene: &SceneState,
         health: &[SourceDeath],
     ) -> RenderFrames {
-        let source_warning = crate::doctor::footer_warning(health, &self.drift.prefixes());
+        let unsaved: Vec<&str> = self
+            .unsaved
+            .iter()
+            .filter(|&(_, &failed)| failed)
+            .map(|(setting, _)| setting.name())
+            .collect();
+        let warning = crate::doctor::footer_warning(health, &unsaved, &self.drift.prefixes());
 
         // Re-anchor the selection by AgentId — an agent may have exited.
         let dashboard_frame = if self.dashboard.open {
@@ -585,7 +602,7 @@ impl UiState {
                 notices: Arc::clone(&self.notices.shown),
             },
             help_open: self.help_open,
-            source_warning,
+            warning,
             dashboard: dashboard_frame,
             connection: connection_frame,
             onboarding: onboarding_frame,

@@ -178,7 +178,7 @@ impl Chrome {
             session.footer_floor(scene),
             self.audio.is_audible(),
             self.volume_flash,
-            self.frames.source_warning.as_deref(),
+            self.frames.warning.as_deref(),
         )
     }
 }
@@ -1044,7 +1044,7 @@ impl TuiRenderer<ratatui::backend::CrosstermBackend<crate::tui::FrameOut>> {
 }
 
 #[cfg(test)]
-mod harness;
+pub(super) mod harness;
 
 /// The pixel a cell showing `bounds` points at: its middle.
 fn centre(bounds: pixtuoid_scene::layout::Bounds) -> pixtuoid_scene::layout::Point {
