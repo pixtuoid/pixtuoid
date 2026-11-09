@@ -85,7 +85,7 @@ impl Changed {
     }
 
     /// The sentence the Sources panel, the onboarding and a paired device show for
-    /// it, the source named `display_name`. A failure's names no reason: that stays
+    /// it, the source named `display_name`. A failure names no reason: that stays
     /// with the machine that made the change.
     pub fn line(&self, display_name: &str) -> String {
         let Self {
