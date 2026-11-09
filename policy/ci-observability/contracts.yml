@@ -632,8 +632,10 @@
       |= sub("just stage-notices \"\\$DIR\""; "cp LICENSE \"$DIR/\"")
     - .jobs.build.steps |= map(select(.name != "Package (Unix)"))
 
-- id: deb-ships-the-license
-  file: crates/pixtuoid/Cargo.toml
+- id: debs-ship-the-license
+  file:
+    - crates/pixtuoid/Cargo.toml
+    - crates/pixtuoid-hook/Cargo.toml
   why: >-
     cargo-deb's generated copyright file names the license without its text,
     which MIT requires in every copy; without this row a .deb ships none.
@@ -663,35 +665,6 @@
     - |
       (.package.metadata.deb.assets[] | select(.[0] | contains("fonts")) | .[0])
       = "../pixtuoid/fonts/*.txt"
-
-- id: deb-ships-what-brew-installs
-  file: crates/pixtuoid/Cargo.toml
-  why: >-
-    Homebrew installs the hook shim every hook pixtuoid writes runs, the man
-    page and the bash, zsh and fish completions; a .deb without one installs
-    hooks that all fail, a `man pixtuoid` with no entry or a shell that
-    completes nothing. The shim's path belonged to the retired pixtuoid-hook
-    package, and dpkg refuses to take it over without Replaces (Debian Policy
-    7.6.1), which Breaks pairs with so the old package goes.
-  assert: |
-    .package.metadata.deb as $deb
-    | $deb.replaces == "pixtuoid-hook" and $deb.breaks == "pixtuoid-hook"
-      and all(
-        ["target/release/pixtuoid-hook", "usr/bin/", "755"],
-        ["target/deb/man/pixtuoid.1", "usr/share/man/man1/", "644"],
-        ["target/deb/completions/bash/pixtuoid.bash", "usr/share/bash-completion/completions/", "644"],
-        ["target/deb/completions/zsh/_pixtuoid", "usr/share/zsh/vendor-completions/", "644"],
-        ["target/deb/completions/fish/pixtuoid.fish", "usr/share/fish/vendor_completions.d/", "644"];
-        . as $want | $deb.assets | any(. == $want))
-  break:
-    - .package.metadata.deb.assets |= map(select(.[0] != "target/release/pixtuoid-hook"))
-    - |
-      (.package.metadata.deb.assets[] | select(.[0] == "target/release/pixtuoid-hook") | .[2])
-      = "644"
-    - .package.metadata.deb.assets |= map(select(.[0] != "target/deb/man/pixtuoid.1"))
-    - .package.metadata.deb.assets |= map(select(.[0] != "target/deb/completions/zsh/_pixtuoid"))
-    - del(.package.metadata.deb.replaces)
-    - del(.package.metadata.deb.breaks)
 
 - id: queue-merge-conditions-are-ci-gate
   file: .mergify.yml

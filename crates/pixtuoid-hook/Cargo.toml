@@ -40,3 +40,11 @@ tempfile = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]
 tokio = { workspace = true, features = ["sync", "rt", "macros", "net", "time", "io-util", "rt-multi-thread"] }
+
+[package.metadata.deb]
+section = "utils"
+assets = [
+    ["target/release/pixtuoid-hook", "usr/bin/", "755"],
+    # cargo-deb's generated copyright names the license; MIT wants its text.
+    ["../../LICENSE", "usr/share/doc/pixtuoid-hook/", "644"],
+]
