@@ -7,8 +7,8 @@
 //!   subtree.
 //! - **liveness flows UP** — [`refresh_lineage`]: a working descendant keeps its
 //!   ancestors alive, so a blocked-but-delegating parent isn't stale-swept.
-//! - **readiness, queried both ways** — [`ScopeTree::descendants_of`] and
-//!   [`ScopeTree::ancestors_of`]: a node gated by a `RequiresAction` relative is "not ready", not dead.
+//! - **relatives, queried both ways** — [`ScopeTree::descendants_of`] and
+//!   [`ScopeTree::ancestors_of`]: the slots with a relative satisfying a predicate, in one walk.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::SystemTime;
@@ -107,42 +107,42 @@ impl<'a> ScopeTree<'a> {
     }
 }
 
-/// Whether [`cascade_exit`] also marks each root seed itself exiting — EXPLICIT
+/// Whether [`cascade_exit`] also marks each seed itself exiting — EXPLICIT
 /// at each call site, replacing the old implicit "did the caller stamp
-/// `root.exiting_at` before calling?" convention that had no assertion to catch
+/// `seed.exiting_at` before calling?" convention that had no assertion to catch
 /// a caller that forgot.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum StampRoot {
-    /// The whole tree leaves together — the root is marked exiting too.
+    /// The whole tree leaves together — the seed is marked exiting too.
     Yes,
-    /// Only the subtree leaves; the root keeps running (the subagent-completion
+    /// Only the subtree leaves; the seed keeps running (the subagent-completion
     /// cascade: the parent stays alive as its finished children walk out).
     No,
 }
 
-/// Mark every not-yet-exiting descendant of each of `roots` exiting, over
-/// `parent_id` links — and, when `stamp_root` is [`StampRoot::Yes`], each root
+/// Mark every not-yet-exiting descendant of each of `seeds` exiting, over
+/// `parent_id` links — and, when `stamp_root` is [`StampRoot::Yes`], each seed
 /// itself (via [`fsm::mark_exiting`], so the earliest `exiting_at` wins).
 /// Idempotent through that write-once stamp, NOT by pruning the walk at an
 /// exiting node: one keeps its original `exiting_at` but is still traversed, so
 /// a descendant registered under it after it started exiting is reached.
 pub(crate) fn cascade_exit(
     scene: &mut SceneState,
-    roots: &[AgentId],
+    seeds: &[AgentId],
     stamp_root: StampRoot,
     now: SystemTime,
 ) {
-    if roots.is_empty() {
+    if seeds.is_empty() {
         return;
     }
     let tree = ScopeTree::of(&scene.agents);
     let mut doomed: HashSet<AgentId> = HashSet::new();
-    for &root in roots {
-        // A doomed root's subtree is doomed already, so the roots share one walk.
-        if stamp_root == StampRoot::Yes && !doomed.insert(root) {
+    for &seed in seeds {
+        // A doomed seed's subtree is doomed already, so the seeds share one walk.
+        if stamp_root == StampRoot::Yes && !doomed.insert(seed) {
             continue;
         }
-        let mut frontier = vec![root];
+        let mut frontier = vec![seed];
         while let Some(parent) = frontier.pop() {
             for child in tree.children(parent) {
                 if doomed.insert(child.agent_id) {
@@ -448,12 +448,12 @@ mod tests {
     }
 
     #[test]
-    fn a_subtree_only_cascade_exits_a_root_nested_under_another_in_either_order() {
+    fn a_subtree_only_cascade_exits_a_seed_nested_under_another_in_either_order() {
         let root = AgentId::from_transcript_path("/p/root.jsonl");
         let mid = AgentId::from_transcript_path("/p/mid.jsonl");
         let leaf = AgentId::from_transcript_path("/p/leaf.jsonl");
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000);
-        for roots in [[root, mid], [mid, root]] {
+        for seeds in [[root, mid], [mid, root]] {
             let mut scene = SceneState::uniform(8);
             scene
                 .agents
@@ -465,15 +465,15 @@ mod tests {
                 .agents
                 .insert(leaf, slot(leaf, Some(mid), ActivityState::Idle));
 
-            cascade_exit(&mut scene, &roots, StampRoot::No, now);
+            cascade_exit(&mut scene, &seeds, StampRoot::No, now);
 
-            assert_eq!(scene.agents[&root].exiting_at, None, "{roots:?}");
+            assert_eq!(scene.agents[&root].exiting_at, None, "{seeds:?}");
             assert_eq!(
                 scene.agents[&mid].exiting_at,
                 Some(now),
-                "{roots:?}: a root under another root's subtree leaves with it"
+                "{seeds:?}: a seed under another seed's subtree leaves with it"
             );
-            assert_eq!(scene.agents[&leaf].exiting_at, Some(now), "{roots:?}");
+            assert_eq!(scene.agents[&leaf].exiting_at, Some(now), "{seeds:?}");
         }
     }
 
