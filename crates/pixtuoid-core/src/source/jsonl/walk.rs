@@ -486,7 +486,7 @@ pub(super) async fn walk_jsonl(
             replaying,
         })
     };
-    for life in each_life(decoded, own) {
+    for (nth, life) in each_life(decoded, own).into_iter().enumerate() {
         if Sight::registers(seen.lock().await.get(path), holds_life(&life)) && !sidecar_only {
             // A revived GATED file reads only the tail, which may lack what only a
             // head carries: Codex's `session_meta` cwd and parent, and the title.
@@ -513,9 +513,13 @@ pub(super) async fn walk_jsonl(
             registration.label = Some(label.clone());
         }
         let ended = last_life(&life, own) == Some(Life::Ended);
-        // After the life's first sight, whose revive forgets that the agent
+        // A replay opens once, its close after every life; a live read declares
+        // after each life's first sight, whose revive forgets that the agent
         // caught up, so each life's events count toward Today.
-        for ev in backlog(replays).chain(life) {
+        for ev in backlog(replays)
+            .filter(|_| !replays || nth == 0)
+            .chain(life)
+        {
             if tx.send((Transport::Jsonl, ev)).await.is_err() {
                 return;
             }
