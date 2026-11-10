@@ -302,9 +302,11 @@ fn reanchor_keeps_visible_else_first() {
 
 #[test]
 fn resolve_floor_finds_selected_agents_floor() {
-    let rows = flat_rows(4);
+    let mut rows = flat_rows(4);
     assert_eq!(resolve_floor(&rows, rows[2].agent_id), Some(2));
     assert_eq!(resolve_floor(&rows, id("/p/absent.jsonl")), None);
+    rows[3].floor = None;
+    assert_eq!(resolve_floor(&rows, rows[3].agent_id), None, "unseated");
 }
 
 #[test]

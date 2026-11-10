@@ -574,9 +574,9 @@ impl Office {
     }
 
     /// Keep the reducer's desk capacity in lockstep with the office actually
-    /// rendered at these units. Without it an admitted agent's desk can lie
-    /// past the canvas layout's desk count, so it paints NOWHERE (its anchors
-    /// return `None`) while staying alive in the scene. A shrink re-seats
+    /// rendered at these units. Capacity starts at zero, so without it no
+    /// agent is ever seated and each paints NOWHERE (its anchors return
+    /// `None`) while staying alive in the scene. A resize re-seats
     /// ([`SceneState::set_capacities`]), as the TUI's does.
     fn sync_capacity(&mut self, units_w: u16, units_h: u16, now: SystemTime) {
         if self.caps_units == Some((units_w, units_h)) {
