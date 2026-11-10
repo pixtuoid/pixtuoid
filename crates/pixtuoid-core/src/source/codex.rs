@@ -463,9 +463,11 @@ fn cell_tool(source: &str) -> Option<&str> {
 
 /// The Codex home dir, matching codex's own precedence (`codex-rs`
 /// `find_codex_home`): `CODEX_HOME` if it's set to an EXISTING directory, else
-/// `<user_home>/.codex`. The installer reads Codex's `config.toml` through here
-/// too, so the watched sessions root and the plugin state it reads can never
-/// disagree.
+/// `<home>/.codex`, the home being `dirs::home_dir`'s
+/// (`utils/home-dir/src/lib.rs:2,53` @ rust-v0.167.0), so
+/// [`dirs_home_dir`](crate::platform::dirs_home_dir). The installer reads
+/// Codex's `config.toml` through here too, so the watched sessions root and the
+/// plugin state it reads can never disagree.
 ///
 /// Not mirrored: upstream `canonicalize`s the ENV value (the default branch it
 /// leaves alone) — the inverse scoping of [`super::grok::grok_home`]'s, and
@@ -473,7 +475,7 @@ fn cell_tool(source: &str) -> Option<&str> {
 pub fn codex_home() -> PathBuf {
     resolve_codex_home(
         crate::platform::path_env("CODEX_HOME"),
-        crate::platform::user_home(),
+        crate::platform::or_host_fallback(crate::platform::dirs_home_dir()),
     )
 }
 
@@ -511,6 +513,23 @@ mod tests {
         assert_eq!(
             resolve_codex_home(Some(missing.clone()), PathBuf::from("/home/u")),
             expected
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn codex_s_default_home_is_the_known_profile_whatever_userprofile_says() {
+        let spoof = tempfile::tempdir().unwrap();
+        temp_env::with_vars(
+            [
+                ("CODEX_HOME", None),
+                ("USERPROFILE", Some(spoof.path().as_os_str())),
+            ],
+            || {
+                let profile = crate::platform::dirs_home_dir().expect("Windows profile folder");
+                assert_eq!(codex_home(), profile.join(".codex"));
+                assert!(!codex_home().starts_with(spoof.path()));
+            },
         );
     }
     use serde_json::json;

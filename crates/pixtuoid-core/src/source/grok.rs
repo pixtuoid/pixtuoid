@@ -606,15 +606,14 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// The grok home dir, matching grok-build's own resolution (`xai-grok-config`
-/// `paths.rs::grok_home`): `GROK_HOME` UNCONDITIONALLY when set (upstream takes
-/// the env var without an exists-check and `create_dir_all`s it — the opposite
-/// of codex's existing-dir gate), else `<home>/.grok` on EVERY OS (no XDG, no
-/// APPDATA). Upstream resolves home via `std::env::home_dir()` (USERPROFILE on
-/// Windows, `$HOME` never consulted there), which `user_home` mirrors. The
-/// watcher, the installer and the liveness probe all route through here, so
-/// the watched root, the installed hooks file and the probed registry can never
-/// disagree.
+/// The grok home dir, matching grok-build's own resolution (`xai-dirs`
+/// `src/lib.rs:33-89` @ 2bdd1d6a63): `GROK_HOME` UNCONDITIONALLY when set
+/// (upstream takes the env var without an exists-check and `create_dir_all`s it
+/// — the opposite of codex's existing-dir gate), else `<home>/.grok` on EVERY
+/// OS (no XDG, no APPDATA), the home being `std::env::home_dir()`'s, so
+/// [`crate::platform::user_home_opt`]'s. The watcher, the installer and the
+/// liveness probe all route through here, so the watched root, the installed
+/// hooks file and the probed registry can never disagree.
 ///
 /// Not mirrored: upstream `dunce::canonicalize`s the DEFAULT home before joining
 /// `.grok` (never `$GROK_HOME`), so under a SYMLINKED `$HOME` its path string

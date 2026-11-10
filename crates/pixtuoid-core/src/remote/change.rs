@@ -1,5 +1,5 @@
-//! What a device's [`Ask::Change`](super::Ask::Change) did, and the words a
-//! device and the Sources panel show for it.
+//! What a connect or disconnect of a source did, a device's
+//! [`Ask::Change`](super::Ask::Change) included, and the words shown for it.
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -11,8 +11,9 @@ fn display_safe_some<'de, D: Deserializer<'de>>(text: D) -> Result<Option<String
     Option::<String>::deserialize(text).map(|text| text.as_deref().map(display_safe))
 }
 
-/// What an [`Ask::Change`](super::Ask::Change) did. A failure's reason stays on
-/// the server: it can quote another CLI's config.
+/// What a connect or disconnect of a source did, a device's
+/// [`Ask::Change`](super::Ask::Change) included. A failure's reason stays with
+/// the machine that made the change: it can quote another CLI's config.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Changed {
     #[serde(deserialize_with = "display_safe_text")]
@@ -83,17 +84,18 @@ impl Changed {
         self.outcome
     }
 
-    /// The sentence a device shows for it, the source named `display_name`: the
-    /// Sources panel's own, but a failure's, which the panel words with its reason.
+    /// The sentence the Sources panel, the onboarding and a paired device show for
+    /// it, the source named `display_name`. A failure names no reason: that stays
+    /// with the machine that made the change.
     pub fn line(&self, display_name: &str) -> String {
         let Self {
             source,
             on,
             outcome,
             no_cli,
-            hook_off_path,
-            step,
-            plugin_left,
+            hook_off_path: _,
+            step: _,
+            plugin_left: _,
         } = self;
         let mut line = match outcome {
             Outcome::Connected => format!("\u{2713} {display_name} connected"),
@@ -108,18 +110,35 @@ impl Changed {
             }
             Outcome::Unknown => format!("{display_name}: done"),
         };
-        if *hook_off_path {
-            line.push_str(" \u{00b7} \u{26a0} pixtuoid-hook not on PATH");
-        }
-        if let Some(step) = step {
+        for note in self.notes() {
             line.push_str(" \u{00b7} ");
-            line.push_str(step);
-        }
-        if let Some(cli) = plugin_left {
-            line.push_str(" \u{00b7} \u{26a0} ");
-            line.push_str(&plugin_left_registered(cli));
+            line.push_str(&note);
         }
         line
+    }
+
+    /// What it still asks of the user or warns of, each a phrase [`Self::line`]
+    /// appends.
+    pub fn notes(&self) -> Vec<String> {
+        let Self {
+            source: _,
+            on: _,
+            outcome: _,
+            no_cli: _,
+            hook_off_path,
+            step,
+            plugin_left,
+        } = self;
+        [
+            hook_off_path.then(|| "\u{26a0} pixtuoid-hook not on PATH".to_owned()),
+            step.clone(),
+            plugin_left
+                .as_deref()
+                .map(|cli| format!("\u{26a0} plugin left registered ({cli} not on PATH)")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 }
 
@@ -132,12 +151,6 @@ pub fn nothing_to_do(display_name: &str) -> String {
 /// to connect.
 pub fn not_detected(display_name: &str) -> String {
     format!("{display_name} not detected on this machine")
-}
-
-/// How a disconnect that couldn't reach `command` to deregister the plugin
-/// reads, which stays registered with that CLI.
-pub fn plugin_left_registered(command: &str) -> String {
-    format!("plugin left registered ({command} not on PATH)")
 }
 
 /// What a change came to, as the binary's `--json` tokens spell it.
@@ -282,6 +295,36 @@ mod tests {
                 format!("Codex: {op} failed \u{2014} `pixtuoid {op} codex` on the server says why")
             );
         }
+    }
+
+    #[test]
+    fn what_a_change_still_asks_reads_as_its_notes() {
+        let warned = Changed::new(
+            "openclaw",
+            true,
+            Outcome::Connected,
+            true,
+            Some("restart it"),
+            None,
+        );
+        assert_eq!(
+            warned.notes(),
+            ["\u{26a0} pixtuoid-hook not on PATH", "restart it"]
+        );
+        let stranded = Changed::new(
+            "codex",
+            false,
+            Outcome::Disconnected,
+            false,
+            None,
+            Some("codex"),
+        );
+        assert_eq!(
+            stranded.notes(),
+            ["\u{26a0} plugin left registered (codex not on PATH)"]
+        );
+        let plain = Changed::new("codex", true, Outcome::Connected, false, None, None);
+        assert!(plain.notes().is_empty());
     }
 
     #[test]

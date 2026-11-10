@@ -46,6 +46,20 @@ pub use router::HookRouter;
 /// The variable naming the hook endpoint: [`super::claude_code::ClaudeCodeSource::default_socket_path`]
 /// reads it, and so does the shim's parity-pinned twin (`tests/socket_path_parity.rs`).
 pub const SOCKET_ENV: &str = "PIXTUOID_SOCKET";
+/// The long flag the serving commands take for the hook endpoint, read before
+/// [`SOCKET_ENV`]: the binary's clap names it from here, so the flag a refusal
+/// names is the one they parse.
+pub const SOCKET_FLAG: &str = "socket";
+
+/// How a bind refusal that moving the endpoint fixes ends: both settings that
+/// choose it, since core can't tell which of them supplied this one.
+pub(crate) struct Repoint;
+
+impl std::fmt::Display for Repoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "point --{SOCKET_FLAG} or {SOCKET_ENV} at")
+    }
+}
 pub(crate) const MAX_CONCURRENT_CONNS: usize = 128;
 pub(crate) const CONN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -114,8 +128,8 @@ impl std::fmt::Display for SocketBusy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "another pixtuoid instance is listening on {} — close it first, or run this one \
-             with {SOCKET_ENV} pointing at a different path",
+            "another pixtuoid instance is listening on {} — close it first, or {Repoint} a \
+             different path",
             self.path.display()
         )
     }
@@ -143,7 +157,9 @@ impl HookSocketListener {
     ///
     /// # Errors
     ///
-    /// If the socket directory is not an owner-only directory we own, or the lock or bind fails (a live owner yields [`SocketBusy`]).
+    /// If the socket directory is not an owner-only directory we own, the path is too long,
+    /// anything but a dead owner's socket holds the path or its temp name, or the lock or bind
+    /// fails. A live owner of the path yields [`SocketBusy`].
     pub async fn bind(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
         let inner = imp::Listener::bind(&path).await?;

@@ -303,30 +303,87 @@ fn onboarding_dims_the_composed_slide_on_the_transition_path() {
     );
 }
 
+/// The first cell of `r`'s last frame on its coffee machine.
+fn coffee_machine_cell(r: &TuiRenderer<TestBackend>) -> (u16, u16) {
+    let layout = r.cached_layout().expect("layout");
+    r.frame_buffer()
+        .area()
+        .positions()
+        .map(|p| (p.x, p.y))
+        .find(|&(mx, my)| {
+            crate::tui::hit_test::hit_test_coffee_machine(
+                layout,
+                crate::tui::geometry::CellArea::half_block(mx, my),
+            )
+        })
+        .expect("coffee machine should be hit-testable")
+}
+
 #[test]
 fn coffee_machine_tooltip_on_hover() {
     let scene = scene_with(vec![idle("/tt/c.jsonl", 0, t0())], 16);
     let mut r = build(140, 48, vec![]);
     r.render(&scene, t0()).unwrap();
-    let layout = r.cached_layout().expect("layout");
-    let mut hover = None;
-    'scan: for my in 0..48u16 {
-        for mx in 0..140u16 {
-            if crate::tui::hit_test::hit_test_coffee_machine(
-                layout,
-                crate::tui::geometry::CellArea::half_block(mx, my),
-            ) {
-                hover = Some((mx, my));
-                break 'scan;
-            }
-        }
-    }
-    let hover = hover.expect("coffee machine should be hit-testable");
-    r.set_mouse_pos(Some(hover));
+    r.set_mouse_pos(Some(coffee_machine_cell(&r)));
     r.render(&scene, t0()).unwrap();
     assert!(
         frame_text(r.frame_buffer()).contains("Ivan"),
         "hovering the coffee machine shows the Buy-Ivan-a-coffee tooltip"
+    );
+}
+
+/// A panel opened by key while the pointer rests on the office shows no
+/// tooltip beside it, as the window's doesn't; closed, the tooltip at rest
+/// shows again.
+#[test]
+fn a_panel_opened_by_key_hides_the_tooltip_at_rest() {
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+    let scene = scene_with(vec![idle("/tt/k.jsonl", 0, t0())], 16);
+    let (_tx, scene_rx) = tokio::sync::watch::channel(Arc::new(scene.clone()));
+    let mut ui = crate::panels::ui_state::UiState::new(
+        normal_theme(),
+        crate::panels::welcome::WelcomeUi::from_detected(&[]),
+        std::path::PathBuf::from("/tmp/sock"),
+        None,
+        crate::doctor::DriftSeen::default(),
+    );
+    let mut r = build(140, 48, vec![]);
+    // A frame as the TUI's loop draws one: the panels, then the office.
+    let frame = |r: &mut TuiRenderer<TestBackend>, ui: &mut crate::panels::ui_state::UiState| {
+        r.set_frames(ui.build_frames(t0(), &scene, &[]), t0());
+        r.render(&scene, t0()).unwrap();
+        frame_text(r.frame_buffer())
+    };
+    frame(&mut r, &mut ui);
+    let (column, row) = coffee_machine_cell(&r);
+    crate::tui::handle_mouse_event(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        &mut ui,
+        &mut r,
+        &scene_rx,
+        |_| panic!("a hover focuses nothing"),
+        t0(),
+    );
+    assert!(
+        frame(&mut r, &mut ui).contains("Ivan"),
+        "premise: the tooltip shows"
+    );
+    ui.open_appearance();
+    let text = frame(&mut r, &mut ui);
+    assert!(
+        text.contains("Theme ["),
+        "premise: the picker shows:\n{text}"
+    );
+    assert!(!text.contains("Ivan"), "no tooltip under a panel:\n{text}");
+    ui.cancel_appearance();
+    assert!(
+        frame(&mut r, &mut ui).contains("Ivan"),
+        "closed, the tooltip at rest shows again"
     );
 }
 

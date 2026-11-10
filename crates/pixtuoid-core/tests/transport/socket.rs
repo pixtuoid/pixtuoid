@@ -10,7 +10,7 @@ use tokio::net::UnixStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
-use pixtuoid_core::source::hook::{HookRouter, HookSocketListener};
+use pixtuoid_core::source::hook::{HookRouter, HookSocketListener, SOCKET_ENV, SOCKET_FLAG};
 use pixtuoid_core::source::{AgentEvent, Source, Transport};
 
 #[tokio::test]
@@ -185,6 +185,7 @@ async fn bind_bails_when_a_live_listener_holds_the_path() {
         msg.contains(&path.display().to_string()),
         "error must name the contended path: {msg}"
     );
+    assert_names_both_settings(&msg);
 
     // The losing bind must be side-effect-free — the owner keeps serving.
     let mut s = UnixStream::connect(&path).await.unwrap();
@@ -248,6 +249,158 @@ async fn bind_reclaims_a_stale_socket_file() {
     assert_eq!(transport, Transport::Hook);
     assert!(matches!(ev, AgentEvent::SessionStart { .. }));
     handle.abort();
+}
+
+// A mistyped `--socket` or `PIXTUOID_SOCKET` can name the user's own file
+// (REVIEW.md: a pre-existing endpoint is hostile).
+#[tokio::test]
+async fn bind_refuses_to_reclaim_a_file_that_is_not_a_socket() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("notes.txt");
+    std::fs::write(&path, "precious").unwrap();
+    let err = HookSocketListener::bind(path.clone())
+        .await
+        .expect_err("a regular file is not a stale socket");
+    let text = format!("{err:#}");
+    assert!(text.contains("notes.txt"), "{text}");
+    assert_names_both_settings(&text);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "precious");
+}
+
+#[tokio::test]
+async fn bind_refuses_to_replace_a_dangling_symlink() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("pixtuoid.sock");
+    std::os::unix::fs::symlink(dir.path().join("gone"), &path).unwrap();
+    HookSocketListener::bind(path.clone())
+        .await
+        .expect_err("a dangling symlink is not a stale socket");
+    assert!(
+        std::fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the symlink is left as it was"
+    );
+}
+
+// bind goes through a `.tmp` sibling, so a path that fits a unix socket
+// alone can still be too long.
+#[tokio::test]
+async fn bind_takes_a_path_of_its_budget_and_refuses_one_byte_more() {
+    let dir = TempDir::new().unwrap();
+    // SAFETY: sockaddr_un is plain old data; all-zero is a valid value.
+    let sun_path = unsafe { std::mem::zeroed::<libc::sockaddr_un>() }
+        .sun_path
+        .len();
+    let of_len = |n: usize| {
+        let base = dir.path().join("s");
+        let fill = n.saturating_sub(base.as_os_str().len());
+        let path = dir.path().join(format!("s{}", "x".repeat(fill)));
+        assert_eq!(path.as_os_str().len(), n, "premise: the path is {n} bytes");
+        path
+    };
+    let too_long = of_len(sun_path - 1);
+    let err = HookSocketListener::bind(too_long.clone())
+        .await
+        .expect_err("its temp sibling cannot fit");
+    let text = format!("{err:#}");
+    assert!(
+        text.contains(&format!("{} is too long", too_long.display())),
+        "{text}"
+    );
+    assert_names_both_settings(&text);
+    let budget: usize = text
+        .split("at most ")
+        .nth(1)
+        .and_then(|rest| rest.split(' ').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("the refusal states its budget: {text}"));
+    HookSocketListener::bind(of_len(budget))
+        .await
+        .expect("a path of exactly the budget binds");
+    let over = of_len(budget + 1);
+    let err = HookSocketListener::bind(over.clone())
+        .await
+        .expect_err("one byte over the budget");
+    assert!(
+        format!("{err:#}").contains(&format!("{} is too long", over.display())),
+        "{err:#}"
+    );
+}
+
+// A path the temp name is shorter than (trailing slashes) fails as an error,
+// never as an arithmetic panic in the length check.
+#[tokio::test]
+async fn bind_refuses_a_trailing_slash_path_without_panicking() {
+    let dir = TempDir::new().unwrap();
+    let mut path = dir.path().join("x").into_os_string();
+    path.push("//////");
+    HookSocketListener::bind(std::path::PathBuf::from(path))
+        .await
+        .expect_err("a socket path can't end in a slash");
+}
+
+#[tokio::test]
+async fn bind_leaves_a_live_socket_at_its_temp_name_alone() {
+    let dir = TempDir::new().unwrap();
+    let other = dir.path().join("foo.tmp");
+    let (tx, _rx) = mpsc::channel::<(Transport, AgentEvent)>(16);
+    let owner = HookSocketListener::bind(other.clone()).await.unwrap();
+    let handle = tokio::spawn(async move { owner.run(tx).await });
+    sleep(Duration::from_millis(20)).await;
+    let endpoint = dir.path().join("foo");
+    let err = HookSocketListener::bind(endpoint.clone())
+        .await
+        .expect_err("the temp name is another endpoint's live socket");
+    assert!(
+        err.downcast_ref::<pixtuoid_core::source::hook::SocketBusy>()
+            .is_none(),
+        "another endpoint's owner is not this one's to subscribe to: {err:#}"
+    );
+    let text = format!("{err:#}");
+    assert!(
+        text.contains(&format!(
+            "bind for {} listens at its temp name first: {} is a live hook socket",
+            endpoint.display(),
+            other.display()
+        )),
+        "{text}"
+    );
+    assert_names_both_settings(&text);
+    UnixStream::connect(&other)
+        .await
+        .expect("the other endpoint still answers");
+    handle.abort();
+}
+
+#[tokio::test]
+async fn bind_refuses_to_reclaim_a_file_at_its_temp_name() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("notes.tmp");
+    std::fs::write(&file, "precious").unwrap();
+    let endpoint = dir.path().join("notes");
+    let err = HookSocketListener::bind(endpoint.clone())
+        .await
+        .expect_err("a regular file at the temp name is not a stale socket");
+    let text = format!("{err:#}");
+    assert!(
+        text.contains(&format!(
+            "bind for {} listens at its temp name first: {} exists and is not a socket",
+            endpoint.display(),
+            file.display()
+        )),
+        "{text}"
+    );
+    assert_names_both_settings(&text);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "precious");
+}
+
+/// A refusal can't know whether the flag or the variable chose the path, so it
+/// names both.
+fn assert_names_both_settings(text: &str) {
+    assert!(text.contains(&format!("--{SOCKET_FLAG}")), "{text}");
+    assert!(text.contains(SOCKET_ENV), "{text}");
 }
 
 // The socket must be owner-only 0600 the moment it is reachable at the public

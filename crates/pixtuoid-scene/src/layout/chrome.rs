@@ -27,18 +27,25 @@ pub(super) fn fit(
         crate::render_scale::PixelFit::at_most_high(FITTED_MAX_H, (density, per_point), surface_px);
     let units = |px: u16| px.div_ceil(fit.scale().get());
     let Size { w, h } = fit.logical();
+    let insets = Insets {
+        top: units(insets_px.top),
+        right: units(insets_px.right),
+        bottom: units(insets_px.bottom),
+        left: units(insets_px.left),
+    };
     Fitted {
         viewport: Viewport {
             size: Size {
-                w: w.max(FITTED_MIN_W),
+                // The layout runs inside the insets, so FITTED_MIN_W is counted
+                // inside them.
+                w: w.max(
+                    FITTED_MIN_W
+                        .saturating_add(insets.left)
+                        .saturating_add(insets.right),
+                ),
                 h,
             },
-            insets: Insets {
-                top: units(insets_px.top),
-                right: units(insets_px.right),
-                bottom: units(insets_px.bottom),
-                left: units(insets_px.left),
-            },
+            insets,
         },
         upscale: fit.upscale(),
     }
@@ -98,9 +105,9 @@ impl Bounds {
 
 impl crate::look::Hits {
     /// `agent`'s badge plate as this frame drew it, in layout units, cut where
-    /// the area inside the insets or the canvas ends; under host-set text, the
-    /// plate the frame would have baked. `None` for an agent this floor
-    /// doesn't draw.
+    /// the area inside the insets or the canvas ends; where it baked no text,
+    /// the plate it would have baked. `None` for an agent this floor doesn't
+    /// draw.
     pub fn badge(&self, agent: &pixtuoid_core::AgentId) -> Option<Bounds> {
         let canvas = Size {
             w: self.layout().buf_w,

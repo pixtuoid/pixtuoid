@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::floating::geometry::Zoom;
+use crate::floating::geometry::{DesktopSpot, Zoom};
 
 /// One `[[pets]]` stanza. `kind` is an OPTIONAL raw `String` (NOT a serde-derived
 /// `PetKind`) on purpose: an unknown or typo'd value is warn-skipped in
@@ -85,7 +85,7 @@ pub(crate) struct FloatingConfig {
     pub width: u32,
     pub height: u32,
     /// `None` lets the OS place the window.
-    pub position: Option<(i32, i32)>,
+    pub position: Option<DesktopSpot>,
     pub zoom: Zoom,
 }
 
@@ -107,7 +107,7 @@ pub(crate) fn resolve_floating(config: &AppConfig) -> FloatingConfig {
     FloatingConfig {
         width: raw.width.unwrap_or(FLOATING_DEFAULT_W),
         height: raw.height.unwrap_or(FLOATING_DEFAULT_H),
-        position: raw.x.zip(raw.y),
+        position: raw.x.zip(raw.y).map(|(x, y)| DesktopSpot { x, y }),
         zoom: Zoom::new(
             raw.zoom
                 .map_or(0, |z| z.clamp(i64::from(i8::MIN), i64::from(i8::MAX)) as i8),
@@ -135,6 +135,54 @@ pub(crate) fn resolve_audio(config: &AppConfig) -> AudioConfig {
     AudioConfig {
         muted: raw.muted.unwrap_or(true),
         volume: raw.volume.unwrap_or(1.0).clamp(0.0, 1.0),
+    }
+}
+
+/// A setting a painter saves when the user changes it (volume once its readout
+/// fades).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, enum_map::Enum)]
+pub(crate) enum Setting {
+    Appearance,
+    Mute,
+    Volume,
+}
+
+impl Setting {
+    /// How the footer names it while it isn't saved.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Setting::Appearance => "appearance",
+            Setting::Mute => "mute",
+            Setting::Volume => "volume",
+        }
+    }
+}
+
+/// A save of `setting`, and whether it `landed`: one that didn't leaves the
+/// run's choice to revert at the next launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SaveOutcome {
+    pub(crate) setting: Setting,
+    pub(crate) landed: bool,
+}
+
+impl SaveOutcome {
+    /// What `save`, a save of `setting`, came to, its failure logged.
+    pub(crate) fn of(setting: Setting, save: Result<()>) -> Self {
+        if let Err(e) = &save {
+            // A message is the log's stable grep key, so each keeps its own.
+            match setting {
+                Setting::Appearance => {
+                    tracing::warn!(error = ?e, "failed to persist the appearance")
+                }
+                Setting::Mute => tracing::warn!(error = ?e, "failed to persist audio mute"),
+                Setting::Volume => tracing::warn!(error = ?e, "failed to persist audio volume"),
+            }
+        }
+        Self {
+            setting,
+            landed: save.is_ok(),
+        }
     }
 }
 
@@ -171,7 +219,13 @@ pub(crate) fn state_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn config_path() -> PathBuf {
-    config_base().map_or_else(
+    config_path_under(config_base())
+}
+
+/// [`config_path`] under a resolved base, so the no-home arm tests without the
+/// passwd lookup the home read makes.
+fn config_path_under(base: Option<PathBuf>) -> PathBuf {
+    base.map_or_else(
         || PathBuf::from(".config/pixtuoid/config.toml"),
         |base| base.join("pixtuoid").join("config.toml"),
     )
@@ -351,12 +405,12 @@ pub(crate) fn save_flag_sources(
 }
 
 /// What the floating window keeps of itself across runs: its logical size,
-/// its physical position when the OS reports one, and its zoom.
+/// its position when the OS reports one, and its zoom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatingSave {
     pub(crate) width: u32,
     pub(crate) height: u32,
-    pub(crate) position: Option<(i32, i32)>,
+    pub(crate) position: Option<DesktopSpot>,
     pub(crate) zoom: Zoom,
 }
 
@@ -376,8 +430,8 @@ pub(crate) fn save_floating(path: &Path, save: &FloatingSave) -> Result<()> {
         // let the OS place the window. No zoom is no key, as an unset one reads.
         let zoom = (zoom != Zoom::default()).then(|| i32::from(zoom.steps()));
         for (key, val) in [
-            ("x", position.map(|p| p.0)),
-            ("y", position.map(|p| p.1)),
+            ("x", position.map(|p| p.x)),
+            ("y", position.map(|p| p.y)),
             ("zoom", zoom),
         ] {
             match val {
