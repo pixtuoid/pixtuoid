@@ -397,9 +397,10 @@ impl Drive {
         }
     }
 
-    /// Lead each read of the transcript the watcher's gate registers on with the
-    /// `SessionStart` the watcher's `emit_registration` would emit for it, keyed
-    /// by the source's registry row.
+    /// Lead each life of the transcript the watcher's gate registers on, a life
+    /// after its own end within one read included, with the `SessionStart` the
+    /// watcher's `emit_registration` would emit for it, keyed by the source's
+    /// registry row.
     ///
     /// Not a free choice: a transcript carrying no `SessionStart` of its own is
     /// registered in production by the watcher, so an offline driver must seed
