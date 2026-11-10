@@ -435,9 +435,9 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 /// The tool/permission arms (PreToolUse / PostToolUse / Notification /
 /// PermissionRequest) and kimi's claimed turn ends lead with an
 /// [`AgentEvent::Identity`] carrying source/session_id/cwd (#221), the claim an
-/// unknown id registers from. The shared lifecycle and Subagent arms do NOT:
-/// SessionStart carries identity, a `SessionEnd` proves nothing, and on the
-/// shared `Stop` an `Identity` would re-create a CC child past its cascade.
+/// unknown id registers from. The shared lifecycle arms do NOT: SessionStart
+/// carries identity, an end for an unknown id proves nothing, and on the shared
+/// `Stop` an `Identity` would re-create a CC child past its cascade.
 ///
 /// # Errors
 ///
