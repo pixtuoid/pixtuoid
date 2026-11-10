@@ -20,8 +20,8 @@ use pixtuoid_core::source::{AgentEvent, DynSource, TaggedSender, Transport};
 use pixtuoid_core::{Reducer, SceneState};
 
 use crate::{
-    Fold, append, codex_meta_line, codex_work_line, collect_until, fast_watch, recorded,
-    split_before_last, stage, write_lines,
+    Watched, a_first_sight_ends, a_replay_closes, append, codex_meta_line, codex_work_line,
+    collect_until, fast_watch, recorded, split_before_last, stage, write_lines,
 };
 
 /// Past the watcher's default first-sight window: no clock may be what tells a
@@ -125,13 +125,13 @@ async fn every_transcript_source_replays_uncounted_and_then_reaches_live() {
 
         let (tx, rx) = mpsc::channel(64);
         let handle = spawn_source(source, dir.path().to_path_buf(), tx);
-        let mut fold = Fold::new(
+        let mut fold = Watched::new(
             rx,
             Reducer::new().counting(utc_day),
             SystemTime::now() + HELD_PAST_ANY_WINDOW,
         );
-        fold.until(source, |e| matches!(e, AgentEvent::SessionStart { .. }))
-            .await;
+        let first_sight = a_first_sight_ends(source, &transcript, &head);
+        fold.until(source, first_sight).await;
         assert!(!fold.scene.agents.is_empty(), "{source}: nobody registered");
         assert_eq!(fold.scene.today, None, "{source}: its replay counted");
         let (tokens, calls) = totals(&fold.scene);
@@ -204,7 +204,7 @@ async fn what_a_late_root_already_held_is_a_replay() {
     tokio::fs::create_dir(&staged).await.unwrap();
     write_codex_session(&staged).await;
     tokio::fs::rename(&staged, &root).await.unwrap();
-    let events = collect_until(&mut rx, "codex", is_tool).await;
+    let events = collect_until(&mut rx, "codex", a_replay_closes()).await;
     handle.abort();
 
     assert_eq!(backlogs(&events), [true, false], "{events:?}");
@@ -235,7 +235,7 @@ async fn what_a_root_the_poll_attaches_already_held_is_a_replay() {
     let next = dir.path().join("next");
     std::os::unix::fs::symlink(&full, &next).unwrap();
     std::fs::rename(&next, &link).unwrap();
-    let events = collect_until(&mut rx, "codex", is_tool).await;
+    let events = collect_until(&mut rx, "codex", a_replay_closes()).await;
     handle.abort();
 
     assert_eq!(backlogs(&events), [true, false], "{events:?}");
