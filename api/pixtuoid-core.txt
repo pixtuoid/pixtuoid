@@ -341,7 +341,7 @@ pub fn pixtuoid_core::remote::RemoteOffice::apply(&mut self, &[u8], std::time::S
 pub fn pixtuoid_core::remote::RemoteOffice::machine(&self) -> core::option::Option<&pixtuoid_core::remote::Machine>
 pub fn pixtuoid_core::remote::RemoteOffice::new([usize; 10]) -> Self
 pub fn pixtuoid_core::remote::RemoteOffice::scene(&self) -> &pixtuoid_core::state::SceneState
-pub fn pixtuoid_core::remote::RemoteOffice::set_capacities(&mut self, [usize; 10])
+pub fn pixtuoid_core::remote::RemoteOffice::set_capacities(&mut self, [usize; 10], std::time::SystemTime)
 impl core::fmt::Debug for pixtuoid_core::remote::RemoteOffice
 pub fn pixtuoid_core::remote::RemoteOffice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::remote::RemoteOffice
@@ -1618,7 +1618,7 @@ pub fn pixtuoid_core::state::SceneState::daemons(&self) -> impl core::iter::trai
 impl pixtuoid_core::state::SceneState
 pub fn pixtuoid_core::state::SceneState::floor_capacities(&self) -> &[usize; 10]
 pub fn pixtuoid_core::state::SceneState::new([usize; 10]) -> Self
-pub fn pixtuoid_core::state::SceneState::set_capacities(&mut self, [usize; 10])
+pub fn pixtuoid_core::state::SceneState::set_capacities(&mut self, [usize; 10], std::time::SystemTime)
 pub fn pixtuoid_core::state::SceneState::total_capacity(&self) -> usize
 pub fn pixtuoid_core::state::SceneState::uniform(usize) -> Self
 impl core::clone::Clone for pixtuoid_core::state::SceneState
@@ -2099,7 +2099,7 @@ pub fn pixtuoid_core::state::SceneState::daemons(&self) -> impl core::iter::trai
 impl pixtuoid_core::state::SceneState
 pub fn pixtuoid_core::state::SceneState::floor_capacities(&self) -> &[usize; 10]
 pub fn pixtuoid_core::state::SceneState::new([usize; 10]) -> Self
-pub fn pixtuoid_core::state::SceneState::set_capacities(&mut self, [usize; 10])
+pub fn pixtuoid_core::state::SceneState::set_capacities(&mut self, [usize; 10], std::time::SystemTime)
 pub fn pixtuoid_core::state::SceneState::total_capacity(&self) -> usize
 pub fn pixtuoid_core::state::SceneState::uniform(usize) -> Self
 impl core::clone::Clone for pixtuoid_core::state::SceneState
