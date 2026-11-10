@@ -424,11 +424,11 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 /// Decode one hook payload into the event sequence the reducer applies.
 ///
 /// The tool/permission arms (PreToolUse / PostToolUse / Notification /
-/// PermissionRequest) lead with an [`AgentEvent::Identity`] carrying the payload's
-/// source/session_id/cwd (#221), the claim an unknown id registers from: the
-/// activity alone registers nothing. The session-lifecycle and custom Subagent
-/// arms deliberately do NOT: SessionStart already carries identity, and an end
-/// for an unknown agent proves nothing.
+/// PermissionRequest) and kimi's claimed turn ends lead with an
+/// [`AgentEvent::Identity`] carrying source/session_id/cwd (#221), the claim an
+/// unknown id registers from. The shared lifecycle and Subagent arms do NOT:
+/// SessionStart carries identity, a `SessionEnd` proves nothing, and on the
+/// shared `Stop` an `Identity` would re-create a CC child past its cascade.
 ///
 /// # Errors
 ///

@@ -1,6 +1,6 @@
-//! kimi's turn end is an identity-carrying claim: no installed kimi hook names
-//! the session per turn (`KIMI_EVENTS`), so a chat-only session that was running
-//! before the office (or was swept) becomes a sprite on its next turn end.
+//! kimi's turn end claims its session: `KIMI_EVENTS` has no `UserPromptSubmit`
+//! to register it per turn, so a chat-only session running before the office
+//! (or swept) becomes a sprite on its next turn end.
 
 use pixtuoid_core::harness::Drive;
 use serde_json::Value;

@@ -58,8 +58,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // `SessionEnd` fires on exit — best-effort counts; abrupt exits fall
             // to the stale-sweep.
             has_exit_signal: true,
-            // SessionStart is the registration carrier, not UserPromptSubmit, so
-            // a swept session does not walk back in.
+            // kimi installs no `UserPromptSubmit` (`KIMI_EVENTS`), so no prompt
+            // re-registers: a swept session returns on its next tool call or turn end.
             resurrects_on_prompt: false,
             // Consumed via the `Agent` tool: 0.36.1's `AgentToolInputSchema` injects
             // `subagent_type: "coder"` when the model omits it, so `make_tool_detail`
