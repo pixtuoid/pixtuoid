@@ -2290,7 +2290,7 @@ async fn a_first_sights_verdict_leaves_drift_to_the_read() {
 #[tokio::test]
 async fn an_oversized_skips_verdicts_leave_drift_to_the_rescan() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("claimed-big.jsonl");
+    let path = dir.path().join("ended-big.jsonl");
     tokio::fs::write(&path, HEAD_LINE).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
