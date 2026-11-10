@@ -134,7 +134,7 @@ pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
     /// What the transport would deliver for the reads fed, in order, a seed
-    /// leading its read's events.
+    /// leading each life it registers.
     pub events: Vec<AgentEvent>,
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
@@ -419,7 +419,7 @@ impl Drive {
         S: AsRef<str>,
     {
         let mut fold = Fold::default();
-        fold.run(self, lines.into_iter().map(Some), default_now());
+        fold.feed(self, lines, default_now());
         fold.finish()
     }
 
@@ -937,8 +937,9 @@ mod tests {
         assert!(d.registered() == 1 && walked_out, "{:?}", d.scene.agents);
     }
 
-    /// A recording reads as the watcher reads it live, its own end and a life
-    /// after one each a read later: every life registers, and none after its end.
+    /// A recording reads as the watcher reads it live: each life of it registers
+    /// as a read of its own, an end stays in its life, and an end alone registers
+    /// nothing.
     #[test]
     fn a_recording_is_read_live_each_life_a_read_of_its_own() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();

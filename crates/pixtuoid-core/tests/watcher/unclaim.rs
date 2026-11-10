@@ -193,14 +193,12 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
         let (transcript, dir) = recorded(source, scenario);
         let (head, tail) = split_before_last(source, &transcript, is_call);
         let drive = Drive::transcript_at(source, &transcript).expect("a transcript source");
-        let cuts = |line: &str| {
-            (drive.lines([line]).events.iter())
-                .any(|e| matches!(e, AgentEvent::Rename { .. } | AgentEvent::SessionEnd { .. }))
+        let renames = |line: &str| {
+            (drive.lines([line]).events.iter()).any(|e| matches!(e, AgentEvent::Rename { .. }))
         };
         // Cut where the transcript names its session again, so only the
-        // re-registration can name the slot it brings back, and before its end,
-        // which one read with its life would register nothing for.
-        let tail: String = (tail.lines().take_while(|line| !cuts(line)))
+        // re-registration can name the slot it brings back.
+        let tail: String = (tail.lines().take_while(|line| !renames(line)))
             .map(|line| format!("{line}\n"))
             .collect();
         let calls = (drive.lines(tail.lines()).events.iter())

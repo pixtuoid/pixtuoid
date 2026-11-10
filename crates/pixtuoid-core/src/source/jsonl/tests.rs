@@ -4737,11 +4737,8 @@ mod backlog {
     async fn a_read_declares_around_what_it_replays() {
         let rows: [(&str, &[Step]); 11] = [
             (
-                "an end alone registers nothing, replayed as read live",
-                &[
-                    (Append(WORK), Walk, &[Start, Rename, Opens, Usage, Tool]),
-                    (Rewrite(END), Walk, &[Closes, End, Opens]),
-                ],
+                "an end alone on a gated path registers nothing",
+                &[(History, Boot, &[]), (Append(END), Walk, &[Opens, End])],
             ),
             (
                 "a replay that works and ends registers nothing",
