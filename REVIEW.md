@@ -40,7 +40,7 @@ examples).
   and, since a guard protects an OUTCOME, every ordering when it is
   timing-dependent (boot-then-write vs write-then-boot); each is guarded,
   guarded elsewhere, or exempt with its reason (#823's first-sight gate left
-  its fn's second caller unguarded).
+  `emit_registration`'s second caller unguarded).
 - **Wire format** — a decoder vs the recorded upstream shape; every literal a
   decoder reads is in a scenario's fixture, owed by its profile (`not_yet*`)
   or exempt with its reason (`hermetic::literals`'s census).

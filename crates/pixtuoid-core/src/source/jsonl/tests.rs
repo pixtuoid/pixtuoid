@@ -4954,3 +4954,54 @@ async fn a_claimed_paths_life_after_its_end_registers_from_the_head() {
         .collect();
     assert_eq!(cwds, [Path::new("/repo/head")], "{live:?}");
 }
+
+/// A claimed path's re-registration hints the last name a read gave its own
+/// session, never a child's.
+#[tokio::test]
+async fn a_claimed_paths_hint_carries_its_own_last_rename() {
+    /// [`t_decode_lifecycle`], and a `rename` line naming the transcript's
+    /// own session, or a child's when it says `child`.
+    fn decode(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
+        let Some(label) = v.get("rename").and_then(|l| l.as_str()) else {
+            return t_decode_lifecycle(t, s, v);
+        };
+        let session = if v.get("child").is_some() { "child" } else { t };
+        vec![AgentEvent::Rename {
+            agent_id: AgentId::from_parts(s, session),
+            label: label.to_owned(),
+        }]
+    }
+    const TOOL: &str = "{\"type\":\"tool_use\"}\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("t.jsonl");
+    std::fs::write(&path, "").unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    let mut hints = Vec::new();
+    for named in [
+        "",
+        "{\"rename\":\"Fix login\"}\n",
+        "{\"rename\":\"Sisko\",\"child\":true}\n",
+        "",
+    ] {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(format!("{named}{TOOL}").as_bytes()).unwrap();
+        drop(file);
+        let read = walk_once_with(&path, Duration::from_secs(3600), decode, &cursors, &seen).await;
+        hints.push(
+            (read.into_iter())
+                .filter_map(|(_, e)| match e {
+                    AgentEvent::LabelHint { label, .. } => Some(label),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(
+        hints,
+        [vec![], vec!["t"], vec!["Fix login"], vec!["Fix login"]]
+    );
+}
