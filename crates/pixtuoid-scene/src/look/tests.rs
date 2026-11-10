@@ -162,7 +162,6 @@ fn no_figure_is_drawn_under_an_inset() {
             viewport,
             place: Place {
                 gateway: crate::tally::office_gateway(&scene),
-                floor: None,
             },
             ..bare
         }

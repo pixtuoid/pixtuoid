@@ -761,12 +761,12 @@ fn main() -> Result<()> {
     let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
 
     if args.debug_walkable {
-        print_walkability_report(&term)?;
+        print_walkability_report(drawn.as_ref())?;
     }
 
     let crop_rect = match figure_target(&args, &scene, drawn.as_ref())? {
         Some(at) => Some(centered_crop(at, cols, rows)),
-        None => furniture_crop(&args, cols, rows)?,
+        None => furniture_crop(&args, drawn.as_ref(), cols, rows)?,
     };
     let area = crop_rect.unwrap_or(ratatui::layout::Rect::new(0, 0, cols, rows));
 
@@ -885,19 +885,38 @@ mod tests {
         SnapshotArgs::try_parse_from([&["snapshot"], extra].concat()).unwrap()
     }
 
+    /// The classic frame a 192x64 still draws of `scene` at `now`: what it
+    /// answers a pointer with, the layout it was drawn on among it.
+    fn drawn(scene: &SceneState, now: SystemTime) -> pixtuoid_scene::look::Hits {
+        let pack = std::sync::Arc::new(load_bundled_pack().unwrap());
+        let mut floor = pixtuoid_scene::floor::PerFloor::new(pack);
+        let mut office = pixtuoid_scene::floor::PerOffice::new();
+        let theme = pixtuoid_scene::theme::theme_by_name("normal").unwrap();
+        let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
+        let mut ctx = DrawCtx::offscreen(
+            &mut floor,
+            office.stores(),
+            theme,
+            scene,
+            0,
+            now,
+            pixtuoid_scene::floor::Conditions::default(),
+        );
+        draw_frame(&mut term, &mut ctx, None)
+            .unwrap()
+            .expect("a classic frame")
+    }
+
     #[test]
     fn crop_rect_centers_on_the_pantry_waypoint() {
+        let now = SystemTime::now();
+        let hits = drawn(&sample_scene(now, 12, 12), now);
         let args = crop_args(&["--crop-furniture", "pantry"]);
-        let rect = furniture_crop(&args, 192, 64)
+        let rect = furniture_crop(&args, Some(&hits), 192, 64)
             .unwrap()
             .expect("pantry crop");
-        let layout = pixtuoid_scene::layout::SceneLayout::compute(
-            pixtuoid_scene::layout::Viewport::full(192, 126),
-            None,
-            0,
-        )
-        .unwrap();
-        let pantry = layout
+        let pantry = hits
+            .layout()
             .waypoints
             .iter()
             .find(|w| w.kind == pixtuoid_scene::layout::WaypointKind::Pantry)
@@ -917,28 +936,9 @@ mod tests {
         use pixtuoid_scene::hit::HoverTarget;
         let now = SystemTime::now();
         let scene = sample_scene(now, 12, 12);
-        let drawn = |scene: &SceneState| {
-            let pack = std::sync::Arc::new(load_bundled_pack().unwrap());
-            let mut floor = pixtuoid_scene::floor::PerFloor::new(pack);
-            let mut office = pixtuoid_scene::floor::PerOffice::new();
-            let theme = pixtuoid_scene::theme::theme_by_name("normal").unwrap();
-            let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
-            let mut ctx = DrawCtx::offscreen(
-                &mut floor,
-                office.stores(),
-                theme,
-                scene,
-                0,
-                now,
-                pixtuoid_scene::floor::Conditions::default(),
-            );
-            draw_frame(&mut term, &mut ctx, None)
-                .unwrap()
-                .expect("a classic frame")
-        };
         let crop =
             |key: &str, hits| figure_target(&crop_args(&["--crop-agent", key]), &scene, Some(hits));
-        let hits = drawn(&scene);
+        let hits = drawn(&scene, now);
         let agent = crate::scenes::agent_named(&scene, "test", "demo-turn").unwrap();
         let (_, at) = hits
             .figures()
@@ -953,7 +953,7 @@ mod tests {
         );
         let mut without = scene.clone();
         without.agents.remove(&agent.agent_id);
-        let left_out = drawn(&without);
+        let left_out = drawn(&without, now);
         let err = crop("demo-turn", &left_out).unwrap_err().to_string();
         assert!(err.contains("not drawn"), "{err}");
         let err = crop("ghost", &hits).unwrap_err().to_string();
@@ -966,13 +966,13 @@ mod tests {
         let scene = sample_scene(now, 12, 12);
         let args = crop_args(&[]);
         assert!(figure_target(&args, &scene, None).unwrap().is_none());
-        assert!(furniture_crop(&args, 192, 64).unwrap().is_none());
+        assert!(furniture_crop(&args, None, 192, 64).unwrap().is_none());
     }
 
     #[test]
     fn crop_rect_fails_loudly_on_a_typo() {
         let typo = crop_args(&["--crop-furniture", "fridge"]);
-        let err = furniture_crop(&typo, 192, 64).unwrap_err();
+        let err = furniture_crop(&typo, None, 192, 64).unwrap_err();
         assert!(err.to_string().contains("valid: pantry"), "{err}");
     }
 

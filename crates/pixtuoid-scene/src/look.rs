@@ -12,7 +12,6 @@ use pixtuoid_core::state::DaemonState;
 use crate::cutaway::canvas::{CanvasFrame, CutawayCanvas};
 use crate::display::Hovers;
 use crate::floor::{FloorInputs, OfficeStores, PerFloor, step_floor};
-use crate::footer::FooterFloor;
 use crate::layout::{Bounds, SceneLayout, Viewport};
 use crate::pixel_painter::{ClassicCaches, Drawn, PaintCtx, paint_frame};
 use crate::render_scale::RenderScale;
@@ -178,14 +177,11 @@ impl WorldText {
 }
 
 /// What only the office knows about the floor a painter draws: its wall
-/// board's gateway chip and breadcrumb.
+/// board's gateway chip.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Place {
     /// The office's [`office_gateway`](crate::tally::office_gateway).
     pub gateway: Option<DaemonState>,
-    /// Where the floor sits, `None` in a one-floor office.
-    #[doc(hidden)]
-    pub floor: Option<FooterFloor>,
 }
 
 /// One floor's frame, beyond its stores. `S` is its world's scene, as
@@ -764,7 +760,6 @@ pub fn render(
     let board = crate::neon_sign::wall_board(
         world.scene,
         place.gateway,
-        place.floor,
         world.conditions.motion,
         world.now,
     );

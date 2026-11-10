@@ -755,10 +755,10 @@ mod tests {
     use crate::script::cast_id;
     use pixtuoid_scene::screen::{Flashes, ManualClock};
 
-    /// `Office::new`'s error arm constructs a `JsError`, so unwrap via match.
     /// The hero [`office`] draws.
     const SEED: u32 = 1;
 
+    /// `Office::new`'s error arm constructs a `JsError`, so unwrap via match.
     fn office() -> Office {
         match Office::new(SEED) {
             Ok(o) => o,

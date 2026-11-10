@@ -1288,7 +1288,10 @@ fn audio_observer_keeps_cue_edges_warm_so_delivery_resume_fires_no_volley() {
     let occ = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
 
-    let ground_clear = (0, crate::sky::WeatherPolicy::default());
+    let ground_clear = (
+        0,
+        crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Clear),
+    );
     let _ = obs.frame(&empty, Some(&occ), |_| None, ground_clear, now);
     let arrival = obs.frame(&one, Some(&occ), |_| None, ground_clear, now);
     assert!(
@@ -1873,7 +1876,6 @@ fn paint(
         viewport: PAINTED,
         place: crate::look::Place {
             gateway: crate::tally::office_gateway(scene),
-            floor: None,
         },
         debug_walkable: false,
         dim: crate::look::Dim::NONE,
@@ -2384,7 +2386,6 @@ fn render_office_with(
             viewport: PAINTED,
             place: crate::look::Place {
                 gateway: crate::tally::office_gateway(scene),
-                floor: None,
             },
             debug_walkable: false,
             dim: crate::look::Dim::NONE,
@@ -4332,7 +4333,6 @@ fn figures_on(
             viewport,
             place: crate::look::Place {
                 gateway: crate::tally::office_gateway(scene),
-                floor: None,
             },
             debug_walkable: false,
             dim: crate::look::Dim::NONE,

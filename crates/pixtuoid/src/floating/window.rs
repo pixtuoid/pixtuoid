@@ -403,7 +403,7 @@ impl FloatingApp {
         )
     }
 
-    /// The office's weather and motion; the office picks each floor's own.
+    /// The office's weather and motion, which every floor shares.
     fn conditions(&self) -> Conditions {
         Conditions::default().with_motion(self.motion)
     }
@@ -466,7 +466,6 @@ impl FloatingApp {
                 theme: self.theme,
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                    floor: None,
                 },
                 dim: frames.onboarding.dim,
             },

@@ -492,8 +492,6 @@ impl OfficeSession {
         let scene = inputs.world.scene;
         let now = inputs.world.now;
         self.prepare(scene, now);
-        let n_floors = self.n_floors;
-        let total_agents = scene.agents.len();
         let draw = |views: &mut Vec<FloorView>,
                     office: &mut PerOffice,
                     pettings: &[Option<PetState>],
@@ -507,10 +505,6 @@ impl OfficeSession {
                 look,
                 crate::look::RenderInputs {
                     world,
-                    place: crate::look::Place {
-                        floor: footer_floor(floor, n_floors, total_agents),
-                        ..inputs.place
-                    },
                     ..inputs.on(&floor_scene)
                 },
             );

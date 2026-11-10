@@ -252,7 +252,6 @@ fn main() -> Result<()> {
                 theme,
                 place: pixtuoid_scene::look::Place {
                     gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                    floor: None,
                 },
                 dim: pixtuoid_scene::look::Dim::NONE,
             },

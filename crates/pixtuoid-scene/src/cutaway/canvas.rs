@@ -1443,25 +1443,54 @@ mod tests {
         let ground_seed = crate::floor::floor_seed(0);
         let office = empty(Viewport::full(240, 144), ground_seed);
         // The top floor of four, whose windows look out from the highest.
-        let upstairs = {
+        // Floor `floor` of `scene`, empty, stepped on `viewport`.
+        let empty_on = |viewport, scene: &pixtuoid_core::SceneState, floor| {
             let mut office = crate::floor::PerOffice::new();
             crate::floor::step_floor(
                 &mut crate::floor::PerFloor::new(Arc::clone(&pack)),
                 &mut office.coffee,
                 &mut office.chitchat,
                 crate::floor::FloorInputs {
-                    scene: &crate::floor::project_floor_scene(
-                        &pixtuoid_core::SceneState::uniform(16),
-                        3,
-                    ),
+                    scene: &crate::floor::project_floor_scene(scene, floor),
                     now: crate::localclock::at_hour(12),
                     conditions: Conditions::default(),
                     pets: crate::floor::PetInputs::default(),
                 },
-                Viewport::full(240, 144),
+                viewport,
             )
             .expect("lays out")
         };
+        let upstairs = empty_on(
+            Viewport::full(240, 144),
+            &pixtuoid_core::SceneState::uniform(16),
+            3,
+        );
+        // An agent upstairs, so a floor between it and the ground lights both
+        // its arrows.
+        let four_floors = {
+            let mut scene = pixtuoid_core::SceneState::uniform(16);
+            let id = pixtuoid_core::AgentId::from_transcript_path("/canvas/top.jsonl");
+            scene.agents.insert(
+                id,
+                pixtuoid_core::AgentSlot {
+                    desk: Some(pixtuoid_core::FloorDesk::new(3, 0)),
+                    ..crate::character::test_support::make_slot(
+                        id,
+                        pixtuoid_core::state::ActivityState::Idle,
+                    )
+                },
+            );
+            scene
+        };
+        let (seated_up_layout, _, seated_up_frames, _) =
+            crate::display::compose::tests::sit_down_on(
+                test_office(),
+                crate::layout::Facing::North,
+                2,
+                pixtuoid_core::AgentId::from_transcript_path("/cutaway/sit.jsonl"),
+                3,
+            );
+        let seated_up_layout = Arc::new(seated_up_layout);
         // Each inset the App's chrome takes: a bottom bar, the same over a
         // floor whose south room lays a rug against it, and a banner on top.
         let inset = |insets| Viewport {
@@ -1480,6 +1509,7 @@ mod tests {
         // A dual-meeting floor's seed.
         let rug_on_bar = empty(inset(bar), 3);
         let under_banner = empty(inset(banner), ground_seed);
+        let under_banner_mid = empty_on(inset(banner), &four_floors, 1);
         assert!(
             rug_on_bar
                 .layout
@@ -1514,6 +1544,16 @@ mod tests {
             ("under-bar", &under_bar.layout, &under_bar.frame),
             ("rug-on-bar", &rug_on_bar.layout, &rug_on_bar.frame),
             ("under-banner", &under_banner.layout, &under_banner.frame),
+            (
+                "under-banner-mid",
+                &under_banner_mid.layout,
+                &under_banner_mid.frame,
+            ),
+            (
+                "seated-upstairs",
+                &seated_up_layout,
+                seated_up_frames.last().expect("a seated frame"),
+            ),
         ];
         let moments = [
             ("normal", Weather::Clear, 12),

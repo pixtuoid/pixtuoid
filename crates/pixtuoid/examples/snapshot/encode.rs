@@ -19,25 +19,15 @@ use crate::{CELL_H, CELL_W, SnapshotArgs, due_navigations};
 /// Print a connectedness report for the walkable mask: a BFS from the door threshold,
 /// reachable vs total walkable pixels. If the two differ, the mask has an isolated
 /// region and A* falls back to a straight line when crossing into it — the root cause
-/// of any character teleport the user sees.
-pub(crate) fn print_walkability_report(term: &Terminal<TestBackend>) -> Result<()> {
-    use pixtuoid_scene::layout::SceneLayout;
-    let floor_seed = pixtuoid_scene::floor::floor_seed(0);
-
-    let size = term.size()?;
-    let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(size.width, size.height);
-    // `None` = the SAME fill the renderer's draw_scene passes — the overlay
-    // must mirror the real layout exactly (desks stamp the walkable mask).
-    let Some(layout) = SceneLayout::compute(
-        pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
-        None,
-        floor_seed,
-    ) else {
+/// of any character teleport the user sees. It reads the layout `drawn` was
+/// drawn on, so it reports the office the frame shows.
+pub(crate) fn print_walkability_report(drawn: Option<&pixtuoid_scene::look::Hits>) -> Result<()> {
+    let Some(layout) = drawn.map(pixtuoid_scene::look::Hits::layout) else {
         println!("(debug_walkable) layout too small to compute");
         return Ok(());
     };
 
-    let reach_mask = compute_reachable(&layout);
+    let reach_mask = compute_reachable(layout);
     let w = layout.buf_w as usize;
     let h = layout.buf_h as usize;
     let mut reachable = 0usize;
@@ -57,7 +47,7 @@ pub(crate) fn print_walkability_report(term: &Terminal<TestBackend>) -> Result<(
     }
     let disconnected = walkable_total.saturating_sub(reachable);
     println!(
-        "--- walkability report (floor seed {floor_seed}) ---\n\
+        "--- walkability report ---\n\
         total walkable pixels   : {walkable_total}\n\
         reachable from threshold: {reachable}\n\
         disconnected pixels     : {disconnected}{}",
@@ -114,40 +104,38 @@ fn compute_reachable(layout: &pixtuoid_scene::layout::SceneLayout) -> Vec<bool> 
     visited
 }
 
-/// The crop window centered on `--crop-furniture`'s piece in the office the
-/// classic frame lays out; `None` without the flag.
+/// The crop window centered on `--crop-furniture`'s piece in the office
+/// `drawn` was drawn on; `None` without the flag.
 pub(crate) fn furniture_crop(
     args: &SnapshotArgs,
+    drawn: Option<&pixtuoid_scene::look::Hits>,
     cols: u16,
     rows: u16,
 ) -> Result<Option<ratatui::layout::Rect>> {
     let Some(furniture_str) = &args.crop_furniture else {
         return Ok(None);
     };
-    let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
-    let layout = pixtuoid_scene::layout::SceneLayout::compute(
-        pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
-        None,
-        pixtuoid_scene::floor::floor_seed(0),
-    )
-    .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
-    let found = match furniture_str.to_lowercase().as_str() {
-        "desk" => layout.home_desks.first().map(|d| d.at),
-        name => {
-            // Fail loudly, as an unknown --theme/--weather does: a typo'd crop
-            // target silently writing the full uncropped PNG defeats the point
-            // of the flag.
-            let kind = crate::scenes::waypoint_target(name).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "unknown --crop-furniture {name:?}; valid: pantry | couch | vending | printer | meeting | sofa | chair | island | snackshelf | desk"
-                )
-            })?;
-            layout
-                .waypoints
-                .iter()
-                .find(|w| w.kind == kind)
-                .map(|w| w.pos)
-        }
+    let kind = match furniture_str.to_lowercase().as_str() {
+        "desk" => None,
+        // Fail loudly, as an unknown --theme/--weather does: a typo'd crop
+        // target silently writing the full uncropped PNG defeats the point
+        // of the flag.
+        name => Some(crate::scenes::waypoint_target(name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "unknown --crop-furniture {name:?}; valid: pantry | couch | vending | printer | meeting | sofa | chair | island | snackshelf | desk"
+            )
+        })?),
+    };
+    let layout = drawn
+        .map(pixtuoid_scene::look::Hits::layout)
+        .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
+    let found = match kind {
+        None => layout.home_desks.first().map(|d| d.at),
+        Some(kind) => layout
+            .waypoints
+            .iter()
+            .find(|w| w.kind == kind)
+            .map(|w| w.pos),
     };
     let target = found.ok_or_else(|| {
         anyhow::anyhow!("no {furniture_str:?} waypoint in this layout (terminal too small?)")

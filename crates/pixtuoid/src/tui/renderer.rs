@@ -271,7 +271,6 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
             viewport: Viewport::full(buf_w, buf_h),
             place: Place {
                 gateway: footer.context.gateway,
-                floor: footer.context.floor,
             },
             debug_walkable: ctx.debug_walkable,
             dim: overlays.onboarding.dim,
