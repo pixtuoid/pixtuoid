@@ -946,10 +946,16 @@ mod tests {
         assert!(matches!(peer.answer().await, Answer::Sources { .. }));
     }
 
-    /// The second is one answered at once, which the gate can't hold back.
+    /// The first, a read, waits on the shut gate; the second is one answered at
+    /// once, which the gate can't hold back.
     #[tokio::test(start_paused = true)]
     async fn a_second_ask_waits_for_the_first() {
-        let fixture = fixture();
+        let read = Arc::new(AtomicBool::new(false));
+        let reading = Arc::clone(&read);
+        let fixture = fixture_reading(Arc::new(move || {
+            reading.store(true, Ordering::Relaxed);
+            Vec::new()
+        }));
         let mut peer = streaming(&fixture).await;
         let shut = Arc::clone(&fixture.devices.gate)
             .try_acquire_owned()
@@ -959,9 +965,12 @@ mod tests {
 
         peer.say(&format!("{ask}\n{unknown}")).await;
         // The first waits on the shut gate, not on blocking work, so the paused
-        // clock moves only once no task can run: past the stream's frame gap, a
-        // stream that read on has answered the second.
+        // clock moves only once no task can run
+        // (https://docs.rs/tokio/latest/tokio/time/fn.pause.html): past the
+        // stream's frame gap, a stream that read on has answered the second.
         sleep(MIN_FRAME_GAP * 2).await;
+        let past = read.load(Ordering::Relaxed);
+        assert!(!past, "the read ran past the shut gate");
         drop(shut);
         let first = peer.answer().await;
         assert!(matches!(first, Answer::Sources { .. }), "{first:?}");
