@@ -530,7 +530,7 @@ impl Reducer {
 
         // `refresh_lineage` stamps the ACTOR too, yet the per-arm `last_event_at`
         // writes are NOT droppable: Rename and SessionStart never reach here.
-        if event.is_work() {
+        if event.is_turn_traffic() {
             scope::refresh_lineage(scene, id, now);
         }
 
@@ -1248,8 +1248,8 @@ impl Reducer {
             slot.parent_id = Some(p);
             self.corr.link_applied_parent(agent_id, p);
         }
-        // A slot can exist with MISSING identity: an `Identity` may name no cwd,
-        // and a Codex revive ghost has an empty cwd.
+        // A slot can exist with a MISSING cwd: an `Identity` may name none, and a
+        // Codex revive ghost has an empty one.
         if let Some(base) = backfill_cwd(slot, ctx) {
             // `base` BYPASSES the `cwd_basename_label` chokepoint, so the
             // same decode-boundary cap is applied here.
