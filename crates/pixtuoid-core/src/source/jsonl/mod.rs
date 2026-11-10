@@ -8,7 +8,6 @@ use notify::RecursiveMode;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use crate::AgentId;
 use crate::source::exit_watch::ExitWatch;
 use crate::source::{DEFAULT_POLL_INTERVAL, TaggedSender};
 
@@ -21,8 +20,6 @@ mod tests;
 mod unclaim;
 mod walk;
 
-#[cfg(test)]
-pub(crate) use crate::source::decoder::is_subagent_path;
 pub use liveness::LivenessProbe;
 pub use liveness::ProbeSnapshot;
 pub use unclaim::ChildEndUnclaims;
@@ -38,6 +35,7 @@ use unclaim::drain_child_end_unclaims;
 use walk::{RootRead, scan_root, walk_jsonl};
 
 use crate::source::decoder::LineDecoder;
+use crate::source::first_sight::{HeadLabel, Sight};
 
 pub use crate::source::decoder::PathFilter;
 pub use crate::source::decoder::{IdDeriver, TailActivity};
@@ -71,14 +69,6 @@ pub(crate) type CwdDeriver = fn(&Path) -> Option<PathBuf>;
 fn no_cwd_from_path(_p: &Path) -> Option<PathBuf> {
     None
 }
-
-/// Pulls a display label out of ONE decoded head line, for a source that names
-/// its session in the transcript HEAD rather than only in the tail stream.
-/// `None` on a source's registry row means it has no such name — which is
-/// load-bearing, not merely absent: it lets the head scan stop at the first
-/// `cwd` instead of reading on for a label that can never arrive. **omp** is
-/// the one override; see its `omp_head_title`.
-pub(crate) type HeadLabel = fn(&serde_json::Value) -> Option<String>;
 
 #[derive(Clone, Copy)]
 struct SourceDecoders {
@@ -114,33 +104,6 @@ mod folded {
             (self.0)(&super::walk::id_path(path))
         }
     }
-}
-
-/// What the watcher's first sight of a transcript still holds. Absent = never
-/// registered, or fully retired by an exit un-claim.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Sight {
-    /// Registered as its reads last resolved it: every read showing life
-    /// re-registers it, so a slot the reducer forgot on its own comes back.
-    Claimed(Registration),
-    /// Its session ended: the last lifecycle evidence of a read or of an
-    /// oversized span's tail is its end, or a child-end un-claim: the path
-    /// stays KNOWN, so [`revouch_gated_files`](liveness::revouch_gated_files)
-    /// won't replay it however live the probe says the (still-open) rollout is,
-    /// and only an append that shows life re-registers it.
-    Ended,
-}
-
-/// What the path's reads resolved of its session (first sight's cwd and
-/// parent, and the label they last gave it), kept so a re-registration reads
-/// no head.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Registration {
-    cwd: PathBuf,
-    parent_id: Option<AgentId>,
-    /// The label its reads last gave the session: first sight's, then any
-    /// `Rename` a read decoded for it since.
-    label: String,
 }
 
 #[derive(Clone, Copy)]

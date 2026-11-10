@@ -69,7 +69,8 @@ orphaned surface). Prefer a `Workflow`, else parallel `Agent`s; scale to the
 ask. Scout the work-list → subsystem finders (site and Raycast RENDERED) plus
 per-factor finders (arch invariants · concurrency/liveness · security threat
 model · performance · mutation depth on hot logic · silent failure · drift ·
-deep modules) plus a SYSTEM lens (decomposition, dependency directions) and a
+deep modules · upkeep, the Proportion lens's "delete it" over every
+mechanism) plus a SYSTEM lens (decomposition, dependency directions) and a
 one-source (DRY) census → adversarial verify, default REFUTE, one skeptic per finding and
 2–3 differentiated ones for security/concurrency, majority confirms →
 loop until two consecutive rounds come back empty → a completeness critic

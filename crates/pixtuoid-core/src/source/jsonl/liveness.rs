@@ -8,9 +8,10 @@ use tracing::debug;
 
 use crate::AgentId;
 use crate::source::exit_watch::ExitWatch;
+use crate::source::first_sight::Life;
 use crate::source::{AgentEvent, TaggedSender, Transport, fd_probe};
 
-use super::walk::{Life, TAIL_BYTES, park_if_truncated_below_cursor, tail_life, walk_jsonl};
+use super::walk::{TAIL_BYTES, park_if_truncated_below_cursor, tail_life, walk_jsonl};
 use super::{SourceDecoders, WatchCtx};
 
 /// One healthy liveness-probe observation: which agent processes are verified

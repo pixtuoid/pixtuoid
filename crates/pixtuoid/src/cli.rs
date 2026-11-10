@@ -70,7 +70,11 @@ pub(crate) struct SourceArgs {
     /// Listen for agent hooks on this socket instead of the default.
     // Empty/whitespace is rejected: an explicit override deserves a loud
     // answer, and bind("") would strand a relative `.lock` in the CWD.
-    #[arg(long, value_parser = parse_nonempty_path, value_hint = clap::ValueHint::FilePath)]
+    #[arg(
+        long = pixtuoid_core::source::hook::SOCKET_FLAG,
+        value_parser = parse_nonempty_path,
+        value_hint = clap::ValueHint::FilePath
+    )]
     pub socket: Option<PathBuf>,
 }
 

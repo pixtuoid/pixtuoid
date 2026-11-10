@@ -3,7 +3,7 @@
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::sprite::RgbBuffer;
 
-use pixtuoid_scene::floor::{FloorInputs, OfficeSession};
+use pixtuoid_scene::floor::{FloorInputs, FloorMeta, OfficeSession};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
 use pixtuoid_scene::interact::{Gesture, Pointer, Pressed};
 use pixtuoid_scene::look::RenderInputs;
@@ -75,6 +75,17 @@ impl OfficeRenderer {
 
     pub(crate) fn set_audio(&mut self, audio: crate::audio::AudioHandle) {
         self.audio = audio;
+    }
+
+    /// Feed the audio a frame of the office without drawing one
+    /// ([`OfficeSession::hear`]), in `scene` at `now` under `floor`.
+    pub(crate) fn hear(
+        &mut self,
+        scene: &SceneState,
+        floor: FloorMeta,
+        now: std::time::SystemTime,
+    ) {
+        self.audio.frame(self.session.hear(scene, floor, now));
     }
 
     /// Render the office's floor showing, or its slide to another, into the
@@ -258,20 +269,14 @@ impl OfficeRenderer {
         self.pointer.carrying()
     }
 
-    /// [`release`](Self::release) under the panels `modal`: a carried figure
-    /// is set down either way, and the click lands only with none open.
-    pub(crate) fn release_under(
-        &mut self,
-        cursor: (f64, f64),
-        modal: &crate::panels::ModalState,
-    ) -> Option<pixtuoid_scene::hit::HitAction> {
-        self.release(cursor).filter(|_| !modal.any_open())
-    }
-
-    /// Whether a pointer `cursor_in` the window shows its tooltip: not over a
-    /// figure in hand, nor over the office under a panel.
-    pub(crate) fn tooltip_shows(&self, cursor_in: bool, modal: &crate::panels::ModalState) -> bool {
-        cursor_in && !self.carrying() && !modal.any_open()
+    /// Whether a pointer `cursor_in` the window shows its tooltip under
+    /// `panels`: not over a figure in hand, nor over the office under a panel.
+    pub(crate) fn tooltip_shows(
+        &self,
+        cursor_in: bool,
+        panels: &crate::panels::OverlayFrame<'_>,
+    ) -> bool {
+        cursor_in && !self.carrying() && !panels.any_open()
     }
 
     /// What the frame on screen shows the pointer at `cursor` (physical px).
@@ -448,7 +453,7 @@ mod tests {
     use super::super::overlays::footer_budget;
     use super::*;
     use pixtuoid_scene::cutaway::glyph_cell;
-    use pixtuoid_scene::floor::{FloorMeta, PetInputs};
+    use pixtuoid_scene::floor::PetInputs;
     use pixtuoid_scene::sprite::Rgb;
     use winit::dpi::PhysicalSize;
 
@@ -1008,48 +1013,28 @@ mod tests {
         assert!(renderer.carrying());
         assert_eq!(renderer.release(away), None, "a drop clicks nothing");
         assert!(!renderer.carrying());
-        // Under a panel a carry still sets down, and a click lands nowhere.
-        let open = crate::panels::ModalState {
+        let help = crate::panels::ui_state::RenderFrames {
             help_open: true,
-            ..crate::panels::ModalState::closed()
+            ..Default::default()
         };
-        assert!(renderer.tooltip_shows(true, &crate::panels::ModalState::closed()));
+        let closed = crate::panels::OverlayFrame::closed();
+        assert!(renderer.tooltip_shows(true, &closed));
         assert!(
-            !renderer.tooltip_shows(true, &open),
+            !renderer.tooltip_shows(true, &help.overlays(0.0, &[])),
             "no tooltip under a panel"
         );
-        assert!(!renderer.tooltip_shows(false, &crate::panels::ModalState::closed()));
-        let press = |renderer: &mut OfficeRenderer| {
-            renderer.press_at(
-                on_agent,
-                size,
-                Pressing {
-                    scale_factor: 1.0,
-                    petting: None,
-                    now,
-                },
-            )
-        };
-        press(&mut renderer);
+        assert!(!renderer.tooltip_shows(false, &closed));
+        renderer.press_at(
+            on_agent,
+            size,
+            Pressing {
+                scale_factor: 1.0,
+                petting: None,
+                now,
+            },
+        );
         assert!(renderer.pointer_moved(away));
-        assert!(
-            !renderer.tooltip_shows(true, &crate::panels::ModalState::closed()),
-            "nor in hand"
-        );
-        assert_eq!(renderer.release_under(away, &open), None);
-        assert!(
-            !renderer.carrying(),
-            "a panel opened mid-carry sets it down"
-        );
-        press(&mut renderer);
-        assert_eq!(renderer.release_under(on_agent, &open), None);
-        press(&mut renderer);
-        assert!(
-            renderer
-                .release_under(on_agent, &crate::panels::ModalState::closed())
-                .is_some(),
-            "with no panel the click lands"
-        );
+        assert!(!renderer.tooltip_shows(true, &closed), "nor in hand");
         // A carry whose release goes elsewhere is set down when the window
         // loses focus, or at the next press.
         renderer.press_at(
@@ -1193,7 +1178,7 @@ mod tests {
         let mut scene = SceneState::new([8; pixtuoid_core::state::MAX_FLOORS]);
         let slot = running_on("/p/a.jsonl", 0, 0);
         scene.agents.insert(slot.agent_id, slot);
-        let warning = crate::doctor::footer_warning(&[], &["cc"]);
+        let warning = crate::doctor::footer_warning(&[], &[], &["cc"]);
         let budget = footer_budget(960, glyph_cell(2));
         let calm = renderer.footer(&scene, budget, true, None, None).text();
         let warned = renderer
@@ -1203,26 +1188,25 @@ mod tests {
         assert!(!calm.contains("decode drift"), "{calm}");
     }
 
-    #[test]
-    fn floating_appliance_cues_fire_from_the_sessions_occupancy() {
-        // Deterministic: fixed agent id + a hand-stepped clock; the loop bound mirrors
-        // the scene crate's occupancy sim pin.
+    /// The first of `budget` steps whose frame fires a printer or vending
+    /// cue, an idle agent wandering an office drawn every two seconds, and
+    /// heard undrawn just before step `heard_before`, if one is named.
+    /// Deterministic: fixed agent id + a hand-stepped clock.
+    fn first_appliance_cue(budget: u64, heard_before: Option<u64>) -> Option<u64> {
         use pixtuoid_scene::audio::OneShot;
-        let pack = std::sync::Arc::new(
-            pixtuoid_scene::pack::load_bundled_pack().expect("bundled pack loads"),
-        );
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let now0 = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         let mut idle = running_on("/w/wanderer.jsonl", 0, 0);
         idle.state = pixtuoid_core::state::ActivityState::Idle;
         let scene = scene_with(vec![idle], 16);
-        let mut renderer = OfficeRenderer::new(pack);
+        let mut renderer = OfficeRenderer::new(crate::test_flash::pack_arc());
         let (handle, rx) = crate::audio::AudioHandle::test_pair();
         renderer.set_audio(handle);
-        let mut heard = Vec::new();
-        // A BUDGET, not part of the assertion: the wait rides random wander over live desk positions.
-        for step in 0..9_000u64 {
+        (0..budget).find(|&step| {
             let now = now0 + std::time::Duration::from_secs(2 * step);
+            if heard_before == Some(step) {
+                renderer.hear(&scene, FloorMeta::ground(), now);
+            }
             // 192x160: tall enough that the corridor hosts BOTH appliances
             // (the vending/printer height gates in layout::compute).
             renderer.render(
@@ -1239,24 +1223,29 @@ mod tests {
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             );
-            heard.extend(
-                crate::audio::drain_frames(&rx)
-                    .into_iter()
-                    .flat_map(|f| f.events),
-            );
-            if heard
-                .iter()
+            crate::audio::drain_frames(&rx)
+                .into_iter()
+                .flat_map(|f| f.events)
                 .any(|e| matches!(e, OneShot::PrinterWhir | OneShot::VendingDrop))
-            {
-                break;
-            }
-        }
+        })
+    }
+
+    #[test]
+    fn floating_appliance_cues_fire_from_the_sessions_occupancy() {
+        // A BUDGET, not part of the assertion: the wait rides random wander over live desk positions.
         assert!(
-            heard
-                .iter()
-                .any(|e| matches!(e, OneShot::PrinterWhir | OneShot::VendingDrop)),
-            "a wander through the appliance strip must fire a printer/vending cue; heard: {heard:?}"
+            first_appliance_cue(9_000, None).is_some(),
+            "a wander through the appliance strip must fire a printer/vending cue"
         );
+    }
+
+    /// The frame drawn after the office was heard undrawn, as a window no
+    /// longer occluded draws, fires no cue for an appliance reached
+    /// meanwhile.
+    #[test]
+    fn a_frame_drawn_after_hearing_fires_no_stale_appliance_cue() {
+        let cue = first_appliance_cue(9_000, None).expect("a wander fires a cue");
+        assert_eq!(first_appliance_cue(cue + 1, Some(cue)), None);
     }
 
     #[test]
@@ -1339,6 +1328,50 @@ mod tests {
         assert!(
             on_floor.contains(&pixtuoid_scene::audio::OneShot::DoorChime),
             "a ground-floor walk-in must chime the floating window: {on_floor:?}"
+        );
+    }
+
+    /// An office heard without being drawn, as an occluded window hears it,
+    /// still chimes a walk-in.
+    #[test]
+    fn an_office_heard_undrawn_chimes_a_walk_in() {
+        let cap = 16;
+        let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
+        let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        let mut renderer = OfficeRenderer::new(crate::test_flash::pack_arc());
+        let (handle, rx) = crate::audio::AudioHandle::test_pair();
+        renderer.set_audio(handle);
+        let mut agents = vec![running_on("/h/f0.jsonl", 0, 0)];
+        let scene = scene_with(agents.clone(), cap);
+        renderer.render(
+            cutaway(Size { w: 160, h: 96 }),
+            WindowFrame {
+                world: FloorInputs {
+                    scene: &scene,
+                    now,
+                    floor: FloorMeta::ground(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                place: pixtuoid_scene::look::Place::default(),
+                dim: pixtuoid_scene::look::Dim::NONE,
+            },
+        );
+        crate::audio::drain_frames(&rx); // discard the priming frames
+        agents.push(running_on("/h/f0-new.jsonl", 0, 1));
+        let scene = scene_with(agents, cap);
+        renderer.hear(
+            &scene,
+            FloorMeta::ground(),
+            now + pixtuoid_scene::floor::REST_TICK,
+        );
+        let heard: Vec<_> = crate::audio::drain_frames(&rx)
+            .into_iter()
+            .flat_map(|f| f.events)
+            .collect();
+        assert!(
+            heard.contains(&pixtuoid_scene::audio::OneShot::DoorChime),
+            "{heard:?}"
         );
     }
 
