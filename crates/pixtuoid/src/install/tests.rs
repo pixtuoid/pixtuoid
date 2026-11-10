@@ -847,6 +847,30 @@ fn verify_target_hard_flags_a_missing_beside_file_for_every_beside_target() {
     );
 }
 
+#[test]
+fn verify_target_notes_an_unread_shim_only_when_no_command_names_one() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let cfg = tmp.path().join("hooks.json");
+    let exe = std::env::current_exe().unwrap();
+    install_target_from(&target::CURSOR, Some(cfg.clone()), Some(exe)).unwrap();
+    let noted = |cfg: &std::path::Path| {
+        verify_target(&target::CURSOR, Some(cfg.to_path_buf()))
+            .notes
+            .iter()
+            .any(|n| n.contains("could not read the shim path"))
+    };
+    assert!(!noted(&cfg));
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+    for entries in doc["hooks"].as_object_mut().unwrap().values_mut() {
+        for entry in entries.as_array_mut().unwrap() {
+            entry["command"] = " ".into();
+        }
+    }
+    std::fs::write(&cfg, doc.to_string()).unwrap();
+    assert!(noted(&cfg));
+}
+
 /// EVERY owned file, not just the one that bakes a shim path, and any byte of it — a
 /// comment included: an OpenClaw upgrader whose manifest or `package.json` predated the
 /// upgrade once got existence-only checking and a green doctor.

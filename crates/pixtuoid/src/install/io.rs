@@ -797,6 +797,18 @@ mod tests {
         names(&chain(guard.restore(None)), "removing", &target);
     }
 
+    /// A host's failed registration may already have removed the file the undo removes.
+    #[test]
+    fn restoring_no_file_removes_it_and_accepts_one_already_gone() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("hooks.json");
+        let guard = lock_config(&target).unwrap();
+        guard.write_atomic("{}").unwrap();
+        guard.restore(None).unwrap();
+        assert!(!target.exists());
+        guard.restore(None).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn lock_config_refuses_a_symlinked_lock_file() {
