@@ -890,7 +890,7 @@ impl RemoteOffice {
                         Some(local(agent.created_ms))
                     };
                     new.insert(agent.id, arrival);
-                    (None, arrival)
+                    (None, None)
                 }
             };
             self.scene
@@ -1495,14 +1495,16 @@ mod tests {
         assert_eq!(desk_of(&office, "d"), Some(FloorDesk::new(0, 0)));
     }
 
-    /// One past the device's desks is kept unseated, and walks in from the
-    /// line that frees it a desk.
+    /// One past the device's desks is kept unseated, with no arrival until a
+    /// line frees it a desk, and walks in from that line.
     #[test]
     fn an_agent_past_the_devices_desks_is_unseated_until_one_frees() {
         let mut office = RemoteOffice::new(ONE_DESK);
+        received(&mut office, &crowd(&["b"]), AT);
         received(&mut office, &crowd(&["b", "a"]), AT);
         assert_eq!(desk_of(&office, "b"), Some(FloorDesk::new(0, 0)));
-        assert_eq!(desk_of(&office, "a"), None, "kept, unseated");
+        let a = slot_of(&office, "a").expect("kept");
+        assert_eq!((a.desk, a.arrived_at), (None, None), "unseated");
         let freed = AT + 10_000;
         received(&mut office, &crowd(&["a"]), freed);
         let a = slot_of(&office, "a").expect("held");
