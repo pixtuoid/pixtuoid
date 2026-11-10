@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import sourcesData from '../../src/sources.json' with { type: 'json' };
-import installData from '../../src/install.json' with { type: 'json' };
 import { E2E_STAR_COUNT } from '../../config/gh-stars.mjs';
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
@@ -1985,13 +1984,6 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   await page.locator('.install__tab[data-tab="release"]').click();
   await expect(page.locator('#install-panel-release')).toBeVisible();
   await expect(page.locator('#install-panel-release .install__copy')).toHaveCount(0);
-  // A tab's blurb (where it works) shows in its panel, as README shows it.
-  for (const method of installData.filter((m) => 'blurb' in m)) {
-    await page.locator(`.install__tab[data-tab="${method.id}"]`).click();
-    await expect(page.locator(`#install-panel-${method.id} .install__blurb`)).toHaveText(
-      String(method.blurb)
-    );
-  }
   // Force the manual branch on a fresh load (brew is the default active panel).
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'clipboard', { value: undefined })
@@ -2009,34 +2001,6 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   const selected = await page.evaluate(() => String(getSelection()));
   expect(selected).toContain('cargo install');
   expect(selected).not.toContain('#');
-});
-
-test('install: a blurb clears its code and the touch Copy pill', async ({ browser }) => {
-  // 480 px under a coarse pointer: one-line commands, and Copy at its 44 px touch size.
-  const ctx = await browser.newContext({
-    viewport: { width: 480, height: 900 },
-    hasTouch: true,
-    isMobile: true,
-  });
-  const page = await ctx.newPage();
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./');
-  for (const method of installData.filter((m) => 'blurb' in m)) {
-    await page.locator(`.install__tab[data-tab="${method.id}"]`).tap();
-    const overlaps = await page.evaluate((id) => {
-      const panel = document.getElementById(`install-panel-${id}`)!;
-      const blurb = panel.querySelector('.install__blurb')!.getBoundingClientRect();
-      return [...panel.querySelectorAll('code .line, .install__copy')]
-        .map((e) => e.getBoundingClientRect())
-        .filter(
-          (o) =>
-            Math.min(blurb.right, o.right) > Math.max(blurb.left, o.left) &&
-            Math.min(blurb.bottom, o.bottom) > Math.max(blurb.top, o.top)
-        ).length;
-    }, method.id);
-    expect(overlaps, `${method.id}'s blurb is covered`).toBe(0);
-  }
-  await ctx.close();
 });
 
 test('showcase studio: deep-links tune, dial and chips swap hydrated stages, the clip plays', async ({

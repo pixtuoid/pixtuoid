@@ -83,37 +83,13 @@ pub(crate) fn home_unset(what: &str, vars: &str) -> anyhow::Error {
     anyhow!("cannot resolve {what} ({vars} unset); set one and reconnect")
 }
 
-/// Each install that puts `pixtuoid-hook` beside `pixtuoid`, with the OSes it
-/// ships for as `std::env::consts::OS` names (`None`: every OS). Homebrew runs on
-/// macOS and Linux only (<https://docs.brew.sh/Installation>), and npm publishes
-/// darwin and win32 packages only (npm/generate.mjs's `TARGETS`), so elsewhere
-/// its shim has no binary and every hook wired to it exits 0 unheard.
-const SHIM_INSTALLS: &[(&str, Option<&[&str]>)] = &[
-    ("`brew install pixtuoid`", Some(&["macos", "linux"])),
-    ("`cargo install pixtuoid-hook`", None),
-    ("`npm i -g pixtuoid`", Some(&["macos", "windows"])),
-];
-
 /// The remedy sentence for "the shim isn't where we looked", shared by every site
-/// that offers one. It names [`HOOK_OVERRIDE_ENV`] and nothing else: the `--hook-path`
+/// that offers one. It names `PIXTUOID_HOOK` and nothing else: the `--hook-path`
 /// flag these messages used to advertise no longer exists, so clap answers it with
 /// `unexpected argument` — an error whose only remedy was itself an error.
-pub(crate) fn shim_locate_remedy() -> String {
-    shim_locate_remedy_for(std::env::consts::OS)
-}
-
-fn shim_locate_remedy_for(os: &str) -> String {
-    let installs: Vec<&str> = SHIM_INSTALLS
-        .iter()
-        .filter(|(_, oses)| oses.is_none_or(|oses| oses.contains(&os)))
-        .map(|&(install, _)| install)
-        .collect();
-    format!(
-        "install it alongside pixtuoid ({}) or point {HOOK_OVERRIDE_ENV} at an absolute path \
-         to the shim",
-        installs.join(" / ")
-    )
-}
+pub(crate) const SHIM_LOCATE_REMEDY: &str = "install it alongside pixtuoid (`cargo install \
+     pixtuoid-hook`, or reinstall the package pixtuoid came in, which ships both) or point \
+     PIXTUOID_HOOK at an absolute path to the shim";
 
 /// The shim's binary name, which a bare-name hook command resolves on PATH.
 pub(crate) const HOOK_BIN: &str = "pixtuoid-hook";
@@ -152,9 +128,8 @@ fn default_hook_binary_from(
     }
     Err(anyhow!(
         "could not locate pixtuoid-hook (not on PATH, and not beside the pixtuoid \
-         binary at {}); {}",
-        dir.display(),
-        shim_locate_remedy()
+         binary at {}); {SHIM_LOCATE_REMEDY}",
+        dir.display()
     ))
 }
 
@@ -662,83 +637,12 @@ mod tests {
                 .is_err(),
             "if --hook-path is ever re-added, revisit this remedy wording"
         );
-        assert!(shim_locate_remedy().contains(HOOK_OVERRIDE_ENV));
-        assert!(!shim_locate_remedy().contains("--hook-path"));
-    }
-
-    #[test]
-    fn the_shim_locate_remedy_offers_only_the_installs_each_os_has() {
-        let linux = shim_locate_remedy_for("linux");
-        assert!(
-            !linux.contains("npm"),
-            "npm publishes no Linux package, so its shim has no binary there: {linux}"
-        );
-        assert!(
-            linux.contains("`brew install pixtuoid`")
-                && linux.contains("`cargo install pixtuoid-hook`")
-        );
-        let windows = shim_locate_remedy_for("windows");
-        assert!(
-            !windows.contains("brew"),
-            "Homebrew has no Windows build: {windows}"
-        );
-        assert!(
-            windows.contains("`npm i -g pixtuoid`")
-                && windows.contains("`cargo install pixtuoid-hook`")
-        );
-        let macos = shim_locate_remedy_for("macos");
-        for install in [
-            "`brew install pixtuoid`",
-            "`cargo install pixtuoid-hook`",
-            "`npm i -g pixtuoid`",
-        ] {
-            assert!(
-                macos.contains(install),
-                "{install} ships for macOS: {macos}"
-            );
+        assert!(SHIM_LOCATE_REMEDY.contains(HOOK_OVERRIDE_ENV));
+        assert!(!SHIM_LOCATE_REMEDY.contains("--hook-path"));
+        // Every OS reads it, and Homebrew and npm each skip one.
+        for channel in ["brew", "npm"] {
+            assert!(!SHIM_LOCATE_REMEDY.contains(channel), "{channel}");
         }
-        assert!(shim_locate_remedy_for("freebsd").contains("`cargo install pixtuoid-hook`"));
-    }
-
-    /// No Rust build reads `npm/generate.mjs`, so this test is the only bridge
-    /// between its `TARGETS` and `SHIM_INSTALLS`' npm row.
-    #[test]
-    fn the_npm_install_is_offered_where_npm_publishes() {
-        // crates.io-packaged test runs don't ship the repo's npm/ tree.
-        if !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../npm")).is_dir() {
-            return;
-        }
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../npm/generate.mjs");
-        let js = std::fs::read_to_string(path).expect("generate.mjs moved or was renamed");
-        let targets = &js[js
-            .find("const TARGETS = [")
-            .expect("generate.mjs declares TARGETS")..];
-        let targets = &targets[..targets.find("];").expect("TARGETS closes")];
-        // TARGETS names Node's `process.platform`; the remedy, `std::env::consts::OS`.
-        let mut published: Vec<&str> = targets
-            .split("os: \"")
-            .skip(1)
-            .map(|row| row.split('"').next().expect("a target's os is a string"))
-            .map(|os| match os {
-                "darwin" => "macos",
-                "win32" => "windows",
-                os => os,
-            })
-            .collect();
-        published.sort_unstable();
-        published.dedup();
-        let (_, oses) = SHIM_INSTALLS
-            .iter()
-            .find(|(install, _)| install.contains("npm i -g"))
-            .expect("the remedy offers npm");
-        let mut offered = oses
-            .expect("npm publishes for some OSes, not every OS")
-            .to_vec();
-        offered.sort_unstable();
-        assert_eq!(
-            offered, published,
-            "SHIM_INSTALLS' npm row drifted from TARGETS"
-        );
     }
 
     #[test]

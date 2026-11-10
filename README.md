@@ -61,9 +61,10 @@ Pick one:
 brew install pixtuoid
 ```
 
-**npm** (macOS or Windows):
+**npm**:
 
 ```bash
+# macOS or Windows
 npm install -g pixtuoid
 ```
 <!-- install:end -->

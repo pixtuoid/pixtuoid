@@ -9,8 +9,7 @@
   {
     "id": "npm",
     "label": "npm",
-    "blurb": "macOS or Windows",
-    "cmds": ["npm install -g pixtuoid"],
+    "cmds": ["# macOS or Windows", "npm install -g pixtuoid"],
     "readme": true
   },
   {
