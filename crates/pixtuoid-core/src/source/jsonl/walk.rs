@@ -453,16 +453,6 @@ pub(super) async fn walk_jsonl(
     // per-line key disagree and every JSONL event lands on a phantom id.
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
 
-    let extract = cwd_extractor_for(source);
-    let parent = parent_extractor_for(source);
-    let mut first_sight = extract_head_fields(new_bytes, extract, None, parent);
-    if first_sight.lack_the_head(parent)
-        && seen.lock().await.get(path) != Some(&Sight::Claimed)
-        && let Some(head) = read_head(path).await
-    {
-        first_sight = extract_head_fields(&head, extract, decoders.head_label, parent);
-    }
-
     let mut decoded = Vec::new();
     for line in crate::source::admit::lines(new_bytes) {
         let Ok(s) = line else {
@@ -496,7 +486,19 @@ pub(super) async fn walk_jsonl(
             replaying,
         })
     };
-    for (nth, life) in each_life(decoded, own).into_iter().enumerate() {
+    let lives = each_life(decoded, own);
+    let extract = cwd_extractor_for(source);
+    let parent = parent_extractor_for(source);
+    let mut first_sight = extract_head_fields(new_bytes, extract, None, parent);
+    // A claimed path registers again only for a life after its end, which reads
+    // the head as any first sight does.
+    if first_sight.lack_the_head(parent)
+        && (lives.len() > 1 || seen.lock().await.get(path) != Some(&Sight::Claimed))
+        && let Some(head) = read_head(path).await
+    {
+        first_sight = extract_head_fields(&head, extract, decoders.head_label, parent);
+    }
+    for (nth, life) in lives.into_iter().enumerate() {
         let sight = seen.lock().await.get(path).copied();
         if Sight::leads(sight).unwrap_or_else(|| holds_life(&life)) && !sidecar_only {
             emit_first_sight(path, source, decoders, seen, tx, first_sight.clone()).await;
