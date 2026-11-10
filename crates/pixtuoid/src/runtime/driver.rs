@@ -272,8 +272,8 @@ pub(crate) async fn reducer_task(
                     None => presence_open = false,
                 }
             }
-            // Re-seated the moment a painter publishes, so a shrink hides no
-            // one past the frame that drew it.
+            // Re-seated the moment a painter publishes, so whoever a shrink
+            // displaces takes a free desk, or is unseated, on that publish.
             changed = floor_caps.changed(), if caps_open => match changed {
                 Ok(()) => {
                     scene.set_capacities(*floor_caps.borrow_and_update(), SystemTime::now());
