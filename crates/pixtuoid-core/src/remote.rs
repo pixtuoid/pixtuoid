@@ -799,6 +799,8 @@ pub struct RemoteOffice {
     machine: Option<Machine>,
     /// The device's clock minus the server's, in ms; held from line to line.
     skew_ms: Option<i64>,
+    /// The agents the last line names.
+    named: BTreeSet<AgentId>,
 }
 
 impl RemoteOffice {
@@ -808,6 +810,7 @@ impl RemoteOffice {
             scene: SceneState::new(capacities),
             machine: None,
             skew_ms: None,
+            named: BTreeSet::new(),
         }
     }
 
@@ -821,10 +824,22 @@ impl RemoteOffice {
         self.machine.as_ref()
     }
 
-    /// Take a new layout at the device's `now`, by
-    /// [`SceneState::set_capacities`]'s rule.
+    /// Take a new layout at the device's `now`: whoever loses a desk takes a
+    /// free one, as on a line, or is unseated.
     pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS], now: SystemTime) {
-        self.scene.set_capacities(capacities, now);
+        self.scene.take_capacities(capacities);
+        self.seat(|_| Some(now));
+    }
+
+    /// Seat the unseated, each walking in from its `arrival`.
+    fn seat(&mut self, arrival: impl Fn(&AgentSlot) -> Option<SystemTime>) {
+        let named = &self.named;
+        self.scene.seat_unseated(
+            // One the line no longer names is walking out and lends its desk; a
+            // named one keeps it, as its server can still take it back in place.
+            |slot| named.contains(&slot.agent_id),
+            arrival,
+        );
     }
 
     /// Take one line `encode` wrote, received at the device's `now`. An agent
@@ -867,7 +882,8 @@ impl RemoteOffice {
                 slot.exiting_at.get_or_insert(now);
             }
         }
-        let named: BTreeSet<AgentId> = agents.iter().map(|agent| agent.id).collect();
+        self.named = agents.iter().map(|agent| agent.id).collect();
+        let named = &self.named;
         // A server drops a slot only once it has walked out (`sweep_exited`), so
         // one walking out here keeps its walk until its own grace ends.
         self.scene.agents.retain(|id, slot| {
@@ -905,13 +921,8 @@ impl RemoteOffice {
                 .agents
                 .insert(agent.id, inflate_agent(agent, place, &local));
         }
-        self.scene.seat_unseated(
-            // One the line no longer names is walking out and lends its desk; a
-            // named one keeps it, as its server can still take it back in place.
-            |slot| named.contains(&slot.agent_id),
-            // One new arrives as above; one seated late walks in now.
-            |slot| new.get(&slot.agent_id).copied().unwrap_or(Some(now)),
-        );
+        // One new arrives as above; one seated late walks in now.
+        self.seat(|slot| new.get(&slot.agent_id).copied().unwrap_or(Some(now)));
 
         self.scene.daemons = DaemonRoster::default();
         for daemon in daemons {
@@ -1730,6 +1741,27 @@ mod tests {
         office.set_capacities(ground_floor(3), at(AT + 1_000));
         assert_eq!(desk_of(&office, "d"), Some(FloorDesk::new(0, 1)));
         assert_eq!(desk_of(&office, "b"), None);
+    }
+
+    /// A new layout seats as a line does: one the last line no longer names
+    /// lends its desk, so the staying agent a shrink displaces takes it at once.
+    #[test]
+    fn a_new_layout_lends_the_desk_of_one_no_line_names() {
+        let x = AgentId::from_parts("claude-code", "x");
+        let mut office = RemoteOffice::new(ground_floor(2));
+        let mut cast = crowd(&["x", "y"]);
+        received(&mut office, &cast, AT);
+        cast.agents.get_mut(&x).expect("x").exiting_at = Some(at(AT));
+        received(&mut office, &cast, AT + 500);
+        cast.agents.remove(&x);
+        received(&mut office, &cast, AT + 1_000);
+        assert_eq!(
+            (desk_of(&office, "x"), desk_of(&office, "y")),
+            (Some(FloorDesk::new(0, 0)), Some(FloorDesk::new(0, 1))),
+            "premise: the unnamed leaver still sits at the ground desk"
+        );
+        office.set_capacities(ONE_DESK, at(AT + 1_000));
+        assert_eq!(desk_of(&office, "y"), Some(FloorDesk::new(0, 0)));
     }
 
     #[test]

@@ -1051,7 +1051,6 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             Transport::Hook,
         );
 
-        // The interleaved tick is the ONLY reaper of the non-TTL orphan retains.
         r.tick(&mut scene, now);
 
         let lens = [
