@@ -13,12 +13,12 @@
 //! 1. **Registration comes from the WATCHER, not the decoder.** A JSONL event
 //!    for an unknown id is a documented no-op, so a transcript driven with no
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
-//!    in for `emit_registration`, through the SAME registration gate
-//!    ([`Sight::registers`]), head scan and `first_sight_start` from the SAME
-//!    registry row. The seed-at-EOF decision (`should_seed_at_eof`) and a
-//!    claim's `LabelHint` stay out, as does what the registry's native-only
-//!    `NativeTranscript` column derives (the title, the label, a path-derived
-//!    cwd), which a wasm-clean build lacks.
+//!    in for `emit_registration`, through [`Sight::registers`], the head scan and
+//!    `first_sight_start` from the SAME registry row. The seed-at-EOF decision
+//!    (`should_seed_at_eof`) and a claim's `LabelHint` stay out, as does every
+//!    reader in the registry's native-only `NativeTranscript` column (the title,
+//!    the label, a path-derived cwd, and the tail-activity reader whose
+//!    sidecar-only verdict vetoes a registration), which a wasm-clean build lacks.
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
 //!    so it is not a free parameter.
 
