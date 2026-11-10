@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import sourcesData from '../../src/sources.json' with { type: 'json' };
+import installData from '../../src/install.json' with { type: 'json' };
 import { E2E_STAR_COUNT } from '../../config/gh-stars.mjs';
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
@@ -1974,9 +1975,24 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   const copy = page.locator('.install__panel.is-active .install__copy');
   await copy.click();
   await expect(copy).toHaveText('Copied ✓');
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    await copy.getAttribute('data-copy')
-  );
+  // A comment line shows but is never copied: pasted into a default zsh (no
+  // interactive comments) it runs as `#` and fails.
+  await expect(page.locator('#install-panel-cargo code')).toContainText('#');
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toBe(await copy.getAttribute('data-copy'));
+  expect(copied).toContain('cargo install');
+  expect(copied).not.toMatch(/^#/m);
+  // A tab with only comments has nothing to copy, so no button.
+  await page.locator('.install__tab[data-tab="release"]').click();
+  await expect(page.locator('#install-panel-release')).toBeVisible();
+  await expect(page.locator('#install-panel-release .install__copy')).toHaveCount(0);
+  // A tab's blurb (where it works) shows in its panel, as README shows it.
+  for (const method of installData.filter((m) => 'blurb' in m)) {
+    await page.locator(`.install__tab[data-tab="${method.id}"]`).click();
+    await expect(page.locator(`#install-panel-${method.id} .install__blurb`)).toHaveText(
+      String(method.blurb)
+    );
+  }
   // Force the manual branch on a fresh load (brew is the default active panel).
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'clipboard', { value: undefined })
@@ -1986,6 +2002,14 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   await brewCopy.click();
   await expect(brewCopy).toHaveText('Select & copy');
   expect(await page.evaluate(() => String(getSelection()))).toContain('brew install');
+  // The manual branch selects the commands alone too.
+  await page.locator('.install__tab[data-tab="cargo"]').click();
+  const cargoCopy = page.locator('#install-panel-cargo .install__copy');
+  await cargoCopy.click();
+  await expect(cargoCopy).toHaveText('Select & copy');
+  const selected = await page.evaluate(() => String(getSelection()));
+  expect(selected).toContain('cargo install');
+  expect(selected).not.toContain('#');
 });
 
 test('showcase studio: deep-links tune, dial and chips swap hydrated stages, the clip plays', async ({

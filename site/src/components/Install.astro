@@ -39,20 +39,28 @@ import tabs from '../install.json';
         </button>)}
       </div>
 
-      {tabs.map((t, i) => <div
-        id={`install-panel-${t.id}`}
-        class:list={['install__panel', { 'is-active': i === 0 }]}
-        role="tabpanel"
-        aria-labelledby={`install-tab-${t.id}`}
-        data-panel={t.id}
-      >
-        <Code code={t.cmds.join('\n')} lang="bash" theme="vesper" />
-        {/* no aria-label: the visible "Copy" text IS the accessible name, so
-              the textContent swap stays exposed. A name change alone isn't
-              announced, hence the role=status sibling — WCAG 4.1.3. */}
-        <button class="install__copy" data-copy={t.cmds.join('\n')}>Copy</button>
-        <span class="sr-only" role="status" data-copy-status />
-      </div>)}
+      {tabs.map((t, i) => {
+        // A comment line shows but is never copied: a default zsh has no
+        // interactive comments, so a pasted `# …` runs and fails.
+        const commands = t.cmds.filter((line) => !line.startsWith('#'));
+        return <div
+          id={`install-panel-${t.id}`}
+          class:list={['install__panel', { 'is-active': i === 0 }]}
+          role="tabpanel"
+          aria-labelledby={`install-tab-${t.id}`}
+          data-panel={t.id}
+        >
+          <Code code={t.cmds.join('\n')} lang="bash" theme="vesper" />
+          {t.blurb && <p class="install__blurb">{t.blurb}</p>}
+          {/* no aria-label: the visible "Copy" text IS the accessible name, so
+                the textContent swap stays exposed. A name change alone isn't
+                announced, hence the role=status sibling — WCAG 4.1.3. */}
+          {commands.length > 0 && (
+            <><button class="install__copy" data-copy={commands.join('\n')}>Copy</button>
+              <span class="sr-only" role="status" data-copy-status /></>
+          )}
+        </div>;
+      })}
 
       <p class="install__note text-scrim">
         Also on <a href={CRATES} target="_blank" rel="noreferrer">crates.io</a> · prebuilt binaries
@@ -118,12 +126,19 @@ import tabs from '../install.json';
       }
       function manual() {
         // no / blocked Clipboard API (insecure context, old browser): select
-        // the command so the user can copy it — don't fail silently.
-        const code = btn.parentElement.querySelector('code');
+        // the command lines, the ones Copy would write, so the user can copy
+        // them — don't fail silently.
+        const commands = btn.dataset.copy.split('\n');
+        const lines = Array.from(btn.parentElement.querySelectorAll('code .line')).filter(
+          function (line) {
+            return commands.indexOf(line.textContent) !== -1;
+          }
+        );
         const sel = window.getSelection();
-        if (sel) {
+        if (sel && lines.length) {
           const range = document.createRange();
-          range.selectNodeContents(code);
+          range.setStartBefore(lines[0]);
+          range.setEndAfter(lines[lines.length - 1]);
           sel.removeAllRanges();
           sel.addRange(range);
         }
@@ -198,6 +213,19 @@ import tabs from '../install.json';
   }
   .install__panel :global(pre code) {
     font-family: var(--font-mono);
+  }
+  /* In the code block's bottom padding, so a blurb adds no height: the page's
+     scroll budget (floors.spec.ts) holds the default tab to its measured fit. */
+  .install__blurb {
+    position: absolute;
+    right: 0.7rem;
+    bottom: 0.35rem;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1;
+    /* --chip-dim holds 5.34:1 only on an OPAQUE --screen, which the panel is */
+    color: var(--chip-dim);
   }
   .install__copy {
     position: absolute;
