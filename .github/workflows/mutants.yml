@@ -23,8 +23,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           tools: cargo:cargo-mutants cargo-binstall aqua:nextest-rs/nextest/cargo-nextest
-      # cargo-mutants builds its baseline with DEFAULT features — it needs
-      # ALSA even where a reader assumes the flag-stripped release shape.
+      # cargo-mutants builds its baseline with DEFAULT features, so it needs ALSA.
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-gpu
       # workflow_dispatch has no pull_request context, so MUTANTS_BASE is left

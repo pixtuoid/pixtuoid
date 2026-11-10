@@ -2718,7 +2718,7 @@ fn sim_step_decides_each_desks_props_from_its_occupant() {
         crate::token_meter::SHEET_MIN_DELTA_TOKENS,
         now0,
     ));
-    let desk = scene.agents[&id].desk.expect("seated").index.0;
+    let desk = scene.agents[&id].desk.expect("holds a desk").index.0;
     let coffee = HashMap::from([(id, now0)]);
     let desks_at = |now| {
         let mut owned = OwnedSimStores::new();

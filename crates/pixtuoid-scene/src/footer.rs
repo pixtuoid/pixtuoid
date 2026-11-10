@@ -216,7 +216,8 @@ pub(crate) fn footer_tool_tally(scene: &SceneState) -> Vec<ToolTally> {
 }
 
 /// The per-frame inputs `build_footer` renders: `counts` and `tools` come from
-/// the drawn floor's scene, everything else from the [`FooterContext`].
+/// the drawn floor's scene, everything else from the [`FooterContext`], whose
+/// unseated agents at a prompt `build_footer` counts with the drawn floor's.
 #[derive(Debug)]
 pub struct FooterInputs<'a> {
     counts: StateCounts,
@@ -312,6 +313,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let ctx = &inputs.context;
     let mut counts = inputs.counts;
     counts.requires_action += ctx.unseated.requires_action;
+    counts.total += ctx.unseated.requires_action;
     // A warning outranks the stats: it is what the user must act on, a dead
     // source's counts gone stale with it, so it IS the status while it lasts —
     // truncated to fit rather than tiered away.
@@ -393,7 +395,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let quit = format!("{audio_glyph}{floor_suffix}{}", ctx.keys_stats);
 
     // The board owns the friendly "— office empty —"; here it's a bare count.
-    if counts.total == 0 && counts.requires_action == 0 {
+    if counts.total == 0 {
         return fit_tiers(
             [vec![FooterSegment::new(
                 format!(" {count_str} "),
@@ -768,15 +770,35 @@ mod tests {
     /// the footer raises it anyway, in the alarm and in the requires-action rung.
     #[test]
     fn an_unseated_agents_prompt_raises_the_alarm() {
-        let seated = running_slot("/p/seated.jsonl", "Bash", ToolKind::Other);
+        let at_desk = running_slot("/p/at-desk.jsonl", "Bash", ToolKind::Other);
         let mut unseated = requires_action_slot("/p/unseated.jsonl");
         unseated.desk = None;
         let mut office = SceneState::uniform(16);
         let mut drawn = SceneState::uniform(16);
-        drawn.agents.insert(seated.agent_id, seated.clone());
-        for slot in [seated, unseated] {
+        drawn.agents.insert(at_desk.agent_id, at_desk.clone());
+        for slot in [at_desk, unseated] {
             office.agents.insert(slot.agent_id, slot);
         }
+        let line = |warning| {
+            let ctx =
+                FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
+            build_footer(&FooterInputs::new(&drawn, ctx), 200).text()
+        };
+        let warned = line(Some("a source died"));
+        assert!(warned.contains("\u{25b2}1 need you"), "{warned}");
+        let full = line(None);
+        assert!(full.contains("\u{25d0}1 A"), "{full}");
+    }
+
+    /// A floor that draws no one, as a size too small to seat anyone leaves it,
+    /// still raises an unseated agent's prompt rather than a bare count.
+    #[test]
+    fn an_empty_floor_raises_an_unseated_agents_prompt() {
+        let mut unseated = requires_action_slot("/p/unseated.jsonl");
+        unseated.desk = None;
+        let mut office = SceneState::uniform(16);
+        office.agents.insert(unseated.agent_id, unseated);
+        let drawn = SceneState::uniform(16);
         let line = |warning| {
             let ctx =
                 FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
