@@ -4860,7 +4860,7 @@ async fn a_claimed_paths_hint_carries_its_own_last_rename() {
     let mut hints = Vec::new();
     for named in [
         "",
-        "{\"rename\":\"Fix login\"}\n",
+        "{\"rename\":\"Draft\"}\n{\"rename\":\"Fix login\"}\n",
         "{\"rename\":\"Sisko\",\"child\":true}\n",
         "",
     ] {
