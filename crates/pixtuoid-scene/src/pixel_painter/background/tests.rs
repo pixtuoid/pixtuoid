@@ -771,7 +771,7 @@ fn fullest_moon_day() -> u32 {
 }
 
 /// The pane-luminance rig every weather/time invariant below shares: the glass
-/// mean for one theme × hour × weather, at the year's brightest night.
+/// mean for one theme × hour × weather, on [`fullest_moon_day`].
 fn pane(theme: &'static crate::theme::Theme, hour: u32, w: Weather) -> f32 {
     const BUF_W: u16 = 120;
     const TOP_WALL_H: u16 = 26;

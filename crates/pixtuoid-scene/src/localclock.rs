@@ -55,7 +55,7 @@ fn base() -> chrono::NaiveDate {
         .expect("a year has a day no holiday touches")
 }
 
-/// `day` counts FORWARD from the base date by calendar arithmetic, not as a
+/// `day` counts FORWARD from day 0 by calendar arithmetic, not as a
 /// day-of-month: a search that walks days to find a weather or moon phase runs
 /// past 31, and `with_ymd_and_hms(.., 1, 40, ..)` is an invalid date that panics
 /// in exactly the zones whose day-hash sequence needs the extra days.
@@ -80,18 +80,18 @@ fn local(day: u32, h: u32, m: u32) -> SystemTime {
         .expect("a helper's time early in its base year is valid and unambiguous in every zone")
 }
 
-/// Local `h:m` on `day`'s own local date, not the reference day: a run on
+/// Local `h:m` on `day`'s own local date, not day 0: a run on
 /// today's sky. `None` where that local time doesn't exist.
 pub(crate) fn on_date_of(day: SystemTime, h: u32, m: u32) -> Option<SystemTime> {
     local_instant(local_time(day).date(), h, m)
 }
 
-/// Local `h:00` on the reference day.
+/// Local `h:00` on day 0.
 pub fn at_hour(h: u32) -> SystemTime {
     local(0, h, 0)
 }
 
-/// Local `h:m` on the reference day.
+/// Local `h:m` on day 0.
 pub fn at_hour_min(h: u32, m: u32) -> SystemTime {
     local(0, h, m)
 }
@@ -102,7 +102,7 @@ pub(crate) fn on_day(day: u32, h: u32) -> SystemTime {
     local(day, h, 0)
 }
 
-/// Local `h:00`, `day` days after the base date — weather and moon phase vary by
+/// Local `h:00`, `day` days after day 0 — weather and moon phase vary by
 /// day at a fixed hour, so a search over days reaches different sky states. Any
 /// `day` is valid, including past the end of the month; `None` where the date is
 /// past chrono's calendar, `h` is no hour, or that local time is skipped or
