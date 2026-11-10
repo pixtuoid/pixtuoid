@@ -151,15 +151,12 @@ mod tests {
     }
 
     #[test]
-    fn windows_command_treats_cmd_first_token_delimiters_as_unsafe() {
-        // `;` `,` `=` are legal Win32 filename chars and tab survives at the
-        // NTFS layer, so a space-free path can genuinely carry one.
-        for path in [
-            r"C:\tools\a;b\pixtuoid-hook.exe",
-            r"C:\tools\a,b\pixtuoid-hook.exe",
-            r"C:\tools\a=b\pixtuoid-hook.exe",
-            "C:\\tools\\a\tb\\pixtuoid-hook.exe",
-        ] {
+    fn windows_command_treats_every_cmd_metachar_a_path_can_hold_as_unsafe() {
+        // Spelled out, not read from `CMD_UNSAFE`, so a char dropped there fails
+        // here. Win32 names reserve `<` `>` `"` `|` ("Naming Files",
+        // learn.microsoft.com); tab survives at the NTFS layer.
+        for c in [' ', '\t', ';', ',', '=', '&', '(', ')', '^', '%'] {
+            let path = &format!(r"C:\tools\a{c}b\pixtuoid-hook.exe");
             let short = resolve_windows_command(path, "codex", |_| {
                 Some(r"C:\TOOLS\SHORT~1\PIXTUO~1.EXE".to_string())
             });

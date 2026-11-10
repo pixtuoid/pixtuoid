@@ -117,11 +117,7 @@ pub(crate) fn verify_target(
                 );
             }
         }
-        ShimRef::Unknown => {
-            // SOFT, not hard: a novel-but-valid command shape lands here, and the
-            // genuine no-hooks case is already a HARD issue from the primary's verify.
-            notes.push("could not read the shim path from the managed hook command".into());
-        }
+        ShimRef::Unknown => {}
     }
     let name = t.display_name();
     if let Primary::Config {
@@ -130,6 +126,12 @@ pub(crate) fn verify_target(
     } = t.primary
     {
         verify_beside(render, name, &mut issues, &mut notes, &mut shims);
+    }
+    // SOFT, not hard: a novel-but-valid command shape lands here, and the genuine
+    // no-hooks case is already a HARD issue from the primary's verify. A beside
+    // file that bakes the shim answers for a config that carries none.
+    if shims.iter().all(|s| *s == ShimRef::Unknown) {
+        notes.push("could not read the shim path from the managed hook command".into());
     }
     if let Some(files) = t.primary.owned_files() {
         verify_owned_drift(t, files, &path, &mut issues, &mut notes);
@@ -365,10 +367,7 @@ fn converge_files(
 /// CLI that never loaded the rewrite still runs, so the next convergence redoes it.
 pub(crate) fn put_back(rewritten: &[(PathBuf, String)]) -> Result<()> {
     for (p, replaced) in rewritten {
-        restore(
-            &io::lock_config(p)?,
-            (!replaced.is_empty()).then_some(replaced.as_str()),
-        )?;
+        io::lock_config(p)?.restore((!replaced.is_empty()).then_some(replaced.as_str()))?;
     }
     Ok(())
 }
@@ -546,6 +545,11 @@ fn install_target_from(
         .unwrap_or_else(|| (t.default_config_path)())?;
     let (binary, explicit_hook) = resolve_hook_binary_from(t, env_hook, io::default_hook_binary)?;
     let hook_cmd = (t.hook_command)(&binary, explicit_hook)?;
+    // Before the lock creates the first file: failing after it leaves a plugin root
+    // no manifest names, which no disconnect removes.
+    if let Some(host) = t.host {
+        host.cli.require()?;
+    }
     // Lost-update TOCTOU: two concurrent pixtuoid runs would otherwise interleave
     // read(A)→write(B)→write(A), and A's rename clobbers B's change.
     let lock = io::lock_config(&path)?;
@@ -593,7 +597,7 @@ fn install_target_from(
         && let Err(e) = connect_host(host, &path)
     {
         if outcome.changed
-            && let Err(undo) = restore(&lock, prior.as_deref())
+            && let Err(undo) = lock.restore(prior.as_deref())
         {
             return Err(e.context(format!("the hooks it wrote stay in place: {undo:#}")));
         }
@@ -612,9 +616,8 @@ fn install_target_from(
 
 /// Strip what an older pixtuoid merged into the CLI's own config, then register. A
 /// registration that fails after the strip leaves neither firing, which is what a
-/// failed connect reads as; a CLI that isn't on PATH fails it before the strip.
+/// failed connect reads as; a CLI that isn't on PATH failed it before any write.
 fn connect_host(host: &target::HostRegistration, primary: &std::path::Path) -> Result<()> {
-    host.cli.require()?;
     strip_legacy(host)?;
     (host.register)(primary)
 }
@@ -633,23 +636,6 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
         path.display()
     );
     strip_managed(legacy.strip, &path)
-}
-
-/// Put the locked file back as an install found it: `prior`, or no file at all.
-fn restore(lock: &io::ConfigLock, prior: Option<&str>) -> Result<()> {
-    // A host's failed registration may have taken the file's dir with it.
-    match prior {
-        Some(content) => {
-            if let Some(dir) = lock.target().parent() {
-                std::fs::create_dir_all(dir)?;
-            }
-            lock.write_atomic(content)
-        }
-        None => match std::fs::remove_file(lock.target()) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
-            _ => Ok(()),
-        },
-    }
 }
 
 /// Remove the entries `uninstall` recognizes from `path` under its lock; whether
@@ -736,8 +722,7 @@ fn write_owned_file(
     }
     // Atomic (temp-in-dir → fsync → rename), NOT a plain `fs::write`: a torn write
     // leaves a half-rendered plugin the gateway then fails to load.
-    lock.write_atomic(&want)
-        .with_context(|| format!("writing {}", p.display()))?;
+    lock.write_atomic(&want)?;
     Ok(Some(replaced))
 }
 
