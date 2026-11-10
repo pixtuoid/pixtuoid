@@ -830,12 +830,12 @@ impl RemoteOffice {
     }
 
     /// Take one line `encode` wrote, received at the device's `now`. An agent
-    /// keeps its desk and arrival from line to line, and one no desk is free
-    /// for is unseated until one frees, then walks in from that line's `now`.
-    /// One new to the office arrives at `now` on a line from another machine,
-    /// at its creation on a line from the same machine, and never on the first
-    /// line. A line from another machine also walks the previous machine's cast
-    /// out from `now`.
+    /// keeps its desk and arrival from line to line unless it lent the desk
+    /// while walking out; one without a desk is unseated until one frees, then
+    /// walks in from that line's `now`. One new to the office arrives at `now`
+    /// on a line from another machine, at its creation on a line from the same
+    /// machine, and never on the first line. A line from another machine also
+    /// walks the previous machine's cast out from `now`.
     ///
     /// # Errors
     ///

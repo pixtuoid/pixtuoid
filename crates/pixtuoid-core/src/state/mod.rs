@@ -330,8 +330,8 @@ pub struct AgentSlot {
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
-    /// Its desk; `None` while it is unseated, counted but drawn nowhere. Only a
-    /// new layout ([`SceneState::set_capacities`]) moves it.
+    /// Its desk; `None` while it is unseated, counted but drawn nowhere. A new
+    /// layout ([`SceneState::set_capacities`]) or a remote lender's return moves it.
     pub desk: Option<FloorDesk>,
     /// Monotonic count of tool calls this agent has made this session.
     pub tool_call_count: u32,
