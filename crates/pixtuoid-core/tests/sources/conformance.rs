@@ -131,9 +131,9 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
 
 /// The WATCHER half of coalescing: `all_source_fixtures_decode_and_coalesce`
 /// drives the wire ALONE, so the first-sight seed — the thing production
-/// actually registers with — is never exercised there. This is also the
-/// windows-only catch for the path-key fold: on Unix `normalize_path_key` is
-/// the identity, so a raw vs normalized key divergence is invisible locally.
+/// actually registers with — is never exercised there. Windows folds the key's
+/// case, so there this also checks that the registry row's deriver and the
+/// source's decoder agree on the folded key.
 #[test]
 fn a_seeded_drive_coalesces_with_each_transcripts_own_decoder() {
     let mut ran = 0;

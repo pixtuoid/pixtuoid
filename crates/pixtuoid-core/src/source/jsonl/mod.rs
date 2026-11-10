@@ -20,8 +20,6 @@ mod tests;
 mod unclaim;
 mod walk;
 
-#[cfg(test)]
-pub(crate) use crate::source::decoder::is_subagent_path;
 pub use liveness::LivenessProbe;
 pub use liveness::ProbeSnapshot;
 pub use unclaim::ChildEndUnclaims;
@@ -37,6 +35,7 @@ use unclaim::drain_child_end_unclaims;
 use walk::{RootRead, scan_root, walk_jsonl};
 
 use crate::source::decoder::LineDecoder;
+use crate::source::first_sight::{HeadLabel, Sight};
 
 pub use crate::source::decoder::PathFilter;
 pub use crate::source::decoder::{IdDeriver, TailActivity};
@@ -75,14 +74,6 @@ fn no_cwd_from_path(_p: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Pulls a display label out of ONE decoded head line, for a source that names
-/// its session in the transcript HEAD rather than only in the tail stream.
-/// `None` on a source's registry row means it has no such name — which is
-/// load-bearing, not merely absent: it lets the head scan stop at the first
-/// `cwd` instead of reading on for a label that can never arrive. **omp** is
-/// the one override; see its `omp_head_title`.
-pub(crate) type HeadLabel = fn(&serde_json::Value) -> Option<String>;
-
 #[derive(Clone, Copy)]
 struct SourceDecoders {
     decode_line: LineDecoder,
@@ -118,20 +109,6 @@ mod folded {
             (self.0)(&super::walk::id_path(path))
         }
     }
-}
-
-/// What the watcher's first sight of a transcript still holds. Absent = never
-/// registered, or fully retired by an exit un-claim.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Sight {
-    /// Registered: appends decode without re-registering.
-    Claimed,
-    /// Its session ended: a DECODED terminator, an oversized span whose tail
-    /// its [`SessionEndChecker`] matches, or a child-end un-claim: the path
-    /// stays KNOWN, so [`revouch_gated_files`](liveness::revouch_gated_files)
-    /// won't replay it however live the probe says the (still-open) rollout is,
-    /// and only an append that shows activity re-registers it.
-    Ended,
 }
 
 #[derive(Clone, Copy)]

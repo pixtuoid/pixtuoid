@@ -5,7 +5,10 @@ import { REPO, CRATES, floorById, floorName } from '../consts';
 const floor = floorById('install');
 // The README regenerates its install block from this same file, so the two
 // can't drift — the site shows every method, the README only `readme: true`.
-import tabs from '../install.json';
+import install from '../install.json';
+import { splitCmds } from '../../config/install-cmds.mjs';
+
+const tabs = install.map((t) => ({ ...t, commands: splitCmds(t.cmds).commands }));
 ---
 
 <section
@@ -50,8 +53,12 @@ import tabs from '../install.json';
         {/* no aria-label: the visible "Copy" text IS the accessible name, so
               the textContent swap stays exposed. A name change alone isn't
               announced, hence the role=status sibling — WCAG 4.1.3. */}
-        <button class="install__copy" data-copy={t.cmds.join('\n')}>Copy</button>
-        <span class="sr-only" role="status" data-copy-status />
+        {t.commands.length > 0 && (
+          <>
+            <button class="install__copy" data-copy={t.commands.join('\n')}>Copy</button>
+            <span class="sr-only" role="status" data-copy-status />
+          </>
+        )}
       </div>)}
 
       <p class="install__note text-scrim">
@@ -118,12 +125,19 @@ import tabs from '../install.json';
       }
       function manual() {
         // no / blocked Clipboard API (insecure context, old browser): select
-        // the command so the user can copy it — don't fail silently.
-        const code = btn.parentElement.querySelector('code');
+        // the command lines, the ones Copy would write, so the user can copy
+        // them — don't fail silently.
+        const commands = btn.dataset.copy.split('\n');
+        const lines = Array.from(btn.parentElement.querySelectorAll('code .line')).filter(
+          function (line) {
+            return commands.indexOf(line.textContent) !== -1;
+          }
+        );
         const sel = window.getSelection();
-        if (sel) {
+        if (sel && lines.length) {
           const range = document.createRange();
-          range.selectNodeContents(code);
+          range.setStartBefore(lines[0]);
+          range.setEndAfter(lines[lines.length - 1]);
           sel.removeAllRanges();
           sel.addRange(range);
         }
