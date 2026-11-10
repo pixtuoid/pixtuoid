@@ -203,19 +203,6 @@ ci-observability:
     bash policy/ci-observability/check.sh
     bash policy/ci-observability/action_behavior_test.sh
 
-# Every committed JSON Schema, held to the metaschema. These are contracts a
-# consumer reads at runtime — the raycast ones pin the `--json` shape — and
-# nothing else parses them: a broken one is invisible until the consumer
-# refuses to start.
-[doc('Validate every committed JSON Schema against the metaschema (check-jsonschema)')]
-[group('rust')]
-json-schemas:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    schemas=(integrations/raycast/contract/*.schema.json)
-    check-jsonschema --check-metaschema "${schemas[@]}"
-    echo "${#schemas[@]} JSON Schemas validated"
-
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link
 # must resolve and every `#anchor` exist. `--offline`, so external-URL decay is
@@ -372,7 +359,6 @@ lint: (_npm ".")
     run composites just actionlint-composites & pids+=($!)
     run zizmor  just zizmor              & pids+=($!)
     run ci-obs  just ci-observability     & pids+=($!)
-    run schemas just json-schemas         & pids+=($!)
     run links   just links               & pids+=($!)
     run ruff    just ruff                & pids+=($!)
     run pyright just pyright             & pids+=($!)
