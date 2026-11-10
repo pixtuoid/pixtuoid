@@ -1,7 +1,7 @@
-//! grok's DELEGATING run, recorded from a blocking `spawn_subagent`.
-//! Conformance skips it (`OUTSIDE_CONFORMANCE`): a child is its own grok session with
-//! its own transcript — two sprites, which the conformance harness's one-AgentId
-//! rule cannot hold (the same reason `cursor.rs` exists).
+//! grok's DELEGATING run, recorded from a blocking `spawn_subagent`, and its tool run's
+//! bare `stop`. Conformance skips the first (`OUTSIDE_CONFORMANCE`): a child is its own
+//! grok session with its own transcript — two sprites, which the conformance harness's
+//! one-AgentId rule cannot hold (the same reason `cursor.rs` exists).
 //!
 //! Both halves of the one run are here: the parent's transcript, whose
 //! `subagent_spawned` line registers the child, and the hook wire, where the
@@ -124,7 +124,7 @@ fn only_the_blocking_spawn_carries_the_task_detail() {
 }
 
 /// A swept or never-seen session's turn end, its tool run's own `stop`: an end
-/// carries no identity, so it creates nothing (a nameless ghost before).
+/// carries no identity, so it creates nothing.
 #[test]
 fn a_bare_stop_for_an_unknown_session_registers_nothing() {
     let lines =
