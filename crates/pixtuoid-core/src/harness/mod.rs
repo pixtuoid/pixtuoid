@@ -15,7 +15,7 @@
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
 //!    in for `emit_registration`, through the SAME registration gate
 //!    ([`Sight::registers`]), head scan and `first_sight_start` from the SAME
-//!    registry row. The file's mtime gate (`should_seed_at_eof`) stays out, as
+//!    registry row. The seed-at-EOF decision (`should_seed_at_eof`) stays out, as
 //!    does what the registry's native-only `NativeTranscript` column derives
 //!    (the title, the label, a path-derived cwd), which a wasm-clean build lacks.
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
@@ -908,10 +908,7 @@ mod tests {
         let mut fold = Fold::default();
         fold.feed(&child, [head.to_string(), call.to_string()], at);
         let linked = slots(&fold);
-        assert!(
-            linked.iter().all(|(_, parent)| parent.is_some()),
-            "{linked:?}"
-        );
+        assert!(matches!(linked[..], [(_, Some(_))]), "{linked:?}");
         fold.feed(&child, [call.to_string()], at);
         assert_eq!(fold.driven().seeds.len(), 2, "a child's feed showing life");
         assert_eq!(slots(&fold), linked);
