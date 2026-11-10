@@ -290,8 +290,7 @@ type Decoded = (
 /// daemon's envelopes decode to no `AgentEvent` by design (presence rides
 /// `presence_decoder`), and the watcher registers a `transcript` through
 /// `cwd_extractor` and `parent_extractor` on whichever line a first sight
-/// reads, a revived file's new bytes included, where `Drive`'s seed reads only
-/// its head. A hook envelope never meets them.
+/// reads, a revived file's new bytes included. A hook envelope never meets them.
 /// Compared as rendered, the way a golden is: `PathBuf` equality drops a
 /// trailing slash, and grok's `workspaceRoot` fallback differs by exactly that.
 fn events_of(source: &str, drive: &Drive, lines: &[Value], transcript: bool) -> Decoded {

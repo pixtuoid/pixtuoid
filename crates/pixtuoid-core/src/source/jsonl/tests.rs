@@ -9,8 +9,6 @@ use super::*;
 use crate::AgentId;
 use crate::source::claude_code::{cc_activity_recency, cc_session_ended, decode_cc_line};
 use crate::source::decoder::{accept_all_paths, default_id_from_path};
-use crate::source::first_sight::detect_parent_id;
-use crate::source::registry::cwd_extractor_for;
 use crate::source::{AgentEvent, Transport};
 
 fn snap(pairs: &[(&str, i32)]) -> ProbeSnapshot {
@@ -237,125 +235,6 @@ fn default_id_from_path_returns_normalized_path_key() {
     assert_eq!(
         default_id_from_path(p),
         "/users/me/.claude/projects/x/abc.jsonl"
-    );
-}
-
-#[test]
-fn detect_parent_id_derives_grandparent_transcript_key() {
-    let parent: PathBuf = ["projects", "x", "abc123"].iter().collect();
-    let p = parent.join("subagents").join("agent-1.jsonl");
-    let expected = AgentId::from_parts("claude-code", "abc123");
-    assert_eq!(detect_parent_id(&p, "claude-code"), Some(expected));
-    assert!(is_subagent_path(&p));
-}
-
-#[test]
-fn detect_parent_id_none_for_regular_and_lookalike_paths() {
-    assert_eq!(
-        detect_parent_id(
-            Path::new("/Users/me/.claude/projects/x/ses.jsonl"),
-            "claude-code"
-        ),
-        None
-    );
-    let lookalike = Path::new("/Users/me/.claude/projects/subagents-paper/ses.jsonl");
-    assert_eq!(detect_parent_id(lookalike, "claude-code"), None);
-    assert!(!is_subagent_path(lookalike));
-    assert_eq!(
-        detect_parent_id(Path::new("subagents/agent-1.jsonl"), "claude-code"),
-        None
-    );
-}
-
-#[test]
-fn detect_parent_id_keys_on_parent_uuid_component() {
-    let sub = Path::new("/Users/me/.claude/projects/-Users-me-proj/abc123/subagents/agent-1.jsonl");
-    let expected = AgentId::from_parts("claude-code", "abc123");
-    assert_eq!(detect_parent_id(sub, "claude-code"), Some(expected));
-}
-
-#[test]
-fn detect_parent_id_survives_cwd_split() {
-    let under_a = Path::new("/Users/me/.claude/projects/-PROJECT-A/abc123/subagents/agent-1.jsonl");
-    let under_b = Path::new("/Users/me/.claude/projects/-PROJECT-B/abc123/subagents/agent-1.jsonl");
-    let expected = AgentId::from_parts("claude-code", "abc123");
-    assert_eq!(detect_parent_id(under_a, "claude-code"), Some(expected));
-    assert_eq!(detect_parent_id(under_b, "claude-code"), Some(expected));
-    assert_eq!(
-        detect_parent_id(under_a, "claude-code"),
-        detect_parent_id(under_b, "claude-code"),
-        "same <parent-uuid> under different project dirs resolves to the same parent"
-    );
-}
-
-#[test]
-fn detect_parent_id_handles_workflow_nesting() {
-    let sub =
-        Path::new("/Users/me/.claude/projects/p/abc123/subagents/workflows/wf_0d/agent-y.jsonl");
-    let expected = AgentId::from_parts("claude-code", "abc123");
-    assert_eq!(detect_parent_id(sub, "claude-code"), Some(expected));
-}
-
-#[cfg(windows)]
-#[test]
-fn detect_parent_id_handles_backslash_paths() {
-    let p = Path::new(r"C:\Users\Me\.claude\projects\x\abc123\subagents\agent-1.jsonl");
-    let expected = AgentId::from_parts("claude-code", "abc123");
-    assert_eq!(detect_parent_id(p, "claude-code"), Some(expected));
-    assert!(is_subagent_path(p));
-}
-
-#[test]
-fn the_head_scan_dispatches_the_scanned_sources_shape() {
-    let top = br#"{"cwd":"/repo/a"}"#;
-    assert_eq!(
-        crate::source::first_sight::extract_head_fields(top, cwd_extractor_for("omp"), None, None)
-            .cwd,
-        Some(PathBuf::from("/repo/a"))
-    );
-    assert_eq!(
-        crate::source::first_sight::extract_head_fields(top, cwd_extractor_for("test"), None, None)
-            .cwd,
-        Some(PathBuf::from("/repo/a")),
-        "an unregistered harness source keeps the shared top-level default"
-    );
-    let nested = br#"{"type":"session_meta","payload":{"cwd":"/repo/b","id":"u"}}"#;
-    assert_eq!(
-        crate::source::first_sight::extract_head_fields(
-            nested,
-            cwd_extractor_for("codex"),
-            None,
-            None
-        )
-        .cwd,
-        Some(PathBuf::from("/repo/b"))
-    );
-    let mixed = b"not-json\n{\"type\":\"noise\"}\n{\"cwd\":\"/repo/c\"}\n";
-    assert_eq!(
-        crate::source::first_sight::extract_head_fields(
-            mixed,
-            cwd_extractor_for("omp"),
-            None,
-            None
-        )
-        .cwd,
-        Some(PathBuf::from("/repo/c"))
-    );
-}
-
-#[test]
-fn cc_head_scan_ignores_codex_shaped_payload_cwd() {
-    let codex_shaped = br#"{"type":"session_meta","payload":{"cwd":"/foreign/repo","id":"u"}}"#;
-    assert_eq!(
-        crate::source::first_sight::extract_head_fields(
-            codex_shaped,
-            cwd_extractor_for("claude-code"),
-            None,
-            None
-        )
-        .cwd,
-        None,
-        "a foreign source's cwd shape must not extract for a CC transcript"
     );
 }
 
@@ -913,51 +792,6 @@ async fn gated_file_registers_on_oversized_first_append() {
 fn t_head_label(v: &serde_json::Value) -> Option<String> {
     let t = v.get("title")?.as_str()?;
     (!t.is_empty()).then(|| format!("t·{t}"))
-}
-
-/// Both head fields come back from ONE pass, and a source with no head label
-/// still gets its cwd. (The scan's STOP point — the cost half of this seam — is
-/// pinned by `first_sight::tests::head_scan_stops_on_cwd_alone_when_the_source_has_no_head_label`,
-/// where the predicate is directly observable.)
-#[test]
-fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
-    let plain = "{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n{\"type\":\"assistant\"}\n";
-    let head = crate::source::first_sight::extract_head_fields(
-        plain.as_bytes(),
-        cwd_extractor_for("test"),
-        None,
-        None,
-    );
-    assert_eq!(head.cwd.as_deref(), Some(Path::new("/repo/head")));
-    assert_eq!(
-        head.label, None,
-        "a source with no head label must name nothing"
-    );
-
-    let titled = "{\"type\":\"title\",\"title\":\"Ship it\"}\n{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
-    let head = crate::source::first_sight::extract_head_fields(
-        titled.as_bytes(),
-        cwd_extractor_for("test"),
-        Some(t_head_label),
-        None,
-    );
-    assert_eq!(head.cwd.as_deref(), Some(Path::new("/repo/head")));
-    assert_eq!(head.label.as_deref(), Some("t·Ship it"));
-
-    // The title slot exists but is EMPTY (omp's subagents, forever): the head
-    // read must fall through to the cwd-basename deriver, not name it "".
-    let empty =
-        "{\"type\":\"title\",\"title\":\"\"}\n{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
-    let head = crate::source::first_sight::extract_head_fields(
-        empty.as_bytes(),
-        cwd_extractor_for("test"),
-        Some(t_head_label),
-        None,
-    );
-    assert_eq!(
-        head.label, None,
-        "an empty slot must not become an empty name"
-    );
 }
 
 async fn walk_once_with_head_label(

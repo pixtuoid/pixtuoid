@@ -357,13 +357,15 @@ pub(super) async fn walk_jsonl(
             tail.as_deref().map(decoders.activity_recency),
             Some(super::TailActivity::SidecarOnly)
         );
-        // Judged on the window `rescan_skipped_tail` reads, wide enough to hold
-        // a tool result's whole line.
-        let revives = sight != Some(Sight::Ended)
-            || read_tail(path, SKIP_RESCAN_BYTES)
+        let leads = match Sight::leads(sight) {
+            Some(leads) => leads,
+            // Judged on the window `rescan_skipped_tail` reads, wide enough to
+            // hold a tool result's whole line.
+            None => read_tail(path, SKIP_RESCAN_BYTES)
                 .await
-                .is_some_and(|t| tail_shows_activity(&t, path, source, decoders.decode_line));
-        if sight != Some(Sight::Claimed) && !metadata_only && revives {
+                .is_some_and(|t| tail_shows_activity(&t, path, source, decoders.decode_line)),
+        };
+        if leads && !metadata_only {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
             let head = match read_head(path).await {
@@ -417,14 +419,10 @@ pub(super) async fn walk_jsonl(
     // per-line key disagree and every JSONL event lands on a phantom id.
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
 
-    // A revived GATED file reads only the tail, which may lack what only a head
-    // carries: Codex's `session_meta` cwd and parent, and the title. Without
-    // them the revive registers empty-cwd onto the short reap, or a child as a
-    // root.
     let extract = cwd_extractor_for(source);
     let parent = parent_extractor_for(source);
     let mut first_sight = extract_head_fields(new_bytes, extract, None, parent);
-    if (first_sight.cwd.is_none() || (parent.is_some() && first_sight.parent.is_none()))
+    if first_sight.lack_the_head(parent)
         && seen.lock().await.get(path) != Some(&Sight::Claimed)
         && let Some(head) = read_head(path).await
     {
@@ -451,10 +449,8 @@ pub(super) async fn walk_jsonl(
         decoded.extend(decode_line(&transcript_path_str, source, v));
     }
 
-    // A trailer flushed after the end line (grok's `hook_execution{stop}`)
-    // proves no revival.
-    let ended = seen.lock().await.get(path) == Some(&Sight::Ended);
-    if (!ended || decoded.iter().any(|ev| ev.shows_activity()))
+    let sight = seen.lock().await.get(path).copied();
+    if Sight::leads(sight).unwrap_or_else(|| decoded.iter().any(AgentEvent::shows_activity))
         && !matches!(
             (decoders.activity_recency)(new_bytes),
             super::TailActivity::SidecarOnly

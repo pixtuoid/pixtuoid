@@ -258,12 +258,18 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             assert_eq!(ev.agent_id(), id, "{scenario}: hook half split");
         }
 
-        // The recorded human ordering: whole-transcript-first would end the
-        // FIRST life, making the hook round a resurrect that restarts counting.
+        // The recorded human ordering: the call is written before the approval
+        // round and its result after, so the hook round meets a live slot, not
+        // one the transcript's own end walked out.
         let cut = jsonl_lines
             .iter()
-            .position(|l| parsed(l)["message"]["role"] == "toolResult")
-            .unwrap_or(jsonl_lines.len());
+            .position(|l| {
+                let events = transcript_drive.lines([l]).events;
+                events
+                    .iter()
+                    .any(|e| matches!(e, AgentEvent::ToolUseEnd { .. }))
+            })
+            .expect("the round's tool result");
         let tail = hook_lines.len().saturating_sub(1);
         let mut fold = Fold::default();
         for (drive, part) in [

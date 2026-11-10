@@ -78,7 +78,8 @@ impl Drive {
         };
         let &(_, key, spelling) = WRITE_STAMPS.iter().find(|(s, ..)| s == source)?;
         let mut decoded = Driven::empty();
-        let seed = self.seed(lines.iter().map(AsRef::as_ref));
+        let head = super::joined(lines.iter());
+        let seed = self.first_sight(&head, &head);
         decoded.seed_events = usize::from(seed.is_some());
         let sink = BreadcrumbSink::default();
         let (hooks, transcript) = tracing::subscriber::with_default(sink.clone(), || {
