@@ -411,9 +411,9 @@ fn namesake_rows_read_their_floors_nameplates() {
             .expect("a row per agent")
     };
     for (agent, floor) in [(a, 0), (b, 0), (up, 1)] {
-        let projection = pixtuoid_scene::floor::project_floor_scene(&scene, floor);
+        let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, floor);
         let namesakes =
-            pixtuoid_scene::nameplate::Namesakes::of(projection.scene().agents.values());
+            pixtuoid_scene::nameplate::Namesakes::of(floor_scene.scene().agents.values());
         assert_eq!(row(agent), namesakes.nameplate(&scene.agents[&agent]));
     }
     assert_ne!(row(a), row(b));

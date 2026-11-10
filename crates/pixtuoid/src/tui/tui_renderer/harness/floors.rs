@@ -541,10 +541,10 @@ fn every_painter_shows_the_one_board_of_a_floor() {
         r.session.prepare(scene, now);
         r.session.navigate(floor, now);
         r.session.cancel_slide();
-        let drawn = project_floor_scene(scene, floor);
+        let floor_scene = project_floor_scene(scene, floor);
         let ctx = r.chrome.footer(&r.session, scene);
         pixtuoid_scene::neon_sign::wall_board(
-            drawn.scene(),
+            floor_scene.scene(),
             ctx.gateway,
             ctx.floor,
             Motion::Full,

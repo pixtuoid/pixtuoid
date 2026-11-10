@@ -612,7 +612,7 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
             now,
             pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
         );
-        let hits = draw_frame(&mut term, &mut draw_ctx, &scene, pixel.as_mut())?;
+        let hits = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
         // The burned callout's anchor: home_desks[0] of the layout the office
         // side was drawn on.
         let desk_px = match &pixel {

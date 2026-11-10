@@ -30,6 +30,9 @@ pub use pixtuoid_scene::pet::PetState;
 #[derive(Debug)]
 pub struct DrawCtx<'a> {
     pub world: FloorInputs<'a>,
+    /// The whole office `world`'s floor is projected from, whose agents a
+    /// tooltip names.
+    pub scene: &'a SceneState,
     /// The floor drawn: its sim stores and raster.
     pub floor: &'a mut PerFloor,
     /// The office stores its frame steps and draws with.
@@ -47,8 +50,8 @@ pub struct DrawCtx<'a> {
 
 impl<'a> DrawCtx<'a> {
     /// An offscreen still of one floor, `floor_scene` its projection of `full`,
-    /// every input and overlay off; the footer's office-wide context comes from
-    /// `full`, as the live renderer's does.
+    /// every input and overlay off; the footer's office-wide context and a
+    /// tooltip read `full`, as the live renderer's do.
     #[doc(hidden)]
     pub fn offscreen(
         floor: &'a mut PerFloor,
@@ -66,6 +69,7 @@ impl<'a> DrawCtx<'a> {
                 floor: meta,
                 pets: Default::default(),
             },
+            scene: full,
             floor,
             office,
             mouse_pos: None,
@@ -269,7 +273,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
         footer: &footer,
         overlays: &overlays,
         theme,
-        office: scene,
+        office: ctx.scene,
         now,
         pets: world.pets,
         mouse_pos: ctx.mouse_pos,

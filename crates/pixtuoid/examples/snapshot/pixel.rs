@@ -307,13 +307,13 @@ mod tests {
             )
         };
         let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
-        draw_frame(&mut term, &mut ctx, scene, None).unwrap();
+        draw_frame(&mut term, &mut ctx, None).unwrap();
         let cells = term.backend().buffer();
         let classic = cells_to_rgba(cells, cells.area);
         let mut cutaway =
             PixelOffice::of_draw_frame(&pack, (COLS, ROWS), LookKind::Cutaway).unwrap();
         let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
-        draw_frame(&mut term, &mut ctx, scene, Some(&mut cutaway)).unwrap();
+        draw_frame(&mut term, &mut ctx, Some(&mut cutaway)).unwrap();
         let cells = term.backend().buffer();
         let composed = compose(cells, cells.area, Some(&cutaway));
         (classic, composed, cutaway)

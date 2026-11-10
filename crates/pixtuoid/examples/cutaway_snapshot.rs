@@ -16,7 +16,7 @@ use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid_core::source::claude_code;
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
-use pixtuoid_scene::floor::{FloorMeta, FloorSession};
+use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PerFloor, PerOffice, project_floor_scene};
 use pixtuoid_scene::layout::Viewport;
 use pixtuoid_scene::look::{Look, Place, RenderInputs};
 use pixtuoid_scene::render_scale::RenderScale;
@@ -35,7 +35,7 @@ const _: () = assert!(
     "the default cast must share a working directory"
 );
 
-fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String]) {
+fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String], floor: usize) {
     let cap = scene.floor_capacities()[0];
     let seated = now.checked_sub(Duration::from_secs(120)).unwrap_or(now);
     let recent = now.checked_sub(Duration::from_secs(3)).unwrap_or(now);
@@ -73,7 +73,7 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
                 arrived_at: Some(seated),
                 last_event_at: recent,
                 exiting_at: None,
-                desk: Some(FloorDesk::new(i / cap, i % cap)),
+                desk: Some(FloorDesk::new(floor + i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -173,18 +173,23 @@ fn main() -> Result<()> {
     let meta = FloorMeta::for_floor(floor.0, floor.1).with_weather(policy);
 
     let mut scene = SceneState::uniform(64);
-    populate(&mut scene, now, agents, &repos);
+    populate(&mut scene, now, agents, &repos, meta.floor_idx);
 
-    // The real sim, at LOGICAL size, drawn through the painters' one entry.
-    let mut session = FloorSession::new(Arc::clone(&pack));
-    session.render(
+    // The real sim, at LOGICAL size, drawn through the painters' one entry
+    // from the projection of the floor `meta` names, as an office's floor is.
+    let mut per_floor = PerFloor::new(Arc::clone(&pack));
+    let mut office = PerOffice::new();
+    let floor_scene = project_floor_scene(&scene, meta.floor_idx);
+    let rendered = pixtuoid_scene::look::render(
+        &mut per_floor,
+        office.stores(),
         Look::Cutaway {
             scale,
             text: pixtuoid_scene::look::WorldText::Baked,
         },
         RenderInputs {
-            world: pixtuoid_scene::floor::FloorInputs {
-                scene: &scene,
+            world: FloorInputs {
+                scene: &floor_scene,
                 now,
                 floor: meta,
                 pets: pixtuoid_scene::floor::PetInputs::default(),
@@ -199,8 +204,9 @@ fn main() -> Result<()> {
             dim: pixtuoid_scene::look::Dim::NONE,
         },
     );
-    let picture = session
-        .picture()
+    let picture = rendered
+        .as_ref()
+        .and_then(|rendered| rendered.picture(&per_floor.raster))
         .ok_or_else(|| anyhow!("{lw}x{lh} does not lay out"))?;
     let (buf, layout) = (picture.pixels, picture.hits.layout());
     let (bw, bh) = (buf.width(), buf.height());

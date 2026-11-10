@@ -788,7 +788,7 @@ fn main() -> Result<()> {
             floor_meta,
         )
     };
-    let drawn = draw_frame(&mut term, &mut draw_ctx, &scene, pixel.as_mut())?;
+    let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
 
     if args.debug_walkable {
         print_walkability_report(&term, args.floor_seed)?;
@@ -966,7 +966,7 @@ mod tests {
                 now,
                 ground,
             );
-            draw_frame(&mut term, &mut ctx, scene, None)
+            draw_frame(&mut term, &mut ctx, None)
                 .unwrap()
                 .expect("a classic frame")
         };

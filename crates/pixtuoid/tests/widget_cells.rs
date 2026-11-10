@@ -24,7 +24,13 @@ fn render_and_get_buffer(now: SystemTime) -> (Buffer, u16, u16) {
     let backend = TestBackend::new(w, h);
     let mut term = Terminal::new(backend).unwrap();
     let pack = std::sync::Arc::new(load_bundled_pack().unwrap());
-    make_draw_ctx!(draw_ctx, &scene, &pack, now);
+    make_draw_ctx!(
+        draw_ctx,
+        &scene,
+        &pack,
+        now,
+        pixtuoid_scene::floor::FloorMeta::ground()
+    );
     draw_scene(&mut term, &mut draw_ctx).unwrap();
     let buffer = term.backend().buffer().clone();
     (buffer, w, h)

@@ -313,6 +313,51 @@ fn the_drawn_geometry_answers_every_cell_as_the_half_block_does() {
     }
 }
 
+/// A still's tooltip names a hovered subagent's lead working upstairs, as the
+/// live frame's does: it reads the whole office, not the floor's projection.
+#[test]
+fn a_stills_tooltip_names_a_lead_on_another_floor() {
+    let now = t0() + Duration::from_secs(20);
+    let mut lead = slot(AgentId::from_transcript_path("/lead/0.jsonl"), 1, 0, t0());
+    lead.label = "UPSTAIRS".into();
+    let mut sub = running("/lead/1.jsonl", 0, "Edit", t0());
+    sub.parent_id = Some(lead.agent_id);
+    let sub_id = sub.agent_id;
+    let scene = scene_with(vec![lead, sub], 16);
+    let (cols, rows) = (140, 48);
+    let mut term = Terminal::new(TestBackend::new(cols, rows)).expect("test backend");
+    let mut floor = PerFloor::new(pack_arc());
+    let mut office = pixtuoid_scene::floor::PerOffice::new();
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
+    let mut ctx = DrawCtx::offscreen(
+        &mut floor,
+        office.stores(),
+        normal_theme(),
+        &scene,
+        &floor_scene,
+        now,
+        FloorMeta::ground(),
+    );
+    let drawn = draw_scene(&mut term, &mut ctx)
+        .expect("draw")
+        .expect("drawn");
+    ctx.mouse_pos = (0..rows)
+        .flat_map(|row| (0..cols).map(move |col| (col, row)))
+        .find(|&(col, row)| {
+            matches!(
+                drawn.at(CellArea::half_block(col, row).bounds(), None),
+                Some(SceneHit::Figure(HoverTarget::Agent(id))) if *id == sub_id
+            )
+        });
+    assert!(ctx.mouse_pos.is_some(), "premise: the subagent is drawn");
+    draw_scene(&mut term, &mut ctx).expect("draw");
+    let text = frame_text(term.backend().buffer());
+    assert!(
+        text.contains("under UPSTAIRS"),
+        "the tooltip names the lead; frame:\n{text}"
+    );
+}
+
 /// A click on an agent focuses it and a click on the pet pets it, through the
 /// mouse handler itself.
 #[test]

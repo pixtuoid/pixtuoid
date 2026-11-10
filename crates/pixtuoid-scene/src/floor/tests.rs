@@ -162,8 +162,8 @@ fn a_floor_past_the_building_projects_empty() {
             .any(|a| a.desk.is_some_and(|s| s.floor == MAX_FLOORS - 1))
     );
     assert!(floor_agents(&scene, MAX_FLOORS).next().is_none());
-    let past = project_floor_scene(&scene, MAX_FLOORS);
-    assert!(past.scene().agents.is_empty());
+    let floor_scene = project_floor_scene(&scene, MAX_FLOORS);
+    assert!(floor_scene.scene().agents.is_empty());
 }
 
 #[test]
@@ -258,8 +258,13 @@ fn num_floors_empty() {
 fn a_floors_projection_holds_its_agents_at_their_own_desks() {
     let scene = make_scene(20, 16);
     for (floor, indices) in [(0, 0..16), (1, 0..4)] {
-        let projected = project_floor_scene(&scene, floor);
-        let mut desks: Vec<_> = projected.scene().agents.values().map(|a| a.desk).collect();
+        let floor_scene = project_floor_scene(&scene, floor);
+        let mut desks: Vec<_> = floor_scene
+            .scene()
+            .agents
+            .values()
+            .map(|a| a.desk)
+            .collect();
         desks.sort();
         let want: Vec<_> = indices
             .map(|index| Some(FloorDesk::new(floor, index)))
@@ -605,8 +610,8 @@ fn every_floor_of_an_office_shares_its_offline() {
         pets: PetInputs::default(),
     };
     for floor in 0..2 {
-        let projected = project_floor_scene(&scene, floor);
-        let seen = office.floor_world(world, &projected, floor, &[]).floor;
+        let floor_scene = project_floor_scene(&scene, floor);
+        let seen = office.floor_world(world, &floor_scene, floor, &[]).floor;
         assert!(seen.offline && seen.floor_idx == floor, "floor {floor}");
     }
 }
@@ -1121,13 +1126,13 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
     let mut office = PerOffice::new();
     office.coffee.insert(downstairs, t0());
     let mut upstairs = PerFloor::new(Arc::new(crate::pack::test_office()));
-    let projected = project_floor_scene(&scene, 1);
+    let floor_scene = project_floor_scene(&scene, 1);
     let stepped = step_floor(
         &mut upstairs,
         &mut office.coffee,
         &mut office.chitchat,
         crate::floor::FloorInputs {
-            scene: &projected,
+            scene: &floor_scene,
             now: t0(),
             floor: FloorMeta::for_floor(1, num_floors(&scene)),
             pets: crate::floor::PetInputs::default(),

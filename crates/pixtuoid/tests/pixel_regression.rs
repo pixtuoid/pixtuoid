@@ -3,6 +3,7 @@ mod common;
 use std::time::{Duration, SystemTime};
 
 use common::{fixture_scene, render_hash};
+use pixtuoid_core::FloorDesk;
 use pixtuoid_scene::floor::FloorMeta;
 use pixtuoid_scene::sky::{Weather, WeatherPolicy};
 use pixtuoid_scene::theme;
@@ -15,8 +16,17 @@ fn floor_seed_affects_render() {
     let ground = FloorMeta::ground();
     let upper = FloorMeta::for_floor(2, 4);
 
+    // Floor 2 draws its own cast: the same agents, seated there.
+    let mut upstairs = scene.clone();
+    for slot in upstairs.agents.values_mut() {
+        slot.desk = slot.desk.map(|desk| FloorDesk {
+            floor: upper.floor_idx,
+            ..desk
+        });
+    }
+
     let hash_ground = render_hash(&scene, now, &theme::NORMAL, ground);
-    let hash_upper = render_hash(&scene, now, &theme::NORMAL, upper);
+    let hash_upper = render_hash(&upstairs, now, &theme::NORMAL, upper);
 
     assert_ne!(
         hash_ground, hash_upper,

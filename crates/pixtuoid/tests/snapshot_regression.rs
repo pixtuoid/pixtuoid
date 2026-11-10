@@ -51,7 +51,7 @@ fn render_produces_distinct_wall_band_and_floor_regions() {
     let backend = TestBackend::new(96, 36);
     let mut term = Terminal::new(backend).expect("terminal");
     let pack = std::sync::Arc::new(load_bundled_pack().expect("pack"));
-    make_draw_ctx!(draw_ctx, &scene, &pack, now);
+    make_draw_ctx!(draw_ctx, &scene, &pack, now, FloorMeta::ground());
     draw_scene(&mut term, &mut draw_ctx).expect("render");
     let buf = draw_ctx.floor.raster.pixels().expect("a frame");
 
