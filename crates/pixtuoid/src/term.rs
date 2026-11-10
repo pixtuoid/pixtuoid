@@ -109,6 +109,28 @@ pub(crate) fn clicolor_forced(v: Option<&str>) -> bool {
     matches!(v.map(str::trim), Some(v) if !v.is_empty() && v != "0")
 }
 
+/// Whether a stream, a `tty` or not, may carry ANSI color under this
+/// environment: the one rule `doctor`'s report and the stderr log share.
+pub(crate) fn stream_color(tty: bool) -> bool {
+    let force = pixtuoid_core::platform::text_env("CLICOLOR_FORCE");
+    let pf = color_preflight(
+        pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
+        force.as_deref(),
+        pixtuoid_core::platform::text_env("TERM").as_deref(),
+    );
+    stream_color_under(tty, pf, force.as_deref())
+}
+
+/// [`stream_color`]'s rule: a tty with color allowed by the SAME
+/// [`color_preflight`] policy the launcher acts on, or `$CLICOLOR_FORCE`
+/// (bixense: forces color even piped) — except `$TERM=dumb`, which outranks
+/// the force (the preflight's own rule: forcing color can't fix a terminal
+/// that renders no escapes).
+fn stream_color_under(tty: bool, pf: ColorPreflight, clicolor_force: Option<&str>) -> bool {
+    pf != ColorPreflight::RefuseDumbTerm
+        && (clicolor_forced(clicolor_force) || (tty && matches!(pf, ColorPreflight::Proceed)))
+}
+
 /// The `pixtuoid doctor` color-availability line, derived from the SAME
 /// `color_preflight` policy the launcher acts on so the diagnostic matches what
 /// `run` would do. `None` when color is plainly available.
@@ -469,6 +491,38 @@ pub(crate) fn query_truecolor() -> Truecolor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The color policy is a pure fn precisely so these arms are testable —
+    /// force-when-piped and dumb-beats-force both survived mutation before the
+    /// extraction.
+    #[test]
+    fn stream_color_truth_table() {
+        use ColorPreflight as Pf;
+        let color = stream_color_under;
+        assert!(color(true, Pf::Proceed, None), "tty + Proceed → on");
+        assert!(!color(false, Pf::Proceed, None), "piped + Proceed → off");
+        assert!(
+            color(false, Pf::Proceed, Some("1")),
+            "CLICOLOR_FORCE forces even piped"
+        );
+        assert!(
+            !color(false, Pf::Proceed, Some("0")),
+            "CLICOLOR_FORCE=0 does not force"
+        );
+        assert!(
+            !color(false, Pf::Proceed, Some("  ")),
+            "a whitespace CLICOLOR_FORCE does not force"
+        );
+        assert!(!color(true, Pf::RefuseNoColor, None), "NO_COLOR refuses");
+        assert!(
+            color(false, Pf::ForceColor, Some("1")),
+            "the force overrides NO_COLOR (pf is already ForceColor)"
+        );
+        assert!(
+            !color(true, Pf::RefuseDumbTerm, Some("1")),
+            "TERM=dumb outranks everything, force included"
+        );
+    }
 
     /// Mode 2026 counts as supported when reported set or reset, not when
     /// unknown (0) or permanently reset (4), and the DA1 reply ends the wait

@@ -64,6 +64,8 @@ pub(crate) struct FloatingApp {
     /// (the `[floating]` config size is LOGICAL and would mis-seed on HiDPI).
     /// `take`n exactly once; `None` afterwards.
     boot: Option<super::PipelineBoot>,
+    /// `--notify-ready`: say so on stdout once `boot` spawns.
+    notify_ready: bool,
     /// The live pipeline — `None` until `resumed` boots it. `redraw` cannot
     /// reach that state because `resumed` sets `live` BEFORE `window` and
     /// `redraw`'s window guard runs first. Don't reorder those assignments.
@@ -124,14 +126,15 @@ impl Stop {
 
 /// What the run keeps beside the office: the config it persists to, its
 /// audio, the log the Sources panel's drift history comes from, whether
-/// this is the first run, which opens the onboarding, and the drift the footer
-/// names.
+/// this is the first run, which opens the onboarding, the drift the footer
+/// names, and whether a launcher waits to hear the window is up.
 pub(crate) struct Settings {
     pub(crate) config_path: PathBuf,
     pub(crate) audio: config::AudioConfig,
     pub(crate) log: crate::run_log::LogLocation,
     pub(crate) first_run: bool,
     pub(crate) drift: crate::doctor::DriftSeen,
+    pub(crate) notify_ready: bool,
 }
 
 /// How the office looks and moves.
@@ -204,6 +207,7 @@ impl FloatingApp {
             log,
             first_run,
             drift,
+            notify_ready,
         }: Settings,
         boot: super::PipelineBoot,
     ) -> Self {
@@ -240,6 +244,7 @@ impl FloatingApp {
             renderer,
             audio_ctl,
             boot: Some(boot),
+            notify_ready,
             live: None,
             last_caps_size: None,
             cursor: PhysicalPosition::new(0.0, 0.0),
@@ -710,6 +715,10 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
                 self.pack.max_density_variant(),
                 self.zoom,
             ));
+            // The first point the window, its GPU and the pipeline all exist.
+            if self.notify_ready {
+                super::say_ready(crate::cli_stdout());
+            }
         }
         self.presented = super::compose::Presented::of_window(
             winit::raw_window_handle::HasWindowHandle::window_handle(&*window)

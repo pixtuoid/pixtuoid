@@ -85,13 +85,13 @@ pub fn run() -> Result<()> {
         );
     }
     let log_level: &'static str = log_level.as_str();
-    let tui_active = matches!(&cmd, Cmd::Run { headless, .. } if !*headless)
+    let file_log = matches!(&cmd, Cmd::Run { headless, .. } if !*headless)
         || matches!(&cmd, Cmd::Floating { .. });
-    let drift = logging::init(tui_active, log_level);
+    let drift = logging::init(file_log, log_level);
     let ran = dispatch(cmd, drift);
-    // The log file's copy of what `main` reports on stderr, which a detached
-    // `floating` discards; a run logging to stderr would show it twice.
-    if tui_active && let Err(e) = &ran {
+    // The log file's copy of `main`'s stderr report, which no one reads once a
+    // detached `floating`'s launcher lets go; a stderr log would show it twice.
+    if file_log && let Err(e) = &ran {
         tracing::error!(error = ?e, "pixtuoid exited with an error");
     }
     ran

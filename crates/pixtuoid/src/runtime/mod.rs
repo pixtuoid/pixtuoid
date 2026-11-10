@@ -32,9 +32,9 @@ pub(crate) type SceneRx = watch::Receiver<Arc<SceneState>>;
 /// Fallback desk capacity when the terminal cannot be queried (e.g. headless mode).
 pub(crate) const FALLBACK_DESKS: usize = 16;
 
-/// The startup inputs shared by `run` + `run_async`. The `theme` is already resolved
-/// (`config::resolve_theme` validates CLI + config in one place), so an unknown theme
-/// can't reach the runtime by construction.
+/// The startup inputs `build_run_config` resolves once for `run`, `floating` and
+/// `serve`. The `theme` is already resolved (`config::resolve_theme` validates the CLI
+/// and the config in one place), so an unknown theme can't reach the runtime by construction.
 #[derive(Debug)]
 pub(crate) struct RunConfig {
     pub(crate) socket: Option<PathBuf>,

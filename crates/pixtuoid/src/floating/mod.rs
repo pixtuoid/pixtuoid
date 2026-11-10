@@ -109,13 +109,13 @@ pub(crate) fn run(
             log,
             first_run,
             drift,
+            notify_ready,
         },
         PipelineBoot {
             socket_path,
             connected,
             proxy,
             rt: rt.handle().clone(),
-            notify_ready,
         },
     );
     let ran = event_loop.run_app(&mut app);
@@ -149,10 +149,6 @@ pub(crate) struct PipelineBoot {
     /// (`PipelineBoot::spawn`): `run` holds no guard, and a `tokio::spawn`
     /// outside a runtime panics.
     rt: tokio::runtime::Handle,
-    /// `--notify-ready`: the boot says so on stdout once it spawns, the first
-    /// point the window, its GPU and the pipeline all exist, and a boot spawns
-    /// once.
-    notify_ready: bool,
 }
 
 /// The pipeline handles, available only once [`PipelineBoot::spawn`] has run.
@@ -231,9 +227,6 @@ impl PipelineBoot {
             });
         }
 
-        if self.notify_ready {
-            say_ready(crate::cli_stdout());
-        }
         LivePipeline {
             scene_rx,
             floor_caps,

@@ -16,7 +16,7 @@ pub(crate) struct Cli {
     /// Log verbosity.
     ///
     /// The TUI and the floating window always log warn+ to a file per run (in
-    /// ~/.cache/pixtuoid/logs/ or $XDG_STATE_HOME/pixtuoid/logs/, or the one file
+    /// ~/.local/state/pixtuoid/logs/ or $XDG_STATE_HOME/pixtuoid/logs/, or the one file
     /// $PIXTUOID_LOG names); debug/trace raise the file's verbosity. Everything
     /// else logs to stderr at this level. ($RUST_LOG remains the escape hatch for
     /// full directive syntax.)

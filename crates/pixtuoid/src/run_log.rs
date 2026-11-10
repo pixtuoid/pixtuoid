@@ -6,21 +6,18 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-/// The directory the runs directory and the crash log share: in the state or
-/// cache directory, else the temp dir.
+/// The directory the runs directory and the crash log share: pixtuoid's
+/// [state directory](crate::config::state_dir), where the XDG spec puts logs.
 fn diagnostics_dir() -> PathBuf {
-    diagnostics_under(
-        crate::install::nonempty_abs_env("XDG_STATE_HOME")
-            .or_else(|| pixtuoid_core::platform::user_home_opt().map(|h| h.join(".cache"))),
-    )
+    diagnostics_under(crate::config::state_dir())
 }
 
-/// [`diagnostics_dir`] under a resolved base, so the no-home arm tests
-/// without the passwd lookup the home read makes.
-fn diagnostics_under(base: Option<PathBuf>) -> PathBuf {
+/// [`diagnostics_dir`] of a resolved state directory, so the no-home arm
+/// tests without the passwd lookup the home read makes.
+fn diagnostics_under(state: Option<PathBuf>) -> PathBuf {
     // No home dir at all: the log must exist somewhere — it is the only runtime
     // diagnostics channel.
-    base.unwrap_or_else(std::env::temp_dir).join("pixtuoid")
+    state.unwrap_or_else(|| std::env::temp_dir().join("pixtuoid"))
 }
 
 /// Where a panic's report goes, whatever `$PIXTUOID_LOG` names.
@@ -97,7 +94,7 @@ fn prune_runs(dir: &Path, now: SystemTime) {
 ///
 /// The mode binds AT CREATION — race-free, no window in which a co-located user
 /// can open the sink. An already-existing DIRECTORY keeps its mode: silently
-/// re-moding a user's `~/.cache` is not ours.
+/// re-moding a user's `~/.local/state` is not ours.
 ///
 /// # Errors
 ///
@@ -199,14 +196,14 @@ const RUN_LOG_EXT: &str = "log";
 /// The size past which the file `$PIXTUOID_LOG` names rotates at startup.
 const LOG_ROTATE_BYTES: u64 = 5 * 1024 * 1024;
 
-/// The most one [`LogLocation::read`] takes, of the named file or the runs
-/// newest first: what the named file holds at most across its two
-/// generations, so a week of verbose runs costs a reader no more than it did.
+/// The most one [`LogLocation::read`] takes, of the named file's tail or the
+/// newest runs: twice what the named file rotates past, so neither a long
+/// verbose run nor a week of runs makes a reader take more.
 const LOG_READ_BYTES: u64 = 2 * LOG_ROTATE_BYTES;
 
 impl LogLocation {
     /// Where this process's log goes: `$PIXTUOID_LOG`'s file, else a runs
-    /// directory in the state, cache or temp directory.
+    /// directory in the state or temp directory.
     pub(crate) fn from_env() -> Self {
         match pixtuoid_core::platform::path_env("PIXTUOID_LOG") {
             Some(p) => LogLocation::File(p),
@@ -336,13 +333,13 @@ mod tests {
         temp_env::with_var_unset("PIXTUOID_LOG", || {
             let home =
                 pixtuoid_core::platform::user_home_opt().expect("a home dir in the test env");
-            let cache = LogLocation::Runs(home.join(".cache").join("pixtuoid").join("logs"));
+            let state = LogLocation::Runs(home.join(".local/state/pixtuoid/logs"));
             for rel in ["", "   ", "rel/state", "~/state"] {
                 temp_env::with_var("XDG_STATE_HOME", Some(rel), || {
                     assert_eq!(
                         LogLocation::from_env(),
-                        cache,
-                        "relative XDG_STATE_HOME {rel:?} must fall back to ~/.cache"
+                        state,
+                        "relative XDG_STATE_HOME {rel:?} must fall back to ~/.local/state"
                     );
                 });
             }
@@ -362,12 +359,16 @@ mod tests {
     /// when there is no home at all.
     #[test]
     fn the_crash_log_sits_beside_the_runs_even_with_no_home() {
-        temp_env::with_var_unset("PIXTUOID_LOG", || {
-            let LogLocation::Runs(runs) = LogLocation::from_env() else {
-                panic!("no $PIXTUOID_LOG reads as a runs directory");
-            };
-            assert_eq!(crash_log_path().parent(), runs.parent());
-        });
+        let abs = if cfg!(windows) { "C:/state" } else { "/state" };
+        temp_env::with_vars(
+            [("PIXTUOID_LOG", None), ("XDG_STATE_HOME", Some(abs))],
+            || {
+                let LogLocation::Runs(runs) = LogLocation::from_env() else {
+                    panic!("no $PIXTUOID_LOG reads as a runs directory");
+                };
+                assert_eq!(crash_log_path().parent(), runs.parent());
+            },
+        );
         assert_eq!(
             diagnostics_under(None),
             std::env::temp_dir().join("pixtuoid")

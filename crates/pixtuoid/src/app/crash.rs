@@ -185,7 +185,7 @@ mod tests {
             panic!("deliberate panic: the crash-hook stream probe");
         }
         // Isolated XDG_STATE_HOME so the child's crash.log never lands in the
-        // developer's real ~/.cache.
+        // developer's real ~/.local/state.
         let state = tempfile::tempdir().unwrap();
         let out = std::process::Command::new(std::env::current_exe().unwrap())
             .args([

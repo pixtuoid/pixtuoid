@@ -34,25 +34,18 @@ test("a launch settles once its child says it is up, and the child outlives the 
   }
 });
 
-test("a child that exits before it is up fails the launch with its code and stderr", async () => {
-  await assert.rejects(launch("process.stderr.write('Error: no adapter\\n'); process.exit(1);"), (e) => {
-    assert.ok(e instanceof LaunchFailedError);
-    assert.equal(e.code, 1);
-    assert.match(e.message, /Error: no adapter/);
-    assert.equal(e.outdated, false);
-    return true;
-  });
+/** A launch of a child that writes `stderr` and exits 1, settled. */
+const failed = (stderr) => launch(`process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);`).catch((e) => e);
+
+test("a child that exits before it is up fails the launch with its code and its error report", async () => {
+  const e = await failed("⚠ pixtuoid: a notice\nError: an old line\nError: no adapter\n\nCaused by:\n    0: gone\n");
+  assert.ok(e instanceof LaunchFailedError);
+  assert.equal(e.code, 1);
+  assert.equal(e.message, "Error: no adapter\n\nCaused by:\n    0: gone");
 });
 
-test("a binary that rejects the command line is one to update", async () => {
-  await assert.rejects(
-    launch("process.stderr.write(\"error: unexpected argument '--notify-ready'\\n\"); process.exit(2);"),
-    (e) => {
-      assert.ok(e instanceof LaunchFailedError);
-      assert.equal(e.outdated, true);
-      return true;
-    },
-  );
+test("a failed launch's stderr with no error report is its message whole", async () => {
+  assert.equal((await failed("  a panic\n")).message, "a panic");
 });
 
 test("a binary that cannot be spawned fails the launch", async () => {

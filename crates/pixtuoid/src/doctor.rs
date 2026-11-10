@@ -844,19 +844,8 @@ struct DoctorReport {
     /// One per probe-backed source, in registry order.
     probes: Vec<ProbePath>,
     home_split: Option<String>,
-    /// Whether the report may carry ANSI color — see [`report_color`].
+    /// Whether the report may carry ANSI color — see [`crate::term::stream_color`].
     color: bool,
-}
-
-/// Whether the report may carry ANSI color: a tty with color allowed by the
-/// SAME `color_preflight` policy the launcher acts on, or `$CLICOLOR_FORCE`
-/// (bixense: forces color even piped) — except `$TERM=dumb`, which outranks
-/// the force (the preflight's own rule: forcing color can't fix a terminal
-/// that renders no escapes).
-fn report_color(tty: bool, pf: crate::term::ColorPreflight, clicolor_force: Option<&str>) -> bool {
-    pf != crate::term::ColorPreflight::RefuseDumbTerm
-        && (crate::term::clicolor_forced(clicolor_force)
-            || (tty && matches!(pf, crate::term::ColorPreflight::Proceed)))
 }
 
 /// ANSI paint, a no-op when [`DoctorReport::color`] is off. The escape codes
@@ -984,15 +973,14 @@ fn collect(
 
     let term_env = pixtuoid_core::platform::text_env("TERM");
     let colorterm_env = pixtuoid_core::platform::text_env("COLORTERM");
-    let clicolor_force = pixtuoid_core::platform::text_env("CLICOLOR_FORCE");
     let color_pf = crate::term::color_preflight(
         pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
-        clicolor_force.as_deref(),
+        pixtuoid_core::platform::text_env("CLICOLOR_FORCE").as_deref(),
         term_env.as_deref(),
     );
     let tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let probe_ok = tty && color_pf != crate::term::ColorPreflight::RefuseDumbTerm;
-    let color = report_color(tty, color_pf, clicolor_force.as_deref());
+    let color = crate::term::stream_color(tty);
     if color {
         // crossterm strips color under `$NO_COLOR` unless forced; pin it rather
         // than rely on the Display path happening not to check today.
@@ -1852,43 +1840,6 @@ mod tests {
         }
     }
 
-    /// The color policy is a pure fn precisely so these arms are testable —
-    /// force-when-piped and dumb-beats-force both survived mutation before the
-    /// extraction.
-    #[test]
-    fn report_color_truth_table() {
-        use crate::term::ColorPreflight as Pf;
-        assert!(report_color(true, Pf::Proceed, None), "tty + Proceed → on");
-        assert!(
-            !report_color(false, Pf::Proceed, None),
-            "piped + Proceed → off"
-        );
-        assert!(
-            report_color(false, Pf::Proceed, Some("1")),
-            "CLICOLOR_FORCE forces even piped"
-        );
-        assert!(
-            !report_color(false, Pf::Proceed, Some("0")),
-            "CLICOLOR_FORCE=0 does not force"
-        );
-        assert!(
-            !report_color(false, Pf::Proceed, Some("  ")),
-            "a whitespace CLICOLOR_FORCE does not force"
-        );
-        assert!(
-            !report_color(true, Pf::RefuseNoColor, None),
-            "NO_COLOR refuses"
-        );
-        assert!(
-            report_color(false, Pf::ForceColor, Some("1")),
-            "the force overrides NO_COLOR (pf is already ForceColor)"
-        );
-        assert!(
-            !report_color(true, Pf::RefuseDumbTerm, Some("1")),
-            "TERM=dumb outranks everything, force included"
-        );
-    }
-
     #[test]
     fn terminal_category_warns_when_an_attempted_probe_did_not_confirm() {
         let mut r = summary_report(vec![]);
@@ -2266,7 +2217,7 @@ mod tests {
         let warning = warning.expect("an unreadable log must be reported");
         assert!(
             !warning.contains(['\u{1b}', '\u{7}', '\u{202e}']),
-            "asserted on `read_log`'s OWN return, not on either presenter — sanitizing per \
+            "asserted on `LogLocation::read`'s OWN return, not on either presenter — sanitizing per \
              presenter is how one of them shipped raw. This warning carries a live OSC / \
              Trojan-Source override: {warning:?}"
         );

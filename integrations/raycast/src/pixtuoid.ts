@@ -10,7 +10,9 @@ import { promisify } from "node:util";
 import type { SourceStatus } from "./contract";
 import type { OutcomeRow } from "./contract-outcome";
 import { rowsOf } from "./conforms";
-import { launchUntilReady } from "./launch";
+import { LaunchFailedError, launchUntilReady } from "./launch";
+// Pinned against the binary by `cli_packaging`'s `the_floating_launch_contract_holds`.
+import floatingLaunch from "../contract/floating-launch.json";
 import outcomeRowSchema from "../contract/outcome-row.schema.json";
 import sourceStatusSchema from "../contract/source-status.schema.json";
 
@@ -132,5 +134,11 @@ export async function toggleSource(id: string, connected: boolean): Promise<Outc
  *  (a config error, no GPU adapter) rejects with its reason instead of passing
  *  for an open window. */
 export async function startFloating(): Promise<void> {
-  await launchUntilReady(await resolveBinary(), ["floating", "--notify-ready"]);
+  await launchUntilReady(await resolveBinary(), floatingLaunch.args);
+}
+
+/** Whether `e` is the binary refusing that launch's command line, as one older
+ *  than it does. */
+export function predatesFloatingLaunch(e: unknown): boolean {
+  return e instanceof LaunchFailedError && e.code === floatingLaunch.usage_exit;
 }

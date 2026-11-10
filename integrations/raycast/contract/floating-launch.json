@@ -1,0 +1,4 @@
+{
+  "args": ["floating", "--notify-ready"],
+  "usage_exit": 2
+}

@@ -47,11 +47,11 @@ comment in `crates/pixtuoid/src/sources.rs` owns the published-wire rule.)
 **A republish may still be owed.** The split (`e21ec7f0`, 2026-07-02) landed
 AFTER the local `ray publish` marker `__raycast_latest_publish_ext/pixtuoid__`
 (`b870d8ba`, 2026-06-19), so the version in the store was built against the
-folded `failed: <msg>` form: it prefix-strips, and renders a bare `failed` toast
-with the reason dropped. The parse in `src/` is already correct, so a republish
-is the whole fix. That tag is never pushed, so a fresh clone has no copy — check
-your own, then the listing at `raycast.com/IvanWng97/pixtuoid`, before assuming
-it is clear.
+folded `failed: <msg>` form: its toast shows a bare `failed`, the reason dropped.
+`src/` parses it right, but Start Floating passes `floating --notify-ready`, so
+the republish waits for the first pixtuoid release with that flag. The marker is
+never pushed, so a fresh clone has no copy — check your own, then the listing at
+`raycast.com/IvanWng97/pixtuoid`, before assuming it is clear.
 
 ## Toolchain policy
 

@@ -140,8 +140,8 @@ fn a_fatal_error_into_a_broken_pipe_still_exits_1() {
     assert_eq!(status.code(), Some(1), "{status:?}");
 }
 
-/// A detached `floating` launch discards its stderr, so a painter that logs
-/// to a file records its fatal error there too.
+/// A detached `floating`'s stderr goes unread once its launcher lets go, so a
+/// painter that logs to a file records its fatal error there too.
 #[test]
 fn a_file_logging_painters_fatal_error_reaches_its_log() {
     let tmp = tempfile::TempDir::new().expect("tempdir");
@@ -288,19 +288,51 @@ fn a_tracing_warning_into_a_gone_stderr_exits_0() {
     assert_eq!(status.code(), Some(0), "{status:?}");
 }
 
-/// A log on a stderr that is no terminal (`2>file`, `| grep`) is plain text.
+/// A log on stderr colors as `doctor`'s report on stdout does: not into a
+/// pipe (`2>file`, `| grep`) unless `$CLICOLOR_FORCE` forces it, and never
+/// for `$TERM=dumb`.
 #[cfg(unix)]
 #[test]
-fn a_log_on_a_piped_stderr_carries_no_ansi() {
+fn a_log_on_stderr_colors_by_the_one_stream_rule() {
     let home = tempfile::TempDir::new().expect("tempdir");
-    let out = common::isolated(&["sources"], home.path())
-        .env("PIXTUOID_LOG", home.path())
-        .output()
-        .expect("run pixtuoid");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("log unreadable") && !stderr.contains('\u{1b}'),
-        "{stderr:?}"
+    for (env, colored) in [
+        (&[][..], false),
+        (&[("CLICOLOR_FORCE", "1")][..], true),
+        (&[("CLICOLOR_FORCE", "1"), ("TERM", "dumb")][..], false),
+    ] {
+        let out = common::isolated(&["sources"], home.path())
+            .env("PIXTUOID_LOG", home.path())
+            .envs(env.iter().copied())
+            .output()
+            .expect("run pixtuoid");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("log unreadable"), "{env:?}: {stderr:?}");
+        assert_eq!(stderr.contains('\u{1b}'), colored, "{env:?}: {stderr:?}");
+    }
+}
+
+/// Raycast's Start Floating passes the contract's args and reads its exit
+/// code as a binary older than them, so this binary takes the one and exits
+/// with the other on a command line it doesn't know.
+#[test]
+fn the_floating_launch_contract_holds() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../integrations/raycast/contract/floating-launch.json");
+    let contract: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("the contract")).expect("json");
+    let args: Vec<&str> = contract["args"]
+        .as_array()
+        .expect("args")
+        .iter()
+        .map(|a| a.as_str().expect("an arg"))
+        .collect();
+    let help = run(&[&args[..], &["--help"]].concat());
+    assert!(help.status.success(), "{help:?}");
+    let refused = run(&[args[0], "--no-such-flag"]);
+    assert_eq!(
+        refused.status.code().map(i64::from),
+        contract["usage_exit"].as_i64(),
+        "{refused:?}"
     );
 }
 

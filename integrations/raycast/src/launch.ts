@@ -1,28 +1,26 @@
 // Apart from `pixtuoid.ts`, which imports `@raycast/api`, so `node:test` can drive it.
 import { spawn } from "node:child_process";
 
-/** clap's exit code for a command line it rejects (clap_builder 4.6.7
- *  `src/util/mod.rs:32` `USAGE_CODE`): what a binary older than a flag the
- *  launch passes exits with. */
-const USAGE_EXIT = 2;
-
 /** A launch whose child exited before it said it was up. */
 export class LaunchFailedError extends Error {
   readonly code: number | null;
 
   constructor(code: number | null, stderr: string) {
     super(
-      stderr.trim() ||
+      errorReport(stderr) ||
         `pixtuoid exited ${code === null ? "on a signal" : `with code ${code}`} before its window opened`,
     );
     this.name = "LaunchFailedError";
     this.code = code;
   }
+}
 
-  /** The binary predates the command line the launch passes. */
-  get outdated(): boolean {
-    return this.code === USAGE_EXIT;
-  }
+/** `stderr` from its last line `main`'s fatal report starts (`Error: `) on,
+ *  else whole: the notices a boot prints first would bury the reason. */
+function errorReport(stderr: string): string {
+  const lines = stderr.split("\n");
+  const at = lines.findLastIndex((line) => line.startsWith("Error: "));
+  return lines.slice(Math.max(at, 0)).join("\n").trim();
 }
 
 /** Spawn `bin` detached, so it outlives Raycast, and settle once it says it is
