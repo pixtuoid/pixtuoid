@@ -373,8 +373,8 @@ pub struct AgentSlot {
 }
 
 impl AgentSlot {
-    /// Whether it holds a desk or takes the next free one: one walking out never
-    /// does, as seated it would appear partway through its exit.
+    /// Whether it holds a desk or, staying, takes the next free one. One walking
+    /// out without a desk never takes one: seated, it would appear partway through its exit.
     pub fn claims_a_desk(&self) -> bool {
         self.desk.is_some() || self.exiting_at.is_none()
     }
@@ -782,8 +782,8 @@ impl SceneState {
     }
 
     /// Take a new layout at `now`. An agent keeps its desk while its floor
-    /// still has that desk; whoever loses one is unseated until a desk frees,
-    /// and walks in from when it takes one.
+    /// still has that desk; whoever loses one takes a free desk, or is
+    /// unseated until one frees, and walks in from when it takes one.
     pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS], now: SystemTime) {
         self.floor_capacities = capacities;
         for slot in self.agents.values_mut() {

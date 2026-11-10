@@ -822,20 +822,18 @@ impl RemoteOffice {
     }
 
     /// Take a new layout at the device's `now`, by
-    /// [`SceneState::set_capacities`]'s rule: an agent keeps a desk its floor
-    /// still has, and whoever that leaves without one is unseated, counted but
-    /// drawn nowhere, until a desk frees.
+    /// [`SceneState::set_capacities`]'s rule.
     pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS], now: SystemTime) {
         self.scene.set_capacities(capacities, now);
     }
 
     /// Take one line `encode` wrote, received at the device's `now`. An agent
     /// keeps its desk and arrival from line to line unless it lent the desk
-    /// while walking out; one without a desk is unseated until one frees, then
-    /// walks in from that line's `now`. One new to the office arrives at `now`
-    /// on a line from another machine, at its creation on a line from the same
-    /// machine, and never on the first line. A line from another machine also
-    /// walks the previous machine's cast out from `now`.
+    /// while walking out; one without a desk takes a free one, or is unseated,
+    /// and walks in from the `now` of the line it takes one on. One new to the
+    /// office arrives at `now` on a line from another machine, at its creation
+    /// on a line from the same machine, and never on the first line. A line
+    /// from another machine also walks the previous machine's cast out from `now`.
     ///
     /// # Errors
     ///

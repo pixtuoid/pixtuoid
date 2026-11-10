@@ -84,9 +84,9 @@ pub(crate) struct Pipeline {
     pub(crate) floor_caps: watch::Sender<[usize; MAX_FLOORS]>,
 }
 
-/// A painter's new floor capacities, a smaller one included: the reducer
-/// re-seats on it ([`SceneState::set_capacities`]), so whoever lost a desk is
-/// unseated instead of sitting where nothing is drawn. An unchanged one wakes no one.
+/// A painter's new floor capacities, a smaller one included, so no one keeps a
+/// desk that is not drawn: the reducer re-seats on it by
+/// [`SceneState::set_capacities`]'s rule. An unchanged one wakes no one.
 pub(crate) fn publish_floor_caps(
     floor_caps: &watch::Sender<[usize; MAX_FLOORS]>,
     caps: [usize; MAX_FLOORS],
