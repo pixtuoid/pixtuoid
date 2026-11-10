@@ -14,8 +14,9 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
-use pixtuoid_core::harness::{Drive, Driven};
+use pixtuoid_core::harness::{Drive, Driven, Fold};
 use pixtuoid_core::source::{AgentEvent, registry};
 
 // ONE set of tree helpers, in `captures.rs`. This file kept byte-identical
@@ -142,10 +143,13 @@ fn a_seeded_drive_coalesces_with_each_transcripts_own_decoder() {
             continue;
         }
         let transcript = transcript_in(&scenario_dir);
-        let driven = Drive::transcript_at(&source, &transcript)
+        let drive = Drive::transcript_at(&source, &transcript)
             .unwrap_or_else(|| panic!("{source}: no transcript decoder"))
-            .seeded()
-            .live_lines(&fixture_lines(&transcript));
+            .seeded();
+        let mut fold = Fold::default();
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        fold.feed_live(&drive, &fixture_lines(&transcript), at);
+        let driven = fold.finish();
         driven.assert_clean(&format!("seeded transcript {}", transcript.display()));
 
         let ids: BTreeSet<_> = driven.events.iter().map(AgentEvent::agent_id).collect();

@@ -477,13 +477,6 @@ impl Drive {
         }
     }
 
-    /// [`Self::lines`], read live ([`Fold::feed_live`]).
-    pub fn live_lines<S: AsRef<str>>(&self, lines: &[S]) -> Driven {
-        let mut fold = Fold::default();
-        fold.feed_live(self, lines, default_now());
-        fold.finish()
-    }
-
     /// The `SessionStart` the watcher's first sight emits for this transcript:
     /// its head read off `read`, or off `head`, the transcript's start, where
     /// `read` lacks what only a head carries.
@@ -945,7 +938,9 @@ mod tests {
         assert_eq!(drive.live_reads(&resumed), [&resumed[..]]);
         let ended = [tool_line(), exit.to_string(), trailer.to_string()];
         assert_eq!(drive.live_reads(&ended), [&ended[..1], &ended[1..]]);
-        let d = drive.seeded().live_lines(&ended);
+        let mut fold = Fold::default();
+        fold.feed_live(&drive.seeded(), &ended, default_now());
+        let d = fold.finish();
         assert_eq!((d.seed_events, d.registered()), (1, 1));
     }
 
