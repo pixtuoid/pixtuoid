@@ -11,7 +11,7 @@ use crate::source::exit_watch::ExitWatch;
 use crate::source::{AgentEvent, TaggedSender, Transport, fd_probe};
 
 use super::walk::{Life, TAIL_BYTES, park_if_truncated_below_cursor, tail_life, walk_jsonl};
-use super::{Sight, SourceDecoders, WatchCtx};
+use super::{SourceDecoders, WatchCtx};
 
 /// One healthy liveness-probe observation: which agent processes are verified
 /// alive RIGHT NOW, and which OS pid owns each. The live-id set IS `pid_of`'s
@@ -459,9 +459,9 @@ pub(super) async fn revouch_gated_files(decoders: SourceDecoders, ctx: &WatchCtx
         }
         // Last, so the bounded tail read costs only the vouched candidates. An
         // ENDED one is refused here — resetting undoes the terminator gate — and
-        // leaves the candidates, or every pass reads and decodes its tail again.
+        // stays unseen: marked `Sight::Ended`, a resume whose first append shows
+        // no life would never register.
         if tail_life(&path, TAIL_BYTES, ctx.source, decoders).await == Some(Life::Ended) {
-            ctx.seen.lock().await.entry(path).or_insert(Sight::Ended);
             continue;
         }
         ctx.cursors.lock().await.insert(path, 0);
