@@ -13,7 +13,7 @@ use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::cutaway::Canvas as _;
 use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
 use pixtuoid_scene::layout::{Insets, Point, SceneLayout, Viewport};
-use pixtuoid_scene::look::{Dim, Look, LookKind, Place, RenderInputs, WorldText};
+use pixtuoid_scene::look::{Dim, Look, LookKind, RenderInputs, WorldText};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pet::Pet;
 use pixtuoid_scene::render_scale::PixelFit;
@@ -173,9 +173,7 @@ impl<S: PixelSession> PixelOffice<S> {
                     size: self.fit.logical(),
                     insets: self.insets,
                 },
-                place: Place {
-                    gateway: pixtuoid_scene::tally::office_gateway(world.scene),
-                },
+                gateway: pixtuoid_scene::tally::office_gateway(world.scene),
                 debug_walkable: false,
                 dim: under.as_ref().map_or(Dim::NONE, ImageCells::dim),
             },
@@ -440,9 +438,7 @@ mod tests {
                 world,
                 theme: &NORMAL,
                 viewport: classic.fit.logical().into(),
-                place: Place {
-                    gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                },
+                gateway: pixtuoid_scene::tally::office_gateway(&scene),
                 debug_walkable: false,
                 dim: Dim::NONE,
             },

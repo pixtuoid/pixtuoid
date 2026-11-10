@@ -101,7 +101,7 @@ impl OfficeRenderer {
         let WindowFrame {
             world,
             theme,
-            place,
+            gateway,
             dim,
         } = frame;
         let gap = theme.surface.bg_fallback;
@@ -114,7 +114,7 @@ impl OfficeRenderer {
                 world,
                 theme,
                 viewport: at.logical().into(),
-                place,
+                gateway,
                 debug_walkable: false,
                 dim,
             },
@@ -444,7 +444,7 @@ const RESIZE_CORNER_PX: f64 = 18.0;
 pub struct WindowFrame<'a> {
     pub world: FloorInputs<'a, SceneState>,
     pub theme: &'static pixtuoid_scene::theme::Theme,
-    pub place: pixtuoid_scene::look::Place,
+    pub gateway: Option<pixtuoid_core::state::DaemonState>,
     pub dim: pixtuoid_scene::look::Dim,
 }
 
@@ -484,7 +484,7 @@ mod tests {
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             )
@@ -588,7 +588,7 @@ mod tests {
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
                 self.px,
@@ -1108,7 +1108,7 @@ mod tests {
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1151,7 +1151,7 @@ mod tests {
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1223,7 +1223,7 @@ mod tests {
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             );
@@ -1276,7 +1276,7 @@ mod tests {
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1295,7 +1295,7 @@ mod tests {
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1321,7 +1321,7 @@ mod tests {
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1357,7 +1357,7 @@ mod tests {
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1548,7 +1548,7 @@ mod tests {
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
             size,

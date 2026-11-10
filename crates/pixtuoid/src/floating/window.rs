@@ -28,7 +28,6 @@ use super::offscreen::{OfficeRenderer, WindowFrame};
 use crate::config::{self, FloatingConfig};
 use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::floor::{Conditions, FloorInputs, PetInputs};
-use pixtuoid_scene::look::Place;
 use pixtuoid_scene::theme::Theme;
 
 /// Wake reasons delivered to the winit loop from the background tokio pipeline.
@@ -480,9 +479,7 @@ impl FloatingApp {
             WindowFrame {
                 world,
                 theme: self.theme,
-                place: Place {
-                    gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                },
+                gateway: pixtuoid_scene::tally::office_gateway(&scene),
                 dim: frames.onboarding.dim,
             },
             (win_w, win_h),

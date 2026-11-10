@@ -85,7 +85,7 @@ pub(super) fn frame<'a>(
             pets: pixtuoid_scene::floor::PetInputs::default(),
         },
         theme,
-        place: pixtuoid_scene::look::Place::default(),
+        gateway: None,
         dim: pixtuoid_scene::look::Dim::NONE,
     }
 }

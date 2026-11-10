@@ -250,9 +250,7 @@ fn main() -> Result<()> {
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place {
-                    gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                },
+                gateway: pixtuoid_scene::tally::office_gateway(&scene),
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
             (win_w, win_h),

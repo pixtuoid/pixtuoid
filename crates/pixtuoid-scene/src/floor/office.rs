@@ -450,8 +450,8 @@ impl OfficeSession {
     /// as the floors are.
     /// `inputs.world.scene` is the FULL live scene: the office evicts against
     /// it and projects each floor out of it. `inputs.world.conditions` carries
-    /// what its floors share, `inputs.place.gateway` its gateway; each
-    /// floor's breadcrumb and pet (of `pets`) are the office's, and a
+    /// what its floors share, `inputs.gateway` its gateway; each floor's pet
+    /// (of `pets`) is the office's, its breadcrumb its projection's, and a
     /// petting plays only on its own floor. Its picture is
     /// [`Self::picture`].
     pub fn render(

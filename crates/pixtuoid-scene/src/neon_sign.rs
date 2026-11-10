@@ -508,7 +508,7 @@ pub fn build_board(
 /// floor's tally, uptime and place among the building's floors (none in a
 /// one-floor office), and the office's `gateway`
 /// ([`office_gateway`](crate::tally::office_gateway)).
-pub fn wall_board(
+pub(crate) fn wall_board(
     drawn: &crate::floor::FloorScene,
     gateway: Option<DaemonState>,
     motion: crate::anim::Motion,

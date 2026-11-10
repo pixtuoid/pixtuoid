@@ -55,7 +55,7 @@ fn inputs(scene: &crate::floor::FloorScene, now: SystemTime) -> RenderInputs<'_>
         },
         theme: theme(),
         viewport: VIEWPORT,
-        place: Place::default(),
+        gateway: None,
         debug_walkable: false,
         dim: crate::look::Dim::NONE,
     }
@@ -160,9 +160,7 @@ fn no_figure_is_drawn_under_an_inset() {
                 ..bare.world
             },
             viewport,
-            place: Place {
-                gateway: crate::tally::office_gateway(&scene),
-            },
+            gateway: crate::tally::office_gateway(&scene),
             ..bare
         }
     };

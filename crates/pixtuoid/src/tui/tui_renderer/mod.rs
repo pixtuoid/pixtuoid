@@ -19,7 +19,7 @@ use ratatui::layout::{Position, Rect};
 use crate::tui::renderer::PetState;
 use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorTransition, OfficeSession, PetInputs};
 use pixtuoid_scene::layout::{SceneLayout, Size};
-use pixtuoid_scene::look::{FrameNote, Look, LookKind, Picture, Place, RenderInputs};
+use pixtuoid_scene::look::{FrameNote, Look, LookKind, Picture, RenderInputs};
 use pixtuoid_scene::screen::Screen;
 
 #[derive(Debug, Default)]
@@ -348,9 +348,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
                 world: self.chrome.office_world(scene, now),
                 theme: self.chrome.theme,
                 viewport: size.into(),
-                place: Place {
-                    gateway: pixtuoid_scene::tally::office_gateway(scene),
-                },
+                gateway: pixtuoid_scene::tally::office_gateway(scene),
                 debug_walkable,
                 dim: self.chrome.frames.onboarding.dim,
             },

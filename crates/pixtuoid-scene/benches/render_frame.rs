@@ -34,7 +34,7 @@ use pixtuoid_scene::floor::{
 };
 use pixtuoid_scene::layout::{SceneLayout, Size, Viewport};
 use pixtuoid_scene::localclock;
-use pixtuoid_scene::look::{Look, Place, RenderInputs};
+use pixtuoid_scene::look::{Look, RenderInputs};
 use pixtuoid_scene::neon_sign::BoardModel;
 use pixtuoid_scene::render_scale::RenderScale;
 use pixtuoid_scene::sky::{Weather, WeatherPolicy, hour_is_day};
@@ -172,7 +172,7 @@ fn floor_frames<'a>(
                 },
                 theme,
                 viewport: size.into(),
-                place: Place::default(),
+                gateway: None,
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },

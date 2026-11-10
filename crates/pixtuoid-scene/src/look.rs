@@ -176,14 +176,6 @@ impl WorldText {
     }
 }
 
-/// What only the office knows about the floor a painter draws: its wall
-/// board's gateway chip.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Place {
-    /// The office's [`office_gateway`](crate::tally::office_gateway).
-    pub gateway: Option<DaemonState>,
-}
-
 /// One floor's frame, beyond its stores. `S` is its world's scene, as
 /// [`FloorInputs`] reads one.
 #[derive(Debug)]
@@ -195,8 +187,9 @@ pub struct RenderInputs<'a, S = crate::floor::FloorScene> {
     /// The logical extent a painter draws the office on, and the insets its
     /// chrome covers; a look's scale maps it to buffer pixels.
     pub viewport: Viewport,
-    /// See [`Place`].
-    pub place: Place,
+    /// The office's gateway chip on the wall board, which only the office
+    /// knows: [`office_gateway`](crate::tally::office_gateway).
+    pub gateway: Option<DaemonState>,
     /// The classic's walkable/approach/route debug layer (the `w` toggle).
     pub debug_walkable: bool,
     /// The brightness the host's modal leaves the frame.
@@ -220,7 +213,7 @@ impl<'a> RenderInputs<'a, pixtuoid_core::state::SceneState> {
             world: self.world.on(floor_scene),
             theme: self.theme,
             viewport: self.viewport,
-            place: self.place,
+            gateway: self.gateway,
             debug_walkable: self.debug_walkable,
             dim: self.dim,
         }
@@ -715,7 +708,7 @@ pub fn render(
         world,
         theme,
         viewport,
-        place,
+        gateway,
         debug_walkable,
         dim,
     } = inputs;
@@ -757,12 +750,8 @@ pub fn render(
     let switched =
         was.is_none_or(|was| std::mem::discriminant(&was) != std::mem::discriminant(&look));
     let _rasterize = tracing::trace_span!(spans::RASTERIZE).entered();
-    let board = crate::neon_sign::wall_board(
-        world.scene,
-        place.gateway,
-        world.conditions.motion,
-        world.now,
-    );
+    let board =
+        crate::neon_sign::wall_board(world.scene, gateway, world.conditions.motion, world.now);
     let sky = crate::sky::Sky::at(
         world.conditions.motion.timing(world.now),
         world.conditions.weather,
