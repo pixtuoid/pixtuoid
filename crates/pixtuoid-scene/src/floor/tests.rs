@@ -1806,6 +1806,38 @@ fn both_painters(
     (classic, cutaway_px)
 }
 
+/// A one-floor office draws, counts and names only the agents seated on
+/// its floor, as each floor of an [`OfficeSession`] does: an unseated namesake
+/// waiting on its user changes neither the picture nor the wall board.
+#[test]
+fn a_one_floor_session_draws_and_counts_only_its_seated_agents() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let floor = FloorMeta::ground();
+    let seated = make_scene(1, 8);
+    let namesake = seated.agents.values().next().expect("one agent").clone();
+    let id = AgentId::from_transcript_path("/p/unseated.jsonl");
+    let mut with_unseated = seated.clone();
+    with_unseated.agents.insert(
+        id,
+        AgentSlot {
+            agent_id: id,
+            home_desk: None,
+            state: ActivityState::RequiresAction { reason: None },
+            ..namesake
+        },
+    );
+    assert!(
+        both_painters(&seated, floor, None, now) == both_painters(&with_unseated, floor, None, now),
+        "an unseated agent changed the picture"
+    );
+    let session = FloorSession::new(Arc::new(crate::pack::test_office()));
+    assert_eq!(
+        session.board(&with_unseated, Motion::Full, now),
+        session.board(&seated, Motion::Full, now),
+        "an unseated agent changed the board"
+    );
+}
+
 /// Every ambient loop either painter draws reads its floor's beat: two
 /// instants on one beat paint one frame, and at rest every instant does — no
 /// loop, wander or flash moves.

@@ -602,12 +602,21 @@ impl FloorSession {
     }
 
     /// Render one frame in `look`: the dual eviction, then
-    /// [`look::render`](crate::look::render); its picture is
-    /// [`Self::picture`]. `scene` MUST be the full live scene — the session
-    /// evicts against it.
+    /// [`look::render`](crate::look::render) of the ground floor's
+    /// [`project_floor_scene`]; its picture is [`Self::picture`]. `scene` MUST
+    /// be the full live scene — the session evicts against it.
     pub fn render(&mut self, look: crate::look::Look, inputs: crate::look::RenderInputs<'_>) {
         self.evict_missing(inputs.world.scene);
-        self.view.render(&mut self.office, look, inputs);
+        let floor = project_floor_scene(inputs.world.scene, 0);
+        let world = FloorInputs {
+            scene: floor.scene(),
+            ..inputs.world
+        };
+        self.view.render(
+            &mut self.office,
+            look,
+            crate::look::RenderInputs { world, ..inputs },
+        );
     }
 
     /// The last frame [`Self::render`] drew; `None` before the first, and
@@ -616,7 +625,9 @@ impl FloorSession {
         self.view.picture(0, false)
     }
 
-    /// The [`wall_board`](crate::neon_sign::wall_board) of `scene`, a one-floor office.
+    /// The [`wall_board`](crate::neon_sign::wall_board) of `scene`, a one-floor
+    /// office: its ground floor's [`project_floor_scene`], as [`Self::render`]
+    /// draws it.
     #[doc(hidden)]
     pub fn board(
         &self,
@@ -624,9 +635,10 @@ impl FloorSession {
         motion: crate::anim::Motion,
         now: SystemTime,
     ) -> crate::neon_sign::BoardModel {
+        let floor = project_floor_scene(scene, 0);
         crate::neon_sign::wall_board(
-            scene,
-            crate::tally::office_gateway(scene),
+            floor.scene(),
+            crate::tally::office_gateway(floor.scene()),
             None,
             motion,
             now,
@@ -653,15 +665,20 @@ impl FloorSession {
     }
 
     /// Advance the world one tick WITHOUT painting: the session's eviction, then
-    /// `step_floor`. `viewport` is the layout's logical extent and insets,
-    /// whatever scale a painter draws it at. `None` when it can't lay out.
+    /// `step_floor` of the ground floor's [`project_floor_scene`]. `viewport` is
+    /// the layout's logical extent and insets, whatever scale a painter draws it
+    /// at. `None` when it can't lay out.
     pub fn step(&mut self, world: FloorInputs<'_>, viewport: Viewport) -> Option<SteppedFloor> {
         self.evict_missing(world.scene);
+        let floor = project_floor_scene(world.scene, 0);
         step_floor(
             &mut self.view.floor,
             &mut self.office.coffee,
             &mut self.office.chitchat,
-            world,
+            FloorInputs {
+                scene: floor.scene(),
+                ..world
+            },
             viewport,
         )
     }
