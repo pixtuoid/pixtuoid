@@ -124,11 +124,6 @@ test("stamps launcher + all 6 platform packages with the asymmetric libc gate", 
       `the launcher's ${key} is the targets' own`,
     );
   }
-  assert.deepEqual(
-    launcher.platformLibc,
-    Object.fromEntries(TARGETS.filter((tg) => tg.libc).map((tg) => [`@pixtuoid/cli-${tg.pkg}`, tg.libc])),
-    "the launcher knows each package's libc gate",
-  );
 
   for (const tg of TARGETS) {
     const name = `@pixtuoid/cli-${tg.pkg}`;

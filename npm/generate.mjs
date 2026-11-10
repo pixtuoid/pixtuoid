@@ -78,14 +78,9 @@ launcher.optionalDependencies = {};
 // npm refuses to install or update a package whose `os`/`cpu` leave the host
 // out (EBADPLATFORM: npm-install-checks v9.0.0 `lib/index.js:25-57`, applied to
 // every required node by npm v12.2.2's arborist `build-ideal-tree.js:212-228`),
-// so a host whose os or cpu no target ships keeps its working install.
+// so a host no target ships keeps its working install.
 launcher.os = [...new Set(TARGETS.map((t) => t.os))];
 launcher.cpu = [...new Set(TARGETS.map((t) => t.cpu))];
-// Within an os/cpu the launcher installs on, a platform package's `libc` gate
-// decides; resolve.js's isShipped reads it here, its package being skipped.
-launcher.platformLibc = Object.fromEntries(
-  TARGETS.filter((t) => t.libc).map((t) => [packageName(t.os, t.cpu), t.libc]),
-);
 
 for (const t of TARGETS) {
   const pkgName = packageName(t.os, t.cpu);
