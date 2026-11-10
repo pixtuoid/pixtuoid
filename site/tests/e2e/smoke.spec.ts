@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import sourcesData from '../../src/sources.json' with { type: 'json' };
+import { splitCmds } from '../../config/install-cmds.mjs';
 import { E2E_STAR_COUNT } from '../../config/gh-stars.mjs';
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
@@ -1974,13 +1975,14 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   const copy = page.locator('.install__panel.is-active .install__copy');
   await copy.click();
   await expect(copy).toHaveText('Copied ✓');
-  // A comment line shows but is never copied (site/config/install-cmds.mjs says why).
+  // A `#` note shows but is never copied (site/config/install-cmds.mjs says why).
   await expect(page.locator('#install-panel-cargo code')).toContainText('#');
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toBe(await copy.getAttribute('data-copy'));
   expect(copied).toContain('cargo install');
   expect(copied).not.toMatch(/^#/m);
-  // A tab with only comments has nothing to copy, so no button.
+  expect(splitCmds(['# a note', 'cmd'])).toEqual({ notes: ['a note'], commands: ['cmd'] });
+  // A tab with only notes has nothing to copy, so no button.
   await page.locator('.install__tab[data-tab="release"]').click();
   await expect(page.locator('#install-panel-release')).toBeVisible();
   await expect(page.locator('#install-panel-release .install__copy')).toHaveCount(0);

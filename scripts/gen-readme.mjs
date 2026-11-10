@@ -193,7 +193,7 @@ const installBody = install
   .filter((m) => m.readme)
   .map((m) => {
     const { notes, commands } = splitCmds(m.cmds);
-    const aside = ['blurb' in m ? m.blurb : '', ...notes].filter(Boolean).map(cell).join('; ');
+    const aside = [m.blurb, ...notes].filter(Boolean).map(cell).join('; ');
     return `**${cell(m.label)}**${aside ? ` (${aside})` : ''}:\n\n\`\`\`bash\n${commands.join('\n')}\n\`\`\``;
   })
   .join('\n\n');

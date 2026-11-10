@@ -21,8 +21,7 @@ const PACKAGE = {
 // builds none, so there is no download to point at either.
 /** @returns {string | null} */
 function hostPackage() {
-  const key = process.platform + " " + process.arch;
-  return Object.hasOwn(PACKAGE, key) ? PACKAGE[key] : null;
+  return PACKAGE[process.platform + " " + process.arch] || null;
 }
 
 /** @param {string} bin */
