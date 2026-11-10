@@ -46,15 +46,14 @@ pub struct DrawCtx<'a> {
 }
 
 impl<'a> DrawCtx<'a> {
-    /// An offscreen still of one floor, `scene` its projection, every input and
-    /// overlay off; the tallies and gateway come from it, as the live renderer's
-    /// do from the floor it draws.
+    /// An offscreen still of one floor, every input and overlay off; the office-wide
+    /// tallies and gateway come from `scene`, as the live renderer's do.
     #[doc(hidden)]
     pub fn offscreen(
         floor: &'a mut PerFloor,
         office: OfficeStores<'a>,
         theme: &'static pixtuoid_scene::theme::Theme,
-        scene: &'a pixtuoid_scene::floor::FloorScene,
+        scene: &'a SceneState,
         now: SystemTime,
         meta: pixtuoid_scene::floor::FloorMeta,
     ) -> Self {
@@ -70,7 +69,7 @@ impl<'a> DrawCtx<'a> {
             mouse_pos: None,
             debug_walkable: false,
             theme,
-            footer: crate::panels::widgets::footer_context(scene.scene(), None, false, None, None),
+            footer: crate::panels::widgets::footer_context(scene, None, false, None, None),
             overlays: crate::panels::OverlayFrame::closed(),
         }
     }
@@ -234,7 +233,6 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
     let theme = ctx.theme;
     let world = ctx.world;
     let FloorInputs { scene, now, .. } = world;
-    let scene = scene.scene();
     let footer = FooterInputs::new(scene, ctx.footer);
     let overlays = ctx.overlays;
 
@@ -312,7 +310,7 @@ pub fn draw_over_image<B: Backend<Error: Send + Sync + 'static>>(
     use crate::tui::cutaway::ImageCells;
     let theme = ctx.theme;
     let FloorInputs { scene, now, .. } = ctx.world;
-    let footer = FooterInputs::new(scene.scene(), ctx.footer);
+    let footer = FooterInputs::new(scene, ctx.footer);
     let overlays = ctx.overlays;
     let size = term.size()?;
     if scene_too_small(scene_rect(Rect::new(0, 0, size.width, size.height))) {
@@ -486,12 +484,11 @@ mod tests {
             pixtuoid_scene::pack::load_bundled_pack().expect("pack"),
         ));
         let mut office = pixtuoid_scene::floor::PerOffice::new();
-        let ground = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
         let ctx = DrawCtx::offscreen(
             &mut floor,
             office.stores(),
             &pixtuoid_scene::theme::NORMAL,
-            &ground,
+            &scene,
             t0,
             pixtuoid_scene::floor::FloorMeta::ground(),
         );

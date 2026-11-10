@@ -377,41 +377,17 @@ pub struct PetInputs<'a> {
 }
 
 /// What one floor shows at one instant — the inputs the frame, the paint pass
-/// and the sim share. `S` is the scene it reads: a floor's [`FloorScene`] where a
-/// floor is drawn, since a layout places an agent by its desk's index alone, or
-/// the full live scene where a session projects its floors itself.
-#[derive(Debug)]
-pub struct FloorInputs<'a, S = FloorScene> {
-    /// The scene to render.
-    pub scene: &'a S,
+/// and the sim share.
+#[derive(Debug, Clone, Copy)]
+pub struct FloorInputs<'a> {
+    /// The scene to render (the full live scene, or a projected single-floor one).
+    pub scene: &'a SceneState,
     /// This frame's time — a parameter; the engine never reads the clock (wasm).
     pub now: SystemTime,
     /// This floor's index, altitude, and layout seed.
     pub floor: FloorMeta,
     /// This floor's pet and the live interaction with it.
     pub pets: PetInputs<'a>,
-}
-
-// By hand: a derive would bound `S: Copy`, and the full scene is not.
-impl<S> Clone for FloorInputs<'_, S> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<S> Copy for FloorInputs<'_, S> {}
-
-impl<'a> FloorInputs<'a, SceneState> {
-    /// These inputs drawing `floor`, a projection of their scene.
-    #[must_use]
-    pub(crate) fn on(self, floor: &'a FloorScene) -> FloorInputs<'a> {
-        FloorInputs {
-            scene: floor,
-            now: self.now,
-            floor: self.floor,
-            pets: self.pets,
-        }
-    }
 }
 
 /// One floor, one tick, stepped rather than painted: the world advanced, and the
@@ -625,17 +601,22 @@ impl FloorSession {
         self.office.evict_missing(scene);
     }
 
-    /// Render one frame in `look`: the dual eviction against the full live
-    /// scene, then [`look::render`](crate::look::render) of its ground floor's
-    /// [`project_floor_scene`]; its picture is [`Self::picture`].
-    pub fn render(
-        &mut self,
-        look: crate::look::Look,
-        inputs: crate::look::RenderInputs<'_, SceneState>,
-    ) {
+    /// Render one frame in `look`: the dual eviction, then
+    /// [`look::render`](crate::look::render) of the ground floor's
+    /// [`project_floor_scene`]; its picture is [`Self::picture`]. `scene` MUST
+    /// be the full live scene — the session evicts against it.
+    pub fn render(&mut self, look: crate::look::Look, inputs: crate::look::RenderInputs<'_>) {
         self.evict_missing(inputs.world.scene);
         let floor = project_floor_scene(inputs.world.scene, 0);
-        self.view.render(&mut self.office, look, inputs.on(&floor));
+        let world = FloorInputs {
+            scene: floor.scene(),
+            ..inputs.world
+        };
+        self.view.render(
+            &mut self.office,
+            look,
+            crate::look::RenderInputs { world, ..inputs },
+        );
     }
 
     /// The last frame [`Self::render`] drew; `None` before the first, and
@@ -687,18 +668,17 @@ impl FloorSession {
     /// `step_floor` of the ground floor's [`project_floor_scene`]. `viewport` is
     /// the layout's logical extent and insets, whatever scale a painter draws it
     /// at. `None` when it can't lay out.
-    pub fn step(
-        &mut self,
-        world: FloorInputs<'_, SceneState>,
-        viewport: Viewport,
-    ) -> Option<SteppedFloor> {
+    pub fn step(&mut self, world: FloorInputs<'_>, viewport: Viewport) -> Option<SteppedFloor> {
         self.evict_missing(world.scene);
         let floor = project_floor_scene(world.scene, 0);
         step_floor(
             &mut self.view.floor,
             &mut self.office.coffee,
             &mut self.office.chitchat,
-            world.on(&floor),
+            FloorInputs {
+                scene: floor.scene(),
+                ..world
+            },
             viewport,
         )
     }

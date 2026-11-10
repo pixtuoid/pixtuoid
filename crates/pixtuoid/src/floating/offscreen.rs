@@ -438,7 +438,7 @@ const RESIZE_CORNER_PX: f64 = 18.0;
 /// the window's [`window_geometry`](super::geometry::window_geometry) owns.
 #[derive(Debug, Clone, Copy)]
 pub struct WindowFrame<'a> {
-    pub world: FloorInputs<'a, SceneState>,
+    pub world: FloorInputs<'a>,
     pub theme: &'static pixtuoid_scene::theme::Theme,
     pub place: pixtuoid_scene::look::Place,
     pub dim: pixtuoid_scene::look::Dim,

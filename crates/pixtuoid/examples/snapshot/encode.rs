@@ -450,14 +450,7 @@ pub(crate) fn draw_frame(
         return draw_scene(term, ctx);
     };
     let under = draw_over_image(term, ctx)?;
-    // The floor's projection is a one-floor office of its own.
-    let world = pixtuoid_scene::floor::FloorInputs {
-        scene: ctx.world.scene.scene(),
-        now: ctx.world.now,
-        floor: ctx.world.floor,
-        pets: ctx.world.pets,
-    };
-    pixel.render(world, ctx.theme, Some(under))?;
+    pixel.render(ctx.world, ctx.theme, Some(under))?;
     Ok(None)
 }
 
@@ -472,7 +465,7 @@ pub(crate) fn save_animation(
     debug_walkable: bool,
     pixel: Option<PixelOffice<FloorSession>>,
 ) -> Result<()> {
-    let ground = pixtuoid_scene::floor::project_floor_scene(job.scene, 0);
+    let scene = job.scene;
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     job.encode(
         skip_ms,
@@ -480,7 +473,7 @@ pub(crate) fn save_animation(
         |(term, pixel), now, _| {
             let mut draw_ctx = DrawCtx {
                 debug_walkable,
-                ..DrawCtx::offscreen(floor, office.stores(), job.theme, &ground, now, floor_meta)
+                ..DrawCtx::offscreen(floor, office.stores(), job.theme, scene, now, floor_meta)
             };
             draw_frame(term, &mut draw_ctx, pixel.as_mut()).map(drop)
         },

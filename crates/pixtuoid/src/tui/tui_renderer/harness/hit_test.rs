@@ -272,12 +272,11 @@ fn the_drawn_geometry_answers_every_cell_as_the_half_block_does() {
         let mut term = Terminal::new(TestBackend::new(cols, rows)).expect("test backend");
         let mut floor = PerFloor::new(pack_arc());
         let mut office = pixtuoid_scene::floor::PerOffice::new();
-        let ground = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
         let mut ctx = DrawCtx::offscreen(
             &mut floor,
             office.stores(),
             normal_theme(),
-            &ground,
+            &scene,
             now,
             FloorMeta::ground(),
         );
