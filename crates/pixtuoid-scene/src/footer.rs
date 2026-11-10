@@ -237,7 +237,8 @@ pub struct FooterContext<'a> {
     /// The agents on no floor; a prompt of theirs joins the floor's alarm.
     pub(crate) unseated: StateCounts,
     pub gateway: Option<DaemonState>,
-    /// The office's agents, the breadcrumb's `n/total` total.
+    /// How many agents the office holds: the `total` of the `n/total` count a
+    /// multi-floor footer shows beside its breadcrumb.
     pub(crate) agents: usize,
     /// "You would hear sound right now": audio live AND not effectively muted
     /// (m-state OR pause).
