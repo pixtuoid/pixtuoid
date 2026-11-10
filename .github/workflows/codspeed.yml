@@ -5,7 +5,7 @@ name: codspeed
 # it too) and `memory` counts heap allocations. Ruff's step:
 # https://github.com/astral-sh/ruff/blob/6dc81766a78f8d16a1020330417b46c3bfa26768/.github/workflows/ci.yaml#L1271-L1274
 # ADVISORY by construction like
-# bench.yml/mutants.yml: nothing `needs:` it, it is not a required check, and
+# bench.yml: nothing `needs:` it, it is not a required check, and
 # both action steps are `continue-on-error` — trend evidence, never a gate.
 # Reports need the CodSpeed GitHub App installed on the repo; auth is OIDC
 # (`id-token: write`, job-scoped per this repo's convention), no token secret.
@@ -80,7 +80,7 @@ jobs:
       # it builds (cargo-codspeed 6.0.0 `build.rs:324-331`).
       - name: Build instrumented benchmarks
         run: |
-          cargo codspeed build -p pixtuoid-scene -p pixtuoid-core
+          cargo codspeed build -p pixtuoid-scene
           cargo codspeed build -p pixtuoid --no-default-features
       # Non-required is not enough: a red step still reaches mergeStateStatus
       # (#964 sat gated on a red simulation while memory was already forgiven).
