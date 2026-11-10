@@ -30,11 +30,12 @@ pub(crate) enum Sight {
 }
 
 impl Sight {
-    /// Whether a read after `prev` registers its session: a first sight always
-    /// does, a seen one only when the read `lives`, so a trailer flushed after
-    /// its end line (grok's `hook_execution{stop}`) registers nothing.
-    pub(crate) fn registers(prev: Option<&Self>, lives: bool) -> bool {
-        prev.is_none() || lives
+    /// Whether a read after `prev` registers its session: a first sight does,
+    /// a seen one only when the read `lives`, so a trailer flushed after its end
+    /// line (grok's `hook_execution{stop}`) registers nothing; and no read whose
+    /// `verdict` is its end does, or its sprite walks in only to walk out.
+    pub(crate) fn registers(prev: Option<&Self>, lives: bool, verdict: Option<Life>) -> bool {
+        verdict != Some(Life::Ended) && (prev.is_none() || lives)
     }
 }
 
@@ -212,6 +213,27 @@ mod tests {
     use super::*;
     use crate::source::decoder::is_subagent_path;
     use crate::source::registry::cwd_extractor_for;
+
+    /// The registration gate: a first sight or a read that lives registers, and
+    /// a read whose verdict is its end registers nothing, seen or not.
+    #[test]
+    fn a_read_that_ends_its_session_registers_nothing() {
+        let rows = [
+            (None, false, None, true),
+            (None, true, Some(Life::Lives), true),
+            (None, true, Some(Life::Ended), false),
+            (Some(Sight::Ended), false, None, false),
+            (Some(Sight::Ended), true, Some(Life::Lives), true),
+            (Some(Sight::Ended), true, Some(Life::Ended), false),
+        ];
+        for (prev, lives, verdict, registers) in rows {
+            assert_eq!(
+                Sight::registers(prev.as_ref(), lives, verdict),
+                registers,
+                "{prev:?} {lives} {verdict:?}"
+            );
+        }
+    }
 
     /// The lifecycle fold: the last evidence is the verdict, a start or activity is
     /// life whoever it names, and only the path's own end is an end.

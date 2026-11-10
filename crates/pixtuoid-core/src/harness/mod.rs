@@ -433,6 +433,11 @@ impl Drive {
     /// The source, key and session id [`Self::seeded`]'s first sight keys on,
     /// when it seeds.
     fn sighted(&self) -> Option<(&str, &Path, String)> {
+        self.keyed_on().filter(|_| self.seeded)
+    }
+
+    /// The source, key and session id a transcript drive's own agent keys on.
+    fn keyed_on(&self) -> Option<(&str, &Path, String)> {
         let Decode::Transcript {
             source, logical, ..
         } = &self.decode
@@ -443,13 +448,40 @@ impl Drive {
         // The id deriver over the normalized key, as the watcher derives it:
         // nothing heals a slot's session_id, so any other spelling keys a twin
         // of the hook-created slot forever.
-        self.seeded.then(|| {
-            (
-                source.as_str(),
-                path,
-                registry::id_deriver_for(source)(path),
-            )
-        })
+        Some((source, path, registry::id_deriver_for(source)(path)))
+    }
+
+    /// `lines` as the watcher reads a live transcript: one read, unless their
+    /// last lifecycle evidence ends the transcript's own session, written after
+    /// its work, when the lines before that end come first and the rest arrive
+    /// a read later. One read of a whole ended recording would register
+    /// nothing (`Sight::registers`).
+    pub fn live_reads<'a, S: AsRef<str>>(&self, lines: &'a [S]) -> Vec<&'a [S]> {
+        let Some((source, _, session_id)) = self.keyed_on() else {
+            return vec![lines];
+        };
+        let own = AgentId::from_parts(source, &session_id);
+        let scratch = &mut Driven::empty();
+        let lives: Vec<Option<Life>> = (lines.iter())
+            .map(|line| {
+                let events = self.decode.line(Some(line.as_ref()), scratch, |_| {});
+                last_life(&events.unwrap_or_default(), own)
+            })
+            .collect();
+        match lives.iter().rposition(Option::is_some) {
+            Some(end) if lives[end] == Some(Life::Ended) => [&lines[..end], &lines[end..]]
+                .into_iter()
+                .filter(|read| !read.is_empty())
+                .collect(),
+            _ => vec![lines],
+        }
+    }
+
+    /// [`Self::lines`], read live ([`Fold::feed_live`]).
+    pub fn live_lines<S: AsRef<str>>(&self, lines: &[S]) -> Driven {
+        let mut fold = Fold::default();
+        fold.feed_live(self, lines, default_now());
+        fold.finish()
     }
 
     /// The `SessionStart` the watcher's first sight emits for this transcript:
@@ -524,6 +556,14 @@ impl Fold {
         self.run(drive, lines.into_iter().map(Some), at);
     }
 
+    /// [`Self::feed`] of a recorded transcript in the reads the watcher makes
+    /// of it live ([`Drive::live_reads`]).
+    pub fn feed_live<S: AsRef<str>>(&mut self, drive: &Drive, lines: &[S], at: SystemTime) {
+        for read in drive.live_reads(lines) {
+            self.feed(drive, read, at);
+        }
+    }
+
     /// [`Self::feed`] over a transcript's bytes, cut into lines as the watcher
     /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
     pub fn feed_body(&mut self, drive: &Drive, body: &[u8], at: SystemTime) {
@@ -568,7 +608,9 @@ impl Fold {
         let id = AgentId::from_parts(source, &session_id);
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.get(&id);
-        let registers = Sight::registers(sighted.map(|s| &s.sight), holds_life(decoded, id));
+        let verdict = last_life(decoded, id);
+        let registers =
+            Sight::registers(sighted.map(|s| &s.sight), holds_life(decoded, id), verdict);
         let seed = match sighted {
             _ if !registers => None,
             // A claim re-sends the start its first sight built, as the watcher's
@@ -580,7 +622,7 @@ impl Fold {
             Some(Sighted { head, .. }) => drive.seed(&read, head),
             None => drive.seed(&read, &read),
         };
-        let sight = match (last_life(decoded, id), &seed) {
+        let sight = match (verdict, &seed) {
             (Some(Life::Ended), _) => Sight::Ended,
             (_, Some(start)) => Sight::Claimed(Registration {
                 start: start.clone(),
@@ -831,7 +873,8 @@ mod tests {
         let at = default_now();
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
         let mut fold = Fold::default();
-        fold.feed(&drive, [tool_line(), exit.to_string()], at);
+        fold.feed(&drive, [tool_line()], at);
+        fold.feed(&drive, [exit.to_string()], at);
         let resumed = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
         fold.tick(resumed);
         assert_eq!(fold.driven().registered(), 0, "the first life walked out");
@@ -849,7 +892,8 @@ mod tests {
         let at = default_now();
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
         let mut fold = Fold::default();
-        fold.feed(&drive, [tool_line(), exit.to_string()], at);
+        fold.feed(&drive, [tool_line()], at);
+        fold.feed(&drive, [exit.to_string()], at);
         let after = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
         fold.tick(after);
         let fed = fold.driven().events.len();
@@ -864,6 +908,47 @@ mod tests {
         assert_eq!(d.registered(), 0);
     }
 
+    /// A batch whose own last word ends its session registers nothing, so no
+    /// sprite walks in only to walk out.
+    #[test]
+    fn a_batch_that_ends_its_session_registers_nothing() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let d = drive.lines([tool_line(), exit.to_string()]);
+        assert!(
+            d.events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::SessionEnd { .. })),
+            "{:?}",
+            d.events
+        );
+        assert!(
+            !d.events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::SessionStart { .. })),
+            "{:?}",
+            d.events
+        );
+    }
+
+    /// A recording read live is one read while its last lifecycle evidence is
+    /// not its own end, a resume included; one that ends reads its end, and
+    /// the rest, a read later, so its life registers.
+    #[test]
+    fn a_recording_is_read_live_its_end_a_read_later() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap();
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let trailer = serde_json::json!({"type": "thinking_level_change", "thinkingLevel": "high"});
+        let open = [tool_line(), tool_line()];
+        assert_eq!(drive.live_reads(&open), [&open[..]]);
+        let resumed = [tool_line(), exit.to_string(), tool_line()];
+        assert_eq!(drive.live_reads(&resumed), [&resumed[..]]);
+        let ended = [tool_line(), exit.to_string(), trailer.to_string()];
+        assert_eq!(drive.live_reads(&ended), [&ended[..1], &ended[1..]]);
+        let d = drive.seeded().live_lines(&ended);
+        assert_eq!((d.seed_events, d.registered()), (1, 1));
+    }
+
     /// A new life's read that lacks the head's cwd reads the transcript's start
     /// back for it, as the watcher reads the file's head.
     #[test]
@@ -873,11 +958,8 @@ mod tests {
         let head = serde_json::json!({"type": "session", "cwd": "/repo/head"});
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
         let mut fold = Fold::default();
-        fold.feed(
-            &drive,
-            [head.to_string(), tool_line(), exit.to_string()],
-            at,
-        );
+        fold.feed(&drive, [head.to_string(), tool_line()], at);
+        fold.feed(&drive, [exit.to_string()], at);
         let resumed = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
         fold.tick(resumed);
         let fed = fold.driven().events.len();

@@ -198,7 +198,9 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
         };
         // Cut where the transcript names its session again, so only the
         // re-registration can name the slot it brings back.
-        let tail: String = (tail.lines().take_while(|line| !renames(line)))
+        let tail: Vec<&str> = tail.lines().take_while(|line| !renames(line)).collect();
+        // The forgotten session's next live read, its end arriving later.
+        let tail: String = (drive.live_reads(&tail)[0].iter())
             .map(|line| format!("{line}\n"))
             .collect();
         let calls = (drive.lines(tail.lines()).events.iter())

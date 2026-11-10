@@ -145,7 +145,7 @@ fn a_seeded_drive_coalesces_with_each_transcripts_own_decoder() {
         let driven = Drive::transcript_at(&source, &transcript)
             .unwrap_or_else(|| panic!("{source}: no transcript decoder"))
             .seeded()
-            .lines(fixture_lines(&transcript));
+            .live_lines(&fixture_lines(&transcript));
         driven.assert_clean(&format!("seeded transcript {}", transcript.display()));
 
         let ids: BTreeSet<_> = driven.events.iter().map(AgentEvent::agent_id).collect();

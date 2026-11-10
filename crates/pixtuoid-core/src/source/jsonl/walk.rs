@@ -359,12 +359,11 @@ pub(super) async fn walk_jsonl(
         // A skipped span may bury the session's end, leaving the slot to the
         // slow stale-sweep. Unconditional (a KNOWN file's span can end mid-skip) and
         // cursor-independent, so it must run before the seed below.
-        let ended_in_skip =
-            tail_life(path, TAIL_BYTES, source, decoders).await == Some(Life::Ended);
+        let verdict = tail_life(path, TAIL_BYTES, source, decoders).await;
         // Seed to EOF BEFORE the awaited head-read below, so a concurrent
         // walk_jsonl sees `known` and won't re-enter this branch.
         cursors.lock().await.insert(path.to_path_buf(), file_len);
-        if ended_in_skip {
+        if verdict == Some(Life::Ended) {
             // An already-ENDED span stays unregistered: a SessionStart or seeded
             // Task after the SessionEnd just sent would animate a ghost.
             let id = own_agent(path, source, decoders);
@@ -396,7 +395,7 @@ pub(super) async fn walk_jsonl(
         // stays invisible until its next small append; the backlog is not replayed.
         // Keys on `seen`, NOT `!known` — a first-sight-GATED file is already `known`,
         // and keying on `!known` left it invisible until a later ≤1 MiB append.
-        let registers = Sight::registers(seen.lock().await.get(path), lives);
+        let registers = Sight::registers(seen.lock().await.get(path), lives, verdict);
         if registers && !metadata_only {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
@@ -470,8 +469,8 @@ pub(super) async fn walk_jsonl(
     }
 
     let own = own_agent(path, source, decoders);
-    let lives = holds_life(&decoded, own);
-    if Sight::registers(seen.lock().await.get(path), lives)
+    let (lives, verdict) = (holds_life(&decoded, own), last_life(&decoded, own));
+    if Sight::registers(seen.lock().await.get(path), lives, verdict)
         && !matches!(
             (decoders.activity_recency)(new_bytes),
             super::TailActivity::SidecarOnly
@@ -502,7 +501,6 @@ pub(super) async fn walk_jsonl(
         registration.label = Some(label.clone());
     }
 
-    let verdict = last_life(&decoded, own);
     // A known file's read from the top follows a truncation or a re-vouch.
     let replays = if known { cursor_now == 0 } else { replaying };
     // Declared per read, and per agent a read names: a transcript carries its

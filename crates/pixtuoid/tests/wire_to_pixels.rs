@@ -141,7 +141,7 @@ fn assert_renders_a_sprite(case: &WireCase) {
         Wire::Hooks => Drive::hooks(),
     };
     let mut fold = Fold::default();
-    fold.feed(&drive, lines, t0());
+    fold.feed_live(&drive, &lines, t0());
     let driven = fold.finish();
 
     driven.assert_clean(case.name);
