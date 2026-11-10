@@ -770,13 +770,13 @@ mod tests {
     /// the footer raises it anyway, in the alarm and in the requires-action rung.
     #[test]
     fn an_unseated_agents_prompt_raises_the_alarm() {
-        let seated = running_slot("/p/seated.jsonl", "Bash", ToolKind::Other);
+        let at_desk = running_slot("/p/at-desk.jsonl", "Bash", ToolKind::Other);
         let mut unseated = requires_action_slot("/p/unseated.jsonl");
         unseated.desk = None;
         let mut office = SceneState::uniform(16);
         let mut drawn = SceneState::uniform(16);
-        drawn.agents.insert(seated.agent_id, seated.clone());
-        for slot in [seated, unseated] {
+        drawn.agents.insert(at_desk.agent_id, at_desk.clone());
+        for slot in [at_desk, unseated] {
             office.agents.insert(slot.agent_id, slot);
         }
         let line = |warning| {

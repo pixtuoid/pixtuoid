@@ -1155,7 +1155,7 @@ pub fn num_floors(scene: &SceneState) -> usize {
         .unwrap_or(1)
 }
 
-/// The agents floor `floor_idx` draws: those seated on it.
+/// The agents floor `floor_idx` draws: those holding a desk on it.
 pub(crate) fn floor_agents(
     scene: &SceneState,
     floor_idx: usize,
@@ -1176,7 +1176,7 @@ impl FloorScene {
     }
 }
 
-/// Build a self-contained `SceneState` for one floor: the agents seated on it,
+/// Build a self-contained `SceneState` for one floor: the agents at its desks,
 /// at the desks they hold. A floor past the building's is an empty one.
 pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> FloorScene {
     let mut s = SceneState::default();

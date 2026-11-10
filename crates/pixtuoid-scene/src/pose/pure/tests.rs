@@ -341,7 +341,7 @@ fn entry_animation_overrides_normal_pose_while_it_runs() {
     }
 }
 
-/// An unseated agent, or one seated past this layout's desks, has no pose to
+/// An unseated agent, or one at a desk past this layout's, has no pose to
 /// be drawn in.
 #[test]
 fn derive_returns_none_without_a_desk_in_the_layout() {
@@ -357,7 +357,7 @@ fn exit_override_walks_desk_to_door_within_window() {
     let (mut s, now) = slot(ActivityState::Idle, 0);
     s.exiting_at = Some(now - Duration::from_secs(1));
     let l = layout();
-    let desk = l.home_desks[s.desk.expect("seated").index.0];
+    let desk = l.home_desks[s.desk.expect("holds a desk").index.0];
     match derive(&s, now, &l).expect("pose") {
         Pose::Walking { segment, .. } => {
             let from = segment.from();
