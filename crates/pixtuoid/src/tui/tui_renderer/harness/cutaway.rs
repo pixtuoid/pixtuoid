@@ -1786,30 +1786,30 @@ fn a_window_back_at_its_fit_after_a_mid_frame_resize_gets_every_tile_at_once() {
         (ImageProtocol::Sixel, SIXEL),
         (ImageProtocol::Iterm2, ITERM2),
     ] {
-        for fit in [(cols, rows), (cols - 4, rows - 2)] {
+        for size in [(cols, rows), (cols - 4, rows - 2)] {
             let scene = office();
             let cadence = protocol.cadence();
             let (mut r, wire) = painter(cols, rows, protocol);
             r.render(&scene, t0()).expect("render");
-            r.terminal.backend_mut().resize(fit.0, fit.1);
+            r.terminal.backend_mut().resize(size.0, size.1);
             r.terminal
                 .backend_mut()
                 .resize_mid_frame(cols - 8, rows - 4);
             r.render(&scene, t0() + cadence / 2).expect("render");
             assert_eq!(r.drawn_look(), LookKind::Cutaway, "premise: {protocol:?}");
-            r.terminal.backend_mut().resize(fit.0, fit.1);
+            r.terminal.backend_mut().resize(size.0, size.1);
             wire.take();
             let next = t0() + cadence * 3 / 4;
             r.render(&scene, next).expect("render");
             let fresh = {
-                let (mut r, wire) = painter(fit.0, fit.1, protocol);
+                let (mut r, wire) = painter(size.0, size.1, protocol);
                 r.render(&scene, next).expect("render");
                 wire.take().matches(intro).count()
             };
             assert_eq!(
                 wire.take().matches(intro).count(),
                 fresh,
-                "{protocol:?} at {fit:?}: every tile at once"
+                "{protocol:?} at {size:?}: every tile at once"
             );
         }
     }
