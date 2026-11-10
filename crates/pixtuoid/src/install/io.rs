@@ -215,7 +215,7 @@ fn read_resolved(target: &Path) -> Result<String> {
 /// even while a reader holds the old fd, so a single attempt is correct there.
 fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
-    return retry_rename(|| std::fs::rename(from, to), std::thread::sleep);
+    return bounded_retry(|| std::fs::rename(from, to), std::thread::sleep);
     #[cfg(not(windows))]
     std::fs::rename(from, to)
 }
@@ -230,7 +230,7 @@ const RENAME_RETRY_SLEEP: Duration = Duration::from_millis(50);
 /// [`rename_with_retry`]'s Windows loop, its rename and sleep injected so it runs
 /// under test on every host.
 #[cfg(any(windows, test))]
-fn retry_rename(
+fn bounded_retry(
     mut rename: impl FnMut() -> std::io::Result<()>,
     mut sleep: impl FnMut(Duration),
 ) -> std::io::Result<()> {
@@ -748,7 +748,7 @@ mod tests {
     fn a_rename_retries_through_its_last_attempt_and_no_further() {
         for fails in [RENAME_ATTEMPTS - 1, RENAME_ATTEMPTS] {
             let (mut calls, mut slept) = (0, Vec::new());
-            let out = retry_rename(
+            let out = bounded_retry(
                 || {
                     calls += 1;
                     if calls > fails {
