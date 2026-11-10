@@ -567,7 +567,7 @@ impl Fold {
         let (source, _, session_id) = drive.sighted()?;
         let id = AgentId::from_parts(source, &session_id);
         let leads = Sight::leads(self.sights.get(&id).map(|s| s.sight))
-            .unwrap_or_else(|| holds_life(decoded, id));
+            .unwrap_or_else(|| holds_life(decoded));
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.entry(id).or_insert_with(|| Sighted {
             sight: Sight::Claimed,

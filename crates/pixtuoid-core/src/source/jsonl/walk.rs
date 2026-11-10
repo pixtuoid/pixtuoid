@@ -481,7 +481,7 @@ pub(super) async fn walk_jsonl(
 
     let own = own_agent(path, source, decoders);
     let sight = seen.lock().await.get(path).copied();
-    if Sight::leads(sight).unwrap_or_else(|| holds_life(&decoded, own))
+    if Sight::leads(sight).unwrap_or_else(|| holds_life(&decoded))
         && !matches!(
             (decoders.activity_recency)(new_bytes),
             super::TailActivity::SidecarOnly

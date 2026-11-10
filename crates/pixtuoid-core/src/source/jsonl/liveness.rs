@@ -460,8 +460,8 @@ pub(super) async fn revouch_gated_files(decoders: SourceDecoders, ctx: &WatchCtx
         }
         // Last, so the bounded tail read costs only the vouched candidates. An
         // ENDED one is refused here — resetting undoes the terminator gate — and
-        // stays unseen: marked `Sight::Ended`, a resume whose first append shows
-        // no life would never register.
+        // stays unseen, not `Sight::Ended`: an ended mark would keep a resume
+        // whose first append shows no life from ever registering.
         if tail_life(&path, TAIL_BYTES, ctx.source, decoders).await == Some(Life::Ended) {
             continue;
         }
