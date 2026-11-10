@@ -946,23 +946,26 @@ mod tests {
         assert!(matches!(peer.answer().await, Answer::Sources { .. }));
     }
 
-    #[tokio::test]
+    /// The second is one answered at once, which the gate can't hold back.
+    #[tokio::test(start_paused = true)]
     async fn a_second_ask_waits_for_the_first() {
-        let mut held = held();
-        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let fixture = fixture();
         let mut peer = streaming(&fixture).await;
+        let shut = Arc::clone(&fixture.devices.gate)
+            .try_acquire_owned()
+            .expect("an idle gate");
         let ask = serde_json::to_string(&Ask::Sources).expect("it encodes");
+        let unknown = r#"{"ask":"from_the_future"}"#;
 
-        peer.say(&format!("{ask}\n{ask}")).await;
-        held.started.recv().await.expect("the first starts");
-        peer.sees_a_change(&fixture).await;
-        assert!(held.started.try_recv().is_err(), "the second started");
-
-        held.release.send(()).expect("it waits");
-        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
-        held.started.recv().await.expect("the second starts");
-        held.release.send(()).expect("it waits");
-        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+        peer.say(&format!("{ask}\n{unknown}")).await;
+        // The first waits on the shut gate, not on blocking work, so the paused
+        // clock moves only once no task can run: past the stream's frame gap, a
+        // stream that read on has answered the second.
+        sleep(MIN_FRAME_GAP * 2).await;
+        drop(shut);
+        let first = peer.answer().await;
+        assert!(matches!(first, Answer::Sources { .. }), "{first:?}");
+        assert_eq!(peer.answer().await, Answer::Unsupported);
     }
 
     /// An answer names no ask, so a device matches it by order: an ask the
