@@ -7,8 +7,8 @@
 #              on-demand e2e / capture / fixture recipes
 #   site     — the Astro landing page under site/ (npm + the wasm build)
 #   gen      — regenerate + check committed artifacts
-#   release  — what release.yml builds: the cross builds, the .deb, the version
-#              read; plus the Node gates (npm-check)
+#   release  — what release.yml builds: the cross builds, the version read;
+#              plus the Node gates (npm-check)
 #   meta     — tooling setup, the local gate (preflight), the fixture
 #              gates, and the gates' selftests
 
@@ -1030,8 +1030,7 @@ build-target target cross="false":
     fi
 
 # Globbed, not listed, so a font embedded later ships its notice too: a font's
-# notice is any .txt under the `fonts/` beside it. The tree mirrors the repo's
-# (licenses/<crate>/fonts/…), as pixtuoid's .deb assets do with the same glob.
+# notice is any .txt under the `fonts/` beside it.
 [doc("Copy LICENSE + every embedded font's notice (licenses/) into a release archive's DIR")]
 [group('release')]
 stage-notices dir:
@@ -1043,14 +1042,6 @@ stage-notices dir:
         mkdir -p "$(dirname "$dest")"
         cp "$notice" "$dest"
     done
-
-# `--no-build`: the target is already built by `build-target`. Needs cargo-deb
-# (CI installs it via taiki-e/install-action with `tool: cargo-deb`).
-[doc('Package the .deb for ONE already-built target (release.yml deb job)')]
-[group('release')]
-deb target:
-    cargo deb -p pixtuoid --no-build --no-strip --target "$1"
-    cargo deb -p pixtuoid-hook --no-build --no-strip --target "$1"
 
 # The npm package generator's tests, its only run before a tag-push, and every
 # plugin's selftest, which executes it against `plugin-contract.json`; a
