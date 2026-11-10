@@ -835,7 +835,7 @@ mod capacity_sweep_tests {
         }
     }
 
-    /// R2-C32: a shrunk terminal lowers what the reducer seats against, which
+    /// A shrunk terminal lowers what the reducer seats against, which
     /// re-seats whoever it displaces.
     #[test]
     fn a_shrunk_terminal_lowers_the_published_capacity() {

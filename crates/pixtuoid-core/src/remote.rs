@@ -1536,7 +1536,7 @@ mod tests {
         assert_eq!(desk_of(&office, "b"), Some(FloorDesk::new(0, 0)));
     }
 
-    /// R2-C32: a smaller layout keeps whoever it can't seat, and a larger one
+    /// A smaller layout keeps whoever it can't seat, and a larger one
     /// seats them with no new line, everyone it fit at the desk they had.
     #[test]
     fn a_new_layout_keeps_whoever_it_cant_seat_until_it_can() {

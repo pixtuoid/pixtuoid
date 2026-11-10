@@ -543,7 +543,7 @@ mod tests {
         assert!(super::CAPS_CLOSED.with(std::cell::Cell::get) <= 1);
     }
 
-    /// R2-C32: the capacities a painter publishes re-seat the scene it reads,
+    /// The capacities a painter publishes re-seat the scene it reads,
     /// a smaller set keeping whoever it can't seat.
     #[tokio::test]
     async fn a_published_layout_reseats_the_scene() {
