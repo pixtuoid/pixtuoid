@@ -15,6 +15,10 @@ pub(crate) fn install_crash_hook() {
 
         let version = env!("CARGO_PKG_VERSION");
         let crash_path = crash_log_path();
+        #[expect(
+            clippy::disallowed_types,
+            reason = "a process-edge stamp: the report reads in the user's own zone"
+        )]
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         let panic_msg = extract_panic_message(info);
