@@ -2147,7 +2147,7 @@ async fn probe_live_ended_first_sight_stays_unregistered() {
     );
 }
 
-/// [`t_decode`], breadcrumbing a drift for every line it decodes.
+/// [`t_decode_lifecycle`], breadcrumbing a drift for every line it decodes.
 fn drifting(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
     crate::source::drift::missing_field(s, "probe", "field");
     t_decode_lifecycle(t, s, v)

@@ -396,9 +396,9 @@ impl Drive {
         }
     }
 
-    /// Lead each life's first feed of the transcript with the `SessionStart` the
-    /// watcher's `emit_first_sight` would emit for it, keyed by the source's
-    /// registry row.
+    /// Lead each life of the transcript, a life after its own end within one feed
+    /// included, with the `SessionStart` the watcher's `emit_first_sight` would
+    /// emit for it, keyed by the source's registry row.
     ///
     /// Not a free choice: a transcript carrying no `SessionStart` of its own is
     /// registered in production by the watcher, so an offline driver must seed
