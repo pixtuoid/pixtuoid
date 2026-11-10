@@ -2079,9 +2079,10 @@ mod tests {
         }
     }
 
-    /// The noons the zone census found a bolt hanging off no cloud at, in the
-    /// [`RED_NOON_STRIKES`] strikes on from each: Jan 1 2026, 12:00 in each red
-    /// zone, as Unix seconds.
+    /// The noons at which #2229's census, scene's unit tests run under every
+    /// tzdata offset, found a bolt hanging off no cloud in the
+    /// [`RED_NOON_STRIKES`] strikes from each: 12:00 on Jan 1 2026 at UTC+14,
+    /// +13:45, +7, +4, +1 and −3:30, in that order, as Unix seconds.
     const BOLT_RED_NOONS: [u64; 6] = [
         1_767_218_400,
         1_767_219_300,
@@ -2096,11 +2097,11 @@ mod tests {
     /// the cell its top starts in or the one over it, at every density, though
     /// the masses have drifted on since the strike's start, over which
     /// `bolt_cloud` chose its cloud. Over every strike of one wrap of the
-    /// slowest layer, which brings each mass past each column, and the
-    /// census's red noons.
+    /// slowest layer, which brings each mass past each column, and those red
+    /// noons ([`BOLT_RED_NOONS`]).
     #[test]
     fn the_bolt_hangs_off_a_drawn_cloud() {
-        let bucket = Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS);
+        let period = Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS);
         let noon = crate::localclock::at_hour(12);
         let widest = clouds_at(noon, Weather::Storm, None)
             .masses
@@ -2108,10 +2109,10 @@ mod tests {
             .map(|m| m.widest)
             .fold(0.0, f32::max);
         let wrap_s = wrap_period(f32::from(SPAN), widest) / Layer::Far.pace();
-        let wrap = (0..(wrap_s / bucket.as_secs_f32()).ceil() as u32).map(|k| noon + bucket * k);
+        let wrap = (0..(wrap_s / period.as_secs_f32()).ceil() as u32).map(|k| noon + period * k);
         let red = BOLT_RED_NOONS.iter().flat_map(|&s| {
             let noon = std::time::UNIX_EPOCH + Duration::from_secs(s);
-            (0..RED_NOON_STRIKES).map(move |k| noon + bucket * k)
+            (0..RED_NOON_STRIKES).map(move |k| noon + period * k)
         });
         let strikes: Vec<_> = wrap.chain(red).collect();
         for d in [1u16, 4] {
