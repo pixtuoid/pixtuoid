@@ -73,6 +73,7 @@ disallowed-macros = [
     { path = "snapbox::file", reason = "it resolves against the outermost Cargo.toml, so in a nested worktree it reads and overwrites the main checkout's golden; use `snapbox::Data::read_from` on a `CARGO_MANIFEST_DIR` path" },
 ]
 disallowed-types = [
-    # `Local` reads the runner's zone, so a test asserting on the hour passes on one machine and fails on another, which `localclock`'s unit-test build avoids by reading a fixed zone. The `chrono` constructors under disallowed-methods back this ban, which misses `Local` used as a value (`chrono::Local.timestamp_opt(..)`); clippy matches them on every zone. `allow-invalid`: pixtuoid-core's chrono has no `clock`, so `Local` doesn't exist when `just hack` lints core alone.
-    { path = "chrono::Local", allow-invalid = true, reason = "read the viewer's zone through `pixtuoid_scene::localclock`" },
+    # `Local` reads the runner's zone, so a test asserting on the hour passes on one machine and fails on another, which `localclock`'s unit-test build avoids by reading a fixed zone. The `chrono` constructors under disallowed-methods back this ban, which misses `Local` used as a value (`chrono::Local.timestamp_opt(..)`; clippy rust-1.99.0 `clippy_lints/src/disallowed_types.rs:110-122` checks types and single `use`s only).
+    # `allow-invalid` skips an entry whose path doesn't exist instead of erroring (https://doc.rust-lang.org/clippy/lint_configuration.html#disallowed-types), and chrono builds `Local` only under `clock` (chrono 0.4.45 `src/offset/mod.rs:32-35`), which pixtuoid-core's chrono lacks, so `just hack` linting core alone needs it.
+    { path = "chrono::Local", allow-invalid = true, reason = "read the viewer's zone through `pixtuoid_scene::localclock`; outside scene, today's date is `pixtuoid_scene::tally::local_day`" },
 ]
