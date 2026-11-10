@@ -2,7 +2,7 @@
 
 // Shared platform → native-binary resolution for the two launcher shims: npm
 // installs exactly the ONE `@pixtuoid/cli-<platform>-<arch>` optionalDependency
-// that matches the host (filtered by each platform package's `os`/`cpu`/`libc`),
+// that matches the host (filtered by each platform package's `os`/`cpu`),
 // and we `require.resolve` the native binary out of it. No postinstall, no
 // download.
 
@@ -29,8 +29,8 @@ function exeName(bin, platform = process.platform) {
   return bin + (platform === "win32" ? ".exe" : "");
 }
 
-// Returns null if this platform isn't shipped — callers decide how to handle
-// that (the TUI errors; the hook stays silent).
+// Returns null when no binary resolves — callers decide how to handle that
+// (the TUI errors; the hook stays silent).
 /**
  * @param {string} bin
  * @returns {string | null}
@@ -61,4 +61,17 @@ function binaryPath(bin) {
   }
 }
 
-module.exports = { binaryPath, exeName, packageName };
+// generate.mjs stamps the launcher's optionalDependencies from TARGETS, so a
+// platform they don't name has no prebuilt package, and one they name but
+// that didn't resolve was left out by the install, which may omit optional
+// dependencies (https://docs.npmjs.com/cli/v11/commands/npm-install#omit).
+/**
+ * @param {string} platform
+ * @param {string} arch
+ */
+function isShipped(platform, arch) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  return Object.hasOwn(manifest.optionalDependencies ?? {}, packageName(platform, arch));
+}
+
+module.exports = { binaryPath, exeName, isShipped, packageName };

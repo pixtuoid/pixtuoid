@@ -12,15 +12,20 @@ import { spawnSync } from "node:child_process";
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "pixtuoid", "bin");
 
+// The package npm installs on this host, named apart from resolve.js.
+const HOST_PACKAGE = `@pixtuoid/cli-${process.platform}-${process.arch}`;
+
 /**
- * The launcher alone in a scratch dir, with no platform package for
- * `require.resolve` to find.
+ * The launcher alone in a scratch dir, its manifest stamped as generate.mjs
+ * stamps it, with no platform package for `require.resolve` to find.
  * @param {import("node:test").TestContext} t
+ * @param {Record<string, string>} [optionalDependencies]
  */
-function launcher(t) {
+function launcher(t, optionalDependencies = {}) {
   const dir = mkdtempSync(join(tmpdir(), "pixtuoid-launcher-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(BIN, join(dir, "bin"), { recursive: true });
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "pixtuoid", optionalDependencies }));
   return dir;
 }
 
@@ -38,11 +43,13 @@ function run(dir, shim, env = {}) {
 }
 
 test("pixtuoid-hook exits 0 and prints nothing when no binary resolves", (t) => {
-  const dir = launcher(t);
-  for (const env of /** @type {Record<string, string>[]} */ ([{}, { PIXTUOID_BINARY: join(dir, "missing") }])) {
-    const r = run(dir, "pixtuoid-hook", env);
-    assert.equal(r.status, 0, JSON.stringify(env));
-    assert.equal(r.stdout + r.stderr, "", JSON.stringify(env));
+  for (const shipped of [{}, { [HOST_PACKAGE]: "1.2.3" }]) {
+    const dir = launcher(t, shipped);
+    for (const env of /** @type {Record<string, string>[]} */ ([{}, { PIXTUOID_BINARY: join(dir, "missing") }])) {
+      const r = run(dir, "pixtuoid-hook", env);
+      assert.equal(r.status, 0, JSON.stringify({ shipped, env }));
+      assert.equal(r.stdout + r.stderr, "", JSON.stringify({ shipped, env }));
+    }
   }
 });
 
@@ -60,9 +67,19 @@ test(
   },
 );
 
-test("pixtuoid names the host and the other installs when no binary resolves", (t) => {
+test("pixtuoid sends a platform no package ships for to a source install", (t) => {
   const r = run(launcher(t), "pixtuoid");
   assert.equal(r.status, 1);
   assert.match(r.stderr, new RegExp(`no prebuilt binary for ${process.platform}-${process.arch}`));
+  assert.match(r.stderr, /brew install pixtuoid/);
   assert.match(r.stderr, /cargo install pixtuoid pixtuoid-hook/);
+  assert.doesNotMatch(r.stderr, /releases/, "no release carries a build for it");
+});
+
+test("pixtuoid tells an install that skipped its platform's package to keep optional dependencies", (t) => {
+  const r = run(launcher(t, { [HOST_PACKAGE]: "1.2.3" }), "pixtuoid");
+  assert.equal(r.status, 1);
+  assert.ok(r.stderr.includes(HOST_PACKAGE), r.stderr);
+  assert.match(r.stderr, /optional dependencies/);
+  assert.doesNotMatch(r.stderr, /no prebuilt binary/);
 });

@@ -75,6 +75,12 @@ function copyNotices(from, pkgDir) {
 const launcherPath = join(NPM_DIR, "pixtuoid", "package.json");
 const launcher = JSON.parse(readFileSync(launcherPath, "utf8"));
 launcher.optionalDependencies = {};
+// npm refuses to install or update a package whose `os`/`cpu` leave the host
+// out (EBADPLATFORM: npm-install-checks v9.0.0 `lib/index.js:25-57`, applied to
+// every required node by npm v12.2.2's arborist `build-ideal-tree.js:212-228`),
+// so a host no target ships keeps its working install.
+launcher.os = [...new Set(TARGETS.map((t) => t.os))];
+launcher.cpu = [...new Set(TARGETS.map((t) => t.cpu))];
 
 for (const t of TARGETS) {
   const pkgName = packageName(t.os, t.cpu);

@@ -117,6 +117,13 @@ test("stamps launcher + all 6 platform packages with the asymmetric libc gate", 
     TARGETS.map((tg) => `@pixtuoid/cli-${tg.pkg}`).sort(),
     "the launcher depends on exactly the packages generated",
   );
+  for (const key of /** @type {const} */ (["os", "cpu"])) {
+    assert.deepEqual(
+      [...(launcher[key] ?? [])].sort(),
+      [...new Set(TARGETS.map((tg) => tg[key]))].sort(),
+      `the launcher's ${key} is the targets' own`,
+    );
+  }
 
   for (const tg of TARGETS) {
     const name = `@pixtuoid/cli-${tg.pkg}`;
