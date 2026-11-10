@@ -821,8 +821,8 @@ struct DoctorReport {
     log_path: ShownPath,
     config_path: ShownPath,
     config_warnings: Vec<String>,
-    /// Minted only by [`read_log`](crate::run_log::read_log), which strips it; the render prints it as
-    /// is.
+    /// Minted only by [`LogLocation::read`](crate::run_log::LogLocation::read), which strips it;
+    /// the render prints it as is.
     log_warning: Option<String>,
     term_env: Option<String>,
     colorterm_env: Option<String>,
@@ -1520,7 +1520,7 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::run_log::read_log;
+    use crate::run_log::LogLocation;
     use crate::test_capture::capture;
     #[cfg(unix)]
     use std::time::Duration;
@@ -1818,7 +1818,7 @@ mod tests {
         r.log_path = ShownPath::new(evil());
         r.config_path = ShownPath::new(evil());
         r.config_warnings = vec![evil()];
-        // Through `read_log`, which mints it: a directory is no readable log.
+        // Through the read that mints it: a directory is no readable log.
         // Windows forbids the Cc half in a file name, as
         // `the_unreadable_log_warning_is_stripped_where_it_is_minted` notes.
         let dir = tempfile::tempdir().unwrap();
@@ -1828,7 +1828,7 @@ mod tests {
             dir.path().join(format!("log{EVIL}"))
         };
         std::fs::create_dir(&unreadable).unwrap();
-        r.log_warning = read_log(&unreadable).1;
+        r.log_warning = LogLocation::File(unreadable).read().1;
         assert!(
             r.log_warning.is_some(),
             "a directory must not read as a log"
@@ -2231,15 +2231,18 @@ mod tests {
     #[test]
     fn an_unreadable_log_is_reported_but_a_missing_one_is_not() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(read_log(&dir.path().join("nope")), (String::new(), None));
+        assert_eq!(
+            LogLocation::File(dir.path().join("nope")).read(),
+            (String::new(), None)
+        );
 
         let f = dir.path().join("log");
         std::fs::write(&f, "hello").unwrap();
-        assert_eq!(read_log(&f), ("hello".to_string(), None));
+        assert_eq!(LogLocation::File(f).read(), ("hello".to_string(), None));
 
         // A directory reads as IsADirectory / PermissionDenied — never NotFound,
         // on any platform and any uid (a chmod-000 file would not bind as root).
-        let (text, warning) = read_log(dir.path());
+        let (text, warning) = LogLocation::File(dir.path().to_owned()).read();
         assert!(text.is_empty());
         let warning = warning.expect("an unreadable log must be reported");
         assert!(
@@ -2259,7 +2262,7 @@ mod tests {
             dir.path().join("l\u{1b}]0;PWNED\u{7}\u{202e}og")
         };
         std::fs::create_dir(&hostile).unwrap(); // a directory never reads as NotFound
-        let (_, warning) = read_log(&hostile);
+        let (_, warning) = LogLocation::File(hostile).read();
         let warning = warning.expect("an unreadable log must be reported");
         assert!(
             !warning.contains(['\u{1b}', '\u{7}', '\u{202e}']),

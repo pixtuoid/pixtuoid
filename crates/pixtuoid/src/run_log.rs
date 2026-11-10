@@ -124,7 +124,8 @@ fn rotate_if_large(path: &Path) {
     }
 }
 
-/// Read the warn-floor log for a drift scan, separating "there is no log yet" from "the log
+/// Read the last `max` bytes of the warn-floor log, from their first whole
+/// line, for a drift scan, separating "there is no log yet" from "the log
 /// could not be read" — the latter gets a warning line. A missing log is the ordinary
 /// no-TUI-run-yet state and genuinely means "no drift recorded"; every other error class
 /// leaves the counts UNKNOWN, and folding those into the same silent empty string made
@@ -133,13 +134,7 @@ fn rotate_if_large(path: &Path) {
 /// The warning is [`crate::strip_control_chars`]-ed where it is MINTED, for the
 /// reason `crate::display_path` gives: the path comes from
 /// `PIXTUOID_LOG`/`XDG_STATE_HOME`.
-pub(crate) fn read_log(path: &std::path::Path) -> (String, Option<String>) {
-    read_log_tail(path, u64::MAX)
-}
-
-/// [`read_log`] of the last `max` bytes of `path`, from the first whole line
-/// in them.
-fn read_log_tail(path: &std::path::Path, max: u64) -> (String, Option<String>) {
+fn read_log(path: &std::path::Path, max: u64) -> (String, Option<String>) {
     let tail = || -> std::io::Result<String> {
         use std::io::{Read, Seek, SeekFrom};
         let mut file = std::fs::File::open(path)?;
@@ -186,9 +181,9 @@ const RUN_LOG_EXT: &str = "log";
 /// The size past which the file `$PIXTUOID_LOG` names rotates at startup.
 const LOG_ROTATE_BYTES: u64 = 5 * 1024 * 1024;
 
-/// The most one [`LogLocation::read`] takes of the retained runs, newest first: what
-/// the named file holds at most across its two generations, so a week of
-/// verbose runs costs a reader no more than it did.
+/// The most one [`LogLocation::read`] takes, of the named file or the runs
+/// newest first: what the named file holds at most across its two
+/// generations, so a week of verbose runs costs a reader no more than it did.
 const LOG_READ_BYTES: u64 = 2 * LOG_ROTATE_BYTES;
 
 impl LogLocation {
@@ -251,7 +246,7 @@ impl LogLocation {
     /// the tail across its runs, oldest run first.
     pub(crate) fn read(&self) -> (String, Option<String>) {
         match self {
-            LogLocation::File(path) => read_log(path),
+            LogLocation::File(path) => read_log(path, LOG_READ_BYTES),
             LogLocation::Runs(dir) => read_runs(dir, LOG_READ_BYTES),
         }
     }
@@ -284,7 +279,7 @@ fn read_runs(dir: &std::path::Path, budget: u64) -> (String, Option<String>) {
             break;
         }
         let len = std::fs::metadata(run).map_or(0, |m| m.len());
-        let (run_text, run_warning) = read_log_tail(run, left);
+        let (run_text, run_warning) = read_log(run, left);
         left = left.saturating_sub(len);
         read.push(run_text);
         warning = warning.or(run_warning);
@@ -538,5 +533,25 @@ mod tests {
             "a1\na2\nb1\nb2\nc1\n",
             "every run under a budget that holds them"
         );
+    }
+
+    /// The named file is read within the budget a runs directory is, from
+    /// its first whole line.
+    #[test]
+    fn a_named_files_read_takes_its_tail_within_the_budget() {
+        use std::io::{Seek, Write};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pixtuoid.log");
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(b"old\n").unwrap();
+        // A sparse line of NULs that ends past the budget.
+        let nuls_from = f.stream_position().unwrap();
+        f.set_len(nuls_from + LOG_READ_BYTES).unwrap();
+        f.seek(std::io::SeekFrom::End(0)).unwrap();
+        f.write_all(b"\nnew\n").unwrap();
+        drop(f);
+        let (text, warning) = LogLocation::File(path).read();
+        assert_eq!(warning, None);
+        assert!(text == "new\n", "read {} bytes", text.len());
     }
 }
