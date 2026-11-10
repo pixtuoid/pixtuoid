@@ -700,8 +700,8 @@ mod tests {
         assert!(shim_locate_remedy_for("freebsd").contains("`cargo install pixtuoid-hook`"));
     }
 
-    /// npm's row names the OSes `npm/generate.mjs`'s `TARGETS` publishes for; no
-    /// build reads that JS, so this test is the only bridge between the two.
+    /// No Rust build reads `npm/generate.mjs`, so this test is the only bridge
+    /// between its `TARGETS` and `SHIM_INSTALLS`' npm row.
     #[test]
     fn the_npm_install_is_offered_where_npm_publishes() {
         // crates.io-packaged test runs don't ship the repo's npm/ tree.

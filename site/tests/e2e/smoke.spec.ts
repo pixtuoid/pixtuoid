@@ -1975,8 +1975,7 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   const copy = page.locator('.install__panel.is-active .install__copy');
   await copy.click();
   await expect(copy).toHaveText('Copied ✓');
-  // A comment line shows but is never copied: pasted into a default zsh (no
-  // interactive comments) it runs as `#` and fails.
+  // A comment line shows but is never copied (Install.astro's `commands` says why).
   await expect(page.locator('#install-panel-cargo code')).toContainText('#');
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toBe(await copy.getAttribute('data-copy'));
@@ -2010,6 +2009,34 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   const selected = await page.evaluate(() => String(getSelection()));
   expect(selected).toContain('cargo install');
   expect(selected).not.toContain('#');
+});
+
+test('install: a blurb clears its code and the touch Copy pill', async ({ browser }) => {
+  // 480 px under a coarse pointer: one-line commands, and Copy at its 44 px touch size.
+  const ctx = await browser.newContext({
+    viewport: { width: 480, height: 900 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await ctx.newPage();
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  for (const method of installData.filter((m) => 'blurb' in m)) {
+    await page.locator(`.install__tab[data-tab="${method.id}"]`).tap();
+    const overlaps = await page.evaluate((id) => {
+      const panel = document.getElementById(`install-panel-${id}`)!;
+      const blurb = panel.querySelector('.install__blurb')!.getBoundingClientRect();
+      return [...panel.querySelectorAll('code .line, .install__copy')]
+        .map((e) => e.getBoundingClientRect())
+        .filter(
+          (o) =>
+            Math.min(blurb.right, o.right) > Math.max(blurb.left, o.left) &&
+            Math.min(blurb.bottom, o.bottom) > Math.max(blurb.top, o.top)
+        ).length;
+    }, method.id);
+    expect(overlaps, `${method.id}'s blurb is covered`).toBe(0);
+  }
+  await ctx.close();
 });
 
 test('showcase studio: deep-links tune, dial and chips swap hydrated stages, the clip plays', async ({

@@ -40,8 +40,10 @@ import tabs from '../install.json';
       </div>
 
       {tabs.map((t, i) => {
-        // A comment line shows but is never copied: a default zsh has no
-        // interactive comments, so a pasted `# …` runs and fails.
+        // A comment line shows but is never copied: zsh reads `#` as a comment in
+        // an interactive shell only under INTERACTIVE_COMMENTS, which is on by
+        // default in ksh and sh emulation alone
+        // (https://zsh.sourceforge.io/Doc/Release/Options.html#index-INTERACTIVE_005fCOMMENTS).
         const commands = t.cmds.filter((line) => !line.startsWith('#'));
         return <div
           id={`install-panel-${t.id}`}
@@ -199,13 +201,15 @@ import tabs from '../install.json';
     background: var(--screen);
     /* lifted off the office, but the edge stays sharp: it's a terminal screen */
     box-shadow: var(--shadow-lg);
+    /* the code's left edge, which the blurb lines up with */
+    --install-inset: clamp(1.2rem, 3.4vw, 2.6rem);
   }
   .install__panel.is-active {
     display: block;
   }
   .install__panel :global(pre) {
     margin: 0;
-    padding: clamp(1.2rem, 3vw, 2.2rem) clamp(1.2rem, 3.4vw, 2.6rem);
+    padding: clamp(1.2rem, 3vw, 2.2rem) var(--install-inset);
     overflow-x: auto;
     font-size: clamp(1.1rem, 2.6vw, 2rem);
     line-height: 1.5;
@@ -215,10 +219,11 @@ import tabs from '../install.json';
     font-family: var(--font-mono);
   }
   /* In the code block's bottom padding, so a blurb adds no height: the page's
-     scroll budget (floors.spec.ts) holds the default tab to its measured fit. */
+     scroll budget (floors.spec.ts) holds the default tab to its measured fit.
+     Left, never the right corner: the touch Copy pill (44 px) reaches down there. */
   .install__blurb {
     position: absolute;
-    right: 0.7rem;
+    left: var(--install-inset);
     bottom: 0.35rem;
     margin: 0;
     font-family: var(--font-mono);
