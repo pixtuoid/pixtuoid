@@ -39,9 +39,8 @@ The per-platform packages are **generated, not committed** (see `.gitignore`).
 
 ## Release flow (the `npm` job in `.github/workflows/release.yml`)
 
-On a stable `v*` tag (skipped for `-rc`/`-win` pre-releases, like crates.io +
-homebrew): download the `artifact-<target>` tarballs the build matrix already
-produced → extract each target's binaries and notices → `node generate.mjs
---version <tag> --artifacts <dir>` → `npm publish` the platform packages first,
-the launcher last. The version is sourced from the git tag (single source of
-truth, same as the crates.io publish) — never a separate `package.json`.
+On a stable `v*` tag: download the `artifact-<target>` tarballs the build matrix
+already produced → extract each target's binaries and notices → `node
+generate.mjs --version <tag> --artifacts <dir>` → `npm publish` the platform
+packages first, the launcher last. The version is sourced from the git tag
+(single source of truth) — never a separate `package.json`.
