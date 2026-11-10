@@ -6,8 +6,26 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-fn runs_under(base: &Path) -> LogLocation {
-    LogLocation::Runs(base.join("pixtuoid").join("logs"))
+/// The directory the runs directory and the crash log share: in the state or
+/// cache directory, else the temp dir.
+fn diagnostics_dir() -> PathBuf {
+    diagnostics_under(
+        crate::install::nonempty_abs_env("XDG_STATE_HOME")
+            .or_else(|| pixtuoid_core::platform::user_home_opt().map(|h| h.join(".cache"))),
+    )
+}
+
+/// [`diagnostics_dir`] under a resolved base, so the no-home arm tests
+/// without the passwd lookup the home read makes.
+fn diagnostics_under(base: Option<PathBuf>) -> PathBuf {
+    // No home dir at all: the log must exist somewhere — it is the only runtime
+    // diagnostics channel.
+    base.unwrap_or_else(std::env::temp_dir).join("pixtuoid")
+}
+
+/// Where a panic's report goes, whatever `$PIXTUOID_LOG` names.
+pub(crate) fn crash_log_path() -> PathBuf {
+    diagnostics_dir().join("crash.log")
 }
 
 /// How long a run's log outlives its last write before a later run removes
@@ -190,18 +208,10 @@ impl LogLocation {
     /// Where this process's log goes: `$PIXTUOID_LOG`'s file, else a runs
     /// directory in the state, cache or temp directory.
     pub(crate) fn from_env() -> Self {
-        if let Some(p) = pixtuoid_core::platform::path_env("PIXTUOID_LOG") {
-            return LogLocation::File(p);
+        match pixtuoid_core::platform::path_env("PIXTUOID_LOG") {
+            Some(p) => LogLocation::File(p),
+            None => LogLocation::Runs(diagnostics_dir().join("logs")),
         }
-        if let Some(state) = crate::install::nonempty_abs_env("XDG_STATE_HOME") {
-            return runs_under(&state);
-        }
-        if let Some(home) = pixtuoid_core::platform::user_home_opt() {
-            return runs_under(&home.join(".cache"));
-        }
-        // No home dir at all: the log must exist somewhere — it is the only runtime
-        // diagnostics channel.
-        runs_under(&std::env::temp_dir())
     }
 
     pub(crate) fn path(&self) -> &std::path::Path {
@@ -346,6 +356,22 @@ mod tests {
                 );
             });
         });
+    }
+
+    /// The crash log sits beside the runs directory, in the temp dir's
+    /// when there is no home at all.
+    #[test]
+    fn the_crash_log_sits_beside_the_runs_even_with_no_home() {
+        temp_env::with_var_unset("PIXTUOID_LOG", || {
+            let LogLocation::Runs(runs) = LogLocation::from_env() else {
+                panic!("no $PIXTUOID_LOG reads as a runs directory");
+            };
+            assert_eq!(crash_log_path().parent(), runs.parent());
+        });
+        assert_eq!(
+            diagnostics_under(None),
+            std::env::temp_dir().join("pixtuoid")
+        );
     }
 
     #[test]

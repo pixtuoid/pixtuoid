@@ -1,8 +1,6 @@
 //! Crash reporting: the panic hook that restores the terminal, appends a
-//! timestamped backtrace to [`crash_log_path`], and prints a pre-filled GitHub
-//! issue URL.
-
-use std::path::PathBuf;
+//! timestamped backtrace to [`crate::run_log::crash_log_path`], and prints a
+//! pre-filled GitHub issue URL.
 
 pub(crate) fn install_crash_hook() {
     std::panic::set_hook(Box::new(|info| {
@@ -14,7 +12,7 @@ pub(crate) fn install_crash_hook() {
         );
 
         let version = env!("CARGO_PKG_VERSION");
-        let crash_path = crash_log_path();
+        let crash_path = crate::run_log::crash_log_path();
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         let panic_msg = extract_panic_message(info);
@@ -150,18 +148,6 @@ fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> usize {
         cut -= 1;
     }
     cut
-}
-
-fn crash_log_path() -> PathBuf {
-    // Empty or RELATIVE XDG_STATE_HOME = unset (XDG spec): an unfiltered "" yields
-    // root `/pixtuoid/...`, a relative one lands CWD-relative.
-    if let Some(state) = crate::install::nonempty_abs_env("XDG_STATE_HOME") {
-        return state.join("pixtuoid").join("crash.log");
-    }
-    if let Some(home) = pixtuoid_core::platform::user_home_opt() {
-        return home.join(".cache").join("pixtuoid").join("crash.log");
-    }
-    std::env::temp_dir().join("pixtuoid-crash.log")
 }
 
 #[cfg(test)]
@@ -343,27 +329,5 @@ mod tests {
         let url = build_issue_url("0.4.0", "msg", "loc", &long_bt, Path::new("/tmp/x"));
         assert!(url.len() < GITHUB_URL_LIMIT, "{}", url.len());
         assert!(url.contains("truncated"));
-    }
-
-    #[test]
-    fn crash_log_path_rejects_a_relative_xdg_state_home() {
-        for rel in ["", "   ", "rel/state", "~/state"] {
-            temp_env::with_var("XDG_STATE_HOME", Some(rel), || {
-                let home =
-                    pixtuoid_core::platform::user_home_opt().expect("a home dir in the test env");
-                assert_eq!(
-                    crash_log_path(),
-                    home.join(".cache").join("pixtuoid").join("crash.log"),
-                    "relative XDG_STATE_HOME {rel:?} must fall back to ~/.cache"
-                );
-            });
-        }
-        let abs = if cfg!(windows) { "C:/state" } else { "/state" };
-        temp_env::with_var("XDG_STATE_HOME", Some(abs), || {
-            assert_eq!(
-                crash_log_path(),
-                PathBuf::from(format!("{abs}/pixtuoid/crash.log"))
-            );
-        });
     }
 }
