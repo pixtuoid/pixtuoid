@@ -39,28 +39,20 @@ pub(crate) fn local_time(now: SystemTime) -> chrono::NaiveDateTime {
         .naive_local()
 }
 
-/// The year of the helpers' day 0, so of `scripts/media.json`'s renders.
-const BASE_YEAR: i32 = 2026;
-
-/// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders: its
-/// year's first day no holiday touches ([`untouched`](crate::holiday::untouched)),
-/// so a test meets only the holidays it names.
-fn base() -> chrono::NaiveDate {
-    chrono::NaiveDate::from_ymd_opt(BASE_YEAR, 1, 1)
-        .and_then(|first| {
-            first
-                .iter_days()
-                .find(|&day| crate::holiday::untouched(day))
-        })
-        .expect("a year has a day no holiday touches")
-}
+/// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders: a day no
+/// holiday touches, so a test meets only the holidays it names. A holiday that
+/// reaches it fails `day_zero_is_an_ordinary_day`, so the move is chosen.
+const DAY_ZERO: chrono::NaiveDate = match chrono::NaiveDate::from_ymd_opt(2026, 1, 2) {
+    Some(date) => date,
+    None => panic!("a calendar date"),
+};
 
 /// `day` counts FORWARD from day 0 by calendar arithmetic, not as a
 /// day-of-month: a search that walks days to find a weather or moon phase runs
 /// past 31, and `with_ymd_and_hms(.., 1, 40, ..)` is an invalid date that panics
 /// in exactly the zones whose day-hash sequence needs the extra days.
 fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
-    let date = base().checked_add_days(chrono::Days::new(u64::from(day)))?;
+    let date = DAY_ZERO.checked_add_days(chrono::Days::new(u64::from(day)))?;
     local_instant(date, h, m)
 }
 
@@ -77,7 +69,7 @@ pub(crate) fn local_instant(date: chrono::NaiveDate, h: u32, m: u32) -> Option<S
 
 fn local(day: u32, h: u32, m: u32) -> SystemTime {
     try_local(day, h, m)
-        .expect("a helper's time early in its base year is valid and unambiguous in every zone")
+        .expect("a helper's time in the weeks after day 0 is valid and unambiguous in every zone")
 }
 
 /// Local `h:m` on `day`'s own local date, not day 0: a run on
@@ -129,13 +121,13 @@ mod tests {
         let t = local_time(on_day(8, 2));
         assert_eq!(
             (t.date(), t.hour()),
-            (base() + chrono::Days::new(8), 2),
-            "on_day counts days FORWARD from the base"
+            (DAY_ZERO + chrono::Days::new(8), 2),
+            "on_day counts days FORWARD from day 0"
         );
-        // Past the end of the base's month: the form this replaced panicked here.
+        // Past the end of day 0's month: the form this replaced panicked here.
         let t = local_time(on_day(45, 7));
-        assert_eq!((t.date(), t.hour()), (base() + chrono::Days::new(45), 7));
-        assert_ne!(t.month(), base().month());
+        assert_eq!((t.date(), t.hour()), (DAY_ZERO + chrono::Days::new(45), 7));
+        assert_ne!(t.month(), DAY_ZERO.month());
     }
 
     #[test]

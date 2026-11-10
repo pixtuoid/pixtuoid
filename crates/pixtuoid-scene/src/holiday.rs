@@ -21,16 +21,6 @@ fn festive_day(local: NaiveDateTime) -> NaiveDate {
     (local - NIGHT_RUNS_PAST_MIDNIGHT).date()
 }
 
-/// Whether no holiday touches any local time on `date`: none holds on the
-/// festive day of any of its hours, the night before's included.
-pub(crate) fn untouched(date: NaiveDate) -> bool {
-    let first = festive_day(date.and_time(chrono::NaiveTime::MIN));
-    first
-        .iter_days()
-        .take_while(|&day| day <= date)
-        .all(|day| Holiday::on(day).is_none())
-}
-
 /// The hues New Year's fireworks burst in.
 const NEW_YEAR_HUES: [Hue; 5] = [Hue::Gold, Hue::Red, Hue::Green, Hue::Blue, Hue::Violet];
 
@@ -184,24 +174,6 @@ mod tests {
         assert_eq!(on(2026, 12, 1), Some(Holiday::Christmas));
         assert_eq!(on(2026, 12, 31), Some(Holiday::Christmas));
         assert_eq!(on(2027, 1, 1), None);
-    }
-
-    /// A date is untouched until the first day its year's holidays hold, and
-    /// again once the night after their last has ended.
-    #[test]
-    fn a_date_is_untouched_only_clear_of_a_holiday_and_its_night() {
-        let year = NaiveDate::from_ymd_opt(2026, 1, 1).expect("a date");
-        let held: Vec<NaiveDate> = year
-            .iter_days()
-            .take_while(|day| day.year() == year.year())
-            .filter(|&day| Holiday::on(day).is_some())
-            .collect();
-        let (first, last) = (held[0], held[held.len() - 1]);
-        let after = last.succ_opt().expect("a date");
-        assert!(untouched(first.pred_opt().expect("a date")));
-        assert!(!untouched(first), "its own day");
-        assert!(!untouched(after), "the night before");
-        assert!(untouched(after.succ_opt().expect("a date")));
     }
 
     /// A holiday draws each piece one of its stand-ins stands in for as that
