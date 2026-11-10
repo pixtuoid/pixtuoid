@@ -54,8 +54,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         }),
         caps: SourceCaps {
             has_exit_signal: true,
-            // CC's JSONL SessionStart is first-sight-only, so a swept slot
-            // would not walk back in — moot with a real exit signal anyway.
+            // A swept slot returns on its transcript's next read showing life
+            // (the watcher's re-registration), not through this flag.
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
             // A subagent turn fires SubagentStart, and SubagentStop once it has

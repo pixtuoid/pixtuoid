@@ -6,7 +6,7 @@ use tracing::debug;
 
 use crate::AgentId;
 
-use super::walk::{park_if_truncated_below_cursor, walk_jsonl};
+use super::walk::{own_agent, park_if_truncated_below_cursor, walk_jsonl};
 use super::{Sight, SourceDecoders, WatchCtx};
 
 /// How long an un-drained [`ChildEndUnclaims`] entry survives. Bounds the set:
@@ -141,13 +141,7 @@ pub(super) async fn drain_child_end_unclaims(
     let claimed: Vec<(PathBuf, AgentId, Sight)> = {
         let seen = ctx.seen.lock().await;
         seen.iter()
-            .map(|(p, &sight)| {
-                (
-                    p.clone(),
-                    AgentId::from_parts(ctx.source, &decoders.id_derive.id_for(p)),
-                    sight,
-                )
-            })
+            .map(|(p, sight)| (p.clone(), own_agent(p, ctx.source, decoders), sight.clone()))
             .collect()
     };
     // Consume ids matching ANY of this watcher's known paths, held or already
@@ -155,14 +149,15 @@ pub(super) async fn drain_child_end_unclaims(
     let matched = unclaims.take_matching(|id| claimed.iter().any(|(_, pid, _)| pid == id));
     for id in matched {
         for (path, pid, sight) in &claimed {
-            if *pid != id || *sight != Sight::Claimed {
+            if *pid != id || !matches!(sight, Sight::Claimed(_)) {
                 continue;
             }
             // Drain pending bytes to EOF while the claim is still held (a
-            // straggler decodes as an already-claimed walk, registering
-            // nothing), THEN end it. The end only DOWNGRADES an entry that
-            // still exists: a drain that met NotFound retired the claim, and a
-            // blind insert would bring it back as ended.
+            // straggler showing life re-registers onto the slot the hook just
+            // ended, which a transcript start never revives), THEN end it. The
+            // end only DOWNGRADES an entry that still exists: a drain that met
+            // NotFound retired the claim, and a blind insert would bring it
+            // back as ended.
             park_if_truncated_below_cursor(path, ctx).await;
             walk_jsonl(path, decoders, ctx, false).await;
             {

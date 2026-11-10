@@ -194,7 +194,7 @@ pub(crate) enum LabelProvenance {
 }
 
 /// An [`AgentSlot`]'s display label + the provenance it was minted with.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SlotLabel {
     #[serde(with = "arc_str_serde")]
     text: Arc<str>,
@@ -258,6 +258,12 @@ impl SlotLabel {
     pub(crate) fn yields_to(&self, incoming: &Self) -> bool {
         incoming.provenance == LabelProvenance::Renamed || self.is_upgradable()
     }
+
+    /// Whether a [`LabelHint`](crate::AgentEvent::LabelHint)'s `hint` replaces
+    /// this label: as [`yields_to`](Self::yields_to), unless a rename named it.
+    pub(crate) fn yields_to_hint(&self, hint: &Self) -> bool {
+        self.provenance != LabelProvenance::Renamed && self.yields_to(hint)
+    }
 }
 
 impl std::ops::Deref for SlotLabel {
@@ -294,7 +300,7 @@ impl From<String> for SlotLabel {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// One live agent's full state: identity, working directory, current activity,
 /// desk/floor assignment, and the per-session meters. The Arc-backed
 /// strings/paths keep the per-frame `SceneState` clone allocation-free.
@@ -548,7 +554,7 @@ impl std::fmt::Display for DaemonInstanceId {
 /// Per-daemon-INSTANCE presence for the gateway mascot, carried on `SceneState`
 /// so the serializable scene snapshot the renderer reads holds the mascot's
 /// state + concurrency (bubble) intensity.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaemonPresence {
     /// The stored liveness axes; the 4-way render state is PROJECTED via
     /// [`display_state`](Self::display_state), never stored.
@@ -603,9 +609,10 @@ impl DaemonPresence {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 /// The whole-office snapshot the reducer maintains and the render layer reads:
-/// live agent slots, per-floor desk capacities, and the daemon mascots.
+/// live agent slots, per-floor desk capacities, and the daemon mascots. Its
+/// equality is how a publisher tells a change from a repeat.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneState {
     /// Live agent slots, keyed by `AgentId`.
     pub agents: BTreeMap<AgentId, AgentSlot>,
@@ -665,7 +672,7 @@ impl SceneState {
 /// The `source → instance → presence` roster behind [`SceneState::daemons`], a
 /// named type so the nesting lives in ONE place and the mutation ops stay
 /// `pub(crate)` to the daemon layer.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DaemonRoster(BTreeMap<String, BTreeMap<DaemonInstanceId, DaemonPresence>>);
 
 impl DaemonRoster {

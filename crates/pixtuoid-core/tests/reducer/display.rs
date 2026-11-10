@@ -245,6 +245,55 @@ fn rename_updates_slot_label() {
     );
 }
 
+/// A transcript's label hint names a slot nothing has named, as its first
+/// sight's `Rename` did, and nothing else.
+#[test]
+fn a_label_hint_names_only_a_slot_nothing_has_named() {
+    let id = AgentId::from_transcript_path("/p/a.jsonl");
+    let start = || AgentEvent::SessionStart {
+        agent_id: id,
+        source: "claude-code".into(),
+        session_id: "abc".into(),
+        cwd: PathBuf::from("/work/repo"),
+        parent_id: None,
+    };
+    let rename = |label: &str| AgentEvent::Rename {
+        agent_id: id,
+        label: label.into(),
+    };
+    let hint = |label: &str| AgentEvent::LabelHint {
+        agent_id: id,
+        label: label.into(),
+    };
+    let rows = [
+        (
+            "a cwd label takes it",
+            vec![start(), hint("cc·title")],
+            Some("cc·title"),
+        ),
+        (
+            "a rename's name keeps",
+            vec![start(), rename("cc·named"), hint("cc·title")],
+            Some("cc·named"),
+        ),
+        (
+            "a bare prefix never replaces a cwd label",
+            vec![start(), hint("cc")],
+            Some("cc·repo"),
+        ),
+        ("an absent slot stays absent", vec![hint("cc·title")], None),
+    ];
+    for (row, events, label) in rows {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        for event in events {
+            r.apply(&mut scene, event, SystemTime::now(), Transport::Jsonl);
+        }
+        let got = scene.agents.get(&id).map(|s| s.label.text());
+        assert_eq!(got.as_deref(), label, "{row}");
+    }
+}
+
 #[test]
 fn rename_for_unknown_agent_is_noop() {
     let mut scene = SceneState::uniform(4);

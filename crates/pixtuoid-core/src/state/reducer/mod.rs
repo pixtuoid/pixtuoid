@@ -446,6 +446,9 @@ impl Reducer {
             AgentEvent::Rename { agent_id, label } => {
                 Self::apply_rename(scene, agent_id, &label, now);
             }
+            AgentEvent::LabelHint { agent_id, label } => {
+                Self::apply_label_hint(scene, agent_id, &label);
+            }
             AgentEvent::SessionEnd { agent_id, as_child } => {
                 self.apply_session_end(scene, agent_id, as_child, from, now);
             }
@@ -967,6 +970,18 @@ impl Reducer {
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let label = classify_rename(label, &slot.source);
             fsm::rename(slot, label, now);
+        }
+    }
+
+    /// Minted as a `Rename` is, so a slot brought back carries the label its
+    /// transcript last gave it. No liveness: the start it rides behind already
+    /// wrote that.
+    fn apply_label_hint(scene: &mut SceneState, agent_id: AgentId, label: &str) {
+        if let Some(slot) = scene.agents.get_mut(&agent_id) {
+            let label = classify_rename(label, &slot.source);
+            if slot.label.yields_to_hint(&label) {
+                slot.label = label;
+            }
         }
     }
 

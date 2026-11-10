@@ -13,7 +13,7 @@
 //! 1. **Registration comes from the WATCHER, not the decoder.** A JSONL event
 //!    for an unknown id is a documented no-op, so a transcript driven with no
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
-//!    in for `emit_first_sight`, through the SAME first-sight gate, head scan and
+//!    in for `emit_registration`, through the SAME first-sight gate, head scan and
 //!    `first_sight_start` from the SAME registry row. Only what the registry's
 //!    native-only `NativeTranscript` column derives (the title, the label, a
 //!    path-derived cwd) stays out, since a wasm-clean build has none of it.
@@ -21,6 +21,7 @@
 //!    so it is not a free parameter.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -29,7 +30,8 @@ use serde_json::Value;
 use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::first_sight::{
-    HEAD_BYTES, Life, Sight, extract_head_fields, first_sight_start, holds_life, last_life,
+    HEAD_BYTES, Life, Registration, Sight, extract_head_fields, first_sight_start, holds_life,
+    last_life,
 };
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
@@ -137,9 +139,9 @@ pub struct Driven {
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
     pub(crate) presence: Vec<PresenceMsg>,
-    /// How many `events` are a first-sight SEED, not the wire's own output. A
-    /// census must report [`Self::wire_events`] instead — the seed registers a
-    /// slot unconditionally, so counting it scores garbage 1/1.
+    /// How many `events` are a SEED standing in for the watcher's registration,
+    /// not the wire's own output. A census reports [`Self::wire_events`]: a seed
+    /// registers a slot unconditionally, so counting it scores garbage 1/1.
     pub(crate) seed_events: usize,
     /// Non-blank lines driven (blank lines are skipped, not counted).
     pub lines: usize,
@@ -213,7 +215,7 @@ impl Driven {
         })
     }
 
-    /// Events the WIRE produced, excluding the first-sight seed — the honest
+    /// Events the WIRE produced, excluding the registration seeds — the honest
     /// numerator for any census.
     pub fn wire_events(&self) -> usize {
         self.events.len() - self.seed_events
@@ -396,9 +398,9 @@ impl Drive {
         }
     }
 
-    /// Lead each life's first feed of the transcript with the `SessionStart` the
-    /// watcher's `emit_first_sight` would emit for it, keyed by the source's
-    /// registry row.
+    /// Lead each feed of the transcript the watcher's gate registers on with the
+    /// `SessionStart` the watcher's `emit_registration` would emit for it, keyed
+    /// by the source's registry row.
     ///
     /// Not a free choice: a transcript carrying no `SessionStart` of its own is
     /// registered in production by the watcher, so an offline driver must seed
@@ -489,13 +491,12 @@ fn joined<S: AsRef<str>>(lines: impl Iterator<Item = S>) -> Vec<u8> {
 pub struct Fold {
     reducer: Reducer,
     driven: Driven,
-    /// Each seeded transcript's first sight, once per life through the
-    /// watcher's own gate.
+    /// Each seeded transcript's claim, through the watcher's own gate.
     sights: HashMap<AgentId, Sighted>,
 }
 
-/// A seeded transcript's first sight and its start: the first feed stands in
-/// for the file head the watcher reads back.
+/// A seeded transcript's claim and its head: the first feed stands in for the
+/// file head the watcher reads back.
 #[derive(Debug)]
 struct Sighted {
     sight: Sight,
@@ -556,9 +557,8 @@ impl Fold {
     }
 
     /// The seed `drive` leads a feed of `lines` with when the watcher's gate
-    /// makes it a first sight, else `None`; the claim then follows `decoded`'s
-    /// verdict.
-    fn first_sight<S: AsRef<str>>(
+    /// registers on it, else `None`; the claim then follows `decoded`'s verdict.
+    fn registration<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
         lines: &[Option<S>],
@@ -566,19 +566,34 @@ impl Fold {
     ) -> Option<AgentEvent> {
         let (source, _, session_id) = drive.sighted()?;
         let id = AgentId::from_parts(source, &session_id);
-        let leads = Sight::leads(self.sights.get(&id).map(|s| s.sight))
-            .unwrap_or_else(|| holds_life(decoded, id));
         let read = joined(lines.iter().flatten());
-        let sighted = self.sights.entry(id).or_insert_with(|| Sighted {
-            sight: Sight::Claimed,
-            head: read.get(..HEAD_BYTES).unwrap_or(&read).to_vec(),
-        });
-        let seed = leads.then(|| drive.seed(&read, &sighted.head)).flatten();
-        if leads {
-            sighted.sight = Sight::Claimed;
-        }
-        if last_life(decoded, id) == Some(Life::Ended) {
-            sighted.sight = Sight::Ended;
+        let sighted = self.sights.get(&id);
+        let registers = Sight::registers(sighted.map(|s| &s.sight), holds_life(decoded, id));
+        let seed = match sighted {
+            _ if !registers => None,
+            // A claim re-sends the start its first sight built, as the watcher's
+            // `Registration` does.
+            Some(Sighted {
+                sight: Sight::Claimed(claim),
+                ..
+            }) => Some(claim.start.clone()),
+            Some(Sighted { head, .. }) => drive.seed(&read, head),
+            None => drive.seed(&read, &read),
+        };
+        let sight = match (last_life(decoded, id), &seed) {
+            (Some(Life::Ended), _) => Sight::Ended,
+            (_, Some(start)) => Sight::Claimed(Registration {
+                start: start.clone(),
+                label: None,
+            }),
+            (_, None) => return seed,
+        };
+        match self.sights.entry(id) {
+            Entry::Occupied(mut held) => held.get_mut().sight = sight,
+            Entry::Vacant(new) => {
+                let head = read.get(..HEAD_BYTES).unwrap_or(&read).to_vec();
+                new.insert(Sighted { sight, head });
+            }
         }
         seed
     }
@@ -601,7 +616,7 @@ impl Fold {
                 }
             }
             let mut fed = Vec::new();
-            if let Some(seed) = self.first_sight(drive, &lines, &decoded) {
+            if let Some(seed) = self.registration(drive, &lines, &decoded) {
                 self.driven.seed_events += 1;
                 fed.push(seed);
             }
@@ -785,14 +800,27 @@ mod tests {
         assert_eq!(d.reached(), vec![Reach::Running]);
     }
 
+    /// A claimed transcript re-registers on a feed showing life and on no
+    /// other, and re-registering its live slot leaves one slot as it was.
     #[test]
-    fn a_transcript_fed_twice_is_first_sighted_once() {
+    fn a_claimed_transcript_reregisters_only_on_a_feed_showing_life() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
         let at = default_now();
+        let title = serde_json::json!({"type": "title_change", "id": "x", "title": "Named"});
+        let trailer = serde_json::json!({"type": "thinking_level_change", "thinkingLevel": "high"});
+        let slots = |fold: &Fold| {
+            (fold.driven().scene.agents.values())
+                .map(|slot| (slot.label.clone(), slot.parent_id))
+                .collect::<Vec<_>>()
+        };
         let mut fold = Fold::default();
+        fold.feed(&drive, [tool_line(), title.to_string()], at);
+        let first = slots(&fold);
+        fold.feed(&drive, [trailer.to_string()], at);
+        assert_eq!(fold.driven().seed_events, 1, "a feed showing no life");
         fold.feed(&drive, [tool_line()], at);
-        fold.feed(&drive, [tool_line()], at);
-        assert_eq!(fold.finish().seed_events, 1);
+        assert_eq!(fold.driven().seed_events, 2, "a feed showing life");
+        assert_eq!(slots(&fold), first);
     }
 
     /// An ended session's transcript showing activity again is a new life,

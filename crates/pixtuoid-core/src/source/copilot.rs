@@ -57,8 +57,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         caps: SourceCaps {
             // `session.shutdown` is a real persisted exit marker.
             has_exit_signal: true,
-            // sessionId is constant across `--resume`, so a swept session does
-            // not silently walk back in.
+            // A swept session returns on its transcript's next read showing
+            // life (the watcher's re-registration), not through this flag.
             resurrects_on_prompt: false,
             // The `task` dispatch emits `tool.execution_start`/`complete` AND
             // explicit `subagent.started`/`completed` events.
