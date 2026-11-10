@@ -567,11 +567,7 @@ fn main() -> Result<()> {
     }
     // One floor draws its projection, as the painters do: a layout reads only a
     // desk's index, so one seated upstairs would sit on floor 0's desk of it.
-    let ground = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
-    let anim_job = AnimJob {
-        scene: ground.scene(),
-        ..anim_job
-    };
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
 
     let mut pixel = args
         .pixel
@@ -788,7 +784,7 @@ fn main() -> Result<()> {
             &mut floor,
             office.stores(),
             theme,
-            ground.scene(),
+            floor_scene.scene(),
             now,
             floor_meta,
         )
