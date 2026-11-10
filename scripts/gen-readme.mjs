@@ -13,6 +13,7 @@ import sources from '../site/src/sources.json' with { type: 'json' };
 import install from '../site/src/install.json' with { type: 'json' };
 import media from './media.json' with { type: 'json' };
 import { featureText } from '../site/config/feature-text.mjs';
+import { splitCmds } from '../site/config/install-cmds.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readmePath = join(root, 'README.md');
@@ -194,10 +195,11 @@ for (const [, id] of readme.matchAll(/<!-- media:(\S+):start/g)) {
 
 const installBody = install
   .filter((m) => m.readme)
-  .map(
-    (m) =>
-      `**${cell(m.label)}**${m.blurb ? ` (${cell(m.blurb)})` : ''}:\n\n\`\`\`bash\n${m.cmds.join('\n')}\n\`\`\``
-  )
+  .map((m) => {
+    const { notes, commands } = splitCmds(m.cmds);
+    const aside = [m.blurb, ...notes].filter(Boolean).map(cell).join('; ');
+    return `**${cell(m.label)}**${aside ? ` (${aside})` : ''}:\n\n\`\`\`bash\n${commands.join('\n')}\n\`\`\``;
+  })
   .join('\n\n');
 regenSection(
   'Install block',

@@ -126,8 +126,8 @@ rodio = { version = "0.23.0", default-features = false, features = ["playback", 
 rtrb = { version = "0.4.0", optional = true }
 
 [features]
-# `build-target` builds the Linux release artifacts with `portable` alone, so a
-# new default feature goes in `portable` unless it can't build on those targets.
+# `portable` is the build docs/CONFIGURATION.md offers where libasound is
+# absent, so a new default feature goes in it unless it needs a system library.
 default = ["audio", "portable"]
 portable = ["serve"]
 # Ambient sound (config-OFF at runtime regardless; this gates the DEPENDENCY).
@@ -226,17 +226,6 @@ test = true
 [[example]]
 name = "corpus_check"
 test = true
-
-[package.metadata.deb]
-section = "utils"
-assets = [
-    ["target/release/pixtuoid", "usr/bin/", "755"],
-    # cargo-deb's generated copyright names the license; MIT wants its text.
-    ["../../LICENSE", "usr/share/doc/pixtuoid/", "644"],
-    # The embedded fonts' notices, globbed as `just stage-notices` does.
-    ["../*/fonts/**/*.txt", "usr/share/doc/pixtuoid/licenses/", "644"],
-]
-extended-description = "Terminal-native, multi-agent pixel-art visualizer for AI coding agents. Each running Claude Code session appears as an animated sprite in a top-down ASCII office."
 
 [[bench]]
 name              = "render_tiles"

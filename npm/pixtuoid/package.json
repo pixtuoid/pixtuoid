@@ -32,8 +32,6 @@
   "optionalDependencies": {
     "@pixtuoid/cli-darwin-arm64": "0.0.0",
     "@pixtuoid/cli-darwin-x64": "0.0.0",
-    "@pixtuoid/cli-linux-x64": "0.0.0",
-    "@pixtuoid/cli-linux-arm64": "0.0.0",
     "@pixtuoid/cli-win32-x64": "0.0.0",
     "@pixtuoid/cli-win32-arm64": "0.0.0"
   }
