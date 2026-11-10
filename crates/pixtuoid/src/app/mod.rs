@@ -88,7 +88,18 @@ pub fn run() -> Result<()> {
     let tui_active = matches!(&cmd, Cmd::Run { headless, .. } if !*headless)
         || matches!(&cmd, Cmd::Floating { .. });
     let drift = logging::init(tui_active, log_level);
+    let ran = dispatch(cmd, drift);
+    // The log file's copy of what `main` reports on stderr, which a detached
+    // `floating` discards; a run logging to stderr would show it twice.
+    if tui_active && let Err(e) = &ran {
+        tracing::error!(error = ?e, "pixtuoid exited with an error");
+    }
+    ran
+}
 
+/// Run `cmd`: apart from [`run`] so every failure in it, a `?` included,
+/// reaches [`run`]'s log.
+fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
     match cmd {
         Cmd::Run {
             source,

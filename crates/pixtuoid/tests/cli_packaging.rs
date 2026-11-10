@@ -88,15 +88,16 @@ fn man_emits_clean_roff_to_stdout() {
     );
 }
 
-/// A theme name carrying an ESC and a bidi override: `run` refuses it with an
-/// error that quotes it.
+/// A theme name carrying an ESC and a bidi override: `run` and `floating`
+/// refuse it with an error that quotes it.
 const HOSTILE_THEME: &str = "x\u{1b}[31m\u{202e}";
 
-/// `run` refused for `HOSTILE_THEME`, its config read from an empty `config`
-/// dir, so the developer's own config.toml plays no part.
-fn refused_run(config: &std::path::Path) -> std::process::Command {
+/// `command` refused for `HOSTILE_THEME`, its config read from an empty
+/// `config` dir, so the developer's own config.toml plays no part.
+fn refused(command: &[&str], config: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_pixtuoid"));
-    cmd.args(["run", "--headless", "--theme", HOSTILE_THEME])
+    cmd.args(command)
+        .args(["--theme", HOSTILE_THEME])
         .env_remove("RUST_LOG")
         .env_remove("PIXTUOID_LOG")
         .env("XDG_CONFIG_HOME", config)
@@ -107,7 +108,9 @@ fn refused_run(config: &std::path::Path) -> std::process::Command {
 #[test]
 fn a_fatal_error_reaches_stderr_stripped_and_exits_1() {
     let tmp = tempfile::TempDir::new().expect("tempdir");
-    let out = refused_run(tmp.path()).output().expect("run pixtuoid");
+    let out = refused(&["run", "--headless"], tmp.path())
+        .output()
+        .expect("run pixtuoid");
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.starts_with("Error: "), "{stderr:?}");
@@ -130,11 +133,30 @@ fn a_fatal_error_into_a_broken_pipe_still_exits_1() {
     // A regression crashes, and the crash hook must not log into the real
     // state dir.
     let state = tempfile::TempDir::new().expect("tempdir");
-    let status = refused_run(state.path())
+    let status = refused(&["run", "--headless"], state.path())
         .stderr(reader_gone())
         .status()
         .expect("run pixtuoid");
     assert_eq!(status.code(), Some(1), "{status:?}");
+}
+
+/// A detached `floating` launch discards its stderr, so a painter that logs
+/// to a file records its fatal error there too.
+#[test]
+fn a_file_logging_painters_fatal_error_reaches_its_log() {
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let log = tmp.path().join("pixtuoid.log");
+    let status = refused(&["floating"], tmp.path())
+        .env("PIXTUOID_LOG", &log)
+        .stderr(std::process::Stdio::null())
+        .status()
+        .expect("run pixtuoid");
+    assert_eq!(status.code(), Some(1), "{status:?}");
+    let logged = std::fs::read_to_string(&log).expect("the run's log");
+    assert!(
+        logged.contains(" ERROR ") && logged.contains("unknown theme"),
+        "{logged:?}"
+    );
 }
 
 /// A terminal the office can't paint is refused before it is touched, and the

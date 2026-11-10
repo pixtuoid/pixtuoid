@@ -725,7 +725,6 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
         match event {
             FloatingEvent::SceneChanged => self.request_redraw(),
             FloatingEvent::GpuFailed(message) => {
-                tracing::error!(error = ?message, "pixtuoid floating: the GPU failed");
                 let failure = anyhow::anyhow!(message).context("the floating window's GPU failed");
                 if self.failure.fail(failure) {
                     event_loop.exit();
