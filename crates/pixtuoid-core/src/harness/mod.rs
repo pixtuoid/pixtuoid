@@ -654,9 +654,10 @@ impl Fold {
     }
 
     /// What the transport delivers for one read of `lines`, whose own
-    /// session's last lifecycle evidence is `verdict`: its registration, then
-    /// `decoded`.
-    fn gate<S: AsRef<str>>(
+    /// session's last lifecycle evidence is `verdict`: its registration, if the
+    /// watcher's gate registers on it, then what [`sends`] keeps of `decoded`.
+    /// Records the read's claim.
+    fn deliver<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
         own: Option<AgentId>,
@@ -676,7 +677,7 @@ impl Fold {
         fed
     }
 
-    /// Fold [`Self::gate`]'s delivery for one read.
+    /// Fold [`Self::deliver`]'s delivery for one read.
     fn send<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
@@ -686,7 +687,7 @@ impl Fold {
         verdict: Option<Life>,
         at: SystemTime,
     ) {
-        for event in self.gate(drive, own, lines, decoded, verdict) {
+        for event in self.deliver(drive, own, lines, decoded, verdict) {
             self.apply(drive.transport, event, at);
             // Each event is observed BEFORE and AFTER a cascade tick, so a
             // transient class a later event resolves still counts as reached.
