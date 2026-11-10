@@ -70,11 +70,7 @@ pub(crate) fn relative_source(plugin: &Path) -> Result<String> {
 /// Write each manifest, creating its dir.
 pub(crate) fn write_manifests(docs: &[(PathBuf, Value)]) -> Result<()> {
     for (path, doc) in docs {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-        }
-        io::write_config_atomic(path, &serde_json::to_string_pretty(doc)?)
-            .with_context(|| format!("writing {}", path.display()))?;
+        io::write_config_atomic(path, &serde_json::to_string_pretty(doc)?)?;
     }
     Ok(())
 }

@@ -202,13 +202,13 @@ impl LegPose {
     }
 }
 
-/// Returns `None` if the slot's desk_index is out of range for `layout`.
+/// Returns `None` if the slot has no desk in `layout`.
 ///
 /// Priority, first match wins: exit override (walk to the door, then `None`
 /// once the window passes) → entry override (door → desk, regardless of state
 /// changes) → the state-driven pose.
 pub(crate) fn derive(slot: &AgentSlot, now: SystemTime, layout: &SceneLayout) -> Option<Pose> {
-    let desk = layout.home_desk(slot.desk_index.single_floor_local())?;
+    let desk = layout.home_desk_of(slot)?;
 
     // The target is `door_threshold` (the on-floor point below the door), not
     // the door itself, so the character doesn't paint through the wall trim.
@@ -283,13 +283,13 @@ fn state_driven_pose(
 /// a physics-driven entry already in flight doesn't restart a redundant linear
 /// entry walk.
 ///
-/// Returns `None` when `slot.desk_index` is out of range for `layout`.
+/// Returns `None` when the slot has no desk in `layout`.
 pub(crate) fn derive_state_only(
     slot: &AgentSlot,
     now: SystemTime,
     layout: &SceneLayout,
 ) -> Option<Pose> {
-    let desk = layout.home_desk(slot.desk_index.single_floor_local())?;
+    let desk = layout.home_desk_of(slot)?;
     state_driven_pose(slot, desk, layout, now)
 }
 

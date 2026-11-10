@@ -85,7 +85,7 @@ impl From<&str> for ToolDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum AgentEvent {
-    /// A session began — registers a new agent slot at the next free desk.
+    /// A session began — registers a new agent slot, seated at the first free desk or unseated.
     SessionStart {
         /// The new session's agent id.
         agent_id: AgentId,

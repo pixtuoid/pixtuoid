@@ -256,9 +256,8 @@ const _: () = assert!(
 );
 
 /// PER-FLOOR desk capacity for the driven scene. Registration past the TOTAL is
-/// REFUSED, and SILENTLY — so a wire carrying more agents than that reads as
-/// "decoded but never reached the scene", exactly the false verdict every driver
-/// here exists to avoid.
+/// kept unseated: in the scene but drawn on no floor, so `wire_to_pixels` would
+/// measure no pixels for it.
 ///
 /// SECOND consumer, in another crate: `wire_to_pixels` shapes its EMPTY pixel
 /// baseline with this same value, so changing it moves that test's measured
