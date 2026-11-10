@@ -1080,7 +1080,7 @@ mod tests {
 
     /// A scene of `capacities` holding `desks`, each slot one second younger
     /// than the last.
-    fn seated(
+    fn scene_holding(
         capacities: [usize; MAX_FLOORS],
         desks: &[Option<FloorDesk>],
     ) -> (SceneState, Vec<AgentId>) {
@@ -1099,7 +1099,7 @@ mod tests {
 
     #[test]
     fn an_unseated_agent_takes_the_first_free_desk_past_an_empty_floor() {
-        let (mut s, ids) = seated(
+        let (mut s, ids) = scene_holding(
             [1, 0, 2, 0, 0, 0, 0, 0, 0, 0],
             &[Some(FloorDesk::new(0, 0)), None, None, None],
         );
@@ -1124,7 +1124,7 @@ mod tests {
             Some(FloorDesk::new(1, 0)),
             Some(FloorDesk::new(1, 1)),
         ];
-        let (mut s, ids) = seated([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], &all);
+        let (mut s, ids) = scene_holding([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], &all);
         s.set_capacities([1, 2, 0, 0, 0, 0, 0, 0, 0, 0], SystemTime::UNIX_EPOCH);
         let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
         assert_eq!(
@@ -1145,7 +1145,7 @@ mod tests {
     /// stays unseated beside a free desk.
     #[test]
     fn a_free_desk_goes_to_the_oldest_unseated_and_never_to_one_walking_out() {
-        let (mut s, ids) = seated([3, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[None, None, None]);
+        let (mut s, ids) = scene_holding([3, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[None, None, None]);
         s.agents.get_mut(&ids[0]).unwrap().exiting_at = Some(SystemTime::UNIX_EPOCH);
         s.seat_unseated(|_| true, |_| None);
         let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
@@ -1159,7 +1159,7 @@ mod tests {
     /// in from the layout that seats it; one that kept its desk keeps its walk.
     #[test]
     fn a_layout_that_seats_an_agent_walks_it_in_from_then() {
-        let (mut s, ids) = seated(
+        let (mut s, ids) = scene_holding(
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             &[Some(FloorDesk::new(0, 0)), None],
         );
