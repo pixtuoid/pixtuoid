@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -133,8 +134,8 @@ impl std::fmt::Display for LineFailure {
 pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
-    /// Every decoded event in the order fed, each seed ahead of its
-    /// transcript's lines.
+    /// What the watcher would send for the reads fed, in order, each seed
+    /// ahead of its read's lines.
     pub events: Vec<AgentEvent>,
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
@@ -412,18 +413,16 @@ impl Drive {
     }
 
     /// Drive a recording's `lines` end to end, at one instant, in the reads the
-    /// watcher makes of it live ([`Self::live_reads`]). A caller that renders
-    /// the scene feeds a [`Fold`] at its render's instant.
+    /// watcher makes of it live (`Reads::Live`). A caller that renders the
+    /// scene feeds a [`Fold`] at its render's instant.
     pub fn lines<I, S>(&self, lines: I) -> Driven
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let lines: Vec<S> = lines.into_iter().collect();
         let mut fold = Fold::default();
-        for read in self.live_reads(&lines) {
-            fold.feed(self, read, default_now());
-        }
+        let lines = lines.into_iter().map(Some);
+        fold.run(self, lines, default_now(), Reads::Live);
         fold.finish()
     }
 
@@ -432,12 +431,6 @@ impl Drive {
         let mut fold = Fold::default();
         fold.feed_body(self, body, default_now());
         fold.finish()
-    }
-
-    /// The source, key and session id [`Self::seeded`]'s first sight keys on,
-    /// when it seeds.
-    fn sighted(&self) -> Option<(&str, &Path, String)> {
-        self.keyed_on().filter(|_| self.seeded)
     }
 
     /// The source, key and session id a transcript drive's own agent keys on.
@@ -455,55 +448,18 @@ impl Drive {
         Some((source, path, registry::id_deriver_for(source)(path)))
     }
 
-    /// `lines` as the watcher reads a live transcript, where an end of its own
-    /// session lands a read after the work before it: when their last
-    /// lifecycle evidence is that end and some line precedes it, the end and
-    /// the rest are a read of their own, and the lines before it split the same
-    /// way; otherwise they are one read. One read holding a life and its end
-    /// would register nothing (`Sight::registers`).
-    pub fn live_reads<'a, S: AsRef<str>>(&self, lines: &'a [S]) -> Vec<&'a [S]> {
-        self.split_live(lines, |line| Some(line.as_ref()))
-    }
-
-    /// [`Self::live_reads`] over lines `text` reads, `None` for one that is not
-    /// UTF-8. Scanned from the back, so an open recording decodes about one line.
-    fn split_live<'a, T>(&self, lines: &'a [T], text: impl Fn(&T) -> Option<&str>) -> Vec<&'a [T]> {
-        let mut cuts = Vec::new();
-        if let Some((source, _, session_id)) = self.keyed_on() {
-            let own = AgentId::from_parts(source, &session_id);
-            let scratch = &mut Driven::empty();
-            let mut upto = lines.len();
-            while let Some((end, Life::Ended)) =
-                (lines[..upto].iter().enumerate().rev()).find_map(|(at, line)| {
-                    let events = self
-                        .decode
-                        .line(text(line), scratch, |_| {})
-                        .unwrap_or_default();
-                    last_life(&events, own).map(|verdict| (at, verdict))
-                })
-                && end > 0
-            {
-                cuts.push(end);
-                upto = end;
-            }
-        }
-        let mut start = 0;
-        let mut reads: Vec<&[T]> = (cuts.into_iter().rev())
-            .map(|cut| {
-                let read = &lines[start..cut];
-                start = cut;
-                read
-            })
-            .collect();
-        reads.push(&lines[start..]);
-        reads
+    /// The agent a transcript drive's lifecycle evidence is judged for, as the
+    /// watcher's `own_agent`.
+    fn own(&self) -> Option<AgentId> {
+        let (source, _, session_id) = self.keyed_on()?;
+        Some(AgentId::from_parts(source, &session_id))
     }
 
     /// The `SessionStart` the watcher's first sight emits for this transcript:
     /// its head read off `read`, or off `head`, the transcript's start, where
     /// `read` lacks what only a head carries.
     fn seed(&self, read: &[u8], head: &[u8]) -> Option<AgentEvent> {
-        let (source, path, session_id) = self.sighted()?;
+        let (source, path, session_id) = self.keyed_on()?;
         let parent = registry::parent_extractor_for(source);
         let scan = |bytes: &[u8]| {
             // The title deriver is in the native-only `NativeTranscript` column.
@@ -560,26 +516,37 @@ impl Default for Fold {
     }
 }
 
+/// How a feed's lines fall into the watcher's reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reads {
+    /// One read, as a test models one watcher read.
+    One,
+    /// As the watcher reads a live transcript: the session's own end, and the
+    /// first life after one, each start a read, since the work before them was
+    /// already read. One read holding a life and its end would register nothing
+    /// ([`Sight::registers`]).
+    Live,
+}
+
 impl Fold {
     /// Decode `lines` through `drive` (blank lines skipped, every other line
-    /// parsed and decoded) and fold what they decode to at `at`.
+    /// parsed and decoded) as one read, and fold what the watcher would send
+    /// for it at `at`.
     pub fn feed<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.run(drive, lines.into_iter().map(Some), at);
+        self.run(drive, lines.into_iter().map(Some), at, Reads::One);
     }
 
     /// A recording's bytes, cut into lines as the watcher cuts them and fed in
-    /// the reads it makes of them live ([`Drive::live_reads`]): a line that is
-    /// not UTF-8 is unparseable, and costs only itself.
+    /// the reads it makes of them live (`Reads::Live`): a line that is not
+    /// UTF-8 is unparseable, and costs only itself.
     pub fn feed_body(&mut self, drive: &Drive, body: &[u8], at: SystemTime) {
         use crate::source::admit::{lines, whole};
-        let lines: Vec<Option<&str>> = lines(whole(body)).map(Result::ok).collect();
-        for read in drive.split_live(&lines, |line| *line) {
-            self.run(drive, read.iter().copied(), at);
-        }
+        let lines = lines(whole(body)).map(Result::ok);
+        self.run(drive, lines, at, Reads::Live);
     }
 
     /// Advance to `at` with no line: past a grace window, its sweep fires.
@@ -607,19 +574,19 @@ impl Fold {
         self.driven.events.push(event);
     }
 
-    /// The seed `drive` leads a feed of `lines` with when the watcher's gate
-    /// registers on it, else `None`; the claim then follows `decoded`'s verdict.
+    /// The seed `drive` leads a read of `lines` with when the watcher's gate
+    /// registers on it, else `None`; the claim then follows the read's verdict.
     fn registration<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
+        own: Option<AgentId>,
         lines: &[Option<S>],
         decoded: &[AgentEvent],
+        verdict: Option<Life>,
     ) -> Option<AgentEvent> {
-        let (source, _, session_id) = drive.sighted()?;
-        let id = AgentId::from_parts(source, &session_id);
+        let id = own.filter(|_| drive.seeded)?;
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.get(&id);
-        let verdict = last_life(decoded, id);
         let registers =
             Sight::registers(sighted.map(|s| &s.sight), holds_life(decoded, id), verdict);
         let seed = match sighted {
@@ -652,45 +619,67 @@ impl Fold {
     }
 
     /// `None` is a line whose bytes are not UTF-8, so not JSON either.
-    fn run<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
+    fn run<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime, reads: Reads)
     where
         I: IntoIterator<Item = Option<S>>,
         S: AsRef<str>,
     {
-        let lines: Vec<Option<S>> = lines.into_iter().collect();
+        let own = drive.own();
         let sink = BreadcrumbSink::default();
         tracing::subscriber::with_default(sink.clone(), || {
             let presence = self.driven.presence.len()..;
-            let mut decoded = Vec::new();
-            for line in &lines {
-                let line = line.as_ref().map(AsRef::as_ref);
-                if let Some(events) = drive.decode.line(line, &mut self.driven, |_| {}) {
-                    decoded.extend(events);
+            let (mut read, mut decoded, mut verdict) = (Vec::new(), Vec::new(), None);
+            for line in lines {
+                let text = line.as_ref().map(AsRef::as_ref);
+                let events =
+                    (drive.decode.line(text, &mut self.driven, |_| {})).unwrap_or_default();
+                let life = own.and_then(|own| last_life(&events, own));
+                if reads == Reads::Live
+                    && !read.is_empty()
+                    && life.is_some_and(|life| life == Life::Ended || verdict == Some(Life::Ended))
+                {
+                    let (read, decoded) = (mem::take(&mut read), mem::take(&mut decoded));
+                    self.send(drive, own, &read, decoded, verdict.take(), at);
                 }
+                verdict = life.or(verdict);
+                read.push(line);
+                decoded.extend(events);
             }
-            let mut fed = Vec::new();
-            if let Some(seed) = self.registration(drive, &lines, &decoded) {
-                self.driven.seed_events += 1;
-                fed.push(seed);
-            }
-            if let Some((source, _, session_id)) = drive.keyed_on() {
-                let own = AgentId::from_parts(source, &session_id);
-                let verdict = last_life(&decoded, own);
-                decoded.retain(|event| sends(event, own, verdict));
-            }
-            fed.extend(decoded);
-            for event in fed {
-                self.apply(drive.transport, event, at);
-                // Each event is observed BEFORE and AFTER a cascade tick, so a
-                // transient class a later event resolves still counts as reached.
-                self.tick(at + CASCADE_TICK);
-            }
+            self.send(drive, own, &read, decoded, verdict, at);
             let d = &mut self.driven;
             for msg in &d.presence[presence] {
                 apply_presence(&mut d.scene, &msg.key, msg.delta.clone(), at);
             }
         });
         self.driven.breadcrumbs.extend(sink.take());
+    }
+
+    /// Fold what the watcher sends for one read of `lines`, whose own session's
+    /// last lifecycle evidence is `verdict`: its registration, then `decoded`.
+    fn send<S: AsRef<str>>(
+        &mut self,
+        drive: &Drive,
+        own: Option<AgentId>,
+        lines: &[Option<S>],
+        mut decoded: Vec<AgentEvent>,
+        verdict: Option<Life>,
+        at: SystemTime,
+    ) {
+        let mut fed = Vec::new();
+        if let Some(seed) = self.registration(drive, own, lines, &decoded, verdict) {
+            self.driven.seed_events += 1;
+            fed.push(seed);
+        }
+        if let Some(own) = own {
+            decoded.retain(|event| sends(event, own, verdict));
+        }
+        fed.extend(decoded);
+        for event in fed {
+            self.apply(drive.transport, event, at);
+            // Each event is observed BEFORE and AFTER a cascade tick, so a
+            // transient class a later event resolves still counts as reached.
+            self.tick(at + CASCADE_TICK);
+        }
     }
 }
 
@@ -951,35 +940,35 @@ mod tests {
         );
     }
 
-    /// A recording read live is one read while its last lifecycle evidence is
-    /// not its own end, a resume included; one that ends reads its end, and
-    /// the rest, a read later, and so does each earlier end, so its life
-    /// registers (omp's `resume-hermetic`: a life, its exit, a text-only turn,
-    /// its exit).
+    /// A recording reads as the watcher reads it live, its own end and a life
+    /// after one each a read later: every life registers, and none after its end.
     #[test]
-    fn a_recording_is_read_live_its_end_a_read_later() {
-        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap();
-        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
-        let trailer = serde_json::json!({"type": "thinking_level_change", "thinkingLevel": "high"});
-        let open = [tool_line(), tool_line()];
-        assert_eq!(drive.live_reads(&open), [&open[..]]);
-        let resumed = [tool_line(), exit.to_string(), tool_line()];
-        assert_eq!(drive.live_reads(&resumed), [&resumed[..]]);
-        let ended = [tool_line(), exit.to_string(), trailer.to_string()];
-        assert_eq!(drive.live_reads(&ended), [&ended[..1], &ended[1..]]);
-        let lives = [
+    fn a_recording_is_read_live_each_life_a_read_of_its_own() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let (tool, exit, trailer) = (
             tool_line(),
-            exit.to_string(),
-            trailer.to_string(),
-            exit.to_string(),
-        ];
-        let reads = [&lives[..1], &lives[1..3], &lives[3..]];
-        assert_eq!(drive.live_reads(&lives), reads);
-        let seeded = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
-        for recording in [&ended[..], &lives[..]] {
-            let d = seeded.lines(recording);
-            assert_eq!((d.seed_events, d.registered()), (1, 1), "{recording:?}");
-        }
+            serde_json::json!({"type": "custom", "customType": "session_exit"}).to_string(),
+            serde_json::json!({"type": "thinking_level_change", "thinkingLevel": "high"})
+                .to_string(),
+        );
+        let lifecycle = |recording: &[&String]| {
+            let d = drive.lines(recording);
+            let starts_and_ends = (d.events.iter()).filter_map(|e| match e {
+                AgentEvent::SessionStart { .. } => Some("start"),
+                AgentEvent::SessionEnd { .. } => Some("end"),
+                _ => None,
+            });
+            (starts_and_ends.collect::<Vec<_>>(), d.seed_events)
+        };
+        assert_eq!(lifecycle(&[&tool, &tool]), (vec!["start"], 1));
+        assert_eq!(
+            lifecycle(&[&tool, &exit, &trailer]),
+            (vec!["start", "end"], 1)
+        );
+        let resumed = lifecycle(&[&tool, &exit, &tool]);
+        assert_eq!(resumed, (vec!["start", "end", "start"], 2));
+        let lives = lifecycle(&[&tool, &exit, &tool, &exit]);
+        assert_eq!(lives, (vec!["start", "end", "start", "end"], 2));
     }
 
     /// A new life's read that lacks the head's cwd reads the transcript's start
