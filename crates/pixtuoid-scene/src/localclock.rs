@@ -14,18 +14,18 @@ use chrono::TimeZone;
 #[cfg(not(test))]
 #[expect(
     clippy::disallowed_types,
-    reason = "the one reader of the viewer's zone"
+    reason = "the office's reader of the viewer's zone"
 )]
 const ZONE: chrono::Local = chrono::Local;
 
 /// This crate's unit tests read one fixed zone, never the runner's, which
 /// `chrono::Local` takes from `$TZ` on Unix and the system on Windows (chrono
-/// 0.4.45 `src/offset/local/unix.rs:92`, `windows.rs:138`). +05:45 is neither
-/// UTC nor a whole hour, so epoch and local hours never coincide.
+/// 0.4.45 `src/offset/local/unix.rs:92`, `windows.rs:138`). Its offset is
+/// neither UTC nor a whole hour, so epoch and local hours never coincide.
 #[cfg(test)]
 const ZONE: chrono::FixedOffset = match chrono::FixedOffset::east_opt(5 * 3600 + 45 * 60) {
     Some(zone) => zone,
-    None => panic!("+05:45 is within a day of UTC"),
+    None => panic!("the offset is within a day of UTC"),
 };
 
 /// `now` on the viewer's wall clock.
@@ -152,7 +152,7 @@ mod tests {
         );
     }
 
-    /// The unit tests read one fixed zone: the epoch reads 05:45 on every runner.
+    /// The unit tests read one fixed zone: the epoch reads `ZONE`'s offset on every runner.
     #[test]
     fn the_tests_read_one_fixed_zone() {
         let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date");
