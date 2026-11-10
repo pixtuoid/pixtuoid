@@ -38,6 +38,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           shared-key: site
+          tools: uv
       # Before the build: astro.config.mjs asserts each demo exists.
       - uses: ./.github/actions/gen-demos
       - uses: ./.github/actions/gen-wasm

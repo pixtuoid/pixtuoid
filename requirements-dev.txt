@@ -1,11 +1,4 @@
-# Dev-only Python deps for visual verification tooling and gen-fonts.
-#
-# Setup (once per clone):
-#   python3 -m venv .venv
-#   .venv/bin/pip install -r requirements-dev.txt
-#
-# Run scripts via the venv:
-#   .venv/bin/python3 scripts/crop-snapshot.py /tmp/snap.png
+# Dev-only Python deps, resolved by the justfile's UV_DEV.
 brotli==1.2.1 \
     --hash=sha256:0023348c448140a6ea71615eba331835c971d38ae8acf8a89b4e963b1f38f131 \
     --hash=sha256:00a50d063aae2e69c2eb28818ccf6dc3e51f2ea5b74e3c2082a47943ee23f399 \

@@ -1,5 +1,5 @@
 name: 'Generate the site demos'
-description: 'Renders site/public/demos/ (clips, posters, stills) from this checkout via gen-media.py --only site, on the Rust toolchain and cache its job set up'
+description: 'Renders site/public/demos/ (clips, posters, stills) from this checkout via gen-media.py --only site, on the Rust toolchain, cache and uv its job set up'
 
 runs:
   using: 'composite'
@@ -25,6 +25,4 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        python3 -m venv .venv
-        .venv/bin/pip install --quiet -r requirements-dev.txt
-        .venv/bin/python3 scripts/gen-media.py --only site
+        just gen-media --only site

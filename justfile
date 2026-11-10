@@ -87,6 +87,10 @@ HAWK_INSTALLER_SHA256 := "4e1b85fc15d3d4efa9b3bd7c62620655cc5504b7164272292043e3
 # it builds C (`cargo doc` still runs build scripts).
 DOC_TARGETS := "x86_64-pc-windows-msvc aarch64-apple-darwin"
 
+# Every Python recipe runs in the ephemeral environment uv builds out of the
+# hashed pins, so no venv is provisioned or kept (CI runs the same recipes).
+UV_DEV := "uv run --no-project --with-requirements requirements-dev.txt --"
+
 # The zone every test run reads the clock in, so a test anchored to its
 # writer's own zone fails on their machine, not first in CI (#1377). Its +05:45
 # is neither UTC nor a whole hour, so epoch and local hours never coincide.
@@ -238,7 +242,7 @@ ruff:
 [doc('Type-check the Python (pyright, as pyproject.toml configures it)')]
 [group('rust')]
 pyright: (_npm ".")
-    git ls-files -z -- '*.py' '*.pyi' {{ SELF_GATED }} | xargs -0 uv run --no-project --with-requirements requirements-dev.txt -- node_modules/.bin/pyright
+    git ls-files -z -- '*.py' '*.pyi' {{ SELF_GATED }} | xargs -0 {{ UV_DEV }} node_modules/.bin/pyright
 
 [doc('Type-check the JavaScript (tsc --checkJs, as tsconfig.json configures it)')]
 [group('rust')]
@@ -775,7 +779,7 @@ site-demos:
     # re-renders instead of passing on the inputs alone.
     have() { find site/public/demos -type f -exec cksum {} + 2>/dev/null | sort | shasum | cut -d' ' -f1; }
     [ "$(cat "$stamp" 2>/dev/null)" = "$want $(have)" ] && exit 0
-    .venv/bin/python3 scripts/gen-media.py --only site
+    {{ UV_DEV }} python3 scripts/gen-media.py --only site
     mkdir -p target && echo "$want $(have)" > "$stamp"
 
 [doc('Site dev server with HMR → http://localhost:4321/ (foreground; agents: site-dev-bg)')]
@@ -868,11 +872,11 @@ gen-banner-check:
     python3 scripts/gen-banner.py --selftest
     python3 scripts/gen-banner.py --check docs/images/banner
 
-# Not in `gen`: it downloads its pinned fonts. Requires the .venv (fontTools).
+# Not in `gen`: it downloads its pinned fonts.
 [doc("Regenerate Fusion Pixel 8px + its licenses for the scene (crates/pixtuoid-scene/fonts/) and the site (site/src/assets/fonts/) from scripts/gen-fonts.py")]
 [group('gen')]
 gen-fonts:
-    .venv/bin/python3 scripts/gen-fonts.py
+    {{ UV_DEV }} python3 scripts/gen-fonts.py
 
 [doc('Sync README install/features/tools sections from site/src/*.json, and its images from scripts/media.json + docs/images')]
 [group('gen')]
@@ -908,12 +912,12 @@ gen-readme-check:
 [doc('Regenerate docs/images/ + site/public/demos/ from scripts/media.json')]
 [group('gen')]
 gen-media *args:
-    .venv/bin/python3 scripts/gen-media.py "$@"
+    {{ UV_DEV }} python3 scripts/gen-media.py "$@"
 
 [doc("Regenerate the site's and the README's pix icons from the bundled sprite-pack palette")]
 [group('gen')]
 gen-icons:
-    .venv/bin/python3 scripts/gen-pix-icons.py
+    {{ UV_DEV }} python3 scripts/gen-pix-icons.py
 
 # The wasm-bindgen CLI must match the crate's version exactly; CI installs Cargo.lock's.
 [private]
@@ -979,20 +983,20 @@ gen-check: compare-selftest gen-readme-check gen-art-check gen-banner-check gen-
 gen-icons-check:
     #!/usr/bin/env bash
     set -eu
-    .venv/bin/python3 scripts/gen-pix-icons.py --selftest
-    .venv/bin/python3 scripts/gen-pix-icons.py --check
+    {{ UV_DEV }} python3 scripts/gen-pix-icons.py --selftest
+    {{ UV_DEV }} python3 scripts/gen-pix-icons.py --check
 
 # scripts/gen-media.py's docstring says what `--check` compares. The README's
 # media only: the site's demos are rendered in CI and never committed. On a PR
 # a drift here is evidence for REVIEW.md's Render and look, not a gate; main's
 # land through media-regen.yml.
-# Requires the .venv; it builds the examples it renders with.
+# It builds the examples it renders with.
 [doc("Diff the README's committed media against what gen-media renders")]
 [group('gen')]
 gen-media-check:
     #!/usr/bin/env bash
     set -eu
-    .venv/bin/python3 scripts/gen-media.py --check --only docs
+    {{ UV_DEV }} python3 scripts/gen-media.py --check --only docs
 
 # ── release ───────────────────────────────────────────────────────
 
@@ -1108,7 +1112,7 @@ setup-tools:
 compare-selftest:
     #!/usr/bin/env bash
     set -eu
-    .venv/bin/python3 scripts/compare-screenshots.py --selftest
+    {{ UV_DEV }} python3 scripts/compare-screenshots.py --selftest
 
 [doc("Self-test the git env scrub of the pre-push hook")]
 [group('meta')]
