@@ -742,6 +742,13 @@ impl Default for SceneState {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The seating passes run on this thread, counted like `scope::VISITS`:
+    /// a pass is O(agents), so a test bounds how often one runs by count.
+    pub(crate) static SEATINGS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl SceneState {
     /// An empty scene with the given per-floor desk capacities.
     pub fn new(floor_capacities: [usize; MAX_FLOORS]) -> Self {
@@ -783,6 +790,8 @@ impl SceneState {
     /// before those walking out, then oldest first. A desk is free while no
     /// slot that `holds` sits at it.
     pub(crate) fn assign_waiting(&mut self, holds: impl Fn(&AgentSlot) -> bool) {
+        #[cfg(test)]
+        SEATINGS.with(|n| n.set(n.get() + 1));
         let taken: BTreeSet<FloorDesk> = (self.agents.values())
             .filter(|slot| holds(slot))
             .filter_map(|slot| slot.home_desk)

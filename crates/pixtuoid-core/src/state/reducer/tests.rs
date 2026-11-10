@@ -1260,6 +1260,66 @@ fn a_tick_walks_scope_in_linear_work() {
     }
 }
 
+/// Every apply sweeps exited slots, and a seating pass walks the whole scene,
+/// so one runs only on the apply where a slot leaves.
+#[test]
+fn an_apply_seats_only_when_a_slot_leaves() {
+    use super::EXIT_GRACE_WINDOW;
+    use crate::source::{AgentEvent, Transport};
+    use crate::state::SEATINGS;
+    use crate::{AgentId, Reducer, SceneState};
+    use std::time::{Duration, SystemTime};
+
+    const APPLIES: usize = 16;
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut scene = SceneState::uniform(1);
+    let mut r = Reducer::new();
+    let sessions = ["holder", "waiter"];
+    let [holder, waiter] = sessions.map(|s| AgentId::from_parts("claude-code", s));
+    for (agent_id, session) in [holder, waiter].into_iter().zip(sessions) {
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id,
+                source: "claude-code".into(),
+                session_id: session.into(),
+                cwd: "/repo".into(),
+                parent_id: None,
+            },
+            t0,
+            Transport::Hook,
+        );
+    }
+    let seatings = || SEATINGS.with(std::cell::Cell::get);
+    SEATINGS.with(|n| n.set(0));
+
+    for _ in 0..APPLIES {
+        r.apply(
+            &mut scene,
+            AgentEvent::ProofOfLife { agent_id: waiter },
+            t0,
+            Transport::Hook,
+        );
+    }
+    assert_eq!(seatings(), 0, "no slot left, so no desk freed");
+
+    let end = AgentEvent::SessionEnd {
+        agent_id: holder,
+        as_child: false,
+    };
+    r.apply(&mut scene, end, t0, Transport::Hook);
+    let walked_out = t0 + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+    r.apply(
+        &mut scene,
+        AgentEvent::ProofOfLife { agent_id: waiter },
+        walked_out,
+        Transport::Hook,
+    );
+    assert!(!scene.agents.contains_key(&holder), "premise: swept out");
+    assert_eq!(seatings(), 1, "the apply its holder left on seats once");
+    assert!(scene.agents[&waiter].home_desk.is_some());
+}
+
 /// An open turn showing no item is the agent between items, alive by its
 /// turn: it is reaped on neither the tool's window alone nor the idle one.
 #[test]
