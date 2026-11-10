@@ -28,9 +28,9 @@ use crate::script::{
 
 use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs, floor_capacity};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
 use pixtuoid_scene::layout::Size;
-use pixtuoid_scene::look::{Place, RenderInputs, WorldText};
+use pixtuoid_scene::look::{RenderInputs, WorldText};
 use pixtuoid_scene::pack::load_bundled_pack;
 use pixtuoid_scene::render_scale::PixelFit;
 use pixtuoid_scene::screen::{Screen, ScreenClock};
@@ -142,7 +142,6 @@ pub struct Office {
     theme: &'static Theme,
     /// The cutaway at the pack's densest art, which the browser upscales.
     fit: PixelFit,
-    seed: u64,
     reducer: Reducer,
     beats: Vec<Beat>,
     cursor: usize,
@@ -197,11 +196,10 @@ impl Office {
             // on every `step` before any beat fires, so the reducer seats agents
             // only at desks the rendered office has.
             scene: SceneState::default(),
-            session: FloorSession::new(pack),
+            session: FloorSession::new(pack).with_floor_seed(u64::from(seed)),
             rgba: Vec::new(),
             theme: &NORMAL,
             fit,
-            seed: u64::from(seed),
             reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
             beats: hero_script(),
             cursor: 0,
@@ -387,7 +385,7 @@ impl Office {
 
         let board = self
             .session
-            .board(&self.scene, self.floor_meta().motion, now);
+            .board(&self.scene, self.conditions().motion, now);
 
         let mut out = format!("{head},\"labels\":[");
         for (i, badge) in self.shown_badges.iter().enumerate() {
@@ -532,13 +530,13 @@ impl Office {
         let Some(now) = self.last_now else {
             return silent();
         };
-        let meta = self.floor_meta();
+        let conditions = self.conditions();
         let Some(audio) = self.audio.as_mut().filter(|a| a.is_ready()) else {
             return silent();
         };
         // The shared observer composes the whole AudioFrame, single-sourced with
         // the desktop painters. Single-floor hero → floor 0.
-        let frame = self.session.audio_frame(&self.scene, meta, now);
+        let frame = self.session.audio_frame(&self.scene, conditions, now);
         audio::commands_json(&audio.tick(now_ms, frame))
     }
 }
@@ -582,12 +580,9 @@ impl Office {
         if self.caps_units == Some((units_w, units_h)) {
             return;
         }
-        // The SAME (size, cap=None, seed) computation `render` lays out, so
-        // reducer capacity and painted layout can't drift.
-        let cap = floor_capacity(
-            pixtuoid_scene::layout::Viewport::full(units_w, units_h),
-            self.seed,
-        );
+        let cap = self
+            .session
+            .capacity(pixtuoid_scene::layout::Viewport::full(units_w, units_h));
         self.scene
             .set_capacities(std::array::from_fn(|i| if i == 0 { cap } else { 0 }), now);
         self.caps_units = Some((units_w, units_h));
@@ -645,19 +640,17 @@ impl Office {
             .drain_due(now, &mut self.reducer, &mut self.scene);
     }
 
-    /// The hero's one floor: its layout seed is the hero's variant seed, not
-    /// floor-derived, under this office's own weather.
-    fn floor_meta(&self) -> FloorMeta {
-        FloorMeta {
-            floor_seed: self.seed,
-            ..FloorMeta::for_floor(0, 1)
+    /// The hero's conditions: this office's own weather.
+    fn conditions(&self) -> Conditions {
+        Conditions {
+            weather: self.weather,
+            ..Conditions::default()
         }
-        .with_weather(self.weather)
     }
 
     fn render(&mut self, now: SystemTime, units_w: u16, units_h: u16) {
         // Too small to lay out: draws nothing, and `step` fills the frame; never panics.
-        let floor_meta = self.floor_meta();
+        let conditions = self.conditions();
         self.session.render(
             self.fit
                 .look(pixtuoid_scene::look::LookKind::Cutaway, WorldText::Host),
@@ -665,12 +658,12 @@ impl Office {
                 world: FloorInputs {
                     scene: &self.scene,
                     now,
-                    floor: floor_meta,
+                    conditions,
                     pets: PetInputs::default(),
                 },
                 theme: self.theme,
                 viewport: pixtuoid_scene::layout::Viewport::full(units_w, units_h),
-                place: Place::default(),
+                gateway: None,
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
@@ -762,9 +755,12 @@ mod tests {
     use crate::script::cast_id;
     use pixtuoid_scene::screen::{Flashes, ManualClock};
 
+    /// The hero [`office`] draws.
+    const SEED: u32 = 1;
+
     /// `Office::new`'s error arm constructs a `JsError`, so unwrap via match.
     fn office() -> Office {
-        match Office::new(1) {
+        match Office::new(SEED) {
             Ok(o) => o,
             Err(_) => panic!("bundled pack must parse"),
         }
@@ -1511,12 +1507,16 @@ mod tests {
             "the click past exhaustion is refused outright: {admitted:?}"
         );
         o.step(T0_MS + 32_000.0, w, h);
-        let layout = SceneLayout::compute(
-            pixtuoid_scene::layout::Viewport::full(w as u16, h as u16),
-            None,
-            o.seed,
-        )
-        .expect("the portrait buffer lays out");
+        let picture = o.session.picture().expect("the portrait buffer lays out");
+        let layout = picture.hits.layout();
+        let viewport = pixtuoid_scene::layout::Viewport::full(w as u16, h as u16);
+        assert_eq!(
+            layout.walkable,
+            SceneLayout::compute(viewport, None, u64::from(SEED))
+                .expect("the portrait buffer lays out")
+                .walkable,
+            "the hero draws its own variant"
+        );
         assert_eq!(
             o.scene.total_capacity(),
             layout.home_desks.len(),
@@ -1659,8 +1659,8 @@ mod tests {
     fn an_offices_rain_follows_its_own_weather_after_another_steps() {
         let now = SystemTime::UNIX_EPOCH + Duration::from_millis(T0_MS as u64);
         let rain = |o: &mut Office| {
-            let floor = o.floor_meta();
-            o.session.audio_frame(&o.scene, floor, now).stems
+            let conditions = o.conditions();
+            o.session.audio_frame(&o.scene, conditions, now).stems
         };
         let mut storm = Office::new(1).unwrap();
         storm.set_weather(Some("storm".into()));

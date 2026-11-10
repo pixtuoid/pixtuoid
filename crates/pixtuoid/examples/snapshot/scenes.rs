@@ -393,7 +393,6 @@ pub(crate) fn meeting_scene(
     n: usize,
     cols: u16,
     rows: u16,
-    floor_seed: u64,
     max_desks: usize,
     n_agents: usize,
 ) -> Result<(SceneState, u64)> {
@@ -406,6 +405,7 @@ pub(crate) fn meeting_scene(
     // The renderer's own buffer and `None` desk fill: any other layout shifts the
     // waypoint indices and the staging silently misses.
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
+    let floor_seed = pixtuoid_scene::floor::floor_seed(0);
     let l = SceneLayout::compute(
         pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
         None,
@@ -705,7 +705,6 @@ pub(crate) fn anim_scene(
     target: &str,
     cols: u16,
     rows: u16,
-    floor_seed: u64,
     facing: Option<&str>,
 ) -> (SceneState, u64) {
     use pixtuoid_scene::layout::{CLASSIC_OFFICE_DESKS, Facing, SceneLayout};
@@ -716,6 +715,7 @@ pub(crate) fn anim_scene(
     // The renderer's own buffer: a 2px mismatch shifts the waypoint set and the
     // agent targets the wrong furniture.
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
+    let floor_seed = pixtuoid_scene::floor::floor_seed(0);
     let l = SceneLayout::compute(
         pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
         None,
@@ -912,7 +912,7 @@ mod tests {
 
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         let (cols, rows, max_desks) = (208u16, 88u16, 12);
-        let (scene, warmup_ms) = meeting_scene(now, 3, cols, rows, 0, max_desks, 12).unwrap();
+        let (scene, warmup_ms) = meeting_scene(now, 3, cols, rows, max_desks, 12).unwrap();
         assert_eq!(scene.agents.len(), 12, "staged 3 + 9 archetype fillers");
 
         let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
@@ -1030,7 +1030,7 @@ mod vocabulary_tests {
         .map(|t| (t, None))
         .chain([("desk", Some("north")), ("desk", Some("south"))])
         {
-            let (scene, _) = anim_scene(now, target, 192, 80, 0, facing);
+            let (scene, _) = anim_scene(now, target, 192, 80, facing);
             assert!(
                 !scene.agents.is_empty(),
                 "--anim {target}{} staged no agent",
