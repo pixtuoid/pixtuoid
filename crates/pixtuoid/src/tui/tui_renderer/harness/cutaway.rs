@@ -22,30 +22,67 @@ impl Wire {
     }
 }
 
-/// A terminal whose window reports each cell at its `tap` [`CellSize`], as a
-/// real one's does.
-type Window = Tapped<TestBackend, CellSize>;
+/// A terminal whose window reports each cell at its `tap`'s [`CellSize`], as
+/// a real one's does.
+type Window = Tapped<TestBackend, WindowReport>;
+
+/// What a [`Window`] reports beyond its backend.
+struct WindowReport {
+    cell: CellSize,
+    /// A resize under way: the size every read after the first answers, and
+    /// the reads so far.
+    resizing: Option<(ratatui::layout::Size, std::cell::Cell<u32>)>,
+}
 
 impl Window {
     fn new(cols: u16, rows: u16) -> Self {
         Self {
             inner: TestBackend::new(cols, rows),
-            tap: CELL,
+            tap: WindowReport {
+                cell: CELL,
+                resizing: None,
+            },
         }
     }
 
+    /// Resize to `cols`×`rows`, landing any resize under way.
     fn resize(&mut self, cols: u16, rows: u16) {
         self.inner.resize(cols, rows);
+        self.tap.resizing = None;
+    }
+
+    /// Shrink the window to `cols`×`rows` as the next frame runs: its first
+    /// size read answers the old size, every later one the new, as a SIGWINCH
+    /// landing between them does. ratatui's buffers follow the later reads;
+    /// [`Self::resize`] lands it on the backend's.
+    fn resize_mid_frame(&mut self, cols: u16, rows: u16) {
+        self.tap.resizing = Some((
+            ratatui::layout::Size::new(cols, rows),
+            std::cell::Cell::new(0),
+        ));
     }
 
     /// Zoom the font to `cell`, the window keeping its cells: only the pixels
     /// change.
     fn zoom(&mut self, cell: CellSize) {
-        self.tap = cell;
+        self.tap.cell = cell;
     }
 }
 
-impl Tap<TestBackend> for CellSize {
+impl Tap<TestBackend> for WindowReport {
+    fn size(
+        &self,
+        inner: &TestBackend,
+    ) -> Result<ratatui::layout::Size, <TestBackend as ratatui::backend::Backend>::Error> {
+        let Some((to, reads)) = &self.resizing else {
+            return ratatui::backend::Backend::size(inner);
+        };
+        if reads.replace(reads.get() + 1) == 0 {
+            return ratatui::backend::Backend::size(inner);
+        }
+        Ok(*to)
+    }
+
     fn window_size(
         &mut self,
         inner: &mut TestBackend,
@@ -55,8 +92,8 @@ impl Tap<TestBackend> for CellSize {
         Ok(ratatui::backend::WindowSize {
             columns_rows,
             pixels: ratatui::layout::Size::new(
-                columns_rows.width * self.w,
-                columns_rows.height * self.h,
+                columns_rows.width * self.cell.w,
+                columns_rows.height * self.cell.h,
             ),
         })
     }
@@ -1719,6 +1756,91 @@ fn a_resize_sends_at_once_inside_the_cadence() {
     r.render(&scene, t0() + ImageProtocol::Sixel.cadence() / 2)
         .expect("render");
     assert!(wire.take().contains(SIXEL));
+}
+
+/// A resize landing while a frame runs, after it fit the scene and before
+/// ratatui redraws the screen it clears for the new size: the frame sends no
+/// tile cut for the fit, which would stay over text ratatui's diff never
+/// rewrites, whether its fit is new or the last frame's with every tile owed.
+#[test]
+fn a_resize_landing_mid_frame_sends_no_tile_cut_for_the_old_size() {
+    let (cols, rows) = (120, 40);
+    for (protocol, intro) in [
+        (ImageProtocol::Sixel, SIXEL),
+        (ImageProtocol::Iterm2, ITERM2),
+    ] {
+        for refit in [true, false] {
+            // What the frame sends, the window shrinking as it runs or not.
+            let sent = |mid_frame: bool| {
+                let scene = office();
+                let (mut r, wire) = painter(cols, rows, protocol);
+                r.render(&scene, t0()).expect("render");
+                if refit {
+                    r.terminal.backend_mut().resize(cols - 4, rows - 2);
+                } else {
+                    r.redraw().expect("redraw");
+                }
+                if mid_frame {
+                    r.terminal
+                        .backend_mut()
+                        .resize_mid_frame(cols - 8, rows - 4);
+                }
+                wire.take();
+                r.render(&scene, t0() + protocol.cadence() / 2)
+                    .expect("render");
+                assert_eq!(r.drawn_look(), LookKind::Cutaway, "premise: {protocol:?}");
+                wire.take()
+            };
+            assert!(
+                sent(false).contains(intro),
+                "premise: {protocol:?}, refit {refit}: the frame has tiles to send"
+            );
+            assert!(
+                !sent(true).contains(intro),
+                "{protocol:?}, refit {refit}: a tile cut for the fit"
+            );
+        }
+    }
+}
+
+/// The frame after one a resize landed in, the window back at that frame's
+/// fit, sends every tile at once, inside the cadence, whether or not that fit
+/// was new: ratatui cleared the screen twice, while the fit and the size the
+/// frames read stayed the same.
+#[test]
+fn a_window_back_at_its_fit_after_a_mid_frame_resize_gets_every_tile_at_once() {
+    let (cols, rows) = (120, 40);
+    for (protocol, intro) in [
+        (ImageProtocol::Sixel, SIXEL),
+        (ImageProtocol::Iterm2, ITERM2),
+    ] {
+        for size in [(cols, rows), (cols - 4, rows - 2)] {
+            let scene = office();
+            let cadence = protocol.cadence();
+            let (mut r, wire) = painter(cols, rows, protocol);
+            r.render(&scene, t0()).expect("render");
+            r.terminal.backend_mut().resize(size.0, size.1);
+            r.terminal
+                .backend_mut()
+                .resize_mid_frame(cols - 8, rows - 4);
+            r.render(&scene, t0() + cadence / 2).expect("render");
+            assert_eq!(r.drawn_look(), LookKind::Cutaway, "premise: {protocol:?}");
+            r.terminal.backend_mut().resize(size.0, size.1);
+            wire.take();
+            let next = t0() + cadence * 3 / 4;
+            r.render(&scene, next).expect("render");
+            let fresh = {
+                let (mut r, wire) = painter(size.0, size.1, protocol);
+                r.render(&scene, next).expect("render");
+                wire.take().matches(intro).count()
+            };
+            assert_eq!(
+                wire.take().matches(intro).count(),
+                fresh,
+                "{protocol:?} at {size:?}: every tile at once"
+            );
+        }
+    }
 }
 
 /// A redraw inside a strike's hold paints its first frame at once: the
