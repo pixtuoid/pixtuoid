@@ -791,6 +791,18 @@ fn footer_cross_floor_alarm_points_at_requires_action_floor() {
     );
 }
 
+/// The cue points only at another floor: the prompt on the floor shown is
+/// already on screen.
+#[test]
+fn footer_cross_floor_alarm_skips_the_floor_shown() {
+    let s = office_of(vec![requires_action("a")], 1, 3, 2);
+    let line = build_status_summary(&inputs(&s, 1, None), 160);
+    assert!(
+        !line.contains("\u{25b2}F"),
+        "no cross-floor cue for the floor shown: {line}"
+    );
+}
+
 /// `grid_of` reads back what `put_grid` wrote: symbols (a wide one's covered
 /// cell empty), colours, an unset fill as the terminal's, and bold.
 #[test]
