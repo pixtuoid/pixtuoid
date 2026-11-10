@@ -589,9 +589,9 @@ impl Fold {
         self.driven.events.push(event);
     }
 
-    /// The seed `drive` leads `life`, one life of a read of `lines`, with when
-    /// the watcher's gate registers on it, else `None`; the claim then follows
-    /// `life`'s verdict.
+    /// The seed `drive` leads `life` with, one life of a read of `lines`, when
+    /// `drive` is seeded and the watcher's gate registers on it, else `None`. A
+    /// seeded `drive`'s claim then follows `life`'s verdict.
     fn registration<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
@@ -665,8 +665,8 @@ impl Fold {
     }
 
     /// What one live read of `lines` delivers: each life of `decoded`
-    /// ([`each_life`]) as a read of its own, led by its registration if the
-    /// watcher's gate registers on it. Records each life's claim, and folds
+    /// ([`each_life`]) as a read of its own, led by any seed
+    /// [`Self::registration`] gives it, which also keeps the claim. Folds
     /// nothing: [`Self::send`] does.
     fn deliver<S: AsRef<str>>(
         &mut self,
