@@ -1,5 +1,5 @@
-// The Raycast extension links the install floor by its id, and no build reads
-// across that boundary, so renaming the floor would strand the link silently.
+// The README and the Raycast extension link the site's floors by id, and no
+// build reads across that boundary, so renaming a floor would strand a link silently.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -11,6 +11,7 @@ const floorIds = [...read('../src/consts.ts').matchAll(/\{ id: '([^']+)', fl: /g
 for (const rel of [
   '../../integrations/raycast/src/manage-sources.tsx',
   '../../integrations/raycast/README.md',
+  '../../README.md',
 ]) {
   test(`${rel} links a floor the site has`, () => {
     const anchors = [...read(rel).matchAll(/pixtuoid\.dev\/#([\w-]+)/g)].map((m) => m[1]);
