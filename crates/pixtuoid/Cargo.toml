@@ -73,7 +73,7 @@ tracing-subscriber = { workspace = true }
 which              = "8"
 # The throwaway hook endpoint `doctor` proves the shim against.
 tempfile           = { workspace = true }
-# clock feature gives us Local::now() w/ system timezone for the wall clock.
+# `clock` gives `Local::now()`, the crash report's stamp in the user's zone.
 chrono             = { workspace = true, features = ["clock"] }
 open               = "5"
 semver             = { workspace = true }
