@@ -155,7 +155,7 @@ async fn every_transcript_source_replays_uncounted_and_then_reaches_live() {
         .collect();
     let mut replayed_tokens = 0;
     for source in sources {
-        let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources");
+        let corpus = pixtuoid_core::harness::sources_root();
         let recorded =
             pixtuoid_core::harness::fixtures_dir(&corpus, source).join("tool-run-hermetic");
         let transcript = transcript_in(source, &recorded)

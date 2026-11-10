@@ -161,31 +161,11 @@ mod tests {
         (gated, live)
     }
 
-    /// Each activity payload of a disconnected source's run never registers.
+    /// No payload of a disconnected source's recorded run registers.
     #[test]
     fn a_disconnected_sources_hook_payloads_never_register() {
-        let activity = cursor_payloads()
-            .into_iter()
-            .filter(|(name, _)| matches!(name.as_str(), "preToolUse" | "postToolUse"));
-        let now = SystemTime::now();
-        let cs = ConnectedSources::new(["claude-code".to_string()].into());
-        let mut scene = SceneState::uniform(8);
-        let mut reducer = Reducer::new();
-        let mut gate_logged = HashSet::new();
-        for (event, events) in activity {
-            for ev in events {
-                apply_gated_event(
-                    &mut reducer,
-                    &mut scene,
-                    ev,
-                    Transport::Hook,
-                    &cs,
-                    now,
-                    &mut gate_logged,
-                );
-                assert!(scene.agents.is_empty(), "{event}: {:?}", scene.agents);
-            }
-        }
+        let run = cursor_payloads().into_iter().flat_map(|(_, events)| events);
+        assert_eq!(drive_hook_gate(run.collect(), &["claude-code"]), (0, 0));
     }
 
     #[test]
