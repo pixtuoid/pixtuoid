@@ -504,9 +504,9 @@ pub(super) async fn walk_jsonl(
             emit_first_sight(path, source, decoders, seen, tx, first_sight.clone()).await;
         }
         let ended = last_life(&life, own) == Some(Life::Ended);
-        // A replay opens once, its close after every life; a live read declares
-        // after each life's first sight, whose revive forgets that the agent
-        // caught up, so each life's events count toward Today.
+        // A replay declares `true` once, before its first life, and `false` after
+        // its last; a live read declares `false` before each life, past any first
+        // sight, since a revive forgets that the agent caught up.
         for ev in backlog(replays)
             .filter(|_| !replays || nth == 0)
             .chain(life)

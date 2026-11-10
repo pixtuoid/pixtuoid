@@ -148,7 +148,7 @@ mod tests {
 
     #[cfg(feature = "native")]
     #[test]
-    fn a_window_from_mid_file_drops_its_partial_first_line_and_only_that() {
+    fn first_whole_line_drops_only_a_line_its_read_tore() {
         let from_first_whole = |window: &'static [u8], from_start| {
             lines(&window[first_whole_line(window, from_start)..]).collect::<Vec<_>>()
         };

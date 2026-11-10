@@ -561,11 +561,11 @@ impl Fold {
     fn first_sight<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
+        own: Option<AgentId>,
         lines: &[Option<S>],
         life: &[AgentEvent],
     ) -> Option<AgentEvent> {
-        let (source, _, session_id) = drive.sighted()?;
-        let id = AgentId::from_parts(source, &session_id);
+        let id = own?;
         let leads =
             Sight::leads(self.sights.get(&id).map(|s| s.sight)).unwrap_or_else(|| holds_life(life));
         let read = joined(lines.iter().flatten());
@@ -607,7 +607,7 @@ impl Fold {
             };
             for life in lives {
                 let mut fed = Vec::new();
-                if let Some(seed) = self.first_sight(drive, &lines, &life) {
+                if let Some(seed) = self.first_sight(drive, own, &lines, &life) {
                     self.driven.seed_events += 1;
                     fed.push(seed);
                 }

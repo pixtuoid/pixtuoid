@@ -2150,7 +2150,7 @@ async fn probe_live_ended_first_sight_stays_unregistered() {
 /// [`t_decode`], breadcrumbing a drift for every line it decodes.
 fn drifting(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
     crate::source::drift::missing_field(s, "probe", "field");
-    t_decode(t, s, v)
+    t_decode_lifecycle(t, s, v)
 }
 
 /// A first sight's verdict on its tail decodes silently: the read that sends
@@ -2174,9 +2174,9 @@ async fn a_first_sights_verdict_leaves_drift_to_the_read() {
     assert_eq!(breadcrumbs, lines.lines().count(), "{logs}");
 }
 
-/// The oversized twin: its verdicts on the skipped span's tail decode
-/// silently, and the rescan that seeds from that tail breadcrumbs each of its
-/// lines once.
+/// The oversized twin: on an ended path both verdicts on the skipped span's
+/// tail, its end and its revive, decode silently, and the rescan that seeds
+/// from that tail breadcrumbs each of its lines once.
 #[tokio::test]
 async fn an_oversized_skips_verdicts_leave_drift_to_the_rescan() {
     let dir = tempfile::tempdir().unwrap();
@@ -2185,14 +2185,15 @@ async fn an_oversized_skips_verdicts_leave_drift_to_the_rescan() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
     walk_once_with(&path, Duration::from_secs(3600), drifting, &cursors, &seen).await;
-    let full = oversized_body(&[]);
+    seen.lock().await.insert(path.clone(), Sight::Ended);
+    let full = oversized_body(&["{\"type\":\"tool_use\"}\n".to_string()]);
     tokio::fs::write(&path, &full).await.unwrap();
 
     let (logs, _guard) = crate::test_capture::capture_warns();
     walk_once_with(&path, Duration::from_secs(3600), drifting, &cursors, &seen).await;
     let window = &full.as_bytes()[full.len() - SKIP_RESCAN_BYTES as usize..];
-    let whole = &window[crate::source::admit::first_whole_line(window, false)..];
-    let rescanned = crate::source::admit::lines(whole).count();
+    let from_first_whole = &window[crate::source::admit::first_whole_line(window, false)..];
+    let rescanned = crate::source::admit::lines(from_first_whole).count();
     let logs = logs.contents();
     let breadcrumbs = logs.matches(crate::source::drift::TARGET).count();
     assert_eq!(breadcrumbs, rescanned, "{logs}");
