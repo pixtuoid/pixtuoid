@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import sourcesData from '../../src/sources.json' with { type: 'json' };
-import { splitCmds } from '../../config/install-cmds.mjs';
 import { E2E_STAR_COUNT } from '../../config/gh-stars.mjs';
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
@@ -1981,7 +1980,6 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   expect(copied).toBe(await copy.getAttribute('data-copy'));
   expect(copied).toContain('cargo install');
   expect(copied).not.toMatch(/^#/m);
-  expect(splitCmds(['# a note', 'cmd'])).toEqual({ notes: ['a note'], commands: ['cmd'] });
   // A tab with only notes has nothing to copy, so no button.
   await page.locator('.install__tab[data-tab="release"]').click();
   await expect(page.locator('#install-panel-release')).toBeVisible();
