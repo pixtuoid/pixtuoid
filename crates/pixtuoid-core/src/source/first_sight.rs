@@ -79,25 +79,25 @@ pub(crate) fn holds_life<'a>(events: impl IntoIterator<Item = &'a AgentEvent>) -
     events.into_iter().any(lives)
 }
 
-/// How many of `events` each life spans, a new one starting at the first
-/// [`Life::Lives`] evidence after the session's own end: a read judges each as
-/// a read of its own, because the reducer revives a walked-out slot only on a
-/// start, and a resume (omp's) may write none.
-pub(crate) fn each_life(events: &[AgentEvent], own: AgentId) -> Vec<usize> {
-    let (mut spans, mut span, mut ended) = (Vec::new(), 0, false);
+/// `events` cut into lives, a new one starting at the first [`Life::Lives`]
+/// evidence after the session's own end: a read judges each as a read of its
+/// own, because the reducer revives an exiting slot only on a start, and a
+/// resume (omp's) may write none.
+pub(crate) fn each_life(events: Vec<AgentEvent>, own: AgentId) -> Vec<Vec<AgentEvent>> {
+    let (mut lives, mut life, mut ended) = (Vec::new(), Vec::new(), false);
     for ev in events {
-        match evidence(ev, own) {
+        match evidence(&ev, own) {
             Some(Life::Ended) => ended = true,
             Some(Life::Lives) if ended => {
-                spans.push(span);
-                (span, ended) = (0, false);
+                lives.push(std::mem::take(&mut life));
+                ended = false;
             }
             _ => {}
         }
-        span += 1;
+        life.push(ev);
     }
-    spans.push(span);
-    spans
+    lives.push(life);
+    lives
 }
 
 /// Detect a CC subagent by the `subagents` path component and link it to its

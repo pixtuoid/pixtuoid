@@ -517,8 +517,8 @@ mod tests {
 
     #[test]
     fn parsed_tail_lines_yields_only_complete_parseable_lines() {
-        // A tail byte-window can begin mid-line (torn leading partial), carry
-        // CRLF terminators, and hold empty/torn segments.
+        // Any bytes: a torn leading line, CRLF terminators, and empty or torn
+        // segments.
         let tail = b"3,\"torn\":tru\n{\"type\":\"a\"}\n{\"type\":\"b\"}\r\n\n{\"type\":\"c\"";
         let kinds: Vec<String> = parsed_tail_lines(tail)
             .filter_map(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))

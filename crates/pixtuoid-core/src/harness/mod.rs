@@ -555,19 +555,19 @@ impl Fold {
         self.driven.events.push(event);
     }
 
-    /// The seed `drive` leads a feed of `lines` with when the watcher's gate
-    /// makes it a first sight, else `None`; the claim then follows `decoded`'s
-    /// verdict.
+    /// The seed `drive` leads `life`, one life of a feed of `lines`, with when
+    /// the watcher's gate makes it a first sight, else `None`; the claim then
+    /// follows `life`'s verdict.
     fn first_sight<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
         lines: &[Option<S>],
-        decoded: &[AgentEvent],
+        life: &[AgentEvent],
     ) -> Option<AgentEvent> {
         let (source, _, session_id) = drive.sighted()?;
         let id = AgentId::from_parts(source, &session_id);
-        let leads = Sight::leads(self.sights.get(&id).map(|s| s.sight))
-            .unwrap_or_else(|| holds_life(decoded));
+        let leads =
+            Sight::leads(self.sights.get(&id).map(|s| s.sight)).unwrap_or_else(|| holds_life(life));
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.entry(id).or_insert_with(|| Sighted {
             sight: Sight::Claimed,
@@ -577,7 +577,7 @@ impl Fold {
         if leads {
             sighted.sight = Sight::Claimed;
         }
-        if last_life(decoded, id) == Some(Life::Ended) {
+        if last_life(life, id) == Some(Life::Ended) {
             sighted.sight = Sight::Ended;
         }
         seed
@@ -601,10 +601,11 @@ impl Fold {
                 }
             }
             let own = (drive.sighted()).map(|(source, _, id)| AgentId::from_parts(source, &id));
-            let lives = own.map_or_else(|| vec![decoded.len()], |own| each_life(&decoded, own));
-            let mut decoded = decoded.into_iter();
-            for span in lives {
-                let life: Vec<AgentEvent> = decoded.by_ref().take(span).collect();
+            let lives = match own {
+                Some(own) => each_life(decoded, own),
+                None => vec![decoded],
+            };
+            for life in lives {
                 let mut fed = Vec::new();
                 if let Some(seed) = self.first_sight(drive, &lines, &life) {
                     self.driven.seed_events += 1;

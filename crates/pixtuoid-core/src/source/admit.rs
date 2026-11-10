@@ -149,18 +149,21 @@ mod tests {
     #[cfg(feature = "native")]
     #[test]
     fn a_window_from_mid_file_drops_its_partial_first_line_and_only_that() {
-        let whole = |window: &'static [u8], from_start| {
+        let from_first_whole = |window: &'static [u8], from_start| {
             lines(&window[first_whole_line(window, from_start)..]).collect::<Vec<_>>()
         };
         let torn = b"rt\"}\n{\"a\":1}\n{\"b\":2}";
-        assert_eq!(whole(torn, false), [Ok("{\"a\":1}"), Ok("{\"b\":2}")]);
         assert_eq!(
-            whole(b"\n{\"a\":1}\n", false),
+            from_first_whole(torn, false),
+            [Ok("{\"a\":1}"), Ok("{\"b\":2}")]
+        );
+        assert_eq!(
+            from_first_whole(b"\n{\"a\":1}\n", false),
             [Ok("{\"a\":1}")],
             "no real line is lost"
         );
         assert_eq!(
-            whole(b"{\"a\":1}\n", true),
+            from_first_whole(b"{\"a\":1}\n", true),
             [Ok("{\"a\":1}")],
             "a file's own start is whole"
         );
