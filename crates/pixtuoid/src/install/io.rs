@@ -700,6 +700,47 @@ mod tests {
         assert!(shim_locate_remedy_for("freebsd").contains("`cargo install pixtuoid-hook`"));
     }
 
+    /// npm's row names the OSes `npm/generate.mjs`'s `TARGETS` publishes for; no
+    /// build reads that JS, so this test is the only bridge between the two.
+    #[test]
+    fn the_npm_install_is_offered_where_npm_publishes() {
+        // crates.io-packaged test runs don't ship the repo's npm/ tree.
+        if !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../npm")).is_dir() {
+            return;
+        }
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../npm/generate.mjs");
+        let js = std::fs::read_to_string(path).expect("generate.mjs moved or was renamed");
+        let targets = &js[js
+            .find("const TARGETS = [")
+            .expect("generate.mjs declares TARGETS")..];
+        let targets = &targets[..targets.find("];").expect("TARGETS closes")];
+        // TARGETS names Node's `process.platform`; the remedy, `std::env::consts::OS`.
+        let mut published: Vec<&str> = targets
+            .split("os: \"")
+            .skip(1)
+            .map(|row| row.split('"').next().expect("a target's os is a string"))
+            .map(|os| match os {
+                "darwin" => "macos",
+                "win32" => "windows",
+                os => os,
+            })
+            .collect();
+        published.sort_unstable();
+        published.dedup();
+        let (_, oses) = SHIM_INSTALLS
+            .iter()
+            .find(|(install, _)| install.contains("npm i -g"))
+            .expect("the remedy offers npm");
+        let mut offered = oses
+            .expect("npm publishes for some OSes, not every OS")
+            .to_vec();
+        offered.sort_unstable();
+        assert_eq!(
+            offered, published,
+            "SHIM_INSTALLS' npm row drifted from TARGETS"
+        );
+    }
+
     #[test]
     fn expand_tilde_home_some_expands_leading_tilde_only() {
         let home = Path::new("/home/u");
