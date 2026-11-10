@@ -2775,7 +2775,7 @@ fn a_slides_footer_speaks_for_its_destination() {
 }
 
 /// The anim floor `floor` of `office` last drew its pet in.
-fn drawn_pet(office: &OfficeSession, floor: usize) -> crate::pack::Piece {
+fn drawn_pet_anim(office: &OfficeSession, floor: usize) -> crate::pack::Piece {
     let hovers = (office.floor(floor).and_then(|f| f.raster.hovers())).expect("a frame");
     (hovers.listed().iter())
         .find_map(|hover| match hover.target {
@@ -2822,11 +2822,11 @@ impl PettedTwins {
     /// frame of it.
     fn sits(&self, floor: usize, kind: crate::pet::PetKind) -> bool {
         assert_ne!(
-            drawn_pet(&self.plain, floor),
+            drawn_pet_anim(&self.plain, floor),
             kind.sit_anim(),
             "premise: an unpetted pet sits on floor {floor}"
         );
-        drawn_pet(&self.petted, floor) == kind.sit_anim()
+        drawn_pet_anim(&self.petted, floor) == kind.sit_anim()
     }
 }
 
