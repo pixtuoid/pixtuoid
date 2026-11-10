@@ -1195,6 +1195,17 @@ mod tests {
         decode_at(ROOT, line)
     }
 
+    /// Tool results persist verbatim in the transcript, so `session_exit` quoted
+    /// in one is content.
+    #[test]
+    fn an_end_marker_in_a_tool_result_ends_nothing() {
+        let line = r#"{"type":"message","message":{"role":"toolResult","toolCallId":"t1","content":[{"type":"text","text":"grep hit: \"customType\":\"session_exit\""}]}}"#;
+        let ends = decode(line)
+            .into_iter()
+            .any(|e| matches!(e, AgentEvent::SessionEnd { .. }));
+        assert!(!ends);
+    }
+
     #[test]
     fn id_from_path_is_the_stem_for_a_root_and_the_chain_for_subagents() {
         assert_eq!(omp_id_from_path(Path::new(ROOT)), ROOT_KEY);

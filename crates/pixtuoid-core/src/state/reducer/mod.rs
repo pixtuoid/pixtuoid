@@ -134,7 +134,7 @@ struct ModelObservation<'a> {
     effort: Option<&'a str>,
 }
 
-/// Borrowed identity context threaded into slot registration/back-fill, bundled
+/// Borrowed identity context threaded into slot registration, bundled
 /// so the two `&str`s (`source`/`session_id`, positionally interchangeable)
 /// can't be silently swapped at a call site.
 #[derive(Clone, Copy)]
@@ -144,25 +144,18 @@ struct IdentityCtx<'a> {
     cwd: &'a std::path::Path,
 }
 
-/// First-wins identity back-fill (#221): heal EMPTY source/session_id/cwd — an
-/// established value is never overwritten. Returns the healed cwd's basename
-/// when THIS call healed the cwd; only the SessionStart arm upgrades a fallback
-/// label from it, since `Identity` carries no label authority.
-fn backfill_identity<'a>(slot: &mut AgentSlot, ctx: IdentityCtx<'a>) -> Option<&'a str> {
-    if slot.source.is_empty() && !ctx.source.is_empty() {
-        slot.source = Arc::<str>::from(ctx.source);
-    }
-    if slot.session_id.is_empty() && !ctx.session_id.is_empty() {
-        slot.session_id = Arc::<str>::from(ctx.session_id);
-    }
+/// First-wins cwd back-fill (#221): heal a MISSING cwd, never overwrite an
+/// established one. Returns the healed cwd's basename when THIS call healed it;
+/// only the SessionStart arm upgrades a fallback label from it, since
+/// `Identity` carries no label authority.
+fn backfill_cwd<'a>(slot: &mut AgentSlot, cwd: &'a std::path::Path) -> Option<&'a str> {
     if (slot.unknown_cwd || slot.cwd.as_os_str().is_empty())
-        && let Some(base) = ctx
-            .cwd
+        && let Some(base) = cwd
             .file_name()
             .and_then(|n| n.to_str())
             .filter(|s| !s.is_empty())
     {
-        slot.cwd = Arc::<std::path::Path>::from(ctx.cwd);
+        slot.cwd = Arc::<std::path::Path>::from(cwd);
         slot.unknown_cwd = false;
         return Some(base);
     }
@@ -185,8 +178,6 @@ enum AttemptKind {
     Start,
     /// A hook `Identity` (#221), which names no parent.
     Identity,
-    /// A hook tool or permission event that shows activity, synthesizing a slot.
-    HookActivity,
 }
 
 /// What [`Reducer::authorizes`] lets an attempt do.
@@ -307,32 +298,23 @@ impl Reducer {
         {
             scene.today = None;
         }
-        // Reap entries for agents that never got a SessionStart — a Task event
-        // can arrive before JSONL creates the slot.
+        // What no slot holds: a Task or backlog marker for an id that never
+        // registered, and a gone slot's newest turn position, which
+        // `remove_agent_correlation` keeps through a revive.
         self.corr
             .tasks_in_flight
             .retain(|id, _| scene.agents.contains_key(id));
-        self.corr
-            .action_requests
-            .retain(|id| scene.agents.contains_key(id));
         self.corr.turns.retain(|id| scene.agents.contains_key(id));
-        self.corr
-            .item_started_on
-            .retain(|id, _| scene.agents.contains_key(id));
         self.corr
             .caught_up
             .retain(|id| scene.agents.contains_key(id));
-        self.pending_b1_cascades
-            .retain(|id, _| scene.agents.contains_key(id));
     }
 
     /// Mark exiting every non-exiting slot whose source is NOT connected, then
     /// cascade to its subtree. Driven by the Sources panel's DISCONNECT toggle —
     /// an explicit user action, not transcript content, so it does NOT violate
-    /// the "content never drives lifecycle" invariant. Keying on the COMPLEMENT
-    /// of the connected set also evicts a BLANK-source slot synthesized for an
-    /// identity-less hook event that slipped the per-event gate; already-exiting
-    /// slots stay untouched so a re-reconcile can't reset their walkout clock.
+    /// the "content never drives lifecycle" invariant. Already-exiting slots stay
+    /// untouched so a re-reconcile can't reset their walkout clock.
     pub fn reconcile_connected(
         &self,
         scene: &mut SceneState,
@@ -538,13 +520,9 @@ impl Reducer {
         self.corr.gc(now);
         self.sweep_exited(scene, now);
 
-        if from == Transport::Hook {
-            self.synthesize_hook_registration(scene, event, id, now);
-        }
-
         // `refresh_lineage` stamps the ACTOR too, yet the per-arm `last_event_at`
         // writes are NOT droppable: Rename and SessionStart never reach here.
-        if event.refreshes_lineage() {
+        if event.is_turn_traffic() {
             scope::refresh_lineage(scene, id, now);
         }
 
@@ -623,8 +601,8 @@ impl Reducer {
             return Preprocessed::Drop;
         }
 
-        // Gated on the slot EXISTING: a synthesis REFUSED for desk exhaustion
-        // would leave a record that dedup-eats the JSONL registration's Start.
+        // Gated on the slot EXISTING: an `Identity` `authorizes` refused would
+        // leave a record that dedup-eats the JSONL registration's Start.
         if from == Transport::Hook
             && scene.agents.contains_key(&id)
             && let Some((kind, tuid)) = event_tool_use_id(event)
@@ -997,7 +975,7 @@ impl Reducer {
     }
 
     /// The `ProofOfLife` arm — #220: refresh the sweep exemption, and NOTHING
-    /// else. No slot synthesis (this only vouches for already-visible slots),
+    /// else. No registration (this only vouches for already-visible slots),
     /// no state change, no `last_event_at` refresh. An exiting slot is left
     /// alone so the vouch can't tug against SessionEnd/cascade_exit.
     fn apply_proof_of_life(&mut self, scene: &SceneState, agent_id: AgentId, now: SystemTime) {
@@ -1011,9 +989,9 @@ impl Reducer {
     }
 
     /// The `Identity` arm — #221: the identity context a hook decoder attaches
-    /// ahead of a tool/permission event. Register-or-back-fill, NOTHING else:
-    /// no label change, no activity-state change, no `last_event_at` refresh.
-    /// The paired activity event right behind it carries those.
+    /// ahead of an event that may be its session's first sight. Register-or-
+    /// back-fill, NOTHING else: no label change, no activity-state change, no
+    /// `last_event_at` refresh. The paired event right behind it carries those.
     fn apply_identity(
         &mut self,
         scene: &mut SceneState,
@@ -1024,13 +1002,13 @@ impl Reducer {
         now: SystemTime,
     ) {
         // No in-tree JSONL path emits Identity today; the guard IS the
-        // boundary, not dead code (replay hazard: see hook synthesis).
+        // boundary, not dead code: a transcript line can be a historical replay.
         if from != Transport::Hook {
             tracing::debug!(?agent_id, "ignoring Identity on a non-hook transport");
             return;
         }
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            backfill_identity(slot, ctx);
+            backfill_cwd(slot, ctx.cwd);
             // A pid-less Identity must never DOWNGRADE a cached Some (e.g. an
             // opencode plugin event following a shim-stamped one).
             if pid.is_some() {
@@ -1039,14 +1017,15 @@ impl Reducer {
             // Identity is hook-only, so the process is alive: a JSONL-seeded
             // unknown-cwd flag must not keep `STALE_UNKNOWN_CWD_TIMEOUT` armed.
             slot.unknown_cwd = false;
-        } else if let Some(parent) =
-            self.parent_to_create(scene, agent_id, ctx, AttemptKind::Identity, from, now)
-            && self.register_and_link(scene, agent_id, ctx, parent, now)
-            && let Some(slot) = scene.agents.get_mut(&agent_id)
-        {
-            slot.unknown_cwd = false;
-            if pid.is_some() {
-                slot.pid = pid;
+        } else {
+            let attempt = self.attempt(agent_id, AttemptKind::Identity, None);
+            if let Verdict::Create = self.authorizes(scene, agent_id, attempt, from, now) {
+                let parent = self.resolve_parent_link(scene, agent_id, ctx, attempt.parent);
+                let slot = self.register_and_link(scene, agent_id, ctx, parent, now);
+                slot.unknown_cwd = false;
+                if pid.is_some() {
+                    slot.pid = pid;
+                }
             }
         }
     }
@@ -1122,7 +1101,6 @@ impl Reducer {
         if let Verdict::Enrich { revive } = verdict {
             self.enrich_existing_start(scene, agent_id, ctx, parent_id, revive, now);
         } else {
-            // A desk-exhaustion refusal records nothing — nothing registered.
             self.register_and_link(scene, agent_id, ctx, parent_id, now);
         }
     }
@@ -1135,8 +1113,8 @@ impl Reducer {
     }
 
     /// What `attempt`, arriving on `from`, may do to `id`'s slot: the ONE
-    /// creation-polarity decision every registering arm applies. Desk capacity
-    /// and parent cycles are structure, not authority, and stay out.
+    /// creation-polarity decision every registering arm applies. Parent
+    /// cycles are structure, not authority, and stay out.
     fn authorizes(
         &self,
         scene: &SceneState,
@@ -1171,7 +1149,7 @@ impl Reducer {
                                 .exiting_at
                                 .is_some_and(|exit| !corr.child_ended_since(id, exit))
                     }
-                    AttemptKind::Identity | AttemptKind::HookActivity => false,
+                    AttemptKind::Identity => false,
                 };
             return Verdict::Enrich { revive };
         }
@@ -1262,9 +1240,9 @@ impl Reducer {
             slot.parent_id = Some(p);
             self.corr.link_applied_parent(agent_id, p);
         }
-        // A slot can exist with MISSING identity: hook synthesis registers from
-        // the AgentId alone, and a Codex revive ghost has an empty cwd.
-        if let Some(base) = backfill_identity(slot, ctx) {
+        // A slot can exist with a MISSING cwd: an `Identity` may name none, and a
+        // Codex revive ghost has an empty one.
+        if let Some(base) = backfill_cwd(slot, ctx.cwd) {
             // `base` BYPASSES the `cwd_basename_label` chokepoint, so the
             // same decode-boundary cap is applied here.
             let derived = crate::state::SlotLabel::cwd_derived(crate::state::SlotLabel::join(
@@ -1279,6 +1257,8 @@ impl Reducer {
             }
         }
         slot.last_event_at = now;
+        // Seating skips one walking out, so a desk may have freed mid-exit.
+        let seat = revive && slot.desk.is_none();
         if revive {
             // Route through fsm so an in-flight Running span folds into
             // `running_ms` — a direct `state = Idle` here silently dropped it.
@@ -1290,111 +1270,42 @@ impl Reducer {
                 self.corr.link_applied_parent(agent_id, p);
             }
         }
-    }
-
-    /// A hook event is PROOF OF LIFE, so a tool/permission event whose id has no
-    /// slot registers one — that session's transcript was gated at first sight.
-    /// JSONL must NOT synthesize: a transcript line can be a historical replay.
-    /// Only an event that [`AgentEvent::shows_activity`] qualifies. Since #221 decoders
-    /// attach an `Identity` ahead, leaving this the identity-less fallback.
-    fn synthesize_hook_registration(
-        &mut self,
-        scene: &mut SceneState,
-        event: &AgentEvent,
-        id: AgentId,
-        now: SystemTime,
-    ) {
-        if !event.shows_activity() {
-            return;
-        }
-        let ctx = IdentityCtx {
-            source: "",
-            session_id: "",
-            cwd: std::path::Path::new(""),
-        };
-        // A blank Idle ghost of a DEAD session is unremovable.
-        let Some(parent) = self.parent_to_create(
-            scene,
-            id,
-            ctx,
-            AttemptKind::HookActivity,
-            Transport::Hook,
-            now,
-        ) else {
-            return;
-        };
-        if self.register_and_link(scene, id, ctx, parent, now)
-            && let Some(slot) = scene.agents.get_mut(&id)
-        {
-            // NOT an unknown-cwd ghost: that reap targets startup
-            // JSONL-seeding artifacts, and a hook proves this one alive.
-            slot.unknown_cwd = false;
-        }
-    }
-
-    /// [`Reducer::authorizes`] for an arm whose event names no parent: `None`
-    /// when it may not create, else the parent to create under, through
-    /// [`Reducer::resolve_parent_link`].
-    fn parent_to_create(
-        &self,
-        scene: &SceneState,
-        id: AgentId,
-        ctx: IdentityCtx,
-        kind: AttemptKind,
-        from: Transport,
-        now: SystemTime,
-    ) -> Option<Option<AgentId>> {
-        let attempt = self.attempt(id, kind, None);
-        match self.authorizes(scene, id, attempt, from, now) {
-            Verdict::Create => Some(self.resolve_parent_link(scene, id, ctx, attempt.parent)),
-            Verdict::Enrich { .. } | Verdict::Refuse(_) => None,
+        if seat {
+            scene.seat_unseated(|_| true, |_| Some(now));
         }
     }
 
     /// [`Reducer::register_slot`], recording the link it applies.
-    fn register_and_link(
+    fn register_and_link<'s>(
         &mut self,
-        scene: &mut SceneState,
+        scene: &'s mut SceneState,
         id: AgentId,
         ctx: IdentityCtx,
         parent: Option<AgentId>,
         now: SystemTime,
-    ) -> bool {
-        let registered = self.register_slot(scene, id, ctx, parent, now);
-        if registered && let Some(p) = parent {
+    ) -> &'s mut AgentSlot {
+        if let Some(p) = parent {
             self.corr.link_applied_parent(id, p);
         }
-        registered
+        self.register_slot(scene, id, ctx, parent, now)
     }
 
-    /// The slot-creation half of the `SessionStart` arm, shared with
-    /// [`Reducer::synthesize_hook_registration`] so both run the same
-    /// desk-capacity gate and label derivation. Returns `false` when all desks
-    /// are occupied.
-    fn register_slot(
+    /// The slot-creation half of the `SessionStart` and `Identity` arms, so both
+    /// run the same seating and label derivation. A slot no desk is free for
+    /// still registers, unseated.
+    fn register_slot<'s>(
         &mut self,
-        scene: &mut SceneState,
+        scene: &'s mut SceneState,
         agent_id: AgentId,
         ctx: IdentityCtx,
         parent_id: Option<AgentId>,
         now: SystemTime,
-    ) -> bool {
+    ) -> &'s mut AgentSlot {
         let IdentityCtx {
             source,
             session_id,
             cwd,
         } = ctx;
-        let Some(desk_index) = scene.next_free_desk() else {
-            tracing::warn!(
-                ?agent_id,
-                cwd = ?cwd,
-                session_id = ?session_id,
-                total_capacity = scene.total_capacity(),
-                "dropped SessionStart — all desks occupied; bump --max-desks"
-            );
-            return false;
-        };
-        let floor_idx = scene.floor_of(desk_index);
         // A hook-only source has no JSONL Rename — its prefix is minted here.
         let prefix = label_prefix_for(source);
         // The cwd is hook/transcript CONTENT — the `cwd_basename_label`
@@ -1423,11 +1334,9 @@ impl Reducer {
                 state_started_at: now,
                 last_event_at: now,
                 created_at: now,
-                // The local office walks in every slot it registers, a replay's included.
-                arrived_at: Some(now),
+                arrived_at: None,
                 exiting_at: None,
-                desk_index,
-                floor_idx,
+                desk: None,
                 tool_call_count: 0,
                 running_ms: 0,
                 // A PARENTED slot came from an explicit subagent signal (e.g.
@@ -1441,7 +1350,12 @@ impl Reducer {
                 last_usage: None,
             },
         );
-        true
+        // The local office walks in every slot it seats, a replay's included.
+        scene.seat_unseated(|_| true, |_| Some(now));
+        scene
+            .agents
+            .get_mut(&agent_id)
+            .expect("the slot was inserted above")
     }
 
     /// Hook transport only, on a source whose child hooks arrive unnamed under
@@ -1727,6 +1641,10 @@ impl Reducer {
             .iter()
             .filter_map(|(id, slot)| slot.walked_out(now).then_some(*id))
             .collect();
+        // Only a slot leaving frees a desk, and every apply sweeps.
+        if expired.is_empty() {
+            return;
+        }
         for id in expired {
             scene.agents.remove(&id);
             // Runs on the apply path too, where `tick`'s `retain` doesn't.
@@ -1741,6 +1659,8 @@ impl Reducer {
             self.corr.call_holders.release(id, now);
             self.corr.note_removed(id, now);
         }
+        // A desk it freed goes to the oldest unseated agent.
+        scene.seat_unseated(|_| true, |_| Some(now));
     }
 }
 

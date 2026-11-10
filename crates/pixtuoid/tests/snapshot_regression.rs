@@ -11,14 +11,14 @@ use std::time::{Duration, SystemTime};
 use common::{fixture_scene, render_hash};
 use pixtuoid::dev::draw_scene;
 use pixtuoid_core::state::ActivityState;
-use pixtuoid_scene::floor::FloorMeta;
+use pixtuoid_scene::floor::Conditions;
 use pixtuoid_scene::pack::load_bundled_pack;
 use pixtuoid_scene::theme::NORMAL;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 fn render_pixel_hash(now: SystemTime) -> u64 {
-    render_hash(&fixture_scene(now), now, &NORMAL, FloorMeta::ground())
+    render_hash(&fixture_scene(now), now, &NORMAL, Conditions::default())
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn render_produces_distinct_wall_band_and_floor_regions() {
     let backend = TestBackend::new(96, 36);
     let mut term = Terminal::new(backend).expect("terminal");
     let pack = std::sync::Arc::new(load_bundled_pack().expect("pack"));
-    make_draw_ctx!(draw_ctx, &scene, &pack, now);
+    make_draw_ctx!(draw_ctx, &scene, &pack, now, Conditions::default());
     draw_scene(&mut term, &mut draw_ctx).expect("render");
     let buf = draw_ctx.floor.raster.pixels().expect("a frame");
 
@@ -106,7 +106,7 @@ fn render_changes_when_an_agent_state_changes() {
     for slot in scene_idle.agents.values_mut() {
         slot.state = ActivityState::Idle;
     }
-    let idle_hash = render_hash(&scene_idle, now, &NORMAL, FloorMeta::ground());
+    let idle_hash = render_hash(&scene_idle, now, &NORMAL, Conditions::default());
 
     let active_hash = render_pixel_hash(now);
     assert_ne!(

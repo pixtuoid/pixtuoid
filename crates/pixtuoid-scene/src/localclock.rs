@@ -3,22 +3,40 @@
 //! the helpers build instants from local times for tests, benches and the
 //! snapshot examples.
 //!
-//! The office reads `now` through `chrono::Local`, so a test building its
-//! instants as epoch offsets is really asking for whatever local hours the
-//! runner's `$TZ` gives — how `the_foreground_layer_is_lit_by_the_clock` passed
-//! in CI (UTC) and failed on a clean checkout in UTC-6.
-//!
 //! Anything whose ASSERTION depends on the local hour or date builds its
-//! instants here; a test needing only "some fixed moment" is TZ-independent
-//! already and keeps a plain epoch offset.
+//! instants here; a unit test needing only "some fixed moment" keeps an epoch offset.
 
 use std::time::SystemTime;
 
 use chrono::TimeZone;
 
+/// The zone the office reads the wall clock in: the viewer's.
+#[cfg(not(test))]
+#[expect(
+    clippy::disallowed_types,
+    reason = "the office's reader of the viewer's zone"
+)]
+const ZONE: chrono::Local = chrono::Local;
+
+/// This crate's unit tests read one fixed zone, never the runner's, which
+/// `chrono::Local` takes from `$TZ` on Unix and the system on Windows (chrono
+/// 0.4.45 `src/offset/local/unix.rs:92`, `windows.rs:138`). Its offset is
+/// neither UTC nor a whole hour, so epoch and local hours never coincide.
+#[cfg(test)]
+const ZONE: chrono::FixedOffset = match chrono::FixedOffset::east_opt(5 * 3600 + 45 * 60) {
+    Some(zone) => zone,
+    None => panic!("the offset is within a day of UTC"),
+};
+
 /// `now` on the viewer's wall clock.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the office's one conversion into the viewer's zone"
+)]
 pub(crate) fn local_time(now: SystemTime) -> chrono::NaiveDateTime {
-    chrono::DateTime::<chrono::Local>::from(now).naive_local()
+    chrono::DateTime::<chrono::Utc>::from(now)
+        .with_timezone(&ZONE)
+        .naive_local()
 }
 
 /// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders.
@@ -41,7 +59,7 @@ fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
     reason = "the one sanctioned TimeZone construction clippy.toml bans elsewhere"
 )]
 pub(crate) fn local_instant(date: chrono::NaiveDate, h: u32, m: u32) -> Option<SystemTime> {
-    let local = chrono::Local.from_local_datetime(&date.and_hms_opt(h, m, 0)?);
+    let local = ZONE.from_local_datetime(&date.and_hms_opt(h, m, 0)?);
     local.single().map(Into::into)
 }
 
@@ -84,25 +102,25 @@ pub fn try_on_day(day: u32, h: u32) -> Option<SystemTime> {
 mod tests {
     use super::*;
 
-    /// The whole point of the module: the same call must name the same LOCAL
-    /// hour whatever `$TZ` is, which a raw epoch offset does not.
+    /// The whole point of the module: the same call names the same LOCAL hour
+    /// the office then reads, which a raw epoch offset does not.
     #[test]
     fn every_helper_lands_on_the_local_hour_it_names() {
         use chrono::{Datelike, Timelike};
         for h in [0, 2, 5, 12, 17, 23] {
-            let t: chrono::DateTime<chrono::Local> = at_hour(h).into();
+            let t = local_time(at_hour(h));
             assert_eq!(t.hour(), h, "at_hour({h}) landed on {}", t.hour());
         }
-        let t: chrono::DateTime<chrono::Local> = at_hour_min(7, 30).into();
+        let t = local_time(at_hour_min(7, 30));
         assert_eq!((t.hour(), t.minute()), (7, 30));
-        let t: chrono::DateTime<chrono::Local> = on_day(8, 2).into();
+        let t = local_time(on_day(8, 2));
         assert_eq!(
             (t.day(), t.hour()),
             (9, 2),
             "on_day counts days FORWARD from the base"
         );
         // Past the end of January: the form this replaced panicked here.
-        let t: chrono::DateTime<chrono::Local> = on_day(45, 7).into();
+        let t = local_time(on_day(45, 7));
         assert_eq!((t.month(), t.day(), t.hour()), (2, 15, 7));
     }
 
@@ -121,6 +139,16 @@ mod tests {
         assert_eq!(
             noon.duration_since(night).expect("noon is after midnight"),
             std::time::Duration::from_secs(12 * 3600)
+        );
+    }
+
+    /// The unit tests read one fixed zone: the epoch reads `ZONE`'s offset on every runner.
+    #[test]
+    fn the_tests_read_one_fixed_zone() {
+        let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date");
+        assert_eq!(
+            local_time(SystemTime::UNIX_EPOCH),
+            epoch.and_hms_opt(5, 45, 0).expect("a time")
         );
     }
 }

@@ -37,7 +37,7 @@ pub(crate) fn naps_here(layout: &SceneLayout, agents: &[AgentSlot], at: Point) -
     agents
         .iter()
         .filter(|a| matches!(a.state, ActivityState::Idle) && a.exiting_at.is_none())
-        .filter_map(|a| layout.home_desk(a.desk_index.single_floor_local()))
+        .filter_map(|a| layout.home_desk_of(a))
         .any(|d| {
             (i32::from(at.x) - i32::from(d.at.x)).abs() <= NAP_NEAR_DESK_PX
                 && (i32::from(at.y) - i32::from(d.at.y)).abs() <= NAP_NEAR_DESK_PX
@@ -657,7 +657,7 @@ mod tests {
         );
     }
     use crate::anim::{Motion, PAINT_FPS, PAINT_FRAME_MS};
-    use crate::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs};
+    use crate::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
     use crate::pathfind::{AStarRouter, point_in_walkable_cell};
     use crate::pet::{Pet, PetState};
     use crate::sim::SimFrame;
@@ -974,7 +974,7 @@ mod tests {
     struct Office {
         session: FloorSession,
         viewport: crate::layout::Viewport,
-        floor: FloorMeta,
+        conditions: Conditions,
     }
 
     impl Office {
@@ -982,7 +982,7 @@ mod tests {
             Self {
                 session: FloorSession::new(std::sync::Arc::new(test_pack())),
                 viewport: crate::layout::Viewport::full(w, h),
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
             }
         }
 
@@ -998,7 +998,7 @@ mod tests {
                     FloorInputs {
                         scene,
                         now: at(ms),
-                        floor: self.floor,
+                        conditions: self.conditions,
                         pets: PetInputs { pet, petting },
                     },
                     self.viewport,
@@ -1293,13 +1293,13 @@ mod tests {
         use crate::character::test_support::make_slot;
         use crate::pose::Pose;
         use pixtuoid_core::AgentId;
-        use pixtuoid_core::state::{ActivityState, GlobalDeskIndex};
+        use pixtuoid_core::state::{ActivityState, FloorDesk};
         const SEEN: [&str; 5] = ["agent in", "agent out", "mascot in", "pet wander", "door"];
         let exit_ms = 2_000;
         let agent = |name: &str, desk: usize, arrived: SystemTime| {
             let id = AgentId::from_transcript_path(name);
             AgentSlot {
-                desk_index: GlobalDeskIndex(desk),
+                desk: Some(FloorDesk::new(0, desk)),
                 arrived_at: Some(arrived),
                 ..make_slot(id, ActivityState::Idle)
             }
@@ -1318,7 +1318,7 @@ mod tests {
         let cat = Pet::defaulted(PetKind::Cat);
         let seen = |motion: Motion| {
             let mut office = Office::new(192, 80);
-            office.floor = office.floor.with_motion(motion);
+            office.conditions = office.conditions.with_motion(motion);
             let walking =
                 |pose: Option<&Option<Pose>>| matches!(pose, Some(Some(Pose::Walking { .. })));
             let mut seen = [false; SEEN.len()];
@@ -1380,7 +1380,7 @@ mod tests {
                 .session
                 .floor_mut()
                 .ctx
-                .frame_layout(office.viewport, office.floor.floor_seed, at(delay))
+                .frame_layout(office.viewport, crate::floor::floor_seed(0), at(delay))
                 .expect("lays out"),
         )
         .expect("an elevator");
@@ -1477,7 +1477,11 @@ mod tests {
                 .session
                 .floor_mut()
                 .ctx
-                .frame_layout(office.viewport, office.floor.floor_seed, at(back + delay))
+                .frame_layout(
+                    office.viewport,
+                    crate::floor::floor_seed(0),
+                    at(back + delay),
+                )
                 .expect("lays out"),
         )
         .expect("an elevator");
@@ -1514,7 +1518,7 @@ mod tests {
             .session
             .floor_mut()
             .ctx
-            .frame_layout(office.viewport, office.floor.floor_seed, at(ms))
+            .frame_layout(office.viewport, crate::floor::floor_seed(0), at(ms))
             .expect("lays out");
         // Over a desk, on ground no leg stands on.
         let (over, reach) = layout

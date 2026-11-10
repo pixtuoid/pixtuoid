@@ -451,7 +451,7 @@ pub(crate) fn save_floating(path: &Path, save: &FloatingSave) -> Result<()> {
 
 /// Resolve the config `max-desks` into the runtime desk cap. `0` is treated as
 /// unset with a warning: the cap clamps every floor via `min`, so an accepted 0
-/// would permanently zero every floor and silently drop every SessionStart. The
+/// would zero every floor's capacity and leave every agent unseated forever. The
 /// `--max-desks` CLI flag rejects 0 at the clap seam; this is its config twin.
 pub(crate) fn resolve_max_desks(config: &AppConfig, warnings: &mut Vec<String>) -> Option<usize> {
     match config.max_desks {

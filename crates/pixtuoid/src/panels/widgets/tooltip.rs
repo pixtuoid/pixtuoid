@@ -536,7 +536,11 @@ mod tests {
             align: pixtuoid_scene::display::Align::Centre,
             within: BARE_OFFICE,
             spans: pixtuoid_scene::layout::floor_indicator(
-                pixtuoid_scene::floor::FloorMeta::ground(),
+                pixtuoid_scene::floor::project_floor_scene(
+                    &pixtuoid_core::SceneState::default(),
+                    0,
+                )
+                .floor_place(),
             )
             .into_iter()
             .map(|content| pixtuoid_scene::display::TextSpan {
@@ -844,7 +848,7 @@ mod tests {
         use std::sync::Arc;
         use std::time::{Duration, SystemTime};
 
-        use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex};
+        use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk};
         use pixtuoid_core::{AgentId, SceneState};
 
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
@@ -862,8 +866,7 @@ mod tests {
             arrived_at: Some(now - Duration::from_secs(2)),
             last_event_at: now,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(0),
-            floor_idx: 0,
+            desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -932,7 +935,7 @@ mod tests {
         use std::sync::Arc;
         use std::time::{Duration, SystemTime};
 
-        use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind, ToolUse};
+        use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, ToolKind, ToolUse};
         use pixtuoid_core::{AgentId, SceneState};
 
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
@@ -952,8 +955,7 @@ mod tests {
                 arrived_at: Some(now - Duration::from_secs(2)),
                 last_event_at: now,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(0),
-                floor_idx: 0,
+                desk: Some(FloorDesk::new(0, 0)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,

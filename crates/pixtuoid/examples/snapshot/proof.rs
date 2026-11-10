@@ -607,8 +607,9 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
             office.stores(),
             job.theme,
             &scene,
+            0,
             now,
-            pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
+            pixtuoid_scene::floor::Conditions::default().with_weather(job.weather),
         );
         let hits = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
         // The burned callout's anchor: home_desks[0] of the layout the office
@@ -857,7 +858,7 @@ mod tests {
         let world = pixtuoid_scene::floor::FloorInputs {
             scene: &scene,
             now: std::time::UNIX_EPOCH,
-            floor: pixtuoid_scene::floor::FloorMeta::ground(),
+            conditions: pixtuoid_scene::floor::Conditions::default(),
             pets: Default::default(),
         };
         office

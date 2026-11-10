@@ -1,6 +1,6 @@
 name: bench
 
-# ON-DEMAND only, mirroring mutants.yml: a dispatch runs ONLY this, and nothing
+# ON-DEMAND only: a dispatch runs ONLY this, and nothing
 # `needs:` it, so a slow run gates nothing. Shared-runner wall-clock is noise
 # (https://bheisler.github.io/criterion.rs/book/faq.html), so this exists for
 # trend evidence on request — the authoritative numbers are `just bench` runs
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   bench:
-    name: frame, wire + pacing benchmarks (on-demand, advisory)
+    name: frame + pacing benchmarks (on-demand, advisory)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -27,7 +27,7 @@ jobs:
       # `bench-pacing` builds the binary, whose default `audio` feature links ALSA.
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-cargo-just
-      - name: Run frame + wire benchmarks (advisory, non-blocking)
+      - name: Run frame benchmarks (advisory, non-blocking)
         run: just bench
       - name: Run frame pacing (advisory, non-blocking)
         # Independent of the criterion run: either one failing keeps the other.

@@ -7,7 +7,7 @@ use image::{Delay, Frame as GifFrame, Rgba, RgbaImage};
 use pixtuoid::dev::{DrawCtx, draw_over_image, draw_scene};
 use pixtuoid_core::SceneState;
 use pixtuoid_scene::cutaway::{Canvas, CellPx, GridInk, paint_grid};
-use pixtuoid_scene::floor::{FloorMeta, FloorSession, PerFloor};
+use pixtuoid_scene::floor::{Conditions, FloorSession, PerFloor};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::theme::Theme;
 use ratatui::Terminal;
@@ -19,31 +19,15 @@ use crate::{CELL_H, CELL_W, SnapshotArgs, due_navigations};
 /// Print a connectedness report for the walkable mask: a BFS from the door threshold,
 /// reachable vs total walkable pixels. If the two differ, the mask has an isolated
 /// region and A* falls back to a straight line when crossing into it — the root cause
-/// of any character teleport the user sees.
-///
-/// `floor_seed` MUST be the one the frame beside it was rendered with: the layout variants
-/// have different obstacle placements, so a report computed for another
-/// variant is a tick about an office nobody looked at.
-pub(crate) fn print_walkability_report(
-    term: &Terminal<TestBackend>,
-    floor_seed: u64,
-) -> Result<()> {
-    use pixtuoid_scene::layout::SceneLayout;
-
-    let size = term.size()?;
-    let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(size.width, size.height);
-    // `None` = the SAME fill the renderer's draw_scene passes — the overlay
-    // must mirror the real layout exactly (desks stamp the walkable mask).
-    let Some(layout) = SceneLayout::compute(
-        pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
-        None,
-        floor_seed,
-    ) else {
+/// of any character teleport the user sees. It reads the layout `drawn` was
+/// drawn on, so it reports the office the frame shows.
+pub(crate) fn print_walkability_report(drawn: Option<&pixtuoid_scene::look::Hits>) {
+    let Some(layout) = drawn.map(pixtuoid_scene::look::Hits::layout) else {
         println!("(debug_walkable) layout too small to compute");
-        return Ok(());
+        return;
     };
 
-    let reach_mask = compute_reachable(&layout);
+    let reach_mask = compute_reachable(layout);
     let w = layout.buf_w as usize;
     let h = layout.buf_h as usize;
     let mut reachable = 0usize;
@@ -63,7 +47,7 @@ pub(crate) fn print_walkability_report(
     }
     let disconnected = walkable_total.saturating_sub(reachable);
     println!(
-        "--- walkability report (floor seed {floor_seed}) ---\n\
+        "--- walkability report ---\n\
         total walkable pixels   : {walkable_total}\n\
         reachable from threshold: {reachable}\n\
         disconnected pixels     : {disconnected}{}",
@@ -83,7 +67,6 @@ pub(crate) fn print_walkability_report(
         }
         println!();
     }
-    Ok(())
 }
 
 fn compute_reachable(layout: &pixtuoid_scene::layout::SceneLayout) -> Vec<bool> {
@@ -120,41 +103,38 @@ fn compute_reachable(layout: &pixtuoid_scene::layout::SceneLayout) -> Vec<bool> 
     visited
 }
 
-/// The crop window centered on `--crop-furniture`'s piece; `None` without the
-/// flag.
+/// The crop window centered on `--crop-furniture`'s piece in the office
+/// `drawn` was drawn on; `None` without the flag.
 pub(crate) fn furniture_crop(
     args: &SnapshotArgs,
-    scene: &SceneState,
+    drawn: Option<&pixtuoid_scene::look::Hits>,
     cols: u16,
     rows: u16,
 ) -> Result<Option<ratatui::layout::Rect>> {
     let Some(furniture_str) = &args.crop_furniture else {
         return Ok(None);
     };
-    let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
-    let layout = pixtuoid_scene::layout::SceneLayout::compute(
-        pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
-        Some(scene.floor_capacities[0]),
-        args.floor_seed,
-    )
-    .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
-    let found = match furniture_str.to_lowercase().as_str() {
-        "desk" => layout.home_desks.first().map(|d| d.at),
-        name => {
-            // Fail loudly, as an unknown --theme/--weather does: a typo'd crop
-            // target silently writing the full uncropped PNG defeats the point
-            // of the flag.
-            let kind = crate::scenes::waypoint_target(name).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "unknown --crop-furniture {name:?}; valid: pantry | couch | vending | printer | meeting | sofa | chair | island | snackshelf | desk"
-                )
-            })?;
-            layout
-                .waypoints
-                .iter()
-                .find(|w| w.kind == kind)
-                .map(|w| w.pos)
-        }
+    let kind = match furniture_str.to_lowercase().as_str() {
+        "desk" => None,
+        // Fail loudly, as an unknown --theme/--weather does: a typo'd crop
+        // target silently writing the full uncropped PNG defeats the point
+        // of the flag.
+        name => Some(crate::scenes::waypoint_target(name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "unknown --crop-furniture {name:?}; valid: pantry | couch | vending | printer | meeting | sofa | chair | island | snackshelf | desk"
+            )
+        })?),
+    };
+    let layout = drawn
+        .map(pixtuoid_scene::look::Hits::layout)
+        .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
+    let found = match kind {
+        None => layout.home_desks.first().map(|d| d.at),
+        Some(kind) => layout
+            .waypoints
+            .iter()
+            .find(|w| w.kind == kind)
+            .map(|w| w.pos),
     };
     let target = found.ok_or_else(|| {
         anyhow::anyhow!("no {furniture_str:?} waypoint in this layout (terminal too small?)")
@@ -438,9 +418,9 @@ pub(crate) fn save_renderer_animation(
     )
 }
 
-/// One frame of `ctx`'s floor: `draw_scene`'s, or `pixel`'s office under
-/// the frame's text, as the TUI's cutaway draws it. What the classic frame
-/// answers a pointer with.
+/// One frame of `ctx`'s floor: `draw_scene`'s, or `pixel`'s office under the
+/// frame's text, as the TUI's cutaway draws it. What the classic frame answers
+/// a pointer with.
 pub(crate) fn draw_frame(
     term: &mut Terminal<TestBackend>,
     ctx: &mut DrawCtx<'_>,
@@ -450,7 +430,13 @@ pub(crate) fn draw_frame(
         return draw_scene(term, ctx);
     };
     let under = draw_over_image(term, ctx)?;
-    pixel.render(ctx.world, ctx.theme, Some(under))?;
+    let world = pixtuoid_scene::floor::FloorInputs {
+        scene: ctx.scene(),
+        now: ctx.now,
+        conditions: ctx.conditions,
+        pets: ctx.pets,
+    };
+    pixel.render(world, ctx.theme, Some(under))?;
     Ok(None)
 }
 
@@ -460,21 +446,26 @@ pub(crate) fn save_animation(
     job: &AnimJob,
     term: &mut Terminal<TestBackend>,
     floor: &mut PerFloor,
-    floor_meta: FloorMeta,
+    conditions: Conditions,
     skip_ms: u64,
     debug_walkable: bool,
     pixel: Option<PixelOffice<FloorSession>>,
 ) -> Result<()> {
-    let scene = job.scene;
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     job.encode(
         skip_ms,
         &mut (term, pixel),
         |(term, pixel), now, _| {
-            let mut draw_ctx = DrawCtx {
-                debug_walkable,
-                ..DrawCtx::offscreen(floor, office.stores(), job.theme, scene, now, floor_meta)
-            };
+            let mut draw_ctx = DrawCtx::offscreen(
+                floor,
+                office.stores(),
+                job.theme,
+                job.scene,
+                0,
+                now,
+                conditions,
+            );
+            draw_ctx.debug_walkable = debug_walkable;
             draw_frame(term, &mut draw_ctx, pixel.as_mut()).map(drop)
         },
         |(term, pixel)| {

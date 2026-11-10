@@ -27,8 +27,7 @@ use super::geometry::{DESKTOP_UNIT, Monitor};
 use super::offscreen::{OfficeRenderer, WindowFrame};
 use crate::config::{self, FloatingConfig};
 use pixtuoid_scene::cutaway::chrome_cell;
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
-use pixtuoid_scene::look::Place;
+use pixtuoid_scene::floor::{Conditions, FloorInputs, PetInputs};
 use pixtuoid_scene::theme::Theme;
 
 /// Wake reasons delivered to the winit loop from the background tokio pipeline.
@@ -68,8 +67,8 @@ pub(crate) struct FloatingApp {
     /// reach that state because `resumed` sets `live` BEFORE `window` and
     /// `redraw`'s window guard runs first. Don't reorder those assignments.
     live: Option<super::LivePipeline>,
-    /// The buffer size the capacity atomics were last synced for — capacity only changes
-    /// with the window size, so re-sync only on a size change (not every frame).
+    /// The buffer size the floor capacities were last published for — capacity only
+    /// changes with the window size, so re-publish only on a size change (not every frame).
     last_caps_size: Option<(u16, u16)>,
     /// Latest cursor position (physical px) — for the corner resize hit-test on click.
     cursor: PhysicalPosition<f64>,
@@ -416,9 +415,9 @@ impl FloatingApp {
         )
     }
 
-    /// The office's weather and motion; the office picks each floor's own.
-    fn floor_meta(&self) -> FloorMeta {
-        FloorMeta::ground().with_motion(self.motion)
+    /// The office's weather and motion, which every floor shares.
+    fn conditions(&self) -> Conditions {
+        Conditions::default().with_motion(self.motion)
     }
 
     /// Feed the audio what the office sounds like now, painting nothing.
@@ -427,7 +426,7 @@ impl FloatingApp {
             return;
         };
         crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
-        self.renderer.hear(&scene, self.floor_meta(), self.ui.now());
+        self.renderer.hear(&scene, self.conditions(), self.ui.now());
     }
 
     fn paint(&mut self) {
@@ -444,7 +443,7 @@ impl FloatingApp {
         let Some((scene, floor_caps)) = self
             .live
             .as_ref()
-            .map(|l| (l.scene_rx.borrow().clone(), Arc::clone(&l.floor_caps)))
+            .map(|l| (l.scene_rx.borrow().clone(), l.floor_caps.clone()))
         else {
             return;
         };
@@ -461,9 +460,9 @@ impl FloatingApp {
         // ONE clock read, so the overlays below annotate the frame actually rendered.
         let now = self.ui.now();
         let world = FloorInputs {
-            scene: &scene,
+            scene: &*scene,
             now,
-            floor: self.floor_meta(),
+            conditions: self.conditions(),
             pets: PetInputs {
                 pet: None,
                 petting: self.petting.as_ref(),
@@ -480,10 +479,7 @@ impl FloatingApp {
             WindowFrame {
                 world,
                 theme: self.theme,
-                place: Place {
-                    gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                    floor: None,
-                },
+                gateway: pixtuoid_scene::tally::office_gateway(&scene),
                 dim: frames.onboarding.dim,
             },
             (win_w, win_h),
@@ -519,10 +515,7 @@ impl FloatingApp {
                 .and_then(|hit| {
                     // The office picks each floor's pet as it renders; the
                     // tooltip names the one the floor showing drew.
-                    let pets = PetInputs {
-                        pet: self.renderer.showing_pet(),
-                        ..world.pets
-                    };
+                    let pets = self.renderer.showing_pets(world.pets.petting, now);
                     pixtuoid_scene::tooltip::for_hit(hit, &scene, now, pets)
                 })
                 .map(|tip| (tip, (cursor.0 as i32, cursor.1 as i32))),

@@ -74,8 +74,8 @@ pub(crate) fn floor_capacities(
 ) -> [usize; MAX_FLOORS] {
     std::array::from_fn(|i| {
         // The ONE seed derivation every call site shares — an inline copy of the
-        // formula would silently drift the boot capacities from the rendered layout
-        // (over-seeded atomics strand agents on unrendered desks).
+        // formula would silently drift the published capacities from the rendered
+        // layout, seating agents at desks it lacks.
         let seed = pixtuoid_scene::floor::floor_seed(i);
         offices
             .values()
@@ -91,20 +91,16 @@ pub(crate) fn floor_capacities(
     })
 }
 
-/// [`floor_capacities`] as the boot seed. When a floor's layout rejects the
-/// office (e.g. too small), fall back to `FALLBACK_DESKS` for that floor so the
-/// reducer can still seat agents — they may render off-grid on the tiny
-/// terminal, but won't be silently dropped during the boot race before the first
-/// TUI frame.
+/// [`floor_capacities`] of `term` as the boot seed: what the first frame will
+/// publish, so the boot race seats no one that frame moves.
 pub(crate) fn boot_capacities_for(plan: Plan, term: TermSize) -> [usize; MAX_FLOORS] {
     floor_capacities(&plan.seat_extents(term))
-        .map(|cap| if cap == 0 { FALLBACK_DESKS } else { cap })
 }
 
-/// Clamp each per-floor boot capacity to an optional `--max-desks` cap, so the boot
-/// atomics are never seeded above the real layout capacity (`fetch_max` only grows; an
-/// over-seed strands agents on non-existent desks until the terminal grows).
-fn cap_boot_capacities(base: [usize; MAX_FLOORS], cap: Option<usize>) -> [usize; MAX_FLOORS] {
+/// Clamp each floor's capacity to an optional `--max-desks` cap: the one clamp
+/// the boot seed and every frame's publish share, so the first frame re-seats no
+/// one the boot seated.
+pub(crate) fn cap_capacities(base: [usize; MAX_FLOORS], cap: Option<usize>) -> [usize; MAX_FLOORS] {
     match cap {
         Some(c) => base.map(|x| x.min(c)),
         None => base,
@@ -113,7 +109,7 @@ fn cap_boot_capacities(base: [usize; MAX_FLOORS], cap: Option<usize>) -> [usize;
 
 /// The headless-vs-interactive boot capacity POLICY: headless (no `plan`) honors
 /// `--max-desks` UNCLAMPED and never calls `measure`; interactive clamps
-/// [`boot_capacities_for`] to the cap ([`cap_boot_capacities`]).
+/// [`boot_capacities_for`] to the cap ([`cap_capacities`]).
 pub(crate) fn resolve_boot_caps(
     desk_cap: Option<usize>,
     plan: Option<Plan>,
@@ -122,7 +118,7 @@ pub(crate) fn resolve_boot_caps(
     match (desk_cap, plan) {
         (Some(cap), None) => [cap; MAX_FLOORS],
         (None, None) => [FALLBACK_DESKS; MAX_FLOORS],
-        (cap, Some(plan)) => cap_boot_capacities(boot_capacities_for(plan, measure()), cap),
+        (cap, Some(plan)) => cap_capacities(boot_capacities_for(plan, measure()), cap),
     }
 }
 
@@ -159,7 +155,15 @@ fn summarize(scene: &SceneState) -> String {
                 }
                 ActivityState::RequiresAction { reason: None } => "requires_action".to_string(),
             };
-            format!("{}@{}:{}", sanitize_line(&a.label), a.desk_index.0, state)
+            let desk = a.desk.map_or_else(
+                || "-".to_owned(),
+                // Counted across the whole office, so no two floors' desks print alike.
+                |desk| {
+                    let below: usize = scene.floor_capacities().iter().take(desk.floor).sum();
+                    (below + desk.index.0).to_string()
+                },
+            );
+            format!("{}@{desk}:{state}", sanitize_line(&a.label))
         })
         .collect();
     // Daemon-style sources (the OpenClaw gateway lobster) render as wandering mascots,
@@ -677,12 +681,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn boot_capacities_falls_back_to_default_on_tiny_terminal() {
-        let caps = boot_capacities_for(classic(), term(10, 10));
-        assert_eq!(caps, [FALLBACK_DESKS; MAX_FLOORS]);
-    }
-
     /// A queue nobody drains: the pushes past its capacity are refused and
     /// counted, the stall is flagged, and the lines it kept are the first ones,
     /// in order.
@@ -810,6 +808,37 @@ mod tests {
         );
         assert!(summary.contains(":idle"), "got: {summary}");
         assert!(summary.contains('@'), "got: {summary}");
+    }
+
+    /// A desk counts on from the floors below it; an unseated agent has none to
+    /// show.
+    #[test]
+    fn summarize_numbers_desks_across_floors_and_shows_an_unseated_agent_deskless() {
+        use pixtuoid_core::AgentId;
+        use pixtuoid_core::source::AgentEvent;
+        let mut caps = [0; MAX_FLOORS];
+        caps[..2].copy_from_slice(&[1, 1]);
+        let mut scene = SceneState::new(caps);
+        let mut reducer = Reducer::new();
+        let now = SystemTime::now();
+        for (i, repo) in ["a", "b", "c"].into_iter().enumerate() {
+            reducer.apply(
+                &mut scene,
+                AgentEvent::SessionStart {
+                    agent_id: AgentId::from_transcript_path(&format!("/p/{repo}.jsonl")),
+                    source: "claude-code".into(),
+                    session_id: repo.into(),
+                    cwd: std::path::PathBuf::from("/").join(repo),
+                    parent_id: None,
+                },
+                now + std::time::Duration::from_secs(i as u64),
+                Transport::Hook,
+            );
+        }
+        let summary = summarize(&scene);
+        for agent in ["cc\u{b7}a@0:idle", "cc\u{b7}b@1:idle", "cc\u{b7}c@-:idle"] {
+            assert!(summary.contains(agent), "{agent} in {summary}");
+        }
     }
 
     #[test]
@@ -985,12 +1014,12 @@ mod tests {
         let base = boot_capacities_for(classic(), term(192, 48));
         let layout_max = *base.iter().max().unwrap();
         assert_eq!(
-            cap_boot_capacities(base, Some(layout_max + 100)),
+            cap_capacities(base, Some(layout_max + 100)),
             base,
             "cap above layout capacity must clamp down to the layout, not inflate"
         );
-        assert!(cap_boot_capacities(base, Some(1)).iter().all(|&c| c <= 1));
-        assert_eq!(cap_boot_capacities(base, None), base);
+        assert!(cap_capacities(base, Some(1)).iter().all(|&c| c <= 1));
+        assert_eq!(cap_capacities(base, None), base);
     }
 
     #[test]

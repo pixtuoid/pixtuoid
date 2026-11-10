@@ -28,7 +28,10 @@ use serde_json::Value;
 
 use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
-use crate::source::first_sight::{HEAD_BYTES, Sight, extract_head_fields, first_sight_start};
+use crate::source::first_sight::{
+    HEAD_BYTES, Life, Sight, each_life, extract_head_fields, first_sight_start, holds_life,
+    last_life,
+};
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
@@ -57,7 +60,7 @@ pub use captures::{
 };
 
 /// The committed corpus: every recorded capture, fixture and hermetic script.
-pub(crate) fn sources_root() -> PathBuf {
+pub fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
@@ -256,9 +259,8 @@ const _: () = assert!(
 );
 
 /// PER-FLOOR desk capacity for the driven scene. Registration past the TOTAL is
-/// REFUSED, and SILENTLY — so a wire carrying more agents than that reads as
-/// "decoded but never reached the scene", exactly the false verdict every driver
-/// here exists to avoid.
+/// kept unseated: in the scene but drawn on no floor, so `wire_to_pixels` would
+/// measure no pixels for it.
 ///
 /// SECOND consumer, in another crate: `wire_to_pixels` shapes its EMPTY pixel
 /// baseline with this same value, so changing it moves that test's measured
@@ -383,8 +385,9 @@ impl Drive {
     /// source: the dispatcher routes by the envelope's own `_pixtuoid_source`
     /// stamp.
     ///
-    /// There is no seed here by construction — a hook for an unknown id
-    /// REGISTERS it (hooks are proof of life), so hook bytes never need one.
+    /// There is no seed here by construction: a hook that may register carries
+    /// its identity (`SessionStart`/`Identity`), and a seed would hide one that
+    /// doesn't.
     pub fn hooks() -> Self {
         Self {
             transport: Transport::Hook,
@@ -393,9 +396,9 @@ impl Drive {
         }
     }
 
-    /// Lead each life's first feed of the transcript with the `SessionStart` the
-    /// watcher's `emit_first_sight` would emit for it, keyed by the source's
-    /// registry row.
+    /// Lead each life of the transcript, a life after its own end within one feed
+    /// included, with the `SessionStart` the watcher's `emit_first_sight` would
+    /// emit for it, keyed by the source's registry row.
     ///
     /// Not a free choice: a transcript carrying no `SessionStart` of its own is
     /// registered in production by the watcher, so an offline driver must seed
@@ -436,8 +439,8 @@ impl Drive {
         };
         let path = Path::new(logical.as_str());
         // The id deriver over the normalized key, as the watcher derives it:
-        // `backfill_identity` never heals a non-empty session_id, so any other
-        // spelling keys a twin of the hook-created slot forever.
+        // nothing heals a slot's session_id, so any other spelling keys a twin
+        // of the hook-created slot forever.
         self.seeded.then(|| {
             (
                 source.as_str(),
@@ -552,19 +555,19 @@ impl Fold {
         self.driven.events.push(event);
     }
 
-    /// The seed `drive` leads a feed of `lines` with when the watcher's gate
-    /// makes it a first sight, else `None`; the claim then follows `decoded`,
-    /// whose `SessionEnd` ends it.
+    /// The seed `drive` leads `life`, one life of a feed of `lines`, with when
+    /// the watcher's gate makes it a first sight, else `None`; the claim then
+    /// follows `life`'s verdict.
     fn first_sight<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
+        own: Option<AgentId>,
         lines: &[Option<S>],
-        decoded: &[AgentEvent],
+        life: &[AgentEvent],
     ) -> Option<AgentEvent> {
-        let (source, _, session_id) = drive.sighted()?;
-        let id = AgentId::from_parts(source, &session_id);
-        let leads = Sight::leads(self.sights.get(&id).map(|s| s.sight))
-            .unwrap_or_else(|| decoded.iter().any(AgentEvent::shows_activity));
+        let id = own?;
+        let leads =
+            Sight::leads(self.sights.get(&id).map(|s| s.sight)).unwrap_or_else(|| holds_life(life));
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.entry(id).or_insert_with(|| Sighted {
             sight: Sight::Claimed,
@@ -574,8 +577,7 @@ impl Fold {
         if leads {
             sighted.sight = Sight::Claimed;
         }
-        let ends = |e: &AgentEvent| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == id);
-        if decoded.iter().any(ends) {
+        if last_life(life, id) == Some(Life::Ended) {
             sighted.sight = Sight::Ended;
         }
         seed
@@ -598,17 +600,24 @@ impl Fold {
                     decoded.extend(events);
                 }
             }
-            let mut fed = Vec::new();
-            if let Some(seed) = self.first_sight(drive, &lines, &decoded) {
-                self.driven.seed_events += 1;
-                fed.push(seed);
-            }
-            fed.extend(decoded);
-            for event in fed {
-                self.apply(drive.transport, event, at);
-                // Each event is observed BEFORE and AFTER a cascade tick, so a
-                // transient class a later event resolves still counts as reached.
-                self.tick(at + CASCADE_TICK);
+            let own = (drive.sighted()).map(|(source, _, id)| AgentId::from_parts(source, &id));
+            let lives = match own {
+                Some(own) => each_life(decoded, own),
+                None => vec![decoded],
+            };
+            for life in lives {
+                let mut fed = Vec::new();
+                if let Some(seed) = self.first_sight(drive, own, &lines, &life) {
+                    self.driven.seed_events += 1;
+                    fed.push(seed);
+                }
+                fed.extend(life);
+                for event in fed {
+                    self.apply(drive.transport, event, at);
+                    // Each event is observed BEFORE and AFTER a cascade tick, so a
+                    // transient class a later event resolves still counts as reached.
+                    self.tick(at + CASCADE_TICK);
+                }
             }
             let d = &mut self.driven;
             for msg in &d.presence[presence] {
@@ -858,6 +867,28 @@ mod tests {
             "the second life's seed: {:?}",
             d.events[fed]
         );
+    }
+
+    /// One feed holding a life, its own end and a life after it registers the
+    /// second life again before its events, as the watcher's read does.
+    #[test]
+    fn a_life_after_its_own_end_registers_again_within_one_feed() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let mut fold = Fold::default();
+        let feed = [tool_line(), exit.to_string(), tool_line()];
+        fold.feed(&drive, feed, default_now());
+        let d = fold.finish();
+        let lifecycle: Vec<&str> = (d.events.iter())
+            .filter_map(|e| match e {
+                AgentEvent::SessionStart { .. } => Some("start"),
+                AgentEvent::SessionEnd { .. } => Some("end"),
+                AgentEvent::ToolUseStart { .. } => Some("tool"),
+                _ => None,
+            })
+            .collect();
+        let want = vec!["start", "tool", "end", "start", "tool"];
+        assert_eq!((lifecycle, d.seed_events), (want, 2));
     }
 
     /// Under Windows' path-key normalization, which rewrites `TRANSCRIPT`'s
