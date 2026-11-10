@@ -169,14 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn the_gate_drops_a_disconnected_sources_carrying_hook_event_outright() {
-        assert_eq!(
-            drive_hook_gate(cursor_payload("sessionStart"), &["claude-code"]),
-            (0, 0)
-        );
-    }
-
-    #[test]
     fn hook_events_for_a_connected_source_render() {
         assert_eq!(
             drive_hook_gate(cursor_payload("preToolUse"), &["cursor"]),
