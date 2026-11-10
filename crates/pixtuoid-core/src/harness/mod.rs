@@ -13,7 +13,7 @@
 //! 1. **Registration comes from the WATCHER, not the decoder.** A JSONL event
 //!    for an unknown id is a documented no-op, so a transcript driven with no
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
-//!    in for `emit_registration`, through [`Sight::registers`], the head scan and
+//!    in for `emit_registration`, through `Sight::registers`, the head scan and
 //!    `first_sight_start` from the SAME registry row. The seed-at-EOF decision
 //!    (`should_seed_at_eof`) and a claim's `LabelHint` stay out, as does every
 //!    reader in the registry's native-only `NativeTranscript` column (the title,
