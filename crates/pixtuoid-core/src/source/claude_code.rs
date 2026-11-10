@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, cwd_basename_label, ellipsize, extract_top_level_cwd,
-    make_tool_detail, non_empty, parsed_tail_lines,
+    make_tool_detail, non_empty,
 };
 
 use crate::AgentId;
@@ -260,7 +260,9 @@ fn fresh_spend(message: &serde_json::Map<String, Value>) -> u64 {
 /// deriver key the same way, so every CC keying site coalesces onto one sprite.
 /// There is deliberately NO user-content arm: content is user-controllable and a
 /// message QUOTING the slash-command wrapper would false-positive, so lifecycle
-/// is the SessionEnd hook + the idle sweep.
+/// is the SessionEnd hook + the idle sweep. Nor is there a structural arm: CC
+/// writes no `session_start`/`session_end` subtype nor top-level
+/// `hook_event_name` to its transcript (none in a census of CC 2.1.295–2.1.318).
 pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &cc_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
@@ -428,6 +430,13 @@ fn classifies_as_turn(v: &Value) -> Option<bool> {
     Some(ACTIVITY_TYPES.contains(&ty) || is_turn_record(obj))
 }
 
+/// Every line of a tail-scan window that parses as JSON, an unterminated last
+/// one included; empty, torn and non-JSON lines are dropped.
+#[cfg(any(feature = "native", test))]
+fn parsed_tail_lines(tail: &[u8]) -> impl Iterator<Item = Value> + '_ {
+    crate::source::admit::lines(tail).filter_map(|line| serde_json::from_str(line.ok()?).ok())
+}
+
 /// When this transcript's SESSION last wrote, read from its tail — the honest
 /// TIGHTENING of the file's mtime in the first-sight recency gate (`ACTIVITY_TYPES`
 /// documents the write that made mtime lie). Widening the tail window is NOT an
@@ -465,28 +474,6 @@ pub(crate) fn cc_activity_recency(tail: &[u8]) -> TailActivity {
         None if saw_classified && !saw_turn && !saw_unclassifiable => TailActivity::SidecarOnly,
         None => TailActivity::Unknown,
     }
-}
-
-/// CC session-end checker: structural lifecycle markers only, never a byte
-/// scan of message content.
-pub fn cc_session_ended(tail: &[u8]) -> bool {
-    // Last-marker-wins: a later `session_start` resets a `session_end` earlier
-    // in the window, so this can't reduce to a simple `.any(predicate)`.
-    let mut last_is_end = false;
-    for v in parsed_tail_lines(tail) {
-        let subtype = v.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
-        let hook = v
-            .get("hook_event_name")
-            .and_then(|s| s.as_str())
-            .unwrap_or("");
-        if subtype == "session_start" {
-            last_is_end = false;
-        }
-        if subtype == "session_end" || hook == "SessionEnd" {
-            last_is_end = true;
-        }
-    }
-    last_is_end
 }
 
 /// CC label: subagent paths → "subagent", else "cc·" + cwd basename. With `cwd`
@@ -527,6 +514,31 @@ mod tests {
     use super::*;
     use crate::source::decoder::test_obj;
     use serde_json::json;
+
+    #[test]
+    fn parsed_tail_lines_yields_only_parseable_lines() {
+        // Any bytes: a torn leading line, CRLF terminators, and empty or torn
+        // segments.
+        let tail = b"3,\"torn\":tru\n{\"type\":\"a\"}\n{\"type\":\"b\"}\r\n\n{\"type\":\"c\"}";
+        let kinds: Vec<String> = parsed_tail_lines(tail)
+            .filter_map(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
+            .collect();
+        assert_eq!(
+            kinds,
+            ["a", "b", "c"],
+            "an unterminated last line parses too"
+        );
+        assert_eq!(
+            parsed_tail_lines(b"").count(),
+            0,
+            "empty tail yields nothing"
+        );
+        assert_eq!(
+            parsed_tail_lines(b"not json at all\n").count(),
+            0,
+            "non-JSON lines are skipped, never panic",
+        );
+    }
 
     /// A subagent's tool hook names it in `agent_id` (hooks.md;
     /// `claude_code/fixtures/subagent-hermetic`): every event it decodes to lands on
@@ -1163,16 +1175,6 @@ mod tests {
         assert!(
             events.is_empty(),
             "quoting the wrapper must not emit SessionEnd: {events:?}"
-        );
-
-        let tail = serde_json::json!({
-            "type": "user",
-            "message": { "role": "user", "content": prose }
-        })
-        .to_string();
-        assert!(
-            !cc_session_ended(tail.as_bytes()),
-            "tail scan must not end a session on quoted wrapper text"
         );
     }
 

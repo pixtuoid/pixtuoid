@@ -52,10 +52,9 @@ pub(crate) fn apply_gated_event(
     true
 }
 
-/// One reconcile-sweep tick — the 1-Hz cadence `reducer_task` runs so exit-grace
+/// One reconcile-sweep tick — the cadence `reducer_task` runs so exit-grace
 /// sweeps fire even when no events arrive. Walks out every slot whose source is
-/// the COMPLEMENT of the connected snapshot, so a blank-source slot that slipped
-/// the per-event gate is swept too. Stateless and registry-driven on purpose: no
+/// not in the connected snapshot. Stateless and registry-driven on purpose: no
 /// prev-set bookkeeping, and an Nth daemon needs no edit here.
 pub(crate) fn reconcile_sweep_tick(
     reducer: &mut Reducer,
@@ -106,18 +105,49 @@ pub(crate) fn apply_gated_presence(
 mod tests {
     use super::*;
 
+    /// The recorded cursor tool run's payloads, stamped `_pixtuoid_source` as
+    /// the shim relays them (the only attribution the gate trusts): each one's
+    /// event name, and what `Drive` decodes it to.
+    fn cursor_payloads() -> Vec<(String, Vec<AgentEvent>)> {
+        use pixtuoid_core::harness::{Drive, fixtures_dir, sources_root};
+        let path = fixtures_dir(&sources_root(), "cursor").join("tool-run/hook-payloads.jsonl");
+        std::fs::read_to_string(&path)
+            .expect("the recorded run")
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| {
+                let payload: serde_json::Value =
+                    serde_json::from_str(l).expect("a recorded payload is JSON");
+                let event = payload["hook_event_name"].as_str().expect("a named event");
+                (event.to_string(), Drive::hooks().lines([l]).events)
+            })
+            .collect()
+    }
+
+    fn cursor_payload(event: &str) -> Vec<AgentEvent> {
+        cursor_payloads()
+            .into_iter()
+            .find_map(|(name, events)| (name == event).then_some(events))
+            .unwrap_or_else(|| panic!("the run records a {event}"))
+    }
+
     // Returns (slots BEFORE the reconcile, live slots AFTER) so the gate and the
-    // 1-Hz reconciler get independent teeth: a source-carrying event is dropped by
-    // the GATE — 0 before reconcile — while a bare activity event only clears at
-    // the RECONCILE. A single "after" count would pass even with the gate removed.
-    fn drive_hook_gate(payload: &serde_json::Value, connected: &[&str]) -> (usize, usize) {
-        use pixtuoid_core::source::decoder::decode_hook_payload;
-        let cs = ConnectedSources::new(connected.iter().map(|s| s.to_string()).collect());
+    // sweep reconciler get independent teeth: a single "after" count would pass
+    // even with the gate removed. The gate runs on `connected_at_gate`, the
+    // reconcile on `connected_at_sweep`.
+    fn drive_hook_gate(
+        events: Vec<AgentEvent>,
+        connected_at_gate: &[&str],
+        connected_at_sweep: &[&str],
+    ) -> (usize, usize) {
+        let sources =
+            |names: &[&str]| ConnectedSources::new(names.iter().map(|s| s.to_string()).collect());
+        let cs = sources(connected_at_gate);
         let mut scene = SceneState::uniform(8);
         let mut reducer = Reducer::new();
         let mut gate_logged = HashSet::new();
         let now = SystemTime::now();
-        for ev in decode_hook_payload(payload.clone()).expect("decode hook") {
+        for ev in events {
             apply_gated_event(
                 &mut reducer,
                 &mut scene,
@@ -128,59 +158,38 @@ mod tests {
                 &mut gate_logged,
             );
         }
-        let before = scene.agents.len();
-        reconcile_sweep_tick(&mut reducer, &mut scene, &cs, now);
+        let gated = scene.agents.len();
+        reconcile_sweep_tick(&mut reducer, &mut scene, &sources(connected_at_sweep), now);
         let live = scene
             .agents
             .values()
             .filter(|s| s.exiting_at.is_none())
             .count();
-        (before, live)
+        (gated, live)
     }
 
-    fn cursor_hook(event: &str) -> serde_json::Value {
-        // `_pixtuoid_source` is the only attribution the gate trusts — never the
-        // public `source` field, which CC overloads for the SessionStart reason.
-        serde_json::json!({
-            "hook_event_name": event, "session_id": "c7-sess", "cwd": "",
-            "conversation_id": "c7-sess", "workspace_roots": ["/x/proj"],
-            "tool_name": "Shell", "tool_input": {"command": "ls"},
-            "_pixtuoid_source": "cursor"
-        })
-    }
-
+    /// No payload of a disconnected source's recorded run registers.
     #[test]
-    fn the_gate_drops_a_disconnected_sources_carrying_hook_event_outright() {
-        // A `sessionStart` decodes to a single source-carrying `SessionStart`, so
-        // the per-event gate drops it before it ever registers — no transient.
-        let (before, live) = drive_hook_gate(&cursor_hook("sessionStart"), &["claude-code"]);
+    fn a_disconnected_sources_hook_payloads_never_register() {
+        let run = cursor_payloads().into_iter().flat_map(|(_, events)| events);
         assert_eq!(
-            before, 0,
-            "the gate must drop a disconnected SessionStart pre-reconcile"
-        );
-        assert_eq!(live, 0, "and no sprite survives");
-    }
-
-    #[test]
-    fn a_disconnected_sources_hook_activity_leaves_no_persistent_sprite() {
-        // A bare activity event slips the gate once (its id has no slot yet) and
-        // synthesizes a transient blank slot the reconcile sweeps. Pins the
-        // CONTRACT, not the transient count, so a fix that closes the one-slot
-        // window stays green.
-        let (_before, live) = drive_hook_gate(&cursor_hook("preToolUse"), &["claude-code"]);
-        assert_eq!(
-            live, 0,
-            "a disconnected source's hook activity must leave no live sprite after the reconcile"
+            drive_hook_gate(run.collect(), &["claude-code"], &["claude-code"]),
+            (0, 0)
         );
     }
 
     #[test]
     fn hook_events_for_a_connected_source_render() {
-        let (_before, live) = drive_hook_gate(&cursor_hook("preToolUse"), &["cursor"]);
         assert_eq!(
-            live, 1,
-            "a connected source's hook activity must render exactly one live sprite"
+            drive_hook_gate(cursor_payload("preToolUse"), &["cursor"], &["cursor"]),
+            (1, 1)
         );
+    }
+
+    #[test]
+    fn the_sweep_tick_walks_out_a_source_disconnected_after_it_registered() {
+        let run = cursor_payload("preToolUse");
+        assert_eq!(drive_hook_gate(run, &["cursor"], &["claude-code"]), (1, 0));
     }
 
     #[test]

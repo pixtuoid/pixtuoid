@@ -9,7 +9,7 @@ use pixtuoid_core::state::reducer::{
 use pixtuoid_core::state::{ActivityState, FloorDesk, SceneState};
 
 use crate::{
-    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, proof_of_life, sess_end, start,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, identity, proof_of_life, sess_end, start,
     tool_use_end, tool_use_start, user_action_request,
 };
 
@@ -772,76 +772,19 @@ fn codex_subagent_cascades_with_parent_on_session_end() {
     );
 }
 
+/// Activity names no identity: only a start or a hook's `Identity` registers.
 #[test]
-fn hook_tool_use_start_for_unknown_id_synthesizes_slot_and_goes_running() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_parts("claude-code", "gated-sess");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        Some("Edit: foo.rs"),
-        t0,
-        Transport::Hook,
-    );
-
-    let slot = scene
-        .agents
-        .get(&id)
-        .expect("hook event must synthesize the slot");
-    assert!(
-        matches!(slot.state, ActivityState::Running { .. }),
-        "the synthesizing event itself applies to the fresh slot"
-    );
-    assert_eq!(&*slot.label, "#1");
-    assert!(slot.cwd.as_os_str().is_empty(), "no cwd on the event");
-}
-
-#[test]
-fn hook_user_action_request_for_unknown_id_synthesizes_slot_in_requires_action_state() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_parts("claude-code", "parked-sess");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
-
-    let slot = scene
-        .agents
-        .get(&id)
-        .expect("hook UserActionRequest must synthesize the slot");
-    assert!(
-        matches!(slot.state, ActivityState::RequiresAction { .. }),
-        "slot enters RequiresAction so the permission prompt is visible"
-    );
-}
-
-#[test]
-fn jsonl_event_for_unknown_id_stays_a_no_op() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
+fn activity_for_an_unknown_id_creates_nothing_on_either_transport() {
     let id = AgentId::from_parts("codex", "replayed-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        None,
-        t0,
-        Transport::Jsonl,
-    );
-    user_action_request(&mut r, &mut scene, id, "perm", t0, Transport::Jsonl);
-
-    assert!(
-        scene.agents.is_empty(),
-        "JSONL events for an unknown id must not synthesize a slot"
-    );
+    for from in [Transport::Hook, Transport::Jsonl] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        tool_use_start(&mut r, &mut scene, id, Some("t1"), None, t0, from);
+        user_action_request(&mut r, &mut scene, id, "perm", t0, from);
+        tool_use_end(&mut r, &mut scene, id, Some("t1"), t0, from);
+        assert!(scene.agents.is_empty(), "{from:?}");
+    }
 }
 
 #[test]
@@ -853,74 +796,10 @@ fn hook_session_end_for_unknown_id_does_not_create_slot() {
 
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
 
-    assert!(scene.agents.is_empty(), "SessionEnd must not synthesize");
+    assert!(scene.agents.is_empty(), "SessionEnd must not register");
 }
 
-#[test]
-fn session_start_after_hook_synthesis_coalesces_into_same_slot() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_parts("claude-code", "revived-sess");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        None,
-        t0,
-        Transport::Hook,
-    );
-    let desk = scene.agents.get(&id).expect("synthesized").desk;
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: id,
-            source: "claude-code".into(),
-            session_id: "revived-sess".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: None,
-        },
-        t0 + Duration::from_secs(1),
-        Transport::Hook,
-    );
-
-    assert_eq!(scene.agents.len(), 1, "no duplicate sprite");
-    assert_eq!(
-        scene.agents.get(&id).unwrap().desk,
-        desk,
-        "the agent keeps its desk"
-    );
-}
-
-#[test]
-fn hook_synthesized_slot_is_exempt_from_unknown_cwd_reap() {
-    use pixtuoid_core::state::reducer::STALE_UNKNOWN_CWD_TIMEOUT;
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_parts("claude-code", "parked-sess");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
-    assert!(
-        !scene.agents.get(&id).expect("synthesized").unknown_cwd,
-        "process-proven slot must not carry the startup-ghost flag"
-    );
-
-    r.tick(
-        &mut scene,
-        t0 + STALE_UNKNOWN_CWD_TIMEOUT + Duration::from_secs(60),
-    );
-    let slot = scene.agents.get(&id).expect("still present after 4 min");
-    assert!(
-        slot.exiting_at.is_none(),
-        "a parked-on-permission synthesized slot must ride the blocked timeout, not the 3-min ghost reap"
-    );
-}
-
-/// A synthesis `authorizes` refuses leaves no hook record behind: a
+/// An `Identity` `authorizes` refuses leaves no hook record behind: a
 /// straggler's hook call must not eat the transcript's copy of that call once a
 /// new life registers.
 #[test]
@@ -934,6 +813,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
     let step = HOOK_WINS_WINDOW / 4;
 
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
+    identity(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT, t0 + step);
     tool_use_start(
         &mut r,
         &mut scene,
@@ -945,7 +825,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
     );
     assert!(
         !scene.agents.contains_key(&id),
-        "premise: a straggler's synthesis is refused"
+        "premise: a straggler's Identity is refused"
     );
 
     r.apply(
@@ -977,51 +857,6 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
     assert!(
         matches!(slot.state, ActivityState::Running { .. }),
         "the JSONL ToolUseStart must not be dedup-eaten by the refused hook's record"
-    );
-}
-
-#[test]
-fn duplicate_session_start_backfills_hook_synthesized_slot() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_parts("claude-code", "gated-sess");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        None,
-        t0,
-        Transport::Hook,
-    );
-    assert_eq!(&*scene.agents.get(&id).unwrap().label, "#1");
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: id,
-            source: "claude-code".into(),
-            session_id: "gated-sess".into(),
-            cwd: PathBuf::from("/Users/me/repo"),
-            parent_id: None,
-        },
-        t0 + Duration::from_secs(1),
-        Transport::Hook,
-    );
-
-    let slot = scene.agents.get(&id).unwrap();
-    assert_eq!(&*slot.cwd, std::path::Path::new("/Users/me/repo"));
-    assert!(!slot.unknown_cwd);
-    assert_eq!(&*slot.source, "claude-code", "empty source back-filled");
-    assert_eq!(
-        &*slot.session_id, "gated-sess",
-        "empty session_id back-filled"
-    );
-    assert_eq!(
-        &*slot.label, "cc·repo",
-        "ordinal fallback upgraded with the back-filled source's prefix"
     );
 }
 
@@ -1101,12 +936,15 @@ fn backfill_does_not_clobber_a_renamed_label() {
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    tool_use_start(
-        &mut r,
+    r.apply(
         &mut scene,
-        id,
-        Some("t1"),
-        None,
+        AgentEvent::Identity {
+            agent_id: id,
+            source: "claude-code".into(),
+            session_id: "gated-sess".into(),
+            cwd: None,
+            pid: None,
+        },
         t0,
         Transport::Hook,
     );
@@ -1176,13 +1014,24 @@ fn a_bare_prefix_rename_never_replaces_a_cwd_label() {
 }
 
 #[test]
-fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
+fn two_step_backfill_a_cwd_less_start_then_a_cwd_still_upgrades_the_label() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    r.apply(
+        &mut scene,
+        AgentEvent::Identity {
+            agent_id: id,
+            source: "claude-code".into(),
+            session_id: "gated-sess".into(),
+            cwd: None,
+            pid: None,
+        },
+        t0,
+        Transport::Hook,
+    );
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
@@ -1196,8 +1045,7 @@ fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
         Transport::Hook,
     );
     let slot = scene.agents.get(&id).unwrap();
-    assert_eq!(&*slot.source, "claude-code", "source back-filled first");
-    assert_eq!(&*slot.label, "#1", "no cwd yet — label unchanged");
+    assert_eq!(&*slot.label, "cc#1", "no cwd yet — label unchanged");
 
     r.apply(
         &mut scene,
@@ -1215,7 +1063,7 @@ fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
     assert_eq!(&*slot.cwd, std::path::Path::new("/Users/me/repo"));
     assert_eq!(
         &*slot.label, "cc·repo",
-        "fallback still upgrades after the two-step heal"
+        "fallback still upgrades once a start names the cwd"
     );
 }
 
@@ -1344,7 +1192,7 @@ fn model_info_for_an_unknown_agent_never_registers() {
         );
         assert!(
             scene.agents.is_empty(),
-            "ModelInfo must not synthesize a slot ({transport:?})"
+            "ModelInfo must not register a slot ({transport:?})"
         );
     }
 }
@@ -1592,7 +1440,7 @@ fn usage_for_an_unknown_agent_never_registers() {
         );
         assert!(
             scene.agents.is_empty(),
-            "Usage must not synthesize a slot ({transport:?})"
+            "Usage must not register a slot ({transport:?})"
         );
     }
 }
@@ -1743,35 +1591,34 @@ fn hook_identity_on_existing_unknown_cwd_slot_clears_ghost_reap() {
 }
 
 #[test]
-fn hook_identity_backfills_blank_synthesized_slot() {
+fn hook_identity_heals_a_missing_cwd_but_not_the_label() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let identity = |cwd: Option<&str>| AgentEvent::Identity {
+        agent_id: id,
+        source: "reasonix".into(),
+        session_id: "/Users/dev/proj".into(),
+        cwd: cwd.map(PathBuf::from),
+        pid: None,
+    };
 
-    tool_use_end(&mut r, &mut scene, id, None, t0, Transport::Hook);
-    assert_eq!(&*scene.agents.get(&id).unwrap().label, "#1", "blank slot");
-
+    r.apply(&mut scene, identity(None), t0, Transport::Hook);
+    let fallback = scene.agents.get(&id).unwrap().label.text();
     r.apply(
         &mut scene,
-        AgentEvent::Identity {
-            agent_id: id,
-            source: "reasonix".into(),
-            session_id: "/Users/dev/proj".into(),
-            cwd: Some(PathBuf::from("/Users/dev/proj")),
-            pid: None,
-        },
+        identity(Some("/Users/dev/proj")),
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
 
     let slot = scene.agents.get(&id).unwrap();
-    assert_eq!(&*slot.source, "reasonix", "empty source healed");
-    assert_eq!(&*slot.session_id, "/Users/dev/proj", "session_id healed");
     assert_eq!(&*slot.cwd, std::path::Path::new("/Users/dev/proj"));
     assert!(!slot.unknown_cwd);
     assert_eq!(
-        &*slot.label, "#1",
+        slot.label.text(),
+        fallback,
         "Identity carries no label authority — upgrade stays on SessionStart"
     );
 }
@@ -1952,34 +1799,5 @@ fn reconcile_connected_is_idempotent_on_already_exiting() {
         scene.agents.get(&id).unwrap().exiting_at,
         first,
         "already-exiting slot's exiting_at is left untouched"
-    );
-}
-
-#[test]
-fn reconcile_connected_evicts_a_blank_source_gate_slipper() {
-    let mut scene = SceneState::uniform(4);
-    let mut reducer = Reducer::new();
-    let now = SystemTime::now();
-    let blank = AgentId::from_transcript_path("/p/blank.jsonl");
-
-    tool_use_start(
-        &mut reducer,
-        &mut scene,
-        blank,
-        None,
-        None,
-        now,
-        Transport::Hook,
-    );
-    assert_eq!(
-        scene.agents.get(&blank).unwrap().source.as_ref(),
-        "",
-        "the synthesized slot is blank-source"
-    );
-
-    reducer.reconcile_connected(&mut scene, &connected_set(["claude-code", "codex"]), now);
-    assert!(
-        scene.agents.get(&blank).unwrap().exiting_at.is_some(),
-        "a blank-source gate-slipper is evicted within one reconcile tick"
     );
 }

@@ -1,7 +1,7 @@
 name: fuzz
 
 # ClusterFuzzLite: a PR touching a fuzzed parser gets a short run off the corpus
-# main's long run grows. ADVISORY by construction, like mutants.yml: nothing
+# main's long run grows. ADVISORY by construction: nothing
 # `needs:` it and no queue condition reads it, because a run's red can't convict
 # the PR it ran on. With no build of the base commits, which `cflite_build.yml`
 # would upload on every main push, a reproducible crash "was newly introduced"

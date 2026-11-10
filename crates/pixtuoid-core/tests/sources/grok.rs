@@ -1,7 +1,7 @@
-//! grok's DELEGATING run, recorded from a blocking `spawn_subagent`.
-//! Conformance skips it (`OUTSIDE_CONFORMANCE`): a child is its own grok session with
-//! its own transcript — two sprites, which the conformance harness's one-AgentId
-//! rule cannot hold (the same reason `cursor.rs` exists).
+//! grok's DELEGATING run, recorded from a blocking `spawn_subagent`, and its tool run's
+//! bare `stop`. Conformance skips the first (`OUTSIDE_CONFORMANCE`): a child is its own
+//! grok session with its own transcript — two sprites, which the conformance harness's
+//! one-AgentId rule cannot hold (the same reason `cursor.rs` exists).
 //!
 //! Both halves of the one run are here: the parent's transcript, whose
 //! `subagent_spawned` line registers the child, and the hook wire, where the
@@ -121,6 +121,24 @@ fn only_the_blocking_spawn_carries_the_task_detail() {
         tasks, 1,
         "exactly the one `background: false` spawn mints Task"
     );
+}
+
+/// A swept or never-seen session's turn end, its tool run's own `stop`: an end
+/// carries no identity, so it creates nothing.
+#[test]
+fn a_bare_stop_for_an_unknown_session_registers_nothing() {
+    let lines =
+        fixture_lines(&sources_root().join("grok/fixtures/tool-run-hermetic/hook-payloads.jsonl"));
+    let stop = lines
+        .iter()
+        .find(|l| {
+            serde_json::from_str::<serde_json::Value>(l).expect("valid json")["hookEventName"]
+                == "stop"
+        })
+        .expect("the tool run ends its turn");
+    let d = Drive::hooks().lines([stop]);
+    d.assert_clean("grok's stop");
+    assert_eq!(d.registered(), 0, "{:?}", d.events);
 }
 
 #[test]

@@ -88,6 +88,23 @@ fn delegating_pair_on(
     (parent, child)
 }
 
+/// The `Identity` a hook decoder leads its activity with: a hook's one claim on
+/// a session short of its start.
+fn identity(r: &mut Reducer, scene: &mut SceneState, id: AgentId, source: &str, at: SystemTime) {
+    r.apply(
+        scene,
+        AgentEvent::Identity {
+            agent_id: id,
+            source: source.into(),
+            session_id: "s".into(),
+            cwd: Some(PathBuf::from("/repo")),
+            pid: None,
+        },
+        at,
+        Transport::Hook,
+    );
+}
+
 fn tool_use_start(
     r: &mut Reducer,
     scene: &mut SceneState,
