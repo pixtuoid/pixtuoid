@@ -52,7 +52,7 @@ pub(crate) fn apply_gated_event(
     true
 }
 
-/// One reconcile-sweep tick — the 1-Hz cadence `reducer_task` runs so exit-grace
+/// One reconcile-sweep tick — the cadence `reducer_task` runs so exit-grace
 /// sweeps fire even when no events arrive. Walks out every slot whose source is
 /// not in the connected snapshot. Stateless and registry-driven on purpose: no
 /// prev-set bookkeeping, and an Nth daemon needs no edit here.
@@ -132,7 +132,7 @@ mod tests {
     }
 
     // Returns (slots BEFORE the reconcile, live slots AFTER) so the gate and the
-    // 1-Hz reconciler get independent teeth: a single "after" count would pass
+    // sweep reconciler get independent teeth: a single "after" count would pass
     // even with the gate removed. The gate runs on `connected_at_gate`, the
     // reconcile on `connected_at_sweep`.
     fn drive_hook_gate(
@@ -186,8 +186,6 @@ mod tests {
         );
     }
 
-    /// The 1 Hz tick walks out a slot whose source is disconnected after it
-    /// registered.
     #[test]
     fn the_sweep_tick_walks_out_a_source_disconnected_after_it_registered() {
         let run = cursor_payload("preToolUse");

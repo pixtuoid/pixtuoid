@@ -488,21 +488,24 @@ mod tests {
     /// A read still running when a quit comes is left behind, not waited for.
     #[test]
     fn a_quit_leaves_blocking_work_behind() {
+        /// Past [`QUIT_GRACE`], so a quit that waits for this work fails, not hangs.
         const HELD: Duration = Duration::from_secs(10);
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .build()
             .expect("a runtime");
         let (_release, held) = std::sync::mpsc::channel::<()>();
-        let started = std::time::Instant::now();
+        let (done, is_done) = std::sync::mpsc::channel();
         run_then_quit(runtime, async {
             let (up, is_up) = tokio::sync::oneshot::channel();
             tokio::task::spawn_blocking(move || {
                 let _ = up.send(());
-                held.recv_timeout(HELD)
+                let _ = done.send(held.recv_timeout(HELD));
             });
             is_up.await.expect("it runs");
         });
-        assert!(started.elapsed() < HELD / 2, "{:?}", started.elapsed());
+        let waited = is_done.try_recv();
+        let running = Err(std::sync::mpsc::TryRecvError::Empty);
+        assert_eq!(waited, running, "the quit waited for its blocking work");
     }
 
     #[test]

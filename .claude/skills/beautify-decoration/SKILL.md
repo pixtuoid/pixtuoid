@@ -34,14 +34,14 @@ A repo-specific iteration loop for visually redesigning a decoration in `pixtuoi
    ↓
 7. cargo build --release --workspace    ← rebuild the LIVE binary too
    ↓
-8. Commit with iteration history (which designs were tried, why rejected)
+8. Record the iteration history (which designs were tried, why rejected) in the PR body
 ```
 
 The user is the final judge of "does it look like a fridge / coffee machine / etc." — send only once your own critique against the checklist below passes.
 
 **Step 7 is mandatory.** `cargo build --release --example snapshot` does NOT rebuild the main binary. Users testing with `./target/release/pixtuoid run` won't see sprite changes until the workspace is rebuilt. Forgetting this step is how "I changed the sprite but nothing happened in the live TUI" bugs get filed.
 
-**Step 8 is mandatory.** Commit messages for sprite changes must include the iteration count and a one-line rationale for each rejected attempt. Future editors need to know which alternatives were explored — otherwise they'll re-try the same dead-end designs.
+**Step 8 is mandatory.** A sprite change's PR body, which becomes its squash message on main, must include the iteration count and a one-line rationale for each rejected attempt. Future editors need to know which alternatives were explored — otherwise they'll re-try the same dead-end designs.
 
 ## Sharp edges
 

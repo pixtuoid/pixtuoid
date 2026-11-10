@@ -2397,7 +2397,7 @@ fn task_start_tuids(events: &[(Transport, AgentEvent)]) -> Vec<String> {
 
 /// A walk with omp's decoder keyed by omp's deriver, as its registry row
 /// pairs them: its end ends the path's own agent.
-async fn walk_oversized(
+async fn walk_omp(
     path: &Path,
     window: Duration,
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
@@ -2423,7 +2423,7 @@ async fn oversized_attach_seeds_unmatched_task_dispatch() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     let start_pos = events
         .iter()
         .position(|(_, e)| matches!(e, AgentEvent::SessionStart { .. }))
@@ -2558,7 +2558,7 @@ async fn oversized_attach_matched_task_is_not_seeded() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert!(
         events
             .iter()
@@ -2606,7 +2606,7 @@ async fn pending_span_of_exactly_max_bytes_replays_instead_of_skipping() {
     tokio::fs::write(&path, &full).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert!(
         events
             .iter()
@@ -2628,7 +2628,7 @@ async fn oversized_attach_seeds_dispatches_across_the_full_scan_window() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert_eq!(
         task_start_tuids(&events),
         vec!["tu_deep".to_string(), "tu_near".to_string()],
@@ -2650,7 +2650,7 @@ async fn oversized_attach_ended_session_skips_task_scan() {
     )])));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert!(
         events
             .iter()
@@ -2680,11 +2680,11 @@ async fn a_claimed_paths_oversized_live_append_emits_its_registration_again() {
     tokio::fs::write(&path, HEAD_LINE).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
-    walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
 
     let full = oversized_body(&[task_dispatch_line("tu_task")]);
     tokio::fs::write(&path, &full).await.unwrap();
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     let registration: Vec<_> = (events.iter())
         .filter(|(_, e)| {
             matches!(
@@ -2710,7 +2710,7 @@ async fn oversized_attach_unregistered_skips_task_scan() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized(&path, Duration::from_secs(60), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(60), &cursors, &seen).await;
     assert!(
         events.is_empty(),
         "a gated unregistered oversized file must emit NOTHING — no Task seeding without a slot, got {events:?}"
@@ -2741,7 +2741,7 @@ async fn oversized_attach_dispatch_outside_window_is_missed() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert!(
         events
             .iter()
@@ -2786,7 +2786,7 @@ async fn task_scan_handles_partial_first_line() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert_eq!(
         task_start_tuids(&events),
         vec!["tu_inside".to_string()],
@@ -3398,7 +3398,7 @@ async fn task_scan_skips_empty_and_non_utf8_lines_and_still_seeds_a_dispatch() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert_eq!(
         task_start_tuids(&events),
         vec!["tu_x".to_string()],
@@ -4335,6 +4335,8 @@ mod backlog {
     const TOOL: &str = "{\"type\":\"tool_use\"}\n";
     const WORK: &str = "{\"type\":\"usage\",\"cwd\":\"/repo\"}\n{\"type\":\"tool_use\"}\n";
     const END: &str = "{\"type\":\"system\",\"subtype\":\"session_end\"}\n";
+    const END_THEN_TOOL: &str =
+        "{\"type\":\"system\",\"subtype\":\"session_end\"}\n{\"type\":\"tool_use\"}\n";
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Sent {
@@ -4624,7 +4626,7 @@ mod backlog {
 
     #[tokio::test]
     async fn a_read_declares_around_what_it_replays() {
-        let rows: [(&str, &[Step]); 8] = [
+        let rows: [(&str, &[Step]); 9] = [
             (
                 "what predates the watch opens after its last event, and the next read is live",
                 &[
@@ -4680,6 +4682,17 @@ mod backlog {
                 ],
             ),
             (
+                "a life after its own end in one read opens again after it registers again",
+                &[
+                    (Append(USAGE), Walk, &[Start, Rename, Opens, Usage]),
+                    (
+                        Append(END_THEN_TOOL),
+                        Walk,
+                        &[Opens, End, Start, Rename, Opens, Tool],
+                    ),
+                ],
+            ),
+            (
                 "an oversized skip replays nothing and its next read opens",
                 &[
                     (Oversized, Boot, &[Start, Rename]),
@@ -4728,7 +4741,7 @@ mod backlog {
 }
 
 /// A life after its session's own end registers again before its events, in a
-/// replay and in one live read: the reducer revives a walked-out slot only on a
+/// replay and in one live read: the reducer revives an exiting slot only on a
 /// start, and omp's resume writes none.
 #[tokio::test]
 async fn a_life_after_its_own_end_registers_again_within_one_read() {
@@ -4752,7 +4765,7 @@ async fn a_life_after_its_own_end_registers_again_within_one_read() {
     let seen = Arc::new(Mutex::new(HashMap::new()));
     let window = Duration::from_secs(3600);
 
-    let replay = walk_oversized(&path, window, &cursors, &seen).await;
+    let replay = walk_omp(&path, window, &cursors, &seen).await;
     assert_eq!(
         lifecycle(&replay),
         ["start", "tool", "end", "start", "tool"]
@@ -4770,7 +4783,7 @@ async fn a_life_after_its_own_end_registers_again_within_one_read() {
     tokio::io::AsyncWriteExt::write_all(&mut f, format!("{OMP_EXIT_LINE}{TOOL}").as_bytes())
         .await
         .unwrap();
-    let live = walk_oversized(&path, window, &cursors, &seen).await;
+    let live = walk_omp(&path, window, &cursors, &seen).await;
     assert_eq!(lifecycle(&live), ["end", "start", "tool"]);
     assert!(matches!(
         seen.lock().await.get(&path),

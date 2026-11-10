@@ -75,7 +75,7 @@ a lint to dodge the bump.
 3. **Merge it** (squash). That merge is the *irreversible* step: the `release` job
    publishes every crate to crates.io over OIDC, creates `vX.Y.Z` and a DRAFT
    GitHub release carrying the changelog; the tag then fires `release.yml`,
-   which builds every target in its build matrix and the debs, attaches them,
+   which builds every target in its build matrix, attaches them,
    publishes the draft, and publishes the npm packages. The crates.io and npm
    jobs each wait for an approval from the `release` environment's reviewer,
    crates.io first. The tag also starts a homebrew-core autobump.
@@ -235,8 +235,8 @@ adding code for a finding, establish its case is reachable: when a test or
 sweep shows it isn't, that test is the mechanism and no defensive code lands) ·
 RE-SCOPED → #N (real and INTRODUCED — or first made reachable — by this
 change, and bigger than the PR: split it off into #N; a redesign that brings
-the finding into scope ends FIXED) · FOLLOW-UP → #N (real and PRE-EXISTING,
-and not FIXED in place
+the finding into scope ends FIXED) · FOLLOW-UP → #N (real and reachable at
+the base, and not FIXED in place
 — in place fits a small defect inside code this change already touches,
 pulling in no new must-run item, and a breach of a written rule there is fixed
 in place whatever it pulls in (AGENTS.md's org rules: Refactor) — so it is

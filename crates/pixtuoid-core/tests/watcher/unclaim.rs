@@ -160,7 +160,7 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
 }
 
 /// The reducer forgets a claimed session on its own (the stale sweep, a
-/// disconnect's reconcile, a desk it refused), and the session's next read that
+/// disconnect's reconcile), and the session's next read that
 /// shows life registers it again, renaming nothing yet under the label its
 /// reads last gave it: omp's is its transcript's title.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -172,23 +172,20 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
     use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, Reducer, STALE_BLOCKED_TIMEOUT};
 
     const DESKS: usize = 8;
-    /// What forgets the session, and the desks first sight meets.
-    type Forget = (&'static str, usize, fn(&mut Watched));
-    let forgets: [Forget; 3] = [
-        ("the stale sweep", DESKS, |fold| {
+    /// What forgets the session.
+    type Forget = (&'static str, fn(&mut Watched));
+    let forgets: [Forget; 2] = [
+        ("the stale sweep", |fold| {
             let swept = fold.at + STALE_BLOCKED_TIMEOUT * 2;
             fold.reducer.tick(&mut fold.scene, swept);
             fold.at = swept + EXIT_GRACE_WINDOW * 2;
             fold.reducer.tick(&mut fold.scene, fold.at);
         }),
-        ("a disconnect's reconcile", DESKS, |fold| {
+        ("a disconnect's reconcile", |fold| {
             fold.reducer
                 .reconcile_connected(&mut fold.scene, &HashSet::new(), fold.at);
             fold.at += EXIT_GRACE_WINDOW * 2;
             fold.reducer.tick(&mut fold.scene, fold.at);
-        }),
-        ("a desk refusal", 0, |fold| {
-            fold.scene.floor_capacities = SceneState::uniform(DESKS).floor_capacities;
         }),
     ];
     let is_call = |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { .. });
@@ -207,13 +204,13 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
         let calls = (drive.lines(tail.lines()).events.iter())
             .filter(|e| is_call(e))
             .count();
-        for (forget, desks, forgotten) in forgets {
+        for (forget, forgotten) in forgets {
             let case = format!("{source}, {forget}");
             let (root, path) = stage(&transcript, &dir, &head);
             let (tx, rx) = mpsc::channel(64);
             let handle = spawn_source(source, root.path().to_path_buf(), tx);
             let mut fold = Watched::new(rx, Reducer::new(), SystemTime::now());
-            fold.scene = SceneState::uniform(desks);
+            fold.scene = SceneState::uniform(DESKS);
             let ends = a_first_sight_ends(source, &transcript, &head);
             let first_sight = fold.until(&case, ends).await;
             let id = first_sight

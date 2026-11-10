@@ -88,8 +88,8 @@ fn within(t: std::time::SystemTime, window: Duration) -> bool {
 /// transcript be "ended" and "active" over different bytes.
 pub(super) const TAIL_BYTES: u64 = 8192;
 
-/// [`last_life`] of a tail `window`'s lines, decoded as a read decodes them, so
-/// the source's decoder is the one authority on its end.
+/// [`last_life`] of a tail `window`'s lines, an unterminated last one included,
+/// decoded by the source's own decoder, the one authority on its end.
 fn window_life(
     window: &[u8],
     path: &Path,
@@ -486,10 +486,7 @@ pub(super) async fn walk_jsonl(
             replaying,
         })
     };
-    let lives = each_life(&decoded, own);
-    let mut decoded = decoded.into_iter();
-    for (nth, span) in lives.into_iter().enumerate() {
-        let life: Vec<AgentEvent> = decoded.by_ref().take(span).collect();
+    for life in each_life(decoded, own) {
         if Sight::registers(seen.lock().await.get(path), holds_life(&life)) && !sidecar_only {
             // A revived GATED file reads only the tail, which may lack what only a
             // head carries: Codex's `session_meta` cwd and parent, and the title.
@@ -516,7 +513,9 @@ pub(super) async fn walk_jsonl(
             registration.label = Some(label.clone());
         }
         let ended = last_life(&life, own) == Some(Life::Ended);
-        for ev in backlog(replays).filter(|_| nth == 0).chain(life) {
+        // After the life's first sight, whose revive forgets that the agent
+        // caught up, so each life's events count toward Today.
+        for ev in backlog(replays).chain(life) {
             if tx.send((Transport::Jsonl, ev)).await.is_err() {
                 return;
             }
@@ -641,9 +640,9 @@ async fn read_head(path: &Path) -> Option<Vec<u8>> {
     Some(head)
 }
 
-/// The whole lines of at most the last `bytes` of a file (clamped to file
-/// size), so every reader of a tail judges the same lines. `None` on any I/O
-/// error — callers treat that as "nothing to scan".
+/// At most the last `bytes` of a file from a line start (clamped to file size),
+/// its last line possibly unterminated, so every reader of a tail judges the
+/// same lines. `None` on any I/O error — callers treat that as "nothing to scan".
 async fn read_tail(path: &Path, bytes: u64) -> Option<Vec<u8>> {
     let meta = tokio::fs::metadata(path).await.ok()?;
     let file_len = meta.len();

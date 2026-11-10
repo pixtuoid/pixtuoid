@@ -887,21 +887,25 @@ fn child_lifecycle_is_stamped_on_sweep_and_pruned_by_gc() {
 }
 
 /// A synthetic ~1 event/s stream through the REAL reducer: a per-event leak
-/// (a missed prune site) grows a map ~linearly and blows the bound, while a
-/// healthy stream stays an order of magnitude under.
+/// (a missed prune site) grows a map ~linearly and blows the bound.
 #[test]
 fn correlation_maps_stay_bounded_across_a_long_stream() {
+    use super::{EXIT_GRACE_WINDOW, STALE_TOOL_TIMEOUT};
     use crate::AgentId;
     use crate::source::{AgentEvent, ToolDetail, Transport};
     use crate::state::SceneState;
     use std::path::PathBuf;
     use std::time::{Duration, SystemTime};
 
-    /// ~3× the widest steady-state working set (`CHILD_END_RELINK_TTL` at
-    /// ~1 event/s) and FAR below ITERS. A bound that merely clears the steady
-    /// state proves nothing about a slow leak.
-    const MAX_CORR_ENTRIES: usize = 1024;
-    const ITERS: u64 = 3_000;
+    /// The widest steady-state working set at 1 event/s: an orphan Task's
+    /// `tasks_in_flight` entry lives while its hook-registered slot does, which
+    /// the stale sweep reaps `STALE_TOOL_TIMEOUT` after its last event and drops
+    /// an exit grace later.
+    const STEADY: usize = (STALE_TOOL_TIMEOUT.as_secs() + EXIT_GRACE_WINDOW.as_secs()) as usize + 1;
+    /// Twice the steady state and a third of the stream: a bound that merely
+    /// clears the steady state proves nothing about a slow leak.
+    const MAX_CORR_ENTRIES: usize = 2 * STEADY;
+    const ITERS: u64 = 3 * MAX_CORR_ENTRIES as u64;
     const MAP_NAMES: [&str; 8] = [
         "recent_hook_tool_uses",
         "tasks_in_flight",
@@ -914,9 +918,6 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     ];
 
     let mut r = super::Reducer::new();
-    // 32 desks comfortably exceeds the un-swept working set: a slot lives until
-    // `sweep_exited` removes it ~EXIT_GRACE_WINDOW after its end, so only a
-    // handful are concurrent at ~1s/iter.
     let mut scene = SceneState::uniform(32);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
@@ -1017,8 +1018,9 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             now,
             Transport::Hook,
         );
-        // An ORPHAN Task (no SessionStart, so no slot) leaves an tasks_in_flight
-        // entry reaped ONLY by tick's slot-removal retain.
+        // An ORPHAN Task (no SessionStart): its hook registers a slot, unseated
+        // once the desks fill, so its tasks_in_flight entry lives until the
+        // stale sweep removes that slot.
         r.apply(
             &mut scene,
             AgentEvent::ToolUseStart {
@@ -1031,7 +1033,6 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             Transport::Hook,
         );
 
-        // The interleaved tick is the ONLY reaper of the non-TTL orphan retains.
         r.tick(&mut scene, now);
 
         let lens = [
@@ -1063,47 +1064,42 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     }
 }
 
-/// A session id and cwd arrive from another agent's process, so the reducer's
-/// warn lines carry them as `?` fields — a `%` field would write their bytes raw.
+/// A transcript tool or backlog line registers no slot, yet a Task it starts and
+/// a backlog marker it carries are kept by id: the tick reaps both while no slot
+/// holds it.
 #[test]
-fn desks_full_warn_escapes_the_wire_session_id_and_cwd() {
-    use crate::source::{AgentEvent, Transport};
-    use crate::test_capture::capture_logs;
-    use crate::{AgentId, Reducer, SceneState};
-    use std::time::SystemTime;
-    let mut scene = SceneState::uniform(1);
-    let mut r = Reducer::new();
-    let start = |sid: &str, cwd: &str| AgentEvent::SessionStart {
-        agent_id: AgentId::from_parts("claude-code", sid),
-        source: "claude-code".into(),
-        session_id: sid.into(),
-        cwd: cwd.into(),
-        parent_id: None,
+fn the_tick_reaps_what_an_id_no_slot_holds_left() {
+    use crate::AgentId;
+    use crate::source::{AgentEvent, ToolDetail, Transport};
+    use crate::state::SceneState;
+    use std::time::{Duration, SystemTime};
+
+    let mut r = super::Reducer::new();
+    let mut scene = SceneState::uniform(4);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let id = AgentId::from_parts("claude-code", "never-registered");
+    let task = AgentEvent::ToolUseStart {
+        agent_id: id,
+        tool_use_id: Some("task1".into()),
+        detail: Some(ToolDetail::Task),
+        copy_id: None,
     };
-    for i in 0..scene.total_capacity() {
-        r.apply(
-            &mut scene,
-            start(&format!("s{i}"), "/p"),
-            SystemTime::UNIX_EPOCH,
-            Transport::Hook,
-        );
-    }
-    let hostile = "\u{1b}]0;pwned\u{7}\u{202e}";
-    let out = capture_logs(|| {
-        r.apply(
-            &mut scene,
-            start(hostile, hostile),
-            SystemTime::UNIX_EPOCH,
-            Transport::Hook,
-        );
-    });
-    assert!(out.contains("dropped SessionStart"), "got {out:?}");
-    for raw in ['\u{1b}', '\u{7}', '\u{202e}'] {
-        assert!(
-            !out.contains(raw),
-            "{raw:?} must not reach the log raw: {out:?}"
-        );
-    }
+    r.apply(&mut scene, task, t0, Transport::Jsonl);
+    let backlog = AgentEvent::Backlog {
+        agent_id: id,
+        replaying: false,
+    };
+    r.apply(&mut scene, backlog, t0, Transport::Jsonl);
+    assert!(!scene.agents.contains_key(&id), "premise: no slot");
+    assert!(
+        r.corr.tasks_in_flight.contains_key(&id),
+        "premise: a Task kept"
+    );
+    assert!(r.corr.caught_up.contains(&id), "premise: a marker kept");
+
+    r.tick(&mut scene, t0);
+    assert!(!r.corr.tasks_in_flight.contains_key(&id));
+    assert!(!r.corr.caught_up.contains(&id));
 }
 
 /// A label carries its cwd's basename, wire content, so the stale sweep logs it
@@ -1253,6 +1249,72 @@ fn a_tick_walks_scope_in_linear_work() {
             2 * SLOTS
         );
     }
+}
+
+/// Every apply sweeps exited slots, and a seating pass walks the whole scene:
+/// an apply that adds, removes or revives no slot runs no seating pass, and the
+/// apply a slot leaves on runs one.
+#[test]
+fn a_sweep_seats_only_when_a_slot_leaves() {
+    use super::EXIT_GRACE_WINDOW;
+    use crate::source::{AgentEvent, Transport};
+    use crate::state::{FloorDesk, MAX_FLOORS, SEATINGS};
+    use crate::{AgentId, Reducer, SceneState};
+    use std::time::{Duration, SystemTime};
+
+    const APPLIES: usize = 16;
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut one_desk = [0; MAX_FLOORS];
+    one_desk[0] = 1;
+    let mut scene = SceneState::new(one_desk);
+    let mut r = Reducer::new();
+    let sessions = ["holder", "unseated"];
+    let [holder, unseated] = sessions.map(|s| AgentId::from_parts("claude-code", s));
+    for (agent_id, session) in [holder, unseated].into_iter().zip(sessions) {
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id,
+                source: "claude-code".into(),
+                session_id: session.into(),
+                cwd: "/repo".into(),
+                parent_id: None,
+            },
+            t0,
+            Transport::Hook,
+        );
+    }
+    let desk = |scene: &SceneState, id| scene.agents[&id].desk;
+    assert_eq!(desk(&scene, holder), Some(FloorDesk::new(0, 0)), "premise");
+    assert_eq!(desk(&scene, unseated), None, "premise: one desk");
+    let seatings = || SEATINGS.with(std::cell::Cell::get);
+    SEATINGS.with(|n| n.set(0));
+
+    for _ in 0..APPLIES {
+        r.apply(
+            &mut scene,
+            AgentEvent::ProofOfLife { agent_id: unseated },
+            t0,
+            Transport::Hook,
+        );
+    }
+    assert_eq!(seatings(), 0, "no slot left, so no desk freed");
+
+    let end = AgentEvent::SessionEnd {
+        agent_id: holder,
+        as_child: false,
+    };
+    r.apply(&mut scene, end, t0, Transport::Hook);
+    let walked_out = t0 + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+    r.apply(
+        &mut scene,
+        AgentEvent::ProofOfLife { agent_id: unseated },
+        walked_out,
+        Transport::Hook,
+    );
+    assert!(!scene.agents.contains_key(&holder), "premise: swept out");
+    assert_eq!(seatings(), 1, "the apply its holder left on seats once");
+    assert_eq!(desk(&scene, unseated), Some(FloorDesk::new(0, 0)));
 }
 
 /// An open turn showing no item is the agent between items, alive by its
