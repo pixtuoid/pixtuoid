@@ -13,11 +13,13 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 
 use pixtuoid_scene::display::cells::CellMap;
-use pixtuoid_scene::floor::{FloorInputs, OfficeStores, PerFloor, PetInputs};
+use pixtuoid_scene::floor::{
+    Conditions, FloorInputs, FloorScene, OfficeStores, PerFloor, PetInputs,
+};
 use pixtuoid_scene::footer::{FooterContext, FooterInputs};
 use pixtuoid_scene::hit::HoverTarget;
 use pixtuoid_scene::layout::Viewport;
-use pixtuoid_scene::look::{FloorPicture, Hits, Look, Place, RenderInputs};
+use pixtuoid_scene::look::{FloorPicture, Hits, Look, RenderInputs};
 
 pub(crate) use crate::panels::widgets::{TooltipAt, paint_tooltip};
 pub(super) use crate::panels::widgets::{paint_footer, paint_host_text, star_area};
@@ -25,53 +27,65 @@ pub(crate) use crate::panels::{FOOTER_ROWS, scene_rect};
 use crate::tui::geometry::SceneGeometry;
 pub(crate) use crate::tui::hit_test::SceneHit;
 
-pub use pixtuoid_scene::pet::PetState;
-
 #[derive(Debug)]
 pub struct DrawCtx<'a> {
-    pub world: FloorInputs<'a>,
+    /// The whole office: the footer's office-wide context reads it and a
+    /// tooltip names its agents, while the footer counts `floor_scene`'s.
+    scene: &'a SceneState,
+    /// The floor drawn: [`Self::offscreen`]'s projection of `scene`; both are
+    /// private, so the two can't disagree.
+    floor_scene: FloorScene,
+    pub now: SystemTime,
+    pub conditions: Conditions,
+    pub pets: PetInputs<'a>,
     /// The floor drawn: its sim stores and raster.
     pub floor: &'a mut PerFloor,
     /// The office stores its frame steps and draws with.
-    pub office: OfficeStores<'a>,
+    pub(crate) office: OfficeStores<'a>,
     pub mouse_pos: Option<(u16, u16)>,
     /// Walkable/approach/route debug layer toggle (`w`) — transient, never
     /// persisted to config.
     pub debug_walkable: bool,
     pub theme: &'static pixtuoid_scene::theme::Theme,
-    /// From [`footer_context`](crate::panels::widgets::footer_context).
+    /// The footer's office-wide context, as [`Self::offscreen`] builds it.
     pub footer: FooterContext<'a>,
     /// The panels open over the frame.
     pub overlays: crate::panels::OverlayFrame<'a>,
 }
 
 impl<'a> DrawCtx<'a> {
-    /// An offscreen still of one floor, every input and overlay off; the office-wide
-    /// tallies and gateway come from `scene`, as the live renderer's do.
+    /// An offscreen still of floor `floor_idx` of `full`, every input and
+    /// overlay off; the footer's office-wide context and a tooltip read
+    /// `full`, as the live renderer's do.
     #[doc(hidden)]
     pub fn offscreen(
         floor: &'a mut PerFloor,
         office: OfficeStores<'a>,
         theme: &'static pixtuoid_scene::theme::Theme,
-        scene: &'a SceneState,
+        full: &'a SceneState,
+        floor_idx: usize,
         now: SystemTime,
-        meta: pixtuoid_scene::floor::FloorMeta,
+        conditions: Conditions,
     ) -> Self {
         Self {
-            world: FloorInputs {
-                scene,
-                now,
-                floor: meta,
-                pets: Default::default(),
-            },
+            scene: full,
+            floor_scene: pixtuoid_scene::floor::project_floor_scene(full, floor_idx),
+            now,
+            conditions,
+            pets: PetInputs::default(),
             floor,
             office,
             mouse_pos: None,
             debug_walkable: false,
             theme,
-            footer: crate::panels::widgets::footer_context(scene, None, false, None, None),
+            footer: crate::panels::widgets::footer_context(full, false, None, None),
             overlays: crate::panels::OverlayFrame::closed(),
         }
+    }
+
+    /// The whole office its floor is projected from.
+    pub fn scene(&self) -> &'a SceneState {
+        self.scene
     }
 }
 
@@ -231,9 +245,14 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
     };
     let scene_rect = scene_rect(full_rect);
     let theme = ctx.theme;
-    let world = ctx.world;
-    let FloorInputs { scene, now, .. } = world;
-    let footer = FooterInputs::new(scene, ctx.footer);
+    let now = ctx.now;
+    let world = FloorInputs {
+        scene: &ctx.floor_scene,
+        now,
+        conditions: ctx.conditions,
+        pets: ctx.pets,
+    };
+    let footer = FooterInputs::new(&ctx.floor_scene, ctx.footer);
     let overlays = ctx.overlays;
 
     if scene_too_small(scene_rect) {
@@ -250,10 +269,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
             world,
             theme,
             viewport: Viewport::full(buf_w, buf_h),
-            place: Place {
-                gateway: footer.context.gateway,
-                floor: footer.context.floor,
-            },
+            gateway: footer.context.gateway,
             debug_walkable: ctx.debug_walkable,
             dim: overlays.onboarding.dim,
         },
@@ -266,7 +282,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
         footer: &footer,
         overlays: &overlays,
         theme,
-        office: scene,
+        office: ctx.scene,
         now,
         pets: world.pets,
         mouse_pos: ctx.mouse_pos,
@@ -309,8 +325,8 @@ pub fn draw_over_image<B: Backend<Error: Send + Sync + 'static>>(
 ) -> Result<crate::tui::cutaway::ImageCells> {
     use crate::tui::cutaway::ImageCells;
     let theme = ctx.theme;
-    let FloorInputs { scene, now, .. } = ctx.world;
-    let footer = FooterInputs::new(scene, ctx.footer);
+    let now = ctx.now;
+    let footer = FooterInputs::new(&ctx.floor_scene, ctx.footer);
     let overlays = ctx.overlays;
     let size = term.size()?;
     if scene_too_small(scene_rect(Rect::new(0, 0, size.width, size.height))) {
@@ -464,8 +480,10 @@ mod tests {
     use crate::tui::geometry::CellArea;
     use std::sync::Arc;
 
+    /// The gateway is office-wide, and only floor 0's projection carries the
+    /// daemons: a still of an upper floor keeps it by reading the full scene.
     #[test]
-    fn an_offscreen_still_shows_its_scenes_gateway() {
+    fn an_offscreen_still_of_an_upper_floor_shows_the_offices_gateway() {
         let t0 = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         let mut scene = SceneState::uniform(16);
         scene.insert_daemon(
@@ -489,8 +507,9 @@ mod tests {
             office.stores(),
             &pixtuoid_scene::theme::NORMAL,
             &scene,
+            1,
             t0,
-            pixtuoid_scene::floor::FloorMeta::ground(),
+            pixtuoid_scene::floor::Conditions::default(),
         );
         assert!(ctx.footer.gateway.is_some());
     }

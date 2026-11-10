@@ -11,7 +11,6 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::Result;
@@ -188,13 +187,20 @@ pub(crate) fn build_source_set(
     ]
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The closed capacity channel's arm runs on this thread, counted like
+    /// `SEATINGS`: guarded, it runs at most once instead of on every pass.
+    static CAPS_CLOSED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The reducer event loop: gate + apply incoming `AgentEvent`s, merge daemon
-/// presence, and run the 1-Hz reconcile sweep — an async shell over
+/// presence, and run the reconcile sweep — an async shell over
 /// [`super::gate`], which owns every decision.
 pub(crate) async fn reducer_task(
     mut rx: TaggedReceiver,
     mut sink: SceneSink,
-    floor_caps: Arc<[AtomicUsize; MAX_FLOORS]>,
+    mut floor_caps: tokio::sync::watch::Receiver<[usize; MAX_FLOORS]>,
     connected: ConnectedSources,
     mut presence_rx: tokio::sync::mpsc::UnboundedReceiver<PresenceMsg>,
     presence_exit_watch: Option<daemon::PresenceExitWatch>,
@@ -209,9 +215,10 @@ pub(crate) async fn reducer_task(
     // from socket JSON with no registry check and no length cap, so keying on it
     // lets a long-lived `run` accumulate an entry per distinct name seen.
     let mut gate_logged: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
-    let initial_caps: [usize; MAX_FLOORS] =
-        std::array::from_fn(|i| floor_caps[i].load(Ordering::Relaxed));
-    let mut scene = SceneState::new(initial_caps);
+    let mut scene = SceneState::new(*floor_caps.borrow_and_update());
+    // Disabled once its painter is gone, or never had one (`serve`), so the
+    // closed channel can't busy-loop the select.
+    let mut caps_open = true;
     let mut today_saver =
         file.map(|file| TodaySaver::boot(file, &mut scene, day_of(SystemTime::now())));
     if !sink.publish(&scene) {
@@ -224,11 +231,6 @@ pub(crate) async fn reducer_task(
     loop {
         if let Some(saver) = &mut today_saver {
             saver.note(scene.today);
-        }
-        // Sync per-floor capacities from the shared atomics so the
-        // auto-computed layout capacity propagates to next_free_desk().
-        for (i, a) in floor_caps.iter().enumerate() {
-            scene.floor_capacities[i] = a.load(Ordering::Relaxed);
         }
         tokio::select! {
             event = rx.recv() => {
@@ -277,6 +279,22 @@ pub(crate) async fn reducer_task(
                     None => presence_open = false,
                 }
             }
+            // Re-seated the moment a painter publishes, so whoever a shrink
+            // displaces takes a free desk, or is unseated, on that publish.
+            changed = floor_caps.changed(), if caps_open => match changed {
+                Ok(()) => {
+                    scene.set_capacities(*floor_caps.borrow_and_update(), SystemTime::now());
+                    if !sink.publish(&scene) {
+                        tracing::warn!("scene reader gone or stalled — reducer stopping");
+                        break;
+                    }
+                }
+                Err(_) => {
+                    #[cfg(test)]
+                    CAPS_CLOSED.with(|n| n.set(n.get() + 1));
+                    caps_open = false;
+                }
+            },
             _ = sweep_interval.tick() => {
                 gate::reconcile_sweep_tick(&mut reducer, &mut scene, &connected, SystemTime::now());
                 if let Some(saver) = &mut today_saver {
@@ -453,7 +471,7 @@ mod tests {
         reducer_task(
             events,
             sink,
-            Arc::new(std::array::from_fn(|_| AtomicUsize::new(FALLBACK_DESKS))),
+            tokio::sync::watch::channel([FALLBACK_DESKS; MAX_FLOORS]).1,
             ConnectedSources::new(["claude-code".to_string()].into()),
             presence_rx,
             None,
@@ -500,6 +518,82 @@ mod tests {
         );
     }
 
+    /// `serve` has no painter, so its capacity channel is closed from the start:
+    /// the guarded arm runs at most once, not on every pass of the loop.
+    #[tokio::test]
+    async fn a_closed_capacity_channel_is_polled_at_most_once() {
+        super::CAPS_CLOSED.with(|n| n.set(0));
+        let (sink, _scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+        let (_presence_tx, presence_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (caps_tx, caps_rx) = watch::channel([FALLBACK_DESKS; MAX_FLOORS]);
+        drop(caps_tx);
+        reducer_task(
+            batch(16).await,
+            sink,
+            caps_rx,
+            ConnectedSources::new(["claude-code".to_string()].into()),
+            presence_rx,
+            None,
+            DayCount {
+                day_of: the_day,
+                file: None,
+            },
+        )
+        .await;
+        assert!(super::CAPS_CLOSED.with(std::cell::Cell::get) <= 1);
+    }
+
+    /// The capacities a painter publishes re-seat the scene it reads,
+    /// a smaller set keeping whoever it can't seat.
+    #[tokio::test]
+    async fn a_published_layout_reseats_the_scene() {
+        use pixtuoid_core::source::{AgentEvent, Transport};
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        let (caps_tx, caps_rx) = watch::channel([FALLBACK_DESKS; MAX_FLOORS]);
+        let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+        let (_presence_tx, presence_rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(reducer_task(
+            rx,
+            sink,
+            caps_rx,
+            ConnectedSources::new(["claude-code".to_string()].into()),
+            presence_rx,
+            None,
+            DayCount {
+                day_of: the_day,
+                file: None,
+            },
+        ));
+        for key in ["a", "b"] {
+            let start = AgentEvent::SessionStart {
+                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", key),
+                source: "claude-code".into(),
+                session_id: key.into(),
+                cwd: PathBuf::from("/proj"),
+                parent_id: None,
+            };
+            tx.send((Transport::Hook, start)).await.expect("it queues");
+        }
+        let seated = |want: usize| {
+            move |scene: &Arc<SceneState>| {
+                scene.agents.len() == 2
+                    && scene.agents.values().filter(|a| a.desk.is_some()).count() == want
+            }
+        };
+        let within = Duration::from_secs(5);
+        tokio::time::timeout(within, scene.wait_for(seated(2)))
+            .await
+            .expect("both seated")
+            .expect("the reducer runs");
+        let mut one_desk = [0; MAX_FLOORS];
+        one_desk[0] = 1;
+        crate::runtime::pipeline::publish_floor_caps(&caps_tx, one_desk);
+        tokio::time::timeout(within, scene.wait_for(seated(1)))
+            .await
+            .expect("one is unseated")
+            .expect("the reducer runs");
+    }
+
     fn saved_at(path: &std::path::Path) -> Option<pixtuoid_core::state::Today> {
         serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
     }
@@ -515,6 +609,31 @@ mod tests {
         )
     }
 
+    /// The session's start: a call registers nothing without it.
+    fn session_start() -> (pixtuoid_core::Transport, pixtuoid_core::AgentEvent) {
+        (
+            pixtuoid_core::Transport::Hook,
+            pixtuoid_core::AgentEvent::SessionStart {
+                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/proj"),
+                parent_id: None,
+            },
+        )
+    }
+
+    /// Until a tick has saved `calls`, so the next tick is a second off.
+    async fn saved_by_a_tick(path: &std::path::Path, calls: u64) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while saved_at(path).map(|today| today.tool_calls) != Some(calls) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("a tick writes the count while the run goes on");
+    }
+
     /// The reader gone, the event that finds it so ends the loop before its top
     /// notes the count.
     #[tokio::test]
@@ -522,16 +641,15 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("today.json");
         let (tx, rx) = tokio::sync::mpsc::channel(8);
-        let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+        let (sink, scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
         let run = tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
-        // The boot's publish and the first tick's, the next tick a second off.
-        for _ in 0..2 {
-            scene.changed().await.expect("the reducer publishes");
-        }
+        tx.send(session_start()).await.expect("it queues");
+        tx.send(hook_call("first")).await.expect("it queues");
+        saved_by_a_tick(&path, 1).await;
         drop(scene);
-        tx.send(hook_call("t")).await.expect("it queues");
+        tx.send(hook_call("last")).await.expect("it queues");
         run.await.expect("the reducer stops on its reader");
-        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
+        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(2));
     }
 
     /// `run` drops its runtime as `run_async` returns, cancelling the reducer's
@@ -550,25 +668,9 @@ mod tests {
             let (tx, rx) = tokio::sync::mpsc::channel(8);
             let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
             tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
-            // The slot's source: on a hook's blank one the gate drops the next call.
-            let start = pixtuoid_core::AgentEvent::SessionStart {
-                agent_id: pixtuoid_core::AgentId::from_parts("claude-code", "s"),
-                source: "claude-code".into(),
-                session_id: "s".into(),
-                cwd: PathBuf::from("/proj"),
-                parent_id: None,
-            };
-            tx.send((pixtuoid_core::Transport::Hook, start))
-                .await
-                .expect("it queues");
+            tx.send(session_start()).await.expect("it queues");
             tx.send(hook_call("first")).await.expect("it queues");
-            tokio::time::timeout(Duration::from_secs(5), async {
-                while saved_at(&path).is_none() {
-                    tokio::time::sleep(Duration::from_millis(20)).await;
-                }
-            })
-            .await
-            .expect("a tick writes the count while the run goes on");
+            saved_by_a_tick(&path, 1).await;
             tx.send(hook_call("last")).await.expect("it queues");
             scene
                 .wait_for(|scene| scene.today.is_some_and(|today| today.tool_calls == 2))

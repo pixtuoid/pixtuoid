@@ -218,7 +218,8 @@ const POINTER_GAP: u16 = 2;
 
 /// The tooltip for what `hit` names at `now`; `None` for the star, whose click
 /// is its whole story, and for an agent or gateway gone from `office`, the whole
-/// office. `pets` is the shown floor's.
+/// office. `pets` is the shown floor's at `now`
+/// ([`crate::floor::OfficeSession::showing_pets`]).
 pub fn for_hit(
     hit: SceneHit<'_>,
     office: &SceneState,
@@ -228,7 +229,7 @@ pub fn for_hit(
     match hit {
         SceneHit::Figure(HoverTarget::Agent(id)) => agent(office, *id, now),
         SceneHit::Figure(&HoverTarget::Pet(PetHover { kind, anim, .. })) => {
-            let on_cooldown = pets.petting.is_some_and(|p| p.is_active(now));
+            let on_cooldown = pets.petting.is_some();
             // The hover was drawn from `pets.pet`, so the kinds agree and the
             // `default_name` arm is not a live path.
             let name = pets
@@ -541,8 +542,7 @@ mod tests {
         let id = AgentId::from_transcript_path(&format!("/p/{key}.jsonl"));
         let mut a = crate::character::test_support::make_slot(id, ActivityState::Idle);
         a.label = label.into();
-        a.desk_index = pixtuoid_core::state::GlobalDeskIndex(desk);
-        a.floor_idx = floor;
+        a.desk = Some(pixtuoid_core::state::FloorDesk::new(floor, desk));
         a.parent_id = lead;
         office.agents.insert(id, a);
         id
@@ -590,7 +590,7 @@ mod tests {
         let mut office = two_floor_office();
         let lead = seat(&mut office, ("lead", "cc\u{b7}api"), (0, 0), None);
         let sub = seat(&mut office, ("sub", "subagent"), (1, 0), Some(lead));
-        seat(&mut office, ("upstairs", "cc\u{b7}api"), (4, 1), None);
+        seat(&mut office, ("upstairs", "cc\u{b7}api"), (0, 1), None);
         let named = floor_nameplate(&office, 0, lead);
         assert_eq!(lineage(&office, sub), [format!("\u{21b3} under {named}")]);
     }

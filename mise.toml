@@ -11,7 +11,6 @@ yq = "latest"
 jq = "latest"
 gitleaks = "latest"
 lychee = "latest"
-"pypi:check-jsonschema" = "latest"
 uv = "latest"
 ruff = "latest"
 # Pre-push's `lint` runs tsc and pyright on it, and CI's setup-node reads it as its

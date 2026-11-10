@@ -148,11 +148,11 @@ Repo skills (committed): `local-review`, `beautify-decoration`,
 
 ## Ownership by crate
 
-Who owns what: **core** owns session lifecycle/identity (registration, dedup,
-first-sight, liveness ladder, subagent parenting, feature boundaries) ·
+Who owns what: **core** owns session lifecycle/identity/seating (registration,
+dedup, first-sight, liveness ladder, subagent parenting, feature boundaries) ·
 **scene** owns look/motion (per-agent palette recolor, walk timing,
 footprints, sky/light invariants, reachability) · **binary** owns
-install/runtime wiring (config rewriting, desk growth, boot order, doctor,
+install/runtime wiring (config rewriting, desk capacities (publishing), boot order, doctor,
 daemon announce-only) · **tui** owns the flush (popup geometry, the
 office's hit-test ladder) · **panels** owns what both painters' panels share
 (their key dispatch and mouse ladder). Terminal cell aspect drives sprite design: the

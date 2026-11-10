@@ -714,69 +714,6 @@ fn ag_ask_permission_and_question_emits_user_action_request() {
 }
 
 #[test]
-fn cc_session_ended_detects_session_end_subtype() {
-    use pixtuoid_core::source::claude_code::cc_session_ended;
-    let tail = br#"{"type":"system","subtype":"session_start","sessionId":"s1"}
-{"type":"assistant","message":{"role":"assistant","content":[]}}
-{"type":"system","subtype":"session_end","sessionId":"s1"}
-"#;
-    assert!(cc_session_ended(tail));
-}
-
-#[test]
-fn cc_session_ended_returns_false_for_active_session() {
-    use pixtuoid_core::source::claude_code::cc_session_ended;
-    let tail = br#"{"type":"system","subtype":"session_start","sessionId":"s1"}
-{"type":"assistant","message":{"role":"assistant","content":[]}}
-"#;
-    assert!(!cc_session_ended(tail));
-}
-
-#[test]
-fn cc_session_ended_ignores_string_content_containing_session_end() {
-    use pixtuoid_core::source::claude_code::cc_session_ended;
-    let tail = br#"{"type":"system","subtype":"session_start","sessionId":"s1"}
-{"type":"user","message":{"content":[{"type":"tool_result","output":"cat session_end.sh"}]}}
-"#;
-    assert!(
-        !cc_session_ended(tail),
-        "should not false-positive on session_end inside tool output"
-    );
-}
-
-#[test]
-fn cc_session_ended_ignores_slash_command_content() {
-    use pixtuoid_core::source::claude_code::cc_session_ended;
-    let tail = br#"{"type":"system","subtype":"session_start","sessionId":"s1"}
-{"type":"assistant","message":{"role":"assistant","content":[]}}
-{"type":"user","message":{"role":"user","content":"<command-name>/exit</command-name>\n            <command-message>exit</command-message>"}}
-"#;
-    assert!(
-        !cc_session_ended(tail),
-        "an /exit-wrapper user line is content, not a structural end marker"
-    );
-    let quoted = br#"{"type":"system","subtype":"session_start","sessionId":"s1"}
-{"type":"user","message":{"role":"user","content":"why does <command-name>/quit</command-name> show up wrapped?"}}
-"#;
-    assert!(
-        !cc_session_ended(quoted),
-        "quoting the wrapper mid-prose must not end the session"
-    );
-}
-
-#[test]
-fn cc_session_ended_end_then_session_start_is_not_ended() {
-    use pixtuoid_core::source::claude_code::cc_session_ended;
-    let tail = br#"{"type":"system","subtype":"session_end","sessionId":"s1"}
-{"type":"system","subtype":"session_start","sessionId":"s1"}
-"#;
-    assert!(
-        !cc_session_ended(tail),
-        "session resumed after a structural end — last marker wins"
-    );
-}
-
-#[test]
 fn decode_hook_payload_missing_session_id_returns_err() {
     let payload = serde_json::json!({
         "hook_event_name": "SessionStart",
@@ -1029,8 +966,8 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
 
 #[test]
 fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
-    use std::path::{Path, PathBuf};
-    let sources = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources");
+    use std::path::PathBuf;
+    let sources = pixtuoid_core::harness::sources_root();
     // A recording names its transcript after its session, which every
     // re-record changes.
     let transcript_of = |source: &str, capture: &str| {

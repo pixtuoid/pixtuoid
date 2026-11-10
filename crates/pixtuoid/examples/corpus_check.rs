@@ -21,7 +21,7 @@ use std::time::{Duration, SystemTime};
 use pixtuoid_core::harness::{Drive, Fold};
 use pixtuoid_core::source::decoder::TailActivity;
 use pixtuoid_core::source::registry;
-use pixtuoid_scene::floor::{FloorMeta, FloorSession};
+use pixtuoid_scene::floor::{Conditions, FloorSession};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pack::load_bundled_pack;
 
@@ -116,7 +116,7 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
             pixtuoid_scene::floor::FloorInputs {
                 scene: &driven.scene,
                 now: now(),
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: pixtuoid_scene::floor::PetInputs::default(),
             },
             pixtuoid_scene::layout::Viewport::full(192, 80),

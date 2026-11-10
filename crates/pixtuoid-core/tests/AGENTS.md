@@ -27,7 +27,7 @@ tests/
 │   ├── <module>.rs      a source's unique behavior: claude_code codex codewhale cursor grok
 │   │                    opencode reasonix (DELEGATING runs, two sprites), copilot (refusal
 │   │                    endings, a failed child's own end), omp (bridge rounds whose hook
-│   │                    keys FOLD per OS, #951)
+│   │                    keys FOLD per OS, #951), kimi (a turn end registers its session)
 │   ├── delegation.rs    the NAME-KEYED family (a tool literally called `task` — `subagent`
 │   │                    for dsh and opencode): copilot, omp, dsh, opencode — one rule, one table
 │   └── hermetic/aimock/ the scripted model's npm lock, shared by every profile
@@ -43,7 +43,7 @@ tests/
 │                        `watcher`'s process-wide `fast_watch()` polling can't reach them
 ├── transport/main.rs    relay (both) · #[cfg(unix)] socket / #[cfg(windows)] pipe
 └── socket_path_parity.rs · supported_sources_manifest.rs · pinned_by_claims.rs ·
-    lang_gates.rs · shim_stamp_parity.rs · pair_link_site.rs · published_license.rs
+    lang_gates.rs · shim_stamp_parity.rs · pair_link_site.rs · published_package.rs
                          FLAT + publish-excluded (see Cargo.toml's `exclude`; `sources/` is excluded whole)
 ```
 
@@ -59,8 +59,6 @@ reordered or cut, never decoded events, over time through a `harness::Fold`, and
 it does NOT re-roll decode→reduce and never re-derives the first-sight seed's
 `AgentId` (that comes from the source's `DESCRIPTOR`; a driver
 keyed off anything else registers NOTHING).
-`benches/decode_reduce.rs` SYNTHESIZES its lines — a bench-shaped fixture
-under a `sources/<module>/fixtures/` would be mis-scanned.
 
 ## Adding a new agent CLI — the test steps
 

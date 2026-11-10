@@ -10,13 +10,14 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::pack::OfficeArt;
+use crate::pet::{PetKind, PetState};
 use crate::sprite::{Rgb, RgbBuffer};
 use pixtuoid_core::SceneState;
 
 use super::{
-    AudioFrame, FloorInputs, FloorMeta, FloorTransition, PerFloor, PerOffice, waypoint_kind_of,
+    AudioFrame, Conditions, FloorInputs, FloorTransition, PerFloor, PerOffice, PetInputs,
+    waypoint_kind_of,
 };
-use crate::footer::FooterFloor;
 
 /// One floor of a painter's office: its raster and sim stores, and what its
 /// last frame laid out, occupied and flashed.
@@ -56,7 +57,7 @@ impl FloorView {
         look: crate::look::Look,
         inputs: crate::look::RenderInputs<'_>,
     ) {
-        self.last_motion = Some(inputs.world.floor.motion);
+        self.last_motion = Some(inputs.world.conditions.motion);
         match crate::look::render(&mut self.floor, office.stores(), look, inputs) {
             Some(frame) => {
                 self.last_hits = Some(frame.hits);
@@ -99,7 +100,7 @@ impl FloorView {
         &self,
         office: &mut PerOffice,
         scene: &SceneState,
-        floor: FloorMeta,
+        (floor, conditions): (usize, Conditions),
         now: SystemTime,
     ) -> AudioFrame {
         let layout = self.last_hits.as_ref().map(|hits| &**hits.layout());
@@ -107,7 +108,7 @@ impl FloorView {
             scene,
             Some(&self.last_occupied),
             |idx| waypoint_kind_of(layout, idx),
-            floor,
+            (floor, conditions.weather),
             now,
         )
     }
@@ -195,69 +196,44 @@ impl FloorNav {
     }
 }
 
-/// Floor `floor` of `n_floors`, all else as `office` has it.
-fn floor_meta(office: FloorMeta, floor: usize, n_floors: usize) -> FloorMeta {
-    let FloorMeta {
-        floor_idx,
-        floors,
-        altitude,
-        floor_seed,
-        weather: _,
-        motion: _,
-        offline: _,
-    } = FloorMeta::for_floor(floor, n_floors);
-    FloorMeta {
-        floor_idx,
-        floors,
-        altitude,
-        floor_seed,
-        ..office
-    }
-}
-
-/// The pet of `pets` floor `floor` of `n_floors` draws: the one choice its
-/// frames and its tooltip both read.
-fn floor_pet(floor: usize, n_floors: usize, pets: &[crate::pet::Pet]) -> Option<&crate::pet::Pet> {
-    crate::pet::select_pet_for_floor(FloorMeta::for_floor(floor, n_floors).floor_seed, pets)
-}
-
-/// `world` as floor `floor` of `n_floors` sees it, `floor_scene` its
-/// projection: its index, altitude and pet (of `pets`) the office's, and a
-/// petting playing only on its own floor while it lasts.
-fn floor_world<'a>(
-    world: FloorInputs<'a>,
-    floor_scene: &'a super::FloorScene,
+/// The petting of `pettings` floor `floor` plays at `now` for its pet of
+/// `kind`: the one read of a petting, whole, so no reader re-checks a part.
+fn petting_on(
+    pettings: &[Option<PetState>],
     floor: usize,
-    n_floors: usize,
+    kind: Option<PetKind>,
+    now: SystemTime,
+) -> Option<&PetState> {
+    pettings[floor]
+        .as_ref()
+        .filter(|p| Some(p.kind) == kind && p.is_active(now))
+}
+
+/// Floor `floor`'s pet of `pets`, the one choice its frames and its tooltip
+/// both read, and the petting it plays at `now`.
+fn floor_pets<'a>(
+    floor: usize,
     pets: &'a [crate::pet::Pet],
-) -> FloorInputs<'a> {
-    let now = world.now;
-    FloorInputs {
-        scene: floor_scene.scene(),
-        floor: floor_meta(world.floor, floor, n_floors),
-        pets: super::PetInputs {
-            pet: floor_pet(floor, n_floors, pets),
-            petting: world
-                .pets
-                .petting
-                .filter(|p| p.floor_idx == floor && p.is_active(now)),
-        },
-        ..world
+    pettings: &'a [Option<PetState>],
+    now: SystemTime,
+) -> PetInputs<'a> {
+    let pet = crate::pet::select_pet_for_floor(super::floor_seed(floor), pets);
+    PetInputs {
+        pet,
+        petting: petting_on(pettings, floor, pet.map(|p| p.kind), now),
     }
 }
 
-/// The footer's floor breadcrumb for floor `current` of `n_floors`, among
-/// `total_agents`; `None` in a one-floor office.
-pub(crate) fn footer_floor(
-    current: usize,
-    n_floors: usize,
-    total_agents: usize,
-) -> Option<FooterFloor> {
-    (n_floors > 1).then_some(FooterFloor {
-        current: current + 1,
-        total_floors: n_floors,
-        total_agents,
-    })
+/// `world` drawing `floor_scene`, with its `pets`.
+fn floor_world<'a>(
+    world: FloorInputs<'a, SceneState>,
+    floor_scene: &'a super::FloorScene,
+    pets: PetInputs<'a>,
+) -> FloorInputs<'a> {
+    FloorInputs {
+        pets,
+        ..world.on(floor_scene)
+    }
 }
 
 /// How far down the floor being left and the one arriving sit, `t` through a
@@ -318,7 +294,7 @@ pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
 pub const REST_TICK: Duration = Duration::from_secs(1);
 
 /// A painter's office of up to [`MAX_FLOORS`](super::MAX_FLOORS) floors:
-/// each floor's view, the office-wide state they share (a cup of
+/// each floor's view and petting, the office-wide state they share (a cup of
 /// coffee survives a floor switch), the [`FloorNav`], and the slide's
 /// composed frame.
 #[derive(Debug)]
@@ -340,6 +316,7 @@ pub struct OfficeSession {
     shown: Option<usize>,
     shown_changed: bool,
     gripped: crate::interact::GripFloor,
+    pettings: [Option<PetState>; super::MAX_FLOORS],
 }
 
 impl OfficeSession {
@@ -355,6 +332,7 @@ impl OfficeSession {
             shown: None,
             shown_changed: true,
             gripped: crate::interact::GripFloor::default(),
+            pettings: Default::default(),
         }
     }
 
@@ -385,10 +363,28 @@ impl OfficeSession {
         self.n_floors
     }
 
-    /// The pet of `pets` the floor showing picks, as its frames draw it.
-    #[doc(hidden)]
-    pub fn showing_pet<'p>(&self, pets: &'p [crate::pet::Pet]) -> Option<&'p crate::pet::Pet> {
-        floor_pet(self.nav.current(), self.n_floors, pets)
+    /// Pet the floor showing's pet of `kind` at `now`: whether it was
+    /// recorded, which it is not while that floor's last petting plays.
+    pub fn pet(&mut self, kind: PetKind, now: SystemTime) -> bool {
+        let floor = self.nav.current();
+        if petting_on(&self.pettings, floor, Some(kind), now).is_some() {
+            return false;
+        }
+        self.pettings[floor] = Some(PetState {
+            petted_at: now,
+            kind,
+        });
+        true
+    }
+
+    /// The floor showing's pet of `pets` and the petting it plays at `now`,
+    /// as its frames draw them: what a press, the cursor and a tooltip read.
+    pub fn showing_pets<'p>(
+        &'p self,
+        pets: &'p [crate::pet::Pet],
+        now: SystemTime,
+    ) -> PetInputs<'p> {
+        floor_pets(self.nav.current(), pets, &self.pettings, now)
     }
 
     /// Ready the office for a frame of `scene` (the FULL live scene) at
@@ -399,7 +395,7 @@ impl OfficeSession {
     #[doc(hidden)]
     pub fn prepare(&mut self, scene: &SceneState, now: SystemTime) {
         self.evict_missing(scene);
-        self.n_floors = super::num_floors(scene).clamp(1, super::MAX_FLOORS);
+        self.n_floors = super::num_floors(scene);
         while self.views.len() < self.n_floors {
             self.views.push(FloorView::new(Arc::clone(&self.pack)));
         }
@@ -415,20 +411,6 @@ impl OfficeSession {
             view.floor.evict_missing(scene);
         }
         self.office.evict_missing(scene);
-    }
-
-    /// `world` as floor `floor` sees it, `floor_scene` its projection: the
-    /// inputs [`Self::render`] draws each floor with, for a painter drawing
-    /// it on its own.
-    #[doc(hidden)]
-    pub fn floor_world<'a>(
-        &self,
-        world: FloorInputs<'a>,
-        floor_scene: &'a super::FloorScene,
-        floor: usize,
-        pets: &'a [crate::pet::Pet],
-    ) -> FloorInputs<'a> {
-        floor_world(world, floor_scene, floor, self.n_floors, pets)
     }
 
     /// End a slide at once on its destination: a cancel (a resize) must not
@@ -481,36 +463,34 @@ impl OfficeSession {
     /// or both floors of a slide composed into one, `gap` between them dimmed
     /// as the floors are.
     /// `inputs.world.scene` is the FULL live scene: the office evicts against
-    /// it and projects each floor out of it. `inputs.world.floor` carries what
-    /// its floors share, `inputs.place.gateway` its gateway; each
-    /// floor's index, altitude, breadcrumb and pet (of `pets`) are the
-    /// office's, and a petting plays only on its own floor. Its picture is
-    /// [`Self::picture`].
+    /// it and projects each floor out of it. `inputs.world.conditions` carries
+    /// what its floors share, `inputs.gateway` its gateway; each floor's pet
+    /// (of `pets`) and petting are the office's, its breadcrumb its
+    /// projection's. Its picture is [`Self::picture`].
     pub fn render(
         &mut self,
         look: crate::look::Look,
-        inputs: crate::look::RenderInputs<'_>,
+        inputs: crate::look::RenderInputs<'_, SceneState>,
         pets: &[crate::pet::Pet],
         gap: Rgb,
     ) -> Feed {
         let scene = inputs.world.scene;
         let now = inputs.world.now;
         self.prepare(scene, now);
-        let n_floors = self.n_floors;
-        let total_agents = scene.agents.len();
-        let draw = |views: &mut Vec<FloorView>, office: &mut PerOffice, floor: usize, look| {
+        let draw = |views: &mut Vec<FloorView>,
+                    office: &mut PerOffice,
+                    pettings: &[Option<PetState>],
+                    floor: usize,
+                    look| {
             let floor_scene = super::project_floor_scene(scene, floor);
-            let world = floor_world(inputs.world, &floor_scene, floor, n_floors, pets);
+            let pets = floor_pets(floor, pets, pettings, now);
+            let world = floor_world(inputs.world, &floor_scene, pets);
             views[floor].render(
                 office,
                 look,
                 crate::look::RenderInputs {
                     world,
-                    place: crate::look::Place {
-                        floor: footer_floor(floor, n_floors, total_agents),
-                        ..inputs.place
-                    },
-                    ..inputs
+                    ..inputs.on(&floor_scene)
                 },
             );
         };
@@ -519,8 +499,14 @@ impl OfficeSession {
             // A slide has no one layout for a host to set text on.
             let look = look.on_slide();
             let (from, to, t) = (tr.from_floor, tr.to_floor, tr.t(now));
-            draw(&mut self.views, &mut self.office, from, look);
-            draw(&mut self.views, &mut self.office, to, look);
+            draw(
+                &mut self.views,
+                &mut self.office,
+                &self.pettings,
+                from,
+                look,
+            );
+            draw(&mut self.views, &mut self.office, &self.pettings, to, look);
             if let (Some(leaving), Some(arriving)) = (self.views[from].buf(), self.views[to].buf())
             {
                 let (slide, flashes) = self
@@ -540,11 +526,17 @@ impl OfficeSession {
             self.slide = None;
             let current = self.nav.current();
             self.shown_changed = self.shown.replace(current) != Some(current);
-            draw(&mut self.views, &mut self.office, current, look);
+            draw(
+                &mut self.views,
+                &mut self.office,
+                &self.pettings,
+                current,
+                look,
+            );
         }
         let current = self.nav.current();
         Feed {
-            audio: self.audio_frame(scene, inputs.world.floor, now),
+            audio: self.audio_frame(scene, inputs.world.conditions, now),
             note: self.views[current].floor.raster.note(),
         }
     }
@@ -574,17 +566,20 @@ impl OfficeSession {
     pub fn drew_no_office(
         &mut self,
         scene: &SceneState,
-        office_floor: FloorMeta,
+        conditions: Conditions,
         now: SystemTime,
     ) -> AudioFrame {
         self.drop_slide();
         let current = self.nav.current();
         self.views[current].forget();
         // The empty floor's by construction, whatever the view still holds.
-        let floor = floor_meta(office_floor, current, self.n_floors);
-        self.office
-            .audio
-            .frame(scene, Some(&HashSet::new()), |_| None, floor, now)
+        self.office.audio.frame(
+            scene,
+            Some(&HashSet::new()),
+            |_| None,
+            (current, conditions.weather),
+            now,
+        )
     }
 
     /// The waypoints the floor showing's audio reads as occupied.
@@ -594,31 +589,30 @@ impl OfficeSession {
     }
 
     /// One frame of audio intent for the floor showing, heard in `scene` (the
-    /// FULL live scene) under `office_floor` without drawing it: a walk-in
+    /// FULL live scene) under `conditions` without drawing it: a walk-in
     /// chimes, and the next frame drawn re-primes the appliance cues' edge.
     pub fn hear(
         &mut self,
         scene: &SceneState,
-        office_floor: FloorMeta,
+        conditions: Conditions,
         now: SystemTime,
     ) -> AudioFrame {
         self.prepare(scene, now);
-        let floor = floor_meta(office_floor, self.nav.current(), self.n_floors);
-        self.office.audio.frame(scene, None, |_| None, floor, now)
+        let floor = self.nav.current();
+        (self.office.audio).frame(scene, None, |_| None, (floor, conditions.weather), now)
     }
 
     /// One frame of audio intent for the floor showing, in `scene` (the FULL
-    /// live scene) under `office_floor`.
+    /// live scene) under `conditions`.
     fn audio_frame(
         &mut self,
         scene: &SceneState,
-        office_floor: FloorMeta,
+        conditions: Conditions,
         now: SystemTime,
     ) -> AudioFrame {
         // `nav` settles within `n_floors`, and a view is kept for each.
         let current = self.nav.current();
-        let floor = floor_meta(office_floor, current, self.n_floors);
-        self.views[current].audio_frame(&mut self.office, scene, floor, now)
+        self.views[current].audio_frame(&mut self.office, scene, (current, conditions), now)
     }
 
     /// The floor the footer speaks for: the one showing, or a slide's
@@ -629,17 +623,11 @@ impl OfficeSession {
             .map_or(self.nav.current(), |tr| tr.to_floor)
     }
 
-    /// The footer's floor breadcrumb, among `scene`'s agents.
-    #[doc(hidden)]
-    pub fn footer_floor(&self, scene: &SceneState) -> Option<FooterFloor> {
-        footer_floor(self.footer_floor_index(), self.n_floors, scene.agents.len())
-    }
-
-    /// The scene the footer counts and tallies: its floor's, as
+    /// The floor the footer counts, tallies and names: its projection, as
     /// [`FooterInputs::new`](crate::footer::FooterInputs::new) asks.
     #[doc(hidden)]
-    pub fn footer_scene(&self, scene: &SceneState) -> SceneState {
-        super::project_floor_scene(scene, self.footer_floor_index()).0
+    pub fn footer_scene(&self, scene: &SceneState) -> super::FloorScene {
+        super::project_floor_scene(scene, self.footer_floor_index())
     }
 
     /// Whether the floor showing's last frame changes between beats: someone

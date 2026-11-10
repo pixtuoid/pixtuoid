@@ -85,7 +85,7 @@ impl From<&str> for ToolDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum AgentEvent {
-    /// A session began — registers a new agent slot at the next free desk.
+    /// A session began — registers a new agent slot, seated at the first free desk or unseated.
     SessionStart {
         /// The new session's agent id.
         agent_id: AgentId,
@@ -209,14 +209,12 @@ pub enum AgentEvent {
         /// The vouched-live agent whose sweep-exemption to refresh.
         agent_id: AgentId,
     },
-    /// Identity context a hook decoder attaches IMMEDIATELY AHEAD of a
-    /// tool/permission activity event: hook payloads carry source/session_id/
-    /// cwd that the activity variants don't, so without this a proof-of-life
-    /// registration for an unknown id starts BLANK until the next real
-    /// `SessionStart` — for a hook-only source, the whole rest of the turn.
-    /// The reducer registers-or-back-fills from it on the Hook transport ONLY
-    /// (a JSONL `Identity` is a structural no-op — transcript lines can be
-    /// historical replays and must never synthesize).
+    /// Identity context a hook decoder attaches IMMEDIATELY AHEAD of a hook
+    /// event that may be its session's first sight (an activity event or a
+    /// turn end): hook payloads carry source/session_id/cwd that those
+    /// variants don't, so this, not the event, registers an unknown id. The reducer registers-or-back-fills from it on
+    /// the Hook transport ONLY (a JSONL `Identity` is a structural no-op — a
+    /// transcript line can be a historical replay).
     Identity {
         /// The agent this identity context describes.
         agent_id: AgentId,
@@ -474,35 +472,11 @@ impl AgentEvent {
         }
     }
 
-    /// Whether this event shows its session working now: the creation
-    /// polarity's evidence for a slot no start announced. A session start
-    /// carries its own authority, and a session end, a model, usage or title
-    /// line shows nothing, nor does [`Backlog`](Self::Backlog), the reader's own
-    /// word, or [`ProofOfLife`](Self::ProofOfLife), which vouches a visible slot
-    /// past the sweeps and must never create one.
-    pub(crate) fn shows_activity(&self) -> bool {
-        match self {
-            AgentEvent::ToolUseStart { .. }
-            | AgentEvent::ToolUseEnd { .. }
-            | AgentEvent::ToolUsePending { .. }
-            | AgentEvent::TurnStart { .. }
-            | AgentEvent::TurnEnd { .. }
-            | AgentEvent::UserActionRequest { .. }
-            | AgentEvent::UserActionResolved { .. } => true,
-            AgentEvent::SessionStart { .. }
-            | AgentEvent::Rename { .. }
-            | AgentEvent::SessionEnd { .. }
-            | AgentEvent::ProofOfLife { .. }
-            | AgentEvent::Identity { .. }
-            | AgentEvent::ModelInfo { .. }
-            | AgentEvent::Usage { .. }
-            | AgentEvent::Backlog { .. } => false,
-        }
-    }
-
-    /// Whether this event is its session's work, which keeps the session and
-    /// its ancestors past the stale sweep.
-    pub(crate) fn refreshes_lineage(&self) -> bool {
+    /// Whether this event is a turn's traffic: a call, a turn edge, or a
+    /// request for the user and its answer; never [`Backlog`](Self::Backlog),
+    /// the reader's own word, nor [`ProofOfLife`](Self::ProofOfLife), which
+    /// vouches a visible slot and must never create one.
+    pub(crate) fn is_turn_traffic(&self) -> bool {
         match self {
             AgentEvent::ToolUseStart { .. }
             | AgentEvent::ToolUseEnd { .. }
@@ -581,6 +555,7 @@ pub(crate) fn read_bounded_bytes(path: &std::path::Path, cap: u64) -> std::io::R
     file.take(cap).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
+#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) mod admit;
 /// Claude Code transcript source: line/hook decoders + the `Source` adapter.
 pub mod claude_code;

@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid::dev::{RenderFrames, TuiRenderer};
 use pixtuoid_core::state::{ActivityState, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, SceneState};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk, SceneState};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pack::load_bundled_pack;
 use ratatui::Terminal;
@@ -24,8 +24,7 @@ fn agent_slot(
     id: AgentId,
     session: &str,
     label: &str,
-    desk: GlobalDeskIndex,
-    floor: usize,
+    desk: FloorDesk,
     state: ActivityState,
     now: SystemTime,
 ) -> AgentSlot {
@@ -41,8 +40,7 @@ fn agent_slot(
         arrived_at: Some(now - Duration::from_secs(60)),
         last_event_at: now - Duration::from_secs(60),
         exiting_at: None,
-        desk_index: desk,
-        floor_idx: floor,
+        desk: Some(desk),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,
@@ -66,8 +64,7 @@ fn tui_renderer_render_paints_a_full_frame() {
             id,
             "s-1",
             "demo",
-            GlobalDeskIndex(0),
-            0,
+            FloorDesk::new(0, 0),
             ActivityState::Running {
                 item: Some(ToolUse {
                     tool_use_id: Some(std::sync::Arc::from("t1")),
@@ -98,79 +95,6 @@ fn tui_renderer_render_paints_a_full_frame() {
     let buf = renderer.buf().expect("a frame");
     assert_eq!(buf.width(), 96);
     assert_eq!(buf.height(), 70);
-}
-
-/// The transition path must not hardcode `PetInputs::default()` or empty
-/// coffee state — pets, cups and steam vanish during the slide if it does.
-#[test]
-fn tui_renderer_transition_paints_pets_and_coffee() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
-
-    let mut caps = [0usize; pixtuoid_core::state::MAX_FLOORS];
-    caps[0] = 8;
-    caps[1] = 8;
-    let mut scene = SceneState::new(caps);
-    for (i, name) in ["a", "b"].iter().enumerate() {
-        let id = AgentId::from_transcript_path(&format!("/demo/{name}.jsonl"));
-        scene.agents.insert(
-            id,
-            agent_slot(
-                id,
-                &format!("s-{i}"),
-                name,
-                GlobalDeskIndex(i * 8),
-                i,
-                ActivityState::Idle,
-                now,
-            ),
-        );
-    }
-
-    let backend = TestBackend::new(96, 36);
-    let terminal = Terminal::new(backend).expect("terminal");
-    let mut renderer = TuiRenderer::new(
-        terminal,
-        &pixtuoid_scene::theme::NORMAL,
-        pixtuoid_scene::pet::PetKind::ALL
-            .iter()
-            .map(|&k| pixtuoid_scene::pet::Pet::defaulted(k))
-            .collect(),
-        pack(),
-    );
-
-    // Initial render so the renderer grows its per-floor state to nf=2.
-    renderer.render(&scene, now).expect("initial render");
-
-    renderer.set_active_pet(Some(pixtuoid::dev::PetState {
-        petted_at: now,
-        kind: pixtuoid_scene::pet::PetKind::Cat,
-        floor_idx: 0,
-    }));
-
-    renderer.navigate_floor(1, now);
-    assert!(
-        renderer.transition().is_some(),
-        "navigate_floor should arm a transition"
-    );
-
-    let mid = now + Duration::from_millis(100);
-    renderer.render(&scene, mid).expect("transition render");
-
-    assert!(
-        renderer.transition().is_some(),
-        "transition should not have completed yet (was the path skipped?)"
-    );
-
-    let buf = renderer.buf().expect("a frame");
-    let nonzero = buf
-        .as_slice()
-        .iter()
-        .filter(|p| p.r != 0 || p.g != 0 || p.b != 0)
-        .count();
-    assert!(
-        nonzero > 100,
-        "transition buffer should have substantial paint (got {nonzero} non-black px)"
-    );
 }
 
 #[test]
@@ -368,8 +292,7 @@ fn cancel_transition_lands_on_destination_floor() {
                 id,
                 &format!("s-{i}"),
                 name,
-                GlobalDeskIndex(i * 8),
-                i,
+                FloorDesk::new(i, 0),
                 ActivityState::Idle,
                 now,
             ),

@@ -117,10 +117,9 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
 /// dropping silently, so registered-vs-decoded drift is loud.
 ///
 /// The activity arms prepend a registration, an [`AgentEvent::Identity`] (#221)
-/// or a subagent's parented `SessionStart`, because Reasonix is HOOK-ONLY: a
-/// slot the reducer's proof-of-life pre-pass synthesizes mid-turn has no JSONL
-/// back-fill path, so without it it would stay a blank `#N` ghost until the
-/// next `UserPromptSubmit`.
+/// or a subagent's parented `SessionStart`, because Reasonix is HOOK-ONLY: it is
+/// the one claim on a session first seen mid-turn short of the next
+/// `UserPromptSubmit`.
 ///
 /// # Errors
 ///
@@ -234,8 +233,8 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             });
             Ok(events)
         }
-        // Identity-less: an end alone proves too little to label a session, so
-        // an unknown id registers blank (`shows_activity`).
+        // Identity-less: an end alone registers nothing; the next
+        // `UserPromptSubmit` does.
         "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "Notification" => {
             // Every producer waits on the user: the approval gate, a question,

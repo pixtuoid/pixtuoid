@@ -2,35 +2,35 @@
 
 // Shared platform → native-binary resolution for the two launcher shims: npm
 // installs exactly the ONE `@pixtuoid/cli-<platform>-<arch>` optionalDependency
-// that matches the host (filtered by each platform package's `os`/`cpu`/`libc`),
+// that matches the host (filtered by each platform package's `os`/`cpu`),
 // and we `require.resolve` the native binary out of it. No postinstall, no
 // download.
 
 const fs = require("fs");
 const path = require("path");
 
-// The matrix is ASYMMETRIC, so there is no runtime gnu-vs-musl choice here:
-// linux-x64 ships a STATIC musl build and declares no `libc`; linux-arm64 ships
-// a glibc build and declares `libc:["glibc"]`, so npm skips it on musl/Alpine
-// rather than installing a binary that would crash. The os/cpu/libc filtering
-// happens at npm INSTALL time; here we just map.
-/** @type {Record<string, string>} */
-const PACKAGE = {
-  "darwin arm64": "@pixtuoid/cli-darwin-arm64",
-  "darwin x64": "@pixtuoid/cli-darwin-x64",
-  "linux x64": "@pixtuoid/cli-linux-x64",
-  "linux arm64": "@pixtuoid/cli-linux-arm64",
-  "win32 x64": "@pixtuoid/cli-win32-x64",
-  "win32 arm64": "@pixtuoid/cli-win32-arm64",
-};
-
-/** @param {string} bin */
-function exeName(bin) {
-  return bin + (process.platform === "win32" ? ".exe" : "");
+// npm matches `os`/`cpu` against `process.platform`/`process.arch`
+// (https://docs.npmjs.com/cli/v11/configuring-npm/package-json#os), and
+// generate.mjs names each package it publishes here, so this names the one
+// npm installed.
+/**
+ * @param {string} platform
+ * @param {string} arch
+ */
+function packageName(platform, arch) {
+  return "@pixtuoid/cli-" + platform + "-" + arch;
 }
 
-// Returns null if this platform isn't shipped — callers decide how to handle
-// that (the TUI errors; the hook stays silent).
+/**
+ * @param {string} bin
+ * @param {string} [platform]
+ */
+function exeName(bin, platform = process.platform) {
+  return bin + (platform === "win32" ? ".exe" : "");
+}
+
+// Returns null when no binary resolves — callers decide how to handle that
+// (the TUI errors; the hook stays silent).
 /**
  * @param {string} bin
  * @returns {string | null}
@@ -54,13 +54,24 @@ function binaryPath(bin) {
     if (fs.existsSync(p)) return p;
   }
 
-  const pkg = PACKAGE[process.platform + " " + process.arch];
-  if (!pkg) return null;
   try {
-    return require.resolve(pkg + "/" + exeName(bin));
+    return require.resolve(packageName(process.platform, process.arch) + "/" + exeName(bin));
   } catch (_e) {
     return null;
   }
 }
 
-module.exports = { binaryPath, exeName };
+// generate.mjs stamps the launcher's optionalDependencies from TARGETS, so a
+// platform they don't name has no prebuilt package, and one they name but
+// that didn't resolve was left out by the install, which may omit optional
+// dependencies (https://docs.npmjs.com/cli/v11/commands/npm-install#omit).
+/**
+ * @param {string} platform
+ * @param {string} arch
+ */
+function isShipped(platform, arch) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  return Object.hasOwn(manifest.optionalDependencies ?? {}, packageName(platform, arch));
+}
+
+module.exports = { binaryPath, exeName, isShipped, packageName };
