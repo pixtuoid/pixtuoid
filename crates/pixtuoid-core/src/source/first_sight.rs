@@ -88,7 +88,7 @@ fn head_scan_complete(cwd: Option<&Path>, label: Option<&str>, wants_label: bool
 }
 
 /// The first-sight fields a HEAD read yields, pulled in ONE parse pass: scanning
-/// a 1 MiB head once per field is a real cost. Each comes from the SCANNED
+/// a [`HEAD_BYTES`] head once per field is a real cost. Each comes from the SCANNED
 /// source's own extractor (invariant #3): an if-chain trying every source's
 /// shape against every transcript lets a foreign-shaped line label a session
 /// with a foreign, identity-bearing cwd. For a TITLED omp root — the only
@@ -132,10 +132,10 @@ pub(crate) struct HeadFields {
 }
 
 impl HeadFields {
-    /// Whether these fields, read off a read that need not start the file, miss
-    /// what only a head carries, so the head is read instead: a revive's tail
-    /// may lack Codex's `session_meta` cwd and parent, and the title, which
-    /// would register it empty-cwd onto the short reap, or a child as a root.
+    /// Whether a read that need not start the file misses the head's cwd, or its
+    /// parent where the source extracts one, so the head is read instead: a
+    /// revive's tail may lack Codex's `session_meta` cwd and parent, which would
+    /// register it empty-cwd onto the short reap, or a child as a root.
     pub(crate) fn lack_the_head(&self, parent: Option<ParentExtractor>) -> bool {
         self.cwd.is_none() || (parent.is_some() && self.parent.is_none())
     }
@@ -182,18 +182,18 @@ mod tests {
         assert!(!head_scan_complete(None, None, true));
     }
 
-    /// A cwd ending on the cap's last byte is read; one starting past it is not,
-    /// whatever the caller hands in.
+    /// A cwd whose closing brace is the cap's last byte is read; one whose brace
+    /// is the first byte past it is not, whatever the caller hands in.
     #[test]
     fn the_head_scan_reads_no_further_than_its_cap() {
-        let line = "{\"cwd\":\"/repo\"}\n";
-        let after = |pad: usize| format!("{}\n{line}", "x".repeat(pad));
+        let obj = "{\"cwd\":\"/repo\"}";
+        let after = |pad: usize| format!("{}\n{obj}", "x".repeat(pad));
         let cwd = |text: String| {
             let extract = crate::source::decoder::extract_top_level_cwd;
             extract_head_fields(text.as_bytes(), extract, None, None).cwd
         };
-        assert!(cwd(after(HEAD_BYTES - 1 - line.len())).is_some());
-        assert!(cwd(after(HEAD_BYTES - 1)).is_none());
+        assert!(cwd(after(HEAD_BYTES - 1 - obj.len())).is_some());
+        assert!(cwd(after(HEAD_BYTES - obj.len())).is_none());
     }
 
     #[test]

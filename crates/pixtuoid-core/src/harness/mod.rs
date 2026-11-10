@@ -450,7 +450,7 @@ impl Drive {
     /// The `SessionStart` the watcher's first sight emits for this transcript:
     /// its head read off `read`, or off `head`, the transcript's start, where
     /// `read` lacks what only a head carries.
-    fn first_sight(&self, read: &[u8], head: &[u8]) -> Option<AgentEvent> {
+    fn seed(&self, read: &[u8], head: &[u8]) -> Option<AgentEvent> {
         let (source, path, session_id) = self.sighted()?;
         let parent = registry::parent_extractor_for(source);
         let scan = |bytes: &[u8]| {
@@ -552,8 +552,9 @@ impl Fold {
         self.driven.events.push(event);
     }
 
-    /// The seed `drive` leads a feed of `lines` with, when the watcher's gate
-    /// makes it a first sight, and the gate's state after `decoded`.
+    /// The seed `drive` leads a feed of `lines` with when the watcher's gate
+    /// makes it a first sight, else `None`; the claim then follows `decoded`,
+    /// whose `SessionEnd` ends it.
     fn first_sight<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
@@ -569,9 +570,7 @@ impl Fold {
             sight: Sight::Claimed,
             head: read.get(..HEAD_BYTES).unwrap_or(&read).to_vec(),
         });
-        let seed = leads
-            .then(|| drive.first_sight(&read, &sighted.head))
-            .flatten();
+        let seed = leads.then(|| drive.seed(&read, &sighted.head)).flatten();
         if leads {
             sighted.sight = Sight::Claimed;
         }
