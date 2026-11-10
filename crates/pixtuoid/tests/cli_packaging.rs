@@ -288,6 +288,22 @@ fn a_tracing_warning_into_a_gone_stderr_exits_0() {
     assert_eq!(status.code(), Some(0), "{status:?}");
 }
 
+/// A log on a stderr that is no terminal (`2>file`, `| grep`) is plain text.
+#[cfg(unix)]
+#[test]
+fn a_log_on_a_piped_stderr_carries_no_ansi() {
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let out = common::isolated(&["sources"], home.path())
+        .env("PIXTUOID_LOG", home.path())
+        .output()
+        .expect("run pixtuoid");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("log unreadable") && !stderr.contains('\u{1b}'),
+        "{stderr:?}"
+    );
+}
+
 /// The shim a workspace `just test` builds beside the binary.
 fn built_shim() -> std::path::PathBuf {
     let shim = std::path::Path::new(env!("CARGO_BIN_EXE_pixtuoid"))

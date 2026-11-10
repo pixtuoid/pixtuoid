@@ -66,9 +66,18 @@ pub(crate) fn init(tui_active: bool, log_level: &'static str) -> DriftSeen {
             }
         }
     } else {
+        // tracing-subscriber colors by `NO_COLOR` alone, never asking whether
+        // the writer is a terminal (its `fmt_layer.rs` `Layer::default`), and
+        // its `with_ansi(true)` would override `NO_COLOR`.
+        let layer = fmt_layer();
+        let layer = if std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+            layer
+        } else {
+            layer.with_ansi(false)
+        };
         registry
             .with(
-                fmt_layer()
+                layer
                     .with_writer(std::io::stderr)
                     .with_filter(make_filter()),
             )
