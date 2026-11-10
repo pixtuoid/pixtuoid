@@ -300,6 +300,7 @@ mod tests {
                 &mut floor,
                 office.stores(),
                 &NORMAL,
+                scene,
                 &ground,
                 epoch(),
                 FloorMeta::ground(),

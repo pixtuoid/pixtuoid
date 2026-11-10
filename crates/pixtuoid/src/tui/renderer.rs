@@ -46,21 +46,22 @@ pub struct DrawCtx<'a> {
 }
 
 impl<'a> DrawCtx<'a> {
-    /// An offscreen still of one floor, `scene` its projection, every input and
-    /// overlay off; the tallies and gateway come from it, as the live renderer's
-    /// do from the floor it draws.
+    /// An offscreen still of one floor, `floor_scene` its projection of `full`,
+    /// every input and overlay off; the footer's office-wide context comes from
+    /// `full`, as the live renderer's does.
     #[doc(hidden)]
     pub fn offscreen(
         floor: &'a mut PerFloor,
         office: OfficeStores<'a>,
         theme: &'static pixtuoid_scene::theme::Theme,
-        scene: &'a pixtuoid_scene::floor::FloorScene,
+        full: &'a SceneState,
+        floor_scene: &'a pixtuoid_scene::floor::FloorScene,
         now: SystemTime,
         meta: pixtuoid_scene::floor::FloorMeta,
     ) -> Self {
         Self {
             world: FloorInputs {
-                scene,
+                scene: floor_scene,
                 now,
                 floor: meta,
                 pets: Default::default(),
@@ -70,7 +71,7 @@ impl<'a> DrawCtx<'a> {
             mouse_pos: None,
             debug_walkable: false,
             theme,
-            footer: crate::panels::widgets::footer_context(scene.scene(), None, false, None, None),
+            footer: crate::panels::widgets::footer_context(full, None, false, None, None),
             overlays: crate::panels::OverlayFrame::closed(),
         }
     }
@@ -491,6 +492,7 @@ mod tests {
             &mut floor,
             office.stores(),
             &pixtuoid_scene::theme::NORMAL,
+            &scene,
             &ground,
             t0,
             pixtuoid_scene::floor::FloorMeta::ground(),

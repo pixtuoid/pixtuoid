@@ -778,7 +778,15 @@ fn main() -> Result<()> {
         debug_walkable: args.debug_walkable,
         footer: pixtuoid::dev::footer_context(&scene, None, false, None, warning_text.as_deref()),
         overlays: frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]),
-        ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &ground, now, floor_meta)
+        ..DrawCtx::offscreen(
+            &mut floor,
+            office.stores(),
+            theme,
+            &scene,
+            &ground,
+            now,
+            floor_meta,
+        )
     };
     let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
 
@@ -949,8 +957,15 @@ mod tests {
             let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
             let ground = pixtuoid_scene::floor::FloorMeta::ground();
             let projected = pixtuoid_scene::floor::project_floor_scene(scene, 0);
-            let mut ctx =
-                DrawCtx::offscreen(&mut floor, office.stores(), theme, &projected, now, ground);
+            let mut ctx = DrawCtx::offscreen(
+                &mut floor,
+                office.stores(),
+                theme,
+                scene,
+                &projected,
+                now,
+                ground,
+            );
             draw_frame(&mut term, &mut ctx, None)
                 .unwrap()
                 .expect("a classic frame")

@@ -480,7 +480,15 @@ pub(crate) fn save_animation(
         |(term, pixel), now, _| {
             let mut draw_ctx = DrawCtx {
                 debug_walkable,
-                ..DrawCtx::offscreen(floor, office.stores(), job.theme, &ground, now, floor_meta)
+                ..DrawCtx::offscreen(
+                    floor,
+                    office.stores(),
+                    job.theme,
+                    job.scene,
+                    &ground,
+                    now,
+                    floor_meta,
+                )
             };
             draw_frame(term, &mut draw_ctx, pixel.as_mut()).map(drop)
         },

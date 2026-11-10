@@ -607,6 +607,7 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
             &mut floor,
             office.stores(),
             job.theme,
+            &scene,
             &ground,
             now,
             pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),

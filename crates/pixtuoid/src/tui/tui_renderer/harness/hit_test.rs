@@ -277,6 +277,7 @@ fn the_drawn_geometry_answers_every_cell_as_the_half_block_does() {
             &mut floor,
             office.stores(),
             normal_theme(),
+            &scene,
             &ground,
             now,
             FloorMeta::ground(),
