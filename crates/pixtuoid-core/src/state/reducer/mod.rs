@@ -1270,6 +1270,8 @@ impl Reducer {
             }
         }
         slot.last_event_at = now;
+        // Seating skips one walking out, so a desk may have freed mid-exit.
+        let seat = revive && slot.home_desk.is_none();
         if revive {
             // Route through fsm so an in-flight Running span folds into
             // `running_ms` — a direct `state = Idle` here silently dropped it.
@@ -1280,6 +1282,9 @@ impl Reducer {
             if let Some(p) = slot.parent_id {
                 self.corr.link_applied_parent(agent_id, p);
             }
+        }
+        if seat {
+            scene.seat_unseated(|_| true, |_| Some(now));
         }
     }
 

@@ -231,6 +231,44 @@ fn an_unseated_agent_walks_in_on_the_apply_where_its_holder_walks_out() {
     assert_eq!(slot.arrived_at, Some(walked_out));
 }
 
+/// Seating skips one walking out, so a desk that frees mid-exit stays free; a
+/// start that revives the unseated agent seats it there and walks it in.
+#[test]
+fn a_revived_unseated_agent_takes_the_desk_that_freed_mid_exit() {
+    let mut r = Reducer::new();
+    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let holder = AgentId::from_transcript_path("/p/holder.jsonl");
+    let unseated = AgentId::from_transcript_path("/p/unseated.jsonl");
+    let mut scene = one_desk_office(&mut r, &[holder, unseated], t0);
+
+    let t1 = t0 + Duration::from_secs(2);
+    sess_end(&mut r, &mut scene, holder, false, t1, Transport::Hook);
+    let t2 = t1 + Duration::from_secs(2);
+    sess_end(&mut r, &mut scene, unseated, false, t2, Transport::Hook);
+    let freed = t1 + EXIT_GRACE_WINDOW + Duration::from_millis(100);
+    proof_of_life(&mut r, &mut scene, unseated, freed, Transport::Hook);
+    assert!(!scene.agents.contains_key(&holder), "premise: swept out");
+    assert_eq!(scene.agents[&unseated].home_desk, None, "premise: mid-exit");
+
+    let revived = freed + Duration::from_millis(100);
+    r.apply(
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: unseated,
+            source: "claude-code".into(),
+            session_id: "s1".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        },
+        revived,
+        Transport::Hook,
+    );
+    let slot = &scene.agents[&unseated];
+    assert_eq!(slot.exiting_at, None, "premise: revived");
+    assert_eq!(slot.home_desk, desk(0, 0));
+    assert_eq!(slot.arrived_at, Some(revived));
+}
+
 /// A gone slot's newest turn position goes at the tick that finds the slot
 /// gone, so a new life of the same id opens a lower-numbered turn.
 #[test]
