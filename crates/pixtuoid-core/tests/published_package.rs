@@ -140,7 +140,10 @@ fn a_tree_link_off_head_is_caught_however_many_segments_its_ref_spans() {
         for (target, off_head) in [
             (format!("{head}README.md"), false),
             (format!("{any_ref}main/README.md"), true),
-            (format!("{any_ref}refs/heads/main/README.md#usage"), true),
+            (
+                format!("{any_ref}refs/heads/main/docs/CONTRIBUTING.md#usage"),
+                true,
+            ),
             (format!("{any_ref}fix/x/README.md?plain=1"), true),
             (format!("{any_ref}star-history/no-such-file.svg"), false),
         ] {
