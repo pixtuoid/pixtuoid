@@ -283,6 +283,12 @@ impl<'a> FooterContext<'a> {
             keys_alert,
         }
     }
+
+    /// This context with `warning` as its painter's one-line warning.
+    #[must_use]
+    pub fn with_warning(self, warning: Option<&'a str>) -> Self {
+        Self { warning, ..self }
+    }
 }
 
 /// Column width of a footer string. The footer's own glyph vocabulary is ALL

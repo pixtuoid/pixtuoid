@@ -11,7 +11,7 @@ const KEYS_STATS: &str = " [?]help [p]ause [t]heme [q]uit ";
 const KEYS_ALERT: &str = " [q]uit ";
 
 /// [`FooterContext::new`] with the TUI's keybind tails.
-pub fn footer_context<'a>(
+pub(crate) fn footer_context<'a>(
     office: &SceneState,
     floor: Option<FooterFloor>,
     audio_audible: bool,

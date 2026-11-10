@@ -172,18 +172,24 @@ fn floor_buffers_grow_on_overflow() {
     );
 }
 
+/// Each floor lays out from its own seed, as the frame it draws shows.
 #[test]
 fn per_floor_layout_seeds_differ() {
     let scene = two_floor_scene();
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
     r.render(&scene, now).unwrap();
-    let seed0 = r.current_floor_seed();
+    let walkable = |r: &TuiRenderer<TestBackend>| {
+        r.cached_layout()
+            .map(|layout| layout.walkable.clone())
+            .expect("a floor shows")
+    };
+    let ground = walkable(&r);
     r.navigate_floor(1, now);
     render_until_settled(&mut r, &scene, &mut now, 1);
     assert_ne!(
-        seed0,
-        r.current_floor_seed(),
+        ground,
+        walkable(&r),
         "each floor must use a distinct layout seed"
     );
 }

@@ -254,7 +254,7 @@ pub(crate) fn scanline_col(desk_x: u16, beat: Beat) -> u16 {
 #[derive(Debug, Clone)]
 pub struct SimFrame {
     /// Where the floor it stepped stands: its projection's.
-    pub(crate) place: FloorPlace,
+    pub(crate) floor_place: FloorPlace,
     /// The tick's agent snapshot — placements index into it, paint borrows
     /// from it.
     pub agents: Vec<AgentSlot>,
@@ -443,7 +443,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
 
     let chitchat_bubbles = chitchat::update_and_collect(
         stores.chitchat,
-        floor_scene.place().index(),
+        floor_scene.floor_place().index(),
         &waypoint_visitors,
         now,
     );
@@ -479,7 +479,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         next_change.at(at);
     }
     SimFrame {
-        place: floor_scene.place(),
+        floor_place: floor_scene.floor_place(),
         agents,
         poses,
         seated_agents,
@@ -589,9 +589,9 @@ fn pet_placement(
     let stride = pack.inner().stride(walk_anim);
     let walk = creatures
         .entry(CreatureKey::Pet(kind))
-        .or_insert_with(|| CreatureWalk::at_home(layout, floor_scene.layout_seed(), now));
+        .or_insert_with(|| CreatureWalk::at_home(layout, floor_scene.floor_seed(), now));
     let petted = pets.petting.filter(|p| {
-        p.is_active(now) && p.kind == kind && p.floor_idx == floor_scene.place().index()
+        p.is_active(now) && p.kind == kind && p.floor_idx == floor_scene.floor_place().index()
     });
     if petted.is_some() {
         walk.hold(now);

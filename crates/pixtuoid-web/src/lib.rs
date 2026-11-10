@@ -28,7 +28,7 @@ use crate::script::{
 
 use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
-use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs, floor_capacity};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::load_bundled_pack;
@@ -142,7 +142,6 @@ pub struct Office {
     theme: &'static Theme,
     /// The cutaway at the pack's densest art, which the browser upscales.
     fit: PixelFit,
-    seed: u64,
     reducer: Reducer,
     beats: Vec<Beat>,
     cursor: usize,
@@ -197,11 +196,10 @@ impl Office {
             // on every `step` before any beat fires, so the reducer seats agents
             // only at desks the rendered office has.
             scene: SceneState::default(),
-            session: FloorSession::new(pack).with_layout_seed(u64::from(seed)),
+            session: FloorSession::new(pack).with_floor_seed(u64::from(seed)),
             rgba: Vec::new(),
             theme: &NORMAL,
             fit,
-            seed: u64::from(seed),
             reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
             beats: hero_script(),
             cursor: 0,
@@ -582,12 +580,9 @@ impl Office {
         if self.caps_units == Some((units_w, units_h)) {
             return;
         }
-        // The SAME (size, cap=None, seed) computation `render` lays out, so
-        // reducer capacity and painted layout can't drift.
-        let cap = floor_capacity(
-            pixtuoid_scene::layout::Viewport::full(units_w, units_h),
-            self.seed,
-        );
+        let cap = self
+            .session
+            .capacity(pixtuoid_scene::layout::Viewport::full(units_w, units_h));
         self.scene
             .set_capacities(std::array::from_fn(|i| if i == 0 { cap } else { 0 }), now);
         self.caps_units = Some((units_w, units_h));
@@ -761,8 +756,11 @@ mod tests {
     use pixtuoid_scene::screen::{Flashes, ManualClock};
 
     /// `Office::new`'s error arm constructs a `JsError`, so unwrap via match.
+    /// The hero [`office`] draws.
+    const SEED: u32 = 1;
+
     fn office() -> Office {
-        match Office::new(1) {
+        match Office::new(SEED) {
             Ok(o) => o,
             Err(_) => panic!("bundled pack must parse"),
         }
@@ -1509,12 +1507,16 @@ mod tests {
             "the click past exhaustion is refused outright: {admitted:?}"
         );
         o.step(T0_MS + 32_000.0, w, h);
-        let layout = SceneLayout::compute(
-            pixtuoid_scene::layout::Viewport::full(w as u16, h as u16),
-            None,
-            o.seed,
-        )
-        .expect("the portrait buffer lays out");
+        let picture = o.session.picture().expect("the portrait buffer lays out");
+        let layout = picture.hits.layout();
+        let viewport = pixtuoid_scene::layout::Viewport::full(w as u16, h as u16);
+        assert_eq!(
+            layout.walkable,
+            SceneLayout::compute(viewport, None, u64::from(SEED))
+                .expect("the portrait buffer lays out")
+                .walkable,
+            "the hero draws its own variant"
+        );
         assert_eq!(
             o.scene.total_capacity(),
             layout.home_desks.len(),

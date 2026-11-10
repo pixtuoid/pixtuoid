@@ -3,12 +3,12 @@
     reason = "every test crate includes `common` whole, and none uses every helper"
 )]
 
-/// Binds `$name` to a `DrawCtx::offscreen` of floor `$floor` of `$scene`
-/// under `$conditions`; a macro so the stores it borrows live in the caller's
-/// scope. `$pack` is the `Arc<OfficeArt>` its floor draws with.
+/// Binds `$name` to a `DrawCtx::offscreen` of `$scene`'s ground floor under
+/// `$conditions`; a macro so the stores it borrows live in the caller's scope.
+/// `$pack` is the `Arc<OfficeArt>` its floor draws with.
 #[macro_export]
 macro_rules! make_draw_ctx {
-    ($name:ident, $scene:expr, $pack:expr, $now:expr, $floor:expr, $conditions:expr) => {
+    ($name:ident, $scene:expr, $pack:expr, $now:expr, $conditions:expr) => {
         let mut _floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone($pack));
         let mut _office = pixtuoid_scene::floor::PerOffice::new();
         let mut $name = pixtuoid::dev::DrawCtx::offscreen(
@@ -16,7 +16,7 @@ macro_rules! make_draw_ctx {
             _office.stores(),
             &pixtuoid_scene::theme::NORMAL,
             $scene,
-            $floor,
+            0,
             $now,
             $conditions,
         );
@@ -88,13 +88,13 @@ pub(crate) fn render_hash(
     scene: &pixtuoid_core::SceneState,
     now: std::time::SystemTime,
     theme: &'static pixtuoid_scene::theme::Theme,
-    (floor, conditions): (usize, pixtuoid_scene::floor::Conditions),
+    conditions: pixtuoid_scene::floor::Conditions,
 ) -> u64 {
     use std::hash::{Hash, Hasher};
 
     let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(96, 36)).unwrap();
     let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
-    make_draw_ctx!(draw_ctx, scene, &pack, now, floor, conditions);
+    make_draw_ctx!(draw_ctx, scene, &pack, now, conditions);
     draw_ctx.theme = theme;
     pixtuoid::dev::draw_scene(&mut term, &mut draw_ctx).unwrap();
 

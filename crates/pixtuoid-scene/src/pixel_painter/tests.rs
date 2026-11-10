@@ -660,18 +660,18 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
             theme,
             scale,
         };
-        let ground = crate::floor::Conditions::default();
+        let conditions = crate::floor::Conditions::default();
         crate::cutaway::paint::render_cutaway(
             &frame,
             office,
-            crate::display::compose::tests::showing(ground, now0),
+            crate::display::compose::tests::showing(conditions, now0),
             (&mut cache, &mut crate::outside::OutsideCache::default()),
             &mut buf,
         );
         let list = crate::display::compose(
             &frame,
             office,
-            crate::display::compose::tests::showing(ground, now0),
+            crate::display::compose::tests::showing(conditions, now0),
             (
                 &mut crate::display::compose::LightCache::default(),
                 &mut crate::outside::OutsideCache::default(),
@@ -1689,7 +1689,7 @@ fn every_hover_size_is_its_painted_sprite_size() {
 /// A frame with nobody in it, for `layout`.
 fn empty_frame(layout: &SceneLayout) -> SimFrame {
     SimFrame {
-        place: crate::floor::FloorPlace::at(0, 1),
+        floor_place: crate::floor::FloorPlace::at(0, 1),
         agents: Vec::new(),
         poses: HashMap::new(),
         seated_agents: HashMap::new(),
@@ -5045,7 +5045,7 @@ fn a_roaming_creature_is_never_sliced_by_the_canvas_edge() {
                 SimInputs {
                     world: FloorInputs {
                         scene: &crate::floor::project_floor_scene(&scene, 0)
-                            .with_layout_seed(u64::from(port)),
+                            .with_floor_seed(u64::from(port)),
                         now,
                         conditions: crate::floor::Conditions::default(),
                         pets: PetInputs {
@@ -6293,7 +6293,7 @@ fn the_classics_dark_carries_past_the_insets() {
             &Moment::resolve(
                 crate::sky::Sky::at_with(noon, crate::sky::Weather::Clear),
                 theme,
-                frame.place.altitude(),
+                frame.floor_place.altitude(),
                 Motion::Full.timing(noon),
             ),
             theme,

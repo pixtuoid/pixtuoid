@@ -22,7 +22,7 @@ pub(crate) fn quiet_board() -> &'static crate::neon_sign::BoardModel {
     &BOARD
 }
 
-/// `floor` at `now`, under the [`quiet_board`].
+/// `conditions` at `now`, under the [`quiet_board`].
 pub(crate) fn showing(
     conditions: crate::floor::Conditions,
     now: std::time::SystemTime,
@@ -580,8 +580,8 @@ fn the_floor_indicator_stays_in_its_cell() {
     for d in densities {
         let pen = Pen::new(RenderScale::from(*d), *d).expect("d divides itself");
         for (floor, floors) in [(0, 1), (11, 12), (98, 99)] {
-            let place = crate::floor::FloorPlace::at(floor, floors);
-            let run = TextRun::indicator(&layout, place, &crate::theme::NORMAL);
+            let floor_place = crate::floor::FloorPlace::at(floor, floors);
+            let run = TextRun::indicator(&layout, floor_place, &crate::theme::NORMAL);
             let plate = run_rect(&run, pen);
             let span = topmost_span(plate, pen);
             assert!(
@@ -798,7 +798,7 @@ fn a_sitters_chair_casts_the_shadow_they_do_not() {
 /// calm.
 pub(crate) fn empty_frame(layout: &SceneLayout) -> SimFrame {
     SimFrame {
-        place: crate::floor::FloorPlace::at(0, 1),
+        floor_place: crate::floor::FloorPlace::at(0, 1),
         agents: Vec::new(),
         poses: std::collections::HashMap::new(),
         seated_agents: std::collections::HashMap::new(),

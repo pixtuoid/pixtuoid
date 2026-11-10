@@ -3,7 +3,7 @@
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::sprite::RgbBuffer;
 
-use pixtuoid_scene::floor::{Conditions, FloorInputs, OfficeSession};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, OfficeSession, PetInputs};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
 use pixtuoid_scene::interact::{Gesture, Pointer, Pressed};
 use pixtuoid_scene::look::RenderInputs;
@@ -46,9 +46,13 @@ impl OfficeRenderer {
         self.pets = pets;
     }
 
-    /// [`OfficeSession::showing_pet`] of this window's pets.
-    pub(crate) fn showing_pet(&self) -> Option<&pixtuoid_scene::pet::Pet> {
-        self.session.showing_pet(&self.pets)
+    /// [`OfficeSession::showing_pets`] of this window's pets.
+    pub(crate) fn showing_pets<'a>(
+        &'a self,
+        petting: Option<&'a pixtuoid_scene::pet::PetState>,
+        now: std::time::SystemTime,
+    ) -> PetInputs<'a> {
+        self.session.showing_pets(&self.pets, petting, now)
     }
 
     /// Which floor shows, and the slide under way.
@@ -78,7 +82,7 @@ impl OfficeRenderer {
     }
 
     /// Feed the audio a frame of the office without drawing one
-    /// ([`OfficeSession::hear`]), in `scene` at `now` under `floor`.
+    /// ([`OfficeSession::hear`]), in `scene` at `now` under `conditions`.
     pub(crate) fn hear(
         &mut self,
         scene: &SceneState,

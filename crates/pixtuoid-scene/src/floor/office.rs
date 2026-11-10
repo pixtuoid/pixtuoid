@@ -195,31 +195,30 @@ impl FloorNav {
     }
 }
 
-/// The pet of `pets` floor `floor` of `n_floors` draws: the one choice its
-/// frames and its tooltip both read.
-fn floor_pet(floor: usize, pets: &[crate::pet::Pet]) -> Option<&crate::pet::Pet> {
-    crate::pet::select_pet_for_floor(super::floor_seed(floor), pets)
+/// The pets floor `floor` draws at `now`: its pet of `pets`, the one choice
+/// its frames and its tooltip both read, and `petting` while it plays there.
+fn floor_pets<'a>(
+    floor: usize,
+    pets: &'a [crate::pet::Pet],
+    petting: Option<&'a crate::pet::PetState>,
+    now: SystemTime,
+) -> super::PetInputs<'a> {
+    super::PetInputs {
+        pet: crate::pet::select_pet_for_floor(super::floor_seed(floor), pets),
+        petting: petting.filter(|p| p.floor_idx == floor && p.is_active(now)),
+    }
 }
 
-/// `world` drawing `floor_scene`: its floor's pet (of `pets`) the office's,
-/// and a petting playing only on its own floor while it lasts.
+/// `world` drawing `floor_scene`, with that floor's pets of `pets`.
 fn floor_world<'a>(
     world: FloorInputs<'a, SceneState>,
     floor_scene: &'a super::FloorScene,
     pets: &'a [crate::pet::Pet],
 ) -> FloorInputs<'a> {
-    let now = world.now;
-    let floor = floor_scene.place().index();
-    let world = world.on(floor_scene);
+    let floor = floor_scene.floor_place().index();
     FloorInputs {
-        pets: super::PetInputs {
-            pet: floor_pet(floor, pets),
-            petting: world
-                .pets
-                .petting
-                .filter(|p| p.floor_idx == floor && p.is_active(now)),
-        },
-        ..world
+        pets: floor_pets(floor, pets, world.pets.petting, world.now),
+        ..world.on(floor_scene)
     }
 }
 
@@ -362,10 +361,16 @@ impl OfficeSession {
         self.n_floors
     }
 
-    /// The pet of `pets` the floor showing picks, as its frames draw it.
+    /// The pets the floor showing draws at `now`, of `pets` and the office's
+    /// `petting`, as its frames read them: a painter's chrome names these.
     #[doc(hidden)]
-    pub fn showing_pet<'p>(&self, pets: &'p [crate::pet::Pet]) -> Option<&'p crate::pet::Pet> {
-        floor_pet(self.nav.current(), pets)
+    pub fn showing_pets<'a>(
+        &self,
+        pets: &'a [crate::pet::Pet],
+        petting: Option<&'a crate::pet::PetState>,
+        now: SystemTime,
+    ) -> super::PetInputs<'a> {
+        floor_pets(self.nav.current(), pets, petting, now)
     }
 
     /// Ready the office for a frame of `scene` (the FULL live scene) at
@@ -392,18 +397,6 @@ impl OfficeSession {
             view.floor.evict_missing(scene);
         }
         self.office.evict_missing(scene);
-    }
-
-    /// `world` drawing `floor_scene`: the inputs [`Self::render`] draws each
-    /// floor with, for a painter drawing it on its own.
-    #[doc(hidden)]
-    pub fn floor_world<'a>(
-        &self,
-        world: FloorInputs<'a, SceneState>,
-        floor_scene: &'a super::FloorScene,
-        pets: &'a [crate::pet::Pet],
-    ) -> FloorInputs<'a> {
-        floor_world(world, floor_scene, pets)
     }
 
     /// End a slide at once on its destination: a cancel (a resize) must not
@@ -458,7 +451,7 @@ impl OfficeSession {
     /// `inputs.world.scene` is the FULL live scene: the office evicts against
     /// it and projects each floor out of it. `inputs.world.conditions` carries
     /// what its floors share, `inputs.place.gateway` its gateway; each
-    /// floor's place, breadcrumb and pet (of `pets`) are the office's, and a
+    /// floor's breadcrumb and pet (of `pets`) are the office's, and a
     /// petting plays only on its own floor. Its picture is
     /// [`Self::picture`].
     pub fn render(
@@ -581,8 +574,8 @@ impl OfficeSession {
         now: SystemTime,
     ) -> AudioFrame {
         self.prepare(scene, now);
-        let floor = (self.nav.current(), conditions.weather);
-        self.office.audio.frame(scene, None, |_| None, floor, now)
+        let floor = self.nav.current();
+        (self.office.audio).frame(scene, None, |_| None, (floor, conditions.weather), now)
     }
 
     /// One frame of audio intent for the floor showing, in `scene` (the FULL

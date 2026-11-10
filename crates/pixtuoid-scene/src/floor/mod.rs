@@ -74,7 +74,8 @@ pub(crate) fn floor_capacity_scaled(
 }
 
 /// What the host decides about how a frame reads, office-wide. Where a floor
-/// stands is its projection's ([`FloorPlace`]), never the host's to say.
+/// stands is its projection's ([`FloorPlace`]); only the wall board's
+/// breadcrumb ([`Place::floor`](crate::look::Place::floor)) is still the host's.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Conditions {
     /// Which weather its windows show, and its rain sounds.
@@ -397,7 +398,7 @@ pub struct FloorInputs<'a, S = FloorScene> {
     pub pets: PetInputs<'a>,
 }
 
-// By hand: a derive would bound `S: Copy`, and the full scene is not.
+// By hand: a derive would bound `S: Copy`, and no scene is.
 impl<S> Clone for FloorInputs<'_, S> {
     fn clone(&self) -> Self {
         *self
@@ -599,7 +600,7 @@ pub struct FloorSession {
     /// The office-wide cross-frame state (coffee, chitchat, audio) shared across floors.
     pub office: PerOffice,
     /// The seed its floor lays out from.
-    layout_seed: u64,
+    floor_seed: u64,
 }
 
 impl FloorSession {
@@ -609,24 +610,29 @@ impl FloorSession {
         Self {
             view: FloorView::new(pack),
             office: PerOffice::default(),
-            layout_seed: floor_seed(0),
+            floor_seed: floor_seed(0),
         }
     }
 
     /// This session laying its floor out from `seed`, a variant of the ground
-    /// floor's; its painter publishes the capacity [`floor_capacity`] gives
-    /// that seed.
+    /// floor's.
     #[must_use]
-    pub fn with_layout_seed(self, seed: u64) -> Self {
+    pub fn with_floor_seed(self, seed: u64) -> Self {
         Self {
-            layout_seed: seed,
+            floor_seed: seed,
             ..self
         }
     }
 
+    /// How many desks its floor lays out on `viewport`: the capacity its
+    /// painter publishes, from the seed it draws with.
+    pub fn capacity(&self, viewport: Viewport) -> usize {
+        floor_capacity(viewport, self.floor_seed)
+    }
+
     /// The floor it draws of `scene`: its ground floor, laid out from its seed.
     fn ground(&self, scene: &SceneState) -> FloorScene {
-        project_floor_scene(scene, 0).with_layout_seed(self.layout_seed)
+        project_floor_scene(scene, 0).with_floor_seed(self.floor_seed)
     }
 
     /// This session's floor: its sim stores + raster.
@@ -738,7 +744,7 @@ pub(crate) fn step_floor(
     viewport: Viewport,
 ) -> Option<SteppedFloor> {
     let PerFloor { ctx: fctx, raster } = floor;
-    let layout = fctx.frame_layout(viewport, world.scene.layout_seed(), world.now)?;
+    let layout = fctx.frame_layout(viewport, world.scene.floor_seed(), world.now)?;
     let door_anim_max_ms = fctx.door_anim_max_ms;
     let frame = sim_step(
         &mut fctx.sim_stores(chitchat),
@@ -1214,8 +1220,8 @@ pub(crate) fn floor_agents(
 #[derive(Debug)]
 pub struct FloorScene {
     scene: SceneState,
-    place: FloorPlace,
-    layout_seed: u64,
+    floor_place: FloorPlace,
+    floor_seed: u64,
 }
 
 impl FloorScene {
@@ -1225,27 +1231,25 @@ impl FloorScene {
     }
 
     /// Where its floor stands.
-    pub fn place(&self) -> FloorPlace {
-        self.place
+    pub fn floor_place(&self) -> FloorPlace {
+        self.floor_place
     }
 
     /// The seed its floor lays out from: [`floor_seed`] of its index, or a
-    /// one-floor session's own ([`FloorSession::with_layout_seed`]).
-    pub(crate) fn layout_seed(&self) -> u64 {
-        self.layout_seed
+    /// one-floor session's own ([`FloorSession::with_floor_seed`]).
+    pub(crate) fn floor_seed(&self) -> u64 {
+        self.floor_seed
     }
 
-    /// This projection laid out from `layout_seed`.
-    pub(crate) fn with_layout_seed(self, layout_seed: u64) -> Self {
-        Self {
-            layout_seed,
-            ..self
-        }
+    /// This projection laid out from `floor_seed`.
+    pub(crate) fn with_floor_seed(self, floor_seed: u64) -> Self {
+        Self { floor_seed, ..self }
     }
 }
 
-/// Build a self-contained `SceneState` for one floor: the agents at its desks,
-/// at the desks they hold. A floor past the building's is an empty one.
+/// Build floor `floor_idx`'s [`FloorScene`]: the agents holding a desk on it,
+/// where it stands ([`FloorPlace`]), and its floor seed. A floor past the
+/// building's is an empty one that tops it.
 pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> FloorScene {
     let mut s = SceneState::default();
     for slot in floor_agents(scene, floor_idx) {
@@ -1259,11 +1263,11 @@ pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> FloorScene {
     s.today = scene.today;
     FloorScene {
         scene: s,
-        place: FloorPlace {
+        floor_place: FloorPlace {
             index: floor_idx,
             floors: num_floors(scene).max(floor_idx + 1),
         },
-        layout_seed: floor_seed(floor_idx),
+        floor_seed: floor_seed(floor_idx),
     }
 }
 

@@ -279,11 +279,11 @@ fn a_floors_projection_holds_its_agents_at_their_own_desks() {
 fn a_projection_records_where_its_floor_stands() {
     let scene = make_scene(20, 16);
     let floor_scene = project_floor_scene(&scene, 1);
-    let place = floor_scene.place();
-    assert_eq!((place.index(), place.floors()), (1, 2));
-    assert!((place.altitude() - 1.0).abs() < f32::EPSILON);
-    assert_eq!(floor_scene.layout_seed(), floor_seed(1));
-    let past = project_floor_scene(&scene, 3).place();
+    let floor_place = floor_scene.floor_place();
+    assert_eq!((floor_place.index(), floor_place.floors()), (1, 2));
+    assert!((floor_place.altitude() - 1.0).abs() < f32::EPSILON);
+    assert_eq!(floor_scene.floor_seed(), floor_seed(1));
+    let past = project_floor_scene(&scene, 3).floor_place();
     assert_eq!(
         (past.index(), past.floors()),
         (3, 4),
@@ -312,7 +312,7 @@ fn a_stepped_frame_stands_where_its_projection_does() {
         Viewport::full(160, 96),
     )
     .expect("lays out");
-    assert_eq!(stepped.frame.place, floor_scene.place());
+    assert_eq!(stepped.frame.floor_place, floor_scene.floor_place());
 }
 
 /// A one-floor session lays its floor out from its own seed, a hero's variant,
@@ -320,7 +320,7 @@ fn a_stepped_frame_stands_where_its_projection_does() {
 #[test]
 fn a_one_floor_session_lays_out_its_own_seed() {
     let viewport = Viewport::full(160, 96);
-    let mut session = FloorSession::new(Arc::new(crate::pack::test_office())).with_layout_seed(3);
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office())).with_floor_seed(3);
     let stepped = session
         .step(
             FloorInputs {
@@ -588,8 +588,8 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
         ),
         (make_scene(0, 8), Conditions::default()),
     ]
-    .map(|(scene, floor)| {
-        step_through_vacancy(&scene, floor)
+    .map(|(scene, conditions)| {
+        step_through_vacancy(&scene, conditions)
             .into_iter()
             .map(|(frame, dimmed)| (frame.indoor_scale, dimmed, frame.neon))
             .collect::<Vec<_>>()
@@ -603,7 +603,7 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
     );
 }
 
-/// Each frame a fresh session steps `scene` on `floor` through three vacancy
+/// Each frame a fresh session steps `scene` under `conditions` through three vacancy
 /// debounces, and whether its floor had dimmed by then.
 fn step_through_vacancy(
     scene: &SceneState,
@@ -664,30 +664,6 @@ fn a_one_floor_session_steps_only_the_agents_at_its_desks() {
             .is_some_and(|&(lit, dimmed, _, _)| lit == VacancyDim::MIN_LEVEL && dimmed),
         "premise: the empty floor dims"
     );
-}
-
-#[test]
-fn every_floor_of_an_office_shares_its_offline() {
-    let scene = make_scene(3, 2);
-    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
-    office.prepare(&scene, t0());
-    let world = FloorInputs {
-        scene: &scene,
-        now: t0(),
-        conditions: Conditions {
-            offline: true,
-            ..Conditions::default()
-        },
-        pets: PetInputs::default(),
-    };
-    for floor in 0..2 {
-        let floor_scene = project_floor_scene(&scene, floor);
-        let seen = office.floor_world(world, &floor_scene, &[]);
-        assert!(
-            seen.conditions.offline && seen.scene.place().index() == floor,
-            "floor {floor}"
-        );
-    }
 }
 
 #[test]
@@ -1312,14 +1288,14 @@ fn audio_observer_keeps_cue_edges_warm_so_delivery_resume_fires_no_volley() {
     let occ = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
 
-    let clock = (0, crate::sky::WeatherPolicy::default());
-    let _ = obs.frame(&empty, Some(&occ), |_| None, clock, now);
-    let arrival = obs.frame(&one, Some(&occ), |_| None, clock, now);
+    let ground_clear = (0, crate::sky::WeatherPolicy::default());
+    let _ = obs.frame(&empty, Some(&occ), |_| None, ground_clear, now);
+    let arrival = obs.frame(&one, Some(&occ), |_| None, ground_clear, now);
     assert!(
         arrival.events.contains(&crate::audio::OneShot::DoorChime),
         "an arrival chimes on the frame it happens"
     );
-    let resumed = obs.frame(&one, Some(&occ), |_| None, clock, now);
+    let resumed = obs.frame(&one, Some(&occ), |_| None, ground_clear, now);
     assert!(
         !resumed.events.contains(&crate::audio::OneShot::DoorChime),
         "no volley on resume — the observer saw the agent while muted"
@@ -1770,15 +1746,15 @@ fn neon_never_flashes_while_lit_or_while_still_coasting_down() {
     assert!(last.power > NeonLevels::VACANT.power, "{last:?}");
 }
 
-/// The classic looks out from its own floor: the ground floor and the top
-/// one of an empty two-floor office, laid out alike.
+/// The classic looks out from its own floor: the ground floor of an empty
+/// office and the floor above it, laid out alike.
 #[test]
 fn the_classic_sees_the_skyline_from_its_floors_altitude() {
     let pack = Arc::new(crate::pack::test_office());
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let render = |floor| {
         let floor_scene =
-            project_floor_scene(&SceneState::uniform(8), floor).with_layout_seed(floor_seed(0));
+            project_floor_scene(&SceneState::uniform(8), floor).with_floor_seed(floor_seed(0));
         let mut per_floor = PerFloor::new(Arc::clone(&pack));
         let mut office = PerOffice::new();
         let rendered = crate::look::render(
@@ -1876,7 +1852,7 @@ fn looks() -> [crate::look::Look; 2] {
     ]
 }
 
-/// `session`'s pixels for `scene` on `floor` at `now`, in `look`.
+/// `session`'s pixels for `scene` under `conditions` at `now`, in `look`.
 fn paint(
     session: &mut FloorSession,
     look: crate::look::Look,
@@ -1911,7 +1887,7 @@ fn paint(
         .to_vec()
 }
 
-/// Both looks' pixels for `scene` on `floor` at `now`, each from fresh
+/// Both looks' pixels for `scene` under `conditions` at `now`, each from fresh
 /// stores so only the instant differs.
 fn both_painters(
     scene: &SceneState,
@@ -2376,7 +2352,7 @@ fn render_office(
     render_office_with(office, look, scene, conditions, now, (&[], None));
 }
 
-/// [`render_office`] under `floor`, its floors picking their pet of `pets`,
+/// [`render_office`] under `conditions`, its floors picking their pet of `pets`,
 /// `petting` playing.
 fn render_office_with(
     office: &mut OfficeSession,
@@ -2792,26 +2768,19 @@ fn a_petting_plays_only_on_its_own_floor() {
         floor_idx: 0,
     };
     let pets = [crate::pet::Pet::defaulted(crate::pet::PetKind::Cat)];
-    let world = |now| FloorInputs {
-        scene: &scene,
-        now,
-        conditions: Conditions::default(),
-        pets: PetInputs {
-            pet: None,
-            petting: Some(&petting),
-        },
-    };
-    let petted = |floor, now| {
+    let petted = |office: &OfficeSession, now| {
         office
-            .floor_world(world(now), &project_floor_scene(&scene, floor), &pets)
-            .pets
+            .showing_pets(&pets, Some(&petting), now)
             .petting
             .is_some()
     };
-    assert!(petted(0, t0), "the petted floor");
-    assert!(!petted(1, t0), "another floor");
+    assert!(petted(&office, t0), "the petted floor");
     let over = t0 + Duration::from_millis(crate::pet::PET_DURATION_MS);
-    assert!(!petted(0, over), "a petting over");
+    assert!(!petted(&office, over), "a petting over");
+    assert!(office.navigate(1, t0));
+    office.prepare(&scene, t0 + Duration::from_millis(TRANSITION_DURATION_MS));
+    assert_eq!(office.nav().current(), 1, "premise: floor 1 shows");
+    assert!(!petted(&office, t0), "another floor");
 }
 
 /// A lift goes to the floor showing and nothing during a slide; its carry and
@@ -2910,7 +2879,10 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         })
         .collect();
     assert_eq!(
-        office.showing_pet(&pets).map(|p| p.name.as_str()),
+        office
+            .showing_pets(&pets, None, t0)
+            .pet
+            .map(|p| p.name.as_str()),
         crate::pet::select_pet_for_floor(floor_seed(1), &pets).map(|p| p.name.as_str()),
         "the floor showing's pet"
     );

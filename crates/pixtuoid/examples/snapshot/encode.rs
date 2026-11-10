@@ -114,11 +114,10 @@ fn compute_reachable(layout: &pixtuoid_scene::layout::SceneLayout) -> Vec<bool> 
     visited
 }
 
-/// The crop window centered on `--crop-furniture`'s piece; `None` without the
-/// flag.
+/// The crop window centered on `--crop-furniture`'s piece in the office the
+/// classic frame lays out; `None` without the flag.
 pub(crate) fn furniture_crop(
     args: &SnapshotArgs,
-    scene: &SceneState,
     cols: u16,
     rows: u16,
 ) -> Result<Option<ratatui::layout::Rect>> {
@@ -128,7 +127,7 @@ pub(crate) fn furniture_crop(
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
     let layout = pixtuoid_scene::layout::SceneLayout::compute(
         pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
-        Some(scene.floor_capacities()[0]),
+        None,
         pixtuoid_scene::floor::floor_seed(0),
     )
     .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
@@ -445,7 +444,7 @@ pub(crate) fn draw_frame(
     };
     let under = draw_over_image(term, ctx)?;
     let world = pixtuoid_scene::floor::FloorInputs {
-        scene: ctx.scene,
+        scene: ctx.scene(),
         now: ctx.now,
         conditions: ctx.conditions,
         pets: ctx.pets,

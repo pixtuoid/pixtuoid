@@ -47,7 +47,7 @@ pub(crate) trait PixelSession {
 }
 
 /// [`crate::encode::draw_frame`]'s one floor, under the `Conditions` it is
-/// handed (`--floor-seed`).
+/// handed.
 impl PixelSession for FloorSession {
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_, SceneState>) {
         self.render(look, inputs);

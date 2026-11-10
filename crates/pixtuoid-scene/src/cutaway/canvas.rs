@@ -1361,12 +1361,12 @@ mod tests {
                 layout: Arc::new(layout),
             }
         };
-        let floor = clear_sky();
+        let conditions = clear_sky();
         canvas.frame(
             &stepped(0),
             normal(),
             scale,
-            crate::display::compose::tests::showing(floor, now),
+            crate::display::compose::tests::showing(conditions, now),
             crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
@@ -1374,7 +1374,7 @@ mod tests {
             &stepped(0),
             normal(),
             scale,
-            crate::display::compose::tests::showing(floor, now),
+            crate::display::compose::tests::showing(conditions, now),
             crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
@@ -1388,7 +1388,7 @@ mod tests {
             &b,
             normal(),
             scale,
-            crate::display::compose::tests::showing(floor, now),
+            crate::display::compose::tests::showing(conditions, now),
             crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
@@ -1426,9 +1426,9 @@ mod tests {
         let pack = Arc::new(test_office());
         let (walk_layout, _, frames, _) = sit_down(crate::layout::Facing::North, 2);
         let walk_layout = Arc::new(walk_layout);
-        let empty = |viewport, layout_seed| {
+        let empty = |viewport, floor_seed| {
             crate::floor::FloorSession::new(Arc::clone(&pack))
-                .with_layout_seed(layout_seed)
+                .with_floor_seed(floor_seed)
                 .step(
                     crate::floor::FloorInputs {
                         scene: &pixtuoid_core::SceneState::uniform(16),
@@ -1573,7 +1573,7 @@ mod tests {
                         },
                     );
                     let name = weather.name();
-                    let floor_idx = frame.place.index();
+                    let floor_idx = frame.floor_place.index();
                     writeln!(
                         digests,
                         "{scene} {theme_name} {name} {hour:02}h floor{floor_idx} d{d} {digest:016x}"

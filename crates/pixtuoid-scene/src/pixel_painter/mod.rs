@@ -191,7 +191,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
     let agents: &[AgentSlot] = &frame.agents;
     let buf_h = ctx.layout.buf_h;
 
-    let moment = Moment::resolve(ctx.sky, ctx.theme, frame.place.altitude(), ctx.timing);
+    let moment = Moment::resolve(ctx.sky, ctx.theme, frame.floor_place.altitude(), ctx.timing);
     let look = &moment.look;
     let lights = Lights::of(
         ctx.layout,
@@ -210,7 +210,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
     paint_ground_and_walls(ctx.base_fill, ctx.buf, &wall, &moment, ctx.theme);
     let window_moment = ctx
         .window_sky
-        .map(|sky| Moment::resolve(sky, ctx.theme, frame.place.altitude(), ctx.timing));
+        .map(|sky| Moment::resolve(sky, ctx.theme, frame.floor_place.altitude(), ctx.timing));
     paint_windows(
         ctx.buf,
         wall,

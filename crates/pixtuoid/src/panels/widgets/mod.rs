@@ -13,7 +13,7 @@ mod welcome;
 pub(crate) use appearance::paint_appearance;
 pub(crate) use connection::{fmt_age, paint_connection_panel};
 pub(crate) use dashboard::paint_dashboard;
-pub use footer::footer_context;
+pub(crate) use footer::footer_context;
 pub(crate) use footer::paint_footer;
 pub(crate) use help::{Shortcut, paint_help_overlay};
 pub(crate) use panel::{Overflow, Panel, PanelGeometry, borderless_panel};

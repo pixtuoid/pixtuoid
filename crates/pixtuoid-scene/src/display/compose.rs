@@ -256,7 +256,7 @@ pub(crate) fn compose<'a>(
     let moment = Moment::resolve(
         crate::sky::Sky::at(timing, conditions.weather),
         office.theme,
-        frame.place.altitude(),
+        frame.floor_place.altitude(),
         timing,
     );
     let mut list = compose_at(frame, office, &moment, board, caches);
@@ -279,7 +279,7 @@ pub(crate) fn compose_at<'a>(
     } = office;
     let ambient = crate::display::light::Ambient::of(&moment.look);
     let (mut collected, mut host_text) = collect_pieces(frame, office, moment, outside);
-    host_text.signs = TextRun::signs(board, office.layout, frame.place, theme);
+    host_text.signs = TextRun::signs(board, office.layout, frame.floor_place, theme);
     collected.extend(signs(office, &host_text.signs));
     let sorted = depth_sort(
         collected

@@ -540,7 +540,7 @@ mod tests {
                     &pixtuoid_core::SceneState::default(),
                     0,
                 )
-                .place(),
+                .floor_place(),
             )
             .into_iter()
             .map(|content| pixtuoid_scene::display::TextSpan {

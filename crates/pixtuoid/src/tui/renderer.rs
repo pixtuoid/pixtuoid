@@ -31,10 +31,11 @@ pub use pixtuoid_scene::pet::PetState;
 
 #[derive(Debug)]
 pub struct DrawCtx<'a> {
-    /// The whole office, whose agents the footer tallies and a tooltip names.
-    pub scene: &'a SceneState,
-    /// The floor drawn: [`Self::offscreen`]'s projection of `scene`, so the
-    /// two can't disagree.
+    /// The whole office: the footer's office-wide context reads it and a
+    /// tooltip names its agents, while the footer counts `floor_scene`'s.
+    scene: &'a SceneState,
+    /// The floor drawn: [`Self::offscreen`]'s projection of `scene`; both are
+    /// private, so the two can't disagree.
     floor_scene: FloorScene,
     pub now: SystemTime,
     pub conditions: Conditions,
@@ -48,7 +49,7 @@ pub struct DrawCtx<'a> {
     /// persisted to config.
     pub debug_walkable: bool,
     pub theme: &'static pixtuoid_scene::theme::Theme,
-    /// From [`footer_context`](crate::panels::widgets::footer_context).
+    /// The footer's office-wide context, as [`Self::offscreen`] builds it.
     pub footer: FooterContext<'a>,
     /// The panels open over the frame.
     pub overlays: crate::panels::OverlayFrame<'a>,
@@ -82,6 +83,11 @@ impl<'a> DrawCtx<'a> {
             footer: crate::panels::widgets::footer_context(full, None, false, None, None),
             overlays: crate::panels::OverlayFrame::closed(),
         }
+    }
+
+    /// The whole office its floor is projected from.
+    pub fn scene(&self) -> &'a SceneState {
+        self.scene
     }
 }
 

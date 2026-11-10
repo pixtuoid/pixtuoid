@@ -25,25 +25,15 @@ fn empty_scene() -> SceneState {
 #[test]
 fn golden_empty_office_is_deterministic() {
     let scene = empty_scene();
-    let h1 = render_hash(&scene, now(), &theme::NORMAL, (0, Conditions::default()));
-    let h2 = render_hash(&scene, now(), &theme::NORMAL, (0, Conditions::default()));
+    let h1 = render_hash(&scene, now(), &theme::NORMAL, Conditions::default());
+    let h2 = render_hash(&scene, now(), &theme::NORMAL, Conditions::default());
     assert_eq!(h1, h2, "empty office render is non-deterministic");
 }
 
 #[test]
 fn golden_populated_vs_empty_differ() {
     let n = now();
-    let h_empty = render_hash(
-        &empty_scene(),
-        n,
-        &theme::NORMAL,
-        (0, Conditions::default()),
-    );
-    let h_pop = render_hash(
-        &fixture_scene(n),
-        n,
-        &theme::NORMAL,
-        (0, Conditions::default()),
-    );
+    let h_empty = render_hash(&empty_scene(), n, &theme::NORMAL, Conditions::default());
+    let h_pop = render_hash(&fixture_scene(n), n, &theme::NORMAL, Conditions::default());
     assert_ne!(h_empty, h_pop, "populated and empty scenes look identical");
 }

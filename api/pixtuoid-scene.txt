@@ -194,7 +194,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorPla
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorPlace
 pub struct pixtuoid_scene::floor::FloorScene
 impl pixtuoid_scene::floor::FloorScene
-pub fn pixtuoid_scene::floor::FloorScene::place(&self) -> pixtuoid_scene::floor::FloorPlace
+pub fn pixtuoid_scene::floor::FloorScene::floor_place(&self) -> pixtuoid_scene::floor::FloorPlace
 pub fn pixtuoid_scene::floor::FloorScene::scene(&self) -> &pixtuoid_core::state::SceneState
 impl core::fmt::Debug for pixtuoid_scene::floor::FloorScene
 pub fn pixtuoid_scene::floor::FloorScene::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -209,13 +209,14 @@ pub struct pixtuoid_scene::floor::FloorSession
 pub pixtuoid_scene::floor::FloorSession::office: pixtuoid_scene::floor::PerOffice
 impl pixtuoid_scene::floor::FloorSession
 pub fn pixtuoid_scene::floor::FloorSession::audio_frame(&mut self, &pixtuoid_core::state::SceneState, pixtuoid_scene::floor::Conditions, std::time::SystemTime) -> pixtuoid_scene::audio::AudioFrame
+pub fn pixtuoid_scene::floor::FloorSession::capacity(&self, pixtuoid_scene::layout::Viewport) -> usize
 pub fn pixtuoid_scene::floor::FloorSession::floor(&self) -> &pixtuoid_scene::floor::PerFloor
 pub fn pixtuoid_scene::floor::FloorSession::floor_mut(&mut self) -> &mut pixtuoid_scene::floor::PerFloor
 pub fn pixtuoid_scene::floor::FloorSession::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
 pub fn pixtuoid_scene::floor::FloorSession::picture(&self) -> core::option::Option<pixtuoid_scene::look::FloorPicture<'_>>
 pub fn pixtuoid_scene::floor::FloorSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_, pixtuoid_core::state::SceneState>)
 pub fn pixtuoid_scene::floor::FloorSession::step(&mut self, pixtuoid_scene::floor::FloorInputs<'_, pixtuoid_core::state::SceneState>, pixtuoid_scene::layout::Viewport) -> core::option::Option<pixtuoid_scene::floor::SteppedFloor>
-pub fn pixtuoid_scene::floor::FloorSession::with_layout_seed(self, u64) -> Self
+pub fn pixtuoid_scene::floor::FloorSession::with_floor_seed(self, u64) -> Self
 impl core::fmt::Debug for pixtuoid_scene::floor::FloorSession
 pub fn pixtuoid_scene::floor::FloorSession::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::FloorSession

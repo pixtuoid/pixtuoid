@@ -29,7 +29,6 @@ fn render_and_get_buffer(now: SystemTime) -> (Buffer, u16, u16) {
         &scene,
         &pack,
         now,
-        0,
         pixtuoid_scene::floor::Conditions::default()
     );
     draw_scene(&mut term, &mut draw_ctx).unwrap();

@@ -519,10 +519,7 @@ impl FloatingApp {
                 .and_then(|hit| {
                     // The office picks each floor's pet as it renders; the
                     // tooltip names the one the floor showing drew.
-                    let pets = PetInputs {
-                        pet: self.renderer.showing_pet(),
-                        ..world.pets
-                    };
+                    let pets = self.renderer.showing_pets(world.pets.petting, now);
                     pixtuoid_scene::tooltip::for_hit(hit, &scene, now, pets)
                 })
                 .map(|tip| (tip, (cursor.0 as i32, cursor.1 as i32))),

@@ -207,7 +207,7 @@ pub struct RenderInputs<'a, S = crate::floor::FloorScene> {
     pub dim: Dim,
 }
 
-// By hand: a derive would bound `S: Copy`, and the full scene is not.
+// By hand: a derive would bound `S: Copy`, and no scene is.
 impl<S> Clone for RenderInputs<'_, S> {
     fn clone(&self) -> Self {
         *self
@@ -800,8 +800,12 @@ pub fn render(
             let drawn = paint_frame(&mut paint, &stepped.frame);
             classic.drew(drawn);
             classic.dim = dim;
-            classic.signs =
-                crate::display::TextRun::signs(&board, &stepped.layout, stepped.frame.place, theme);
+            classic.signs = crate::display::TextRun::signs(
+                &board,
+                &stepped.layout,
+                stepped.frame.floor_place,
+                theme,
+            );
             if look == Look::HALF_BLOCKS {
                 dim.apply(&mut classic.buf);
                 (Dirty::All, flash)

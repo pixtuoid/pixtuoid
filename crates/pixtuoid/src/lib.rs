@@ -53,7 +53,7 @@ pub mod dev {
         AppearanceFrame, AppearancePick, RenderFrames, VersionPopupFrame, popup_whole,
     };
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
-    pub use crate::panels::widgets::{footer_context, grid_of};
+    pub use crate::panels::widgets::grid_of;
     pub use crate::sources::{ConnState, ConnectionRow};
     #[cfg(unix)]
     pub use crate::term::{QUERY_TIMEOUT, TTY_READ_CHUNK};

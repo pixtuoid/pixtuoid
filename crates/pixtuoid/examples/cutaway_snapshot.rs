@@ -1,6 +1,6 @@
 //! Render one frame of the CUTAWAY profile to a PNG, through the real seam: the
 //! real sim produces a `SimFrame`, the real layout is computed at LOGICAL size,
-//! and `render_cutaway` paints it into a buffer sized in pixels at `--scale`.
+//! and `look::render` paints it into a buffer sized in pixels at `--scale`.
 //!
 //! Usage:
 //!   cargo run --release --example cutaway_snapshot -- <out.png> [--scale N]
@@ -167,7 +167,8 @@ fn main() -> Result<()> {
     populate(&mut scene, now, agents, &repos, floor);
 
     // The real sim, at LOGICAL size, drawn through the painters' one entry
-    // from floor `--floor`'s projection, the building's top.
+    // from floor `--floor`'s projection, the building's top while `--agents`
+    // fits one floor.
     let mut per_floor = PerFloor::new(Arc::clone(&pack));
     let mut office = PerOffice::new();
     let floor_scene = project_floor_scene(&scene, floor);
@@ -212,7 +213,7 @@ fn main() -> Result<()> {
         "wrote {out} ({bw}x{bh} = {lw}x{lh} logical @{scale_n}x, \
          {} desks, {} agents)",
         layout.home_desks.len(),
-        scene.agents.len()
+        floor_scene.scene().agents.len()
     );
     Ok(())
 }

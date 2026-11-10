@@ -18,12 +18,7 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 fn render_pixel_hash(now: SystemTime) -> u64 {
-    render_hash(
-        &fixture_scene(now),
-        now,
-        &NORMAL,
-        (0, Conditions::default()),
-    )
+    render_hash(&fixture_scene(now), now, &NORMAL, Conditions::default())
 }
 
 #[test]
@@ -56,7 +51,7 @@ fn render_produces_distinct_wall_band_and_floor_regions() {
     let backend = TestBackend::new(96, 36);
     let mut term = Terminal::new(backend).expect("terminal");
     let pack = std::sync::Arc::new(load_bundled_pack().expect("pack"));
-    make_draw_ctx!(draw_ctx, &scene, &pack, now, 0, Conditions::default());
+    make_draw_ctx!(draw_ctx, &scene, &pack, now, Conditions::default());
     draw_scene(&mut term, &mut draw_ctx).expect("render");
     let buf = draw_ctx.floor.raster.pixels().expect("a frame");
 
@@ -111,7 +106,7 @@ fn render_changes_when_an_agent_state_changes() {
     for slot in scene_idle.agents.values_mut() {
         slot.state = ActivityState::Idle;
     }
-    let idle_hash = render_hash(&scene_idle, now, &NORMAL, (0, Conditions::default()));
+    let idle_hash = render_hash(&scene_idle, now, &NORMAL, Conditions::default());
 
     let active_hash = render_pixel_hash(now);
     assert_ne!(
