@@ -166,7 +166,7 @@ invariant-breaking sequence against:
    included, is justified, and a new workspace edge follows
    [AGENTS.md](AGENTS.md#layout)'s crate DAG.
 
-#### Every changed file
+#### Everything the review reads
 
 A maintenance defect's failure scenario is the edit that would leave a copy
 wrong.
