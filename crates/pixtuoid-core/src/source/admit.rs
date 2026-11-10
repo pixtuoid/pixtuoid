@@ -1,16 +1,19 @@
 //! The one rule for what the watcher reads of a source's tree: which entries are
 //! its transcripts (`classify`) and which bytes of one are its lines ([`lines`]).
 //!
-//! Built whenever `native` or `harness` is on, either alone being enough: the
+//! `lines` is in every build, since the tail checkers read it; `classify` and
+//! `whole` whenever `native` or `harness` is on, either alone being enough: the
 //! production watcher is behind `native` and the offline drivers behind
 //! `harness`, and the whole point is that both ask the same question. The
 //! TRAVERSAL stays with each caller — the watcher's is async and retires a
 //! vanished path's cursor, the harness's is a plain recursion.
 
+#[cfg(any(feature = "native", feature = "harness"))]
 use std::path::Path;
 use std::str::Utf8Error;
 
 /// What the walker should do with one directory entry.
+#[cfg(any(feature = "native", feature = "harness"))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Entry {
     /// A real directory — descend.
@@ -30,6 +33,7 @@ pub(crate) enum Entry {
 /// A symlinked entry is refused before anything else: a directory link would
 /// recurse a loop or drag a foreign tree into this source's id space, and a file
 /// link would double-count one transcript.
+#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn classify(
     meta: &std::fs::Metadata,
     path: &Path,
@@ -49,6 +53,7 @@ pub(crate) fn classify(
 }
 
 /// Whether a file at `path` is a transcript of the source whose filter is `admits`.
+#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn is_transcript(path: &Path, admits: &dyn Fn(&Path) -> bool) -> bool {
     path.extension().and_then(|s| s.to_str()) == Some("jsonl") && admits(path)
 }
@@ -56,6 +61,7 @@ pub(crate) fn is_transcript(path: &Path, admits: &dyn Fn(&Path) -> bool) -> bool
 /// `span`'s whole lines: everything through its last `\n`. What follows is a line
 /// still being written, which a reader with a cursor holds back until its `\n`
 /// lands.
+#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn whole(span: &[u8]) -> &[u8] {
     span.iter()
         .rposition(|&b| b == b'\n')

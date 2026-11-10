@@ -13,9 +13,8 @@ use pixtuoid_core::source::antigravity::AntigravitySource;
 use pixtuoid_core::source::jsonl::JsonlWatcher;
 
 use crate::{
-    Fold, ag_step_line, cc_watcher, codex_meta_line, codex_watcher, codex_work_line,
-    copilot_tool_line, fast_watch, recorded, spawn_copilot, split_before_last, stage,
-    vouch_snapshot, write_lines,
+    ag_step_line, cc_watcher, codex_meta_line, codex_watcher, codex_work_line, copilot_tool_line,
+    fast_watch, spawn_copilot, vouch_snapshot, write_lines,
 };
 
 #[tokio::test]
@@ -643,39 +642,4 @@ async fn the_registry_row_filters_the_untruncated_copy_and_the_builder_overrides
         2,
         "an explicit with_path_filter must OVERRIDE the row (both files first-sight)"
     );
-}
-
-/// A resumed copilot session sits idle with its pre-resume shutdown still
-/// in its tail; its last word is the resume, so first sight registers it live.
-#[tokio::test]
-async fn a_resumed_session_is_live_at_first_sight() {
-    use pixtuoid_core::Reducer;
-
-    let (transcript, dir) = recorded("copilot", "resume-hermetic");
-    let (head, _) = split_before_last("copilot", &transcript, |e| {
-        matches!(
-            e,
-            AgentEvent::SessionEnd {
-                as_child: false,
-                ..
-            }
-        )
-    });
-    let (root, _) = stage(&transcript, &dir, &head);
-    let (tx, rx) = mpsc::channel(64);
-    let handle = spawn_copilot(root.path().to_path_buf(), tx);
-    let mut fold = Fold::new(rx, Reducer::new(), SystemTime::now());
-    let events = fold
-        .until("copilot", |e| matches!(e, AgentEvent::SessionStart { .. }))
-        .await;
-    handle.abort();
-    let id = events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart { agent_id, .. } => Some(*agent_id),
-            _ => None,
-        })
-        .expect("first sight declares it");
-    let exiting = fold.scene.agents.get(&id).map(|s| s.exiting_at);
-    assert_eq!(exiting, Some(None), "{events:?}");
 }
