@@ -4,8 +4,8 @@
 use super::*;
 use crate::audio::{AudioHandle, drain_frames};
 
-fn running_on(path: &str, floor_idx: usize, desk: usize) -> AgentSlot {
-    let mut s = slot(AgentId::from_transcript_path(path), floor_idx, desk, t0());
+fn running_on(path: &str, floor: usize, desk: usize) -> AgentSlot {
+    let mut s = slot(AgentId::from_transcript_path(path), floor, desk, t0());
     s.state = ActivityState::Running {
         item: Some(ToolUse {
             tool_use_id: Some(Arc::from("t")),
@@ -24,9 +24,9 @@ fn audio_stems_and_music_count_only_the_viewed_floor() {
     let scene = scene_with(
         vec![
             running_on("/a/f0.jsonl", 0, 0),
-            running_on("/a/f1a.jsonl", 1, cap),
-            running_on("/a/f1b.jsonl", 1, cap + 1),
-            running_on("/a/f1c.jsonl", 1, cap + 2),
+            running_on("/a/f1a.jsonl", 1, 0),
+            running_on("/a/f1b.jsonl", 1, 1),
+            running_on("/a/f1c.jsonl", 1, 2),
         ],
         cap,
     );
@@ -68,7 +68,7 @@ fn door_chime_fires_only_for_viewed_floor_arrivals() {
     r.render(&scene, now).expect("prime render");
     drain_frames(&rx);
 
-    agents.push(running_on("/d/f1-new.jsonl", 1, cap));
+    agents.push(running_on("/d/f1-new.jsonl", 1, 0));
     let scene = scene_with(agents.clone(), cap);
     now += PAINT_FRAME;
     r.render(&scene, now).expect("render");
@@ -101,8 +101,8 @@ fn floor_switch_reprimes_without_a_chime_volley() {
     let scene = scene_with(
         vec![
             running_on("/s/f0.jsonl", 0, 0),
-            running_on("/s/f1a.jsonl", 1, cap),
-            running_on("/s/f1b.jsonl", 1, cap + 1),
+            running_on("/s/f1a.jsonl", 1, 0),
+            running_on("/s/f1b.jsonl", 1, 1),
         ],
         cap,
     );
@@ -127,9 +127,9 @@ fn floor_switch_reprimes_without_a_chime_volley() {
     let scene = scene_with(
         vec![
             running_on("/s/f0.jsonl", 0, 0),
-            running_on("/s/f1a.jsonl", 1, cap),
-            running_on("/s/f1b.jsonl", 1, cap + 1),
-            running_on("/s/f1-new.jsonl", 1, cap + 2),
+            running_on("/s/f1a.jsonl", 1, 0),
+            running_on("/s/f1b.jsonl", 1, 1),
+            running_on("/s/f1-new.jsonl", 1, 2),
         ],
         cap,
     );
@@ -153,7 +153,7 @@ fn every_frame_of_a_slide_feeds_the_audio_thread() {
     let scene = scene_with(
         vec![
             running_on("/l/f0.jsonl", 0, 0),
-            running_on("/l/f1.jsonl", 1, cap),
+            running_on("/l/f1.jsonl", 1, 0),
         ],
         cap,
     );
@@ -225,7 +225,7 @@ fn a_forced_weather_reaches_the_frame_both_slide_halves_and_the_rain() {
     let scene = scene_with(
         vec![
             running_on("/w/f0.jsonl", 0, 0),
-            running_on("/w/f1.jsonl", 1, cap),
+            running_on("/w/f1.jsonl", 1, 0),
         ],
         cap,
     );

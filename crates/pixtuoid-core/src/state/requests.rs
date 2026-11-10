@@ -399,11 +399,6 @@ impl ActionRequests {
         self.pending.remove(id);
     }
 
-    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&AgentId) -> bool) {
-        self.open.retain(|id, _| keep(id));
-        self.pending.retain(|id, _| keep(id));
-    }
-
     #[cfg(test)]
     pub(crate) fn contains(&self, id: &AgentId) -> bool {
         self.open.contains_key(id)

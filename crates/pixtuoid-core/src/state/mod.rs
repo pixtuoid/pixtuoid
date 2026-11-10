@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -71,28 +71,29 @@ mod arc_path_serde {
     }
 }
 
-/// Global desk index — the reducer's allocation space across ALL floors.
-///
-/// NOT a valid index into a single floor's `SceneLayout::home_desks`; convert
-/// through `SceneState::floor_local_desk` (the one legal bridge) first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct GlobalDeskIndex(pub usize);
-
 /// Floor-local desk index — indexes a single floor's
 /// `SceneLayout::home_desks` (see `SceneLayout::home_desk`).
-///
-/// Deliberately NOT `Serialize` (its twin `GlobalDeskIndex` is): a transient
-/// bridge value, never a stored `SceneState` field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct FloorLocalDeskIndex(pub usize);
 
-impl GlobalDeskIndex {
-    /// The floor-local view of this index **within a single-floor scene**,
-    /// where the global space coincides with the floor-0 local space so the
-    /// cast is the identity by construction. For a multi-floor scene go through
-    /// `SceneState::floor_local_desk` — the arithmetic bridge — instead.
-    pub fn single_floor_local(self) -> FloorLocalDeskIndex {
-        FloorLocalDeskIndex(self.0)
+/// A desk on one floor. Floor-local, never an office-wide index: a desk keeps
+/// its index when another floor's capacity changes. Ordered floor first, the
+/// order desks are handed out in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct FloorDesk {
+    /// The floor, `0..MAX_FLOORS`.
+    pub floor: usize,
+    /// The desk's index on that floor.
+    pub index: FloorLocalDeskIndex,
+}
+
+impl FloorDesk {
+    /// Desk `index` of floor `floor`.
+    pub const fn new(floor: usize, index: usize) -> Self {
+        Self {
+            floor,
+            index: FloorLocalDeskIndex(index),
+        }
     }
 }
 
@@ -323,19 +324,15 @@ pub struct AgentSlot {
     /// Wall-clock time the slot was first created: its age, unaffected by later
     /// state transitions.
     pub created_at: SystemTime,
-    /// The entry walk's anchor; `None` seats the slot at its desk from its first
-    /// frame.
+    /// The entry walk's anchor, set as the slot takes a desk; `None` seats it at
+    /// its desk from its first frame.
     pub arrived_at: Option<SystemTime>,
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
-    /// GLOBAL desk index, assigned once at `SessionStart`; only a device's new
-    /// layout ([`RemoteOffice::set_capacities`](crate::remote::RemoteOffice::set_capacities))
-    /// moves it.
-    pub desk_index: GlobalDeskIndex,
-    /// Floor assigned with the desk and moved only with it, so capacity growth
-    /// never silently migrates agents between floors.
-    pub floor_idx: usize,
+    /// Its desk; `None` while it is unseated, counted but drawn nowhere. A new
+    /// layout ([`SceneState::set_capacities`]) or a remote lender's return moves it.
+    pub desk: Option<FloorDesk>,
     /// Monotonic count of tool calls this agent has made this session.
     pub tool_call_count: u32,
     /// Cumulative milliseconds spent in the `Running` state.
@@ -376,6 +373,12 @@ pub struct AgentSlot {
 }
 
 impl AgentSlot {
+    /// Whether it holds a desk or, staying, takes the next free one. One walking
+    /// out without a desk never takes one: seated, it would appear partway through its exit.
+    pub fn claims_a_desk(&self) -> bool {
+        self.desk.is_some() || self.exiting_at.is_none()
+    }
+
     /// Whether its exit walk has had [`EXIT_GRACE_WINDOW`](reducer::EXIT_GRACE_WINDOW)
     /// to reach the door, so its slot may go.
     pub(crate) fn walked_out(&self, now: SystemTime) -> bool {
@@ -609,8 +612,10 @@ impl DaemonPresence {
 pub struct SceneState {
     /// Live agent slots, keyed by `AgentId`.
     pub agents: BTreeMap<AgentId, AgentSlot>,
-    /// Desk capacity per floor, indexed by floor (`0..MAX_FLOORS`).
-    pub floor_capacities: [usize; MAX_FLOORS],
+    /// Desk capacity per floor, indexed by floor (`0..MAX_FLOORS`). Private,
+    /// so a desk past its floor's capacity can't outlive
+    /// [`Self::set_capacities`].
+    floor_capacities: [usize; MAX_FLOORS],
     /// Daemon-style sources rendered as wandering mascots, keyed source →
     /// instance so instance A's stop/expiry can't touch instance B. Empty for
     /// an all-agent scene.
@@ -743,6 +748,13 @@ impl Default for SceneState {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The seating passes run on this thread, counted like `scope::VISITS`:
+    /// a pass is O(agents), so a test bounds how often one runs by count.
+    pub(crate) static SEATINGS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl SceneState {
     /// An empty scene with the given per-floor desk capacities.
     pub fn new(floor_capacities: [usize; MAX_FLOORS]) -> Self {
@@ -759,78 +771,59 @@ impl SceneState {
         Self::new([cap; MAX_FLOORS])
     }
 
+    /// Desk capacity per floor, indexed by floor.
+    pub fn floor_capacities(&self) -> &[usize; MAX_FLOORS] {
+        &self.floor_capacities
+    }
+
     /// Total desk count across all floors (sum of `floor_capacities`).
     pub fn total_capacity(&self) -> usize {
         self.floor_capacities.iter().sum()
     }
 
-    fn cumulative_offsets(&self) -> [usize; MAX_FLOORS] {
-        let mut offsets = [0usize; MAX_FLOORS];
-        for i in 1..MAX_FLOORS {
-            offsets[i] = offsets[i - 1] + self.floor_capacities[i - 1];
+    /// Take a new layout at `now`. An agent keeps its desk while its floor
+    /// still has that desk; whoever loses one takes a free desk, or is
+    /// unseated until one frees, and walks in from when it takes one.
+    pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS], now: SystemTime) {
+        self.take_capacities(capacities);
+        self.seat_unseated(|_| true, |_| Some(now));
+    }
+
+    /// Take `capacities`, unseating whoever holds a desk they no longer have.
+    pub(crate) fn take_capacities(&mut self, capacities: [usize; MAX_FLOORS]) {
+        self.floor_capacities = capacities;
+        for slot in self.agents.values_mut() {
+            slot.desk = (slot.desk)
+                .filter(|desk| (capacities.get(desk.floor)).is_some_and(|&cap| desk.index.0 < cap));
         }
-        offsets
     }
 
-    fn floor_of_with_offsets(
-        &self,
-        desk_index: GlobalDeskIndex,
-        offsets: &[usize; MAX_FLOORS],
-    ) -> usize {
-        for i in (0..MAX_FLOORS).rev() {
-            if self.floor_capacities[i] > 0 && desk_index.0 >= offsets[i] {
-                return i;
-            }
-        }
-        0
-    }
-
-    /// Which floor does `desk_index` belong to? Recomputed from CURRENT
-    /// capacities, while `AgentSlot.floor_idx` freezes at allocation — so after
-    /// growth `pixtuoid_scene::tally::per_floor_counts` still counts an agent
-    /// that `pixtuoid_scene::floor::build_floor_scene` skips. The skip is
-    /// deliberate — desk 0 has a real occupant — and is pinned by
-    /// `build_floor_scene_skips_agent_below_grown_offset`.
-    pub fn floor_of(&self, desk_index: GlobalDeskIndex) -> usize {
-        self.floor_of_with_offsets(desk_index, &self.cumulative_offsets())
-    }
-
-    /// Local desk offset within the floor — THE bridge from the global
-    /// allocation space to a floor's `home_desks` index space.
-    pub fn floor_local_desk(&self, desk_index: GlobalDeskIndex) -> FloorLocalDeskIndex {
-        let offsets = self.cumulative_offsets();
-        let floor = self.floor_of_with_offsets(desk_index, &offsets);
-        FloorLocalDeskIndex(desk_index.0 - offsets[floor])
-    }
-
-    /// Global desk index range `[lo, hi)` for a given floor, clamping
-    /// `floor_idx` to `MAX_FLOORS - 1`. Raw `usize` rather than the newtype:
-    /// a `Range` of newtypes has no `Step` impl.
-    pub fn floor_range(&self, floor_idx: usize) -> std::ops::Range<usize> {
-        let idx = floor_idx.min(MAX_FLOORS - 1);
-        let offsets = self.cumulative_offsets();
-        let lo = offsets[idx];
-        let hi = lo + self.floor_capacities[idx];
-        lo..hi
-    }
-
-    /// Lowest free desk index, or `None` if all desks are occupied.
-    pub fn next_free_desk(&self) -> Option<GlobalDeskIndex> {
-        self.next_desk_free_of(|_| true)
-    }
-
-    /// Lowest desk no slot that `holds` sits at, or `None` if there is none.
-    pub(crate) fn next_desk_free_of(
-        &self,
+    /// Give each unseated agent that is staying the first free desk, oldest
+    /// first, and the `arrival` it walks in from. A desk is free while no slot
+    /// that `holds` sits at it.
+    pub(crate) fn seat_unseated(
+        &mut self,
         holds: impl Fn(&AgentSlot) -> bool,
-    ) -> Option<GlobalDeskIndex> {
-        let occupied: std::collections::BTreeSet<GlobalDeskIndex> = (self.agents.values())
-            .filter(|a| holds(a))
-            .map(|a| a.desk_index)
+        arrival: impl Fn(&AgentSlot) -> Option<SystemTime>,
+    ) {
+        #[cfg(test)]
+        SEATINGS.with(|n| n.set(n.get() + 1));
+        let taken: BTreeSet<FloorDesk> = (self.agents.values())
+            .filter(|slot| holds(slot))
+            .filter_map(|slot| slot.desk)
             .collect();
-        (0..self.total_capacity())
-            .map(GlobalDeskIndex)
-            .find(|i| !occupied.contains(i))
+        let capacities = self.floor_capacities;
+        let free = (0..MAX_FLOORS)
+            .flat_map(|floor| (0..capacities[floor]).map(move |index| FloorDesk::new(floor, index)))
+            .filter(|desk| !taken.contains(desk));
+        let mut unseated: Vec<&mut AgentSlot> = (self.agents.values_mut())
+            .filter(|slot| slot.desk.is_none() && slot.claims_a_desk())
+            .collect();
+        unseated.sort_by_key(|slot| (slot.created_at, slot.agent_id));
+        for (slot, desk) in unseated.into_iter().zip(free) {
+            slot.desk = Some(desk);
+            slot.arrived_at = arrival(slot);
+        }
     }
 }
 
@@ -859,7 +852,7 @@ mod tests {
         assert_eq!(back.tokens_used, 7);
     }
 
-    fn make_slot(id: AgentId, desk_index: usize) -> AgentSlot {
+    fn make_slot(id: AgentId, desk: usize) -> AgentSlot {
         let now = SystemTime::now();
         AgentSlot {
             agent_id: id,
@@ -873,8 +866,7 @@ mod tests {
             arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(desk_index),
-            floor_idx: 0,
+            desk: Some(FloorDesk::new(0, desk)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -1096,78 +1088,96 @@ mod tests {
         assert!(!p.is_running());
     }
 
-    #[test]
-    fn next_free_desk_returns_none_when_full() {
-        let mut s = SceneState::uniform(2);
-        let total = s.total_capacity();
-        for i in 0..total {
-            let id = AgentId::from_transcript_path(&format!("p{i}"));
-            s.agents.insert(id, make_slot(id, i));
+    /// A scene of `capacities` holding `desks`, each slot one second younger
+    /// than the last.
+    fn scene_holding(
+        capacities: [usize; MAX_FLOORS],
+        desks: &[Option<FloorDesk>],
+    ) -> (SceneState, Vec<AgentId>) {
+        let mut s = SceneState::new(capacities);
+        let ids: Vec<AgentId> = (0..desks.len())
+            .map(|i| AgentId::from_transcript_path(&format!("/p/{i}.jsonl")))
+            .collect();
+        for (i, (&id, &at)) in ids.iter().zip(desks).enumerate() {
+            let mut slot = make_slot(id, 0);
+            slot.desk = at;
+            slot.created_at = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(i as u64);
+            s.agents.insert(id, slot);
         }
-        assert_eq!(s.next_free_desk(), None);
+        (s, ids)
     }
 
     #[test]
-    fn next_free_desk_overflows_to_second_floor() {
-        let mut s = SceneState::uniform(4);
-        for i in 0..4 {
-            let id = AgentId::from_transcript_path(&format!("f{i}"));
-            s.agents.insert(id, make_slot(id, i));
-        }
-        assert_eq!(
-            s.next_free_desk(),
-            Some(GlobalDeskIndex(4)),
-            "should overflow to desk 4 (floor 1)"
+    fn an_unseated_agent_takes_the_first_free_desk_past_an_empty_floor() {
+        let (mut s, ids) = scene_holding(
+            [1, 0, 2, 0, 0, 0, 0, 0, 0, 0],
+            &[Some(FloorDesk::new(0, 0)), None, None, None],
         );
-    }
-
-    #[test]
-    fn floor_of_variable_capacities() {
-        let s = SceneState::new([4, 8, 6, 4, 2, 0, 0, 0, 0, 0]);
-        assert_eq!(s.floor_of(GlobalDeskIndex(0)), 0);
-        assert_eq!(s.floor_of(GlobalDeskIndex(3)), 0);
-        assert_eq!(s.floor_of(GlobalDeskIndex(4)), 1);
-        assert_eq!(s.floor_of(GlobalDeskIndex(11)), 1);
-        assert_eq!(s.floor_of(GlobalDeskIndex(12)), 2);
-        assert_eq!(s.floor_of(GlobalDeskIndex(17)), 2);
-        assert_eq!(s.floor_of(GlobalDeskIndex(18)), 3);
-        assert_eq!(s.floor_of(GlobalDeskIndex(22)), 4);
-        assert_eq!(s.floor_of(GlobalDeskIndex(23)), 4);
-    }
-
-    #[test]
-    fn floor_local_desk_variable() {
-        let s = SceneState::new([4, 8, 6, 4, 2, 0, 0, 0, 0, 0]);
+        s.seat_unseated(|_| true, |_| None);
+        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
         assert_eq!(
-            s.floor_local_desk(GlobalDeskIndex(0)),
-            FloorLocalDeskIndex(0)
-        );
-        assert_eq!(
-            s.floor_local_desk(GlobalDeskIndex(3)),
-            FloorLocalDeskIndex(3)
-        );
-        assert_eq!(
-            s.floor_local_desk(GlobalDeskIndex(4)),
-            FloorLocalDeskIndex(0)
-        );
-        assert_eq!(
-            s.floor_local_desk(GlobalDeskIndex(11)),
-            FloorLocalDeskIndex(7)
-        );
-        assert_eq!(
-            s.floor_local_desk(GlobalDeskIndex(12)),
-            FloorLocalDeskIndex(0)
+            desks,
+            [
+                Some(FloorDesk::new(0, 0)),
+                Some(FloorDesk::new(2, 0)),
+                Some(FloorDesk::new(2, 1)),
+                None
+            ]
         );
     }
 
     #[test]
-    fn floor_range_variable() {
-        let s = SceneState::new([4, 8, 6, 4, 2, 0, 0, 0, 0, 0]);
-        assert_eq!(s.floor_range(0), 0..4);
-        assert_eq!(s.floor_range(1), 4..12);
-        assert_eq!(s.floor_range(2), 12..18);
-        assert_eq!(s.floor_range(3), 18..22);
-        assert_eq!(s.floor_range(4), 22..24);
+    fn a_shrink_moves_no_one_on_another_floor() {
+        let all = [
+            Some(FloorDesk::new(0, 0)),
+            Some(FloorDesk::new(0, 1)),
+            Some(FloorDesk::new(1, 0)),
+            Some(FloorDesk::new(1, 1)),
+        ];
+        let (mut s, ids) = scene_holding([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], &all);
+        s.set_capacities([1, 2, 0, 0, 0, 0, 0, 0, 0, 0], SystemTime::UNIX_EPOCH);
+        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
+        assert_eq!(
+            desks,
+            [
+                Some(FloorDesk::new(0, 0)),
+                None,
+                Some(FloorDesk::new(1, 0)),
+                Some(FloorDesk::new(1, 1))
+            ]
+        );
+        s.set_capacities([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], SystemTime::UNIX_EPOCH);
+        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
+        assert_eq!(desks, all);
+    }
+
+    /// Seated, one walking out would appear partway through its exit, so it
+    /// stays unseated beside a free desk.
+    #[test]
+    fn a_free_desk_goes_to_the_oldest_unseated_and_never_to_one_walking_out() {
+        let (mut s, ids) = scene_holding([3, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[None, None, None]);
+        s.agents.get_mut(&ids[0]).unwrap().exiting_at = Some(SystemTime::UNIX_EPOCH);
+        s.seat_unseated(|_| true, |_| None);
+        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
+        assert_eq!(
+            desks,
+            [None, Some(FloorDesk::new(0, 0)), Some(FloorDesk::new(0, 1))]
+        );
+    }
+
+    /// One unseated past its entry walk would appear in its chair, so it walks
+    /// in from the layout that seats it; one that kept its desk keeps its walk.
+    #[test]
+    fn a_layout_that_seats_an_agent_walks_it_in_from_then() {
+        let (mut s, ids) = scene_holding(
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            &[Some(FloorDesk::new(0, 0)), None],
+        );
+        let kept = s.agents[&ids[0]].arrived_at;
+        let later = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(600);
+        s.set_capacities([2, 0, 0, 0, 0, 0, 0, 0, 0, 0], later);
+        assert_eq!(s.agents[&ids[0]].arrived_at, kept);
+        assert_eq!(s.agents[&ids[1]].arrived_at, Some(later));
     }
 
     #[test]
@@ -1177,57 +1187,5 @@ mod tests {
 
         let u = SceneState::uniform(8);
         assert_eq!(u.total_capacity(), 80);
-    }
-
-    #[test]
-    fn zero_capacity_floor_skipped_by_next_free_desk() {
-        let s = SceneState::new([4, 0, 6, 0, 2, 0, 0, 0, 0, 0]);
-        assert_eq!(s.total_capacity(), 12);
-        assert_eq!(s.floor_range(0), 0..4);
-        assert_eq!(s.floor_range(1), 4..4);
-        assert_eq!(s.floor_range(2), 4..10);
-        assert_eq!(s.next_free_desk(), Some(GlobalDeskIndex(0)));
-    }
-
-    #[test]
-    fn floor_of_skips_zero_capacity_floors() {
-        let s = SceneState::new([4, 0, 6, 0, 2, 0, 0, 0, 0, 0]);
-        assert_eq!(s.floor_of(GlobalDeskIndex(4)), 2);
-        assert_eq!(
-            s.floor_local_desk(GlobalDeskIndex(4)),
-            FloorLocalDeskIndex(0)
-        );
-        assert_eq!(s.floor_of(GlobalDeskIndex(9)), 2);
-        assert_eq!(s.floor_of(GlobalDeskIndex(10)), 4);
-    }
-
-    #[test]
-    fn floor_of_leading_zero_capacity_floors() {
-        let s = SceneState::new([0, 0, 6, 4, 2, 0, 0, 0, 0, 0]);
-        assert_eq!(s.floor_of(GlobalDeskIndex(0)), 2);
-        assert_eq!(s.floor_of(GlobalDeskIndex(5)), 2);
-        assert_eq!(s.floor_of(GlobalDeskIndex(6)), 3);
-    }
-
-    #[test]
-    fn floor_range_clamps_oob_index() {
-        let s = SceneState::uniform(4);
-        let last = s.floor_range(MAX_FLOORS - 1);
-        let oob = s.floor_range(MAX_FLOORS + 10);
-        assert_eq!(
-            last, oob,
-            "an OOB floor index clamps to the last floor's range"
-        );
-    }
-
-    #[test]
-    fn floor_local_desk_oob_lands_on_last_nonempty_floor() {
-        let s = SceneState::new([4, 8, 6, 4, 2, 0, 0, 0, 0, 0]);
-        let total = s.total_capacity();
-        let oob = total + 76;
-        let floor = s.floor_of(GlobalDeskIndex(oob));
-        assert_eq!(floor, 4, "OOB desk lands on last nonempty floor");
-        let local = s.floor_local_desk(GlobalDeskIndex(oob));
-        assert_eq!(local, FloorLocalDeskIndex(oob - 22));
     }
 }

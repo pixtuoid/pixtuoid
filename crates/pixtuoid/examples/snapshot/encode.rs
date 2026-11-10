@@ -134,7 +134,7 @@ pub(crate) fn furniture_crop(
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
     let layout = pixtuoid_scene::layout::SceneLayout::compute(
         pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
-        Some(scene.floor_capacities[0]),
+        Some(scene.floor_capacities()[0]),
         args.floor_seed,
     )
     .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
@@ -465,7 +465,7 @@ pub(crate) fn save_animation(
     debug_walkable: bool,
     pixel: Option<PixelOffice<FloorSession>>,
 ) -> Result<()> {
-    let scene = job.scene;
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(job.scene, 0);
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     job.encode(
         skip_ms,
@@ -473,7 +473,15 @@ pub(crate) fn save_animation(
         |(term, pixel), now, _| {
             let mut draw_ctx = DrawCtx {
                 debug_walkable,
-                ..DrawCtx::offscreen(floor, office.stores(), job.theme, scene, now, floor_meta)
+                footer: pixtuoid::dev::footer_context(job.scene, None, false, None, None),
+                ..DrawCtx::offscreen(
+                    floor,
+                    office.stores(),
+                    job.theme,
+                    floor_scene.scene(),
+                    now,
+                    floor_meta,
+                )
             };
             draw_frame(term, &mut draw_ctx, pixel.as_mut()).map(drop)
         },

@@ -75,9 +75,9 @@ struct SnapshotArgs {
     #[arg(long)]
     rows: Option<u16>,
 
-    /// Cap on home desks per floor for the sample scene. Agents past
-    /// this count overflow to additional floors.
-    #[arg(long, default_value_t = 12)]
+    /// Cap on home desks per floor for the sample scene, at least 1. Agents
+    /// past this count overflow to additional floors.
+    #[arg(long, default_value_t = 12, value_parser = pixtuoid::dev::desk_cap_parser())]
     max_desks: usize,
 
     /// Number of agents in the sample scene.
@@ -565,6 +565,9 @@ fn main() -> Result<()> {
         println!("wrote {}", anim_dest.display());
         return Ok(());
     }
+    // One floor draws its projection, as the painters do: a layout reads only a
+    // desk's index, so one seated upstairs would sit on floor 0's desk of it.
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
 
     let mut pixel = args
         .pixel
@@ -777,7 +780,14 @@ fn main() -> Result<()> {
         debug_walkable: args.debug_walkable,
         footer: pixtuoid::dev::footer_context(&scene, None, false, None, warning_text.as_deref()),
         overlays: frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]),
-        ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, floor_meta)
+        ..DrawCtx::offscreen(
+            &mut floor,
+            office.stores(),
+            theme,
+            floor_scene.scene(),
+            now,
+            floor_meta,
+        )
     };
     let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
 
@@ -1041,6 +1051,14 @@ mod tests {
                 "accepted {bad:?}"
             );
         }
+    }
+
+    /// A sample scene seats agent `i` at `i / max_desks`, so 0 is refused at the
+    /// flag rather than dividing by it.
+    #[test]
+    fn max_desks_refuses_zero() {
+        assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "0"]).is_err());
+        assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "1"]).is_ok());
     }
 
     #[test]

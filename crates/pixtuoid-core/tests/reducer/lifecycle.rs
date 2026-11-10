@@ -6,12 +6,16 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::reducer::{
     B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer, STALE_BLOCKED_TIMEOUT,
 };
-use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, SceneState};
+use pixtuoid_core::state::{ActivityState, FloorDesk, SceneState};
 
 use crate::{
     DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, identity, proof_of_life, sess_end, start,
     tool_use_end, tool_use_start, user_action_request,
 };
+
+fn desk(floor: usize, index: usize) -> Option<FloorDesk> {
+    Some(FloorDesk::new(floor, index))
+}
 
 #[test]
 fn session_start_creates_idle_slot_at_first_free_desk() {
@@ -33,7 +37,7 @@ fn session_start_creates_idle_slot_at_first_free_desk() {
     );
 
     let slot = scene.agents.get(&id).expect("agent inserted");
-    assert_eq!(slot.desk_index, GlobalDeskIndex(0));
+    assert_eq!(slot.desk, desk(0, 0));
     assert_eq!(
         &*slot.label, "cc·repo",
         "label = source prefix + cwd basename"
@@ -71,7 +75,9 @@ fn session_end_marks_slot_exiting_then_tick_removes_it_after_grace() {
         !scene.agents.contains_key(&a),
         "tick should sweep expired exit"
     );
-    assert_eq!(scene.next_free_desk(), Some(GlobalDeskIndex(0)));
+    let c = AgentId::from_transcript_path("/p/c.jsonl");
+    start(&mut r, &mut scene, c);
+    assert_eq!(scene.agents[&c].desk, desk(0, 0), "the swept slot's desk");
 }
 
 #[test]
@@ -95,62 +101,215 @@ fn session_start_overflows_to_floor1_with_heterogeneous_capacity() {
             Transport::Jsonl,
         );
     }
-    assert_eq!(scene.agents.len(), 3);
-    let desks: Vec<usize> = scene.agents.values().map(|a| a.desk_index.0).collect();
-    assert!(desks.contains(&0));
-    assert!(desks.contains(&1));
-    assert!(
-        desks.contains(&2),
-        "third agent should get desk 2 (floor 1)"
+    let mut desks: Vec<_> = scene.agents.values().map(|a| a.desk).collect();
+    desks.sort();
+    assert_eq!(
+        desks,
+        [desk(0, 0), desk(0, 1), desk(1, 0)],
+        "the third agent takes floor 1's first desk"
     );
-    assert_eq!(scene.floor_of(GlobalDeskIndex(2)), 1);
 }
 
+/// A layout shrinking under its agents keeps every one. Whoever loses
+/// a desk is unseated, a new arrival too, and the oldest unseated agent takes
+/// the next desk that frees; a layout growing back seats the rest, and nobody
+/// it kept a desk for ever moves.
 #[test]
-fn session_start_dropped_when_all_desks_occupied() {
+fn a_shrunk_layout_keeps_every_agent_and_seats_each_as_a_desk_frees() {
     let mut r = Reducer::new();
-    let mut scene = SceneState::new([2, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let mut scene = SceneState::new([2, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    for i in 0..2 {
-        let id = AgentId::from_transcript_path(&format!("/proj/{i}.jsonl"));
+    let id = |i: usize| AgentId::from_transcript_path(&format!("/proj/{i}.jsonl"));
+    let begin = |r: &mut Reducer, scene: &mut SceneState, i: usize| {
         r.apply(
-            &mut scene,
+            scene,
             AgentEvent::SessionStart {
-                agent_id: id,
-                source: "cc".into(),
+                agent_id: id(i),
+                source: "claude-code".into(),
                 session_id: format!("s{i}"),
                 cwd: PathBuf::from("/repo"),
                 parent_id: None,
             },
-            t0,
+            t0 + Duration::from_secs(i as u64),
+            Transport::Hook,
+        );
+    };
+    let desks = |scene: &SceneState| {
+        (0..5)
+            .map(|i| scene.agents.get(&id(i)).and_then(|a| a.desk))
+            .collect::<Vec<_>>()
+    };
+    for i in 0..4 {
+        begin(&mut r, &mut scene, i);
+    }
+
+    let t1 = t0 + Duration::from_secs(10);
+    scene.set_capacities([1, 2, 0, 0, 0, 0, 0, 0, 0, 0], t1);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id(1),
+        Some("t1"),
+        Some("Read"),
+        t1,
+        Transport::Hook,
+    );
+    begin(&mut r, &mut scene, 4);
+    assert!(
+        matches!(scene.agents[&id(1)].state, ActivityState::Running { .. }),
+        "an unseated agent still works"
+    );
+    assert_eq!(scene.agents.len(), 5, "nobody is dropped");
+    assert_eq!(
+        desks(&scene),
+        [desk(0, 0), None, desk(1, 0), desk(1, 1), None]
+    );
+
+    sess_end(&mut r, &mut scene, id(0), false, t1, Transport::Hook);
+    r.tick(
+        &mut scene,
+        t1 + EXIT_GRACE_WINDOW + Duration::from_millis(100),
+    );
+    assert_eq!(
+        desks(&scene),
+        [None, desk(0, 0), desk(1, 0), desk(1, 1), None],
+        "the oldest unseated agent takes the freed desk"
+    );
+
+    scene.set_capacities([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], t1);
+    assert_eq!(
+        desks(&scene),
+        [None, desk(0, 0), desk(1, 0), desk(1, 1), desk(0, 1)]
+    );
+}
+
+/// A one-desk office: `ids` registered in order, a second apart from `t0`.
+fn one_desk_office(r: &mut Reducer, ids: &[AgentId], t0: SystemTime) -> SceneState {
+    let mut caps = [0; pixtuoid_core::state::MAX_FLOORS];
+    caps[0] = 1;
+    let mut scene = SceneState::new(caps);
+    for (i, &id) in ids.iter().enumerate() {
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "claude-code".into(),
+                session_id: format!("s{i}"),
+                cwd: PathBuf::from("/repo"),
+                parent_id: None,
+            },
+            t0 + Duration::from_secs(i as u64),
             Transport::Hook,
         );
     }
-    assert_eq!(scene.agents.len(), 2);
-    assert!(scene.next_free_desk().is_none());
+    scene
+}
 
-    let overflow_id = AgentId::from_transcript_path("/proj/overflow.jsonl");
+/// Any apply sweeps out a walked-out slot, so the unseated agent takes its
+/// desk on that same apply, not at the next tick, and walks in from then: past
+/// its registration's entry walk, it would otherwise appear in its chair.
+#[test]
+fn an_unseated_agent_walks_in_on_the_apply_where_its_holder_walks_out() {
+    let mut r = Reducer::new();
+    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let holder = AgentId::from_transcript_path("/p/holder.jsonl");
+    let unseated = AgentId::from_transcript_path("/p/unseated.jsonl");
+    let mut scene = one_desk_office(&mut r, &[holder, unseated], t0);
+    assert_eq!(scene.agents[&unseated].desk, None, "premise: one desk");
+
+    let t1 = t0 + Duration::from_secs(2);
+    sess_end(&mut r, &mut scene, holder, false, t1, Transport::Hook);
+    let walked_out = t1 + EXIT_GRACE_WINDOW + Duration::from_millis(100);
+    proof_of_life(&mut r, &mut scene, unseated, walked_out, Transport::Hook);
+    assert!(!scene.agents.contains_key(&holder), "premise: swept out");
+    let slot = &scene.agents[&unseated];
+    assert_eq!(slot.desk, desk(0, 0));
+    assert_eq!(slot.arrived_at, Some(walked_out));
+}
+
+/// Seating skips one walking out, so a desk that frees mid-exit stays free; a
+/// start that revives the unseated agent seats it there and walks it in.
+#[test]
+fn a_revived_unseated_agent_takes_the_desk_that_freed_mid_exit() {
+    let mut r = Reducer::new();
+    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let holder = AgentId::from_transcript_path("/p/holder.jsonl");
+    let unseated = AgentId::from_transcript_path("/p/unseated.jsonl");
+    let mut scene = one_desk_office(&mut r, &[holder, unseated], t0);
+
+    let t1 = t0 + Duration::from_secs(2);
+    sess_end(&mut r, &mut scene, holder, false, t1, Transport::Hook);
+    let t2 = t1 + Duration::from_secs(2);
+    sess_end(&mut r, &mut scene, unseated, false, t2, Transport::Hook);
+    let freed = t1 + EXIT_GRACE_WINDOW + Duration::from_millis(100);
+    proof_of_life(&mut r, &mut scene, unseated, freed, Transport::Hook);
+    assert!(!scene.agents.contains_key(&holder), "premise: swept out");
+    assert_eq!(scene.agents[&unseated].desk, None, "premise: mid-exit");
+
+    let revived = freed + Duration::from_millis(100);
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
-            agent_id: overflow_id,
-            source: "cc".into(),
-            session_id: "s-overflow".into(),
+            agent_id: unseated,
+            source: "claude-code".into(),
+            session_id: "s1".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
         },
-        t0,
+        revived,
         Transport::Hook,
     );
+    let slot = &scene.agents[&unseated];
+    assert_eq!(slot.exiting_at, None, "premise: revived");
+    assert_eq!(slot.desk, desk(0, 0));
+    assert_eq!(slot.arrived_at, Some(revived));
+}
+
+/// A gone slot's newest turn position goes at the tick that finds the slot
+/// gone, so a new life of the same id opens a lower-numbered turn.
+#[test]
+fn a_gone_slots_turn_position_goes_with_it() {
+    use pixtuoid_core::state::TurnKey;
+    let mut r = Reducer::new();
+    let mut scene = SceneState::uniform(4);
+    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let id = AgentId::from_parts("opencode", "ses_p");
+    let begin = |r: &mut Reducer, scene: &mut SceneState, at: SystemTime| {
+        r.apply(
+            scene,
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "opencode".into(),
+                session_id: "ses_p".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id: None,
+            },
+            at,
+            Transport::Hook,
+        );
+    };
+    let turn = |r: &mut Reducer, scene: &mut SceneState, seq: u64, at: SystemTime| {
+        let start = AgentEvent::TurnStart {
+            agent_id: id,
+            turn: TurnKey::Seq(seq),
+        };
+        r.apply(scene, start, at, Transport::Hook);
+    };
+
+    begin(&mut r, &mut scene, t0);
+    turn(&mut r, &mut scene, 5, t0);
+    sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
+    let gone = t0 + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+    r.tick(&mut scene, gone);
+    assert!(!scene.agents.contains_key(&id), "premise: swept out");
+
+    let next_life = gone + Duration::from_secs(1);
+    begin(&mut r, &mut scene, next_life);
+    turn(&mut r, &mut scene, 3, next_life);
     assert_eq!(
-        scene.agents.len(),
-        2,
-        "third SessionStart must be silently dropped when desks are full"
-    );
-    assert!(
-        !scene.agents.contains_key(&overflow_id),
-        "overflow agent should not exist"
+        scene.agents[&id].state,
+        ActivityState::Running { item: None },
+        "the old life's position must not refuse the new life's turn"
     );
 }
 
@@ -640,49 +799,35 @@ fn hook_session_end_for_unknown_id_does_not_create_slot() {
     assert!(scene.agents.is_empty(), "SessionEnd must not register");
 }
 
+/// An `Identity` `authorizes` refuses leaves no hook record behind: a
+/// straggler's hook call must not eat the transcript's copy of that call once a
+/// new life registers.
 #[test]
 fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
-    use pixtuoid_core::state::MAX_FLOORS;
-    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
-    let mut caps = [0usize; MAX_FLOORS];
-    caps[0] = 1;
-    let mut scene = SceneState::new(caps);
+    use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
+    let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    let occupant = AgentId::from_transcript_path("/p/occupant.jsonl");
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: occupant,
-            source: HOOK_AND_TRANSCRIPT.into(),
-            session_id: "o".into(),
-            cwd: PathBuf::from("/Users/me/proj"),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-    sess_end(&mut r, &mut scene, occupant, false, t0, Transport::Hook);
-
     let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "gated-sess");
-    let th = t0 + EXIT_GRACE_WINDOW - Duration::from_millis(100);
-    identity(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT, th);
+    // The transcript's copy lands inside the hook's dedup window.
+    let step = HOOK_WINS_WINDOW / 4;
+
+    sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
+    identity(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT, t0 + step);
     tool_use_start(
         &mut r,
         &mut scene,
         id,
         Some("t9"),
         None,
-        th,
+        t0 + step,
         Transport::Hook,
     );
     assert!(
         !scene.agents.contains_key(&id),
-        "desk exhausted — registration must be refused"
+        "premise: a straggler's Identity is refused"
     );
 
-    let tj = t0 + EXIT_GRACE_WINDOW + Duration::from_millis(200);
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
@@ -692,8 +837,8 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
             cwd: PathBuf::from("/repo"),
             parent_id: None,
         },
-        tj,
-        Transport::Jsonl,
+        t0 + 2 * step,
+        Transport::Hook,
     );
     tool_use_start(
         &mut r,
@@ -701,14 +846,14 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
         id,
         Some("t9"),
         None,
-        tj,
+        t0 + 3 * step,
         Transport::Jsonl,
     );
 
     let slot = scene
         .agents
         .get(&id)
-        .expect("registered once the desk freed");
+        .expect("the hook start registers the new life");
     assert!(
         matches!(slot.state, ActivityState::Running { .. }),
         "the JSONL ToolUseStart must not be dedup-eaten by the refused hook's record"
@@ -1335,7 +1480,7 @@ fn hook_identity_registers_unknown_id_with_real_identity() {
         !slot.unknown_cwd,
         "real-cwd registration — not an unknown-cwd ghost"
     );
-    assert_eq!(slot.floor_idx, scene.floor_of(slot.desk_index));
+    assert_eq!(slot.desk, desk(0, 0));
     assert!(
         matches!(slot.state, ActivityState::Idle),
         "Identity itself sets no activity state — the paired activity event does"
@@ -1569,10 +1714,9 @@ fn jsonl_identity_is_a_no_op() {
 }
 
 #[test]
-fn hook_identity_desk_refusal_is_quiet() {
+fn a_hook_identity_with_no_free_desk_registers_unseated() {
     use pixtuoid_core::state::MAX_FLOORS;
-    let caps = [0usize; MAX_FLOORS];
-    let mut scene = SceneState::new(caps);
+    let mut scene = SceneState::new([0; MAX_FLOORS]);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -1589,10 +1733,11 @@ fn hook_identity_desk_refusal_is_quiet() {
         t0,
         Transport::Hook,
     );
-    assert!(
-        scene.agents.is_empty(),
-        "no desks — the registration must be quietly refused"
-    );
+    let slot = scene
+        .agents
+        .get(&id)
+        .expect("registered, though no desk is free");
+    assert_eq!(slot.desk, None, "unseated");
 }
 
 fn connected_set<const N: usize>(srcs: [&str; N]) -> std::collections::HashSet<String> {

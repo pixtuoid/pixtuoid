@@ -4,7 +4,7 @@ name: bench
 # `needs:` it, so a slow run gates nothing. Shared-runner wall-clock is noise
 # (https://bheisler.github.io/criterion.rs/book/faq.html), so this exists for
 # trend evidence on request — the authoritative numbers are `just bench` runs
-# on a quiet local machine, recorded in commit messages. It still earns its
+# on a quiet local machine, recorded in the PR body. It still earns its
 # keep beside codspeed.yml: an x86 Linux wall-clock run is the one signal that
 # can check an architecture-specific claim from an aarch64 dev machine, which
 # instruction counting can't. `just bench-pacing` rides along: the TUI

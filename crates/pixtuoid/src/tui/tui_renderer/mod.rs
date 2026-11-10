@@ -254,8 +254,9 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     }
 
     /// The office each look this run can return to lays out on the terminal
-    /// now, the cutaway at its last fit where this cell has none: a floor's
-    /// seats only grow, so they are held to the fewest any of them holds.
+    /// now, the cutaway at its last fit where this cell has none: each floor is
+    /// held to the fewest desks any of them holds, so a look switch re-seats no
+    /// one.
     pub(crate) fn seat_extents(
         &mut self,
     ) -> enum_map::EnumMap<LookKind, Option<pixtuoid_scene::layout::Size>> {

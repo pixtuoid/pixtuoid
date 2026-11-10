@@ -602,14 +602,19 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
         // event, so without this nothing would sweep or cascade once the
         // session's events are drained.
         reducer.tick(&mut scene, now);
-        let mut draw_ctx = DrawCtx::offscreen(
-            &mut floor,
-            office.stores(),
-            job.theme,
-            &scene,
-            now,
-            pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
-        );
+        // One floor draws its projection, as the painters do.
+        let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
+        let mut draw_ctx = DrawCtx {
+            footer: pixtuoid::dev::footer_context(&scene, None, false, None, None),
+            ..DrawCtx::offscreen(
+                &mut floor,
+                office.stores(),
+                job.theme,
+                floor_scene.scene(),
+                now,
+                pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
+            )
+        };
         let hits = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
         // The burned callout's anchor: home_desks[0] of the layout the office
         // side was drawn on.
