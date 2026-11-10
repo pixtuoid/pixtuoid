@@ -808,7 +808,6 @@ mod tests {
         }
     }
 
-    /// Every visible subcommand, nested ones included.
     /// Every visible subcommand, nested ones included, with the command line
     /// that runs it and its parent.
     fn visible_subcommands<'a>(
@@ -876,6 +875,16 @@ mod tests {
             );
             for flag in own_flags(sub, Some(parent)) {
                 assert!(documents(section, flag), "{line}'s section lacks --{flag}");
+            }
+            for flag in parent
+                .get_arguments()
+                .filter(|a| a.is_global_set())
+                .filter_map(clap::Arg::get_long)
+            {
+                assert!(
+                    !documents(section, flag),
+                    "{line}'s section repeats the global --{flag}"
+                );
             }
             let own_page = format!("{}(", roff(sub.get_display_name().expect("built")));
             assert!(

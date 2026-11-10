@@ -14,7 +14,7 @@ if (!bin) {
     isShipped(platform, arch)
       ? "pixtuoid: npm left out the optional dependency " +
           packageName(platform, arch) +
-          "; reinstall without omitting optional dependencies: `npm install -g pixtuoid`\n"
+          "; reinstall with optional dependencies included: `npm install -g pixtuoid --include=optional`\n"
       : "pixtuoid: no prebuilt binary for " +
           platform +
           "-" +

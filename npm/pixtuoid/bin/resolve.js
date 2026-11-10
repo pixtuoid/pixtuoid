@@ -2,7 +2,7 @@
 
 // Shared platform → native-binary resolution for the two launcher shims: npm
 // installs exactly the ONE `@pixtuoid/cli-<platform>-<arch>` optionalDependency
-// that matches the host (filtered by each platform package's `os`/`cpu`),
+// that matches the host (filtered by each platform package's `os`/`cpu`/`libc`),
 // and we `require.resolve` the native binary out of it. No postinstall, no
 // download.
 
@@ -61,17 +61,35 @@ function binaryPath(bin) {
   }
 }
 
-// generate.mjs stamps the launcher's optionalDependencies from TARGETS, so a
-// platform they don't name has no prebuilt package, and one they name but
-// that didn't resolve was left out by the install, which may omit optional
-// dependencies (https://docs.npmjs.com/cli/v11/commands/npm-install#omit).
+// generate.mjs stamps the launcher's optionalDependencies and their libc gates
+// from TARGETS. A platform they don't name, or whose libc gate npm would refuse
+// here, has no prebuilt package; one that passes but didn't resolve was left
+// out by the install, which may omit optional dependencies
+// (https://docs.npmjs.com/cli/v11/commands/npm-install#omit).
 /**
  * @param {string} platform
  * @param {string} arch
  */
 function isShipped(platform, arch) {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
-  return Object.hasOwn(manifest.optionalDependencies ?? {}, packageName(platform, arch));
+  const name = packageName(platform, arch);
+  /** @type {string[] | undefined} */
+  const libc = manifest.platformLibc?.[name];
+  return Object.hasOwn(manifest.optionalDependencies ?? {}, name) && (!libc || libc.includes(String(hostLibc())));
+}
+
+// npm-install-checks v9.0.0's reading of the host libc from Node's report
+// (`lib/current-env.js:33-46`), the check npm gates a `libc` package by.
+function hostLibc() {
+  if (process.platform !== "linux") return undefined;
+  // As npm does; @types/node doesn't declare the setting yet.
+  Object.assign(process.report, { excludeNetwork: true });
+  const report = /** @type {{ header?: { glibcVersionRuntime?: string }, sharedObjects?: string[] }} */ (
+    process.report.getReport()
+  );
+  if (report.header?.glibcVersionRuntime) return "glibc";
+  const musl = (/** @type {string} */ file) => file.includes("libc.musl-") || file.includes("ld-musl-");
+  return Array.isArray(report.sharedObjects) && report.sharedObjects.some(musl) ? "musl" : null;
 }
 
 module.exports = { binaryPath, exeName, isShipped, packageName };
