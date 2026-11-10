@@ -1739,7 +1739,6 @@ fn queued(layout: &SceneLayout, frame: &SimFrame) -> Furnishings<'static> {
         &crate::lighting::LightInputs {
             agents: &frame.agents,
             seated: &frame.seated_agents,
-            floor_idx: 0,
             indoor_scale: frame.indoor_scale,
             neon: frame.neon,
             beat: ctx.timing.beat,
@@ -6112,7 +6111,6 @@ fn the_outside_reaches_only_the_glass() {
             &LightInputs {
                 agents: &frame.agents,
                 seated: &frame.seated_agents,
-                floor_idx: 0,
                 indoor_scale: frame.indoor_scale,
                 neon: frame.neon,
                 beat: timing.beat,

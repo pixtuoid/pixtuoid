@@ -298,13 +298,7 @@ pub(crate) fn compose_at<'a>(
         })
         .collect();
     DisplayList {
-        lights: lights(
-            frame,
-            office,
-            moment,
-            (floor.floor_idx, ambient),
-            lights_cache,
-        ),
+        lights: lights(frame, office, moment, ambient, lights_cache),
         ambient,
         carpet: moment.look.carpet(theme),
         flash: crate::display::light::Flash::of(&moment.sky),
@@ -422,7 +416,7 @@ fn lights(
     frame: &SimFrame,
     office: Office<'_>,
     moment: &Moment,
-    (floor_idx, ambient): (usize, crate::display::light::Ambient),
+    ambient: crate::display::light::Ambient,
     cache: &mut LightCache,
 ) -> Vec<LightPiece> {
     let Office {
@@ -437,7 +431,6 @@ fn lights(
         &crate::lighting::LightInputs {
             agents: &frame.agents,
             seated: &frame.seated_agents,
-            floor_idx,
             indoor_scale: frame.indoor_scale,
             neon: frame.neon,
             beat: moment.timing.beat,

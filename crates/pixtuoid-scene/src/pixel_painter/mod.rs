@@ -201,7 +201,6 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
         &LightInputs {
             agents,
             seated: &frame.seated_agents,
-            floor_idx: ctx.floor.floor_idx,
             indoor_scale: frame.indoor_scale,
             neon: frame.neon,
             beat: ctx.timing.beat,
