@@ -24,8 +24,6 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "generate.mjs");
 const TARGETS = [
   { rust: "aarch64-apple-darwin", pkg: "darwin-arm64", os: "darwin", cpu: "arm64", win: false },
   { rust: "x86_64-apple-darwin", pkg: "darwin-x64", os: "darwin", cpu: "x64", win: false },
-  { rust: "x86_64-unknown-linux-musl", pkg: "linux-x64", os: "linux", cpu: "x64", win: false },
-  { rust: "aarch64-unknown-linux-gnu", pkg: "linux-arm64", os: "linux", cpu: "arm64", win: false, libc: ["glibc"] },
   { rust: "x86_64-pc-windows-msvc", pkg: "win32-x64", os: "win32", cpu: "x64", win: true },
   { rust: "aarch64-pc-windows-msvc", pkg: "win32-arm64", os: "win32", cpu: "arm64", win: true },
 ];
@@ -97,7 +95,7 @@ test("refuses a flag it does not know rather than ignore it", (t) => {
   assert.match(r.stderr, /--bogus/);
 });
 
-test("stamps launcher + all 6 platform packages with the asymmetric libc gate", (t) => {
+test("stamps launcher + every platform package", (t) => {
   const { npmDir, artifacts } = scaffold(t);
   const r = run(npmDir, artifacts, "1.2.3");
   assert.equal(r.status, 0, r.stderr);
@@ -115,9 +113,6 @@ test("stamps launcher + all 6 platform packages with the asymmetric libc gate", 
     assert.equal(pkg.version, "1.2.3");
     assert.deepEqual(pkg.os, [tg.os]);
     assert.deepEqual(pkg.cpu, [tg.cpu]);
-
-    if (tg.libc) assert.deepEqual(pkg.libc, tg.libc, `${name} declares libc`);
-    else assert.equal("libc" in pkg, false, `${name} omits libc`);
 
     const ext = tg.win ? ".exe" : "";
     assert.deepEqual(
@@ -169,10 +164,10 @@ test("rejects a non-semver version without writing", (t) => {
 });
 
 test("throws when a target's prebuilt binary is missing", (t) => {
-  const { npmDir, artifacts } = scaffold(t, { skip: "x86_64-unknown-linux-musl" });
+  const { npmDir, artifacts } = scaffold(t, { skip: "x86_64-apple-darwin" });
   const r = run(npmDir, artifacts, "1.2.3");
   assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /missing prebuilt binary for x86_64-unknown-linux-musl/);
+  assert.match(r.stderr, /missing prebuilt binary for x86_64-apple-darwin/);
 });
 
 test("release.yml build matrix targets == npm TARGETS (npm ships every built platform)", () => {

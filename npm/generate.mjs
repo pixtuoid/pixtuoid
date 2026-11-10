@@ -28,14 +28,9 @@ const NOTICES = ["LICENSE", "licenses"];
 
 // Must stay equal to release.yml's build matrix; npm/generate.test.mjs pins that,
 // so a missing target fails `just npm-check` instead of silently shipping nowhere.
-// linux-x64 is a static musl build (portable to glibc too), so it takes NO `libc`
-// gate; linux-arm64 is glibc, so `libc:["glibc"]` makes npm SKIP it on Alpine-arm64
-// rather than install a binary that would crash there.
 const TARGETS = [
   { rust: "aarch64-apple-darwin", pkg: "darwin-arm64", os: "darwin", cpu: "arm64" },
   { rust: "x86_64-apple-darwin", pkg: "darwin-x64", os: "darwin", cpu: "x64" },
-  { rust: "x86_64-unknown-linux-musl", pkg: "linux-x64", os: "linux", cpu: "x64" },
-  { rust: "aarch64-unknown-linux-gnu", pkg: "linux-arm64", os: "linux", cpu: "arm64", libc: ["glibc"] },
   { rust: "x86_64-pc-windows-msvc", pkg: "win32-x64", os: "win32", cpu: "x64" },
   { rust: "aarch64-pc-windows-msvc", pkg: "win32-arm64", os: "win32", cpu: "arm64" },
 ];
@@ -106,7 +101,6 @@ for (const t of TARGETS) {
     homepage: launcher.homepage,
     os: [t.os],
     cpu: [t.cpu],
-    ...(t.libc ? { libc: t.libc } : {}),
     files,
   };
   writeFileSync(join(pkgDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
