@@ -1177,11 +1177,9 @@ impl FloorScene {
 }
 
 /// Build a self-contained `SceneState` for one floor: the agents seated on it,
-/// at the desks they hold, in a `uniform(cap)` scene. A floor past the building's is
-/// an empty one.
+/// at the desks they hold. A floor past the building's is an empty one.
 pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> FloorScene {
-    let cap = (scene.floor_capacities().get(floor_idx).copied()).unwrap_or(0);
-    let mut s = SceneState::uniform(cap);
+    let mut s = SceneState::default();
     for slot in floor_agents(scene, floor_idx) {
         s.agents.insert(slot.agent_id, slot.clone());
     }

@@ -164,7 +164,6 @@ fn a_floor_past_the_building_projects_empty() {
     assert!(floor_agents(&scene, MAX_FLOORS).next().is_none());
     let past = project_floor_scene(&scene, MAX_FLOORS);
     assert!(past.scene().agents.is_empty());
-    assert_eq!(past.scene().total_capacity(), 0);
 }
 
 #[test]
