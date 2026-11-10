@@ -333,7 +333,10 @@ where
         doc
     };
     mutate(&mut doc);
-    lock.write_atomic(&doc.to_string())
+    lock.write_atomic(&crate::install::merge::end_lines_like(
+        &contents,
+        doc.to_string(),
+    ))
 }
 
 /// Save the appearance picker's commit: `theme`, and the look `picked`
