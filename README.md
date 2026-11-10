@@ -61,7 +61,7 @@ Pick one:
 brew install pixtuoid
 ```
 
-**npm** (any OS):
+**npm** (macOS or Windows):
 
 ```bash
 npm install -g pixtuoid
@@ -76,7 +76,7 @@ Then:
 
 <kbd>Tab</kbd> agent dashboard · <kbd>t</kbd> themes, and the look where the terminal draws the cutaway · <kbd>m</kbd> sound · click a coworker to bring its terminal to the front · <kbd>?</kbd> every other key
 
-**More ways to install** — Cargo, prebuilt binaries, and Debian packages (`.deb`) — are on the **[install guide ↗](https://pixtuoid.dev/#install)**.
+**More ways to install** are on the **[install guide ↗](https://pixtuoid.dev/#install)**.
 
 ## Features
 
