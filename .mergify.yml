@@ -22,6 +22,11 @@ queue_rules:
     # and PRs arm one by one after review; the 30-second default batches one.
     batch_max_wait_time: 10 min
     merge_method: squash
+    # main takes the reviewed PR text, never a branch's unreviewed commit
+    # messages; pr-body overrides the repo's squash setting (docs.mergify.com/workflow/actions/merge).
+    commit_message_format:
+      title: pr-title
+      body: pr-body
     # `auto` sizes this from unloaded runs, so a backlog of runners alone times
     # a PR out and costs a full CI rerun; this covers the backlogged full tier.
     checks_timeout: 60 min
