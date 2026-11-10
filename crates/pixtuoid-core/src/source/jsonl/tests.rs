@@ -4862,3 +4862,42 @@ async fn a_life_after_its_own_end_registers_again_within_one_read() {
         Some(Sight::Claimed(_))
     ));
 }
+
+/// A life after its own end on a claimed path registers from the transcript's
+/// head, as any first sight does: the appended lines carry no cwd, and omp
+/// names its session only there.
+#[tokio::test]
+async fn a_claimed_paths_life_after_its_end_registers_from_the_head() {
+    const HEAD: &str = "{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
+    const TOOL: &str = "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"tu-1\",\"name\":\"bash\",\"arguments\":{}}]}}\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("claimed.jsonl");
+    tokio::fs::write(&path, format!("{HEAD}{TOOL}"))
+        .await
+        .unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    let window = Duration::from_secs(3600);
+    walk_omp(&path, window, &cursors, &seen).await;
+    assert!(matches!(
+        seen.lock().await.get(&path),
+        Some(Sight::Claimed(_))
+    ));
+
+    let mut f = tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut f, format!("{OMP_EXIT_LINE}{TOOL}").as_bytes())
+        .await
+        .unwrap();
+    let live = walk_omp(&path, window, &cursors, &seen).await;
+    let cwds: Vec<&Path> = (live.iter())
+        .filter_map(|(_, e)| match e {
+            AgentEvent::SessionStart { cwd, .. } => Some(cwd.as_path()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(cwds, [Path::new("/repo/head")], "{live:?}");
+}
