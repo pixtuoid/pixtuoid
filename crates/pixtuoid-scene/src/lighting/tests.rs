@@ -80,7 +80,6 @@ fn lights_at(w: u16, h: u16, hour: u32) -> (SceneLayout, Lights) {
         &LightInputs {
             agents: &[],
             seated: &HashMap::new(),
-            floor_idx: 0,
             indoor_scale: 1.0,
             neon: NeonLevels::RUNNING,
             beat: Beat::at_ms(0),
@@ -141,7 +140,6 @@ fn the_neon_halo_throws_the_signs_own_levels() {
             &LightInputs {
                 agents: &[],
                 seated: &HashMap::new(),
-                floor_idx: 0,
                 indoor_scale: 1.0,
                 neon: levels,
                 beat,
@@ -225,7 +223,7 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
     };
     let at_desk = |path: &str, desk: usize, state: pixtuoid_core::state::ActivityState| {
         let mut a = crate::character::test_support::make_slot(id(path), state);
-        a.desk_index = pixtuoid_core::state::GlobalDeskIndex(desk);
+        a.desk = Some(pixtuoid_core::state::FloorDesk::new(0, desk));
         a
     };
     let agents = [
@@ -251,7 +249,6 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
         &LightInputs {
             agents: &agents,
             seated: &seated,
-            floor_idx: 0,
             indoor_scale: 1.0,
             neon: NeonLevels::RUNNING,
             beat: Beat::at_ms(0),

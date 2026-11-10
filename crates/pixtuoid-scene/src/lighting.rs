@@ -307,11 +307,10 @@ pub(crate) struct Lights {
 
 /// What the lights depend on this frame besides the layout and the sky's [`SkyTones`].
 pub(crate) struct LightInputs<'a> {
-    /// Every agent the scene holds; only this floor's light it.
+    /// This floor's agents (its projection).
     pub(crate) agents: &'a [AgentSlot],
     /// Whether each home desk's occupant sits there now.
     pub(crate) seated: &'a HashMap<FloorLocalDeskIndex, bool>,
-    pub(crate) floor_idx: usize,
     /// The room's artificial-light level, which a vacant floor turns down.
     pub(crate) indoor_scale: f32,
     pub(crate) neon: NeonLevels,
@@ -501,9 +500,9 @@ fn monitor_halos(layout: &SceneLayout, inputs: &LightInputs<'_>) -> Vec<Emitter>
     inputs
         .agents
         .iter()
-        .filter(|agent| agent.exiting_at.is_none() && agent.floor_idx == inputs.floor_idx)
+        .filter(|agent| agent.exiting_at.is_none())
         .filter_map(|agent| {
-            let local = agent.desk_index.single_floor_local();
+            let local = agent.desk?.index;
             let seated = inputs.seated.get(&local).copied().unwrap_or(false);
             let desk = layout.home_desk(local)?;
             let work = lit_screen(agent, desk.facing, seated)?;

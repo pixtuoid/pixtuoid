@@ -9,22 +9,22 @@
   {
     "id": "npm",
     "label": "npm",
-    "blurb": "any OS",
-    "cmds": ["npm install -g pixtuoid"],
+    "cmds": ["# macOS or Windows", "npm install -g pixtuoid"],
     "readme": true
   },
   {
     "id": "cargo",
     "label": "Cargo",
-    "cmds": ["cargo install pixtuoid pixtuoid-hook"],
+    "cmds": ["# Linux needs pkg-config, ALSA headers", "cargo install pixtuoid pixtuoid-hook"],
     "readme": false
   },
   {
     "id": "release",
     "label": "GitHub Releases",
     "cmds": [
-      "# prebuilt binaries (macOS · Linux · Windows .zip) + Debian .debs:",
-      "# https://github.com/pixtuoid/pixtuoid/releases/latest"
+      "# prebuilt binaries for macOS (.tar.gz) and Windows (.zip):",
+      "# https://github.com/pixtuoid/pixtuoid/releases/latest",
+      "# Linux: see the Homebrew or Cargo tab"
     ],
     "readme": false
   }

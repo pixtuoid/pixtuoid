@@ -1,10 +1,10 @@
 //! Render one frame of the CUTAWAY profile to a PNG, through the real seam: the
 //! real sim produces a `SimFrame`, the real layout is computed at LOGICAL size,
-//! and `render_cutaway` paints it into a buffer sized in pixels at `--scale`.
+//! and `look::render` paints it into a buffer sized in pixels at `--scale`.
 //!
 //! Usage:
 //!   cargo run --release --example cutaway_snapshot -- <out.png> [--scale N]
-//!       [--agents N] [--theme T] [--logical WxH] [--now-hour H] [--floor I/N]
+//!       [--agents N] [--theme T] [--logical WxH] [--now-hour H] [--floor I]
 //!       [--weather W] [--now-day D] [--now-sec S] [--repos a,b,...]
 
 use std::path::{Path, PathBuf};
@@ -15,10 +15,11 @@ use anyhow::{Context, Result, anyhow};
 use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid_core::source::claude_code;
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
-use pixtuoid_scene::floor::{FloorMeta, FloorSession};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, PerFloor, PerOffice, project_floor_scene};
+use pixtuoid_scene::hit::HoverTarget;
 use pixtuoid_scene::layout::Viewport;
-use pixtuoid_scene::look::{Look, Place, RenderInputs};
+use pixtuoid_scene::look::{Look, RenderInputs};
 use pixtuoid_scene::render_scale::RenderScale;
 use pixtuoid_scene::theme::theme_by_name;
 
@@ -35,7 +36,8 @@ const _: () = assert!(
     "the default cast must share a working directory"
 );
 
-fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String]) {
+fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String], floor: usize) {
+    let cap = scene.floor_capacities()[0];
     let seated = now.checked_sub(Duration::from_secs(120)).unwrap_or(now);
     let recent = now.checked_sub(Duration::from_secs(3)).unwrap_or(now);
     for i in 0..n {
@@ -72,8 +74,7 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
                 arrived_at: Some(seated),
                 last_event_at: recent,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx: scene.floor_of(GlobalDeskIndex(i)),
+                desk: Some(FloorDesk::new(floor + i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -96,7 +97,7 @@ fn main() -> Result<()> {
 
     let (mut scale_n, mut agents, mut theme_name) =
         (None, DEFAULT_AGENTS, "tokyo-night".to_string());
-    let (mut now_hour, mut now_sec, mut floor) = (None::<u32>, 0u64, (0usize, 1usize));
+    let (mut now_hour, mut now_sec, mut floor) = (None::<u32>, 0u64, 0usize);
     // 1 = the clock's base date, as the classic snapshot's `--now-day`.
     let mut now_day = 1u32;
     let mut weather = None::<String>;
@@ -132,16 +133,7 @@ fn main() -> Result<()> {
             "--now-sec" => now_sec = val("--now-sec")?.parse().context("bad --now-sec")?,
             "--weather" => weather = Some(val("--weather")?),
             "--repos" => repos = val("--repos")?.split(',').map(str::to_string).collect(),
-            "--floor" => {
-                let v = val("--floor")?;
-                let (f, n) = v
-                    .split_once('/')
-                    .ok_or_else(|| anyhow!("--floor wants I/N"))?;
-                floor = (
-                    f.parse().context("bad --floor index")?,
-                    n.parse().context("bad --floor count")?,
-                );
-            }
+            "--floor" => floor = val("--floor")?.parse().context("bad --floor index")?,
             other => return Err(anyhow!("unexpected arg: {other}")),
         }
         i += 2;
@@ -170,37 +162,41 @@ fn main() -> Result<()> {
         return Err(anyhow!("--now-sec wants 0..3600 and a --now-hour"));
     }
     let now = now + Duration::from_secs(now_sec);
-    let meta = FloorMeta::for_floor(floor.0, floor.1).with_weather(policy);
+    let conditions = Conditions::default().with_weather(policy);
 
     let mut scene = SceneState::uniform(64);
-    populate(&mut scene, now, agents, &repos);
+    populate(&mut scene, now, agents, &repos, floor);
 
-    // The real sim, at LOGICAL size, drawn through the painters' one entry.
-    let mut session = FloorSession::new(Arc::clone(&pack));
-    session.render(
+    // The real sim, at LOGICAL size, drawn through the painters' one entry
+    // from floor `--floor`'s projection, the building's top while `--agents`
+    // fits one floor.
+    let mut per_floor = PerFloor::new(Arc::clone(&pack));
+    let mut office = PerOffice::new();
+    let floor_scene = project_floor_scene(&scene, floor);
+    let rendered = pixtuoid_scene::look::render(
+        &mut per_floor,
+        office.stores(),
         Look::Cutaway {
             scale,
             text: pixtuoid_scene::look::WorldText::Baked,
         },
         RenderInputs {
-            world: pixtuoid_scene::floor::FloorInputs {
-                scene: &scene,
+            world: FloorInputs {
+                scene: &floor_scene,
                 now,
-                floor: meta,
+                conditions,
                 pets: pixtuoid_scene::floor::PetInputs::default(),
             },
             theme,
             viewport: Viewport::full(lw, lh),
-            place: Place {
-                gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                floor: None,
-            },
+            gateway: pixtuoid_scene::tally::office_gateway(&scene),
             debug_walkable: false,
             dim: pixtuoid_scene::look::Dim::NONE,
         },
     );
-    let picture = session
-        .picture()
+    let picture = rendered
+        .as_ref()
+        .and_then(|rendered| rendered.picture(&per_floor.raster))
         .ok_or_else(|| anyhow!("{lw}x{lh} does not lay out"))?;
     let (buf, layout) = (picture.pixels, picture.hits.layout());
     let (bw, bh) = (buf.width(), buf.height());
@@ -215,7 +211,11 @@ fn main() -> Result<()> {
         "wrote {out} ({bw}x{bh} = {lw}x{lh} logical @{scale_n}x, \
          {} desks, {} agents)",
         layout.home_desks.len(),
-        scene.agents.len()
+        picture
+            .hits
+            .figures()
+            .filter(|(target, _)| matches!(target, HoverTarget::Agent(_)))
+            .count()
     );
     Ok(())
 }

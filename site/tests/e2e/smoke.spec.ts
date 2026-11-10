@@ -1974,9 +1974,16 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   const copy = page.locator('.install__panel.is-active .install__copy');
   await copy.click();
   await expect(copy).toHaveText('Copied ✓');
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    await copy.getAttribute('data-copy')
-  );
+  // A `#` note shows but is never copied (site/config/install-cmds.mjs says why).
+  await expect(page.locator('#install-panel-cargo code')).toContainText('#');
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toBe(await copy.getAttribute('data-copy'));
+  expect(copied).toContain('cargo install');
+  expect(copied).not.toMatch(/^#/m);
+  // A tab with only notes has nothing to copy, so no button.
+  await page.locator('.install__tab[data-tab="release"]').click();
+  await expect(page.locator('#install-panel-release')).toBeVisible();
+  await expect(page.locator('#install-panel-release .install__copy')).toHaveCount(0);
   // Force the manual branch on a fresh load (brew is the default active panel).
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'clipboard', { value: undefined })
@@ -1986,6 +1993,14 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   await brewCopy.click();
   await expect(brewCopy).toHaveText('Select & copy');
   expect(await page.evaluate(() => String(getSelection()))).toContain('brew install');
+  // The manual branch selects the commands alone too.
+  await page.locator('.install__tab[data-tab="cargo"]').click();
+  const cargoCopy = page.locator('#install-panel-cargo .install__copy');
+  await cargoCopy.click();
+  await expect(cargoCopy).toHaveText('Select & copy');
+  const selected = await page.evaluate(() => String(getSelection()));
+  expect(selected).toContain('cargo install');
+  expect(selected).not.toContain('#');
 });
 
 test('showcase studio: deep-links tune, dial and chips swap hydrated stages, the clip plays', async ({

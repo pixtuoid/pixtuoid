@@ -361,17 +361,17 @@ mod tests {
     use crate::cutaway::paint::render_cutaway;
     use crate::display::PieceKind;
     use crate::display::compose::tests::{empty_frame, lively_office, sit_down};
-    use crate::floor::FloorMeta;
+    use crate::floor::Conditions;
     use crate::hit::HoverTarget;
     use crate::layout::SceneLayout;
     use crate::pack::test_office;
     use crate::sim::SimFrame;
     use crate::theme::Theme;
 
-    /// The ground floor under a clear sky: rain or snow on the glass moves
+    /// A clear sky: rain or snow on the glass moves
     /// every tick, so the clock's weather would decide what a tick repaints.
-    fn clear_ground() -> FloorMeta {
-        FloorMeta::ground().with_weather(crate::sky::WeatherPolicy::Forced(
+    fn clear_sky() -> Conditions {
+        Conditions::default().with_weather(crate::sky::WeatherPolicy::Forced(
             crate::sky::Weather::Clear,
         ))
     }
@@ -427,20 +427,15 @@ mod tests {
     /// full render, and every pixel two full renders in a row differ in lies in
     /// what it reported.
     fn run(layout: SceneLayout, pack: OfficeArt, steps: &[(SimFrame, SystemTime)]) -> Run {
-        run_under(
-            layout,
-            pack,
-            steps,
-            (clear_ground(), crate::look::Dim::NONE),
-        )
+        run_under(layout, pack, steps, (clear_sky(), crate::look::Dim::NONE))
     }
 
-    /// [`run`] on `floor`, under its weather and `dim`.
+    /// [`run`] under `conditions` and `dim`.
     fn run_under(
         layout: SceneLayout,
         pack: OfficeArt,
         steps: &[(SimFrame, SystemTime)],
-        (floor, dim): (FloorMeta, crate::look::Dim),
+        (conditions, dim): (Conditions, crate::look::Dim),
     ) -> Run {
         let (layout, pack) = (Arc::new(layout), Arc::new(pack));
         let theme = normal();
@@ -471,7 +466,7 @@ mod tests {
                 &pack,
                 scale,
                 frame,
-                crate::display::compose::tests::showing(floor, *now),
+                crate::display::compose::tests::showing(conditions, *now),
             );
             // Dimmed apart from `paint`, which the canvas shares.
             for px in full.as_mut_slice() {
@@ -480,7 +475,7 @@ mod tests {
             let list = compose(
                 frame,
                 office,
-                crate::display::compose::tests::showing(floor, *now),
+                crate::display::compose::tests::showing(conditions, *now),
                 (
                     &mut crate::display::compose::LightCache::default(),
                     &mut crate::outside::OutsideCache::default(),
@@ -502,7 +497,7 @@ mod tests {
                 scale,
                 Showing {
                     dim,
-                    ..crate::display::compose::tests::showing(floor, *now)
+                    ..crate::display::compose::tests::showing(conditions, *now)
                 },
                 crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
@@ -587,7 +582,7 @@ mod tests {
             SceneLayout::clone(&layout),
             OfficeArt::clone(&pack),
             &steps,
-            (clear_ground(), crate::look::Dim::from_brightness(0.4)),
+            (clear_sky(), crate::look::Dim::from_brightness(0.4)),
         );
         assert!(tally.partial > 0, "{tally:?}");
         let (mut cache, mut outside) = (
@@ -606,7 +601,7 @@ mod tests {
                 RenderScale::from(pack.max_density_variant()),
                 Showing {
                     dim,
-                    ..crate::display::compose::tests::showing(clear_ground(), now)
+                    ..crate::display::compose::tests::showing(clear_sky(), now)
                 },
                 crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
@@ -661,7 +656,7 @@ mod tests {
             pack,
             &steps,
             (
-                FloorMeta::ground().with_weather(storm),
+                Conditions::default().with_weather(storm),
                 crate::look::Dim::NONE,
             ),
         );
@@ -735,7 +730,7 @@ mod tests {
                     &stepped,
                     theme,
                     scale,
-                    crate::display::compose::tests::showing(clear_ground(), now),
+                    crate::display::compose::tests::showing(clear_sky(), now),
                     crate::look::WorldText::Baked,
                     (&mut cache, &mut outside),
                 )
@@ -787,7 +782,7 @@ mod tests {
             let list = compose(
                 frame,
                 office,
-                crate::display::compose::tests::showing(clear_ground(), Self::now()),
+                crate::display::compose::tests::showing(clear_sky(), Self::now()),
                 (
                     &mut crate::display::compose::LightCache::default(),
                     &mut crate::outside::OutsideCache::default(),
@@ -819,7 +814,7 @@ mod tests {
                 &stepped,
                 normal(),
                 self.scale,
-                crate::display::compose::tests::showing(clear_ground(), Self::now()),
+                crate::display::compose::tests::showing(clear_sky(), Self::now()),
                 crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             );
@@ -975,7 +970,7 @@ mod tests {
                 let list = compose(
                     &both,
                     office,
-                    crate::display::compose::tests::showing(clear_ground(), Hovering::now()),
+                    crate::display::compose::tests::showing(clear_sky(), Hovering::now()),
                     (
                         &mut crate::display::compose::LightCache::default(),
                         &mut crate::outside::OutsideCache::default(),
@@ -1028,7 +1023,7 @@ mod tests {
             let list = compose(
                 frame,
                 office,
-                crate::display::compose::tests::showing(clear_ground(), Hovering::now()),
+                crate::display::compose::tests::showing(clear_sky(), Hovering::now()),
                 (
                     &mut crate::display::compose::LightCache::default(),
                     &mut crate::outside::OutsideCache::default(),
@@ -1061,7 +1056,7 @@ mod tests {
                 &stepped,
                 normal(),
                 h.scale,
-                crate::display::compose::tests::showing(clear_ground(), Hovering::now()),
+                crate::display::compose::tests::showing(clear_sky(), Hovering::now()),
                 crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             )
@@ -1099,7 +1094,7 @@ mod tests {
         for s in [1, d] {
             let scale = RenderScale::new(s).expect("nonzero");
             let mut canvas = CutawayCanvas::new(Arc::clone(&pack));
-            let showing = crate::display::compose::tests::showing(clear_ground(), now);
+            let showing = crate::display::compose::tests::showing(clear_sky(), now);
             canvas.frame(
                 &stepped,
                 normal(),
@@ -1145,7 +1140,7 @@ mod tests {
     fn a_new_tally_repaints_only_the_board() {
         let h = Hovering::new();
         let seated = h.frames.last().expect("a seated frame");
-        let quiet = crate::display::compose::tests::showing(clear_ground(), Hovering::now());
+        let quiet = crate::display::compose::tests::showing(clear_sky(), Hovering::now());
         let counts = crate::tally::StateCounts {
             running: 3,
             total: 3,
@@ -1249,7 +1244,7 @@ mod tests {
         let mut list = compose(
             seated,
             office,
-            crate::display::compose::tests::showing(clear_ground(), Hovering::now()),
+            crate::display::compose::tests::showing(clear_sky(), Hovering::now()),
             (
                 &mut crate::display::compose::LightCache::default(),
                 &mut crate::outside::OutsideCache::default(),
@@ -1366,12 +1361,12 @@ mod tests {
                 layout: Arc::new(layout),
             }
         };
-        let floor = clear_ground();
+        let conditions = clear_sky();
         canvas.frame(
             &stepped(0),
             normal(),
             scale,
-            crate::display::compose::tests::showing(floor, now),
+            crate::display::compose::tests::showing(conditions, now),
             crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
@@ -1379,7 +1374,7 @@ mod tests {
             &stepped(0),
             normal(),
             scale,
-            crate::display::compose::tests::showing(floor, now),
+            crate::display::compose::tests::showing(conditions, now),
             crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
@@ -1393,7 +1388,7 @@ mod tests {
             &b,
             normal(),
             scale,
-            crate::display::compose::tests::showing(floor, now),
+            crate::display::compose::tests::showing(conditions, now),
             crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
@@ -1405,7 +1400,7 @@ mod tests {
                     &pack,
                     scale,
                     &b.frame,
-                    crate::display::compose::tests::showing(clear_ground(), now)
+                    crate::display::compose::tests::showing(clear_sky(), now)
                 )
                 .as_slice(),
             "the canvas shows other than the new layout"
@@ -1433,21 +1428,69 @@ mod tests {
         let walk_layout = Arc::new(walk_layout);
         let empty = |viewport, floor_seed| {
             crate::floor::FloorSession::new(Arc::clone(&pack))
+                .with_floor_seed(floor_seed)
                 .step(
                     crate::floor::FloorInputs {
                         scene: &pixtuoid_core::SceneState::uniform(16),
                         now: crate::localclock::at_hour(12),
-                        floor: FloorMeta {
-                            floor_seed,
-                            ..FloorMeta::ground()
-                        },
+                        conditions: Conditions::default(),
                         pets: crate::floor::PetInputs::default(),
                     },
                     viewport,
                 )
                 .expect("lays out")
         };
-        let office = empty(Viewport::full(240, 144), FloorMeta::ground().floor_seed);
+        let ground_seed = crate::floor::floor_seed(0);
+        let office = empty(Viewport::full(240, 144), ground_seed);
+        // Floor `floor` of `scene`, empty, stepped on `viewport`.
+        let empty_on = |viewport, scene: &pixtuoid_core::SceneState, floor| {
+            let mut office = crate::floor::PerOffice::new();
+            crate::floor::step_floor(
+                &mut crate::floor::PerFloor::new(Arc::clone(&pack)),
+                &mut office.coffee,
+                &mut office.chitchat,
+                crate::floor::FloorInputs {
+                    scene: &crate::floor::project_floor_scene(scene, floor),
+                    now: crate::localclock::at_hour(12),
+                    conditions: Conditions::default(),
+                    pets: crate::floor::PetInputs::default(),
+                },
+                viewport,
+            )
+            .expect("lays out")
+        };
+        // The top floor of four, whose windows look out from the highest.
+        let upstairs = empty_on(
+            Viewport::full(240, 144),
+            &pixtuoid_core::SceneState::uniform(16),
+            3,
+        );
+        // An agent upstairs, so a floor between it and the ground lights both
+        // its arrows.
+        let four_floors = {
+            let mut scene = pixtuoid_core::SceneState::uniform(16);
+            let id = pixtuoid_core::AgentId::from_transcript_path("/canvas/top.jsonl");
+            scene.agents.insert(
+                id,
+                pixtuoid_core::AgentSlot {
+                    desk: Some(pixtuoid_core::FloorDesk::new(3, 0)),
+                    ..crate::character::test_support::make_slot(
+                        id,
+                        pixtuoid_core::state::ActivityState::Idle,
+                    )
+                },
+            );
+            scene
+        };
+        let (seated_up_layout, _, seated_up_frames, _) =
+            crate::display::compose::tests::sit_down_on(
+                test_office(),
+                crate::layout::Facing::North,
+                2,
+                pixtuoid_core::AgentId::from_transcript_path("/cutaway/sit.jsonl"),
+                3,
+            );
+        let seated_up_layout = Arc::new(seated_up_layout);
         // Each inset the App's chrome takes: a bottom bar, the same over a
         // floor whose south room lays a rug against it, and a banner on top.
         let inset = |insets| Viewport {
@@ -1462,10 +1505,11 @@ mod tests {
             top: 12,
             ..Insets::default()
         };
-        let under_bar = empty(inset(bar), FloorMeta::ground().floor_seed);
+        let under_bar = empty(inset(bar), ground_seed);
         // A dual-meeting floor's seed.
         let rug_on_bar = empty(inset(bar), 3);
-        let under_banner = empty(inset(banner), FloorMeta::ground().floor_seed);
+        let under_banner = empty(inset(banner), ground_seed);
+        let under_banner_mid = empty_on(inset(banner), &four_floors, 1);
         assert!(
             rug_on_bar
                 .layout
@@ -1495,10 +1539,21 @@ mod tests {
                 frames.last().expect("a seated frame"),
             ),
             ("office", &office.layout, &office.frame),
+            ("upstairs", &upstairs.layout, &upstairs.frame),
             ("lively", &lively, &busy),
             ("under-bar", &under_bar.layout, &under_bar.frame),
             ("rug-on-bar", &rug_on_bar.layout, &rug_on_bar.frame),
             ("under-banner", &under_banner.layout, &under_banner.frame),
+            (
+                "under-banner-mid",
+                &under_banner_mid.layout,
+                &under_banner_mid.frame,
+            ),
+            (
+                "seated-upstairs",
+                &seated_up_layout,
+                seated_up_frames.last().expect("a seated frame"),
+            ),
         ];
         let moments = [
             ("normal", Weather::Clear, 12),
@@ -1521,9 +1576,9 @@ mod tests {
             .expect("a lunation has days");
         let mut digests = String::new();
         for (scene, layout, frame) in scenes {
-            for (i, (theme_name, weather, hour)) in moments.into_iter().enumerate() {
+            for (theme_name, weather, hour) in moments {
                 let theme = crate::theme::theme_by_name(theme_name).expect("theme");
-                let floor = FloorMeta::for_floor(i % 2 * 3, 4)
+                let conditions = Conditions::default()
                     .with_weather(WeatherPolicy::Forced(weather))
                     .with_motion(Motion::Still);
                 for d in densities {
@@ -1538,7 +1593,7 @@ mod tests {
                         theme,
                         scale,
                         crate::display::compose::tests::showing(
-                            floor,
+                            conditions,
                             crate::localclock::on_day(new_moon, hour),
                         ),
                         crate::look::WorldText::Baked,
@@ -1557,7 +1612,7 @@ mod tests {
                         },
                     );
                     let name = weather.name();
-                    let floor_idx = floor.floor_idx;
+                    let floor_idx = frame.floor_place.index();
                     writeln!(
                         digests,
                         "{scene} {theme_name} {name} {hour:02}h floor{floor_idx} d{d} {digest:016x}"

@@ -223,7 +223,7 @@ fn a_cancelled_slide_reports_what_its_last_frame_flashes() {
     r.set_weather(stutter.weather);
     r.set_motion(pixtuoid_scene::anim::Motion::Full);
     let cap = 16;
-    let upstairs = slot(AgentId::from_transcript_path("/c/1.jsonl"), 1, cap, t0());
+    let upstairs = slot(AgentId::from_transcript_path("/c/1.jsonl"), 1, 0, t0());
     let scene = scene_with(vec![upstairs], cap);
     let catch = stutter.changes[0];
     // A tick before: a starved tube catches only across a step no longer than

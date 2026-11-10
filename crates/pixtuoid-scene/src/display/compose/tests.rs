@@ -22,13 +22,13 @@ pub(crate) fn quiet_board() -> &'static crate::neon_sign::BoardModel {
     &BOARD
 }
 
-/// `floor` at `now`, under the [`quiet_board`].
+/// `conditions` at `now`, under the [`quiet_board`].
 pub(crate) fn showing(
-    floor: crate::floor::FloorMeta,
+    conditions: crate::floor::Conditions,
     now: std::time::SystemTime,
 ) -> Showing<'static> {
     Showing {
-        floor,
+        conditions,
         now,
         board: quiet_board(),
         dim: crate::look::Dim::NONE,
@@ -309,15 +309,26 @@ pub(crate) fn sit_down_as(
     seated_ticks: usize,
     id: pixtuoid_core::AgentId,
 ) -> (SceneLayout, OfficeArt, Vec<SimFrame>, crate::layout::Point) {
-    use crate::floor::{FloorMeta, FloorSession};
+    sit_down_on(pack, facing, seated_ticks, id, 0)
+}
+
+/// [`sit_down_as`] on floor `floor`, the building's top.
+pub(crate) fn sit_down_on(
+    pack: OfficeArt,
+    facing: crate::layout::Facing,
+    seated_ticks: usize,
+    id: pixtuoid_core::AgentId,
+    floor: usize,
+) -> (SceneLayout, OfficeArt, Vec<SimFrame>, crate::layout::Point) {
+    use crate::floor::{Conditions, PerFloor, PerOffice};
     use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, ToolKind, ToolUse};
     use std::time::{Duration, SystemTime};
     const LOGICAL: (u16, u16) = (160, 96);
-    let meta = FloorMeta::ground();
+    let mut scene = pixtuoid_core::SceneState::uniform(16);
     let layout = SceneLayout::compute(
         crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
         None,
-        meta.floor_seed,
+        crate::floor::project_floor_scene(&scene, floor).floor_seed(),
     )
     .expect("lays out");
     let home = layout
@@ -326,7 +337,6 @@ pub(crate) fn sit_down_as(
         .position(|d| d.facing == facing)
         .expect("the office has a desk facing that way");
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let mut scene = pixtuoid_core::SceneState::uniform(16);
     scene.agents.insert(
         id,
         pixtuoid_core::AgentSlot {
@@ -335,7 +345,7 @@ pub(crate) fn sit_down_as(
             created_at: now0,
             arrived_at: Some(now0),
             last_event_at: now0,
-            desk_index: pixtuoid_core::GlobalDeskIndex(home),
+            desk: Some(pixtuoid_core::FloorDesk::new(floor, home)),
             ..make_slot(
                 id,
                 ActivityState::Running {
@@ -348,22 +358,28 @@ pub(crate) fn sit_down_as(
             )
         },
     );
-    let mut session = FloorSession::new(std::sync::Arc::new(pack.clone()));
+    let (mut per_floor, mut office) = (
+        PerFloor::new(std::sync::Arc::new(pack.clone())),
+        PerOffice::new(),
+    );
+    let floor_scene = crate::floor::project_floor_scene(&scene, floor);
     let mut frames = Vec::new();
     let mut seated_at = None;
     for n in 1..=1200u64 {
-        let frame = session
-            .step(
-                crate::floor::FloorInputs {
-                    scene: &scene,
-                    now: now0 + Duration::from_millis(100 * n),
-                    floor: meta,
-                    pets: crate::floor::PetInputs::default(),
-                },
-                crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
-            )
-            .expect("lays out")
-            .frame;
+        let frame = crate::floor::step_floor(
+            &mut per_floor,
+            &mut office.coffee,
+            &mut office.chitchat,
+            crate::floor::FloorInputs {
+                scene: &floor_scene,
+                now: now0 + Duration::from_millis(100 * n),
+                conditions: Conditions::default(),
+                pets: crate::floor::PetInputs::default(),
+            },
+            crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
+        )
+        .expect("lays out")
+        .frame;
         if seated_at.is_none()
             && frame
                 .seated_agents
@@ -581,14 +597,13 @@ fn the_floor_indicator_stays_in_its_cell() {
     for d in densities {
         let pen = Pen::new(RenderScale::from(*d), *d).expect("d divides itself");
         for (floor, floors) in [(0, 1), (11, 12), (98, 99)] {
-            let floor = crate::floor::FloorMeta::for_floor(floor, floors);
-            let run = TextRun::indicator(&layout, floor, &crate::theme::NORMAL);
+            let floor_place = crate::floor::FloorPlace::at(floor, floors);
+            let run = TextRun::indicator(&layout, floor_place, &crate::theme::NORMAL);
             let plate = run_rect(&run, pen);
             let span = topmost_span(plate, pen);
             assert!(
                 rows.contains(&span.y0) && rows.contains(&span.y1),
-                "{d:?} floor {}: rows {}..={} outside {rows:?}",
-                floor.floor_idx,
+                "{d:?} floor {floor}: rows {}..={} outside {rows:?}",
                 span.y0,
                 span.y1
             );
@@ -643,7 +658,7 @@ fn no_run_overprints_another_on_its_line() {
             &TextRun::signs(
                 quiet_board(),
                 &layout,
-                crate::floor::FloorMeta::ground(),
+                crate::floor::FloorPlace::at(0, 1),
                 &crate::theme::NORMAL,
             ),
         )
@@ -800,6 +815,7 @@ fn a_sitters_chair_casts_the_shadow_they_do_not() {
 /// calm.
 pub(crate) fn empty_frame(layout: &SceneLayout) -> SimFrame {
     SimFrame {
+        floor_place: crate::floor::FloorPlace::at(0, 1),
         agents: Vec::new(),
         poses: std::collections::HashMap::new(),
         seated_agents: std::collections::HashMap::new(),
@@ -1005,7 +1021,6 @@ pub(crate) fn list_at<'a>(frame: &SimFrame, office: Office<'a>, hour: u32) -> Di
         frame,
         office,
         &Moment::resolve(sky, office.theme, 0.0, Motion::Full.timing(now)),
-        crate::floor::FloorMeta::ground(),
         quiet_board(),
         (
             &mut crate::display::compose::LightCache::default(),
@@ -1724,7 +1739,6 @@ fn a_frame_on_unchanged_inputs_reuses_the_last_frames_windows_and_lights() {
             &frame,
             office,
             &Moment::resolve(sky, office.theme, 0.0, Motion::Full.timing(now)),
-            crate::floor::FloorMeta::ground(),
             quiet_board(),
             (&mut lights, &mut outside),
         );

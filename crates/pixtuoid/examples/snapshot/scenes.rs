@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::Result;
 use pixtuoid_core::source::{AgentEvent, claude_code};
 use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
-use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, Reducer, SceneState, Transport};
+use pixtuoid_core::{AgentId, AgentSlot, FloorDesk, Reducer, SceneState, Transport};
 use tokio::sync::{RwLock, mpsc};
 
 pub(crate) async fn capture_live_scene(
@@ -73,10 +73,10 @@ pub(crate) async fn capture_live_scene(
     );
     for (id, slot) in &snapshot.agents {
         println!(
-            "  {} ({}) at desk {}: {:?} model={:?} effort={:?}",
+            "  {} ({}) at desk {:?}: {:?} model={:?} effort={:?}",
             slot.label,
             id,
-            slot.desk_index.0,
+            slot.desk,
             slot.state,
             slot.model,
             slot.effort.as_ref().map(|e| e.value.clone())
@@ -201,6 +201,7 @@ pub(crate) fn inject_openclaw_presence(
 const TIER_EXEMPLARS: [u64; 4] = [0, 400_000, 3_000_000, 20_000_000];
 
 fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Range<usize>) {
+    let cap = s.floor_capacities()[0];
     debug_assert!(
         TIER_EXEMPLARS
             .iter()
@@ -343,9 +344,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
                 last_event_at: now - *since_event,
                 exiting_at: None,
 
-                desk_index: GlobalDeskIndex(i),
-                // Hardcoding 0 here would leave overflow agents invisible.
-                floor_idx: s.floor_of(GlobalDeskIndex(i)),
+                desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -394,7 +393,6 @@ pub(crate) fn meeting_scene(
     n: usize,
     cols: u16,
     rows: u16,
-    floor_seed: u64,
     max_desks: usize,
     n_agents: usize,
 ) -> Result<(SceneState, u64)> {
@@ -407,6 +405,7 @@ pub(crate) fn meeting_scene(
     // The renderer's own buffer and `None` desk fill: any other layout shifts the
     // waypoint indices and the staging silently misses.
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
+    let floor_seed = pixtuoid_scene::floor::floor_seed(0);
     let l = SceneLayout::compute(
         pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
         None,
@@ -510,6 +509,7 @@ pub(crate) fn meeting_scene(
     let warmup_ms = min_dwell.saturating_sub(MEETING_WARMUP_LEAD_MS);
 
     let mut s = SceneState::uniform(max_desks);
+    let cap = max_desks;
     for (i, c) in staged.iter().enumerate() {
         let wp = l.waypoints[c.wp_idx];
         eprintln!(
@@ -546,8 +546,7 @@ pub(crate) fn meeting_scene(
                 arrived_at: Some(now - back_date),
                 last_event_at: now - back_date,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(i),
-                floor_idx: s.floor_of(GlobalDeskIndex(i)),
+                desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -586,6 +585,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
     );
 
     let mut s = SceneState::uniform(12);
+    let cap = s.floor_capacities()[0];
 
     let cc_root_id = AgentId::from_transcript_path("/demo/dash_cc_root.jsonl");
 
@@ -667,8 +667,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
                 arrived_at: Some(now - D::from_secs(*desk_index as u64)),
                 last_event_at: now,
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(*desk_index),
-                floor_idx: s.floor_of(GlobalDeskIndex(*desk_index)),
+                desk: Some(FloorDesk::new(*desk_index / cap, *desk_index % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -706,7 +705,6 @@ pub(crate) fn anim_scene(
     target: &str,
     cols: u16,
     rows: u16,
-    floor_seed: u64,
     facing: Option<&str>,
 ) -> (SceneState, u64) {
     use pixtuoid_scene::layout::{CLASSIC_OFFICE_DESKS, Facing, SceneLayout};
@@ -717,6 +715,7 @@ pub(crate) fn anim_scene(
     // The renderer's own buffer: a 2px mismatch shifts the waypoint set and the
     // agent targets the wrong furniture.
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
+    let floor_seed = pixtuoid_scene::floor::floor_seed(0);
     let l = SceneLayout::compute(
         pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
         None,
@@ -847,8 +846,7 @@ pub(crate) fn anim_scene(
             arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(desk_idx),
-            floor_idx: 0,
+            desk: Some(FloorDesk::new(0, desk_idx)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -876,11 +874,13 @@ mod tests {
         let mut got: Vec<_> = scene
             .agents
             .values()
-            .map(|a| (a.desk_index.0, a.label.to_string()))
+            .map(|a| (a.desk, a.label.to_string()))
             .collect();
         got.sort();
         let team = |i| pixtuoid_scene::DEMO_REPOS[i % pixtuoid_scene::DEMO_TEAMS];
-        let want: Vec<_> = (0..12).map(|i| (i, format!("cc·{}", team(i)))).collect();
+        let want: Vec<_> = (0..12)
+            .map(|i| (Some(FloorDesk::new(0, i)), format!("cc·{}", team(i))))
+            .collect();
         assert_eq!(got, want);
         let teams: std::collections::HashSet<_> = got.iter().map(|(_, l)| l).collect();
         assert!(teams.len() < got.len(), "no two sample agents share a team");
@@ -912,7 +912,7 @@ mod tests {
 
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         let (cols, rows, max_desks) = (208u16, 88u16, 12);
-        let (scene, warmup_ms) = meeting_scene(now, 3, cols, rows, 0, max_desks, 12).unwrap();
+        let (scene, warmup_ms) = meeting_scene(now, 3, cols, rows, max_desks, 12).unwrap();
         assert_eq!(scene.agents.len(), 12, "staged 3 + 9 archetype fillers");
 
         let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(cols, rows);
@@ -933,7 +933,11 @@ mod tests {
         let mut rooms = Vec::new();
         let mut dwells = Vec::new();
         for slot in &staged {
-            assert!(slot.desk_index.0 < 3, "staged agents take desks 0..n");
+            assert!(
+                slot.desk
+                    .is_some_and(|desk| desk.floor == 0 && desk.index.0 < 3),
+                "staged agents take desks 0..n"
+            );
             let id = slot.agent_id;
             let elapsed_ms = now
                 .duration_since(slot.state_started_at)
@@ -1026,7 +1030,7 @@ mod vocabulary_tests {
         .map(|t| (t, None))
         .chain([("desk", Some("north")), ("desk", Some("south"))])
         {
-            let (scene, _) = anim_scene(now, target, 192, 80, 0, facing);
+            let (scene, _) = anim_scene(now, target, 192, 80, facing);
             assert!(
                 !scene.agents.is_empty(),
                 "--anim {target}{} staged no agent",

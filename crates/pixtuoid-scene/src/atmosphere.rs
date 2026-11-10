@@ -40,7 +40,7 @@ pub(crate) struct SkyTones {
 }
 
 /// The moment a frame shows, to either painter: the sky at `now` and its
-/// [`SkyTones`], seen from `altitude` ([`FloorMeta::altitude`](crate::floor::FloorMeta::altitude)).
+/// [`SkyTones`], seen from `altitude` ([`FloorPlace::altitude`](crate::floor::FloorPlace::altitude)).
 pub(crate) struct Moment {
     pub(crate) sky: Sky,
     /// Always `sky`'s, resolved against the frame's theme.

@@ -207,15 +207,6 @@ pub(crate) fn first_present_str<'a>(obj: &'a Value, keys: &[&str]) -> Option<&'a
     keys.iter().find_map(|k| m.get(*k).and_then(|v| v.as_str()))
 }
 
-/// Parse every COMPLETE line of a tail-scan window as JSON, silently dropping
-/// empty, torn, and non-JSON lines. The ONE tail-parse scaffold the per-source
-/// `*_session_ended` checkers share — each passes only its own STRUCTURAL
-/// end-marker predicate, never a substring scan (user-controllable content — a
-/// tool result QUOTING the marker — must not drive lifecycle).
-pub(crate) fn parsed_tail_lines(tail: &[u8]) -> impl Iterator<Item = Value> + '_ {
-    crate::source::admit::lines(tail).filter_map(|line| serde_json::from_str(line.ok()?).ok())
-}
-
 /// What a transcript tail says about when its SESSION last wrote — the per-source
 /// refinement of the file mtime the first-sight gate used to trust outright. Three
 /// states, `non_exhaustive` while unpublished because a fourth is plausible.
@@ -388,10 +379,11 @@ pub(crate) fn hook_session_id(
         .map(str::to_string)
 }
 
-/// The identity context the tool/permission arms attach ahead of their activity
-/// event. `cwd` is on the wire for CC tool hooks but absent on e.g. Codex
-/// `PermissionRequest` — absent or empty maps to `None`, so the reducer's cwd-less
-/// registration path (ordinal label, reap-exempt) applies.
+/// The identity context a hook arm attaches ahead of an event that may be its
+/// session's first sight (an activity event or a turn end). `cwd` is on the
+/// wire for CC tool hooks but absent on e.g. Codex `PermissionRequest` — absent
+/// or empty maps to `None`, so the reducer's cwd-less registration path
+/// (ordinal label, reap-exempt) applies.
 pub(crate) fn hook_identity(
     agent_id: AgentId,
     source: &str,
@@ -432,11 +424,11 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 /// Decode one hook payload into the event sequence the reducer applies.
 ///
 /// The tool/permission arms (PreToolUse / PostToolUse / Notification /
-/// PermissionRequest) lead with an [`AgentEvent::Identity`] carrying the payload's
-/// source/session_id/cwd (#221), so the reducer's proof-of-life registration for an
-/// unknown id lands with REAL identity instead of a blank `#N` slot. The
-/// session-lifecycle and custom Subagent arms deliberately do NOT: SessionStart
-/// already carries identity, and an end for an unknown agent proves nothing.
+/// PermissionRequest) and kimi's claimed turn ends lead with an
+/// [`AgentEvent::Identity`] carrying source/session_id/cwd (#221), the claim an
+/// unknown id registers from. The shared lifecycle arms do NOT: SessionStart
+/// carries identity, an end for an unknown id proves nothing, and on the shared
+/// `Stop` an `Identity` would re-create a CC child past its cascade.
 ///
 /// # Errors
 ///
@@ -875,27 +867,6 @@ mod tests {
         assert_eq!(
             rfc3339_to_epoch_secs("2026-07-16T17:30:05+05:30"),
             Some(utc)
-        );
-    }
-
-    #[test]
-    fn parsed_tail_lines_yields_only_complete_parseable_lines() {
-        // A tail byte-window can begin mid-line (torn leading partial), carry
-        // CRLF terminators, and hold empty/torn segments.
-        let tail = b"3,\"torn\":tru\n{\"type\":\"a\"}\n{\"type\":\"b\"}\r\n\n{\"type\":\"c\"";
-        let kinds: Vec<String> = parsed_tail_lines(tail)
-            .filter_map(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
-            .collect();
-        assert_eq!(kinds, vec!["a".to_owned(), "b".to_owned()]);
-        assert_eq!(
-            parsed_tail_lines(b"").count(),
-            0,
-            "empty tail yields nothing"
-        );
-        assert_eq!(
-            parsed_tail_lines(b"not json at all\n").count(),
-            0,
-            "non-JSON lines are skipped, never panic",
         );
     }
 
