@@ -151,7 +151,7 @@ impl<'a> PaintCtx<'a> {
     ) -> Self {
         let timing = world.floor.motion.timing(world.now);
         Self {
-            scene: world.scene,
+            scene: world.scene.scene(),
             layout,
             pack,
             timing,

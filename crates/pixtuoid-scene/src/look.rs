@@ -188,11 +188,12 @@ pub struct Place {
     pub floor: Option<FooterFloor>,
 }
 
-/// One floor's frame, beyond its stores.
-#[derive(Debug, Clone, Copy)]
-pub struct RenderInputs<'a> {
+/// One floor's frame, beyond its stores. `S` is its world's scene, as
+/// [`FloorInputs`] reads one.
+#[derive(Debug)]
+pub struct RenderInputs<'a, S = crate::floor::FloorScene> {
     /// The floor it shows.
-    pub world: FloorInputs<'a>,
+    pub world: FloorInputs<'a, S>,
     /// The active color theme.
     pub theme: &'static Theme,
     /// The logical extent a painter draws the office on, and the insets its
@@ -204,6 +205,30 @@ pub struct RenderInputs<'a> {
     pub debug_walkable: bool,
     /// The brightness the host's modal leaves the frame.
     pub dim: Dim,
+}
+
+// By hand: a derive would bound `S: Copy`, and the full scene is not.
+impl<S> Clone for RenderInputs<'_, S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for RenderInputs<'_, S> {}
+
+impl<'a> RenderInputs<'a, pixtuoid_core::state::SceneState> {
+    /// These inputs drawing `floor`, a projection of their world's scene.
+    #[must_use]
+    pub(crate) fn on(self, floor: &'a crate::floor::FloorScene) -> RenderInputs<'a> {
+        RenderInputs {
+            world: self.world.on(floor),
+            theme: self.theme,
+            viewport: self.viewport,
+            place: self.place,
+            debug_walkable: self.debug_walkable,
+            dim: self.dim,
+        }
+    }
 }
 
 /// A brightness multiplier, from black to unchanged, each pixel takes: a
@@ -737,7 +762,7 @@ pub fn render(
         was.is_none_or(|was| std::mem::discriminant(&was) != std::mem::discriminant(&look));
     let _rasterize = tracing::trace_span!(spans::RASTERIZE).entered();
     let board = crate::neon_sign::wall_board(
-        world.scene,
+        world.scene.scene(),
         place.gateway,
         place.floor,
         world.floor.motion,

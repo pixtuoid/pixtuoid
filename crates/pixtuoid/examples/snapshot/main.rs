@@ -565,13 +565,7 @@ fn main() -> Result<()> {
         println!("wrote {}", anim_dest.display());
         return Ok(());
     }
-    // One floor draws its projection, as the painters do: a layout reads only a
-    // desk's index, so one seated upstairs would sit on floor 0's desk of it.
     let ground = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
-    let anim_job = AnimJob {
-        scene: ground.scene(),
-        ..anim_job
-    };
 
     let mut pixel = args
         .pixel
@@ -784,14 +778,7 @@ fn main() -> Result<()> {
         debug_walkable: args.debug_walkable,
         footer: pixtuoid::dev::footer_context(&scene, None, false, None, warning_text.as_deref()),
         overlays: frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]),
-        ..DrawCtx::offscreen(
-            &mut floor,
-            office.stores(),
-            theme,
-            ground.scene(),
-            now,
-            floor_meta,
-        )
+        ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &ground, now, floor_meta)
     };
     let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
 
@@ -961,8 +948,9 @@ mod tests {
             let theme = pixtuoid_scene::theme::theme_by_name("normal").unwrap();
             let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
             let ground = pixtuoid_scene::floor::FloorMeta::ground();
+            let projected = pixtuoid_scene::floor::project_floor_scene(scene, 0);
             let mut ctx =
-                DrawCtx::offscreen(&mut floor, office.stores(), theme, scene, now, ground);
+                DrawCtx::offscreen(&mut floor, office.stores(), theme, &projected, now, ground);
             draw_frame(&mut term, &mut ctx, None)
                 .unwrap()
                 .expect("a classic frame")

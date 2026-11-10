@@ -577,7 +577,7 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + std::time::Duration::from_millis(250),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -818,7 +818,7 @@ fn a_desk_variant_lands_where_the_base_does_and_draws_its_own_front() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + std::time::Duration::from_secs(40),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -946,7 +946,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
                 &mut owned.stores(),
                 SimInputs {
                     world: FloorInputs {
-                        scene: &scene,
+                        scene: &crate::floor::project_floor_scene(&scene, 0),
                         now: now0 + Duration::from_millis(100 * n),
                         floor: crate::floor::FloorMeta::ground(),
                         pets: PetInputs::default(),
@@ -969,7 +969,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
         &mut OwnedSimStores::new().stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &SceneState::uniform(16),
+                scene: &crate::floor::project_floor_scene(&SceneState::uniform(16), 0),
                 now: now0,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -2612,7 +2612,7 @@ fn sim_step_keeps_the_sign_lit_through_a_gap_in_a_room_that_once_dimmed() {
                     &mut owned.stores(),
                     SimInputs {
                         world: FloorInputs {
-                            scene,
+                            scene: &crate::floor::project_floor_scene(scene, 0),
                             now,
                             floor: crate::floor::FloorMeta::ground(),
                             pets: PetInputs::default(),
@@ -2663,7 +2663,7 @@ fn seat_desk_is_set_exactly_when_the_sim_seats_someone_at_a_desk() {
             &mut stores,
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now: now0 + Duration::from_millis(ms),
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -2727,7 +2727,7 @@ fn sim_step_decides_each_desks_props_from_its_occupant() {
             &mut owned.stores(),
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -2787,7 +2787,7 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
             &mut owned.stores(),
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now: now0,
                     floor,
                     pets,
@@ -2934,7 +2934,7 @@ fn sim_step_walks_a_mascot_in_for_each_gateway_present() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + Duration::from_secs(6),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -2979,7 +2979,7 @@ fn a_mascot_hovers_sized_by_its_frame() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -3034,7 +3034,7 @@ fn sim_step_fits_every_mascot_frame_on_the_canvas() {
             &mut owned.stores(),
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now: now0 + Duration::from_secs(s),
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -3081,7 +3081,7 @@ fn sim_step_advances_walks_without_painting() {
         &mut stores,
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + Duration::from_millis(50),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -3096,7 +3096,7 @@ fn sim_step_advances_walks_without_painting() {
         &mut stores,
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + Duration::from_millis(250),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -3154,7 +3154,7 @@ fn a_requires_action_agent_stays_seated_and_gets_its_bubble_whichever_way_the_de
             &mut owned.stores(),
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -3222,7 +3222,7 @@ fn the_hover_list_omits_the_undrawn_and_follows_sort_drawables() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -3776,7 +3776,7 @@ fn each_mascot_hovers_as_its_own_instance() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -3820,7 +3820,7 @@ fn paint_frame_is_pure_and_byte_identical() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -4462,7 +4462,7 @@ fn sim_reports_occupied_waypoints_and_enqueue_marks_them_busy() {
             &mut stores,
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -4568,7 +4568,7 @@ fn no_two_agents_ever_occupy_the_same_exclusive_waypoint() {
             &mut stores,
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -4637,7 +4637,7 @@ fn a_placement_is_seated_exactly_when_its_figure_sits_on_furniture() {
             &mut stores,
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -4709,7 +4709,7 @@ fn a_running_agent_releases_the_seat_it_snapped_back_from() {
             &mut stores,
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -4750,7 +4750,7 @@ fn a_running_agent_releases_the_seat_it_snapped_back_from() {
         &mut stores,
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -4839,7 +4839,7 @@ fn one_meeting_sofa_still_seats_three_agents_at_once() {
             &mut stores,
             SimInputs {
                 world: FloorInputs {
-                    scene: &scene,
+                    scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -4904,7 +4904,7 @@ fn a_meeting_chair_sitter_is_drawn_on_the_seat_not_5px_high() {
                 &mut stores,
                 SimInputs {
                     world: FloorInputs {
-                        scene: &scene,
+                        scene: &crate::floor::project_floor_scene(&scene, 0),
                         now,
                         floor: crate::floor::FloorMeta::ground(),
                         pets: PetInputs::default(),
@@ -5052,7 +5052,7 @@ fn a_roaming_creature_is_never_sliced_by_the_canvas_edge() {
                 &mut owned.stores(),
                 SimInputs {
                     world: FloorInputs {
-                        scene: &scene,
+                        scene: &crate::floor::project_floor_scene(&scene, 0),
                         now,
                         floor,
                         pets: PetInputs {
@@ -5228,7 +5228,7 @@ fn a_wandering_character_is_never_sliced_by_the_canvas_edge() {
                 &mut stores,
                 SimInputs {
                     world: FloorInputs {
-                        scene: &scene,
+                        scene: &crate::floor::project_floor_scene(&scene, 0),
                         now,
                         floor: crate::floor::FloorMeta::ground(),
                         pets: PetInputs::default(),
@@ -5275,7 +5275,7 @@ fn sim_and_paint(
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene,
+                scene: &crate::floor::project_floor_scene(scene, 0),
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -5634,7 +5634,7 @@ fn a_badge_follows_its_sprite_fitted_to_the_canvas_rim() {
                 &mut owned.stores(),
                 SimInputs {
                     world: FloorInputs {
-                        scene: &scene,
+                        scene: &crate::floor::project_floor_scene(&scene, 0),
                         now,
                         floor: crate::floor::FloorMeta::ground(),
                         pets: PetInputs::default(),
@@ -6048,7 +6048,7 @@ fn the_outside_reaches_only_the_glass() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -6193,7 +6193,7 @@ fn the_neon_halo_lifts_the_window_glass_it_falls_on() {
         &mut owned.stores(),
         SimInputs {
             world: FloorInputs {
-                scene: &scene,
+                scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),

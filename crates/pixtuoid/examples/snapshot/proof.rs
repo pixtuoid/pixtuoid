@@ -602,13 +602,12 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
         // event, so without this nothing would sweep or cascade once the
         // session's events are drained.
         reducer.tick(&mut scene, now);
-        // One floor draws its projection, as the painters do.
         let ground = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
         let mut draw_ctx = DrawCtx::offscreen(
             &mut floor,
             office.stores(),
             job.theme,
-            ground.scene(),
+            &ground,
             now,
             pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
         );

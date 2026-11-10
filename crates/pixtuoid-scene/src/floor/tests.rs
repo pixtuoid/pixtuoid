@@ -1082,7 +1082,7 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
         &mut office.coffee,
         &mut office.chitchat,
         crate::floor::FloorInputs {
-            scene: projected.scene(),
+            scene: &projected,
             now: t0(),
             floor: FloorMeta::for_floor(1, num_floors(&scene)),
             pets: crate::floor::PetInputs::default(),

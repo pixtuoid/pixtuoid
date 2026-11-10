@@ -331,6 +331,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         coffee,
         door_anim_max_ms,
     } = inputs;
+    let scene = scene.scene();
     let timing = floor.motion.timing(now);
     let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
     take_grip(stores, &agents, layout, now);
