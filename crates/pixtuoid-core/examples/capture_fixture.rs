@@ -1550,7 +1550,6 @@ mod recorder {
             CAPTURED.parse().expect("an ISO date")
         }
 
-        /// [`promote`] on [`CAPTURED`], its notices dropped.
         fn promoted(run: &Path, root: &Path) -> std::io::Result<()> {
             promote(run, root, &needles(), captured(), &mut std::io::sink())
         }
