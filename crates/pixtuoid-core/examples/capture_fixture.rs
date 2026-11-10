@@ -305,6 +305,7 @@ mod recorder {
                 &run,
                 &sources_root(),
                 &identity_needles(git_config, true),
+                today(),
                 &mut std::io::stderr(),
             ) {
                 Ok(promoted) => promoted,
@@ -627,7 +628,13 @@ mod recorder {
                 prompt: prompt.clone(),
                 seed: plan.seed.clone(),
                 sentinel_reads,
-                ..record(&cli, &version, command.as_str(), deidentified.clone())?
+                ..record(
+                    &cli,
+                    &version,
+                    today(),
+                    command.as_str(),
+                    deidentified.clone(),
+                )?
             },
         )?;
         for p in &wrote {
@@ -683,9 +690,10 @@ mod recorder {
         run: &Path,
         root: &Path,
         needles: &BTreeSet<String>,
+        captured: chrono::NaiveDate,
         notices: &mut impl Write,
     ) -> Result<std::io::Result<()>, &'static str> {
-        promote_unless_refused(corpus_refusal(true), run, root, needles, notices)
+        promote_unless_refused(corpus_refusal(true), run, root, needles, captured, notices)
     }
 
     /// [`promote`], unless `refusal` says this host may not write the corpus; the
@@ -695,11 +703,12 @@ mod recorder {
         run: &Path,
         root: &Path,
         needles: &BTreeSet<String>,
+        captured: chrono::NaiveDate,
         notices: &mut impl Write,
     ) -> Result<std::io::Result<()>, &'static str> {
         match refusal {
             Some(why) => Err(why),
-            None => Ok(promote(run, root, needles, notices)),
+            None => Ok(promote(run, root, needles, captured, notices)),
         }
     }
 
@@ -711,6 +720,7 @@ mod recorder {
         run: &Path,
         root: &Path,
         needles: &BTreeSet<String>,
+        captured: chrono::NaiveDate,
         notices: &mut impl Write,
     ) -> std::io::Result<()> {
         let manifest: Manifest =
@@ -778,6 +788,7 @@ mod recorder {
             ..record(
                 &manifest.capture.cli,
                 &manifest.capture.version,
+                captured,
                 &command,
                 deidentified,
             )?
@@ -1323,13 +1334,14 @@ mod recorder {
     fn record(
         cli: &str,
         version: &str,
+        captured: chrono::NaiveDate,
         command: &str,
         deidentified: Deidentified,
     ) -> std::io::Result<Recorded> {
         Ok(Recorded {
             cli: filled("cli", cli)?,
             version: filled("version", version)?,
-            captured: filled("captured", &today())?,
+            captured: filled("captured", &captured.to_string())?,
             command: filled("command", command)?,
             note: None,
             deidentified,
@@ -1354,14 +1366,13 @@ mod recorder {
         Ok(at)
     }
 
-    fn today() -> String {
+    fn today() -> chrono::NaiveDate {
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
             .and_then(|d| chrono::DateTime::from_timestamp(i64::try_from(d.as_secs()).ok()?, 0))
             .expect("clock is after 1970 and in chrono's range")
             .date_naive()
-            .to_string()
     }
 
     /// Strings this machine would leak into a capture, the git identity included:
@@ -1531,6 +1542,19 @@ mod recorder {
         /// An operator nobody's bytes carry, so no test reads the machine's.
         const OPERATOR: &str = "Ada Lovelace";
 
+        /// The day a promotion is handed, so no test reads the clock: past, so a
+        /// stamp read off the clock never matches it.
+        const CAPTURED: &str = "2026-06-01";
+
+        fn captured() -> chrono::NaiveDate {
+            CAPTURED.parse().expect("an ISO date")
+        }
+
+        /// [`promote`] on [`CAPTURED`], its notices dropped.
+        fn promoted(run: &Path, root: &Path) -> std::io::Result<()> {
+            promote(run, root, &needles(), captured(), &mut std::io::sink())
+        }
+
         #[test]
         fn only_captures_of_one_workspace_take_turns() {
             let d = tempfile::tempdir().expect("tempdir");
@@ -1655,7 +1679,7 @@ mod recorder {
                 serde_json::json!({"origin": "recorded", "note": "the old record"}),
                 |_| {},
             );
-            promote(&p.run, &p.root, &needles(), &mut std::io::sink()).expect("promote");
+            promoted(&p.run, &p.root).expect("promote");
             assert!(
                 !p.dest.join("old").exists(),
                 "the old bytes leave whole, with the dir that held them"
@@ -1735,7 +1759,7 @@ mod recorder {
                 complete_record(serde_json::json!({"origin": "recorded"})).to_string(),
             )
             .expect("record");
-            promote(&run, &root, &needles(), &mut std::io::sink()).expect("promote");
+            promoted(&run, &root).expect("promote");
             let record = Provenance::read(&dest.join(PROVENANCE)).expect("record");
             let dropped = record.dropped().expect("a baseline");
             let json = serde_json::to_value(dropped).expect("json");
@@ -1756,7 +1780,7 @@ mod recorder {
             text.push_str("not json\n");
             std::fs::write(&raw, text).expect("write");
             let mut notices = Vec::new();
-            promote(&p.run, &p.root, &needles(), &mut notices).expect("promote");
+            promote(&p.run, &p.root, &needles(), captured(), &mut notices).expect("promote");
             let notices = String::from_utf8(notices).expect("text");
             let named = format!("not stripping {}:", p.dest.join(HOOK_PAYLOADS).display());
             assert!(
@@ -1787,7 +1811,7 @@ mod recorder {
                 lines[0]["cwd"] = format!("/Users/{OPERATOR}/proj").into();
             });
             assert!(
-                promote(&p.run, &p.root, &needles(), &mut std::io::sink()).is_err(),
+                promoted(&p.run, &p.root).is_err(),
                 "the operator's name is refused"
             );
         }
@@ -1804,7 +1828,7 @@ mod recorder {
                 let p = promotable(serde_json::json!({"origin": "recorded"}), |lines| {
                     edit(&mut lines[0]);
                 });
-                let refused = promote(&p.run, &p.root, &needles(), &mut std::io::sink());
+                let refused = promoted(&p.run, &p.root);
                 assert!(refused.is_err_and(|e| e.to_string().contains("tap heard")));
                 assert!(
                     p.dest.join("old").join("old.jsonl").is_file()
@@ -1954,13 +1978,13 @@ mod recorder {
         /// Promotes `p`, and says whether the fixture came through untouched.
         fn kept(p: &Promotable) -> bool {
             let before = snapshot(&p.dest);
-            promote(&p.run, &p.root, &needles(), &mut std::io::sink()).expect("promote");
+            promoted(&p.run, &p.root).expect("promote");
             let after = snapshot(&p.dest);
             if after != before {
                 let record = Provenance::read(&p.dest.join(PROVENANCE)).expect("record");
                 assert_eq!(
                     record.recorded().captured.as_str(),
-                    today().as_str(),
+                    CAPTURED,
                     "a rewrite is the run's own record"
                 );
             }
@@ -2060,10 +2084,9 @@ mod recorder {
         fn a_re_record_of_a_transcript_source_that_renamed_only_ids_keeps_the_fixture_whole() {
             let d = tempfile::tempdir().expect("tempdir");
             let r = codex_reruns(d.path());
-            promote(&(r.run)(1), &r.root, &needles(), &mut std::io::sink()).expect("recorded");
+            promoted(&(r.run)(1), &r.root).expect("recorded");
             let before = snapshot(&r.dest);
-            promote(&(r.run)(2), &r.root, &needles(), &mut std::io::sink())
-                .expect("recorded again");
+            promoted(&(r.run)(2), &r.root).expect("recorded again");
             assert_eq!(snapshot(&r.dest), before, "only ids differ");
         }
 
@@ -2072,13 +2095,12 @@ mod recorder {
             let d = tempfile::tempdir().expect("tempdir");
             let r = codex_reruns(d.path());
             let prov = r.dest.join(PROVENANCE);
-            promote(&(r.run)(1), &r.root, &needles(), &mut std::io::sink()).expect("recorded");
+            promoted(&(r.run)(1), &r.root).expect("recorded");
             let mut record = Provenance::read(&prov).expect("its record");
             let Provenance::Recorded(recorded) = &mut record;
             recorded.sentinel_reads.clear();
             record.write_to(&prov).expect("write");
-            promote(&(r.run)(2), &r.root, &needles(), &mut std::io::sink())
-                .expect("recorded again");
+            promoted(&(r.run)(2), &r.root).expect("recorded again");
             let record = Provenance::read(&prov).expect("its record");
             assert!(
                 !record.recorded().sentinel_reads.is_empty(),
@@ -2307,6 +2329,7 @@ mod recorder {
                 &p.run,
                 &p.root,
                 &needles(),
+                captured(),
                 &mut std::io::sink(),
             );
             assert_eq!(refused.err(), Some("not this host"));
@@ -2320,7 +2343,13 @@ mod recorder {
         #[test]
         fn a_promotion_on_this_host_is_refused_only_where_the_corpus_is_not_its_to_write() {
             let p = promotable(serde_json::json!({"origin": "recorded"}), |_| {});
-            let here = promote_here(&p.run, &p.root, &needles(), &mut std::io::sink());
+            let here = promote_here(
+                &p.run,
+                &p.root,
+                &needles(),
+                captured(),
+                &mut std::io::sink(),
+            );
             assert_eq!(here.is_err(), !cfg!(unix), "{here:?}");
             assert_eq!(p.dest.join(HOOK_PAYLOADS).exists(), cfg!(unix));
         }
@@ -3661,17 +3690,6 @@ mod recorder {
             link_keychains(&env, Some(&gone)).expect("a keychain-less operator still isolates");
             let home = PathBuf::from(env.var_os("HOME").expect("HOME"));
             assert!(!home.join(KEYCHAINS).exists());
-        }
-
-        #[test]
-        fn today_is_an_iso_date_the_provenance_gate_can_parse() {
-            let t = today();
-            assert_eq!(t.len(), 10, "{t}");
-            let parts: Vec<&str> = t.split('-').collect();
-            assert_eq!(parts.len(), 3);
-            assert!(parts[0].parse::<u32>().expect("year") >= 2026);
-            assert!((1..=12).contains(&parts[1].parse::<u32>().expect("month")));
-            assert!((1..=31).contains(&parts[2].parse::<u32>().expect("day")));
         }
     }
 }
