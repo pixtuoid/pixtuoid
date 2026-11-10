@@ -8,9 +8,9 @@ use crate::source::decoder::DecodeResult as Result;
 #[cfg(feature = "native")]
 use crate::source::decoder::TailActivity;
 #[cfg(feature = "native")]
-use crate::source::jsonl::{
-    ActivityRecency, CwdDeriver, HeadLabel, LabelDeriver, SessionEndChecker,
-};
+use crate::source::first_sight::HeadLabel;
+#[cfg(feature = "native")]
+use crate::source::jsonl::{ActivityRecency, CwdDeriver, LabelDeriver, SessionEndChecker};
 use serde_json::{Map, Value};
 
 use crate::source::decoder::{

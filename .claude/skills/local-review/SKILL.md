@@ -66,17 +66,19 @@ contract; fill briefs from them, never a paraphrase here.
 Population = the tree, where the aggregate-only classes live (cross-PR
 interaction, drift, debt accretion, coverage-topology gaps, invariant erosion,
 orphaned surface). Prefer a `Workflow`, else parallel `Agent`s; scale to the
-ask. Scout the work-list → subsystem finders (site and Raycast RENDERED) plus
-per-factor finders (arch invariants · concurrency/liveness · security threat
-model · performance · mutation depth on hot logic · silent failure · drift ·
-deep modules) plus a SYSTEM lens (decomposition, dependency directions) and a
-one-source (DRY) census → adversarial verify, default REFUTE, one skeptic per finding and
-2–3 differentiated ones for security/concurrency, majority confirms →
-loop until two consecutive rounds come back empty → a completeness critic
-("what modality did we NOT run?" seeds the next round) → dedup and rank,
-keeping the refuted-as-deliberate list → dispositions plus a stale-phrase
-sweep (`rg --hidden`) at 0. Involved refactors land in-arc; each bigger item
-the owner keeps becomes a FOLLOW-UP PR.
+ask. Scout the work-list (seed: each `Pre-existing:` review line on a closed PR,
+merged or not) → subsystem finders (site and Raycast RENDERED) plus per-factor
+finders (arch invariants · concurrency/liveness · security threat model ·
+performance · mutation depth on hot logic · silent failure · drift · deep
+modules · upkeep, the Proportion lens's "delete it" over every mechanism) plus a
+SYSTEM lens (decomposition, dependency directions) and a one-source (DRY) census
+→ adversarial verify, default REFUTE, one skeptic per finding and 2–3
+differentiated ones for security/concurrency, majority confirms → loop until two
+consecutive rounds come back empty → a completeness critic ("what modality did
+we NOT run?" seeds the next round) → dedup and rank, keeping the
+refuted-as-deliberate list → dispositions plus a stale-phrase sweep (`rg
+--hidden`) at 0. Involved refactors land in-arc; each bigger item the owner
+keeps becomes a FOLLOW-UP PR.
 
 ## Red flags
 

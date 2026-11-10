@@ -1,4 +1,4 @@
-//! Install-WRITE shared helpers — the config parse/merge core every JSON/TOML
+//! Install-WRITE shared helpers — the config parse/merge core every JSON/TOML/YAML
 //! target's `merge_install`/`merge_uninstall` rides. These fns MUTATE;
 //! `verify.rs` next door is the READ-only soundness detector. Per-target FORMAT
 //! knowledge stays in each `install/<target>.rs` (invariant #3); only the
@@ -6,6 +6,7 @@
 
 use crate::install::target::MergeOutcome;
 use anyhow::Context;
+use saphyr::{LoadableYamlNode, YamlOwned};
 use serde_json::{Map, Value, json};
 
 /// Parse JSON config content, treating empty/whitespace-only as the empty
@@ -68,6 +69,20 @@ pub(crate) fn hook_path_str(p: &std::path::Path) -> anyhow::Result<&str> {
 
 fn parse_toml(content: &str) -> anyhow::Result<toml::Table> {
     toml::from_str(content).context("not valid TOML — refusing to overwrite")
+}
+
+/// The one YAML document `content` holds, `None` when it holds none; `file` names
+/// it in the error. A second is refused: the CLIs whose YAML pixtuoid rewrites
+/// load exactly one and reject the file otherwise (dsh's js-yaml `load`,
+/// `lib/loader.js:1791-1799` @ 4.3.2; Hermes's ruamel `Composer.get_single_node`,
+/// `composer.py:65-83` @ 0.18.16), so a rewrite would drop every later document.
+pub(crate) fn single_yaml_doc(content: &str, file: &str) -> anyhow::Result<Option<YamlOwned>> {
+    let mut docs = YamlOwned::load_from_str(content)
+        .map_err(|e| anyhow::anyhow!("{file} does not parse as YAML: {e}"))?;
+    if docs.len() > 1 {
+        anyhow::bail!("{file} holds more than one YAML document, which its CLI refuses to load");
+    }
+    Ok(docs.pop())
 }
 
 /// `item` as a table, an inline one opened up so a nested array of tables fits in
@@ -225,7 +240,7 @@ pub(crate) fn flat_json_merge_outcome_install(
     let merged = Value::Object(mutate(root)?);
     let changed = merged != doc;
     Ok(MergeOutcome {
-        content: serde_json::to_string_pretty(&merged)?,
+        content: emit_json(content, &merged)?,
         changed,
     })
 }
@@ -248,7 +263,7 @@ pub(crate) fn flat_json_merge_outcome_uninstall(
     let cleaned = mutate(doc.clone());
     let changed = cleaned != doc;
     Ok(MergeOutcome {
-        content: serde_json::to_string_pretty(&cleaned)?,
+        content: emit_json(content, &cleaned)?,
         changed,
     })
 }
@@ -262,16 +277,48 @@ pub(crate) fn toml_merge_outcome(
     let before = parse_toml(content)?;
     let mut doc: toml_edit::DocumentMut = content.parse()?;
     mutate(&mut doc)?;
-    let mut out = doc.to_string();
+    let out = doc.to_string();
     let changed = parse_toml(&out)? != before;
-    // toml_edit writes LF; a file that was all-CRLF stays so.
-    if content.contains("\r\n") && !content.replace("\r\n", "").contains('\n') {
-        out = out.replace("\r\n", "\n").replace('\n', "\r\n");
-    }
     Ok(MergeOutcome {
-        content: out,
+        content: end_lines_like(content, out),
         changed,
     })
+}
+
+/// `value` as pretty JSON for the file `content` held, by [`end_lines_like`].
+pub(crate) fn emit_json(content: &str, value: &Value) -> anyhow::Result<String> {
+    Ok(end_lines_like(
+        content,
+        serde_json::to_string_pretty(value)?,
+    ))
+}
+
+/// `doc` as YAML for the file `content` held, by [`end_lines_like`], `file` naming it
+/// in the error. The emitter's leading `---` goes: an explicit document is that marker
+/// before a bare one ([YAML 1.2.2 §9.1.4](https://yaml.org/spec/1.2.2/#914-explicit-documents)).
+pub(crate) fn emit_yaml(content: &str, doc: &YamlOwned, file: &str) -> anyhow::Result<String> {
+    let mut out = String::new();
+    saphyr::YamlEmitter::new(&mut out)
+        .dump(&saphyr::Yaml::from(doc))
+        .map_err(|e| anyhow::anyhow!("emitting {file}: {e}"))?;
+    let out = out.strip_prefix("---\n").map(str::to_string).unwrap_or(out);
+    Ok(end_lines_like(content, out))
+}
+
+/// `out` in `content`'s line ending, CRLF when `content` broke every line with one,
+/// and ending in a newline, as npm's `package.json` save does (npm/package-json
+/// `lib/index.js:249-257` @ v8.0.0); an empty `out` stays empty. Every config
+/// rewrite rides it, pixtuoid's own `config.toml` save included.
+pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    if content.contains("\r\n") && !content.replace("\r\n", "").contains('\n') {
+        // Fold first: toml_edit 0.25.17 writes a multi-line string's raw CRLF as is
+        // (`src/encode.rs:81-83`), every other break as LF (`src/raw_string.rs:95-114`).
+        out = out.replace("\r\n", "\n").replace('\n', "\r\n");
+    }
+    out
 }
 
 #[cfg(test)]
@@ -361,13 +408,77 @@ mod tests {
     }
 
     #[test]
+    fn a_yaml_file_holds_at_most_one_document() {
+        for none in ["", "  \n", "# only a note\n"] {
+            assert_eq!(single_yaml_doc(none, "c.yml").unwrap(), None, "{none:?}");
+        }
+        assert!(single_yaml_doc("a: 1\n", "c.yml").unwrap().is_some());
+        for two in ["a: 1\n---\nb: 2\n", "- a\n---\n"] {
+            let err = single_yaml_doc(two, "c.yml").unwrap_err().to_string();
+            assert!(
+                err.starts_with("c.yml") && err.contains("more than one YAML document"),
+                "{two:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn prune_empty_drops_only_an_empty_container() {
+        let mut parent = json!({
+            "paths": ["/some/other/plugin"],
+            "entries": {"anthropic": {}},
+            "none": [],
+            "nothing": {},
+            "scalar": 0,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        for key in ["paths", "entries", "none", "nothing", "scalar", "absent"] {
+            prune_empty(&mut parent, key);
+        }
+        assert_eq!(
+            Value::Object(parent),
+            json!({"paths": ["/some/other/plugin"], "entries": {"anthropic": {}}, "scalar": 0})
+        );
+    }
+
+    #[test]
     fn a_crlf_file_stays_crlf() {
-        let out = toml_merge_outcome("# note\r\na = 1\r\n", |d| {
+        let out = toml_merge_outcome("# note\r\na = 1\r\ns = '''x\r\ny'''\r\n", |d| {
             d["b"] = toml_edit::value(2);
             Ok(())
         })
         .unwrap();
-        assert_eq!(out.content, "# note\r\na = 1\r\nb = 2\r\n");
+        assert_eq!(
+            out.content,
+            "# note\r\na = 1\r\ns = '''x\r\ny'''\r\nb = 2\r\n"
+        );
+    }
+
+    #[test]
+    fn a_json_rewrite_ends_with_a_newline_in_the_files_line_ending() {
+        let add = |mut d: Map<String, Value>| {
+            d.insert("b".into(), json!(2));
+            Ok(d)
+        };
+        for (before, kept, added) in [
+            (
+                "{\r\n  \"a\": 1\r\n}\r\n",
+                "{\r\n  \"a\": 1\r\n}\r\n",
+                "{\r\n  \"a\": 1,\r\n  \"b\": 2\r\n}\r\n",
+            ),
+            (
+                "{\"a\": 1}",
+                "{\n  \"a\": 1\n}\n",
+                "{\n  \"a\": 1,\n  \"b\": 2\n}\n",
+            ),
+        ] {
+            let out = flat_json_merge_outcome_install(before, "c", add).unwrap();
+            assert_eq!(out.content, added);
+            let out = flat_json_merge_outcome_uninstall(before, |d| d).unwrap();
+            assert_eq!(out.content, kept);
+        }
     }
 
     /// A merge rewrites only what it changed: the owner's comments, on the keys,

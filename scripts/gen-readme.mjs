@@ -13,6 +13,7 @@ import sources from '../site/src/sources.json' with { type: 'json' };
 import install from '../site/src/install.json' with { type: 'json' };
 import media from './media.json' with { type: 'json' };
 import { featureText } from '../site/config/feature-text.mjs';
+import { splitCmds } from '../site/config/install-cmds.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readmePath = join(root, 'README.md');
@@ -20,6 +21,10 @@ const readmePath = join(root, 'README.md');
 // MUST match `site` in site/astro.config.mjs — a hand-kept copy (importing the
 // astro config here would pull @astrojs/*), and nothing gates the two.
 const SITE = 'https://pixtuoid.dev';
+// Absolute: each published crate's crates.io page is this README, and crates.io
+// resolves a relative link against the crate's own directory
+// (crates/pixtuoid-core/tests/published_package.rs).
+const RAW = 'https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD';
 const check = process.argv.includes('--check');
 let readme = readFileSync(readmePath, 'utf8');
 const errors = [];
@@ -92,7 +97,7 @@ const pixDims = (/** @type {string} */ pix) => {
 };
 /** @param {(typeof features)[number]} f */
 const iconCell = (f) =>
-  f.pix ? `<img src="docs/images/pix-icons/${cell(f.pix)}.svg" alt=""${pixDims(f.pix)}>` : cell(f.icon);
+  f.pix ? `<img src="${RAW}/docs/images/pix-icons/${cell(f.pix)}.svg" alt=""${pixDims(f.pix)}>` : cell(f.icon);
 const featuredFeatures = features.filter((f) => f.featured !== false);
 const featureRows = featuredFeatures.map(
   (f) => `| ${iconCell(f)} | **${cell(f.name)}** | ${cell(featureText(f.desc, f))} |`
@@ -172,7 +177,7 @@ for (const job of captioned) {
   // (https://www.w3.org/WAI/tutorials/images/decorative/, Example 3).
   const href = 'href' in job ? new URL(String(job.href), SITE) : null;
   const alt = href ? `${href.host}${href.pathname}`.replace(/\/$/, '') : '';
-  const img = `<img src="${file}" alt="${esc(alt)}" width="${README_IMAGE_WIDTH}" />`;
+  const img = `<img src="${RAW}/${file}" alt="${esc(alt)}" width="${README_IMAGE_WIDTH}" />`;
   const linked = href ? `<a href="${esc(href)}">${img}</a>` : img;
   regenSection(
     `${job.id} image`,
@@ -190,10 +195,11 @@ for (const [, id] of readme.matchAll(/<!-- media:(\S+):start/g)) {
 
 const installBody = install
   .filter((m) => m.readme)
-  .map(
-    (m) =>
-      `**${cell(m.label)}**${m.blurb ? ` (${cell(m.blurb)})` : ''}:\n\n\`\`\`bash\n${m.cmds.join('\n')}\n\`\`\``
-  )
+  .map((m) => {
+    const { notes, commands } = splitCmds(m.cmds);
+    const aside = [m.blurb, ...notes].filter(Boolean).map(cell).join('; ');
+    return `**${cell(m.label)}**${aside ? ` (${aside})` : ''}:\n\n\`\`\`bash\n${commands.join('\n')}\n\`\`\``;
+  })
   .join('\n\n');
 regenSection(
   'Install block',
