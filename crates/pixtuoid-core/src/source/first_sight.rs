@@ -53,7 +53,8 @@ pub(crate) struct Registration {
 /// What a decoded event says of its transcript's session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Life {
-    /// A start, or work ([`AgentEvent::is_work`]), whoever it names.
+    /// A start, or a turn's traffic ([`AgentEvent::is_turn_traffic`]), whoever
+    /// it names.
     Lives,
     /// An end of the path's own agent: a child's end in its parent's
     /// transcript ends only the child.
@@ -69,11 +70,11 @@ fn evidence(ev: &AgentEvent, own: AgentId) -> Option<Life> {
 
 /// Whether `ev` is [`Life::Lives`] evidence.
 fn lives(ev: &AgentEvent) -> bool {
-    matches!(ev, AgentEvent::SessionStart { .. }) || ev.is_work()
+    matches!(ev, AgentEvent::SessionStart { .. }) || ev.is_turn_traffic()
 }
 
 /// The session's verdict over `events`, in order: its last evidence, so a start
-/// or work after an end is a resume.
+/// or a turn's traffic after an end is a resume.
 pub(crate) fn last_life<'a>(
     events: impl IntoIterator<Item = &'a AgentEvent>,
     own: AgentId,
