@@ -3,7 +3,7 @@
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::sprite::RgbBuffer;
 
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, OfficeSession};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, OfficeSession, PetInputs};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
 use pixtuoid_scene::interact::{Gesture, Pointer, Pressed};
 use pixtuoid_scene::look::RenderInputs;
@@ -46,9 +46,13 @@ impl OfficeRenderer {
         self.pets = pets;
     }
 
-    /// [`OfficeSession::showing_pet`] of this window's pets.
-    pub(crate) fn showing_pet(&self) -> Option<&pixtuoid_scene::pet::Pet> {
-        self.session.showing_pet(&self.pets)
+    /// [`OfficeSession::showing_pets`] of this window's pets.
+    pub(crate) fn showing_pets<'a>(
+        &'a self,
+        petting: Option<&'a pixtuoid_scene::pet::PetState>,
+        now: std::time::SystemTime,
+    ) -> PetInputs<'a> {
+        self.session.showing_pets(&self.pets, petting, now)
     }
 
     /// Which floor shows, and the slide under way.
@@ -78,14 +82,14 @@ impl OfficeRenderer {
     }
 
     /// Feed the audio a frame of the office without drawing one
-    /// ([`OfficeSession::hear`]), in `scene` at `now` under `floor`.
+    /// ([`OfficeSession::hear`]), in `scene` at `now` under `conditions`.
     pub(crate) fn hear(
         &mut self,
         scene: &SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         now: std::time::SystemTime,
     ) {
-        self.audio.frame(self.session.hear(scene, floor, now));
+        self.audio.frame(self.session.hear(scene, conditions, now));
     }
 
     /// Render the office's floor showing, or its slide to another, into the
@@ -97,7 +101,7 @@ impl OfficeRenderer {
         let WindowFrame {
             world,
             theme,
-            place,
+            gateway,
             dim,
         } = frame;
         let gap = theme.surface.bg_fallback;
@@ -110,7 +114,7 @@ impl OfficeRenderer {
                 world,
                 theme,
                 viewport: at.logical().into(),
-                place,
+                gateway,
                 debug_walkable: false,
                 dim,
             },
@@ -316,13 +320,7 @@ impl OfficeRenderer {
         let floor_scene = self.session.footer_scene(scene);
         let inputs = FooterInputs::new(
             &floor_scene,
-            crate::panels::widgets::footer_context(
-                scene,
-                self.session.footer_floor(scene),
-                audio_audible,
-                volume_flash,
-                warning,
-            ),
+            crate::panels::widgets::footer_context(scene, audio_audible, volume_flash, warning),
         );
         build_footer(&inputs, budget)
     }
@@ -438,9 +436,9 @@ const RESIZE_CORNER_PX: f64 = 18.0;
 /// the window's [`window_geometry`](super::geometry::window_geometry) owns.
 #[derive(Debug, Clone, Copy)]
 pub struct WindowFrame<'a> {
-    pub world: FloorInputs<'a>,
+    pub world: FloorInputs<'a, SceneState>,
     pub theme: &'static pixtuoid_scene::theme::Theme,
-    pub place: pixtuoid_scene::look::Place,
+    pub gateway: Option<pixtuoid_core::state::DaemonState>,
     pub dim: pixtuoid_scene::look::Dim,
 }
 
@@ -476,11 +474,11 @@ mod tests {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             )
@@ -532,7 +530,7 @@ mod tests {
     struct Window {
         renderer: OfficeRenderer,
         scene: SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         screen: pixtuoid_scene::screen::ManualClock,
         /// How long a present takes on the screen clock.
         present_takes: Duration,
@@ -550,7 +548,7 @@ mod tests {
             Self {
                 renderer,
                 scene: SceneState::new([8; pixtuoid_core::state::MAX_FLOORS]),
-                floor: FloorMeta::ground()
+                conditions: Conditions::default()
                     .with_weather(weather)
                     .with_motion(pixtuoid_scene::anim::Motion::Full),
                 screen,
@@ -580,11 +578,11 @@ mod tests {
                     world: FloorInputs {
                         scene: &self.scene,
                         now,
-                        floor: self.floor,
+                        conditions: self.conditions,
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
                 self.px,
@@ -1100,11 +1098,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1143,11 +1141,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1205,7 +1203,7 @@ mod tests {
         (0..budget).find(|&step| {
             let now = now0 + std::time::Duration::from_secs(2 * step);
             if heard_before == Some(step) {
-                renderer.hear(&scene, FloorMeta::ground(), now);
+                renderer.hear(&scene, Conditions::default(), now);
             }
             // 192x160: tall enough that the corridor hosts BOTH appliances
             // (the vending/printer height gates in layout::compute).
@@ -1215,11 +1213,11 @@ mod tests {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             );
@@ -1268,11 +1266,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1287,11 +1285,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1313,11 +1311,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1349,11 +1347,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1362,7 +1360,7 @@ mod tests {
         let scene = scene_with(agents, cap);
         renderer.hear(
             &scene,
-            FloorMeta::ground(),
+            Conditions::default(),
             now + pixtuoid_scene::floor::REST_TICK,
         );
         let heard: Vec<_> = crate::audio::drain_frames(&rx)
@@ -1540,11 +1538,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
             size,

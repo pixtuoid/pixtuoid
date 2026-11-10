@@ -12,7 +12,6 @@ use pixtuoid_core::state::DaemonState;
 use crate::cutaway::canvas::{CanvasFrame, CutawayCanvas};
 use crate::display::Hovers;
 use crate::floor::{FloorInputs, OfficeStores, PerFloor, step_floor};
-use crate::footer::FooterFloor;
 use crate::layout::{Bounds, SceneLayout, Viewport};
 use crate::pixel_painter::{ClassicCaches, Drawn, PaintCtx, paint_frame};
 use crate::render_scale::RenderScale;
@@ -177,33 +176,48 @@ impl WorldText {
     }
 }
 
-/// What only the office knows about the floor a painter draws: its wall
-/// board's gateway chip and breadcrumb.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Place {
-    /// The office's [`office_gateway`](crate::tally::office_gateway).
-    pub gateway: Option<DaemonState>,
-    /// Where the floor sits, `None` in a one-floor office.
-    #[doc(hidden)]
-    pub floor: Option<FooterFloor>,
-}
-
-/// One floor's frame, beyond its stores.
-#[derive(Debug, Clone, Copy)]
-pub struct RenderInputs<'a> {
+/// One floor's frame, beyond its stores. `S` is its world's scene, as
+/// [`FloorInputs`] reads one.
+#[derive(Debug)]
+pub struct RenderInputs<'a, S = crate::floor::FloorScene> {
     /// The floor it shows.
-    pub world: FloorInputs<'a>,
+    pub world: FloorInputs<'a, S>,
     /// The active color theme.
     pub theme: &'static Theme,
     /// The logical extent a painter draws the office on, and the insets its
     /// chrome covers; a look's scale maps it to buffer pixels.
     pub viewport: Viewport,
-    /// See [`Place`].
-    pub place: Place,
+    /// The office's gateway chip on the wall board, which only the office
+    /// knows: [`office_gateway`](crate::tally::office_gateway).
+    pub gateway: Option<DaemonState>,
     /// The classic's walkable/approach/route debug layer (the `w` toggle).
     pub debug_walkable: bool,
     /// The brightness the host's modal leaves the frame.
     pub dim: Dim,
+}
+
+// By hand: a derive would bound `S: Copy`, and no scene is.
+impl<S> Clone for RenderInputs<'_, S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for RenderInputs<'_, S> {}
+
+impl<'a> RenderInputs<'a, pixtuoid_core::state::SceneState> {
+    /// These inputs drawing `floor_scene`, a projection of their world's scene.
+    #[must_use]
+    pub(crate) fn on(self, floor_scene: &'a crate::floor::FloorScene) -> RenderInputs<'a> {
+        RenderInputs {
+            world: self.world.on(floor_scene),
+            theme: self.theme,
+            viewport: self.viewport,
+            gateway: self.gateway,
+            debug_walkable: self.debug_walkable,
+            dim: self.dim,
+        }
+    }
 }
 
 /// A brightness multiplier, from black to unchanged, each pixel takes: a
@@ -694,7 +708,7 @@ pub fn render(
         world,
         theme,
         viewport,
-        place,
+        gateway,
         debug_walkable,
         dim,
     } = inputs;
@@ -736,14 +750,12 @@ pub fn render(
     let switched =
         was.is_none_or(|was| std::mem::discriminant(&was) != std::mem::discriminant(&look));
     let _rasterize = tracing::trace_span!(spans::RASTERIZE).entered();
-    let board = crate::neon_sign::wall_board(
-        world.scene,
-        place.gateway,
-        place.floor,
-        world.floor.motion,
-        world.now,
+    let board =
+        crate::neon_sign::wall_board(world.scene, gateway, world.conditions.motion, world.now);
+    let sky = crate::sky::Sky::at(
+        world.conditions.motion.timing(world.now),
+        world.conditions.weather,
     );
-    let sky = crate::sky::Sky::at(world.floor.motion.timing(world.now), world.floor.weather);
     raster.note = Some(FrameNote {
         repaint: None,
         weather: {
@@ -772,8 +784,12 @@ pub fn render(
             let drawn = paint_frame(&mut paint, &stepped.frame);
             classic.drew(drawn);
             classic.dim = dim;
-            classic.signs =
-                crate::display::TextRun::signs(&board, &stepped.layout, world.floor, theme);
+            classic.signs = crate::display::TextRun::signs(
+                &board,
+                &stepped.layout,
+                stepped.frame.floor_place,
+                theme,
+            );
             if look == Look::HALF_BLOCKS {
                 dim.apply(&mut classic.buf);
                 (Dirty::All, flash)
@@ -816,7 +832,7 @@ pub fn render(
                 theme,
                 scale,
                 crate::display::Showing {
-                    floor: world.floor,
+                    conditions: world.conditions,
                     now: world.now,
                     board: &board,
                     dim,

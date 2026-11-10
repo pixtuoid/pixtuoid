@@ -172,18 +172,24 @@ fn floor_buffers_grow_on_overflow() {
     );
 }
 
+/// Each floor lays out from its own seed, as the frame it draws shows.
 #[test]
 fn per_floor_layout_seeds_differ() {
     let scene = two_floor_scene();
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
     r.render(&scene, now).unwrap();
-    let seed0 = r.current_floor_seed();
+    let walkable = |r: &TuiRenderer<TestBackend>| {
+        r.cached_layout()
+            .map(|layout| layout.walkable.clone())
+            .expect("a floor shows")
+    };
+    let ground = walkable(&r);
     r.navigate_floor(1, now);
     render_until_settled(&mut r, &scene, &mut now, 1);
     assert_ne!(
-        seed0,
-        r.current_floor_seed(),
+        ground,
+        walkable(&r),
         "each floor must use a distinct layout seed"
     );
 }
@@ -466,9 +472,9 @@ fn theme_picker_renders_during_floor_transition() {
     );
 }
 
-/// The board's context row is wired in `draw_scene` from the floor breadcrumb
-/// and the OFFICE-WIDE gateway: the projected floor scene carries daemons only
-/// on floor 0, so a board built from it would drop the `⬢gw` chip upstairs.
+/// The board's breadcrumb comes from the drawn floor's projection and its
+/// gateway chip from the office-wide gateway: the projection carries daemons
+/// only on floor 0, so a board built from it alone would drop `⬢gw` upstairs.
 #[test]
 fn the_wall_board_upstairs_shows_the_breadcrumb_and_the_office_gateway() {
     let theme = pixtuoid_scene::theme::ALL_THEMES[0];
@@ -513,60 +519,41 @@ fn the_wall_board_upstairs_shows_the_breadcrumb_and_the_office_gateway() {
     );
 }
 
-/// Every painter's board for a floor comes out of the one builder: a one-floor
-/// office's TUI board is the floating window's, and an upper floor, whose
-/// projection carries no daemon, still shows the office's gateway.
+/// A still of a two-floor office names its floor where the live frame does,
+/// on the board and in the footer alike: both read the drawn floor's
+/// projection.
 #[test]
-fn every_painter_shows_the_one_board_of_a_floor() {
-    use pixtuoid_scene::anim::Motion;
-    use pixtuoid_scene::floor::project_floor_scene;
-    let now = t0() + Duration::from_secs(90);
-    let with_gateway = |mut scene: SceneState| {
-        scene.insert_daemon(
-            pixtuoid_core::source::openclaw::SOURCE_NAME,
-            pixtuoid_core::state::DaemonInstanceId::new("18789").expect("non-empty"),
-            pixtuoid_core::state::DaemonPresence {
-                liveness: pixtuoid_core::state::DaemonLiveness::UP,
-                active_sessions: 1,
-                last_seen: now,
-                entered_at: t0(),
-                in_flight_turns: Default::default(),
-                current_pid: Some(1),
-            },
-        );
-        scene
-    };
-    let mut r = build(120, 40, vec![]);
-    let mut tui = |scene: &SceneState, floor: usize| {
-        r.session.prepare(scene, now);
-        r.session.navigate(floor, now);
-        r.session.cancel_slide();
-        let drawn = project_floor_scene(scene, floor);
-        let ctx = r.chrome.footer(&r.session, scene);
-        pixtuoid_scene::neon_sign::wall_board(
-            drawn.scene(),
-            ctx.gateway,
-            ctx.floor,
-            Motion::Full,
-            now,
-        )
-    };
-
-    let one_floor = with_gateway(scene_with(vec![idle("/b/0.jsonl", 0, t0())], 16));
-    let floating = pixtuoid_scene::neon_sign::wall_board(
-        &one_floor,
-        pixtuoid_scene::tally::office_gateway(&one_floor),
-        None,
-        Motion::Full,
-        now,
+fn a_still_names_its_floor_on_the_board_and_in_the_footer() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let mut scene = SceneState::uniform(16);
+    for (path, floor) in [("/h/still0.jsonl", 0), ("/h/still1.jsonl", 1)] {
+        let id = AgentId::from_transcript_path(path);
+        scene.agents.insert(id, slot(id, floor, 0, t0));
+    }
+    let mut term = Terminal::new(TestBackend::new(120, 44)).expect("test backend");
+    let mut floor = pixtuoid_scene::floor::PerFloor::new(pack_arc());
+    let mut office = pixtuoid_scene::floor::PerOffice::new();
+    let mut ctx = crate::tui::renderer::DrawCtx::offscreen(
+        &mut floor,
+        office.stores(),
+        normal_theme(),
+        &scene,
+        0,
+        t0,
+        pixtuoid_scene::floor::Conditions::default(),
     );
-    assert_eq!(tui(&one_floor, 0), floating, "the floating window's place");
-
-    let upper = tui(&with_gateway(two_floor_scene()), 1);
-    let context: Vec<_> = upper.context.iter().map(|s| s.text().trim()).collect();
-    assert!(context.contains(&"F2/2"), "{context:?}");
+    crate::tui::renderer::draw_scene(&mut term, &mut ctx)
+        .expect("draw")
+        .expect("drawn");
+    let text = frame_text(term.backend().buffer());
+    let rows: Vec<&str> = text.lines().collect();
+    let (room, footer) = rows.split_at(rows.len() - usize::from(crate::tui::renderer::FOOTER_ROWS));
     assert!(
-        context.iter().any(|t| t.contains("gw")),
-        "floor 2 lost the office's gateway chip: {context:?}"
+        room.join("\n").contains("F1/2"),
+        "the board names floor 1 of 2:\n{text}"
+    );
+    assert!(
+        footer.join("\n").contains("F1/2"),
+        "the footer names floor 1 of 2:\n{text}"
     );
 }

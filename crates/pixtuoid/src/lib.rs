@@ -53,7 +53,7 @@ pub mod dev {
         AppearanceFrame, AppearancePick, RenderFrames, VersionPopupFrame, popup_whole,
     };
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
-    pub use crate::panels::widgets::{footer_context, grid_of};
+    pub use crate::panels::widgets::grid_of;
     pub use crate::sources::{ConnState, ConnectionRow};
     #[cfg(unix)]
     pub use crate::term::{QUERY_TIMEOUT, TTY_READ_CHUNK};
@@ -276,8 +276,8 @@ pub(crate) mod test_flash {
 
     use pixtuoid_core::state::{MAX_FLOORS, SceneState};
     use pixtuoid_scene::anim::{FULL_TICK_MS, Motion, PHOTOSENSITIVE_PHASE_MIN_MS};
-    use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs};
-    use pixtuoid_scene::look::{Look, Place, RenderInputs};
+    use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
+    use pixtuoid_scene::look::{Look, RenderInputs};
     use pixtuoid_scene::pack::OfficeArt;
     use pixtuoid_scene::screen::Flashes;
     use pixtuoid_scene::sky::{Weather, WeatherPolicy};
@@ -304,7 +304,11 @@ pub(crate) mod test_flash {
 
     /// What an empty floor's frame flashes at `at`, rendered on `session` as a
     /// painter renders it.
-    fn rendered_flash(session: &mut FloorSession, floor: FloorMeta, at: SystemTime) -> Flashes {
+    fn rendered_flash(
+        session: &mut FloorSession,
+        conditions: Conditions,
+        at: SystemTime,
+    ) -> Flashes {
         let scene = SceneState::new([8; MAX_FLOORS]);
         session.render(
             Look::HALF_BLOCKS,
@@ -312,12 +316,12 @@ pub(crate) mod test_flash {
                 world: FloorInputs {
                     scene: &scene,
                     now: at,
-                    floor,
+                    conditions,
                     pets: PetInputs::default(),
                 },
                 theme: pixtuoid_scene::theme::ALL_THEMES[0],
                 viewport: pixtuoid_scene::layout::min_layout_size().into(),
-                place: Place::default(),
+                gateway: None,
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
@@ -340,11 +344,11 @@ pub(crate) mod test_flash {
     pub(crate) fn storm_strike() -> Strike {
         let ms = Duration::from_millis;
         let weather = WeatherPolicy::Forced(Weather::Storm);
-        let floor = FloorMeta::for_floor(0, 1)
+        let conditions = Conditions::default()
             .with_weather(weather)
             .with_motion(Motion::Full);
         // A fresh floor each instant: a room never left to dim, so only the sky flashes.
-        let phase = |at| rendered_flash(&mut FloorSession::new(pack_arc()), floor, at);
+        let phase = |at| rendered_flash(&mut FloorSession::new(pack_arc()), conditions, at);
         let noon = pixtuoid_scene::localclock::at_hour_min(12, 0);
         let start = (0..MINUTE_MS)
             .step_by(FULL_TICK_MS as usize)
@@ -403,13 +407,13 @@ pub(crate) mod test_flash {
         const BURST_MS: u64 = 1_000;
         let ms = Duration::from_millis;
         let weather = WeatherPolicy::Forced(Weather::Clear);
-        let floor = FloorMeta::for_floor(0, 1)
+        let conditions = Conditions::default()
             .with_weather(weather)
             .with_motion(Motion::Full);
         let noon = pixtuoid_scene::localclock::at_hour_min(12, 0);
         let setup = [noon, noon + ms(VacancyDim::VACANCY_DEBOUNCE_MS)];
         let mut session = FloorSession::new(pack_arc());
-        let mut phase = |at| rendered_flash(&mut session, floor, at);
+        let mut phase = |at| rendered_flash(&mut session, conditions, at);
         phase(setup[0]);
         let mut was = phase(setup[1]);
         let mut last = setup[1];
