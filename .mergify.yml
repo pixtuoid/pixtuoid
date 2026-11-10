@@ -22,7 +22,7 @@ queue_rules:
     # and PRs arm one by one after review; the 30-second default batches one.
     batch_max_wait_time: 10 min
     merge_method: squash
-    # main takes the reviewed PR text, never a branch's unreviewed commit
+    # main takes the PR's title and body, never a branch's commit
     # messages; pr-body overrides the repo's squash setting (docs.mergify.com/workflow/actions/merge).
     commit_message_format:
       title: pr-title
