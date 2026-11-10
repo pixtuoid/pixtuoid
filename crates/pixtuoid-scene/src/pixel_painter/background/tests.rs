@@ -632,16 +632,15 @@ fn crescent_moon_leaves_the_dark_limb_unlit() {
 }
 
 /// A waxing moon is lit on its right limb and a waning one on its left, as a
-/// northern-hemisphere sky shows them: 2026's first quarter falls on Jan 26 and
-/// its last on Jan 10 ([`Sky::moon_waxing`]'s test cites the table).
+/// northern-hemisphere sky shows them, on each low quarter moon of a lunar
+/// month from the helpers' day 0, waxing or waning as the sky reckons it.
 #[test]
 fn a_waning_moon_lights_its_left_limb() {
     let buf_w = 96u16;
     let top_wall_h = 40u16;
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     // Lit disc pixels left and right of the disc's centre column.
-    let lit_sides = |day: u32| -> (usize, usize) {
-        let (hour, geom) = low_moon(day, buf_w, top_wall_h).expect("the quarter moon shows low");
+    let lit_sides = |day: u32, (hour, geom): (u32, crate::celestial::Disc)| -> (usize, usize) {
         let buf = render_office_on(day, hour, Weather::Clear, buf_w, top_wall_h);
         let r = geom.r.ceil() as i32;
         let (cx, cy) = (geom.cx.round() as i32, geom.cy.round() as i32);
@@ -664,16 +663,28 @@ fn a_waning_moon_lights_its_left_limb() {
         }
         (left, right)
     };
-    // `on_day` counts from Jan 1, so day 9 is Jan 10 and day 25 is Jan 26.
-    let (waning_left, waning_right) = lit_sides(9);
+    let (mut waning, mut waxing) = (0, 0);
+    for day in 0..crate::sky::SYNODIC_DAYS.ceil() as u32 {
+        let sky = Sky::clock(crate::localclock::on_day(day, 0));
+        // half lit, give or take the days either side of the quarter
+        if !(0.35..0.65).contains(&sky.moon_phase()) {
+            continue;
+        }
+        let Some(low) = low_moon(day, buf_w, top_wall_h) else {
+            continue;
+        };
+        let (left, right) = lit_sides(day, low);
+        if sky.moon_waxing() {
+            waxing += 1;
+            assert!(right > left, "day {day} waxes: left={left} right={right}");
+        } else {
+            waning += 1;
+            assert!(left > right, "day {day} wanes: left={left} right={right}");
+        }
+    }
     assert!(
-        waning_left > waning_right,
-        "last quarter lights the left limb: left={waning_left} right={waning_right}"
-    );
-    let (waxing_left, waxing_right) = lit_sides(25);
-    assert!(
-        waxing_right > waxing_left,
-        "first quarter lights the right limb: left={waxing_left} right={waxing_right}"
+        waning > 0 && waxing > 0,
+        "the sample must hold a waning and a waxing quarter: {waning}, {waxing}"
     );
 }
 
