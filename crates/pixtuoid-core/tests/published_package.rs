@@ -132,6 +132,24 @@ fn every_published_crate_carries_a_readme_crates_io_renders_whole() {
     }
 }
 
+#[test]
+fn a_tree_link_off_head_is_caught_however_many_segments_its_ref_spans() {
+    let prefixes = RepoPrefixes::of(&repository());
+    let any_ref = prefixes.raw.trim_end_matches("HEAD/");
+    for (target, off_head) in [
+        (format!("{}README.md", prefixes.raw), false),
+        (format!("{any_ref}main/README.md"), true),
+        (format!("{any_ref}refs/heads/main/README.md"), true),
+        (format!("{any_ref}star-history/no-such-file.svg"), false),
+    ] {
+        assert_eq!(
+            prefixes.names_a_tree_file_off_head(&target),
+            off_head,
+            "{target}"
+        );
+    }
+}
+
 /// The prefixes are copied into gen-readme.mjs, which writes the generated
 /// images by one, and into the `links` recipe, which remaps both onto the tree.
 #[test]
@@ -145,16 +163,7 @@ fn every_copy_of_the_readme_link_prefixes_is_the_repositorys() {
     );
     let justfile = read("justfile");
     for prefix in [&prefixes.blob, &prefixes.raw] {
-        let escaped: String = prefix
-            .chars()
-            .flat_map(|c| {
-                r".^$|?*+()[]{}\"
-                    .contains(c)
-                    .then_some('\\')
-                    .into_iter()
-                    .chain([c])
-            })
-            .collect();
+        let escaped = regex::escape(prefix);
         assert!(
             justfile.contains(&format!("--remap '^{escaped} file://")),
             "`just links` does not remap {prefix} onto the tree"
@@ -192,15 +201,16 @@ impl RepoPrefixes {
         }
     }
 
-    /// A link to a file this tree holds, at a ref other than `HEAD`, which is
-    /// all `just links` checks. A ref holding files the tree lacks, a generated
-    /// image's own branch, is out of its reach at any ref.
+    /// A link to a file this tree holds, at a ref other than `HEAD` however many
+    /// segments it spans, as `just links` checks only `HEAD`. A ref holding files
+    /// the tree lacks, a generated image's own branch, is out of its reach.
     fn names_a_tree_file_off_head(&self, target: &str) -> bool {
         [&self.blob, &self.raw].into_iter().any(|head| {
             let any_ref = head.trim_end_matches('/').trim_end_matches("HEAD");
             target.strip_prefix(any_ref).is_some_and(|rest| {
                 !target.starts_with(head.as_str())
-                    && rest.split_once('/').is_some_and(|(_, path)| {
+                    && rest.match_indices('/').any(|(at, _)| {
+                        let path = &rest[at + 1..];
                         root()
                             .join(path.split(['#', '?']).next().unwrap_or(path))
                             .exists()
