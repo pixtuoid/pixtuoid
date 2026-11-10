@@ -13,9 +13,9 @@ use pixtuoid_core::source::antigravity::AntigravitySource;
 use pixtuoid_core::source::jsonl::JsonlWatcher;
 
 use crate::{
-    Fold, ag_step_line, cc_watcher, codex_meta_line, codex_watcher, codex_work_line,
-    copilot_tool_line, fast_watch, recorded, spawn_copilot, split_before_last, stage,
-    vouch_snapshot, write_lines,
+    Watched, a_first_sight_ends, ag_step_line, cc_watcher, codex_meta_line, codex_watcher,
+    codex_work_line, copilot_tool_line, fast_watch, recorded, spawn_copilot, split_before_last,
+    stage, vouch_snapshot, write_lines,
 };
 
 #[tokio::test]
@@ -664,10 +664,9 @@ async fn a_resumed_session_is_live_at_first_sight() {
     let (root, _) = stage(&transcript, &dir, &head);
     let (tx, rx) = mpsc::channel(64);
     let handle = spawn_copilot(root.path().to_path_buf(), tx);
-    let mut fold = Fold::new(rx, Reducer::new(), SystemTime::now());
-    let events = fold
-        .until("copilot", |e| matches!(e, AgentEvent::SessionStart { .. }))
-        .await;
+    let mut fold = Watched::new(rx, Reducer::new(), SystemTime::now());
+    let first_sight = a_first_sight_ends("copilot", &transcript, &head);
+    let events = fold.until("copilot", first_sight).await;
     handle.abort();
     let id = events
         .iter()

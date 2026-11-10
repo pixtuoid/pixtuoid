@@ -12,7 +12,10 @@ use pixtuoid_core::source::codex::CodexSource;
 use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 
 use crate::today::spawn_source;
-use crate::{Fold, append, fast_watch, recorded, split_before_last, stage, write_lines};
+use crate::{
+    Watched, a_first_sight_ends, append, fast_watch, recorded, split_before_last, stage,
+    write_lines,
+};
 
 #[tokio::test]
 async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
@@ -170,7 +173,7 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
 
     const DESKS: usize = 8;
     /// What forgets the session, and the desks first sight meets.
-    type Forget = (&'static str, usize, fn(&mut Fold));
+    type Forget = (&'static str, usize, fn(&mut Watched));
     let forgets: [Forget; 3] = [
         ("the stale sweep", DESKS, |fold| {
             let swept = fold.at + STALE_BLOCKED_TIMEOUT * 2;
@@ -211,11 +214,10 @@ async fn a_claim_the_reducer_forgot_registers_again_on_its_next_live_read() {
             let (root, path) = stage(&transcript, &dir, &head);
             let (tx, rx) = mpsc::channel(64);
             let handle = spawn_source(source, root.path().to_path_buf(), tx);
-            let mut fold = Fold::new(rx, Reducer::new(), SystemTime::now());
+            let mut fold = Watched::new(rx, Reducer::new(), SystemTime::now());
             fold.scene = SceneState::uniform(desks);
-            let first_sight = fold
-                .until(&case, |e| matches!(e, AgentEvent::SessionStart { .. }))
-                .await;
+            let ends = a_first_sight_ends(source, &transcript, &head);
+            let first_sight = fold.until(&case, ends).await;
             let id = first_sight
                 .iter()
                 .find_map(|e| match e {
