@@ -1436,9 +1436,9 @@ pub pixtuoid_core::state::AgentSlot::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::state::AgentSlot::arrived_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::state::AgentSlot::created_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
+pub pixtuoid_core::state::AgentSlot::desk: core::option::Option<pixtuoid_core::state::FloorDesk>
 pub pixtuoid_core::state::AgentSlot::effort: core::option::Option<pixtuoid_core::state::EffortObservation>
 pub pixtuoid_core::state::AgentSlot::exiting_at: core::option::Option<std::time::SystemTime>
-pub pixtuoid_core::state::AgentSlot::home_desk: core::option::Option<pixtuoid_core::state::FloorDesk>
 pub pixtuoid_core::state::AgentSlot::label: pixtuoid_core::state::SlotLabel
 pub pixtuoid_core::state::AgentSlot::last_event_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::last_usage: core::option::Option<pixtuoid_core::state::UsageObservation>
@@ -1982,9 +1982,9 @@ pub pixtuoid_core::AgentSlot::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentSlot::arrived_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::AgentSlot::created_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
+pub pixtuoid_core::AgentSlot::desk: core::option::Option<pixtuoid_core::state::FloorDesk>
 pub pixtuoid_core::AgentSlot::effort: core::option::Option<pixtuoid_core::state::EffortObservation>
 pub pixtuoid_core::AgentSlot::exiting_at: core::option::Option<std::time::SystemTime>
-pub pixtuoid_core::AgentSlot::home_desk: core::option::Option<pixtuoid_core::state::FloorDesk>
 pub pixtuoid_core::AgentSlot::label: pixtuoid_core::state::SlotLabel
 pub pixtuoid_core::AgentSlot::last_event_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::last_usage: core::option::Option<pixtuoid_core::state::UsageObservation>
