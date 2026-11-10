@@ -96,6 +96,12 @@ pub(crate) struct JsonArgs {
     pub(crate) json: bool,
 }
 
+/// A `--max-desks` cap, at least 1: 0 would zero every floor's capacity, so
+/// every agent would stay unseated forever.
+pub fn desk_cap_parser() -> clap::builder::RangedU64ValueParser<usize> {
+    clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+}
+
 #[derive(Debug, Subcommand)]
 pub(crate) enum Cmd {
     /// Run the TUI (default if no subcommand given).
@@ -104,9 +110,7 @@ pub(crate) enum Cmd {
         source: SourceArgs,
         /// Cap desks per floor, ≥ 1 (auto-computed from terminal size if
         /// unset).
-        // 0 is rejected: it would zero every floor's capacity, so every agent
-        // would stay unseated forever.
-        #[arg(long, hide = true, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
+        #[arg(long, hide = true, value_parser = desk_cap_parser())]
         max_desks: Option<usize>,
         /// Skip the TUI entirely — useful for CI / scripting.
         ///

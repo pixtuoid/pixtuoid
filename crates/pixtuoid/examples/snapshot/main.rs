@@ -75,9 +75,9 @@ struct SnapshotArgs {
     #[arg(long)]
     rows: Option<u16>,
 
-    /// Cap on home desks per floor for the sample scene. Agents past
-    /// this count overflow to additional floors.
-    #[arg(long, default_value_t = 12)]
+    /// Cap on home desks per floor for the sample scene, at least 1. Agents
+    /// past this count overflow to additional floors.
+    #[arg(long, default_value_t = 12, value_parser = pixtuoid::dev::desk_cap_parser())]
     max_desks: usize,
 
     /// Number of agents in the sample scene.
@@ -1061,6 +1061,14 @@ mod tests {
                 "accepted {bad:?}"
             );
         }
+    }
+
+    /// A sample scene seats agent `i` at `i / max_desks`, so 0 is refused at the
+    /// flag rather than dividing by it.
+    #[test]
+    fn max_desks_refuses_zero() {
+        assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "0"]).is_err());
+        assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "1"]).is_ok());
     }
 
     #[test]
