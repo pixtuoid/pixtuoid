@@ -176,18 +176,15 @@ jobs:
 
       # release-plz created this release as a DRAFT carrying the changelog, so
       # the version is never visible without its binaries. Passing no `body`
-      # keeps what release-plz wrote (the action retains the existing release's
-      # info for every key it isn't given), and omitting `draft` is what
-      # publishes it once the assets are attached.
+      # keeps what release-plz wrote ("retain its original info",
+      # https://github.com/softprops/action-gh-release/blob/efb35369e0ad2afab669f228072c1b0d510eae64/README.md),
+      # and omitting `draft` is what publishes it once the assets are attached.
+      # A tester tag builds artifacts only: this repo's releases are immutable,
+      # so a prerelease published before its upload could never take its assets.
       - name: Fill and publish the draft release
+        if: ${{ !contains(github.ref_name, '-') }}
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 # zizmor: ignore[superfluous-actions] mature release action avoids hand-rolled gh release behavior
         with:
-          # Passed rather than inherited because a hand-pushed tag (a tester
-          # tag, or the recovery path release-plz.yml's error message names)
-          # leaves NO draft to inherit from, and the action then creates the
-          # release with this field unset — an `-rc.N` tag would land as the
-          # latest stable release.
-          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             artifacts/*.tar.gz
             artifacts/*.zip

@@ -200,7 +200,7 @@ pub(crate) enum Cmd {
         #[command(flatten)]
         output: JsonArgs,
     },
-    /// Disconnect one or more sources: remove any hooks pixtuoid installed + persist the choice.
+    /// Disconnect one or more sources: remove any pixtuoid hooks + persist the choice.
     Disconnect {
         #[command(flatten)]
         sources: SourceIdArgs,

@@ -85,7 +85,7 @@ body:
     id: logs
     attributes:
       label: Relevant logs
-      description: Output of `pixtuoid doctor`, anything printed to stderr, and the run log's lines around the bug (docs/CONFIGURATION.md says where it is). Will be formatted as code.
+      description: Output of `pixtuoid doctor`, anything printed to stderr, and the lines around the bug from the log `pixtuoid doctor` names. Will be formatted as code.
       render: shell
     validations:
       required: false

@@ -58,14 +58,9 @@ export default function ManageSources() {
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Filter agent CLIs…">
-      {/* A custom EmptyView also replaces Raycast's view for a filter that matches nothing. */}
-      {data?.length === 0 && (
-        <List.EmptyView
-          icon={Icon.Plug}
-          title="No sources reported"
-          description="pixtuoid sources --json returned an empty list."
-        />
-      )}
+      {/* Raycast shows an EmptyView while loading once the search bar has text, where its own would read as no
+          match (developers.raycast.com/api-reference/user-interface/list). */}
+      {data === undefined && <List.EmptyView icon={Icon.Plug} title="Loading sources…" />}
       {(data ?? []).map((s) => (
         <List.Item
           key={s.id}
@@ -108,11 +103,7 @@ function ErrorView({ error, onRetry }: { error: Error; onRetry: () => void }) {
       <List.EmptyView
         icon={notFound ? Icon.MagnifyingGlass : Icon.Warning}
         title={notFound ? "Pixtuoid not found" : "Couldn't read sources"}
-        description={
-          notFound
-            ? "Set the binary path in preferences, or install pixtuoid from its Installation Docs."
-            : error.message
-        }
+        description={notFound ? "Set the binary path in preferences, or install pixtuoid." : error.message}
         actions={
           <ActionPanel>
             {notFound ? (
