@@ -587,8 +587,7 @@ impl Fold {
         let id = own.filter(|_| drive.seeded)?;
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.get(&id);
-        let registers =
-            Sight::registers(sighted.map(|s| &s.sight), holds_life(decoded, id), verdict);
+        let registers = Sight::registers(sighted.map(|s| &s.sight), holds_life(decoded), verdict);
         let seed = match sighted {
             _ if !registers => None,
             // A claim re-sends the start its first sight built, as the watcher's
