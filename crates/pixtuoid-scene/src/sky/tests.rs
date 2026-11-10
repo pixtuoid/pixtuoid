@@ -441,7 +441,7 @@ fn solar_noon_outshines_the_brightest_night() {
                 .partial_cmp(&moon_phase_at(on_day(b, 2)))
                 .expect("moon_phase is never NaN")
         })
-        .expect("January has days");
+        .expect("the range has days");
     // The night's brightest ten-minute mark, since the moon's apex moves with
     // its age.
     let night = (0..9 * 6u64)

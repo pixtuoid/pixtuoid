@@ -72,7 +72,8 @@ pub(crate) fn local_instant(date: chrono::NaiveDate, h: u32, m: u32) -> Option<S
 }
 
 fn local(day: u32, h: u32, m: u32) -> SystemTime {
-    try_local(day, h, m).expect("a fixed January local time is valid and unambiguous in every zone")
+    try_local(day, h, m)
+        .expect("a helper's time early in its base year is valid and unambiguous in every zone")
 }
 
 /// Local `h:m` on `day`'s own local date, not the reference day: a run on
