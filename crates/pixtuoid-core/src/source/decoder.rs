@@ -388,10 +388,11 @@ pub(crate) fn hook_session_id(
         .map(str::to_string)
 }
 
-/// The identity context the tool/permission arms attach ahead of their activity
-/// event. `cwd` is on the wire for CC tool hooks but absent on e.g. Codex
-/// `PermissionRequest` — absent or empty maps to `None`, so the reducer's cwd-less
-/// registration path (ordinal label, reap-exempt) applies.
+/// The identity context a hook arm attaches ahead of an event that may be its
+/// session's first sight (an activity event or a turn end). `cwd` is on the
+/// wire for CC tool hooks but absent on e.g. Codex `PermissionRequest` — absent
+/// or empty maps to `None`, so the reducer's cwd-less registration path
+/// (ordinal label, reap-exempt) applies.
 pub(crate) fn hook_identity(
     agent_id: AgentId,
     source: &str,
@@ -432,11 +433,11 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 /// Decode one hook payload into the event sequence the reducer applies.
 ///
 /// The tool/permission arms (PreToolUse / PostToolUse / Notification /
-/// PermissionRequest) lead with an [`AgentEvent::Identity`] carrying the payload's
-/// source/session_id/cwd (#221), the claim an unknown id registers from: the
-/// activity alone registers nothing. The session-lifecycle and custom Subagent
-/// arms deliberately do NOT: SessionStart already carries identity, and an end
-/// for an unknown agent proves nothing.
+/// PermissionRequest) and kimi's claimed turn ends lead with an
+/// [`AgentEvent::Identity`] carrying source/session_id/cwd (#221), the claim an
+/// unknown id registers from. The shared lifecycle arms do NOT: SessionStart
+/// carries identity, an end for an unknown id proves nothing, and on the shared
+/// `Stop` an `Identity` would re-create a CC child past its cascade.
 ///
 /// # Errors
 ///
