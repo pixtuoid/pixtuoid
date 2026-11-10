@@ -455,16 +455,16 @@ fn board_mood_at(counts: StateCounts, now_ms: u64) -> Vec<BoardSegment> {
     }
 }
 
-/// Assemble the whole board model. `floor` is the drawn floor's `FloorPlace::breadcrumb`,
-/// `(floor, floors)` counted from 1; `headline` is the day's count in words, which
-/// yields first when the row can't hold it; `gateway` is the
+/// Assemble the whole board model. `breadcrumb` is the drawn floor's `FloorPlace::breadcrumb`,
+/// `(floor, floors)` counted from 1, `None` drawing none; `headline` is the day's count in
+/// words, which yields first when the row can't hold it; `gateway` is the
 /// [`gateway_rollup`](crate::tally::gateway_rollup), where `None` suppresses the
 /// chip; `now` on `motion`'s beat drives L2's flap. The context separators (`"  "`)
 /// are baked into each following segment so painters just concatenate.
 pub fn build_board(
     counts: StateCounts,
     uptime_secs: u64,
-    floor: Option<(usize, usize)>,
+    breadcrumb: Option<(usize, usize)>,
     headline: Option<&str>,
     gateway: Option<DaemonState>,
     motion: crate::anim::Motion,
@@ -474,7 +474,7 @@ pub fn build_board(
         format!("up {}", compact_hms(uptime_secs)),
         BoardTone::Dim,
     )];
-    if let Some((floor, floors)) = floor {
+    if let Some((floor, floors)) = breadcrumb {
         context.push(BoardSegment::new(
             format!("  F{floor}/{floors}"),
             BoardTone::Dim,
