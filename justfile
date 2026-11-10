@@ -7,8 +7,8 @@
 #              on-demand e2e / capture / fixture recipes
 #   site     — the Astro landing page under site/ (npm + the wasm build)
 #   gen      — regenerate + check committed artifacts
-#   release  — what release.yml builds: the cross builds, the version read;
-#              plus the Node gates (npm-check)
+#   release  — what release.yml builds: the cross builds, the notices they
+#              ship, the version read; plus the Node gates (npm-check)
 #   meta     — tooling setup, the local gate (preflight), the fixture
 #              gates, and the gates' selftests
 
@@ -1003,31 +1003,10 @@ gen-media-check:
 workspace-version:
     @grep -m1 '^version' Cargo.toml | cut -d'"' -f2
 
-# Pass `true` for targets that need the Docker-backed `cross` toolchain
-# (CI installs it via taiki-e/install-action with `tool: cross`).
 [doc('Cross-compile a release for ONE target triple (release.yml build matrix)')]
 [group('release')]
-build-target target cross="false":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    target="$1"
-    use_cross="$2"
-    # Every LINUX artifact drops `audio` (musl can't link ALSA statically; the
-    # aarch64 cross image has no ALSA headers), so prebuilt Linux binaries ship
-    # SILENT and Linux audio is a from-source feature (#633; see
-    # docs/CONFIGURATION.md). Every other default feature rides `portable`
-    # (pixtuoid's Cargo.toml). Derived here, not passed: the flags are a
-    # property of the target. $flags stays UNQUOTED below — quoting the empty
-    # non-Linux case would pass cargo an empty positional arg.
-    flags=""
-    case "$target" in
-    *linux*) flags="--no-default-features --features portable" ;;
-    esac
-    if [ "$use_cross" = "true" ]; then
-        cross build --release --target "$target" $flags
-    else
-        cargo build --release --target "$target" $flags
-    fi
+build-target target:
+    cargo build --release --target "$1"
 
 # Globbed, not listed, so a font embedded later ships its notice too: a font's
 # notice is any .txt under the `fonts/` beside it.

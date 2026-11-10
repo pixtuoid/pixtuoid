@@ -501,8 +501,7 @@
   why: >-
     These jobs build and publish with the release tokens in scope (see
     release-workflows-restore-no-cache), and mise.toml's tools are unpinned
-    `latest`: past just, nothing it downloads runs here. cross stays on
-    install-action's checksum-pinned manifest.
+    `latest`: past just, nothing it downloads runs here.
   assert: |
     all(.jobs[].steps[]?;
         ((.uses // "") | test("/(setup-tools|setup-cargo-just)$") | not)

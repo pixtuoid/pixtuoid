@@ -78,16 +78,11 @@ jobs:
             os: macos-latest
           - target: x86_64-apple-darwin
             os: macos-latest
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            cross: true
-          # aarch64 cross-links on the same x64 runner (VC ARM64 components preinstalled).
           # `windows-latest` is validated only at TAG time (release.yml doesn't run on
           # PRs) — re-pin to a dated label if a runner-image bump regresses it.
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+          # Cross-links on the same x64 runner (VC ARM64 components preinstalled).
           - target: aarch64-pc-windows-msvc
             os: windows-latest
     steps:
@@ -101,19 +96,8 @@ jobs:
 
       - uses: ./.github/actions/setup-tools
 
-      - name: Install cross
-        if: matrix.cross
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: cross
-
-      - if: contains(matrix.target, 'musl')
-        uses: ./.github/actions/apt-install
-        with:
-          packages: musl-tools
-
       - name: Build
-        run: just build-target ${{ matrix.target }} "${{ matrix.cross || 'false' }}"
+        run: just build-target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'

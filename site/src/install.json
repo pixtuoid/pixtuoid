@@ -9,7 +9,7 @@
   {
     "id": "npm",
     "label": "npm",
-    "blurb": "any OS",
+    "blurb": "macOS or Windows",
     "cmds": ["npm install -g pixtuoid"],
     "readme": true
   },
@@ -23,7 +23,8 @@
     "id": "release",
     "label": "GitHub Releases",
     "cmds": [
-      "# prebuilt binaries (macOS · Linux · Windows .zip):",
+      "# prebuilt binaries for macOS and Windows (.zip); Linux installs with",
+      "# Homebrew or Cargo, which build against the host's libasound (cpal#1421):",
       "# https://github.com/pixtuoid/pixtuoid/releases/latest"
     ],
     "readme": false
