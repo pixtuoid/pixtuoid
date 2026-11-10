@@ -51,13 +51,13 @@ examples).
 - **Population** — a gate, build flag or config key that selects a set
   (crates, features, targets, jobs, a gate's own tests): name the set before
   and after; a silent shrink is a defect (#1012, #1101, #1103, #1123).
-- **Test teeth** — every new or changed test, every test in what the review
-  reads, and every test asserting an effect the diff removes or reroutes, fails
-  when the code it names is wrong. Refusal paths are pinned on both sides of
-  every window, offsets derived from the constant under test; a new gate fires
-  on the violation, is silent on the legitimate case, and names the real
-  requirement. No verdict turns on the zone or local time; no test reads other
-  ambient state: `HOME`, a developer's config, a fixed temp path (#1023, #1048).
+- **Test teeth** — every test in what the review reads, and every test asserting
+  an effect the diff removes or reroutes, fails when the code it names is wrong.
+  Refusal paths are pinned on both sides of every window, offsets derived from
+  the constant under test; a new gate fires on the violation, is silent on the
+  legitimate case, and names the real requirement. No verdict turns on the zone,
+  the date or the time of day; no test reads other ambient state: `HOME`, a
+  developer's config, a fixed temp path (#1023, #1048).
 - **Reducer, liveness, sweeps** (`crates/pixtuoid-core/src/state/`,
   `source/jsonl/liveness.rs`, `source/exit_watch.rs`, `source/daemon.rs`) —
   trace the downstream interaction graph (rebind, sweeps, TTLs, cascade,
