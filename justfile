@@ -87,11 +87,11 @@ HAWK_INSTALLER_SHA256 := "4e1b85fc15d3d4efa9b3bd7c62620655cc5504b7164272292043e3
 # it builds C (`cargo doc` still runs build scripts).
 DOC_TARGETS := "x86_64-pc-windows-msvc aarch64-apple-darwin"
 
-# The zone a test reads the clock in unless it is a pixtuoid-scene unit test,
-# which reads `localclock`'s fixed zone: a test anchored to its writer's zone
-# then fails on their machine, not first in CI (#1377). Its offset is neither
-# UTC nor a whole hour. chrono reads `TZ` on Unix only (chrono 0.4.45
-# `src/offset/local/unix.rs:92`); Windows tests keep the runner's own zone.
+# The zone a test run reads the clock in, so a test anchored to its writer's
+# zone fails on their machine, not first in CI (#1377). Its offset is neither
+# UTC nor a whole hour, so epoch and local hours never coincide. chrono reads
+# `TZ` on Unix only (chrono 0.4.45 `src/offset/local/unix.rs:92`), so Windows
+# tests keep the runner's zone; pixtuoid-scene's unit tests read `localclock`'s.
 TEST_TZ := "Asia/Kathmandu"
 
 # List available recipes.

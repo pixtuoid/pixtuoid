@@ -17,7 +17,7 @@ pub(crate) fn install_crash_hook() {
         let crash_path = crash_log_path();
         #[expect(
             clippy::disallowed_types,
-            reason = "a process-edge stamp: the report reads in the user's own zone"
+            reason = "the crash report is stamped in the user's own zone"
         )]
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 

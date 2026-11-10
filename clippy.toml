@@ -73,5 +73,5 @@ disallowed-macros = [
 ]
 disallowed-types = [
     # `allow-invalid`: pixtuoid-core's chrono has no `clock`, so `Local` doesn't exist when `just hack` lints core alone.
-    { path = "chrono::Local", allow-invalid = true, reason = "the viewer's zone is read in `pixtuoid_scene::localclock`, whose unit-test build reads a fixed zone; a process-edge stamp elsewhere `#[expect]`s this" },
+    { path = "chrono::Local", allow-invalid = true, reason = "the viewer's zone is read in `pixtuoid_scene::localclock`, whose unit-test build reads a fixed zone; the crash report's stamp (`app/crash.rs`) `#[expect]`s this" },
 ]
