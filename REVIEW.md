@@ -8,11 +8,10 @@ diff touches, first; these rules add to generic defect hunting.
 The org's [shared review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)
 runs a correctness and a design reviewer, each over this file but the other's
 section and with its contract's lenses, so [Correctness](#correctness) and
-[Design](#design) keep those headings. Both read each changed file whole at the head (a removed file has
-only its hunks), against the base tree: a defect anywhere in it is in scope,
-pre-existing when the diff did not introduce it. The review only reads, so it
-never attempts a [must-run](#must-run) item, and skipping one is not partial
-coverage.
+[Design](#design) keep those headings. A defect anywhere in what the contract
+has them read is in scope, judged against the base tree, pre-existing when the
+diff did not introduce it. The review only reads, so it never attempts a
+[must-run](#must-run) item, and skipping one is not partial coverage.
 
 ## Do not flag
 
@@ -54,13 +53,13 @@ examples).
 - **Population** — a gate, build flag or config key that selects a set
   (crates, features, targets, jobs, a gate's own tests): name the set before
   and after; a silent shrink is a defect (#1012, #1101, #1103, #1123).
-- **Test teeth** — every new or changed test, every test a changed file holds,
-  and every test asserting an effect the diff removes or reroutes, fails when
-  the code it names is wrong. Refusal paths are pinned on both sides of every
-  window, offsets derived from the constant under test; a new gate fires on the
-  violation, stays silent on the legitimate case, and names the real
-  requirement. No test reads ambient state: the local time zone, `HOME`, the
-  developer's config, a fixed temp path (#1023, #1048).
+- **Test teeth** — every new or changed test, every test in what the review
+  reads, and every test asserting an effect the diff removes or reroutes,
+  fails when the code it names is wrong. Refusal paths are pinned on both
+  sides of every window, offsets derived from the constant under test; a new
+  gate fires on the violation, stays silent on the legitimate case, and names
+  the real requirement. No test reads ambient state: the local time zone,
+  `HOME`, the developer's config, a fixed temp path (#1023, #1048).
 - **Reducer, liveness, sweeps** (`crates/pixtuoid-core/src/state/`,
   `source/jsonl/liveness.rs`, `source/exit_watch.rs`, `source/daemon.rs`) —
   trace the downstream interaction graph (rebind, sweeps, TTLs, cascade,
@@ -153,11 +152,9 @@ invariant-breaking sequence against:
    three painters for a width almost never hit is low ROI; an invariant held
    by prose where a type could make the failure impossible (#1142), and a
    check outside [its own layer](docs/CONTRIBUTING.md#convergence-contract),
-   are hard to maintain. A
-   mechanism the diff extends is judged as if new against AGENTS.md's [upkeep
-   rule](AGENTS.md#org-rules); one that fails it draws "delete it". A defense
+   are hard to maintain. The lens's "delete it" spares a defense
    [Traps](#traps-the-obvious-reading-is-wrong-here) or [Security](#security)
-   names, and the documented liveness ladders, stay.
+   names, and the documented liveness ladders.
 7. **Words** (the contract's lens), here: names include `pub(crate)` items and
    modules, docs elsewhere include `.github/` and `.claude/`, one concept keeps
    one name across crates and painters (`rg` before coining), compass words
@@ -169,7 +166,7 @@ invariant-breaking sequence against:
    included, is justified, and a new workspace edge follows
    [AGENTS.md](AGENTS.md#layout)'s crate DAG.
 
-#### Every changed file
+#### Everything the review reads
 
 A maintenance defect's failure scenario is the edit that would leave a copy
 wrong.
