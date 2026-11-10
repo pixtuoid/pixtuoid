@@ -105,7 +105,7 @@ impl FloorView {
         let layout = self.last_hits.as_ref().map(|hits| &**hits.layout());
         office.audio.frame(
             scene,
-            &self.last_occupied,
+            Some(&self.last_occupied),
             |idx| waypoint_kind_of(layout, idx),
             floor,
             now,
@@ -116,7 +116,9 @@ impl FloorView {
         self.last_flash
     }
 
+    /// The last frame's pixels; `None` when it drew no office.
     pub(super) fn buf(&self) -> Option<&RgbBuffer> {
+        self.last_hits.as_ref()?;
         self.floor.raster.pixels()
     }
 
@@ -313,7 +315,7 @@ pub(super) const PAST_THE_TURN: Duration = Duration::from_millis(1);
 /// How often an office whose beat never turns paints: never 0fps, since its
 /// clock and sky still move with the wall and a frozen one reads as a dead
 /// window.
-pub(super) const REST_TICK: Duration = Duration::from_secs(1);
+pub const REST_TICK: Duration = Duration::from_secs(1);
 
 /// A painter's office of up to [`MAX_FLOORS`](super::MAX_FLOORS) floors:
 /// each floor's view, the office-wide state they share (a cup of
@@ -436,6 +438,13 @@ impl OfficeSession {
         self.nav.cancel(self.n_floors);
     }
 
+    /// End a slide no frame shows: it lands on its destination, and its last
+    /// composed frame goes too, since the frame on screen is not it.
+    fn drop_slide(&mut self) {
+        self.cancel_slide();
+        self.slide = None;
+    }
+
     /// Floor `floor`'s stores and raster, once a frame has grown it.
     #[doc(hidden)]
     pub fn floor(&self, floor: usize) -> Option<&PerFloor> {
@@ -512,16 +521,20 @@ impl OfficeSession {
             let (from, to, t) = (tr.from_floor, tr.to_floor, tr.t(now));
             draw(&mut self.views, &mut self.office, from, look);
             draw(&mut self.views, &mut self.office, to, look);
-            let (slide, flashes) = self
-                .slide
-                .get_or_insert_with(|| (RgbBuffer::filled(0, 0, gap), Default::default()));
             if let (Some(leaving), Some(arriving)) = (self.views[from].buf(), self.views[to].buf())
             {
+                let (slide, flashes) = self
+                    .slide
+                    .get_or_insert_with(|| (RgbBuffer::filled(0, 0, gap), Default::default()));
                 compose_slide(slide, (leaving, arriving), t, to > from, inputs.dim.of(gap));
                 *flashes = crate::screen::Flashes::of_slide(
                     self.views[from].flash(),
                     self.views[to].flash(),
                 );
+            } else {
+                // A slide no screen shows would run its course unseen, its
+                // pixels the last frames drawn.
+                self.drop_slide();
             }
         } else {
             self.slide = None;
@@ -552,9 +565,10 @@ impl OfficeSession {
             .map(crate::look::Picture::Floor)
     }
 
-    /// A frame drew no office (a painter's too-small screen): the floor
-    /// showing keeps nothing of its last. Its audio, the empty floor's, is
-    /// the caller's to feed.
+    /// A frame drew no office (a painter's too-small screen): a slide ends on
+    /// its destination, as [`Self::render`] ends one it can't lay out, and the
+    /// floor showing keeps nothing of its last. Its audio, the empty floor's,
+    /// is the caller's to feed.
     #[must_use]
     #[doc(hidden)]
     pub fn drew_no_office(
@@ -563,19 +577,34 @@ impl OfficeSession {
         office_floor: FloorMeta,
         now: SystemTime,
     ) -> AudioFrame {
+        self.drop_slide();
         let current = self.nav.current();
         self.views[current].forget();
         // The empty floor's by construction, whatever the view still holds.
         let floor = floor_meta(office_floor, current, self.n_floors);
         self.office
             .audio
-            .frame(scene, &HashSet::new(), |_| None, floor, now)
+            .frame(scene, Some(&HashSet::new()), |_| None, floor, now)
     }
 
     /// The waypoints the floor showing's audio reads as occupied.
     #[cfg(test)]
     pub(super) fn heard_occupied(&self) -> &HashSet<usize> {
         &self.views[self.nav.current()].last_occupied
+    }
+
+    /// One frame of audio intent for the floor showing, heard in `scene` (the
+    /// FULL live scene) under `office_floor` without drawing it: a walk-in
+    /// chimes, and the next frame drawn re-primes the appliance cues' edge.
+    pub fn hear(
+        &mut self,
+        scene: &SceneState,
+        office_floor: FloorMeta,
+        now: SystemTime,
+    ) -> AudioFrame {
+        self.prepare(scene, now);
+        let floor = floor_meta(office_floor, self.nav.current(), self.n_floors);
+        self.office.audio.frame(scene, None, |_| None, floor, now)
     }
 
     /// One frame of audio intent for the floor showing, in `scene` (the FULL
