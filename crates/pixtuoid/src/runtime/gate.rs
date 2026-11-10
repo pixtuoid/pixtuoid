@@ -133,9 +133,16 @@ mod tests {
 
     // Returns (slots BEFORE the reconcile, live slots AFTER) so the gate and the
     // 1-Hz reconciler get independent teeth: a single "after" count would pass
-    // even with the gate removed.
-    fn drive_hook_gate(events: Vec<AgentEvent>, connected: &[&str]) -> (usize, usize) {
-        let cs = ConnectedSources::new(connected.iter().map(|s| s.to_string()).collect());
+    // even with the gate removed. The gate runs on `connected_at_gate`, the
+    // reconcile on `connected_at_sweep`.
+    fn drive_hook_gate(
+        events: Vec<AgentEvent>,
+        connected_at_gate: &[&str],
+        connected_at_sweep: &[&str],
+    ) -> (usize, usize) {
+        let sources =
+            |names: &[&str]| ConnectedSources::new(names.iter().map(|s| s.to_string()).collect());
+        let cs = sources(connected_at_gate);
         let mut scene = SceneState::uniform(8);
         let mut reducer = Reducer::new();
         let mut gate_logged = HashSet::new();
@@ -152,7 +159,7 @@ mod tests {
             );
         }
         let gated = scene.agents.len();
-        reconcile_sweep_tick(&mut reducer, &mut scene, &cs, now);
+        reconcile_sweep_tick(&mut reducer, &mut scene, &sources(connected_at_sweep), now);
         let live = scene
             .agents
             .values()
@@ -165,15 +172,26 @@ mod tests {
     #[test]
     fn a_disconnected_sources_hook_payloads_never_register() {
         let run = cursor_payloads().into_iter().flat_map(|(_, events)| events);
-        assert_eq!(drive_hook_gate(run.collect(), &["claude-code"]), (0, 0));
+        assert_eq!(
+            drive_hook_gate(run.collect(), &["claude-code"], &["claude-code"]),
+            (0, 0)
+        );
     }
 
     #[test]
     fn hook_events_for_a_connected_source_render() {
         assert_eq!(
-            drive_hook_gate(cursor_payload("preToolUse"), &["cursor"]),
+            drive_hook_gate(cursor_payload("preToolUse"), &["cursor"], &["cursor"]),
             (1, 1)
         );
+    }
+
+    /// The 1 Hz tick walks out a slot whose source is disconnected after it
+    /// registered.
+    #[test]
+    fn the_sweep_tick_walks_out_a_source_disconnected_after_it_registered() {
+        let run = cursor_payload("preToolUse");
+        assert_eq!(drive_hook_gate(run, &["cursor"], &["claude-code"]), (1, 0));
     }
 
     #[test]
