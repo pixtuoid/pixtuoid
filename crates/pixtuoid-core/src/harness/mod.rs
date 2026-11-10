@@ -561,11 +561,11 @@ impl Fold {
     fn registration<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
+        own: Option<AgentId>,
         lines: &[Option<S>],
         life: &[AgentEvent],
     ) -> Option<AgentEvent> {
-        let (source, _, session_id) = drive.sighted()?;
-        let id = AgentId::from_parts(source, &session_id);
+        let id = own?;
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.get(&id);
         let registers = Sight::registers(sighted.map(|s| &s.sight), holds_life(life));
@@ -622,7 +622,7 @@ impl Fold {
             };
             for life in lives {
                 let mut fed = Vec::new();
-                if let Some(seed) = self.registration(drive, &lines, &life) {
+                if let Some(seed) = self.registration(drive, own, &lines, &life) {
                     self.driven.seed_events += 1;
                     fed.push(seed);
                 }
