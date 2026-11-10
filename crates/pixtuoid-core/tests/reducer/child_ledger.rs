@@ -28,8 +28,8 @@ fn a_hook_session_ends_straggler_window_is_its_own_id_alone() {
     );
 }
 
-/// The [`STRAGGLER_TTL`] window is the ONLY guard on a hook's `Identity`, and
-/// past it the ended id registers again: hermes has no other reaper
+/// For an ended root, the [`STRAGGLER_TTL`] window is the only guard on a hook's
+/// `Identity`, and past it the id registers again: hermes has no other reaper
 /// (`resurrects_on_prompt: false`), so a turn finishing after the user rotates
 /// with `/new` leaves the outgoing id on the floor until the
 /// [`STALE_IDLE_TIMEOUT`](pixtuoid_core::state::reducer::STALE_IDLE_TIMEOUT)

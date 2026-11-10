@@ -385,16 +385,12 @@ fn lobster_px(r: &mut TuiRenderer<TestBackend>, scene: &SceneState, times: &[Sys
         .count()
 }
 
-/// Drives one openclaw capture through the presence seam and hands back what the
-/// office would paint. `attach_after` starts the stream just past the first
+/// Drives one openclaw capture through the presence seam and hands back the
+/// office it leaves. `attach_after` starts the stream just past the first
 /// envelope of a type, where a listener that attached late picks it up;
 /// `stop_at` ends it before a type, as the lobster test does to stay inside the
 /// live window.
-fn openclaw_state(
-    scenario: &str,
-    attach_after: Option<&str>,
-    stop_at: &[&str],
-) -> pixtuoid_core::state::DaemonState {
+fn openclaw_scene(scenario: &str, attach_after: Option<&str>, stop_at: &[&str]) -> SceneState {
     let hooks = sources_root().join(format!("openclaw/fixtures/{scenario}/hook-payloads.jsonl"));
     let lines = read_nonblank_lines(&hooks);
     let type_of = |line: &String| {
@@ -417,12 +413,25 @@ fn openclaw_state(
     fold.feed(&Drive::hooks(), fed, t0());
     let driven = fold.finish();
     driven.assert_clean(scenario);
-    let (_, _, presence) = driven
-        .scene
+    driven.scene
+}
+
+/// The openclaw gateway's presence in `scene`.
+fn openclaw_presence(scene: &SceneState) -> &pixtuoid_core::state::DaemonPresence {
+    let (_, _, presence) = scene
         .daemons()
         .find(|(source, _, _)| *source == pixtuoid_core::source::openclaw::SOURCE_NAME)
         .expect("openclaw presence must be populated");
-    presence.display_state()
+    presence
+}
+
+/// What the office would paint of [`openclaw_scene`]'s gateway.
+fn openclaw_state(
+    scenario: &str,
+    attach_after: Option<&str>,
+    stop_at: &[&str],
+) -> pixtuoid_core::state::DaemonState {
+    openclaw_presence(&openclaw_scene(scenario, attach_after, stop_at)).display_state()
 }
 
 /// pixtuoid usually starts AFTER the gateway, so `gateway_start` is the one
@@ -463,28 +472,10 @@ fn a_failed_provider_degrades_the_gateway_rather_than_downing_it() {
 /// `runtime/driver.rs` uses — NEVER `Reducer::apply`, which is `AgentId`-pure.
 #[test]
 fn openclaw_presence_envelope_renders_a_lobster() {
-    let hooks = sources_root().join("openclaw/fixtures/tool-run-hermetic/hook-payloads.jsonl");
-    let lines = read_nonblank_lines(&hooks);
-    let live = lines.iter().take_while(|line| {
-        let v: serde_json::Value = serde_json::from_str(line).expect("openclaw hook json");
-        !matches!(
-            v.get("type").and_then(|t| t.as_str()),
-            Some("session_end" | "gateway_stop")
-        )
-    });
     let now = t0();
-    let mut fold = Fold::default();
-    fold.feed(&Drive::hooks(), live, now);
-    let driven = fold.finish();
-    driven.assert_clean("openclaw tool-run");
-    let scene = driven.scene;
-
-    let (_, _, presence) = scene
-        .daemons()
-        .find(|(source, _, _)| *source == pixtuoid_core::source::openclaw::SOURCE_NAME)
-        .expect("openclaw presence must be populated");
+    let scene = openclaw_scene("tool-run-hermetic", None, &["session_end", "gateway_stop"]);
     assert_ne!(
-        presence.liveness,
+        openclaw_presence(&scene).liveness,
         pixtuoid_core::state::DaemonLiveness::Down,
         "the in-session presence stream must leave the gateway UP"
     );

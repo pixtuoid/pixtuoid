@@ -133,16 +133,16 @@ mod tests {
 
     // Returns (slots BEFORE the reconcile, live slots AFTER) so the gate and the
     // 1-Hz reconciler get independent teeth: a single "after" count would pass
-    // even with the gate removed. The gate runs on `connected`, the reconcile on
-    // `swept`.
+    // even with the gate removed. The gate runs on `connected_at_gate`, the
+    // reconcile on `connected_at_sweep`.
     fn drive_hook_gate(
         events: Vec<AgentEvent>,
-        connected: &[&str],
-        swept: &[&str],
+        connected_at_gate: &[&str],
+        connected_at_sweep: &[&str],
     ) -> (usize, usize) {
         let sources =
             |names: &[&str]| ConnectedSources::new(names.iter().map(|s| s.to_string()).collect());
-        let cs = sources(connected);
+        let cs = sources(connected_at_gate);
         let mut scene = SceneState::uniform(8);
         let mut reducer = Reducer::new();
         let mut gate_logged = HashSet::new();
@@ -159,7 +159,7 @@ mod tests {
             );
         }
         let gated = scene.agents.len();
-        reconcile_sweep_tick(&mut reducer, &mut scene, &sources(swept), now);
+        reconcile_sweep_tick(&mut reducer, &mut scene, &sources(connected_at_sweep), now);
         let live = scene
             .agents
             .values()
