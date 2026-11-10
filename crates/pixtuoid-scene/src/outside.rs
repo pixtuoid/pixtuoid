@@ -963,8 +963,9 @@ pub(crate) mod tests {
         let bays = slots(wall.0);
         for d in [Density::ONE, pack.max_density_variant()] {
             let mut bolts = 0;
-            for k in 0..60u64 {
-                let then = crate::localclock::at_hour(12) + std::time::Duration::from_secs(k * 15);
+            for k in 0..60u32 {
+                let then = crate::localclock::at_hour(12)
+                    + std::time::Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS) * k;
                 let beat = crate::anim::Motion::Full.timing(then).beat;
                 let start = crate::sky::strike_start_ms(beat) - beat.ms();
                 let now = then + std::time::Duration::from_millis(start);

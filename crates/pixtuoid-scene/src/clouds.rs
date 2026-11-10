@@ -2396,10 +2396,11 @@ mod tests {
     /// and the dim apart, and nothing once it is over.
     #[test]
     fn a_strike_lights_the_deck_only_by_its_phase() {
-        let tick = crate::anim::FULL_TICK_MS;
+        let phase_ms = crate::sky::STRIKE_PHASE_MS;
         let mut walked = 0;
-        for k in 0..60u64 {
-            let then = crate::localclock::at_hour(12) + Duration::from_secs(k * 15);
+        for k in 0..60u32 {
+            let then = crate::localclock::at_hour(12)
+                + Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS) * k;
             let beat = Motion::Full.timing(then).beat;
             let start = then + Duration::from_millis(crate::sky::strike_start_ms(beat) - beat.ms());
             let at = |ms: u64| {
@@ -2433,7 +2434,7 @@ mod tests {
             walked += 1;
             let mut looks = Vec::new();
             for i in 0.. {
-                let (phase, _, early) = at(i * tick);
+                let (phase, _, early) = at(i * phase_ms);
                 let Some(phase) = phase else {
                     assert!(
                         early.iter().all(Option::is_none),
@@ -2441,7 +2442,7 @@ mod tests {
                     );
                     break;
                 };
-                let (_, _, late) = at(i * tick + tick / 2);
+                let (_, _, late) = at(i * phase_ms + phase_ms / 2);
                 assert_eq!(
                     early, late,
                     "strike {k}: {phase:?} changed its look within itself"
