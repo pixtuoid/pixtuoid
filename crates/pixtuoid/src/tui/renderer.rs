@@ -467,8 +467,10 @@ mod tests {
     use crate::tui::geometry::CellArea;
     use std::sync::Arc;
 
+    /// The gateway is office-wide, and only floor 0's projection carries the
+    /// daemons: a still of an upper floor keeps it by reading the full scene.
     #[test]
-    fn an_offscreen_still_shows_its_scenes_gateway() {
+    fn an_offscreen_still_of_an_upper_floor_shows_the_offices_gateway() {
         let t0 = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         let mut scene = SceneState::uniform(16);
         scene.insert_daemon(
@@ -487,15 +489,15 @@ mod tests {
             pixtuoid_scene::pack::load_bundled_pack().expect("pack"),
         ));
         let mut office = pixtuoid_scene::floor::PerOffice::new();
-        let ground = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
+        let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 1);
         let ctx = DrawCtx::offscreen(
             &mut floor,
             office.stores(),
             &pixtuoid_scene::theme::NORMAL,
             &scene,
-            &ground,
+            &floor_scene,
             t0,
-            pixtuoid_scene::floor::FloorMeta::ground(),
+            pixtuoid_scene::floor::FloorMeta::for_floor(1, 2),
         );
         assert!(ctx.footer.gateway.is_some());
     }

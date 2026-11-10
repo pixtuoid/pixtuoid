@@ -565,7 +565,7 @@ fn main() -> Result<()> {
         println!("wrote {}", anim_dest.display());
         return Ok(());
     }
-    let ground = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
 
     let mut pixel = args
         .pixel
@@ -783,12 +783,12 @@ fn main() -> Result<()> {
             office.stores(),
             theme,
             &scene,
-            &ground,
+            &floor_scene,
             now,
             floor_meta,
         )
     };
-    let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
+    let drawn = draw_frame(&mut term, &mut draw_ctx, &scene, pixel.as_mut())?;
 
     if args.debug_walkable {
         print_walkability_report(&term, args.floor_seed)?;
@@ -956,17 +956,17 @@ mod tests {
             let theme = pixtuoid_scene::theme::theme_by_name("normal").unwrap();
             let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
             let ground = pixtuoid_scene::floor::FloorMeta::ground();
-            let projected = pixtuoid_scene::floor::project_floor_scene(scene, 0);
+            let floor_scene = pixtuoid_scene::floor::project_floor_scene(scene, 0);
             let mut ctx = DrawCtx::offscreen(
                 &mut floor,
                 office.stores(),
                 theme,
                 scene,
-                &projected,
+                &floor_scene,
                 now,
                 ground,
             );
-            draw_frame(&mut term, &mut ctx, None)
+            draw_frame(&mut term, &mut ctx, scene, None)
                 .unwrap()
                 .expect("a classic frame")
         };

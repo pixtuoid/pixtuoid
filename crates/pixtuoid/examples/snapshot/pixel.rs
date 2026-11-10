@@ -293,7 +293,7 @@ mod tests {
         let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let mut floor = PerFloor::new(Arc::clone(&pack));
         let mut office = PerOffice::new();
-        let ground = pixtuoid_scene::floor::project_floor_scene(scene, 0);
+        let floor_scene = pixtuoid_scene::floor::project_floor_scene(scene, 0);
         let mut ctx = DrawCtx {
             overlays: frames.overlays(0.0, &[]),
             ..DrawCtx::offscreen(
@@ -301,19 +301,19 @@ mod tests {
                 office.stores(),
                 &NORMAL,
                 scene,
-                &ground,
+                &floor_scene,
                 epoch(),
                 FloorMeta::ground(),
             )
         };
         let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
-        draw_frame(&mut term, &mut ctx, None).unwrap();
+        draw_frame(&mut term, &mut ctx, scene, None).unwrap();
         let cells = term.backend().buffer();
         let classic = cells_to_rgba(cells, cells.area);
         let mut cutaway =
             PixelOffice::of_draw_frame(&pack, (COLS, ROWS), LookKind::Cutaway).unwrap();
         let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
-        draw_frame(&mut term, &mut ctx, Some(&mut cutaway)).unwrap();
+        draw_frame(&mut term, &mut ctx, scene, Some(&mut cutaway)).unwrap();
         let cells = term.backend().buffer();
         let composed = compose(cells, cells.area, Some(&cutaway));
         (classic, composed, cutaway)

@@ -438,21 +438,21 @@ pub(crate) fn save_renderer_animation(
     )
 }
 
-/// One frame of `ctx`'s floor: `draw_scene`'s, or `pixel`'s office under
-/// the frame's text, as the TUI's cutaway draws it. What the classic frame
-/// answers a pointer with.
+/// One frame of `ctx`'s floor, projected out of `full`: `draw_scene`'s, or
+/// `pixel`'s office under the frame's text, as the TUI's cutaway draws it. What
+/// the classic frame answers a pointer with.
 pub(crate) fn draw_frame(
     term: &mut Terminal<TestBackend>,
     ctx: &mut DrawCtx<'_>,
+    full: &SceneState,
     pixel: Option<&mut PixelOffice<FloorSession>>,
 ) -> Result<Option<pixtuoid_scene::look::Hits>> {
     let Some(pixel) = pixel else {
         return draw_scene(term, ctx);
     };
     let under = draw_over_image(term, ctx)?;
-    // The floor's projection is a one-floor office of its own.
     let world = pixtuoid_scene::floor::FloorInputs {
-        scene: ctx.world.scene.scene(),
+        scene: full,
         now: ctx.world.now,
         floor: ctx.world.floor,
         pets: ctx.world.pets,
@@ -472,7 +472,7 @@ pub(crate) fn save_animation(
     debug_walkable: bool,
     pixel: Option<PixelOffice<FloorSession>>,
 ) -> Result<()> {
-    let ground = pixtuoid_scene::floor::project_floor_scene(job.scene, 0);
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(job.scene, 0);
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     job.encode(
         skip_ms,
@@ -485,12 +485,12 @@ pub(crate) fn save_animation(
                     office.stores(),
                     job.theme,
                     job.scene,
-                    &ground,
+                    &floor_scene,
                     now,
                     floor_meta,
                 )
             };
-            draw_frame(term, &mut draw_ctx, pixel.as_mut()).map(drop)
+            draw_frame(term, &mut draw_ctx, job.scene, pixel.as_mut()).map(drop)
         },
         |(term, pixel)| {
             let cells = term.backend().buffer();

@@ -1524,7 +1524,14 @@ mod tests {
         for (scene, layout, frame) in scenes {
             for (i, (theme_name, weather, hour)) in moments.into_iter().enumerate() {
                 let theme = crate::theme::theme_by_name(theme_name).expect("theme");
-                let floor = FloorMeta::for_floor(i % 2 * 3, 4)
+                // A frame holds only its own floor's agents, so one with
+                // agents is drawn on theirs; an empty one on each moment's.
+                let floor_idx = frame
+                    .agents
+                    .iter()
+                    .find_map(|agent| agent.desk)
+                    .map_or(i % 2 * 3, |desk| desk.floor);
+                let floor = FloorMeta::for_floor(floor_idx, 4)
                     .with_weather(WeatherPolicy::Forced(weather))
                     .with_motion(Motion::Still);
                 for d in densities {
@@ -1558,7 +1565,6 @@ mod tests {
                         },
                     );
                     let name = weather.name();
-                    let floor_idx = floor.floor_idx;
                     writeln!(
                         digests,
                         "{scene} {theme_name} {name} {hour:02}h floor{floor_idx} d{d} {digest:016x}"

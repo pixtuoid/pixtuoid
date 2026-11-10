@@ -148,9 +148,9 @@ fn no_figure_is_drawn_under_an_inset() {
             left: 5,
         },
     };
-    let ground = crate::floor::project_floor_scene(&scene, 0);
+    let floor_scene = crate::floor::project_floor_scene(&scene, 0);
     let at = |now| {
-        let bare = inputs(&ground, now);
+        let bare = inputs(&floor_scene, now);
         RenderInputs {
             world: FloorInputs {
                 pets: PetInputs {
@@ -790,10 +790,10 @@ fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
         !signs.iter().any(|r| matches!(r, TextRole::Badge(_))),
         "{signs:?}"
     );
-    let ground = crate::floor::project_floor_scene(&scene, 0);
+    let floor_scene = crate::floor::project_floor_scene(&scene, 0);
     let refused = RenderInputs {
         viewport: Viewport::full(1, 1),
-        ..inputs(&ground, t0)
+        ..inputs(&floor_scene, t0)
     };
     assert!(render(&mut floor, office.stores(), Look::HALF_BLOCKS, refused).is_none());
     let text = floor.raster.host_text().expect("shown");
@@ -1274,12 +1274,12 @@ fn a_dim_darkens_the_baked_classic_after_its_text() {
     let scene = office(t0);
     let look = scaled(scale, WorldText::Baked);
     let dim = Dim::from_brightness(0.5);
-    let ground = crate::floor::project_floor_scene(&scene, 0);
+    let floor_scene = crate::floor::project_floor_scene(&scene, 0);
     let frame = |dim: Dim| {
         let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
         let inputs = RenderInputs {
             dim,
-            ..inputs(&ground, t0)
+            ..inputs(&floor_scene, t0)
         };
         render(&mut floor, office.stores(), look, inputs).expect("lays out");
         floor.raster.pixels().expect("a frame").clone()
@@ -1298,11 +1298,11 @@ fn a_scaled_classic_changed_all_over_repaints_whole() {
     let scene = office(t0);
     let (mut floor, mut office) = (PerFloor::new(pack), PerOffice::new());
     let look = scaled(scale, WorldText::Baked);
-    let ground = crate::floor::project_floor_scene(&scene, 0);
+    let floor_scene = crate::floor::project_floor_scene(&scene, 0);
     let mut dirty = |dim: Dim| {
         let inputs = RenderInputs {
             dim,
-            ..inputs(&ground, t0)
+            ..inputs(&floor_scene, t0)
         };
         render(&mut floor, office.stores(), look, inputs)
             .expect("lays out")

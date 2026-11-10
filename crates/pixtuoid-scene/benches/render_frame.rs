@@ -151,7 +151,7 @@ fn floor_frames<'a>(
     let mut floor = PerFloor::new(Arc::clone(pack));
     let mut office = PerOffice::new();
     let mut i = 0u32;
-    let ground = pixtuoid_scene::floor::project_floor_scene(scene, 0);
+    let floor_scene = pixtuoid_scene::floor::project_floor_scene(scene, 0);
     move || {
         if i == 0 {
             floor = PerFloor::new(Arc::clone(pack));
@@ -165,7 +165,7 @@ fn floor_frames<'a>(
             Look::HALF_BLOCKS,
             RenderInputs {
                 world: FloorInputs {
-                    scene: &ground,
+                    scene: &floor_scene,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
