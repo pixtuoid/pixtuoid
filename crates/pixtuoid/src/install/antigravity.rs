@@ -58,8 +58,11 @@ pub(crate) const AG_EVENTS: &[(&str, bool)] = &[
 ];
 
 fn config_dir() -> Result<PathBuf> {
-    if pixtuoid_core::platform::user_home_opt().is_none() {
-        return Err(io::home_unset("the home directory", "HOME/USERPROFILE"));
+    if pixtuoid_core::platform::go_user_home_dir().is_none() {
+        return Err(io::home_unset(
+            "the home directory",
+            pixtuoid_core::platform::USER_HOME_VAR,
+        ));
     }
     Ok(gemini_dir().join("config"))
 }
@@ -241,6 +244,28 @@ mod tests {
     use super::*;
 
     const CMD: &str = "PIXTUOID_SOURCE=antigravity '/opt/pixtuoid-hook'";
+
+    #[test]
+    fn config_dir_sits_under_go_s_home_and_needs_its_variable() {
+        let (own, other) = if cfg!(windows) {
+            ("USERPROFILE", "HOME")
+        } else {
+            ("HOME", "USERPROFILE")
+        };
+        temp_env::with_vars(
+            [(own, Some("/home/u")), (other, Some("/elsewhere"))],
+            || {
+                assert_eq!(
+                    config_dir().unwrap(),
+                    PathBuf::from("/home/u").join(".gemini").join("config")
+                );
+            },
+        );
+        temp_env::with_vars([(own, None), (other, Some("/elsewhere"))], || {
+            let err = config_dir().unwrap_err().to_string();
+            assert!(err.contains(&format!("({own} unset)")), "{err}");
+        });
+    }
 
     fn rendered() -> Value {
         serde_json::from_str(&render_hooks(CMD).expect("render")).expect("json")

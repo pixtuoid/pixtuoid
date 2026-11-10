@@ -246,9 +246,9 @@ pub fn footer_warning(
 
 /// Windows "installed but no sprite": `HOME` set and differing from
 /// `%USERPROFILE%` can put hooks where the CLI never reads. A SAFETY NET only —
-/// `platform::home_first_dir` already mirrors the HOME-first CLIs, so this
-/// catches a residual resolver mismatch. Pure (env + platform injected) so it
-/// unit-tests on any host.
+/// the CodeWhale and OpenClaw targets already mirror their HOME-first
+/// resolvers, so this catches a residual mismatch. Pure (env + platform
+/// injected) so it unit-tests on any host.
 pub(crate) fn home_split_advisory(
     is_windows: bool,
     home: Option<&str>,
@@ -902,8 +902,7 @@ fn probe_terminal_caps(
     look: crate::graphics::LookChoice,
     max_density: pixtuoid_scene::sprite::format::Density,
 ) -> (Option<crate::term::Truecolor>, crate::graphics::Plan) {
-    let truecolor_probe =
-        probe_ok.then(|| crate::term::query_truecolor(crate::term::TRUECOLOR_PROBE_TIMEOUT));
+    let truecolor_probe = probe_ok.then(crate::term::query_truecolor);
     let graphics_plan = crate::graphics::plan_this_terminal(look, max_density, probe_ok);
     (truecolor_probe, graphics_plan)
 }

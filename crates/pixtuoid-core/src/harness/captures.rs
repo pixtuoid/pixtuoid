@@ -91,6 +91,28 @@ pub fn capture_root() -> std::io::Result<PathBuf> {
     Ok(root)
 }
 
+/// Where a recording's sandbox sits under the capture `root`
+/// ([`capture_root`], which a test replaces), its homes among it: fixed and
+/// generic as [`capture_workspace`] is, since a path a CLI writes under its
+/// home rides the bytes too. Canonical, so a CLI that realpaths its home
+/// records what one reading `HOME` does. Beside the workspace's base, not in
+/// it: the recorder clears that base after the sandbox is made.
+///
+/// # Errors
+///
+/// If `root` cannot be resolved.
+pub fn capture_sandbox(root: &Path) -> std::io::Result<PathBuf> {
+    // Unix only: std's Windows form is an extended-length `\\?\` path
+    // (doc.rust-lang.org/std/fs/fn.canonicalize.html), and no Windows run
+    // records the corpus (`CORPUS_REFUSAL`).
+    #[cfg(unix)]
+    let root = std::fs::canonicalize(root)?;
+    Ok(root.join(CAPTURE_SANDBOX))
+}
+
+/// [`capture_sandbox`]'s own name under the root.
+const CAPTURE_SANDBOX: &str = "pixtuoid-sandbox";
+
 /// The end every [`capture_workspace`] path has, whatever the host's root: the
 /// part [`capture_base`] checks.
 pub fn capture_workspace_tail() -> PathBuf {
@@ -570,12 +592,6 @@ const ID_FAMILIES: &[IdFamily] = &[
         )],
     },
     IdFamily {
-        name: "recorder-sandbox",
-        pattern: r"\.tmp[0-9A-Za-z]{6}",
-        seen_in: "omp/fixtures/subagent-hermetic",
-        renamed: &[("/T/.tmpbelEXY/homes", "/T/.tmpLZD2ds/homes")],
-    },
-    IdFamily {
         name: "shim-pid",
         pattern: r#""_pid":(\d+)"#,
         seen_in: "dsh/fixtures/tool-run-hermetic",
@@ -776,6 +792,36 @@ pub fn captures(root: &Path) -> Vec<Capture> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_recordings_sandbox_is_fixed_canonical_and_outside_the_workspace_base() {
+        let root = capture_root().expect("the capture root");
+        let sandbox = capture_sandbox(&root).expect("the sandbox");
+        assert_eq!(
+            capture_sandbox(&root).expect("again"),
+            sandbox,
+            "no per-run part"
+        );
+        #[cfg(unix)]
+        {
+            let parent = sandbox.parent().expect("under the capture root");
+            assert_eq!(
+                std::fs::canonicalize(parent).expect("the root exists"),
+                parent,
+                "a CLI that realpaths its home records what one reading it does"
+            );
+        }
+        // dunce, not std: std's Windows form is `\\?\`, which the sandbox never
+        // starts with, so the assert below would hold whatever the sandbox was.
+        let base = capture_base(&capture_workspace().expect("the workspace"))
+            .and_then(|b| Some(dunce::canonicalize(b.parent()?).ok()?.join(b.file_name()?)))
+            .expect("the workspace base");
+        assert!(
+            !sandbox.starts_with(&base),
+            "the recorder clears {} after the sandbox is made",
+            base.display()
+        );
+    }
 
     /// `sort` reads its stdin to the end before it writes, on every host.
     #[cfg(feature = "native")]

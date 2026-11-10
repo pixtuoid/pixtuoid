@@ -82,6 +82,13 @@ regex = '''(?:/(?:Users|home)/|[A-Za-z]:\\+Users\\+)[A-Za-z0-9._-]+'''
   ]
 
 [[rules]]
+id = "pixtuoid-user-temp"
+description = "A macOS per-user temp dir, the recording account's"
+# confstr(3) `_CS_DARWIN_USER_TEMP_DIR`: "the path to a user's temporary items
+# directory". A sandbox made under it once rode every path a CLI wrote there.
+regex = '''/var/folders/[^/\s"]+/[^/\s"]+'''
+
+[[rules]]
 id = "pixtuoid-dash-encoded-home"
 description = "A home path in omp's dash-encoded cwd-directory form"
 # omp encodes a session's cwd into its directory name by replacing separators

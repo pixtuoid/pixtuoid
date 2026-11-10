@@ -273,46 +273,45 @@ fn config_path_xdg_home_and_relative_branches() {
         "/xdg/base"
     };
 
-    // Clear USERPROFILE for the whole test: on Windows it outranks HOME in
-    // user_home(), so both the HOME arm and the relative-fallback arm need it
-    // absent to reach their branches.
-    temp_env::with_var_unset("USERPROFILE", || {
-        temp_env::with_vars(
-            [
-                ("XDG_CONFIG_HOME", Some(abs_xdg)),
-                ("HOME", Some("/home/u")),
-            ],
-            || {
+    // The generic home's own variable: Windows reads `USERPROFILE`, never `HOME`.
+    let home_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+
+    temp_env::with_vars(
+        [
+            ("XDG_CONFIG_HOME", Some(abs_xdg)),
+            (home_var, Some("/home/u")),
+        ],
+        || {
+            assert_eq!(
+                config_path(),
+                PathBuf::from(abs_xdg).join("pixtuoid").join("config.toml")
+            );
+        },
+    );
+
+    temp_env::with_var(home_var, Some("/home/u"), || {
+        for invalid in ["", "   ", "rel/xdg"] {
+            temp_env::with_var("XDG_CONFIG_HOME", Some(invalid), || {
                 assert_eq!(
                     config_path(),
-                    PathBuf::from(abs_xdg).join("pixtuoid").join("config.toml")
-                );
-            },
-        );
-
-        temp_env::with_var("HOME", Some("/home/u"), || {
-            for invalid in ["", "   ", "rel/xdg"] {
-                temp_env::with_var("XDG_CONFIG_HOME", Some(invalid), || {
-                    assert_eq!(
-                        config_path(),
-                        PathBuf::from("/home/u/.config/pixtuoid/config.toml"),
-                        "invalid XDG_CONFIG_HOME {invalid:?} must fall to $HOME/.config"
-                    );
-                });
-            }
-
-            temp_env::with_var_unset("XDG_CONFIG_HOME", || {
-                assert_eq!(
-                    config_path(),
-                    PathBuf::from("/home/u/.config/pixtuoid/config.toml")
+                    PathBuf::from("/home/u/.config/pixtuoid/config.toml"),
+                    "invalid XDG_CONFIG_HOME {invalid:?} must fall to $HOME/.config"
                 );
             });
-        });
+        }
 
-        temp_env::with_vars_unset(["XDG_CONFIG_HOME", "HOME"], || {
-            assert_eq!(config_path(), PathBuf::from(".config/pixtuoid/config.toml"));
+        temp_env::with_var_unset("XDG_CONFIG_HOME", || {
+            assert_eq!(
+                config_path(),
+                PathBuf::from("/home/u/.config/pixtuoid/config.toml")
+            );
         });
     });
+
+    assert_eq!(
+        config_path_under(None),
+        PathBuf::from(".config/pixtuoid/config.toml")
+    );
 }
 
 #[test]
@@ -731,7 +730,10 @@ fn floating_config_defaults_and_explicit_roundtrip() {
     let cfg: AppConfig =
         toml::from_str("[floating]\nwidth = 480\nheight = 300\nx = 10\ny = 20\n").unwrap();
     let f = resolve_floating(&cfg);
-    assert_eq!((f.width, f.height, f.position), (480, 300, Some((10, 20))));
+    assert_eq!(
+        (f.width, f.height, f.position),
+        (480, 300, Some(DesktopSpot { x: 10, y: 20 }))
+    );
     let cfg: AppConfig = toml::from_str("[floating]\nx = 10\n").unwrap();
     assert_eq!(
         resolve_floating(&cfg).position,
@@ -755,14 +757,17 @@ fn save_floating_roundtrips_geometry_and_preserves_other_settings() {
         &FloatingSave {
             width: 480,
             height: 320,
-            position: Some((12, 34)),
+            position: Some(DesktopSpot { x: 12, y: 34 }),
             zoom: Zoom::default(),
         },
     )
     .unwrap();
     let cfg = load(&path, &mut Vec::new());
     let f = resolve_floating(&cfg);
-    assert_eq!((f.width, f.height, f.position), (480, 320, Some((12, 34))));
+    assert_eq!(
+        (f.width, f.height, f.position),
+        (480, 320, Some(DesktopSpot { x: 12, y: 34 }))
+    );
     assert_eq!(cfg.theme.as_deref(), Some("normal"));
 }
 
@@ -778,7 +783,7 @@ fn save_floating_clears_stale_position_when_os_cannot_report_it() {
         &FloatingSave {
             width: 480,
             height: 320,
-            position: Some((12, 34)),
+            position: Some(DesktopSpot { x: 12, y: 34 }),
             zoom: Zoom::default(),
         },
     )
@@ -827,7 +832,7 @@ fn save_floating_writes_a_zoom_and_drops_a_reset_one() {
         &FloatingSave {
             width: 480,
             height: 320,
-            position: Some((1, 2)),
+            position: Some(DesktopSpot { x: 1, y: 2 }),
             zoom: Zoom::new(3),
         },
     )
@@ -841,7 +846,7 @@ fn save_floating_writes_a_zoom_and_drops_a_reset_one() {
         &FloatingSave {
             width: 480,
             height: 320,
-            position: Some((1, 2)),
+            position: Some(DesktopSpot { x: 1, y: 2 }),
             zoom: Zoom::default(),
         },
     )

@@ -73,7 +73,7 @@ pub fn run() -> Result<()> {
         std::io::IsTerminal::is_terminal(&std::io::stderr()),
         pixtuoid_core::platform::text_env("COLORTERM").as_deref(),
         pixtuoid_core::platform::text_env("PIXTUOID_NO_TRUECOLOR_WARN").as_deref(),
-    ) && crate::term::query_truecolor(crate::term::TRUECOLOR_PROBE_TIMEOUT).warrants_warning()
+    ) && crate::term::query_truecolor().warrants_warning()
     {
         let _ = writeln!(
             std::io::stderr(),
