@@ -631,6 +631,31 @@ fn update_config_refuses_a_type_invalid_config() {
 }
 
 #[test]
+fn update_config_names_a_config_it_cannot_read_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::create_dir(&p).unwrap();
+    let err = save_appearance(&p, "cyberpunk", None).expect_err("a dir is no readable config");
+    let msg = format!("{err:#}");
+    assert_eq!(msg.matches(&p.display().to_string()).count(), 1, "{msg}");
+}
+
+#[test]
+fn update_config_keeps_a_crlf_config_crlf() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::write(&p, "# mine\r\ntheme = \"normal\"\r\n").unwrap();
+    save_audio_volume(&p, 0.5).unwrap();
+    let saved = std::fs::read_to_string(&p).unwrap();
+    assert!(
+        saved.starts_with("# mine\r\ntheme = \"normal\"\r\n")
+            && saved.ends_with("\r\n")
+            && !saved.replace("\r\n", "").contains('\n'),
+        "{saved:?}"
+    );
+}
+
+#[test]
 fn update_config_refuses_to_overwrite_a_malformed_config() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");

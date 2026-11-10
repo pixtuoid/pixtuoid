@@ -308,12 +308,9 @@ where
     // Read through the guard's pinned resolution, NOT a raw read of a re-derived
     // path: every leg of the locked round must address the ONE file the flock
     // protects.
-    let contents = lock.read().with_context(|| {
-        format!(
-            "refusing to rewrite {}: cannot read the existing config",
-            real_path.display()
-        )
-    })?;
+    let contents = lock
+        .read()
+        .context("refusing to rewrite a config it cannot read")?;
     let mut doc = if contents.is_empty() {
         toml_edit::DocumentMut::new()
     } else {
@@ -336,7 +333,10 @@ where
         doc
     };
     mutate(&mut doc);
-    lock.write_atomic(&doc.to_string())
+    lock.write_atomic(&crate::install::merge::end_lines_like(
+        &contents,
+        doc.to_string(),
+    ))
 }
 
 /// Save the appearance picker's commit: `theme`, and the look `picked`
