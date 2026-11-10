@@ -195,7 +195,7 @@ thread_local! {
 }
 
 /// The reducer event loop: gate + apply incoming `AgentEvent`s, merge daemon
-/// presence, and run the 1-Hz reconcile sweep — an async shell over
+/// presence, and run the reconcile sweep — an async shell over
 /// [`super::gate`], which owns every decision.
 pub(crate) async fn reducer_task(
     mut rx: TaggedReceiver,
