@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::SceneState;
-use pixtuoid_core::harness::{DRIVEN_DESKS, Drive, Reach};
+use pixtuoid_core::harness::{DRIVEN_DESKS, Drive, Fold, Reach};
 use pixtuoid_core::source::daemon::apply_presence;
 use pixtuoid_core::source::registry;
 use pixtuoid_scene::anim::PAINT_FRAME;
@@ -138,7 +138,7 @@ fn assert_renders_a_sprite(case: &WireCase) {
     let path = fixture_path(case);
     let lines = read_nonblank_lines(&path);
 
-    let driven = match case.wire {
+    let drive = match case.wire {
         Wire::Transcript { seeded } => {
             let drive = Drive::transcript_at(case.source, &path).unwrap_or_else(|| {
                 panic!(
@@ -146,11 +146,13 @@ fn assert_renders_a_sprite(case: &WireCase) {
                     case.name, case.source
                 )
             });
-            let drive = if seeded { drive.seeded() } else { drive };
-            drive.at(t0()).lines(lines)
+            if seeded { drive.seeded() } else { drive }
         }
-        Wire::Hooks => Drive::hooks().at(t0()).lines(lines),
+        Wire::Hooks => Drive::hooks(),
     };
+    let mut fold = Fold::default();
+    fold.feed(&drive, lines, t0());
+    let driven = fold.finish();
 
     driven.assert_clean(case.name);
     assert!(
