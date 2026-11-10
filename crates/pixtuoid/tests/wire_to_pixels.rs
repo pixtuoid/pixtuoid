@@ -13,7 +13,6 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::SceneState;
 use pixtuoid_core::harness::{DRIVEN_DESKS, Drive, Fold, Reach, sources_root};
-use pixtuoid_core::source::daemon::apply_presence;
 use pixtuoid_core::source::registry;
 use pixtuoid_scene::anim::PAINT_FRAME;
 use pixtuoid_scene::floor::VacancyDim;
@@ -397,39 +396,29 @@ fn openclaw_state(
     stop_at: &[&str],
 ) -> pixtuoid_core::state::DaemonState {
     let hooks = sources_root().join(format!("openclaw/fixtures/{scenario}/hook-payloads.jsonl"));
-    let mut scene = SceneState::uniform(16);
-    let now = t0();
-    let envelopes: Vec<serde_json::Value> = read_nonblank_lines(&hooks)
-        .iter()
-        .map(|line| serde_json::from_str(line).expect("openclaw hook json"))
-        .collect();
-    fn type_of(v: &serde_json::Value) -> &str {
-        v.get("type").and_then(|t| t.as_str()).unwrap_or("")
-    }
+    let lines = read_nonblank_lines(&hooks);
+    let type_of = |line: &String| {
+        let v: serde_json::Value = serde_json::from_str(line).expect("openclaw hook json");
+        v.get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_owned()
+    };
     let from = attach_after.map_or(0, |after| {
-        1 + envelopes
+        1 + lines
             .iter()
-            .position(|v| type_of(v) == after)
+            .position(|l| type_of(l) == after)
             .unwrap_or_else(|| panic!("{scenario} has no {after}"))
     });
-    for v in &envelopes[from..] {
-        let ty = type_of(v);
-        if stop_at.contains(&ty) {
-            break;
-        }
-        let decoded = pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(
-            v.as_object().expect("an object"),
-        )
-        .expect("decode_openclaw_hook_payload");
-        let key = pixtuoid_core::source::daemon::DaemonInstanceKey::new(
-            pixtuoid_core::source::openclaw::SOURCE_NAME,
-            decoded.instance.clone(),
-        );
-        for update in decoded.updates {
-            apply_presence(&mut scene, &key, update, now);
-        }
-    }
-    let (_, _, presence) = scene
+    let fed = lines[from..]
+        .iter()
+        .take_while(|l| !stop_at.contains(&type_of(l).as_str()));
+    let mut fold = Fold::default();
+    fold.feed(&Drive::hooks(), fed, t0());
+    let driven = fold.finish();
+    driven.assert_clean(scenario);
+    let (_, _, presence) = driven
+        .scene
         .daemons()
         .find(|(source, _, _)| *source == pixtuoid_core::source::openclaw::SOURCE_NAME)
         .expect("openclaw presence must be populated");
@@ -475,34 +464,20 @@ fn a_failed_provider_degrades_the_gateway_rather_than_downing_it() {
 #[test]
 fn openclaw_presence_envelope_renders_a_lobster() {
     let hooks = sources_root().join("openclaw/fixtures/tool-run-hermetic/hook-payloads.jsonl");
-
     let lines = read_nonblank_lines(&hooks);
-    let mut scene = SceneState::uniform(16);
-    let now = t0();
-    let mut applied = 0;
-    for line in &lines {
+    let live = lines.iter().take_while(|line| {
         let v: serde_json::Value = serde_json::from_str(line).expect("openclaw hook json");
-        let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
-        if ty == "session_end" || ty == "gateway_stop" {
-            break;
-        }
-        let decoded = pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(
-            v.as_object().expect("an object"),
+        !matches!(
+            v.get("type").and_then(|t| t.as_str()),
+            Some("session_end" | "gateway_stop")
         )
-        .expect("decode_openclaw_hook_payload");
-        let key = pixtuoid_core::source::daemon::DaemonInstanceKey::new(
-            pixtuoid_core::source::openclaw::SOURCE_NAME,
-            decoded.instance.clone(),
-        );
-        for update in decoded.updates {
-            apply_presence(&mut scene, &key, update, now);
-            applied += 1;
-        }
-    }
-    assert!(
-        applied > 0,
-        "the openclaw fixture must decode to presence deltas (got 0)"
-    );
+    });
+    let now = t0();
+    let mut fold = Fold::default();
+    fold.feed(&Drive::hooks(), live, now);
+    let driven = fold.finish();
+    driven.assert_clean("openclaw tool-run");
+    let scene = driven.scene;
 
     let (_, _, presence) = scene
         .daemons()
