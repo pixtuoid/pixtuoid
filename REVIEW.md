@@ -8,10 +8,8 @@ diff touches, first; these rules add to generic defect hunting.
 The org's [shared review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)
 runs a correctness and a design reviewer, each over this file but the other's
 section and with its contract's lenses, so [Correctness](#correctness) and
-[Design](#design) keep those headings. A defect anywhere in what the contract
-has them read is in scope, judged against the base tree, pre-existing when the
-diff did not introduce it. The review only reads, so it never attempts a
-[must-run](#must-run) item, and skipping one is not partial coverage.
+[Design](#design) keep those headings. The review only reads, so it never
+attempts a [must-run](#must-run) item, and skipping one is not partial coverage.
 
 ## Do not flag
 

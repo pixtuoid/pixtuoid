@@ -1568,7 +1568,7 @@ impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Slide
 impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::SlidePicture<'a>
 pub fn pixtuoid_scene::look::render(&mut pixtuoid_scene::floor::PerFloor, pixtuoid_scene::floor::OfficeStores<'_>, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>) -> core::option::Option<pixtuoid_scene::look::Rendered>
 pub mod pixtuoid_scene::nameplate
-pub struct pixtuoid_scene::nameplate::FloorNamesakes<'a>(_)
+pub struct pixtuoid_scene::nameplate::FloorNamesakes<'a>
 impl<'a> pixtuoid_scene::nameplate::FloorNamesakes<'a>
 pub fn pixtuoid_scene::nameplate::FloorNamesakes<'a>::nameplate(&self, &pixtuoid_core::state::AgentSlot) -> pixtuoid_scene::nameplate::Nameplate
 pub fn pixtuoid_scene::nameplate::FloorNamesakes<'a>::of(&'a pixtuoid_core::state::SceneState) -> Self

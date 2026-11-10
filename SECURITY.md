@@ -3,8 +3,8 @@
 ## Supported Versions
 
 Fixes land on the latest released version; there are no maintained back-branches.
-Upgrade to the newest release (`cargo install pixtuoid`, `brew upgrade`, or
-`npm i -g pixtuoid`) to receive security fixes.
+Upgrade to the newest release (`cargo install pixtuoid pixtuoid-hook`, `brew upgrade`,
+or on macOS and Windows `npm i -g pixtuoid`) to receive security fixes.
 
 | Version        | Supported |
 |----------------|-----------|

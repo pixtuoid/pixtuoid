@@ -100,7 +100,7 @@ pub fn remote(bytes: &[u8]) -> RemoteOffice {
     if let Some(machine) = office.machine() {
         let _ = remote::encode(office.scene(), machine, now);
     }
-    office.set_capacities([1; MAX_FLOORS]);
+    office.set_capacities([1; MAX_FLOORS], now);
     office
 }
 

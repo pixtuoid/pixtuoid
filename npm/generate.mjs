@@ -19,8 +19,9 @@ import {
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+// The launcher's own naming, so each package lands where it looks.
+import { exeName, packageName } from "./pixtuoid/bin/resolve.js";
 
-const SCOPE = "@pixtuoid";
 const BINS = ["pixtuoid", "pixtuoid-hook"];
 // What the release archive carries beside the binaries (`just stage-notices`):
 // the license and every embedded font's notice, which travel with each copy.
@@ -28,16 +29,11 @@ const NOTICES = ["LICENSE", "licenses"];
 
 // Must stay equal to release.yml's build matrix; npm/generate.test.mjs pins that,
 // so a missing target fails `just npm-check` instead of silently shipping nowhere.
-// linux-x64 is a static musl build (portable to glibc too), so it takes NO `libc`
-// gate; linux-arm64 is glibc, so `libc:["glibc"]` makes npm SKIP it on Alpine-arm64
-// rather than install a binary that would crash there.
 const TARGETS = [
-  { rust: "aarch64-apple-darwin", pkg: "darwin-arm64", os: "darwin", cpu: "arm64" },
-  { rust: "x86_64-apple-darwin", pkg: "darwin-x64", os: "darwin", cpu: "x64" },
-  { rust: "x86_64-unknown-linux-musl", pkg: "linux-x64", os: "linux", cpu: "x64" },
-  { rust: "aarch64-unknown-linux-gnu", pkg: "linux-arm64", os: "linux", cpu: "arm64", libc: ["glibc"] },
-  { rust: "x86_64-pc-windows-msvc", pkg: "win32-x64", os: "win32", cpu: "x64" },
-  { rust: "aarch64-pc-windows-msvc", pkg: "win32-arm64", os: "win32", cpu: "arm64" },
+  { rust: "aarch64-apple-darwin", os: "darwin", cpu: "arm64" },
+  { rust: "x86_64-apple-darwin", os: "darwin", cpu: "x64" },
+  { rust: "x86_64-pc-windows-msvc", os: "win32", cpu: "x64" },
+  { rust: "aarch64-pc-windows-msvc", os: "win32", cpu: "arm64" },
 ];
 
 const {
@@ -73,17 +69,23 @@ function copyNotices(from, pkgDir) {
 
 const launcherPath = join(NPM_DIR, "pixtuoid", "package.json");
 const launcher = JSON.parse(readFileSync(launcherPath, "utf8"));
+launcher.optionalDependencies = {};
+// npm refuses to install or update a package whose `os`/`cpu` leave the host
+// out (EBADPLATFORM: npm-install-checks v9.0.0 `lib/index.js:25-57`, applied to
+// every required node by npm v12.2.2's arborist `build-ideal-tree.js:212-228`),
+// so a host no target ships keeps its working install.
+launcher.os = [...new Set(TARGETS.map((t) => t.os))];
+launcher.cpu = [...new Set(TARGETS.map((t) => t.cpu))];
 
 for (const t of TARGETS) {
-  const isWin = t.os === "win32";
-  const pkgName = `${SCOPE}/cli-${t.pkg}`;
-  const pkgDir = join(NPM_DIR, SCOPE, `cli-${t.pkg}`);
+  const pkgName = packageName(t.os, t.cpu);
+  const pkgDir = join(NPM_DIR, ...pkgName.split("/"));
   rmSync(pkgDir, { recursive: true, force: true });
   mkdirSync(pkgDir, { recursive: true });
 
   const files = [];
   for (const bin of BINS) {
-    const exe = bin + (isWin ? ".exe" : "");
+    const exe = exeName(bin, t.os);
     const src = join(artifacts, t.rust, exe);
     if (!existsSync(src) || !statSync(src).isFile()) {
       throw new Error(`missing prebuilt binary for ${t.rust}: ${src}`);
@@ -91,7 +93,7 @@ for (const t of TARGETS) {
     const dst = join(pkgDir, exe);
     copyFileSync(src, dst);
     // the upload/download-artifact round-trip strips the exec bit — restore it.
-    if (!isWin) chmodSync(dst, 0o755);
+    if (t.os !== "win32") chmodSync(dst, 0o755);
     files.push(exe);
   }
   copyNotices(join(artifacts, t.rust), pkgDir);
@@ -100,13 +102,12 @@ for (const t of TARGETS) {
   const pkg = {
     name: pkgName,
     version,
-    description: `pixtuoid prebuilt binaries for ${t.pkg}`,
+    description: `pixtuoid prebuilt binaries for ${t.os}-${t.cpu}`,
     license: launcher.license,
     repository: launcher.repository,
     homepage: launcher.homepage,
     os: [t.os],
     cpu: [t.cpu],
-    ...(t.libc ? { libc: t.libc } : {}),
     files,
   };
   writeFileSync(join(pkgDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");

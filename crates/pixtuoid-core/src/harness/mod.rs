@@ -261,9 +261,8 @@ const _: () = assert!(
 );
 
 /// PER-FLOOR desk capacity for the driven scene. Registration past the TOTAL is
-/// REFUSED, and SILENTLY — so a wire carrying more agents than that reads as
-/// "decoded but never reached the scene", exactly the false verdict every driver
-/// here exists to avoid.
+/// kept unseated: in the scene but drawn on no floor, so `wire_to_pixels` would
+/// measure no pixels for it.
 ///
 /// SECOND consumer, in another crate: `wire_to_pixels` shapes its EMPTY pixel
 /// baseline with this same value, so changing it moves that test's measured
@@ -573,20 +572,21 @@ impl Fold {
         self.driven.events.push(event);
     }
 
-    /// The seed `drive` leads a read of `lines` with when the watcher's gate
-    /// registers on it, else `None`; the claim then follows the read's verdict.
+    /// The seed `drive` leads `life`, one life of a read of `lines`, with when
+    /// the watcher's gate registers on it, else `None`; the claim then follows
+    /// the life's `verdict`.
     fn registration<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
         own: Option<AgentId>,
         lines: &[Option<S>],
-        decoded: &[AgentEvent],
+        life: &[AgentEvent],
         verdict: Option<Life>,
     ) -> Option<AgentEvent> {
         let id = own.filter(|_| drive.seeded)?;
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.get(&id);
-        let registers = Sight::registers(sighted.map(|s| &s.sight), holds_life(decoded), verdict);
+        let registers = Sight::registers(sighted.map(|s| &s.sight), holds_life(life), verdict);
         let seed = match sighted {
             _ if !registers => None,
             // A claim re-sends the start its first sight built, as the watcher's
@@ -659,11 +659,12 @@ impl Fold {
         lines: &[Option<S>],
         decoded: Vec<AgentEvent>,
     ) -> Vec<AgentEvent> {
-        let lives = own.map_or_else(|| vec![decoded.len()], |own| each_life(&decoded, own));
-        let mut decoded = decoded.into_iter();
+        let lives = match own {
+            Some(own) => each_life(decoded, own),
+            None => vec![decoded],
+        };
         let mut fed = Vec::new();
-        for span in lives {
-            let mut life: Vec<AgentEvent> = decoded.by_ref().take(span).collect();
+        for mut life in lives {
             let verdict = own.and_then(|own| last_life(&life, own));
             if let Some(seed) = self.registration(drive, own, lines, &life, verdict) {
                 self.driven.seed_events += 1;
