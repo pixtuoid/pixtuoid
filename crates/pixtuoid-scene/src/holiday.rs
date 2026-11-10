@@ -21,6 +21,16 @@ fn festive_day(local: NaiveDateTime) -> NaiveDate {
     (local - NIGHT_RUNS_PAST_MIDNIGHT).date()
 }
 
+/// Whether no holiday touches any local time on `date`: none holds on the
+/// festive day of any of its hours, the night before's included.
+pub(crate) fn untouched(date: NaiveDate) -> bool {
+    let first = festive_day(date.and_time(chrono::NaiveTime::MIN));
+    first
+        .iter_days()
+        .take_while(|&day| day <= date)
+        .all(|day| Holiday::on(day).is_none())
+}
+
 /// The hues New Year's fireworks burst in.
 const NEW_YEAR_HUES: [Hue; 5] = [Hue::Gold, Hue::Red, Hue::Green, Hue::Blue, Hue::Violet];
 
