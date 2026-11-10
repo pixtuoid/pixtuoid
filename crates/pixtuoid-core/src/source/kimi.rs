@@ -16,15 +16,17 @@
 //! would silently stop tracking whatever they learn next.
 //!
 //! So every CC-shaped event rides the SHARED arms
-//! (`decoder::decode_hook_payload`) UNCHANGED, keyed on `session_id`; this
-//! module's custom `Extend` decoder handles only Kimi's `PostToolUseFailure` /
-//! `StopFailure` variants and DECLINES (`Ok(None)`) for everything else.
+//! (`decoder::decode_hook_payload`), keyed on `session_id`;
+//! `decode_kimi_hook_custom` claims only what Kimi needs read unlike CC and
+//! DECLINES (`Ok(None)`) for everything else.
 //!
 //! **Subagents** (Kimi's "agent swarm") are deliberately NOT modeled: the
 //! `SubagentStart`/`SubagentStop` payload shape is uncaptured, so sessions render
 //! FLAT until a byte-real capture can add nesting.
 
-use crate::source::decoder::{DecodeResult as Result, hook_identity, hook_session_id};
+use crate::source::decoder::{
+    DecodeResult as Result, hook_identity, hook_session_id, shared_hook_arms,
+};
 use serde_json::{Map, Value};
 
 use crate::AgentId;
@@ -56,8 +58,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // `SessionEnd` fires on exit — best-effort counts; abrupt exits fall
             // to the stale-sweep.
             has_exit_signal: true,
-            // SessionStart is the registration carrier, not UserPromptSubmit, so
-            // a swept session does not walk back in.
+            // kimi installs no `UserPromptSubmit` (`KIMI_EVENTS`), so no prompt
+            // re-registers: a swept session returns on its next tool call or turn end.
             resurrects_on_prompt: false,
             // Consumed via the `Agent` tool: 0.36.1's `AgentToolInputSchema` injects
             // `subagent_type: "coder"` when the model omits it, so `make_tool_detail`
@@ -80,7 +82,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: crate::source::registry::Native::NONE,
 };
 
-/// Decode Kimi's two failure-variant hook events (no CC equivalent) and DECLINE
+/// Decode the hook events Kimi needs read unlike CC's, and DECLINE
 /// (`Ok(None)`) for the rest, so the CC-shaped remainder falls through to
 /// `decoder::decode_hook_payload`'s shared arms.
 ///
@@ -88,28 +90,32 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 ///   `PostToolUse`; it must close the activity or the tool's `ToolUseStart`
 ///   lingers Running. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
 ///   on an already-idle slot.
-/// - `StopFailure` — a failed turn end; settle to idle like `Stop`.
-///   Identity-less: an end alone registers nothing.
+/// - `Stop`, and `StopFailure`, a failed turn end — kimi's only per-turn
+///   hooks (`KIMI_EVENTS`), so each claims its session: a chat-only session
+///   running before the office, or swept since, registers on its next turn
+///   end. Claimed here, not in the shared `Stop` arm, whose CC children an
+///   `Identity` would re-create past their cascade.
 pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    match obj.get("hook_event_name").and_then(|s| s.as_str()) {
-        Some(event @ "PostToolUseFailure") => {
-            let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
-            let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
-            Ok(Some(vec![
-                hook_identity(agent_id, SOURCE_NAME, &session_id, obj),
-                AgentEvent::ToolUseEnd {
-                    agent_id,
-                    tool_use_id: kimi_tool_call_id(obj),
-                },
-            ]))
-        }
-        Some(event @ "StopFailure") => {
-            let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
-            let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
-            Ok(Some(vec![AgentEvent::turn_end(agent_id)]))
-        }
-        _ => Ok(None),
+    let event = match obj.get("hook_event_name").and_then(|s| s.as_str()) {
+        Some(event @ ("PostToolUseFailure" | "Stop" | "StopFailure")) => event,
+        _ => return Ok(None),
+    };
+    let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
+    let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
+    let mut evs = vec![hook_identity(agent_id, SOURCE_NAME, &session_id, obj)];
+    match event {
+        "PostToolUseFailure" => evs.push(AgentEvent::ToolUseEnd {
+            agent_id,
+            tool_use_id: kimi_tool_call_id(obj),
+        }),
+        "StopFailure" => evs.push(AgentEvent::turn_end(agent_id)),
+        _ => evs.extend(shared_hook_arms(
+            obj,
+            SOURCE_NAME,
+            registry::descriptor_for(SOURCE_NAME),
+        )?),
     }
+    Ok(Some(evs))
 }
 
 /// Kimi's per-call id, read through the registry variant the shared arms read —
@@ -188,23 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn stop_failure_is_a_turn_end_without_identity() {
-        let evs = decode_kimi_hook_custom(test_obj(&json!({
-            "hook_event_name": "StopFailure",
-            "session_id": "s"
-        })))
-        .unwrap()
-        .unwrap();
-        assert_eq!(evs.len(), 1);
-        assert!(
-            matches!(&evs[0], AgentEvent::TurnEnd { agent_id, .. }
-                if *agent_id == AgentId::from_parts(SOURCE_NAME, "s")),
-            "got {evs:?}"
-        );
-    }
-
-    #[test]
-    fn non_failure_events_decline_to_the_shared_arms() {
+    fn unclaimed_events_decline_to_the_shared_arms() {
         // SubagentStart is deliberately UNregistered — included to pin that the
         // custom decoder declines it too.
         for ev in [
@@ -212,7 +202,6 @@ mod tests {
             "PreToolUse",
             "PostToolUse",
             "PermissionRequest",
-            "Stop",
             "SessionEnd",
             "UserPromptSubmit",
             "SubagentStart",
@@ -234,7 +223,7 @@ mod tests {
     #[test]
     fn a_claimed_event_without_session_id_errs_and_breadcrumbs() {
         use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
-        for ev in ["PostToolUseFailure", "StopFailure"] {
+        for ev in ["PostToolUseFailure", "Stop", "StopFailure"] {
             for payload in [
                 json!({ "hook_event_name": ev, "cwd": "/repo" }),
                 json!({ "hook_event_name": ev, "session_id": "" }),
