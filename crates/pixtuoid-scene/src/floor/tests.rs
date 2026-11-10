@@ -505,7 +505,6 @@ fn light_backward_clock_jump_does_not_move_level() {
 
 #[test]
 fn an_offline_floor_dims_as_an_emptied_one_does() {
-    let pack = Arc::new(crate::pack::test_office());
     let [offline, emptied] = [
         (
             make_scene(3, 8),
@@ -517,23 +516,9 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
         (make_scene(0, 8), FloorMeta::ground()),
     ]
     .map(|(scene, floor)| {
-        let mut session = FloorSession::new(Arc::clone(&pack));
-        (0..frames_in(Duration::from_millis(3 * VacancyDim::VACANCY_DEBOUNCE_MS)))
-            .map(|i| {
-                let now = t0() + FRAME * i;
-                let world = FloorInputs {
-                    scene: &scene,
-                    now,
-                    floor,
-                    pets: PetInputs::default(),
-                };
-                let frame = session
-                    .step(world, Viewport::full(160, 96))
-                    .expect("lays out")
-                    .frame;
-                let dimmed = session.floor().ctx.vacancy_dim.dimmed();
-                (frame.indoor_scale, dimmed, frame.neon)
-            })
+        step_through_vacancy(&scene, floor)
+            .into_iter()
+            .map(|(frame, dimmed)| (frame.indoor_scale, dimmed, frame.neon))
             .collect::<Vec<_>>()
     });
     assert_eq!(offline, emptied);
@@ -542,6 +527,66 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
             .last()
             .is_some_and(|&(lit, dimmed, _)| lit == VacancyDim::MIN_LEVEL && dimmed),
         "premise: the emptied floor dims"
+    );
+}
+
+/// Each frame a fresh session steps `scene` on `floor` through three vacancy
+/// debounces, and whether its floor had dimmed by then.
+fn step_through_vacancy(scene: &SceneState, floor: FloorMeta) -> Vec<(crate::sim::SimFrame, bool)> {
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
+    (0..frames_in(Duration::from_millis(3 * VacancyDim::VACANCY_DEBOUNCE_MS)))
+        .map(|i| {
+            let world = FloorInputs {
+                scene,
+                now: t0() + FRAME * i,
+                floor,
+                pets: PetInputs::default(),
+            };
+            let frame = session
+                .step(world, Viewport::full(160, 96))
+                .expect("lays out")
+                .frame;
+            (frame, session.floor().ctx.vacancy_dim.dimmed())
+        })
+        .collect()
+}
+
+/// A one-floor session steps only the agents at its desks, as it draws them:
+/// one unseated and one seated upstairs neither keep its empty floor lit nor
+/// walk on it.
+#[test]
+fn a_one_floor_session_steps_only_the_agents_at_its_desks() {
+    let floor = FloorMeta::ground();
+    let empty = make_scene(0, 8);
+    let mut off_its_desks = empty.clone();
+    for (path, desk) in [
+        ("/p/unseated.jsonl", None),
+        ("/p/upstairs.jsonl", Some(FloorDesk::new(1, 0))),
+    ] {
+        let id = AgentId::from_transcript_path(path);
+        off_its_desks.agents.insert(
+            id,
+            AgentSlot {
+                desk,
+                ..make_slot(id, ActivityState::Idle)
+            },
+        );
+    }
+    let [stepped, unstepped] = [&off_its_desks, &empty].map(|scene| {
+        step_through_vacancy(scene, floor)
+            .into_iter()
+            .map(|(frame, dimmed)| (frame.indoor_scale, dimmed, frame.neon, frame.agents.len()))
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        stepped, unstepped,
+        "an agent off its desks stepped on the floor"
+    );
+    assert!(
+        unstepped
+            .last()
+            .is_some_and(|&(lit, dimmed, _, _)| lit == VacancyDim::MIN_LEVEL && dimmed),
+        "premise: the empty floor dims"
     );
 }
 
