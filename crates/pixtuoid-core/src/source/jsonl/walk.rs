@@ -10,8 +10,8 @@ use tracing::{debug, warn};
 
 use crate::AgentId;
 use crate::source::first_sight::{
-    HEAD_BYTES, HeadFields, Life, Registration, Sight, evidence, extract_head_fields,
-    first_sight_start, last_life,
+    HEAD_BYTES, HeadFields, Life, Registration, Sight, extract_head_fields, first_sight_start,
+    holds_life, last_life,
 };
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
@@ -382,11 +382,6 @@ pub(super) async fn walk_jsonl(
             seen.lock().await.insert(path.to_path_buf(), Sight::Ended);
             return;
         }
-        // #204: register even on an oversized first sight, or a >1 MB transcript
-        // stays invisible until its next small append; the backlog is not replayed.
-        // Keys on `seen`, NOT `!known` — a first-sight-GATED file is already `known`,
-        // and keying on `!known` left it invisible until a later ≤1 MiB append.
-        let leads = Sight::leads(seen.lock().await.get(path));
         // The span is too big to hold, so the tail is the instrument — a
         // metadata run always lands at the end.
         let tail = read_tail(path, TAIL_BYTES).await;
@@ -394,13 +389,15 @@ pub(super) async fn walk_jsonl(
             tail.as_deref().map(decoders.activity_recency),
             Some(super::TailActivity::SidecarOnly)
         );
-        let leads = match leads {
-            Some(leads) => leads,
-            // Judged on the window `rescan_skipped_tail` reads, wide enough to
-            // hold a tool result's whole line.
-            None => tail_life(path, SKIP_RESCAN_BYTES, source, decoders).await == Some(Life::Lives),
-        };
-        if leads && !metadata_only {
+        // Judged on the window `rescan_skipped_tail` reads, wide enough to hold
+        // a tool result's whole line.
+        let lives = tail_life(path, SKIP_RESCAN_BYTES, source, decoders).await == Some(Life::Lives);
+        // #204: register even on an oversized first sight, or a >1 MB transcript
+        // stays invisible until its next small append; the backlog is not replayed.
+        // Keys on `seen`, NOT `!known` — a first-sight-GATED file is already `known`,
+        // and keying on `!known` left it invisible until a later ≤1 MiB append.
+        let registers = Sight::registers(seen.lock().await.get(path), lives);
+        if registers && !metadata_only {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
             let head = async {
@@ -473,15 +470,13 @@ pub(super) async fn walk_jsonl(
     }
 
     let own = own_agent(path, source, decoders);
-    let leads = Sight::leads(seen.lock().await.get(path));
-    if leads.unwrap_or_else(|| {
-        decoded
-            .iter()
-            .any(|ev| evidence(ev, own) == Some(Life::Lives))
-    }) && !matches!(
-        (decoders.activity_recency)(new_bytes),
-        super::TailActivity::SidecarOnly
-    ) {
+    let lives = holds_life(&decoded, own);
+    if Sight::registers(seen.lock().await.get(path), lives)
+        && !matches!(
+            (decoders.activity_recency)(new_bytes),
+            super::TailActivity::SidecarOnly
+        )
+    {
         // A revived GATED file reads only the tail, which may lack what only a
         // head carries: Codex's `session_meta` cwd and parent, and the title.
         // Without them the revive registers empty-cwd onto the short reap, or a

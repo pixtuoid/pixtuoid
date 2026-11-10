@@ -30,11 +30,11 @@ pub(crate) enum Sight {
 }
 
 impl Sight {
-    /// Whether a read after `prev` registers its session; `None` when only the
-    /// read's [`Life::Lives`] evidence can tell, for a seen one: a trailer
-    /// flushed after its end line (grok's `hook_execution{stop}`) proves none.
-    pub(crate) fn leads(prev: Option<&Self>) -> Option<bool> {
-        prev.is_none().then_some(true)
+    /// Whether a read after `prev` registers its session: a first sight always
+    /// does, a seen one only when the read `lives`, so a trailer flushed after
+    /// its end line (grok's `hook_execution{stop}`) registers nothing.
+    pub(crate) fn registers(prev: Option<&Self>, lives: bool) -> bool {
+        prev.is_none() || lives
     }
 }
 
@@ -60,7 +60,7 @@ pub(crate) enum Life {
     Ended,
 }
 
-pub(crate) fn evidence(ev: &AgentEvent, own: AgentId) -> Option<Life> {
+fn evidence(ev: &AgentEvent, own: AgentId) -> Option<Life> {
     match ev {
         AgentEvent::SessionEnd { .. } if ev.agent_id() == own => Some(Life::Ended),
         AgentEvent::SessionStart { .. } => Some(Life::Lives),
@@ -75,6 +75,17 @@ pub(crate) fn last_life<'a>(
     own: AgentId,
 ) -> Option<Life> {
     events.into_iter().filter_map(|ev| evidence(ev, own)).last()
+}
+
+/// Whether `events` hold any [`Life::Lives`] evidence: the life a read shows
+/// whose whole span it then sends, a trailing end included.
+pub(crate) fn holds_life<'a>(
+    events: impl IntoIterator<Item = &'a AgentEvent>,
+    own: AgentId,
+) -> bool {
+    events
+        .into_iter()
+        .any(|ev| evidence(ev, own) == Some(Life::Lives))
 }
 
 /// Detect a CC subagent by the `subagents` path component and link it to its

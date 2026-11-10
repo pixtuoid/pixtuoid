@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::SceneState;
-use pixtuoid_core::harness::{DRIVEN_DESKS, Drive, Fold, Reach};
+use pixtuoid_core::harness::{DRIVEN_DESKS, Drive, Fold, Reach, sources_root};
 use pixtuoid_core::source::daemon::apply_presence;
 use pixtuoid_core::source::registry;
 use pixtuoid_scene::anim::PAINT_FRAME;
@@ -28,16 +28,6 @@ use pixtuoid::dev::TuiRenderer;
 /// A fixed wall-clock so motion/animation is deterministic across runs.
 fn t0() -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800)
-}
-
-/// The core crate's source-test tree, so these tests decode the SAME captured
-/// wire bytes that crate pins, never a hand-rolled re-encoding.
-fn core_sources() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("pixtuoid-core")
-        .join("tests")
-        .join("sources")
 }
 
 fn read_nonblank_lines(path: &Path) -> Vec<String> {
@@ -114,7 +104,7 @@ enum Wire {
 struct WireCase {
     name: &'static str,
     source: &'static str,
-    /// Path to the fixture file, relative to `core_sources()`, or to a
+    /// Path to the fixture file, relative to `sources_root()`, or to a
     /// capture holding one transcript of `source`'s under a session id that
     /// each re-record changes.
     fixture: &'static str,
@@ -126,7 +116,7 @@ struct WireCase {
 }
 
 fn fixture_path(case: &WireCase) -> PathBuf {
-    let path = core_sources().join(case.fixture);
+    let path = sources_root().join(case.fixture);
     if !path.is_dir() {
         return path;
     }
@@ -406,7 +396,7 @@ fn openclaw_state(
     attach_after: Option<&str>,
     stop_at: &[&str],
 ) -> pixtuoid_core::state::DaemonState {
-    let hooks = core_sources().join(format!("openclaw/fixtures/{scenario}/hook-payloads.jsonl"));
+    let hooks = sources_root().join(format!("openclaw/fixtures/{scenario}/hook-payloads.jsonl"));
     let mut scene = SceneState::uniform(16);
     let now = t0();
     let envelopes: Vec<serde_json::Value> = read_nonblank_lines(&hooks)
@@ -484,7 +474,7 @@ fn a_failed_provider_degrades_the_gateway_rather_than_downing_it() {
 /// `runtime/driver.rs` uses — NEVER `Reducer::apply`, which is `AgentId`-pure.
 #[test]
 fn openclaw_presence_envelope_renders_a_lobster() {
-    let hooks = core_sources().join("openclaw/fixtures/tool-run-hermetic/hook-payloads.jsonl");
+    let hooks = sources_root().join("openclaw/fixtures/tool-run-hermetic/hook-payloads.jsonl");
 
     let lines = read_nonblank_lines(&hooks);
     let mut scene = SceneState::uniform(16);
