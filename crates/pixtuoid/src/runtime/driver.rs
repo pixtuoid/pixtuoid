@@ -187,6 +187,13 @@ pub(crate) fn build_source_set(
     ]
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The closed capacity channel's arm runs on this thread, counted like
+    /// `SEATINGS`: guarded, it runs at most once instead of on every pass.
+    static CAPS_CLOSED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The reducer event loop: gate + apply incoming `AgentEvent`s, merge daemon
 /// presence, and run the 1-Hz reconcile sweep — an async shell over
 /// [`super::gate`], which owns every decision.
@@ -282,7 +289,11 @@ pub(crate) async fn reducer_task(
                         break;
                     }
                 }
-                Err(_) => caps_open = false,
+                Err(_) => {
+                    #[cfg(test)]
+                    CAPS_CLOSED.with(|n| n.set(n.get() + 1));
+                    caps_open = false;
+                }
             },
             _ = sweep_interval.tick() => {
                 gate::reconcile_sweep_tick(&mut reducer, &mut scene, &connected, SystemTime::now());
@@ -505,6 +516,31 @@ mod tests {
             Some(today),
             "the loop's end saves what no tick reached"
         );
+    }
+
+    /// `serve` has no painter, so its capacity channel is closed from the start:
+    /// the guarded arm runs at most once, not on every pass of the loop.
+    #[tokio::test]
+    async fn a_closed_capacity_channel_is_polled_at_most_once() {
+        super::CAPS_CLOSED.with(|n| n.set(0));
+        let (sink, _scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+        let (_presence_tx, presence_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (caps_tx, caps_rx) = watch::channel([FALLBACK_DESKS; MAX_FLOORS]);
+        drop(caps_tx);
+        reducer_task(
+            batch(16).await,
+            sink,
+            caps_rx,
+            ConnectedSources::new(["claude-code".to_string()].into()),
+            presence_rx,
+            None,
+            DayCount {
+                day_of: the_day,
+                file: None,
+            },
+        )
+        .await;
+        assert!(super::CAPS_CLOSED.with(std::cell::Cell::get) <= 1);
     }
 
     /// R2-C32: the capacities a painter publishes re-seat the scene it reads,
