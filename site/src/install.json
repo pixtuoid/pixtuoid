@@ -16,7 +16,7 @@
   {
     "id": "cargo",
     "label": "Cargo",
-    "cmds": ["# Linux needs pkg-config, libasound2-dev", "cargo install pixtuoid pixtuoid-hook"],
+    "cmds": ["# Linux needs pkg-config, ALSA headers", "cargo install pixtuoid pixtuoid-hook"],
     "readme": false
   },
   {
@@ -25,7 +25,7 @@
     "cmds": [
       "# prebuilt binaries for macOS (.tar.gz) and Windows (.zip):",
       "# https://github.com/pixtuoid/pixtuoid/releases/latest",
-      "# Linux: brew install pixtuoid, or cargo install pixtuoid pixtuoid-hook"
+      "# Linux: see the Homebrew or Cargo tab"
     ],
     "readme": false
   }

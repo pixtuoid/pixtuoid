@@ -83,13 +83,37 @@ pub(crate) fn home_unset(what: &str, vars: &str) -> anyhow::Error {
     anyhow!("cannot resolve {what} ({vars} unset); set one and reconnect")
 }
 
+/// Each install that puts `pixtuoid-hook` beside `pixtuoid`, with the OSes it
+/// ships for as `std::env::consts::OS` names (`None`: every OS). Homebrew runs on
+/// macOS and Linux only (<https://docs.brew.sh/Installation>), and npm publishes
+/// darwin and win32 packages only (npm/generate.mjs's `TARGETS`), so elsewhere
+/// its shim has no binary and every hook wired to it exits 0 unheard.
+const SHIM_INSTALLS: &[(&str, Option<&[&str]>)] = &[
+    ("`brew install pixtuoid`", Some(&["macos", "linux"])),
+    ("`cargo install pixtuoid-hook`", None),
+    ("`npm i -g pixtuoid`", Some(&["macos", "windows"])),
+];
+
 /// The remedy sentence for "the shim isn't where we looked", shared by every site
-/// that offers one. It names `PIXTUOID_HOOK` and nothing else: the `--hook-path`
+/// that offers one. It names [`HOOK_OVERRIDE_ENV`] and nothing else: the `--hook-path`
 /// flag these messages used to advertise no longer exists, so clap answers it with
 /// `unexpected argument` — an error whose only remedy was itself an error.
-pub(crate) const SHIM_LOCATE_REMEDY: &str = "install it alongside pixtuoid (`brew install \
-     pixtuoid` / `cargo install pixtuoid-hook` / `npm i -g pixtuoid`) or point \
-     PIXTUOID_HOOK at an absolute path to the shim";
+pub(crate) fn shim_locate_remedy() -> String {
+    shim_locate_remedy_for(std::env::consts::OS)
+}
+
+fn shim_locate_remedy_for(os: &str) -> String {
+    let installs: Vec<&str> = SHIM_INSTALLS
+        .iter()
+        .filter(|(_, oses)| oses.is_none_or(|oses| oses.contains(&os)))
+        .map(|&(install, _)| install)
+        .collect();
+    format!(
+        "install it alongside pixtuoid ({}) or point {HOOK_OVERRIDE_ENV} at an absolute path \
+         to the shim",
+        installs.join(" / ")
+    )
+}
 
 /// The shim's binary name, which a bare-name hook command resolves on PATH.
 pub(crate) const HOOK_BIN: &str = "pixtuoid-hook";
@@ -128,8 +152,9 @@ fn default_hook_binary_from(
     }
     Err(anyhow!(
         "could not locate pixtuoid-hook (not on PATH, and not beside the pixtuoid \
-         binary at {}); {SHIM_LOCATE_REMEDY}",
-        dir.display()
+         binary at {}); {}",
+        dir.display(),
+        shim_locate_remedy()
     ))
 }
 
@@ -637,8 +662,42 @@ mod tests {
                 .is_err(),
             "if --hook-path is ever re-added, revisit this remedy wording"
         );
-        assert!(SHIM_LOCATE_REMEDY.contains(HOOK_OVERRIDE_ENV));
-        assert!(!SHIM_LOCATE_REMEDY.contains("--hook-path"));
+        assert!(shim_locate_remedy().contains(HOOK_OVERRIDE_ENV));
+        assert!(!shim_locate_remedy().contains("--hook-path"));
+    }
+
+    #[test]
+    fn the_shim_locate_remedy_offers_only_the_installs_each_os_has() {
+        let linux = shim_locate_remedy_for("linux");
+        assert!(
+            !linux.contains("npm"),
+            "npm publishes no Linux package, so its shim has no binary there: {linux}"
+        );
+        assert!(
+            linux.contains("`brew install pixtuoid`")
+                && linux.contains("`cargo install pixtuoid-hook`")
+        );
+        let windows = shim_locate_remedy_for("windows");
+        assert!(
+            !windows.contains("brew"),
+            "Homebrew has no Windows build: {windows}"
+        );
+        assert!(
+            windows.contains("`npm i -g pixtuoid`")
+                && windows.contains("`cargo install pixtuoid-hook`")
+        );
+        let macos = shim_locate_remedy_for("macos");
+        for install in [
+            "`brew install pixtuoid`",
+            "`cargo install pixtuoid-hook`",
+            "`npm i -g pixtuoid`",
+        ] {
+            assert!(
+                macos.contains(install),
+                "{install} ships for macOS: {macos}"
+            );
+        }
+        assert!(shim_locate_remedy_for("freebsd").contains("`cargo install pixtuoid-hook`"));
     }
 
     #[test]

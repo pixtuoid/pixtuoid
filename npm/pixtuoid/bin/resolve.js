@@ -17,6 +17,14 @@ const PACKAGE = {
   "win32 arm64": "@pixtuoid/cli-win32-arm64",
 };
 
+// The platform package release.yml builds for this host, or null where it
+// builds none, so there is no download to point at either.
+/** @returns {string | null} */
+function hostPackage() {
+  const key = process.platform + " " + process.arch;
+  return Object.hasOwn(PACKAGE, key) ? PACKAGE[key] : null;
+}
+
 /** @param {string} bin */
 function exeName(bin) {
   return bin + (process.platform === "win32" ? ".exe" : "");
@@ -47,7 +55,7 @@ function binaryPath(bin) {
     if (fs.existsSync(p)) return p;
   }
 
-  const pkg = PACKAGE[process.platform + " " + process.arch];
+  const pkg = hostPackage();
   if (!pkg) return null;
   try {
     return require.resolve(pkg + "/" + exeName(bin));
@@ -56,4 +64,4 @@ function binaryPath(bin) {
   }
 }
 
-module.exports = { binaryPath, exeName };
+module.exports = { binaryPath, exeName, hostPackage };
