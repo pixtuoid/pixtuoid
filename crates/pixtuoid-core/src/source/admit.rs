@@ -70,15 +70,15 @@ pub(crate) fn lines(span: &[u8]) -> impl Iterator<Item = Result<&str, Utf8Error>
         .map(std::str::from_utf8)
 }
 
-/// [`lines`] of a window read back from mid-file: its first, partial line dropped.
+/// Where `window`'s first whole line begins: at 0 when it was read from its
+/// file's start, else past its first `\n`, the end of a line the read tore.
 #[cfg(feature = "native")]
-pub(crate) fn window_lines(window: &[u8]) -> impl Iterator<Item = Result<&str, Utf8Error>> {
-    lines(
-        window
-            .iter()
-            .position(|&b| b == b'\n')
-            .map_or(&[], |i| &window[i + 1..]),
-    )
+pub(crate) fn first_whole_line(window: &[u8], from_start: bool) -> usize {
+    match window.iter().position(|&b| b == b'\n') {
+        _ if from_start => 0,
+        Some(newline) => newline + 1,
+        None => window.len(),
+    }
 }
 
 #[cfg(test)]
@@ -148,10 +148,21 @@ mod tests {
 
     #[cfg(feature = "native")]
     #[test]
-    fn a_window_drops_its_partial_first_line_and_only_that() {
-        let got: Vec<_> = window_lines(b"rt\"}\n{\"a\":1}\n{\"b\":2}").collect();
-        assert_eq!(got, [Ok("{\"a\":1}"), Ok("{\"b\":2}")]);
-        let on_a_newline: Vec<_> = window_lines(b"\n{\"a\":1}\n").collect();
-        assert_eq!(on_a_newline, [Ok("{\"a\":1}")], "no real line is lost");
+    fn a_window_from_mid_file_drops_its_partial_first_line_and_only_that() {
+        let whole = |window: &'static [u8], from_start| {
+            lines(&window[first_whole_line(window, from_start)..]).collect::<Vec<_>>()
+        };
+        let torn = b"rt\"}\n{\"a\":1}\n{\"b\":2}";
+        assert_eq!(whole(torn, false), [Ok("{\"a\":1}"), Ok("{\"b\":2}")]);
+        assert_eq!(
+            whole(b"\n{\"a\":1}\n", false),
+            [Ok("{\"a\":1}")],
+            "no real line is lost"
+        );
+        assert_eq!(
+            whole(b"{\"a\":1}\n", true),
+            [Ok("{\"a\":1}")],
+            "a file's own start is whole"
+        );
     }
 }

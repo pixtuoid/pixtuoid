@@ -261,8 +261,8 @@ fn fresh_spend(message: &serde_json::Map<String, Value>) -> u64 {
 /// There is deliberately NO user-content arm: content is user-controllable and a
 /// message QUOTING the slash-command wrapper would false-positive, so lifecycle
 /// is the SessionEnd hook + the idle sweep. Nor is there a structural arm: CC
-/// writes no `session_start`/`session_end` record to its transcript (none in a
-/// census of CC 2.1.295–2.1.318 transcripts).
+/// writes no `session_start`/`session_end` subtype nor top-level
+/// `hook_event_name` to its transcript (none in a census of CC 2.1.295–2.1.318).
 pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &cc_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {

@@ -83,8 +83,7 @@ pub(crate) fn last_life<'a>(
     events.into_iter().filter_map(|ev| evidence(ev, own)).last()
 }
 
-/// Whether `events` hold any [`Life::Lives`] evidence: the life a read shows
-/// whose whole span it then sends, a trailing end included.
+/// Whether `events` hold any [`Life::Lives`] evidence.
 pub(crate) fn holds_life<'a>(events: impl IntoIterator<Item = &'a AgentEvent>) -> bool {
     events.into_iter().any(lives)
 }
@@ -97,6 +96,27 @@ pub(crate) fn sends(event: &AgentEvent, own: AgentId, verdict: Option<Life>) -> 
     verdict != Some(Life::Ended)
         || !matches!(event, AgentEvent::SessionStart { .. })
         || event.agent_id() != own
+}
+
+/// How many of `events` each life spans, a new one starting at the first
+/// [`Life::Lives`] evidence after the session's own end: a read judges each as
+/// a read of its own, because the reducer revives a walked-out slot only on a
+/// start, and a resume (omp's) may write none.
+pub(crate) fn each_life(events: &[AgentEvent], own: AgentId) -> Vec<usize> {
+    let (mut spans, mut span, mut ended) = (Vec::new(), 0, false);
+    for ev in events {
+        match evidence(ev, own) {
+            Some(Life::Ended) => ended = true,
+            Some(Life::Lives) if ended => {
+                spans.push(span);
+                (span, ended) = (0, false);
+            }
+            _ => {}
+        }
+        span += 1;
+    }
+    spans.push(span);
+    spans
 }
 
 /// Detect a CC subagent by the `subagents` path component and link it to its
@@ -182,7 +202,7 @@ pub(crate) fn extract_head_fields(
 
 /// What a first sight reads off a transcript's head, or off a revived file's
 /// new bytes.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct HeadFields {
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) label: Option<String>,
@@ -245,8 +265,8 @@ mod tests {
         }
     }
 
-    /// The lifecycle fold: the last evidence is the verdict, a start or activity is
-    /// life whoever it names, and only the path's own end is an end.
+    /// The lifecycle fold: the last evidence is the verdict, a start or a turn's
+    /// traffic is life whoever it names, and only the path's own end is an end.
     #[test]
     fn the_last_lifecycle_evidence_is_the_verdict() {
         let own = AgentId::from_parts("test", "own");

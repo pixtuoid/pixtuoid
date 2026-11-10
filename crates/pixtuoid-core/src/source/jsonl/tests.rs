@@ -250,7 +250,7 @@ fn t_decode(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
     vec![]
 }
 /// [`t_decode`] keyed by the file stem, as `cc_id_from_path` keys the probe
-/// tests' transcripts: a decoder keyed off its row's deriver ends nothing.
+/// tests' transcripts: a decoder keyed differently from its row's deriver ends nothing.
 fn t_decode_stem_keyed(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
     t_decode(
         &crate::source::claude_code::cc_id_from_path(Path::new(t)),
@@ -711,7 +711,7 @@ async fn walk_jsonl_honors_the_path_filter() {
 }
 
 #[tokio::test]
-async fn an_oversized_append_revives_an_ended_transcript_only_on_activity() {
+async fn an_oversized_append_revives_an_ended_transcript_only_on_life() {
     // The last row's final line is longer than the activity tail's window.
     let long_tool = format!(
         "{{\"type\":\"tool_use\",\"pad\":\"{}\"}}\n",
@@ -757,7 +757,7 @@ async fn an_oversized_append_revives_an_ended_transcript_only_on_activity() {
                 .iter()
                 .any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
             revives,
-            "an oversized {filler:?} span ending {:?} revives only on activity: {events:?}",
+            "an oversized {filler:?} span ending {:?} revives only on life: {events:?}",
             last.get(..24)
         );
     }
@@ -1814,21 +1814,31 @@ async fn oversized_ended_skip_ends_its_claim_so_later_activity_re_registers() {
     );
 }
 
+/// A file shorter than the tail window is read from its start, so its first
+/// line is whole: a lone end line gates first sight too.
 #[tokio::test]
 async fn walk_jsonl_gates_a_first_sight_ended_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("ended.jsonl");
-    let content = "{\"type\":\"system\",\"subtype\":\"session_start\"}\n\
-                   {\"type\":\"system\",\"subtype\":\"session_end\"}\n";
-    tokio::fs::write(&path, content).await.unwrap();
-    let len = tokio::fs::metadata(&path).await.unwrap().len();
+    let end = "{\"type\":\"system\",\"subtype\":\"session_end\"}\n";
+    for content in [
+        format!("{{\"type\":\"system\",\"subtype\":\"session_start\"}}\n{end}"),
+        end.to_string(),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ended.jsonl");
+        tokio::fs::write(&path, &content).await.unwrap();
+        let len = tokio::fs::metadata(&path).await.unwrap().len();
 
-    let (events, cursor) = first_sight_walk(&path, Duration::from_secs(3600)).await;
-    assert!(
-        events.is_empty(),
-        "a never-seeded ENDED file must not emit SessionStart, got {events:?}"
-    );
-    assert_eq!(cursor, Some(len), "ended file must be seeded at EOF");
+        let (events, cursor) = first_sight_walk(&path, Duration::from_secs(3600)).await;
+        assert!(
+            events.is_empty(),
+            "a never-seeded ENDED file must not emit SessionStart, got {events:?}"
+        );
+        assert_eq!(
+            cursor,
+            Some(len),
+            "ended file must be seeded at EOF: {content}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -2259,7 +2269,8 @@ async fn an_oversized_skips_verdicts_leave_drift_to_the_rescan() {
     let (logs, _guard) = crate::test_capture::capture_warns();
     walk_once_with(&path, Duration::from_secs(3600), drifting, &cursors, &seen).await;
     let window = &full.as_bytes()[full.len() - SKIP_RESCAN_BYTES as usize..];
-    let rescanned = crate::source::admit::window_lines(window).count();
+    let whole = &window[crate::source::admit::first_whole_line(window, false)..];
+    let rescanned = crate::source::admit::lines(whole).count();
     let logs = logs.contents();
     let breadcrumbs = logs.matches(crate::source::drift::TARGET).count();
     assert_eq!(breadcrumbs, rescanned, "{logs}");
@@ -4788,4 +4799,53 @@ mod backlog {
         both.sort();
         assert_eq!(opened, both);
     }
+}
+
+/// A life after its session's own end registers again before its events, in a
+/// replay and in one live read: the reducer revives a walked-out slot only on a
+/// start, and omp's resume writes none. The life that end closes in the same read
+/// registers nothing ([`Sight::registers`]).
+#[tokio::test]
+async fn a_life_after_its_own_end_registers_again_within_one_read() {
+    const TOOL: &str = "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"tu-1\",\"name\":\"bash\",\"arguments\":{}}]}}\n";
+    let lifecycle = |events: &[(Transport, AgentEvent)]| -> Vec<&'static str> {
+        (events.iter())
+            .filter_map(|(_, e)| match e {
+                AgentEvent::SessionStart { .. } => Some("start"),
+                AgentEvent::SessionEnd { .. } => Some("end"),
+                AgentEvent::ToolUseStart { .. } => Some("tool"),
+                _ => None,
+            })
+            .collect()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("resumed.jsonl");
+    tokio::fs::write(&path, format!("{TOOL}{OMP_EXIT_LINE}{TOOL}"))
+        .await
+        .unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    let window = Duration::from_secs(3600);
+
+    let replay = walk_oversized(&path, window, &cursors, &seen).await;
+    assert_eq!(lifecycle(&replay), ["tool", "end", "start", "tool"]);
+    assert!(matches!(
+        seen.lock().await.get(&path),
+        Some(Sight::Claimed(_))
+    ));
+
+    let mut f = tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut f, format!("{OMP_EXIT_LINE}{TOOL}").as_bytes())
+        .await
+        .unwrap();
+    let live = walk_oversized(&path, window, &cursors, &seen).await;
+    assert_eq!(lifecycle(&live), ["end", "start", "tool"]);
+    assert!(matches!(
+        seen.lock().await.get(&path),
+        Some(Sight::Claimed(_))
+    ));
 }

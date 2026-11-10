@@ -11,7 +11,6 @@ use super::reads::{Spelling, WRITE_STAMPS};
 use super::{BreadcrumbSink, CASCADE_TICK, Decode, Drive, Driven, Fold};
 use crate::source::DEFAULT_POLL_INTERVAL;
 use crate::source::decoder::rfc3339_to_epoch;
-use crate::source::first_sight::last_life;
 use crate::state::ActivityState;
 use crate::{AgentEvent, Transport};
 
@@ -81,10 +80,7 @@ impl Drive {
         let mut decoded = Driven::empty();
         // Each line arrives alone, so it is a read of its own.
         let (own, mut fold) = (self.own_agent(), Fold::default());
-        let read = |line: &str, events: Vec<AgentEvent>| {
-            let verdict = own.and_then(|own| last_life(&events, own));
-            fold.deliver(self, own, &[Some(line)], events, verdict)
-        };
+        let read = |line: &str, events| fold.deliver(self, own, &[Some(line)], events);
         let sink = BreadcrumbSink::default();
         let (hooks, transcript) = tracing::subscriber::with_default(sink.clone(), || {
             let hooks = written(

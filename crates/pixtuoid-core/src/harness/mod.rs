@@ -31,8 +31,8 @@ use serde_json::Value;
 use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::first_sight::{
-    HEAD_BYTES, Life, Registration, Sight, extract_head_fields, first_sight_start, holds_life,
-    last_life, sends,
+    HEAD_BYTES, Life, Registration, Sight, each_life, extract_head_fields, first_sight_start,
+    holds_life, last_life, sends,
 };
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
@@ -521,10 +521,9 @@ impl Default for Fold {
 enum Reads {
     /// One read, as a test models one watcher read.
     One,
-    /// As the watcher reads a live transcript: the session's own end, and the
-    /// first life after one, each start a read, since the work before them was
-    /// already read. One read holding a life and its end would register nothing
-    /// ([`Sight::registers`]).
+    /// As the watcher reads a live transcript: the session's own end starts a
+    /// read, since the work before it was already read. One read holding a life
+    /// and its end would register nothing ([`Sight::registers`]).
     Live,
 }
 
@@ -627,24 +626,20 @@ impl Fold {
         let sink = BreadcrumbSink::default();
         tracing::subscriber::with_default(sink.clone(), || {
             let presence = self.driven.presence.len()..;
-            let (mut read, mut decoded, mut verdict) = (Vec::new(), Vec::new(), None);
+            let (mut read, mut decoded) = (Vec::new(), Vec::new());
             for line in lines {
                 let text = line.as_ref().map(AsRef::as_ref);
                 let events =
                     (drive.decode.line(text, &mut self.driven, |_| {})).unwrap_or_default();
-                let life = own.and_then(|own| last_life(&events, own));
-                if reads == Reads::Live
-                    && !read.is_empty()
-                    && life.is_some_and(|life| life == Life::Ended || verdict == Some(Life::Ended))
-                {
+                let ends = own.is_some_and(|own| last_life(&events, own) == Some(Life::Ended));
+                if reads == Reads::Live && !read.is_empty() && ends {
                     let (read, decoded) = (mem::take(&mut read), mem::take(&mut decoded));
-                    self.send(drive, own, &read, decoded, verdict.take(), at);
+                    self.send(drive, own, &read, decoded, at);
                 }
-                verdict = life.or(verdict);
                 read.push(line);
                 decoded.extend(events);
             }
-            self.send(drive, own, &read, decoded, verdict, at);
+            self.send(drive, own, &read, decoded, at);
             let d = &mut self.driven;
             for msg in &d.presence[presence] {
                 apply_presence(&mut d.scene, &msg.key, msg.delta.clone(), at);
@@ -653,27 +648,32 @@ impl Fold {
         self.driven.breadcrumbs.extend(sink.take());
     }
 
-    /// What the transport delivers for one read of `lines`, whose own
-    /// session's last lifecycle evidence is `verdict`: its registration, if the
-    /// watcher's gate registers on it, then what [`sends`] keeps of `decoded`.
-    /// Records the read's claim.
+    /// What the transport delivers for one read of `lines`: each life of
+    /// `decoded` ([`each_life`]) as a read of its own, its registration if the
+    /// watcher's gate registers on it, then what [`sends`] keeps of it. Records
+    /// each life's claim.
     fn deliver<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
         own: Option<AgentId>,
         lines: &[Option<S>],
-        mut decoded: Vec<AgentEvent>,
-        verdict: Option<Life>,
+        decoded: Vec<AgentEvent>,
     ) -> Vec<AgentEvent> {
+        let lives = own.map_or_else(|| vec![decoded.len()], |own| each_life(&decoded, own));
+        let mut decoded = decoded.into_iter();
         let mut fed = Vec::new();
-        if let Some(seed) = self.registration(drive, own, lines, &decoded, verdict) {
-            self.driven.seed_events += 1;
-            fed.push(seed);
+        for span in lives {
+            let mut life: Vec<AgentEvent> = decoded.by_ref().take(span).collect();
+            let verdict = own.and_then(|own| last_life(&life, own));
+            if let Some(seed) = self.registration(drive, own, lines, &life, verdict) {
+                self.driven.seed_events += 1;
+                fed.push(seed);
+            }
+            if let Some(own) = own {
+                life.retain(|event| sends(event, own, verdict));
+            }
+            fed.extend(life);
         }
-        if let Some(own) = own {
-            decoded.retain(|event| sends(event, own, verdict));
-        }
-        fed.extend(decoded);
         fed
     }
 
@@ -684,10 +684,9 @@ impl Fold {
         own: Option<AgentId>,
         lines: &[Option<S>],
         decoded: Vec<AgentEvent>,
-        verdict: Option<Life>,
         at: SystemTime,
     ) {
-        for event in self.deliver(drive, own, lines, decoded, verdict) {
+        for event in self.deliver(drive, own, lines, decoded) {
             self.apply(drive.transport, event, at);
             // Each event is observed BEFORE and AFTER a cascade tick, so a
             // transient class a later event resolves still counts as reached.
@@ -1006,6 +1005,29 @@ mod tests {
             "the second life's seed: {:?}",
             d.events[fed]
         );
+    }
+
+    /// One feed holding a life, its own end and a life after it registers the
+    /// second life again before its events, as the watcher's read does, and the
+    /// first, which its end closes in the same read, not at all.
+    #[test]
+    fn a_life_after_its_own_end_registers_again_within_one_feed() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let mut fold = Fold::default();
+        let feed = [tool_line(), exit.to_string(), tool_line()];
+        fold.feed(&drive, feed, default_now());
+        let d = fold.finish();
+        let lifecycle: Vec<&str> = (d.events.iter())
+            .filter_map(|e| match e {
+                AgentEvent::SessionStart { .. } => Some("start"),
+                AgentEvent::SessionEnd { .. } => Some("end"),
+                AgentEvent::ToolUseStart { .. } => Some("tool"),
+                _ => None,
+            })
+            .collect();
+        let want = vec!["tool", "end", "start", "tool"];
+        assert_eq!((lifecycle, d.seed_events), (want, 1));
     }
 
     /// Under Windows' path-key normalization, which rewrites `TRANSCRIPT`'s

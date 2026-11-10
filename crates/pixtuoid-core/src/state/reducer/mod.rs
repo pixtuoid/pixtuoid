@@ -134,7 +134,7 @@ struct ModelObservation<'a> {
     effort: Option<&'a str>,
 }
 
-/// Borrowed identity context threaded into slot registration/back-fill, bundled
+/// Borrowed identity context threaded into slot registration, bundled
 /// so the two `&str`s (`source`/`session_id`, positionally interchangeable)
 /// can't be silently swapped at a call site.
 #[derive(Clone, Copy)]
@@ -148,15 +148,14 @@ struct IdentityCtx<'a> {
 /// established one. Returns the healed cwd's basename when THIS call healed it;
 /// only the SessionStart arm upgrades a fallback label from it, since
 /// `Identity` carries no label authority.
-fn backfill_cwd<'a>(slot: &mut AgentSlot, ctx: IdentityCtx<'a>) -> Option<&'a str> {
+fn backfill_cwd<'a>(slot: &mut AgentSlot, cwd: &'a std::path::Path) -> Option<&'a str> {
     if (slot.unknown_cwd || slot.cwd.as_os_str().is_empty())
-        && let Some(base) = ctx
-            .cwd
+        && let Some(base) = cwd
             .file_name()
             .and_then(|n| n.to_str())
             .filter(|s| !s.is_empty())
     {
-        slot.cwd = Arc::<std::path::Path>::from(ctx.cwd);
+        slot.cwd = Arc::<std::path::Path>::from(cwd);
         slot.unknown_cwd = false;
         return Some(base);
     }
@@ -1031,7 +1030,7 @@ impl Reducer {
             return;
         }
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            backfill_cwd(slot, ctx);
+            backfill_cwd(slot, ctx.cwd);
             // A pid-less Identity must never DOWNGRADE a cached Some (e.g. an
             // opencode plugin event following a shim-stamped one).
             if pid.is_some() {
@@ -1265,7 +1264,7 @@ impl Reducer {
         }
         // A slot can exist with a MISSING cwd: an `Identity` may name none, and a
         // Codex revive ghost has an empty one.
-        if let Some(base) = backfill_cwd(slot, ctx) {
+        if let Some(base) = backfill_cwd(slot, ctx.cwd) {
             // `base` BYPASSES the `cwd_basename_label` chokepoint, so the
             // same decode-boundary cap is applied here.
             let derived = crate::state::SlotLabel::cwd_derived(crate::state::SlotLabel::join(
