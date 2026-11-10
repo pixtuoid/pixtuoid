@@ -430,8 +430,8 @@ fn classifies_as_turn(v: &Value) -> Option<bool> {
     Some(ACTIVITY_TYPES.contains(&ty) || is_turn_record(obj))
 }
 
-/// Parse every COMPLETE line of a tail-scan window as JSON, silently dropping
-/// empty, torn, and non-JSON lines.
+/// Every line of a tail-scan window that parses as JSON, an unterminated last
+/// one included; empty, torn and non-JSON lines are dropped.
 #[cfg(any(feature = "native", test))]
 fn parsed_tail_lines(tail: &[u8]) -> impl Iterator<Item = Value> + '_ {
     crate::source::admit::lines(tail).filter_map(|line| serde_json::from_str(line.ok()?).ok())
@@ -516,14 +516,18 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn parsed_tail_lines_yields_only_complete_parseable_lines() {
+    fn parsed_tail_lines_yields_only_parseable_lines() {
         // Any bytes: a torn leading line, CRLF terminators, and empty or torn
         // segments.
-        let tail = b"3,\"torn\":tru\n{\"type\":\"a\"}\n{\"type\":\"b\"}\r\n\n{\"type\":\"c\"";
+        let tail = b"3,\"torn\":tru\n{\"type\":\"a\"}\n{\"type\":\"b\"}\r\n\n{\"type\":\"c\"}";
         let kinds: Vec<String> = parsed_tail_lines(tail)
             .filter_map(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
             .collect();
-        assert_eq!(kinds, vec!["a".to_owned(), "b".to_owned()]);
+        assert_eq!(
+            kinds,
+            ["a", "b", "c"],
+            "an unterminated last line parses too"
+        );
         assert_eq!(
             parsed_tail_lines(b"").count(),
             0,
