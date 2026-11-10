@@ -470,7 +470,7 @@ pub(super) async fn walk_jsonl(
     }
 
     let own = own_agent(path, source, decoders);
-    let lives = holds_life(&decoded, own);
+    let lives = holds_life(&decoded);
     if Sight::registers(seen.lock().await.get(path), lives)
         && !matches!(
             (decoders.activity_recency)(new_bytes),

@@ -63,9 +63,13 @@ pub(crate) enum Life {
 fn evidence(ev: &AgentEvent, own: AgentId) -> Option<Life> {
     match ev {
         AgentEvent::SessionEnd { .. } if ev.agent_id() == own => Some(Life::Ended),
-        AgentEvent::SessionStart { .. } => Some(Life::Lives),
-        _ => ev.is_work().then_some(Life::Lives),
+        _ => lives(ev).then_some(Life::Lives),
     }
+}
+
+/// Whether `ev` is [`Life::Lives`] evidence.
+fn lives(ev: &AgentEvent) -> bool {
+    matches!(ev, AgentEvent::SessionStart { .. }) || ev.is_work()
 }
 
 /// The session's verdict over `events`, in order: its last evidence, so a start
@@ -79,13 +83,8 @@ pub(crate) fn last_life<'a>(
 
 /// Whether `events` hold any [`Life::Lives`] evidence: the life a read shows
 /// whose whole span it then sends, a trailing end included.
-pub(crate) fn holds_life<'a>(
-    events: impl IntoIterator<Item = &'a AgentEvent>,
-    own: AgentId,
-) -> bool {
-    events
-        .into_iter()
-        .any(|ev| evidence(ev, own) == Some(Life::Lives))
+pub(crate) fn holds_life<'a>(events: impl IntoIterator<Item = &'a AgentEvent>) -> bool {
+    events.into_iter().any(lives)
 }
 
 /// Detect a CC subagent by the `subagents` path component and link it to its

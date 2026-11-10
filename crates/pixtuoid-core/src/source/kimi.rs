@@ -89,8 +89,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 ///   lingers Running. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
 ///   on an already-idle slot.
 /// - `StopFailure` — a failed turn end; settle to idle like `Stop`.
-///   Identity-less: an end alone proves too little to label a session, so an
-///   unknown id registers nothing.
+///   Identity-less: an end alone registers nothing.
 pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     match obj.get("hook_event_name").and_then(|s| s.as_str()) {
         Some(event @ "PostToolUseFailure") => {
