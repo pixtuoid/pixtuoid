@@ -180,17 +180,7 @@ test("release.yml build matrix targets == npm TARGETS (npm ships every built pla
     join(dirname(SCRIPT), "..", ".github", "workflows", "release.yml"),
     "utf8",
   );
-  // Isolate the `build:` job — the `deb:` job carries its own smaller matrix.
-  const buildStart = releaseYml.indexOf("\n  build:\n");
-  assert.notEqual(buildStart, -1, "release.yml has a build: job");
-  const afterBuild = releaseYml.slice(buildStart + 1);
-  const nextJob = afterBuild.search(/\n  [a-z][\w-]*:\n/);
-  const buildBlock = nextJob === -1 ? afterBuild : afterBuild.slice(0, nextJob + 1);
-  const matrixTargets = [...buildBlock.matchAll(/^\s+- target:\s*(\S+)/gm)].map((m) => m[1]);
-  assert.ok(
-    matrixTargets.length >= 4,
-    `parsed only ${matrixTargets.length} matrix targets — the build-job slice/regex drifted`,
-  );
+  const matrixTargets = [...releaseYml.matchAll(/^\s+- target:\s*(\S+)/gm)].map((m) => m[1]);
   assert.deepEqual(
     [...matrixTargets].sort(),
     TARGETS.map((t) => t.rust).sort(),

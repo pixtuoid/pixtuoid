@@ -75,7 +75,7 @@ a lint to dodge the bump.
 3. **Merge it** (squash). That merge is the *irreversible* step: the `release` job
    publishes every crate to crates.io over OIDC, creates `vX.Y.Z` and a DRAFT
    GitHub release carrying the changelog; the tag then fires `release.yml`,
-   which builds every target in its build matrix and the debs, attaches them,
+   which builds every target in its build matrix, attaches them,
    publishes the draft, and publishes the npm packages. The crates.io and npm
    jobs each wait for an approval from the `release` environment's reviewer,
    crates.io first. The tag also starts a homebrew-core autobump.
