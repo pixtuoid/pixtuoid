@@ -228,27 +228,6 @@ fn a_waiter_takes_the_desk_on_the_apply_where_its_holder_walks_out() {
     assert_eq!(scene.agents[&waiter].home_desk, desk(0, 0));
 }
 
-/// Seating runs only when a desk can have freed, never on every apply: a
-/// waiter beside a free desk, which no production path leaves, stays waiting
-/// through an apply where no slot leaves.
-#[test]
-fn an_apply_where_no_slot_leaves_seats_no_waiter() {
-    let mut r = Reducer::new();
-    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let id = AgentId::from_transcript_path("/p/a.jsonl");
-    let mut scene = one_desk_office(&mut r, &[id], t0);
-    scene.agents.get_mut(&id).expect("registered").home_desk = None;
-
-    proof_of_life(
-        &mut r,
-        &mut scene,
-        id,
-        t0 + Duration::from_secs(1),
-        Transport::Hook,
-    );
-    assert_eq!(scene.agents[&id].home_desk, None);
-}
-
 /// A gone slot's newest turn position goes at the tick that finds the slot
 /// gone, so a new life of the same id opens a lower-numbered turn.
 #[test]

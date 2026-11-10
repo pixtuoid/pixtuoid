@@ -74,8 +74,8 @@ pub(crate) fn floor_capacities(
 ) -> [usize; MAX_FLOORS] {
     std::array::from_fn(|i| {
         // The ONE seed derivation every call site shares — an inline copy of the
-        // formula would silently drift the boot capacities from the rendered layout
-        // (over-seeded atomics strand agents on unrendered desks).
+        // formula would silently drift the published capacities from the rendered
+        // layout, seating agents at desks it lacks.
         let seed = pixtuoid_scene::floor::floor_seed(i);
         offices
             .values()

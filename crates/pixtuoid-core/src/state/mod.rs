@@ -780,8 +780,8 @@ impl SceneState {
     }
 
     /// Give each agent waiting for a desk the first free one: those staying
-    /// before those walking out, then oldest first, as the reducer seats
-    /// arrivals. A desk is free while no slot that `holds` sits at it.
+    /// before those walking out, then oldest first. A desk is free while no
+    /// slot that `holds` sits at it.
     pub(crate) fn assign_waiting(&mut self, holds: impl Fn(&AgentSlot) -> bool) {
         let taken: BTreeSet<FloorDesk> = (self.agents.values())
             .filter(|slot| holds(slot))

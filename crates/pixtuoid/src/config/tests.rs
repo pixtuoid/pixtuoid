@@ -460,9 +460,8 @@ fn max_desks_no_config_file() {
 
 #[test]
 fn max_desks_zero_in_config_is_ignored_with_warning() {
-    // 0 would permanently zero every floor (the per-frame re-seed guards
-    // `capacity > 0`, so the boot atomics never grow), silently dropping every
-    // agent.
+    // 0 would zero every floor's capacity, so every agent would wait for a desk
+    // forever.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "max-desks = 0\n").unwrap();
