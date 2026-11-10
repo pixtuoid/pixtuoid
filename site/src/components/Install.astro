@@ -46,12 +46,7 @@ import tabs from '../install.json';
         aria-labelledby={`install-tab-${t.id}`}
         data-panel={t.id}
       >
-        {/* the blurb (where a method works) shows as a comment; Copy takes the commands */}
-        <Code
-          code={[...(t.blurb ? [`# ${t.blurb}`] : []), ...t.cmds].join('\n')}
-          lang="bash"
-          theme="vesper"
-        />
+        <Code code={t.cmds.join('\n')} lang="bash" theme="vesper" />
         {/* no aria-label: the visible "Copy" text IS the accessible name, so
               the textContent swap stays exposed. A name change alone isn't
               announced, hence the role=status sibling — WCAG 4.1.3. */}
