@@ -13,7 +13,7 @@ use crate::physics::{WalkProfile, walk_arrived};
 use crate::sprite::Rgb;
 use crate::walkable::OccupancyOverlay;
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, SceneState};
+use pixtuoid_core::state::{AgentSlot, SceneState};
 
 use crate::audio::{AudioCueTracker, AudioFrame};
 use crate::chitchat::{ActiveChitchat, VenueKey};
@@ -481,11 +481,7 @@ impl AudioObserver {
         let counts = crate::tally::per_floor_counts(scene)[floor_idx.min(MAX_FLOORS - 1)];
         let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), floor.weather);
         let rain = sky.rain();
-        let floor_ids = scene
-            .agents
-            .iter()
-            .filter(|(_, slot)| slot.floor_idx == floor_idx)
-            .map(|(id, _)| id);
+        let floor_ids = floor_agents(scene, floor_idx).map(|slot| &slot.agent_id);
         let events = self.cues.observe(floor_ids, occupied, waypoint_kind);
         AudioFrame {
             stems: crate::audio::stem_levels(&counts, rain),
@@ -606,12 +602,21 @@ impl FloorSession {
     }
 
     /// Render one frame in `look`: the dual eviction, then
-    /// [`look::render`](crate::look::render); its picture is
-    /// [`Self::picture`]. `scene` MUST be the full live scene — the session
-    /// evicts against it.
+    /// [`look::render`](crate::look::render) of the ground floor's
+    /// [`project_floor_scene`]; its picture is [`Self::picture`]. `scene` MUST
+    /// be the full live scene — the session evicts against it.
     pub fn render(&mut self, look: crate::look::Look, inputs: crate::look::RenderInputs<'_>) {
         self.evict_missing(inputs.world.scene);
-        self.view.render(&mut self.office, look, inputs);
+        let floor_scene = project_floor_scene(inputs.world.scene, 0);
+        let world = FloorInputs {
+            scene: floor_scene.scene(),
+            ..inputs.world
+        };
+        self.view.render(
+            &mut self.office,
+            look,
+            crate::look::RenderInputs { world, ..inputs },
+        );
     }
 
     /// The last frame [`Self::render`] drew; `None` before the first, and
@@ -620,7 +625,9 @@ impl FloorSession {
         self.view.picture(0, false)
     }
 
-    /// The [`wall_board`](crate::neon_sign::wall_board) of `scene`, a one-floor office.
+    /// The [`wall_board`](crate::neon_sign::wall_board) of `scene`, a one-floor
+    /// office: its ground floor's [`project_floor_scene`], as [`Self::render`]
+    /// draws it.
     #[doc(hidden)]
     pub fn board(
         &self,
@@ -628,9 +635,10 @@ impl FloorSession {
         motion: crate::anim::Motion,
         now: SystemTime,
     ) -> crate::neon_sign::BoardModel {
+        let floor_scene = project_floor_scene(scene, 0);
         crate::neon_sign::wall_board(
-            scene,
-            crate::tally::office_gateway(scene),
+            floor_scene.scene(),
+            crate::tally::office_gateway(floor_scene.scene()),
             None,
             motion,
             now,
@@ -657,15 +665,20 @@ impl FloorSession {
     }
 
     /// Advance the world one tick WITHOUT painting: the session's eviction, then
-    /// `step_floor`. `viewport` is the layout's logical extent and insets,
-    /// whatever scale a painter draws it at. `None` when it can't lay out.
+    /// `step_floor` of the ground floor's [`project_floor_scene`]. `viewport` is
+    /// the layout's logical extent and insets, whatever scale a painter draws it
+    /// at. `None` when it can't lay out.
     pub fn step(&mut self, world: FloorInputs<'_>, viewport: Viewport) -> Option<SteppedFloor> {
         self.evict_missing(world.scene);
+        let floor_scene = project_floor_scene(world.scene, 0);
         step_floor(
             &mut self.view.floor,
             &mut self.office.coffee,
             &mut self.office.chitchat,
-            world,
+            FloorInputs {
+                scene: floor_scene.scene(),
+                ..world
+            },
             viewport,
         )
     }
@@ -1135,51 +1148,19 @@ impl FloorTransition {
 
 /// The floors `scene`'s agents sit on: one past the highest, at least one.
 pub fn num_floors(scene: &SceneState) -> usize {
-    scene
-        .agents
-        .values()
-        .map(|a| a.floor_idx + 1)
+    (scene.agents.values())
+        .filter_map(|a| a.desk)
+        .map(|desk| desk.floor + 1)
         .max()
         .unwrap_or(1)
 }
 
-/// One agent projected onto a floor by [`build_floor_scene`]. The floor-local
-/// offset rides a SEPARATE `desk` field rather than being written back into
-/// `AgentSlot.desk_index`, which keeps that field's GLOBAL type honest until
-/// [`project_floor_scene`] re-hosts the slot.
-#[derive(Debug)]
-pub(crate) struct ProjectedSlot {
-    /// The projected agent — its `desk_index` still the ORIGINAL global allocation.
-    pub(crate) slot: AgentSlot,
-    /// The agent's desk remapped into this floor's local `[0..capacity)` space.
-    pub(crate) desk: FloorLocalDeskIndex,
-}
-
-/// The agents floor `floor_idx` draws. It goes by each slot's stored
-/// `floor_idx`, so capacity growth never migrates agents between floors, and
-/// leaves out one a lower floor's growth left below its offset
-/// ([`SceneState::floor_of`]).
+/// The agents floor `floor_idx` draws: those holding a desk on it.
 pub(crate) fn floor_agents(
     scene: &SceneState,
     floor_idx: usize,
 ) -> impl Iterator<Item = &AgentSlot> + '_ {
-    let offset = scene.floor_range(floor_idx).start;
-    scene
-        .agents
-        .values()
-        .filter(move |a| a.floor_idx == floor_idx && a.desk_index.0 >= offset)
-}
-
-/// Each of [`floor_agents`], paired with its desk remapped into the floor's
-/// `[0..capacity)` LOCAL space so the layout engine sees a self-contained floor.
-pub(crate) fn build_floor_scene(scene: &SceneState, floor_idx: usize) -> Vec<ProjectedSlot> {
-    let offset = scene.floor_range(floor_idx).start;
-    floor_agents(scene, floor_idx)
-        .map(|a| ProjectedSlot {
-            slot: a.clone(),
-            desk: FloorLocalDeskIndex(a.desk_index.0 - offset),
-        })
-        .collect()
+    (scene.agents.values()).filter(move |a| a.desk.is_some_and(|desk| desk.floor == floor_idx))
 }
 
 /// One floor's [projection](project_floor_scene), the scene that floor is drawn
@@ -1195,20 +1176,12 @@ impl FloorScene {
     }
 }
 
-/// Build a self-contained `SceneState` for one floor: a `uniform(cap)` scene, so
-/// floor arithmetic stays self-consistent with the remapped desk indices in
-/// `[0..cap)`. A floor past the building's is an empty one.
+/// Build a self-contained `SceneState` for one floor: the agents at its desks,
+/// at the desks they hold. A floor past the building's is an empty one.
 pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> FloorScene {
-    let cap = scene.floor_capacities.get(floor_idx).copied().unwrap_or(0);
-    let mut s = SceneState::uniform(cap);
-    for p in build_floor_scene(scene, floor_idx) {
-        let mut slot = p.slot;
-        // The RE-HOST, not a space mix-up: this `uniform(cap)` single-floor
-        // scene's global desk space coincides with its floor-0 local space by
-        // construction, so the floor-local desk IS a genuinely valid
-        // `GlobalDeskIndex` FOR THIS SMALLER SCENE.
-        slot.desk_index = GlobalDeskIndex(p.desk.0);
-        s.agents.insert(slot.agent_id, slot);
+    let mut s = SceneState::default();
+    for slot in floor_agents(scene, floor_idx) {
+        s.agents.insert(slot.agent_id, slot.clone());
     }
     // Daemon presences are global, not per-desk — ground floor only, so the
     // mascot renders exactly once.
