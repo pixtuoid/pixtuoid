@@ -713,7 +713,6 @@ pub(crate) struct MassRaster {
 }
 
 impl MassRaster {
-    #[cfg(test)]
     fn at(&self, col: i32, row: i32) -> Option<Band> {
         let (x, y) = (
             usize::try_from(col - self.x0).ok()?,
@@ -1100,7 +1099,12 @@ impl Clouds {
 
     /// `m`'s drift this frame in whole cells of its grid: where it is drawn.
     fn cell_drift(&self, m: &Mass) -> i32 {
-        (m.off * f32::from(self.d.get())).round() as i32
+        self.cells(m.off)
+    }
+
+    /// A drift of `off` units in whole cells of its grid, as it is drawn.
+    fn cells(&self, off: f32) -> i32 {
+        (off * f32::from(self.d.get())).round() as i32
     }
 
     /// The nearest mass's band at each cell of a grid `cols` by `rows` whose
@@ -1123,21 +1127,28 @@ impl Clouds {
             .find_map(|m| self.rasters[m].at(col - drift[m], row).map(|b| (b, m)))
     }
 
-    /// The nearest mass with a lobe within [`BOLT_LOBE_SHARE`] of its radius over
-    /// `x`, each mass drifted by its `offs`.
-    fn nearest_over(&self, x: f32, offs: &[f32]) -> Option<usize> {
-        (0..self.masses.len()).rev().find(|&i| {
-            self.masses[i]
-                .lobes
-                .iter()
-                .any(|l| l.r > 0.0 && (x - offs[i] - l.x).abs() < l.r * BOLT_LOBE_SHARE)
+    /// The nearest mass whose drawn cells hold column `x` at its base, or the
+    /// row over it, at every cell its drift from `run`'s start to its end (in
+    /// seconds into the beat) draws it at, and that base: where a lobe's skirt
+    /// narrows to its base, or the drift turns a cell, the column is bare.
+    fn struck(&self, x: f32, run: [f64; 2], span: f32) -> Option<(usize, f32)> {
+        let df = f32::from(self.d.get());
+        let col = (x * df) as i32;
+        (0..self.masses.len()).rev().find_map(|i| {
+            let m = &self.masses[i];
+            let base = m.base_at(x - m.drift_at(run[0], span));
+            let row = (base * df) as i32;
+            let [a, b] = run.map(|t| self.cells(m.drift_at(t, span)));
+            (a.min(b)..=a.max(b))
+                .all(|drift| (row - 1..=row).any(|r| self.rasters[i].at(col - drift, r).is_some()))
+                .then_some((i, base))
         })
     }
 
     /// Bucket `bucket`'s strike in `phase` over a run `(span, glass_h)`, its
-    /// cloud the one over a column of one of `panes` as the masses stood
-    /// `start` seconds into the beat, when it struck: so neither the drift
-    /// nor the joinery hides it partway through.
+    /// cloud the one drawn over a column of one of `panes` from `start`
+    /// seconds into the beat, when it struck, to its end: so neither the
+    /// drift nor the joinery hides it partway through.
     fn strike_at(
         &self,
         bucket: u64,
@@ -1150,13 +1161,8 @@ impl Clouds {
         let pane = panes.get((r.u() * panes.len() as f32) as usize)?;
         let (west, east) = (f32::from(pane.start), f32::from(pane.end));
         let x = r.between(west + BOLT_PANE_MARGIN, (east - BOLT_PANE_MARGIN).max(west));
-        let offs: Vec<f32> = self
-            .masses
-            .iter()
-            .map(|m| m.drift_at(start, span))
-            .collect();
-        let i = self.nearest_over(x, &offs)?;
-        let base = self.masses[i].base_at(x - offs[i]);
+        let end = start + std::time::Duration::from_millis(crate::sky::STRIKE_MS).as_secs_f64();
+        let (i, base) = self.struck(x, [start, end], span)?;
         let intra = r.u() < INTRA_SHARE;
         let step = match phase {
             StrikePhase::Primary => 2,
@@ -1498,10 +1504,6 @@ const STORM_OCCLUDE: f32 = 0.4;
 const VIRGA_DEPTH: f32 = 4.5;
 /// The units between two rain shafts.
 const VIRGA_PITCH: u32 = 3;
-
-/// How far out along a lobe's radius a strike may fall: under a mass's body,
-/// where its drawn bottom reaches its base, never its fringe, which curls up.
-const BOLT_LOBE_SHARE: f32 = 0.5;
 
 /// How far in from a pane's edges, in units, a strike may fall.
 const BOLT_PANE_MARGIN: f32 = 1.0;
@@ -2074,16 +2076,43 @@ mod tests {
         }
     }
 
+    /// The noons the zone census found a bolt hanging off no cloud at, its
+    /// 60 strikes on from each: Jan 1 2026, 12:00 in each red zone, as Unix
+    /// seconds (R2-C40).
+    const BOLT_RED_NOONS: [u64; 6] = [
+        1_767_218_400,
+        1_767_219_300,
+        1_767_243_600,
+        1_767_254_400,
+        1_767_265_200,
+        1_767_281_400,
+    ];
+
     /// A strike's bolt hangs off a drawn cloud: a mass draws the cell its
     /// top starts in or the one over it, at every density, partway through the
     /// strike, so the masses have drifted on since the instant it chose its
-    /// cloud at.
+    /// cloud at. Over every strike of one wrap of the slowest layer, which
+    /// brings each mass past each column, and the census's red noons.
     #[test]
     fn the_bolt_hangs_off_a_drawn_cloud() {
+        let bucket = Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS);
+        let noon = crate::localclock::at_hour(12);
+        let widest = clouds_at(noon, Weather::Storm, None)
+            .masses
+            .iter()
+            .map(|m| m.widest)
+            .fold(0.0, f32::max);
+        let wrap_s = (f32::from(SPAN) + 2.0 * widest) / Layer::Far.pace();
+        let wrap = (0..(wrap_s / bucket.as_secs_f32()).ceil() as u32).map(|k| noon + bucket * k);
+        let red = BOLT_RED_NOONS.iter().flat_map(|&s| {
+            let noon = std::time::UNIX_EPOCH + Duration::from_secs(s);
+            (0..60).map(move |k| noon + bucket * k)
+        });
+        let strikes: Vec<_> = wrap.chain(red).collect();
         for d in [1u16, 4] {
             let (mut bolts, mut lagged) = (0, 0);
-            for k in 0..60u64 {
-                let then = crate::localclock::at_hour(12) + Duration::from_secs(k * 15);
+            let mut cache = CloudCache::default();
+            for (k, &then) in strikes.iter().enumerate() {
                 let beat = Motion::Full.timing(then).beat;
                 let start = crate::sky::strike_start_ms(beat) - beat.ms();
                 // its last phase: the furthest the drift gets from the strike's start
@@ -2097,7 +2126,7 @@ mod tests {
                     (SPAN, GLASS_H),
                     test_density(d),
                     RUN,
-                    &mut CloudCache::default(),
+                    &mut cache,
                 );
                 let Some(&(x, y)) = c
                     .strike
@@ -2114,7 +2143,7 @@ mod tests {
                 let (col, row) = ((x * df) as i32, (y * df) as i32);
                 assert!(
                     (row - 1..=row).any(|r| c.band_at(&drift, col, r).is_some()),
-                    "d {d}, strike {k}: the bolt's top at ({col}, {row}) hangs off no cloud"
+                    "d {d}, strike {k} at {now:?}: the bolt's top at ({col}, {row}) hangs off no cloud"
                 );
                 bolts += 1;
             }
@@ -2253,6 +2282,12 @@ mod tests {
             .find(|m| m.layer == Layer::Mid)
             .expect("a rain deck has a mid mass")
             .clone();
+        // mid-run, where the instant's drift can't carry it past the glass
+        let (west, east) = mid.extent();
+        let mid = Mass {
+            off: (f32::from(SPAN) - west - east) / 2.0,
+            ..mid
+        };
         // the same mass nearer, in another weather's tones
         let near = Mass {
             layer: Layer::Near,

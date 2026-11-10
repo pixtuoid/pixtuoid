@@ -1125,20 +1125,42 @@ fn new_years_eve_bursts_through_the_sky_on_every_tier() {
         let fired = night.iter().any(|(_, b)| b.iter().any(Option::is_some));
         assert_eq!(fired, motion != Motion::Still, "{motion:?}");
         floor(&night);
-        let midnight = bursts(at(31, 23, 59), 2 * MINUTE_MS);
-        floor(&midnight);
-        let most = |finale: bool| {
-            midnight
-                .iter()
-                .filter(|(now, _)| crate::holiday::finale_at(*now) == finale)
-                .map(|(_, b)| b.iter().flatten().count())
-                .max()
-                .unwrap_or(0)
+        // A burst the finale set off is the finale's while it burns, though the
+        // finale has ended: `bursts_at` fires a lane by its burst's start.
+        let from_finale = |now: SystemTime, b: &[Option<fireworks::Burst>; fireworks::LANES]| {
+            let all_night =
+                fireworks::bursts_at(motion.timing(now).beat, &[fireworks::Hue::Gold], |_| false);
+            b.iter()
+                .zip(all_night)
+                .any(|(b, a)| b.is_some() && a.is_none())
         };
-        if motion != Motion::Still {
+        // a century of midnights, each laying the lanes' buckets anew
+        for year in 2026..2126 {
+            if motion == Motion::Still {
+                break;
+            }
+            let date = chrono::NaiveDate::from_ymd_opt(year, 12, 31).expect("a date");
+            let eve = crate::localclock::local_instant(date, 23, 59).expect("a local time");
+            let midnight = bursts(eve, 2 * MINUTE_MS);
+            floor(&midnight);
+            let most = |finale: bool| {
+                midnight
+                    .iter()
+                    .filter(|(now, b)| {
+                        let during = crate::holiday::finale_at(*now);
+                        if finale {
+                            during
+                        } else {
+                            !during && !from_finale(*now, b)
+                        }
+                    })
+                    .map(|(_, b)| b.iter().flatten().count())
+                    .max()
+                    .unwrap_or(0)
+            };
             assert!(
                 most(true) > most(false),
-                "{motion:?}: the finale fills the sky"
+                "{motion:?}, {year}: the finale fills the sky"
             );
         }
         assert!(

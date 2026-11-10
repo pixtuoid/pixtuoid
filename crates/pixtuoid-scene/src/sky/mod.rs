@@ -605,7 +605,7 @@ fn moon_phase_at(now: SystemTime) -> f32 {
 
 /// Lightning cadence: one strike per bucket this long, at a hashed offset
 /// ([`LIGHTNING`]) — a much faster cadence reads as a hyperactive storm.
-const LIGHTNING_PERIOD_MS: u64 = 15000;
+pub(crate) const LIGHTNING_PERIOD_MS: u64 = 15000;
 // A slot's start is a bucket's start on every moving tier's loop clock, so no
 // strike runs into the next slot's weather.
 const _: () = {
@@ -656,8 +656,7 @@ const LIGHTNING: crate::anim::FlashSchedule = crate::anim::FlashSchedule {
 }
 .floored();
 /// How long one strike's [`STRIKE`] phases last together.
-#[cfg(test)]
-const STRIKE_MS: u64 = LIGHTNING.run_ms();
+pub(crate) const STRIKE_MS: u64 = LIGHTNING.run_ms();
 
 /// The phase of a strike `since_strike_ms` after it began: [`STRIKE`]'s in
 /// turn, then none.
