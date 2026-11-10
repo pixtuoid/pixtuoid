@@ -27,8 +27,6 @@ pub(crate) use crate::panels::{FOOTER_ROWS, scene_rect};
 use crate::tui::geometry::SceneGeometry;
 pub(crate) use crate::tui::hit_test::SceneHit;
 
-pub use pixtuoid_scene::pet::PetState;
-
 #[derive(Debug)]
 pub struct DrawCtx<'a> {
     /// The whole office: the footer's office-wide context reads it and a

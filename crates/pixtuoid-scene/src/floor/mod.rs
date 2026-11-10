@@ -382,8 +382,8 @@ pub struct PetInputs<'a> {
     /// This floor's configured pet; `None` when no pets are configured or none
     /// maps to this floor seed.
     pub pet: Option<&'a Pet>,
-    /// The last petting, if any; honoured only while it plays, for this
-    /// floor's pet.
+    /// The petting this floor's pet plays, as [`OfficeSession::showing_pets`]
+    /// reads it at this instant; played as given.
     pub petting: Option<&'a PetState>,
 }
 

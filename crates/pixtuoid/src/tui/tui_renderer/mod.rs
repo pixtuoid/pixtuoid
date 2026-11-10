@@ -16,7 +16,6 @@ use ratatui::backend::Backend;
 
 use ratatui::layout::{Position, Rect};
 
-use crate::tui::renderer::PetState;
 use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorTransition, OfficeSession, PetInputs};
 use pixtuoid_scene::layout::{SceneLayout, Size};
 use pixtuoid_scene::look::{FrameNote, Look, LookKind, Picture, RenderInputs};
@@ -75,7 +74,6 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
 #[derive(Debug)]
 struct Chrome {
     theme: &'static pixtuoid_scene::theme::Theme,
-    active_pet: Option<PetState>,
     pets: Vec<pixtuoid_scene::pet::Pet>,
     popup: PopupState,
     /// The panels the loop computed, which the frame paints: their
@@ -128,8 +126,7 @@ impl Chrome {
     }
 
     /// The office's inputs over `scene`, as [`OfficeSession::render`] takes
-    /// them: its weather and motion, and the petting the session keeps to
-    /// its own floor.
+    /// them: its weather and motion; the office fills each floor's pets.
     fn office_world<'a>(
         &'a self,
         scene: &'a SceneState,
@@ -143,10 +140,7 @@ impl Chrome {
                 motion: self.motion,
                 ..Conditions::default()
             },
-            pets: PetInputs {
-                pet: None,
-                petting: self.active_pet.as_ref(),
-            },
+            pets: PetInputs::default(),
         }
     }
 
@@ -179,7 +173,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             debug_walkable: false,
             chrome: Chrome {
                 theme,
-                active_pet: None,
                 pets,
                 popup: PopupState::default(),
                 frames: crate::panels::ui_state::RenderFrames::default(),
@@ -510,13 +503,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             x: bounds.width,
             y: bounds.height,
         };
-        let down = self.pointer.down(
-            hit,
-            centre(bounds),
-            slop,
-            self.chrome.active_pet.as_ref(),
-            now,
-        );
+        let petting = self.session.showing_pets(&self.chrome.pets, now).petting;
+        let down = self.pointer.down(hit, centre(bounds), slop, petting);
         if let Some(ended) = &down.ended {
             self.grip(ended);
         }
@@ -650,13 +638,9 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.chrome.popup.last_scale
     }
 
-    pub fn set_active_pet(&mut self, pet: Option<PetState>) {
-        self.chrome.active_pet = pet;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn active_pet_ref(&self) -> Option<&PetState> {
-        self.chrome.active_pet.as_ref()
+    /// [`OfficeSession::pet`].
+    pub(crate) fn pet(&mut self, kind: pixtuoid_scene::pet::PetKind, now: SystemTime) {
+        self.session.pet(kind, now);
     }
 
     /// The pet the frame the terminal shows drew.
@@ -807,15 +791,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     /// One frame of `scene`, whichever path draws it: what it was drawn under.
     fn draw_frame(&mut self, scene: &SceneState, now: SystemTime) -> Result<Option<FrameNote>> {
-        if self
-            .chrome
-            .active_pet
-            .as_ref()
-            .is_some_and(|p| !p.is_active(now))
-        {
-            self.chrome.active_pet = None;
-        }
-
         let window = self.window_cell();
         let term_size = self.terminal.size()?;
         let full_rect = Rect::from((Position::ORIGIN, term_size));
@@ -856,8 +831,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let footer =
             pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
-        let pets =
-            (self.session).showing_pets(&self.chrome.pets, self.chrome.active_pet.as_ref(), now);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -877,7 +850,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             theme: self.chrome.theme,
             office: scene,
             now,
-            pets,
+            pets: self.session.showing_pets(&self.chrome.pets, now),
             mouse_pos,
             placement,
         };
@@ -920,8 +893,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
-        let pets =
-            (self.session).showing_pets(&self.chrome.pets, self.chrome.active_pet.as_ref(), now);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -946,6 +917,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             Some((_, _, SceneHit::Figure(HoverTarget::Agent(id)))) => Some(*id),
             _ => None,
         };
+        let pets = self.session.showing_pets(&self.chrome.pets, now);
         let tooltip = mouse.and_then(|(mx, my, hit)| {
             pixtuoid_scene::tooltip::for_hit(hit, scene, now, pets).map(|tip| (mx, my, tip))
         });

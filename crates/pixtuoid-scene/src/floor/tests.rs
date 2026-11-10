@@ -2132,7 +2132,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         let mut arrived = None;
         for now in frames(t0).take_while(|&now| now < t0 + cycles) {
             let look = crate::look::Look::HALF_BLOCKS;
-            render_office_with(&mut scout, look, &alone, calm, now, (&[], None));
+            render_office_with(&mut scout, look, &alone, calm, now, &[]);
             let walks = &scout.floor(0).expect("drawn").ctx.walks;
             let standing = (walks.get(&idle))
                 .is_some_and(|w| matches!(w.wander.phase, crate::walk::WanderPhase::AtWaypoint(_)));
@@ -2177,11 +2177,6 @@ fn a_frame_holds_for_the_wait_its_office_names() {
     // past the switch, the debounce and the ease to a still room
     let emptied = switch
         + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 6 * VacancyDim::FADE_TAU_MS);
-    let petting = crate::pet::PetState {
-        petted_at: t0 + switch,
-        kind: cat.kind,
-        floor_idx: 0,
-    };
     let fed = |name, motion, before, after| Case {
         name,
         motion,
@@ -2268,6 +2263,10 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         for look in looks {
             let mut office = OfficeSession::new(Arc::clone(&pack));
             let mut sparse = OfficeSession::new(Arc::clone(&pack));
+            // never petted, so the petting has teeth only if a frame shows it
+            let mut plain = case.petted.then(|| OfficeSession::new(Arc::clone(&pack)));
+            let petted_until = case.switch + Duration::from_millis(crate::pet::PET_DURATION_MS);
+            let mut petting_drawn = false;
             let mut sparse_due = t0;
             let mut held: Option<(SystemTime, Vec<Rgb>)> = None;
             let (mut slept, mut set_off, mut ticks) = (0, false, 0);
@@ -2278,14 +2277,20 @@ fn a_frame_holds_for_the_wait_its_office_names() {
                 if feed {
                     held = None;
                 }
+                if feed && case.petted {
+                    assert!(office.pet(cat.kind, now) && sparse.pet(cat.kind, now));
+                }
                 let scene = if fed { case.after } else { case.before };
-                let petting = (case.petted && fed).then_some(&petting);
                 let draw = |office: &mut OfficeSession| {
-                    render_office_with(office, look, scene, conditions, now, (&pets, petting));
+                    render_office_with(office, look, scene, conditions, now, &pets);
                     let picture = office.picture().expect("lays out");
                     picture.pixels().as_slice().to_vec()
                 };
                 let px = draw(&mut office);
+                if let Some(plain) = plain.as_mut().filter(|_| ticks * FRAME < petted_until) {
+                    let unpetted = draw(plain);
+                    petting_drawn |= fed && unpetted != px;
+                }
                 if let Some((until, held_px)) = &held
                     && now < *until
                 {
@@ -2319,6 +2324,10 @@ fn a_frame_holds_for_the_wait_its_office_names() {
             assert!(
                 set_off || !case.sets_off,
                 "{name} {look:?}: no wander set off"
+            );
+            assert!(
+                petting_drawn || plain.is_none(),
+                "{name} {look:?}: no frame drew the petting"
             );
         }
     }
@@ -2367,18 +2376,17 @@ fn render_office(
     now: SystemTime,
 ) {
     let conditions = Conditions::default().with_motion(motion);
-    render_office_with(office, look, scene, conditions, now, (&[], None));
+    render_office_with(office, look, scene, conditions, now, &[]);
 }
 
-/// [`render_office`] under `conditions`, its floors picking their pet of `pets`,
-/// `petting` playing.
+/// [`render_office`] under `conditions`, its floors picking their pet of `pets`.
 fn render_office_with(
     office: &mut OfficeSession,
     look: crate::look::Look,
     scene: &SceneState,
     conditions: Conditions,
     now: SystemTime,
-    (pets, petting): (&[Pet], Option<&crate::pet::PetState>),
+    pets: &[Pet],
 ) {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let _ = office.render(
@@ -2388,7 +2396,7 @@ fn render_office_with(
                 scene,
                 now,
                 conditions,
-                pets: PetInputs { pet: None, petting },
+                pets: PetInputs::default(),
             },
             theme,
             viewport: PAINTED,
@@ -2438,18 +2446,15 @@ fn under_still_a_reading_and_a_petting_hold_their_frame() {
         kind: crate::pet::PetKind::Cat,
         name: "cat".into(),
     };
-    let petting = crate::pet::PetState {
-        petted_at: t0,
-        kind: cat.kind,
-        floor_idx: 0,
-    };
     let conditions = Conditions::default().with_motion(Motion::Still);
     for look in looks() {
-        let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
-        let mut frame_at = |since: Duration| {
-            let now = t0 + since;
-            let pets = (std::slice::from_ref(&cat), Some(&petting));
-            render_office_with(&mut office, look, &scene, conditions, now, pets);
+        let pack = Arc::new(crate::pack::test_office());
+        let mut office = OfficeSession::new(Arc::clone(&pack));
+        let mut plain = OfficeSession::new(pack);
+        assert!(office.pet(cat.kind, t0));
+        let frame_at = |office: &mut OfficeSession, since: Duration| {
+            let pets = std::slice::from_ref(&cat);
+            render_office_with(office, look, &scene, conditions, t0 + since, pets);
             office
                 .picture()
                 .expect("lays out")
@@ -2457,9 +2462,17 @@ fn under_still_a_reading_and_a_petting_hold_their_frame() {
                 .as_slice()
                 .to_vec()
         };
-        let first = frame_at(FRAME);
+        let first = frame_at(&mut office, FRAME);
         assert!(
-            first == frame_at(Duration::from_millis(crate::token_meter::SHEET_FALL_MS - 1)),
+            first != frame_at(&mut plain, FRAME),
+            "{look:?}: premise: the frame draws the petting"
+        );
+        assert!(
+            first
+                == frame_at(
+                    &mut office,
+                    Duration::from_millis(crate::token_meter::SHEET_FALL_MS - 1)
+                ),
             "{look:?}: the frame moved"
         );
     }
@@ -2494,28 +2507,34 @@ fn under_still_a_lived_in_room_waits_the_rest_tick() {
         kind: crate::pet::PetKind::Cat,
         name: "cat".into(),
     };
-    let petting = crate::pet::PetState {
-        petted_at: t0,
-        kind: cat.kind,
-        floor_idx: 0,
-    };
     let conditions = Conditions::default().with_motion(Motion::Still);
     let now = t0 + FRAME;
-    for (case, scene, petting) in [
-        ("a turn just ended", &turn_ended, None),
-        ("a gateway just came up", &gateway_up, None),
-        ("a pet being petted", &idle, Some(&petting)),
+    let draw = |office: &mut OfficeSession, scene| {
+        let pets = std::slice::from_ref(&cat);
+        let look = crate::look::Look::HALF_BLOCKS;
+        render_office_with(office, look, scene, conditions, now, pets);
+        office
+            .picture()
+            .expect("lays out")
+            .pixels()
+            .as_slice()
+            .to_vec()
+    };
+    for (case, scene, petted) in [
+        ("a turn just ended", &turn_ended, false),
+        ("a gateway just came up", &gateway_up, false),
+        ("a pet being petted", &idle, true),
     ] {
-        let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
-        let pets = (std::slice::from_ref(&cat), petting);
-        render_office_with(
-            &mut office,
-            crate::look::Look::HALF_BLOCKS,
-            scene,
-            conditions,
-            now,
-            pets,
-        );
+        let pack = Arc::new(crate::pack::test_office());
+        let mut office = OfficeSession::new(Arc::clone(&pack));
+        assert!(!petted || office.pet(cat.kind, t0), "{case}");
+        let drawn = draw(&mut office, scene);
+        if petted {
+            assert!(
+                drawn != draw(&mut OfficeSession::new(pack), scene),
+                "{case}: premise: the frame draws the petting"
+            );
+        }
         assert_eq!(office.until_next_paint(now), Some(REST_TICK), "{case}");
     }
     let dwell = (idle.agents.keys())
@@ -2783,33 +2802,154 @@ fn a_slides_footer_speaks_for_its_destination() {
     );
 }
 
-/// Every painter's floor reads the one rule for its pet: a petting plays on
-/// its own floor alone, and only while it lasts.
+/// The anim floor `floor` of `office` last drew its pet in.
+fn drawn_pet_anim(office: &OfficeSession, floor: usize) -> crate::pack::Piece {
+    let hovers = (office.floor(floor).and_then(|f| f.raster.hovers())).expect("a frame");
+    (hovers.listed().iter())
+        .find_map(|hover| match hover.target {
+            crate::hit::HoverTarget::Pet(pet) => Some(pet.anim),
+            _ => None,
+        })
+        .expect("a pet drawn")
+}
+
+/// An office of two idle floors and its twin no one pets, drawn at the same
+/// instants: on an idle floor an unpetted pet walks or sleeps, so a sitting
+/// one is petted.
+struct PettedTwins {
+    scene: SceneState,
+    petted: OfficeSession,
+    plain: OfficeSession,
+}
+
+impl PettedTwins {
+    fn new() -> Self {
+        let pack = Arc::new(crate::pack::test_office());
+        Self {
+            scene: make_scene(3, 2),
+            petted: OfficeSession::new(Arc::clone(&pack)),
+            plain: OfficeSession::new(pack),
+        }
+    }
+
+    /// Both drawn at `now`, each floor picking its pet of `pets`.
+    fn render(&mut self, pets: &[Pet], now: SystemTime) {
+        for office in [&mut self.petted, &mut self.plain] {
+            let look = crate::look::Look::HALF_BLOCKS;
+            render_office_with(office, look, &self.scene, Conditions::default(), now, pets);
+        }
+    }
+
+    fn navigate(&mut self, floor: usize, now: SystemTime) {
+        for office in [&mut self.petted, &mut self.plain] {
+            assert!(office.navigate(floor, now), "premise: a slide to {floor}");
+        }
+    }
+
+    /// Whether floor `floor`'s `kind` pet sat in the petted office's last
+    /// frame of it.
+    fn sits(&self, floor: usize, kind: crate::pet::PetKind) -> bool {
+        assert_ne!(
+            drawn_pet_anim(&self.plain, floor),
+            kind.sit_anim(),
+            "premise: an unpetted pet sits on floor {floor}"
+        );
+        drawn_pet_anim(&self.petted, floor) == kind.sit_anim()
+    }
+}
+
+/// A petting plays on the floor it was given on, which a slide away shows
+/// beside the floor it lands on, and what a press, the cursor and a tooltip
+/// read over a floor is that floor's: a pet petted on one floor, then
+/// another, plays on each.
 #[test]
 fn a_petting_plays_only_on_its_own_floor() {
-    let scene = make_scene(3, 2);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
-    office.prepare(&scene, t0);
-    let petting = crate::pet::PetState {
-        petted_at: t0,
-        kind: crate::pet::PetKind::Cat,
-        floor_idx: 0,
-    };
-    let pets = [crate::pet::Pet::defaulted(crate::pet::PetKind::Cat)];
-    let petted = |office: &OfficeSession, now| {
-        office
-            .showing_pets(&pets, Some(&petting), now)
-            .petting
-            .is_some()
-    };
-    assert!(petted(&office, t0), "the petted floor");
-    let over = t0 + Duration::from_millis(crate::pet::PET_DURATION_MS);
-    assert!(!petted(&office, over), "a petting over");
-    assert!(office.navigate(1, t0));
-    office.prepare(&scene, t0 + Duration::from_millis(TRANSITION_DURATION_MS));
-    assert_eq!(office.nav().current(), 1, "premise: floor 1 shows");
-    assert!(!petted(&office, t0), "another floor");
+    use crate::pet::{PET_DURATION_MS, PetKind};
+    const { assert!(2 * TRANSITION_DURATION_MS < PET_DURATION_MS) };
+    let slide = Duration::from_millis(TRANSITION_DURATION_MS);
+    let pets = [Pet::defaulted(PetKind::Cat)];
+    let mut twins = PettedTwins::new();
+    let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    twins.render(&pets, start);
+    twins.navigate(1, start);
+    let t0 = start + slide;
+    twins.render(&pets, t0);
+    assert!(twins.petted.pet(PetKind::Cat, t0), "the record");
+    twins.render(&pets, t0);
+    assert!(twins.sits(1, PetKind::Cat), "the floor showing plays it");
+    twins.navigate(0, t0);
+    twins.render(&pets, t0 + slide / 2);
+    assert_eq!(twins.petted.nav().current(), 1, "premise: mid-slide");
+    assert!(twins.sits(1, PetKind::Cat), "the floor it leaves plays it");
+    assert!(
+        !twins.sits(0, PetKind::Cat),
+        "the floor it reaches does not"
+    );
+    let t1 = t0 + slide;
+    twins.render(&pets, t1);
+    assert!(!twins.sits(0, PetKind::Cat));
+    assert!(
+        (twins.petted.showing_pets(&pets, t1).petting).is_none(),
+        "a pointer over floor 0 reads no petting"
+    );
+    assert!(twins.petted.pet(PetKind::Cat, t1), "floor 0's own record");
+    twins.navigate(1, t1);
+    let t2 = t1 + slide;
+    twins.render(&pets, t2);
+    assert!(twins.sits(1, PetKind::Cat), "floor 1's petting plays on");
+    assert!(
+        (twins.petted.showing_pets(&pets, t2).petting).is_some(),
+        "a pointer over floor 1 reads its petting"
+    );
+}
+
+/// A petting refuses another until it is over: a millisecond short of its
+/// length it still plays and still refuses, and at its length it is over and
+/// a new one is recorded.
+#[test]
+fn a_petting_refuses_another_while_it_plays() {
+    use crate::pet::{PET_DURATION_MS, PetKind};
+    let pets = [Pet::defaulted(PetKind::Cat)];
+    let mut twins = PettedTwins::new();
+    let t = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    twins.render(&pets, t);
+    assert!(twins.petted.pet(PetKind::Cat, t));
+    let last = t + Duration::from_millis(PET_DURATION_MS - 1);
+    twins.render(&pets, last);
+    assert!(
+        twins.sits(0, PetKind::Cat),
+        "it plays to its last millisecond"
+    );
+    assert!((twins.petted.showing_pets(&pets, last).petting).is_some());
+    assert!(!twins.petted.pet(PetKind::Cat, last), "and refuses another");
+    let over = t + Duration::from_millis(PET_DURATION_MS);
+    twins.render(&pets, over);
+    assert!(!twins.sits(0, PetKind::Cat), "over at its length");
+    assert!((twins.petted.showing_pets(&pets, over).petting).is_none());
+    assert!(
+        twins.petted.pet(PetKind::Cat, over),
+        "a new one is recorded"
+    );
+}
+
+/// A petting plays for the pet petted: a floor that draws another kind since
+/// plays none, and that pet can be petted at once.
+#[test]
+fn a_petting_plays_only_for_the_pet_petted() {
+    use crate::pet::PetKind;
+    let (cats, dogs) = (
+        [Pet::defaulted(PetKind::Cat)],
+        [Pet::defaulted(PetKind::Dog)],
+    );
+    let mut twins = PettedTwins::new();
+    let t = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    twins.render(&cats, t);
+    assert!(twins.petted.pet(PetKind::Cat, t));
+    let later = t + FRAME;
+    twins.render(&dogs, later);
+    assert!(!twins.sits(0, PetKind::Dog));
+    assert!((twins.petted.showing_pets(&dogs, later).petting).is_none());
+    assert!(twins.petted.pet(PetKind::Dog, later));
 }
 
 /// A lift goes to the floor showing and nothing during a slide; its carry and
@@ -2898,10 +3038,8 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         "a slide has no one layout"
     );
     assert!(slide.hits().is_none(), "a slide hits nothing");
-    let _ = render(
-        &mut office,
-        t0 + Duration::from_millis(TRANSITION_DURATION_MS),
-    );
+    let landed = t0 + Duration::from_millis(TRANSITION_DURATION_MS);
+    let _ = render(&mut office, landed);
     assert!(matches!(
         office.picture(),
         Some(crate::look::Picture::Floor(_))
@@ -2915,7 +3053,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         .collect();
     assert_eq!(
         office
-            .showing_pets(&pets, None, t0)
+            .showing_pets(&pets, landed)
             .pet
             .map(|p| p.name.as_str()),
         crate::pet::select_pet_for_floor(floor_seed(1), &pets).map(|p| p.name.as_str()),
