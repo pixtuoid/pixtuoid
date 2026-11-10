@@ -30,7 +30,7 @@ use serde_json::Value;
 use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::first_sight::{
-    HEAD_BYTES, Life, Registration, Sight, evidence, extract_head_fields, first_sight_start,
+    HEAD_BYTES, Life, Registration, Sight, extract_head_fields, first_sight_start, holds_life,
     last_life,
 };
 use crate::source::registry;
@@ -139,9 +139,9 @@ pub struct Driven {
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
     pub(crate) presence: Vec<PresenceMsg>,
-    /// How many `events` are a first-sight SEED, not the wire's own output. A
-    /// census must report [`Self::wire_events`] instead — the seed registers a
-    /// slot unconditionally, so counting it scores garbage 1/1.
+    /// How many `events` are a SEED standing in for the watcher's registration,
+    /// not the wire's own output. A census reports [`Self::wire_events`]: a seed
+    /// registers a slot unconditionally, so counting it scores garbage 1/1.
     pub(crate) seed_events: usize,
     /// Non-blank lines driven (blank lines are skipped, not counted).
     pub lines: usize,
@@ -215,7 +215,7 @@ impl Driven {
         })
     }
 
-    /// Events the WIRE produced, excluding the first-sight seed — the honest
+    /// Events the WIRE produced, excluding the registration seeds — the honest
     /// numerator for any census.
     pub fn wire_events(&self) -> usize {
         self.events.len() - self.seed_events
@@ -441,8 +441,8 @@ impl Drive {
         };
         let path = Path::new(logical.as_str());
         // The id deriver over the normalized key, as the watcher derives it:
-        // `backfill_identity` never heals a non-empty session_id, so any other
-        // spelling keys a twin of the hook-created slot forever.
+        // nothing heals a slot's session_id, so any other spelling keys a twin
+        // of the hook-created slot forever.
         self.seeded.then(|| {
             (
                 source.as_str(),
@@ -495,8 +495,8 @@ pub struct Fold {
     sights: HashMap<AgentId, Sighted>,
 }
 
-/// A seeded transcript's first sight and its start: the first feed stands in
-/// for the file head the watcher reads back.
+/// A seeded transcript's claim and its head: the first feed stands in for the
+/// file head the watcher reads back.
 #[derive(Debug)]
 struct Sighted {
     sight: Sight,
@@ -558,7 +558,7 @@ impl Fold {
 
     /// The seed `drive` leads a feed of `lines` with when the watcher's gate
     /// registers on it, else `None`; the claim then follows `decoded`'s verdict.
-    fn first_sight<S: AsRef<str>>(
+    fn registration<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
         lines: &[Option<S>],
@@ -568,13 +568,9 @@ impl Fold {
         let id = AgentId::from_parts(source, &session_id);
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.get(&id);
-        let leads = Sight::leads(sighted.map(|s| &s.sight)).unwrap_or_else(|| {
-            decoded
-                .iter()
-                .any(|ev| evidence(ev, id) == Some(Life::Lives))
-        });
+        let registers = Sight::registers(sighted.map(|s| &s.sight), holds_life(decoded, id));
         let seed = match sighted {
-            _ if !leads => None,
+            _ if !registers => None,
             // A claim re-sends the start its first sight built, as the watcher's
             // `Registration` does.
             Some(Sighted {
@@ -620,7 +616,7 @@ impl Fold {
                 }
             }
             let mut fed = Vec::new();
-            if let Some(seed) = self.first_sight(drive, &lines, &decoded) {
+            if let Some(seed) = self.registration(drive, &lines, &decoded) {
                 self.driven.seed_events += 1;
                 fed.push(seed);
             }
