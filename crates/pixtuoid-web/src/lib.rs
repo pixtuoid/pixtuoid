@@ -195,8 +195,8 @@ impl Office {
         let fit = PixelFit::at_least_density(density.get(), density, Size { w: 0, h: 0 });
         Ok(Office {
             // Capacity starts empty and is synced from the CANVAS's own layout
-            // on every `step` before any beat fires, so the reducer only admits
-            // agents the rendered office can seat.
+            // on every `step` before any beat fires, so the reducer seats agents
+            // only at desks the rendered office has.
             scene: SceneState::default(),
             session: FloorSession::new(pack),
             rgba: Vec::new(),

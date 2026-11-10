@@ -905,8 +905,7 @@ fn child_lifecycle_is_stamped_on_sweep_and_pruned_by_gc() {
 }
 
 /// A synthetic ~1 event/s stream through the REAL reducer: a per-event leak
-/// (a missed prune site) grows a map ~linearly and blows the bound, while a
-/// healthy stream stays an order of magnitude under.
+/// (a missed prune site) grows a map ~linearly and blows the bound.
 #[test]
 fn correlation_maps_stay_bounded_across_a_long_stream() {
     use super::{EXIT_GRACE_WINDOW, STALE_TOOL_TIMEOUT};
