@@ -38,12 +38,7 @@ impl Source for AntigravitySource {
     }
 }
 
-fn ag_session_ended(_tail: &[u8]) -> bool {
-    false
-}
-
 pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
-    check_ended: ag_session_ended,
     activity_recency: None,
     head_label: None,
     derive_label: None,
@@ -62,12 +57,6 @@ fn brain_root() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ag_session_ended_is_always_false() {
-        assert!(!ag_session_ended(b"x"));
-        assert!(!ag_session_ended(b""));
-    }
 
     #[test]
     fn brain_root_is_the_cli_brain_under_dot_gemini() {

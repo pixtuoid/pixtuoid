@@ -6,13 +6,17 @@ mod tailing;
 mod today;
 mod unclaim;
 
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use filetime::{FileTime, set_file_mtime};
+use tokio::sync::mpsc;
 
+use pixtuoid_core::harness::{Drive, fixtures_dir, sources_root, transcript_in};
 use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::jsonl::{JsonlWatcher, ProbeSnapshot, force_polling_backend_for_tests};
 use pixtuoid_core::source::{AgentEvent, Source, Transport};
+use pixtuoid_core::{Reducer, SceneState};
 
 /// Run every watcher test's root watch on a fast `PollWatcher` backend instead
 /// of the native FSEvents/inotify watcher, whose stream setup/teardown
@@ -151,4 +155,144 @@ fn copilot_tool_line(call_id: &str, tool: &str) -> serde_json::Value {
 
 fn ag_step_line() -> serde_json::Value {
     serde_json::json!({ "step_index": 0, "type": "PLANNER_RESPONSE", "tool_calls": [] })
+}
+
+/// [`collect_until`]'s bound on reaching its event: a hang guard, never a verdict.
+const DEADLINE: Duration = Duration::from_secs(15);
+
+/// Every event up to the first `done` accepts. `done` names an event the
+/// watcher sends after every event a test asserts on, and one read's events
+/// arrive in order, so a slow runner delays the verdict but never changes it.
+async fn collect_until(
+    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    what: &str,
+    mut done: impl FnMut(&AgentEvent) -> bool,
+) -> Vec<(Transport, AgentEvent)> {
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+    let mut events = Vec::new();
+    loop {
+        match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Some(tagged)) => {
+                let reached = done(&tagged.1);
+                events.push(tagged);
+                if reached {
+                    return events;
+                }
+            }
+            Ok(None) => panic!("{what}: the stream closed"),
+            Err(_) => panic!("{what}: no end"),
+        }
+    }
+}
+
+/// `done` for a replaying read: its closing bracket, which `walk_jsonl` sends
+/// after every event the read decoded, one per agent it opened.
+fn a_replay_closes() -> impl FnMut(&AgentEvent) -> bool {
+    let (mut opened, mut closed) = (0, 0);
+    move |event| {
+        match event {
+            AgentEvent::Backlog {
+                replaying: true, ..
+            } => opened += 1,
+            AgentEvent::Backlog {
+                replaying: false, ..
+            } if opened > 0 => closed += 1,
+            _ => {}
+        }
+        opened > 0 && closed == opened
+    }
+}
+
+/// `done` for `transcript`'s first sight at boot when it holds `lines`: the
+/// replay's closing bracket, or its `Rename` when the lines decode to no event
+/// and the watcher brackets nothing.
+fn a_first_sight_ends(
+    source: &str,
+    transcript: &Path,
+    lines: &str,
+) -> impl FnMut(&AgentEvent) -> bool {
+    let drive = Drive::transcript_at(source, transcript).expect("a transcript source");
+    let brackets = !drive.lines(lines.lines()).events.is_empty();
+    let mut closes = a_replay_closes();
+    move |event| match brackets {
+        true => closes(event),
+        false => matches!(event, AgentEvent::Rename { .. }),
+    }
+}
+
+/// A reducer folding a watched source's stream, every event at `at`.
+struct Watched {
+    rx: mpsc::Receiver<(Transport, AgentEvent)>,
+    reducer: Reducer,
+    scene: SceneState,
+    at: SystemTime,
+}
+
+impl Watched {
+    fn new(rx: mpsc::Receiver<(Transport, AgentEvent)>, reducer: Reducer, at: SystemTime) -> Self {
+        Self {
+            rx,
+            reducer,
+            scene: SceneState::uniform(8),
+            at,
+        }
+    }
+
+    /// Folds what [`collect_until`] gathers, and returns it.
+    async fn until(
+        &mut self,
+        what: &str,
+        done: impl FnMut(&AgentEvent) -> bool,
+    ) -> Vec<AgentEvent> {
+        let mut folded = Vec::new();
+        for (transport, event) in collect_until(&mut self.rx, what, done).await {
+            folded.push(event.clone());
+            self.reducer
+                .apply(&mut self.scene, event, self.at, transport);
+        }
+        folded
+    }
+}
+
+/// `source`'s one transcript in its recorded `scenario`, and that scenario's dir.
+fn recorded(source: &str, scenario: &str) -> (PathBuf, PathBuf) {
+    let dir = fixtures_dir(&sources_root(), source).join(scenario);
+    let transcript = transcript_in(source, &dir)
+        .unwrap_or_else(|found| panic!("{source}: one recorded transcript, found {found:?}"));
+    (transcript, dir)
+}
+
+/// `transcript`'s lines before the last one `source` decodes to an event `cut`
+/// accepts, and the rest.
+fn split_before_last(
+    source: &str,
+    transcript: &Path,
+    cut: impl Fn(&AgentEvent) -> bool,
+) -> (String, String) {
+    let body = std::fs::read_to_string(transcript).expect("a committed transcript");
+    let drive = Drive::transcript_at(source, transcript).expect("a transcript source");
+    let lines: Vec<&str> = body.lines().collect();
+    let last = lines
+        .iter()
+        .rposition(|line| drive.lines([*line]).events.iter().any(&cut))
+        .unwrap_or_else(|| panic!("{source}: no line decodes to it"));
+    assert!(last > 0, "{source}: nothing before it");
+    let text = |part: &[&str]| part.iter().map(|l| format!("{l}\n")).collect();
+    (text(&lines[..last]), text(&lines[last..]))
+}
+
+/// `head` written where `transcript` sits under `dir`, in a fresh root.
+fn stage(transcript: &Path, dir: &Path, head: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::TempDir::new().unwrap();
+    let path = root
+        .path()
+        .join(transcript.strip_prefix(dir).expect("under it"));
+    std::fs::create_dir_all(path.parent().expect("a parent")).unwrap();
+    std::fs::write(&path, head).unwrap();
+    (root, path)
+}
+
+fn append(path: &Path, text: &str) {
+    let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+    std::io::Write::write_all(&mut file, text.as_bytes()).unwrap();
 }
