@@ -402,11 +402,11 @@ impl<S> Clone for FloorInputs<'_, S> {
 impl<S> Copy for FloorInputs<'_, S> {}
 
 impl<'a> FloorInputs<'a, SceneState> {
-    /// These inputs drawing `floor`, a projection of their scene.
+    /// These inputs drawing `floor_scene`, a projection of their scene.
     #[must_use]
-    pub(crate) fn on(self, floor: &'a FloorScene) -> FloorInputs<'a> {
+    pub(crate) fn on(self, floor_scene: &'a FloorScene) -> FloorInputs<'a> {
         FloorInputs {
-            scene: floor,
+            scene: floor_scene,
             now: self.now,
             floor: self.floor,
             pets: self.pets,

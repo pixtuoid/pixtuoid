@@ -217,11 +217,11 @@ impl<S> Clone for RenderInputs<'_, S> {
 impl<S> Copy for RenderInputs<'_, S> {}
 
 impl<'a> RenderInputs<'a, pixtuoid_core::state::SceneState> {
-    /// These inputs drawing `floor`, a projection of their world's scene.
+    /// These inputs drawing `floor_scene`, a projection of their world's scene.
     #[must_use]
-    pub(crate) fn on(self, floor: &'a crate::floor::FloorScene) -> RenderInputs<'a> {
+    pub(crate) fn on(self, floor_scene: &'a crate::floor::FloorScene) -> RenderInputs<'a> {
         RenderInputs {
-            world: self.world.on(floor),
+            world: self.world.on(floor_scene),
             theme: self.theme,
             viewport: self.viewport,
             place: self.place,
