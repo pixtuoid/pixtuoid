@@ -15,9 +15,10 @@
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
 //!    in for `emit_registration`, through the SAME registration gate
 //!    ([`Sight::registers`]), head scan and `first_sight_start` from the SAME
-//!    registry row. The seed-at-EOF decision (`should_seed_at_eof`) stays out, as
-//!    does what the registry's native-only `NativeTranscript` column derives
-//!    (the title, the label, a path-derived cwd), which a wasm-clean build lacks.
+//!    registry row. The seed-at-EOF decision (`should_seed_at_eof`) and a
+//!    claim's `LabelHint` stay out, as does what the registry's native-only
+//!    `NativeTranscript` column derives (the title, the label, a path-derived
+//!    cwd), which a wasm-clean build lacks.
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
 //!    so it is not a free parameter.
 
@@ -816,7 +817,7 @@ mod tests {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
         let at = default_now();
         let title = serde_json::json!({"type": "title_change", "id": "x", "title": "Named"});
-        let trailer = serde_json::json!({"type": "thinking_level_change", "thinkingLevel": "high"});
+        let no_life = serde_json::json!({"type": "thinking_level_change", "thinkingLevel": "high"});
         let slots = |fold: &Fold| {
             (fold.driven().scene.agents.values())
                 .map(|slot| (slot.label.clone(), slot.parent_id))
@@ -829,7 +830,7 @@ mod tests {
             matches!(&first[..], [(label, None)] if &*label.text() == "om·Named"),
             "{first:?}"
         );
-        fold.feed(&drive, [trailer.to_string()], at);
+        fold.feed(&drive, [no_life.to_string()], at);
         assert_eq!(fold.driven().seed_events, 1, "a feed showing no life");
         fold.feed(&drive, [tool_line()], at);
         assert_eq!(fold.driven().seed_events, 2, "a feed showing life");
