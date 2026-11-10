@@ -1051,7 +1051,6 @@ mod tests {
         let petting = PetState {
             petted_at: at(walking_at + PAINT_FRAME_MS),
             kind: PetKind::Cat,
-            floor_idx: 0,
         };
         let pet_ms = walking_at + PAINT_FRAME_MS;
         for ms in (pet_ms..pet_ms + crate::pet::PET_DURATION_MS).step_by(PAINT_FRAME_MS as usize) {

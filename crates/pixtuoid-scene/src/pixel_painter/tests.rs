@@ -2826,7 +2826,6 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
     let petting = crate::pet::PetState {
         petted_at: now0,
         kind: pet.kind,
-        floor_idx: floor.floor_idx,
     };
     let held = step(PetInputs {
         pet: Some(&pet),
@@ -2842,33 +2841,6 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
         hearts(&held),
         [0],
         "petted just now: its first heart leaves"
-    );
-
-    let upstairs = crate::pet::PetState {
-        floor_idx: floor.floor_idx + 1,
-        ..petting
-    };
-    let elsewhere = step(PetInputs {
-        pet: Some(&pet),
-        petting: Some(&upstairs),
-    })
-    .expect("the cat roams");
-    assert!(
-        hearts(&elsewhere).is_empty(),
-        "a petting on another floor leaves this one roaming"
-    );
-    let a_dog = crate::pet::PetState {
-        kind: crate::pet::PetKind::Dog,
-        ..petting
-    };
-    let other_kind = step(PetInputs {
-        pet: Some(&pet),
-        petting: Some(&a_dog),
-    })
-    .expect("the cat roams");
-    assert!(
-        hearts(&other_kind).is_empty(),
-        "petting another kind of pet leaves the cat roaming"
     );
 }
 

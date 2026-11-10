@@ -230,8 +230,10 @@ pub fn pixtuoid_scene::floor::OfficeSession::n_floors(&self) -> usize
 pub fn pixtuoid_scene::floor::OfficeSession::nav(&self) -> &pixtuoid_scene::floor::FloorNav
 pub fn pixtuoid_scene::floor::OfficeSession::navigate(&mut self, usize, std::time::SystemTime) -> bool
 pub fn pixtuoid_scene::floor::OfficeSession::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
+pub fn pixtuoid_scene::floor::OfficeSession::pet(&mut self, pixtuoid_scene::pet::PetKind, std::time::SystemTime) -> bool
 pub fn pixtuoid_scene::floor::OfficeSession::picture(&self) -> core::option::Option<pixtuoid_scene::look::Picture<'_>>
 pub fn pixtuoid_scene::floor::OfficeSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>, &[pixtuoid_scene::pet::Pet], pixtuoid_scene::sprite::Rgb) -> pixtuoid_scene::floor::Feed
+pub fn pixtuoid_scene::floor::OfficeSession::showing_pets<'p>(&'p self, &'p [pixtuoid_scene::pet::Pet], std::time::SystemTime) -> pixtuoid_scene::floor::PetInputs<'p>
 pub fn pixtuoid_scene::floor::OfficeSession::until_next_paint(&self, std::time::SystemTime) -> core::option::Option<core::time::Duration>
 impl core::fmt::Debug for pixtuoid_scene::floor::OfficeSession
 pub fn pixtuoid_scene::floor::OfficeSession::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -405,7 +407,7 @@ pub pixtuoid_scene::hit::SceneHit::Figure(&'a pixtuoid_scene::hit::HoverTarget)
 pub pixtuoid_scene::hit::SceneHit::Furniture(&'static str)
 pub pixtuoid_scene::hit::SceneHit::Star
 impl pixtuoid_scene::hit::SceneHit<'_>
-pub fn pixtuoid_scene::hit::SceneHit<'_>::action(self, core::option::Option<&pixtuoid_scene::pet::PetState>, std::time::SystemTime) -> core::option::Option<pixtuoid_scene::hit::HitAction>
+pub fn pixtuoid_scene::hit::SceneHit<'_>::action(self, core::option::Option<&pixtuoid_scene::pet::PetState>) -> core::option::Option<pixtuoid_scene::hit::HitAction>
 impl<'a> core::clone::Clone for pixtuoid_scene::hit::SceneHit<'a>
 pub fn pixtuoid_scene::hit::SceneHit<'a>::clone(&self) -> Self
 impl<'a> core::cmp::Eq for pixtuoid_scene::hit::SceneHit<'a>
@@ -509,7 +511,7 @@ pub struct pixtuoid_scene::interact::Affordance
 pub pixtuoid_scene::interact::Affordance::click: core::option::Option<pixtuoid_scene::hit::HitAction>
 pub pixtuoid_scene::interact::Affordance::lift: core::option::Option<pixtuoid_scene::interact::Figure>
 impl pixtuoid_scene::interact::Affordance
-pub fn pixtuoid_scene::interact::Affordance::of(core::option::Option<pixtuoid_scene::hit::SceneHit<'_>>, core::option::Option<&pixtuoid_scene::pet::PetState>, std::time::SystemTime) -> Self
+pub fn pixtuoid_scene::interact::Affordance::of(core::option::Option<pixtuoid_scene::hit::SceneHit<'_>>, core::option::Option<&pixtuoid_scene::pet::PetState>) -> Self
 impl core::clone::Clone for pixtuoid_scene::interact::Affordance
 pub fn pixtuoid_scene::interact::Affordance::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::interact::Affordance
@@ -549,7 +551,7 @@ pub struct pixtuoid_scene::interact::Pointer
 impl pixtuoid_scene::interact::Pointer
 pub fn pixtuoid_scene::interact::Pointer::cancel(&mut self) -> core::option::Option<pixtuoid_scene::interact::Gesture>
 pub fn pixtuoid_scene::interact::Pointer::carrying(&self) -> bool
-pub fn pixtuoid_scene::interact::Pointer::down(&mut self, core::option::Option<pixtuoid_scene::hit::SceneHit<'_>>, pixtuoid_scene::layout::Point, pixtuoid_scene::interact::Slop, core::option::Option<&pixtuoid_scene::pet::PetState>, std::time::SystemTime) -> pixtuoid_scene::interact::Down
+pub fn pixtuoid_scene::interact::Pointer::down(&mut self, core::option::Option<pixtuoid_scene::hit::SceneHit<'_>>, pixtuoid_scene::layout::Point, pixtuoid_scene::interact::Slop, core::option::Option<&pixtuoid_scene::pet::PetState>) -> pixtuoid_scene::interact::Down
 pub fn pixtuoid_scene::interact::Pointer::moved(&mut self, pixtuoid_scene::layout::Point) -> core::option::Option<pixtuoid_scene::interact::Gesture>
 pub fn pixtuoid_scene::interact::Pointer::up(&mut self, core::option::Option<pixtuoid_scene::layout::Point>) -> core::option::Option<pixtuoid_scene::interact::Gesture>
 impl core::clone::Clone for pixtuoid_scene::interact::Pointer
@@ -1882,11 +1884,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::pet::Pet
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pet::Pet
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pet::Pet
 pub struct pixtuoid_scene::pet::PetState
-pub pixtuoid_scene::pet::PetState::floor_idx: usize
-pub pixtuoid_scene::pet::PetState::kind: pixtuoid_scene::pet::PetKind
-pub pixtuoid_scene::pet::PetState::petted_at: std::time::SystemTime
-impl pixtuoid_scene::pet::PetState
-pub fn pixtuoid_scene::pet::PetState::is_active(&self, std::time::SystemTime) -> bool
 impl core::fmt::Debug for pixtuoid_scene::pet::PetState
 pub fn pixtuoid_scene::pet::PetState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::pet::PetState

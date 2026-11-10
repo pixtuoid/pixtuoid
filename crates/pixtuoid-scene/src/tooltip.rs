@@ -218,7 +218,8 @@ const POINTER_GAP: u16 = 2;
 
 /// The tooltip for what `hit` names at `now`; `None` for the star, whose click
 /// is its whole story, and for an agent or gateway gone from `office`, the whole
-/// office. `pets` is the shown floor's.
+/// office. `pets` is the shown floor's at `now`
+/// ([`crate::floor::OfficeSession::showing_pets`]).
 pub fn for_hit(
     hit: SceneHit<'_>,
     office: &SceneState,
@@ -228,7 +229,7 @@ pub fn for_hit(
     match hit {
         SceneHit::Figure(HoverTarget::Agent(id)) => agent(office, *id, now),
         SceneHit::Figure(&HoverTarget::Pet(PetHover { kind, anim, .. })) => {
-            let on_cooldown = pets.petting.is_some_and(|p| p.is_active(now));
+            let on_cooldown = pets.petting.is_some();
             // The hover was drawn from `pets.pet`, so the kinds agree and the
             // `default_name` arm is not a live path.
             let name = pets

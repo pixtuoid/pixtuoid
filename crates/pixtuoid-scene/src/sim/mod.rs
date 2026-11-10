@@ -591,9 +591,7 @@ fn pet_placement(
     let walk = creatures
         .entry(CreatureKey::Pet(kind))
         .or_insert_with(|| CreatureWalk::at_home(layout, floor.floor_seed, now));
-    let petted = pets
-        .petting
-        .filter(|p| p.is_active(now) && p.kind == kind && p.floor_idx == floor.floor_idx);
+    let petted = pets.petting;
     if petted.is_some() {
         walk.hold(now);
     }

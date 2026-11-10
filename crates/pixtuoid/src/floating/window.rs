@@ -81,8 +81,6 @@ pub(crate) struct FloatingApp {
     /// The cursor last set, so it is set only when it changes; `None` once
     /// the pointer leaves, whatever the OS showed meanwhile.
     cursor_icon: Option<winit::window::CursorIcon>,
-    /// The last petting, played while it lasts.
-    petting: Option<pixtuoid_scene::pet::PetState>,
     /// The animation-tick deadline — see [`super::cadence`] for why the redraw
     /// REQUEST (not just the wait) has to be gated on it.
     clock: super::cadence::FrameClock,
@@ -154,7 +152,6 @@ struct WindowOffice<'a> {
     window: &'a Window,
     /// Physical px.
     cursor: (f64, f64),
-    petting: Option<&'a pixtuoid_scene::pet::PetState>,
     now: std::time::SystemTime,
 }
 
@@ -170,7 +167,6 @@ impl crate::panels::Office for WindowOffice<'_> {
             (size.width, size.height),
             super::offscreen::Pressing {
                 scale_factor: self.window.scale_factor(),
-                petting: self.petting,
                 now: self.now,
             },
         );
@@ -245,7 +241,6 @@ impl FloatingApp {
             cursor: PhysicalPosition::new(0.0, 0.0),
             cursor_in: false,
             hovered: false,
-            petting: None,
             clock: super::cadence::FrameClock::new(Instant::now()),
             cursor_icon: None,
             zoom: cfg.zoom,
@@ -283,7 +278,6 @@ impl FloatingApp {
             (self.cursor.x, self.cursor.y),
             (size.width, size.height),
             &self.ui.modal(),
-            self.petting.as_ref(),
             self.ui.now(),
         );
         if self.cursor_icon != Some(icon) {
@@ -327,7 +321,6 @@ impl FloatingApp {
             renderer: &mut self.renderer,
             window,
             cursor,
-            petting: self.petting.as_ref(),
             now,
         };
         Some(super::overlays::mouse_ladder(
@@ -371,13 +364,7 @@ impl FloatingApp {
                     crate::focus::focus_slot(&slot);
                 }
             }
-            Some(HitAction::Pet(kind)) => {
-                self.petting = Some(pixtuoid_scene::pet::PetState {
-                    petted_at: now,
-                    kind,
-                    floor_idx: self.renderer.nav().current(),
-                });
-            }
+            Some(HitAction::Pet(kind)) => self.renderer.pet(kind, now),
             Some(HitAction::Open(url)) => {
                 crate::open_url(url);
             }
@@ -464,10 +451,7 @@ impl FloatingApp {
             scene: &scene,
             now,
             floor: self.floor_meta(),
-            pets: PetInputs {
-                pet: None,
-                petting: self.petting.as_ref(),
-            },
+            pets: PetInputs::default(),
         };
         let health = self
             .live
@@ -517,12 +501,7 @@ impl FloatingApp {
                 .then(|| self.renderer.drawn_hit_at(cursor, at))
                 .flatten()
                 .and_then(|hit| {
-                    // The office picks each floor's pet as it renders; the
-                    // tooltip names the one the floor showing drew.
-                    let pets = PetInputs {
-                        pet: self.renderer.showing_pet(),
-                        ..world.pets
-                    };
+                    let pets = self.renderer.showing_pets(now);
                     pixtuoid_scene::tooltip::for_hit(hit, &scene, now, pets)
                 })
                 .map(|tip| (tip, (cursor.0 as i32, cursor.1 as i32))),

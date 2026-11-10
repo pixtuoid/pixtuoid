@@ -271,7 +271,6 @@ fn main() -> Result<()> {
             window,
             pixtuoid::dev::Pressing {
                 scale_factor: 1.0,
-                petting: None,
                 now,
             },
         );

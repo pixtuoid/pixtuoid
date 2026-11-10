@@ -452,13 +452,7 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
                 focus(&slot);
             }
         }
-        Some(HitAction::Pet(kind)) => {
-            renderer.set_active_pet(Some(renderer::PetState {
-                petted_at: now,
-                kind,
-                floor_idx: renderer.current_floor(),
-            }));
-        }
+        Some(HitAction::Pet(kind)) => renderer.pet(kind, now),
         Some(HitAction::Open(url)) => {
             crate::open_url(url);
         }

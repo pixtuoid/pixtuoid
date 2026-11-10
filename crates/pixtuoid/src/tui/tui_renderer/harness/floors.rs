@@ -403,22 +403,6 @@ fn debug_walkable_getter_reflects_setter() {
 }
 
 #[test]
-fn already_expired_active_pet_clears_on_render() {
-    let scene = scene_with(vec![running("/exp/0.jsonl", 0, "Edit", t0())], 16);
-    let mut r = build(100, 40, vec![PetKind::Cat]);
-    r.set_active_pet(Some(PetState {
-        petted_at: t0() - Duration::from_secs(3600), // long expired
-        kind: PetKind::Cat,
-        floor_idx: 0,
-    }));
-    r.render(&scene, t0()).unwrap();
-    assert!(
-        r.active_pet_ref().is_none(),
-        "an already-expired pet state must be cleared on render"
-    );
-}
-
-#[test]
 fn current_floor_clamps_when_floor_count_drops() {
     let cap = 16;
     let two = two_floor_scene();
