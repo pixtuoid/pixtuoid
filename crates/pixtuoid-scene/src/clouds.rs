@@ -2092,11 +2092,12 @@ mod tests {
     ];
     const RED_NOON_STRIKES: u32 = 60;
 
-    /// A strike's bolt hangs off a drawn cloud: a mass draws the cell its
-    /// top starts in or the one over it, at every density, partway through the
-    /// strike, so the masses have drifted on since the instant it chose its
-    /// cloud at. Over every strike of one wrap of the slowest layer, which
-    /// brings each mass past each column, and the census's red noons.
+    /// A strike's bolt hangs off a drawn cloud at its last phase: a mass draws
+    /// the cell its top starts in or the one over it, at every density, though
+    /// the masses have drifted on since the strike's start, over which
+    /// `bolt_cloud` chose its cloud. Over every strike of one wrap of the
+    /// slowest layer, which brings each mass past each column, and the
+    /// census's red noons.
     #[test]
     fn the_bolt_hangs_off_a_drawn_cloud() {
         let bucket = Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS);
@@ -2120,7 +2121,8 @@ mod tests {
                 let beat = Motion::Full.timing(then).beat;
                 let start = crate::sky::strike_start_ms(beat) - beat.ms();
                 // its last phase: the furthest the drift gets from the strike's start
-                let now = then + Duration::from_millis(start + 2 * crate::anim::FULL_TICK_MS);
+                let last_phase = crate::sky::STRIKE_MS - crate::sky::STRIKE_PHASE_MS;
+                let now = then + Duration::from_millis(start + last_phase);
                 let sky = Sky::at_with(now, Weather::Storm)
                     .with_strike(Some(crate::sky::StrikePhase::Primary));
                 let moment =
