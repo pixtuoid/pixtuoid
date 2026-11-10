@@ -5,21 +5,21 @@
 // platform package and execs it transparently. An interactive TUI has no
 // latency/exit-0 contract, so this may report an error and exit non-zero.
 
-const { binaryPath, hostPackage } = require("./resolve");
+const { binaryPath, isShipped, packageName } = require("./resolve");
 
 const bin = binaryPath("pixtuoid");
 if (!bin) {
-  const cargo = "`cargo install pixtuoid pixtuoid-hook`";
+  const { platform, arch } = process;
   process.stderr.write(
-    "pixtuoid: no prebuilt binary for " +
-      process.platform +
-      "-" +
-      process.arch +
-      ".\n" +
-      (hostPackage()
-        ? "Install with " + cargo + ", or download a build:\n" +
-          "https://github.com/pixtuoid/pixtuoid/releases/latest\n"
-        : "Install with `brew install pixtuoid` or " + cargo + ".\n")
+    isShipped(platform, arch)
+      ? "pixtuoid: npm left out the optional dependency " +
+          packageName(platform, arch) +
+          "; reinstall with optional dependencies included: `npm install -g pixtuoid --include=optional`\n"
+      : "pixtuoid: no prebuilt binary for " +
+          platform +
+          "-" +
+          arch +
+          "; install from source: `brew install pixtuoid` or `cargo install pixtuoid pixtuoid-hook`\n"
   );
   process.exit(1);
 }
