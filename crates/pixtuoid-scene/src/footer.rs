@@ -790,6 +790,26 @@ mod tests {
         assert!(full.contains("\u{25d0}1 A"), "{full}");
     }
 
+    /// A floor that draws no one, as a size too small to seat anyone leaves it,
+    /// still raises an unseated agent's prompt rather than a bare count.
+    #[test]
+    fn an_empty_floor_raises_an_unseated_agents_prompt() {
+        let mut unseated = requires_action_slot("/p/unseated.jsonl");
+        unseated.desk = None;
+        let mut office = SceneState::uniform(16);
+        office.agents.insert(unseated.agent_id, unseated);
+        let drawn = SceneState::uniform(16);
+        let line = |warning| {
+            let ctx =
+                FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
+            build_footer(&FooterInputs::new(&drawn, ctx), 200).text()
+        };
+        let warned = line(Some("a source died"));
+        assert!(warned.contains("\u{25b2}1 need you"), "{warned}");
+        let full = line(None);
+        assert!(full.contains("\u{25d0}1 A"), "{full}");
+    }
+
     #[test]
     fn context_derives_the_office_wide_halves_from_the_full_scene() {
         use pixtuoid_core::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence};
