@@ -39,7 +39,10 @@ use window::{FloatingApp, FloatingEvent};
 /// # Errors
 ///
 /// If the sprite pack cannot be loaded, the tokio runtime or the winit event loop cannot be built, the event loop exits with an error, or the window or its GPU fails to start or is lost.
-pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> {
+pub(crate) fn run(
+    cfg: RunConfig,
+    notify_ready: bool,
+) -> Result<Option<crate::runtime::QuitSignal>> {
     let RunConfig {
         socket,
         theme,
@@ -112,6 +115,7 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> 
             connected,
             proxy,
             rt: rt.handle().clone(),
+            notify_ready,
         },
     );
     let ran = event_loop.run_app(&mut app);
@@ -145,6 +149,10 @@ pub(crate) struct PipelineBoot {
     /// (`PipelineBoot::spawn`): `run` holds no guard, and a `tokio::spawn`
     /// outside a runtime panics.
     rt: tokio::runtime::Handle,
+    /// `--notify-ready`: the boot says so on stdout once it spawns, the first
+    /// point the window, its GPU and the pipeline all exist, and a boot spawns
+    /// once.
+    notify_ready: bool,
 }
 
 /// The pipeline handles, available only once [`PipelineBoot::spawn`] has run.
@@ -223,10 +231,32 @@ impl PipelineBoot {
             });
         }
 
+        if self.notify_ready {
+            say_ready(crate::cli_stdout());
+        }
         LivePipeline {
             scene_rx,
             floor_caps,
             health_rx,
         }
+    }
+}
+
+/// The notice a launcher waits on: a newline, as in s6's readiness protocol
+/// (<https://skarnet.org/software/s6/notifywhenup.html>), less its close of
+/// the fd: a closed fd 1 is the next opened file's, and the launcher stops
+/// reading at the newline. A launcher gone by then is no failure of the
+/// window's.
+fn say_ready(mut out: impl std::io::Write) {
+    let _ = out.write_all(b"\n").and_then(|()| out.flush());
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_ready_notice_is_one_newline() {
+        let mut out = Vec::new();
+        super::say_ready(&mut out);
+        assert_eq!(out, b"\n");
     }
 }

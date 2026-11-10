@@ -116,7 +116,11 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Floating { source, paint } => {
+        Cmd::Floating {
+            source,
+            paint,
+            notify_ready,
+        } => {
             // No desk cap: floating seeds its capacity from the window.
             let rc = build_run_config(
                 paint,
@@ -126,7 +130,7 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
                 crate::cli::LookArgs::default(),
                 drift,
             )?;
-            if let Some(signal) = floating::run(rc)? {
+            if let Some(signal) = floating::run(rc, notify_ready)? {
                 signal.reraise();
             }
             Ok(())
