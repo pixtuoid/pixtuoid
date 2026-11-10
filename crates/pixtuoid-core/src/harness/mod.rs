@@ -664,9 +664,10 @@ impl Fold {
         self.driven.breadcrumbs.extend(sink.take());
     }
 
-    /// Fold one live read of `lines`: each life of `decoded` ([`each_life`]) as
-    /// a read of its own, led by its registration if the watcher's gate
-    /// registers on it. Records each life's claim.
+    /// What one live read of `lines` delivers: each life of `decoded`
+    /// ([`each_life`]) as a read of its own, led by its registration if the
+    /// watcher's gate registers on it. Records each life's claim, and folds
+    /// nothing: [`Self::send`] does.
     fn deliver<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
