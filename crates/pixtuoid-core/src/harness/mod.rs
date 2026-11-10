@@ -134,8 +134,8 @@ impl std::fmt::Display for LineFailure {
 pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
-    /// What the watcher would send for the reads fed, in order, each seed
-    /// ahead of its read's lines.
+    /// What the transport would deliver for the reads fed, in order, a seed
+    /// leading its read's events.
     pub events: Vec<AgentEvent>,
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
@@ -399,7 +399,7 @@ impl Drive {
         }
     }
 
-    /// Lead each feed of the transcript the watcher's gate registers on with the
+    /// Lead each read of the transcript the watcher's gate registers on with the
     /// `SessionStart` the watcher's `emit_registration` would emit for it, keyed
     /// by the source's registry row.
     ///
@@ -450,7 +450,7 @@ impl Drive {
 
     /// The agent a transcript drive's lifecycle evidence is judged for, as the
     /// watcher's `own_agent`.
-    fn own(&self) -> Option<AgentId> {
+    fn own_agent(&self) -> Option<AgentId> {
         let (source, _, session_id) = self.keyed_on()?;
         Some(AgentId::from_parts(source, &session_id))
     }
@@ -498,7 +498,7 @@ pub struct Fold {
     sights: HashMap<AgentId, Sighted>,
 }
 
-/// A seeded transcript's claim and its head: the first feed stands in for the
+/// A seeded transcript's claim and its head: the first read stands in for the
 /// file head the watcher reads back.
 #[derive(Debug)]
 struct Sighted {
@@ -530,8 +530,8 @@ enum Reads {
 
 impl Fold {
     /// Decode `lines` through `drive` (blank lines skipped, every other line
-    /// parsed and decoded) as one read, and fold what the watcher would send
-    /// for it at `at`.
+    /// parsed and decoded) as one read, and fold what the transport would
+    /// deliver for it at `at`.
     pub fn feed<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
     where
         I: IntoIterator<Item = S>,
@@ -624,7 +624,7 @@ impl Fold {
         I: IntoIterator<Item = Option<S>>,
         S: AsRef<str>,
     {
-        let own = drive.own();
+        let own = drive.own_agent();
         let sink = BreadcrumbSink::default();
         tracing::subscriber::with_default(sink.clone(), || {
             let presence = self.driven.presence.len()..;
@@ -654,17 +654,17 @@ impl Fold {
         self.driven.breadcrumbs.extend(sink.take());
     }
 
-    /// Fold what the watcher sends for one read of `lines`, whose own session's
-    /// last lifecycle evidence is `verdict`: its registration, then `decoded`.
-    fn send<S: AsRef<str>>(
+    /// What the transport delivers for one read of `lines`, whose own
+    /// session's last lifecycle evidence is `verdict`: its registration, then
+    /// `decoded`.
+    fn gate<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
         own: Option<AgentId>,
         lines: &[Option<S>],
         mut decoded: Vec<AgentEvent>,
         verdict: Option<Life>,
-        at: SystemTime,
-    ) {
+    ) -> Vec<AgentEvent> {
         let mut fed = Vec::new();
         if let Some(seed) = self.registration(drive, own, lines, &decoded, verdict) {
             self.driven.seed_events += 1;
@@ -674,7 +674,20 @@ impl Fold {
             decoded.retain(|event| sends(event, own, verdict));
         }
         fed.extend(decoded);
-        for event in fed {
+        fed
+    }
+
+    /// Fold [`Self::gate`]'s delivery for one read.
+    fn send<S: AsRef<str>>(
+        &mut self,
+        drive: &Drive,
+        own: Option<AgentId>,
+        lines: &[Option<S>],
+        decoded: Vec<AgentEvent>,
+        verdict: Option<Life>,
+        at: SystemTime,
+    ) {
+        for event in self.gate(drive, own, lines, decoded, verdict) {
             self.apply(drive.transport, event, at);
             // Each event is observed BEFORE and AFTER a cascade tick, so a
             // transient class a later event resolves still counts as reached.
@@ -965,6 +978,7 @@ mod tests {
             lifecycle(&[&tool, &exit, &trailer]),
             (vec!["start", "end"], 1)
         );
+        assert_eq!(lifecycle(&[&exit, &trailer]), (vec!["end"], 0));
         let resumed = lifecycle(&[&tool, &exit, &tool]);
         assert_eq!(resumed, (vec!["start", "end", "start"], 2));
         let lives = lifecycle(&[&tool, &exit, &tool, &exit]);
