@@ -66,7 +66,8 @@ contract; fill briefs from them, never a paraphrase here.
 Population = the tree, where the aggregate-only classes live (cross-PR
 interaction, drift, debt accretion, coverage-topology gaps, invariant erosion,
 orphaned surface). Prefer a `Workflow`, else parallel `Agent`s; scale to the
-ask. Scout the work-list → subsystem finders (site and Raycast RENDERED) plus
+ask. Scout the work-list (seed: each `Pre-existing:` review line on PRs merged
+since the last audit) → subsystem finders (site and Raycast RENDERED) plus
 per-factor finders (arch invariants · concurrency/liveness · security threat
 model · performance · mutation depth on hot logic · silent failure · drift ·
 deep modules · upkeep, the Proportion lens's "delete it" over every
