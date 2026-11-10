@@ -57,11 +57,14 @@ export default function ManageSources() {
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Filter agent CLIs…">
-      <List.EmptyView
-        icon={Icon.Plug}
-        title={isLoading ? "Loading sources…" : "No sources reported"}
-        description="pixtuoid sources --json returned an empty list."
-      />
+      {/* A custom EmptyView also replaces Raycast's view for a filter that matches nothing. */}
+      {data?.length === 0 && (
+        <List.EmptyView
+          icon={Icon.Plug}
+          title="No sources reported"
+          description="pixtuoid sources --json returned an empty list."
+        />
+      )}
       {(data ?? []).map((s) => (
         <List.Item
           key={s.id}
