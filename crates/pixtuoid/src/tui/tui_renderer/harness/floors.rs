@@ -456,9 +456,9 @@ fn theme_picker_renders_during_floor_transition() {
     );
 }
 
-/// The board's context row is wired in `draw_scene` from the floor breadcrumb
-/// and the OFFICE-WIDE gateway: the projected floor scene carries daemons only
-/// on floor 0, so a board built from it would drop the `⬢gw` chip upstairs.
+/// The board's breadcrumb comes from the drawn floor's projection and its
+/// gateway chip from the office-wide gateway: the projection carries daemons
+/// only on floor 0, so a board built from it alone would drop `⬢gw` upstairs.
 #[test]
 fn the_wall_board_upstairs_shows_the_breadcrumb_and_the_office_gateway() {
     let theme = pixtuoid_scene::theme::ALL_THEMES[0];
@@ -500,5 +500,44 @@ fn the_wall_board_upstairs_shows_the_breadcrumb_and_the_office_gateway() {
     assert!(
         office.contains("\u{2b22}gw"),
         "board keeps the office-wide gateway chip upstairs:\n{office}"
+    );
+}
+
+/// A still of a two-floor office names its floor where the live frame does,
+/// on the board and in the footer alike: both read the drawn floor's
+/// projection.
+#[test]
+fn a_still_names_its_floor_on_the_board_and_in_the_footer() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let mut scene = SceneState::uniform(16);
+    for (path, floor) in [("/h/still0.jsonl", 0), ("/h/still1.jsonl", 1)] {
+        let id = AgentId::from_transcript_path(path);
+        scene.agents.insert(id, slot(id, floor, 0, t0));
+    }
+    let mut term = Terminal::new(TestBackend::new(120, 44)).expect("test backend");
+    let mut floor = pixtuoid_scene::floor::PerFloor::new(pack_arc());
+    let mut office = pixtuoid_scene::floor::PerOffice::new();
+    let mut ctx = crate::tui::renderer::DrawCtx::offscreen(
+        &mut floor,
+        office.stores(),
+        normal_theme(),
+        &scene,
+        0,
+        t0,
+        pixtuoid_scene::floor::Conditions::default(),
+    );
+    crate::tui::renderer::draw_scene(&mut term, &mut ctx)
+        .expect("draw")
+        .expect("drawn");
+    let text = frame_text(term.backend().buffer());
+    let rows: Vec<&str> = text.lines().collect();
+    let (room, footer) = rows.split_at(rows.len() - usize::from(crate::tui::renderer::FOOTER_ROWS));
+    assert!(
+        room.join("\n").contains("F1/2"),
+        "the board names floor 1 of 2:\n{text}"
+    );
+    assert!(
+        footer.join("\n").contains("F1/2"),
+        "the footer names floor 1 of 2:\n{text}"
     );
 }

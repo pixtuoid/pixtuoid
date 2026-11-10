@@ -125,6 +125,12 @@ impl FloorPlace {
         self.floors
     }
 
+    /// Its breadcrumb, `(floor, floors)` counted from 1; none in a one-floor
+    /// building.
+    pub(crate) fn breadcrumb(self) -> Option<(usize, usize)> {
+        (self.floors > 1).then_some((self.index + 1, self.floors))
+    }
+
     /// 0.0 on the ground floor to 1.0 on the top; drives skyline depth, never
     /// lighting.
     pub(crate) fn altitude(self) -> f32 {
@@ -1195,13 +1201,16 @@ impl FloorTransition {
     }
 }
 
-/// The floors `scene`'s agents sit on: one past the highest, at least one.
+/// The floors `scene`'s agents sit on: one past the highest, at least one,
+/// at most [`MAX_FLOORS`], since a [`FloorDesk`](pixtuoid_core::state::FloorDesk)'s
+/// floor is a bare `usize`.
 pub fn num_floors(scene: &SceneState) -> usize {
     (scene.agents.values())
         .filter_map(|a| a.desk)
         .map(|desk| desk.floor + 1)
         .max()
         .unwrap_or(1)
+        .min(MAX_FLOORS)
 }
 
 /// The agents floor `floor_idx` draws: those holding a desk on it.

@@ -144,16 +144,10 @@ impl Chrome {
         }
     }
 
-    /// The footer's context over the FULL `scene`, for the floor `session`'s
-    /// footer speaks for.
-    fn footer<'a>(
-        &'a self,
-        session: &OfficeSession,
-        scene: &SceneState,
-    ) -> pixtuoid_scene::footer::FooterContext<'a> {
+    /// The footer's context over the FULL `scene`.
+    fn footer<'a>(&'a self, scene: &SceneState) -> pixtuoid_scene::footer::FooterContext<'a> {
         crate::panels::widgets::footer_context(
             scene,
-            session.footer_floor(scene),
             self.audio.is_audible(),
             self.volume_flash,
             self.frames.warning.as_deref(),
@@ -682,10 +676,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         use crate::panels::paint_overlays;
         use crate::tui::renderer::{flush_buffer_to_term, paint_footer, scene_rect};
         let footer_scene = self.session.footer_scene(scene);
-        let footer = pixtuoid_scene::footer::FooterInputs::new(
-            &footer_scene,
-            self.chrome.footer(&self.session, scene),
-        );
+        let footer =
+            pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
         let overlays = self
             .chrome
@@ -724,10 +716,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     ) -> Result<Option<FrameNote>> {
         self.session.prepare(scene, now);
         let footer_scene = self.session.footer_scene(scene);
-        let footer = pixtuoid_scene::footer::FooterInputs::new(
-            &footer_scene,
-            self.chrome.footer(&self.session, scene),
-        );
+        let footer =
+            pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
         let offers_walkable_debug = self.offers_walkable_debug();
         let flushed = crate::tui::renderer::draw_footer_only_frame(
@@ -838,10 +828,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
                 .map(|()| drawn);
         };
         let footer_scene = self.session.footer_scene(scene);
-        let footer = pixtuoid_scene::footer::FooterInputs::new(
-            &footer_scene,
-            self.chrome.footer(&self.session, scene),
-        );
+        let footer =
+            pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
         let overlays = self
             .chrome
@@ -901,10 +889,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             return self.draw_too_small(scene, now, term_size, true);
         };
         let footer_scene = self.session.footer_scene(scene);
-        let footer = pixtuoid_scene::footer::FooterInputs::new(
-            &footer_scene,
-            self.chrome.footer(&self.session, scene),
-        );
+        let footer =
+            pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
         let overlays = self

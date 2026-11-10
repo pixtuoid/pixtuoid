@@ -254,6 +254,24 @@ fn num_floors_empty() {
     assert_eq!(num_floors(&scene), 1);
 }
 
+/// A desk past the top floor counts the building as tall as it can be,
+/// wherever it is counted: the session navigates the floors every
+/// projection's breadcrumb names.
+#[test]
+fn a_desk_past_the_top_floor_counts_one_building() {
+    let mut scene = make_scene(1, 1);
+    for slot in scene.agents.values_mut() {
+        slot.desk = Some(FloorDesk::new(MAX_FLOORS + 1, 0));
+    }
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    office.prepare(&scene, SystemTime::UNIX_EPOCH);
+    assert_eq!(num_floors(&scene), MAX_FLOORS);
+    assert_eq!(
+        project_floor_scene(&scene, 0).floor_place().floors(),
+        office.n_floors()
+    );
+}
+
 #[test]
 fn a_floors_projection_holds_its_agents_at_their_own_desks() {
     let scene = make_scene(20, 16);
@@ -2761,9 +2779,23 @@ fn a_slides_footer_speaks_for_its_destination() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let mut office = OfficeSession::new(pack);
     office.prepare(&scene, t0);
-    assert_eq!(office.footer_floor(&scene).map(|f| f.current), Some(1));
+    assert_eq!(
+        office
+            .footer_scene(&scene)
+            .floor_place()
+            .breadcrumb()
+            .map(|(floor, _)| floor),
+        Some(1)
+    );
     assert!(office.navigate(1, t0));
-    assert_eq!(office.footer_floor(&scene).map(|f| f.current), Some(2));
+    assert_eq!(
+        office
+            .footer_scene(&scene)
+            .floor_place()
+            .breadcrumb()
+            .map(|(floor, _)| floor),
+        Some(2)
+    );
     assert_eq!(
         office.footer_scene(&scene).scene().agents.len(),
         project_floor_scene(&scene, 1).scene().agents.len()
@@ -2989,7 +3021,13 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         "floor 1 lays out"
     );
     assert_eq!(office.n_floors(), 2);
-    let bread = |office: &OfficeSession| office.footer_floor(&scene).map(|f| f.current);
+    let bread = |office: &OfficeSession| {
+        office
+            .footer_scene(&scene)
+            .floor_place()
+            .breadcrumb()
+            .map(|(floor, _)| floor)
+    };
     assert_eq!(bread(&office), Some(1));
     assert!(office.navigate(1, t0));
     let mid = t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2);
@@ -3353,7 +3391,11 @@ fn an_office_session_follows_its_floors_down() {
     let _ = render(&mut office, &one);
     assert_eq!(office.n_floors(), 1);
     assert!(
-        office.footer_floor(&one).is_none(),
+        office
+            .footer_scene(&one)
+            .floor_place()
+            .breadcrumb()
+            .is_none(),
         "one floor has no breadcrumb"
     );
 }

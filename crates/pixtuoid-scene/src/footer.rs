@@ -166,16 +166,6 @@ impl FooterModel {
     }
 }
 
-/// The floor breadcrumb inputs — `current`/`total_floors` drive the `F{c}/{t}`
-/// badge, `total_agents` the `n/total` slash. A single-floor office passes `None`:
-/// bare count, no breadcrumb.
-#[derive(Debug, Clone, Copy)]
-pub struct FooterFloor {
-    pub current: usize,
-    pub total_floors: usize,
-    pub total_agents: usize,
-}
-
 const TOOL_TALLY_CAP: usize = 4;
 
 /// One aggregate tool-tally entry: the raw display `token` (kept verbatim), the
@@ -215,13 +205,15 @@ pub(crate) fn footer_tool_tally(scene: &SceneState) -> Vec<ToolTally> {
     tools
 }
 
-/// The per-frame inputs `build_footer` renders: `counts` and `tools` come from
-/// the drawn floor's scene, everything else from the [`FooterContext`], whose
-/// unseated agents at a prompt `build_footer` counts with the drawn floor's.
+/// The per-frame inputs `build_footer` renders: `counts`, `tools` and the
+/// breadcrumb's floor come from the drawn floor's projection, everything else
+/// from the [`FooterContext`], whose unseated agents at a prompt
+/// `build_footer` counts with the drawn floor's.
 #[derive(Debug)]
 pub struct FooterInputs<'a> {
     counts: StateCounts,
     tools: Vec<ToolTally>,
+    place: crate::floor::FloorPlace,
     pub context: FooterContext<'a>,
 }
 
@@ -231,6 +223,7 @@ impl<'a> FooterInputs<'a> {
         Self {
             counts: crate::tally::scene_stats(drawn.scene()),
             tools: footer_tool_tally(drawn.scene()),
+            place: drawn.floor_place(),
             context,
         }
     }
@@ -244,7 +237,8 @@ pub struct FooterContext<'a> {
     /// The agents on no floor; a prompt of theirs joins the floor's alarm.
     pub(crate) unseated: StateCounts,
     pub gateway: Option<DaemonState>,
-    pub(crate) floor: Option<FooterFloor>,
+    /// The office's agents, the breadcrumb's `n/total` total.
+    pub(crate) agents: usize,
     /// "You would hear sound right now": audio live AND not effectively muted
     /// (m-state OR pause).
     pub(crate) audio_audible: bool,
@@ -264,7 +258,6 @@ impl<'a> FooterContext<'a> {
     /// The context over `office`, the FULL scene — never a projected floor.
     pub fn new(
         office: &SceneState,
-        floor: Option<FooterFloor>,
         audio_audible: bool,
         volume_flash: Option<u8>,
         warning: Option<&'a str>,
@@ -275,7 +268,7 @@ impl<'a> FooterContext<'a> {
             per_floor: crate::tally::per_floor_counts(office),
             unseated: crate::tally::unseated_counts(office),
             gateway: crate::tally::office_gateway(office),
-            floor,
+            agents: office.agents.len(),
             audio_audible,
             volume_flash,
             warning,
@@ -368,28 +361,25 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
         return FooterModel { segments: out };
     }
 
-    let count_str = match ctx.floor {
-        Some(fi) => format!("{}/{}", counts.total, fi.total_agents),
+    let breadcrumb = inputs.place.breadcrumb();
+    let count_str = match breadcrumb {
+        Some(_) => format!("{}/{}", counts.total, ctx.agents),
         None => format!("{}", counts.total),
     };
 
     // The cross-floor `▲F{n}` cue: any OTHER floor holding a requires-action agent.
-    let cross_floor = ctx.floor.and_then(|fi| {
-        let cur = fi.current.saturating_sub(1);
+    let cross_floor = breadcrumb.and_then(|_| {
         (0..MAX_FLOORS)
-            .find(|&fl| fl != cur && ctx.per_floor[fl].requires_action > 0)
+            .find(|&fl| fl != inputs.place.index() && ctx.per_floor[fl].requires_action > 0)
             .map(|fl| fl + 1)
     });
-    let floor_suffix = match ctx.floor {
-        Some(fi) => {
+    let floor_suffix = match breadcrumb {
+        Some((floor, floors)) => {
             let cross = match cross_floor {
                 Some(n) => format!(" {}F{n}", Icon::Alert.terminal()),
                 None => String::new(),
             };
-            format!(
-                " F{}/{}{cross} [\u{2191}\u{2193}]",
-                fi.current, fi.total_floors
-            )
+            format!(" F{floor}/{floors}{cross} [\u{2191}\u{2193}]")
         }
         None => String::new(),
     };
@@ -614,11 +604,12 @@ mod tests {
         FooterInputs {
             counts: crate::tally::scene_stats(scene),
             tools: tools.to_vec(),
+            place: crate::floor::FloorPlace::at(0, 1),
             context: FooterContext {
                 per_floor: crate::tally::per_floor_counts(scene),
                 unseated: crate::tally::unseated_counts(scene),
                 gateway: None,
-                floor: None,
+                agents: scene.agents.len(),
                 audio_audible,
                 volume_flash,
                 warning,
@@ -785,8 +776,7 @@ mod tests {
         }
         let floor_scene = crate::floor::project_floor_scene(&office, 0);
         let line = |warning| {
-            let ctx =
-                FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
+            let ctx = FooterContext::new(&office, false, None, warning, KEYS_STATS, KEYS_ALERT);
             build_footer(&FooterInputs::new(&floor_scene, ctx), 200).text()
         };
         let warned = line(Some("a source died"));
@@ -805,8 +795,7 @@ mod tests {
         office.agents.insert(unseated.agent_id, unseated);
         let floor_scene = crate::floor::project_floor_scene(&office, 0);
         let line = |warning| {
-            let ctx =
-                FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
+            let ctx = FooterContext::new(&office, false, None, warning, KEYS_STATS, KEYS_ALERT);
             build_footer(&FooterInputs::new(&floor_scene, ctx), 200).text()
         };
         let warned = line(Some("a source died"));
@@ -834,7 +823,7 @@ mod tests {
                 current_pid: None,
             },
         );
-        let ctx = FooterContext::new(&scene, None, false, None, None, KEYS_STATS, KEYS_ALERT);
+        let ctx = FooterContext::new(&scene, false, None, None, KEYS_STATS, KEYS_ALERT);
         assert_eq!(
             ctx.per_floor[1].requires_action, 1,
             "the upstairs agent counts"

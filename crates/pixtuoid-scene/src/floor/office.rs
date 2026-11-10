@@ -18,7 +18,6 @@ use super::{
     AudioFrame, Conditions, FloorInputs, FloorTransition, PerFloor, PerOffice, PetInputs,
     waypoint_kind_of,
 };
-use crate::footer::FooterFloor;
 
 /// One floor of a painter's office: its raster and sim stores, and what its
 /// last frame laid out, occupied and flashed.
@@ -237,20 +236,6 @@ fn floor_world<'a>(
     }
 }
 
-/// The footer's floor breadcrumb for floor `current` of `n_floors`, among
-/// `total_agents`; `None` in a one-floor office.
-pub(crate) fn footer_floor(
-    current: usize,
-    n_floors: usize,
-    total_agents: usize,
-) -> Option<FooterFloor> {
-    (n_floors > 1).then_some(FooterFloor {
-        current: current + 1,
-        total_floors: n_floors,
-        total_agents,
-    })
-}
-
 /// How far down the floor being left and the one arriving sit, `t` through a
 /// slide over a scene `h` units tall, a divider's gap between them.
 fn slide_offsets(t: f32, going_down: bool, h: f32) -> (i32, i32) {
@@ -410,7 +395,7 @@ impl OfficeSession {
     #[doc(hidden)]
     pub fn prepare(&mut self, scene: &SceneState, now: SystemTime) {
         self.evict_missing(scene);
-        self.n_floors = super::num_floors(scene).clamp(1, super::MAX_FLOORS);
+        self.n_floors = super::num_floors(scene);
         while self.views.len() < self.n_floors {
             self.views.push(FloorView::new(Arc::clone(&self.pack)));
         }
@@ -638,13 +623,7 @@ impl OfficeSession {
             .map_or(self.nav.current(), |tr| tr.to_floor)
     }
 
-    /// The footer's floor breadcrumb, among `scene`'s agents.
-    #[doc(hidden)]
-    pub fn footer_floor(&self, scene: &SceneState) -> Option<FooterFloor> {
-        footer_floor(self.footer_floor_index(), self.n_floors, scene.agents.len())
-    }
-
-    /// The scene the footer counts and tallies: its floor's, as
+    /// The floor the footer counts, tallies and names: its projection, as
     /// [`FooterInputs::new`](crate::footer::FooterInputs::new) asks.
     #[doc(hidden)]
     pub fn footer_scene(&self, scene: &SceneState) -> super::FloorScene {

@@ -520,7 +520,7 @@ pub(crate) fn wall_board(
     build_board(
         scene_stats(drawn),
         scene_uptime_secs(drawn, now),
-        (place.floors() > 1).then(|| (place.index() + 1, place.floors())),
+        place.breadcrumb(),
         headline.as_deref(),
         gateway,
         motion,

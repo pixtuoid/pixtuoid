@@ -320,13 +320,7 @@ impl OfficeRenderer {
         let floor_scene = self.session.footer_scene(scene);
         let inputs = FooterInputs::new(
             &floor_scene,
-            crate::panels::widgets::footer_context(
-                scene,
-                self.session.footer_floor(scene),
-                audio_audible,
-                volume_flash,
-                warning,
-            ),
+            crate::panels::widgets::footer_context(scene, audio_audible, volume_flash, warning),
         );
         build_footer(&inputs, budget)
     }
