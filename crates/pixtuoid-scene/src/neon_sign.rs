@@ -508,12 +508,13 @@ pub fn build_board(
 /// floor's tally and uptime, and what only the office knows — its `gateway`
 /// ([`office_gateway`](crate::tally::office_gateway)) and `floor`'s place among its floors.
 pub fn wall_board(
-    drawn: &SceneState,
+    drawn: &crate::floor::FloorScene,
     gateway: Option<DaemonState>,
     floor: Option<crate::footer::FooterFloor>,
     motion: crate::anim::Motion,
     now: SystemTime,
 ) -> BoardModel {
+    let drawn = drawn.scene();
     let headline = drawn.today.and_then(today_headline);
     build_board(
         scene_stats(drawn),
@@ -1187,7 +1188,13 @@ mod tests {
     fn board_of(today: Option<Today>) -> String {
         let mut scene = SceneState::uniform(16);
         scene.today = today;
-        let board = wall_board(&scene, None, None, Motion::Full, SystemTime::UNIX_EPOCH);
+        let board = wall_board(
+            &crate::floor::project_floor_scene(&scene, 0),
+            None,
+            None,
+            Motion::Full,
+            SystemTime::UNIX_EPOCH,
+        );
         text_of(&board.context)
     }
 

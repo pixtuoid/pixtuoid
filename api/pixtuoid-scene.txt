@@ -195,7 +195,6 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorPlace
 pub struct pixtuoid_scene::floor::FloorScene
 impl pixtuoid_scene::floor::FloorScene
 pub fn pixtuoid_scene::floor::FloorScene::floor_place(&self) -> pixtuoid_scene::floor::FloorPlace
-pub fn pixtuoid_scene::floor::FloorScene::scene(&self) -> &pixtuoid_core::state::SceneState
 impl core::fmt::Debug for pixtuoid_scene::floor::FloorScene
 pub fn pixtuoid_scene::floor::FloorScene::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::FloorScene

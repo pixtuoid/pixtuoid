@@ -417,7 +417,10 @@ fn inputs<'a>(
     floor: Option<FooterFloor>,
     warning: Option<&'a str>,
 ) -> FooterInputs<'a> {
-    FooterInputs::new(scene, footer_context(scene, floor, false, None, warning))
+    FooterInputs::new(
+        &pixtuoid_scene::floor::project_floor_scene(scene, 0),
+        footer_context(scene, floor, false, None, warning),
+    )
 }
 
 fn footer_line(

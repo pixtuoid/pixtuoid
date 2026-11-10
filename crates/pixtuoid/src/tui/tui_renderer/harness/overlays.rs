@@ -666,10 +666,9 @@ fn a_subagents_card_names_its_lead_from_any_floor() {
     let (here_id, there_id) = (here.agent_id, there.agent_id);
     let namesake = place("namesake", "cc\u{b7}api", (1, 1), None);
     let scene = scene_with(vec![lead, here, there, namesake], cap);
-    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
-    let projection = floor_scene.scene();
-    let badge = pixtuoid_scene::nameplate::Namesakes::of(projection.agents.values())
-        .nameplate(&projection.agents[&lead_id])
+    let ground = (scene.agents.values()).filter(|a| a.desk.is_some_and(|desk| desk.floor == 0));
+    let badge = pixtuoid_scene::nameplate::Namesakes::of(ground)
+        .nameplate(&scene.agents[&lead_id])
         .to_string();
     let mut r = build(120, 44, vec![]);
     let mut now = t0();

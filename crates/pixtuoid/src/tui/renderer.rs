@@ -254,7 +254,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
         conditions: ctx.conditions,
         pets: ctx.pets,
     };
-    let footer = FooterInputs::new(ctx.floor_scene.scene(), ctx.footer);
+    let footer = FooterInputs::new(&ctx.floor_scene, ctx.footer);
     let overlays = ctx.overlays;
 
     if scene_too_small(scene_rect) {
@@ -331,7 +331,7 @@ pub fn draw_over_image<B: Backend<Error: Send + Sync + 'static>>(
     use crate::tui::cutaway::ImageCells;
     let theme = ctx.theme;
     let now = ctx.now;
-    let footer = FooterInputs::new(ctx.floor_scene.scene(), ctx.footer);
+    let footer = FooterInputs::new(&ctx.floor_scene, ctx.footer);
     let overlays = ctx.overlays;
     let size = term.size()?;
     if scene_too_small(scene_rect(Rect::new(0, 0, size.width, size.height))) {

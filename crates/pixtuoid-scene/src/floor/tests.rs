@@ -2749,7 +2749,7 @@ fn a_slides_footer_speaks_for_its_destination() {
     assert!(office.navigate(1, t0));
     assert_eq!(office.footer_floor(&scene).map(|f| f.current), Some(2));
     assert_eq!(
-        office.footer_scene(&scene).agents.len(),
+        office.footer_scene(&scene).scene().agents.len(),
         project_floor_scene(&scene, 1).scene().agents.len()
     );
 }

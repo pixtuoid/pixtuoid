@@ -762,7 +762,7 @@ pub fn render(
         was.is_none_or(|was| std::mem::discriminant(&was) != std::mem::discriminant(&look));
     let _rasterize = tracing::trace_span!(spans::RASTERIZE).entered();
     let board = crate::neon_sign::wall_board(
-        world.scene.scene(),
+        world.scene,
         place.gateway,
         place.floor,
         world.conditions.motion,

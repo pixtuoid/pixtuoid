@@ -608,8 +608,8 @@ impl OfficeSession {
     /// The scene the footer counts and tallies: its floor's, as
     /// [`FooterInputs::new`](crate::footer::FooterInputs::new) asks.
     #[doc(hidden)]
-    pub fn footer_scene(&self, scene: &SceneState) -> SceneState {
-        super::project_floor_scene(scene, self.footer_floor_index()).scene
+    pub fn footer_scene(&self, scene: &SceneState) -> super::FloorScene {
+        super::project_floor_scene(scene, self.footer_floor_index())
     }
 
     /// Whether the floor showing's last frame changes between beats: someone

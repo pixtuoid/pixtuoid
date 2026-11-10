@@ -226,11 +226,11 @@ pub struct FooterInputs<'a> {
 }
 
 impl<'a> FooterInputs<'a> {
-    /// The footer over `drawn`, the (projected) floor scene the painter draws.
-    pub fn new(drawn: &SceneState, context: FooterContext<'a>) -> Self {
+    /// The footer over `drawn`, the floor the painter draws.
+    pub fn new(drawn: &crate::floor::FloorScene, context: FooterContext<'a>) -> Self {
         Self {
-            counts: crate::tally::scene_stats(drawn),
-            tools: footer_tool_tally(drawn),
+            counts: crate::tally::scene_stats(drawn.scene()),
+            tools: footer_tool_tally(drawn.scene()),
             context,
         }
     }
@@ -780,11 +780,10 @@ mod tests {
         let mut unseated = requires_action_slot("/p/unseated.jsonl");
         unseated.desk = None;
         let mut office = SceneState::uniform(16);
-        let mut drawn = SceneState::uniform(16);
-        drawn.agents.insert(at_desk.agent_id, at_desk.clone());
         for slot in [at_desk, unseated] {
             office.agents.insert(slot.agent_id, slot);
         }
+        let drawn = crate::floor::project_floor_scene(&office, 0);
         let line = |warning| {
             let ctx =
                 FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
@@ -804,7 +803,7 @@ mod tests {
         unseated.desk = None;
         let mut office = SceneState::uniform(16);
         office.agents.insert(unseated.agent_id, unseated);
-        let drawn = SceneState::uniform(16);
+        let drawn = crate::floor::project_floor_scene(&office, 0);
         let line = |warning| {
             let ctx =
                 FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);

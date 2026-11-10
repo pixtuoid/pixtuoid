@@ -686,7 +686,7 @@ impl FloorSession {
     ) -> crate::neon_sign::BoardModel {
         let floor_scene = project_floor_scene(scene, 0);
         crate::neon_sign::wall_board(
-            floor_scene.scene(),
+            &floor_scene,
             crate::tally::office_gateway(floor_scene.scene()),
             None,
             motion,
@@ -1216,7 +1216,14 @@ pub(crate) fn floor_agents(
 
 /// One floor's [projection](project_floor_scene), the scene that floor is drawn
 /// from: only the projection builds one, so an input that takes it can't be
-/// handed a whole office.
+/// handed a whole office, and its scene stays inside the crate, so it can't be
+/// handed back as one:
+///
+/// ```compile_fail,E0624
+/// let office = pixtuoid_core::SceneState::default();
+/// let floor_scene = pixtuoid_scene::floor::project_floor_scene(&office, 0);
+/// let _full: &pixtuoid_core::SceneState = floor_scene.scene();
+/// ```
 #[derive(Debug)]
 pub struct FloorScene {
     scene: SceneState,
@@ -1226,7 +1233,7 @@ pub struct FloorScene {
 
 impl FloorScene {
     /// The projected scene.
-    pub fn scene(&self) -> &SceneState {
+    pub(crate) fn scene(&self) -> &SceneState {
         &self.scene
     }
 

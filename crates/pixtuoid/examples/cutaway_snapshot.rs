@@ -17,6 +17,7 @@ use pixtuoid_core::source::claude_code;
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
 use pixtuoid_scene::floor::{Conditions, FloorInputs, PerFloor, PerOffice, project_floor_scene};
+use pixtuoid_scene::hit::HoverTarget;
 use pixtuoid_scene::layout::Viewport;
 use pixtuoid_scene::look::{Look, Place, RenderInputs};
 use pixtuoid_scene::render_scale::RenderScale;
@@ -213,7 +214,11 @@ fn main() -> Result<()> {
         "wrote {out} ({bw}x{bh} = {lw}x{lh} logical @{scale_n}x, \
          {} desks, {} agents)",
         layout.home_desks.len(),
-        floor_scene.scene().agents.len()
+        picture
+            .hits
+            .figures()
+            .filter(|(target, _)| matches!(target, HoverTarget::Agent(_)))
+            .count()
     );
     Ok(())
 }

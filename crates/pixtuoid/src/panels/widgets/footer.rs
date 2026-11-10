@@ -115,7 +115,10 @@ mod tests {
         };
         let mut scene = SceneState::uniform(16);
         scene.agents.insert(slot.agent_id, slot);
-        let inputs = FooterInputs::new(&scene, footer_context(&scene, None, false, None, None));
+        let inputs = FooterInputs::new(
+            &pixtuoid_scene::floor::project_floor_scene(&scene, 0),
+            footer_context(&scene, None, false, None, None),
+        );
         let spans = build_status_spans(&inputs, 200, theme);
         let running_rgb = FooterTone::Rung(RungKind::Running).rgb(theme);
         let rung = spans
