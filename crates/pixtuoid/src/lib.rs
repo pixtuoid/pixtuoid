@@ -275,7 +275,7 @@ pub(crate) mod test_flash {
     use pixtuoid_core::state::{MAX_FLOORS, SceneState};
     use pixtuoid_scene::anim::{FULL_TICK_MS, Motion, PHOTOSENSITIVE_PHASE_MIN_MS};
     use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
-    use pixtuoid_scene::look::{Look, Place, RenderInputs};
+    use pixtuoid_scene::look::{Look, RenderInputs};
     use pixtuoid_scene::pack::OfficeArt;
     use pixtuoid_scene::screen::Flashes;
     use pixtuoid_scene::sky::{Weather, WeatherPolicy};
@@ -319,7 +319,7 @@ pub(crate) mod test_flash {
                 },
                 theme: pixtuoid_scene::theme::ALL_THEMES[0],
                 viewport: pixtuoid_scene::layout::min_layout_size().into(),
-                place: Place::default(),
+                gateway: None,
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },

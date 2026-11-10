@@ -761,7 +761,7 @@ fn main() -> Result<()> {
     let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
 
     if args.debug_walkable {
-        print_walkability_report(drawn.as_ref())?;
+        print_walkability_report(drawn.as_ref());
     }
 
     let crop_rect = match figure_target(&args, &scene, drawn.as_ref())? {

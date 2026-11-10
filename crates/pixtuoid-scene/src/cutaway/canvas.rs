@@ -1442,7 +1442,6 @@ mod tests {
         };
         let ground_seed = crate::floor::floor_seed(0);
         let office = empty(Viewport::full(240, 144), ground_seed);
-        // The top floor of four, whose windows look out from the highest.
         // Floor `floor` of `scene`, empty, stepped on `viewport`.
         let empty_on = |viewport, scene: &pixtuoid_core::SceneState, floor| {
             let mut office = crate::floor::PerOffice::new();
@@ -1460,6 +1459,7 @@ mod tests {
             )
             .expect("lays out")
         };
+        // The top floor of four, whose windows look out from the highest.
         let upstairs = empty_on(
             Viewport::full(240, 144),
             &pixtuoid_core::SceneState::uniform(16),

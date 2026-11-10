@@ -324,10 +324,11 @@ pub(crate) fn sit_down_on(
     use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, ToolKind, ToolUse};
     use std::time::{Duration, SystemTime};
     const LOGICAL: (u16, u16) = (160, 96);
+    let mut scene = pixtuoid_core::SceneState::uniform(16);
     let layout = SceneLayout::compute(
         crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
         None,
-        crate::floor::floor_seed(floor),
+        crate::floor::project_floor_scene(&scene, floor).floor_seed(),
     )
     .expect("lays out");
     let home = layout
@@ -336,7 +337,6 @@ pub(crate) fn sit_down_on(
         .position(|d| d.facing == facing)
         .expect("the office has a desk facing that way");
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let mut scene = pixtuoid_core::SceneState::uniform(16);
     scene.agents.insert(
         id,
         pixtuoid_core::AgentSlot {

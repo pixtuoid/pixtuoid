@@ -19,7 +19,7 @@ use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
 use pixtuoid_scene::floor::{Conditions, FloorInputs, PerFloor, PerOffice, project_floor_scene};
 use pixtuoid_scene::hit::HoverTarget;
 use pixtuoid_scene::layout::Viewport;
-use pixtuoid_scene::look::{Look, Place, RenderInputs};
+use pixtuoid_scene::look::{Look, RenderInputs};
 use pixtuoid_scene::render_scale::RenderScale;
 use pixtuoid_scene::theme::theme_by_name;
 
@@ -189,9 +189,7 @@ fn main() -> Result<()> {
             },
             theme,
             viewport: Viewport::full(lw, lh),
-            place: Place {
-                gateway: pixtuoid_scene::tally::office_gateway(&scene),
-            },
+            gateway: pixtuoid_scene::tally::office_gateway(&scene),
             debug_walkable: false,
             dim: pixtuoid_scene::look::Dim::NONE,
         },

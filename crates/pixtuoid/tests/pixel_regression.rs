@@ -28,7 +28,7 @@ fn floor_seed_affects_render() {
                 },
                 theme: &theme::NORMAL,
                 viewport: pixtuoid_scene::layout::Viewport::full(160, 96),
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },

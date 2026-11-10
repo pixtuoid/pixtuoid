@@ -30,7 +30,7 @@ use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
 use pixtuoid_scene::layout::Size;
-use pixtuoid_scene::look::{Place, RenderInputs, WorldText};
+use pixtuoid_scene::look::{RenderInputs, WorldText};
 use pixtuoid_scene::pack::load_bundled_pack;
 use pixtuoid_scene::render_scale::PixelFit;
 use pixtuoid_scene::screen::{Screen, ScreenClock};
@@ -663,7 +663,7 @@ impl Office {
                 },
                 theme: self.theme,
                 viewport: pixtuoid_scene::layout::Viewport::full(units_w, units_h),
-                place: Place::default(),
+                gateway: None,
                 debug_walkable: false,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },

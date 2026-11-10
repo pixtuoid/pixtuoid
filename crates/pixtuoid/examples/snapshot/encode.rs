@@ -21,10 +21,10 @@ use crate::{CELL_H, CELL_W, SnapshotArgs, due_navigations};
 /// region and A* falls back to a straight line when crossing into it — the root cause
 /// of any character teleport the user sees. It reads the layout `drawn` was
 /// drawn on, so it reports the office the frame shows.
-pub(crate) fn print_walkability_report(drawn: Option<&pixtuoid_scene::look::Hits>) -> Result<()> {
+pub(crate) fn print_walkability_report(drawn: Option<&pixtuoid_scene::look::Hits>) {
     let Some(layout) = drawn.map(pixtuoid_scene::look::Hits::layout) else {
         println!("(debug_walkable) layout too small to compute");
-        return Ok(());
+        return;
     };
 
     let reach_mask = compute_reachable(layout);
@@ -67,7 +67,6 @@ pub(crate) fn print_walkability_report(drawn: Option<&pixtuoid_scene::look::Hits
         }
         println!();
     }
-    Ok(())
 }
 
 fn compute_reachable(layout: &pixtuoid_scene::layout::SceneLayout) -> Vec<bool> {

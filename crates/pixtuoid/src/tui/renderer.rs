@@ -19,7 +19,7 @@ use pixtuoid_scene::floor::{
 use pixtuoid_scene::footer::{FooterContext, FooterInputs};
 use pixtuoid_scene::hit::HoverTarget;
 use pixtuoid_scene::layout::Viewport;
-use pixtuoid_scene::look::{FloorPicture, Hits, Look, Place, RenderInputs};
+use pixtuoid_scene::look::{FloorPicture, Hits, Look, RenderInputs};
 
 pub(crate) use crate::panels::widgets::{TooltipAt, paint_tooltip};
 pub(super) use crate::panels::widgets::{paint_footer, paint_host_text, star_area};
@@ -269,9 +269,7 @@ pub fn draw_scene<B: Backend<Error: Send + Sync + 'static>>(
             world,
             theme,
             viewport: Viewport::full(buf_w, buf_h),
-            place: Place {
-                gateway: footer.context.gateway,
-            },
+            gateway: footer.context.gateway,
             debug_walkable: ctx.debug_walkable,
             dim: overlays.onboarding.dim,
         },
