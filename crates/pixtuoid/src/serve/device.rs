@@ -946,23 +946,35 @@ mod tests {
         assert!(matches!(peer.answer().await, Answer::Sources { .. }));
     }
 
-    #[tokio::test]
+    /// The first, a read, waits on the shut gate; the second is one answered at
+    /// once, which the gate can't hold back.
+    #[tokio::test(start_paused = true)]
     async fn a_second_ask_waits_for_the_first() {
-        let mut held = held();
-        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let read = Arc::new(AtomicBool::new(false));
+        let reading = Arc::clone(&read);
+        let fixture = fixture_reading(Arc::new(move || {
+            reading.store(true, Ordering::Relaxed);
+            Vec::new()
+        }));
         let mut peer = streaming(&fixture).await;
+        let shut = Arc::clone(&fixture.devices.gate)
+            .try_acquire_owned()
+            .expect("an idle gate");
         let ask = serde_json::to_string(&Ask::Sources).expect("it encodes");
+        let unknown = r#"{"ask":"from_the_future"}"#;
 
-        peer.say(&format!("{ask}\n{ask}")).await;
-        held.started.recv().await.expect("the first starts");
-        peer.sees_a_change(&fixture).await;
-        assert!(held.started.try_recv().is_err(), "the second started");
-
-        held.release.send(()).expect("it waits");
-        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
-        held.started.recv().await.expect("the second starts");
-        held.release.send(()).expect("it waits");
-        assert!(matches!(peer.answer().await, Answer::Sources { .. }));
+        peer.say(&format!("{ask}\n{unknown}")).await;
+        // The first waits on the shut gate, not on blocking work, so the paused
+        // clock moves only once no task can run
+        // (https://docs.rs/tokio/latest/tokio/time/fn.pause.html): past the
+        // stream's frame gap, a stream that read on has answered the second.
+        sleep(MIN_FRAME_GAP * 2).await;
+        let past = read.load(Ordering::Relaxed);
+        assert!(!past, "the read ran past the shut gate");
+        drop(shut);
+        let first = peer.answer().await;
+        assert!(matches!(first, Answer::Sources { .. }), "{first:?}");
+        assert_eq!(peer.answer().await, Answer::Unsupported);
     }
 
     /// An answer names no ask, so a device matches it by order: an ask the
@@ -990,37 +1002,23 @@ mod tests {
         assert_eq!(peer.answer().await, Answer::Unsupported);
     }
 
-    /// A device that reconnects while its read runs can't start a second, which
-    /// gets this long to show it would.
+    /// A read holds the gate until its blocking work returns, though the
+    /// connection that asked ends: a device that reconnects can't start a second.
     #[tokio::test]
     async fn one_read_runs_at_a_time_across_connections() {
-        const A_SECOND_WOULD_START: Duration = Duration::from_millis(500);
         let mut held = held();
         let fixture = fixture_reading(Arc::clone(&held.rows));
-        let hello = Hello::Resume {
-            token: paired(&fixture),
-        };
-        let mut old = Peer::connect(&fixture.devices);
-        old.hello(&hello).await;
-        assert_eq!(old.reply().await, Reply::Resumed);
-        old.line().await;
-        old.ask(&Ask::Sources).await;
+        let gate = &fixture.devices.gate;
+        let read = tokio::spawn(fixture.devices.sources());
         held.started.recv().await.expect("it starts");
-
-        let mut new = Peer::connect(&fixture.devices);
-        new.hello(&hello).await;
-        assert_eq!(new.reply().await, Reply::Resumed);
-        new.line().await;
-        old.ended().await.expect("replaced is a clean end");
-        new.ask(&Ask::Sources).await;
-        new.sees_a_change(&fixture).await;
-        let second = timeout(A_SECOND_WOULD_START, held.started.recv()).await;
-        assert!(second.is_err(), "a second read started");
+        // A connection's end aborts its ask; the handle returns once the task's
+        // locals are dropped (https://docs.rs/tokio/latest/tokio/task/index.html#cancellation).
+        read.abort();
+        assert!(read.await.expect_err("aborted mid-read").is_cancelled());
+        assert_eq!(gate.available_permits(), 0, "the gate left with the ask");
 
         held.release.send(()).expect("it waits");
-        held.started.recv().await.expect("the new read starts");
-        held.release.send(()).expect("it waits");
-        assert!(matches!(new.answer().await, Answer::Sources { .. }));
+        let _given_back = gate.acquire().await.expect("an open gate");
     }
 
     /// The device reaches the change, and so its audit line, by a short hash.
@@ -1139,25 +1137,24 @@ mod tests {
         assert_eq!(first.outcome(), Outcome::NoOp);
     }
 
-    /// A write waits for a read on another connection, which can hold a CLI.
-    #[tokio::test]
+    /// A write waits for a read, which can hold a CLI: the gate held here is
+    /// the one a read holds through its blocking work.
+    #[tokio::test(start_paused = true)]
     async fn a_write_waits_for_a_read_on_the_gate() {
-        const A_WRITE_WOULD_START: Duration = Duration::from_millis(500);
-        let mut held = held();
-        let fixture = fixture_reading(Arc::clone(&held.rows));
-        let mut reader = streaming(&fixture).await;
-        reader.ask(&Ask::Sources).await;
-        held.started.recv().await.expect("the read starts");
-
-        let mut writer = streaming(&fixture).await;
-        writer.ask(&change("copilot", true)).await;
-        writer.sees_a_change(&fixture).await;
-        sleep(A_WRITE_WOULD_START).await;
+        let fixture = fixture();
+        let device = Hashed::of(&paired(&fixture));
+        let read = Arc::clone(&fixture.devices.gate)
+            .try_acquire_owned()
+            .expect("an idle gate");
+        let write = tokio::spawn(fixture.devices.change(device, "copilot".into(), true));
+        // Any length: a paused clock moves only once no task can run and no
+        // blocking work runs (https://docs.rs/tokio/latest/tokio/time/fn.pause.html),
+        // so a write past the gate has been made by then.
+        sleep(Duration::from_millis(1)).await;
         assert!(made(&fixture).is_empty(), "the write ran beside the read");
 
-        held.release.send(()).expect("it waits");
-        assert!(matches!(reader.answer().await, Answer::Sources { .. }));
-        assert!(matches!(writer.answer().await, Answer::Changed(_)));
-        assert_eq!(made(&fixture).len(), 1);
+        drop(read);
+        let written = write.await.expect("it runs");
+        assert!(matches!(written, Ok(Answer::Changed(_))), "{written:?}");
     }
 }

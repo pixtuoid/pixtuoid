@@ -16,7 +16,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
 use crate::install::io;
-use crate::install::merge::{prune_empty, prune_empty_root};
+use crate::install::merge::{emit_json, parse_json_or_empty, prune_empty, prune_empty_root};
 use crate::install::target::MergeOutcome;
 
 const PLUGIN_ID: &str = "pixtuoid";
@@ -212,14 +212,12 @@ fn contains_include(v: &Value) -> bool {
 /// don't re-propose it as the fix without re-measuring. Pinned by
 /// `merge_refuses_a_json5_document_instead_of_dropping_its_comments`.
 fn parse_for_merge(content: &str) -> Result<Value> {
-    if content.trim().is_empty() {
-        return Ok(json!({}));
-    }
-    serde_json::from_str(content).map_err(|e| {
+    parse_json_or_empty(content).map_err(|e| {
         anyhow!(
-            "openclaw.json is not strict JSON ({e}). OpenClaw parses it as JSON5, so \
+            "openclaw.json is not strict JSON ({}). OpenClaw parses it as JSON5, so \
              comments/trailing commas/single quotes are legal there and pixtuoid will not \
-             rewrite the file rather than drop them — {OWNER_CLI_ADVICE}"
+             rewrite the file rather than drop them — {OWNER_CLI_ADVICE}",
+            e.root_cause()
         )
     })
 }
@@ -277,7 +275,7 @@ pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutco
     let changed = root != before;
     Ok(MergeOutcome {
         changed,
-        content: serde_json::to_string_pretty(&root)? + "\n",
+        content: emit_json(content, &root)?,
     })
 }
 
@@ -335,13 +333,13 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     let changed = root != before;
     Ok(MergeOutcome {
         changed,
-        content: serde_json::to_string_pretty(&root)? + "\n",
+        content: emit_json(content, &root)?,
     })
 }
 
 /// Install-schema check — the "silent-dead source" detector. The shim path lives
 /// in the SEPARATE plugin `index.js`, NOT this config, so the shim ref is
-/// `Unknown` and `verify_target` downgrades that to a soft note. The HARD checks
+/// `Unknown` and `verify_target` reads it from that file instead. The HARD checks
 /// are the two config-level facts only WE write: the enabled `entries.pixtuoid`
 /// entry + its `load.paths` dir registration.
 pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaParse {
@@ -1090,6 +1088,37 @@ mod tests {
                     .iter()
                     .any(|p| p.as_str().is_some_and(|s| s.ends_with("plugins/pixtuoid")))),
                 "our load.path removed, got {paths:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn a_crlf_config_stays_crlf() {
+        in_state_dir(|| {
+            let installed = merge_install("{\r\n  \"gateway\": {}\r\n}\r\n", "/x").unwrap();
+            let removed = merge_uninstall(&installed.content).unwrap();
+            for out in [installed.content, removed.content] {
+                assert!(
+                    out.ends_with("\r\n") && !out.replace("\r\n", "").contains('\n'),
+                    "{out:?}"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn uninstall_keeps_a_foreign_load_path() {
+        in_state_dir(|| {
+            let installed = merge_install(
+                r#"{"plugins":{"load":{"paths":["/some/other/plugin"]}}}"#,
+                "/x",
+            )
+            .unwrap();
+            let removed = merge_uninstall(&installed.content).unwrap();
+            let v: Value = serde_json::from_str(&removed.content).unwrap();
+            assert_eq!(
+                v,
+                json!({"plugins": {"load": {"paths": ["/some/other/plugin"]}}})
             );
         });
     }

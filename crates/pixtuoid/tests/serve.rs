@@ -37,9 +37,6 @@ const PAIR_LINK: &str = "https://pixtuoid.dev/pair/";
 
 const PATIENCE: Duration = Duration::from_secs(30);
 
-/// Well inside the hello deadline, which ends a connection that got a slot.
-const AT_ONCE: Duration = Duration::from_secs(2);
-
 /// What a device checks in place of a CA.
 #[derive(Debug)]
 struct PinnedTo {
@@ -112,33 +109,25 @@ impl Device {
 
     /// From `local`, the address the server knows this device by.
     async fn connect_from(link: &PairLink, local: Ipv4Addr) -> Self {
-        let provider = Arc::new(default_provider());
-        let verifier = PinnedTo {
-            spki: link.spki.clone(),
-            provider: default_provider(),
-        };
-        let config = ClientConfig::builder_with_provider(provider)
-            .with_protocol_versions(&[&TLS13])
-            .expect("TLS 1.3 is on offer")
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(verifier))
-            .with_no_client_auth();
-        let socket = TcpSocket::new_v4().expect("a socket");
-        socket.bind((local, 0).into()).expect("a local address");
-        let tcp = socket
-            .connect((Ipv4Addr::LOCALHOST, link.port).into())
-            .await
-            .expect("the server listens");
-        let name = ServerName::try_from("pixtuoid.local").expect("a name");
-        let tls = TlsConnector::from(Arc::new(config))
-            .connect(name, tcp)
-            .await
-            .expect("the handshake passes the link's pin");
+        let tls = handshake(link, local).await;
+        let tls = tls.expect("the handshake passes the link's pin");
         Self {
             stream: AsyncBufReader::new(tls),
             office: RemoteOffice::new([4; MAX_FLOORS]),
             received: String::new(),
         }
+    }
+
+    /// Leave, and read on to the server's end, which comes only past this
+    /// connection's verdict: its address's turn is given back by then.
+    async fn leave(mut self) {
+        let tls = self.stream.get_mut();
+        tls.shutdown().await.expect("a close_notify");
+        let mut rest = Vec::new();
+        let ended = self.stream.read_to_end(&mut rest);
+        let _ = tokio::time::timeout(PATIENCE, ended)
+            .await
+            .expect("the server ends its side");
     }
 
     async fn say(&mut self, line: &str) {
@@ -196,6 +185,31 @@ impl Device {
             .await
             .unwrap_or_else(|_| panic!("{repo} never reached the device"));
     }
+}
+
+/// A handshake from `local` pinned to `link`, which the server answers only for
+/// a peer it admitted: a refused one's TCP is closed before any TLS.
+async fn handshake(link: &PairLink, local: Ipv4Addr) -> std::io::Result<TlsStream<TcpStream>> {
+    let provider = Arc::new(default_provider());
+    let verifier = PinnedTo {
+        spki: link.spki.clone(),
+        provider: default_provider(),
+    };
+    let config = ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&TLS13])
+        .expect("TLS 1.3 is on offer")
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth();
+    let socket = TcpSocket::new_v4().expect("a socket");
+    socket.bind((local, 0).into()).expect("a local address");
+    let tcp = socket
+        .connect((Ipv4Addr::LOCALHOST, link.port).into())
+        .await
+        .expect("the server listens");
+    let name = ServerName::try_from("pixtuoid.local").expect("a name");
+    let connector = TlsConnector::from(Arc::new(config));
+    connector.connect(name, tcp).await
 }
 
 /// A HOME of its own, where cursor is connected, and one hook endpoint.
@@ -520,28 +534,22 @@ async fn a_server_shares_the_hook_plane_in_either_order_and_survives_either_exit
         .await;
 }
 
-/// An address's second connection while its first says nothing ends at once,
-/// and its turn comes back when the first leaves.
+/// An address's second connection while its first says no hello is closed
+/// unanswered, and its turn comes back when the first leaves.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_address_says_one_hello_at_a_time() {
     let world = World::new();
     let (_server, port) = world.serve();
     let link = world.pair(port);
-    let connect = || TcpStream::connect(("127.0.0.1", port));
 
-    let silent = connect().await.expect("the server listens");
-    // Past its accept, or the next could overtake it.
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    let mut refused = connect().await.expect("the backlog takes it");
-    let mut unread = [0; 1];
-    let closed = tokio::time::timeout(AT_ONCE, refused.read(&mut unread)).await;
+    let silent = Device::connect(&link).await;
+    let refused = handshake(&link, Ipv4Addr::LOCALHOST).await;
     assert!(
-        matches!(closed, Ok(Ok(0) | Err(_))),
-        "a second unanswered hello is closed unanswered: {closed:?}"
+        refused.is_err(),
+        "a second unanswered hello got a slot: {refused:?}"
     );
 
-    drop(silent);
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    silent.leave().await;
     let hello = Hello::Pair {
         code: link.code.clone(),
     };
@@ -559,17 +567,19 @@ async fn another_address_pairs_beside_a_silent_one() {
     let (_server, port) = world.serve();
     let link = world.pair(port);
 
-    let _silent = TcpStream::connect(("127.0.0.1", port))
-        .await
-        .expect("the server listens");
-    // Past its accept, or the device could overtake it.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let _silent = Device::connect(&link).await;
     let hello = Hello::Pair {
         code: link.code.clone(),
     };
     let device = Device::connect_from(&link, Ipv4Addr::new(127, 0, 0, 2));
     let reply = device.await.hello(&hello).await;
     assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
+    // Still held, so the pairing came beside it, not past its hello deadline.
+    let again = handshake(&link, Ipv4Addr::LOCALHOST).await;
+    assert!(
+        again.is_err(),
+        "the silent address's turn was free: {again:?}"
+    );
 }
 
 #[test]

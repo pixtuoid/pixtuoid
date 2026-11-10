@@ -707,11 +707,15 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     }
 
     /// The slide the session just composed, as classic half-blocks, under the
-    /// destination's footer.
-    fn flush_classic_slide(&mut self, scene: &SceneState, now: SystemTime) -> Result<()> {
+    /// destination's footer, on a terminal `term_size` big.
+    fn flush_classic_slide(
+        &mut self,
+        scene: &SceneState,
+        now: SystemTime,
+        term_size: ratatui::layout::Size,
+    ) -> Result<()> {
         use crate::panels::paint_overlays;
         use crate::tui::renderer::{flush_buffer_to_term, paint_footer, scene_rect};
-        let term_size = self.terminal.size()?;
         let footer_scene = self.session.footer_scene(scene);
         let footer = pixtuoid_scene::footer::FooterInputs::new(
             &footer_scene,
@@ -750,6 +754,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         &mut self,
         scene: &SceneState,
         now: SystemTime,
+        term_size: ratatui::layout::Size,
         stepped: bool,
     ) -> Result<Option<FrameNote>> {
         self.session.prepare(scene, now);
@@ -772,7 +777,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             let audio = self.session.drew_no_office(scene, office_floor, now);
             self.chrome.audio.frame(audio);
         }
-        self.screen.blank(self.terminal.size()?);
+        self.screen.blank(term_size);
         self.chrome.popup.last_scale = popup_scale;
         self.rest_floor(now);
         flushed.map(|()| None)
@@ -841,25 +846,23 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         }
 
         let window = self.window_cell();
+        let term_size = self.terminal.size()?;
+        let full_rect = Rect::from((Position::ORIGIN, term_size));
         let look = self.look;
         if let Some(mut cutaway) = self.cutaway.take_if(|_| look == LookKind::Cutaway) {
             cutaway.begin_frame();
-            let size = self.terminal.size()?;
-            let scene_area =
-                crate::tui::renderer::scene_rect(Rect::new(0, 0, size.width, size.height));
+            let scene_area = crate::tui::renderer::scene_rect(full_rect);
             let drawn = cutaway
                 .fit_to(scene_area, window)
-                .map(|fitted| self.render_cutaway(&mut cutaway, fitted, scene, now));
+                .map(|fitted| self.render_cutaway(&mut cutaway, fitted, term_size, scene, now));
             self.cutaway = Some(cutaway);
             if let Some(drawn) = drawn {
                 return drawn;
             }
         }
 
-        let term_size = self.terminal.size()?;
-        let full_rect = Rect::new(0, 0, term_size.width, term_size.height);
         if crate::tui::renderer::scene_too_small(crate::tui::renderer::scene_rect(full_rect)) {
-            return self.draw_too_small(scene, now, false);
+            return self.draw_too_small(scene, now, term_size, false);
         }
         let (buf_w, buf_h) =
             crate::tui::renderer::scene_buf_size(full_rect.width, full_rect.height);
@@ -871,10 +874,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             self.debug_walkable,
         );
         let Some(picture) = self.session.picture() else {
-            return self.draw_too_small(scene, now, true);
+            return self.draw_too_small(scene, now, term_size, true);
         };
         let Picture::Floor(floor) = &picture else {
-            return self.flush_classic_slide(scene, now).map(|()| drawn);
+            return self
+                .flush_classic_slide(scene, now, term_size)
+                .map(|()| drawn);
         };
         let current = self.session.nav().current();
         let footer_scene = self.session.footer_scene(scene);
@@ -891,10 +896,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
         let mouse_pos = self.tooltip_pos(&overlays);
-        let (geometry, star) = crate::tui::renderer::classic_placement(term_size, floor);
+        let placement = crate::tui::renderer::classic_placement(term_size, floor);
         if !self
             .screen
-            .admit(&picture, term_size, geometry, star)
+            .admit(&picture, term_size, placement.0, placement.1)
             .written()
         {
             // The terminal still shows the last frame, and its hit targets.
@@ -908,6 +913,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             now,
             pets: world.pets,
             mouse_pos,
+            placement,
         };
         crate::tui::renderer::flush_classic(&mut self.terminal, &frame, floor)?;
         // The popup's click rect derives from the terminal bounds — NOT the
@@ -928,6 +934,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         &mut self,
         cutaway: &mut crate::tui::cutaway::TileCutaway,
         fitted: crate::tui::cutaway::Fitted,
+        term_size: ratatui::layout::Size,
         scene: &SceneState,
         now: SystemTime,
     ) -> Result<Option<FrameNote>> {
@@ -936,13 +943,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         use crate::tui::renderer::{TooltipAt, paint_over_image};
         use pixtuoid_scene::hit::HoverTarget;
         if crate::tui::renderer::scene_too_small(fitted.scene) {
-            return self.draw_too_small(scene, now, false);
+            return self.draw_too_small(scene, now, term_size, false);
         }
         let drawn = self.render_office(scene, now, fitted.look(), fitted.fit.logical(), false);
         let Some(picture) = self.session.picture() else {
-            return self.draw_too_small(scene, now, true);
+            return self.draw_too_small(scene, now, term_size, true);
         };
-        let term_size = self.terminal.size()?;
         let current = self.session.nav().current();
         let footer_scene = self.session.footer_scene(scene);
         let footer = pixtuoid_scene::footer::FooterInputs::new(
@@ -984,7 +990,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         });
         cutaway.before_flush(now)?;
         let mut carves = Vec::new();
-        self.terminal.draw(|f| {
+        let flushed = self.terminal.draw(|f| {
             carves = paint_over_image(
                 f,
                 &footer,
@@ -1008,6 +1014,14 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
                 |buf, scene_area| cutaway.carve(buf, scene_area),
             );
         })?;
+        if crate::tui::renderer::scene_rect(flushed.area) != fitted.scene {
+            // ratatui's draw read a resize the fit missed
+            // (`Terminal::autoresize`) and cleared the screen for it, as a
+            // redraw does: tiles cut for the fit would stay over text its
+            // diff never rewrites.
+            cutaway.forget();
+            self.screen.wiped();
+        }
         cutaway.after_flush(&carves, now)?;
         self.chrome.popup.last_scale = popup_scale;
         Ok(drawn)

@@ -83,18 +83,7 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
         .seeded()
         .lines(lines);
     d.assert_clean("child error");
-    let child = d
-        .events
-        .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: Some(parent),
-                ..
-            } => Some((*agent_id, *parent)),
-            _ => None,
-        })
-        .expect("the recording's child");
+    let child = d.linked_child().expect("the recording's child");
     assert!(d.reaches.contains(&(child.1, Reach::Delegating)));
     let at = |end: &dyn Fn(&AgentEvent) -> bool| d.events.iter().position(end);
     let failed =
