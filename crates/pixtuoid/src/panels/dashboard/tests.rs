@@ -129,6 +129,22 @@ fn an_unseated_agent_lists_after_its_seated_siblings() {
     );
 }
 
+/// Two unseated namesakes are told apart as two on one floor are: the unseated
+/// are counted as a group of their own.
+#[test]
+fn unseated_namesakes_each_carry_their_suffix() {
+    let mut scene = SceneState::uniform(8);
+    for agent in ["/p/a.jsonl", "/p/b.jsonl"].map(id) {
+        let slot = mk_slot(agent, "cc·api", 0, 0, None, ActivityState::Idle);
+        scene.agents.insert(agent, AgentSlot { desk: None, ..slot });
+    }
+
+    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+
+    let names: Vec<String> = rows.iter().map(|r| r.name.to_string()).collect();
+    assert_ne!(names[0], names[1], "{names:?}");
+}
+
 /// A root plus `n` direct subagents (desks 1..=n, floor 1).
 fn root_with_children(n: usize) -> (SceneState, AgentId, usize) {
     let root = id("/p/root.jsonl");

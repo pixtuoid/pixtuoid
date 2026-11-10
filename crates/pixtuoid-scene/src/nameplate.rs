@@ -142,28 +142,32 @@ impl<'a> Namesakes<'a> {
 
 /// Each floor's [`Namesakes`], counted over the agents that floor draws, so a
 /// list of a whole multi-floor office names each agent as its floor's badges
-/// do.
+/// do; the unseated, on no floor, are counted as a group of their own.
 #[derive(Debug)]
-pub struct FloorNamesakes<'a>(Vec<Namesakes<'a>>);
+pub struct FloorNamesakes<'a> {
+    floors: Vec<Namesakes<'a>>,
+    unseated: Namesakes<'a>,
+}
 
 impl<'a> FloorNamesakes<'a> {
     /// The floors of `scene`, the whole office.
     pub fn of(scene: &'a SceneState) -> Self {
         let floors = 0..pixtuoid_core::state::MAX_FLOORS;
-        Self(
-            floors
+        Self {
+            floors: floors
                 .map(|floor| Namesakes::of(crate::floor::floor_agents(scene, floor)))
                 .collect(),
-        )
+            unseated: Namesakes::of(scene.agents.values().filter(|a| a.desk.is_none())),
+        }
     }
 
-    /// `agent`'s name as its floor's badges read it; an agent no floor draws
-    /// is counted on none.
+    /// `agent`'s name as its floor's badges read it, or among the unseated.
     pub fn nameplate(&self, agent: &AgentSlot) -> Nameplate {
-        let shared = (agent.desk)
-            .and_then(|desk| self.0.get(desk.floor))
-            .is_some_and(|floor| floor.shares(agent));
-        Nameplate::of(agent, shared)
+        let counted = match agent.desk {
+            Some(desk) => self.floors.get(desk.floor),
+            None => Some(&self.unseated),
+        };
+        Nameplate::of(agent, counted.is_some_and(|group| group.shares(agent)))
     }
 }
 
