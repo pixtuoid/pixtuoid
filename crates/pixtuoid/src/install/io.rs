@@ -76,11 +76,11 @@ pub(crate) fn home_unset(what: &str, vars: &str) -> anyhow::Error {
 }
 
 /// The remedy sentence for "the shim isn't where we looked", shared by every site
-/// that offers one. It names `PIXTUOID_HOOK` and nothing else: the `--hook-path`
+/// that offers one. It names [`HOOK_OVERRIDE_ENV`]: the `--hook-path`
 /// flag these messages used to advertise no longer exists, so clap answers it with
 /// `unexpected argument` — an error whose only remedy was itself an error.
-pub(crate) const SHIM_LOCATE_REMEDY: &str = "install it alongside pixtuoid (`brew install \
-     pixtuoid` / `cargo install pixtuoid-hook` / `npm i -g pixtuoid`) or point \
+pub(crate) const SHIM_LOCATE_REMEDY: &str = "install pixtuoid-hook the same way you installed \
+     pixtuoid (`cargo install pixtuoid-hook` for cargo; every other channel ships both) or point \
      PIXTUOID_HOOK at an absolute path to the shim";
 
 /// The shim's binary name, which a bare-name hook command resolves on PATH.
@@ -664,6 +664,18 @@ mod tests {
         );
         assert!(SHIM_LOCATE_REMEDY.contains(HOOK_OVERRIDE_ENV));
         assert!(!SHIM_LOCATE_REMEDY.contains("--hook-path"));
+    }
+
+    #[test]
+    fn the_shim_locate_remedy_names_cargo_alone() {
+        assert!(SHIM_LOCATE_REMEDY.contains(&format!("cargo install {HOOK_BIN}")));
+        for channel in ["brew", "npm"] {
+            assert!(
+                !SHIM_LOCATE_REMEDY.contains(channel),
+                "{channel}: every packaged install ships the shim; only cargo needs it named \
+                 (docs/CONFIGURATION.md)"
+            );
+        }
     }
 
     #[test]
