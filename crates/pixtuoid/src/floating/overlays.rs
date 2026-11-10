@@ -543,7 +543,7 @@ mod tests {
         let slot = running_on("/p/a.jsonl", 0, 0);
         scene.agents.insert(slot.agent_id, slot);
         let inputs = FooterInputs::new(
-            &scene,
+            &pixtuoid_scene::floor::project_floor_scene(&scene, 0),
             crate::panels::widgets::footer_context(&scene, None, true, None, None),
         );
         let (w, h) = (640usize, 400usize);

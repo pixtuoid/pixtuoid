@@ -508,12 +508,13 @@ pub fn build_board(
 /// floor's tally and uptime, and what only the office knows — its `gateway`
 /// ([`office_gateway`](crate::tally::office_gateway)) and `floor`'s place among its floors.
 pub fn wall_board(
-    drawn: &SceneState,
+    drawn: &crate::floor::FloorScene,
     gateway: Option<DaemonState>,
     floor: Option<crate::footer::FooterFloor>,
     motion: crate::anim::Motion,
     now: SystemTime,
 ) -> BoardModel {
+    let drawn = drawn.scene();
     let headline = drawn.today.and_then(today_headline);
     build_board(
         scene_stats(drawn),
@@ -935,7 +936,7 @@ mod tests {
 
     #[test]
     fn uptime_is_the_oldest_in_scene_agent_in_whole_seconds() {
-        use pixtuoid_core::state::{ActivityState, GlobalDeskIndex};
+        use pixtuoid_core::state::{ActivityState, FloorDesk};
         use pixtuoid_core::{AgentId, AgentSlot};
         use std::path::PathBuf;
         use std::sync::Arc;
@@ -953,8 +954,7 @@ mod tests {
                 created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(secs),
                 arrived_at: Some(SystemTime::UNIX_EPOCH + Duration::from_secs(secs)),
                 exiting_at: None,
-                desk_index: GlobalDeskIndex(0),
-                floor_idx: 0,
+                desk: Some(FloorDesk::new(0, 0)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -1188,7 +1188,13 @@ mod tests {
     fn board_of(today: Option<Today>) -> String {
         let mut scene = SceneState::uniform(16);
         scene.today = today;
-        let board = wall_board(&scene, None, None, Motion::Full, SystemTime::UNIX_EPOCH);
+        let board = wall_board(
+            &crate::floor::project_floor_scene(&scene, 0),
+            None,
+            None,
+            Motion::Full,
+            SystemTime::UNIX_EPOCH,
+        );
         text_of(&board.context)
     }
 

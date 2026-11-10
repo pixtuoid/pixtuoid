@@ -3,7 +3,7 @@
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::sprite::RgbBuffer;
 
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, OfficeSession, PetInputs};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, OfficeSession, PetInputs};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
 use pixtuoid_scene::interact::{Gesture, Pointer, Pressed};
 use pixtuoid_scene::look::RenderInputs;
@@ -83,14 +83,14 @@ impl OfficeRenderer {
     }
 
     /// Feed the audio a frame of the office without drawing one
-    /// ([`OfficeSession::hear`]), in `scene` at `now` under `floor`.
+    /// ([`OfficeSession::hear`]), in `scene` at `now` under `conditions`.
     pub(crate) fn hear(
         &mut self,
         scene: &SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         now: std::time::SystemTime,
     ) {
-        self.audio.frame(self.session.hear(scene, floor, now));
+        self.audio.frame(self.session.hear(scene, conditions, now));
     }
 
     /// Render the office's floor showing, or its slide to another, into the
@@ -440,7 +440,7 @@ const RESIZE_CORNER_PX: f64 = 18.0;
 /// the window's [`window_geometry`](super::geometry::window_geometry) owns.
 #[derive(Debug, Clone, Copy)]
 pub struct WindowFrame<'a> {
-    pub world: FloorInputs<'a>,
+    pub world: FloorInputs<'a, SceneState>,
     pub theme: &'static pixtuoid_scene::theme::Theme,
     pub place: pixtuoid_scene::look::Place,
     pub dim: pixtuoid_scene::look::Dim,
@@ -478,7 +478,7 @@ mod tests {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
@@ -534,7 +534,7 @@ mod tests {
     struct Window {
         renderer: OfficeRenderer,
         scene: SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         screen: pixtuoid_scene::screen::ManualClock,
         /// How long a present takes on the screen clock.
         present_takes: Duration,
@@ -552,7 +552,7 @@ mod tests {
             Self {
                 renderer,
                 scene: SceneState::new([8; pixtuoid_core::state::MAX_FLOORS]),
-                floor: FloorMeta::ground()
+                conditions: Conditions::default()
                     .with_weather(weather)
                     .with_motion(pixtuoid_scene::anim::Motion::Full),
                 screen,
@@ -566,7 +566,7 @@ mod tests {
         fn with_a_floor_above(weather: pixtuoid_scene::sky::WeatherPolicy) -> Self {
             let cap = 8;
             Self {
-                scene: scene_with(vec![running_on("/p/upstairs.jsonl", 1, cap)], cap),
+                scene: scene_with(vec![running_on("/p/upstairs.jsonl", 1, 0)], cap),
                 ..Self::new(weather)
             }
         }
@@ -582,7 +582,7 @@ mod tests {
                     world: FloorInputs {
                         scene: &self.scene,
                         now,
-                        floor: self.floor,
+                        conditions: self.conditions,
                         pets: PetInputs::default(),
                     },
                     theme,
@@ -1076,9 +1076,9 @@ mod tests {
         let scene = scene_with(
             vec![
                 running_on("/a/f0.jsonl", 0, 0),
-                running_on("/a/f1a.jsonl", 1, cap),
-                running_on("/a/f1b.jsonl", 1, cap + 1),
-                running_on("/a/f1c.jsonl", 1, cap + 2),
+                running_on("/a/f1a.jsonl", 1, 0),
+                running_on("/a/f1b.jsonl", 1, 1),
+                running_on("/a/f1c.jsonl", 1, 2),
             ],
             cap,
         );
@@ -1094,7 +1094,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1117,9 +1117,9 @@ mod tests {
         let scene = scene_with(
             vec![
                 running_on("/a/f0.jsonl", 0, 0),
-                running_on("/a/f1a.jsonl", 1, cap),
-                running_on("/a/f1b.jsonl", 1, cap + 1),
-                running_on("/a/f1c.jsonl", 1, cap + 2),
+                running_on("/a/f1a.jsonl", 1, 0),
+                running_on("/a/f1b.jsonl", 1, 1),
+                running_on("/a/f1c.jsonl", 1, 2),
             ],
             cap,
         );
@@ -1137,7 +1137,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1199,7 +1199,7 @@ mod tests {
         (0..budget).find(|&step| {
             let now = now0 + std::time::Duration::from_secs(2 * step);
             if heard_before == Some(step) {
-                renderer.hear(&scene, FloorMeta::ground(), now);
+                renderer.hear(&scene, Conditions::default(), now);
             }
             // 192x160: tall enough that the corridor hosts BOTH appliances
             // (the vending/printer height gates in layout::compute).
@@ -1209,7 +1209,7 @@ mod tests {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
@@ -1262,7 +1262,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1272,7 +1272,7 @@ mod tests {
         );
         crate::audio::drain_frames(&rx); // discard the priming frames
 
-        agents.push(running_on("/d/f1-new.jsonl", 1, cap));
+        agents.push(running_on("/d/f1-new.jsonl", 1, 0));
         let scene = scene_with(agents.clone(), cap);
         now += pixtuoid_scene::anim::PAINT_FRAME;
         renderer.render(
@@ -1281,7 +1281,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1307,7 +1307,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1343,7 +1343,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1356,7 +1356,7 @@ mod tests {
         let scene = scene_with(agents, cap);
         renderer.hear(
             &scene,
-            FloorMeta::ground(),
+            Conditions::default(),
             now + pixtuoid_scene::floor::REST_TICK,
         );
         let heard: Vec<_> = crate::audio::drain_frames(&rx)
@@ -1612,7 +1612,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,

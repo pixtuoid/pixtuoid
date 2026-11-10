@@ -662,7 +662,6 @@ fn a_shadow_falls_inside_its_pieces_reach() {
             0.0,
             Motion::Full.timing(std::time::UNIX_EPOCH),
         ),
-        crate::floor::FloorMeta::ground(),
         quiet_board(),
         (
             &mut crate::display::compose::LightCache::default(),
@@ -992,7 +991,6 @@ fn a_shared_backdrop_cache_paints_every_frame_as_a_fresh_one() {
                     0.0,
                     Motion::Full.timing(now),
                 ),
-                crate::floor::FloorMeta::ground(),
                 quiet_board(),
                 (
                     &mut crate::display::compose::LightCache::default(),
@@ -1051,7 +1049,6 @@ fn a_strike_lifts_the_room_and_its_glass_most() {
                 &frame,
                 office,
                 &Moment::resolve(sky, theme, 0.0, Motion::Full.timing(now)),
-                crate::floor::FloorMeta::ground(),
                 quiet_board(),
                 (
                     &mut crate::display::compose::LightCache::default(),
@@ -1575,7 +1572,7 @@ fn the_night_room_is_darker_than_the_noon_room() {
             frame,
             office,
             showing(
-                crate::floor::FloorMeta::ground(),
+                crate::floor::Conditions::default(),
                 crate::localclock::at_hour(hour),
             ),
             (&mut cache, &mut crate::outside::OutsideCache::default()),
@@ -2421,7 +2418,7 @@ fn render_at(
             scale,
         },
         showing(
-            crate::floor::FloorMeta::ground(),
+            crate::floor::Conditions::default(),
             std::time::SystemTime::UNIX_EPOCH,
         ),
         (&mut cache, &mut crate::outside::OutsideCache::default()),
@@ -2440,7 +2437,7 @@ fn render_at(
 /// and a meeting room, under one theme, since no painter branches on it.
 #[test]
 fn the_cutaway_paints_whole_art_pixels() {
-    use crate::floor::{FloorMeta, FloorSession};
+    use crate::floor::{Conditions, FloorSession};
     let pack = test_office();
     let d = pack.max_density_variant().get();
     let (walk_layout, _, frames, _) = sit_down(crate::layout::Facing::North, 2);
@@ -2451,7 +2448,7 @@ fn the_cutaway_paints_whole_art_pixels() {
             crate::floor::FloorInputs {
                 scene: &pixtuoid_core::SceneState::uniform(16),
                 now: std::time::SystemTime::UNIX_EPOCH,
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: crate::floor::PetInputs::default(),
             },
             crate::layout::Viewport::full(240, 144),
@@ -2614,7 +2611,7 @@ fn a_back_turned_sitters_badge_clears_their_raised_monitor() {
         seated,
         office,
         showing(
-            crate::floor::FloorMeta::ground(),
+            crate::floor::Conditions::default(),
             std::time::SystemTime::UNIX_EPOCH,
         ),
         (
@@ -2667,7 +2664,7 @@ fn what_meets_the_ground_casts_a_shadow() {
 /// at every density the pack draws, its other pieces being what else paints.
 #[test]
 fn the_outside_reaches_only_the_glass() {
-    use crate::floor::{FloorMeta, FloorSession};
+    use crate::floor::{Conditions, FloorSession};
     use crate::outside::tests::{
         UNPAINTED, assert_the_outside_reaches_only_the_glass, painted_alone,
     };
@@ -2678,7 +2675,7 @@ fn the_outside_reaches_only_the_glass() {
             crate::floor::FloorInputs {
                 scene: &pixtuoid_core::SceneState::uniform(16),
                 now: std::time::SystemTime::UNIX_EPOCH,
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: crate::floor::PetInputs::default(),
             },
             crate::layout::Viewport::full(240, 144),
@@ -2709,7 +2706,6 @@ fn the_outside_reaches_only_the_glass() {
                 &office.frame,
                 at,
                 shown,
-                FloorMeta::ground(),
                 quiet_board(),
                 (
                     &mut crate::display::compose::LightCache::default(),
@@ -2787,14 +2783,14 @@ fn the_outside_reaches_only_the_glass() {
 /// of the sign and the clock that sort there too, by push order.
 #[test]
 fn a_window_is_drawn_before_whatever_hangs_over_it() {
-    use crate::floor::{FloorMeta, FloorSession};
+    use crate::floor::{Conditions, FloorSession};
     let pack = test_office();
     let office = FloorSession::new(std::sync::Arc::new(pack.clone()))
         .step(
             crate::floor::FloorInputs {
                 scene: &pixtuoid_core::SceneState::uniform(16),
                 now: std::time::SystemTime::UNIX_EPOCH,
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: crate::floor::PetInputs::default(),
             },
             crate::layout::Viewport::full(240, 144),
@@ -2951,7 +2947,7 @@ fn a_window_s_fingerprint_moves_with_the_weather_tick_where_it_falls() {
 /// no colour is assumed to be one the paint never uses.
 #[test]
 fn every_piece_paints_only_inside_its_span() {
-    use crate::floor::{FloorMeta, FloorSession};
+    use crate::floor::{Conditions, FloorSession};
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let (mut kinds, mut props) = (
         std::collections::BTreeSet::new(),
@@ -2986,7 +2982,6 @@ fn every_piece_paints_only_inside_its_span() {
                 frame,
                 office,
                 &moment,
-                crate::floor::FloorMeta::ground(),
                 quiet_board(),
                 (
                     &mut crate::display::compose::LightCache::default(),
@@ -3132,7 +3127,7 @@ fn every_piece_paints_only_inside_its_span() {
                 crate::floor::FloorInputs {
                     scene: &pixtuoid_core::SceneState::uniform(16),
                     now: std::time::SystemTime::UNIX_EPOCH,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: crate::floor::PetInputs::default(),
                 },
                 crate::layout::Viewport::full(w, h),
@@ -3211,7 +3206,7 @@ fn a_dressed_figure_at_a_top_insets_edge_keeps_its_hair_off_it() {
     let layout = SceneLayout::compute(
         crate::layout::inset_viewport(160, 96, insets),
         None,
-        crate::floor::FloorMeta::ground().floor_seed,
+        crate::floor::floor_seed(0),
     )
     .expect("lays out");
     let mut frame = frames.first().expect("a walking frame").clone();
@@ -3234,7 +3229,6 @@ fn a_dressed_figure_at_a_top_insets_edge_keeps_its_hair_off_it() {
             scale,
         },
         &moment,
-        crate::floor::FloorMeta::ground(),
         quiet_board(),
         (
             &mut crate::display::compose::LightCache::default(),
@@ -3621,7 +3615,6 @@ fn the_ground_takes_the_weathers_tint() {
                 scale: RenderScale::ONE,
             },
             &Moment::resolve(sky, theme, 0.0, Motion::Full.timing(now)),
-            crate::floor::FloorMeta::ground(),
             quiet_board(),
             (
                 &mut crate::display::compose::LightCache::default(),
@@ -3804,7 +3797,6 @@ fn one_span_and_fingerprint_always_paint_the_same_pixels() {
                         0.0,
                         Motion::Full.timing(now),
                     ),
-                    crate::floor::FloorMeta::ground(),
                     quiet_board(),
                     (
                         &mut crate::display::compose::LightCache::default(),
@@ -3862,7 +3854,6 @@ fn a_window_s_fingerprint_moves_with_the_moment_it_shows() {
                 0.0,
                 Motion::Full.timing(now),
             ),
-            crate::floor::FloorMeta::ground(),
             quiet_board(),
             (
                 &mut crate::display::compose::LightCache::default(),
@@ -4318,7 +4309,6 @@ fn a_sitters_fingerprint_moves_with_everything_their_figure_paints_from() {
                         0.0,
                         Motion::Full.timing(now),
                     ),
-                    crate::floor::FloorMeta::ground(),
                     quiet_board(),
                     (
                         &mut crate::display::compose::LightCache::default(),
@@ -4386,7 +4376,6 @@ fn one_frame_builds_one_list() {
                 0.0,
                 Motion::Full.timing(now)
             ),
-            crate::floor::FloorMeta::ground(),
             quiet_board(),
             (
                 &mut crate::display::compose::LightCache::default(),
@@ -4407,7 +4396,6 @@ fn one_frame_builds_one_list() {
                 0.0,
                 Motion::Full.timing(now)
             ),
-            crate::floor::FloorMeta::ground(),
             quiet_board(),
             (
                 &mut crate::display::compose::LightCache::default(),
@@ -4438,7 +4426,6 @@ fn each_drawn_agent_hovers_inside_its_piece() {
                 0.0,
                 Motion::Full.timing(std::time::SystemTime::UNIX_EPOCH),
             ),
-            crate::floor::FloorMeta::ground(),
             quiet_board(),
             (
                 &mut crate::display::compose::LightCache::default(),
@@ -4577,7 +4564,6 @@ fn list_now<'a>(
         frame,
         office,
         &Moment::resolve(sky, office.theme, 0.0, Motion::Full.timing(now)),
-        crate::floor::FloorMeta::ground(),
         quiet_board(),
         (
             &mut crate::display::compose::LightCache::default(),
@@ -4674,7 +4660,7 @@ fn full_office(viewport: crate::layout::Viewport) -> (SceneLayout, SimFrame) {
         .map(|i| {
             let id = pixtuoid_core::AgentId::from_transcript_path(&format!("/lit/{i}.jsonl"));
             pixtuoid_core::AgentSlot {
-                desk_index: pixtuoid_core::state::GlobalDeskIndex(i),
+                desk: Some(pixtuoid_core::state::FloorDesk::new(0, i)),
                 ..crate::character::test_support::make_slot(id, running.clone())
             }
         })
@@ -4712,7 +4698,7 @@ fn every_light_crossing_an_inset_edge_lifts_the_margin() {
             x < inner.x || y < inner.y || x >= inner.right() || y >= inner.bottom()
         };
         for hour in [0, 8, 17] {
-            let floor = crate::floor::FloorMeta::ground().with_weather(
+            let conditions = crate::floor::Conditions::default().with_weather(
                 crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Clear),
             );
             let office = Office {
@@ -4724,7 +4710,7 @@ fn every_light_crossing_an_inset_edge_lifts_the_margin() {
             let mut list = compose(
                 &frame,
                 office,
-                showing(floor, crate::localclock::at_hour(hour)),
+                showing(conditions, crate::localclock::at_hour(hour)),
                 (
                     &mut crate::display::compose::LightCache::default(),
                     &mut crate::outside::OutsideCache::default(),
@@ -4785,7 +4771,7 @@ fn the_cutaways_dark_carries_past_the_insets() {
     for insets in crate::layout::SWEEP_INSETS {
         let viewport = crate::layout::inset_viewport(192, 160, insets);
         let layout = SceneLayout::compute(viewport, None, 0).expect("lays out");
-        let floor = crate::floor::FloorMeta::ground().with_weather(
+        let conditions = crate::floor::Conditions::default().with_weather(
             crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Clear),
         );
         let office = Office {
@@ -4797,7 +4783,7 @@ fn the_cutaways_dark_carries_past_the_insets() {
         let mut list = compose(
             &empty_frame(&layout),
             office,
-            showing(floor, crate::localclock::at_hour(0)),
+            showing(conditions, crate::localclock::at_hour(0)),
             (
                 &mut crate::display::compose::LightCache::default(),
                 &mut crate::outside::OutsideCache::default(),

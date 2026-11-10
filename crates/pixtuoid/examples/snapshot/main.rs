@@ -75,9 +75,9 @@ struct SnapshotArgs {
     #[arg(long)]
     rows: Option<u16>,
 
-    /// Cap on home desks per floor for the sample scene. Agents past
-    /// this count overflow to additional floors.
-    #[arg(long, default_value_t = 12)]
+    /// Cap on home desks per floor for the sample scene, at least 1. Agents
+    /// past this count overflow to additional floors.
+    #[arg(long, default_value_t = 12, value_parser = pixtuoid::dev::desk_cap_parser())]
     max_desks: usize,
 
     /// Number of agents in the sample scene.
@@ -124,10 +124,6 @@ struct SnapshotArgs {
     /// Color theme name.
     #[arg(long, default_value = "normal")]
     theme: String,
-
-    /// Floor seed — hashed to one of the floor layout variants.
-    #[arg(long, default_value_t = 0)]
-    floor_seed: u64,
 
     /// Schedule floor navigations inside a --gif capture: repeatable
     /// `--navigate-at <sec>:<floor>` (0-based floor). A navigation during another
@@ -436,27 +432,12 @@ fn main() -> Result<()> {
     let rows = args.rows.unwrap_or(ROWS);
     let mut skip_ms = 0u64;
     let scene = if let Some(target) = args.anim.as_deref() {
-        let (s, skip) = anim_scene(
-            now,
-            target,
-            cols,
-            rows,
-            args.floor_seed,
-            args.anim_facing.as_deref(),
-        );
+        let (s, skip) = anim_scene(now, target, cols, rows, args.anim_facing.as_deref());
         skip_ms = args.anim_skip_ms.unwrap_or(skip);
         eprintln!("ANIM pre-roll skip = {skip_ms}ms (default {skip}ms)");
         s
     } else if let Some(n) = args.meeting {
-        let (s, warmup) = meeting_scene(
-            now,
-            n as usize,
-            cols,
-            rows,
-            args.floor_seed,
-            args.max_desks,
-            args.agents,
-        )?;
+        let (s, warmup) = meeting_scene(now, n as usize, cols, rows, args.max_desks, args.agents)?;
         skip_ms = warmup;
         eprintln!("MEETING auto warmup = {warmup}ms");
         s
@@ -540,12 +521,6 @@ fn main() -> Result<()> {
         }
     };
 
-    if args.floor_seed != 0 && (!navigations.is_empty() || !pet_vec.is_empty()) {
-        eprintln!(
-            "--floor-seed is ignored on the renderer path (--navigate-at / --pets): \
-             TuiRenderer derives per-floor seeds internally"
-        );
-    }
     let anim_job = AnimJob {
         path: &args.out,
         frames_dir: args.frames_dir.as_deref(),
@@ -565,7 +540,6 @@ fn main() -> Result<()> {
         println!("wrote {}", anim_dest.display());
         return Ok(());
     }
-
     let mut pixel = args
         .pixel
         .map(|look| {
@@ -573,14 +547,13 @@ fn main() -> Result<()> {
                 .map(|office| office.inset(args.insets.unwrap_or_default()))
         })
         .transpose()?;
-    let mut floor_meta = pixtuoid_scene::floor::FloorMeta::ground().with_weather(weather);
-    floor_meta.floor_seed = args.floor_seed;
+    let conditions = pixtuoid_scene::floor::Conditions::default().with_weather(weather);
     if args.gif || args.anim.is_some() {
         save_animation(
             &anim_job,
             &mut term,
             &mut floor,
-            floor_meta,
+            conditions,
             skip_ms,
             args.debug_walkable,
             pixel,
@@ -769,25 +742,31 @@ fn main() -> Result<()> {
         onboarding: onboarding_frame,
         ..Default::default()
     };
-    let mut draw_ctx = DrawCtx {
-        mouse_pos: args.hover.as_deref().and_then(|s| {
-            let (x, y) = s.split_once(',')?;
-            Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
-        }),
-        debug_walkable: args.debug_walkable,
-        footer: pixtuoid::dev::footer_context(&scene, None, false, None, warning_text.as_deref()),
-        overlays: frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]),
-        ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, floor_meta)
-    };
+    let mut draw_ctx = DrawCtx::offscreen(
+        &mut floor,
+        office.stores(),
+        theme,
+        &scene,
+        0,
+        now,
+        conditions,
+    );
+    draw_ctx.mouse_pos = args.hover.as_deref().and_then(|s| {
+        let (x, y) = s.split_once(',')?;
+        Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+    });
+    draw_ctx.debug_walkable = args.debug_walkable;
+    draw_ctx.footer = draw_ctx.footer.with_warning(warning_text.as_deref());
+    draw_ctx.overlays = frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]);
     let drawn = draw_frame(&mut term, &mut draw_ctx, pixel.as_mut())?;
 
     if args.debug_walkable {
-        print_walkability_report(&term, args.floor_seed)?;
+        print_walkability_report(&term)?;
     }
 
     let crop_rect = match figure_target(&args, &scene, drawn.as_ref())? {
         Some(at) => Some(centered_crop(at, cols, rows)),
-        None => furniture_crop(&args, &scene, cols, rows)?,
+        None => furniture_crop(&args, cols, rows)?,
     };
     let area = crop_rect.unwrap_or(ratatui::layout::Rect::new(0, 0, cols, rows));
 
@@ -908,15 +887,13 @@ mod tests {
 
     #[test]
     fn crop_rect_centers_on_the_pantry_waypoint() {
-        let now = SystemTime::now();
-        let scene = sample_scene(now, 12, 12);
         let args = crop_args(&["--crop-furniture", "pantry"]);
-        let rect = furniture_crop(&args, &scene, 192, 64)
+        let rect = furniture_crop(&args, 192, 64)
             .unwrap()
             .expect("pantry crop");
         let layout = pixtuoid_scene::layout::SceneLayout::compute(
             pixtuoid_scene::layout::Viewport::full(192, 126),
-            Some(12),
+            None,
             0,
         )
         .unwrap();
@@ -946,9 +923,15 @@ mod tests {
             let mut office = pixtuoid_scene::floor::PerOffice::new();
             let theme = pixtuoid_scene::theme::theme_by_name("normal").unwrap();
             let mut term = Terminal::new(TestBackend::new(192, 64)).unwrap();
-            let ground = pixtuoid_scene::floor::FloorMeta::ground();
-            let mut ctx =
-                DrawCtx::offscreen(&mut floor, office.stores(), theme, scene, now, ground);
+            let mut ctx = DrawCtx::offscreen(
+                &mut floor,
+                office.stores(),
+                theme,
+                scene,
+                0,
+                now,
+                pixtuoid_scene::floor::Conditions::default(),
+            );
             draw_frame(&mut term, &mut ctx, None)
                 .unwrap()
                 .expect("a classic frame")
@@ -983,15 +966,13 @@ mod tests {
         let scene = sample_scene(now, 12, 12);
         let args = crop_args(&[]);
         assert!(figure_target(&args, &scene, None).unwrap().is_none());
-        assert!(furniture_crop(&args, &scene, 192, 64).unwrap().is_none());
+        assert!(furniture_crop(&args, 192, 64).unwrap().is_none());
     }
 
     #[test]
     fn crop_rect_fails_loudly_on_a_typo() {
-        let now = SystemTime::now();
-        let scene = sample_scene(now, 12, 12);
         let typo = crop_args(&["--crop-furniture", "fridge"]);
-        let err = furniture_crop(&typo, &scene, 192, 64).unwrap_err();
+        let err = furniture_crop(&typo, 192, 64).unwrap_err();
         assert!(err.to_string().contains("valid: pantry"), "{err}");
     }
 
@@ -1041,6 +1022,14 @@ mod tests {
                 "accepted {bad:?}"
             );
         }
+    }
+
+    /// A sample scene seats agent `i` at `i / max_desks`, so 0 is refused at the
+    /// flag rather than dividing by it.
+    #[test]
+    fn max_desks_refuses_zero() {
+        assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "0"]).is_err());
+        assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "1"]).is_ok());
     }
 
     #[test]

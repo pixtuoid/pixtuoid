@@ -216,7 +216,8 @@ pub(crate) fn footer_tool_tally(scene: &SceneState) -> Vec<ToolTally> {
 }
 
 /// The per-frame inputs `build_footer` renders: `counts` and `tools` come from
-/// the drawn floor's scene, everything else from the [`FooterContext`].
+/// the drawn floor's scene, everything else from the [`FooterContext`], whose
+/// unseated agents at a prompt `build_footer` counts with the drawn floor's.
 #[derive(Debug)]
 pub struct FooterInputs<'a> {
     counts: StateCounts,
@@ -225,11 +226,11 @@ pub struct FooterInputs<'a> {
 }
 
 impl<'a> FooterInputs<'a> {
-    /// The footer over `drawn`, the (projected) floor scene the painter draws.
-    pub fn new(drawn: &SceneState, context: FooterContext<'a>) -> Self {
+    /// The footer over `drawn`, the floor the painter draws.
+    pub fn new(drawn: &crate::floor::FloorScene, context: FooterContext<'a>) -> Self {
         Self {
-            counts: crate::tally::scene_stats(drawn),
-            tools: footer_tool_tally(drawn),
+            counts: crate::tally::scene_stats(drawn.scene()),
+            tools: footer_tool_tally(drawn.scene()),
             context,
         }
     }
@@ -240,6 +241,8 @@ impl<'a> FooterInputs<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct FooterContext<'a> {
     pub per_floor: [StateCounts; MAX_FLOORS],
+    /// The agents on no floor; a prompt of theirs joins the floor's alarm.
+    pub(crate) unseated: StateCounts,
     pub gateway: Option<DaemonState>,
     pub floor: Option<FooterFloor>,
     /// "You would hear sound right now": audio live AND not effectively muted
@@ -270,6 +273,7 @@ impl<'a> FooterContext<'a> {
     ) -> Self {
         Self {
             per_floor: crate::tally::per_floor_counts(office),
+            unseated: crate::tally::unseated_counts(office),
             gateway: crate::tally::office_gateway(office),
             floor,
             audio_audible,
@@ -278,6 +282,12 @@ impl<'a> FooterContext<'a> {
             keys_stats,
             keys_alert,
         }
+    }
+
+    /// This context with `warning` as its painter's one-line warning.
+    #[must_use]
+    pub fn with_warning(self, warning: Option<&'a str>) -> Self {
+        Self { warning, ..self }
     }
 }
 
@@ -306,8 +316,10 @@ fn clip_cols(s: &str, budget: usize) -> String {
 /// body truncation) → **full** → **medium** → **minimal** → **fallback** (only
 /// the keybind tail).
 pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
-    let counts = inputs.counts;
     let ctx = &inputs.context;
+    let mut counts = inputs.counts;
+    counts.requires_action += ctx.unseated.requires_action;
+    counts.total += ctx.unseated.requires_action;
     // A warning outranks the stats: it is what the user must act on, a dead
     // source's counts gone stale with it, so it IS the status while it lasts —
     // truncated to fit rather than tiered away.
@@ -526,7 +538,7 @@ fn finish_tier(mut tier: Vec<FooterSegment>, quit: &str, budget: u16) -> FooterM
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pixtuoid_core::state::GlobalDeskIndex;
+    use pixtuoid_core::state::FloorDesk;
     use pixtuoid_core::{AgentId, AgentSlot};
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -571,8 +583,7 @@ mod tests {
             arrived_at: Some(SystemTime::UNIX_EPOCH),
             last_event_at: SystemTime::UNIX_EPOCH,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(0),
-            floor_idx: 0,
+            desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -605,6 +616,7 @@ mod tests {
             tools: tools.to_vec(),
             context: FooterContext {
                 per_floor: crate::tally::per_floor_counts(scene),
+                unseated: crate::tally::unseated_counts(scene),
                 gateway: None,
                 floor: None,
                 audio_audible,
@@ -760,12 +772,55 @@ mod tests {
         );
     }
 
+    /// An unseated agent is on no floor, so no floor's count carries its prompt:
+    /// the footer raises it anyway, in the alarm and in the requires-action rung.
+    #[test]
+    fn an_unseated_agents_prompt_raises_the_alarm() {
+        let at_desk = running_slot("/p/at-desk.jsonl", "Bash", ToolKind::Other);
+        let mut unseated = requires_action_slot("/p/unseated.jsonl");
+        unseated.desk = None;
+        let mut office = SceneState::uniform(16);
+        for slot in [at_desk, unseated] {
+            office.agents.insert(slot.agent_id, slot);
+        }
+        let drawn = crate::floor::project_floor_scene(&office, 0);
+        let line = |warning| {
+            let ctx =
+                FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
+            build_footer(&FooterInputs::new(&drawn, ctx), 200).text()
+        };
+        let warned = line(Some("a source died"));
+        assert!(warned.contains("\u{25b2}1 need you"), "{warned}");
+        let full = line(None);
+        assert!(full.contains("\u{25d0}1 A"), "{full}");
+    }
+
+    /// A floor that draws no one, as a size too small to seat anyone leaves it,
+    /// still raises an unseated agent's prompt rather than a bare count.
+    #[test]
+    fn an_empty_floor_raises_an_unseated_agents_prompt() {
+        let mut unseated = requires_action_slot("/p/unseated.jsonl");
+        unseated.desk = None;
+        let mut office = SceneState::uniform(16);
+        office.agents.insert(unseated.agent_id, unseated);
+        let drawn = crate::floor::project_floor_scene(&office, 0);
+        let line = |warning| {
+            let ctx =
+                FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
+            build_footer(&FooterInputs::new(&drawn, ctx), 200).text()
+        };
+        let warned = line(Some("a source died"));
+        assert!(warned.contains("\u{25b2}1 need you"), "{warned}");
+        let full = line(None);
+        assert!(full.contains("\u{25d0}1 A"), "{full}");
+    }
+
     #[test]
     fn context_derives_the_office_wide_halves_from_the_full_scene() {
         use pixtuoid_core::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence};
         let mut scene = SceneState::uniform(16);
         let mut upstairs = requires_action_slot("/p/up.jsonl");
-        upstairs.floor_idx = 1;
+        upstairs.desk = Some(pixtuoid_core::state::FloorDesk::new(1, 0));
         scene.agents.insert(upstairs.agent_id, upstairs);
         scene.insert_daemon(
             pixtuoid_core::source::openclaw::SOURCE_NAME,

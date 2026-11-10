@@ -9,6 +9,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context as _, Result};
 use pixtuoid::dev::ImageCells;
+use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::cutaway::Canvas as _;
 use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
 use pixtuoid_scene::layout::{Insets, Point, SceneLayout, Viewport};
@@ -38,17 +39,17 @@ pub(crate) struct PixelOffice<S> {
 /// office steps on.
 pub(crate) trait PixelSession {
     /// Step and draw one frame of `inputs` in `look`.
-    fn draw(&mut self, look: Look, inputs: RenderInputs<'_>);
+    fn draw(&mut self, look: Look, inputs: RenderInputs<'_, SceneState>);
 
     /// The last frame's pixels; `None` before the first, and when it could not
     /// lay out.
     fn pixels(&self) -> Option<&RgbBuffer>;
 }
 
-/// [`crate::encode::draw_frame`]'s one floor, under the `FloorMeta` it is
-/// handed (`--floor-seed`).
+/// [`crate::encode::draw_frame`]'s one floor, under the `Conditions` it is
+/// handed.
 impl PixelSession for FloorSession {
-    fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
+    fn draw(&mut self, look: Look, inputs: RenderInputs<'_, SceneState>) {
         self.render(look, inputs);
     }
 
@@ -65,7 +66,7 @@ pub(crate) struct RendererOffice {
 }
 
 impl PixelSession for RendererOffice {
-    fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
+    fn draw(&mut self, look: Look, inputs: RenderInputs<'_, SceneState>) {
         // Nothing here plays its audio or reports its pacing.
         let _ = self
             .session
@@ -159,7 +160,7 @@ impl<S: PixelSession> PixelOffice<S> {
     /// where `None`).
     pub(crate) fn render(
         &mut self,
-        world: FloorInputs<'_>,
+        world: FloorInputs<'_, SceneState>,
         theme: &'static Theme,
         under: Option<ImageCells>,
     ) -> Result<()> {
@@ -232,7 +233,7 @@ mod tests {
     use image::{Rgba, RgbaImage};
     use pixtuoid::dev::{DrawCtx, RenderFrames, scene_buf_size};
     use pixtuoid_core::SceneState;
-    use pixtuoid_scene::floor::{FloorMeta, PerOffice};
+    use pixtuoid_scene::floor::{Conditions, PerOffice};
     use pixtuoid_scene::pet::{Pet, PetKind};
     use pixtuoid_scene::theme::NORMAL;
     use ratatui::Terminal;
@@ -292,17 +293,16 @@ mod tests {
         let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let mut floor = PerFloor::new(Arc::clone(&pack));
         let mut office = PerOffice::new();
-        let mut ctx = DrawCtx {
-            overlays: frames.overlays(0.0, &[]),
-            ..DrawCtx::offscreen(
-                &mut floor,
-                office.stores(),
-                &NORMAL,
-                scene,
-                epoch(),
-                FloorMeta::ground(),
-            )
-        };
+        let mut ctx = DrawCtx::offscreen(
+            &mut floor,
+            office.stores(),
+            &NORMAL,
+            scene,
+            0,
+            epoch(),
+            Conditions::default(),
+        );
+        ctx.overlays = frames.overlays(0.0, &[]);
         let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
         draw_frame(&mut term, &mut ctx, None).unwrap();
         let cells = term.backend().buffer();
@@ -387,7 +387,7 @@ mod tests {
         let world = FloorInputs {
             scene: &scene,
             now: epoch(),
-            floor: FloorMeta::ground(),
+            conditions: Conditions::default(),
             pets: Default::default(),
         };
         let blank = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, COLS, ROWS));
@@ -422,7 +422,7 @@ mod tests {
         let world = FloorInputs {
             scene: &scene,
             now: epoch(),
-            floor: FloorMeta::ground(),
+            conditions: Conditions::default(),
             pets: Default::default(),
         };
         let drawn = |look| {
@@ -466,7 +466,7 @@ mod tests {
         let world = FloorInputs {
             scene: &scene,
             now: epoch(),
-            floor: FloorMeta::ground(),
+            conditions: Conditions::default(),
             pets: Default::default(),
         };
         cutaway.render(world, &NORMAL, None).unwrap();

@@ -188,11 +188,12 @@ pub struct Place {
     pub floor: Option<FooterFloor>,
 }
 
-/// One floor's frame, beyond its stores.
-#[derive(Debug, Clone, Copy)]
-pub struct RenderInputs<'a> {
+/// One floor's frame, beyond its stores. `S` is its world's scene, as
+/// [`FloorInputs`] reads one.
+#[derive(Debug)]
+pub struct RenderInputs<'a, S = crate::floor::FloorScene> {
     /// The floor it shows.
-    pub world: FloorInputs<'a>,
+    pub world: FloorInputs<'a, S>,
     /// The active color theme.
     pub theme: &'static Theme,
     /// The logical extent a painter draws the office on, and the insets its
@@ -204,6 +205,30 @@ pub struct RenderInputs<'a> {
     pub debug_walkable: bool,
     /// The brightness the host's modal leaves the frame.
     pub dim: Dim,
+}
+
+// By hand: a derive would bound `S: Copy`, and no scene is.
+impl<S> Clone for RenderInputs<'_, S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for RenderInputs<'_, S> {}
+
+impl<'a> RenderInputs<'a, pixtuoid_core::state::SceneState> {
+    /// These inputs drawing `floor_scene`, a projection of their world's scene.
+    #[must_use]
+    pub(crate) fn on(self, floor_scene: &'a crate::floor::FloorScene) -> RenderInputs<'a> {
+        RenderInputs {
+            world: self.world.on(floor_scene),
+            theme: self.theme,
+            viewport: self.viewport,
+            place: self.place,
+            debug_walkable: self.debug_walkable,
+            dim: self.dim,
+        }
+    }
 }
 
 /// A brightness multiplier, from black to unchanged, each pixel takes: a
@@ -740,10 +765,13 @@ pub fn render(
         world.scene,
         place.gateway,
         place.floor,
-        world.floor.motion,
+        world.conditions.motion,
         world.now,
     );
-    let sky = crate::sky::Sky::at(world.floor.motion.timing(world.now), world.floor.weather);
+    let sky = crate::sky::Sky::at(
+        world.conditions.motion.timing(world.now),
+        world.conditions.weather,
+    );
     raster.note = Some(FrameNote {
         repaint: None,
         weather: {
@@ -772,8 +800,12 @@ pub fn render(
             let drawn = paint_frame(&mut paint, &stepped.frame);
             classic.drew(drawn);
             classic.dim = dim;
-            classic.signs =
-                crate::display::TextRun::signs(&board, &stepped.layout, world.floor, theme);
+            classic.signs = crate::display::TextRun::signs(
+                &board,
+                &stepped.layout,
+                stepped.frame.floor_place,
+                theme,
+            );
             if look == Look::HALF_BLOCKS {
                 dim.apply(&mut classic.buf);
                 (Dirty::All, flash)
@@ -816,7 +848,7 @@ pub fn render(
                 theme,
                 scale,
                 crate::display::Showing {
-                    floor: world.floor,
+                    conditions: world.conditions,
                     now: world.now,
                     board: &board,
                     dim,

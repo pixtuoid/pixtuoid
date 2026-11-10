@@ -26,7 +26,7 @@ use crate::creatures::{
     mascot_elevator, mascot_enter_delay, mascot_seed, naps_here,
 };
 use crate::effects::{self, Effect};
-use crate::floor::{CoffeeState, FloorInputs, FloorMeta, PetInputs, VacancyDim};
+use crate::floor::{CoffeeState, FloorInputs, FloorPlace, VacancyDim};
 use crate::layout::{Facing, Pivot, Point, SceneLayout, Size, WALKING_Y_OFF};
 use crate::pathfind::Router;
 use crate::pet::PetKind;
@@ -253,6 +253,8 @@ pub(crate) fn scanline_col(desk_x: u16, beat: Beat) -> u16 {
 /// `sim_step` returns.
 #[derive(Debug, Clone)]
 pub struct SimFrame {
+    /// Where the floor it stepped stands: its projection's.
+    pub(crate) floor_place: FloorPlace,
     /// The tick's agent snapshot — placements index into it, paint borrows
     /// from it.
     pub agents: Vec<AgentSlot>,
@@ -319,26 +321,27 @@ pub(crate) struct SimInputs<'a> {
 /// painter reads.
 pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> SimFrame {
     let SimInputs {
-        world:
-            FloorInputs {
-                scene,
-                now,
-                floor,
-                pets,
-            },
+        world,
         pack,
         layout,
         coffee,
         door_anim_max_ms,
     } = inputs;
-    let timing = floor.motion.timing(now);
+    let FloorInputs {
+        scene: floor_scene,
+        now,
+        conditions,
+        ..
+    } = world;
+    let scene = floor_scene.scene();
+    let timing = conditions.motion.timing(now);
     let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
     take_grip(stores, &agents, layout, now);
     let mut next_change = SelfChange::default();
 
     let indoor_scale = stores
         .vacancy_dim
-        .tick(scene.agents.is_empty() || floor.offline, now);
+        .tick(scene.agents.is_empty() || conditions.offline, now);
     if let Some(at) = stores.vacancy_dim.fades_at() {
         next_change.at(at);
     }
@@ -357,7 +360,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // mask, so only waypoint visitors — stable across frames — contribute.
     stores.overlay.clear();
     // Only a walk that takes time routes around a wanderer (`Motion::motions_take_time`).
-    let mobile = if floor.motion.motions_take_time() {
+    let mobile = if conditions.motion.motions_take_time() {
         &agents[..]
     } else {
         &[][..]
@@ -371,7 +374,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         {
             continue;
         }
-        let Some(origin) = layout.home_desk(agent.desk_index.single_floor_local()) else {
+        let Some(origin) = layout.home_desk_of(agent) else {
             continue;
         };
         let Some(pose) = pose::derive(agent, now, layout) else {
@@ -400,11 +403,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // absent — an exiting agent's pose is still needed to place its character.
     let poses: HashMap<AgentId, Option<Pose>> = agents
         .iter()
-        .filter(|a| {
-            layout
-                .home_desk(a.desk_index.single_floor_local())
-                .is_some()
-        })
+        .filter(|a| layout.home_desk_of(a).is_some())
         .map(|a| {
             let p = pose::derive_with_routing(
                 a,
@@ -414,7 +413,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
                     planner: crate::walk::Planner {
                         router: &mut *stores.router,
                         overlay: &*stores.overlay,
-                        motion: floor.motion,
+                        motion: conditions.motion,
                     },
                     history: &mut *stores.history,
                     walks: &mut *stores.walks,
@@ -429,40 +428,34 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // ceiling halos share one gate.
     let seated_agents: HashMap<FloorLocalDeskIndex, bool> = agents
         .iter()
-        .filter(|a| {
-            layout
-                .home_desk(a.desk_index.single_floor_local())
-                .is_some()
-                && a.exiting_at.is_none()
-        })
-        .map(|a| {
+        .filter(|a| a.exiting_at.is_none())
+        .filter_map(|a| {
+            let desk = a
+                .desk
+                .filter(|desk| layout.home_desk(desk.index).is_some())?;
             let seated = matches!(poses.get(&a.agent_id), Some(Some(Pose::SeatedTyping)));
-            (a.desk_index.single_floor_local(), seated)
+            Some((desk.index, seated))
         })
         .collect();
 
     let (characters, waypoint_visitors, new_coffee_carriers, occupied_waypoints) =
         resolve_characters(&agents, &poses, layout, pack, coffee, timing.beat);
 
-    let chitchat_bubbles =
-        chitchat::update_and_collect(stores.chitchat, floor.floor_idx, &waypoint_visitors, now);
+    let chitchat_bubbles = chitchat::update_and_collect(
+        stores.chitchat,
+        floor_scene.floor_place().index(),
+        &waypoint_visitors,
+        now,
+    );
     let mut ground = Ground {
         layout,
         planner: crate::walk::Planner {
             router: &mut *stores.router,
             overlay: &*stores.overlay,
-            motion: floor.motion,
+            motion: conditions.motion,
         },
     };
-    let pet = pet_placement(
-        &agents,
-        pack,
-        pets,
-        floor,
-        timing,
-        &mut ground,
-        stores.creatures,
-    );
+    let pet = pet_placement(&agents, pack, world, timing, &mut ground, stores.creatures);
     let mascots = mascot_placements(
         scene,
         pack,
@@ -471,7 +464,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         stores.creatures,
         &mut next_change,
     );
-    let desks = desk_props(&agents, layout, pack, coffee, floor.motion, timing);
+    let desks = desk_props(&agents, layout, pack, coffee, conditions.motion, timing);
 
     let through_door: Vec<&AgentSlot> = agents
         .iter()
@@ -486,6 +479,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         next_change.at(at);
     }
     SimFrame {
+        floor_place: floor_scene.floor_place(),
         agents,
         poses,
         seated_agents,
@@ -575,13 +569,18 @@ fn take_grip(
 fn pet_placement(
     agents: &[AgentSlot],
     pack: &OfficeArt,
-    pets: PetInputs<'_>,
-    floor: FloorMeta,
+    world: FloorInputs<'_>,
     timing: Timing,
     ground: &mut Ground<'_>,
     creatures: &mut HashMap<CreatureKey, CreatureWalk>,
 ) -> Option<PetPlacement> {
     let Timing { now, beat } = timing;
+    let FloorInputs {
+        scene: floor_scene,
+        conditions,
+        pets,
+        ..
+    } = world;
     let layout = ground.layout;
     let kind = pets.pet.map(|p| p.kind);
     creatures.retain(|key, _| !matches!(key, CreatureKey::Pet(k) if Some(*k) != kind));
@@ -590,12 +589,12 @@ fn pet_placement(
     let stride = pack.inner().stride(walk_anim);
     let walk = creatures
         .entry(CreatureKey::Pet(kind))
-        .or_insert_with(|| CreatureWalk::at_home(layout, floor.floor_seed, now));
+        .or_insert_with(|| CreatureWalk::at_home(layout, floor_scene.floor_seed(), now));
     let petted = pets.petting;
     if petted.is_some() {
         walk.hold(now);
     }
-    let hearts_rise = petted.is_some() && floor.motion.motions_take_time();
+    let hearts_rise = petted.is_some() && conditions.motion.motions_take_time();
     let Stance { at, walking } = walk.step(Roam::pet(stride), ground, timing)?;
     // a petted pet sits for it, even held mid-leg
     let (anim_name, frame_idx, flip) = match walking.filter(|_| petted.is_none()) {
@@ -993,7 +992,7 @@ pub(crate) fn resolve_characters(
     let mut wp_rank: HashMap<usize, usize> = HashMap::new();
     let mut waypoint_visitors: Vec<chitchat::Visitor> = Vec::new();
     for (agent_idx, agent) in agents.iter().enumerate() {
-        let Some(desk) = layout.home_desk(agent.desk_index.single_floor_local()) else {
+        let Some(desk) = layout.home_desk_of(agent) else {
             continue;
         };
         let Some(p) = poses.get(&agent.agent_id).copied().flatten() else {
@@ -1241,7 +1240,7 @@ pub(crate) fn desk_occupant(
 ) -> Option<&AgentSlot> {
     agents
         .iter()
-        .find(|a| a.desk_index.single_floor_local() == local && a.exiting_at.is_none())
+        .find(|a| a.desk.is_some_and(|desk| desk.index == local) && a.exiting_at.is_none())
 }
 
 /// Deterministic seed from a lowercased cwd basename: byte-fold, then the

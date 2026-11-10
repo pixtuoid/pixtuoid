@@ -313,7 +313,7 @@ fn departed_agent_walks_are_evicted_on_a_non_current_floor() {
     let scene = scene_with(
         vec![
             slot(a, 0, 0, t0() - Duration::from_secs(120)),
-            slot(b, 1, cap, t0() - Duration::from_secs(120)),
+            slot(b, 1, 0, t0() - Duration::from_secs(120)),
         ],
         cap,
     );
@@ -356,7 +356,7 @@ fn evict_missing_drops_history_and_walks_on_every_floor() {
     let b = AgentId::from_transcript_path("/ev2/floor1.jsonl");
     // Fresh agents: the entry walk populates BOTH history (per-frame walker
     // position records) and walks (entry profile) on their floors.
-    let scene = scene_with(vec![slot(a, 0, 0, t0()), slot(b, 1, cap, t0())], cap);
+    let scene = scene_with(vec![slot(a, 0, 0, t0()), slot(b, 1, 0, t0())], cap);
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
 
@@ -411,7 +411,7 @@ fn floor_transition_clears_stale_pet_position() {
     let a = AgentId::from_transcript_path("/pettrans/f0.jsonl");
     let b = AgentId::from_transcript_path("/pettrans/f1.jsonl");
     scene.agents.insert(a, slot(a, 0, 0, t0()));
-    scene.agents.insert(b, slot(b, 1, cap, t0())); // floor 1 ⇒ navigate_floor(1) valid
+    scene.agents.insert(b, slot(b, 1, 0, t0())); // floor 1 ⇒ navigate_floor(1) valid
 
     let mut r = build(100, 40, vec![PetKind::Cat]);
     let mut now = t0();

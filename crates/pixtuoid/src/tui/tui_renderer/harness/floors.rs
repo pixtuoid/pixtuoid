@@ -13,7 +13,7 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
     scene
         .agents
         .insert(a, slot(a, 0, 0, t0 - Duration::from_secs(120)));
-    scene.agents.insert(b, slot(b, 1, cap, t0));
+    scene.agents.insert(b, slot(b, 1, 0, t0));
 
     let term = Terminal::new(TestBackend::new(100, 40)).expect("test backend");
     let mut r = TuiRenderer::new(term, theme, vec![], pack_arc());
@@ -106,7 +106,7 @@ fn navigation_blocked_during_active_transition() {
     let scene = scene_with(
         vec![
             idle("/b/0.jsonl", 0, t0()),
-            slot(AgentId::from_transcript_path("/b/1.jsonl"), 1, cap, t0()),
+            slot(AgentId::from_transcript_path("/b/1.jsonl"), 1, 0, t0()),
             slot(
                 AgentId::from_transcript_path("/b/2.jsonl"),
                 2,
@@ -131,7 +131,7 @@ fn navigation_blocked_during_active_transition() {
 #[test]
 fn transition_cancelled_when_target_floor_disappears() {
     let cap = 16;
-    let f1 = slot(AgentId::from_transcript_path("/c/1.jsonl"), 1, cap, t0());
+    let f1 = slot(AgentId::from_transcript_path("/c/1.jsonl"), 1, 0, t0());
     let mut scene = scene_with(vec![idle("/c/0.jsonl", 0, t0()), f1.clone()], cap);
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
@@ -161,7 +161,7 @@ fn floor_buffers_grow_on_overflow() {
     let two = scene_with(
         vec![
             idle("/g/0.jsonl", 0, t0()),
-            slot(AgentId::from_transcript_path("/g/1.jsonl"), 1, cap, t0()),
+            slot(AgentId::from_transcript_path("/g/1.jsonl"), 1, 0, t0()),
         ],
         cap,
     );
@@ -172,18 +172,24 @@ fn floor_buffers_grow_on_overflow() {
     );
 }
 
+/// Each floor lays out from its own seed, as the frame it draws shows.
 #[test]
 fn per_floor_layout_seeds_differ() {
     let scene = two_floor_scene();
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
     r.render(&scene, now).unwrap();
-    let seed0 = r.current_floor_seed();
+    let walkable = |r: &TuiRenderer<TestBackend>| {
+        r.cached_layout()
+            .map(|layout| layout.walkable.clone())
+            .expect("a floor shows")
+    };
+    let ground = walkable(&r);
     r.navigate_floor(1, now);
     render_until_settled(&mut r, &scene, &mut now, 1);
     assert_ne!(
-        seed0,
-        r.current_floor_seed(),
+        ground,
+        walkable(&r),
         "each floor must use a distinct layout seed"
     );
 }
@@ -352,7 +358,7 @@ fn a_too_small_slide_footers_the_destination_floor() {
     let scene = scene_with(
         vec![
             running("/d/0.jsonl", 0, "Grep x", t0()),
-            slot(AgentId::from_transcript_path("/d/1.jsonl"), 1, cap, t0()),
+            slot(AgentId::from_transcript_path("/d/1.jsonl"), 1, 0, t0()),
         ],
         cap,
     );
@@ -462,7 +468,7 @@ fn the_wall_board_upstairs_shows_the_breadcrumb_and_the_office_gateway() {
     let a = AgentId::from_transcript_path("/h/board0.jsonl");
     let b = AgentId::from_transcript_path("/h/board1.jsonl");
     scene.agents.insert(a, slot(a, 0, 0, t0));
-    scene.agents.insert(b, slot(b, 1, cap, t0));
+    scene.agents.insert(b, slot(b, 1, 0, t0));
     scene.insert_daemon(
         pixtuoid_core::source::openclaw::SOURCE_NAME,
         pixtuoid_core::state::DaemonInstanceId::new("18789").expect("non-empty"),
@@ -525,10 +531,10 @@ fn every_painter_shows_the_one_board_of_a_floor() {
         r.session.prepare(scene, now);
         r.session.navigate(floor, now);
         r.session.cancel_slide();
-        let drawn = project_floor_scene(scene, floor);
+        let floor_scene = project_floor_scene(scene, floor);
         let ctx = r.chrome.footer(&r.session, scene);
         pixtuoid_scene::neon_sign::wall_board(
-            drawn.scene(),
+            &floor_scene,
             ctx.gateway,
             ctx.floor,
             Motion::Full,
@@ -538,7 +544,7 @@ fn every_painter_shows_the_one_board_of_a_floor() {
 
     let one_floor = with_gateway(scene_with(vec![idle("/b/0.jsonl", 0, t0())], 16));
     let floating = pixtuoid_scene::neon_sign::wall_board(
-        &one_floor,
+        &project_floor_scene(&one_floor, 0),
         pixtuoid_scene::tally::office_gateway(&one_floor),
         None,
         Motion::Full,

@@ -13,8 +13,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use saphyr::{LoadableYamlNode, MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
+use saphyr::{MappingOwned, ScalarOwned, YamlOwned};
 
+use crate::install::merge;
 use crate::install::target::MergeOutcome;
 use crate::install::verify::{SchemaParse, ShimRef, reconnect};
 
@@ -86,11 +87,11 @@ pub(crate) fn detect_installed() -> bool {
 /// dsh runs plugins under Node and the plugin spawns the shim by embedded
 /// path — always absolute, `_explicit` is irrelevant.
 pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
-    crate::install::merge::hook_path_str(resolved).map(str::to_string)
+    merge::hook_path_str(resolved).map(str::to_string)
 }
 
 pub(crate) fn plugin_artifacts(hook_path: &str) -> Result<Vec<(PathBuf, String)>> {
-    let rendered = crate::install::merge::bake_hook_path(PLUGIN_TEMPLATE, hook_path, "dsh")?;
+    let rendered = merge::bake_hook_path(PLUGIN_TEMPLATE, hook_path, "dsh")?;
     Ok(vec![(plugin_path()?, rendered)])
 }
 
@@ -101,38 +102,32 @@ fn ystr(s: &str) -> YamlOwned {
 /// Parse the patch file as its top-level array; empty content is the empty
 /// document. A non-array top level is a config we must not touch.
 fn parse_rows(content: &str) -> Result<Vec<YamlOwned>> {
-    if content.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    let docs = YamlOwned::load_from_str(content)
-        .map_err(|e| anyhow::anyhow!("cordis.patch.yml does not parse as YAML: {e}"))?;
-    match docs.into_iter().next() {
+    match merge::single_yaml_doc(content, "cordis.patch.yml")? {
         None => Ok(Vec::new()),
         Some(YamlOwned::Sequence(rows)) => Ok(rows),
-        Some(_) => bail!(
-            "cordis.patch.yml's top level is not a patch list — refusing to rewrite a \
-             config pixtuoid does not understand"
-        ),
+        Some(_) => bail!("cordis.patch.yml's top level is not a patch list"),
     }
 }
 
-fn emit_rows(rows: &[YamlOwned]) -> Result<String> {
-    // dsh reads an empty file as no array and refuses to boot; only a missing
-    // one is "no patches" (`@deepseek-ai/dsh-app-boot` `parsePatchList`, dsh-v0.2.0-rc.2).
+/// [`parse_rows`] for a rewrite, which a malformed `insert:` refuses too.
+fn rows_to_rewrite(content: &str) -> Result<Vec<YamlOwned>> {
+    let rows = parse_rows(content).context("refusing to overwrite cordis.patch.yml")?;
+    refuse_malformed(&rows)?;
+    Ok(rows)
+}
+
+/// `rows` as the patch file `content` held.
+fn emit_rows(content: &str, rows: &[YamlOwned]) -> Result<String> {
+    // dsh reads an empty file as no array and refuses to boot; only a missing one is "no
+    // patches" (`parsePatchList`, `packages/boot/app-boot/src/index.ts:576-582` @ dsh-v0.2.2-rc.1).
     if rows.is_empty() {
-        return Ok("[]\n".into());
+        return Ok(merge::end_lines_like(content, "[]".into()));
     }
-    let doc = YamlOwned::Sequence(rows.to_vec());
-    let borrowed = Yaml::from(&doc);
-    let mut out = String::new();
-    YamlEmitter::new(&mut out)
-        .dump(&borrowed)
-        .map_err(|e| anyhow::anyhow!("emitting cordis.patch.yml: {e}"))?;
-    let mut out = out.strip_prefix("---\n").map(str::to_string).unwrap_or(out);
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    Ok(out)
+    merge::emit_yaml(
+        content,
+        &YamlOwned::Sequence(rows.to_vec()),
+        "cordis.patch.yml",
+    )
 }
 
 /// Our whole patch row: `- insert: [{id: pixtuoid, name: <plugin path>}]`.
@@ -252,8 +247,7 @@ fn strip_our_entries(rows: &[YamlOwned]) -> (Vec<YamlOwned>, usize) {
 pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutcome> {
     let plugin = plugin_path()?;
     let plugin = plugin.to_str().context("plugin path is not UTF-8")?;
-    let rows = parse_rows(content)?;
-    refuse_malformed(&rows)?;
+    let rows = rows_to_rewrite(content)?;
     let wanted = mount_row(plugin);
     if our_entries(&rows).len() == 1 && rows.contains(&wanted) {
         return Ok(MergeOutcome {
@@ -264,7 +258,7 @@ pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutco
     let (mut kept, _) = strip_our_entries(&rows);
     kept.push(wanted);
     Ok(MergeOutcome {
-        content: emit_rows(&kept)?,
+        content: emit_rows(content, &kept)?,
         changed: true,
     })
 }
@@ -273,8 +267,7 @@ pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutco
 /// same `insert:` row included — survives as data (comments do not survive
 /// saphyr — the hermes target's documented trade).
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
-    let rows = parse_rows(content)?;
-    refuse_malformed(&rows)?;
+    let rows = rows_to_rewrite(content)?;
     let (kept, removed) = strip_our_entries(&rows);
     if removed == 0 {
         return Ok(MergeOutcome {
@@ -283,7 +276,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
         });
     }
     Ok(MergeOutcome {
-        content: emit_rows(&kept)?,
+        content: emit_rows(content, &kept)?,
         changed: true,
     })
 }
@@ -595,6 +588,51 @@ mod tests {
     fn merge_refuses_a_non_list_config_rather_than_rewriting_it() {
         assert!(merge_install("just: a mapping\n", "/unused").is_err());
         assert!(merge_uninstall("just: a mapping\n").is_err());
+    }
+
+    #[test]
+    fn a_crlf_patch_file_stays_crlf() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_var("DSH_HOME", Some(home.path()), || {
+            let foreign = "- insert:\r\n    - id: timer\r\n      name: t\r\n";
+            let merged = merge_install(foreign, "/unused").unwrap();
+            let removed = merge_uninstall(&merged.content).unwrap();
+            for out in [merged.content, removed.content] {
+                assert!(!out.replace("\r\n", "").contains('\n'), "{out:?}");
+            }
+        });
+    }
+
+    /// A merge refuses a patch file it can't rewrite whole, a second document's
+    /// included; verify, which writes nothing, reports it broken without a refusal.
+    #[test]
+    fn a_patch_file_a_merge_refuses_reads_broken_to_verify() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_var("DSH_HOME", Some(home.path()), || {
+            let two = "- insert:\n    - id: pixtuoid\n      name: /old/pixtuoid-dsh.mjs\n---\n- id: timer\n  enabled: false\n";
+            for (content, why) in [
+                (two, "more than one YAML document"),
+                ("just: a mapping\n", "not a patch list"),
+            ] {
+                for err in [
+                    merge_install(content, "/unused").unwrap_err(),
+                    merge_uninstall(content).unwrap_err(),
+                ] {
+                    let err = format!("{err:#}");
+                    assert!(
+                        err.contains("refusing to overwrite") && err.contains(why),
+                        "{err}"
+                    );
+                }
+                let v = verify_schema(content);
+                assert!(
+                    v.issues
+                        .iter()
+                        .any(|i| i.contains(why) && !i.contains("refusing")),
+                    "{v:?}"
+                );
+            }
+        });
     }
 
     #[test]

@@ -52,16 +52,29 @@ pub fn scene_stats(scene: &SceneState) -> StateCounts {
     c
 }
 
-/// Per-floor [`StateCounts`], bucketed by `AgentSlot.floor_idx` (clamped to the
-/// last floor). Computed from the FULL scene, deliberately distinct from
-/// `scene_stats` on the projected floor — don't derive one from the other.
+/// Per-floor [`StateCounts`], bucketed by each agent's desk's floor (clamped to the
+/// last floor), so an unseated agent is on no floor's count.
+/// Computed from the FULL scene, deliberately distinct from `scene_stats` on
+/// the projected floor — don't derive one from the other.
 #[doc(hidden)]
 pub fn per_floor_counts(scene: &SceneState) -> [StateCounts; MAX_FLOORS] {
     let mut floors = [StateCounts::default(); MAX_FLOORS];
     for slot in scene.agents.values() {
-        bucket_slot(&mut floors[slot.floor_idx.min(MAX_FLOORS - 1)], slot);
+        if let Some(desk) = slot.desk {
+            bucket_slot(&mut floors[desk.floor.min(MAX_FLOORS - 1)], slot);
+        }
     }
     floors
+}
+
+/// The unseated agents' [`StateCounts`]: on no floor, so no
+/// [`per_floor_counts`] bucket holds them.
+pub(crate) fn unseated_counts(scene: &SceneState) -> StateCounts {
+    let mut c = StateCounts::default();
+    for slot in scene.agents.values().filter(|slot| slot.desk.is_none()) {
+        bucket_slot(&mut c, slot);
+    }
+    c
 }
 
 /// The worst-of daemon-liveness rollup for the gateway chip. `None` = no daemon

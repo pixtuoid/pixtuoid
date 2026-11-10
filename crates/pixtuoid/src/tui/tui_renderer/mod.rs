@@ -16,7 +16,7 @@ use ratatui::backend::Backend;
 
 use ratatui::layout::{Position, Rect};
 
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorTransition, OfficeSession, PetInputs};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorTransition, OfficeSession, PetInputs};
 use pixtuoid_scene::layout::{SceneLayout, Size};
 use pixtuoid_scene::look::{FrameNote, Look, LookKind, Picture, Place, RenderInputs};
 use pixtuoid_scene::screen::Screen;
@@ -127,13 +127,19 @@ impl Chrome {
 
     /// The office's inputs over `scene`, as [`OfficeSession::render`] takes
     /// them: its weather and motion; the office fills each floor's pets.
-    fn office_world<'a>(&'a self, scene: &'a SceneState, now: SystemTime) -> FloorInputs<'a> {
+    fn office_world<'a>(
+        &'a self,
+        scene: &'a SceneState,
+        now: SystemTime,
+    ) -> FloorInputs<'a, SceneState> {
         FloorInputs {
             scene,
             now,
-            floor: FloorMeta::ground()
-                .with_weather(self.weather)
-                .with_motion(self.motion),
+            conditions: Conditions {
+                weather: self.weather,
+                motion: self.motion,
+                ..Conditions::default()
+            },
             pets: PetInputs::default(),
         }
     }
@@ -225,8 +231,9 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     }
 
     /// The office each look this run can return to lays out on the terminal
-    /// now, the cutaway at its last fit where this cell has none: a floor's
-    /// seats only grow, so they are held to the fewest any of them holds.
+    /// now, the cutaway at its last fit where this cell has none: each floor is
+    /// held to the fewest desks any of them holds, so a look switch re-seats no
+    /// one.
     pub(crate) fn seat_extents(
         &mut self,
     ) -> enum_map::EnumMap<LookKind, Option<pixtuoid_scene::layout::Size>> {
@@ -572,11 +579,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn current_floor_seed(&self) -> u64 {
-        FloorMeta::for_floor(self.session.nav().current(), self.session.n_floors()).floor_seed
-    }
-
     pub fn transition(&self) -> Option<&FloorTransition> {
         self.session.nav().transition()
     }
@@ -617,7 +619,11 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     /// The office's inputs over `scene` at `now`, as [`Self::render`] steps
     /// its floors with them.
-    pub fn office_world<'a>(&'a self, scene: &'a SceneState, now: SystemTime) -> FloorInputs<'a> {
+    pub fn office_world<'a>(
+        &'a self,
+        scene: &'a SceneState,
+        now: SystemTime,
+    ) -> FloorInputs<'a, SceneState> {
         self.chrome.office_world(scene, now)
     }
 
@@ -735,8 +741,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             now,
         );
         if !stepped {
-            let office_floor = self.chrome.office_world(scene, now).floor;
-            let audio = self.session.drew_no_office(scene, office_floor, now);
+            let conditions = self.chrome.office_world(scene, now).conditions;
+            let audio = self.session.drew_no_office(scene, conditions, now);
             self.chrome.audio.frame(audio);
         }
         self.screen.blank(term_size);
