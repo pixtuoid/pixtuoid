@@ -2338,10 +2338,10 @@ async fn an_oversized_skips_verdicts_leave_drift_to_the_rescan() {
     assert_eq!(breadcrumbs, rescanned, "{logs}");
 }
 
+/// The refusal leaves the path unseen, as first sight's gate does, so a resume
+/// whose first append shows no life (omp's text-only turn) still registers.
 #[tokio::test]
-async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
+async fn a_revouch_refuses_an_ended_transcript_until_its_next_append() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(format!("{LIVE_UUID}.jsonl"));
     tokio::fs::write(
@@ -2358,13 +2358,8 @@ async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
         Arc::new(Mutex::new(HashSet::from([LIVE_UUID.to_string()])));
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
     let source: Arc<str> = Arc::from("test");
-    static TAIL_DECODES: AtomicUsize = AtomicUsize::new(0);
-    fn counted(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
-        TAIL_DECODES.fetch_add(1, Ordering::SeqCst);
-        t_decode_stem_keyed(t, s, v)
-    }
     let decoders = SourceDecoders {
-        decode_line: counted,
+        decode_line: t_decode_stem_keyed,
         id_derive: super::folded::FoldedDeriver::new(crate::source::claude_code::cc_id_from_path),
         ..t_decoders()
     };
@@ -2395,10 +2390,17 @@ async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
         Some(file_len),
         "the ended transcript's cursor must stay parked at EOF (no reset-to-0 replay)"
     );
-    // A pass after the refusal must decode nothing.
-    let refused = TAIL_DECODES.load(Ordering::SeqCst);
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(&mut file, b"{\"type\":\"assistant\"}\n").unwrap();
     scan_root(dir.path(), decoders, &ctx, &mut read).await;
-    assert_eq!(TAIL_DECODES.load(Ordering::SeqCst), refused);
+    let events = drain_events(&mut rx);
+    assert!(
+        (events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
+        "{events:?}"
+    );
 }
 
 #[tokio::test]

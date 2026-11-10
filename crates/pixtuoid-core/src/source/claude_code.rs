@@ -260,7 +260,8 @@ fn fresh_spend(message: &serde_json::Map<String, Value>) -> u64 {
 /// deriver key the same way, so every CC keying site coalesces onto one sprite.
 /// There is deliberately NO user-content arm: content is user-controllable and a
 /// message QUOTING the slash-command wrapper would false-positive, so lifecycle
-/// is the SessionEnd hook + the idle sweep.
+/// is the SessionEnd hook + the idle sweep. Nor is there a structural arm: CC
+/// writes no `session_start`/`session_end` record to its transcript.
 pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &cc_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {

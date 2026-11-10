@@ -35,10 +35,11 @@ fn hook_session_end_blocks_a_reordered_trailing_events_registration() {
     );
 }
 
-/// The 5 s straggler window is the ONLY guard on a hook's `Identity`, and past
-/// it the ended id registers again: hermes has no other reaper
+/// The [`STRAGGLER_TTL`] window is the ONLY guard on a hook's `Identity`, and
+/// past it the ended id registers again: hermes has no other reaper
 /// (`resurrects_on_prompt: false`), so a turn finishing after the user rotates
-/// with `/new` leaves the outgoing id on the floor until the 30-minute stale
+/// with `/new` leaves the outgoing id on the floor until the
+/// [`STALE_IDLE_TIMEOUT`](pixtuoid_core::state::reducer::STALE_IDLE_TIMEOUT)
 /// sweep. A bare turn end, carrying no identity, registers nothing.
 #[test]
 fn past_the_straggler_window_only_an_identity_re_registers() {
