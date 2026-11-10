@@ -278,7 +278,7 @@ mod tests {
             arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
-            home_desk: Some(FloorDesk::new(0, 0)),
+            desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,

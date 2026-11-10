@@ -26,7 +26,7 @@ pub(super) fn slot(id: AgentId, floor: usize, desk: usize, started: SystemTime) 
         arrived_at: Some(started),
         last_event_at: started,
         exiting_at: None,
-        home_desk: Some(FloorDesk::new(floor, desk)),
+        desk: Some(FloorDesk::new(floor, desk)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

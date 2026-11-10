@@ -1494,11 +1494,11 @@ mod tests {
         );
         for a in o.scene.agents.values() {
             assert!(
-                a.home_desk
+                a.desk
                     .is_some_and(|desk| layout.home_desk(desk.index).is_some()),
                 "agent {:?} at {:?} has no paintable anchor in the canvas layout",
                 a.agent_id,
-                a.home_desk
+                a.desk
             );
         }
         assert_eq!(
@@ -1522,11 +1522,7 @@ mod tests {
             "premise: this width seats no more than the cast"
         );
         assert_eq!(
-            o.scene
-                .agents
-                .values()
-                .filter(|a| a.home_desk.is_some())
-                .count(),
+            o.scene.agents.values().filter(|a| a.desk.is_some()).count(),
             o.scene.total_capacity(),
             "the cast fills every desk the narrow canvas lays out"
         );

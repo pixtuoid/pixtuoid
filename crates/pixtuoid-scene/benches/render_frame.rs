@@ -122,7 +122,7 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
                 arrived_at: Some(stamp),
                 last_event_at: stamp,
                 exiting_at: None,
-                home_desk: Some(FloorDesk::new(i / max_desks, i % max_desks)),
+                desk: Some(FloorDesk::new(i / max_desks, i % max_desks)),
                 tool_call_count: if busy { i as u32 * 7 } else { 0 },
                 running_ms: 0,
                 unknown_cwd: false,

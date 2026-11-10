@@ -52,7 +52,7 @@ pub fn scene_stats(scene: &SceneState) -> StateCounts {
     c
 }
 
-/// Per-floor [`StateCounts`], bucketed by each home desk's floor (clamped to the
+/// Per-floor [`StateCounts`], bucketed by each agent's desk's floor (clamped to the
 /// last floor), so an unseated agent is on no floor's count.
 /// Computed from the FULL scene, deliberately distinct from `scene_stats` on
 /// the projected floor — don't derive one from the other.
@@ -60,7 +60,7 @@ pub fn scene_stats(scene: &SceneState) -> StateCounts {
 pub fn per_floor_counts(scene: &SceneState) -> [StateCounts; MAX_FLOORS] {
     let mut floors = [StateCounts::default(); MAX_FLOORS];
     for slot in scene.agents.values() {
-        if let Some(desk) = slot.home_desk {
+        if let Some(desk) = slot.desk {
             bucket_slot(&mut floors[desk.floor.min(MAX_FLOORS - 1)], slot);
         }
     }

@@ -1149,7 +1149,7 @@ impl FloorTransition {
 /// The floors `scene`'s agents sit on: one past the highest, at least one.
 pub fn num_floors(scene: &SceneState) -> usize {
     (scene.agents.values())
-        .filter_map(|a| a.home_desk)
+        .filter_map(|a| a.desk)
         .map(|desk| desk.floor + 1)
         .max()
         .unwrap_or(1)
@@ -1160,7 +1160,7 @@ pub(crate) fn floor_agents(
     scene: &SceneState,
     floor_idx: usize,
 ) -> impl Iterator<Item = &AgentSlot> + '_ {
-    (scene.agents.values()).filter(move |a| a.home_desk.is_some_and(|desk| desk.floor == floor_idx))
+    (scene.agents.values()).filter(move |a| a.desk.is_some_and(|desk| desk.floor == floor_idx))
 }
 
 /// One floor's [projection](project_floor_scene), the scene that floor is drawn

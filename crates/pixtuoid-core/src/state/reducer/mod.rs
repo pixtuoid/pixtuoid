@@ -1271,7 +1271,7 @@ impl Reducer {
         }
         slot.last_event_at = now;
         // Seating skips one walking out, so a desk may have freed mid-exit.
-        let seat = revive && slot.home_desk.is_none();
+        let seat = revive && slot.desk.is_none();
         if revive {
             // Route through fsm so an in-flight Running span folds into
             // `running_ms` — a direct `state = Idle` here silently dropped it.
@@ -1404,10 +1404,9 @@ impl Reducer {
                 state_started_at: now,
                 last_event_at: now,
                 created_at: now,
-                // The local office walks in every slot it registers, a replay's included.
-                arrived_at: Some(now),
+                arrived_at: None,
                 exiting_at: None,
-                home_desk: None,
+                desk: None,
                 tool_call_count: 0,
                 running_ms: 0,
                 // A PARENTED slot came from an explicit subagent signal (e.g.
@@ -1421,6 +1420,7 @@ impl Reducer {
                 last_usage: None,
             },
         );
+        // The local office walks in every slot it seats, a replay's included.
         scene.seat_unseated(|_| true, |_| Some(now));
         scene
             .agents

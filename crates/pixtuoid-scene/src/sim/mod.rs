@@ -428,7 +428,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         .filter(|a| a.exiting_at.is_none())
         .filter_map(|a| {
             let desk = a
-                .home_desk
+                .desk
                 .filter(|desk| layout.home_desk(desk.index).is_some())?;
             let seated = matches!(poses.get(&a.agent_id), Some(Some(Pose::SeatedTyping)));
             Some((desk.index, seated))
@@ -1237,7 +1237,7 @@ pub(crate) fn desk_occupant(
 ) -> Option<&AgentSlot> {
     agents
         .iter()
-        .find(|a| a.home_desk.is_some_and(|desk| desk.index == local) && a.exiting_at.is_none())
+        .find(|a| a.desk.is_some_and(|desk| desk.index == local) && a.exiting_at.is_none())
 }
 
 /// Deterministic seed from a lowercased cwd basename: byte-fold, then the

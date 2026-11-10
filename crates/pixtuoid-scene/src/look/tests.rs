@@ -37,7 +37,7 @@ fn office(t0: SystemTime) -> SceneState {
                 created_at: started,
                 arrived_at: Some(started),
                 last_event_at: started,
-                home_desk: Some(FloorDesk::new(0, i)),
+                desk: Some(FloorDesk::new(0, i)),
                 ..make_slot(id, ActivityState::Idle)
             },
         );

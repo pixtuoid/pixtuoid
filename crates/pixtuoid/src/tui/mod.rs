@@ -109,8 +109,8 @@ impl FloorCapacitySweep {
             return false;
         }
         self.last = Some((offices, desk_cap));
-        let seats = crate::runtime::floor_capacities(&offices)
-            .map(|capacity| desk_cap.map_or(capacity, |cap| capacity.min(cap)));
+        let seats =
+            crate::runtime::cap_capacities(crate::runtime::floor_capacities(&offices), desk_cap);
         crate::runtime::pipeline::publish_floor_caps(caps, seats);
         true
     }

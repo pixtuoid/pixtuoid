@@ -76,7 +76,7 @@ pub(crate) async fn capture_live_scene(
             "  {} ({}) at desk {:?}: {:?} model={:?} effort={:?}",
             slot.label,
             id,
-            slot.home_desk,
+            slot.desk,
             slot.state,
             slot.model,
             slot.effort.as_ref().map(|e| e.value.clone())
@@ -344,7 +344,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
                 last_event_at: now - *since_event,
                 exiting_at: None,
 
-                home_desk: Some(FloorDesk::new(i / cap, i % cap)),
+                desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -546,7 +546,7 @@ pub(crate) fn meeting_scene(
                 arrived_at: Some(now - back_date),
                 last_event_at: now - back_date,
                 exiting_at: None,
-                home_desk: Some(FloorDesk::new(i / cap, i % cap)),
+                desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -667,7 +667,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
                 arrived_at: Some(now - D::from_secs(*desk_index as u64)),
                 last_event_at: now,
                 exiting_at: None,
-                home_desk: Some(FloorDesk::new(*desk_index / cap, *desk_index % cap)),
+                desk: Some(FloorDesk::new(*desk_index / cap, *desk_index % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -846,7 +846,7 @@ pub(crate) fn anim_scene(
             arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
-            home_desk: Some(FloorDesk::new(0, desk_idx)),
+            desk: Some(FloorDesk::new(0, desk_idx)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -874,7 +874,7 @@ mod tests {
         let mut got: Vec<_> = scene
             .agents
             .values()
-            .map(|a| (a.home_desk, a.label.to_string()))
+            .map(|a| (a.desk, a.label.to_string()))
             .collect();
         got.sort();
         let team = |i| pixtuoid_scene::DEMO_REPOS[i % pixtuoid_scene::DEMO_TEAMS];
@@ -934,7 +934,7 @@ mod tests {
         let mut dwells = Vec::new();
         for slot in &staged {
             assert!(
-                slot.home_desk
+                slot.desk
                     .is_some_and(|desk| desk.floor == 0 && desk.index.0 < 3),
                 "staged agents take desks 0..n"
             );

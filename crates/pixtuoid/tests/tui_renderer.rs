@@ -40,7 +40,7 @@ fn agent_slot(
         arrived_at: Some(now - Duration::from_secs(60)),
         last_event_at: now - Duration::from_secs(60),
         exiting_at: None,
-        home_desk: Some(desk),
+        desk: Some(desk),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

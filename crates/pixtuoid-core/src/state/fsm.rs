@@ -189,7 +189,7 @@ mod tests {
             created_at: started,
             arrived_at: Some(started),
             exiting_at: None,
-            home_desk: None,
+            desk: None,
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,

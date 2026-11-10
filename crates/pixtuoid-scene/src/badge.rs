@@ -132,7 +132,7 @@ mod tests {
             created_at: SystemTime::UNIX_EPOCH,
             arrived_at: Some(SystemTime::UNIX_EPOCH),
             exiting_at: None,
-            home_desk: Some(FloorDesk::new(0, desk)),
+            desk: Some(FloorDesk::new(0, desk)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,

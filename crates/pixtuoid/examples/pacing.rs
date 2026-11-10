@@ -193,7 +193,7 @@ fn office(start: SystemTime) -> SceneState {
                 arrived_at: Some(started),
                 last_event_at: started,
                 exiting_at: None,
-                home_desk: Some(FloorDesk::new(i / cap, i % cap)),
+                desk: Some(FloorDesk::new(i / cap, i % cap)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,

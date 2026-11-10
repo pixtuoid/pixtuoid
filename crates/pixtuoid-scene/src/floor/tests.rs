@@ -159,7 +159,7 @@ fn a_floor_past_the_building_projects_empty() {
         scene
             .agents
             .values()
-            .any(|a| a.home_desk.is_some_and(|s| s.floor == MAX_FLOORS - 1))
+            .any(|a| a.desk.is_some_and(|s| s.floor == MAX_FLOORS - 1))
     );
     assert!(floor_agents(&scene, MAX_FLOORS).next().is_none());
     let past = project_floor_scene(&scene, MAX_FLOORS);
@@ -229,7 +229,7 @@ fn make_scene(n: usize, max_desks: usize) -> SceneState {
                 created_at: now,
                 arrived_at: Some(now),
                 last_event_at: now,
-                home_desk: Some(FloorDesk::new(i / max_desks, i % max_desks)),
+                desk: Some(FloorDesk::new(i / max_desks, i % max_desks)),
                 ..make_slot(id, ActivityState::Idle)
             },
         );
@@ -260,12 +260,7 @@ fn a_floors_projection_holds_its_agents_at_their_own_desks() {
     let scene = make_scene(20, 16);
     for (floor, indices) in [(0, 0..16), (1, 0..4)] {
         let projected = project_floor_scene(&scene, floor);
-        let mut desks: Vec<_> = projected
-            .scene()
-            .agents
-            .values()
-            .map(|a| a.home_desk)
-            .collect();
+        let mut desks: Vec<_> = projected.scene().agents.values().map(|a| a.desk).collect();
         desks.sort();
         let want: Vec<_> = indices
             .map(|index| Some(FloorDesk::new(floor, index)))
@@ -292,7 +287,7 @@ fn num_floors_variable_capacities() {
                 created_at: now,
                 arrived_at: Some(now),
                 last_event_at: now,
-                home_desk: Some(if i < 4 {
+                desk: Some(if i < 4 {
                     FloorDesk::new(0, i)
                 } else {
                     FloorDesk::new(1, i - 4)
@@ -1078,10 +1073,7 @@ fn step_hands_back_the_layout_the_sim_stepped_on() {
 fn stepping_a_projected_floor_keeps_other_floors_coffee() {
     let scene = make_scene(17, 16);
     let downstairs = AgentId::from_transcript_path("/p/0.jsonl");
-    assert_eq!(
-        scene.agents[&downstairs].home_desk.map(|s| s.floor),
-        Some(0)
-    );
+    assert_eq!(scene.agents[&downstairs].desk.map(|s| s.floor), Some(0));
     let mut office = PerOffice::new();
     office.coffee.insert(downstairs, t0());
     let mut upstairs = PerFloor::new(Arc::new(crate::pack::test_office()));
@@ -1821,7 +1813,7 @@ fn a_one_floor_session_draws_and_counts_only_its_seated_agents() {
         id,
         AgentSlot {
             agent_id: id,
-            home_desk: None,
+            desk: None,
             state: ActivityState::RequiresAction { reason: None },
             ..namesake
         },
@@ -3703,7 +3695,7 @@ mod figure_box {
                         created_at: idle,
                         arrived_at: Some(idle),
                         last_event_at: idle,
-                        home_desk: Some(FloorDesk::new(0, desk)),
+                        desk: Some(FloorDesk::new(0, desk)),
                         ..make_slot(id, ActivityState::Idle)
                     },
                 );
@@ -3855,7 +3847,7 @@ mod figure_box {
         let now = t0 + Duration::from_secs(60);
         for twin in &mut twins {
             let slot = twin.agents.get_mut(&west).expect("west");
-            slot.home_desk = Some(FloorDesk::new(1, 0));
+            slot.desk = Some(FloorDesk::new(1, 0));
             twin.agents.remove(&east);
         }
         for (look, offices) in looks.iter().zip(&mut offices) {

@@ -611,7 +611,7 @@ impl SceneLayout {
     /// The home desk of `agent`, one of the floor this lays out
     /// ([`FloorScene`](crate::floor::FloorScene)); `None` while it is unseated.
     pub(crate) fn home_desk_of(&self, agent: &AgentSlot) -> Option<HomeDesk> {
-        self.home_desk(agent.home_desk?.index)
+        self.home_desk(agent.desk?.index)
     }
 
     /// Is `p` clear of the furniture sprites that PAINT OVER it? Walkable is the

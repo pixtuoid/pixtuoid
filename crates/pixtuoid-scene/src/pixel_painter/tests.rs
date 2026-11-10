@@ -929,7 +929,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
         .position(|d| d.facing == Facing::North)
         .expect("the office has a back-turned desk");
     let slot = scene.agents.get_mut(&id).expect("the rig's agent");
-    slot.home_desk = Some(FloorDesk::new(0, north));
+    slot.desk = Some(FloorDesk::new(0, north));
     slot.state = ActivityState::Running {
         item: Some(ToolUse {
             tool_use_id: None,
@@ -2719,7 +2719,7 @@ fn sim_step_decides_each_desks_props_from_its_occupant() {
         crate::token_meter::SHEET_MIN_DELTA_TOKENS,
         now0,
     ));
-    let desk = scene.agents[&id].home_desk.expect("seated").index.0;
+    let desk = scene.agents[&id].desk.expect("seated").index.0;
     let coffee = HashMap::from([(id, now0)]);
     let desks_at = |now| {
         let mut owned = OwnedSimStores::new();
@@ -3140,7 +3140,7 @@ fn a_requires_action_agent_stays_seated_and_gets_its_bubble_whichever_way_the_de
     let mut seen = std::collections::BTreeSet::new();
     for (i, &HomeDesk { facing, .. }) in layout.home_desks.iter().enumerate() {
         let slot = scene.agents.get_mut(&id).expect("the rig's agent");
-        slot.home_desk = Some(FloorDesk::new(0, i));
+        slot.desk = Some(FloorDesk::new(0, i));
         slot.state = ActivityState::RequiresAction {
             reason: Some("perm".into()),
         };
@@ -3205,7 +3205,7 @@ fn the_hover_list_omits_the_undrawn_and_follows_sort_drawables() {
             pixtuoid_core::AgentId::from_transcript_path(path),
             ActivityState::Idle,
         );
-        s.home_desk = Some(FloorDesk::new(0, desk));
+        s.desk = Some(FloorDesk::new(0, desk));
         (s.created_at, s.state_started_at, s.last_event_at) = (created, created, created);
         s.arrived_at = Some(created);
         s
@@ -3545,7 +3545,7 @@ fn a_bubble_clears_its_speakers_badge_at_every_chitchat_spot() {
         for (n, &(wp, kind)) in spots.iter().enumerate() {
             let id = pixtuoid_core::AgentId::from_transcript_path(&format!("/chat/{n}.jsonl"));
             let mut s = make_slot(id, ActivityState::Idle);
-            s.home_desk = Some(FloorDesk::new(0, n % layout.home_desks.len()));
+            s.desk = Some(FloorDesk::new(0, n % layout.home_desks.len()));
             (s.created_at, s.state_started_at, s.last_event_at) = (now, now, now);
             s.arrived_at = Some(now);
             scene.agents.insert(id, s);
@@ -4554,7 +4554,7 @@ fn no_two_agents_ever_occupy_the_same_exclusive_waypoint() {
         slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = started;
         slot.last_event_at = started;
-        slot.home_desk = Some(FloorDesk::new(0, i));
+        slot.desk = Some(FloorDesk::new(0, i));
         scene.agents.insert(id, slot);
     }
 
@@ -4624,7 +4624,7 @@ fn a_placement_is_seated_exactly_when_its_figure_sits_on_furniture() {
         slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = started;
         slot.last_event_at = started;
-        slot.home_desk = Some(FloorDesk::new(0, i));
+        slot.desk = Some(FloorDesk::new(0, i));
         scene.agents.insert(id, slot);
     }
     let coffee = HashMap::new();
@@ -4823,7 +4823,7 @@ fn one_meeting_sofa_still_seats_three_agents_at_once() {
         slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = started;
         slot.last_event_at = started;
-        slot.home_desk = Some(FloorDesk::new(0, i));
+        slot.desk = Some(FloorDesk::new(0, i));
         scene.agents.insert(id, slot);
     }
 
@@ -4890,7 +4890,7 @@ fn a_meeting_chair_sitter_is_drawn_on_the_seat_not_5px_high() {
         slot.arrived_at = Some(slot.created_at);
         slot.state_started_at = started;
         slot.last_event_at = started;
-        slot.home_desk = Some(FloorDesk::new(0, i));
+        slot.desk = Some(FloorDesk::new(0, i));
         scene.agents.insert(id, slot);
     }
     let coffee = HashMap::new();
@@ -5402,7 +5402,7 @@ fn seated_at_every_desk() -> (SceneState, SceneLayout, SystemTime, OfficeArt) {
                 reason: Some("perm".into()),
             },
         );
-        s.home_desk = Some(FloorDesk::new(0, i));
+        s.desk = Some(FloorDesk::new(0, i));
         (s.created_at, s.state_started_at, s.last_event_at) = (now0, now0, now0);
         s.arrived_at = Some(now0);
         scene.agents.insert(s.agent_id, s);
@@ -5475,7 +5475,7 @@ fn a_typist_keys_on_the_art_its_seat_resolves_to() {
         .iter()
         .position(|d| d.facing == Facing::North)
         .expect("a back-turned desk");
-    scene.agents.get_mut(&id).expect("the agent").home_desk = Some(FloorDesk::new(0, back));
+    scene.agents.get_mut(&id).expect("the agent").desk = Some(FloorDesk::new(0, back));
     let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
     let art = pack.piece(Piece::TypingBack);
     let ms = u64::from(art.frame_ms());
@@ -5578,7 +5578,7 @@ fn co_located_visitors_badges_step_aside_with_their_sprites() {
             pixtuoid_core::AgentId::from_transcript_path(&format!("/queue/{i}.jsonl")),
             ActivityState::Idle,
         );
-        s.home_desk = Some(FloorDesk::new(0, i));
+        s.desk = Some(FloorDesk::new(0, i));
         scene.agents.insert(s.agent_id, s);
     }
     let mut owned = OwnedSimStores::new();

@@ -346,9 +346,9 @@ fn entry_animation_overrides_normal_pose_while_it_runs() {
 #[test]
 fn derive_returns_none_without_a_desk_in_the_layout() {
     let (mut s, now) = slot(ActivityState::Idle, 0);
-    s.home_desk = Some(FloorDesk::new(0, 999));
+    s.desk = Some(FloorDesk::new(0, 999));
     assert!(derive(&s, now, &layout()).is_none());
-    s.home_desk = None;
+    s.desk = None;
     assert!(derive(&s, now, &layout()).is_none());
 }
 
@@ -357,7 +357,7 @@ fn exit_override_walks_desk_to_door_within_window() {
     let (mut s, now) = slot(ActivityState::Idle, 0);
     s.exiting_at = Some(now - Duration::from_secs(1));
     let l = layout();
-    let desk = l.home_desks[s.home_desk.expect("seated").index.0];
+    let desk = l.home_desks[s.desk.expect("seated").index.0];
     match derive(&s, now, &l).expect("pose") {
         Pose::Walking { segment, .. } => {
             let from = segment.from();

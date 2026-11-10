@@ -541,12 +541,7 @@ mod tests {
         let seated = |want: usize| {
             move |scene: &Arc<SceneState>| {
                 scene.agents.len() == 2
-                    && scene
-                        .agents
-                        .values()
-                        .filter(|a| a.home_desk.is_some())
-                        .count()
-                        == want
+                    && scene.agents.values().filter(|a| a.desk.is_some()).count() == want
             }
         };
         let within = Duration::from_secs(5);

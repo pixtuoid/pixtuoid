@@ -160,7 +160,7 @@ impl<'a> FloorNamesakes<'a> {
     /// `agent`'s name as its floor's badges read it; an agent no floor draws
     /// is counted on none.
     pub fn nameplate(&self, agent: &AgentSlot) -> Nameplate {
-        let shared = (agent.home_desk)
+        let shared = (agent.desk)
             .and_then(|desk| self.0.get(desk.floor))
             .is_some_and(|floor| floor.shares(agent));
         Nameplate::of(agent, shared)
@@ -199,8 +199,8 @@ mod tests {
         let label = "cc\u{b7}a-very-long-project-name";
         let a = agent(label, "a");
         let mut b = agent(label, "b");
-        b.home_desk = a
-            .home_desk
+        b.desk = a
+            .desk
             .map(|desk| pixtuoid_core::state::FloorDesk::new(desk.floor + 1, desk.index.0));
         let all = [a.clone(), b.clone()];
         let namesakes = Namesakes::of(&all);

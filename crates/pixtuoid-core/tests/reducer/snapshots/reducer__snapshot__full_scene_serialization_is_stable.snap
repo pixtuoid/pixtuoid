@@ -30,7 +30,7 @@ agents:
       secs_since_epoch: 0
       nanos_since_epoch: 0
     exiting_at: ~
-    home_desk:
+    desk:
       floor: 0
       index: 0
     tool_call_count: 0
@@ -61,7 +61,7 @@ agents:
     exiting_at:
       secs_since_epoch: 8
       nanos_since_epoch: 0
-    home_desk:
+    desk:
       floor: 0
       index: 4
     tool_call_count: 1
@@ -92,7 +92,7 @@ agents:
       secs_since_epoch: 3
       nanos_since_epoch: 0
     exiting_at: ~
-    home_desk:
+    desk:
       floor: 0
       index: 2
     tool_call_count: 0
@@ -121,7 +121,7 @@ agents:
       secs_since_epoch: 5
       nanos_since_epoch: 0
     exiting_at: ~
-    home_desk:
+    desk:
       floor: 0
       index: 3
     tool_call_count: 0
@@ -155,7 +155,7 @@ agents:
       secs_since_epoch: 1
       nanos_since_epoch: 0
     exiting_at: ~
-    home_desk:
+    desk:
       floor: 0
       index: 1
     tool_call_count: 1

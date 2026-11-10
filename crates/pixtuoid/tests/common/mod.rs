@@ -66,7 +66,7 @@ pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneS
                 arrived_at: Some(created_at),
                 exiting_at: None,
 
-                home_desk: Some(FloorDesk::new(0, i)),
+                desk: Some(FloorDesk::new(0, i)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,

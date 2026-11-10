@@ -97,9 +97,10 @@ pub(crate) fn boot_capacities_for(plan: Plan, term: TermSize) -> [usize; MAX_FLO
     floor_capacities(&plan.seat_extents(term))
 }
 
-/// Clamp each per-floor boot capacity to an optional `--max-desks` cap, which
-/// every frame's publish applies too.
-fn cap_boot_capacities(base: [usize; MAX_FLOORS], cap: Option<usize>) -> [usize; MAX_FLOORS] {
+/// Clamp each floor's capacity to an optional `--max-desks` cap: the one clamp
+/// the boot seed and every frame's publish share, so the first frame re-seats no
+/// one the boot seated.
+pub(crate) fn cap_capacities(base: [usize; MAX_FLOORS], cap: Option<usize>) -> [usize; MAX_FLOORS] {
     match cap {
         Some(c) => base.map(|x| x.min(c)),
         None => base,
@@ -108,7 +109,7 @@ fn cap_boot_capacities(base: [usize; MAX_FLOORS], cap: Option<usize>) -> [usize;
 
 /// The headless-vs-interactive boot capacity POLICY: headless (no `plan`) honors
 /// `--max-desks` UNCLAMPED and never calls `measure`; interactive clamps
-/// [`boot_capacities_for`] to the cap ([`cap_boot_capacities`]).
+/// [`boot_capacities_for`] to the cap ([`cap_capacities`]).
 pub(crate) fn resolve_boot_caps(
     desk_cap: Option<usize>,
     plan: Option<Plan>,
@@ -117,7 +118,7 @@ pub(crate) fn resolve_boot_caps(
     match (desk_cap, plan) {
         (Some(cap), None) => [cap; MAX_FLOORS],
         (None, None) => [FALLBACK_DESKS; MAX_FLOORS],
-        (cap, Some(plan)) => cap_boot_capacities(boot_capacities_for(plan, measure()), cap),
+        (cap, Some(plan)) => cap_capacities(boot_capacities_for(plan, measure()), cap),
     }
 }
 
@@ -154,7 +155,7 @@ fn summarize(scene: &SceneState) -> String {
                 }
                 ActivityState::RequiresAction { reason: None } => "requires_action".to_string(),
             };
-            let desk = a.home_desk.map_or_else(
+            let desk = a.desk.map_or_else(
                 || "-".to_owned(),
                 // Counted across the whole office, so no two floors' desks print alike.
                 |desk| {
@@ -1013,12 +1014,12 @@ mod tests {
         let base = boot_capacities_for(classic(), term(192, 48));
         let layout_max = *base.iter().max().unwrap();
         assert_eq!(
-            cap_boot_capacities(base, Some(layout_max + 100)),
+            cap_capacities(base, Some(layout_max + 100)),
             base,
             "cap above layout capacity must clamp down to the layout, not inflate"
         );
-        assert!(cap_boot_capacities(base, Some(1)).iter().all(|&c| c <= 1));
-        assert_eq!(cap_boot_capacities(base, None), base);
+        assert!(cap_capacities(base, Some(1)).iter().all(|&c| c <= 1));
+        assert_eq!(cap_capacities(base, None), base);
     }
 
     #[test]

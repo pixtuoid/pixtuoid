@@ -330,8 +330,9 @@ pub struct AgentSlot {
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
-    /// Its desk; `None` while it is unseated, counted but drawn nowhere. Only a new layout ([`SceneState::set_capacities`]) moves it.
-    pub home_desk: Option<FloorDesk>,
+    /// Its desk; `None` while it is unseated, counted but drawn nowhere. Only a
+    /// new layout ([`SceneState::set_capacities`]) moves it.
+    pub desk: Option<FloorDesk>,
     /// Monotonic count of tool calls this agent has made this session.
     pub tool_call_count: u32,
     /// Cumulative milliseconds spent in the `Running` state.
@@ -606,7 +607,7 @@ pub struct SceneState {
     /// Live agent slots, keyed by `AgentId`.
     pub agents: BTreeMap<AgentId, AgentSlot>,
     /// Desk capacity per floor, indexed by floor (`0..MAX_FLOORS`). Private,
-    /// so a home desk past its floor's capacity can't outlive
+    /// so a desk past its floor's capacity can't outlive
     /// [`Self::set_capacities`].
     floor_capacities: [usize; MAX_FLOORS],
     /// Daemon-style sources rendered as wandering mascots, keyed source →
@@ -774,13 +775,13 @@ impl SceneState {
         self.floor_capacities.iter().sum()
     }
 
-    /// Take a new layout at `now`. An agent keeps its home desk while its floor
+    /// Take a new layout at `now`. An agent keeps its desk while its floor
     /// still has that desk; whoever loses one is unseated until a desk frees,
     /// and walks in from when it takes one.
     pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS], now: SystemTime) {
         self.floor_capacities = capacities;
         for slot in self.agents.values_mut() {
-            slot.home_desk = (slot.home_desk)
+            slot.desk = (slot.desk)
                 .filter(|desk| (capacities.get(desk.floor)).is_some_and(|&cap| desk.index.0 < cap));
         }
         self.seat_unseated(|_| true, |_| Some(now));
@@ -798,7 +799,7 @@ impl SceneState {
         SEATINGS.with(|n| n.set(n.get() + 1));
         let taken: BTreeSet<FloorDesk> = (self.agents.values())
             .filter(|slot| holds(slot))
-            .filter_map(|slot| slot.home_desk)
+            .filter_map(|slot| slot.desk)
             .collect();
         let capacities = self.floor_capacities;
         let free = (0..MAX_FLOORS)
@@ -806,11 +807,11 @@ impl SceneState {
             .filter(|desk| !taken.contains(desk));
         let mut unseated: Vec<&mut AgentSlot> = (self.agents.values_mut())
             // Seated, one walking out would appear partway through its exit.
-            .filter(|slot| slot.home_desk.is_none() && slot.exiting_at.is_none())
+            .filter(|slot| slot.desk.is_none() && slot.exiting_at.is_none())
             .collect();
         unseated.sort_by_key(|slot| (slot.created_at, slot.agent_id));
         for (slot, desk) in unseated.into_iter().zip(free) {
-            slot.home_desk = Some(desk);
+            slot.desk = Some(desk);
             slot.arrived_at = arrival(slot);
         }
     }
@@ -855,7 +856,7 @@ mod tests {
             arrived_at: Some(now),
             last_event_at: now,
             exiting_at: None,
-            home_desk: Some(FloorDesk::new(0, desk)),
+            desk: Some(FloorDesk::new(0, desk)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -1089,7 +1090,7 @@ mod tests {
             .collect();
         for (i, (&id, &at)) in ids.iter().zip(desks).enumerate() {
             let mut slot = make_slot(id, 0);
-            slot.home_desk = at;
+            slot.desk = at;
             slot.created_at = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(i as u64);
             s.agents.insert(id, slot);
         }
@@ -1103,7 +1104,7 @@ mod tests {
             &[Some(FloorDesk::new(0, 0)), None, None, None],
         );
         s.seat_unseated(|_| true, |_| None);
-        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].home_desk).collect();
+        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
         assert_eq!(
             desks,
             [
@@ -1125,7 +1126,7 @@ mod tests {
         ];
         let (mut s, ids) = seated([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], &all);
         s.set_capacities([1, 2, 0, 0, 0, 0, 0, 0, 0, 0], SystemTime::UNIX_EPOCH);
-        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].home_desk).collect();
+        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
         assert_eq!(
             desks,
             [
@@ -1136,7 +1137,7 @@ mod tests {
             ]
         );
         s.set_capacities([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], SystemTime::UNIX_EPOCH);
-        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].home_desk).collect();
+        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
         assert_eq!(desks, all);
     }
 
@@ -1147,7 +1148,7 @@ mod tests {
         let (mut s, ids) = seated([3, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[None, None, None]);
         s.agents.get_mut(&ids[0]).unwrap().exiting_at = Some(SystemTime::UNIX_EPOCH);
         s.seat_unseated(|_| true, |_| None);
-        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].home_desk).collect();
+        let desks: Vec<_> = ids.iter().map(|id| s.agents[id].desk).collect();
         assert_eq!(
             desks,
             [None, Some(FloorDesk::new(0, 0)), Some(FloorDesk::new(0, 1))]

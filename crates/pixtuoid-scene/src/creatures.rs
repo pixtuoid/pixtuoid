@@ -1299,7 +1299,7 @@ mod tests {
         let agent = |name: &str, desk: usize, arrived: SystemTime| {
             let id = AgentId::from_transcript_path(name);
             AgentSlot {
-                home_desk: Some(FloorDesk::new(0, desk)),
+                desk: Some(FloorDesk::new(0, desk)),
                 arrived_at: Some(arrived),
                 ..make_slot(id, ActivityState::Idle)
             }

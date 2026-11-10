@@ -1271,10 +1271,11 @@ fn a_tick_walks_scope_in_linear_work() {
     }
 }
 
-/// Every apply sweeps exited slots, and a seating pass walks the whole scene,
-/// so one runs only on the apply where a slot leaves.
+/// Every apply sweeps exited slots, and a seating pass walks the whole scene:
+/// an apply that adds or removes no slot runs no seating pass, and the apply a
+/// slot leaves on runs one.
 #[test]
-fn an_apply_seats_only_when_a_slot_leaves() {
+fn a_sweep_seats_only_when_a_slot_leaves() {
     use super::EXIT_GRACE_WINDOW;
     use crate::source::{AgentEvent, Transport};
     use crate::state::SEATINGS;
@@ -1328,7 +1329,7 @@ fn an_apply_seats_only_when_a_slot_leaves() {
     );
     assert!(!scene.agents.contains_key(&holder), "premise: swept out");
     assert_eq!(seatings(), 1, "the apply its holder left on seats once");
-    assert!(scene.agents[&unseated].home_desk.is_some());
+    assert!(scene.agents[&unseated].desk.is_some());
 }
 
 /// An open turn showing no item is the agent between items, alive by its

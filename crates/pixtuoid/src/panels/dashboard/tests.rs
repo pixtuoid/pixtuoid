@@ -28,7 +28,7 @@ fn mk_slot(
         arrived_at: Some(now),
         last_event_at: now,
         exiting_at: None,
-        home_desk: Some(FloorDesk::new(floor, desk)),
+        desk: Some(FloorDesk::new(floor, desk)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,
@@ -52,7 +52,7 @@ fn rows_are_tree_ordered_roots_by_desk_children_following_parent() {
     let a_sub = id("/p/a/subagents/agent-x.jsonl");
 
     let mut scene = SceneState::uniform(8);
-    // Inserted out of desk order, and the child has a LATER home desk than root `b`
+    // Inserted out of desk order, and the child has a LATER desk than root `b`
     // — so BTreeMap/AgentId order would give a different answer.
     scene
         .agents
@@ -87,10 +87,7 @@ fn an_unseated_agent_lists_after_its_seated_siblings() {
     let unseated = id("/p/unseated.jsonl");
     let sub_seated = id("/p/seated/subagents/agent-s.jsonl");
     let sub_unseated = id("/p/seated/subagents/agent-u.jsonl");
-    let unseat = |slot: AgentSlot| AgentSlot {
-        home_desk: None,
-        ..slot
-    };
+    let unseat = |slot: AgentSlot| AgentSlot { desk: None, ..slot };
 
     let mut scene = SceneState::uniform(8);
     for slot in [

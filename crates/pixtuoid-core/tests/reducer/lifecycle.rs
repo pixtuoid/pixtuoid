@@ -37,7 +37,7 @@ fn session_start_creates_idle_slot_at_first_free_desk() {
     );
 
     let slot = scene.agents.get(&id).expect("agent inserted");
-    assert_eq!(slot.home_desk, desk(0, 0));
+    assert_eq!(slot.desk, desk(0, 0));
     assert_eq!(
         &*slot.label, "cc·repo",
         "label = source prefix + cwd basename"
@@ -77,11 +77,7 @@ fn session_end_marks_slot_exiting_then_tick_removes_it_after_grace() {
     );
     let c = AgentId::from_transcript_path("/p/c.jsonl");
     start(&mut r, &mut scene, c);
-    assert_eq!(
-        scene.agents[&c].home_desk,
-        desk(0, 0),
-        "the swept slot's desk"
-    );
+    assert_eq!(scene.agents[&c].desk, desk(0, 0), "the swept slot's desk");
 }
 
 #[test]
@@ -105,7 +101,7 @@ fn session_start_overflows_to_floor1_with_heterogeneous_capacity() {
             Transport::Jsonl,
         );
     }
-    let mut desks: Vec<_> = scene.agents.values().map(|a| a.home_desk).collect();
+    let mut desks: Vec<_> = scene.agents.values().map(|a| a.desk).collect();
     desks.sort();
     assert_eq!(
         desks,
@@ -140,7 +136,7 @@ fn a_shrunk_layout_keeps_every_agent_and_seats_each_as_a_desk_frees() {
     };
     let desks = |scene: &SceneState| {
         (0..5)
-            .map(|i| scene.agents.get(&id(i)).and_then(|a| a.home_desk))
+            .map(|i| scene.agents.get(&id(i)).and_then(|a| a.desk))
             .collect::<Vec<_>>()
     };
     for i in 0..4 {
@@ -219,7 +215,7 @@ fn an_unseated_agent_walks_in_on_the_apply_where_its_holder_walks_out() {
     let holder = AgentId::from_transcript_path("/p/holder.jsonl");
     let unseated = AgentId::from_transcript_path("/p/unseated.jsonl");
     let mut scene = one_desk_office(&mut r, &[holder, unseated], t0);
-    assert_eq!(scene.agents[&unseated].home_desk, None, "premise: one desk");
+    assert_eq!(scene.agents[&unseated].desk, None, "premise: one desk");
 
     let t1 = t0 + Duration::from_secs(2);
     sess_end(&mut r, &mut scene, holder, false, t1, Transport::Hook);
@@ -227,7 +223,7 @@ fn an_unseated_agent_walks_in_on_the_apply_where_its_holder_walks_out() {
     proof_of_life(&mut r, &mut scene, unseated, walked_out, Transport::Hook);
     assert!(!scene.agents.contains_key(&holder), "premise: swept out");
     let slot = &scene.agents[&unseated];
-    assert_eq!(slot.home_desk, desk(0, 0));
+    assert_eq!(slot.desk, desk(0, 0));
     assert_eq!(slot.arrived_at, Some(walked_out));
 }
 
@@ -248,7 +244,7 @@ fn a_revived_unseated_agent_takes_the_desk_that_freed_mid_exit() {
     let freed = t1 + EXIT_GRACE_WINDOW + Duration::from_millis(100);
     proof_of_life(&mut r, &mut scene, unseated, freed, Transport::Hook);
     assert!(!scene.agents.contains_key(&holder), "premise: swept out");
-    assert_eq!(scene.agents[&unseated].home_desk, None, "premise: mid-exit");
+    assert_eq!(scene.agents[&unseated].desk, None, "premise: mid-exit");
 
     let revived = freed + Duration::from_millis(100);
     r.apply(
@@ -265,7 +261,7 @@ fn a_revived_unseated_agent_takes_the_desk_that_freed_mid_exit() {
     );
     let slot = &scene.agents[&unseated];
     assert_eq!(slot.exiting_at, None, "premise: revived");
-    assert_eq!(slot.home_desk, desk(0, 0));
+    assert_eq!(slot.desk, desk(0, 0));
     assert_eq!(slot.arrived_at, Some(revived));
 }
 
@@ -876,7 +872,7 @@ fn session_start_after_hook_synthesis_coalesces_into_same_slot() {
         t0,
         Transport::Hook,
     );
-    let desk = scene.agents.get(&id).expect("synthesized").home_desk;
+    let desk = scene.agents.get(&id).expect("synthesized").desk;
 
     r.apply(
         &mut scene,
@@ -893,7 +889,7 @@ fn session_start_after_hook_synthesis_coalesces_into_same_slot() {
 
     assert_eq!(scene.agents.len(), 1, "no duplicate sprite");
     assert_eq!(
-        scene.agents.get(&id).unwrap().home_desk,
+        scene.agents.get(&id).unwrap().desk,
         desk,
         "the agent keeps its desk"
     );
@@ -1636,7 +1632,7 @@ fn hook_identity_registers_unknown_id_with_real_identity() {
         !slot.unknown_cwd,
         "real-cwd registration — not an unknown-cwd ghost"
     );
-    assert_eq!(slot.home_desk, desk(0, 0));
+    assert_eq!(slot.desk, desk(0, 0));
     assert!(
         matches!(slot.state, ActivityState::Idle),
         "Identity itself sets no activity state — the paired activity event does"
@@ -1894,7 +1890,7 @@ fn a_hook_identity_with_no_free_desk_registers_unseated() {
         .agents
         .get(&id)
         .expect("registered, though no desk is free");
-    assert_eq!(slot.home_desk, None, "unseated");
+    assert_eq!(slot.desk, None, "unseated");
 }
 
 fn connected_set<const N: usize>(srcs: [&str; N]) -> std::collections::HashSet<String> {

@@ -129,7 +129,7 @@ mod tests {
             created_at: now,
             arrived_at: Some(now),
             exiting_at: None,
-            home_desk: Some(pixtuoid_core::FloorDesk::new(0, 0)),
+            desk: Some(pixtuoid_core::FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,

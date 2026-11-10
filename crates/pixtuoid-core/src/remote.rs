@@ -285,7 +285,7 @@ fn project_agent(slot: &AgentSlot) -> Agent {
         created_at,
         arrived_at: _,
         exiting_at,
-        home_desk: _,
+        desk: _,
         tool_call_count,
         running_ms,
         unknown_cwd,
@@ -878,7 +878,7 @@ impl RemoteOffice {
         let mut new: BTreeMap<AgentId, Option<SystemTime>> = BTreeMap::new();
         for agent in agents {
             let place = match self.scene.agents.get(&agent.id) {
-                Some(slot) => (slot.home_desk, slot.arrived_at),
+                Some(slot) => (slot.desk, slot.arrived_at),
                 // One never seen alive was never in the room to leave it.
                 None if agent.exiting_ms.is_some() => continue,
                 None => {
@@ -938,7 +938,7 @@ impl RemoteOffice {
 /// from this one entry.
 fn inflate_agent(
     agent: Agent,
-    (home_desk, arrived_at): (Option<FloorDesk>, Option<SystemTime>),
+    (desk, arrived_at): (Option<FloorDesk>, Option<SystemTime>),
     local: &impl Fn(u64) -> SystemTime,
 ) -> AgentSlot {
     let source = display_safe(&agent.source);
@@ -977,7 +977,7 @@ fn inflate_agent(
         created_at: local(agent.created_ms),
         arrived_at,
         exiting_at: agent.exiting_ms.map(local),
-        home_desk,
+        desk,
         tool_call_count: agent.tool_calls,
         running_ms: agent.running_ms,
         parent_id: agent.parent,
@@ -1058,7 +1058,7 @@ mod tests {
             created_at: at(AT - 60_000),
             arrived_at: Some(at(AT - 60_000)),
             exiting_at: None,
-            home_desk: Some(FloorDesk::new(0, 0)),
+            desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 3,
             running_ms: 4_000,
             unknown_cwd: false,
@@ -1166,9 +1166,9 @@ mod tests {
             .expect("it applies");
     }
 
-    /// `name`'s home desk in `office`; `None` while it is unseated.
+    /// `name`'s desk in `office`; `None` while it is unseated.
     fn desk_of(office: &RemoteOffice, name: &str) -> Option<FloorDesk> {
-        office.scene().agents[&AgentId::from_parts("claude-code", name)].home_desk
+        office.scene().agents[&AgentId::from_parts("claude-code", name)].desk
     }
 
     fn crowd(names: &[&str]) -> SceneState {
@@ -1475,7 +1475,7 @@ mod tests {
     fn desks_follow_the_devices_layout_not_the_servers() {
         let mut scene = crowd(&["c", "b", "a"]);
         for (i, slot) in scene.agents.values_mut().enumerate() {
-            slot.home_desk = Some(FloorDesk::new(3, 9 + i));
+            slot.desk = Some(FloorDesk::new(3, 9 + i));
         }
         let mut office = RemoteOffice::new([2, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
         received(&mut office, &scene, AT);
@@ -1506,7 +1506,7 @@ mod tests {
         let freed = AT + 10_000;
         received(&mut office, &crowd(&["a"]), freed);
         let a = slot_of(&office, "a").expect("held");
-        assert_eq!(a.home_desk, Some(FloorDesk::new(0, 0)));
+        assert_eq!(a.desk, Some(FloorDesk::new(0, 0)));
         assert_eq!(a.arrived_at, Some(at(freed)));
     }
 

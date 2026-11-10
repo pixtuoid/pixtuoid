@@ -22,7 +22,7 @@ fn stat_slot(path: &str, state: ActivityState, exiting: bool) -> AgentSlot {
         arrived_at: Some(now),
         last_event_at: now,
         exiting_at: exiting.then_some(now),
-        home_desk: Some(FloorDesk::new(0, 0)),
+        desk: Some(FloorDesk::new(0, 0)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,
@@ -226,7 +226,7 @@ fn gateway_rollup_is_worst_of() {
 }
 
 #[test]
-fn per_floor_buckets_by_home_desk_floor_and_counts_an_unseated_agent_on_none() {
+fn per_floor_buckets_by_desk_floor_and_counts_an_unseated_agent_on_none() {
     use pixtuoid_core::state::ToolKind;
     let running = || ActivityState::Running {
         item: Some(ToolUse {
@@ -238,7 +238,7 @@ fn per_floor_buckets_by_home_desk_floor_and_counts_an_unseated_agent_on_none() {
     let mut scene = SceneState::uniform(16);
     let add = |scene: &mut SceneState, path, state, exiting, floor: usize| {
         let mut s = stat_slot(path, state, exiting);
-        s.home_desk = Some(FloorDesk::new(floor, 0));
+        s.desk = Some(FloorDesk::new(floor, 0));
         scene.agents.insert(s.agent_id, s);
     };
     add(&mut scene, "/f0a.jsonl", running(), false, 0);
@@ -255,7 +255,7 @@ fn per_floor_buckets_by_home_desk_floor_and_counts_an_unseated_agent_on_none() {
     add(&mut scene, "/f1x.jsonl", running(), true, 1); // exiting on floor 1
     add(&mut scene, "/f2i.jsonl", ActivityState::Idle, false, 2);
     let mut unseated = stat_slot("/unseated.jsonl", ActivityState::Idle, false);
-    unseated.home_desk = None;
+    unseated.desk = None;
     scene.agents.insert(unseated.agent_id, unseated);
 
     let pf = per_floor_counts(&scene);
@@ -357,7 +357,7 @@ pub(super) fn slot_with(state: ActivityState, label: &str) -> AgentSlot {
         last_event_at: SystemTime::UNIX_EPOCH,
         exiting_at: None,
 
-        home_desk: Some(FloorDesk::new(0, 0)),
+        desk: Some(FloorDesk::new(0, 0)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

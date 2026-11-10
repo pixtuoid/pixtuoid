@@ -100,10 +100,10 @@ pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<D
     rows
 }
 
-/// Siblings by home desk, an unseated one after them: it has no desk to order
+/// Siblings by desk, an unseated one after them: it has no desk to order
 /// by.
 fn desk_order(slot: &&AgentSlot) -> (bool, Option<FloorDesk>) {
-    (slot.home_desk.is_none(), slot.home_desk)
+    (slot.desk.is_none(), slot.desk)
 }
 
 fn push_subtree(
@@ -158,7 +158,7 @@ fn row_for(
         depth,
         name: namesakes.nameplate(slot),
         source: slot.source.clone(),
-        floor: slot.home_desk.map(|desk| desk.floor),
+        floor: slot.desk.map(|desk| desk.floor),
         state: row_state(&slot.state),
         child_count,
         collapsed,

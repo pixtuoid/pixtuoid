@@ -35,7 +35,7 @@ fn mk_slot(id: AgentId, source: &str, last_event_at: SystemTime) -> AgentSlot {
         arrived_at: Some(SystemTime::UNIX_EPOCH),
         last_event_at,
         exiting_at: None,
-        home_desk: Some(FloorDesk::new(0, 0)),
+        desk: Some(FloorDesk::new(0, 0)),
         tool_call_count: 0,
         running_ms: 0,
         unknown_cwd: false,

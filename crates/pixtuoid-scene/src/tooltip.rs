@@ -541,7 +541,7 @@ mod tests {
         let id = AgentId::from_transcript_path(&format!("/p/{key}.jsonl"));
         let mut a = crate::character::test_support::make_slot(id, ActivityState::Idle);
         a.label = label.into();
-        a.home_desk = Some(pixtuoid_core::state::FloorDesk::new(floor, desk));
+        a.desk = Some(pixtuoid_core::state::FloorDesk::new(floor, desk));
         a.parent_id = lead;
         office.agents.insert(id, a);
         id
