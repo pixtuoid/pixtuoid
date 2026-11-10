@@ -574,6 +574,12 @@ async fn another_address_pairs_beside_a_silent_one() {
     let device = Device::connect_from(&link, Ipv4Addr::new(127, 0, 0, 2));
     let reply = device.await.hello(&hello).await;
     assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
+    // Still held, so the pairing came beside it, not past its hello deadline.
+    let again = handshake(&link, Ipv4Addr::LOCALHOST).await;
+    assert!(
+        again.is_err(),
+        "the silent address's turn was free: {again:?}"
+    );
 }
 
 #[test]
