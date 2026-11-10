@@ -240,6 +240,8 @@ impl<'a> FooterInputs<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct FooterContext<'a> {
     pub per_floor: [StateCounts; MAX_FLOORS],
+    /// The agents on no floor; a prompt of theirs joins the floor's alarm.
+    pub(crate) unseated: StateCounts,
     pub gateway: Option<DaemonState>,
     pub floor: Option<FooterFloor>,
     /// "You would hear sound right now": audio live AND not effectively muted
@@ -270,6 +272,7 @@ impl<'a> FooterContext<'a> {
     ) -> Self {
         Self {
             per_floor: crate::tally::per_floor_counts(office),
+            unseated: crate::tally::unseated_counts(office),
             gateway: crate::tally::office_gateway(office),
             floor,
             audio_audible,
@@ -306,8 +309,9 @@ fn clip_cols(s: &str, budget: usize) -> String {
 /// body truncation) → **full** → **medium** → **minimal** → **fallback** (only
 /// the keybind tail).
 pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
-    let counts = inputs.counts;
     let ctx = &inputs.context;
+    let mut counts = inputs.counts;
+    counts.requires_action += ctx.unseated.requires_action;
     // A warning outranks the stats: it is what the user must act on, a dead
     // source's counts gone stale with it, so it IS the status while it lasts —
     // truncated to fit rather than tiered away.
@@ -389,7 +393,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let quit = format!("{audio_glyph}{floor_suffix}{}", ctx.keys_stats);
 
     // The board owns the friendly "— office empty —"; here it's a bare count.
-    if counts.total == 0 {
+    if counts.total == 0 && counts.requires_action == 0 {
         return fit_tiers(
             [vec![FooterSegment::new(
                 format!(" {count_str} "),
@@ -604,6 +608,7 @@ mod tests {
             tools: tools.to_vec(),
             context: FooterContext {
                 per_floor: crate::tally::per_floor_counts(scene),
+                unseated: crate::tally::unseated_counts(scene),
                 gateway: None,
                 floor: None,
                 audio_audible,
@@ -757,6 +762,30 @@ mod tests {
             !narrow.contains("[t]"),
             "no dangling half-token: {narrow:?}"
         );
+    }
+
+    /// An unseated agent is on no floor, so no floor's count carries its prompt:
+    /// the footer raises it anyway, in the alarm and in the requires-action rung.
+    #[test]
+    fn an_unseated_agents_prompt_raises_the_alarm() {
+        let seated = running_slot("/p/seated.jsonl", "Bash", ToolKind::Other);
+        let mut unseated = requires_action_slot("/p/unseated.jsonl");
+        unseated.desk = None;
+        let mut office = SceneState::uniform(16);
+        let mut drawn = SceneState::uniform(16);
+        drawn.agents.insert(seated.agent_id, seated.clone());
+        for slot in [seated, unseated] {
+            office.agents.insert(slot.agent_id, slot);
+        }
+        let line = |warning| {
+            let ctx =
+                FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
+            build_footer(&FooterInputs::new(&drawn, ctx), 200).text()
+        };
+        let warned = line(Some("a source died"));
+        assert!(warned.contains("\u{25b2}1 need you"), "{warned}");
+        let full = line(None);
+        assert!(full.contains("\u{25d0}1 A"), "{full}");
     }
 
     #[test]
