@@ -1152,6 +1152,41 @@ async fn session_end_ends_its_claim_so_later_activity_re_registers() {
     );
 }
 
+/// An ended path whose one append both works and ends registers nothing: its
+/// SessionStart would walk a sprite in only for the end to walk it out.
+#[tokio::test]
+async fn a_live_read_that_ends_its_session_registers_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ended.jsonl");
+    tokio::fs::write(&path, "{\"type\":\"system\",\"subtype\":\"session_end\"}\n")
+        .await
+        .unwrap();
+    let ended_at = tokio::fs::metadata(&path).await.unwrap().len();
+    let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), ended_at)])));
+    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Ended)])));
+
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(
+        &mut f,
+        b"{\"type\":\"tool_use\"}\n{\"type\":\"system\",\"subtype\":\"session_end\"}\n",
+    )
+    .unwrap();
+    let window = Duration::from_secs(3600);
+    let events = walk_once_with(&path, window, t_decode_lifecycle, &cursors, &seen).await;
+    assert!(
+        (events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionEnd { .. })),
+        "{events:?}"
+    );
+    assert!(
+        !(events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
+        "{events:?}"
+    );
+    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Ended));
+}
+
 #[tokio::test]
 async fn a_post_end_trailer_that_decodes_to_nothing_never_re_registers() {
     let dir = tempfile::tempdir().unwrap();

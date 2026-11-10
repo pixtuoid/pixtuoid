@@ -411,15 +411,19 @@ impl Drive {
         self
     }
 
-    /// Drive `lines` end to end, at one instant: one [`Fold`] fed them all. A
-    /// caller that renders the scene feeds a [`Fold`] at its render's instant.
+    /// Drive a recording's `lines` end to end, at one instant, in the reads the
+    /// watcher makes of it live ([`Self::live_reads`]). A caller that renders
+    /// the scene feeds a [`Fold`] at its render's instant.
     pub fn lines<I, S>(&self, lines: I) -> Driven
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        let lines: Vec<S> = lines.into_iter().collect();
         let mut fold = Fold::default();
-        fold.feed(self, lines, default_now());
+        for read in self.live_reads(&lines) {
+            fold.feed(self, read, default_now());
+        }
         fold.finish()
     }
 
@@ -457,24 +461,29 @@ impl Drive {
     /// a read later. One read of a whole ended recording would register
     /// nothing (`Sight::registers`).
     pub fn live_reads<'a, S: AsRef<str>>(&self, lines: &'a [S]) -> Vec<&'a [S]> {
-        let Some((source, _, session_id)) = self.keyed_on() else {
-            return vec![lines];
-        };
+        match self.live_split(lines.iter().map(|line| Some(line.as_ref()))) {
+            Some(end) => vec![&lines[..end], &lines[end..]],
+            None => vec![lines],
+        }
+    }
+
+    /// Where [`Self::live_reads`] splits `lines`, a line `None` when it is not
+    /// UTF-8: before the line holding their last lifecycle evidence, when that
+    /// is the transcript's own end and some line precedes it.
+    fn live_split<'a>(&self, lines: impl Iterator<Item = Option<&'a str>>) -> Option<usize> {
+        let (source, _, session_id) = self.keyed_on()?;
         let own = AgentId::from_parts(source, &session_id);
         let scratch = &mut Driven::empty();
-        let lives: Vec<Option<Life>> = (lines.iter())
+        let lives: Vec<Option<Life>> = lines
             .map(|line| {
-                let events = self.decode.line(Some(line.as_ref()), scratch, |_| {});
-                last_life(&events.unwrap_or_default(), own)
+                last_life(
+                    &self.decode.line(line, scratch, |_| {}).unwrap_or_default(),
+                    own,
+                )
             })
             .collect();
-        match lives.iter().rposition(Option::is_some) {
-            Some(end) if lives[end] == Some(Life::Ended) => [&lines[..end], &lines[end..]]
-                .into_iter()
-                .filter(|read| !read.is_empty())
-                .collect(),
-            _ => vec![lines],
-        }
+        let end = lives.iter().rposition(Option::is_some)?;
+        (end > 0 && lives[end] == Some(Life::Ended)).then_some(end)
     }
 
     /// The `SessionStart` the watcher's first sight emits for this transcript:
@@ -549,19 +558,19 @@ impl Fold {
         self.run(drive, lines.into_iter().map(Some), at);
     }
 
-    /// [`Self::feed`] of a recorded transcript in the reads the watcher makes
-    /// of it live ([`Drive::live_reads`]).
-    pub fn feed_live<S: AsRef<str>>(&mut self, drive: &Drive, lines: &[S], at: SystemTime) {
-        for read in drive.live_reads(lines) {
-            self.feed(drive, read, at);
-        }
-    }
-
-    /// [`Self::feed`] over a transcript's bytes, cut into lines as the watcher
-    /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
+    /// A recording's bytes, cut into lines as the watcher cuts them and fed in
+    /// the reads it makes of them live ([`Drive::live_reads`]): a line that is
+    /// not UTF-8 is unparseable, and costs only itself.
     pub fn feed_body(&mut self, drive: &Drive, body: &[u8], at: SystemTime) {
         use crate::source::admit::{lines, whole};
-        self.run(drive, lines(whole(body)).map(Result::ok), at);
+        let lines: Vec<Option<&str>> = lines(whole(body)).map(Result::ok).collect();
+        let end = drive
+            .live_split(lines.iter().copied())
+            .unwrap_or(lines.len());
+        self.run(drive, lines[..end].iter().copied(), at);
+        if end < lines.len() {
+            self.run(drive, lines[end..].iter().copied(), at);
+        }
     }
 
     /// Advance to `at` with no line: past a grace window, its sweep fires.
@@ -907,7 +916,9 @@ mod tests {
     fn a_batch_that_ends_its_session_registers_nothing() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
-        let d = drive.lines([tool_line(), exit.to_string()]);
+        let mut fold = Fold::default();
+        fold.feed(&drive, [tool_line(), exit.to_string()], default_now());
+        let d = fold.finish();
         assert!(
             d.events
                 .iter()
@@ -938,9 +949,7 @@ mod tests {
         assert_eq!(drive.live_reads(&resumed), [&resumed[..]]);
         let ended = [tool_line(), exit.to_string(), trailer.to_string()];
         assert_eq!(drive.live_reads(&ended), [&ended[..1], &ended[1..]]);
-        let mut fold = Fold::default();
-        fold.feed_live(&drive.seeded(), &ended, default_now());
-        let d = fold.finish();
+        let d = drive.seeded().lines(&ended);
         assert_eq!((d.seed_events, d.registered()), (1, 1));
     }
 

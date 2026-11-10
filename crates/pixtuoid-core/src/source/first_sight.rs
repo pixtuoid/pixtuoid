@@ -19,8 +19,8 @@ pub(crate) const HEAD_BYTES: usize = 1 << 20;
 /// fully retired by an exit un-claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Sight {
-    /// Registered as its reads last resolved it: every read showing life
-    /// re-registers it, so a slot the reducer forgot on its own comes back.
+    /// Registered as its reads last resolved it: a read [`Sight::registers`]
+    /// admits re-registers it, so a slot the reducer forgot comes back.
     Claimed(Registration),
     /// Its session ended: the last lifecycle evidence of a read or of an
     /// oversized span's tail is its end, or a child-end un-claim. The path
