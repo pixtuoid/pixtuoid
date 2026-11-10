@@ -395,7 +395,7 @@ pub(super) async fn walk_jsonl(
         // stays invisible until its next small append; the backlog is not replayed.
         // Keys on `seen`, NOT `!known` — a first-sight-GATED file is already `known`,
         // and keying on `!known` left it invisible until a later ≤1 MiB append.
-        let registers = Sight::registers(seen.lock().await.get(path), lives, verdict);
+        let registers = Sight::registers(seen.lock().await.get(path), lives, verdict, false);
         if registers && !metadata_only {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
@@ -487,9 +487,13 @@ pub(super) async fn walk_jsonl(
     };
     for (nth, mut life) in each_life(decoded, own).into_iter().enumerate() {
         let verdict = last_life(&life, own);
-        if Sight::registers(seen.lock().await.get(path), holds_life(&life), verdict)
-            && !sidecar_only
-        {
+        let registers = Sight::registers(
+            seen.lock().await.get(path),
+            holds_life(&life),
+            verdict,
+            replays,
+        );
+        if registers && !sidecar_only {
             // A revived GATED file reads only the tail, which may lack what only a
             // head carries: Codex's `session_meta` cwd and parent, and the title.
             // Without them the revive registers empty-cwd onto the short reap, or a
@@ -514,7 +518,7 @@ pub(super) async fn walk_jsonl(
         {
             registration.label = Some(label.clone());
         }
-        life.retain(|event| sends(event, own, verdict));
+        life.retain(|event| sends(event, own, registers));
         let ended = verdict == Some(Life::Ended);
         // A replay declares `true` once, before its first life, and `false` after
         // its last; a live read declares `false` before each life, past any first

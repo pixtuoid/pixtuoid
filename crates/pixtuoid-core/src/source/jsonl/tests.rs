@@ -1152,10 +1152,31 @@ async fn session_end_ends_its_claim_so_later_activity_re_registers() {
     );
 }
 
-/// An ended path whose one append both works and ends registers nothing: its
-/// SessionStart would walk a sprite in only for the end to walk it out.
+/// The office `events` leave, counting Today on one fixed day.
+fn office_after(events: &[(Transport, AgentEvent)]) -> crate::SceneState {
+    fn one_day(_: std::time::SystemTime) -> chrono::NaiveDate {
+        chrono::NaiveDate::MIN
+    }
+    let mut reducer = crate::Reducer::new().counting(one_day);
+    let mut office = crate::SceneState::uniform(8);
+    let at = std::time::SystemTime::now();
+    for (transport, event) in events {
+        reducer.apply(&mut office, event.clone(), at, *transport);
+    }
+    office
+}
+
+/// Whether `office` holds the session as walked in and out again, and the tool
+/// calls it counted toward Today.
+fn walked_in_and_out(office: &crate::SceneState) -> (bool, Option<u64>) {
+    let out = !office.agents.is_empty() && office.agents.values().all(|s| s.exiting_at.is_some());
+    (out, office.today.as_ref().map(|today| today.tool_calls))
+}
+
+/// An ended path whose one live append both works and ends walks in and out, as
+/// a short hook session does, and its call counts toward Today.
 #[tokio::test]
-async fn a_live_read_that_ends_its_session_registers_nothing() {
+async fn a_live_read_that_works_and_ends_walks_in_and_out() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("ended.jsonl");
     tokio::fs::write(&path, "{\"type\":\"system\",\"subtype\":\"session_end\"}\n")
@@ -1176,54 +1197,65 @@ async fn a_live_read_that_ends_its_session_registers_nothing() {
     .unwrap();
     let window = Duration::from_secs(3600);
     let events = walk_once_with(&path, window, t_decode_lifecycle, &cursors, &seen).await;
-    assert!(
-        (events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionEnd { .. })),
-        "{events:?}"
-    );
-    assert!(
-        !(events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
+    assert_eq!(
+        walked_in_and_out(&office_after(&events)),
+        (true, Some(1)),
         "{events:?}"
     );
     assert_eq!(seen.lock().await.get(&path), Some(&Sight::Ended));
 }
 
-/// A start a decoder bears is the same ghost: copilot's resume and its
-/// shutdown in one read send no start, the resume's included.
+/// A resume a decoder bears, its call and its shutdown in one read: read live, the
+/// session walks in and out with its call counted; replayed, the read registers
+/// nothing, the resume's own start included.
 #[tokio::test]
-async fn a_read_that_resumes_and_ends_its_session_sends_no_start() {
+async fn a_resume_that_ends_in_one_read_walks_in_live_and_nowhere_replayed() {
     const SHUTDOWN: &str = r#"{"type":"session.shutdown","data":{"shutdownType":"routine"},"id":"s1","timestamp":"t"}"#;
     const RESUME: &str =
         r#"{"type":"session.resume","data":{"context":{"cwd":"/repo"}},"id":"r1","timestamp":"t"}"#;
     const CALL: &str = r#"{"type":"tool.execution_start","data":{"toolCallId":"c1","toolName":"view","arguments":{"path":"/repo"}}}"#;
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("sid").join("events.jsonl");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, format!("{SHUTDOWN}\n")).unwrap();
-    let ended_at = std::fs::metadata(&path).unwrap().len();
-    let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), ended_at)])));
-    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Ended)])));
-
-    let mut f = std::fs::OpenOptions::new()
-        .append(true)
-        .open(&path)
-        .unwrap();
-    std::io::Write::write_all(&mut f, format!("{RESUME}\n{CALL}\n{SHUTDOWN}\n").as_bytes())
-        .unwrap();
     let decoders = SourceDecoders {
         decode_line: crate::source::copilot::decode_copilot_line,
         id_derive: super::folded::FoldedDeriver::new(crate::source::copilot::copilot_id_from_path),
         ..t_decoders()
     };
-    let events = walk_decoded(&path, Duration::from_secs(3600), decoders, &cursors, &seen).await;
-    assert!(
-        (events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionEnd { .. })),
-        "{events:?}"
-    );
-    assert!(
-        !(events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
-        "{events:?}"
-    );
-    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Ended));
+    for replayed in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sid").join("events.jsonl");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("{SHUTDOWN}\n")).unwrap();
+        let ended_at = std::fs::metadata(&path).unwrap().len();
+        // A cursor past the end reads the file again from its top: a replay.
+        let cursor = if replayed { u64::MAX } else { ended_at };
+        let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), cursor)])));
+        let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Ended)])));
+
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        std::io::Write::write_all(&mut f, format!("{RESUME}\n{CALL}\n{SHUTDOWN}\n").as_bytes())
+            .unwrap();
+        let events =
+            walk_decoded(&path, Duration::from_secs(3600), decoders, &cursors, &seen).await;
+        let starts = (events.iter())
+            .filter(|(_, e)| matches!(e, AgentEvent::SessionStart { .. }))
+            .count();
+        if replayed {
+            assert_eq!(starts, 0, "{events:?}");
+        } else {
+            assert_eq!(
+                walked_in_and_out(&office_after(&events)),
+                (true, Some(1)),
+                "{events:?}"
+            );
+        }
+        assert_eq!(
+            seen.lock().await.get(&path),
+            Some(&Sight::Ended),
+            "replayed {replayed}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -4410,6 +4442,8 @@ mod backlog {
     const TOOL: &str = "{\"type\":\"tool_use\"}\n";
     const WORK: &str = "{\"type\":\"usage\",\"cwd\":\"/repo\"}\n{\"type\":\"tool_use\"}\n";
     const END: &str = "{\"type\":\"system\",\"subtype\":\"session_end\"}\n";
+    const TOOL_THEN_END: &str =
+        "{\"type\":\"tool_use\"}\n{\"type\":\"system\",\"subtype\":\"session_end\"}\n";
     const END_THEN_TOOL: &str =
         "{\"type\":\"system\",\"subtype\":\"session_end\"}\n{\"type\":\"tool_use\"}\n";
 
@@ -4701,7 +4735,22 @@ mod backlog {
 
     #[tokio::test]
     async fn a_read_declares_around_what_it_replays() {
-        let rows: [(&str, &[Step]); 9] = [
+        let rows: [(&str, &[Step]); 11] = [
+            (
+                "an end alone registers nothing, replayed as read live",
+                &[
+                    (Append(WORK), Walk, &[Start, Rename, Opens, Usage, Tool]),
+                    (Rewrite(END), Walk, &[Closes, End, Opens]),
+                ],
+            ),
+            (
+                "a replay that works and ends registers nothing",
+                &[
+                    (Append(WORK), Walk, &[Start, Rename, Opens, Usage, Tool]),
+                    (Append(USAGE), Walk, &[Opens, Usage]),
+                    (Rewrite(TOOL_THEN_END), Walk, &[Closes, Tool, End, Opens]),
+                ],
+            ),
             (
                 "what predates the watch opens after its last event, and the next read is live",
                 &[
@@ -4817,8 +4866,7 @@ mod backlog {
 
 /// A life after its session's own end registers again before its events, in a
 /// replay and in one live read: the reducer revives an exiting slot only on a
-/// start, and omp's resume writes none. The life that end closes in the same read
-/// registers nothing ([`Sight::registers`]).
+/// start, and omp's resume writes none.
 #[tokio::test]
 async fn a_life_after_its_own_end_registers_again_within_one_read() {
     const TOOL: &str = "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"tu-1\",\"name\":\"bash\",\"arguments\":{}}]}}\n";
@@ -4842,7 +4890,10 @@ async fn a_life_after_its_own_end_registers_again_within_one_read() {
     let window = Duration::from_secs(3600);
 
     let replay = walk_omp(&path, window, &cursors, &seen).await;
-    assert_eq!(lifecycle(&replay), ["tool", "end", "start", "tool"]);
+    assert_eq!(
+        lifecycle(&replay),
+        ["start", "tool", "end", "start", "tool"]
+    );
     assert!(matches!(
         seen.lock().await.get(&path),
         Some(Sight::Claimed(_))

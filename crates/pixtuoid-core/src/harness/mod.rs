@@ -22,7 +22,6 @@
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::mem;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -32,7 +31,7 @@ use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::first_sight::{
     HEAD_BYTES, Life, Registration, Sight, each_life, extract_head_fields, first_sight_start,
-    holds_life, last_life, sends,
+    holds_life, last_life,
 };
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
@@ -411,17 +410,15 @@ impl Drive {
         self
     }
 
-    /// Drive a recording's `lines` end to end, at one instant, in the reads the
-    /// watcher makes of it live (`Reads::Live`). A caller that renders the
-    /// scene feeds a [`Fold`] at its render's instant.
+    /// Drive a recording's `lines` end to end, at one instant, as one live read.
+    /// A caller that renders the scene feeds a [`Fold`] at its render's instant.
     pub fn lines<I, S>(&self, lines: I) -> Driven
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
         let mut fold = Fold::default();
-        let lines = lines.into_iter().map(Some);
-        fold.run(self, lines, default_now(), Reads::Live);
+        fold.run(self, lines.into_iter().map(Some), default_now());
         fold.finish()
     }
 
@@ -515,17 +512,6 @@ impl Default for Fold {
     }
 }
 
-/// How a feed's lines fall into the watcher's reads.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Reads {
-    /// One read, as a test models one watcher read.
-    One,
-    /// As the watcher reads a live transcript: the session's own end starts a
-    /// read, since the work before it was already read. One read holding a life
-    /// and its end would register nothing ([`Sight::registers`]).
-    Live,
-}
-
 impl Fold {
     /// Decode `lines` through `drive` (blank lines skipped, every other line
     /// parsed and decoded) as one read, and fold what the transport would
@@ -535,16 +521,15 @@ impl Fold {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.run(drive, lines.into_iter().map(Some), at, Reads::One);
+        self.run(drive, lines.into_iter().map(Some), at);
     }
 
-    /// A recording's bytes, cut into lines as the watcher cuts them and fed in
-    /// the reads it makes of them live (`Reads::Live`): a line that is not
-    /// UTF-8 is unparseable, and costs only itself.
+    /// [`Self::feed`] over a recording's bytes, cut into lines as the watcher cuts
+    /// them: a line that is not UTF-8 is unparseable, and costs only itself.
     pub fn feed_body(&mut self, drive: &Drive, body: &[u8], at: SystemTime) {
         use crate::source::admit::{lines, whole};
         let lines = lines(whole(body)).map(Result::ok);
-        self.run(drive, lines, at, Reads::Live);
+        self.run(drive, lines, at);
     }
 
     /// Advance to `at` with no line: past a grace window, its sweep fires.
@@ -586,7 +571,8 @@ impl Fold {
         let id = own.filter(|_| drive.seeded)?;
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.get(&id);
-        let registers = Sight::registers(sighted.map(|s| &s.sight), holds_life(life), verdict);
+        let registers =
+            Sight::registers(sighted.map(|s| &s.sight), holds_life(life), verdict, false);
         let seed = match sighted {
             _ if !registers => None,
             // A claim re-sends the start its first sight built, as the watcher's
@@ -617,7 +603,7 @@ impl Fold {
     }
 
     /// `None` is a line whose bytes are not UTF-8, so not JSON either.
-    fn run<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime, reads: Reads)
+    fn run<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
     where
         I: IntoIterator<Item = Option<S>>,
         S: AsRef<str>,
@@ -629,15 +615,13 @@ impl Fold {
             let (mut read, mut decoded) = (Vec::new(), Vec::new());
             for line in lines {
                 let text = line.as_ref().map(AsRef::as_ref);
-                let events =
-                    (drive.decode.line(text, &mut self.driven, |_| {})).unwrap_or_default();
-                let ends = own.is_some_and(|own| last_life(&events, own) == Some(Life::Ended));
-                if reads == Reads::Live && !read.is_empty() && ends {
-                    let (read, decoded) = (mem::take(&mut read), mem::take(&mut decoded));
-                    self.send(drive, own, &read, decoded, at);
-                }
+                decoded.extend(
+                    drive
+                        .decode
+                        .line(text, &mut self.driven, |_| {})
+                        .unwrap_or_default(),
+                );
                 read.push(line);
-                decoded.extend(events);
             }
             self.send(drive, own, &read, decoded, at);
             let d = &mut self.driven;
@@ -648,10 +632,9 @@ impl Fold {
         self.driven.breadcrumbs.extend(sink.take());
     }
 
-    /// What the transport delivers for one read of `lines`: each life of
-    /// `decoded` ([`each_life`]) as a read of its own, its registration if the
-    /// watcher's gate registers on it, then what [`sends`] keeps of it. Records
-    /// each life's claim.
+    /// What the transport delivers for one live read of `lines`: each life of
+    /// `decoded` ([`each_life`]) as a read of its own, led by its registration if
+    /// the watcher's gate registers on it. Records each life's claim.
     fn deliver<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
@@ -664,14 +647,11 @@ impl Fold {
             None => vec![decoded],
         };
         let mut fed = Vec::new();
-        for mut life in lives {
+        for life in lives {
             let verdict = own.and_then(|own| last_life(&life, own));
             if let Some(seed) = self.registration(drive, own, lines, &life, verdict) {
                 self.driven.seed_events += 1;
                 fed.push(seed);
-            }
-            if let Some(own) = own {
-                life.retain(|event| sends(event, own, verdict));
             }
             fed.extend(life);
         }
@@ -926,10 +906,10 @@ mod tests {
         assert_eq!(d.registered(), 0);
     }
 
-    /// A batch whose own last word ends its session registers nothing, its
-    /// header's decoded start included, so no sprite walks in only to walk out.
+    /// A live batch that works and ends its session walks it in and out, as a
+    /// short hook session does, its header's decoded start sent too.
     #[test]
-    fn a_batch_that_ends_its_session_registers_nothing() {
+    fn a_live_batch_that_works_and_ends_walks_in_and_out() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
         let head = serde_json::json!({"type": "session", "cwd": "/repo/head"});
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
@@ -937,20 +917,23 @@ mod tests {
         let batch = [head.to_string(), tool_line(), exit.to_string()];
         fold.feed(&drive, batch, default_now());
         let d = fold.finish();
-        assert!(
-            d.events
-                .iter()
-                .any(|e| matches!(e, AgentEvent::SessionEnd { .. })),
-            "{:?}",
-            d.events
+        let lifecycle: Vec<&str> = (d.events.iter())
+            .filter_map(|e| match e {
+                AgentEvent::SessionStart { .. } => Some("start"),
+                AgentEvent::SessionEnd { .. } => Some("end"),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            (lifecycle, d.seed_events),
+            (vec!["start", "start", "end"], 1)
         );
-        assert!(
-            !d.events
-                .iter()
-                .any(|e| matches!(e, AgentEvent::SessionStart { .. })),
-            "{:?}",
-            d.events
-        );
+        let walked_out = d
+            .scene
+            .agents
+            .values()
+            .all(|slot| slot.exiting_at.is_some());
+        assert!(d.registered() == 1 && walked_out, "{:?}", d.scene.agents);
     }
 
     /// A recording reads as the watcher reads it live, its own end and a life
@@ -1009,8 +992,7 @@ mod tests {
     }
 
     /// One feed holding a life, its own end and a life after it registers the
-    /// second life again before its events, as the watcher's read does, and the
-    /// first, which its end closes in the same read, not at all.
+    /// second life again before its events, as the watcher's read does.
     #[test]
     fn a_life_after_its_own_end_registers_again_within_one_feed() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
@@ -1027,8 +1009,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        let want = vec!["tool", "end", "start", "tool"];
-        assert_eq!((lifecycle, d.seed_events), (want, 1));
+        let want = vec!["start", "tool", "end", "start", "tool"];
+        assert_eq!((lifecycle, d.seed_events), (want, 2));
     }
 
     /// Under Windows' path-key normalization, which rewrites `TRANSCRIPT`'s

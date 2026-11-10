@@ -30,12 +30,18 @@ pub(crate) enum Sight {
 }
 
 impl Sight {
-    /// Whether a read after `prev` registers its session: a first sight does,
-    /// a seen one only when the read `lives`, so a trailer flushed after its end
-    /// line (grok's `hook_execution{stop}`) registers nothing; and no read whose
-    /// `verdict` is its end does, or its sprite walks in only to walk out.
-    pub(crate) fn registers(prev: Option<&Self>, lives: bool, verdict: Option<Life>) -> bool {
-        verdict != Some(Life::Ended) && (prev.is_none() || lives)
+    /// Whether a read after `prev` registers its session: a first sight does, a
+    /// seen one only when the read `lives`, so a trailer flushed after its end line
+    /// (grok's `hook_execution{stop}`) registers nothing. A read whose `verdict` is
+    /// its end registers only live and holding life, walking in and out as a short
+    /// hook session does, so its work counts toward Today; a replay of it never.
+    pub(crate) fn registers(
+        prev: Option<&Self>,
+        lives: bool,
+        verdict: Option<Life>,
+        replays: bool,
+    ) -> bool {
+        (lives || prev.is_none()) && (verdict != Some(Life::Ended) || (lives && !replays))
     }
 }
 
@@ -88,14 +94,11 @@ pub(crate) fn holds_life<'a>(events: impl IntoIterator<Item = &'a AgentEvent>) -
     events.into_iter().any(lives)
 }
 
-/// Whether a read whose verdict is `verdict` sends its decoded `event`: not its
-/// own `SessionStart` when the read ends the session, a start a decoder bears
-/// (copilot's `session.resume`) refused as [`Sight::registers`] refuses the
-/// watcher's.
-pub(crate) fn sends(event: &AgentEvent, own: AgentId, verdict: Option<Life>) -> bool {
-    verdict != Some(Life::Ended)
-        || !matches!(event, AgentEvent::SessionStart { .. })
-        || event.agent_id() != own
+/// Whether a read sends its decoded `event`: not its own `SessionStart` when
+/// the read `registers` nothing ([`Sight::registers`]), a start a decoder bears
+/// (copilot's `session.resume`) refused as the watcher's is.
+pub(crate) fn sends(event: &AgentEvent, own: AgentId, registers: bool) -> bool {
+    registers || !matches!(event, AgentEvent::SessionStart { .. }) || event.agent_id() != own
 }
 
 /// `events` cut into lives, a new one starting at the first [`Life::Lives`]
@@ -244,23 +247,27 @@ mod tests {
     use crate::source::decoder::is_subagent_path;
     use crate::source::registry::cwd_extractor_for;
 
-    /// The registration gate: a first sight or a read that lives registers, and
-    /// a read whose verdict is its end registers nothing, seen or not.
+    /// The registration gate: a read that holds no life registers only as a
+    /// first sight that does not end; a live read that holds life registers even
+    /// when it ends; a replay that ends registers nothing.
     #[test]
-    fn a_read_that_ends_its_session_registers_nothing() {
+    fn a_read_registers_on_life_and_a_replay_never_on_its_end() {
+        let ended = Some(Sight::Ended);
         let rows = [
-            (None, false, None, true),
-            (None, true, Some(Life::Lives), true),
-            (None, true, Some(Life::Ended), false),
-            (Some(Sight::Ended), false, None, false),
-            (Some(Sight::Ended), true, Some(Life::Lives), true),
-            (Some(Sight::Ended), true, Some(Life::Ended), false),
+            (None, false, None, false, true),
+            (None, false, Some(Life::Ended), false, false),
+            (None, false, Some(Life::Ended), true, false),
+            (ended.clone(), false, None, false, false),
+            (ended.clone(), true, Some(Life::Lives), true, true),
+            (ended.clone(), true, Some(Life::Ended), false, true),
+            (ended, true, Some(Life::Ended), true, false),
+            (None, true, Some(Life::Ended), true, false),
         ];
-        for (prev, lives, verdict, registers) in rows {
+        for (prev, lives, verdict, replays, registers) in rows {
             assert_eq!(
-                Sight::registers(prev.as_ref(), lives, verdict),
+                Sight::registers(prev.as_ref(), lives, verdict, replays),
                 registers,
-                "{prev:?} {lives} {verdict:?}"
+                "{prev:?} {lives} {verdict:?} {replays}"
             );
         }
     }
