@@ -785,12 +785,17 @@ impl SceneState {
     /// still has that desk; whoever loses one takes a free desk, or is
     /// unseated until one frees, and walks in from when it takes one.
     pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS], now: SystemTime) {
+        self.take_capacities(capacities);
+        self.seat_unseated(|_| true, |_| Some(now));
+    }
+
+    /// Take `capacities`, unseating whoever holds a desk they no longer have.
+    pub(crate) fn take_capacities(&mut self, capacities: [usize; MAX_FLOORS]) {
         self.floor_capacities = capacities;
         for slot in self.agents.values_mut() {
             slot.desk = (slot.desk)
                 .filter(|desk| (capacities.get(desk.floor)).is_some_and(|&cap| desk.index.0 < cap));
         }
-        self.seat_unseated(|_| true, |_| Some(now));
     }
 
     /// Give each unseated agent that is staying the first free desk, oldest
