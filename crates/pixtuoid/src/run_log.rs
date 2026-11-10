@@ -16,8 +16,13 @@ fn diagnostics_dir() -> PathBuf {
 /// tests without the passwd lookup the home read makes.
 fn diagnostics_under(state: Option<PathBuf>) -> PathBuf {
     // No home dir at all: the log must exist somewhere — it is the only runtime
-    // diagnostics channel.
-    state.unwrap_or_else(|| std::env::temp_dir().join("pixtuoid"))
+    // diagnostics channel. Unix's is the socket's per-user `/tmp` dir, which
+    // `open_private_append` vets as the socket's bind does.
+    #[cfg(unix)]
+    let tmp = pixtuoid_core::source::hook::private_tmp_dir;
+    #[cfg(not(unix))]
+    let tmp = || std::env::temp_dir().join("pixtuoid");
+    state.unwrap_or_else(tmp)
 }
 
 /// Where a panic's report goes, whatever `$PIXTUOID_LOG` names.
@@ -103,6 +108,10 @@ pub(crate) fn open_private_append(
     path: &Path,
     mut opts: OpenOptions,
 ) -> std::io::Result<std::fs::File> {
+    // `recursive` keeps a directory that exists, whoever made it, so the shared
+    // `/tmp` one must be ours first.
+    #[cfg(unix)]
+    pixtuoid_core::source::hook::vet_private_tmp_path(path).map_err(std::io::Error::other)?;
     if let Some(parent) = path.parent() {
         #[cfg(unix)]
         {
@@ -117,6 +126,12 @@ pub(crate) fn open_private_append(
     }
     opts.create(true).append(true);
     crate::install::owner_only_create(&mut opts);
+    #[cfg(unix)]
+    {
+        // A symlink planted at the log would append it to its planter's choice.
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(libc::O_NOFOLLOW);
+    }
     opts.open(path)
 }
 
@@ -355,8 +370,8 @@ mod tests {
         });
     }
 
-    /// The crash log sits beside the runs directory, in the temp dir's
-    /// when there is no home at all.
+    /// The crash log sits beside the runs directory, in the socket's per-user
+    /// temp dir when there is no home at all.
     #[test]
     fn the_crash_log_sits_beside_the_runs_even_with_no_home() {
         let abs = if cfg!(windows) { "C:/state" } else { "/state" };
@@ -369,10 +384,30 @@ mod tests {
                 assert_eq!(crash_log_path().parent(), runs.parent());
             },
         );
+        #[cfg(unix)]
+        assert_eq!(
+            diagnostics_under(None),
+            pixtuoid_core::source::hook::private_tmp_dir()
+        );
+        #[cfg(not(unix))]
         assert_eq!(
             diagnostics_under(None),
             std::env::temp_dir().join("pixtuoid")
         );
+    }
+
+    /// A symlink planted at a log's path is refused, not followed to a file
+    /// its planter chose.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_planted_at_a_log_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, "theirs").unwrap();
+        let log = dir.path().join("crash.log");
+        std::os::unix::fs::symlink(&victim, &log).unwrap();
+        assert!(open_private_append(&log, OpenOptions::new()).is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "theirs");
     }
 
     #[test]

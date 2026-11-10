@@ -49,9 +49,9 @@ impl ClaudeCodeSource {
             // creates 0700-owned-by-us, NOT a flat predictable
             // `pixtuoid-{uid}.sock` a co-located user could squat/lock to
             // silently kill the hook plane (#485). Built from the same
-            // `owned_socket_dir()` that guard compares against, so the two
+            // `private_tmp_dir()` that guard compares against, so the two
             // cannot drift apart.
-            crate::source::hook::owned_socket_dir().join(crate::source::hook::SOCKET_FILE_NAME)
+            crate::source::hook::private_tmp_dir().join(crate::source::hook::SOCKET_FILE_NAME)
         }
         #[cfg(windows)]
         {

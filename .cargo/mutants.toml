@@ -49,11 +49,11 @@ exclude_re = [
     'runtime/driver\.rs.*replace (run|run_async|headless_loop) ->',
     'runtime/driver\.rs.*replace reducer_task with',
     # Reached under test, but only on a branch where the mutation is unobservable.
-    'unix\.rs.*replace ensure_owned_socket_dir ->',   # tests hit only the no-op branch
+    'unix\.rs.*replace vet_private_tmp_path ->',   # tests hit only the no-op branch
     'liveness\.rs.*replace ProbeSnapshot::from_open_fds ->',  # proc walk finds nothing under test
     # #828: pure-substitution wrappers whose decision logic + pins live in the
     # `_resolved` core one line down. Keep them substitutions — logic added here
-    # is unmeasurable, exactly as `ensure_owned_socket_dir` above.
+    # is unmeasurable, exactly as `vet_private_tmp_path` above.
     'hermes\.rs.*replace hermes_home ->',
     'grok/native\.rs.*replace grok_probe_root ->',
     # #828: the `from_open_fds` family — under test the proc walk finds nothing,

@@ -18,7 +18,10 @@ mod unix;
 #[cfg(unix)]
 use unix as imp;
 #[cfg(unix)]
-pub(crate) use unix::{SOCKET_FILE_NAME, owned_socket_dir};
+pub(crate) use unix::SOCKET_FILE_NAME;
+// The binary's logs share the socket's per-user `/tmp` fallback and its guard.
+#[cfg(unix)]
+pub use unix::{private_tmp_dir, vet_private_tmp_path};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
