@@ -2,24 +2,17 @@
 
 // Shared platform → native-binary resolution for the two launcher shims: npm
 // installs exactly the ONE `@pixtuoid/cli-<platform>-<arch>` optionalDependency
-// that matches the host (filtered by each platform package's `os`/`cpu`/`libc`),
+// that matches the host (filtered by each platform package's `os`/`cpu`),
 // and we `require.resolve` the native binary out of it. No postinstall, no
 // download.
 
 const fs = require("fs");
 const path = require("path");
 
-// The matrix is ASYMMETRIC, so there is no runtime gnu-vs-musl choice here:
-// linux-x64 ships a STATIC musl build and declares no `libc`; linux-arm64 ships
-// a glibc build and declares `libc:["glibc"]`, so npm skips it on musl/Alpine
-// rather than installing a binary that would crash. The os/cpu/libc filtering
-// happens at npm INSTALL time; here we just map.
 /** @type {Record<string, string>} */
 const PACKAGE = {
   "darwin arm64": "@pixtuoid/cli-darwin-arm64",
   "darwin x64": "@pixtuoid/cli-darwin-x64",
-  "linux x64": "@pixtuoid/cli-linux-x64",
-  "linux arm64": "@pixtuoid/cli-linux-arm64",
   "win32 x64": "@pixtuoid/cli-win32-x64",
   "win32 arm64": "@pixtuoid/cli-win32-arm64",
 };

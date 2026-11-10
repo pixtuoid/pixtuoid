@@ -16,10 +16,7 @@
   {
     "id": "cargo",
     "label": "Cargo",
-    "cmds": [
-      "# Linux: needs pkg-config and libasound2-dev",
-      "cargo install pixtuoid pixtuoid-hook"
-    ],
+    "cmds": ["# Linux needs pkg-config, libasound2-dev", "cargo install pixtuoid pixtuoid-hook"],
     "readme": false
   },
   {
