@@ -886,8 +886,8 @@ fn child_lifecycle_is_stamped_on_sweep_and_pruned_by_gc() {
     );
 }
 
-/// A synthetic ~1 event/s stream through the REAL reducer: a per-event leak
-/// (a missed prune site) grows a map ~linearly and blows the bound.
+/// A synthetic stream of one iteration a second through the REAL reducer: a
+/// per-event leak (a missed prune site) grows a map ~linearly and blows the bound.
 #[test]
 fn correlation_maps_stay_bounded_across_a_long_stream() {
     use super::{CHILD_END_RELINK_TTL, STRAGGLER_TTL};
@@ -897,9 +897,9 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     use std::path::PathBuf;
     use std::time::{Duration, SystemTime};
 
-    /// The widest steady-state working set at 1 event/s: `lifecycles` keeps each
-    /// child end for `CHILD_END_RELINK_TTL` and each unregistered id's hook end
-    /// for `STRAGGLER_TTL`.
+    /// The widest steady-state working set at one iteration a second:
+    /// `lifecycles` keeps each iteration's child end for `CHILD_END_RELINK_TTL`
+    /// and its unregistered id's hook end for `STRAGGLER_TTL`.
     const STEADY: usize = (CHILD_END_RELINK_TTL.as_secs() + STRAGGLER_TTL.as_secs()) as usize + 1;
     /// Twice the steady state and a third of the stream: a bound that merely
     /// clears the steady state proves nothing about a slow leak.
