@@ -1415,7 +1415,7 @@ mod tests {
     /// Every pixel of a fixed set of frames, as committed: a refactor of the
     /// cutaway leaves this file as it found it, and a change to its look
     /// rewrites it (`just gen-cutaway-golden`). Each instant is a local
-    /// hour ([`localclock`](crate::localclock)), so any `$TZ` paints it alike.
+    /// hour ([`localclock`](crate::localclock)).
     // The golden pins baked text.
     #[cfg(feature = "pixel-font")]
     #[test]
@@ -1563,9 +1563,8 @@ mod tests {
             ("gruvbox", Weather::Fog, 2),
         ];
         let densities = [1, pack.max_density_variant().get()];
-        // What the local hour leaves to the absolute instant, so to `$TZ`, held
-        // still: the loops, and the moon, which a new moon keeps out of the
-        // night sky.
+        // What the local hour leaves to the absolute instant, held still: the
+        // loops, and the moon, which a new moon keeps out of the night sky.
         let new_moon = (0..31u32)
             .min_by(|&a, &b| {
                 let phase = |day| {
