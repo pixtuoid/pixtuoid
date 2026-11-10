@@ -16,6 +16,7 @@ mod requests;
 mod scope;
 mod turn_key;
 mod turns;
+pub use scope::ScopeTree;
 pub use turn_key::TurnKey;
 
 /// Maximum number of office floors a `SceneState` tracks.

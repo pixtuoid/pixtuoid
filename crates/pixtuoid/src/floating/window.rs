@@ -22,6 +22,8 @@ use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::{ResizeDirection, Window, WindowId, WindowLevel};
 
+use super::cadence::Due;
+use super::geometry::{DESKTOP_UNIT, Monitor};
 use super::offscreen::{OfficeRenderer, WindowFrame};
 use crate::config::{self, FloatingConfig};
 use pixtuoid_scene::cutaway::chrome_cell;
@@ -121,13 +123,15 @@ impl Stop {
 }
 
 /// What the run keeps beside the office: the config it persists to, its
-/// audio, the log the Sources panel's drift history comes from, and whether
-/// this is the first run, which opens the onboarding.
+/// audio, the log the Sources panel's drift history comes from, whether
+/// this is the first run, which opens the onboarding, and the drift the footer
+/// names.
 pub(crate) struct Settings {
     pub(crate) config_path: PathBuf,
     pub(crate) audio: config::AudioConfig,
     pub(crate) log: crate::run_log::LogLocation,
     pub(crate) first_run: bool,
+    pub(crate) drift: crate::doctor::DriftSeen,
 }
 
 /// How the office looks and moves.
@@ -199,6 +203,7 @@ impl FloatingApp {
             audio,
             log,
             first_run,
+            drift,
         }: Settings,
         boot: super::PipelineBoot,
     ) -> Self {
@@ -214,7 +219,7 @@ impl FloatingApp {
             config_path: &config_path,
             socket_path: boot.socket_path.clone(),
             log,
-            drift: boot.drift.clone(),
+            drift,
             connected: &boot.connected.snapshot(),
             look: None,
         });
@@ -256,34 +261,6 @@ impl FloatingApp {
     /// GPU failure reported while it ran.
     pub(crate) fn into_failure(self) -> Option<anyhow::Error> {
         self.failure.into_inner()
-    }
-
-    /// Persist the current window geometry and zoom into `[floating]` (best-effort — a save error
-    /// must not block quitting). Size is stored LOGICAL (HiDPI-stable); position PHYSICAL.
-    fn persist_geometry(&self) {
-        let Some(window) = &self.window else {
-            return;
-        };
-        let logical = window.inner_size().to_logical::<f64>(window.scale_factor());
-        let pos = window.outer_position().ok();
-        let save = config::FloatingSave {
-            width: logical.width.round() as u32,
-            height: logical.height.round() as u32,
-            position: pos.map(|p| (p.x, p.y)),
-            zoom: self.zoom,
-        };
-        if let Err(e) = config::save_floating(&self.config_path, &save) {
-            tracing::warn!(error = ?e, "pixtuoid floating: could not persist window geometry");
-        }
-    }
-
-    /// End the run. Geometry MUST persist HERE — the window is gone once
-    /// `run_app` returns — and a run shorter than a summary's window still
-    /// reports its spread.
-    fn quit(&self, event_loop: &ActiveEventLoop) {
-        self.persist_geometry();
-        self.jank.finish(Instant::now());
-        event_loop.exit();
     }
 
     fn request_redraw(&self) {
@@ -439,6 +416,20 @@ impl FloatingApp {
         )
     }
 
+    /// The office's weather and motion; the office picks each floor's own.
+    fn floor_meta(&self) -> FloorMeta {
+        FloorMeta::ground().with_motion(self.motion)
+    }
+
+    /// Feed the audio what the office sounds like now, painting nothing.
+    fn hear(&mut self) {
+        let Some(scene) = self.live.as_ref().map(|l| l.scene_rx.borrow().clone()) else {
+            return;
+        };
+        crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
+        self.renderer.hear(&scene, self.floor_meta(), self.ui.now());
+    }
+
     fn paint(&mut self) {
         let started = Instant::now();
         let Some(window) = self.window.as_ref() else {
@@ -457,10 +448,9 @@ impl FloatingApp {
         else {
             return;
         };
-        let audio_now = Instant::now();
-        self.audio_ctl.tick(audio_now);
+        let volume_flash =
+            crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
         let audio_audible = self.audio_ctl.handle().is_audible();
-        let volume_flash = self.audio_ctl.volume_flash(audio_now);
         let at = super::geometry::window_geometry(size, self.pack.max_density_variant(), self.zoom);
         super::geometry::sync_floor_caps(
             &mut self.last_caps_size,
@@ -468,14 +458,12 @@ impl FloatingApp {
             at.logical().w,
             at.logical().h,
         );
-        // The office's weather and motion; the office picks each floor's own.
-        let floor_meta = FloorMeta::ground().with_motion(self.motion);
         // ONE clock read, so the overlays below annotate the frame actually rendered.
         let now = self.ui.now();
         let world = FloorInputs {
             scene: &scene,
             now,
-            floor: floor_meta,
+            floor: self.floor_meta(),
             pets: PetInputs {
                 pet: None,
                 petting: self.petting.as_ref(),
@@ -521,10 +509,7 @@ impl FloatingApp {
                 super::overlays::footer_budget(win_w as usize, chrome_cell(at)),
                 audio_audible,
                 volume_flash,
-                self.live
-                    .as_ref()
-                    .and_then(super::LivePipeline::footer_warning)
-                    .as_deref(),
+                frames.warning.as_deref(),
             ),
             tooltip: self
                 .renderer
@@ -591,19 +576,13 @@ impl FloatingApp {
     }
 }
 
-fn position_on_a_monitor(event_loop: &ActiveEventLoop, x: i32, y: i32, w: u32, h: u32) -> bool {
-    super::geometry::window_visible_on_monitors(
-        (x, y, w, h),
-        event_loop.available_monitors().map(|m| {
-            let (pos, size) = (m.position(), m.size());
-            (pos.x, pos.y, size.width, size.height)
-        }),
-    )
-}
-
 impl super::lifecycle::Redraw for FloatingApp {
     fn jank(&mut self) -> &mut crate::jank::Jank {
         &mut self.jank
+    }
+
+    fn occluded(&self) -> bool {
+        self.clock.occluded()
     }
 
     fn paint(&mut self) {
@@ -618,6 +597,29 @@ impl super::lifecycle::Redraw for FloatingApp {
 }
 
 impl super::lifecycle::Teardown for FloatingApp {
+    /// Best-effort: a save error must not block quitting.
+    fn persist(&mut self) {
+        // A run shorter than a summary's window still reports its spread.
+        self.jank.finish(Instant::now());
+        let Some(window) = &self.window else {
+            return;
+        };
+        let scale = window.scale_factor();
+        let size = window.inner_size().to_logical::<u32>(scale);
+        let save = config::FloatingSave {
+            width: size.width,
+            height: size.height,
+            position: window
+                .outer_position()
+                .ok()
+                .map(|p| DESKTOP_UNIT.spot(p, scale)),
+            zoom: self.zoom,
+        };
+        if let Err(e) = config::save_floating(&self.config_path, &save) {
+            tracing::warn!(error = ?e, "pixtuoid floating: could not persist window geometry");
+        }
+    }
+
     fn hide_window(&mut self) {
         if let Some(window) = &self.window {
             window.set_visible(false);
@@ -642,18 +644,24 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
             return; // already created — a re-resume must not spawn a second window
         }
         let min = super::geometry::min_window(self.pack.max_density_variant());
+        let size = LogicalSize::new(self.cfg.width, self.cfg.height);
         let mut attrs = Window::default_attributes()
             .with_title("pixtuoid")
             .with_decorations(false)
             .with_resizable(true)
             .with_window_level(WindowLevel::AlwaysOnTop)
-            .with_inner_size(LogicalSize::new(self.cfg.width, self.cfg.height))
+            .with_inner_size(size)
             .with_min_inner_size(min);
+        let monitors = event_loop.available_monitors().map(|m| Monitor {
+            position: m.position(),
+            size: m.size(),
+            scale: m.scale_factor(),
+        });
         // A spot on a since-disconnected monitor would open the frameless window unreachably.
-        if let Some((x, y)) = self.cfg.position
-            && position_on_a_monitor(event_loop, x, y, self.cfg.width, self.cfg.height)
+        if let Some(spot) = self.cfg.position
+            && DESKTOP_UNIT.on_a_monitor(spot, size, monitors)
         {
-            attrs = attrs.with_position(PhysicalPosition::new(x, y));
+            attrs = attrs.with_position(DESKTOP_UNIT.place(spot));
         }
         #[cfg(target_os = "macos")]
         {
@@ -720,10 +728,10 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
                 tracing::error!(error = ?message, "pixtuoid floating: the GPU failed");
                 let failure = anyhow::anyhow!(message).context("the floating window's GPU failed");
                 if self.failure.fail(failure) {
-                    self.quit(event_loop);
+                    event_loop.exit();
                 }
             }
-            FloatingEvent::Quit => self.quit(event_loop),
+            FloatingEvent::Quit => event_loop.exit(),
         }
     }
 
@@ -734,7 +742,7 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
         event: WindowEvent,
     ) {
         match event {
-            WindowEvent::CloseRequested => self.quit(event_loop),
+            WindowEvent::CloseRequested => event_loop.exit(),
             // `is_synthetic: false`: winit fabricates a Pressed for every key
             // physically held when the window GAINS FOCUS (X11 + Windows). A
             // muted user holding `+`/`m` who clicks in would otherwise be
@@ -758,12 +766,13 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
                     return;
                 }
                 if self.key(&event) {
-                    self.quit(event_loop);
+                    event_loop.exit();
                     return;
                 }
                 self.request_redraw();
             }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
+            WindowEvent::Occluded(occluded) => self.clock.set_occluded(occluded, Instant::now()),
             WindowEvent::RedrawRequested => super::lifecycle::redraw(self),
             WindowEvent::Resized(_) => self.request_redraw(),
             WindowEvent::CursorMoved { position, .. } => {
@@ -799,8 +808,9 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
         }
     }
 
-    /// The loop is ending, by [`FloatingApp::quit`] or by the OS: the window and
-    /// the audio go.
+    /// The loop is ending, by a quit or by AppKit's terminate, which exits the
+    /// process once this returns (winit-0.30.13 `macos/menu.rs:66-72` binds
+    /// Cmd-Q to it, `macos/app_state.rs:166-171`).
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         super::lifecycle::tear_down(self);
     }
@@ -816,11 +826,15 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
         // The redraw REQUEST rides the same deadline as the wait: requesting one
         // unconditionally here leaves winit a pending redraw, so `WaitUntil` never
         // sleeps and both cadences collapse to max-rate (see `super::cadence`).
-        let (paint, deadline) = self.clock.poll(Instant::now(), until);
+        let (due, deadline) = self.clock.poll(Instant::now(), until);
         event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
-        if let Some(due) = paint {
-            self.jank.due_at(due);
-            self.request_redraw();
+        match due {
+            Some(Due::Paint(at)) => {
+                self.jank.due_at(at);
+                self.request_redraw();
+            }
+            Some(Due::Hear) => self.hear(),
+            None => {}
         }
     }
 }

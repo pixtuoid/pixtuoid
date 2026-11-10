@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "OutcomeRow",
-  "description": "One `{id, outcome, message?}` row of the `--json` batch envelope\n`connect`/`disconnect`/`sources set` print.\n\nTreat this wire as PUBLISHED: installed Raycast store copies parse it\nindependently of the binary's version, so a further shape change needs a\nversion handshake, never another flag-day edit. The token spelling is pinned\nby `change_outcome_wire_tokens_are_stable`.",
+  "description": "One `{id, outcome, message?}` row of the `--json` batch envelope\n`connect`/`disconnect`/`sources set` print.\n\nTreat this wire as PUBLISHED: installed Raycast store copies parse it\nindependently of the binary's version, so a further shape change needs a\nversion handshake, never another flag-day edit. The token spelling is pinned\nby `wire_outcome_tokens_are_stable_and_round_trip`.",
   "type": "object",
   "properties": {
     "id": {

@@ -105,9 +105,9 @@ impl Bounds {
 
 impl crate::look::Hits {
     /// `agent`'s badge plate as this frame drew it, in layout units, cut where
-    /// the area inside the insets or the canvas ends; under host-set text, the
-    /// plate the frame would have baked. `None` for an agent this floor
-    /// doesn't draw.
+    /// the area inside the insets or the canvas ends; where it baked no text,
+    /// the plate it would have baked. `None` for an agent this floor doesn't
+    /// draw.
     pub fn badge(&self, agent: &pixtuoid_core::AgentId) -> Option<Bounds> {
         let canvas = Size {
             w: self.layout().buf_w,

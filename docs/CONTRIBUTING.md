@@ -190,24 +190,25 @@ step is the session's to keep.
 - **Fold before opening** — a change to a surface an open PR already touches
   folds into it.
 - **The queue never idles** — it checks one batch at a time (`.mergify.yml`'s
-  `max_parallel_checks`), so queue every PR that holds the gate, in priority
-  order, at once; dequeue one only when it would jump a priority PR that is
-  already green.
+  `max_parallel_checks`), so queue every PR once what no check can confirm holds
+  and dequeue one only when it would jump a green priority PR.
 
 ## Pull requests
 
 ### The merge gate
 
 Every [`.mergify.yml`](../.mergify.yml) `queue_conditions` check green at the
-final head; every finding's review thread resolved by its disposition; zero
-open confirmed blocking finding. A finding with no thread gets one: a
-[local review](../.claude/skills/local-review/SKILL.md)'s, and a bot's
+final head, and what no check can confirm: every review of that head posted and
+read, every finding's thread resolved by its disposition, zero open confirmed
+blocking finding, the must-run results in the body. A finding with no thread gets
+one: a [local review](../.claude/skills/local-review/SKILL.md)'s, and a bot's
 posted only in its review body. A refuted blocking finding needs no push:
 resolve its thread with the disposition and re-run the review
 (`gh run rerun <id> --failed`), whose verifier judges the refutation once.
 
-Once the gate holds, comment `@mergifyio queue` ([`.mergify.yml`](../.mergify.yml)):
-entry is a command because no queue condition can confirm a finding. The
+Comment `@mergifyio queue` once the latter holds: the command waits for the
+`queue_conditions` ([queue](https://docs.mergify.com/commands/queue/)), and a
+push cancels it or dequeues the PR, so comment again after one. The
 queue tests up to `batch_size` PRs together on a draft PR
 (`mergify/merge-queue/…`) running the full tier, then merges the PRs
 themselves, but merges an up-to-date PR alone at the front on its own CI

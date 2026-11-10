@@ -7,10 +7,11 @@ use anyhow::Result;
 // resolver injected) unit-tests on macOS; only the Win32 FFI is `#[cfg(windows)]`.
 mod windows;
 
-/// The DOS 8.3 short name for an existing path (metachar-free by construction) —
-/// `None` when 8.3 generation is disabled on the volume. Also used by targets
-/// whose hook runner is NOT cmd.exe: a short name needs no quoting under ANY
-/// shell.
+/// The DOS 8.3 short form of an existing path, `None` when the call fails. It
+/// can keep a metacharacter: a component with no short name comes back long,
+/// and one that already fits 8.3 is its own short name (`GetShortPathNameW`
+/// Remarks, learn.microsoft.com; [MS-FSCC] "8.3 Filename" bars only space, a
+/// second `.`, non-ASCII and length). So every consumer re-checks it.
 #[cfg(windows)]
 pub(crate) fn windows_short_path(long: &str) -> Option<String> {
     windows::short_path_windows(long)
@@ -41,7 +42,7 @@ pub(crate) fn shell_single_quote(s: &str) -> String {
 /// - **Unix**: env-prefix form `PIXTUOID_SOURCE=<source> '<path>'`.
 /// - **Windows**: BARE exec form `<path> --source <source>` — cmd.exe can't
 ///   express the env-prefix, so the source rides the shim's `--source` flag and a
-///   space/metacharacter path falls back to its DOS 8.3 short name.
+///   space/metacharacter path tries its DOS 8.3 short form (`windows_short_path`).
 ///
 /// `source` is a registered source name: `every_registered_source_name_is_a_plain_identifier`
 /// pins it shell/cmd-safe, so it splices unquoted.

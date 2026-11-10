@@ -95,10 +95,9 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 ## Workflow
 
 Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
-each step there before taking it, never from recall. Merging is
-`@mergifyio queue`, which a session comments itself once
-[the merge gate](docs/CONTRIBUTING.md#the-merge-gate) holds, and a release PR
-merges by hand. The CI review applies REVIEW.md on every push;
+each step there before taking it, never from recall. Merging is a session's own
+`@mergifyio queue` ([the merge gate](docs/CONTRIBUTING.md#the-merge-gate)); a
+release PR merges by hand. The CI review applies REVIEW.md on every push;
 [arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says when the `local-review`
 skill runs it first.
 
@@ -123,7 +122,7 @@ Repo skills (committed): `local-review`, `beautify-decoration`,
 
 ## Conventions
 
-- **Mechanism upkeep and reuse** (org rule): extending a mechanism re-adds it, so one you touch that can't name its failure is deleted, not polished; the load-bearing defenses [REVIEW.md](REVIEW.md#design)'s Proportion row lists have named theirs. A reuse is skipped only when its own cost is larger (wasm32, a version freeze), and the PR names that cost.
+- **Mechanism upkeep and reuse** (org rule): extending a mechanism re-adds it, so one you touch that can't name its failure is deleted, not polished, but one whose deletion would remove a user-facing feature is proposed to the owner, never deleted outright; the load-bearing defenses [REVIEW.md](REVIEW.md#design)'s Proportion row lists have named theirs. A reuse is skipped only when its own cost is larger (wasm32, a version freeze), and the PR names that cost.
 - **Chibi figures and pets stay round**, the head flowing into the body.
 - **`#[allow(clippy::too_many_arguments)]` is a last resort** — group related parameters into a struct first.
 - **Comments** (org rule): a workflow or manifest comment, a justfile recipe header and a CI contract's `why` are in scope too. Every sentence adds what the earlier ones don't, the first being the whole answer. A rationale stays on the statement, struct-literal field or match arm it governs, never hoisted to the declaration to shorten a body. A change leaves the net comment volume of what it touches no larger unless each added line earns its place. An intra-doc link to the authority also turns a rename into a `doc-check` red, private items included.
@@ -136,7 +135,7 @@ Repo skills (committed): `local-review`, `beautify-decoration`,
 - **Evidence** (org rule): a hermetic profile scenario that reaches the surface (`just hermetic`) counts as a source too, and the population is the whole upstream repo (`gh api .../git/trees/<ref>?recursive=1`), not one plausible file.
 - **Review findings** (org rule): a refutation adds a code comment only for an EXTERNAL fact (another CLI's wire bytes, an OS semantic), on the narrowest thing it constrains. **A real finding ends FIXED, RE-SCOPED → #N or FOLLOW-UP → #N before the PR merges; which applies, the four terminal states and what #N may be are defined once in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#dispositions). Agents never file issues.**
 - **Only the latest released version of each agent CLI is supported.** When upstream renames or reshapes a wire name, repoint the decoder and the plugin at the CURRENT declaration and DELETE the old one — no dual-listening beside a replacement, no legacy-format arm kept "just in case". Every superseded arm is a second copy of a wire contract that drifts silently. Two things this does NOT govern: OUR OWN upgrade path (an arm for an artifact an older pixtuoid wrote is ours to keep or drop, not upstream's — #457), and mirroring a resolver upstream itself still branches on.
-- **Path asserts compare `PathBuf` structurally**, never `to_string_lossy()` with a hardcoded separator — string asserts pass on Unix and fail only in `windows-test`. Resolution POLICY (HOME vs USERPROFILE, %APPDATA% vs `~/.config`) is per-CLI: mirror each CLI's own resolver (`platform::home_first_dir`).
+- **Path asserts compare `PathBuf` structurally**, never `to_string_lossy()` with a hardcoded separator — string asserts pass on Unix and fail only in `windows-test`. Resolution POLICY (HOME vs USERPROFILE, %APPDATA% vs `~/.config`) is per-CLI: mirror each CLI's own resolver (a runtime's in `platform`, else beside its target).
 
 ## Architecture invariants (load-bearing)
 

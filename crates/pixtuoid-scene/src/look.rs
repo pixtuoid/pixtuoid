@@ -82,19 +82,21 @@ impl Look {
         text: WorldText::Host,
     };
 
-    /// It as a slide draws it, which no host sets text on: its world text
-    /// baked, but the half-blocks', whose slide shows none.
-    pub(crate) fn baked(self) -> Self {
+    /// It as a slide draws it, which no host sets text on: the text its host
+    /// would set baked, but the half-blocks', whose slide shows none.
+    pub(crate) fn on_slide(self) -> Self {
         match self {
-            Self::Classic { scale, .. } if self != Self::HALF_BLOCKS => Self::Classic {
+            Self::Classic { scale, text } if text.left_to_host() && self != Self::HALF_BLOCKS => {
+                Self::Classic {
+                    scale,
+                    text: WorldText::Baked,
+                }
+            }
+            Self::Cutaway { scale, text } if text.left_to_host() => Self::Cutaway {
                 scale,
                 text: WorldText::Baked,
             },
-            Self::Cutaway { scale, .. } => Self::Cutaway {
-                scale,
-                text: WorldText::Baked,
-            },
-            unchanged @ Self::Classic { .. } => unchanged,
+            unchanged @ (Self::Classic { .. } | Self::Cutaway { .. }) => unchanged,
         }
     }
 
@@ -141,7 +143,10 @@ impl LookKind {
 }
 
 /// Who sets a look's world text: the badges, bubbles, wall board and floor
-/// indicator.
+/// indicator. Not [`non_exhaustive`], since a match on it outside this crate
+/// would then need a wildcard arm, which a new variant passes unnoticed.
+///
+/// [`non_exhaustive`]: https://doc.rust-lang.org/reference/attributes/type_system.html#the-non_exhaustive-attribute
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorldText {
     /// The image, in the scene's pixel font.
@@ -149,6 +154,27 @@ pub enum WorldText {
     /// The host, in its own font over the image (`FloorPicture::text`).
     #[doc(hidden)]
     Host,
+    /// No one: the frame shows none, a slide's included.
+    Hidden,
+}
+
+// Exhaustive, so a new variant decides each.
+impl WorldText {
+    /// Whether the image carries it.
+    pub(crate) const fn in_image(self) -> bool {
+        match self {
+            Self::Baked => true,
+            Self::Host | Self::Hidden => false,
+        }
+    }
+
+    /// Whether its host sets it, from `FloorPicture::text`.
+    pub(crate) const fn left_to_host(self) -> bool {
+        match self {
+            Self::Host => true,
+            Self::Baked | Self::Hidden => false,
+        }
+    }
 }
 
 /// What only the office knows about the floor a painter draws: its wall
@@ -402,7 +428,7 @@ pub struct FloorPicture<'a> {
     pub(crate) dirty: &'a Dirty,
     /// What of it flashes.
     pub flashes: crate::screen::Flashes,
-    /// The world text its host sets over it; `None` where the look baked it.
+    /// The world text its host sets over it; `None` where its look left none.
     #[doc(hidden)]
     pub text: Option<crate::display::HostText<'a>>,
     /// What it answers a pointer with.
@@ -563,13 +589,12 @@ impl Raster {
     }
 
     /// The world text the last frame left to its host, in either look;
-    /// `None` before the first and for a look that baked its own.
+    /// `None` before the first and for a look that left none.
     pub(crate) fn host_text(&self) -> Option<crate::display::HostText<'_>> {
         match self.shown? {
-            Look::Classic {
-                text: WorldText::Host,
-                ..
-            } => self.classic.as_ref().map(Classic::host_text),
+            Look::Classic { text, .. } if text.left_to_host() => {
+                self.classic.as_ref().map(Classic::host_text)
+            }
             Look::Classic { .. } => None,
             Look::Cutaway { .. } => self.cutaway.as_ref()?.host_text(),
         }
@@ -604,10 +629,9 @@ impl Raster {
     /// sets it ([`Self::host_text`]), which then places it.
     pub(crate) fn star(&self) -> Option<crate::layout::Bounds> {
         match self.shown? {
-            Look::Classic {
-                text: WorldText::Baked,
-                ..
-            } => self.classic.as_ref()?.scaled.as_ref()?.star,
+            Look::Classic { text, .. } if text.in_image() => {
+                self.classic.as_ref()?.scaled.as_ref()?.star
+            }
             Look::Classic { .. } => None,
             Look::Cutaway { .. } => self.cutaway.as_ref()?.star(),
         }

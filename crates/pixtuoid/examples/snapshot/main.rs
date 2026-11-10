@@ -607,7 +607,7 @@ fn main() -> Result<()> {
                 .collect()
         })
         .unwrap_or_default();
-    let warning_text = pixtuoid::dev::footer_warning(&deaths, &drifted);
+    let warning_text = pixtuoid::dev::footer_warning(&deaths, &[], &drifted);
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     if args.empty {
         settle_empty(&mut floor, pixel.as_mut());
