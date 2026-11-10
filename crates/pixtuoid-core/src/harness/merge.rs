@@ -44,8 +44,8 @@ pub struct Merged {
     pub steps: Vec<Step>,
 }
 
-/// A line that decoded to events, and when its CLI wrote it: exactly `at` when
-/// `within` is zero, else in `at..at + within`.
+/// A line `read` delivered events for, its seed alone included, and when its
+/// CLI wrote it: exactly `at` when `within` is zero, else in `at..at + within`.
 #[derive(Debug)]
 struct Written {
     line: usize,

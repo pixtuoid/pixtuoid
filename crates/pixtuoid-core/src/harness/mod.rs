@@ -591,16 +591,16 @@ impl Fold {
 
     /// The seed `drive` leads `life`, one life of a read of `lines`, with when
     /// the watcher's gate registers on it, else `None`; the claim then follows
-    /// the life's `verdict`.
+    /// `life`'s verdict.
     fn registration<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
         own: Option<AgentId>,
         lines: &[Option<S>],
         life: &[AgentEvent],
-        verdict: Option<Life>,
     ) -> Option<AgentEvent> {
         let id = own.filter(|_| drive.seeded)?;
+        let verdict = last_life(life, id);
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.get(&id);
         let registers =
@@ -681,9 +681,8 @@ impl Fold {
         };
         let mut fed = Vec::new();
         for life in lives {
-            let verdict = own.and_then(|own| last_life(&life, own));
             fed.extend(
-                self.registration(drive, own, lines, &life, verdict)
+                self.registration(drive, own, lines, &life)
                     .map(Delivered::Seed),
             );
             fed.extend(life.into_iter().map(Delivered::Wire));
