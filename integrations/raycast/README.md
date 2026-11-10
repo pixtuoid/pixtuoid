@@ -18,13 +18,7 @@ does **not** bundle the binary.
 
 ## Requirements
 
-Install the `pixtuoid` binary with any of:
-
-```sh
-cargo install pixtuoid pixtuoid-hook
-npm i -g pixtuoid
-brew install pixtuoid
-```
+Install the `pixtuoid` binary by any route of its [install guide](https://pixtuoid.dev/#install).
 
 The extension auto-detects it via your login shell's `PATH`, then the common
 Homebrew / Cargo / `~/.local/bin` locations. If yours lives elsewhere, set

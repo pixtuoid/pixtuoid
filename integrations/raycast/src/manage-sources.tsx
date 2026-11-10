@@ -14,6 +14,7 @@ import { usePromise } from "@raycast/utils";
 import { BinaryNotFoundError, getSources, SourceStatus, toggleSource } from "./pixtuoid";
 
 const REPO_URL = "https://github.com/pixtuoid/pixtuoid";
+const INSTALL_URL = "https://pixtuoid.dev/#install";
 
 export default function ManageSources() {
   const { data, isLoading, revalidate, error } = usePromise(getSources);
@@ -109,7 +110,7 @@ function ErrorView({ error, onRetry }: { error: Error; onRetry: () => void }) {
         title={notFound ? "Pixtuoid not found" : "Couldn't read sources"}
         description={
           notFound
-            ? "Set the binary path in preferences, or install pixtuoid (brew install pixtuoid · npm i -g pixtuoid · cargo install pixtuoid pixtuoid-hook)."
+            ? "Set the binary path in preferences, or install pixtuoid from its Installation Docs."
             : error.message
         }
         actions={
@@ -119,7 +120,7 @@ function ErrorView({ error, onRetry }: { error: Error; onRetry: () => void }) {
             ) : (
               <Action title="Try Again" icon={Icon.ArrowClockwise} onAction={onRetry} />
             )}
-            <Action.OpenInBrowser icon={Icon.Globe} title="Installation Docs" url={`${REPO_URL}#install`} />
+            <Action.OpenInBrowser icon={Icon.Globe} title="Installation Docs" url={INSTALL_URL} />
           </ActionPanel>
         }
       />
