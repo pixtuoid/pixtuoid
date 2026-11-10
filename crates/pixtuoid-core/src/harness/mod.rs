@@ -133,8 +133,8 @@ impl std::fmt::Display for LineFailure {
 pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
-    /// What the transport would deliver for the reads fed, in order, a seed
-    /// leading each life it registers.
+    /// Every event folded for the reads fed, in order: each life's decoded
+    /// events, led by the seed the watcher's gate registers for it.
     pub events: Vec<AgentEvent>,
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
@@ -423,7 +423,7 @@ impl Drive {
         fold.finish()
     }
 
-    /// [`Self::lines`] over a transcript's bytes ([`Fold::feed_body`]).
+    /// [`Self::lines`] over a recording's bytes ([`Fold::feed_body`]).
     pub fn body(&self, body: &[u8]) -> Driven {
         let mut fold = Fold::default();
         fold.feed_body(self, body, default_now());
@@ -515,8 +515,7 @@ impl Default for Fold {
 
 impl Fold {
     /// Decode `lines` through `drive` (blank lines skipped, every other line
-    /// parsed and decoded) as one read, and fold what the transport would
-    /// deliver for it at `at`.
+    /// parsed and decoded) as one live read, and fold its lives at `at`.
     pub fn feed<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
     where
         I: IntoIterator<Item = S>,
@@ -633,9 +632,9 @@ impl Fold {
         self.driven.breadcrumbs.extend(sink.take());
     }
 
-    /// What the transport delivers for one live read of `lines`: each life of
-    /// `decoded` ([`each_life`]) as a read of its own, led by its registration if
-    /// the watcher's gate registers on it. Records each life's claim.
+    /// Fold one live read of `lines`: each life of `decoded` ([`each_life`]) as
+    /// a read of its own, led by its registration if the watcher's gate
+    /// registers on it. Records each life's claim.
     fn deliver<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
