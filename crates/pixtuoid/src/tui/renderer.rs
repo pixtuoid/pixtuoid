@@ -80,7 +80,7 @@ impl<'a> DrawCtx<'a> {
             mouse_pos: None,
             debug_walkable: false,
             theme,
-            footer: crate::panels::widgets::footer_context(full, None, false, None, None),
+            footer: crate::panels::widgets::footer_context(full, false, None, None),
             overlays: crate::panels::OverlayFrame::closed(),
         }
     }

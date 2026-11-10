@@ -3,7 +3,7 @@ use footer::{build_status_spans, build_status_summary, footer_context};
 use pixtuoid_core::state::{ActivityState, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, FloorDesk, SceneState};
 use pixtuoid_scene::display::text::cells;
-use pixtuoid_scene::footer::{FooterFloor, FooterInputs};
+use pixtuoid_scene::footer::FooterInputs;
 use pixtuoid_scene::tally::{StateCounts, gateway_rollup, per_floor_counts, scene_stats};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -412,23 +412,34 @@ fn scene_of(slots: Vec<AgentSlot>) -> SceneState {
     s
 }
 
-fn inputs<'a>(
-    scene: &SceneState,
-    floor: Option<FooterFloor>,
-    warning: Option<&'a str>,
-) -> FooterInputs<'a> {
+/// An office `floors` floors tall of `agents` agents: `drawn` on floor
+/// `floor`, the rest idle on another floor, the top one if `floor` isn't.
+fn office_of(drawn: Vec<AgentSlot>, floor: usize, floors: usize, agents: usize) -> SceneState {
+    let top = floors - 1;
+    let other = if floor == top { 0 } else { top };
+    let others = (drawn.len()..agents).map(|i| (idle(&format!("other{i}")), other));
+    let seated = drawn.into_iter().map(|slot| (slot, floor)).chain(others);
+    let office = scene_of(
+        seated
+            .enumerate()
+            .map(|(i, (slot, floor))| AgentSlot {
+                desk: Some(FloorDesk::new(floor, i)),
+                ..slot
+            })
+            .collect(),
+    );
+    assert_eq!(pixtuoid_scene::floor::num_floors(&office), floors);
+    office
+}
+
+fn inputs<'a>(office: &SceneState, floor: usize, warning: Option<&'a str>) -> FooterInputs<'a> {
     FooterInputs::new(
-        &pixtuoid_scene::floor::project_floor_scene(scene, 0),
-        footer_context(scene, floor, false, None, warning),
+        &pixtuoid_scene::floor::project_floor_scene(office, floor),
+        footer_context(office, false, None, warning),
     )
 }
 
-fn footer_line(
-    scene: &SceneState,
-    width: u16,
-    floor: Option<FooterFloor>,
-    warning: Option<&str>,
-) -> String {
+fn footer_line(scene: &SceneState, width: u16, floor: usize, warning: Option<&str>) -> String {
     build_status_summary(&inputs(scene, floor, warning), width)
 }
 
@@ -440,7 +451,7 @@ fn footer_source_warning_replaces_stats_and_keeps_quit() {
     let line = footer_line(
         &s,
         100,
-        None,
+        0,
         Some("claude-code source died — its agents are frozen; restart pixtuoid (see log)"),
     );
     assert!(line.contains('⚠'), "warning marker present: {line}");
@@ -460,7 +471,7 @@ fn footer_source_warning_survives_every_width() {
         let line = footer_line(
             &s,
             w,
-            None,
+            0,
             Some("claude-code source died — its agents are frozen; restart pixtuoid (see log)"),
         );
         assert!(
@@ -477,7 +488,7 @@ fn footer_source_warning_survives_every_width() {
 #[test]
 fn footer_zero_agents() {
     let s = scene_of(vec![]);
-    let line = footer_line(&s, 80, None, None);
+    let line = footer_line(&s, 80, 0, None);
     assert_eq!(line.len(), 80, "should pad to full width");
     insta::assert_snapshot!(line);
 }
@@ -485,7 +496,7 @@ fn footer_zero_agents() {
 #[test]
 fn footer_single_idle_agent() {
     let s = scene_of(vec![idle("myproject")]);
-    let line = footer_line(&s, 80, None, None);
+    let line = footer_line(&s, 80, 0, None);
     assert!(line.contains(" 1 \u{b7} \u{25cb}1 I"), "got: {line}");
     insta::assert_snapshot!(line);
 }
@@ -502,7 +513,7 @@ fn footer_full_width_mixed_states() {
         idle("g"),
         idle("h"),
     ]);
-    let line = footer_line(&s, 120, None, None);
+    let line = footer_line(&s, 120, 0, None);
     for frag in [
         "\u{25cf}3 R",
         "\u{25d0}2 A",
@@ -522,7 +533,7 @@ fn footer_medium_width_compact() {
         requires_action("b"),
         idle("c"),
     ]);
-    let line = footer_line(&s, 60, None, None);
+    let line = footer_line(&s, 60, 0, None);
     assert!(!line.contains("Edit"), "medium drops tools: {line}");
     assert!(line.contains("\u{25cf}1R"), "compact running rung: {line}");
     insta::assert_snapshot!(line);
@@ -532,7 +543,7 @@ fn footer_medium_width_compact() {
 fn footer_minimal_width() {
     let s = scene_of(vec![idle("a"), idle("b")]);
     let w = QUIT_SUFFIX.len() + 6;
-    let line = footer_line(&s, w as u16, None, None);
+    let line = footer_line(&s, w as u16, 0, None);
     assert_eq!(line.len(), w);
     insta::assert_snapshot!(line);
 }
@@ -541,7 +552,7 @@ fn footer_minimal_width() {
 fn footer_quit_only_below_threshold() {
     let s = scene_of(vec![idle("a")]);
     let w = QUIT_SUFFIX.len();
-    let line = footer_line(&s, w as u16, None, None);
+    let line = footer_line(&s, w as u16, 0, None);
     insta::assert_snapshot!(line);
 }
 
@@ -555,7 +566,7 @@ fn footer_caps_tools_at_four() {
         running_with("Grep x", "e"),
         running_with("Glob x", "f"),
     ]);
-    let line = footer_line(&s, 200, None, None);
+    let line = footer_line(&s, 200, 0, None);
     let crosses = line.matches('\u{00d7}').count();
     assert_eq!(crosses, 4, "expected <=4 tools in breakdown");
     insta::assert_snapshot!(line);
@@ -570,7 +581,7 @@ fn footer_minimal_leads_with_requires_action_alarm() {
         idle("d"),
     ]);
     let w = QUIT_SUFFIX.len() + 10;
-    let line = footer_line(&s, w as u16, None, None);
+    let line = footer_line(&s, w as u16, 0, None);
     assert!(
         line.contains("\u{25b2}2 \u{b7} 4"),
         "▲2 · 4 (alarm leads): {line}"
@@ -580,7 +591,7 @@ fn footer_minimal_leads_with_requires_action_alarm() {
 #[test]
 fn footer_death_keeps_the_requires_action_alarm() {
     let s = scene_of(vec![requires_action("a"), requires_action("b"), idle("c")]);
-    let line = footer_line(&s, 120, None, Some("codex disconnected"));
+    let line = footer_line(&s, 120, 0, Some("codex disconnected"));
     assert!(line.contains('\u{26a0}'), "warning present: {line}");
     assert!(
         line.contains("\u{25b2}2 need you"),
@@ -588,18 +599,10 @@ fn footer_death_keeps_the_requires_action_alarm() {
     );
 }
 
-fn fi(current: usize, total_floors: usize, total_agents: usize) -> FooterFloor {
-    FooterFloor {
-        current,
-        total_floors,
-        total_agents,
-    }
-}
-
 #[test]
 fn footer_with_floor_info() {
-    let s = scene_of(vec![idle("a"), idle("b")]);
-    let line = footer_line(&s, 120, Some(fi(2, 3, 5)), None);
+    let s = office_of(vec![idle("a"), idle("b")], 1, 3, 5);
+    let line = footer_line(&s, 120, 1, None);
     assert!(line.contains(" F2/3 "), "floor breadcrumb: {line}");
     insta::assert_snapshot!(line);
 }
@@ -610,36 +613,36 @@ fn footer_with_floor_info() {
 #[test]
 fn count_str_single_floor_shows_bare_n() {
     let s = scene_of(vec![idle("a"), idle("b")]);
-    let line = footer_line(&s, 120, None, None);
+    let line = footer_line(&s, 120, 0, None);
     assert!(line.contains(" 2 \u{b7} \u{25cb}2 I"), "got: {line}");
     assert!(!line.contains("2/"), "no slash on a single floor: {line}");
 }
 
 #[test]
 fn count_str_multi_floor_shows_n_slash_total() {
-    let s = scene_of(vec![idle("a"), idle("b")]);
-    let line = footer_line(&s, 120, Some(fi(2, 3, 5)), None);
+    let s = office_of(vec![idle("a"), idle("b")], 1, 3, 5);
+    let line = footer_line(&s, 120, 1, None);
     assert!(line.contains(" 2/5 \u{b7}"), "got: {line}");
 }
 
 #[test]
 fn count_str_multi_floor_shows_slash_even_when_total_equals_n() {
-    let s = scene_of(vec![idle("a"), idle("b")]);
-    let line = footer_line(&s, 120, Some(fi(1, 3, 2)), None);
+    let s = office_of(vec![idle("a"), idle("b")], 2, 3, 2);
+    let line = footer_line(&s, 120, 2, None);
     assert!(line.contains(" 2/2 \u{b7}"), "got: {line}");
 }
 
 #[test]
 fn count_str_empty_floor_still_shows_total() {
-    let s = scene_of(vec![]);
-    let line = footer_line(&s, 120, Some(fi(2, 3, 5)), None);
+    let s = office_of(vec![], 1, 3, 5);
+    let line = footer_line(&s, 120, 1, None);
     assert!(line.contains(" 0/5 "), "got: {line}");
 }
 
 #[test]
 fn count_str_multi_floor_keeps_slash_at_narrow_tier() {
-    let s = scene_of(vec![idle("a"), idle("b"), idle("c")]);
-    let line = footer_line(&s, 50, Some(fi(1, 3, 10)), None);
+    let s = office_of(vec![idle("a"), idle("b"), idle("c")], 0, 3, 10);
+    let line = footer_line(&s, 50, 0, None);
     assert!(
         line.contains("3/10"),
         "slash kept at the narrow tier: {line}"
@@ -649,7 +652,7 @@ fn count_str_multi_floor_keeps_slash_at_narrow_tier() {
 fn footer_spans_text(
     scene: &SceneState,
     width: u16,
-    floor: Option<FooterFloor>,
+    floor: usize,
     theme: &pixtuoid_scene::theme::Theme,
 ) -> String {
     build_status_spans(&inputs(scene, floor, None), width, theme)
@@ -661,21 +664,24 @@ fn footer_spans_text(
 #[test]
 fn status_spans_text_matches_summary_across_tiers() {
     let theme = &pixtuoid_scene::theme::NORMAL;
-    let s = scene_of(vec![
-        running_with("Edit src/a.rs", "a"),
-        requires_action("b"),
-        idle("c"),
-        idle("d"),
-    ]);
-    for (w, fl) in [
-        (120u16, None),
-        (60, None),
-        (28, None),
-        (10, None),
-        (120, Some(fi(2, 3, 9))),
+    let slots = || {
+        vec![
+            running_with("Edit src/a.rs", "a"),
+            requires_action("b"),
+            idle("c"),
+            idle("d"),
+        ]
+    };
+    let (ground, upstairs) = (scene_of(slots()), office_of(slots(), 1, 3, 9));
+    for (s, w, fl) in [
+        (&ground, 120u16, 0),
+        (&ground, 60, 0),
+        (&ground, 28, 0),
+        (&ground, 10, 0),
+        (&upstairs, 120, 1),
     ] {
-        let summary = footer_line(&s, w, fl, None);
-        let spans_text = footer_spans_text(&s, w, fl, theme);
+        let summary = footer_line(s, w, fl, None);
+        let spans_text = footer_spans_text(s, w, fl, theme);
         assert_eq!(spans_text, summary, "tier width {w} drifted");
     }
 }
@@ -688,7 +694,7 @@ fn status_spans_color_code_state_segments() {
         requires_action("b"),
         idle("c"),
     ]);
-    let spans = build_status_spans(&inputs(&s, None, None), 120, theme);
+    let spans = build_status_spans(&inputs(&s, 0, None), 120, theme);
     let running = spans
         .iter()
         .find(|sp| sp.content.contains('\u{25cf}'))
@@ -715,7 +721,7 @@ fn footer_counts_agree_with_board_on_walkout() {
     ]);
     let c = scene_stats(&s);
     assert_eq!((c.running, c.exiting, c.total), (2, 1, 3), "shared spine");
-    let line = footer_line(&s, 160, None, None);
+    let line = footer_line(&s, 160, 0, None);
     assert!(
         line.contains(" 3 \u{b7} \u{25cf}2 R"),
         "total incl. exiting: {line}"
@@ -736,7 +742,7 @@ fn footer_tool_hue_reads_kind_field() {
         pixtuoid_core::state::ToolKind::Task,
         "lead",
     )]);
-    let spans = build_status_spans(&inputs(&s, None, None), 160, theme);
+    let spans = build_status_spans(&inputs(&s, 0, None), 160, theme);
     let tool = spans
         .iter()
         .find(|sp| sp.content.contains("Delegating"))
@@ -758,11 +764,11 @@ fn footer_tool_hue_reads_kind_field() {
 fn footer_gateway_chip_reflects_rollup_and_suppresses_when_absent() {
     use pixtuoid_core::state::DaemonState;
     let s = scene_of(vec![idle("a")]);
-    let mut with_gw = inputs(&s, None, None);
+    let mut with_gw = inputs(&s, 0, None);
     with_gw.context.gateway = Some(DaemonState::Degraded);
     let line = build_status_summary(&with_gw, 160);
     assert!(line.contains("\u{2b22}gw err"), "degraded chip: {line}");
-    let no_gw = inputs(&s, None, None);
+    let no_gw = inputs(&s, 0, None);
     let line2 = build_status_summary(&no_gw, 160);
     assert!(
         !line2.contains("gw"),
@@ -774,8 +780,8 @@ fn footer_gateway_chip_reflects_rollup_and_suppresses_when_absent() {
 fn footer_cross_floor_alarm_points_at_requires_action_floor() {
     // The requires-action agent sits on floor 2 (index 1) while floor 1 is the one shown —
     // `per_floor` is office-wide, not the projected floor.
-    let s = scene_of(vec![idle("a")]);
-    let mut footer = inputs(&s, Some(fi(1, 3, 2)), None);
+    let s = office_of(vec![idle("a")], 0, 3, 2);
+    let mut footer = inputs(&s, 0, None);
     footer.context.per_floor[1].requires_action = 1;
     footer.context.per_floor[1].total = 1;
     let line = build_status_summary(&footer, 160);
