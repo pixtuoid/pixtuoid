@@ -620,7 +620,7 @@ const _: () = {
 };
 /// How long each of [`STRIKE`]'s phases holds: a whole Full beat, so the beat
 /// neither skips one nor stretches it.
-const STRIKE_PHASE_MS: u64 = crate::anim::FULL_TICK_MS;
+pub(crate) const STRIKE_PHASE_MS: u64 = crate::anim::FULL_TICK_MS;
 /// A strike's phases in order, each held [`STRIKE_PHASE_MS`]: the primary
 /// strike, a brief dim, an after-flash, so it reads as a flicker rather than a
 /// single blink.

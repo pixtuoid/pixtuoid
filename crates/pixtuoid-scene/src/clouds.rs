@@ -1130,7 +1130,7 @@ impl Clouds {
     /// row over it, at every cell its drift draws it at from `secs[0]` to
     /// `secs[1]` seconds into the beat, and that base: where a lobe's skirt
     /// narrows to its base, or the drift turns a cell, the column is bare.
-    fn struck(&self, x: f32, secs: [f64; 2], span: f32) -> Option<(usize, f32)> {
+    fn bolt_cloud(&self, x: f32, secs: [f64; 2], span: f32) -> Option<(usize, f32)> {
         let df = f32::from(self.d.get());
         let col = (x * df) as i32;
         (0..self.masses.len()).rev().find_map(|i| {
@@ -1161,7 +1161,7 @@ impl Clouds {
         let (west, east) = (f32::from(pane.start), f32::from(pane.end));
         let x = r.between(west + BOLT_PANE_MARGIN, (east - BOLT_PANE_MARGIN).max(west));
         let end = start + std::time::Duration::from_millis(crate::sky::STRIKE_MS).as_secs_f64();
-        let (i, base) = self.struck(x, [start, end], span)?;
+        let (i, base) = self.bolt_cloud(x, [start, end], span)?;
         let intra = r.u() < INTRA_SHARE;
         let step = match phase {
             StrikePhase::Primary => 2,
@@ -2169,8 +2169,8 @@ mod tests {
                 + Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS) * k;
             let beat = Motion::Full.timing(then).beat;
             let start = crate::sky::strike_start_ms(beat) - beat.ms();
-            let at = |phase: u64| {
-                let now = then + Duration::from_millis(start + phase * crate::anim::FULL_TICK_MS);
+            let at = |ms: u64| {
+                let now = then + Duration::from_millis(start + ms);
                 let sky = Sky::at_with(now, Weather::Storm)
                     .with_strike(Some(crate::sky::StrikePhase::Primary));
                 let moment =
@@ -2186,8 +2186,9 @@ mod tests {
             };
             let first = at(0);
             strikes += usize::from(first.is_some());
-            for phase in 1..3 {
-                assert_eq!(at(phase), first, "strike {k}, phase {phase}");
+            let phase_ms = crate::sky::STRIKE_PHASE_MS;
+            for ms in (phase_ms..crate::sky::STRIKE_MS).step_by(phase_ms as usize) {
+                assert_eq!(at(ms), first, "strike {k}, {ms} ms in");
             }
         }
         assert!(strikes > 0, "the sample must strike");
