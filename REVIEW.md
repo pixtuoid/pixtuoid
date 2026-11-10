@@ -56,7 +56,7 @@ examples).
   when the code it names is wrong. Refusal paths are pinned on both sides of
   every window, offsets derived from the constant under test; a new gate fires
   on the violation, is silent on the legitimate case, and names the real
-  requirement. No verdict turns on the zone or wall clock; no test reads other
+  requirement. No verdict turns on the zone, date or hour; no test reads other
   ambient state: `HOME`, a developer's config, a fixed temp path (#1023, #1048).
 - **Reducer, liveness, sweeps** (`crates/pixtuoid-core/src/state/`,
   `source/jsonl/liveness.rs`, `source/exit_watch.rs`, `source/daemon.rs`) —
