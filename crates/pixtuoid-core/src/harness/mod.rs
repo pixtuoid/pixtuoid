@@ -875,7 +875,7 @@ mod tests {
     /// A claimed transcript re-registers on a feed showing life and on no
     /// other, and re-registering its live slot leaves one slot as it was.
     #[test]
-    fn a_claimed_transcript_reregisters_only_on_a_feed_showing_life() {
+    fn a_claimed_transcript_re_registers_only_on_a_feed_showing_life() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
         let at = default_now();
         let title = serde_json::json!({"type": "title_change", "id": "x", "title": "Named"});
@@ -888,6 +888,10 @@ mod tests {
         let mut fold = Fold::default();
         fold.feed(&drive, [tool_line(), title.to_string()], at);
         let first = slots(&fold);
+        assert!(
+            matches!(&first[..], [(label, None)] if &*label.text() == "om·Named"),
+            "{first:?}"
+        );
         fold.feed(&drive, [trailer.to_string()], at);
         assert_eq!(fold.driven().seeds.len(), 1, "a feed showing no life");
         fold.feed(&drive, [tool_line()], at);
