@@ -110,7 +110,7 @@ fn session_start_overflows_to_floor1_with_heterogeneous_capacity() {
     );
 }
 
-/// R2-C32: a layout shrinking under its agents keeps every one. Whoever loses
+/// A layout shrinking under its agents keeps every one. Whoever loses
 /// a desk is unseated, a new arrival too, and the oldest unseated agent takes
 /// the next desk that frees; a layout growing back seats the rest, and nobody
 /// it kept a desk for ever moves.

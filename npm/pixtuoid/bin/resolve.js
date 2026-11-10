@@ -9,28 +9,28 @@
 const fs = require("fs");
 const path = require("path");
 
-/** @type {Record<string, string>} */
-const PACKAGE = {
-  "darwin arm64": "@pixtuoid/cli-darwin-arm64",
-  "darwin x64": "@pixtuoid/cli-darwin-x64",
-  "win32 x64": "@pixtuoid/cli-win32-x64",
-  "win32 arm64": "@pixtuoid/cli-win32-arm64",
-};
-
-// The platform package release.yml builds for this host, or null where it
-// builds none, so there is no download to point at either.
-/** @returns {string | null} */
-function hostPackage() {
-  return PACKAGE[process.platform + " " + process.arch] || null;
+// npm matches `os`/`cpu` against `process.platform`/`process.arch`
+// (https://docs.npmjs.com/cli/v11/configuring-npm/package-json#os), and
+// generate.mjs names each package it publishes here, so this names the one
+// npm installed.
+/**
+ * @param {string} platform
+ * @param {string} arch
+ */
+function packageName(platform, arch) {
+  return "@pixtuoid/cli-" + platform + "-" + arch;
 }
 
-/** @param {string} bin */
-function exeName(bin) {
-  return bin + (process.platform === "win32" ? ".exe" : "");
+/**
+ * @param {string} bin
+ * @param {string} [platform]
+ */
+function exeName(bin, platform = process.platform) {
+  return bin + (platform === "win32" ? ".exe" : "");
 }
 
-// Returns null if this platform isn't shipped — callers decide how to handle
-// that (the TUI errors; the hook stays silent).
+// Returns null when no binary resolves — callers decide how to handle that
+// (the TUI errors; the hook stays silent).
 /**
  * @param {string} bin
  * @returns {string | null}
@@ -54,13 +54,24 @@ function binaryPath(bin) {
     if (fs.existsSync(p)) return p;
   }
 
-  const pkg = hostPackage();
-  if (!pkg) return null;
   try {
-    return require.resolve(pkg + "/" + exeName(bin));
+    return require.resolve(packageName(process.platform, process.arch) + "/" + exeName(bin));
   } catch (_e) {
     return null;
   }
 }
 
-module.exports = { binaryPath, exeName, hostPackage };
+// generate.mjs stamps the launcher's optionalDependencies from TARGETS, so a
+// platform they don't name has no prebuilt package, and one they name but
+// that didn't resolve was left out by the install, which may omit optional
+// dependencies (https://docs.npmjs.com/cli/v11/commands/npm-install#omit).
+/**
+ * @param {string} platform
+ * @param {string} arch
+ */
+function isShipped(platform, arch) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  return Object.hasOwn(manifest.optionalDependencies ?? {}, packageName(platform, arch));
+}
+
+module.exports = { binaryPath, exeName, isShipped, packageName };
