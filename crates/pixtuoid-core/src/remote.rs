@@ -878,7 +878,17 @@ impl RemoteOffice {
         let mut new: BTreeMap<AgentId, Option<SystemTime>> = BTreeMap::new();
         for agent in agents {
             let place = match self.scene.agents.get(&agent.id) {
-                Some(slot) => (slot.desk, slot.arrived_at),
+                // One walking out lent its desk once the line stopped naming it,
+                // so named again it finds a staying agent there and is reseated.
+                Some(slot) => {
+                    let lent = slot.exiting_at.is_some()
+                        && (self.scene.agents.values()).any(|other| {
+                            other.agent_id != slot.agent_id
+                                && other.exiting_at.is_none()
+                                && other.desk == slot.desk
+                        });
+                    (slot.desk.filter(|_| !lent), slot.arrived_at)
+                }
                 // One never seen alive was never in the room to leave it.
                 None if agent.exiting_ms.is_some() => continue,
                 None => {
@@ -1659,6 +1669,41 @@ mod tests {
         assert_eq!(back.exiting_at, None, "premise: in the room again");
         received_from(&mut office, &crowd(&[]), &demo(), AT + 3_000);
         assert!(slot_of(&office, "a").is_none());
+    }
+
+    /// A slot walking out lends its desk once its server stops naming it; named
+    /// again before its walk ends, it never shares that desk with the staying
+    /// agent who took it.
+    #[test]
+    fn a_lender_named_again_never_shares_its_lent_desk() {
+        let staying_at = |office: &RemoteOffice, desk| {
+            (office.scene().agents.values())
+                .filter(|slot| slot.exiting_at.is_none() && slot.desk == Some(desk))
+                .count()
+        };
+        let desk = FloorDesk::new(0, 0);
+        let mut office = RemoteOffice::new(ONE_DESK);
+        received(&mut office, &crowd(&["x"]), AT);
+        let mut leaving = crowd(&["x", "y"]);
+        let x = AgentId::from_parts("claude-code", "x");
+        leaving.agents.get_mut(&x).unwrap().exiting_at = Some(at(AT));
+        received(&mut office, &leaving, AT);
+        received(&mut office, &crowd(&["y"]), AT + 1_000);
+        assert!(
+            slot_of(&office, "x").is_some(),
+            "premise: still walking out"
+        );
+        assert_eq!(desk_of(&office, "y"), Some(desk), "premise: lent");
+
+        received(&mut office, &crowd(&["x", "y"]), AT + 2_000);
+        assert_eq!(slot_of(&office, "x").expect("back").exiting_at, None);
+        assert_eq!(staying_at(&office, desk), 1);
+
+        let mut office = RemoteOffice::new(ONE_DESK);
+        received_from(&mut office, &crowd(&["a"]), &demo(), AT);
+        received_from(&mut office, &crowd(&["c"]), &machine(), AT + 1_000);
+        received_from(&mut office, &crowd(&["a"]), &demo(), AT + 2_000);
+        assert_eq!(staying_at(&office, desk), 1, "a machine switched back");
     }
 
     /// A slot its server still names keeps its desk while it walks out: the
