@@ -8,6 +8,7 @@ license                = "MIT AND OFL-1.1"
 repository.workspace   = true
 authors.workspace      = true
 homepage.workspace     = true
+readme.workspace       = true
 keywords.workspace     = true
 categories.workspace   = true
 # The plugins' type-check tooling beside the templates `include_str!` bakes,
@@ -220,6 +221,10 @@ portable-pty = { workspace = true }
 [[example]]
 name = "snapshot"
 path = "examples/snapshot/main.rs"
+test = true
+
+[[example]]
+name = "corpus_check"
 test = true
 
 [[bench]]
