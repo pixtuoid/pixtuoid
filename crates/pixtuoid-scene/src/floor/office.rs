@@ -225,15 +225,15 @@ fn floor_pet(floor: usize, n_floors: usize, pets: &[crate::pet::Pet]) -> Option<
 /// projection: its index, altitude and pet (of `pets`) the office's, and a
 /// petting playing only on its own floor while it lasts.
 fn floor_world<'a>(
-    world: FloorInputs<'a>,
+    world: FloorInputs<'a, SceneState>,
     floor_scene: &'a super::FloorScene,
     floor: usize,
     n_floors: usize,
     pets: &'a [crate::pet::Pet],
 ) -> FloorInputs<'a> {
     let now = world.now;
+    let world = world.on(floor_scene);
     FloorInputs {
-        scene: floor_scene.scene(),
         floor: floor_meta(world.floor, floor, n_floors),
         pets: super::PetInputs {
             pet: floor_pet(floor, n_floors, pets),
@@ -423,7 +423,7 @@ impl OfficeSession {
     #[doc(hidden)]
     pub fn floor_world<'a>(
         &self,
-        world: FloorInputs<'a>,
+        world: FloorInputs<'a, SceneState>,
         floor_scene: &'a super::FloorScene,
         floor: usize,
         pets: &'a [crate::pet::Pet],
@@ -489,7 +489,7 @@ impl OfficeSession {
     pub fn render(
         &mut self,
         look: crate::look::Look,
-        inputs: crate::look::RenderInputs<'_>,
+        inputs: crate::look::RenderInputs<'_, SceneState>,
         pets: &[crate::pet::Pet],
         gap: Rgb,
     ) -> Feed {
@@ -510,7 +510,7 @@ impl OfficeSession {
                         floor: footer_floor(floor, n_floors, total_agents),
                         ..inputs.place
                     },
-                    ..inputs
+                    ..inputs.on(&floor_scene)
                 },
             );
         };

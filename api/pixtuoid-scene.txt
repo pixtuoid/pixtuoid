@@ -122,23 +122,23 @@ impl core::marker::Unpin for pixtuoid_scene::floor::FloorCtx
 impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorCtx
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorCtx
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorCtx
-pub struct pixtuoid_scene::floor::FloorInputs<'a>
+pub struct pixtuoid_scene::floor::FloorInputs<'a, S>
 pub pixtuoid_scene::floor::FloorInputs::floor: pixtuoid_scene::floor::FloorMeta
 pub pixtuoid_scene::floor::FloorInputs::now: std::time::SystemTime
 pub pixtuoid_scene::floor::FloorInputs::pets: pixtuoid_scene::floor::PetInputs<'a>
-pub pixtuoid_scene::floor::FloorInputs::scene: &'a pixtuoid_core::state::SceneState
-impl<'a> core::clone::Clone for pixtuoid_scene::floor::FloorInputs<'a>
-pub fn pixtuoid_scene::floor::FloorInputs<'a>::clone(&self) -> Self
-impl<'a> core::fmt::Debug for pixtuoid_scene::floor::FloorInputs<'a>
-pub fn pixtuoid_scene::floor::FloorInputs<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Copy for pixtuoid_scene::floor::FloorInputs<'a>
-impl<'a> core::marker::Freeze for pixtuoid_scene::floor::FloorInputs<'a>
-impl<'a> core::marker::Send for pixtuoid_scene::floor::FloorInputs<'a>
-impl<'a> core::marker::Sync for pixtuoid_scene::floor::FloorInputs<'a>
-impl<'a> core::marker::Unpin for pixtuoid_scene::floor::FloorInputs<'a>
-impl<'a> core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorInputs<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorInputs<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorInputs<'a>
+pub pixtuoid_scene::floor::FloorInputs::scene: &'a S
+impl<'a, S: core::fmt::Debug> core::fmt::Debug for pixtuoid_scene::floor::FloorInputs<'a, S>
+pub fn pixtuoid_scene::floor::FloorInputs<'a, S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<S> core::clone::Clone for pixtuoid_scene::floor::FloorInputs<'_, S>
+pub fn pixtuoid_scene::floor::FloorInputs<'_, S>::clone(&self) -> Self
+impl<S> core::marker::Copy for pixtuoid_scene::floor::FloorInputs<'_, S>
+impl<'a, S> core::marker::Freeze for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::marker::Freeze
+impl<'a, S> core::marker::Send for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::marker::Send
+impl<'a, S> core::marker::Sync for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::marker::Sync
+impl<'a, S> core::marker::Unpin for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::marker::Unpin
+impl<'a, S> core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::marker::UnsafeUnpin
+impl<'a, S> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::panic::unwind_safe::RefUnwindSafe
+impl<'a, S> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::panic::unwind_safe::UnwindSafe
 pub struct pixtuoid_scene::floor::FloorMeta
 pub pixtuoid_scene::floor::FloorMeta::altitude: f32
 pub pixtuoid_scene::floor::FloorMeta::floor_idx: usize
@@ -199,8 +199,8 @@ pub fn pixtuoid_scene::floor::FloorSession::floor(&self) -> &pixtuoid_scene::flo
 pub fn pixtuoid_scene::floor::FloorSession::floor_mut(&mut self) -> &mut pixtuoid_scene::floor::PerFloor
 pub fn pixtuoid_scene::floor::FloorSession::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
 pub fn pixtuoid_scene::floor::FloorSession::picture(&self) -> core::option::Option<pixtuoid_scene::look::FloorPicture<'_>>
-pub fn pixtuoid_scene::floor::FloorSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>)
-pub fn pixtuoid_scene::floor::FloorSession::step(&mut self, pixtuoid_scene::floor::FloorInputs<'_>, pixtuoid_scene::layout::Viewport) -> core::option::Option<pixtuoid_scene::floor::SteppedFloor>
+pub fn pixtuoid_scene::floor::FloorSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_, pixtuoid_core::state::SceneState>)
+pub fn pixtuoid_scene::floor::FloorSession::step(&mut self, pixtuoid_scene::floor::FloorInputs<'_, pixtuoid_core::state::SceneState>, pixtuoid_scene::layout::Viewport) -> core::option::Option<pixtuoid_scene::floor::SteppedFloor>
 impl core::fmt::Debug for pixtuoid_scene::floor::FloorSession
 pub fn pixtuoid_scene::floor::FloorSession::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::FloorSession
@@ -231,7 +231,7 @@ pub fn pixtuoid_scene::floor::OfficeSession::nav(&self) -> &pixtuoid_scene::floo
 pub fn pixtuoid_scene::floor::OfficeSession::navigate(&mut self, usize, std::time::SystemTime) -> bool
 pub fn pixtuoid_scene::floor::OfficeSession::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
 pub fn pixtuoid_scene::floor::OfficeSession::picture(&self) -> core::option::Option<pixtuoid_scene::look::Picture<'_>>
-pub fn pixtuoid_scene::floor::OfficeSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>, &[pixtuoid_scene::pet::Pet], pixtuoid_scene::sprite::Rgb) -> pixtuoid_scene::floor::Feed
+pub fn pixtuoid_scene::floor::OfficeSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_, pixtuoid_core::state::SceneState>, &[pixtuoid_scene::pet::Pet], pixtuoid_scene::sprite::Rgb) -> pixtuoid_scene::floor::Feed
 pub fn pixtuoid_scene::floor::OfficeSession::until_next_paint(&self, std::time::SystemTime) -> core::option::Option<core::time::Duration>
 impl core::fmt::Debug for pixtuoid_scene::floor::OfficeSession
 pub fn pixtuoid_scene::floor::OfficeSession::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -1521,25 +1521,25 @@ impl core::marker::Unpin for pixtuoid_scene::look::Rects
 impl core::marker::UnsafeUnpin for pixtuoid_scene::look::Rects
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Rects
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::Rects
-pub struct pixtuoid_scene::look::RenderInputs<'a>
+pub struct pixtuoid_scene::look::RenderInputs<'a, S>
 pub pixtuoid_scene::look::RenderInputs::debug_walkable: bool
 pub pixtuoid_scene::look::RenderInputs::dim: pixtuoid_scene::look::Dim
 pub pixtuoid_scene::look::RenderInputs::place: pixtuoid_scene::look::Place
 pub pixtuoid_scene::look::RenderInputs::theme: &'static pixtuoid_scene::theme::Theme
 pub pixtuoid_scene::look::RenderInputs::viewport: pixtuoid_scene::layout::Viewport
-pub pixtuoid_scene::look::RenderInputs::world: pixtuoid_scene::floor::FloorInputs<'a>
-impl<'a> core::clone::Clone for pixtuoid_scene::look::RenderInputs<'a>
-pub fn pixtuoid_scene::look::RenderInputs<'a>::clone(&self) -> Self
-impl<'a> core::fmt::Debug for pixtuoid_scene::look::RenderInputs<'a>
-pub fn pixtuoid_scene::look::RenderInputs<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Copy for pixtuoid_scene::look::RenderInputs<'a>
-impl<'a> core::marker::Freeze for pixtuoid_scene::look::RenderInputs<'a>
-impl<'a> core::marker::Send for pixtuoid_scene::look::RenderInputs<'a>
-impl<'a> core::marker::Sync for pixtuoid_scene::look::RenderInputs<'a>
-impl<'a> core::marker::Unpin for pixtuoid_scene::look::RenderInputs<'a>
-impl<'a> core::marker::UnsafeUnpin for pixtuoid_scene::look::RenderInputs<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::RenderInputs<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::RenderInputs<'a>
+pub pixtuoid_scene::look::RenderInputs::world: pixtuoid_scene::floor::FloorInputs<'a, S>
+impl<'a, S: core::fmt::Debug> core::fmt::Debug for pixtuoid_scene::look::RenderInputs<'a, S>
+pub fn pixtuoid_scene::look::RenderInputs<'a, S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<S> core::clone::Clone for pixtuoid_scene::look::RenderInputs<'_, S>
+pub fn pixtuoid_scene::look::RenderInputs<'_, S>::clone(&self) -> Self
+impl<S> core::marker::Copy for pixtuoid_scene::look::RenderInputs<'_, S>
+impl<'a, S> core::marker::Freeze for pixtuoid_scene::look::RenderInputs<'a, S> where pixtuoid_scene::floor::FloorInputs<'a, S>: core::marker::Freeze
+impl<'a, S> core::marker::Send for pixtuoid_scene::look::RenderInputs<'a, S> where pixtuoid_scene::floor::FloorInputs<'a, S>: core::marker::Send
+impl<'a, S> core::marker::Sync for pixtuoid_scene::look::RenderInputs<'a, S> where pixtuoid_scene::floor::FloorInputs<'a, S>: core::marker::Sync
+impl<'a, S> core::marker::Unpin for pixtuoid_scene::look::RenderInputs<'a, S> where pixtuoid_scene::floor::FloorInputs<'a, S>: core::marker::Unpin
+impl<'a, S> core::marker::UnsafeUnpin for pixtuoid_scene::look::RenderInputs<'a, S> where pixtuoid_scene::floor::FloorInputs<'a, S>: core::marker::UnsafeUnpin
+impl<'a, S> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::RenderInputs<'a, S> where pixtuoid_scene::floor::FloorInputs<'a, S>: core::panic::unwind_safe::RefUnwindSafe
+impl<'a, S> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::RenderInputs<'a, S> where pixtuoid_scene::floor::FloorInputs<'a, S>: core::panic::unwind_safe::UnwindSafe
 pub struct pixtuoid_scene::look::Rendered
 impl pixtuoid_scene::look::Rendered
 pub fn pixtuoid_scene::look::Rendered::layout(&self) -> &alloc::rcs::arc::Arc<pixtuoid_scene::layout::SceneLayout>
@@ -1568,7 +1568,7 @@ impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Slide
 impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::SlidePicture<'a>
 pub fn pixtuoid_scene::look::render(&mut pixtuoid_scene::floor::PerFloor, pixtuoid_scene::floor::OfficeStores<'_>, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>) -> core::option::Option<pixtuoid_scene::look::Rendered>
 pub mod pixtuoid_scene::nameplate
-pub struct pixtuoid_scene::nameplate::FloorNamesakes<'a>(_)
+pub struct pixtuoid_scene::nameplate::FloorNamesakes<'a>
 impl<'a> pixtuoid_scene::nameplate::FloorNamesakes<'a>
 pub fn pixtuoid_scene::nameplate::FloorNamesakes<'a>::nameplate(&self, &pixtuoid_core::state::AgentSlot) -> pixtuoid_scene::nameplate::Nameplate
 pub fn pixtuoid_scene::nameplate::FloorNamesakes<'a>::of(&'a pixtuoid_core::state::SceneState) -> Self

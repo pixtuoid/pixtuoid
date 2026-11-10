@@ -10,11 +10,12 @@ macro_rules! make_draw_ctx {
     ($name:ident, $scene:expr, $pack:expr, $now:expr) => {
         let mut _floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone($pack));
         let mut _office = pixtuoid_scene::floor::PerOffice::new();
+        let _ground = pixtuoid_scene::floor::project_floor_scene($scene, 0);
         let mut $name = pixtuoid::dev::DrawCtx::offscreen(
             &mut _floor,
             _office.stores(),
             &pixtuoid_scene::theme::NORMAL,
-            $scene,
+            &_ground,
             $now,
             pixtuoid_scene::floor::FloorMeta::ground(),
         );

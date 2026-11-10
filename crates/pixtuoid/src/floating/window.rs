@@ -461,7 +461,7 @@ impl FloatingApp {
         // ONE clock read, so the overlays below annotate the frame actually rendered.
         let now = self.ui.now();
         let world = FloorInputs {
-            scene: &scene,
+            scene: &*scene,
             now,
             floor: self.floor_meta(),
             pets: PetInputs {

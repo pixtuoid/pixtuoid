@@ -152,7 +152,11 @@ impl Chrome {
     /// The office's inputs over `scene`, as [`OfficeSession::render`] takes
     /// them: its weather and motion, and the petting the session keeps to
     /// its own floor.
-    fn office_world<'a>(&'a self, scene: &'a SceneState, now: SystemTime) -> FloorInputs<'a> {
+    fn office_world<'a>(
+        &'a self,
+        scene: &'a SceneState,
+        now: SystemTime,
+    ) -> FloorInputs<'a, SceneState> {
         FloorInputs {
             scene,
             now,
@@ -652,7 +656,11 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     /// The office's inputs over `scene` at `now`, as [`Self::render`] steps
     /// its floors with them.
-    pub fn office_world<'a>(&'a self, scene: &'a SceneState, now: SystemTime) -> FloorInputs<'a> {
+    pub fn office_world<'a>(
+        &'a self,
+        scene: &'a SceneState,
+        now: SystemTime,
+    ) -> FloorInputs<'a, SceneState> {
         self.chrome.office_world(scene, now)
     }
 
