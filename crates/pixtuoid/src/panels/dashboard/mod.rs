@@ -81,12 +81,11 @@ impl DashboardFolds {
     }
 }
 
-/// Flatten the scene into a tree-ordered row list: roots in [`desk_order`],
-/// each immediately followed by its visible subagents. An agent
-/// whose `parent_id` is absent from the scene (an orphan) anchors its own
+/// Flatten the scene into a tree-ordered row list: roots by desk, an unseated
+/// root after the seated ones, each immediately followed by its visible subagents.
+/// An agent whose `parent_id` is absent from the scene (an orphan) anchors its own
 /// subtree, and nesting deeper than two levels is walked too, so nothing is
 /// ever silently dropped.
-#[doc(hidden)]
 pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<DashboardRow> {
     let tree = ScopeTree::of(&scene.agents);
     let mut roots: Vec<&AgentSlot> = tree.roots().collect();

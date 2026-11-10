@@ -282,7 +282,7 @@ pub(crate) fn floor_caps_for_buffer(buf_w: u16, buf_h: u16) -> [usize; MAX_FLOOR
 ///
 /// There is deliberately NO `cap == 0 → FALLBACK_DESKS` clause: `sync_floor_caps`
 /// publishes the honest 0 for a window too small to lay out, and a fallback points the
-/// WRONG way, admitting `FALLBACK_DESKS` agents onto desks that do not exist.
+/// WRONG way, seating `FALLBACK_DESKS` agents at desks that do not exist.
 pub(crate) fn boot_capacities_for_window(
     size: PhysicalSize<u32>,
     density: Density,
