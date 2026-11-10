@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ScopeTree, ToolUse};
+use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, SceneState, ScopeTree, ToolUse};
 use pixtuoid_scene::nameplate::{FloorNamesakes, Nameplate};
 
 /// Roots with more than this many direct subagents render collapsed by default,
@@ -41,7 +41,8 @@ pub struct DashboardRow {
     pub depth: u8,
     pub name: Nameplate,
     pub source: Arc<str>,
-    pub floor_idx: usize,
+    /// `None` while the agent is unseated.
+    pub floor: Option<usize>,
     pub state: RowState,
     pub child_count: usize,
     pub collapsed: bool,
@@ -80,15 +81,15 @@ impl DashboardFolds {
     }
 }
 
-/// Flatten the scene into a tree-ordered row list: roots sorted by
-/// `desk_index`, each immediately followed by its visible subagents. An agent
-/// whose `parent_id` is absent from the scene (an orphan) anchors its own
+/// Flatten the scene into a tree-ordered row list: roots by desk, an unseated
+/// root after the seated ones, each immediately followed by its visible subagents.
+/// An agent whose `parent_id` is absent from the scene (an orphan) anchors its own
 /// subtree, and nesting deeper than two levels is walked too, so nothing is
 /// ever silently dropped.
 pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<DashboardRow> {
     let tree = ScopeTree::of(&scene.agents);
     let mut roots: Vec<&AgentSlot> = tree.roots().collect();
-    roots.sort_by_key(|s| s.desk_index);
+    roots.sort_by_key(desk_order);
 
     let namesakes = FloorNamesakes::of(scene);
     let mut rows = Vec::new();
@@ -96,6 +97,12 @@ pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<D
         push_subtree(&tree, folds, &namesakes, root, 0, None, &mut rows);
     }
     rows
+}
+
+/// Siblings by desk, an unseated one after them: it has no desk to order
+/// by.
+fn desk_order(slot: &&AgentSlot) -> (bool, Option<FloorDesk>) {
+    (slot.desk.is_none(), slot.desk)
 }
 
 fn push_subtree(
@@ -122,7 +129,7 @@ fn push_subtree(
         return;
     }
 
-    kids.sort_by_key(|s| s.desk_index);
+    kids.sort_by_key(desk_order);
     for kid in kids {
         push_subtree(
             tree,
@@ -150,7 +157,7 @@ fn row_for(
         depth,
         name: namesakes.nameplate(slot),
         source: slot.source.clone(),
-        floor_idx: slot.floor_idx,
+        floor: slot.desk.map(|desk| desk.floor),
         state: row_state(&slot.state),
         child_count,
         collapsed,
@@ -198,7 +205,7 @@ pub(crate) fn reanchor_selection(
 pub(crate) fn resolve_floor(rows: &[DashboardRow], selected: AgentId) -> Option<usize> {
     rows.iter()
         .find(|r| r.agent_id == selected)
-        .map(|r| r.floor_idx)
+        .and_then(|r| r.floor)
 }
 
 pub(crate) fn clamp_scroll(

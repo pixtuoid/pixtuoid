@@ -75,16 +75,15 @@ impl VisitorHires {
         if self.ids.len() >= Self::MAX_LIVE {
             return false;
         }
-        // A hire the office can't SEAT would hold a MAX_LIVE slot for its whole
-        // stay with zero visual feedback. Live agents keep their desks through
-        // exit grace and each queued SessionStart will claim one, so count both
-        // against the canvas-synced capacity.
+        // A hire the office can't SEAT would hold a MAX_LIVE slot unseen, so every
+        // agent that claims a desk and each queued SessionStart count against its desks.
         let queued_starts = self
             .pending
             .iter()
             .filter(|ev| matches!(ev.event, AgentEvent::SessionStart { .. }))
             .count();
-        if scene.agents.len() + queued_starts >= scene.total_capacity() {
+        let claimed = scene.agents.values().filter(|a| a.claims_a_desk()).count();
+        if claimed + queued_starts >= scene.total_capacity() {
             return false;
         }
         self.seq += 1;
@@ -195,8 +194,8 @@ impl Office {
         let fit = PixelFit::at_least_density(density.get(), density, Size { w: 0, h: 0 });
         Ok(Office {
             // Capacity starts empty and is synced from the CANVAS's own layout
-            // on every `step` before any beat fires, so the reducer only admits
-            // agents the rendered office can seat.
+            // on every `step` before any beat fires, so the reducer seats agents
+            // only at desks the rendered office has.
             scene: SceneState::default(),
             session: FloorSession::new(pack),
             rgba: Vec::new(),
@@ -233,7 +232,7 @@ impl Office {
         let px = self.frame_size(w, h);
         // Capacity BEFORE the script advances: the SessionStarts due this
         // frame must allocate desks against the canvas this frame renders.
-        self.sync_capacity(units_w, units_h);
+        self.sync_capacity(units_w, units_h, now);
         self.advance_script(now);
         self.reducer.tick(&mut self.scene, now);
         // The DAEMON sweep the app's reducer task runs: without it a `Down` row
@@ -575,12 +574,11 @@ impl Office {
     }
 
     /// Keep the reducer's desk capacity in lockstep with the office actually
-    /// rendered at these units. Without it an admitted agent's desk index
-    /// can exceed the canvas layout's desk count, so it paints NOWHERE (its
-    /// anchors return `None`) while staying alive in the scene. A shrink lowers
-    /// capacity for FUTURE admissions only; already-seated excess agents stay
-    /// alive-but-offscreen, same as the TUI on terminal shrink.
-    fn sync_capacity(&mut self, units_w: u16, units_h: u16) {
+    /// rendered at these units. Capacity starts at zero, so without it no
+    /// agent is ever seated and each paints NOWHERE (its anchors return
+    /// `None`) while staying alive in the scene. A resize re-seats
+    /// ([`SceneState::set_capacities`]), as the TUI's does.
+    fn sync_capacity(&mut self, units_w: u16, units_h: u16, now: SystemTime) {
         if self.caps_units == Some((units_w, units_h)) {
             return;
         }
@@ -590,7 +588,8 @@ impl Office {
             pixtuoid_scene::layout::Viewport::full(units_w, units_h),
             self.seed,
         );
-        self.scene.floor_capacities = std::array::from_fn(|i| if i == 0 { cap } else { 0 });
+        self.scene
+            .set_capacities(std::array::from_fn(|i| if i == 0 { cap } else { 0 }), now);
         self.caps_units = Some((units_w, units_h));
     }
 
@@ -1447,6 +1446,37 @@ mod tests {
         assert_eq!(hires_alive(&o), 0, "the hire left and never replays");
     }
 
+    /// An unseated agent walking out leaves the free desk to a hire.
+    #[test]
+    fn a_hire_takes_the_desk_an_unseated_leaver_never_will() {
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let mut desks = [0; pixtuoid_core::state::MAX_FLOORS];
+        desks[0] = 1;
+        let mut scene = SceneState::new(desks);
+        let mut r = Reducer::new();
+        let [seated, leaver] = ["seated", "leaver"].map(|s| AgentId::from_parts("claude-code", s));
+        for (agent_id, session) in [(seated, "seated"), (leaver, "leaver")] {
+            let start = AgentEvent::SessionStart {
+                agent_id,
+                source: "claude-code".into(),
+                session_id: session.into(),
+                cwd: "/repo".into(),
+                parent_id: None,
+            };
+            r.apply(&mut scene, start, t0, Transport::Hook);
+        }
+        let end = AgentEvent::SessionEnd {
+            agent_id: leaver,
+            as_child: false,
+        };
+        r.apply(&mut scene, end, t0, Transport::Hook);
+        desks[0] = 2;
+        scene.set_capacities(desks, t0);
+        assert_eq!(scene.agents[&leaver].desk, None, "premise: walking out");
+
+        assert!(VisitorHires::default().try_hire(t0, &scene));
+    }
+
     #[test]
     fn frame_exposes_the_same_bytes_as_the_ptr_len_contract() {
         let mut o = office();
@@ -1493,12 +1523,12 @@ mod tests {
             "reducer capacity derives from the SAME layout the canvas renders"
         );
         for a in o.scene.agents.values() {
-            let local = o.scene.floor_local_desk(a.desk_index);
             assert!(
-                layout.home_desk(local).is_some(),
-                "agent {:?} at desk {:?} has no paintable anchor in the canvas layout",
+                a.desk
+                    .is_some_and(|desk| layout.home_desk(desk.index).is_some()),
+                "agent {:?} at {:?} has no paintable anchor in the canvas layout",
                 a.agent_id,
-                a.desk_index
+                a.desk
             );
         }
         assert_eq!(
@@ -1522,7 +1552,7 @@ mod tests {
             "premise: this width seats no more than the cast"
         );
         assert_eq!(
-            o.scene.agents.len(),
+            o.scene.agents.values().filter(|a| a.desk.is_some()).count(),
             o.scene.total_capacity(),
             "the cast fills every desk the narrow canvas lays out"
         );

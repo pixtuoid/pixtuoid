@@ -501,8 +501,7 @@
   why: >-
     These jobs build and publish with the release tokens in scope (see
     release-workflows-restore-no-cache), and mise.toml's tools are unpinned
-    `latest`: past just, nothing it downloads runs here. cross and cargo-deb
-    stay on install-action's checksum-pinned manifest.
+    `latest`: past just, nothing it downloads runs here.
   assert: |
     all(.jobs[].steps[]?;
         ((.uses // "") | test("/(setup-tools|setup-cargo-just)$") | not)
@@ -545,13 +544,11 @@
       and (.jobs["ci-passed"] | has("if") | not)
       and .jobs["ci-passed"].permissions.checks == "read"
       and .jobs.build.needs == "ci-passed"
-      and .jobs.deb.needs == "ci-passed"
   break:
     - .jobs["ci-passed"].uses = "./.github/workflows/other.yml"
     - .jobs["ci-passed"].if = "${{ false }}"
     - del(.jobs["ci-passed"].permissions.checks)
     - del(.jobs.build.needs)
-    - .jobs.deb.needs = "check"
 
 - id: the-ci-gate-wait-cannot-pass-unwaited
   file: .github/workflows/wait-ci-gate.yml
@@ -631,40 +628,6 @@
       (.jobs.build.steps[] | select(.name == "Package (Windows)") | .run)
       |= sub("just stage-notices \"\\$DIR\""; "cp LICENSE \"$DIR/\"")
     - .jobs.build.steps |= map(select(.name != "Package (Unix)"))
-
-- id: debs-ship-the-license
-  file:
-    - crates/pixtuoid/Cargo.toml
-    - crates/pixtuoid-hook/Cargo.toml
-  why: >-
-    cargo-deb's generated copyright file names the license without its text,
-    which MIT requires in every copy; without this row a .deb ships none.
-  assert: |
-    .package.name as $name
-    | [.package.metadata.deb.assets[]
-       | select(.[0] == "../../LICENSE" and .[1] == "usr/share/doc/\($name)/")]
-    | length == 1
-  break:
-    - .package.metadata.deb.assets |= map(select(.[0] != "../../LICENSE"))
-    - |
-      (.package.metadata.deb.assets[] | select(.[0] == "../../LICENSE") | .[1])
-      = "usr/share/doc/"
-
-- id: deb-ships-every-font-notice
-  file: crates/pixtuoid/Cargo.toml
-  why: >-
-    The .deb is another copy of the binary, so it carries the embedded fonts'
-    notices by the same glob `just stage-notices` uses; a narrower one drops a
-    font silently.
-  assert: |
-    [.package.metadata.deb.assets[]
-     | select(.[0] == "../*/fonts/**/*.txt" and .[1] == "usr/share/doc/pixtuoid/licenses/")]
-    | length == 1
-  break:
-    - .package.metadata.deb.assets |= map(select(.[0] | startswith("target/")))
-    - |
-      (.package.metadata.deb.assets[] | select(.[0] | contains("fonts")) | .[0])
-      = "../pixtuoid/fonts/*.txt"
 
 - id: queue-merge-conditions-are-ci-gate
   file: .mergify.yml

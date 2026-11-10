@@ -815,9 +815,10 @@ fn verify_target_hard_flags_a_missing_beside_file_for_every_beside_target() {
                 let tmp = tempfile::TempDir::new().unwrap();
                 let cfg = tmp.path().join("config");
                 install_target_from(t, Some(cfg.clone()), Some(exe.clone())).unwrap();
+                let fresh = verify_target(t, Some(cfg.clone()));
                 assert!(
-                    verify_target(t, Some(cfg.clone())).is_sound(),
-                    "{}: a fresh install must verify sound",
+                    fresh.is_sound() && fresh.notes.is_empty(),
+                    "{}: a fresh install must verify clean — got {fresh:?}",
                     t.name
                 );
                 for (p, _) in make(exe.to_str().unwrap()).unwrap() {
@@ -844,6 +845,30 @@ fn verify_target_hard_flags_a_missing_beside_file_for_every_beside_target() {
             );
         },
     );
+}
+
+#[test]
+fn verify_target_notes_an_unread_shim_only_when_no_command_names_one() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let cfg = tmp.path().join("hooks.json");
+    let exe = std::env::current_exe().unwrap();
+    install_target_from(&target::CURSOR, Some(cfg.clone()), Some(exe)).unwrap();
+    let noted = |cfg: &std::path::Path| {
+        verify_target(&target::CURSOR, Some(cfg.to_path_buf()))
+            .notes
+            .iter()
+            .any(|n| n.contains("could not read the shim path"))
+    };
+    assert!(!noted(&cfg));
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+    for entries in doc["hooks"].as_object_mut().unwrap().values_mut() {
+        for entry in entries.as_array_mut().unwrap() {
+            entry["command"] = " ".into();
+        }
+    }
+    std::fs::write(&cfg, doc.to_string()).unwrap();
+    assert!(noted(&cfg));
 }
 
 /// EVERY owned file, not just the one that bakes a shim path, and any byte of it — a
@@ -1959,8 +1984,8 @@ fn codex_connect_re_adds_a_marketplace_codex_records_from_a_moved_root() {
     });
 }
 
-/// A host CLI off PATH fails a connect before it touches the legacy config, so the
-/// hooks an older pixtuoid merged keep firing.
+/// A host CLI off PATH fails a connect before it touches any file, so the hooks an
+/// older pixtuoid merged keep firing and no plugin root is left that no disconnect removes.
 #[test]
 fn a_connect_without_the_host_cli_leaves_the_legacy_hooks() {
     with_fake_hosts(|fake| {
@@ -1978,6 +2003,7 @@ fn a_connect_without_the_host_cli_leaves_the_legacy_hooks() {
             CODEX_LEGACY_HOOK
         );
         assert!(!has_hooks(&CODEX, Some(hooks)));
+        assert!(!tmp.path().join("marketplace").exists());
     });
 }
 
