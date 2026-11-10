@@ -4784,6 +4784,8 @@ async fn a_life_after_its_own_end_registers_again_within_one_read() {
     tokio::io::AsyncWriteExt::write_all(&mut f, format!("{OMP_EXIT_LINE}{TOOL}").as_bytes())
         .await
         .unwrap();
+    tokio::io::AsyncWriteExt::flush(&mut f).await.unwrap();
+    drop(f);
     let live = walk_omp(&path, window, &cursors, &seen).await;
     assert_eq!(lifecycle(&live), ["end", "start", "tool"]);
     assert!(matches!(
@@ -4821,6 +4823,8 @@ async fn a_claimed_paths_life_after_its_end_registers_from_the_head() {
     tokio::io::AsyncWriteExt::write_all(&mut f, format!("{OMP_EXIT_LINE}{TOOL}").as_bytes())
         .await
         .unwrap();
+    tokio::io::AsyncWriteExt::flush(&mut f).await.unwrap();
+    drop(f);
     let live = walk_omp(&path, window, &cursors, &seen).await;
     let cwds: Vec<&Path> = (live.iter())
         .filter_map(|(_, e)| match e {
