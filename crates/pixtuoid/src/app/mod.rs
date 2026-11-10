@@ -260,6 +260,7 @@ fn build_run_config(
         audio: config::resolve_audio(&cfg),
         look,
         motion,
+        floating: config::resolve_floating(&cfg),
     })
 }
 

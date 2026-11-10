@@ -89,6 +89,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
         audio,
         look: _,
         motion: _,
+        floating: _,
     } = cfg;
     // Audio owns no state here: `run_tui` builds the AudioController, which owns
     // the device thread and tears it down on Drop at any exit.

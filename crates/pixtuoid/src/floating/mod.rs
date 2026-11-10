@@ -26,7 +26,6 @@ use anyhow::{Context, Result};
 use pixtuoid_core::source::claude_code::ClaudeCodeSource;
 use winit::event_loop::EventLoop;
 
-use crate::config;
 use crate::runtime::{ConnectedSources, RunConfig};
 use window::{FloatingApp, FloatingEvent};
 
@@ -52,13 +51,13 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> 
         drift,
         log,
         first_run,
+        floating,
         ..
     } = cfg;
-    let app_config = config::load(&config_path, &mut Vec::new());
     let pack = pixtuoid_scene::pack::load_bundled_pack()
         .context("loading the bundled sprite pack for the floating window")?;
     let min = geometry::min_window(pack.max_density_variant());
-    let floating_cfg = config::resolve_floating(&app_config).at_least(min.width, min.height);
+    let floating_cfg = floating.at_least(min.width, min.height);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

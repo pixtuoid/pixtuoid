@@ -62,6 +62,8 @@ pub(crate) struct RunConfig {
     /// Resolved by `config::resolve_motion`; `auto` is what the TUI's graphics
     /// plan affords, and Full in the floating window.
     pub(crate) motion: crate::config::MotionMode,
+    /// `[floating]` from the run's one config load; only `floating` reads it.
+    pub(crate) floating: crate::config::FloatingConfig,
 }
 
 /// Each floor's desks in the fewest that any of `offices` holds, each floor
