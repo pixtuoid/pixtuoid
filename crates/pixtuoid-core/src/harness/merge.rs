@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use serde_json::Value;
 
 use super::reads::{Spelling, WRITE_STAMPS};
-use super::{BreadcrumbSink, CASCADE_TICK, Decode, Drive, Driven, Fold};
+use super::{BreadcrumbSink, CASCADE_TICK, Decode, Delivered, Drive, Driven, Fold};
 use crate::source::DEFAULT_POLL_INTERVAL;
 use crate::source::decoder::rfc3339_to_epoch;
 use crate::state::ActivityState;
@@ -51,7 +51,7 @@ struct Written {
     line: usize,
     at: SystemTime,
     within: Duration,
-    events: Vec<AgentEvent>,
+    events: Vec<Delivered>,
 }
 
 /// Every order a session's two streams can reach the reducer in, each folded.
@@ -86,7 +86,7 @@ impl Drive {
             let hooks = written(
                 &Decode::Hooks,
                 hooks,
-                |_, e| e,
+                |_, e| e.into_iter().map(Delivered::Wire).collect(),
                 &mut decoded,
                 |v| {
                     let ms = v.get(SHIM_STAMP)?.as_u64()?;
@@ -98,7 +98,6 @@ impl Drive {
             });
             (hooks, transcript)
         });
-        decoded.seed_events = fold.driven.seed_events;
         decoded.breadcrumbs = sink.take();
         let bounds = bounds(&hooks, &transcript);
         let next = first_order(&bounds);
@@ -128,7 +127,7 @@ fn stamp_of(v: &Value, spelling: Spelling) -> Option<(Duration, Duration)> {
 fn written<S: AsRef<str>>(
     decode: &Decode,
     lines: &[S],
-    mut read: impl FnMut(&str, Vec<AgentEvent>) -> Vec<AgentEvent>,
+    mut read: impl FnMut(&str, Vec<AgentEvent>) -> Vec<Delivered>,
     d: &mut Driven,
     stamp: impl Fn(&Value) -> Option<(Duration, Duration)>,
 ) -> Vec<Written> {
@@ -235,7 +234,6 @@ impl Merges {
                 lines: self.decoded.lines,
                 unparseable: self.decoded.unparseable,
                 decode_errors: self.decoded.decode_errors.clone(),
-                seed_events: self.decoded.seed_events,
                 ..Driven::empty()
             },
             ..Fold::default()
@@ -248,8 +246,9 @@ impl Merges {
             // the other transport's twin arrives.
             for &(transport, w, at) in &arrivals {
                 fold.tick(at);
-                for event in &w.events {
-                    fold.apply(transport, event.clone(), at);
+                for delivered in &w.events {
+                    let event = delivered.event();
+                    fold.apply(transport, delivered.clone(), at);
                     steps.push(Step {
                         transport,
                         line: w.line,
@@ -489,7 +488,7 @@ mod tests {
     fn a_seeded_drive_registers_ahead_of_each_line_that_lives() {
         let (hooks, lines) = ([hook("SessionStart", 1_000)], [call(2_000), output(3_000)]);
         for merged in drive().merges(&hooks, &lines).expect("codex merges") {
-            let registered = (led_by_a_start(&merged), merged.driven.seed_events);
+            let registered = (led_by_a_start(&merged), merged.driven.seeds.len());
             assert_eq!(registered, (vec![0, 1], 2), "{:?}", merged.steps);
         }
     }
@@ -522,7 +521,7 @@ mod tests {
         ];
         for (lines, led, seeds) in recordings {
             for merged in drive.merges(&[], &lines).expect("grok merges") {
-                let registered = (led_by_a_start(&merged), merged.driven.seed_events);
+                let registered = (led_by_a_start(&merged), merged.driven.seeds.len());
                 assert_eq!(registered, (led.clone(), seeds), "{:?}", merged.steps);
             }
         }

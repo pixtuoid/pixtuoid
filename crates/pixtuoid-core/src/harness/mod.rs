@@ -140,10 +140,11 @@ pub struct Driven {
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
     pub(crate) presence: Vec<PresenceMsg>,
-    /// How many `events` are a SEED standing in for the watcher's registration,
-    /// not the wire's own output. A census reports [`Self::wire_events`]: a seed
-    /// registers a slot unconditionally, so counting it scores garbage 1/1.
-    pub(crate) seed_events: usize,
+    /// The index in `events` of each SEED, which stands in for the watcher's
+    /// registration, not the wire's own output. A census reports
+    /// [`Self::wire_events`]: a seed registers a slot unconditionally, so
+    /// counting it scores garbage 1/1.
+    pub(crate) seeds: Vec<usize>,
     /// Non-blank lines driven (blank lines are skipped, not counted).
     pub lines: usize,
     /// Lines the watcher skips too, outside the decoder contract: not UTF-8, or
@@ -167,7 +168,7 @@ impl Driven {
             scene: SceneState::uniform(DRIVEN_DESKS),
             events: Vec::new(),
             presence: Vec::new(),
-            seed_events: 0,
+            seeds: Vec::new(),
             lines: 0,
             unparseable: 0,
             decode_errors: Vec::new(),
@@ -219,7 +220,15 @@ impl Driven {
     /// Events the WIRE produced, excluding the registration seeds — the honest
     /// numerator for any census.
     pub fn wire_events(&self) -> usize {
-        self.events.len() - self.seed_events
+        self.events.len() - self.seeds.len()
+    }
+
+    /// [`Self::events`] less its seeds, in order: what the wire alone produced.
+    pub(crate) fn into_wire(self) -> impl Iterator<Item = AgentEvent> {
+        let seeds = self.seeds;
+        (self.events.into_iter().enumerate())
+            .filter(move |(at, _)| seeds.binary_search(at).is_err())
+            .map(|(_, event)| event)
     }
 
     /// Assert bytes WE control drove cleanly. Not for unbounded bytes (the
@@ -504,6 +513,21 @@ struct Sighted {
     head: Vec<u8>,
 }
 
+/// One event a read delivers: a seed, or the wire's own.
+#[derive(Debug, Clone)]
+enum Delivered {
+    Seed(AgentEvent),
+    Wire(AgentEvent),
+}
+
+impl Delivered {
+    fn event(&self) -> &AgentEvent {
+        match self {
+            Self::Seed(event) | Self::Wire(event) => event,
+        }
+    }
+}
+
 impl Default for Fold {
     fn default() -> Self {
         Self {
@@ -549,9 +573,16 @@ impl Fold {
         self.driven
     }
 
-    /// Apply `event` at `at` as `transport` delivered it, observing the classes
-    /// it reaches.
-    fn apply(&mut self, transport: Transport, event: AgentEvent, at: SystemTime) {
+    /// Apply `delivered` at `at` as `transport` delivered it, observing the
+    /// classes it reaches.
+    fn apply(&mut self, transport: Transport, delivered: Delivered, at: SystemTime) {
+        let event = match delivered {
+            Delivered::Seed(event) => {
+                self.driven.seeds.push(self.driven.events.len());
+                event
+            }
+            Delivered::Wire(event) => event,
+        };
         self.reducer
             .apply(&mut self.driven.scene, event.clone(), at, transport);
         note_reached(&self.driven.scene, &mut self.driven.reaches);
@@ -642,7 +673,7 @@ impl Fold {
         own: Option<AgentId>,
         lines: &[Option<S>],
         decoded: Vec<AgentEvent>,
-    ) -> Vec<AgentEvent> {
+    ) -> Vec<Delivered> {
         let lives = match own {
             Some(own) => each_life(decoded, own),
             None => vec![decoded],
@@ -650,11 +681,11 @@ impl Fold {
         let mut fed = Vec::new();
         for life in lives {
             let verdict = own.and_then(|own| last_life(&life, own));
-            if let Some(seed) = self.registration(drive, own, lines, &life, verdict) {
-                self.driven.seed_events += 1;
-                fed.push(seed);
-            }
-            fed.extend(life);
+            fed.extend(
+                self.registration(drive, own, lines, &life, verdict)
+                    .map(Delivered::Seed),
+            );
+            fed.extend(life.into_iter().map(Delivered::Wire));
         }
         fed
     }
@@ -858,9 +889,9 @@ mod tests {
         fold.feed(&drive, [tool_line(), title.to_string()], at);
         let first = slots(&fold);
         fold.feed(&drive, [trailer.to_string()], at);
-        assert_eq!(fold.driven().seed_events, 1, "a feed showing no life");
+        assert_eq!(fold.driven().seeds.len(), 1, "a feed showing no life");
         fold.feed(&drive, [tool_line()], at);
-        assert_eq!(fold.driven().seed_events, 2, "a feed showing life");
+        assert_eq!(fold.driven().seeds.len(), 2, "a feed showing life");
         assert_eq!(slots(&fold), first);
 
         let rollout = "/h/.codex/sessions/2026/10/27/rollout-2026-10-27T04-47-02-019e7762-9ded-7e33-8e5c-3b1c8f6f0a02.jsonl";
@@ -881,7 +912,7 @@ mod tests {
             "{linked:?}"
         );
         fold.feed(&child, [call.to_string()], at);
-        assert_eq!(fold.driven().seed_events, 2, "a child's feed showing life");
+        assert_eq!(fold.driven().seeds.len(), 2, "a child's feed showing life");
         assert_eq!(slots(&fold), linked);
     }
 
@@ -900,7 +931,7 @@ mod tests {
         assert_eq!(fold.driven().registered(), 0, "the first life walked out");
         fold.feed(&drive, [tool_line()], resumed);
         let d = fold.finish();
-        assert_eq!(d.seed_events, 2);
+        assert_eq!(d.seeds.len(), 2);
         assert_eq!(d.registered(), 1, "the second life registers");
     }
 
@@ -924,7 +955,7 @@ mod tests {
             d.events.len() > fed,
             "the trailer must decode, or this proves nothing"
         );
-        assert_eq!(d.seed_events, 1);
+        assert_eq!(d.seeds.len(), 1);
         assert_eq!(d.registered(), 0);
     }
 
@@ -947,7 +978,7 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            (lifecycle, d.seed_events),
+            (lifecycle, d.seeds.len()),
             (vec!["start", "start", "end"], 1)
         );
         let walked_out = d
@@ -977,7 +1008,7 @@ mod tests {
                 AgentEvent::SessionEnd { .. } => Some("end"),
                 _ => None,
             });
-            (starts_and_ends.collect::<Vec<_>>(), d.seed_events)
+            (starts_and_ends.collect::<Vec<_>>(), d.seeds.len())
         };
         assert_eq!(lifecycle(&[&tool, &tool]), (vec!["start"], 1));
         assert_eq!(
@@ -989,6 +1020,19 @@ mod tests {
         assert_eq!(resumed, (vec!["start", "end", "start"], 2));
         let lives = lifecycle(&[&tool, &exit, &tool, &exit]);
         assert_eq!(lives, (vec!["start", "end", "start", "end"], 2));
+    }
+
+    /// A recording's wire is its events less each life's seed, a seed past its
+    /// first life included.
+    #[test]
+    fn the_wire_is_every_event_but_each_lifes_seed() {
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let recording = [tool_line(), exit.to_string(), tool_line()];
+        let drive = || Drive::transcript(SOURCE, TRANSCRIPT).unwrap();
+        let seeded = drive().seeded().lines(&recording);
+        assert_eq!(seeded.seeds.len(), 2, "{:?}", seeded.events);
+        let wire: Vec<AgentEvent> = seeded.into_wire().collect();
+        assert_eq!(wire, drive().lines(&recording).events);
     }
 
     /// A new life's read that lacks the head's cwd reads the transcript's start
@@ -1033,7 +1077,7 @@ mod tests {
             })
             .collect();
         let want = vec!["start", "tool", "end", "start", "tool"];
-        assert_eq!((lifecycle, d.seed_events), (want, 2));
+        assert_eq!((lifecycle, d.seeds.len()), (want, 2));
     }
 
     /// Under Windows' path-key normalization, which rewrites `TRANSCRIPT`'s
@@ -1131,13 +1175,13 @@ mod tests {
             .unwrap()
             .seeded()
             .lines([tool_line()]);
-        assert_eq!(d.seed_events, 1);
+        assert_eq!(d.seeds.len(), 1);
         assert_eq!(d.wire_events(), d.events.len() - 1);
 
         let d = Drive::transcript(SOURCE, TRANSCRIPT)
             .unwrap()
             .lines([tool_line()]);
-        assert_eq!(d.seed_events, 0);
+        assert_eq!(d.seeds.len(), 0);
         assert_eq!(d.wire_events(), d.events.len());
     }
 
