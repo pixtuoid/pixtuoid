@@ -262,19 +262,19 @@ fn recorded(source: &str, scenario: &str) -> (PathBuf, PathBuf) {
     (transcript, dir)
 }
 
-/// `transcript`'s lines before the last one `source` decodes to an event `at`
+/// `transcript`'s lines before the last one `source` decodes to an event `cut`
 /// accepts, and the rest.
 fn split_before_last(
     source: &str,
     transcript: &Path,
-    at: impl Fn(&AgentEvent) -> bool,
+    cut: impl Fn(&AgentEvent) -> bool,
 ) -> (String, String) {
     let body = std::fs::read_to_string(transcript).expect("a committed transcript");
     let drive = Drive::transcript_at(source, transcript).expect("a transcript source");
     let lines: Vec<&str> = body.lines().collect();
     let last = lines
         .iter()
-        .rposition(|line| drive.lines([*line]).events.iter().any(&at))
+        .rposition(|line| drive.lines([*line]).events.iter().any(&cut))
         .unwrap_or_else(|| panic!("{source}: no line decodes to it"));
     assert!(last > 0, "{source}: nothing before it");
     let text = |part: &[&str]| part.iter().map(|l| format!("{l}\n")).collect();

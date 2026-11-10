@@ -114,14 +114,14 @@ async fn every_transcript_source_replays_uncounted_and_then_reaches_live() {
         .collect();
     let mut replayed_tokens = 0;
     for source in sources {
-        let (transcript, recorded) = recorded(source, "tool-run-hermetic");
+        let (transcript, scenario_dir) = recorded(source, "tool-run-hermetic");
         let (head, tail) = split_before_last(source, &transcript, counts);
         let head = if source == "claude-code" {
             stamped_now(&head)
         } else {
             head
         };
-        let (dir, path) = stage(&transcript, &recorded, &head);
+        let (dir, path) = stage(&transcript, &scenario_dir, &head);
 
         let (tx, rx) = mpsc::channel(64);
         let handle = spawn_source(source, dir.path().to_path_buf(), tx);

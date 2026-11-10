@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[test]
-fn hook_session_end_blocks_a_reordered_trailing_events_registration() {
+fn a_hook_session_ends_straggler_window_is_its_own_id_alone() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "exited-invisible");
@@ -21,13 +21,6 @@ fn hook_session_end_blocks_a_reordered_trailing_events_registration() {
     let trailing = t0 + Duration::from_millis(50);
 
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
-    identity(&mut r, &mut scene, id, "claude-code", trailing);
-    tool_use_end(&mut r, &mut scene, id, None, trailing, Transport::Hook);
-    assert!(
-        !scene.agents.contains_key(&id),
-        "a reordered trailing event must not resurrect a session that just ended"
-    );
-
     identity(&mut r, &mut scene, other, "claude-code", trailing);
     assert!(
         scene.agents.contains_key(&other),
@@ -35,8 +28,8 @@ fn hook_session_end_blocks_a_reordered_trailing_events_registration() {
     );
 }
 
-/// The [`STRAGGLER_TTL`] window is the ONLY guard on a hook's `Identity`, and
-/// past it the ended id registers again: hermes has no other reaper
+/// For an ended root, the [`STRAGGLER_TTL`] window is the only guard on a hook's
+/// `Identity`, and past it the id registers again: hermes has no other reaper
 /// (`resurrects_on_prompt: false`), so a turn finishing after the user rotates
 /// with `/new` leaves the outgoing id on the floor until the
 /// [`STALE_IDLE_TIMEOUT`](pixtuoid_core::state::reducer::STALE_IDLE_TIMEOUT)

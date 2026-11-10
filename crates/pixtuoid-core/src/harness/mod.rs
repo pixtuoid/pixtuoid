@@ -30,8 +30,8 @@ use serde_json::Value;
 use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::first_sight::{
-    HEAD_BYTES, Life, Registration, Sight, extract_head_fields, first_sight_start, holds_life,
-    last_life,
+    HEAD_BYTES, Life, Registration, Sight, each_life, extract_head_fields, first_sight_start,
+    holds_life, last_life,
 };
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
@@ -615,17 +615,23 @@ impl Fold {
                     decoded.extend(events);
                 }
             }
-            let mut fed = Vec::new();
-            if let Some(seed) = self.registration(drive, &lines, &decoded) {
-                self.driven.seed_events += 1;
-                fed.push(seed);
-            }
-            fed.extend(decoded);
-            for event in fed {
-                self.apply(drive.transport, event, at);
-                // Each event is observed BEFORE and AFTER a cascade tick, so a
-                // transient class a later event resolves still counts as reached.
-                self.tick(at + CASCADE_TICK);
+            let own = (drive.sighted()).map(|(source, _, id)| AgentId::from_parts(source, &id));
+            let lives = own.map_or_else(|| vec![decoded.len()], |own| each_life(&decoded, own));
+            let mut decoded = decoded.into_iter();
+            for span in lives {
+                let life: Vec<AgentEvent> = decoded.by_ref().take(span).collect();
+                let mut fed = Vec::new();
+                if let Some(seed) = self.registration(drive, &lines, &life) {
+                    self.driven.seed_events += 1;
+                    fed.push(seed);
+                }
+                fed.extend(life);
+                for event in fed {
+                    self.apply(drive.transport, event, at);
+                    // Each event is observed BEFORE and AFTER a cascade tick, so a
+                    // transient class a later event resolves still counts as reached.
+                    self.tick(at + CASCADE_TICK);
+                }
             }
             let d = &mut self.driven;
             for msg in &d.presence[presence] {
@@ -888,6 +894,28 @@ mod tests {
             "the second life's seed: {:?}",
             d.events[fed]
         );
+    }
+
+    /// One feed holding a life, its own end and a life after it registers the
+    /// second life again before its events, as the watcher's read does.
+    #[test]
+    fn a_life_after_its_own_end_registers_again_within_one_feed() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let mut fold = Fold::default();
+        let feed = [tool_line(), exit.to_string(), tool_line()];
+        fold.feed(&drive, feed, default_now());
+        let d = fold.finish();
+        let lifecycle: Vec<&str> = (d.events.iter())
+            .filter_map(|e| match e {
+                AgentEvent::SessionStart { .. } => Some("start"),
+                AgentEvent::SessionEnd { .. } => Some("end"),
+                AgentEvent::ToolUseStart { .. } => Some("tool"),
+                _ => None,
+            })
+            .collect();
+        let want = vec!["start", "tool", "end", "start", "tool"];
+        assert_eq!((lifecycle, d.seed_events), (want, 2));
     }
 
     /// Under Windows' path-key normalization, which rewrites `TRANSCRIPT`'s

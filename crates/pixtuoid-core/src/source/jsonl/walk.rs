@@ -10,8 +10,8 @@ use tracing::{debug, warn};
 
 use crate::AgentId;
 use crate::source::first_sight::{
-    HEAD_BYTES, HeadFields, Life, Registration, Sight, extract_head_fields, first_sight_start,
-    holds_life, last_life,
+    HEAD_BYTES, HeadFields, Life, Registration, Sight, each_life, extract_head_fields,
+    first_sight_start, holds_life, last_life,
 };
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
@@ -88,8 +88,8 @@ fn within(t: std::time::SystemTime, window: Duration) -> bool {
 /// transcript be "ended" and "active" over different bytes.
 pub(super) const TAIL_BYTES: u64 = 8192;
 
-/// [`last_life`] of a tail `window`'s whole lines, decoded as a read decodes
-/// them, so the source's decoder is the one authority on its end.
+/// [`last_life`] of a tail `window`'s lines, decoded as a read decodes them, so
+/// the source's decoder is the one authority on its end.
 fn window_life(
     window: &[u8],
     path: &Path,
@@ -102,7 +102,7 @@ fn window_life(
     // (`source::drift`: "Breadcrumb the condition that costs events").
     let decoded: Vec<AgentEvent> =
         tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
-            crate::source::admit::window_lines(window)
+            crate::source::admit::lines(window)
                 .filter_map(|line| serde_json::from_str(line.ok()?).ok())
                 .flat_map(|v| (decoders.decode_line)(&transcript, source, v))
                 .collect()
@@ -470,39 +470,10 @@ pub(super) async fn walk_jsonl(
     }
 
     let own = own_agent(path, source, decoders);
-    let lives = holds_life(&decoded);
-    if Sight::registers(seen.lock().await.get(path), lives)
-        && !matches!(
-            (decoders.activity_recency)(new_bytes),
-            super::TailActivity::SidecarOnly
-        )
-    {
-        // A revived GATED file reads only the tail, which may lack what only a
-        // head carries: Codex's `session_meta` cwd and parent, and the title.
-        // Without them the revive registers empty-cwd onto the short reap, or a
-        // child as a root.
-        let head = async {
-            let extract = cwd_extractor_for(source);
-            let parent = parent_extractor_for(source);
-            let read = extract_head_fields(new_bytes, extract, None, parent);
-            if read.lack_the_head(parent)
-                && let Some(head) = read_head(path).await
-            {
-                return extract_head_fields(&head, extract, decoders.head_label, parent);
-            }
-            read
-        };
-        emit_registration(path, source, decoders, seen, tx, head).await;
-    }
-    if let Some(label) = (decoded.iter().rev()).find_map(|ev| match ev {
-        AgentEvent::Rename { agent_id, label } if *agent_id == own => Some(label),
-        _ => None,
-    }) && let Some(Sight::Claimed(registration)) = seen.lock().await.get_mut(path)
-    {
-        registration.label = Some(label.clone());
-    }
-
-    let verdict = last_life(&decoded, own);
+    let sidecar_only = matches!(
+        (decoders.activity_recency)(new_bytes),
+        super::TailActivity::SidecarOnly
+    );
     // A known file's read from the top follows a truncation or a re-vouch.
     let replays = if known { cursor_now == 0 } else { replaying };
     // Declared per read, and per agent a read names: a transcript carries its
@@ -515,14 +486,49 @@ pub(super) async fn walk_jsonl(
             replaying,
         })
     };
-    let events = (backlog(replays).chain(decoded)).chain(backlog(false).filter(|_| replays));
-    for ev in events {
+    let lives = each_life(&decoded, own);
+    let mut decoded = decoded.into_iter();
+    for (nth, span) in lives.into_iter().enumerate() {
+        let life: Vec<AgentEvent> = decoded.by_ref().take(span).collect();
+        if Sight::registers(seen.lock().await.get(path), holds_life(&life)) && !sidecar_only {
+            // A revived GATED file reads only the tail, which may lack what only a
+            // head carries: Codex's `session_meta` cwd and parent, and the title.
+            // Without them the revive registers empty-cwd onto the short reap, or a
+            // child as a root.
+            let head = async {
+                let extract = cwd_extractor_for(source);
+                let parent = parent_extractor_for(source);
+                let read = extract_head_fields(new_bytes, extract, None, parent);
+                if read.lack_the_head(parent)
+                    && let Some(head) = read_head(path).await
+                {
+                    return extract_head_fields(&head, extract, decoders.head_label, parent);
+                }
+                read
+            };
+            emit_registration(path, source, decoders, seen, tx, head).await;
+        }
+        if let Some(label) = (life.iter().rev()).find_map(|ev| match ev {
+            AgentEvent::Rename { agent_id, label } if *agent_id == own => Some(label),
+            _ => None,
+        }) && let Some(Sight::Claimed(registration)) = seen.lock().await.get_mut(path)
+        {
+            registration.label = Some(label.clone());
+        }
+        let ended = last_life(&life, own) == Some(Life::Ended);
+        for ev in backlog(replays).filter(|_| nth == 0).chain(life) {
+            if tx.send((Transport::Jsonl, ev)).await.is_err() {
+                return;
+            }
+        }
+        if ended {
+            seen.lock().await.insert(path.to_path_buf(), Sight::Ended);
+        }
+    }
+    for ev in backlog(false).filter(|_| replays) {
         if tx.send((Transport::Jsonl, ev)).await.is_err() {
             return;
         }
-    }
-    if verdict == Some(Life::Ended) {
-        seen.lock().await.insert(path.to_path_buf(), Sight::Ended);
     }
 }
 
@@ -635,8 +641,9 @@ async fn read_head(path: &Path) -> Option<Vec<u8>> {
     Some(head)
 }
 
-/// Read at most `bytes` from the END of a file (clamped to file size). `None`
-/// on any I/O error — callers treat that as "nothing to scan".
+/// The whole lines of at most the last `bytes` of a file (clamped to file
+/// size), so every reader of a tail judges the same lines. `None` on any I/O
+/// error — callers treat that as "nothing to scan".
 async fn read_tail(path: &Path, bytes: u64) -> Option<Vec<u8>> {
     let meta = tokio::fs::metadata(path).await.ok()?;
     let file_len = meta.len();
@@ -645,6 +652,7 @@ async fn read_tail(path: &Path, bytes: u64) -> Option<Vec<u8>> {
     file.seek(SeekFrom::Start(start)).await.ok()?;
     let mut buf = Vec::with_capacity(bytes.min(file_len) as usize);
     file.read_to_end(&mut buf).await.ok()?;
+    buf.drain(..crate::source::admit::first_whole_line(&buf, start == 0));
     Some(buf)
 }
 
@@ -675,7 +683,7 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
     let mut pending: Vec<(String, AgentEvent)> = Vec::new();
     let mut last_bracket = None;
-    let parsed = crate::source::admit::window_lines(&buf)
+    let parsed = crate::source::admit::lines(&buf)
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
     for v in parsed {
         for ev in (decoders.decode_line)(&transcript_path_str, ctx.source, v) {
