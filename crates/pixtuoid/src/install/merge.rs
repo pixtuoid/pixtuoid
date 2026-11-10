@@ -306,9 +306,9 @@ pub(crate) fn emit_yaml(content: &str, doc: &YamlOwned, file: &str) -> anyhow::R
 }
 
 /// `out` in `content`'s line ending, CRLF when `content` broke every line with one,
-/// and ending in a newline unless empty, as npm's `package.json` save does
-/// (npm/package-json `lib/index.js:249-256` @ v8.0.0): every config rewrite rides it,
-/// pixtuoid's own `config.toml` save included.
+/// and ending in a newline, as npm's `package.json` save does (npm/package-json
+/// `lib/index.js:249-257` @ v8.0.0); an empty `out` stays empty. Every config
+/// rewrite rides it, pixtuoid's own `config.toml` save included.
 pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
