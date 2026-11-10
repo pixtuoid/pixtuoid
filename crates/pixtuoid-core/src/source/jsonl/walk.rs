@@ -485,7 +485,7 @@ pub(super) async fn walk_jsonl(
             replaying,
         })
     };
-    for mut life in each_life(decoded, own) {
+    for (nth, mut life) in each_life(decoded, own).into_iter().enumerate() {
         let verdict = last_life(&life, own);
         if Sight::registers(seen.lock().await.get(path), holds_life(&life), verdict)
             && !sidecar_only
@@ -516,9 +516,13 @@ pub(super) async fn walk_jsonl(
         }
         life.retain(|event| sends(event, own, verdict));
         let ended = verdict == Some(Life::Ended);
-        // After the life's first sight, whose revive forgets that the agent
+        // A replay opens once, its close after every life; a live read declares
+        // after each life's first sight, whose revive forgets that the agent
         // caught up, so each life's events count toward Today.
-        for ev in backlog(replays).chain(life) {
+        for ev in backlog(replays)
+            .filter(|_| !replays || nth == 0)
+            .chain(life)
+        {
             if tx.send((Transport::Jsonl, ev)).await.is_err() {
                 return;
             }
