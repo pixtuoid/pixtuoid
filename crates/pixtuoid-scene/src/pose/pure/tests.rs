@@ -341,7 +341,7 @@ fn entry_animation_overrides_normal_pose_while_it_runs() {
     }
 }
 
-/// An agent waiting for a desk, or seated past this layout's, has no pose to
+/// An unseated agent, or one seated past this layout's desks, has no pose to
 /// be drawn in.
 #[test]
 fn derive_returns_none_without_a_desk_in_the_layout() {

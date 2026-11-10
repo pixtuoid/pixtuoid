@@ -14,8 +14,8 @@ use crate::panels::dashboard::{DASHBOARD_VIEWPORT_ROWS, DashboardFrame, Dashboar
 use pixtuoid_scene::theme::Theme;
 
 const LABEL_W: usize = 32;
-/// The floor cell of an agent waiting for a desk, on no floor yet.
-const WAITING: &str = "—";
+/// The floor cell of an unseated agent, on no floor yet.
+const UNSEATED: &str = "—";
 const STATE_W: usize = 28;
 const POPUP_W: u16 = 76;
 
@@ -139,7 +139,7 @@ fn dashboard_line(
             format!(
                 " {:<3} ",
                 row.floor
-                    .map_or_else(|| WAITING.to_owned(), |f| format!("F{}", f + 1))
+                    .map_or_else(|| UNSEATED.to_owned(), |f| format!("F{}", f + 1))
             ),
             base.fg(to_color(theme.ui.neon_brand)),
         ),
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn the_floor_cell_reads_the_floor_or_a_dash_while_waiting_for_a_desk() {
+    fn the_floor_cell_reads_the_floor_or_a_dash_while_unseated() {
         let mut row = make_row("cc", RowState::Idle, "cc\u{b7}a");
         let cell = |row: &DashboardRow| {
             let line = dashboard_line(row, false, SystemTime::UNIX_EPOCH, &NORMAL);

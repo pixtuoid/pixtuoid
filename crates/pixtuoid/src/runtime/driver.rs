@@ -276,7 +276,7 @@ pub(crate) async fn reducer_task(
             // one past the frame that drew it.
             changed = floor_caps.changed(), if caps_open => match changed {
                 Ok(()) => {
-                    scene.set_capacities(*floor_caps.borrow_and_update());
+                    scene.set_capacities(*floor_caps.borrow_and_update(), SystemTime::now());
                     if !sink.publish(&scene) {
                         tracing::warn!("scene reader gone or stalled — reducer stopping");
                         break;
@@ -559,7 +559,7 @@ mod tests {
         crate::runtime::pipeline::publish_floor_caps(&caps_tx, one_desk);
         tokio::time::timeout(within, scene.wait_for(seated(1)))
             .await
-            .expect("one waits")
+            .expect("one is unseated")
             .expect("the reducer runs");
     }
 

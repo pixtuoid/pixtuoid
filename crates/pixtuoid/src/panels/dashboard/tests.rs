@@ -79,15 +79,15 @@ fn rows_are_tree_ordered_roots_by_desk_children_following_parent() {
     assert_eq!(rows[2].child_count, 0);
 }
 
-/// A waiter has no desk to order by, so it lists after its seated siblings,
-/// roots and one parent's subagents alike.
+/// An unseated agent has no desk to order by, so it lists after its seated
+/// siblings, roots and one parent's subagents alike.
 #[test]
-fn a_waiter_lists_after_its_seated_siblings() {
+fn an_unseated_agent_lists_after_its_seated_siblings() {
     let seated = id("/p/seated.jsonl");
-    let waiting = id("/p/waiting.jsonl");
+    let unseated = id("/p/unseated.jsonl");
     let sub_seated = id("/p/seated/subagents/agent-s.jsonl");
-    let sub_waiting = id("/p/seated/subagents/agent-w.jsonl");
-    let waiter = |slot: AgentSlot| AgentSlot {
+    let sub_unseated = id("/p/seated/subagents/agent-u.jsonl");
+    let unseat = |slot: AgentSlot| AgentSlot {
         home_desk: None,
         ..slot
     };
@@ -95,9 +95,9 @@ fn a_waiter_lists_after_its_seated_siblings() {
     let mut scene = SceneState::uniform(8);
     for slot in [
         mk_slot(seated, "cc·seated", 0, 0, None, ActivityState::Idle),
-        waiter(mk_slot(
-            waiting,
-            "cc·waiting",
+        unseat(mk_slot(
+            unseated,
+            "cc·unseated",
             0,
             0,
             None,
@@ -111,9 +111,9 @@ fn a_waiter_lists_after_its_seated_siblings() {
             Some(seated),
             ActivityState::Idle,
         ),
-        waiter(mk_slot(
-            sub_waiting,
-            "sub-waiting",
+        unseat(mk_slot(
+            sub_unseated,
+            "sub-unseated",
             0,
             0,
             Some(seated),
@@ -128,7 +128,7 @@ fn a_waiter_lists_after_its_seated_siblings() {
     let labels: Vec<String> = rows.iter().map(|r| r.name.to_string()).collect();
     assert_eq!(
         labels,
-        ["cc·seated", "sub-seated", "sub-waiting", "cc·waiting"]
+        ["cc·seated", "sub-seated", "sub-unseated", "cc·unseated"]
     );
 }
 

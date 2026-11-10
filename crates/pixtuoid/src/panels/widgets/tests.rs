@@ -226,7 +226,7 @@ fn gateway_rollup_is_worst_of() {
 }
 
 #[test]
-fn per_floor_buckets_by_home_desk_floor_and_counts_a_waiter_on_none() {
+fn per_floor_buckets_by_home_desk_floor_and_counts_an_unseated_agent_on_none() {
     use pixtuoid_core::state::ToolKind;
     let running = || ActivityState::Running {
         item: Some(ToolUse {
@@ -254,15 +254,15 @@ fn per_floor_buckets_by_home_desk_floor_and_counts_a_waiter_on_none() {
     );
     add(&mut scene, "/f1x.jsonl", running(), true, 1); // exiting on floor 1
     add(&mut scene, "/f2i.jsonl", ActivityState::Idle, false, 2);
-    let mut waiting = stat_slot("/waits.jsonl", ActivityState::Idle, false);
-    waiting.home_desk = None;
-    scene.agents.insert(waiting.agent_id, waiting);
+    let mut unseated = stat_slot("/unseated.jsonl", ActivityState::Idle, false);
+    unseated.home_desk = None;
+    scene.agents.insert(unseated.agent_id, unseated);
 
     let pf = per_floor_counts(&scene);
     assert_eq!(
         pf.iter().map(|f| f.total).sum::<usize>(),
         5,
-        "the waiter is on no floor"
+        "the unseated agent is on no floor"
     );
     assert_eq!((pf[0].running, pf[0].total), (2, 2));
     assert_eq!(

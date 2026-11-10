@@ -41,7 +41,7 @@ pub struct DashboardRow {
     pub depth: u8,
     pub name: Nameplate,
     pub source: Arc<str>,
-    /// `None` while the agent waits for a desk.
+    /// `None` while the agent is unseated.
     pub floor: Option<usize>,
     pub state: RowState,
     pub child_count: usize,
@@ -86,6 +86,7 @@ impl DashboardFolds {
 /// whose `parent_id` is absent from the scene (an orphan) anchors its own
 /// subtree, and nesting deeper than two levels is walked too, so nothing is
 /// ever silently dropped.
+#[doc(hidden)]
 pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<DashboardRow> {
     let tree = ScopeTree::of(&scene.agents);
     let mut roots: Vec<&AgentSlot> = tree.roots().collect();
@@ -99,7 +100,8 @@ pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<D
     rows
 }
 
-/// Siblings by home desk, a waiter after them: it has no desk to order by.
+/// Siblings by home desk, an unseated one after them: it has no desk to order
+/// by.
 fn desk_order(slot: &&AgentSlot) -> (bool, Option<FloorDesk>) {
     (slot.home_desk.is_none(), slot.home_desk)
 }

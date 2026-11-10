@@ -324,14 +324,13 @@ pub struct AgentSlot {
     /// Wall-clock time the slot was first created: its age, unaffected by later
     /// state transitions.
     pub created_at: SystemTime,
-    /// The entry walk's anchor; `None` seats the slot at its desk from its first
-    /// frame.
+    /// The entry walk's anchor, set as the slot takes a desk; `None` seats it at
+    /// its desk from its first frame.
     pub arrived_at: Option<SystemTime>,
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
-    /// Its desk; `None` while it waits for a free one, counted but drawn
-    /// nowhere. Only a new layout ([`SceneState::set_capacities`]) moves it.
+    /// Its desk; `None` while it is unseated, counted but drawn nowhere. Only a new layout ([`SceneState::set_capacities`]) moves it.
     pub home_desk: Option<FloorDesk>,
     /// Monotonic count of tool calls this agent has made this session.
     pub tool_call_count: u32,
@@ -775,21 +774,26 @@ impl SceneState {
         self.floor_capacities.iter().sum()
     }
 
-    /// Take a new layout. An agent keeps its home desk while its floor still
-    /// has that desk; whoever loses one joins those waiting for one.
-    pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS]) {
+    /// Take a new layout at `now`. An agent keeps its home desk while its floor
+    /// still has that desk; whoever loses one is unseated until a desk frees,
+    /// and walks in from when it takes one.
+    pub fn set_capacities(&mut self, capacities: [usize; MAX_FLOORS], now: SystemTime) {
         self.floor_capacities = capacities;
         for slot in self.agents.values_mut() {
             slot.home_desk = (slot.home_desk)
                 .filter(|desk| (capacities.get(desk.floor)).is_some_and(|&cap| desk.index.0 < cap));
         }
-        self.assign_waiting(|_| true);
+        self.seat_unseated(|_| true, |_| Some(now));
     }
 
-    /// Give each agent waiting for a desk the first free one: those staying
-    /// before those walking out, then oldest first. A desk is free while no
-    /// slot that `holds` sits at it.
-    pub(crate) fn assign_waiting(&mut self, holds: impl Fn(&AgentSlot) -> bool) {
+    /// Give each unseated agent that is staying the first free desk, oldest
+    /// first, and the `arrival` it walks in from. A desk is free while no slot
+    /// that `holds` sits at it.
+    pub(crate) fn seat_unseated(
+        &mut self,
+        holds: impl Fn(&AgentSlot) -> bool,
+        arrival: impl Fn(&AgentSlot) -> Option<SystemTime>,
+    ) {
         #[cfg(test)]
         SEATINGS.with(|n| n.set(n.get() + 1));
         let taken: BTreeSet<FloorDesk> = (self.agents.values())
@@ -797,15 +801,17 @@ impl SceneState {
             .filter_map(|slot| slot.home_desk)
             .collect();
         let capacities = self.floor_capacities;
-        let mut free = (0..MAX_FLOORS)
+        let free = (0..MAX_FLOORS)
             .flat_map(|floor| (0..capacities[floor]).map(move |index| FloorDesk::new(floor, index)))
             .filter(|desk| !taken.contains(desk));
-        let mut waiting: Vec<&mut AgentSlot> = (self.agents.values_mut())
-            .filter(|slot| slot.home_desk.is_none())
+        let mut unseated: Vec<&mut AgentSlot> = (self.agents.values_mut())
+            // Seated, one walking out would appear partway through its exit.
+            .filter(|slot| slot.home_desk.is_none() && slot.exiting_at.is_none())
             .collect();
-        waiting.sort_by_key(|slot| (slot.exiting_at.is_some(), slot.created_at, slot.agent_id));
-        for slot in waiting {
-            slot.home_desk = free.next();
+        unseated.sort_by_key(|slot| (slot.created_at, slot.agent_id));
+        for (slot, desk) in unseated.into_iter().zip(free) {
+            slot.home_desk = Some(desk);
+            slot.arrived_at = arrival(slot);
         }
     }
 }
@@ -1091,12 +1097,12 @@ mod tests {
     }
 
     #[test]
-    fn a_waiter_takes_the_first_free_desk_past_an_empty_floor() {
+    fn an_unseated_agent_takes_the_first_free_desk_past_an_empty_floor() {
         let (mut s, ids) = seated(
             [1, 0, 2, 0, 0, 0, 0, 0, 0, 0],
             &[Some(FloorDesk::new(0, 0)), None, None, None],
         );
-        s.assign_waiting(|_| true);
+        s.seat_unseated(|_| true, |_| None);
         let desks: Vec<_> = ids.iter().map(|id| s.agents[id].home_desk).collect();
         assert_eq!(
             desks,
@@ -1118,7 +1124,7 @@ mod tests {
             Some(FloorDesk::new(1, 1)),
         ];
         let (mut s, ids) = seated([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], &all);
-        s.set_capacities([1, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+        s.set_capacities([1, 2, 0, 0, 0, 0, 0, 0, 0, 0], SystemTime::UNIX_EPOCH);
         let desks: Vec<_> = ids.iter().map(|id| s.agents[id].home_desk).collect();
         assert_eq!(
             desks,
@@ -1129,18 +1135,38 @@ mod tests {
                 Some(FloorDesk::new(1, 1))
             ]
         );
-        s.set_capacities([2, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+        s.set_capacities([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], SystemTime::UNIX_EPOCH);
         let desks: Vec<_> = ids.iter().map(|id| s.agents[id].home_desk).collect();
         assert_eq!(desks, all);
     }
 
+    /// Seated, one walking out would appear partway through its exit, so it
+    /// stays unseated beside a free desk.
     #[test]
-    fn a_freed_desk_goes_to_the_oldest_staying_waiter() {
-        let (mut s, ids) = seated([1, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[None, None, None]);
+    fn a_free_desk_goes_to_the_oldest_unseated_and_never_to_one_walking_out() {
+        let (mut s, ids) = seated([3, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[None, None, None]);
         s.agents.get_mut(&ids[0]).unwrap().exiting_at = Some(SystemTime::UNIX_EPOCH);
-        s.assign_waiting(|_| true);
+        s.seat_unseated(|_| true, |_| None);
         let desks: Vec<_> = ids.iter().map(|id| s.agents[id].home_desk).collect();
-        assert_eq!(desks, [None, Some(FloorDesk::new(0, 0)), None]);
+        assert_eq!(
+            desks,
+            [None, Some(FloorDesk::new(0, 0)), Some(FloorDesk::new(0, 1))]
+        );
+    }
+
+    /// One unseated past its entry walk would appear in its chair, so it walks
+    /// in from the layout that seats it; one that kept its desk keeps its walk.
+    #[test]
+    fn a_layout_that_seats_an_agent_walks_it_in_from_then() {
+        let (mut s, ids) = seated(
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            &[Some(FloorDesk::new(0, 0)), None],
+        );
+        let kept = s.agents[&ids[0]].arrived_at;
+        let later = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(600);
+        s.set_capacities([2, 0, 0, 0, 0, 0, 0, 0, 0, 0], later);
+        assert_eq!(s.agents[&ids[0]].arrived_at, kept);
+        assert_eq!(s.agents[&ids[1]].arrived_at, Some(later));
     }
 
     #[test]

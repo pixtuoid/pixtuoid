@@ -115,9 +115,9 @@ fn session_start_overflows_to_floor1_with_heterogeneous_capacity() {
 }
 
 /// R2-C32: a layout shrinking under its agents keeps every one. Whoever loses
-/// a desk waits, a new arrival too, and the oldest waiter takes the next desk
-/// that frees; a layout growing back desks the rest, and nobody it kept a desk
-/// for ever moves.
+/// a desk is unseated, a new arrival too, and the oldest unseated agent takes
+/// the next desk that frees; a layout growing back seats the rest, and nobody
+/// it kept a desk for ever moves.
 #[test]
 fn a_shrunk_layout_keeps_every_agent_and_seats_each_as_a_desk_frees() {
     let mut r = Reducer::new();
@@ -147,8 +147,8 @@ fn a_shrunk_layout_keeps_every_agent_and_seats_each_as_a_desk_frees() {
         begin(&mut r, &mut scene, i);
     }
 
-    scene.set_capacities([1, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
     let t1 = t0 + Duration::from_secs(10);
+    scene.set_capacities([1, 2, 0, 0, 0, 0, 0, 0, 0, 0], t1);
     tool_use_start(
         &mut r,
         &mut scene,
@@ -161,7 +161,7 @@ fn a_shrunk_layout_keeps_every_agent_and_seats_each_as_a_desk_frees() {
     begin(&mut r, &mut scene, 4);
     assert!(
         matches!(scene.agents[&id(1)].state, ActivityState::Running { .. }),
-        "a waiting agent still works"
+        "an unseated agent still works"
     );
     assert_eq!(scene.agents.len(), 5, "nobody is dropped");
     assert_eq!(
@@ -177,10 +177,10 @@ fn a_shrunk_layout_keeps_every_agent_and_seats_each_as_a_desk_frees() {
     assert_eq!(
         desks(&scene),
         [None, desk(0, 0), desk(1, 0), desk(1, 1), None],
-        "the oldest waiter takes the freed desk"
+        "the oldest unseated agent takes the freed desk"
     );
 
-    scene.set_capacities([2, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+    scene.set_capacities([2, 2, 0, 0, 0, 0, 0, 0, 0, 0], t1);
     assert_eq!(
         desks(&scene),
         [None, desk(0, 0), desk(1, 0), desk(1, 1), desk(0, 1)]
@@ -209,23 +209,26 @@ fn one_desk_office(r: &mut Reducer, ids: &[AgentId], t0: SystemTime) -> SceneSta
     scene
 }
 
-/// Any apply sweeps out a walked-out slot, so the waiter takes its desk on
-/// that same apply, not at the next tick.
+/// Any apply sweeps out a walked-out slot, so the unseated agent takes its
+/// desk on that same apply, not at the next tick, and walks in from then: past
+/// its registration's entry walk, it would otherwise appear in its chair.
 #[test]
-fn a_waiter_takes_the_desk_on_the_apply_where_its_holder_walks_out() {
+fn an_unseated_agent_walks_in_on_the_apply_where_its_holder_walks_out() {
     let mut r = Reducer::new();
     let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
     let holder = AgentId::from_transcript_path("/p/holder.jsonl");
-    let waiter = AgentId::from_transcript_path("/p/waiter.jsonl");
-    let mut scene = one_desk_office(&mut r, &[holder, waiter], t0);
-    assert_eq!(scene.agents[&waiter].home_desk, None, "premise: one desk");
+    let unseated = AgentId::from_transcript_path("/p/unseated.jsonl");
+    let mut scene = one_desk_office(&mut r, &[holder, unseated], t0);
+    assert_eq!(scene.agents[&unseated].home_desk, None, "premise: one desk");
 
     let t1 = t0 + Duration::from_secs(2);
     sess_end(&mut r, &mut scene, holder, false, t1, Transport::Hook);
     let walked_out = t1 + EXIT_GRACE_WINDOW + Duration::from_millis(100);
-    proof_of_life(&mut r, &mut scene, waiter, walked_out, Transport::Hook);
+    proof_of_life(&mut r, &mut scene, unseated, walked_out, Transport::Hook);
     assert!(!scene.agents.contains_key(&holder), "premise: swept out");
-    assert_eq!(scene.agents[&waiter].home_desk, desk(0, 0));
+    let slot = &scene.agents[&unseated];
+    assert_eq!(slot.home_desk, desk(0, 0));
+    assert_eq!(slot.arrived_at, Some(walked_out));
 }
 
 /// A gone slot's newest turn position goes at the tick that finds the slot
@@ -1830,7 +1833,7 @@ fn jsonl_identity_is_a_no_op() {
 }
 
 #[test]
-fn a_hook_identity_with_no_free_desk_registers_waiting() {
+fn a_hook_identity_with_no_free_desk_registers_unseated() {
     use pixtuoid_core::state::MAX_FLOORS;
     let mut scene = SceneState::new([0; MAX_FLOORS]);
     let mut r = Reducer::new();
@@ -1853,7 +1856,7 @@ fn a_hook_identity_with_no_free_desk_registers_waiting() {
         .agents
         .get(&id)
         .expect("registered, though no desk is free");
-    assert_eq!(slot.home_desk, None, "it waits for one");
+    assert_eq!(slot.home_desk, None, "unseated");
 }
 
 fn connected_set<const N: usize>(srcs: [&str; N]) -> std::collections::HashSet<String> {

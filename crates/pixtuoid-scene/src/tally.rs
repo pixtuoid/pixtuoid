@@ -53,7 +53,7 @@ pub fn scene_stats(scene: &SceneState) -> StateCounts {
 }
 
 /// Per-floor [`StateCounts`], bucketed by each home desk's floor (clamped to the
-/// last floor), so an agent waiting for a desk is on no floor's count.
+/// last floor), so an unseated agent is on no floor's count.
 /// Computed from the FULL scene, deliberately distinct from `scene_stats` on
 /// the projected floor — don't derive one from the other.
 #[doc(hidden)]

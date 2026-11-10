@@ -460,7 +460,7 @@ fn max_desks_no_config_file() {
 
 #[test]
 fn max_desks_zero_in_config_is_ignored_with_warning() {
-    // 0 would zero every floor's capacity, so every agent would wait for a desk
+    // 0 would zero every floor's capacity, so every agent would stay unseated
     // forever.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");

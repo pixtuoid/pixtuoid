@@ -909,17 +909,22 @@ fn child_lifecycle_is_stamped_on_sweep_and_pruned_by_gc() {
 /// healthy stream stays an order of magnitude under.
 #[test]
 fn correlation_maps_stay_bounded_across_a_long_stream() {
+    use super::{EXIT_GRACE_WINDOW, STALE_TOOL_TIMEOUT};
     use crate::AgentId;
     use crate::source::{AgentEvent, ToolDetail, Transport};
     use crate::state::SceneState;
     use std::path::PathBuf;
     use std::time::{Duration, SystemTime};
 
-    /// ~3× the widest steady-state working set (`CHILD_END_RELINK_TTL` at
-    /// ~1 event/s) and FAR below ITERS. A bound that merely clears the steady
-    /// state proves nothing about a slow leak.
-    const MAX_CORR_ENTRIES: usize = 1024;
-    const ITERS: u64 = 3_000;
+    /// The widest steady-state working set at 1 event/s: an orphan Task's
+    /// `tasks_in_flight` entry lives while its hook-registered slot does, which
+    /// the stale sweep reaps `STALE_TOOL_TIMEOUT` after its last event and drops
+    /// an exit grace later.
+    const STEADY: usize = (STALE_TOOL_TIMEOUT.as_secs() + EXIT_GRACE_WINDOW.as_secs()) as usize + 1;
+    /// Twice the steady state and a third of the stream: a bound that merely
+    /// clears the steady state proves nothing about a slow leak.
+    const MAX_CORR_ENTRIES: usize = 2 * STEADY;
+    const ITERS: u64 = 3 * MAX_CORR_ENTRIES as u64;
     const MAP_NAMES: [&str; 8] = [
         "recent_hook_tool_uses",
         "tasks_in_flight",
@@ -1032,9 +1037,9 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             now,
             Transport::Hook,
         );
-        // An ORPHAN Task (no SessionStart): its hook registers a slot waiting
-        // for a desk, so its tasks_in_flight entry lives until the stale sweep
-        // removes that slot.
+        // An ORPHAN Task (no SessionStart): its hook registers a slot, unseated
+        // once the desks fill, so its tasks_in_flight entry lives until the
+        // stale sweep removes that slot.
         r.apply(
             &mut scene,
             AgentEvent::ToolUseStart {
@@ -1079,8 +1084,9 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     }
 }
 
-/// A transcript line registers no slot, yet a Task it starts and a backlog
-/// marker it carries are kept by id: the tick reaps both while no slot holds it.
+/// A transcript tool or backlog line registers no slot, yet a Task it starts and
+/// a backlog marker it carries are kept by id: the tick reaps both while no slot
+/// holds it.
 #[test]
 fn the_tick_reaps_what_an_id_no_slot_holds_left() {
     use crate::AgentId;
@@ -1279,9 +1285,9 @@ fn an_apply_seats_only_when_a_slot_leaves() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let mut scene = SceneState::uniform(1);
     let mut r = Reducer::new();
-    let sessions = ["holder", "waiter"];
-    let [holder, waiter] = sessions.map(|s| AgentId::from_parts("claude-code", s));
-    for (agent_id, session) in [holder, waiter].into_iter().zip(sessions) {
+    let sessions = ["holder", "unseated"];
+    let [holder, unseated] = sessions.map(|s| AgentId::from_parts("claude-code", s));
+    for (agent_id, session) in [holder, unseated].into_iter().zip(sessions) {
         r.apply(
             &mut scene,
             AgentEvent::SessionStart {
@@ -1301,7 +1307,7 @@ fn an_apply_seats_only_when_a_slot_leaves() {
     for _ in 0..APPLIES {
         r.apply(
             &mut scene,
-            AgentEvent::ProofOfLife { agent_id: waiter },
+            AgentEvent::ProofOfLife { agent_id: unseated },
             t0,
             Transport::Hook,
         );
@@ -1316,13 +1322,13 @@ fn an_apply_seats_only_when_a_slot_leaves() {
     let walked_out = t0 + EXIT_GRACE_WINDOW + Duration::from_secs(1);
     r.apply(
         &mut scene,
-        AgentEvent::ProofOfLife { agent_id: waiter },
+        AgentEvent::ProofOfLife { agent_id: unseated },
         walked_out,
         Transport::Hook,
     );
     assert!(!scene.agents.contains_key(&holder), "premise: swept out");
     assert_eq!(seatings(), 1, "the apply its holder left on seats once");
-    assert!(scene.agents[&waiter].home_desk.is_some());
+    assert!(scene.agents[&unseated].home_desk.is_some());
 }
 
 /// An open turn showing no item is the agent between items, alive by its

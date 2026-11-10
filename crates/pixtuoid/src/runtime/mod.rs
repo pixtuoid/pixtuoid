@@ -809,10 +809,10 @@ mod tests {
         assert!(summary.contains('@'), "got: {summary}");
     }
 
-    /// A desk counts on from the floors below it; an agent waiting for one has
-    /// none to show.
+    /// A desk counts on from the floors below it; an unseated agent has none to
+    /// show.
     #[test]
-    fn summarize_numbers_desks_across_floors_and_shows_a_waiter_deskless() {
+    fn summarize_numbers_desks_across_floors_and_shows_an_unseated_agent_deskless() {
         use pixtuoid_core::AgentId;
         use pixtuoid_core::source::AgentEvent;
         let mut caps = [0; MAX_FLOORS];

@@ -2103,8 +2103,8 @@ fn a_named_classic_boots_in_the_classic_with_the_cutaway_at_hand() {
     assert_eq!(r.look, LookKind::Classic, "no cutaway to start in");
 }
 
-/// A floor's seats, which only grow, never outnumber the desks a look the
-/// run can return to draws: on a cell whose cutaway seats fewer than the
+/// A floor's published seats never outnumber the desks a look the run can
+/// return to draws: on a cell whose cutaway seats fewer than the
 /// classic, neither a classic preview nor a zoom that leaves the cutaway no
 /// fit publishes more than the cutaway holds, so the zoom back shows every
 /// agent seated.

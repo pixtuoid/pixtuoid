@@ -1356,8 +1356,8 @@ impl Reducer {
 
     /// The slot-creation half of the `SessionStart` arm, shared with
     /// [`Reducer::synthesize_hook_registration`] so both run the same seating
-    /// and label derivation. A slot no desk is free for still registers, and
-    /// waits for one.
+    /// and label derivation. A slot no desk is free for still registers,
+    /// unseated.
     fn register_slot<'s>(
         &mut self,
         scene: &'s mut SceneState,
@@ -1416,7 +1416,7 @@ impl Reducer {
                 last_usage: None,
             },
         );
-        scene.assign_waiting(|_| true);
+        scene.seat_unseated(|_| true, |_| Some(now));
         scene
             .agents
             .get_mut(&agent_id)
@@ -1724,8 +1724,8 @@ impl Reducer {
             self.corr.call_holders.release(id, now);
             self.corr.note_removed(id, now);
         }
-        // A desk it freed goes to whoever waits for one.
-        scene.assign_waiting(|_| true);
+        // A desk it freed goes to the oldest unseated agent.
+        scene.seat_unseated(|_| true, |_| Some(now));
     }
 }
 

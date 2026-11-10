@@ -233,7 +233,7 @@ impl Office {
         let px = self.frame_size(w, h);
         // Capacity BEFORE the script advances: the SessionStarts due this
         // frame must allocate desks against the canvas this frame renders.
-        self.sync_capacity(units_w, units_h);
+        self.sync_capacity(units_w, units_h, now);
         self.advance_script(now);
         self.reducer.tick(&mut self.scene, now);
         // The DAEMON sweep the app's reducer task runs: without it a `Down` row
@@ -579,7 +579,7 @@ impl Office {
     /// past the canvas layout's desk count, so it paints NOWHERE (its anchors
     /// return `None`) while staying alive in the scene. A shrink re-seats
     /// ([`SceneState::set_capacities`]), as the TUI's does.
-    fn sync_capacity(&mut self, units_w: u16, units_h: u16) {
+    fn sync_capacity(&mut self, units_w: u16, units_h: u16, now: SystemTime) {
         if self.caps_units == Some((units_w, units_h)) {
             return;
         }
@@ -590,7 +590,7 @@ impl Office {
             self.seed,
         );
         self.scene
-            .set_capacities(std::array::from_fn(|i| if i == 0 { cap } else { 0 }));
+            .set_capacities(std::array::from_fn(|i| if i == 0 { cap } else { 0 }), now);
         self.caps_units = Some((units_w, units_h));
     }
 

@@ -609,7 +609,7 @@ impl SceneLayout {
     }
 
     /// The home desk of `agent`, one of the floor this lays out
-    /// ([`FloorScene`](crate::floor::FloorScene)); `None` while it waits for one.
+    /// ([`FloorScene`](crate::floor::FloorScene)); `None` while it is unseated.
     pub(crate) fn home_desk_of(&self, agent: &AgentSlot) -> Option<HomeDesk> {
         self.home_desk(agent.home_desk?.index)
     }
