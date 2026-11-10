@@ -255,8 +255,7 @@ fn session_start(
 }
 
 /// An end, led by Identity (#221) as a tool start and a permission ask are,
-/// so one for a slot the reaper removed registers it with its identity, not
-/// as a blank `#N`.
+/// so one for a slot the reaper removed registers it again.
 fn ended(
     data: &Map<String, Value>,
     at: Option<&str>,

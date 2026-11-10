@@ -88,9 +88,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// unregistered event bails, so registered-vs-decoded drift is loud.
 ///
 /// The activity arms prepend an [`AgentEvent::Identity`] (#221) because Cursor
-/// is HOOK-ONLY: a slot the reducer's proof-of-life pre-pass synthesizes
-/// mid-turn has no JSONL back-fill path, so without the attached identity it
-/// would stay a blank `#N` ghost.
+/// is HOOK-ONLY: the identity is the one claim that registers a session first
+/// seen mid-turn.
 ///
 /// # Errors
 ///
@@ -179,8 +178,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 },
             ])
             .collect()),
-        // Identity-less: an end alone proves too little to label a session, so
-        // an unknown id registers blank (`shows_activity`).
+        // Identity-less: an end alone registers nothing.
         "stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "sessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,

@@ -433,10 +433,10 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 ///
 /// The tool/permission arms (PreToolUse / PostToolUse / Notification /
 /// PermissionRequest) lead with an [`AgentEvent::Identity`] carrying the payload's
-/// source/session_id/cwd (#221), so the reducer's proof-of-life registration for an
-/// unknown id lands with REAL identity instead of a blank `#N` slot. The
-/// session-lifecycle and custom Subagent arms deliberately do NOT: SessionStart
-/// already carries identity, and an end for an unknown agent proves nothing.
+/// source/session_id/cwd (#221), the claim an unknown id registers from: the
+/// activity alone registers nothing. The session-lifecycle and custom Subagent
+/// arms deliberately do NOT: SessionStart already carries identity, and an end
+/// for an unknown agent proves nothing.
 ///
 /// # Errors
 ///

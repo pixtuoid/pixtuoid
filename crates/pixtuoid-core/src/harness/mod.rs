@@ -57,7 +57,7 @@ pub use captures::{
 };
 
 /// The committed corpus: every recorded capture, fixture and hermetic script.
-pub(crate) fn sources_root() -> PathBuf {
+pub fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
@@ -382,8 +382,9 @@ impl Drive {
     /// source: the dispatcher routes by the envelope's own `_pixtuoid_source`
     /// stamp.
     ///
-    /// There is no seed here by construction — a hook for an unknown id
-    /// REGISTERS it (hooks are proof of life), so hook bytes never need one.
+    /// There is no seed here by construction: a hook that may register carries
+    /// its identity (`SessionStart`/`Identity`), and a seed would hide one that
+    /// doesn't.
     pub fn hooks() -> Self {
         Self {
             transport: Transport::Hook,
@@ -435,8 +436,8 @@ impl Drive {
         };
         let path = Path::new(logical.as_str());
         // The id deriver over the normalized key, as the watcher derives it:
-        // `backfill_identity` never heals a non-empty session_id, so any other
-        // spelling keys a twin of the hook-created slot forever.
+        // nothing heals a slot's session_id, so any other spelling keys a twin
+        // of the hook-created slot forever.
         self.seeded.then(|| {
             (
                 source.as_str(),
@@ -563,7 +564,7 @@ impl Fold {
         let (source, _, session_id) = drive.sighted()?;
         let id = AgentId::from_parts(source, &session_id);
         let leads = Sight::leads(self.sights.get(&id).map(|s| s.sight))
-            .unwrap_or_else(|| decoded.iter().any(AgentEvent::shows_activity));
+            .unwrap_or_else(|| decoded.iter().any(AgentEvent::is_turn_traffic));
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.entry(id).or_insert_with(|| Sighted {
             sight: Sight::Claimed,

@@ -289,10 +289,7 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
         at(AttemptKind::Start, None),
         at(AttemptKind::Start, Some(parent)),
     );
-    let (identity, activity) = (
-        at(AttemptKind::Identity, None),
-        at(AttemptKind::HookActivity, None),
-    );
+    let identity = at(AttemptKind::Identity, None);
     let (hook, jsonl) = (Transport::Hook, Transport::Jsonl);
     use Verdict::{Create, Refuse};
 
@@ -304,7 +301,6 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                 (root, jsonl, t0, Create),
                 (child, jsonl, t0, Create),
                 (identity, hook, t0, Create),
-                (activity, hook, t0, Create),
             ],
         ),
         (
@@ -330,13 +326,6 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                     t0 + STRAGGLER_TTL - ms,
                     Refuse(Refusal::Straggler),
                 ),
-                (
-                    activity,
-                    hook,
-                    t0 + STRAGGLER_TTL - ms,
-                    Refuse(Refusal::Straggler),
-                ),
-                (activity, hook, t0 + STRAGGLER_TTL, Create),
                 (identity, hook, t0 + STRAGGLER_TTL, Create),
             ],
         ),
@@ -344,12 +333,6 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
             Some(true),
             vec![
                 (root, jsonl, t0 + STRAGGLER_TTL - ms, Create),
-                (
-                    activity,
-                    hook,
-                    t0 + STRAGGLER_TTL - ms,
-                    Refuse(Refusal::Straggler),
-                ),
                 (
                     child,
                     jsonl,
@@ -363,12 +346,12 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                     Refuse(Refusal::Straggler),
                 ),
                 (
-                    activity,
+                    identity,
                     hook,
                     t0 + STRAGGLER_TTL,
                     Refuse(Refusal::ChildEnded),
                 ),
-                (activity, hook, t0 + CHILD_END_GATE_TTL, Create),
+                (identity, hook, t0 + CHILD_END_GATE_TTL, Create),
                 (
                     child,
                     jsonl,
@@ -427,7 +410,6 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
         (child, hook, Create),
         (child, jsonl, Refuse(Refusal::ChildEnded)),
         (remembered(AttemptKind::Identity), hook, Create),
-        (remembered(AttemptKind::HookActivity), hook, Create),
     ] {
         assert_eq!(
             r.authorizes(&scene, id, attempt, from, t0 + ms),
@@ -904,22 +886,21 @@ fn child_lifecycle_is_stamped_on_sweep_and_pruned_by_gc() {
     );
 }
 
-/// A synthetic ~1 event/s stream through the REAL reducer: a per-event leak
-/// (a missed prune site) grows a map ~linearly and blows the bound.
+/// A synthetic stream of one iteration a second through the REAL reducer: a
+/// per-event leak (a missed prune site) grows a map ~linearly and blows the bound.
 #[test]
 fn correlation_maps_stay_bounded_across_a_long_stream() {
-    use super::{EXIT_GRACE_WINDOW, STALE_TOOL_TIMEOUT};
+    use super::{CHILD_END_RELINK_TTL, STRAGGLER_TTL};
     use crate::AgentId;
     use crate::source::{AgentEvent, ToolDetail, Transport};
     use crate::state::SceneState;
     use std::path::PathBuf;
     use std::time::{Duration, SystemTime};
 
-    /// The widest steady-state working set at 1 event/s: an orphan Task's
-    /// `tasks_in_flight` entry lives while its hook-registered slot does, which
-    /// the stale sweep reaps `STALE_TOOL_TIMEOUT` after its last event and drops
-    /// an exit grace later.
-    const STEADY: usize = (STALE_TOOL_TIMEOUT.as_secs() + EXIT_GRACE_WINDOW.as_secs()) as usize + 1;
+    /// The widest steady-state working set at one iteration a second:
+    /// `lifecycles` keeps each iteration's child end for `CHILD_END_RELINK_TTL`
+    /// and its unregistered id's hook end for `STRAGGLER_TTL`.
+    const STEADY: usize = (CHILD_END_RELINK_TTL.as_secs() + STRAGGLER_TTL.as_secs()) as usize + 1;
     /// Twice the steady state and a third of the stream: a bound that merely
     /// clears the steady state proves nothing about a slow leak.
     const MAX_CORR_ENTRIES: usize = 2 * STEADY;
@@ -1036,9 +1017,8 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             now,
             Transport::Hook,
         );
-        // An ORPHAN Task (no SessionStart): its hook registers a slot, unseated
-        // once the desks fill, so its tasks_in_flight entry lives until the
-        // stale sweep removes that slot.
+        // An ORPHAN Task (no SessionStart or Identity) registers no slot, so its
+        // tasks_in_flight entry is the tick's to reap.
         r.apply(
             &mut scene,
             AgentEvent::ToolUseStart {
