@@ -80,10 +80,7 @@ pub(crate) fn single_yaml_doc(content: &str, file: &str) -> anyhow::Result<Optio
     let mut docs = YamlOwned::load_from_str(content)
         .map_err(|e| anyhow::anyhow!("{file} does not parse as YAML: {e}"))?;
     if docs.len() > 1 {
-        anyhow::bail!(
-            "{file} holds more than one YAML document, which its CLI refuses to load — \
-             refusing to overwrite"
-        );
+        anyhow::bail!("{file} holds more than one YAML document, which its CLI refuses to load");
     }
     Ok(docs.pop())
 }
@@ -296,9 +293,9 @@ pub(crate) fn emit_json(content: &str, value: &Value) -> anyhow::Result<String> 
     ))
 }
 
-/// `doc` as YAML for the file `content` held, by [`end_lines_like`] and without
-/// the emitter's leading `---`, which every reader parses alike either way. `file`
-/// names it in the error.
+/// `doc` as YAML for the file `content` held, by [`end_lines_like`], `file` naming it
+/// in the error. The emitter's leading `---` goes: an explicit document is that marker
+/// before a bare one ([YAML 1.2.2 §9.1.4](https://yaml.org/spec/1.2.2/#914-explicit-documents)).
 pub(crate) fn emit_yaml(content: &str, doc: &YamlOwned, file: &str) -> anyhow::Result<String> {
     let mut out = String::new();
     saphyr::YamlEmitter::new(&mut out)
@@ -309,14 +306,16 @@ pub(crate) fn emit_yaml(content: &str, doc: &YamlOwned, file: &str) -> anyhow::R
 }
 
 /// `out` ending in a newline, in `content`'s line ending: CRLF when `content` broke
-/// every line with one, the emitters all writing LF. A rewrite so keeps the file's
-/// line ending and always ends in a newline, as npm's `package.json` save does
-/// (npm/package-json `lib/index.js:249-256` @ v8.0.0). An empty `out` stays empty.
+/// every line with one. Through it every config rewrite, pixtuoid's own `config.toml`
+/// save included, keeps the file's line ending and ends in a newline, as npm's
+/// `package.json` save does (npm/package-json `lib/index.js:249-256` @ v8.0.0).
 pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
     }
     if content.contains("\r\n") && !content.replace("\r\n", "").contains('\n') {
+        // Fold first: toml_edit 0.25.17 writes a multi-line string's raw CRLF as is
+        // (`src/encode.rs:81-83`), every other break as LF (`src/raw_string.rs:95-114`).
         out = out.replace("\r\n", "\n").replace('\n', "\r\n");
     }
     out
@@ -446,12 +445,15 @@ mod tests {
 
     #[test]
     fn a_crlf_file_stays_crlf() {
-        let out = toml_merge_outcome("# note\r\na = 1\r\n", |d| {
+        let out = toml_merge_outcome("# note\r\na = 1\r\ns = '''x\r\ny'''\r\n", |d| {
             d["b"] = toml_edit::value(2);
             Ok(())
         })
         .unwrap();
-        assert_eq!(out.content, "# note\r\na = 1\r\nb = 2\r\n");
+        assert_eq!(
+            out.content,
+            "# note\r\na = 1\r\ns = '''x\r\ny'''\r\nb = 2\r\n"
+        );
     }
 
     #[test]

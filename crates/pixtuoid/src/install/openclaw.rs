@@ -16,7 +16,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
 use crate::install::io;
-use crate::install::merge::{emit_json, prune_empty, prune_empty_root};
+use crate::install::merge::{emit_json, parse_json_or_empty, prune_empty, prune_empty_root};
 use crate::install::target::MergeOutcome;
 
 const PLUGIN_ID: &str = "pixtuoid";
@@ -212,14 +212,12 @@ fn contains_include(v: &Value) -> bool {
 /// don't re-propose it as the fix without re-measuring. Pinned by
 /// `merge_refuses_a_json5_document_instead_of_dropping_its_comments`.
 fn parse_for_merge(content: &str) -> Result<Value> {
-    if content.trim().is_empty() {
-        return Ok(json!({}));
-    }
-    serde_json::from_str(content).map_err(|e| {
+    parse_json_or_empty(content).map_err(|e| {
         anyhow!(
-            "openclaw.json is not strict JSON ({e}). OpenClaw parses it as JSON5, so \
+            "openclaw.json is not strict JSON ({}). OpenClaw parses it as JSON5, so \
              comments/trailing commas/single quotes are legal there and pixtuoid will not \
-             rewrite the file rather than drop them — {OWNER_CLI_ADVICE}"
+             rewrite the file rather than drop them — {OWNER_CLI_ADVICE}",
+            e.root_cause()
         )
     })
 }

@@ -7,9 +7,9 @@
 //! the write-only orchestrator cannot delete.
 //!
 //! **Source attribution rides the handler `env` map** ([`SOURCE_ENV`] set to
-//! `"grok"`), NOT a command argument: grok's runner injects handler env into the
-//! hook process on every platform, and an argument-less absolute path is
-//! DIRECT-exec'd, avoiding grok's shell heuristic entirely.
+//! [`SOURCE_NAME`](pixtuoid_core::source::grok::SOURCE_NAME)), NOT a command argument: grok's
+//! runner injects handler env into the hook process on every platform, and an argument-less
+//! absolute path is DIRECT-exec'd, avoiding grok's shell heuristic entirely.
 
 use std::path::{Path, PathBuf};
 

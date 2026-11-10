@@ -210,8 +210,8 @@ fn read_resolved(target: &Path) -> Result<String> {
 
 /// Rename `from` onto `to`, with a Windows-only bounded retry: `fs::rename` onto
 /// a file another process holds open raises ERROR_SHARING_VIOLATION (os error
-/// 32), so a bare rename can lose the write. That Claude Code holds
-/// `settings.json` open so is unverified. On Unix the rename succeeds atomically
+/// 32), so a bare rename can lose the write. Whether Claude Code holds
+/// `settings.json` open is unverified. On Unix the rename succeeds atomically
 /// even while a reader holds the old fd, so a single attempt is correct there.
 fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
@@ -746,7 +746,8 @@ mod tests {
 
     #[test]
     fn a_rename_retries_through_its_last_attempt_and_no_further() {
-        for fails in [RENAME_ATTEMPTS - 1, RENAME_ATTEMPTS] {
+        for fails in [0, RENAME_ATTEMPTS - 1, RENAME_ATTEMPTS] {
+            let tries = (fails + 1).min(RENAME_ATTEMPTS);
             let (mut calls, mut slept) = (0, Vec::new());
             let out = bounded_retry(
                 || {
@@ -760,8 +761,8 @@ mod tests {
                 |pause| slept.push(pause),
             );
             assert_eq!(out.is_ok(), fails < RENAME_ATTEMPTS, "{fails} failures");
-            assert_eq!(calls, RENAME_ATTEMPTS, "{fails} failures");
-            let pauses = usize::try_from(RENAME_ATTEMPTS - 1).unwrap();
+            assert_eq!(calls, tries, "{fails} failures");
+            let pauses = usize::try_from(tries - 1).unwrap();
             assert_eq!(slept, vec![RENAME_RETRY_SLEEP; pauses], "{fails} failures");
         }
     }

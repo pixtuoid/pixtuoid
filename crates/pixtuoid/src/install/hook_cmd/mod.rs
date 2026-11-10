@@ -23,13 +23,13 @@ pub(crate) fn windows_short_path(long: &str) -> Option<String> {
 /// exact same bytes and a rename can't produce a compiler-invisible write↔read
 /// desync (a path with the un-stripped tail baked in reads as "shim missing").
 /// The pixtuoid-hook crate parses the BARE argv tokens, a copy
-/// `the_shim_parses_every_flag_its_writers_spell` pins.
+/// `the_shim_reads_every_token_its_writers_spell` pins.
 pub(crate) const SOURCE_FLAG: &str = " --source ";
 pub(crate) const EVENT_FLAG: &str = " --event ";
 pub(crate) const HOOK_EVENT_FLAG: &str = " --hook-event ";
 
 /// The env var the shim reads the source from when no `--source` rides;
-/// `the_shim_parses_every_flag_its_writers_spell` pins the shim's copy.
+/// `the_shim_reads_every_token_its_writers_spell` pins the shim's copy.
 pub(crate) const SOURCE_ENV: &str = "PIXTUOID_SOURCE";
 
 /// POSIX single-quote a string so a shell treats it as one literal token: an
@@ -147,11 +147,11 @@ mod parity {
 
     /// Its stamps are pinned by `each_key_the_shim_stamps_is_the_one_core_reads`.
     #[test]
-    fn the_shim_parses_every_flag_its_writers_spell() {
+    fn the_shim_reads_every_token_its_writers_spell() {
         let shim = include_str!("../../../../pixtuoid-hook/src/main.rs");
-        for flag in [SOURCE_FLAG, EVENT_FLAG, HOOK_EVENT_FLAG, SOURCE_ENV] {
-            let bare = format!("\"{}\"", flag.trim());
-            assert!(shim.contains(&bare), "the shim parses no {bare}");
+        for token in [SOURCE_FLAG, EVENT_FLAG, HOOK_EVENT_FLAG, SOURCE_ENV] {
+            let bare = format!("\"{}\"", token.trim());
+            assert!(shim.contains(&bare), "the shim reads no {bare}");
         }
     }
 }

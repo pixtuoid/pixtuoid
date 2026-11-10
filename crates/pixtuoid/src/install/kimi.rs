@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use crate::install::hook_cmd::{SOURCE_ENV, SOURCE_FLAG};
 use crate::install::target::MergeOutcome;
 use crate::install::{io, merge};
 use pixtuoid_core::source::kimi::SOURCE_NAME;
@@ -112,14 +113,14 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     })
 }
 
-/// [`SOURCE_ENV`](crate::install::hook_cmd::SOURCE_ENV)`=kimi`, the Unix `shell_hook_command` prefix.
+/// [`SOURCE_ENV`]`=`[`SOURCE_NAME`], the Unix `shell_hook_command` prefix.
 fn env_marker() -> String {
-    format!("{}={SOURCE_NAME}", crate::install::hook_cmd::SOURCE_ENV)
+    format!("{SOURCE_ENV}={SOURCE_NAME}")
 }
 
-/// The ` --source kimi` flag marker (Windows bare form + any `--source` form).
+/// [`SOURCE_FLAG`] then [`SOURCE_NAME`] (Windows bare form + any `--source` form).
 fn flag_marker() -> String {
-    format!("{}{SOURCE_NAME}", crate::install::hook_cmd::SOURCE_FLAG)
+    format!("{SOURCE_FLAG}{SOURCE_NAME}")
 }
 
 /// A `[[hooks]]` entry is OURS iff its `command` carries the kimi source marker.

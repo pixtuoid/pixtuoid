@@ -105,11 +105,15 @@ fn parse_rows(content: &str) -> Result<Vec<YamlOwned>> {
     match merge::single_yaml_doc(content, "cordis.patch.yml")? {
         None => Ok(Vec::new()),
         Some(YamlOwned::Sequence(rows)) => Ok(rows),
-        Some(_) => bail!(
-            "cordis.patch.yml's top level is not a patch list — refusing to rewrite a \
-             config pixtuoid does not understand"
-        ),
+        Some(_) => bail!("cordis.patch.yml's top level is not a patch list"),
     }
+}
+
+/// [`parse_rows`] for a rewrite, which a malformed `insert:` refuses too.
+fn rows_to_rewrite(content: &str) -> Result<Vec<YamlOwned>> {
+    let rows = parse_rows(content).context("refusing to overwrite cordis.patch.yml")?;
+    refuse_malformed(&rows)?;
+    Ok(rows)
 }
 
 /// `rows` as the patch file `content` held.
@@ -243,8 +247,7 @@ fn strip_our_entries(rows: &[YamlOwned]) -> (Vec<YamlOwned>, usize) {
 pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutcome> {
     let plugin = plugin_path()?;
     let plugin = plugin.to_str().context("plugin path is not UTF-8")?;
-    let rows = parse_rows(content)?;
-    refuse_malformed(&rows)?;
+    let rows = rows_to_rewrite(content)?;
     let wanted = mount_row(plugin);
     if our_entries(&rows).len() == 1 && rows.contains(&wanted) {
         return Ok(MergeOutcome {
@@ -264,8 +267,7 @@ pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutco
 /// same `insert:` row included — survives as data (comments do not survive
 /// saphyr — the hermes target's documented trade).
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
-    let rows = parse_rows(content)?;
-    refuse_malformed(&rows)?;
+    let rows = rows_to_rewrite(content)?;
     let (kept, removed) = strip_our_entries(&rows);
     if removed == 0 {
         return Ok(MergeOutcome {
@@ -601,27 +603,35 @@ mod tests {
         });
     }
 
+    /// A merge refuses a patch file it can't rewrite whole, a second document's
+    /// included; verify, which writes nothing, reports it broken without a refusal.
     #[test]
-    fn a_second_document_is_refused_rather_than_dropped() {
+    fn a_patch_file_a_merge_refuses_reads_broken_to_verify() {
         let home = tempfile::tempdir().unwrap();
         temp_env::with_var("DSH_HOME", Some(home.path()), || {
             let two = "- insert:\n    - id: pixtuoid\n      name: /old/pixtuoid-dsh.mjs\n---\n- id: timer\n  enabled: false\n";
-            for err in [
-                merge_install(two, "/unused").unwrap_err(),
-                merge_uninstall(two).unwrap_err(),
+            for (content, why) in [
+                (two, "more than one YAML document"),
+                ("just: a mapping\n", "not a patch list"),
             ] {
+                for err in [
+                    merge_install(content, "/unused").unwrap_err(),
+                    merge_uninstall(content).unwrap_err(),
+                ] {
+                    let err = format!("{err:#}");
+                    assert!(
+                        err.contains("refusing to overwrite") && err.contains(why),
+                        "{err}"
+                    );
+                }
+                let v = verify_schema(content);
                 assert!(
-                    err.to_string().contains("more than one YAML document"),
-                    "{err}"
+                    v.issues
+                        .iter()
+                        .any(|i| i.contains(why) && !i.contains("refusing")),
+                    "{v:?}"
                 );
             }
-            let v = verify_schema(two);
-            assert!(
-                v.issues
-                    .iter()
-                    .any(|i| i.contains("more than one YAML document")),
-                "{v:?}"
-            );
         });
     }
 

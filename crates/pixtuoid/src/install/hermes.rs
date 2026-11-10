@@ -406,12 +406,14 @@ mod tests {
                 std::fs::write(&config, content).unwrap();
                 assert_eq!(is_registered().unwrap(), want, "{content}");
             }
-            std::fs::write(&config, "- pixtuoid\n").unwrap();
-            let unread = format!("{:#}", is_registered().unwrap_err());
-            assert!(
-                !unread.contains("refusing"),
-                "a read declines no write: {unread}"
-            );
+            for unreadable in ["- pixtuoid\n", "plugins: {}\n---\nmodel: other\n"] {
+                std::fs::write(&config, unreadable).unwrap();
+                let unread = format!("{:#}", is_registered().unwrap_err());
+                assert!(
+                    !unread.contains("refusing"),
+                    "a read declines no write: {unread}"
+                );
+            }
         });
     }
 }
