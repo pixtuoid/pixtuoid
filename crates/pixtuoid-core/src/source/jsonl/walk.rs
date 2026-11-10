@@ -9,14 +9,17 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{CwdExtractor, ParentExtractor, SUBAGENTS_DIR};
+use crate::source::first_sight::{
+    HEAD_BYTES, HeadFields, Life, Registration, Sight, evidence, extract_head_fields,
+    first_sight_start, last_life,
+};
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
 use super::health::FailureLatch;
 use super::liveness::{probe_admits, revouch_gated_files};
 use super::root_watch::{DirId, dir_id};
-use super::{HeadLabel, Registration, Sight, SourceDecoders, TailActivity, WatchCtx};
+use super::{SourceDecoders, TailActivity, WatchCtx};
 
 /// Oversized-span skip threshold: a pending span past this is never replayed.
 pub(super) const MAX_PENDING_BYTES: u64 = 1 << 20;
@@ -84,33 +87,6 @@ fn within(t: std::time::SystemTime, window: Duration) -> bool {
 /// the lifecycle fold and the activity-recency probe — a split would let a
 /// transcript be "ended" and "active" over different bytes.
 pub(super) const TAIL_BYTES: u64 = 8192;
-
-/// What a decoded event says of its transcript's session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Life {
-    /// A start, or work ([`AgentEvent::is_work`]), whoever it names.
-    Lives,
-    /// An end of the path's own agent: a child's end in its parent's
-    /// transcript ends only the child.
-    Ended,
-}
-
-fn evidence(ev: &AgentEvent, own: AgentId) -> Option<Life> {
-    match ev {
-        AgentEvent::SessionEnd { .. } if ev.agent_id() == own => Some(Life::Ended),
-        AgentEvent::SessionStart { .. } => Some(Life::Lives),
-        _ => ev.is_work().then_some(Life::Lives),
-    }
-}
-
-/// The session's verdict over `events`, in order: its last evidence, so a start
-/// or work after an end is a resume.
-pub(super) fn last_life<'a>(
-    events: impl IntoIterator<Item = &'a AgentEvent>,
-    own: AgentId,
-) -> Option<Life> {
-    events.into_iter().filter_map(|ev| evidence(ev, own)).last()
-}
 
 /// [`last_life`] of a tail `window`'s whole lines, decoded as a read decodes
 /// them, so the source's decoder is the one authority on its end.
@@ -410,7 +386,7 @@ pub(super) async fn walk_jsonl(
         // stays invisible until its next small append; the backlog is not replayed.
         // Keys on `seen`, NOT `!known` — a first-sight-GATED file is already `known`,
         // and keying on `!known` left it invisible until a later ≤1 MiB append.
-        let seen_before = seen.lock().await.contains_key(path);
+        let leads = Sight::leads(seen.lock().await.get(path));
         // The span is too big to hold, so the tail is the instrument — a
         // metadata run always lands at the end.
         let tail = read_tail(path, TAIL_BYTES).await;
@@ -418,16 +394,17 @@ pub(super) async fn walk_jsonl(
             tail.as_deref().map(decoders.activity_recency),
             Some(super::TailActivity::SidecarOnly)
         );
-        // A seen path's life is judged on the window `rescan_skipped_tail`
-        // reads, wide enough to hold a tool result's whole line.
-        let emits_registration = !metadata_only
-            && (!seen_before
-                || tail_life(path, SKIP_RESCAN_BYTES, source, decoders).await == Some(Life::Lives));
-        if emits_registration {
+        let leads = match leads {
+            Some(leads) => leads,
+            // Judged on the window `rescan_skipped_tail` reads, wide enough to
+            // hold a tool result's whole line.
+            None => tail_life(path, SKIP_RESCAN_BYTES, source, decoders).await == Some(Life::Lives),
+        };
+        if leads && !metadata_only {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
             let head = async {
-                match read_head(path, MAX_PENDING_BYTES).await {
+                match read_head(path).await {
                     Some(head) => extract_head_fields(
                         &head,
                         cwd_extractor_for(source),
@@ -495,18 +472,16 @@ pub(super) async fn walk_jsonl(
         decoded.extend(decode_line(&transcript_path_str, source, v));
     }
 
-    // A seen path registers again only on a read that shows life: a trailer
-    // flushed after the end line (grok's `hook_execution{stop}`) proves none.
     let own = own_agent(path, source, decoders);
-    let holds_life = decoded
-        .iter()
-        .any(|ev| evidence(ev, own) == Some(Life::Lives));
-    if (!seen.lock().await.contains_key(path) || holds_life)
-        && !matches!(
-            (decoders.activity_recency)(new_bytes),
-            super::TailActivity::SidecarOnly
-        )
-    {
+    let leads = Sight::leads(seen.lock().await.get(path));
+    if leads.unwrap_or_else(|| {
+        decoded
+            .iter()
+            .any(|ev| evidence(ev, own) == Some(Life::Lives))
+    }) && !matches!(
+        (decoders.activity_recency)(new_bytes),
+        super::TailActivity::SidecarOnly
+    ) {
         // A revived GATED file reads only the tail, which may lack what only a
         // head carries: Codex's `session_meta` cwd and parent, and the title.
         // Without them the revive registers empty-cwd onto the short reap, or a
@@ -515,8 +490,8 @@ pub(super) async fn walk_jsonl(
             let extract = cwd_extractor_for(source);
             let parent = parent_extractor_for(source);
             let read = extract_head_fields(new_bytes, extract, None, parent);
-            if (read.cwd.is_none() || (parent.is_some() && read.parent.is_none()))
-                && let Some(head) = read_head(path, MAX_PENDING_BYTES).await
+            if read.lack_the_head(parent)
+                && let Some(head) = read_head(path).await
             {
                 return extract_head_fields(&head, extract, decoders.head_label, parent);
             }
@@ -529,7 +504,7 @@ pub(super) async fn walk_jsonl(
         _ => None,
     }) && let Some(Sight::Claimed(registration)) = seen.lock().await.get_mut(path)
     {
-        registration.label.clone_from(label);
+        registration.label = Some(label.clone());
     }
 
     let verdict = last_life(&decoded, own);
@@ -609,12 +584,18 @@ async fn emit_registration(
             let label = head
                 .label
                 .unwrap_or_else(|| (decoders.derive_label)(path, source, &cwd));
-            let parent_id = detect_parent_id(path, source)
-                .or_else(|| head.parent.map(|p| AgentId::from_parts(source, &p)));
             let registration = Registration {
-                cwd,
-                parent_id,
-                label,
+                start: first_sight_start(
+                    path,
+                    source,
+                    // Same deriver as the AgentId: hook slots carry the bare session
+                    // UUID and nothing heals a slot's session_id, so a raw file-stem
+                    // here disagrees with the hook-created twin forever.
+                    decoders.id_derive.id_for(path),
+                    cwd,
+                    head.parent,
+                ),
+                label: Some(label),
             };
             seen.lock()
                 .await
@@ -622,24 +603,11 @@ async fn emit_registration(
             (registration, true)
         }
     };
-    // Same deriver as the AgentId: hook slots carry the bare session UUID and
-    // nothing heals a slot's session_id, so a raw file-stem here disagrees with
-    // the hook-created twin forever.
-    let session_id = decoders.id_derive.id_for(path);
-    let id = own_agent(path, source, decoders);
-    let _ = tx
-        .send((
-            Transport::Jsonl,
-            AgentEvent::SessionStart {
-                agent_id: id,
-                source: source.to_string(),
-                session_id,
-                cwd: registration.cwd,
-                parent_id: registration.parent_id,
-            },
-        ))
-        .await;
-    let label = registration.label;
+    let id = registration.start.agent_id();
+    let _ = tx.send((Transport::Jsonl, registration.start)).await;
+    let Some(label) = registration.label else {
+        return;
+    };
     // A first sight renames even a slot a hook created first. A claimed path
     // only hints: a `Rename` on every live read would clobber a name another
     // producer gave the session since (a parent's `subagent_spawned`, a
@@ -659,14 +627,14 @@ async fn emit_registration(
     let _ = tx.send((Transport::Jsonl, named)).await;
 }
 
-/// Read at most `limit` bytes from the START of a file, so registration never
-/// reads a whole multi-MB transcript. Returned raw because first-sight pulls
+/// Read a file's first [`HEAD_BYTES`]. Returned raw because first-sight pulls
 /// TWO fields out of the same bytes (`cwd`, and the head label for a source
 /// that names its session there) — one read, not one per field.
-async fn read_head(path: &Path, limit: u64) -> Option<Vec<u8>> {
+async fn read_head(path: &Path) -> Option<Vec<u8>> {
     let file_len = tokio::fs::metadata(path).await.ok()?.len();
     let mut file = tokio::fs::File::open(path).await.ok()?;
-    let mut head = vec![0u8; limit.min(file_len) as usize];
+    let len = usize::try_from(file_len).map_or(HEAD_BYTES, |len| len.min(HEAD_BYTES));
+    let mut head = vec![0u8; len];
     let n = file.read(&mut head).await.ok()?;
     head.truncate(n);
     Some(head)
@@ -750,108 +718,5 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
         if ctx.tx.send((Transport::Jsonl, ev)).await.is_err() {
             return;
         }
-    }
-}
-
-/// Detect a CC subagent by the `subagents` path component and link it to its
-/// parent via the directory component immediately before it (`<parent-uuid>`).
-/// That UUID equals the parent's own id, so the link resolves even when the
-/// subagent transcript lands under a DIFFERENT project dir than the parent (a
-/// git-worktree cwd-split). CC-layout-specific.
-pub(super) fn detect_parent_id(path: &Path, source: &str) -> Option<AgentId> {
-    let mut prev: Option<&str> = None;
-    for c in path.components() {
-        if c.as_os_str() == SUBAGENTS_DIR {
-            return prev.map(|uuid| AgentId::from_parts(source, uuid));
-        }
-        prev = c.as_os_str().to_str();
-    }
-    None
-}
-
-/// Walk a byte span's JSONL lines, handing each parsed line to `visit` until it
-/// returns `true`. A line that does not parse is skipped.
-fn scan_jsonl(bytes: &[u8], mut visit: impl FnMut(&serde_json::Value) -> bool) {
-    let parsed = crate::source::admit::lines(bytes)
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
-    for v in parsed {
-        if visit(&v) {
-            return;
-        }
-    }
-}
-
-/// Whether a head scan can stop: everything it is ABLE to find, it has found.
-///
-/// `wants_label` is the whole reason `head_label` is an `Option`. A source with
-/// no head name can never satisfy a label term, so folding one in unconditionally
-/// turns its first-line stop into a full up-to-`MAX_PENDING_BYTES` parse — on a
-/// path every transcript source rides.
-fn head_scan_complete(cwd: Option<&Path>, label: Option<&str>, wants_label: bool) -> bool {
-    cwd.is_some() && (!wants_label || label.is_some())
-}
-
-/// The first-sight fields a HEAD read yields, pulled in ONE parse pass: scanning
-/// a 1 MiB head once per field is a real cost. Each comes from the SCANNED
-/// source's own extractor (invariant #3): an if-chain trying every source's
-/// shape against every transcript lets a foreign-shaped line label a session
-/// with a foreign, identity-bearing cwd. For a TITLED omp root — the only
-/// source with a head label — the two land on adjacent lines (`title`, then
-/// `session`) and the scan stops there. A title-less head (every subagent, and
-/// legacy files with no slot) has no label to find, so it scans to the byte cap:
-/// bounded, once per first sight, and off the reducer thread.
-pub(super) fn extract_head_fields(
-    bytes: &[u8],
-    extract: CwdExtractor,
-    head_label: Option<HeadLabel>,
-    head_parent: Option<ParentExtractor>,
-) -> HeadFields {
-    let mut head = HeadFields::default();
-    scan_jsonl(bytes, |v| {
-        if head.cwd.is_none() {
-            head.cwd = extract(v);
-        }
-        if let (Some(f), None) = (head_label, &head.label) {
-            head.label = f(v);
-        }
-        if let (Some(f), None) = (head_parent, &head.parent) {
-            head.parent = f(v);
-        }
-        head_scan_complete(
-            head.cwd.as_deref(),
-            head.label.as_deref(),
-            head_label.is_some(),
-        )
-    });
-    head
-}
-
-/// What a first sight reads off a transcript's head, or off a revived file's
-/// new bytes.
-#[derive(Debug, Default)]
-pub(super) struct HeadFields {
-    pub(super) cwd: Option<PathBuf>,
-    pub(super) label: Option<String>,
-    pub(super) parent: Option<String>,
-}
-
-#[cfg(test)]
-mod stop_tests {
-    use super::*;
-
-    /// The truth table the scan's cost depends on. The `wants_label = false`
-    /// row is load-bearing: it is the difference between stopping on the first
-    /// `cwd` line and parsing the entire head.
-    #[test]
-    fn head_scan_stops_on_cwd_alone_when_the_source_has_no_head_label() {
-        let cwd = Path::new("/repo");
-
-        assert!(head_scan_complete(Some(cwd), None, false));
-        assert!(head_scan_complete(Some(cwd), Some("t"), false));
-        assert!(!head_scan_complete(None, Some("t"), false));
-
-        assert!(!head_scan_complete(Some(cwd), None, true));
-        assert!(head_scan_complete(Some(cwd), Some("t"), true));
-        assert!(!head_scan_complete(None, None, true));
     }
 }

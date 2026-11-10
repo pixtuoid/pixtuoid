@@ -1164,7 +1164,7 @@ fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
         weather: storm,
         ..FloorMeta::ground()
     };
-    let frame = obs.frame(&scene, &occupied, |_| None, floor, now);
+    let frame = obs.frame(&scene, Some(&occupied), |_| None, floor, now);
     let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), storm);
     let counts = crate::tally::per_floor_counts(&scene)[0];
     assert_eq!(
@@ -1205,7 +1205,7 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
 
     let _ = obs.frame(
         &scene,
-        &std::collections::HashSet::new(),
+        Some(&std::collections::HashSet::new()),
         printer,
         FloorMeta::ground(),
         now,
@@ -1215,7 +1215,13 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
     // Switch to floor 1 with an appliance ALREADY occupied — this would fire
     // PrinterWhir without the reprime.
     let occ0: std::collections::HashSet<usize> = [0usize].into_iter().collect();
-    let switch = obs.frame(&scene, &occ0, printer, FloorMeta::for_floor(1, 2), now);
+    let switch = obs.frame(
+        &scene,
+        Some(&occ0),
+        printer,
+        FloorMeta::for_floor(1, 2),
+        now,
+    );
     assert_eq!(obs.primed_floor(), Some(1));
     assert!(
         switch.events.is_empty(),
@@ -1223,7 +1229,13 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
     );
 
     let occ01: std::collections::HashSet<usize> = [0usize, 1usize].into_iter().collect();
-    let next = obs.frame(&scene, &occ01, printer, FloorMeta::for_floor(1, 2), now);
+    let next = obs.frame(
+        &scene,
+        Some(&occ01),
+        printer,
+        FloorMeta::for_floor(1, 2),
+        now,
+    );
     assert!(
         next.events.contains(&crate::audio::OneShot::PrinterWhir),
         "after the reprime, a newly occupied printer still fires"
@@ -1240,13 +1252,13 @@ fn audio_observer_keeps_cue_edges_warm_so_delivery_resume_fires_no_volley() {
     let occ = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
 
-    let _ = obs.frame(&empty, &occ, |_| None, FloorMeta::ground(), now);
-    let arrival = obs.frame(&one, &occ, |_| None, FloorMeta::ground(), now);
+    let _ = obs.frame(&empty, Some(&occ), |_| None, FloorMeta::ground(), now);
+    let arrival = obs.frame(&one, Some(&occ), |_| None, FloorMeta::ground(), now);
     assert!(
         arrival.events.contains(&crate::audio::OneShot::DoorChime),
         "an arrival chimes on the frame it happens"
     );
-    let resumed = obs.frame(&one, &occ, |_| None, FloorMeta::ground(), now);
+    let resumed = obs.frame(&one, Some(&occ), |_| None, FloorMeta::ground(), now);
     assert!(
         !resumed.events.contains(&crate::audio::OneShot::DoorChime),
         "no volley on resume — the observer saw the agent while muted"
@@ -2509,6 +2521,32 @@ fn an_office_never_rendered_paints_now() {
     );
 }
 
+/// Hearing settles the office as drawing does: once the floor showing empties
+/// out of the building, a walk-in on the floor it lands on chimes.
+#[test]
+fn hearing_settles_the_floor_showing_as_drawing_does() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000 + 3_600);
+    let look = crate::look::Look::HALF_BLOCKS;
+    // Desks 0 and 2 of two-desk floors: one agent downstairs, one upstairs.
+    let mut two_floors = make_scene(3, 2);
+    two_floors
+        .agents
+        .remove(&AgentId::from_transcript_path("/p/1.jsonl"));
+    let mut office = office_drawn_at(look, &two_floors, Motion::Still, t0);
+    assert!(office.navigate(1, t0));
+    let landed = t0 + Duration::from_millis(TRANSITION_DURATION_MS + 1);
+    render_office(&mut office, look, &two_floors, Motion::Still, landed);
+    assert_eq!(office.nav().current(), 1);
+    let _ = office.hear(&make_scene(1, 2), FloorMeta::ground(), landed);
+    assert_eq!(office.nav().current(), 0, "floor 1 emptied out");
+    let walk_in = office.hear(&make_scene(2, 2), FloorMeta::ground(), landed);
+    assert!(
+        walk_in.events.contains(&crate::audio::OneShot::DoorChime),
+        "{:?}",
+        walk_in.events
+    );
+}
+
 /// An office paints every frame of a slide between two floors.
 #[test]
 fn an_office_mid_slide_paints_every_frame() {
@@ -3008,6 +3046,67 @@ fn a_frame_without_the_office_forgets_the_last() {
     let _ = office.drew_no_office(&scene, FloorMeta::ground(), now0);
     assert!(office.picture().is_none(), "a pointer hits nothing");
     assert!(office.heard_occupied().is_empty());
+}
+
+/// A frame that draws no office ends a slide at once on its destination,
+/// whichever refuses it: a viewport the scene can't lay out, in either look,
+/// or a screen its painter finds too small. No slide of the last frames
+/// drawn runs on unseen.
+#[test]
+fn a_frame_without_the_office_ends_a_slide_on_its_destination() {
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+    let scene = make_scene(3, 2);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mid = t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2);
+    let min = crate::layout::min_layout_size();
+    let refused = Viewport::full(min.w, min.h - 1);
+    let render = |office: &mut OfficeSession, look, viewport, now| {
+        let _ = office.render(
+            look,
+            crate::look::RenderInputs {
+                world: FloorInputs {
+                    scene: &scene,
+                    now,
+                    floor: FloorMeta::ground(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                viewport,
+                place: crate::look::Place::default(),
+                debug_walkable: false,
+                dim: crate::look::Dim::NONE,
+            },
+            &[],
+            theme.surface.bg_fallback,
+        );
+    };
+    let sliding = |look| {
+        let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+        render(&mut office, look, PAINTED, t0);
+        assert!(office.navigate(1, t0), "a second floor to slide to");
+        render(&mut office, look, PAINTED, t0);
+        assert!(
+            matches!(office.picture(), Some(crate::look::Picture::Slide(_))),
+            "{look:?}: premise: a slide that lays out composes"
+        );
+        office
+    };
+    let landed = |office: &OfficeSession| {
+        (
+            office.picture().is_none(),
+            office.nav().transition().is_none(),
+            office.nav().current(),
+        )
+    };
+    for look in looks() {
+        let mut office = sliding(look);
+        render(&mut office, look, refused, mid);
+        assert_eq!(landed(&office), (true, true, 1), "{look:?}");
+    }
+    let [look, _] = looks();
+    let mut office = sliding(look);
+    let _ = office.drew_no_office(&scene, FloorMeta::ground(), mid);
+    assert_eq!(landed(&office), (true, true, 1), "a painter's refusal");
 }
 
 /// An office whose upper floor empties shows one floor: the count and the

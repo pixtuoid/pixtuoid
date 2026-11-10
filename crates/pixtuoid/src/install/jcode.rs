@@ -32,15 +32,8 @@ fn jcode_home() -> Option<PathBuf> {
     pixtuoid_core::platform::path_env("JCODE_HOME")
         // jcode-storage::jcode_dir reads it with `env::var`.
         .filter(|home| home.to_str().is_some())
-        .or_else(|| native_home().map(|home| home.join(".jcode")))
-}
-
-/// `dirs::home_dir`, Jcode's resolver, which no `USERPROFILE` moves on Windows.
-fn native_home() -> Option<PathBuf> {
-    #[cfg(windows)]
-    return pixtuoid_core::platform::profile_dir();
-    #[cfg(not(windows))]
-    std::env::home_dir()
+        // jcode-storage::jcode_dir's `dirs::home_dir` (`src/lib.rs:163-170` @ v0.99.1).
+        .or_else(|| pixtuoid_core::platform::dirs_home_dir().map(|home| home.join(".jcode")))
 }
 
 pub(crate) fn detect_installed() -> bool {
@@ -384,7 +377,7 @@ mod tests {
     #[test]
     fn jcode_windows_native_profile_ignores_spoofed_environment() {
         use std::os::windows::ffi::OsStringExt;
-        let expected = native_home()
+        let expected = pixtuoid_core::platform::dirs_home_dir()
             .expect("Windows profile folder")
             .join(".jcode");
         let spoof = tempfile::tempdir().unwrap();

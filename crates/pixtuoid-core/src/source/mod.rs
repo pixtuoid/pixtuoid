@@ -582,6 +582,8 @@ pub mod dsh;
 pub(crate) mod exit_watch;
 #[cfg(feature = "native")]
 pub(crate) mod fd_probe;
+#[cfg(any(feature = "native", feature = "harness"))]
+pub(crate) mod first_sight;
 pub mod grok;
 pub mod hermes;
 #[cfg(feature = "native")]

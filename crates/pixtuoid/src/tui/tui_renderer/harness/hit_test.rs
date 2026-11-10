@@ -458,6 +458,109 @@ where
     );
 }
 
+/// A move with no button held carries nothing, even after a press on a
+/// figure; the drag lifts it. The dashboard opened mid-carry then withholds no
+/// part of the gesture: the figure follows the pointer under it and is set
+/// down on release.
+#[test]
+fn a_panel_opened_mid_carry_still_sets_the_figure_down() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    let now = t0() + Duration::from_secs(20);
+    let id = AgentId::from_transcript_path("/carry/0.jsonl");
+    let scene = scene_with(vec![running("/carry/0.jsonl", 0, "Edit", t0())], 16);
+    let (_tx, scene_rx) = tokio::sync::watch::channel(Arc::new(scene.clone()));
+    let mut ui = crate::panels::ui_state::UiState::new(
+        normal_theme(),
+        crate::panels::welcome::WelcomeUi::from_detected(&[]),
+        std::path::PathBuf::from("/tmp/sock"),
+        None,
+        crate::doctor::DriftSeen::default(),
+    );
+    let mut r = build(140, 48, vec![]);
+    // A frame as the TUI's loop draws one: the panels, then the office.
+    let frame = |r: &mut TuiRenderer<TestBackend>,
+                 ui: &mut crate::panels::ui_state::UiState,
+                 at: SystemTime| {
+        r.set_frames(ui.build_frames(at, &scene, &[]), at);
+        r.render(&scene, at).unwrap();
+    };
+    let send = |r: &mut TuiRenderer<TestBackend>,
+                ui: &mut crate::panels::ui_state::UiState,
+                kind,
+                (column, row): (u16, u16)| {
+        crate::tui::handle_mouse_event(
+            MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            },
+            ui,
+            r,
+            &scene_rx,
+            |_| panic!("nothing under a panel focuses"),
+            now,
+        );
+    };
+    let agent_at = |r: &TuiRenderer<TestBackend>, (col, row): (u16, u16)| matches!(r.scene_hit_at(col, row), Some(SceneHit::Figure(HoverTarget::Agent(hit))) if *hit == id);
+    frame(&mut r, &mut ui, now);
+    let on_agent = r
+        .frame_buffer()
+        .area()
+        .positions()
+        .map(|p| (p.x, p.y))
+        .find(|&at| agent_at(&r, at))
+        .expect("the agent's cell");
+    let away = (on_agent.0.saturating_sub(12), on_agent.1 + 4);
+    let further = (on_agent.0 + 12, on_agent.1 + 4);
+    assert!(!agent_at(&r, further), "premise: nobody stands there yet");
+    send(
+        &mut r,
+        &mut ui,
+        MouseEventKind::Down(MouseButton::Left),
+        on_agent,
+    );
+    send(&mut r, &mut ui, MouseEventKind::Moved, away);
+    assert!(
+        !r.pointer.carrying(),
+        "a move with no button held lifts nothing"
+    );
+    send(
+        &mut r,
+        &mut ui,
+        MouseEventKind::Drag(MouseButton::Left),
+        away,
+    );
+    assert!(r.pointer.carrying(), "the drag lifts the agent");
+    ui.toggle_dashboard(&scene);
+    send(
+        &mut r,
+        &mut ui,
+        MouseEventKind::Drag(MouseButton::Left),
+        further,
+    );
+    frame(&mut r, &mut ui, now + Duration::from_millis(50));
+    let text = frame_text(r.frame_buffer());
+    assert!(
+        text.contains("Agents ("),
+        "premise: the dashboard shows:\n{text}"
+    );
+    assert!(
+        agent_at(&r, further),
+        "the figure follows the pointer under the panel:\n{text}"
+    );
+    send(
+        &mut r,
+        &mut ui,
+        MouseEventKind::Up(MouseButton::Left),
+        further,
+    );
+    assert!(
+        !r.pointer.carrying(),
+        "a panel opened mid-carry sets it down"
+    );
+}
+
 /// The click handler acts on `scene_hit_at`, so wherever it names a figure or
 /// the coffee machine, the tooltip there names the same thing.
 #[test]

@@ -8,11 +8,11 @@ use std::time::{Duration, SystemTime};
 use serde_json::Value;
 
 use super::reads::{Spelling, WRITE_STAMPS};
-use super::{BreadcrumbSink, CASCADE_TICK, Decode, Drive, Driven, note_reached};
+use super::{BreadcrumbSink, CASCADE_TICK, Decode, Drive, Driven, Fold};
 use crate::source::DEFAULT_POLL_INTERVAL;
 use crate::source::decoder::rfc3339_to_epoch;
 use crate::state::ActivityState;
-use crate::{AgentEvent, Reducer, Transport};
+use crate::{AgentEvent, Transport};
 
 /// What the shim stamps on every envelope: when it forwarded it, in
 /// milliseconds since the epoch. Pinned by
@@ -28,11 +28,7 @@ pub struct Step {
     /// first-sight seed rides in with the transcript's first line.
     pub line: usize,
     /// When it reached the reducer.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "its test pins the arrival rule")
-    )]
-    pub(crate) at: SystemTime,
+    pub at: SystemTime,
     /// The event.
     pub event: AgentEvent,
     /// Its agent's state once it applied; `None` with no slot to hold it.
@@ -82,7 +78,8 @@ impl Drive {
         };
         let &(_, key, spelling) = WRITE_STAMPS.iter().find(|(s, ..)| s == source)?;
         let mut decoded = Driven::empty();
-        let seed = self.seed();
+        let head = super::joined(lines.iter());
+        let seed = self.seed(&head, &head);
         decoded.seed_events = usize::from(seed.is_some());
         let sink = BreadcrumbSink::default();
         let (hooks, transcript) = tracing::subscriber::with_default(sink.clone(), || {
@@ -226,30 +223,33 @@ impl Merges {
             })
             .collect();
 
-        let mut driven = Driven {
-            lines: self.decoded.lines,
-            unparseable: self.decoded.unparseable,
-            decode_errors: self.decoded.decode_errors.clone(),
-            seed_events: self.decoded.seed_events,
-            ..Driven::empty()
+        let mut fold = Fold {
+            driven: Driven {
+                lines: self.decoded.lines,
+                unparseable: self.decoded.unparseable,
+                decode_errors: self.decoded.decode_errors.clone(),
+                seed_events: self.decoded.seed_events,
+                ..Driven::empty()
+            },
+            ..Fold::default()
         };
         let mut steps = Vec::new();
         let sink = BreadcrumbSink::default();
         tracing::subscriber::with_default(sink.clone(), || {
-            let mut reducer = Reducer::new();
+            // Each line at its arrival instant, never `Fold::feed`'s cascade tick
+            // after each event: that tick's gc expires `HOOK_WINS_WINDOW` before
+            // the other transport's twin arrives.
             for &(transport, w, at) in &arrivals {
-                reducer.tick(&mut driven.scene, at);
-                note_reached(&driven.scene, &mut driven.reaches);
+                fold.tick(at);
                 for event in &w.events {
-                    reducer.apply(&mut driven.scene, event.clone(), at, transport);
-                    note_reached(&driven.scene, &mut driven.reaches);
-                    driven.events.push(event.clone());
+                    fold.apply(transport, event.clone(), at);
                     steps.push(Step {
                         transport,
                         line: w.line,
                         at,
                         event: event.clone(),
-                        state: driven
+                        state: fold
+                            .driven
                             .scene
                             .agents
                             .get(&event.agent_id())
@@ -257,9 +257,9 @@ impl Merges {
                     });
                 }
             }
-            reducer.tick(&mut driven.scene, last + CASCADE_TICK);
-            note_reached(&driven.scene, &mut driven.reaches);
+            fold.tick(last + CASCADE_TICK);
         });
+        let mut driven = fold.finish();
         driven.breadcrumbs = self.decoded.breadcrumbs.clone();
         driven.breadcrumbs.extend(sink.take());
         Merged { driven, steps }

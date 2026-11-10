@@ -129,7 +129,7 @@ pub(super) fn scene_with(agents: Vec<AgentSlot>, cap: usize) -> SceneState {
 }
 /// Flatten the ratatui frame into one newline-joined string for substring
 /// assertions on rendered text.
-pub(super) fn frame_text(buf: &ratatui::buffer::Buffer) -> String {
+pub(in crate::tui) fn frame_text(buf: &ratatui::buffer::Buffer) -> String {
     let area = buf.area;
     let mut out = String::new();
     for y in area.y..area.y + area.height {
@@ -179,6 +179,9 @@ pub(super) struct Tapped<B, T> {
 pub(super) trait Tap<B: Backend> {
     /// Sees each draw's cells before `inner` does.
     fn on_draw(&mut self, _cells: &[(u16, u16, &ratatui::buffer::Cell)]) {}
+    fn size(&self, inner: &B) -> Result<ratatui::layout::Size, B::Error> {
+        inner.size()
+    }
     fn window_size(&mut self, inner: &mut B) -> Result<ratatui::backend::WindowSize, B::Error> {
         inner.window_size()
     }
@@ -223,7 +226,7 @@ impl<B: Backend, T: Tap<B>> Backend for Tapped<B, T> {
         self.inner.clear_region(clear_type)
     }
     fn size(&self) -> Result<ratatui::layout::Size, Self::Error> {
-        self.inner.size()
+        self.tap.size(&self.inner)
     }
     fn window_size(&mut self) -> Result<ratatui::backend::WindowSize, Self::Error> {
         self.tap.window_size(&mut self.inner)

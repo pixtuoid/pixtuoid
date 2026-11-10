@@ -73,7 +73,7 @@ pub fn run() -> Result<()> {
         std::io::IsTerminal::is_terminal(&std::io::stderr()),
         pixtuoid_core::platform::text_env("COLORTERM").as_deref(),
         pixtuoid_core::platform::text_env("PIXTUOID_NO_TRUECOLOR_WARN").as_deref(),
-    ) && crate::term::query_truecolor(crate::term::TRUECOLOR_PROBE_TIMEOUT).warrants_warning()
+    ) && crate::term::query_truecolor().warrants_warning()
     {
         let _ = writeln!(
             std::io::stderr(),
@@ -161,25 +161,11 @@ pub fn run() -> Result<()> {
         Cmd::Connect {
             sources: SourceIdArgs { ids },
             output: JsonArgs { json },
-        } => sources_cli::run_change(&ids, json, |c, i| {
-            sources::connect(c, i).map(|_| sources::ChangeOutcome::Connected)
-        }),
+        } => sources_cli::run_change(&ids, json, sources::connect),
         Cmd::Disconnect {
             sources: SourceIdArgs { ids },
             output: JsonArgs { json },
-        } => sources_cli::run_change(&ids, json, |c, i| match sources::disconnect(c, i)? {
-            sources::DisconnectOutcome::Uninstalled(r)
-                if let Some(cli) = r.plugin_left_registered =>
-            {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "{i}: {}",
-                    pixtuoid_core::remote::plugin_left_registered(cli.command)
-                );
-                Ok(sources::ChangeOutcome::Disconnected)
-            }
-            _ => Ok(sources::ChangeOutcome::Disconnected),
-        }),
+        } => sources_cli::run_change(&ids, json, sources::disconnect),
         Cmd::Setup { yes } => sources_cli::run_setup(yes),
         // Packaging interfaces: stdout carries ONLY the generated artifact (the
         // tracing subscriber writes to stderr) so the homebrew
