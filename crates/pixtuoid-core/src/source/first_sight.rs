@@ -89,6 +89,16 @@ pub(crate) fn holds_life<'a>(
         .any(|ev| evidence(ev, own) == Some(Life::Lives))
 }
 
+/// Whether a read whose verdict is `verdict` sends its decoded `event`: not its
+/// own `SessionStart` when the read ends the session, a start a decoder bears
+/// (copilot's `session.resume`) refused as [`Sight::registers`] refuses the
+/// watcher's.
+pub(crate) fn sends(event: &AgentEvent, own: AgentId, verdict: Option<Life>) -> bool {
+    verdict != Some(Life::Ended)
+        || !matches!(event, AgentEvent::SessionStart { .. })
+        || event.agent_id() != own
+}
+
 /// Detect a CC subagent by the `subagents` path component and link it to its
 /// parent via the directory component immediately before it (`<parent-uuid>`).
 /// That UUID equals the parent's own id, so the link resolves even when the

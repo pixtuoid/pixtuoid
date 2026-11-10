@@ -5,8 +5,10 @@
 //!
 //! `Drive` folds through a real `Reducer` and RETAINS every decoded event, so
 //! the curve carries a constant harness component production doesn't pay (one
-//! `AgentEvent` clone per event, plus a per-event `tick` the runtime schedules
-//! on a timer). Read the memory mode's movement as directional, not absolute.
+//! `AgentEvent` clone per event, a per-event `tick` the runtime schedules on a
+//! timer, and a seeded transcript's decode of its last lines back to their
+//! last lifecycle evidence, the live-read split). Read the memory mode's
+//! movement as directional, not absolute.
 //!
 //! Both transports are measured because their costs are structurally different:
 //! the JSONL arm runs a transcript line decoder, the hook arm a hook decoder

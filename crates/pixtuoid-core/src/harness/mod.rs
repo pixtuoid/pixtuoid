@@ -31,7 +31,7 @@ use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::first_sight::{
     HEAD_BYTES, Life, Registration, Sight, extract_head_fields, first_sight_start, holds_life,
-    last_life,
+    last_life, sends,
 };
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
@@ -455,35 +455,48 @@ impl Drive {
         Some((source, path, registry::id_deriver_for(source)(path)))
     }
 
-    /// `lines` as the watcher reads a live transcript: one read, unless their
-    /// last lifecycle evidence ends the transcript's own session, written after
-    /// its work, when the lines before that end come first and the rest arrive
-    /// a read later. One read of a whole ended recording would register
-    /// nothing (`Sight::registers`).
+    /// `lines` as the watcher reads a live transcript, where an end of its own
+    /// session lands a read after the work before it: when their last
+    /// lifecycle evidence is that end and some line precedes it, the end and
+    /// the rest are a read of their own, and the lines before it split the same
+    /// way; otherwise they are one read. One read holding a life and its end
+    /// would register nothing (`Sight::registers`).
     pub fn live_reads<'a, S: AsRef<str>>(&self, lines: &'a [S]) -> Vec<&'a [S]> {
-        match self.live_split(lines.iter().map(|line| Some(line.as_ref()))) {
-            Some(end) => vec![&lines[..end], &lines[end..]],
-            None => vec![lines],
-        }
+        self.split_live(lines, |line| Some(line.as_ref()))
     }
 
-    /// Where [`Self::live_reads`] splits `lines`, a line `None` when it is not
-    /// UTF-8: before the line holding their last lifecycle evidence, when that
-    /// is the transcript's own end and some line precedes it.
-    fn live_split<'a>(&self, lines: impl Iterator<Item = Option<&'a str>>) -> Option<usize> {
-        let (source, _, session_id) = self.keyed_on()?;
-        let own = AgentId::from_parts(source, &session_id);
-        let scratch = &mut Driven::empty();
-        let lives: Vec<Option<Life>> = lines
-            .map(|line| {
-                last_life(
-                    &self.decode.line(line, scratch, |_| {}).unwrap_or_default(),
-                    own,
-                )
+    /// [`Self::live_reads`] over lines `text` reads, `None` for one that is not
+    /// UTF-8. Scanned from the back, so an open recording decodes about one line.
+    fn split_live<'a, T>(&self, lines: &'a [T], text: impl Fn(&T) -> Option<&str>) -> Vec<&'a [T]> {
+        let mut cuts = Vec::new();
+        if let Some((source, _, session_id)) = self.keyed_on() {
+            let own = AgentId::from_parts(source, &session_id);
+            let scratch = &mut Driven::empty();
+            let mut upto = lines.len();
+            while let Some((end, Life::Ended)) =
+                (lines[..upto].iter().enumerate().rev()).find_map(|(at, line)| {
+                    let events = self
+                        .decode
+                        .line(text(line), scratch, |_| {})
+                        .unwrap_or_default();
+                    last_life(&events, own).map(|verdict| (at, verdict))
+                })
+                && end > 0
+            {
+                cuts.push(end);
+                upto = end;
+            }
+        }
+        let mut start = 0;
+        let mut reads: Vec<&[T]> = (cuts.into_iter().rev())
+            .map(|cut| {
+                let read = &lines[start..cut];
+                start = cut;
+                read
             })
             .collect();
-        let end = lives.iter().rposition(Option::is_some)?;
-        (end > 0 && lives[end] == Some(Life::Ended)).then_some(end)
+        reads.push(&lines[start..]);
+        reads
     }
 
     /// The `SessionStart` the watcher's first sight emits for this transcript:
@@ -564,12 +577,8 @@ impl Fold {
     pub fn feed_body(&mut self, drive: &Drive, body: &[u8], at: SystemTime) {
         use crate::source::admit::{lines, whole};
         let lines: Vec<Option<&str>> = lines(whole(body)).map(Result::ok).collect();
-        let end = drive
-            .live_split(lines.iter().copied())
-            .unwrap_or(lines.len());
-        self.run(drive, lines[..end].iter().copied(), at);
-        if end < lines.len() {
-            self.run(drive, lines[end..].iter().copied(), at);
+        for read in drive.split_live(&lines, |line| *line) {
+            self.run(drive, read.iter().copied(), at);
         }
     }
 
@@ -663,6 +672,11 @@ impl Fold {
             if let Some(seed) = self.registration(drive, &lines, &decoded) {
                 self.driven.seed_events += 1;
                 fed.push(seed);
+            }
+            if let Some((source, _, session_id)) = drive.keyed_on() {
+                let own = AgentId::from_parts(source, &session_id);
+                let verdict = last_life(&decoded, own);
+                decoded.retain(|event| sends(event, own, verdict));
             }
             fed.extend(decoded);
             for event in fed {
@@ -910,14 +924,16 @@ mod tests {
         assert_eq!(d.registered(), 0);
     }
 
-    /// A batch whose own last word ends its session registers nothing, so no
-    /// sprite walks in only to walk out.
+    /// A batch whose own last word ends its session registers nothing, its
+    /// header's decoded start included, so no sprite walks in only to walk out.
     #[test]
     fn a_batch_that_ends_its_session_registers_nothing() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let head = serde_json::json!({"type": "session", "cwd": "/repo/head"});
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
         let mut fold = Fold::default();
-        fold.feed(&drive, [tool_line(), exit.to_string()], default_now());
+        let batch = [head.to_string(), tool_line(), exit.to_string()];
+        fold.feed(&drive, batch, default_now());
         let d = fold.finish();
         assert!(
             d.events
@@ -937,7 +953,9 @@ mod tests {
 
     /// A recording read live is one read while its last lifecycle evidence is
     /// not its own end, a resume included; one that ends reads its end, and
-    /// the rest, a read later, so its life registers.
+    /// the rest, a read later, and so does each earlier end, so its life
+    /// registers (omp's `resume-hermetic`: a life, its exit, a text-only turn,
+    /// its exit).
     #[test]
     fn a_recording_is_read_live_its_end_a_read_later() {
         let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap();
@@ -949,8 +967,19 @@ mod tests {
         assert_eq!(drive.live_reads(&resumed), [&resumed[..]]);
         let ended = [tool_line(), exit.to_string(), trailer.to_string()];
         assert_eq!(drive.live_reads(&ended), [&ended[..1], &ended[1..]]);
-        let d = drive.seeded().lines(&ended);
-        assert_eq!((d.seed_events, d.registered()), (1, 1));
+        let lives = [
+            tool_line(),
+            exit.to_string(),
+            trailer.to_string(),
+            exit.to_string(),
+        ];
+        let reads = [&lives[..1], &lives[1..3], &lives[3..]];
+        assert_eq!(drive.live_reads(&lives), reads);
+        let seeded = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        for recording in [&ended[..], &lives[..]] {
+            let d = seeded.lines(recording);
+            assert_eq!((d.seed_events, d.registered()), (1, 1), "{recording:?}");
+        }
     }
 
     /// A new life's read that lacks the head's cwd reads the transcript's start

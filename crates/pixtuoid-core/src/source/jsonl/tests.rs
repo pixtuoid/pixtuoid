@@ -1187,6 +1187,45 @@ async fn a_live_read_that_ends_its_session_registers_nothing() {
     assert_eq!(seen.lock().await.get(&path), Some(&Sight::Ended));
 }
 
+/// A start a decoder bears is the same ghost: copilot's resume and its
+/// shutdown in one read send no start, the resume's included.
+#[tokio::test]
+async fn a_read_that_resumes_and_ends_its_session_sends_no_start() {
+    const SHUTDOWN: &str = r#"{"type":"session.shutdown","data":{"shutdownType":"routine"},"id":"s1","timestamp":"t"}"#;
+    const RESUME: &str =
+        r#"{"type":"session.resume","data":{"context":{"cwd":"/repo"}},"id":"r1","timestamp":"t"}"#;
+    const CALL: &str = r#"{"type":"tool.execution_start","data":{"toolCallId":"c1","toolName":"view","arguments":{"path":"/repo"}}}"#;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("sid").join("events.jsonl");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, format!("{SHUTDOWN}\n")).unwrap();
+    let ended_at = std::fs::metadata(&path).unwrap().len();
+    let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), ended_at)])));
+    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Ended)])));
+
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(&mut f, format!("{RESUME}\n{CALL}\n{SHUTDOWN}\n").as_bytes())
+        .unwrap();
+    let decoders = SourceDecoders {
+        decode_line: crate::source::copilot::decode_copilot_line,
+        id_derive: super::folded::FoldedDeriver::new(crate::source::copilot::copilot_id_from_path),
+        ..t_decoders()
+    };
+    let events = walk_decoded(&path, Duration::from_secs(3600), decoders, &cursors, &seen).await;
+    assert!(
+        (events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionEnd { .. })),
+        "{events:?}"
+    );
+    assert!(
+        !(events.iter()).any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
+        "{events:?}"
+    );
+    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Ended));
+}
+
 #[tokio::test]
 async fn a_post_end_trailer_that_decodes_to_nothing_never_re_registers() {
     let dir = tempfile::tempdir().unwrap();

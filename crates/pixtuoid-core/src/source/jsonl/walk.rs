@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 use crate::AgentId;
 use crate::source::first_sight::{
     HEAD_BYTES, HeadFields, Life, Registration, Sight, extract_head_fields, first_sight_start,
-    holds_life, last_life,
+    holds_life, last_life, sends,
 };
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
@@ -501,6 +501,7 @@ pub(super) async fn walk_jsonl(
         registration.label = Some(label.clone());
     }
 
+    decoded.retain(|event| sends(event, own, verdict));
     // A known file's read from the top follows a truncation or a re-vouch.
     let replays = if known { cursor_now == 0 } else { replaying };
     // Declared per read, and per agent a read names: a transcript carries its
