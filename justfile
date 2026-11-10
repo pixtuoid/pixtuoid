@@ -224,8 +224,12 @@ json-schemas:
 [group('rust')]
 links:
     # Source CSS uses Vite package specifiers; its module graph belongs to the
-    # site build, while this gate owns documentation links and anchors.
-    lychee --offline --include-fragments --extensions md --hidden .
+    # site build, while this gate owns documentation links and anchors. The
+    # README links this repo absolutely (gen-readme.mjs's RAW says why), so
+    # those links are remapped onto this tree to stay checked.
+    lychee --offline --include-fragments --extensions md --hidden \
+        --remap '^https://github\.com/pixtuoid/pixtuoid/blob/HEAD/ file://{{ replace(justfile_directory(), ' ', '%20') }}/' \
+        --remap '^https://raw\.githubusercontent\.com/pixtuoid/pixtuoid/HEAD/ file://{{ replace(justfile_directory(), ' ', '%20') }}/' .
 
 [doc('Lint and format-check the Python (ruff)')]
 [group('rust')]
@@ -688,7 +692,7 @@ corpus-all:
     #!/usr/bin/env bash
     set -uo pipefail
     cc=target/release/examples/corpus_check
-    cargo build --release -q --example corpus_check -p pixtuoid-scene || exit 2
+    cargo build --release -q --example corpus_check -p pixtuoid || exit 2
     # Read the roster BEFORE the loop: as a process substitution its exit status
     # is unobservable, so a roster that dies would feed an empty loop and the
     # census would report "everything clean" having censused nothing.
