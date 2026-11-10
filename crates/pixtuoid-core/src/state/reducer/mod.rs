@@ -1017,13 +1017,15 @@ impl Reducer {
             // Identity is hook-only, so the process is alive: a JSONL-seeded
             // unknown-cwd flag must not keep `STALE_UNKNOWN_CWD_TIMEOUT` armed.
             slot.unknown_cwd = false;
-        } else if let Some(parent) =
-            self.parent_to_create(scene, agent_id, ctx, AttemptKind::Identity, from, now)
-        {
-            let slot = self.register_and_link(scene, agent_id, ctx, parent, now);
-            slot.unknown_cwd = false;
-            if pid.is_some() {
-                slot.pid = pid;
+        } else {
+            let attempt = self.attempt(agent_id, AttemptKind::Identity, None);
+            if let Verdict::Create = self.authorizes(scene, agent_id, attempt, from, now) {
+                let parent = self.resolve_parent_link(scene, agent_id, ctx, attempt.parent);
+                let slot = self.register_and_link(scene, agent_id, ctx, parent, now);
+                slot.unknown_cwd = false;
+                if pid.is_some() {
+                    slot.pid = pid;
+                }
             }
         }
     }
@@ -1270,25 +1272,6 @@ impl Reducer {
         }
         if seat {
             scene.seat_unseated(|_| true, |_| Some(now));
-        }
-    }
-
-    /// [`Reducer::authorizes`] for an arm whose event names no parent: `None`
-    /// when it may not create, else the parent to create under, through
-    /// [`Reducer::resolve_parent_link`].
-    fn parent_to_create(
-        &self,
-        scene: &SceneState,
-        id: AgentId,
-        ctx: IdentityCtx,
-        kind: AttemptKind,
-        from: Transport,
-        now: SystemTime,
-    ) -> Option<Option<AgentId>> {
-        let attempt = self.attempt(id, kind, None);
-        match self.authorizes(scene, id, attempt, from, now) {
-            Verdict::Create => Some(self.resolve_parent_link(scene, id, ctx, attempt.parent)),
-            Verdict::Enrich { .. } | Verdict::Refuse(_) => None,
         }
     }
 
