@@ -27,7 +27,7 @@ export default function ManageSources() {
     if (item.connected) {
       const confirmed = await confirmAlert({
         title: `Disconnect ${item.display_name}?`,
-        message: "Removes its hooks from that CLI's config. You can reconnect anytime.",
+        message: "Removes any hooks pixtuoid put in that CLI's config. You can reconnect anytime.",
         primaryAction: { title: "Disconnect", style: Alert.ActionStyle.Destructive },
       });
       if (!confirmed) return;
