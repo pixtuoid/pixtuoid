@@ -29,6 +29,10 @@ const ZONE: chrono::FixedOffset = match chrono::FixedOffset::east_opt(5 * 3600 +
 };
 
 /// `now` on the viewer's wall clock.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the office's one conversion into the viewer's zone"
+)]
 pub(crate) fn local_time(now: SystemTime) -> chrono::NaiveDateTime {
     chrono::DateTime::<chrono::Utc>::from(now)
         .with_timezone(&ZONE)
