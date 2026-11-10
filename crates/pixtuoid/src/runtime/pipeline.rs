@@ -179,8 +179,8 @@ mod tests {
         );
     }
 
-    /// The 1-Hz sweep of a quiet office, a read's re-registered start and its
-    /// backlog each publish a scene equal to the one the reader holds.
+    /// [`gate::reconcile_sweep_tick`] over a quiet office, a read's re-registered
+    /// start and its backlog each publish a scene equal to the one the reader holds.
     #[test]
     fn a_publish_reaches_the_reader_only_when_the_scene_changed() {
         let caps = [8; MAX_FLOORS];

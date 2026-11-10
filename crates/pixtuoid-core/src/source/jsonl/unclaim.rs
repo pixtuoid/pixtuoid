@@ -124,8 +124,8 @@ impl Default for ChildEndUnclaims {
 ///   that negates the SubagentStop end.
 ///
 /// Accepted residual: bytes the child wrote between the hook Stop and this drain
-/// are consumed silently, indistinguishable from pre-stop stragglers without
-/// per-byte timestamps.
+/// are read as pre-stop stragglers, indistinguishable without per-byte
+/// timestamps.
 pub(super) async fn drain_child_end_unclaims(
     unclaims: Option<&ChildEndUnclaims>,
     decoders: SourceDecoders,

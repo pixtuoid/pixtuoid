@@ -45,8 +45,8 @@ pub(crate) struct Registration {
     /// The [`first_sight_start`] its first sight built.
     pub(crate) start: AgentEvent,
     /// The label its reads last gave the session: first sight's, then any
-    /// `Rename` a read decoded for it since. `None` where no label deriver is
-    /// built: the harness, as [`HeadLabel`]'s native-only column.
+    /// `Rename` a read decoded for it since. `None` in the harness, which builds
+    /// no `NativeTranscript` label deriver.
     pub(crate) label: Option<String>,
 }
 

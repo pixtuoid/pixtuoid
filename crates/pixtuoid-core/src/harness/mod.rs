@@ -13,10 +13,11 @@
 //! 1. **Registration comes from the WATCHER, not the decoder.** A JSONL event
 //!    for an unknown id is a documented no-op, so a transcript driven with no
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
-//!    in for `emit_registration`, through the SAME first-sight gate, head scan and
-//!    `first_sight_start` from the SAME registry row. Only what the registry's
-//!    native-only `NativeTranscript` column derives (the title, the label, a
-//!    path-derived cwd) stays out, since a wasm-clean build has none of it.
+//!    in for `emit_registration`, through the SAME registration gate
+//!    ([`Sight::registers`]), head scan and `first_sight_start` from the SAME
+//!    registry row. The file's mtime gate (`should_seed_at_eof`) stays out, as
+//!    does what the registry's native-only `NativeTranscript` column derives
+//!    (the title, the label, a path-derived cwd), which a wasm-clean build lacks.
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
 //!    so it is not a free parameter.
 
@@ -829,6 +830,27 @@ mod tests {
         fold.feed(&drive, [tool_line()], at);
         assert_eq!(fold.driven().seed_events, 2, "a feed showing life");
         assert_eq!(slots(&fold), first);
+
+        let rollout = "/h/.codex/sessions/2026/10/27/rollout-2026-10-27T04-47-02-019e7762-9ded-7e33-8e5c-3b1c8f6f0a02.jsonl";
+        let child = Drive::transcript("codex", rollout).unwrap().seeded();
+        let head = serde_json::json!({"type": "session_meta", "payload": {
+            "id": "019e7762-9ded-7e33-8e5c-3b1c8f6f0a02",
+            "parent_thread_id": "019e7762-9ded-7e33-8e5c-3b1c8f6f0a01",
+            "cwd": "/repo",
+        }});
+        let call = serde_json::json!({"type": "response_item", "payload": {
+            "type": "function_call", "name": "exec_command", "arguments": "{}", "call_id": "call_1",
+        }});
+        let mut fold = Fold::default();
+        fold.feed(&child, [head.to_string(), call.to_string()], at);
+        let linked = slots(&fold);
+        assert!(
+            linked.iter().all(|(_, parent)| parent.is_some()),
+            "{linked:?}"
+        );
+        fold.feed(&child, [call.to_string()], at);
+        assert_eq!(fold.driven().seed_events, 2, "a child's feed showing life");
+        assert_eq!(slots(&fold), linked);
     }
 
     /// An ended session's transcript showing activity again is a new life,
