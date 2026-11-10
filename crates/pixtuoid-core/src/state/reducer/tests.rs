@@ -1278,13 +1278,15 @@ fn a_tick_walks_scope_in_linear_work() {
 fn a_sweep_seats_only_when_a_slot_leaves() {
     use super::EXIT_GRACE_WINDOW;
     use crate::source::{AgentEvent, Transport};
-    use crate::state::SEATINGS;
+    use crate::state::{FloorDesk, MAX_FLOORS, SEATINGS};
     use crate::{AgentId, Reducer, SceneState};
     use std::time::{Duration, SystemTime};
 
     const APPLIES: usize = 16;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let mut scene = SceneState::uniform(1);
+    let mut one_desk = [0; MAX_FLOORS];
+    one_desk[0] = 1;
+    let mut scene = SceneState::new(one_desk);
     let mut r = Reducer::new();
     let sessions = ["holder", "unseated"];
     let [holder, unseated] = sessions.map(|s| AgentId::from_parts("claude-code", s));
@@ -1302,6 +1304,9 @@ fn a_sweep_seats_only_when_a_slot_leaves() {
             Transport::Hook,
         );
     }
+    let desk = |scene: &SceneState, id| scene.agents[&id].desk;
+    assert_eq!(desk(&scene, holder), Some(FloorDesk::new(0, 0)), "premise");
+    assert_eq!(desk(&scene, unseated), None, "premise: one desk");
     let seatings = || SEATINGS.with(std::cell::Cell::get);
     SEATINGS.with(|n| n.set(0));
 
@@ -1329,7 +1334,7 @@ fn a_sweep_seats_only_when_a_slot_leaves() {
     );
     assert!(!scene.agents.contains_key(&holder), "premise: swept out");
     assert_eq!(seatings(), 1, "the apply its holder left on seats once");
-    assert!(scene.agents[&unseated].desk.is_some());
+    assert_eq!(desk(&scene, unseated), Some(FloorDesk::new(0, 0)));
 }
 
 /// An open turn showing no item is the agent between items, alive by its
