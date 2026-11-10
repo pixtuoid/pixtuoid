@@ -384,13 +384,11 @@ test *args:
     @TZ={{ TEST_TZ }} cargo nextest run "$@"
 
 # The filter forwards to every target, and one matching nothing in a target is
-# not an error: `just bench 360` runs every 360x240 case, `just bench hook` only
-# the hook-transport fold.
-[doc('Render-path + wire-path criterion benchmarks; forwards a filter')]
+# not an error: `just bench 360` runs every 360x240 case.
+[doc('Render-path criterion benchmarks; forwards a filter')]
 [group('rust')]
 bench *args:
     cargo bench -p pixtuoid-scene --bench render_frame -- "$@"
-    cargo bench -p pixtuoid-core --bench decode_reduce -- "$@"
     cargo bench -p pixtuoid --no-default-features --bench render_tiles -- "$@"
 
 [doc('Frame pacing through the real TUI painter per protocol: frame time, budget overruns, interval jitter, bytes per frame')]
@@ -618,7 +616,7 @@ coverage *args:
 # line/region coverage can't see (a covered-but-toothless assertion). DIFF-scoped
 # (`--in-diff` vs `$MUTANTS_BASE`, default origin/main) so cost scales with the
 # change, not the whole tree; reads `.cargo/mutants.toml` (nextest + the
-# untestable/timing exclusions). ADVISORY — CI runs it NON-blocking; a surviving
+# untestable/timing exclusions). ADVISORY — a surviving
 # mutant is a hint to strengthen a test, not a merge gate. Run on a
 # reducer/decoder/layout PR; forwards args (e.g. `just mutants --list`). Needs
 # cargo-mutants + nextest.

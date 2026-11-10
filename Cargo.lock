@@ -3110,7 +3110,6 @@ version = "0.22.0"
 dependencies = [
  "anyhow",
  "chrono",
- "codspeed-criterion-compat",
  "dunce",
  "filetime",
  "insta",
