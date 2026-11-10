@@ -1134,6 +1134,10 @@ fn new_years_eve_bursts_through_the_sky_on_every_tier() {
                 .zip(all_night)
                 .any(|(b, a)| b.is_some() && a.is_none())
         };
+        assert!(
+            night.iter().all(|(now, b)| !from_finale(*now, b)),
+            "{motion:?}: before the finale, only the all-night lanes fire"
+        );
         // a century of midnights, each laying the lanes' buckets anew
         for year in 2026..2126 {
             if motion == Motion::Still {

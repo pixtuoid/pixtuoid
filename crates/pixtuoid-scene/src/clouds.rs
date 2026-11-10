@@ -1127,17 +1127,17 @@ impl Clouds {
     }
 
     /// The nearest mass whose drawn cells hold column `x` at its base, or the
-    /// row over it, at every cell its drift from `run`'s start to its end (in
-    /// seconds into the beat) draws it at, and that base: where a lobe's skirt
+    /// row over it, at every cell its drift draws it at from `secs[0]` to
+    /// `secs[1]` seconds into the beat, and that base: where a lobe's skirt
     /// narrows to its base, or the drift turns a cell, the column is bare.
-    fn struck(&self, x: f32, run: [f64; 2], span: f32) -> Option<(usize, f32)> {
+    fn struck(&self, x: f32, secs: [f64; 2], span: f32) -> Option<(usize, f32)> {
         let df = f32::from(self.d.get());
         let col = (x * df) as i32;
         (0..self.masses.len()).rev().find_map(|i| {
             let m = &self.masses[i];
-            let base = m.base_at(x - m.drift_at(run[0], span));
+            let base = m.base_at(x - m.drift_at(secs[0], span));
             let row = (base * df) as i32;
-            let [a, b] = run.map(|t| self.drift_cells(m.drift_at(t, span)));
+            let [a, b] = secs.map(|t| self.drift_cells(m.drift_at(t, span)));
             (a.min(b)..=a.max(b))
                 .all(|drift| (row - 1..=row).any(|r| self.rasters[i].at(col - drift, r).is_some()))
                 .then_some((i, base))
@@ -2160,12 +2160,13 @@ mod tests {
     }
 
     /// A strike's cloud, bolt and flash hold through all of its phases: they
-    /// are chosen from the strike's own run, not where each frame finds the masses.
+    /// are chosen over the strike's start to its end, not where each frame finds the masses.
     #[test]
     fn a_strike_holds_through_its_phases() {
         let mut strikes = 0;
-        for k in 0..60u64 {
-            let then = crate::localclock::at_hour(12) + Duration::from_secs(k * 15);
+        for k in 0..60u32 {
+            let then = crate::localclock::at_hour(12)
+                + Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS) * k;
             let beat = Motion::Full.timing(then).beat;
             let start = crate::sky::strike_start_ms(beat) - beat.ms();
             let at = |phase: u64| {
