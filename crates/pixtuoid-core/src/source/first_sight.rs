@@ -1,6 +1,7 @@
-//! A transcript's first sight: the head scan and the `SessionStart` the JSONL
-//! watcher registers it with, which the harness's seed builds through the same
-//! code. A wasm-clean build has neither caller.
+//! A transcript's first sight: the head scan, the `SessionStart` the JSONL
+//! watcher registers it with, and the lifecycle verdict on when it registers
+//! again, which the harness's seed runs through the same code. A wasm-clean
+//! build has neither caller.
 
 use std::path::{Path, PathBuf};
 
@@ -20,18 +21,18 @@ pub(crate) const HEAD_BYTES: usize = 1 << 20;
 pub(crate) enum Sight {
     /// Registered: appends decode without re-registering.
     Claimed,
-    /// Its session ended: a DECODED terminator, an oversized span whose tail
-    /// its `SessionEndChecker` matches, or a child-end un-claim. The path stays
-    /// KNOWN, so the watcher's re-vouch won't replay it however live the probe
-    /// says the (still-open) rollout is, and only a read that shows activity
+    /// Its session ended: the last lifecycle evidence of a read or of an
+    /// oversized span's tail is its end, or a child-end un-claim. The path
+    /// stays KNOWN, so the watcher's re-vouch won't replay it however live the
+    /// probe says the (still-open) rollout is, and only a read that shows life
     /// re-registers it.
     Ended,
 }
 
 impl Sight {
     /// Whether a read after `prev` is a first sight; `None` when only the read's
-    /// activity can tell, for an ended session: a trailer flushed after its end
-    /// line (grok's `hook_execution{stop}`) proves no revival.
+    /// [`Life::Lives`] evidence can tell, for an ended session: a trailer flushed
+    /// after its end line (grok's `hook_execution{stop}`) proves no revival.
     pub(crate) fn leads(prev: Option<Self>) -> Option<bool> {
         match prev {
             None => Some(true),
@@ -39,6 +40,44 @@ impl Sight {
             Some(Self::Ended) => None,
         }
     }
+}
+
+/// What a decoded event says of its transcript's session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Life {
+    /// A start, or work ([`AgentEvent::is_work`]), whoever it names.
+    Lives,
+    /// An end of the path's own agent: a child's end in its parent's
+    /// transcript ends only the child.
+    Ended,
+}
+
+fn evidence(ev: &AgentEvent, own: AgentId) -> Option<Life> {
+    match ev {
+        AgentEvent::SessionEnd { .. } if ev.agent_id() == own => Some(Life::Ended),
+        AgentEvent::SessionStart { .. } => Some(Life::Lives),
+        _ => ev.is_work().then_some(Life::Lives),
+    }
+}
+
+/// The session's verdict over `events`, in order: its last evidence, so a start
+/// or work after an end is a resume.
+pub(crate) fn last_life<'a>(
+    events: impl IntoIterator<Item = &'a AgentEvent>,
+    own: AgentId,
+) -> Option<Life> {
+    events.into_iter().filter_map(|ev| evidence(ev, own)).last()
+}
+
+/// Whether `events` hold any [`Life::Lives`] evidence: the life a read shows
+/// whose whole span it then sends, a trailing end included.
+pub(crate) fn holds_life<'a>(
+    events: impl IntoIterator<Item = &'a AgentEvent>,
+    own: AgentId,
+) -> bool {
+    events
+        .into_iter()
+        .any(|ev| evidence(ev, own) == Some(Life::Lives))
 }
 
 /// Detect a CC subagent by the `subagents` path component and link it to its
@@ -165,6 +204,40 @@ mod tests {
     use super::*;
     use crate::source::decoder::is_subagent_path;
     use crate::source::registry::cwd_extractor_for;
+
+    /// The lifecycle fold: the last evidence is the verdict, a start or activity is
+    /// life whoever it names, and only the path's own end is an end.
+    #[test]
+    fn the_last_lifecycle_evidence_is_the_verdict() {
+        let own = AgentId::from_parts("test", "own");
+        let child = AgentId::from_parts("test", "child");
+        let start = AgentEvent::SessionStart {
+            agent_id: own,
+            source: "test".into(),
+            session_id: "own".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        };
+        let end = |agent_id| AgentEvent::SessionEnd {
+            agent_id,
+            as_child: false,
+        };
+        let call = AgentEvent::tool_use_start(own, None, None);
+        let usage = AgentEvent::usage(own, 1, None);
+        let rows: [(&[AgentEvent], Option<Life>); 8] = [
+            (&[], None),
+            (std::slice::from_ref(&start), Some(Life::Lives)),
+            (&[start.clone(), end(own)], Some(Life::Ended)),
+            (&[end(own), start.clone()], Some(Life::Lives)),
+            (&[end(own), call], Some(Life::Lives)),
+            (&[end(own), usage], Some(Life::Ended)),
+            (&[end(child)], None),
+            (&[end(own), end(child)], Some(Life::Ended)),
+        ];
+        for (events, verdict) in rows {
+            assert_eq!(last_life(events, own), verdict, "{events:?}");
+        }
+    }
 
     /// The truth table the scan's cost depends on. The `wants_label = false`
     /// row is load-bearing: it is the difference between stopping on the first

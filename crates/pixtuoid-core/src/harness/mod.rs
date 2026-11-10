@@ -28,7 +28,9 @@ use serde_json::Value;
 
 use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
-use crate::source::first_sight::{HEAD_BYTES, Sight, extract_head_fields, first_sight_start};
+use crate::source::first_sight::{
+    HEAD_BYTES, Life, Sight, extract_head_fields, first_sight_start, holds_life, last_life,
+};
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
@@ -554,8 +556,8 @@ impl Fold {
     }
 
     /// The seed `drive` leads a feed of `lines` with when the watcher's gate
-    /// makes it a first sight, else `None`; the claim then follows `decoded`,
-    /// whose `SessionEnd` ends it.
+    /// makes it a first sight, else `None`; the claim then follows `decoded`'s
+    /// verdict.
     fn first_sight<S: AsRef<str>>(
         &mut self,
         drive: &Drive,
@@ -565,7 +567,7 @@ impl Fold {
         let (source, _, session_id) = drive.sighted()?;
         let id = AgentId::from_parts(source, &session_id);
         let leads = Sight::leads(self.sights.get(&id).map(|s| s.sight))
-            .unwrap_or_else(|| decoded.iter().any(AgentEvent::is_work));
+            .unwrap_or_else(|| holds_life(decoded, id));
         let read = joined(lines.iter().flatten());
         let sighted = self.sights.entry(id).or_insert_with(|| Sighted {
             sight: Sight::Claimed,
@@ -575,8 +577,7 @@ impl Fold {
         if leads {
             sighted.sight = Sight::Claimed;
         }
-        let ends = |e: &AgentEvent| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == id);
-        if decoded.iter().any(ends) {
+        if last_life(decoded, id) == Some(Life::Ended) {
             sighted.sight = Sight::Ended;
         }
         seed

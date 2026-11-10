@@ -430,7 +430,6 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::claude_code
 pub const pixtuoid_core::source::claude_code::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::claude_code::cc_derive_label(&std::path::Path, &str, &std::path::Path) -> alloc::string::String
 pub fn pixtuoid_core::source::claude_code::cc_id_from_path(&std::path::Path) -> alloc::string::String
-pub fn pixtuoid_core::source::claude_code::cc_session_ended(&[u8]) -> bool
 pub fn pixtuoid_core::source::claude_code::decode_cc_line(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub fn pixtuoid_core::source::claude_code::live_cc_session_ids(&std::path::Path) -> core::option::Option<pixtuoid_core::source::jsonl::ProbeSnapshot>
 pub fn pixtuoid_core::source::claude_code::registry_dir(&std::path::Path) -> core::option::Option<std::path::PathBuf>

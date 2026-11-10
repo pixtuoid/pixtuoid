@@ -69,7 +69,6 @@ pub fn transcript(bytes: &[u8]) -> Option<Driven> {
 #[cfg(feature = "native")]
 fn native_reads(row: &Transcript, source: &str, path: &Path, body: &[u8], parsed: &[Value]) {
     let native = row.native;
-    let _ = (native.check_ended)(body);
     let _ = native.activity_recency.map(|recency| recency(body));
     let head_cwd = parsed.iter().find_map(row.cwd_extractor);
     let cwd = head_cwd.or_else(|| native.cwd_derive.and_then(|derive| derive(path)));

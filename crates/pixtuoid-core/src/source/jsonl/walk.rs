@@ -8,15 +8,17 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::LineDecoder;
-use crate::source::first_sight::{HEAD_BYTES, HeadFields, extract_head_fields, first_sight_start};
+use crate::source::first_sight::{
+    HEAD_BYTES, HeadFields, Life, Sight, extract_head_fields, first_sight_start, holds_life,
+    last_life,
+};
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
 use super::health::FailureLatch;
 use super::liveness::{probe_admits, revouch_gated_files};
 use super::root_watch::{DirId, dir_id};
-use super::{ActivityRecency, SessionEndChecker, Sight, SourceDecoders, TailActivity, WatchCtx};
+use super::{SourceDecoders, TailActivity, WatchCtx};
 
 /// Oversized-span skip threshold: a pending span past this is never replayed.
 pub(super) const MAX_PENDING_BYTES: u64 = 1 << 20;
@@ -35,17 +37,17 @@ pub(super) fn id_path(path: &Path) -> std::path::PathBuf {
 /// here is the #85 fix: a later scan used to bypass it and
 /// resurrect an ended/stale session as a phantom live sprite.
 ///
-/// `probe_live` (the liveness vouch) exempts only the RECENCY half — a
-/// structural end marker is the source's own first-hand report that no vouch
-/// outranks: a vouch answers "is the owning process alive", never "is this
-/// session over" (omp's fd vouch fires for a bun tool merely READING an old
-/// transcript).
+/// `probe_live` (the liveness vouch) exempts only the RECENCY half — the
+/// transcript's own last word, an end, is the source's first-hand report that
+/// no vouch outranks: a vouch answers "is the owning process alive", never "is
+/// this session over" (omp's fd vouch fires for a bun tool merely READING an
+/// old transcript).
 async fn should_seed_at_eof(
     meta: &std::fs::Metadata,
     window: Duration,
     path: &Path,
-    check_ended: SessionEndChecker,
-    activity_recency: ActivityRecency,
+    source: &Arc<str>,
+    decoders: SourceDecoders,
     probe_live: bool,
 ) -> bool {
     let mtime_recent = meta.modified().ok().is_some_and(|m| within(m, window));
@@ -56,7 +58,7 @@ async fn should_seed_at_eof(
         // An unreadable tail is no evidence that the session is over.
         return false;
     };
-    if check_ended(&tail) {
+    if window_life(&tail, path, source, decoders) == Some(Life::Ended) {
         return true;
     }
     if probe_live {
@@ -64,7 +66,7 @@ async fn should_seed_at_eof(
     }
     // Recent-but-unvouched: were those recent bytes the SESSION writing — the
     // only thing mtime ever proxied, and the half CC falsifies?
-    match activity_recency(&tail) {
+    match (decoders.activity_recency)(&tail) {
         TailActivity::At(secs) => !within(
             std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(secs),
             window,
@@ -81,9 +83,46 @@ fn within(t: std::time::SystemTime, window: Duration) -> bool {
 }
 
 /// How far back from EOF the first-sight predicates read. ONE value for both
-/// the end-marker scan and the activity-recency probe — a split would let a
+/// the lifecycle fold and the activity-recency probe — a split would let a
 /// transcript be "ended" and "active" over different bytes.
 pub(super) const TAIL_BYTES: u64 = 8192;
+
+/// [`last_life`] of a tail `window`'s whole lines, decoded as a read decodes
+/// them, so the source's decoder is the one authority on its end.
+fn window_life(
+    window: &[u8],
+    path: &Path,
+    source: &Arc<str>,
+    decoders: SourceDecoders,
+) -> Option<Life> {
+    let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
+    // A verdict, not a read: the read that sends these lines' events
+    // breadcrumbs their drift, and a line no read sends costs no events
+    // (`source::drift`: "Breadcrumb the condition that costs events").
+    let decoded: Vec<AgentEvent> =
+        tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+            crate::source::admit::window_lines(window)
+                .filter_map(|line| serde_json::from_str(line.ok()?).ok())
+                .flat_map(|v| (decoders.decode_line)(&transcript, source, v))
+                .collect()
+        });
+    last_life(&decoded, own_agent(path, source, decoders))
+}
+
+/// [`window_life`] of `path`'s last `bytes`; `None` when they can't be read.
+pub(super) async fn tail_life(
+    path: &Path,
+    bytes: u64,
+    source: &Arc<str>,
+    decoders: SourceDecoders,
+) -> Option<Life> {
+    window_life(&read_tail(path, bytes).await?, path, source, decoders)
+}
+
+/// The agent `path` is the transcript of.
+pub(super) fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
+    AgentId::from_parts(source, &decoders.id_derive.id_for(path))
+}
 
 #[derive(Default)]
 pub(super) struct RootRead {
@@ -209,11 +248,7 @@ pub(super) async fn walk_jsonl(
         live: _,
         follower,
     } = *ctx;
-    let SourceDecoders {
-        decode_line,
-        check_ended,
-        ..
-    } = decoders;
+    let SourceDecoders { decode_line, .. } = decoders;
     // symlink_metadata, not metadata: a directory symlink under the root would
     // recurse unboundedly, or walk foreign `.jsonl` trees into this source's id
     // space. The ROOT itself may still be a symlink — only entries are checked.
@@ -277,8 +312,8 @@ pub(super) async fn walk_jsonl(
             &meta,
             window,
             path,
-            check_ended,
-            decoders.activity_recency,
+            source,
+            decoders,
             probe_admits(path, decoders, ctx).await,
         )
         .await
@@ -320,17 +355,18 @@ pub(super) async fn walk_jsonl(
             max = MAX_PENDING_BYTES,
             "pending bytes over the cap; skipping backlog to end"
         );
-        // A skipped span may bury the session-end marker, leaving the slot to the
+        // A skipped span may bury the session's end, leaving the slot to the
         // slow stale-sweep. Unconditional (a KNOWN file's span can end mid-skip) and
         // cursor-independent, so it must run before the seed below.
-        let ended_in_skip = check_session_ended(path, check_ended).await;
+        let ended_in_skip =
+            tail_life(path, TAIL_BYTES, source, decoders).await == Some(Life::Ended);
         // Seed to EOF BEFORE the awaited head-read below, so a concurrent
         // walk_jsonl sees `known` and won't re-enter this branch.
         cursors.lock().await.insert(path.to_path_buf(), file_len);
         if ended_in_skip {
             // An already-ENDED span stays unregistered: a SessionStart or seeded
             // Task after the SessionEnd just sent would animate a ghost.
-            let id = AgentId::from_parts(source, &decoders.id_derive.id_for(path));
+            let id = own_agent(path, source, decoders);
             let _ = tx
                 .send((
                     Transport::Jsonl,
@@ -361,9 +397,7 @@ pub(super) async fn walk_jsonl(
             Some(leads) => leads,
             // Judged on the window `rescan_skipped_tail` reads, wide enough to
             // hold a tool result's whole line.
-            None => read_tail(path, SKIP_RESCAN_BYTES)
-                .await
-                .is_some_and(|t| tail_shows_activity(&t, path, source, decoders.decode_line)),
+            None => tail_life(path, SKIP_RESCAN_BYTES, source, decoders).await == Some(Life::Lives),
         };
         if leads && !metadata_only {
             // The decoder never reaches a head-borne title once the backlog is
@@ -429,10 +463,6 @@ pub(super) async fn walk_jsonl(
         first_sight = extract_head_fields(&head, extract, decoders.head_label, parent);
     }
 
-    let path_agent_id = AgentId::from_parts(source, &decoders.id_derive.id_for(path));
-    let ends_this_agent = |ev: &AgentEvent| {
-        matches!(ev, AgentEvent::SessionEnd { .. }) && ev.agent_id() == path_agent_id
-    };
     let mut decoded = Vec::new();
     for line in crate::source::admit::lines(new_bytes) {
         let Ok(s) = line else {
@@ -449,8 +479,9 @@ pub(super) async fn walk_jsonl(
         decoded.extend(decode_line(&transcript_path_str, source, v));
     }
 
+    let own = own_agent(path, source, decoders);
     let sight = seen.lock().await.get(path).copied();
-    if Sight::leads(sight).unwrap_or_else(|| decoded.iter().any(AgentEvent::is_work))
+    if Sight::leads(sight).unwrap_or_else(|| holds_life(&decoded, own))
         && !matches!(
             (decoders.activity_recency)(new_bytes),
             super::TailActivity::SidecarOnly
@@ -459,7 +490,7 @@ pub(super) async fn walk_jsonl(
         emit_first_sight(path, source, decoders, seen, tx, first_sight).await;
     }
 
-    let session_ended = decoded.iter().any(ends_this_agent);
+    let verdict = last_life(&decoded, own);
     // A known file's read from the top follows a truncation or a re-vouch.
     let replays = if known { cursor_now == 0 } else { replaying };
     // Declared per read, and per agent a read names: a transcript carries its
@@ -478,25 +509,9 @@ pub(super) async fn walk_jsonl(
             return;
         }
     }
-    if session_ended {
+    if verdict == Some(Life::Ended) {
         seen.lock().await.insert(path.to_path_buf(), Sight::Ended);
     }
-}
-
-/// Whether `tail`'s whole lines decode to an event that shows activity: the
-/// evidence an ended claim's oversized append is judged on, since its skipped
-/// span is never decoded.
-fn tail_shows_activity(
-    tail: &[u8],
-    path: &Path,
-    source: &Arc<str>,
-    decode_line: LineDecoder,
-) -> bool {
-    let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
-    crate::source::admit::window_lines(tail)
-        .filter_map(|line| serde_json::from_str(line.ok()?).ok())
-        .flat_map(|v| decode_line(&transcript, source, v))
-        .any(|ev| ev.is_work())
 }
 
 /// Pre-drain guard for the exit-path drains: a transcript truncated/recreated
@@ -595,13 +610,6 @@ async fn read_tail(path: &Path, bytes: u64) -> Option<Vec<u8>> {
     let mut buf = Vec::with_capacity(bytes.min(file_len) as usize);
     file.read_to_end(&mut buf).await.ok()?;
     Some(buf)
-}
-
-pub(super) async fn check_session_ended(path: &Path, checker: SessionEndChecker) -> bool {
-    match read_tail(path, TAIL_BYTES).await {
-        Some(buf) => checker(&buf),
-        None => false,
-    }
 }
 
 /// How far back from EOF an oversized skip is rescanned for what it buried.
