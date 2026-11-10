@@ -607,9 +607,9 @@ impl FloorSession {
     /// be the full live scene — the session evicts against it.
     pub fn render(&mut self, look: crate::look::Look, inputs: crate::look::RenderInputs<'_>) {
         self.evict_missing(inputs.world.scene);
-        let floor = project_floor_scene(inputs.world.scene, 0);
+        let floor_scene = project_floor_scene(inputs.world.scene, 0);
         let world = FloorInputs {
-            scene: floor.scene(),
+            scene: floor_scene.scene(),
             ..inputs.world
         };
         self.view.render(
@@ -635,10 +635,10 @@ impl FloorSession {
         motion: crate::anim::Motion,
         now: SystemTime,
     ) -> crate::neon_sign::BoardModel {
-        let floor = project_floor_scene(scene, 0);
+        let floor_scene = project_floor_scene(scene, 0);
         crate::neon_sign::wall_board(
-            floor.scene(),
-            crate::tally::office_gateway(floor.scene()),
+            floor_scene.scene(),
+            crate::tally::office_gateway(floor_scene.scene()),
             None,
             motion,
             now,
@@ -670,13 +670,13 @@ impl FloorSession {
     /// at. `None` when it can't lay out.
     pub fn step(&mut self, world: FloorInputs<'_>, viewport: Viewport) -> Option<SteppedFloor> {
         self.evict_missing(world.scene);
-        let floor = project_floor_scene(world.scene, 0);
+        let floor_scene = project_floor_scene(world.scene, 0);
         step_floor(
             &mut self.view.floor,
             &mut self.office.coffee,
             &mut self.office.chitchat,
             FloorInputs {
-                scene: floor.scene(),
+                scene: floor_scene.scene(),
                 ..world
             },
             viewport,

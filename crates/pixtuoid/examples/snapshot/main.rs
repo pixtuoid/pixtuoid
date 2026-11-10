@@ -782,13 +782,7 @@ fn main() -> Result<()> {
             Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
         }),
         debug_walkable: args.debug_walkable,
-        footer: pixtuoid::dev::footer_context(
-            ground.scene(),
-            None,
-            false,
-            None,
-            warning_text.as_deref(),
-        ),
+        footer: pixtuoid::dev::footer_context(&scene, None, false, None, warning_text.as_deref()),
         overlays: frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]),
         ..DrawCtx::offscreen(
             &mut floor,
