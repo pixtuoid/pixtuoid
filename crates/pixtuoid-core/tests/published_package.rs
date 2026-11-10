@@ -135,18 +135,21 @@ fn every_published_crate_carries_a_readme_crates_io_renders_whole() {
 #[test]
 fn a_tree_link_off_head_is_caught_however_many_segments_its_ref_spans() {
     let prefixes = RepoPrefixes::of(&repository());
-    let any_ref = prefixes.raw.trim_end_matches("HEAD/");
-    for (target, off_head) in [
-        (format!("{}README.md", prefixes.raw), false),
-        (format!("{any_ref}main/README.md"), true),
-        (format!("{any_ref}refs/heads/main/README.md"), true),
-        (format!("{any_ref}star-history/no-such-file.svg"), false),
-    ] {
-        assert_eq!(
-            prefixes.names_a_tree_file_off_head(&target),
-            off_head,
-            "{target}"
-        );
+    for head in [&prefixes.blob, &prefixes.raw] {
+        let any_ref = head.trim_end_matches("HEAD/");
+        for (target, off_head) in [
+            (format!("{head}README.md"), false),
+            (format!("{any_ref}main/README.md"), true),
+            (format!("{any_ref}refs/heads/main/README.md#usage"), true),
+            (format!("{any_ref}fix/x/README.md?plain=1"), true),
+            (format!("{any_ref}star-history/no-such-file.svg"), false),
+        ] {
+            assert_eq!(
+                prefixes.names_a_tree_file_off_head(&target),
+                off_head,
+                "{target}"
+            );
+        }
     }
 }
 
@@ -201,9 +204,9 @@ impl RepoPrefixes {
         }
     }
 
-    /// A link to a file this tree holds, at a ref other than `HEAD` however many
-    /// segments it spans, as `just links` checks only `HEAD`. A ref holding files
-    /// the tree lacks, a generated image's own branch, is out of its reach.
+    /// A `blob/` or raw link into this tree at a ref other than `HEAD`, however
+    /// many segments it spans: `just links` checks only `HEAD`. A generated
+    /// image's own branch holds files the tree lacks, so it is out of reach.
     fn names_a_tree_file_off_head(&self, target: &str) -> bool {
         [&self.blob, &self.raw].into_iter().any(|head| {
             let any_ref = head.trim_end_matches('/').trim_end_matches("HEAD");
