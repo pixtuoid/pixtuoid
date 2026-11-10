@@ -175,7 +175,6 @@ impl<S: PixelSession> PixelOffice<S> {
                 },
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(world.scene),
-                    floor: None,
                 },
                 debug_walkable: false,
                 dim: under.as_ref().map_or(Dim::NONE, ImageCells::dim),
@@ -443,7 +442,6 @@ mod tests {
                 viewport: classic.fit.logical().into(),
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                    floor: None,
                 },
                 debug_walkable: false,
                 dim: Dim::NONE,

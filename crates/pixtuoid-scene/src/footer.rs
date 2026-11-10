@@ -244,7 +244,7 @@ pub struct FooterContext<'a> {
     /// The agents on no floor; a prompt of theirs joins the floor's alarm.
     pub(crate) unseated: StateCounts,
     pub gateway: Option<DaemonState>,
-    pub floor: Option<FooterFloor>,
+    pub(crate) floor: Option<FooterFloor>,
     /// "You would hear sound right now": audio live AND not effectively muted
     /// (m-state OR pause).
     pub(crate) audio_audible: bool,
@@ -783,11 +783,11 @@ mod tests {
         for slot in [at_desk, unseated] {
             office.agents.insert(slot.agent_id, slot);
         }
-        let drawn = crate::floor::project_floor_scene(&office, 0);
+        let floor_scene = crate::floor::project_floor_scene(&office, 0);
         let line = |warning| {
             let ctx =
                 FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
-            build_footer(&FooterInputs::new(&drawn, ctx), 200).text()
+            build_footer(&FooterInputs::new(&floor_scene, ctx), 200).text()
         };
         let warned = line(Some("a source died"));
         assert!(warned.contains("\u{25b2}1 need you"), "{warned}");
@@ -803,11 +803,11 @@ mod tests {
         unseated.desk = None;
         let mut office = SceneState::uniform(16);
         office.agents.insert(unseated.agent_id, unseated);
-        let drawn = crate::floor::project_floor_scene(&office, 0);
+        let floor_scene = crate::floor::project_floor_scene(&office, 0);
         let line = |warning| {
             let ctx =
                 FooterContext::new(&office, None, false, None, warning, KEYS_STATS, KEYS_ALERT);
-            build_footer(&FooterInputs::new(&drawn, ctx), 200).text()
+            build_footer(&FooterInputs::new(&floor_scene, ctx), 200).text()
         };
         let warned = line(Some("a source died"));
         assert!(warned.contains("\u{25b2}1 need you"), "{warned}");

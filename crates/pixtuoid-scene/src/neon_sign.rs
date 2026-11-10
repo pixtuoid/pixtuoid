@@ -505,21 +505,22 @@ pub fn build_board(
 }
 
 /// The wall board every painter shows over `drawn`, the floor it draws: that
-/// floor's tally and uptime, and what only the office knows — its `gateway`
-/// ([`office_gateway`](crate::tally::office_gateway)) and `floor`'s place among its floors.
+/// floor's tally, uptime and place among the building's floors (none in a
+/// one-floor office), and the office's `gateway`
+/// ([`office_gateway`](crate::tally::office_gateway)).
 pub fn wall_board(
     drawn: &crate::floor::FloorScene,
     gateway: Option<DaemonState>,
-    floor: Option<crate::footer::FooterFloor>,
     motion: crate::anim::Motion,
     now: SystemTime,
 ) -> BoardModel {
+    let place = drawn.floor_place();
     let drawn = drawn.scene();
     let headline = drawn.today.and_then(today_headline);
     build_board(
         scene_stats(drawn),
         scene_uptime_secs(drawn, now),
-        floor.map(|f| (f.current, f.total_floors)),
+        (place.floors() > 1).then(|| (place.index() + 1, place.floors())),
         headline.as_deref(),
         gateway,
         motion,
@@ -1190,7 +1191,6 @@ mod tests {
         scene.today = today;
         let board = wall_board(
             &crate::floor::project_floor_scene(&scene, 0),
-            None,
             None,
             Motion::Full,
             SystemTime::UNIX_EPOCH,

@@ -549,20 +549,13 @@ fn every_painter_shows_the_one_board_of_a_floor() {
         r.session.cancel_slide();
         let floor_scene = project_floor_scene(scene, floor);
         let ctx = r.chrome.footer(&r.session, scene);
-        pixtuoid_scene::neon_sign::wall_board(
-            &floor_scene,
-            ctx.gateway,
-            ctx.floor,
-            Motion::Full,
-            now,
-        )
+        pixtuoid_scene::neon_sign::wall_board(&floor_scene, ctx.gateway, Motion::Full, now)
     };
 
     let one_floor = with_gateway(scene_with(vec![idle("/b/0.jsonl", 0, t0())], 16));
     let floating = pixtuoid_scene::neon_sign::wall_board(
         &project_floor_scene(&one_floor, 0),
         pixtuoid_scene::tally::office_gateway(&one_floor),
-        None,
         Motion::Full,
         now,
     );

@@ -309,14 +309,25 @@ pub(crate) fn sit_down_as(
     seated_ticks: usize,
     id: pixtuoid_core::AgentId,
 ) -> (SceneLayout, OfficeArt, Vec<SimFrame>, crate::layout::Point) {
-    use crate::floor::{Conditions, FloorSession};
+    sit_down_on(pack, facing, seated_ticks, id, 0)
+}
+
+/// [`sit_down_as`] on floor `floor`, the building's top.
+pub(crate) fn sit_down_on(
+    pack: OfficeArt,
+    facing: crate::layout::Facing,
+    seated_ticks: usize,
+    id: pixtuoid_core::AgentId,
+    floor: usize,
+) -> (SceneLayout, OfficeArt, Vec<SimFrame>, crate::layout::Point) {
+    use crate::floor::{Conditions, PerFloor, PerOffice};
     use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, ToolKind, ToolUse};
     use std::time::{Duration, SystemTime};
     const LOGICAL: (u16, u16) = (160, 96);
     let layout = SceneLayout::compute(
         crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
         None,
-        crate::floor::floor_seed(0),
+        crate::floor::floor_seed(floor),
     )
     .expect("lays out");
     let home = layout
@@ -334,7 +345,7 @@ pub(crate) fn sit_down_as(
             created_at: now0,
             arrived_at: Some(now0),
             last_event_at: now0,
-            desk: Some(pixtuoid_core::FloorDesk::new(0, home)),
+            desk: Some(pixtuoid_core::FloorDesk::new(floor, home)),
             ..make_slot(
                 id,
                 ActivityState::Running {
@@ -347,22 +358,28 @@ pub(crate) fn sit_down_as(
             )
         },
     );
-    let mut session = FloorSession::new(std::sync::Arc::new(pack.clone()));
+    let (mut per_floor, mut office) = (
+        PerFloor::new(std::sync::Arc::new(pack.clone())),
+        PerOffice::new(),
+    );
+    let floor_scene = crate::floor::project_floor_scene(&scene, floor);
     let mut frames = Vec::new();
     let mut seated_at = None;
     for n in 1..=1200u64 {
-        let frame = session
-            .step(
-                crate::floor::FloorInputs {
-                    scene: &scene,
-                    now: now0 + Duration::from_millis(100 * n),
-                    conditions: Conditions::default(),
-                    pets: crate::floor::PetInputs::default(),
-                },
-                crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
-            )
-            .expect("lays out")
-            .frame;
+        let frame = crate::floor::step_floor(
+            &mut per_floor,
+            &mut office.coffee,
+            &mut office.chitchat,
+            crate::floor::FloorInputs {
+                scene: &floor_scene,
+                now: now0 + Duration::from_millis(100 * n),
+                conditions: Conditions::default(),
+                pets: crate::floor::PetInputs::default(),
+            },
+            crate::layout::Viewport::full(LOGICAL.0, LOGICAL.1),
+        )
+        .expect("lays out")
+        .frame;
         if seated_at.is_none()
             && frame
                 .seated_agents

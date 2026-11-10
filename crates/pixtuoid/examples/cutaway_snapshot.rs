@@ -191,7 +191,6 @@ fn main() -> Result<()> {
             viewport: Viewport::full(lw, lh),
             place: Place {
                 gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                floor: None,
             },
             debug_walkable: false,
             dim: pixtuoid_scene::look::Dim::NONE,

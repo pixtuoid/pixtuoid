@@ -74,8 +74,7 @@ pub(crate) fn floor_capacity_scaled(
 }
 
 /// What the host decides about how a frame reads, office-wide. Where a floor
-/// stands is its projection's ([`FloorPlace`]); only the wall board's
-/// breadcrumb ([`Place::floor`](crate::look::Place::floor)) is still the host's.
+/// stands is its projection's ([`FloorPlace`]), never the host's to say.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Conditions {
     /// Which weather its windows show, and its rain sounds.
@@ -684,11 +683,10 @@ impl FloorSession {
         motion: crate::anim::Motion,
         now: SystemTime,
     ) -> crate::neon_sign::BoardModel {
-        let floor_scene = project_floor_scene(scene, 0);
+        let floor_scene = self.ground(scene);
         crate::neon_sign::wall_board(
             &floor_scene,
             crate::tally::office_gateway(floor_scene.scene()),
-            None,
             motion,
             now,
         )

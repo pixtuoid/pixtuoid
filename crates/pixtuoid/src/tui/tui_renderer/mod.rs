@@ -350,7 +350,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
                 viewport: size.into(),
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(scene),
-                    floor: None,
                 },
                 debug_walkable,
                 dim: self.chrome.frames.onboarding.dim,
