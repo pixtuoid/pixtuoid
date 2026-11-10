@@ -79,6 +79,59 @@ fn rows_are_tree_ordered_roots_by_desk_children_following_parent() {
     assert_eq!(rows[2].child_count, 0);
 }
 
+/// A waiter has no desk to order by, so it lists after its seated siblings,
+/// roots and one parent's subagents alike.
+#[test]
+fn a_waiter_lists_after_its_seated_siblings() {
+    let seated = id("/p/seated.jsonl");
+    let waiting = id("/p/waiting.jsonl");
+    let sub_seated = id("/p/seated/subagents/agent-s.jsonl");
+    let sub_waiting = id("/p/seated/subagents/agent-w.jsonl");
+    let waiter = |slot: AgentSlot| AgentSlot {
+        home_desk: None,
+        ..slot
+    };
+
+    let mut scene = SceneState::uniform(8);
+    for slot in [
+        mk_slot(seated, "cc·seated", 0, 0, None, ActivityState::Idle),
+        waiter(mk_slot(
+            waiting,
+            "cc·waiting",
+            0,
+            0,
+            None,
+            ActivityState::Idle,
+        )),
+        mk_slot(
+            sub_seated,
+            "sub-seated",
+            1,
+            0,
+            Some(seated),
+            ActivityState::Idle,
+        ),
+        waiter(mk_slot(
+            sub_waiting,
+            "sub-waiting",
+            0,
+            0,
+            Some(seated),
+            ActivityState::Idle,
+        )),
+    ] {
+        scene.agents.insert(slot.agent_id, slot);
+    }
+
+    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+
+    let labels: Vec<String> = rows.iter().map(|r| r.name.to_string()).collect();
+    assert_eq!(
+        labels,
+        ["cc·seated", "sub-seated", "sub-waiting", "cc·waiting"]
+    );
+}
+
 /// A root plus `n` direct subagents (desks 1..=n, floor 1).
 fn root_with_children(n: usize) -> (SceneState, AgentId, usize) {
     let root = id("/p/root.jsonl");

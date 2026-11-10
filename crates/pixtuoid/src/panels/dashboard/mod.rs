@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ScopeTree, ToolUse};
+use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, SceneState, ScopeTree, ToolUse};
 use pixtuoid_scene::nameplate::{FloorNamesakes, Nameplate};
 
 /// Roots with more than this many direct subagents render collapsed by default,
@@ -81,7 +81,7 @@ impl DashboardFolds {
     }
 }
 
-/// Flatten the scene into a tree-ordered row list: roots sorted by home desk,
+/// Flatten the scene into a tree-ordered row list: roots in [`desk_order`],
 /// each immediately followed by its visible subagents. An agent
 /// whose `parent_id` is absent from the scene (an orphan) anchors its own
 /// subtree, and nesting deeper than two levels is walked too, so nothing is
@@ -89,7 +89,7 @@ impl DashboardFolds {
 pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<DashboardRow> {
     let tree = ScopeTree::of(&scene.agents);
     let mut roots: Vec<&AgentSlot> = tree.roots().collect();
-    roots.sort_by_key(|s| s.home_desk);
+    roots.sort_by_key(desk_order);
 
     let namesakes = FloorNamesakes::of(scene);
     let mut rows = Vec::new();
@@ -97,6 +97,11 @@ pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<D
         push_subtree(&tree, folds, &namesakes, root, 0, None, &mut rows);
     }
     rows
+}
+
+/// Siblings by home desk, a waiter after them: it has no desk to order by.
+fn desk_order(slot: &&AgentSlot) -> (bool, Option<FloorDesk>) {
+    (slot.home_desk.is_none(), slot.home_desk)
 }
 
 fn push_subtree(
@@ -123,7 +128,7 @@ fn push_subtree(
         return;
     }
 
-    kids.sort_by_key(|s| s.home_desk);
+    kids.sort_by_key(desk_order);
     for kid in kids {
         push_subtree(
             tree,
