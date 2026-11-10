@@ -209,52 +209,45 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
 }
 
 /// dsh's dispatch returns the child's id at launch, so its drain says nothing
-/// about the child: still standing past the b1 grace, gone only on its own
-/// `session_end`.
+/// about the child: still standing past the b1 grace, which the fold's tick
+/// after each event crosses, and gone only on its own `session_end`.
 #[test]
 fn dsh_s_dispatch_end_leaves_its_running_child_standing() {
     use std::time::{Duration, SystemTime};
 
-    use pixtuoid_core::source::Transport;
-    use pixtuoid_core::state::SceneState;
-    use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer};
+    use pixtuoid_core::harness::Fold;
 
-    let events = dsh_events();
-    let child = events
+    let lines = lines("dsh", "hook-payloads.jsonl");
+    let raw: Vec<serde_json::Value> = lines
         .iter()
-        .find_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: Some(_),
-                ..
-            } => Some(*agent_id),
-            _ => None,
-        })
-        .expect("the recording's child session");
-    let ends = events
+        .map(|l| serde_json::from_str(l).expect("valid capture json"))
+        .collect();
+    // The root's session is the one the capture opens with.
+    let ends = raw
         .iter()
-        .position(|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == child))
+        .position(|v| v["type"] == "session_end" && v["sessionId"] != raw[0]["sessionId"])
         .expect("the child's own end");
-    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let (hooks, mut fold) = (Drive::hooks(), Fold::default());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let mut events = events.into_iter();
-    for ev in events.by_ref().take(ends) {
-        r.apply(&mut scene, ev, t0, Transport::Hook);
-    }
-    let past = t0 + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1);
-    r.tick(&mut scene, past);
+    fold.feed(&hooks, &lines[..ends], t0);
+    let (child, _) = fold
+        .driven()
+        .linked_child()
+        .expect("the recording's child session");
     assert!(
-        scene
+        fold.driven()
+            .scene
             .agents
             .get(&child)
             .is_some_and(|s| s.exiting_at.is_none()),
         "the dispatch's drain walked its running child out"
     );
-    for ev in events {
-        r.apply(&mut scene, ev, past, Transport::Hook);
-    }
+    // Its own end alone: the root's, later, would cascade it out regardless.
+    fold.feed(&hooks, &lines[ends..=ends], t0);
+    let d = fold.finish();
+    d.assert_clean("dsh delegation hooks");
     assert!(
-        scene.agents[&child].exiting_at.is_some(),
+        d.scene.agents[&child].exiting_at.is_some(),
         "its own session_end ends it"
     );
 }

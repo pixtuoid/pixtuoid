@@ -4,11 +4,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::harness::merge::{Merged, Step};
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::state::TurnKey;
+use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
 use pixtuoid_core::{ActivityState, AgentId, ToolUse, Transport};
 use serde_json::Value;
 
@@ -288,6 +290,52 @@ fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
     );
 }
 
+/// A transcript start lagging its call's hook end by less than the hook-wins
+/// window is that call's echo: it never reopens the call, in every order.
+fn a_lagging_jsonl_start_never_reopens_its_call(run: &Run) {
+    let mut lagged = false;
+    run.each(|m| {
+        let mut ended: BTreeMap<(AgentId, &str), SystemTime> = BTreeMap::new();
+        for s in &m.steps {
+            let agent = s.event.agent_id();
+            match &s.event {
+                AgentEvent::ToolUseEnd {
+                    tool_use_id: Some(id),
+                    ..
+                } if s.transport == Transport::Hook => {
+                    ended.insert((agent, id.as_str()), s.at);
+                }
+                AgentEvent::ToolUseStart {
+                    tool_use_id: Some(id),
+                    ..
+                } if s.transport == Transport::Jsonl
+                    && ended.get(&(agent, id.as_str())).is_some_and(|end| {
+                        s.at.duration_since(*end)
+                            .is_ok_and(|d| d < HOOK_WINS_WINDOW)
+                    }) =>
+                {
+                    lagged = true;
+                    assert!(
+                        !matches!(&s.state, Some(ActivityState::Running { item: Some(ToolUse {
+                            tool_use_id: Some(running),
+                            ..
+                        }) }) if **running == **id),
+                        "{}: a Jsonl start at line {} reopened {id}, which the hook ended",
+                        run.name,
+                        s.line
+                    );
+                }
+                _ => {}
+            }
+        }
+    });
+    assert!(
+        lagged,
+        "{}: no order lags a Jsonl start behind its call's hook end",
+        run.name
+    );
+}
+
 /// On a source that brackets its turns (codex's registry row), a turn the
 /// stream delivered open shows its agent working, in every order: its start
 /// arrived, and its end has not.
@@ -388,6 +436,18 @@ fn a_codex_request_a_policy_hook_denied_resolves_by_its_calls_output() {
 fn a_code_mode_cell_s_gated_call_stands_until_its_resolution() {
     for scenario in ["code-mode-gate-hermetic", "code-mode-approve-hermetic"] {
         a_request_stands_until_its_resolution(&Run::of("codex", scenario));
+    }
+}
+
+#[test]
+fn a_lagging_jsonl_start_never_reopens_a_call_the_hook_ended() {
+    for scenario in [
+        "tool-run-hermetic",
+        "tool-error-hermetic",
+        "permission-hermetic",
+        "ask-user-hermetic",
+    ] {
+        a_lagging_jsonl_start_never_reopens_its_call(&Run::of("grok", scenario));
     }
 }
 

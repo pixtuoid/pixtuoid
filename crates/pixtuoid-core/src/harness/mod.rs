@@ -13,11 +13,14 @@
 //! 1. **Registration comes from the WATCHER, not the decoder.** A JSONL event
 //!    for an unknown id is a documented no-op, so a transcript driven with no
 //!    seed registers nothing however well it decodes. [`crate::harness::Drive::seeded`] stands
-//!    in for `emit_first_sight`, keyed by the SAME registry row the watcher
-//!    reads, so the seed can't drift from production.
+//!    in for `emit_first_sight`, through the SAME first-sight gate, head scan and
+//!    `first_sight_start` from the SAME registry row. Only what the registry's
+//!    native-only `NativeTranscript` column derives (the title, the label, a
+//!    path-derived cwd) stays out, since a wasm-clean build has none of it.
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
 //!    so it is not a free parameter.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -25,6 +28,7 @@ use serde_json::Value;
 
 use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
+use crate::source::first_sight::{HEAD_BYTES, Sight, extract_head_fields, first_sight_start};
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
@@ -125,14 +129,15 @@ impl std::fmt::Display for LineFailure {
 pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
-    /// Every decoded event in wire order, seed first when there is one.
+    /// Every decoded event in the order fed, each seed ahead of its
+    /// transcript's lines.
     pub events: Vec<AgentEvent>,
-    /// Every daemon envelope's presence deltas, which [`Drive::fold`] merges into
-    /// `scene` on their own channel, never through the reducer.
+    /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
+    /// into `scene` on their own channel, never through the reducer.
     pub(crate) presence: Vec<PresenceMsg>,
-    /// How many leading `events` are the first-sight SEED, not the wire's own
-    /// output (0 or 1). A census must report [`Self::wire_events`] instead — the
-    /// seed registers a slot unconditionally, so counting it scores garbage 1/1.
+    /// How many `events` are a first-sight SEED, not the wire's own output. A
+    /// census must report [`Self::wire_events`] instead — the seed registers a
+    /// slot unconditionally, so counting it scores garbage 1/1.
     pub(crate) seed_events: usize,
     /// Non-blank lines driven (blank lines are skipped, not counted).
     pub lines: usize,
@@ -182,6 +187,30 @@ impl Driven {
         self.scene.agents.len()
     }
 
+    /// The first session the events start with no parent: the run's root.
+    pub fn root(&self) -> Option<AgentId> {
+        self.events.iter().find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: None,
+                ..
+            } => Some(*agent_id),
+            _ => None,
+        })
+    }
+
+    /// The first session the events start under a parent, and that parent.
+    pub fn linked_child(&self) -> Option<(AgentId, AgentId)> {
+        self.events.iter().find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: Some(parent),
+                ..
+            } => Some((*agent_id, *parent)),
+            _ => None,
+        })
+    }
+
     /// Events the WIRE produced, excluding the first-sight seed — the honest
     /// numerator for any census.
     pub fn wire_events(&self) -> usize {
@@ -208,10 +237,14 @@ impl Driven {
     }
 }
 
-/// The fixed wall clock the fold runs at: with one instant for every event, no
-/// sweep's elapsed-time threshold can fire mid-drive and reap a slot the caller
-/// is about to assert on.
+/// The instant [`Drive::lines`] and [`Drive::body`] fold at: with one instant
+/// for every event, no sweep's elapsed-time threshold can fire mid-drive and reap
+/// a slot the caller is about to assert on.
 const DEFAULT_NOW_EPOCH_SECS: u64 = 1_800_000_000;
+
+fn default_now() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS)
+}
 
 /// How far past `now` the cascade tick runs: past a deferred b1 cascade's
 /// grace, so it fires, and inside the exit grace, so a wire carrying its own
@@ -232,9 +265,10 @@ const _: () = assert!(
 /// delta.
 pub const DRIVEN_DESKS: usize = 64;
 
-/// The seed session's working directory. Non-empty on purpose: an empty cwd
-/// registers the reducer's unknown-cwd ghost, which is not what any driver wants
-/// to observe.
+/// The seed's working directory when its head names none. Production then
+/// derives one from the path (`cwd_derive`, native-only) or leaves it empty, and
+/// an empty cwd registers the reducer's unknown-cwd ghost, which is not what any
+/// driver wants to observe.
 const SEED_CWD: &str = "/pixtuoid/harness";
 
 /// The decode-and-fold pipeline for one source's bytes.
@@ -243,7 +277,6 @@ pub struct Drive {
     transport: Transport,
     decode: Decode,
     seeded: bool,
-    now: SystemTime,
 }
 
 /// Private so the decoder↔transport pairing stays a constructor's job, never a
@@ -314,38 +347,34 @@ impl Decode {
 }
 
 impl Drive {
-    /// Drive the transcript AT `path` — the production form: the logical key is
-    /// `normalize_path_key` of it, exactly the string `walk_jsonl` hands the
-    /// decoder AND runs the id deriver over.
-    ///
-    /// Use this whenever the transcript is a real file: passing a raw Windows
-    /// path to [`Drive::transcript`] instead keys the seed normalized while the
-    /// decoder keeps the raw string, landing every decoded event on a phantom id.
+    /// [`Drive::transcript`] over the transcript at `path`.
     pub fn transcript_at(source: &str, path: &Path) -> Option<Self> {
-        Self::transcript(
-            source,
-            &crate::id::normalize_path_key(&path.to_string_lossy()),
-        )
+        Self::transcript(source, &path.to_string_lossy())
     }
 
     /// Drive a transcript's lines through `source`'s own `LineDecoder` on
-    /// `Transport::Jsonl`, keyed on the LOGICAL string `logical` — for a caller
-    /// whose key is not a filesystem path. For a real file use
-    /// [`Drive::transcript_at`], which applies production's normalization.
+    /// `Transport::Jsonl`, keyed on `logical` normalized as the watcher
+    /// normalizes a transcript path: the ONE key the decoder and the seed both
+    /// read, as `walk_jsonl` hands the decoder and the id deriver one.
     ///
     /// `None` when the source is hook-only, a daemon, or unregistered: a caller
     /// that silently fell back to some other decoder would census the wrong one.
     pub fn transcript(source: &str, logical: &str) -> Option<Self> {
+        Self::keyed(source, &crate::id::normalize_path_key(logical))
+    }
+
+    /// [`Drive::transcript`] on a `key` already normalized, so a test can
+    /// normalize it as another host does.
+    fn keyed(source: &str, key: &str) -> Option<Self> {
         let decode = registry::descriptor_for(source)?.line_decoder()?;
         Some(Self {
             transport: Transport::Jsonl,
             decode: Decode::Transcript {
                 decode,
                 source: source.to_string(),
-                logical: logical.to_string(),
+                logical: key.to_string(),
             },
             seeded: false,
-            now: SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS),
         })
     }
 
@@ -361,12 +390,12 @@ impl Drive {
             transport: Transport::Hook,
             decode: Decode::Hooks,
             seeded: false,
-            now: SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS),
         }
     }
 
-    /// Prepend the `SessionStart` the watcher's `emit_first_sight` would emit
-    /// for this transcript, keyed by the source's registry row.
+    /// Lead each life's first feed of the transcript with the `SessionStart` the
+    /// watcher's `emit_first_sight` would emit for it, keyed by the source's
+    /// registry row.
     ///
     /// Not a free choice: a transcript carrying no `SessionStart` of its own is
     /// registered in production by the watcher, so an offline driver must seed
@@ -377,103 +406,216 @@ impl Drive {
         self
     }
 
-    /// Fold at `now` instead of the default fixed instant. Only a caller that
-    /// RENDERS the resulting scene needs this — the render must read the same
-    /// clock the fold wrote.
-    #[must_use]
-    pub fn at(mut self, now: SystemTime) -> Self {
-        self.now = now;
-        self
-    }
-
-    fn seed_id(source: &str, logical: &str) -> AgentId {
-        AgentId::from_parts(
-            source,
-            &registry::id_deriver_for(source)(Path::new(logical)),
-        )
-    }
-
-    /// Drive `lines` end to end: blank lines skipped, every other line parsed,
-    /// decoded, and the decoded stream folded through a
-    /// real `Reducer`.
+    /// Drive `lines` end to end, at one instant: one [`Fold`] fed them all. A
+    /// caller that renders the scene feeds a [`Fold`] at its render's instant.
     pub fn lines<I, S>(&self, lines: I) -> Driven
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.run(lines.into_iter().map(Some))
+        let mut fold = Fold::default();
+        fold.feed(self, lines, default_now());
+        fold.finish()
     }
 
-    /// [`Self::lines`] over a transcript's bytes, cut into lines as the watcher
-    /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
+    /// [`Self::lines`] over a transcript's bytes ([`Fold::feed_body`]).
     pub fn body(&self, body: &[u8]) -> Driven {
-        use crate::source::admit::{lines, whole};
-        self.run(lines(whole(body)).map(Result::ok))
+        let mut fold = Fold::default();
+        fold.feed_body(self, body, default_now());
+        fold.finish()
     }
 
-    /// `None` is a line whose bytes are not UTF-8, so not JSON either.
-    fn run<I, S>(&self, lines: I) -> Driven
-    where
-        I: IntoIterator<Item = Option<S>>,
-        S: AsRef<str>,
-    {
-        let mut d = Driven::empty();
-        let sink = BreadcrumbSink::default();
-        tracing::subscriber::with_default(sink.clone(), || self.drive(lines, &mut d));
-        d.breadcrumbs = sink.take();
-        d
-    }
-
-    fn drive<I, S>(&self, lines: I, d: &mut Driven)
-    where
-        I: IntoIterator<Item = Option<S>>,
-        S: AsRef<str>,
-    {
-        if let Some(seed) = self.seed() {
-            d.seed_events = 1;
-            d.events.push(seed);
-        }
-        for line in lines {
-            if let Some(events) = self
-                .decode
-                .line(line.as_ref().map(AsRef::as_ref), d, |_| {})
-            {
-                d.events.extend(events);
-            }
-        }
-        self.fold(d);
-    }
-
-    /// The `SessionStart` [`Self::seeded`] prepends, when it does.
-    fn seed(&self) -> Option<AgentEvent> {
+    /// The source, key and session id [`Self::seeded`]'s first sight keys on,
+    /// when it seeds.
+    fn sighted(&self) -> Option<(&str, &Path, String)> {
         let Decode::Transcript {
             source, logical, ..
         } = &self.decode
         else {
             return None;
         };
-        self.seeded.then(|| AgentEvent::SessionStart {
-            agent_id: Self::seed_id(source, logical),
-            source: source.clone(),
-            session_id: format!("{source}-harness-seed"),
-            cwd: PathBuf::from(SEED_CWD),
-            parent_id: None,
+        let path = Path::new(logical.as_str());
+        // The id deriver over the normalized key, as the watcher derives it:
+        // `backfill_identity` never heals a non-empty session_id, so any other
+        // spelling keys a twin of the hook-created slot forever.
+        self.seeded.then(|| {
+            (
+                source.as_str(),
+                path,
+                registry::id_deriver_for(source)(path),
+            )
         })
     }
 
-    /// Each event is observed BEFORE and AFTER a cascade tick, so a transient
-    /// class a later event resolves still counts as reached.
-    fn fold(&self, d: &mut Driven) {
-        let mut reducer = Reducer::new();
-        for ev in &d.events {
-            reducer.apply(&mut d.scene, ev.clone(), self.now, self.transport);
-            note_reached(&d.scene, &mut d.reaches);
-            reducer.tick(&mut d.scene, self.now + CASCADE_TICK);
-            note_reached(&d.scene, &mut d.reaches);
+    /// The `SessionStart` the watcher's first sight emits for this transcript:
+    /// its head read off `read`, or off `head`, the transcript's start, where
+    /// `read` lacks what only a head carries.
+    fn seed(&self, read: &[u8], head: &[u8]) -> Option<AgentEvent> {
+        let (source, path, session_id) = self.sighted()?;
+        let parent = registry::parent_extractor_for(source);
+        let scan = |bytes: &[u8]| {
+            // The title deriver is in the native-only `NativeTranscript` column.
+            extract_head_fields(bytes, registry::cwd_extractor_for(source), None, parent)
+        };
+        let mut fields = scan(read);
+        if fields.lack_the_head(parent) {
+            fields = scan(head);
         }
-        for msg in &d.presence {
-            apply_presence(&mut d.scene, &msg.key, msg.delta.clone(), self.now);
+        Some(first_sight_start(
+            path,
+            source,
+            session_id,
+            fields.cwd.unwrap_or_else(|| PathBuf::from(SEED_CWD)),
+            fields.parent,
+        ))
+    }
+}
+
+/// Lines joined back into the bytes a first sight reads.
+fn joined<S: AsRef<str>>(lines: impl Iterator<Item = S>) -> Vec<u8> {
+    lines
+        .map(|l| l.as_ref().to_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into_bytes()
+}
+
+/// The harness's one reducer fold: batches of lines from any drives, each at
+/// its own instant, and ticks between them.
+#[derive(Debug)]
+pub struct Fold {
+    reducer: Reducer,
+    driven: Driven,
+    /// Each seeded transcript's first sight, once per life through the
+    /// watcher's own gate.
+    sights: HashMap<AgentId, Sighted>,
+}
+
+/// A seeded transcript's first sight and its start: the first feed stands in
+/// for the file head the watcher reads back.
+#[derive(Debug)]
+struct Sighted {
+    sight: Sight,
+    head: Vec<u8>,
+}
+
+impl Default for Fold {
+    fn default() -> Self {
+        Self {
+            reducer: Reducer::new(),
+            driven: Driven::empty(),
+            sights: HashMap::new(),
         }
+    }
+}
+
+impl Fold {
+    /// Decode `lines` through `drive` (blank lines skipped, every other line
+    /// parsed and decoded) and fold what they decode to at `at`.
+    pub fn feed<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.run(drive, lines.into_iter().map(Some), at);
+    }
+
+    /// [`Self::feed`] over a transcript's bytes, cut into lines as the watcher
+    /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
+    pub fn feed_body(&mut self, drive: &Drive, body: &[u8], at: SystemTime) {
+        use crate::source::admit::{lines, whole};
+        self.run(drive, lines(whole(body)).map(Result::ok), at);
+    }
+
+    /// Advance to `at` with no line: past a grace window, its sweep fires.
+    pub fn tick(&mut self, at: SystemTime) {
+        self.reducer.tick(&mut self.driven.scene, at);
+        note_reached(&self.driven.scene, &mut self.driven.reaches);
+    }
+
+    /// Everything observed so far.
+    pub fn driven(&self) -> &Driven {
+        &self.driven
+    }
+
+    /// Everything observed.
+    pub fn finish(self) -> Driven {
+        self.driven
+    }
+
+    /// Apply `event` at `at` as `transport` delivered it, observing the classes
+    /// it reaches.
+    fn apply(&mut self, transport: Transport, event: AgentEvent, at: SystemTime) {
+        self.reducer
+            .apply(&mut self.driven.scene, event.clone(), at, transport);
+        note_reached(&self.driven.scene, &mut self.driven.reaches);
+        self.driven.events.push(event);
+    }
+
+    /// The seed `drive` leads a feed of `lines` with when the watcher's gate
+    /// makes it a first sight, else `None`; the claim then follows `decoded`,
+    /// whose `SessionEnd` ends it.
+    fn first_sight<S: AsRef<str>>(
+        &mut self,
+        drive: &Drive,
+        lines: &[Option<S>],
+        decoded: &[AgentEvent],
+    ) -> Option<AgentEvent> {
+        let (source, _, session_id) = drive.sighted()?;
+        let id = AgentId::from_parts(source, &session_id);
+        let leads = Sight::leads(self.sights.get(&id).map(|s| s.sight))
+            .unwrap_or_else(|| decoded.iter().any(AgentEvent::shows_activity));
+        let read = joined(lines.iter().flatten());
+        let sighted = self.sights.entry(id).or_insert_with(|| Sighted {
+            sight: Sight::Claimed,
+            head: read.get(..HEAD_BYTES).unwrap_or(&read).to_vec(),
+        });
+        let seed = leads.then(|| drive.seed(&read, &sighted.head)).flatten();
+        if leads {
+            sighted.sight = Sight::Claimed;
+        }
+        let ends = |e: &AgentEvent| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == id);
+        if decoded.iter().any(ends) {
+            sighted.sight = Sight::Ended;
+        }
+        seed
+    }
+
+    /// `None` is a line whose bytes are not UTF-8, so not JSON either.
+    fn run<I, S>(&mut self, drive: &Drive, lines: I, at: SystemTime)
+    where
+        I: IntoIterator<Item = Option<S>>,
+        S: AsRef<str>,
+    {
+        let lines: Vec<Option<S>> = lines.into_iter().collect();
+        let sink = BreadcrumbSink::default();
+        tracing::subscriber::with_default(sink.clone(), || {
+            let presence = self.driven.presence.len()..;
+            let mut decoded = Vec::new();
+            for line in &lines {
+                let line = line.as_ref().map(AsRef::as_ref);
+                if let Some(events) = drive.decode.line(line, &mut self.driven, |_| {}) {
+                    decoded.extend(events);
+                }
+            }
+            let mut fed = Vec::new();
+            if let Some(seed) = self.first_sight(drive, &lines, &decoded) {
+                self.driven.seed_events += 1;
+                fed.push(seed);
+            }
+            fed.extend(decoded);
+            for event in fed {
+                self.apply(drive.transport, event, at);
+                // Each event is observed BEFORE and AFTER a cascade tick, so a
+                // transient class a later event resolves still counts as reached.
+                self.tick(at + CASCADE_TICK);
+            }
+            let d = &mut self.driven;
+            for msg in &d.presence[presence] {
+                apply_presence(&mut d.scene, &msg.key, msg.delta.clone(), at);
+            }
+        });
+        self.driven.breadcrumbs.extend(sink.take());
     }
 }
 
@@ -642,24 +784,98 @@ mod tests {
     }
 
     #[test]
-    fn transcript_at_keys_on_the_normalized_path_like_the_walker_does() {
-        let path = Path::new(TRANSCRIPT);
-        let by_path = Drive::transcript_at(SOURCE, path)
+    fn a_transcript_fed_twice_is_first_sighted_once() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let at = default_now();
+        let mut fold = Fold::default();
+        fold.feed(&drive, [tool_line()], at);
+        fold.feed(&drive, [tool_line()], at);
+        assert_eq!(fold.finish().seed_events, 1);
+    }
+
+    /// An ended session's transcript showing activity again is a new life,
+    /// which the watcher first-sights again.
+    #[test]
+    fn an_ended_transcript_showing_activity_again_is_first_sighted_again() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let at = default_now();
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let mut fold = Fold::default();
+        fold.feed(&drive, [tool_line(), exit.to_string()], at);
+        let resumed = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
+        fold.tick(resumed);
+        assert_eq!(fold.driven().registered(), 0, "the first life walked out");
+        fold.feed(&drive, [tool_line()], resumed);
+        let d = fold.finish();
+        assert_eq!(d.seed_events, 2);
+        assert_eq!(d.registered(), 1, "the second life registers");
+    }
+
+    /// A trailer flushed after the end line decodes, but shows no activity: no
+    /// new life.
+    #[test]
+    fn an_ended_transcripts_trailer_is_no_new_life() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let at = default_now();
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let mut fold = Fold::default();
+        fold.feed(&drive, [tool_line(), exit.to_string()], at);
+        let after = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
+        fold.tick(after);
+        let fed = fold.driven().events.len();
+        let trailer = serde_json::json!({"type": "thinking_level_change", "thinkingLevel": "high"});
+        fold.feed(&drive, [trailer.to_string()], after);
+        let d = fold.finish();
+        assert!(
+            d.events.len() > fed,
+            "the trailer must decode, or this proves nothing"
+        );
+        assert_eq!(d.seed_events, 1);
+        assert_eq!(d.registered(), 0);
+    }
+
+    /// A new life's read that lacks the head's cwd reads the transcript's start
+    /// back for it, as the watcher reads the file's head.
+    #[test]
+    fn a_new_lifes_seed_reads_back_the_transcripts_head() {
+        let drive = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().seeded();
+        let at = default_now();
+        let head = serde_json::json!({"type": "session", "cwd": "/repo/head"});
+        let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
+        let mut fold = Fold::default();
+        fold.feed(
+            &drive,
+            [head.to_string(), tool_line(), exit.to_string()],
+            at,
+        );
+        let resumed = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
+        fold.tick(resumed);
+        let fed = fold.driven().events.len();
+        fold.feed(&drive, [tool_line()], resumed);
+        let d = fold.finish();
+        assert!(
+            matches!(&d.events[fed], AgentEvent::SessionStart { cwd, .. } if cwd == Path::new("/repo/head")),
+            "the second life's seed: {:?}",
+            d.events[fed]
+        );
+    }
+
+    /// Under Windows' path-key normalization, which rewrites `TRANSCRIPT`'s
+    /// case, the seed still registers the slot the tool line drives: both key
+    /// on ONE normalized string.
+    #[test]
+    fn the_seed_and_the_decoder_share_the_normalized_key() {
+        let key = crate::id::normalize_key_inner(true, TRANSCRIPT);
+        assert_ne!(
+            key, TRANSCRIPT,
+            "a key normalization leaves alone proves nothing"
+        );
+        let d = Drive::keyed(SOURCE, &key)
             .unwrap()
             .seeded()
             .lines([tool_line()]);
-        let by_key = Drive::transcript(
-            SOURCE,
-            &crate::id::normalize_path_key(&path.to_string_lossy()),
-        )
-        .unwrap()
-        .seeded()
-        .lines([tool_line()]);
-        assert_eq!(
-            by_path.events[0].agent_id(),
-            by_key.events[0].agent_id(),
-            "transcript_at must fold the path exactly as walk_jsonl does"
-        );
+        assert_eq!(d.registered(), 1);
+        assert_eq!(d.reached(), vec![Reach::Running]);
     }
 
     #[test]
