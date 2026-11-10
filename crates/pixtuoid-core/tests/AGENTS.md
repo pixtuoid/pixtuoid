@@ -59,8 +59,6 @@ feature): `conformance.rs`, `merge.rs`, `sources/{grok,cursor,opencode,copilot,d
 it does NOT re-roll decode→reduce and never re-derives the first-sight seed's
 `AgentId` (that comes from the source's `DESCRIPTOR`; a driver
 keyed off anything else registers NOTHING).
-`benches/decode_reduce.rs` SYNTHESIZES its lines — a bench-shaped fixture
-under a `sources/<module>/fixtures/` would be mis-scanned.
 
 ## Adding a new agent CLI — the test steps
 
