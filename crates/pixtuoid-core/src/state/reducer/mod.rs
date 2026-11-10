@@ -298,8 +298,8 @@ impl Reducer {
         {
             scene.today = None;
         }
-        // What no slot holds: a transcript's Task or backlog marker for an id
-        // that never registered, and a gone slot's newest turn position, which
+        // What no slot holds: a Task or backlog marker for an id that never
+        // registered, and a gone slot's newest turn position, which
         // `remove_agent_correlation` keeps through a revive.
         self.corr
             .tasks_in_flight
