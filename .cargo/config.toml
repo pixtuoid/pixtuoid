@@ -6,9 +6,5 @@
 # Link with lld on x86_64 Linux — every ubuntu-latest CI job links natively for
 # this target and the runner image ships lld. Linux contributors need it too
 # (`apt install lld`).
-#
-# Deliberately NOT set for aarch64-unknown-linux-gnu: that target is only ever
-# built through `cross` Docker containers, whose images carry a gcc cross
-# toolchain without lld, so the flag would break the release at tag time.
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
