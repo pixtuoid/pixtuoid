@@ -632,8 +632,8 @@ fn crescent_moon_leaves_the_dark_limb_unlit() {
 }
 
 /// A waxing moon is lit on its right limb and a waning one on its left, as a
-/// northern-hemisphere sky shows them: on every January day whose quarter moon
-/// shows low, waxing or waning as the sky itself reckons it.
+/// northern-hemisphere sky shows them, on each low quarter moon of a lunar
+/// month from the helpers' day 0, waxing or waning as the sky reckons it.
 #[test]
 fn a_waning_moon_lights_its_left_limb() {
     let buf_w = 96u16;
@@ -664,7 +664,7 @@ fn a_waning_moon_lights_its_left_limb() {
         (left, right)
     };
     let (mut waning, mut waxing) = (0, 0);
-    for day in 1..=31u32 {
+    for day in 0..crate::sky::SYNODIC_DAYS.ceil() as u32 {
         let sky = Sky::clock(crate::localclock::on_day(day, 0));
         // half lit, give or take the days either side of the quarter
         if !(0.35..0.65).contains(&sky.moon_phase()) {

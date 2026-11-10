@@ -1080,7 +1080,7 @@ fn nightfall_begins_when_nightfall_on_says() {
 /// calendar-to-sky path (painter tests inject bursts with
 /// [`Sky::with_bursts`]): on a moving tier they fire and never flash past
 /// WCAG's three a second, the midnight finale included, which holds more
-/// bursts at once than the rest of that night; Calm holds each phase a Calm
+/// bursts at once than the all-night lanes do; Calm holds each phase a Calm
 /// tick; at rest, and on the night before, none fire.
 #[test]
 fn new_years_eve_bursts_through_the_sky_on_every_tier() {

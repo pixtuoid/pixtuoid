@@ -454,7 +454,7 @@ const NIGHTFALL_H: f32 = 0.75;
 const MOON_PEAK_LUM: f32 = 0.12;
 /// The mean synodic month: NASA GSFC, "Phases of the Moon 2001 to 2100"
 /// (<https://eclipse.gsfc.nasa.gov/phase/phases2001.html>).
-const SYNODIC_DAYS: f32 = 29.530_588;
+pub(crate) const SYNODIC_DAYS: f32 = 29.530_588;
 /// The MEAN new moon of 2019-11-27 02:56 TT, in unix days (Meeus, *Astronomical
 /// Algorithms*, eq. 49.1, k = 246): a true new moon would carry its own
 /// lunation's offset from the mean into every phase.

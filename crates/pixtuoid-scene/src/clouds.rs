@@ -1094,16 +1094,15 @@ impl Clouds {
     /// Each mass's drift this frame, in whole cells of its grid.
     #[cfg(test)]
     fn cell_drifts(&self) -> Vec<i32> {
-        self.masses.iter().map(|m| self.cell_drift(m)).collect()
+        self.masses
+            .iter()
+            .map(|m| self.drift_cells(m.off))
+            .collect()
     }
 
-    /// `m`'s drift this frame in whole cells of its grid: where it is drawn.
-    fn cell_drift(&self, m: &Mass) -> i32 {
-        self.cells(m.off)
-    }
-
-    /// A drift of `off` units in whole cells of its grid, as it is drawn.
-    fn cells(&self, off: f32) -> i32 {
+    /// A drift of `off` units in whole cells of its grid: where a mass so
+    /// drifted is drawn.
+    fn drift_cells(&self, off: f32) -> i32 {
         (off * f32::from(self.d.get())).round() as i32
     }
 
@@ -1113,7 +1112,7 @@ impl Clouds {
     fn bands(&self, west: i32, (cols, rows): (usize, usize)) -> Vec<Option<(Band, usize)>> {
         let mut px = vec![None; cols * rows];
         for (m, (mass, raster)) in self.masses.iter().zip(&self.rasters).enumerate() {
-            raster.lay(m, west - self.cell_drift(mass), &mut px, cols);
+            raster.lay(m, west - self.drift_cells(mass.off), &mut px, cols);
         }
         px
     }
@@ -1138,7 +1137,7 @@ impl Clouds {
             let m = &self.masses[i];
             let base = m.base_at(x - m.drift_at(run[0], span));
             let row = (base * df) as i32;
-            let [a, b] = run.map(|t| self.cells(m.drift_at(t, span)));
+            let [a, b] = run.map(|t| self.drift_cells(m.drift_at(t, span)));
             (a.min(b)..=a.max(b))
                 .all(|drift| (row - 1..=row).any(|r| self.rasters[i].at(col - drift, r).is_some()))
                 .then_some((i, base))
@@ -1450,7 +1449,7 @@ impl Clouds {
     /// drawn drift, as [`bands`](Self::bands) lays the masses.
     fn virga_mass(&self, x: f32, y: f32) -> Option<&Mass> {
         self.masses.iter().rev().find(|m| {
-            let off = self.cell_drift(m) as f32 / f32::from(self.d.get());
+            let off = self.drift_cells(m.off) as f32 / f32::from(self.d.get());
             m.layer >= Layer::Mid
                 && m.base < y
                 && y <= m.base + VIRGA_DEPTH
@@ -1557,12 +1556,16 @@ const VIRGA_STRENGTH: f32 = 0.35;
 /// their full day tones.
 const FULL_DAY_ALTITUDE: f32 = 0.3;
 
+/// A deck's drift period over a run `span` wide, its widest mass `widest`
+/// wide: two of the widest past the run, so a mass leaves it whole.
+fn wrap_period(span: f32, widest: f32) -> f32 {
+    span + 2.0 * widest
+}
+
 /// Where a mass whose west edge began at `x0` has drifted after `travelled`
-/// units east over a run `span` wide, its deck's widest mass `widest` wide: it
-/// wraps a period the run plus two of the widest long, so it leaves the run's
-/// east end whole before it comes back round its west.
+/// units east over a run `span` wide, wrapping each [`wrap_period`].
 fn drifted_west(x0: f32, travelled: f64, span: f32, widest: f32) -> f32 {
-    let period = f64::from(span + 2.0 * widest);
+    let period = f64::from(wrap_period(span, widest));
     ((f64::from(x0 + widest) + travelled).rem_euclid(period) as f32) - widest
 }
 
@@ -2076,9 +2079,9 @@ mod tests {
         }
     }
 
-    /// The noons the zone census found a bolt hanging off no cloud at, its
-    /// 60 strikes on from each: Jan 1 2026, 12:00 in each red zone, as Unix
-    /// seconds (R2-C40).
+    /// The noons the zone census found a bolt hanging off no cloud at, in the
+    /// [`RED_NOON_STRIKES`] strikes on from each: Jan 1 2026, 12:00 in each red
+    /// zone, as Unix seconds.
     const BOLT_RED_NOONS: [u64; 6] = [
         1_767_218_400,
         1_767_219_300,
@@ -2087,6 +2090,7 @@ mod tests {
         1_767_265_200,
         1_767_281_400,
     ];
+    const RED_NOON_STRIKES: u32 = 60;
 
     /// A strike's bolt hangs off a drawn cloud: a mass draws the cell its
     /// top starts in or the one over it, at every density, partway through the
@@ -2102,11 +2106,11 @@ mod tests {
             .iter()
             .map(|m| m.widest)
             .fold(0.0, f32::max);
-        let wrap_s = (f32::from(SPAN) + 2.0 * widest) / Layer::Far.pace();
+        let wrap_s = wrap_period(f32::from(SPAN), widest) / Layer::Far.pace();
         let wrap = (0..(wrap_s / bucket.as_secs_f32()).ceil() as u32).map(|k| noon + bucket * k);
         let red = BOLT_RED_NOONS.iter().flat_map(|&s| {
             let noon = std::time::UNIX_EPOCH + Duration::from_secs(s);
-            (0..60).map(move |k| noon + bucket * k)
+            (0..RED_NOON_STRIKES).map(move |k| noon + bucket * k)
         });
         let strikes: Vec<_> = wrap.chain(red).collect();
         for d in [1u16, 4] {
@@ -2156,7 +2160,7 @@ mod tests {
     }
 
     /// A strike's cloud, bolt and flash hold through all of its phases: they
-    /// are chosen as the masses stood when it struck, not as they drift on.
+    /// are chosen from the strike's own run, not where each frame finds the masses.
     #[test]
     fn a_strike_holds_through_its_phases() {
         let mut strikes = 0;
