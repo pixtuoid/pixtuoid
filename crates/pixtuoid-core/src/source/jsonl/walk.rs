@@ -363,7 +363,7 @@ pub(super) async fn walk_jsonl(
             // hold a tool result's whole line.
             None => read_tail(path, SKIP_RESCAN_BYTES)
                 .await
-                .is_some_and(|t| tail_shows_activity(&t, path, source, decoders.decode_line)),
+                .is_some_and(|t| tail_shows_work(&t, path, source, decoders.decode_line)),
         };
         if leads && !metadata_only {
             // The decoder never reaches a head-borne title once the backlog is
@@ -483,15 +483,10 @@ pub(super) async fn walk_jsonl(
     }
 }
 
-/// Whether `tail`'s whole lines decode to an event that shows activity: the
-/// evidence an ended claim's oversized append is judged on, since its skipped
-/// span is never decoded.
-fn tail_shows_activity(
-    tail: &[u8],
-    path: &Path,
-    source: &Arc<str>,
-    decode_line: LineDecoder,
-) -> bool {
+/// Whether `tail`'s whole lines decode to their session's work
+/// ([`AgentEvent::is_work`]): the evidence an ended claim's oversized append is
+/// judged on, since its skipped span is never decoded.
+fn tail_shows_work(tail: &[u8], path: &Path, source: &Arc<str>, decode_line: LineDecoder) -> bool {
     let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
     crate::source::admit::window_lines(tail)
         .filter_map(|line| serde_json::from_str(line.ok()?).ok())

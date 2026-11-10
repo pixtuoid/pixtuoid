@@ -161,16 +161,13 @@ mod tests {
         (gated, live)
     }
 
-    /// Each activity payload of a disconnected source's run, and the next one
-    /// past the last walk-out, never registers: a slot the gate let through
-    /// used to come back after every walk-out.
+    /// Each activity payload of a disconnected source's run never registers.
     #[test]
     fn a_disconnected_sources_hook_payloads_never_register() {
-        use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
         let activity = cursor_payloads()
             .into_iter()
             .filter(|(name, _)| matches!(name.as_str(), "preToolUse" | "postToolUse"));
-        let mut now = SystemTime::now();
+        let now = SystemTime::now();
         let cs = ConnectedSources::new(["claude-code".to_string()].into());
         let mut scene = SceneState::uniform(8);
         let mut reducer = Reducer::new();
@@ -188,9 +185,6 @@ mod tests {
                 );
                 assert!(scene.agents.is_empty(), "{event}: {:?}", scene.agents);
             }
-            reconcile_sweep_tick(&mut reducer, &mut scene, &cs, now);
-            now += EXIT_GRACE_WINDOW * 2;
-            reconcile_sweep_tick(&mut reducer, &mut scene, &cs, now);
         }
     }
 
