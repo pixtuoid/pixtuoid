@@ -216,7 +216,8 @@ pub(crate) fn footer_tool_tally(scene: &SceneState) -> Vec<ToolTally> {
 }
 
 /// The per-frame inputs `build_footer` renders: `counts` and `tools` come from
-/// the drawn floor's scene, everything else from the [`FooterContext`].
+/// the drawn floor's scene, everything else from the [`FooterContext`], whose
+/// unseated agents at a prompt `build_footer` counts with the drawn floor's.
 #[derive(Debug)]
 pub struct FooterInputs<'a> {
     counts: StateCounts,
@@ -312,6 +313,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let ctx = &inputs.context;
     let mut counts = inputs.counts;
     counts.requires_action += ctx.unseated.requires_action;
+    counts.total += ctx.unseated.requires_action;
     // A warning outranks the stats: it is what the user must act on, a dead
     // source's counts gone stale with it, so it IS the status while it lasts —
     // truncated to fit rather than tiered away.
@@ -393,7 +395,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     let quit = format!("{audio_glyph}{floor_suffix}{}", ctx.keys_stats);
 
     // The board owns the friendly "— office empty —"; here it's a bare count.
-    if counts.total == 0 && counts.requires_action == 0 {
+    if counts.total == 0 {
         return fit_tiers(
             [vec![FooterSegment::new(
                 format!(" {count_str} "),
