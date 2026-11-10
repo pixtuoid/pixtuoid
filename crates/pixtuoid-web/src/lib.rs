@@ -75,16 +75,15 @@ impl VisitorHires {
         if self.ids.len() >= Self::MAX_LIVE {
             return false;
         }
-        // A hire the office can't SEAT would hold a MAX_LIVE slot for its whole
-        // stay with zero visual feedback. Live agents keep their desks through
-        // exit grace and each queued SessionStart will claim one, so count both
-        // against the canvas-synced capacity.
+        // A hire the office can't SEAT would hold a MAX_LIVE slot unseen, so every
+        // agent that claims a desk and each queued SessionStart count against its desks.
         let queued_starts = self
             .pending
             .iter()
             .filter(|ev| matches!(ev.event, AgentEvent::SessionStart { .. }))
             .count();
-        if scene.agents.len() + queued_starts >= scene.total_capacity() {
+        let claimed = scene.agents.values().filter(|a| a.claims_a_desk()).count();
+        if claimed + queued_starts >= scene.total_capacity() {
             return false;
         }
         self.seq += 1;
@@ -1445,6 +1444,37 @@ mod tests {
             T0_MS + 31_000.0 + crate::script::HIRE_STAY_MS as f64 + 20_000.0 + LOOP_MS as f64;
         o.step(after, 160, 96);
         assert_eq!(hires_alive(&o), 0, "the hire left and never replays");
+    }
+
+    /// An unseated agent walking out leaves the free desk to a hire.
+    #[test]
+    fn a_hire_takes_the_desk_an_unseated_leaver_never_will() {
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let mut desks = [0; pixtuoid_core::state::MAX_FLOORS];
+        desks[0] = 1;
+        let mut scene = SceneState::new(desks);
+        let mut r = Reducer::new();
+        let [seated, leaver] = ["seated", "leaver"].map(|s| AgentId::from_parts("claude-code", s));
+        for (agent_id, session) in [(seated, "seated"), (leaver, "leaver")] {
+            let start = AgentEvent::SessionStart {
+                agent_id,
+                source: "claude-code".into(),
+                session_id: session.into(),
+                cwd: "/repo".into(),
+                parent_id: None,
+            };
+            r.apply(&mut scene, start, t0, Transport::Hook);
+        }
+        let end = AgentEvent::SessionEnd {
+            agent_id: leaver,
+            as_child: false,
+        };
+        r.apply(&mut scene, end, t0, Transport::Hook);
+        desks[0] = 2;
+        scene.set_capacities(desks, t0);
+        assert_eq!(scene.agents[&leaver].desk, None, "premise: walking out");
+
+        assert!(VisitorHires::default().try_hire(t0, &scene));
     }
 
     #[test]

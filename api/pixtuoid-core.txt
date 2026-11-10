@@ -1453,6 +1453,8 @@ pub pixtuoid_core::state::AgentSlot::state_started_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::tokens_used: u64
 pub pixtuoid_core::state::AgentSlot::tool_call_count: u32
 pub pixtuoid_core::state::AgentSlot::unknown_cwd: bool
+impl pixtuoid_core::state::AgentSlot
+pub fn pixtuoid_core::state::AgentSlot::claims_a_desk(&self) -> bool
 impl core::clone::Clone for pixtuoid_core::state::AgentSlot
 pub fn pixtuoid_core::state::AgentSlot::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::state::AgentSlot
@@ -1999,6 +2001,8 @@ pub pixtuoid_core::AgentSlot::state_started_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::tokens_used: u64
 pub pixtuoid_core::AgentSlot::tool_call_count: u32
 pub pixtuoid_core::AgentSlot::unknown_cwd: bool
+impl pixtuoid_core::state::AgentSlot
+pub fn pixtuoid_core::state::AgentSlot::claims_a_desk(&self) -> bool
 impl core::clone::Clone for pixtuoid_core::state::AgentSlot
 pub fn pixtuoid_core::state::AgentSlot::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::state::AgentSlot

@@ -373,6 +373,12 @@ pub struct AgentSlot {
 }
 
 impl AgentSlot {
+    /// Whether it holds a desk or takes the next free one: one walking out never
+    /// does, as seated it would appear partway through its exit.
+    pub fn claims_a_desk(&self) -> bool {
+        self.desk.is_some() || self.exiting_at.is_none()
+    }
+
     /// Whether its exit walk has had [`EXIT_GRACE_WINDOW`](reducer::EXIT_GRACE_WINDOW)
     /// to reach the door, so its slot may go.
     pub(crate) fn walked_out(&self, now: SystemTime) -> bool {
@@ -806,8 +812,7 @@ impl SceneState {
             .flat_map(|floor| (0..capacities[floor]).map(move |index| FloorDesk::new(floor, index)))
             .filter(|desk| !taken.contains(desk));
         let mut unseated: Vec<&mut AgentSlot> = (self.agents.values_mut())
-            // Seated, one walking out would appear partway through its exit.
-            .filter(|slot| slot.desk.is_none() && slot.exiting_at.is_none())
+            .filter(|slot| slot.desk.is_none() && slot.claims_a_desk())
             .collect();
         unseated.sort_by_key(|slot| (slot.created_at, slot.agent_id));
         for (slot, desk) in unseated.into_iter().zip(free) {
