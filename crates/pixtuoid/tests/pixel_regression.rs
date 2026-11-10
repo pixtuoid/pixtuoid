@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 
 use common::{fixture_scene, render_hash};
 use pixtuoid_core::FloorDesk;
-use pixtuoid_scene::floor::FloorMeta;
+use pixtuoid_scene::floor::Conditions;
 use pixtuoid_scene::sky::{Weather, WeatherPolicy};
 use pixtuoid_scene::theme;
 
@@ -13,20 +13,24 @@ fn floor_seed_affects_render() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
     let scene = fixture_scene(now);
 
-    let ground = FloorMeta::ground();
-    let upper = FloorMeta::for_floor(2, 4);
+    let upper = 2;
 
     // Floor 2 draws its own cast: the same agents, seated there.
     let mut upstairs = scene.clone();
     for slot in upstairs.agents.values_mut() {
         slot.desk = slot.desk.map(|desk| FloorDesk {
-            floor: upper.floor_idx,
+            floor: upper,
             ..desk
         });
     }
 
-    let hash_ground = render_hash(&scene, now, &theme::NORMAL, ground);
-    let hash_upper = render_hash(&upstairs, now, &theme::NORMAL, upper);
+    let hash_ground = render_hash(&scene, now, &theme::NORMAL, (0, Conditions::default()));
+    let hash_upper = render_hash(
+        &upstairs,
+        now,
+        &theme::NORMAL,
+        (upper, Conditions::default()),
+    );
 
     assert_ne!(
         hash_ground, hash_upper,
@@ -39,9 +43,9 @@ fn weather_cycle_affects_render() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
     let scene = fixture_scene(now);
 
-    let under = |w| FloorMeta::ground().with_weather(WeatherPolicy::Forced(w));
-    let hash_clear = render_hash(&scene, now, &theme::NORMAL, under(Weather::Clear));
-    let hash_storm = render_hash(&scene, now, &theme::NORMAL, under(Weather::Storm));
+    let under = |w| Conditions::default().with_weather(WeatherPolicy::Forced(w));
+    let hash_clear = render_hash(&scene, now, &theme::NORMAL, (0, under(Weather::Clear)));
+    let hash_storm = render_hash(&scene, now, &theme::NORMAL, (0, under(Weather::Storm)));
 
     assert_ne!(
         hash_clear, hash_storm,
@@ -53,11 +57,14 @@ fn weather_cycle_affects_render() {
 fn all_themes_render_distinctly() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
     let scene = fixture_scene(now);
-    let floor = FloorMeta::ground();
-
     let hashes: Vec<(&str, u64)> = theme::ALL_THEMES
         .iter()
-        .map(|t| (t.name, render_hash(&scene, now, t, floor)))
+        .map(|t| {
+            (
+                t.name,
+                render_hash(&scene, now, t, (0, Conditions::default())),
+            )
+        })
         .collect();
 
     for i in 0..hashes.len() {

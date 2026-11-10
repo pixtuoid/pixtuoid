@@ -93,6 +93,27 @@ impl core::marker::Unpin for pixtuoid_scene::floor::CoffeeState
 impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::CoffeeState
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::CoffeeState
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::CoffeeState
+pub struct pixtuoid_scene::floor::Conditions
+pub pixtuoid_scene::floor::Conditions::motion: pixtuoid_scene::anim::Motion
+pub pixtuoid_scene::floor::Conditions::offline: bool
+pub pixtuoid_scene::floor::Conditions::weather: pixtuoid_scene::sky::WeatherPolicy
+impl pixtuoid_scene::floor::Conditions
+pub fn pixtuoid_scene::floor::Conditions::with_motion(self, pixtuoid_scene::anim::Motion) -> Self
+pub fn pixtuoid_scene::floor::Conditions::with_weather(self, pixtuoid_scene::sky::WeatherPolicy) -> Self
+impl core::clone::Clone for pixtuoid_scene::floor::Conditions
+pub fn pixtuoid_scene::floor::Conditions::clone(&self) -> Self
+impl core::default::Default for pixtuoid_scene::floor::Conditions
+pub fn pixtuoid_scene::floor::Conditions::default() -> Self
+impl core::fmt::Debug for pixtuoid_scene::floor::Conditions
+pub fn pixtuoid_scene::floor::Conditions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::floor::Conditions
+impl core::marker::Freeze for pixtuoid_scene::floor::Conditions
+impl core::marker::Send for pixtuoid_scene::floor::Conditions
+impl core::marker::Sync for pixtuoid_scene::floor::Conditions
+impl core::marker::Unpin for pixtuoid_scene::floor::Conditions
+impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::Conditions
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::Conditions
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::Conditions
 pub struct pixtuoid_scene::floor::Feed
 pub pixtuoid_scene::floor::Feed::audio: pixtuoid_scene::audio::AudioFrame
 impl core::fmt::Debug for pixtuoid_scene::floor::Feed
@@ -123,7 +144,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorCtx
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorCtx
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorCtx
 pub struct pixtuoid_scene::floor::FloorInputs<'a, S>
-pub pixtuoid_scene::floor::FloorInputs::floor: pixtuoid_scene::floor::FloorMeta
+pub pixtuoid_scene::floor::FloorInputs::conditions: pixtuoid_scene::floor::Conditions
 pub pixtuoid_scene::floor::FloorInputs::now: std::time::SystemTime
 pub pixtuoid_scene::floor::FloorInputs::pets: pixtuoid_scene::floor::PetInputs<'a>
 pub pixtuoid_scene::floor::FloorInputs::scene: &'a S
@@ -139,31 +160,6 @@ impl<'a, S> core::marker::Unpin for pixtuoid_scene::floor::FloorInputs<'a, S> wh
 impl<'a, S> core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::marker::UnsafeUnpin
 impl<'a, S> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::panic::unwind_safe::RefUnwindSafe
 impl<'a, S> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorInputs<'a, S> where &'a S: core::panic::unwind_safe::UnwindSafe
-pub struct pixtuoid_scene::floor::FloorMeta
-pub pixtuoid_scene::floor::FloorMeta::altitude: f32
-pub pixtuoid_scene::floor::FloorMeta::floor_idx: usize
-pub pixtuoid_scene::floor::FloorMeta::floor_seed: u64
-pub pixtuoid_scene::floor::FloorMeta::floors: usize
-pub pixtuoid_scene::floor::FloorMeta::motion: pixtuoid_scene::anim::Motion
-pub pixtuoid_scene::floor::FloorMeta::offline: bool
-pub pixtuoid_scene::floor::FloorMeta::weather: pixtuoid_scene::sky::WeatherPolicy
-impl pixtuoid_scene::floor::FloorMeta
-pub fn pixtuoid_scene::floor::FloorMeta::for_floor(usize, usize) -> Self
-pub fn pixtuoid_scene::floor::FloorMeta::ground() -> Self
-pub fn pixtuoid_scene::floor::FloorMeta::with_motion(self, pixtuoid_scene::anim::Motion) -> Self
-pub fn pixtuoid_scene::floor::FloorMeta::with_weather(self, pixtuoid_scene::sky::WeatherPolicy) -> Self
-impl core::clone::Clone for pixtuoid_scene::floor::FloorMeta
-pub fn pixtuoid_scene::floor::FloorMeta::clone(&self) -> Self
-impl core::fmt::Debug for pixtuoid_scene::floor::FloorMeta
-pub fn pixtuoid_scene::floor::FloorMeta::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for pixtuoid_scene::floor::FloorMeta
-impl core::marker::Freeze for pixtuoid_scene::floor::FloorMeta
-impl core::marker::Send for pixtuoid_scene::floor::FloorMeta
-impl core::marker::Sync for pixtuoid_scene::floor::FloorMeta
-impl core::marker::Unpin for pixtuoid_scene::floor::FloorMeta
-impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorMeta
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorMeta
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorMeta
 pub struct pixtuoid_scene::floor::FloorNav
 impl pixtuoid_scene::floor::FloorNav
 pub fn pixtuoid_scene::floor::FloorNav::current(&self) -> usize
@@ -179,8 +175,26 @@ impl core::marker::Unpin for pixtuoid_scene::floor::FloorNav
 impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorNav
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorNav
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorNav
-pub struct pixtuoid_scene::floor::FloorScene(_)
+pub struct pixtuoid_scene::floor::FloorPlace
+impl core::clone::Clone for pixtuoid_scene::floor::FloorPlace
+pub fn pixtuoid_scene::floor::FloorPlace::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::floor::FloorPlace
+impl core::cmp::PartialEq for pixtuoid_scene::floor::FloorPlace
+pub fn pixtuoid_scene::floor::FloorPlace::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::floor::FloorPlace
+pub fn pixtuoid_scene::floor::FloorPlace::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for pixtuoid_scene::floor::FloorPlace
+impl core::marker::StructuralPartialEq for pixtuoid_scene::floor::FloorPlace
+impl core::marker::Freeze for pixtuoid_scene::floor::FloorPlace
+impl core::marker::Send for pixtuoid_scene::floor::FloorPlace
+impl core::marker::Sync for pixtuoid_scene::floor::FloorPlace
+impl core::marker::Unpin for pixtuoid_scene::floor::FloorPlace
+impl core::marker::UnsafeUnpin for pixtuoid_scene::floor::FloorPlace
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::FloorPlace
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorPlace
+pub struct pixtuoid_scene::floor::FloorScene
 impl pixtuoid_scene::floor::FloorScene
+pub fn pixtuoid_scene::floor::FloorScene::place(&self) -> pixtuoid_scene::floor::FloorPlace
 pub fn pixtuoid_scene::floor::FloorScene::scene(&self) -> &pixtuoid_core::state::SceneState
 impl core::fmt::Debug for pixtuoid_scene::floor::FloorScene
 pub fn pixtuoid_scene::floor::FloorScene::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -194,13 +208,14 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorScene
 pub struct pixtuoid_scene::floor::FloorSession
 pub pixtuoid_scene::floor::FloorSession::office: pixtuoid_scene::floor::PerOffice
 impl pixtuoid_scene::floor::FloorSession
-pub fn pixtuoid_scene::floor::FloorSession::audio_frame(&mut self, &pixtuoid_core::state::SceneState, pixtuoid_scene::floor::FloorMeta, std::time::SystemTime) -> pixtuoid_scene::audio::AudioFrame
+pub fn pixtuoid_scene::floor::FloorSession::audio_frame(&mut self, &pixtuoid_core::state::SceneState, pixtuoid_scene::floor::Conditions, std::time::SystemTime) -> pixtuoid_scene::audio::AudioFrame
 pub fn pixtuoid_scene::floor::FloorSession::floor(&self) -> &pixtuoid_scene::floor::PerFloor
 pub fn pixtuoid_scene::floor::FloorSession::floor_mut(&mut self) -> &mut pixtuoid_scene::floor::PerFloor
 pub fn pixtuoid_scene::floor::FloorSession::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
 pub fn pixtuoid_scene::floor::FloorSession::picture(&self) -> core::option::Option<pixtuoid_scene::look::FloorPicture<'_>>
 pub fn pixtuoid_scene::floor::FloorSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_, pixtuoid_core::state::SceneState>)
 pub fn pixtuoid_scene::floor::FloorSession::step(&mut self, pixtuoid_scene::floor::FloorInputs<'_, pixtuoid_core::state::SceneState>, pixtuoid_scene::layout::Viewport) -> core::option::Option<pixtuoid_scene::floor::SteppedFloor>
+pub fn pixtuoid_scene::floor::FloorSession::with_layout_seed(self, u64) -> Self
 impl core::fmt::Debug for pixtuoid_scene::floor::FloorSession
 pub fn pixtuoid_scene::floor::FloorSession::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::FloorSession
@@ -225,7 +240,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorTransi
 pub struct pixtuoid_scene::floor::OfficeSession
 impl pixtuoid_scene::floor::OfficeSession
 pub fn pixtuoid_scene::floor::OfficeSession::grip(&mut self, &pixtuoid_scene::interact::Gesture)
-pub fn pixtuoid_scene::floor::OfficeSession::hear(&mut self, &pixtuoid_core::state::SceneState, pixtuoid_scene::floor::FloorMeta, std::time::SystemTime) -> pixtuoid_scene::audio::AudioFrame
+pub fn pixtuoid_scene::floor::OfficeSession::hear(&mut self, &pixtuoid_core::state::SceneState, pixtuoid_scene::floor::Conditions, std::time::SystemTime) -> pixtuoid_scene::audio::AudioFrame
 pub fn pixtuoid_scene::floor::OfficeSession::n_floors(&self) -> usize
 pub fn pixtuoid_scene::floor::OfficeSession::nav(&self) -> &pixtuoid_scene::floor::FloorNav
 pub fn pixtuoid_scene::floor::OfficeSession::navigate(&mut self, usize, std::time::SystemTime) -> bool

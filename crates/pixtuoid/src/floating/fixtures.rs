@@ -81,7 +81,7 @@ pub(super) fn frame<'a>(
         world: pixtuoid_scene::floor::FloorInputs {
             scene,
             now,
-            floor: pixtuoid_scene::floor::FloorMeta::ground(),
+            conditions: pixtuoid_scene::floor::Conditions::default(),
             pets: pixtuoid_scene::floor::PetInputs::default(),
         },
         theme,

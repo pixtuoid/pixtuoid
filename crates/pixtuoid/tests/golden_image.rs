@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use common::{fixture_scene, render_hash};
 use pixtuoid_core::SceneState;
-use pixtuoid_scene::floor::FloorMeta;
+use pixtuoid_scene::floor::Conditions;
 use pixtuoid_scene::theme;
 
 fn now() -> SystemTime {
@@ -25,15 +25,25 @@ fn empty_scene() -> SceneState {
 #[test]
 fn golden_empty_office_is_deterministic() {
     let scene = empty_scene();
-    let h1 = render_hash(&scene, now(), &theme::NORMAL, FloorMeta::ground());
-    let h2 = render_hash(&scene, now(), &theme::NORMAL, FloorMeta::ground());
+    let h1 = render_hash(&scene, now(), &theme::NORMAL, (0, Conditions::default()));
+    let h2 = render_hash(&scene, now(), &theme::NORMAL, (0, Conditions::default()));
     assert_eq!(h1, h2, "empty office render is non-deterministic");
 }
 
 #[test]
 fn golden_populated_vs_empty_differ() {
     let n = now();
-    let h_empty = render_hash(&empty_scene(), n, &theme::NORMAL, FloorMeta::ground());
-    let h_pop = render_hash(&fixture_scene(n), n, &theme::NORMAL, FloorMeta::ground());
+    let h_empty = render_hash(
+        &empty_scene(),
+        n,
+        &theme::NORMAL,
+        (0, Conditions::default()),
+    );
+    let h_pop = render_hash(
+        &fixture_scene(n),
+        n,
+        &theme::NORMAL,
+        (0, Conditions::default()),
+    );
     assert_ne!(h_empty, h_pop, "populated and empty scenes look identical");
 }

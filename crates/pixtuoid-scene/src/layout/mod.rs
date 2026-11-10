@@ -511,13 +511,13 @@ pub(crate) fn floor_indicator_rows(door_y: u16, inner_top: u16) -> std::ops::Ran
 /// What the floor indicator says on `floor`, every painter's: its number
 /// between the arrows up and down, each hollow where no floor is that way.
 #[doc(hidden)]
-pub fn floor_indicator(floor: crate::floor::FloorMeta) -> [crate::display::Content; 3] {
+pub fn floor_indicator(floor: crate::floor::FloorPlace) -> [crate::display::Content; 3] {
     use crate::display::{Content, Icon};
-    let above = floor.floor_idx + 1 < floor.floors;
-    let below = floor.floor_idx > 0;
+    let above = floor.index() + 1 < floor.floors();
+    let below = floor.index() > 0;
     [
         Content::Icon(if above { Icon::Up } else { Icon::NoUp }),
-        Content::Text(format!(" F{} ", floor.floor_idx + 1)),
+        Content::Text(format!(" F{} ", floor.index() + 1)),
         Content::Icon(if below { Icon::Down } else { Icon::NoDown }),
     ]
 }

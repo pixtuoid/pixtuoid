@@ -579,7 +579,7 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + std::time::Duration::from_millis(250),
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &bundled,
@@ -660,7 +660,7 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
             theme,
             scale,
         };
-        let ground = crate::floor::FloorMeta::ground();
+        let ground = crate::floor::Conditions::default();
         crate::cutaway::paint::render_cutaway(
             &frame,
             office,
@@ -820,7 +820,7 @@ fn a_desk_variant_lands_where_the_base_does_and_draws_its_own_front() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + std::time::Duration::from_secs(40),
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &bundled,
@@ -887,7 +887,7 @@ fn a_desk_variant_lands_where_the_base_does_and_draws_its_own_front() {
                 scale,
             },
             crate::display::compose::tests::showing(
-                crate::floor::FloorMeta::ground(),
+                crate::floor::Conditions::default(),
                 desk_foot_hour(),
             ),
             (&mut cache, &mut crate::outside::OutsideCache::default()),
@@ -948,7 +948,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
                     world: FloorInputs {
                         scene: &crate::floor::project_floor_scene(&scene, 0),
                         now: now0 + Duration::from_millis(100 * n),
-                        floor: crate::floor::FloorMeta::ground(),
+                        conditions: crate::floor::Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     pack: &bundled,
@@ -971,7 +971,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&SceneState::uniform(16), 0),
                 now: now0,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &bundled,
@@ -1042,7 +1042,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
                 scale,
             },
             crate::display::compose::tests::showing(
-                crate::floor::FloorMeta::ground(),
+                crate::floor::Conditions::default(),
                 desk_foot_hour(),
             ),
             (
@@ -1689,6 +1689,7 @@ fn every_hover_size_is_its_painted_sprite_size() {
 /// A frame with nobody in it, for `layout`.
 fn empty_frame(layout: &SceneLayout) -> SimFrame {
     SimFrame {
+        place: crate::floor::FloorPlace::at(0, 1),
         agents: Vec::new(),
         poses: HashMap::new(),
         seated_agents: HashMap::new(),
@@ -1728,7 +1729,6 @@ fn queued(layout: &SceneLayout, frame: &SimFrame) -> Furnishings<'static> {
         base_fill: &mut base_fill,
         shadows: &mut crate::ground::DepthsCache::default(),
         theme,
-        floor: crate::floor::FloorMeta::ground(),
         walks: &walks,
         debug_walkable: false,
         outside: &mut crate::outside::OutsideCache::default(),
@@ -2613,7 +2613,7 @@ fn sim_step_keeps_the_sign_lit_through_a_gap_in_a_room_that_once_dimmed() {
                         world: FloorInputs {
                             scene: &crate::floor::project_floor_scene(scene, 0),
                             now,
-                            floor: crate::floor::FloorMeta::ground(),
+                            conditions: crate::floor::Conditions::default(),
                             pets: PetInputs::default(),
                         },
                         pack: &pack,
@@ -2664,7 +2664,7 @@ fn seat_desk_is_set_exactly_when_the_sim_seats_someone_at_a_desk() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now: now0 + Duration::from_millis(ms),
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -2728,7 +2728,7 @@ fn sim_step_decides_each_desks_props_from_its_occupant() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -2779,7 +2779,6 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
     let (scene, layout, _, now0, pack) = sim_rig();
     let coffee = HashMap::new();
     let pet = crate::pet::Pet::defaulted(crate::pet::PetKind::Cat);
-    let floor = crate::floor::FloorMeta::ground();
     let step = |pets| {
         let mut owned = OwnedSimStores::new();
         sim_step(
@@ -2788,7 +2787,7 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now: now0,
-                    floor,
+                    conditions: crate::floor::Conditions::default(),
                     pets,
                 },
                 pack: &pack,
@@ -2823,7 +2822,7 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
     let petting = crate::pet::PetState {
         petted_at: now0,
         kind: pet.kind,
-        floor_idx: floor.floor_idx,
+        floor_idx: 0,
     };
     let held = step(PetInputs {
         pet: Some(&pet),
@@ -2842,7 +2841,7 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
     );
 
     let upstairs = crate::pet::PetState {
-        floor_idx: floor.floor_idx + 1,
+        floor_idx: 1,
         ..petting
     };
     let elsewhere = step(PetInputs {
@@ -2935,7 +2934,7 @@ fn sim_step_walks_a_mascot_in_for_each_gateway_present() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + Duration::from_secs(6),
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -2980,7 +2979,7 @@ fn a_mascot_hovers_sized_by_its_frame() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -3035,7 +3034,7 @@ fn sim_step_fits_every_mascot_frame_on_the_canvas() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now: now0 + Duration::from_secs(s),
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -3082,7 +3081,7 @@ fn sim_step_advances_walks_without_painting() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + Duration::from_millis(50),
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -3097,7 +3096,7 @@ fn sim_step_advances_walks_without_painting() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0 + Duration::from_millis(250),
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -3155,7 +3154,7 @@ fn a_requires_action_agent_stays_seated_and_gets_its_bubble_whichever_way_the_de
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -3223,7 +3222,7 @@ fn the_hover_list_omits_the_undrawn_and_follows_sort_drawables() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -3246,7 +3245,6 @@ fn the_hover_list_omits_the_undrawn_and_follows_sort_drawables() {
             base_fill: &mut BaseFillCache::new(),
             shadows: &mut crate::ground::DepthsCache::default(),
             theme: crate::theme::theme_by_name("normal").expect("normal theme"),
-            floor: crate::floor::FloorMeta::ground(),
             walks: &owned.route.walks,
             debug_walkable: false,
             outside: &mut crate::outside::OutsideCache::default(),
@@ -3777,7 +3775,7 @@ fn each_mascot_hovers_as_its_own_instance() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -3821,7 +3819,7 @@ fn paint_frame_is_pure_and_byte_identical() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -3856,7 +3854,6 @@ fn paint_frame_is_pure_and_byte_identical() {
                 base_fill: &mut base_fill,
                 shadows: &mut crate::ground::DepthsCache::default(),
                 theme,
-                floor: crate::floor::FloorMeta::ground(),
                 walks: &owned.route.walks,
                 debug_walkable: false,
                 outside: &mut crate::outside::OutsideCache::default(),
@@ -4463,7 +4460,7 @@ fn sim_reports_occupied_waypoints_and_enqueue_marks_them_busy() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -4569,7 +4566,7 @@ fn no_two_agents_ever_occupy_the_same_exclusive_waypoint() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -4638,7 +4635,7 @@ fn a_placement_is_seated_exactly_when_its_figure_sits_on_furniture() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -4710,7 +4707,7 @@ fn a_running_agent_releases_the_seat_it_snapped_back_from() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -4751,7 +4748,7 @@ fn a_running_agent_releases_the_seat_it_snapped_back_from() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -4840,7 +4837,7 @@ fn one_meeting_sofa_still_seats_three_agents_at_once() {
                 world: FloorInputs {
                     scene: &crate::floor::project_floor_scene(&scene, 0),
                     now,
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 pack: &pack,
@@ -4905,7 +4902,7 @@ fn a_meeting_chair_sitter_is_drawn_on_the_seat_not_5px_high() {
                     world: FloorInputs {
                         scene: &crate::floor::project_floor_scene(&scene, 0),
                         now,
-                        floor: crate::floor::FloorMeta::ground(),
+                        conditions: crate::floor::Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     pack: &pack,
@@ -5027,12 +5024,8 @@ fn a_roaming_creature_is_never_sliced_by_the_canvas_edge() {
     let mut escapes: Vec<String> = Vec::new();
     let mut walking = 0;
     for port in 18900..18924u32 {
-        // The pet's roam is keyed on the FLOOR seed, the mascot's on its instance
-        // id — vary both, or the pet half of the sweep rides one trajectory.
-        let floor = crate::floor::FloorMeta {
-            floor_seed: u64::from(port),
-            ..crate::floor::FloorMeta::ground()
-        };
+        // The pet's roam is keyed on the layout seed, the mascot's on its
+        // instance id — vary both, or the pet half of the sweep rides one trajectory.
         let mut scene = SceneState::uniform(16);
         let key = DaemonInstanceKey::new(src, DaemonInstanceId::new(port.to_string()).expect("id"));
         apply_presence(
@@ -5051,9 +5044,10 @@ fn a_roaming_creature_is_never_sliced_by_the_canvas_edge() {
                 &mut owned.stores(),
                 SimInputs {
                     world: FloorInputs {
-                        scene: &crate::floor::project_floor_scene(&scene, 0),
+                        scene: &crate::floor::project_floor_scene(&scene, 0)
+                            .with_layout_seed(u64::from(port)),
                         now,
-                        floor,
+                        conditions: crate::floor::Conditions::default(),
                         pets: PetInputs {
                             pet: Some(&pet),
                             petting: None,
@@ -5229,7 +5223,7 @@ fn a_wandering_character_is_never_sliced_by_the_canvas_edge() {
                     world: FloorInputs {
                         scene: &crate::floor::project_floor_scene(&scene, 0),
                         now,
-                        floor: crate::floor::FloorMeta::ground(),
+                        conditions: crate::floor::Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     pack: &pack,
@@ -5276,7 +5270,7 @@ fn sim_and_paint(
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(scene, 0),
                 now,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack,
@@ -5311,7 +5305,6 @@ fn paint_drawn(
             base_fill: &mut BaseFillCache::new(),
             shadows: &mut crate::ground::DepthsCache::default(),
             theme: crate::theme::theme_by_name("normal").expect("normal theme"),
-            floor: crate::floor::FloorMeta::ground(),
             walks: &owned.route.walks,
             debug_walkable: false,
             outside: &mut crate::outside::OutsideCache::default(),
@@ -5635,7 +5628,7 @@ fn a_badge_follows_its_sprite_fitted_to_the_canvas_rim() {
                     world: FloorInputs {
                         scene: &crate::floor::project_floor_scene(&scene, 0),
                         now,
-                        floor: crate::floor::FloorMeta::ground(),
+                        conditions: crate::floor::Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     pack: &pack,
@@ -6049,7 +6042,7 @@ fn the_outside_reaches_only_the_glass() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -6074,7 +6067,6 @@ fn the_outside_reaches_only_the_glass() {
                 base_fill: &mut BaseFillCache::new(),
                 shadows: &mut crate::ground::DepthsCache::default(),
                 theme,
-                floor: crate::floor::FloorMeta::ground(),
                 walks: &owned.route.walks,
                 debug_walkable: false,
                 outside: &mut crate::outside::OutsideCache::default(),
@@ -6099,7 +6091,6 @@ fn the_outside_reaches_only_the_glass() {
             base_fill: &mut BaseFillCache::new(),
             shadows: &mut crate::ground::DepthsCache::default(),
             theme,
-            floor: crate::floor::FloorMeta::ground(),
             walks: &owned.route.walks,
             debug_walkable: false,
             outside: &mut crate::outside::OutsideCache::default(),
@@ -6193,7 +6184,7 @@ fn the_neon_halo_lifts_the_window_glass_it_falls_on() {
             world: FloorInputs {
                 scene: &crate::floor::project_floor_scene(&scene, 0),
                 now: now0,
-                floor: crate::floor::FloorMeta::ground(),
+                conditions: crate::floor::Conditions::default(),
                 pets: PetInputs::default(),
             },
             pack: &pack,
@@ -6222,7 +6213,6 @@ fn the_neon_halo_lifts_the_window_glass_it_falls_on() {
                 base_fill: &mut BaseFillCache::new(),
                 shadows: &mut crate::ground::DepthsCache::default(),
                 theme: crate::theme::theme_by_name("normal").expect("normal theme"),
-                floor: crate::floor::FloorMeta::ground(),
                 walks: &owned.route.walks,
                 debug_walkable: false,
                 outside: &mut crate::outside::OutsideCache::default(),
@@ -6259,7 +6249,6 @@ fn the_classics_dark_carries_past_the_insets() {
     let pack = crate::pack::test_office();
     let theme = crate::theme::theme_by_name("normal").expect("normal theme");
     let (scene, walks) = (SceneState::uniform(16), HashMap::new());
-    let floor = crate::floor::FloorMeta::ground();
     let black = Rgb { r: 0, g: 0, b: 0 };
     let (midnight, noon) = (
         crate::localclock::at_hour(0),
@@ -6290,7 +6279,6 @@ fn the_classics_dark_carries_past_the_insets() {
                 base_fill: &mut BaseFillCache::new(),
                 shadows: &mut crate::ground::DepthsCache::default(),
                 theme,
-                floor,
                 walks: &walks,
                 debug_walkable: false,
                 outside: &mut crate::outside::OutsideCache::default(),
@@ -6305,7 +6293,7 @@ fn the_classics_dark_carries_past_the_insets() {
             &Moment::resolve(
                 crate::sky::Sky::at_with(noon, crate::sky::Weather::Clear),
                 theme,
-                floor.altitude,
+                frame.place.altitude(),
                 Motion::Full.timing(noon),
             ),
             theme,

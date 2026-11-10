@@ -91,7 +91,7 @@ fn drawn(r: &TuiRenderer<TestBackend>, scene: &SceneState, id: AgentId, now: Sys
             pixtuoid_scene::floor::FloorInputs {
                 scene,
                 now,
-                floor: pixtuoid_scene::floor::FloorMeta::for_floor(0, 1),
+                conditions: pixtuoid_scene::floor::Conditions::default(),
                 pets: pixtuoid_scene::floor::PetInputs::default(),
             },
             pixtuoid_scene::layout::Viewport::full(layout.buf_w, layout.buf_h),
@@ -272,17 +272,16 @@ fn the_drawn_geometry_answers_every_cell_as_the_half_block_does() {
         let mut term = Terminal::new(TestBackend::new(cols, rows)).expect("test backend");
         let mut floor = PerFloor::new(pack_arc());
         let mut office = pixtuoid_scene::floor::PerOffice::new();
-        let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
         let mut ctx = DrawCtx::offscreen(
             &mut floor,
             office.stores(),
             normal_theme(),
             &scene,
-            &floor_scene,
+            0,
             now,
-            FloorMeta::ground(),
+            Conditions::default(),
         );
-        ctx.world.pets.pet = Some(&cat);
+        ctx.pets.pet = Some(&cat);
         let drawn = draw_scene(&mut term, &mut ctx)
             .expect("draw")
             .expect("drawn");
@@ -328,15 +327,14 @@ fn a_stills_tooltip_names_a_lead_on_another_floor() {
     let mut term = Terminal::new(TestBackend::new(cols, rows)).expect("test backend");
     let mut floor = PerFloor::new(pack_arc());
     let mut office = pixtuoid_scene::floor::PerOffice::new();
-    let floor_scene = pixtuoid_scene::floor::project_floor_scene(&scene, 0);
     let mut ctx = DrawCtx::offscreen(
         &mut floor,
         office.stores(),
         normal_theme(),
         &scene,
-        &floor_scene,
+        0,
         now,
-        FloorMeta::ground(),
+        Conditions::default(),
     );
     let drawn = draw_scene(&mut term, &mut ctx)
         .expect("draw")

@@ -22,7 +22,7 @@ use pixtuoid::dev::{OfficeRenderer, WindowFrame, XrgbSurface, window_geometry};
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
 use pixtuoid_scene::cutaway::chrome_cell;
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, PetInputs};
 use pixtuoid_scene::theme::theme_by_name;
 
 /// The two `cc` labels are a DELIBERATE collision, so the snapshot exercises the
@@ -246,7 +246,7 @@ fn main() -> Result<()> {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,

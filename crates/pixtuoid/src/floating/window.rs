@@ -27,7 +27,7 @@ use super::geometry::{DESKTOP_UNIT, Monitor};
 use super::offscreen::{OfficeRenderer, WindowFrame};
 use crate::config::{self, FloatingConfig};
 use pixtuoid_scene::cutaway::chrome_cell;
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, PetInputs};
 use pixtuoid_scene::look::Place;
 use pixtuoid_scene::theme::Theme;
 
@@ -417,8 +417,8 @@ impl FloatingApp {
     }
 
     /// The office's weather and motion; the office picks each floor's own.
-    fn floor_meta(&self) -> FloorMeta {
-        FloorMeta::ground().with_motion(self.motion)
+    fn conditions(&self) -> Conditions {
+        Conditions::default().with_motion(self.motion)
     }
 
     /// Feed the audio what the office sounds like now, painting nothing.
@@ -427,7 +427,7 @@ impl FloatingApp {
             return;
         };
         crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
-        self.renderer.hear(&scene, self.floor_meta(), self.ui.now());
+        self.renderer.hear(&scene, self.conditions(), self.ui.now());
     }
 
     fn paint(&mut self) {
@@ -463,7 +463,7 @@ impl FloatingApp {
         let world = FloorInputs {
             scene: &*scene,
             now,
-            floor: self.floor_meta(),
+            conditions: self.conditions(),
             pets: PetInputs {
                 pet: None,
                 petting: self.petting.as_ref(),

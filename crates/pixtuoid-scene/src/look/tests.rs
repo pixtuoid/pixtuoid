@@ -7,7 +7,7 @@ use pixtuoid_core::state::{ActivityState, FloorDesk};
 use pixtuoid_core::{AgentId, AgentSlot, SceneState};
 
 use super::*;
-use crate::floor::{FloorMeta, PerOffice, PetInputs};
+use crate::floor::{Conditions, PerOffice, PetInputs};
 use crate::layout::Size;
 
 const SIZE: Size = Size { w: 192, h: 160 };
@@ -50,7 +50,7 @@ fn inputs(scene: &crate::floor::FloorScene, now: SystemTime) -> RenderInputs<'_>
         world: FloorInputs {
             scene,
             now,
-            floor: FloorMeta::ground(),
+            conditions: Conditions::default(),
             pets: PetInputs::default(),
         },
         theme: theme(),

@@ -28,7 +28,7 @@ use crate::script::{
 
 use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs, floor_capacity};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs, floor_capacity};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::load_bundled_pack;
@@ -197,7 +197,7 @@ impl Office {
             // on every `step` before any beat fires, so the reducer seats agents
             // only at desks the rendered office has.
             scene: SceneState::default(),
-            session: FloorSession::new(pack),
+            session: FloorSession::new(pack).with_layout_seed(u64::from(seed)),
             rgba: Vec::new(),
             theme: &NORMAL,
             fit,
@@ -387,7 +387,7 @@ impl Office {
 
         let board = self
             .session
-            .board(&self.scene, self.floor_meta().motion, now);
+            .board(&self.scene, self.conditions().motion, now);
 
         let mut out = format!("{head},\"labels\":[");
         for (i, badge) in self.shown_badges.iter().enumerate() {
@@ -532,13 +532,13 @@ impl Office {
         let Some(now) = self.last_now else {
             return silent();
         };
-        let meta = self.floor_meta();
+        let conditions = self.conditions();
         let Some(audio) = self.audio.as_mut().filter(|a| a.is_ready()) else {
             return silent();
         };
         // The shared observer composes the whole AudioFrame, single-sourced with
         // the desktop painters. Single-floor hero → floor 0.
-        let frame = self.session.audio_frame(&self.scene, meta, now);
+        let frame = self.session.audio_frame(&self.scene, conditions, now);
         audio::commands_json(&audio.tick(now_ms, frame))
     }
 }
@@ -645,19 +645,17 @@ impl Office {
             .drain_due(now, &mut self.reducer, &mut self.scene);
     }
 
-    /// The hero's one floor: its layout seed is the hero's variant seed, not
-    /// floor-derived, under this office's own weather.
-    fn floor_meta(&self) -> FloorMeta {
-        FloorMeta {
-            floor_seed: self.seed,
-            ..FloorMeta::for_floor(0, 1)
+    /// The hero's conditions: this office's own weather.
+    fn conditions(&self) -> Conditions {
+        Conditions {
+            weather: self.weather,
+            ..Conditions::default()
         }
-        .with_weather(self.weather)
     }
 
     fn render(&mut self, now: SystemTime, units_w: u16, units_h: u16) {
         // Too small to lay out: draws nothing, and `step` fills the frame; never panics.
-        let floor_meta = self.floor_meta();
+        let conditions = self.conditions();
         self.session.render(
             self.fit
                 .look(pixtuoid_scene::look::LookKind::Cutaway, WorldText::Host),
@@ -665,7 +663,7 @@ impl Office {
                 world: FloorInputs {
                     scene: &self.scene,
                     now,
-                    floor: floor_meta,
+                    conditions,
                     pets: PetInputs::default(),
                 },
                 theme: self.theme,
@@ -1659,8 +1657,8 @@ mod tests {
     fn an_offices_rain_follows_its_own_weather_after_another_steps() {
         let now = SystemTime::UNIX_EPOCH + Duration::from_millis(T0_MS as u64);
         let rain = |o: &mut Office| {
-            let floor = o.floor_meta();
-            o.session.audio_frame(&o.scene, floor, now).stems
+            let conditions = o.conditions();
+            o.session.audio_frame(&o.scene, conditions, now).stems
         };
         let mut storm = Office::new(1).unwrap();
         storm.set_weather(Some("storm".into()));

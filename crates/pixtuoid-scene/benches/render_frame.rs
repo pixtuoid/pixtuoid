@@ -30,7 +30,7 @@ use pixtuoid_scene::cutaway::canvas::CutawayCanvas;
 use pixtuoid_scene::cutaway::paint::render_cutaway;
 use pixtuoid_scene::display::{Office, Showing};
 use pixtuoid_scene::floor::{
-    FloorInputs, FloorMeta, FloorSession, PerFloor, PerOffice, PetInputs, SteppedFloor,
+    Conditions, FloorInputs, FloorSession, PerFloor, PerOffice, PetInputs, SteppedFloor,
 };
 use pixtuoid_scene::layout::{SceneLayout, Size, Viewport};
 use pixtuoid_scene::localclock;
@@ -167,7 +167,7 @@ fn floor_frames<'a>(
                 world: FloorInputs {
                     scene: &floor_scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -263,7 +263,7 @@ fn render_cutaway_frame(c: &mut Criterion) {
     assert!(seats >= 12, "{CUTAWAY_LOGICAL:?} seats {seats} < 12");
     // The sky otherwise picks its weather from the clock, so noon and night
     // would each also be a different weather.
-    let meta = FloorMeta::ground().with_weather(WeatherPolicy::Forced(Weather::Clear));
+    let conditions = Conditions::default().with_weather(WeatherPolicy::Forced(Weather::Clear));
 
     let mut group = c.benchmark_group("render_cutaway");
     let Size { w, h } = CUTAWAY_LOGICAL;
@@ -284,13 +284,13 @@ fn render_cutaway_frame(c: &mut Criterion) {
                         pixtuoid_scene::floor::FloorInputs {
                             scene: &scene,
                             now,
-                            floor: meta,
+                            conditions,
                             pets: pixtuoid_scene::floor::PetInputs::default(),
                         },
                         Viewport::full(w, h),
                     )
                     .expect("the cutaway extent lays out");
-                (now, floor, session.board(&scene, meta.motion, now))
+                (now, floor, session.board(&scene, conditions.motion, now))
             })
             .collect();
         let office = |layout| Office {
@@ -316,7 +316,7 @@ fn render_cutaway_frame(c: &mut Criterion) {
                 let (now, SteppedFloor { layout, frame }, board) = &stepped[i];
                 i = (i + 1) % CUTAWAY_FRAMES;
                 let showing = Showing {
-                    floor: meta,
+                    conditions,
                     now: *now,
                     board,
                     dim: pixtuoid_scene::look::Dim::NONE,
@@ -344,7 +344,7 @@ fn render_cutaway_frame(c: &mut Criterion) {
                 let (now, floor, board) = &stepped[i];
                 i = (i + 1) % CUTAWAY_FRAMES;
                 let showing = Showing {
-                    floor: meta,
+                    conditions,
                     now: *now,
                     board,
                     dim: pixtuoid_scene::look::Dim::NONE,

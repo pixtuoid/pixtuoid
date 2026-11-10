@@ -536,7 +536,11 @@ mod tests {
             align: pixtuoid_scene::display::Align::Centre,
             within: BARE_OFFICE,
             spans: pixtuoid_scene::layout::floor_indicator(
-                pixtuoid_scene::floor::FloorMeta::ground(),
+                pixtuoid_scene::floor::project_floor_scene(
+                    &pixtuoid_core::SceneState::default(),
+                    0,
+                )
+                .place(),
             )
             .into_iter()
             .map(|content| pixtuoid_scene::display::TextSpan {

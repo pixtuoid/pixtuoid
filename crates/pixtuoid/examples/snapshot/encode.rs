@@ -7,7 +7,7 @@ use image::{Delay, Frame as GifFrame, Rgba, RgbaImage};
 use pixtuoid::dev::{DrawCtx, draw_over_image, draw_scene};
 use pixtuoid_core::SceneState;
 use pixtuoid_scene::cutaway::{Canvas, CellPx, GridInk, paint_grid};
-use pixtuoid_scene::floor::{FloorMeta, FloorSession, PerFloor};
+use pixtuoid_scene::floor::{Conditions, FloorSession, PerFloor};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::theme::Theme;
 use ratatui::Terminal;
@@ -20,15 +20,9 @@ use crate::{CELL_H, CELL_W, SnapshotArgs, due_navigations};
 /// reachable vs total walkable pixels. If the two differ, the mask has an isolated
 /// region and A* falls back to a straight line when crossing into it — the root cause
 /// of any character teleport the user sees.
-///
-/// `floor_seed` MUST be the one the frame beside it was rendered with: the layout variants
-/// have different obstacle placements, so a report computed for another
-/// variant is a tick about an office nobody looked at.
-pub(crate) fn print_walkability_report(
-    term: &Terminal<TestBackend>,
-    floor_seed: u64,
-) -> Result<()> {
+pub(crate) fn print_walkability_report(term: &Terminal<TestBackend>) -> Result<()> {
     use pixtuoid_scene::layout::SceneLayout;
+    let floor_seed = pixtuoid_scene::floor::floor_seed(0);
 
     let size = term.size()?;
     let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(size.width, size.height);
@@ -135,7 +129,7 @@ pub(crate) fn furniture_crop(
     let layout = pixtuoid_scene::layout::SceneLayout::compute(
         pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),
         Some(scene.floor_capacities()[0]),
-        args.floor_seed,
+        pixtuoid_scene::floor::floor_seed(0),
     )
     .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
     let found = match furniture_str.to_lowercase().as_str() {
@@ -452,9 +446,9 @@ pub(crate) fn draw_frame(
     let under = draw_over_image(term, ctx)?;
     let world = pixtuoid_scene::floor::FloorInputs {
         scene: ctx.scene,
-        now: ctx.world.now,
-        floor: ctx.world.floor,
-        pets: ctx.world.pets,
+        now: ctx.now,
+        conditions: ctx.conditions,
+        pets: ctx.pets,
     };
     pixel.render(world, ctx.theme, Some(under))?;
     Ok(None)
@@ -466,29 +460,26 @@ pub(crate) fn save_animation(
     job: &AnimJob,
     term: &mut Terminal<TestBackend>,
     floor: &mut PerFloor,
-    floor_meta: FloorMeta,
+    conditions: Conditions,
     skip_ms: u64,
     debug_walkable: bool,
     pixel: Option<PixelOffice<FloorSession>>,
 ) -> Result<()> {
-    let floor_scene = pixtuoid_scene::floor::project_floor_scene(job.scene, 0);
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     job.encode(
         skip_ms,
         &mut (term, pixel),
         |(term, pixel), now, _| {
-            let mut draw_ctx = DrawCtx {
-                debug_walkable,
-                ..DrawCtx::offscreen(
-                    floor,
-                    office.stores(),
-                    job.theme,
-                    job.scene,
-                    &floor_scene,
-                    now,
-                    floor_meta,
-                )
-            };
+            let mut draw_ctx = DrawCtx::offscreen(
+                floor,
+                office.stores(),
+                job.theme,
+                job.scene,
+                0,
+                now,
+                conditions,
+            );
+            draw_ctx.debug_walkable = debug_walkable;
             draw_frame(term, &mut draw_ctx, pixel.as_mut()).map(drop)
         },
         |(term, pixel)| {

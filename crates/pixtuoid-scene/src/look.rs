@@ -765,10 +765,13 @@ pub fn render(
         world.scene.scene(),
         place.gateway,
         place.floor,
-        world.floor.motion,
+        world.conditions.motion,
         world.now,
     );
-    let sky = crate::sky::Sky::at(world.floor.motion.timing(world.now), world.floor.weather);
+    let sky = crate::sky::Sky::at(
+        world.conditions.motion.timing(world.now),
+        world.conditions.weather,
+    );
     raster.note = Some(FrameNote {
         repaint: None,
         weather: {
@@ -798,7 +801,7 @@ pub fn render(
             classic.drew(drawn);
             classic.dim = dim;
             classic.signs =
-                crate::display::TextRun::signs(&board, &stepped.layout, world.floor, theme);
+                crate::display::TextRun::signs(&board, &stepped.layout, stepped.frame.place, theme);
             if look == Look::HALF_BLOCKS {
                 dim.apply(&mut classic.buf);
                 (Dirty::All, flash)
@@ -841,7 +844,7 @@ pub fn render(
                 theme,
                 scale,
                 crate::display::Showing {
-                    floor: world.floor,
+                    conditions: world.conditions,
                     now: world.now,
                     board: &board,
                     dim,

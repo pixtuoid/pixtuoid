@@ -46,7 +46,7 @@ pub(crate) trait PixelSession {
     fn pixels(&self) -> Option<&RgbBuffer>;
 }
 
-/// [`crate::encode::draw_frame`]'s one floor, under the `FloorMeta` it is
+/// [`crate::encode::draw_frame`]'s one floor, under the `Conditions` it is
 /// handed (`--floor-seed`).
 impl PixelSession for FloorSession {
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_, SceneState>) {
@@ -233,7 +233,7 @@ mod tests {
     use image::{Rgba, RgbaImage};
     use pixtuoid::dev::{DrawCtx, RenderFrames, scene_buf_size};
     use pixtuoid_core::SceneState;
-    use pixtuoid_scene::floor::{FloorMeta, PerOffice};
+    use pixtuoid_scene::floor::{Conditions, PerOffice};
     use pixtuoid_scene::pet::{Pet, PetKind};
     use pixtuoid_scene::theme::NORMAL;
     use ratatui::Terminal;
@@ -293,19 +293,16 @@ mod tests {
         let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let mut floor = PerFloor::new(Arc::clone(&pack));
         let mut office = PerOffice::new();
-        let floor_scene = pixtuoid_scene::floor::project_floor_scene(scene, 0);
-        let mut ctx = DrawCtx {
-            overlays: frames.overlays(0.0, &[]),
-            ..DrawCtx::offscreen(
-                &mut floor,
-                office.stores(),
-                &NORMAL,
-                scene,
-                &floor_scene,
-                epoch(),
-                FloorMeta::ground(),
-            )
-        };
+        let mut ctx = DrawCtx::offscreen(
+            &mut floor,
+            office.stores(),
+            &NORMAL,
+            scene,
+            0,
+            epoch(),
+            Conditions::default(),
+        );
+        ctx.overlays = frames.overlays(0.0, &[]);
         let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
         draw_frame(&mut term, &mut ctx, None).unwrap();
         let cells = term.backend().buffer();
@@ -390,7 +387,7 @@ mod tests {
         let world = FloorInputs {
             scene: &scene,
             now: epoch(),
-            floor: FloorMeta::ground(),
+            conditions: Conditions::default(),
             pets: Default::default(),
         };
         let blank = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, COLS, ROWS));
@@ -425,7 +422,7 @@ mod tests {
         let world = FloorInputs {
             scene: &scene,
             now: epoch(),
-            floor: FloorMeta::ground(),
+            conditions: Conditions::default(),
             pets: Default::default(),
         };
         let drawn = |look| {
@@ -469,7 +466,7 @@ mod tests {
         let world = FloorInputs {
             scene: &scene,
             now: epoch(),
-            floor: FloorMeta::ground(),
+            conditions: Conditions::default(),
             pets: Default::default(),
         };
         cutaway.render(world, &NORMAL, None).unwrap();

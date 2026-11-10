@@ -73,18 +73,10 @@ pub(crate) fn floor_capacity_scaled(
     )
 }
 
-/// A floor's identity (index, count, altitude, seed) and what every floor of its
-/// office shares (weather, motion, offline).
-#[derive(Debug, Clone, Copy)]
-pub struct FloorMeta {
-    /// Zero-based floor index.
-    pub floor_idx: usize,
-    /// How many floors the building has.
-    pub floors: usize,
-    /// Height fraction: 0.0 (ground) → 1.0 (top floor); drives skyline depth, never lighting.
-    pub altitude: f32,
-    /// This floor's layout seed (`floor_seed(floor_idx)`).
-    pub floor_seed: u64,
+/// What the host decides about how a frame reads, office-wide. Where a floor
+/// stands is its projection's ([`FloorPlace`]), never the host's to say.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Conditions {
     /// Which weather its windows show, and its rain sounds.
     pub weather: crate::sky::WeatherPolicy,
     /// How its loops and walks move: [`Motion`](crate::anim::Motion).
@@ -94,40 +86,53 @@ pub struct FloorMeta {
     pub offline: bool,
 }
 
-impl FloorMeta {
-    /// Metadata for floor `floor_idx` of `total_floors` — altitude spreads 0.0 (ground) → 1.0 (top).
-    pub fn for_floor(floor_idx: usize, total_floors: usize) -> Self {
-        let altitude = if total_floors <= 1 {
-            0.0
-        } else {
-            floor_idx as f32 / (total_floors - 1) as f32
-        };
-        Self {
-            floor_idx,
-            floors: total_floors,
-            altitude,
-            floor_seed: floor_seed(floor_idx),
-            weather: crate::sky::WeatherPolicy::Clock,
-            motion: crate::anim::Motion::Full,
-            offline: false,
-        }
-    }
-
-    /// This floor under `weather`.
+impl Conditions {
+    /// These conditions under `weather`.
     #[must_use]
     pub fn with_weather(self, weather: crate::sky::WeatherPolicy) -> Self {
         Self { weather, ..self }
     }
 
-    /// This floor moving as `motion` says.
+    /// These conditions moving as `motion` says.
     #[must_use]
     pub fn with_motion(self, motion: crate::anim::Motion) -> Self {
         Self { motion, ..self }
     }
+}
 
-    /// The lone floor of a single-floor office (index 0, altitude 0.0).
-    pub fn ground() -> Self {
-        Self::for_floor(0, 1)
+/// Where a floor stands in its building. Only [`project_floor_scene`] says,
+/// and its frame carries it, so nothing can draw one floor as another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloorPlace {
+    index: usize,
+    floors: usize,
+}
+
+impl FloorPlace {
+    /// Floor `index` of `floors`, as a test that draws no projection names one.
+    #[cfg(test)]
+    pub(crate) const fn at(index: usize, floors: usize) -> Self {
+        Self { index, floors }
+    }
+
+    /// Its zero-based index.
+    pub(crate) fn index(self) -> usize {
+        self.index
+    }
+
+    /// How many floors its building has.
+    pub(crate) fn floors(self) -> usize {
+        self.floors
+    }
+
+    /// 0.0 on the ground floor to 1.0 on the top; drives skyline depth, never
+    /// lighting.
+    pub(crate) fn altitude(self) -> f32 {
+        if self.floors <= 1 {
+            0.0
+        } else {
+            self.index as f32 / (self.floors - 1) as f32
+        }
     }
 }
 
@@ -386,8 +391,8 @@ pub struct FloorInputs<'a, S = FloorScene> {
     pub scene: &'a S,
     /// This frame's time — a parameter; the engine never reads the clock (wasm).
     pub now: SystemTime,
-    /// This floor's index, altitude, and layout seed.
-    pub floor: FloorMeta,
+    /// What the host decides about how this frame reads.
+    pub conditions: Conditions,
     /// This floor's pet and the live interaction with it.
     pub pets: PetInputs<'a>,
 }
@@ -408,7 +413,7 @@ impl<'a> FloorInputs<'a, SceneState> {
         FloorInputs {
             scene: floor_scene,
             now: self.now,
-            floor: self.floor,
+            conditions: self.conditions,
             pets: self.pets,
         }
     }
@@ -478,7 +483,7 @@ pub(crate) struct AudioObserver {
 }
 
 impl AudioObserver {
-    /// Compose one frame of audio intent for the `floor` being VIEWED, advancing
+    /// Compose one frame of audio intent for floor `floor_idx`, the one VIEWED, advancing
     /// the cross-frame cue edges. Call it EVERY world-frame regardless of mute
     /// (the painter gates only DELIVERY): a muted stretch keeps
     /// `seen_agents`/`occupied` warm, so re-enabling never fires a
@@ -489,10 +494,9 @@ impl AudioObserver {
         scene: &SceneState,
         occupied: Option<&std::collections::HashSet<usize>>,
         waypoint_kind: impl Fn(usize) -> Option<crate::layout::WaypointKind>,
-        floor: FloorMeta,
+        (floor_idx, weather): (usize, crate::sky::WeatherPolicy),
         now: SystemTime,
     ) -> AudioFrame {
-        let floor_idx = floor.floor_idx;
         // Reprime on floor switch: a fresh tracker primes silently next observe,
         // so riding to a new floor never fires a cue volley for agents /
         // appliances already there.
@@ -503,7 +507,7 @@ impl AudioObserver {
         // You hear the floor you're LOOKING AT — but rain stays global, since
         // it's weather, not agent activity.
         let counts = crate::tally::per_floor_counts(scene)[floor_idx.min(MAX_FLOORS - 1)];
-        let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), floor.weather);
+        let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), weather);
         let rain = sky.rain();
         let floor_ids = floor_agents(scene, floor_idx).map(|slot| &slot.agent_id);
         let events = self.cues.observe(floor_ids, occupied, waypoint_kind);
@@ -594,6 +598,8 @@ pub struct FloorSession {
     view: FloorView,
     /// The office-wide cross-frame state (coffee, chitchat, audio) shared across floors.
     pub office: PerOffice,
+    /// The seed its floor lays out from.
+    layout_seed: u64,
 }
 
 impl FloorSession {
@@ -603,7 +609,24 @@ impl FloorSession {
         Self {
             view: FloorView::new(pack),
             office: PerOffice::default(),
+            layout_seed: floor_seed(0),
         }
+    }
+
+    /// This session laying its floor out from `seed`, a variant of the ground
+    /// floor's; its painter publishes the capacity [`floor_capacity`] gives
+    /// that seed.
+    #[must_use]
+    pub fn with_layout_seed(self, seed: u64) -> Self {
+        Self {
+            layout_seed: seed,
+            ..self
+        }
+    }
+
+    /// The floor it draws of `scene`: its ground floor, laid out from its seed.
+    fn ground(&self, scene: &SceneState) -> FloorScene {
+        project_floor_scene(scene, 0).with_layout_seed(self.layout_seed)
     }
 
     /// This session's floor: its sim stores + raster.
@@ -634,7 +657,7 @@ impl FloorSession {
         inputs: crate::look::RenderInputs<'_, SceneState>,
     ) {
         self.evict_missing(inputs.world.scene);
-        let floor_scene = project_floor_scene(inputs.world.scene, 0);
+        let floor_scene = self.ground(inputs.world.scene);
         self.view
             .render(&mut self.office, look, inputs.on(&floor_scene));
     }
@@ -678,10 +701,11 @@ impl FloorSession {
     pub fn audio_frame(
         &mut self,
         scene: &SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         now: SystemTime,
     ) -> AudioFrame {
-        self.view.audio_frame(&mut self.office, scene, floor, now)
+        self.view
+            .audio_frame(&mut self.office, scene, (0, conditions), now)
     }
 
     /// Advance the world one tick WITHOUT painting: the session's eviction, then
@@ -694,7 +718,7 @@ impl FloorSession {
         viewport: Viewport,
     ) -> Option<SteppedFloor> {
         self.evict_missing(world.scene);
-        let floor_scene = project_floor_scene(world.scene, 0);
+        let floor_scene = self.ground(world.scene);
         step_floor(
             &mut self.view.floor,
             &mut self.office.coffee,
@@ -714,7 +738,7 @@ pub(crate) fn step_floor(
     viewport: Viewport,
 ) -> Option<SteppedFloor> {
     let PerFloor { ctx: fctx, raster } = floor;
-    let layout = fctx.frame_layout(viewport, world.floor.floor_seed, world.now)?;
+    let layout = fctx.frame_layout(viewport, world.scene.layout_seed(), world.now)?;
     let door_anim_max_ms = fctx.door_anim_max_ms;
     let frame = sim_step(
         &mut fctx.sim_stores(chitchat),
@@ -784,7 +808,7 @@ impl VacancyDim {
     }
 
     /// Whether the debounce has run out — the floor's VERDICT that it is vacant:
-    /// empty, or [`FloorMeta::offline`]. Read this, never `level() < 1.0`: the
+    /// empty, or [`Conditions::offline`]. Read this, never `level() < 1.0`: the
     /// level trails the verdict by the length of its ease.
     pub(crate) fn dimmed(&self) -> bool {
         self.dimmed
@@ -1188,12 +1212,35 @@ pub(crate) fn floor_agents(
 /// from: only the projection builds one, so an input that takes it can't be
 /// handed a whole office.
 #[derive(Debug)]
-pub struct FloorScene(SceneState);
+pub struct FloorScene {
+    scene: SceneState,
+    place: FloorPlace,
+    layout_seed: u64,
+}
 
 impl FloorScene {
     /// The projected scene.
     pub fn scene(&self) -> &SceneState {
-        &self.0
+        &self.scene
+    }
+
+    /// Where its floor stands.
+    pub fn place(&self) -> FloorPlace {
+        self.place
+    }
+
+    /// The seed its floor lays out from: [`floor_seed`] of its index, or a
+    /// one-floor session's own ([`FloorSession::with_layout_seed`]).
+    pub(crate) fn layout_seed(&self) -> u64 {
+        self.layout_seed
+    }
+
+    /// This projection laid out from `layout_seed`.
+    pub(crate) fn with_layout_seed(self, layout_seed: u64) -> Self {
+        Self {
+            layout_seed,
+            ..self
+        }
     }
 }
 
@@ -1210,7 +1257,14 @@ pub fn project_floor_scene(scene: &SceneState, floor_idx: usize) -> FloorScene {
         s.clone_daemons_from(scene);
     }
     s.today = scene.today;
-    FloorScene(s)
+    FloorScene {
+        scene: s,
+        place: FloorPlace {
+            index: floor_idx,
+            floors: num_floors(scene).max(floor_idx + 1),
+        },
+        layout_seed: floor_seed(floor_idx),
+    }
 }
 
 #[cfg(test)]

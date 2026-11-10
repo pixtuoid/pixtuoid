@@ -273,6 +273,74 @@ fn a_floors_projection_holds_its_agents_at_their_own_desks() {
     }
 }
 
+/// A projection records where its floor stands, the one source a frame reads
+/// its floor from: its index among the building's floors, and its layout seed.
+#[test]
+fn a_projection_records_where_its_floor_stands() {
+    let scene = make_scene(20, 16);
+    let floor_scene = project_floor_scene(&scene, 1);
+    let place = floor_scene.place();
+    assert_eq!((place.index(), place.floors()), (1, 2));
+    assert!((place.altitude() - 1.0).abs() < f32::EPSILON);
+    assert_eq!(floor_scene.layout_seed(), floor_seed(1));
+    let past = project_floor_scene(&scene, 3).place();
+    assert_eq!(
+        (past.index(), past.floors()),
+        (3, 4),
+        "a floor past the building tops it"
+    );
+}
+
+/// A stepped frame stands where its projection does, so nothing drawing it can
+/// say it is another floor.
+#[test]
+fn a_stepped_frame_stands_where_its_projection_does() {
+    let scene = make_scene(20, 16);
+    let floor_scene = project_floor_scene(&scene, 1);
+    let mut floor = PerFloor::new(Arc::new(crate::pack::test_office()));
+    let mut office = PerOffice::new();
+    let stepped = step_floor(
+        &mut floor,
+        &mut office.coffee,
+        &mut office.chitchat,
+        FloorInputs {
+            scene: &floor_scene,
+            now: t0(),
+            conditions: Conditions::default(),
+            pets: PetInputs::default(),
+        },
+        Viewport::full(160, 96),
+    )
+    .expect("lays out");
+    assert_eq!(stepped.frame.place, floor_scene.place());
+}
+
+/// A one-floor session lays its floor out from its own seed, a hero's variant,
+/// in place of the ground floor's.
+#[test]
+fn a_one_floor_session_lays_out_its_own_seed() {
+    let viewport = Viewport::full(160, 96);
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office())).with_layout_seed(3);
+    let stepped = session
+        .step(
+            FloorInputs {
+                scene: &SceneState::uniform(16),
+                now: t0(),
+                conditions: Conditions::default(),
+                pets: PetInputs::default(),
+            },
+            viewport,
+        )
+        .expect("lays out");
+    let laid = |seed| crate::layout::SceneLayout::compute(viewport, None, seed).expect("lays out");
+    assert_ne!(
+        laid(3).walkable,
+        laid(floor_seed(0)).walkable,
+        "premise: the seeds lay out apart"
+    );
+    assert_eq!(stepped.layout.walkable, laid(3).walkable);
+}
+
 #[test]
 fn num_floors_variable_capacities() {
     // F0: 0..4, F1: 4..12 — 6 agents span 2 floors
@@ -513,12 +581,12 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
     let [offline, emptied] = [
         (
             make_scene(3, 8),
-            FloorMeta {
+            Conditions {
                 offline: true,
-                ..FloorMeta::ground()
+                ..Conditions::default()
             },
         ),
-        (make_scene(0, 8), FloorMeta::ground()),
+        (make_scene(0, 8), Conditions::default()),
     ]
     .map(|(scene, floor)| {
         step_through_vacancy(&scene, floor)
@@ -537,14 +605,17 @@ fn an_offline_floor_dims_as_an_emptied_one_does() {
 
 /// Each frame a fresh session steps `scene` on `floor` through three vacancy
 /// debounces, and whether its floor had dimmed by then.
-fn step_through_vacancy(scene: &SceneState, floor: FloorMeta) -> Vec<(crate::sim::SimFrame, bool)> {
+fn step_through_vacancy(
+    scene: &SceneState,
+    conditions: Conditions,
+) -> Vec<(crate::sim::SimFrame, bool)> {
     let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     (0..frames_in(Duration::from_millis(3 * VacancyDim::VACANCY_DEBOUNCE_MS)))
         .map(|i| {
             let world = FloorInputs {
                 scene,
                 now: t0() + FRAME * i,
-                floor,
+                conditions,
                 pets: PetInputs::default(),
             };
             let frame = session
@@ -561,7 +632,7 @@ fn step_through_vacancy(scene: &SceneState, floor: FloorMeta) -> Vec<(crate::sim
 /// walk on it.
 #[test]
 fn a_one_floor_session_steps_only_the_agents_at_its_desks() {
-    let floor = FloorMeta::ground();
+    let conditions = Conditions::default();
     let empty = make_scene(0, 8);
     let mut off_its_desks = empty.clone();
     for (path, desk) in [
@@ -578,7 +649,7 @@ fn a_one_floor_session_steps_only_the_agents_at_its_desks() {
         );
     }
     let [stepped, unstepped] = [&off_its_desks, &empty].map(|scene| {
-        step_through_vacancy(scene, floor)
+        step_through_vacancy(scene, conditions)
             .into_iter()
             .map(|(frame, dimmed)| (frame.indoor_scale, dimmed, frame.neon, frame.agents.len()))
             .collect::<Vec<_>>()
@@ -603,16 +674,19 @@ fn every_floor_of_an_office_shares_its_offline() {
     let world = FloorInputs {
         scene: &scene,
         now: t0(),
-        floor: FloorMeta {
+        conditions: Conditions {
             offline: true,
-            ..FloorMeta::ground()
+            ..Conditions::default()
         },
         pets: PetInputs::default(),
     };
     for floor in 0..2 {
         let floor_scene = project_floor_scene(&scene, floor);
-        let seen = office.floor_world(world, &floor_scene, floor, &[]).floor;
-        assert!(seen.offline && seen.floor_idx == floor, "floor {floor}");
+        let seen = office.floor_world(world, &floor_scene, &[]);
+        assert!(
+            seen.conditions.offline && seen.scene.place().index() == floor,
+            "floor {floor}"
+        );
     }
 }
 
@@ -760,7 +834,7 @@ fn classic_frame(
     session: &mut FloorSession,
     scene: &SceneState,
     now: SystemTime,
-    floor: FloorMeta,
+    conditions: Conditions,
     viewport: Viewport,
 ) -> Option<Arc<crate::layout::SceneLayout>> {
     session.render(
@@ -769,7 +843,7 @@ fn classic_frame(
             world: FloorInputs {
                 scene,
                 now,
-                floor,
+                conditions,
                 pets: PetInputs::default(),
             },
             theme: crate::theme::theme_by_name("normal").expect("normal theme exists"),
@@ -798,9 +872,9 @@ fn a_top_model_at_max_effort_draws_as_any_other_agent() {
         scene
     };
     let (top, other) = (as_model("claude-fable-5"), as_model("claude-opus-4-8"));
-    let floor = FloorMeta::ground();
+    let conditions = Conditions::default();
     assert!(
-        both_painters(&top, floor, None, now) == both_painters(&other, floor, None, now),
+        both_painters(&top, conditions, None, now) == both_painters(&other, conditions, None, now),
         "a top model drew apart"
     );
     let effects = |scene: &SceneState| {
@@ -808,7 +882,7 @@ fn a_top_model_at_max_effort_draws_as_any_other_agent() {
         let world = FloorInputs {
             scene,
             now,
-            floor,
+            conditions,
             pets: PetInputs::default(),
         };
         let frame = session.step(world, PAINTED).expect("lays out").frame;
@@ -826,7 +900,7 @@ fn a_top_model_at_max_effort_draws_as_any_other_agent() {
 #[test]
 fn a_subagent_wears_a_cap_and_a_lead_does_not() {
     let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-    let floor = FloorMeta::ground();
+    let conditions = Conditions::default();
     let plain = make_scene(2, 8);
     let [lead, child] = [0, 1].map(|i| AgentId::from_transcript_path(&format!("/p/{i}.jsonl")));
     let mut dispatched = plain.clone();
@@ -840,7 +914,7 @@ fn a_subagent_wears_a_cap_and_a_lead_does_not() {
         let world = FloorInputs {
             scene,
             now,
-            floor,
+            conditions,
             pets: PetInputs::default(),
         };
         let frame = session.step(world, PAINTED).expect("lays out").frame;
@@ -864,8 +938,8 @@ fn a_subagent_wears_a_cap_and_a_lead_does_not() {
         after[&child].label_anchor, before[&child].label_anchor,
         "the cap moved the classic's badge"
     );
-    let (classic, cutaway) = both_painters(&dispatched, floor, None, now);
-    let (bare_classic, bare_cutaway) = both_painters(&plain, floor, None, now);
+    let (classic, cutaway) = both_painters(&dispatched, conditions, None, now);
+    let (bare_classic, bare_cutaway) = both_painters(&plain, conditions, None, now);
     assert!(classic != bare_classic, "the classic drew no cap");
     assert!(cutaway != bare_cutaway, "the cutaway drew no cap");
 }
@@ -880,7 +954,7 @@ fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
         &mut session,
         &scene,
         now,
-        FloorMeta::ground(),
+        Conditions::default(),
         Viewport::full(8, 8),
     );
     assert!(none.is_none(), "an unlayoutable size returns None");
@@ -895,7 +969,7 @@ fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
         &mut session,
         &scene,
         now,
-        FloorMeta::ground(),
+        Conditions::default(),
         Viewport::full(160, 96),
     );
     assert!(layout.is_some(), "a layoutable size returns the layout");
@@ -930,7 +1004,7 @@ fn floor_session_render_owns_the_dual_eviction() {
             world: FloorInputs {
                 scene: &scene,
                 now,
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: PetInputs::default(),
             },
             theme,
@@ -981,7 +1055,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1021,7 +1095,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
             world: FloorInputs {
                 scene: &scene,
                 now: now0,
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: PetInputs::default(),
             },
             theme,
@@ -1050,7 +1124,7 @@ fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
             crate::floor::FloorInputs {
                 scene: &scene,
                 now: t,
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: crate::floor::PetInputs::default(),
             },
             Viewport::full(160, 96),
@@ -1080,7 +1154,7 @@ fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
                 crate::floor::FloorInputs {
                     scene: &scene,
                     now: t,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: crate::floor::PetInputs::default()
                 },
                 Viewport::full(8, 8)
@@ -1095,14 +1169,13 @@ fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
 fn step_hands_back_the_layout_the_sim_stepped_on() {
     let scene = make_scene(1, 8);
     let viewport = Viewport::full(160, 96);
-    let meta = FloorMeta::ground();
     let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     let stepped = session
         .step(
             crate::floor::FloorInputs {
                 scene: &scene,
                 now: t0(),
-                floor: meta,
+                conditions: Conditions::default(),
                 pets: crate::floor::PetInputs::default(),
             },
             viewport,
@@ -1111,7 +1184,7 @@ fn step_hands_back_the_layout_the_sim_stepped_on() {
     let memoized = session
         .floor_mut()
         .ctx
-        .frame_layout(viewport, meta.floor_seed, t0())
+        .frame_layout(viewport, floor_seed(0), t0())
         .expect("the memoized layout");
     assert!(Arc::ptr_eq(&stepped.layout, &memoized));
 }
@@ -1134,7 +1207,7 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
         crate::floor::FloorInputs {
             scene: &floor_scene,
             now: t0(),
-            floor: FloorMeta::for_floor(1, num_floors(&scene)),
+            conditions: Conditions::default(),
             pets: crate::floor::PetInputs::default(),
         },
         Viewport::full(160, 96),
@@ -1151,11 +1224,7 @@ fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
     let occupied = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
     let storm = crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Storm);
-    let floor = FloorMeta {
-        weather: storm,
-        ..FloorMeta::ground()
-    };
-    let frame = obs.frame(&scene, Some(&occupied), |_| None, floor, now);
+    let frame = obs.frame(&scene, Some(&occupied), |_| None, (0, storm), now);
     let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), storm);
     let counts = crate::tally::per_floor_counts(&scene)[0];
     assert_eq!(
@@ -1198,7 +1267,7 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
         &scene,
         Some(&std::collections::HashSet::new()),
         printer,
-        FloorMeta::ground(),
+        (0, crate::sky::WeatherPolicy::default()),
         now,
     );
     assert_eq!(obs.primed_floor(), Some(0));
@@ -1210,7 +1279,7 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
         &scene,
         Some(&occ0),
         printer,
-        FloorMeta::for_floor(1, 2),
+        (1, crate::sky::WeatherPolicy::default()),
         now,
     );
     assert_eq!(obs.primed_floor(), Some(1));
@@ -1224,7 +1293,7 @@ fn audio_observer_reprimes_on_floor_switch_so_the_new_floor_is_silent() {
         &scene,
         Some(&occ01),
         printer,
-        FloorMeta::for_floor(1, 2),
+        (1, crate::sky::WeatherPolicy::default()),
         now,
     );
     assert!(
@@ -1243,13 +1312,14 @@ fn audio_observer_keeps_cue_edges_warm_so_delivery_resume_fires_no_volley() {
     let occ = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
 
-    let _ = obs.frame(&empty, Some(&occ), |_| None, FloorMeta::ground(), now);
-    let arrival = obs.frame(&one, Some(&occ), |_| None, FloorMeta::ground(), now);
+    let clock = (0, crate::sky::WeatherPolicy::default());
+    let _ = obs.frame(&empty, Some(&occ), |_| None, clock, now);
+    let arrival = obs.frame(&one, Some(&occ), |_| None, clock, now);
     assert!(
         arrival.events.contains(&crate::audio::OneShot::DoorChime),
         "an arrival chimes on the frame it happens"
     );
-    let resumed = obs.frame(&one, Some(&occ), |_| None, FloorMeta::ground(), now);
+    let resumed = obs.frame(&one, Some(&occ), |_| None, clock, now);
     assert!(
         !resumed.events.contains(&crate::audio::OneShot::DoorChime),
         "no volley on resume — the observer saw the agent while muted"
@@ -1278,7 +1348,7 @@ fn the_foreground_layer_is_lit_by_the_clock() {
             &mut session,
             &scene,
             now,
-            FloorMeta::ground().with_weather(clear),
+            Conditions::default().with_weather(clear),
             Viewport::full(192, 160),
         )
         .expect("layout");
@@ -1700,33 +1770,43 @@ fn neon_never_flashes_while_lit_or_while_still_coasting_down() {
     assert!(last.power > NeonLevels::VACANT.power, "{last:?}");
 }
 
-/// The classic looks out from its own floor.
+/// The classic looks out from its own floor: the ground floor and the top
+/// one of an empty two-floor office, laid out alike.
 #[test]
 fn the_classic_sees_the_skyline_from_its_floors_altitude() {
     let pack = Arc::new(crate::pack::test_office());
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let scene = make_scene(1, 8);
-    let render = |floor_meta: FloorMeta| {
-        let mut session = FloorSession::new(Arc::clone(&pack));
-        classic_frame(
-            &mut session,
-            &scene,
-            now,
-            floor_meta,
-            Viewport::full(192, 160),
+    let render = |floor| {
+        let floor_scene =
+            project_floor_scene(&SceneState::uniform(8), floor).with_layout_seed(floor_seed(0));
+        let mut per_floor = PerFloor::new(Arc::clone(&pack));
+        let mut office = PerOffice::new();
+        let rendered = crate::look::render(
+            &mut per_floor,
+            office.stores(),
+            crate::look::Look::HALF_BLOCKS,
+            crate::look::RenderInputs {
+                world: FloorInputs {
+                    scene: &floor_scene,
+                    now,
+                    conditions: Conditions::default(),
+                    pets: PetInputs::default(),
+                },
+                theme: crate::theme::theme_by_name("normal").expect("normal theme exists"),
+                viewport: Viewport::full(192, 160),
+                place: crate::look::Place::default(),
+                debug_walkable: false,
+                dim: crate::look::Dim::NONE,
+            },
         )
         .expect("layout");
-        session
+        rendered
+            .picture(&per_floor.raster)
+            .expect("classic buffer")
+            .pixels
+            .clone()
     };
-    let (ground_session, top_session) = (
-        render(FloorMeta::ground()),
-        render(FloorMeta {
-            altitude: 1.0,
-            ..FloorMeta::ground()
-        }),
-    );
-    let ground = ground_session.picture().expect("classic buffer").pixels;
-    let top = top_session.picture().expect("classic buffer").pixels;
+    let (ground, top) = (render(0), render(1));
     assert!(
         (0..ground.height())
             .flat_map(|y| (0..ground.width()).map(move |x| (x, y)))
@@ -1801,7 +1881,7 @@ fn paint(
     session: &mut FloorSession,
     look: crate::look::Look,
     scene: &SceneState,
-    floor: FloorMeta,
+    conditions: Conditions,
     pet: Option<&Pet>,
     now: SystemTime,
 ) -> Vec<Rgb> {
@@ -1810,7 +1890,7 @@ fn paint(
         world: FloorInputs {
             scene,
             now,
-            floor,
+            conditions,
             pets: PetInputs { pet, petting: None },
         },
         theme,
@@ -1835,14 +1915,14 @@ fn paint(
 /// stores so only the instant differs.
 fn both_painters(
     scene: &SceneState,
-    floor: FloorMeta,
+    conditions: Conditions,
     pet: Option<&Pet>,
     now: SystemTime,
 ) -> (Vec<Rgb>, Vec<Rgb>) {
     let pack = Arc::new(crate::pack::test_office());
     let [classic, cutaway_px] = looks().map(|look| {
         let mut session = FloorSession::new(Arc::clone(&pack));
-        paint(&mut session, look, scene, floor, pet, now)
+        paint(&mut session, look, scene, conditions, pet, now)
     });
     (classic, cutaway_px)
 }
@@ -1853,7 +1933,7 @@ fn both_painters(
 #[test]
 fn a_one_floor_session_draws_and_counts_only_the_agents_at_its_desks() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let floor = FloorMeta::ground();
+    let conditions = Conditions::default();
     let at_desks = make_scene(1, 8);
     let namesake = at_desks.agents.values().next().expect("one agent").clone();
     let id = AgentId::from_transcript_path("/p/unseated.jsonl");
@@ -1868,8 +1948,8 @@ fn a_one_floor_session_draws_and_counts_only_the_agents_at_its_desks() {
         },
     );
     assert!(
-        both_painters(&at_desks, floor, None, now)
-            == both_painters(&with_unseated, floor, None, now),
+        both_painters(&at_desks, conditions, None, now)
+            == both_painters(&with_unseated, conditions, None, now),
         "an unseated agent changed the picture"
     );
     let session = FloorSession::new(Arc::new(crate::pack::test_office()));
@@ -1901,12 +1981,17 @@ fn both_painters_paint_one_frame_per_beat() {
         ] {
             let resting = motion == Motion::Still;
             let scene = ambient_office(t0, resting);
-            let floor = FloorMeta::ground()
+            let conditions = Conditions::default()
                 .with_weather(WeatherPolicy::Forced(weather))
                 .with_motion(motion);
             let pet = Some(&cat);
-            let (classic, cutaway_px) = both_painters(&scene, floor, pet, t0);
-            let later = both_painters(&scene, floor, pet, t0 + Duration::from_millis(later_ms));
+            let (classic, cutaway_px) = both_painters(&scene, conditions, pet, t0);
+            let later = both_painters(
+                &scene,
+                conditions,
+                pet,
+                t0 + Duration::from_millis(later_ms),
+            );
             assert!(
                 classic == later.0,
                 "{motion:?} {weather:?}: the classic moved"
@@ -2017,7 +2102,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         slot.arrived_at = Some(settled);
     }
     let a_second_past = |at: Duration| at + Duration::from_secs(1);
-    let calm = FloorMeta::ground().with_motion(Motion::Calm);
+    let calm = Conditions::default().with_motion(Motion::Calm);
     // One of them idle alone among typists, so no other wanderer is re-seated
     // when the sparse office sleeps past the stale-resume gap, standing at a
     // waypoint longer than that gap; and a feed past it after its first
@@ -2181,7 +2266,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
         },
     ];
     for case in cases {
-        let floor = FloorMeta::ground()
+        let conditions = Conditions::default()
             .with_weather(WeatherPolicy::Forced(case.weather))
             .with_motion(case.motion);
         let pets: Vec<Pet> = case.pet.into_iter().cloned().collect();
@@ -2202,7 +2287,7 @@ fn a_frame_holds_for_the_wait_its_office_names() {
                 let scene = if fed { case.after } else { case.before };
                 let petting = (case.petted && fed).then_some(&petting);
                 let draw = |office: &mut OfficeSession| {
-                    render_office_with(office, look, scene, floor, now, (&pets, petting));
+                    render_office_with(office, look, scene, conditions, now, (&pets, petting));
                     let picture = office.picture().expect("lays out");
                     picture.pixels().as_slice().to_vec()
                 };
@@ -2251,11 +2336,11 @@ fn a_full_beat_on_moves_both_painters() {
     use crate::anim::FULL_TICK_MS;
     let t0 = crate::localclock::at_hour(23) + Duration::from_secs(5);
     let scene = ambient_office(t0, false);
-    let floor = FloorMeta::ground().with_motion(Motion::Full);
-    let (classic, cutaway_px) = both_painters(&scene, floor, None, t0);
+    let conditions = Conditions::default().with_motion(Motion::Full);
+    let (classic, cutaway_px) = both_painters(&scene, conditions, None, t0);
     let later = both_painters(
         &scene,
-        floor,
+        conditions,
         None,
         t0 + Duration::from_millis(FULL_TICK_MS),
     );
@@ -2270,10 +2355,10 @@ fn a_frame_is_a_function_of_its_instant_and_tier() {
     let t = crate::localclock::at_hour(23) + Duration::from_millis(5_321);
     let scene = ambient_office(t, false);
     for motion in Motion::ALL {
-        let floor = FloorMeta::ground().with_motion(motion);
+        let conditions = Conditions::default().with_motion(motion);
         let (a, b) = (
-            both_painters(&scene, floor, None, t),
-            both_painters(&scene, floor, None, t),
+            both_painters(&scene, conditions, None, t),
+            both_painters(&scene, conditions, None, t),
         );
         assert!(a == b, "{motion:?}");
     }
@@ -2287,8 +2372,8 @@ fn render_office(
     motion: Motion,
     now: SystemTime,
 ) {
-    let floor = FloorMeta::ground().with_motion(motion);
-    render_office_with(office, look, scene, floor, now, (&[], None));
+    let conditions = Conditions::default().with_motion(motion);
+    render_office_with(office, look, scene, conditions, now, (&[], None));
 }
 
 /// [`render_office`] under `floor`, its floors picking their pet of `pets`,
@@ -2297,7 +2382,7 @@ fn render_office_with(
     office: &mut OfficeSession,
     look: crate::look::Look,
     scene: &SceneState,
-    floor: FloorMeta,
+    conditions: Conditions,
     now: SystemTime,
     (pets, petting): (&[Pet], Option<&crate::pet::PetState>),
 ) {
@@ -2308,7 +2393,7 @@ fn render_office_with(
             world: FloorInputs {
                 scene,
                 now,
-                floor,
+                conditions,
                 pets: PetInputs { pet: None, petting },
             },
             theme,
@@ -2367,13 +2452,13 @@ fn under_still_a_reading_and_a_petting_hold_their_frame() {
         kind: cat.kind,
         floor_idx: 0,
     };
-    let floor = FloorMeta::ground().with_motion(Motion::Still);
+    let conditions = Conditions::default().with_motion(Motion::Still);
     for look in looks() {
         let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
         let mut frame_at = |since: Duration| {
             let now = t0 + since;
             let pets = (std::slice::from_ref(&cat), Some(&petting));
-            render_office_with(&mut office, look, &scene, floor, now, pets);
+            render_office_with(&mut office, look, &scene, conditions, now, pets);
             office
                 .picture()
                 .expect("lays out")
@@ -2423,7 +2508,7 @@ fn under_still_a_lived_in_room_waits_the_rest_tick() {
         kind: cat.kind,
         floor_idx: 0,
     };
-    let floor = FloorMeta::ground().with_motion(Motion::Still);
+    let conditions = Conditions::default().with_motion(Motion::Still);
     let now = t0 + FRAME;
     for (case, scene, petting) in [
         ("a turn just ended", &turn_ended, None),
@@ -2436,7 +2521,7 @@ fn under_still_a_lived_in_room_waits_the_rest_tick() {
             &mut office,
             crate::look::Look::HALF_BLOCKS,
             scene,
-            floor,
+            conditions,
             now,
             pets,
         );
@@ -2561,9 +2646,9 @@ fn hearing_settles_the_floor_showing_as_drawing_does() {
     let landed = t0 + Duration::from_millis(TRANSITION_DURATION_MS + 1);
     render_office(&mut office, look, &two_floors, Motion::Still, landed);
     assert_eq!(office.nav().current(), 1);
-    let _ = office.hear(&make_scene(1, 2), FloorMeta::ground(), landed);
+    let _ = office.hear(&make_scene(1, 2), Conditions::default(), landed);
     assert_eq!(office.nav().current(), 0, "floor 1 emptied out");
-    let walk_in = office.hear(&make_scene(2, 2), FloorMeta::ground(), landed);
+    let walk_in = office.hear(&make_scene(2, 2), Conditions::default(), landed);
     assert!(
         walk_in.events.contains(&crate::audio::OneShot::DoorChime),
         "{:?}",
@@ -2710,7 +2795,7 @@ fn a_petting_plays_only_on_its_own_floor() {
     let world = |now| FloorInputs {
         scene: &scene,
         now,
-        floor: FloorMeta::ground(),
+        conditions: Conditions::default(),
         pets: PetInputs {
             pet: None,
             petting: Some(&petting),
@@ -2718,12 +2803,7 @@ fn a_petting_plays_only_on_its_own_floor() {
     };
     let petted = |floor, now| {
         office
-            .floor_world(
-                world(now),
-                &project_floor_scene(&scene, floor),
-                floor,
-                &pets,
-            )
+            .floor_world(world(now), &project_floor_scene(&scene, floor), &pets)
             .pets
             .petting
             .is_some()
@@ -2784,7 +2864,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -2831,8 +2911,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         .collect();
     assert_eq!(
         office.showing_pet(&pets).map(|p| p.name.as_str()),
-        crate::pet::select_pet_for_floor(FloorMeta::for_floor(1, 2).floor_seed, &pets)
-            .map(|p| p.name.as_str()),
+        crate::pet::select_pet_for_floor(floor_seed(1), &pets).map(|p| p.name.as_str()),
         "the floor showing's pet"
     );
 }
@@ -2865,7 +2944,7 @@ fn every_floors_badges_read_the_offices_floor_nameplates() {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -2922,7 +3001,7 @@ fn a_cutaway_slide_bakes_its_floors_text() {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
@@ -2987,7 +3066,7 @@ fn a_slides_gap_dims_with_its_floors() {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -3039,7 +3118,7 @@ fn a_frame_without_the_office_forgets_the_last() {
                 world: FloorInputs {
                     scene: &scene,
                     now: now0 + Duration::from_secs(3 * step),
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -3067,7 +3146,7 @@ fn a_frame_without_the_office_forgets_the_last() {
             .unwrap_or_default(),
         "the frame drawn shows its agents"
     );
-    let _ = office.drew_no_office(&scene, FloorMeta::ground(), now0);
+    let _ = office.drew_no_office(&scene, Conditions::default(), now0);
     assert!(office.picture().is_none(), "a pointer hits nothing");
     assert!(office.heard_occupied().is_empty());
 }
@@ -3091,7 +3170,7 @@ fn a_frame_without_the_office_ends_a_slide_on_its_destination() {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -3129,7 +3208,7 @@ fn a_frame_without_the_office_ends_a_slide_on_its_destination() {
     }
     let [look, _] = looks();
     let mut office = sliding(look);
-    let _ = office.drew_no_office(&scene, FloorMeta::ground(), mid);
+    let _ = office.drew_no_office(&scene, Conditions::default(), mid);
     assert_eq!(landed(&office), (true, true, 1), "a painter's refusal");
 }
 
@@ -3147,7 +3226,7 @@ fn an_office_session_follows_its_floors_down() {
                 world: FloorInputs {
                     scene,
                     now: t0,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -3190,7 +3269,7 @@ fn a_lifted_agent_hangs_from_the_pointer_and_walks_home_when_set_down() {
                 FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 viewport,
@@ -3264,7 +3343,7 @@ fn frame_at(
             FloorInputs {
                 scene,
                 now,
-                floor: FloorMeta::ground().with_motion(motion),
+                conditions: Conditions::default().with_motion(motion),
                 pets: PetInputs::default(),
             },
             Viewport::full(160, 96),
@@ -3420,7 +3499,7 @@ fn a_drop_and_the_next_lift_between_two_steps_both_land() {
                 FloorInputs {
                     scene: &scene,
                     now: t0 + Duration::from_millis(ms),
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs {
                         pet: Some(&cat),
                         petting: None,
@@ -3479,8 +3558,7 @@ fn a_lifted_agent_reserves_no_cell() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let viewport = Viewport::full(160, 96);
     let layout =
-        crate::layout::SceneLayout::compute(viewport, None, FloorMeta::ground().floor_seed)
-            .expect("lays out");
+        crate::layout::SceneLayout::compute(viewport, None, floor_seed(0)).expect("lays out");
     let at_waypoint = |slot: &AgentSlot, now| {
         matches!(
             crate::pose::derive(slot, now, &layout),
@@ -3508,7 +3586,7 @@ fn a_lifted_agent_reserves_no_cell() {
                 FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 viewport,
@@ -3583,7 +3661,7 @@ fn a_lifted_creature_is_in_front_of_the_room() {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs {
                         pet: Some(&cat),
                         petting: None,
@@ -3775,7 +3853,7 @@ mod figure_box {
                         world: FloorInputs {
                             scene: &twins[i],
                             now,
-                            floor: FloorMeta::ground(),
+                            conditions: Conditions::default(),
                             pets: PetInputs::default(),
                         },
                         theme,
@@ -3944,7 +4022,7 @@ fn a_creature_not_in_hand_sorts_on_its_frames_south_row() {
                 FloorInputs {
                     scene: &scene,
                     now: t0 + FRAME * paint,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs {
                         pet: Some(&cat),
                         petting: None,
@@ -3993,7 +4071,7 @@ fn every_drawn_agent_has_a_walk_a_lift_lands_on() {
             FloorInputs {
                 scene: &scene,
                 now: t0 + FRAME,
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: PetInputs::default(),
             },
             Viewport::full(160, 96),
@@ -4028,7 +4106,7 @@ fn a_pet_flicked_within_one_paint_lands_at_the_drop() {
                 FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs {
                         pet: Some(&cat),
                         petting: None,
@@ -4075,7 +4153,7 @@ fn a_lifted_pet_rests_where_it_is_set_down() {
                 FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs {
                         pet: Some(&cat),
                         petting: None,
@@ -4137,7 +4215,7 @@ fn figures_on(
             world: FloorInputs {
                 scene,
                 now,
-                floor: FloorMeta::ground().with_motion(motion),
+                conditions: Conditions::default().with_motion(motion),
                 pets: PetInputs { pet, petting: None },
             },
             theme: crate::theme::theme_by_name("normal").expect("theme"),

@@ -1646,7 +1646,7 @@ impl Hand {
                 crate::floor::FloorInputs {
                     scene: &self.scene,
                     now: self.now,
-                    floor: crate::floor::FloorMeta::ground(),
+                    conditions: crate::floor::Conditions::default(),
                     pets: crate::floor::PetInputs::default(),
                 },
                 crate::layout::Viewport::full(160, 96),

@@ -3,7 +3,7 @@
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::sprite::RgbBuffer;
 
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, OfficeSession};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, OfficeSession};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
 use pixtuoid_scene::interact::{Gesture, Pointer, Pressed};
 use pixtuoid_scene::look::RenderInputs;
@@ -82,10 +82,10 @@ impl OfficeRenderer {
     pub(crate) fn hear(
         &mut self,
         scene: &SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         now: std::time::SystemTime,
     ) {
-        self.audio.frame(self.session.hear(scene, floor, now));
+        self.audio.frame(self.session.hear(scene, conditions, now));
     }
 
     /// Render the office's floor showing, or its slide to another, into the
@@ -476,7 +476,7 @@ mod tests {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
@@ -532,7 +532,7 @@ mod tests {
     struct Window {
         renderer: OfficeRenderer,
         scene: SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         screen: pixtuoid_scene::screen::ManualClock,
         /// How long a present takes on the screen clock.
         present_takes: Duration,
@@ -550,7 +550,7 @@ mod tests {
             Self {
                 renderer,
                 scene: SceneState::new([8; pixtuoid_core::state::MAX_FLOORS]),
-                floor: FloorMeta::ground()
+                conditions: Conditions::default()
                     .with_weather(weather)
                     .with_motion(pixtuoid_scene::anim::Motion::Full),
                 screen,
@@ -580,7 +580,7 @@ mod tests {
                     world: FloorInputs {
                         scene: &self.scene,
                         now,
-                        floor: self.floor,
+                        conditions: self.conditions,
                         pets: PetInputs::default(),
                     },
                     theme,
@@ -1100,7 +1100,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1143,7 +1143,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1205,7 +1205,7 @@ mod tests {
         (0..budget).find(|&step| {
             let now = now0 + std::time::Duration::from_secs(2 * step);
             if heard_before == Some(step) {
-                renderer.hear(&scene, FloorMeta::ground(), now);
+                renderer.hear(&scene, Conditions::default(), now);
             }
             // 192x160: tall enough that the corridor hosts BOTH appliances
             // (the vending/printer height gates in layout::compute).
@@ -1215,7 +1215,7 @@ mod tests {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
@@ -1268,7 +1268,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1287,7 +1287,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1313,7 +1313,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1349,7 +1349,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
@@ -1362,7 +1362,7 @@ mod tests {
         let scene = scene_with(agents, cap);
         renderer.hear(
             &scene,
-            FloorMeta::ground(),
+            Conditions::default(),
             now + pixtuoid_scene::floor::REST_TICK,
         );
         let heard: Vec<_> = crate::audio::drain_frames(&rx)
@@ -1540,7 +1540,7 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,

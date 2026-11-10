@@ -18,7 +18,7 @@ use ratatui::layout::{Position, Rect};
 
 use crate::tui::renderer::PetState;
 use pixtuoid_scene::floor::{
-    FloorInputs, FloorMeta, FloorScene, FloorTransition, OfficeSession, PetInputs,
+    Conditions, FloorInputs, FloorScene, FloorTransition, OfficeSession, PetInputs,
     project_floor_scene,
 };
 use pixtuoid_scene::layout::{SceneLayout, Size};
@@ -130,23 +130,16 @@ impl Chrome {
         self.frames.overlays(popup_scale, host_keys)
     }
 
-    /// Floor `floor` of `session`'s office in `scene`, `floor_scene` its
-    /// projection: its inputs as [`OfficeSession::floor_world`] gives every
-    /// painter's floors.
+    /// `floor_scene`, a floor of `session`'s office in `scene`: its inputs as
+    /// [`OfficeSession::floor_world`] gives every painter's floors.
     fn world<'a>(
         &'a self,
         session: &OfficeSession,
         scene: &'a SceneState,
         floor_scene: &'a FloorScene,
         now: SystemTime,
-        floor: usize,
     ) -> FloorInputs<'a> {
-        session.floor_world(
-            self.office_world(scene, now),
-            floor_scene,
-            floor,
-            &self.pets,
-        )
+        session.floor_world(self.office_world(scene, now), floor_scene, &self.pets)
     }
 
     /// The office's inputs over `scene`, as [`OfficeSession::render`] takes
@@ -160,9 +153,11 @@ impl Chrome {
         FloorInputs {
             scene,
             now,
-            floor: FloorMeta::ground()
-                .with_weather(self.weather)
-                .with_motion(self.motion),
+            conditions: Conditions {
+                weather: self.weather,
+                motion: self.motion,
+                ..Conditions::default()
+            },
             pets: PetInputs {
                 pet: None,
                 petting: self.active_pet.as_ref(),
@@ -613,7 +608,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     #[cfg(test)]
     pub(crate) fn current_floor_seed(&self) -> u64 {
-        FloorMeta::for_floor(self.session.nav().current(), self.session.n_floors()).floor_seed
+        pixtuoid_scene::floor::floor_seed(self.session.nav().current())
     }
 
     pub fn transition(&self) -> Option<&FloorTransition> {
@@ -782,8 +777,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             now,
         );
         if !stepped {
-            let office_floor = self.chrome.office_world(scene, now).floor;
-            let audio = self.session.drew_no_office(scene, office_floor, now);
+            let conditions = self.chrome.office_world(scene, now).conditions;
+            let audio = self.session.drew_no_office(scene, conditions, now);
             self.chrome.audio.frame(audio);
         }
         self.screen.blank(term_size);
@@ -898,9 +893,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         );
         let popup_scale = self.version_popup_scale(now);
         let floor_scene = project_floor_scene(scene, current);
-        let world = self
-            .chrome
-            .world(&self.session, scene, &floor_scene, now, current);
+        let world = self.chrome.world(&self.session, scene, &floor_scene, now);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -967,9 +960,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
         let floor_scene = project_floor_scene(scene, current);
-        let world = self
-            .chrome
-            .world(&self.session, scene, &floor_scene, now, current);
+        let world = self.chrome.world(&self.session, scene, &floor_scene, now);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
