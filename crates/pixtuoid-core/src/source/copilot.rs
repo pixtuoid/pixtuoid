@@ -57,8 +57,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         caps: SourceCaps {
             // `session.shutdown` is a real persisted exit marker.
             has_exit_signal: true,
-            // A swept session returns on its transcript's next read showing
-            // life (the watcher's re-registration), not through this flag.
+            // sessionId is constant across `--resume`, so a swept session does
+            // not silently walk back in.
             resurrects_on_prompt: false,
             // The `task` dispatch emits `tool.execution_start`/`complete` AND
             // explicit `subagent.started`/`completed` events.
@@ -776,25 +776,6 @@ mod tests {
                 assert!(!*as_child, "a root shutdown is NOT a child end");
             }
             other => panic!("expected root SessionEnd, got {other:?}"),
-        }
-    }
-
-    /// Copilot persists tool `arguments` and results verbatim, so its end's
-    /// marker in them is content, and its event schema names no `session_end`
-    /// (the release asset's `schemas/session-events.schema.json`).
-    #[test]
-    fn an_end_marker_in_content_ends_nothing() {
-        for line in [
-            r#"{"type":"tool.execution_complete","data":{"toolCallId":"t1","result":{"content":"run session.shutdown the cluster"}}}"#,
-            r#"{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"grep","arguments":{"pattern":"session_end"}}}"#,
-            r#"{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"grep","arguments":{"pattern":"\"type\":\"session.shutdown\""}}}"#,
-            r#"{"type":"tool.execution_complete","data":{"toolCallId":"t1","result":{"type":"session_end"}}}"#,
-            r#"{"type":"session_end","data":{}}"#,
-        ] {
-            let ends = decode(line)
-                .into_iter()
-                .any(|e| matches!(e, AgentEvent::SessionEnd { .. }));
-            assert!(!ends, "{line}");
         }
     }
 

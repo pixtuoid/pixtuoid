@@ -187,15 +187,6 @@ pub enum AgentEvent {
         /// The new display label.
         label: String,
     },
-    /// The label a transcript last gave its session, for a slot nothing has
-    /// named since: a rename's name is never replaced, and an absent slot
-    /// stays absent.
-    LabelHint {
-        /// The agent the label names.
-        agent_id: AgentId,
-        /// The label, minted as a [`Rename`](Self::Rename)'s is.
-        label: String,
-    },
     /// A session ended — marks the slot exiting (GC'd after the grace window).
     SessionEnd {
         /// The ending agent.
@@ -472,7 +463,6 @@ impl AgentEvent {
             AgentEvent::UserActionRequest { agent_id, .. } => *agent_id,
             AgentEvent::UserActionResolved { agent_id, .. } => *agent_id,
             AgentEvent::Rename { agent_id, .. } => *agent_id,
-            AgentEvent::LabelHint { agent_id, .. } => *agent_id,
             AgentEvent::SessionEnd { agent_id, .. } => *agent_id,
             AgentEvent::ProofOfLife { agent_id, .. } => *agent_id,
             AgentEvent::Identity { agent_id, .. } => *agent_id,
@@ -497,7 +487,6 @@ impl AgentEvent {
             | AgentEvent::UserActionResolved { .. } => true,
             AgentEvent::SessionStart { .. }
             | AgentEvent::Rename { .. }
-            | AgentEvent::LabelHint { .. }
             | AgentEvent::SessionEnd { .. }
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
@@ -566,7 +555,6 @@ pub(crate) fn read_bounded_bytes(path: &std::path::Path, cap: u64) -> std::io::R
     file.take(cap).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
-#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) mod admit;
 /// Claude Code transcript source: line/hook decoders + the `Source` adapter.
 pub mod claude_code;

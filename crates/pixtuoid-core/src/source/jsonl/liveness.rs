@@ -8,10 +8,9 @@ use tracing::debug;
 
 use crate::AgentId;
 use crate::source::exit_watch::ExitWatch;
-use crate::source::first_sight::Life;
 use crate::source::{AgentEvent, TaggedSender, Transport, fd_probe};
 
-use super::walk::{TAIL_BYTES, park_if_truncated_below_cursor, tail_life, walk_jsonl};
+use super::walk::{check_session_ended, park_if_truncated_below_cursor, walk_jsonl};
 use super::{SourceDecoders, WatchCtx};
 
 /// One healthy liveness-probe observation: which agent processes are verified
@@ -336,7 +335,7 @@ impl ProbeLadder {
 
 /// ONE exit path for every watcher-synthesized session end, shared by the
 /// negative-vouch and instant-exit arms so the two can't fork. Drain FIRST,
-/// then un-claim (which lets a LATER append re-register via `emit_registration`):
+/// then un-claim (which lets a LATER append re-register via `emit_first_sight`):
 /// an instant exit can beat a pre-death write's notify, and un-claiming with
 /// bytes pending re-enters that chunk as a first-sight — a ghost, every rung disarmed.
 pub(super) async fn emit_session_exit(id: &str, decoders: SourceDecoders, ctx: &WatchCtx<'_>) {
@@ -459,10 +458,8 @@ pub(super) async fn revouch_gated_files(decoders: SourceDecoders, ctx: &WatchCtx
             continue;
         }
         // Last, so the bounded tail read costs only the vouched candidates. An
-        // ENDED one is refused here — resetting undoes the terminator gate — and
-        // stays unseen: marked `Sight::Ended`, a resume whose first append shows
-        // no life would never register.
-        if tail_life(&path, TAIL_BYTES, ctx.source, decoders).await == Some(Life::Ended) {
+        // ENDED one is refused here — resetting undoes the terminator gate.
+        if check_session_ended(&path, decoders.check_ended).await {
             continue;
         }
         ctx.cursors.lock().await.insert(path, 0);

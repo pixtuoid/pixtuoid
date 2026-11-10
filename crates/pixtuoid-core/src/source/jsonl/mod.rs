@@ -49,6 +49,10 @@ fn default_prefixed_label(_path: &Path, source: &str, cwd: &Path) -> String {
     crate::source::decoder::derive_prefixed_label(source, cwd)
 }
 
+/// Predicate on a transcript's raw bytes: `true` when they carry a session-end
+/// marker, so the first-sight gate never seeds an already-ended transcript.
+pub(crate) type SessionEndChecker = fn(&[u8]) -> bool;
+
 /// Reads a transcript tail into a [`TailActivity`] verdict. Only **CC**
 /// supplies one (see `claude_code::cc_activity_recency` for the write that made
 /// mtime lie); every other source keeps the mtime proxy until such a write is
@@ -74,6 +78,7 @@ fn no_cwd_from_path(_p: &Path) -> Option<PathBuf> {
 struct SourceDecoders {
     decode_line: LineDecoder,
     derive_label: LabelDeriver,
+    check_ended: SessionEndChecker,
     activity_recency: ActivityRecency,
     id_derive: folded::FoldedDeriver,
     path_filter: PathFilter,
@@ -200,6 +205,7 @@ impl JsonlWatcher {
             decoders: SourceDecoders {
                 decode_line: row.line_decoder,
                 derive_label: native.derive_label.unwrap_or(default_prefixed_label),
+                check_ended: native.check_ended,
                 activity_recency: native.activity_recency.unwrap_or(no_activity_recency),
                 id_derive: folded::FoldedDeriver::new(row.id_from_path),
                 path_filter: row.path_filter,
@@ -416,7 +422,7 @@ impl JsonlWatcher {
         let decoders = self.decoders;
 
         // The initial seed rides the same `scan_root` → `walk_jsonl` path every
-        // later scan uses, so a file is gated identically (recency + its end)
+        // later scan uses, so a file is gated identically (recency + session_end)
         // no matter which pass first sees it (#85).
         {
             let ctx = WatchCtx {
