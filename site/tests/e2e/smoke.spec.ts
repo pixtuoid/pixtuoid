@@ -1974,7 +1974,7 @@ test('install: tabs swap panels and both clipboard branches deliver', async ({ p
   const copy = page.locator('.install__panel.is-active .install__copy');
   await copy.click();
   await expect(copy).toHaveText('Copied ✓');
-  // A comment line shows but is never copied (Install.astro's `commands` says why).
+  // A comment line shows but is never copied (site/config/install-cmds.mjs says why).
   await expect(page.locator('#install-panel-cargo code')).toContainText('#');
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toBe(await copy.getAttribute('data-copy'));

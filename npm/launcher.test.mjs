@@ -39,6 +39,7 @@ function launch(t, platform, arch) {
 test("on a host no package ships for, pixtuoid names the installs that build one", (t) => {
   const r = launch(t, "linux", "x64");
   assert.match(r.stderr, /brew install pixtuoid/);
+  assert.match(r.stderr, /cargo install pixtuoid pixtuoid-hook/);
   assert.doesNotMatch(r.stderr, /releases/, "release.yml builds nothing for this host");
 });
 
