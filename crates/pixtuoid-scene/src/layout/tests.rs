@@ -13,7 +13,9 @@ fn bounds_overlap_is_half_open_and_a_zero_sized_box_overlaps_nothing() {
     assert!(a.overlaps(b(13, 13, 4, 4)), "one shared pixel");
     assert!(!a.overlaps(b(14, 10, 4, 4)), "touching edges share none");
     assert!(!a.overlaps(b(11, 11, 0, 2)), "zero width, inside");
-    assert!(!b(11, 11, 2, 0).overlaps(a), "zero height, inside");
+    assert!(!b(11, 11, 0, 2).overlaps(a), "zero width, around");
+    assert!(!a.overlaps(b(11, 11, 2, 0)), "zero height, inside");
+    assert!(!b(11, 11, 2, 0).overlaps(a), "zero height, around");
 }
 
 /// A cell on the far edge, which `CellArea` saturates to `u16::MAX`, ends one
