@@ -104,8 +104,9 @@ fn every_shipped_plugin_has_its_contract_row_and_its_selftest() {
     }
 }
 
-/// uv runs the scripts on an interpreter `requires-python` admits, while pyright
-/// checks them against its own `pythonVersion`, which it never derives from it.
+/// uv runs the scripts that import a third-party package (`UV_DEV`) on an
+/// interpreter `requires-python` admits, while pyright checks every script
+/// against its own `pythonVersion`, never derived from `requires-python`.
 #[test]
 fn the_scripts_python_floor_is_one_version() {
     let pyproject: toml::Table = read("pyproject.toml").parse().expect("pyproject.toml");

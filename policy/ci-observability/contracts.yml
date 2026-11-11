@@ -11,7 +11,7 @@
 # of the same document that must turn `assert` red, and every run applies them
 # all; a clause is proven able to fire only while some break falsifies it alone.
 # A `covers` string makes every file under .github/ holding it one the contract
-# must list.
+# must list. `parse-runs: true` gives each `run` its shfmt AST as `run_ast`.
 
 # ── Scopes that only look narrow
 
@@ -109,27 +109,30 @@
   file:
     - .github/workflows/media-regen.yml
     - .github/workflows/hermetic-nightly.yml
-  expected: case continue do done echo esac exit false fi for gh git if jq mv read rm set while
+  parse-runs: true
+  expected: "[ continue echo exit false gh git jq mv read rm set"
   why: >-
     Beside `bot-publish-runs-no-tree-code` and
     `nightly-files-issues-from-a-job-that-runs-no-tree-code`: every command a
-    write-token job's `run:` reaches is one `expected` lists, the words those
-    jobs run today. An allowlist, as REVIEW.md's Traps prefer, so an
-    interpreter, package runner or sourced script nobody named fails too.
-    Comment lines and single-quoted text run nothing, so they are skipped.
+    write-token job's `run:` holds, as shfmt parses it, starts with a literal
+    word `expected` lists, the commands those jobs run today. An allowlist, as
+    REVIEW.md's Traps prefer, so an unlisted runner fails, and so do a quoted
+    or expanded command word and a `run` shfmt cannot parse (a `${{ }}` among
+    them).
   assert: |
-    def command_words:
-      split("\n") | map(select(test("^\\s*#") | not)) | join("\n")
-      | gsub("'[^'\n]*'"; "''")
-      | gsub("\\(\\([^)]*\\)\\)"; "")
-      | [scan("(?:^|[\n;&|(`)]|(?<!\\$)\\{|\\$\\(|\\b[A-Za-z_][A-Za-z0-9_]*=[^\\s(]*\\s)\\s*(?:(?:then|do|else|elif|if|while|until|!)\\s+)*([A-Za-z0-9_./][A-Za-z0-9_./:-]*)(?![=)A-Za-z0-9_./:-])")[0]];
-    [.jobs.publish, .jobs.file | objects | .steps[] | .run // empty | command_words[]]
+    [.jobs.publish, .jobs.file | objects | .steps[] | select(has("run")) | .run_ast
+     | if . == null then "a run shfmt refused"
+       else .. | objects | select(.Type == "CallExpr") | .Args[0] // empty
+         | if .Parts | length == 1 and .[0].Type == "Lit" then .Parts[0].Value else "a word not one literal" end
+       end]
     - ($expected | split(" ")) == []
   break:
     - '.jobs.publish.steps += [{"run": "perl scripts/x.pl"}]'
     - '.jobs.file.steps += [{"run": "npx some-bin"}]'
     - '.jobs.publish.steps += [{"run": ". scripts/x.sh"}]'
     - '.jobs.file.steps += [{"run": "./scripts/x.sh"}]'
+    - '.jobs.publish.steps += [{"run": "\"bash\" scripts/x.sh"}]'
+    - '.jobs.file.steps += [{"run": "echo ${{ github.ref }}"}]'
 
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml
