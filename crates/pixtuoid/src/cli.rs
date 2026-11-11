@@ -194,7 +194,7 @@ pub(crate) enum Cmd {
         #[command(flatten)]
         output: JsonArgs,
     },
-    /// Connect one or more sources: install their hooks + persist the choice.
+    /// Connect one or more sources: install any hooks they take + persist the choice.
     ///
     /// A running office reflects it on its next launch.
     Connect {
@@ -203,7 +203,7 @@ pub(crate) enum Cmd {
         #[command(flatten)]
         output: JsonArgs,
     },
-    /// Disconnect one or more sources: remove their hooks + persist the choice.
+    /// Disconnect one or more sources: remove any pixtuoid hooks + persist the choice.
     Disconnect {
         #[command(flatten)]
         sources: SourceIdArgs,
@@ -215,7 +215,7 @@ pub(crate) enum Cmd {
     /// The headless twin of the in-TUI onboarding. Without `--yes` it's a DRY RUN
     /// that only prints what it would connect.
     Setup {
-        /// Apply: actually connect the detected CLIs (install their hooks).
+        /// Apply: actually connect the detected CLIs.
         ///
         /// Without it, `setup` only previews the detected set.
         // Opt-in: applying writes to another tool's config.

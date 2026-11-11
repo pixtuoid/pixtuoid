@@ -14,6 +14,7 @@ import { usePromise } from "@raycast/utils";
 import { BinaryNotFoundError, getSources, SourceStatus, toggleSource } from "./pixtuoid";
 
 const REPO_URL = "https://github.com/pixtuoid/pixtuoid";
+const INSTALL_URL = "https://pixtuoid.dev/#install";
 
 export default function ManageSources() {
   const { data, isLoading, revalidate, error } = usePromise(getSources);
@@ -26,7 +27,7 @@ export default function ManageSources() {
     if (item.connected) {
       const confirmed = await confirmAlert({
         title: `Disconnect ${item.display_name}?`,
-        message: "Removes its hooks from that CLI's config. You can reconnect anytime.",
+        message: "Removes any hooks or plugin pixtuoid installed for that CLI. You can reconnect anytime.",
         primaryAction: { title: "Disconnect", style: Alert.ActionStyle.Destructive },
       });
       if (!confirmed) return;
@@ -57,11 +58,9 @@ export default function ManageSources() {
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Filter agent CLIs…">
-      <List.EmptyView
-        icon={Icon.Plug}
-        title={isLoading ? "Loading sources…" : "No sources reported"}
-        description="pixtuoid sources --json returned an empty list."
-      />
+      {/* Raycast shows an EmptyView while loading once the search bar has text, where its own would read as no
+          match (developers.raycast.com/api-reference/user-interface/list). */}
+      {data === undefined && <List.EmptyView icon={Icon.Plug} title="Loading sources…" />}
       {(data ?? []).map((s) => (
         <List.Item
           key={s.id}
@@ -104,11 +103,7 @@ function ErrorView({ error, onRetry }: { error: Error; onRetry: () => void }) {
       <List.EmptyView
         icon={notFound ? Icon.MagnifyingGlass : Icon.Warning}
         title={notFound ? "Pixtuoid not found" : "Couldn't read sources"}
-        description={
-          notFound
-            ? "Set the binary path in preferences, or install pixtuoid (brew install pixtuoid · npm i -g pixtuoid · cargo install pixtuoid pixtuoid-hook)."
-            : error.message
-        }
+        description={notFound ? "Set the binary path in preferences, or install pixtuoid." : error.message}
         actions={
           <ActionPanel>
             {notFound ? (
@@ -116,7 +111,7 @@ function ErrorView({ error, onRetry }: { error: Error; onRetry: () => void }) {
             ) : (
               <Action title="Try Again" icon={Icon.ArrowClockwise} onAction={onRetry} />
             )}
-            <Action.OpenInBrowser icon={Icon.Globe} title="Installation Docs" url={`${REPO_URL}#install`} />
+            <Action.OpenInBrowser icon={Icon.Globe} title="Installation Docs" url={INSTALL_URL} />
           </ActionPanel>
         }
       />

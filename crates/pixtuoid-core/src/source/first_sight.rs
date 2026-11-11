@@ -17,29 +17,37 @@ pub(crate) const HEAD_BYTES: usize = 1 << 20;
 
 /// What a transcript's first sight still holds. Absent = never registered, or
 /// fully retired by an exit un-claim.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Sight {
-    /// Registered: appends decode without re-registering.
-    Claimed,
+    /// Registered as its reads last resolved it: every read showing life
+    /// re-registers it, so a slot the reducer forgot on its own comes back.
+    Claimed(Registration),
     /// Its session ended: the last lifecycle evidence of a read or of an
     /// oversized span's tail is its end, or a child-end un-claim. The path
     /// stays KNOWN, so the watcher's re-vouch won't replay it however live the
-    /// probe says the (still-open) rollout is, and only a read that shows life
-    /// re-registers it.
+    /// probe says the (still-open) rollout is.
     Ended,
 }
 
 impl Sight {
-    /// Whether a read after `prev` is a first sight; `None` when only the read's
-    /// [`Life::Lives`] evidence can tell, for an ended session: a trailer flushed
-    /// after its end line (grok's `hook_execution{stop}`) proves no revival.
-    pub(crate) fn leads(prev: Option<Self>) -> Option<bool> {
-        match prev {
-            None => Some(true),
-            Some(Self::Claimed) => Some(false),
-            Some(Self::Ended) => None,
-        }
+    /// Whether a read after `prev` registers its session: a first sight always
+    /// does, a seen one only when the read `lives`, so a trailer flushed after
+    /// its end line (grok's `hook_execution{stop}`) registers nothing.
+    pub(crate) fn registers(prev: Option<&Self>, lives: bool) -> bool {
+        prev.is_none() || lives
     }
+}
+
+/// What a path's reads resolved of its session, kept so a re-registration
+/// reads no head.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Registration {
+    /// The [`first_sight_start`] its first sight built.
+    pub(crate) start: AgentEvent,
+    /// The label its reads last gave the session: first sight's, then any
+    /// `Rename` a read decoded for it since. `None` in the harness, which builds
+    /// no `NativeTranscript` label deriver.
+    pub(crate) label: Option<String>,
 }
 
 /// What a decoded event says of its transcript's session.
