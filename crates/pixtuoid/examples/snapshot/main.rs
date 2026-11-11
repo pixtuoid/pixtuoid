@@ -156,7 +156,7 @@ struct SnapshotArgs {
     #[arg(long)]
     now_hour: Option<u32>,
 
-    /// Override the local day (1 = `pixtuoid_scene::localclock`'s base date) used by time-of-day.
+    /// Override the local day (1 = `pixtuoid_scene::localclock`'s day 0) used by time-of-day.
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
     now_day: u32,
 

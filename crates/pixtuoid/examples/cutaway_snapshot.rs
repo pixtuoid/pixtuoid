@@ -98,7 +98,7 @@ fn main() -> Result<()> {
     let (mut scale_n, mut agents, mut theme_name) =
         (None, DEFAULT_AGENTS, "tokyo-night".to_string());
     let (mut now_hour, mut now_sec, mut floor) = (None::<u32>, 0u64, 0usize);
-    // 1 = the clock's base date, as the classic snapshot's `--now-day`.
+    // 1 = localclock's day 0, as the classic snapshot's `--now-day`.
     let mut now_day = 1u32;
     let mut weather = None::<String>;
     let mut repos: Vec<String> = pixtuoid_scene::DEMO_REPOS[..pixtuoid_scene::DEMO_TEAMS]

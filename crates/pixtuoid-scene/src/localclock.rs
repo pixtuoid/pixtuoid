@@ -39,16 +39,21 @@ pub(crate) fn local_time(now: SystemTime) -> chrono::NaiveDateTime {
         .naive_local()
 }
 
-/// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders.
-const BASE: (i32, u32, u32) = (2026, 1, 1);
+/// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders: a day no
+/// holiday touches, so a test meets only the holidays it names. A holiday that
+/// reaches it fails `day_zero_is_an_ordinary_day`, so day 0, and every render
+/// counted from it, moves only by an edit here.
+const DAY_ZERO: chrono::NaiveDate = match chrono::NaiveDate::from_ymd_opt(2026, 1, 2) {
+    Some(date) => date,
+    None => panic!("a calendar date"),
+};
 
-/// `day` counts FORWARD from the base date by calendar arithmetic, not as a
+/// `day` counts FORWARD from day 0 by calendar arithmetic, not as a
 /// day-of-month: a search that walks days to find a weather or moon phase runs
 /// past 31, and `with_ymd_and_hms(.., 1, 40, ..)` is an invalid date that panics
 /// in exactly the zones whose day-hash sequence needs the extra days.
 fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
-    let date = chrono::NaiveDate::from_ymd_opt(BASE.0, BASE.1, BASE.2)?
-        .checked_add_days(chrono::Days::new(u64::from(day)))?;
+    let date = DAY_ZERO.checked_add_days(chrono::Days::new(u64::from(day)))?;
     local_instant(date, h, m)
 }
 
@@ -64,21 +69,22 @@ pub(crate) fn local_instant(date: chrono::NaiveDate, h: u32, m: u32) -> Option<S
 }
 
 fn local(day: u32, h: u32, m: u32) -> SystemTime {
-    try_local(day, h, m).expect("a fixed January local time is valid and unambiguous in every zone")
+    try_local(day, h, m)
+        .expect("a helper's time in the weeks after day 0 is valid and unambiguous in every zone")
 }
 
-/// Local `h:m` on `day`'s own local date, not the reference day: a run on
+/// Local `h:m` on `day`'s own local date, not day 0: a run on
 /// today's sky. `None` where that local time doesn't exist.
 pub(crate) fn on_date_of(day: SystemTime, h: u32, m: u32) -> Option<SystemTime> {
     local_instant(local_time(day).date(), h, m)
 }
 
-/// Local `h:00` on the reference day.
+/// Local `h:00` on day 0.
 pub fn at_hour(h: u32) -> SystemTime {
     local(0, h, 0)
 }
 
-/// Local `h:m` on the reference day.
+/// Local `h:m` on day 0.
 pub fn at_hour_min(h: u32, m: u32) -> SystemTime {
     local(0, h, m)
 }
@@ -89,7 +95,7 @@ pub(crate) fn on_day(day: u32, h: u32) -> SystemTime {
     local(day, h, 0)
 }
 
-/// Local `h:00`, `day` days after the base date — weather and moon phase vary by
+/// Local `h:00`, `day` days after day 0 — weather and moon phase vary by
 /// day at a fixed hour, so a search over days reaches different sky states. Any
 /// `day` is valid, including past the end of the month; `None` where the date is
 /// past chrono's calendar, `h` is no hour, or that local time is skipped or
@@ -115,13 +121,14 @@ mod tests {
         assert_eq!((t.hour(), t.minute()), (7, 30));
         let t = local_time(on_day(8, 2));
         assert_eq!(
-            (t.day(), t.hour()),
-            (9, 2),
-            "on_day counts days FORWARD from the base"
+            (t.date(), t.hour()),
+            (DAY_ZERO + chrono::Days::new(8), 2),
+            "on_day counts days FORWARD from day 0"
         );
-        // Past the end of January: the form this replaced panicked here.
+        // Past the end of day 0's month: the form this replaced panicked here.
         let t = local_time(on_day(45, 7));
-        assert_eq!((t.month(), t.day(), t.hour()), (2, 15, 7));
+        assert_eq!((t.date(), t.hour()), (DAY_ZERO + chrono::Days::new(45), 7));
+        assert_ne!(t.month(), DAY_ZERO.month());
     }
 
     #[test]
@@ -150,5 +157,21 @@ mod tests {
             local_time(SystemTime::UNIX_EPOCH),
             epoch.and_hms_opt(5, 45, 0).expect("a time")
         );
+    }
+
+    /// Day 0 is ordinary at every minute: no stand-in, no fireworks, no finale.
+    #[test]
+    fn day_zero_is_an_ordinary_day() {
+        for minute in 0..24 * 60 {
+            let (h, m) = (minute / 60, minute % 60);
+            let t = at_hour_min(h, m);
+            assert_eq!(
+                crate::holiday::Occasion::at(t),
+                crate::holiday::Occasion::default(),
+                "{h}:{m:02}"
+            );
+            assert!(crate::holiday::fireworks_at(t).is_none(), "{h}:{m:02}");
+            assert!(!crate::holiday::finale_at(t), "{h}:{m:02}");
+        }
     }
 }
