@@ -41,6 +41,6 @@ The per-platform packages are **generated, not committed** (see `.gitignore`).
 
 On a stable `v*` tag: download the `artifact-<target>` tarballs the build matrix
 already produced → extract each target's binaries and notices → `node
-generate.mjs --version <tag> --artifacts <dir>` → `npm publish` the platform
+generate.mjs --version X.Y.Z --artifacts <dir>` → `npm publish` the platform
 packages first, the launcher last. The version is sourced from the git tag
 (single source of truth) — never a separate `package.json`.

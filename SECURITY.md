@@ -79,8 +79,8 @@ The components that handle untrusted or privileged input, and how they're bounde
    hook entries), and either one also strips the hook entries a release before
    the plugin wrote into the CLI's own config. Past an explicit connect/disconnect,
    a launch only rewrites the plugin files pixtuoid owns and loads them through a
-   connected CLI's own subcommand where it has one (`converge_owned`), and
-   installs the hooks of a source an older release connected by flag (`adopt_flagged_targets`).
+   connected CLI's own subcommand where it has one (`converge_owned`), and an interactive
+   one installs the hooks of a source an older release connected by flag (`adopt_flagged_targets`).
 
 4. **`pixtuoid serve`**, the only network listener, binds IPv4 on every interface
    and, before any TLS, drops a peer that isn't private, link-local or loopback,
