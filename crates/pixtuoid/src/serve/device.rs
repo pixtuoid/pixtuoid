@@ -781,6 +781,30 @@ mod tests {
         assert!(line.is_ok_and(|line| !line.is_empty()));
     }
 
+    /// A busy reducer's changes, spread across the gap that follows a frame,
+    /// reach the device as the one frame that ends it.
+    #[tokio::test(start_paused = true)]
+    async fn changes_inside_a_frame_gap_reach_a_device_as_one_frame() {
+        const CHANGES: u32 = 4;
+        let fixture = fixture();
+        let mut peer = streaming(&fixture).await;
+        let began = Instant::now();
+        for _ in 0..CHANGES {
+            fixture
+                .scene
+                .send(Arc::new(SceneState::uniform(4)))
+                .expect("the office is live");
+            sleep(MIN_FRAME_GAP / CHANGES).await;
+        }
+
+        let mut frames = 0;
+        while let Ok(line) = timeout_at(began + MIN_FRAME_GAP * 2, peer.line()).await {
+            assert!(!line.is_empty(), "the stream ended");
+            frames += 1;
+        }
+        assert_eq!(frames, 1);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_device_that_stops_draining_is_dropped_at_the_timeout() {
         let (mut ours, _theirs) = duplex(1);
