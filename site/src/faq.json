@@ -2,11 +2,13 @@
   {
     "q": "will it slow my agent down?",
     "a": "never — the hook's send is time-capped and it always exits 0, by contract.",
-    "cite": "the hook-shim contract (AGENTS.md, architecture invariant 5)"
+    "cite": "the hook-shim contract (AGENTS.md, architecture invariant 5)",
+    "src": "AGENTS.md#architecture-invariants-load-bearing"
   },
   {
     "q": "is anything uploaded?",
-    "a": "nothing — read-only local logs, no telemetry. only pixtuoid serve, if you start it, sends agent status, model, usage, repo names, which agent CLIs you have and how each is connected, and this machine's name and OS, to devices you paired on your LAN, and announces the machine's name and its key's SPKI hash on that network; paired devices can connect or disconnect those CLIs.",
-    "cite": "the privacy posture (SECURITY.md)"
+    "a": "nothing — read-only local logs, no telemetry. only pixtuoid serve, if you start it, announces this machine on your LAN and sends the devices you paired there a fixed allowlist of fields.",
+    "cite": "the privacy posture (SECURITY.md)",
+    "src": "SECURITY.md#privacy-posture"
   }
 ]

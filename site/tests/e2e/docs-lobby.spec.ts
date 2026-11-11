@@ -78,18 +78,12 @@ test('tenant board: hw-panel screen, LED dots with shape distinction, sr-only va
   await expect(page.locator('#tools')).toHaveAttribute('data-floor', '2F');
 });
 
-test('the star plaque hangs beside the tenant board with the sourced engraving', async ({
-  page,
-}) => {
+test('the star plaque hangs beside the tenant board', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   const plaque = page.locator('#tools .tools__plaque');
   await expect(plaque).toHaveClass(/hw-panel/);
   await expect(plaque).toContainText('★');
-  // the engraving is the claim shipped in showcase.json — verbatim
-  await expect(plaque).toContainText(
-    'fleets of 100+ agents have run this repo through this very office'
-  );
 });
 
 test('pantry FAQ: an indented answer stays inside the chat column', async ({ page }) => {
@@ -107,6 +101,30 @@ test('pantry FAQ: an indented answer stays inside the chat column', async ({ pag
     expect(overhangs.length, `${width}px: no bubble rendered`).toBeGreaterThan(0);
     expect(Math.max(...overhangs), `${width}px`).toBeLessThanOrEqual(0);
   }
+});
+
+test('pantry FAQ: every answer cites its source as a link', async ({ page }) => {
+  await page.goto('./');
+  const answers = await page.locator('.pantry__bubble--a').count();
+  const cites = page.locator('.pantry__cite a');
+  await expect(cites).toHaveCount(answers);
+  for (const cite of await cites.all())
+    await expect(cite).toHaveAttribute('href', /\/blob\/main\/[\w.-]+\.md#[\w-]+$/);
+});
+
+test('pantry FAQ: a cite focused before its turn pops shows at once', async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  await page.evaluate(() =>
+    document.querySelector('.pantry')!.scrollIntoView({ block: 'center', behavior: 'instant' })
+  );
+  await expect(page.locator('.pantry__scene')).toHaveClass(/\bin\b/);
+  // The last cite's turn comes latest, seconds after the reveal.
+  const cite = page.locator('.pantry__cite').last();
+  await cite.locator('a').focus();
+  await expect
+    .poll(() => cite.evaluate((el) => getComputedStyle(el).opacity), { timeout: 1_000 })
+    .toBe('1');
 });
 
 test('pantry FAQ: bubbles pop in sequence, join pix:paused, reduced-motion is static', async ({

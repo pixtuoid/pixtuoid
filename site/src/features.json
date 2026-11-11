@@ -57,10 +57,10 @@
   {
     "icon": "📄",
     "name": "Token meter",
-    "desc": "Paper piles up on a desk as its session uses tokens, growing at 250K, 2M and 16M; hover for the exact count",
+    "desc": "Paper piles up on a desk as its session uses tokens; hover for the running total",
     "pix": "tokens",
     "card": {
-      "blurb": "paper piles up on a desk as its agent burns tokens — a big spend drops a sheet onto the stack; hover for the exact Σ total."
+      "blurb": "paper piles up on a desk as its agent burns tokens — a big spend drops a sheet onto the stack; hover for the running Σ total."
     }
   },
   {

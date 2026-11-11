@@ -89,7 +89,7 @@ Then:
 | <img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/walk.svg" alt="" width="16" height="24"> | **Animated characters** | Coworkers type, raise a `?` when they need you, nap under little z's, and walk between desks |
 | <img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/palette.svg" alt="" width="20" height="20"> | **Team palette** | Agents in the same working directory wear the same colors, so you can see who works together at a glance |
 | <img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/glow.svg" alt="" width="20" height="20"> | **Per-tool monitor glow** | Each desk's monitor glows with the tool in use — Edit blue, Bash orange, Read cyan — so you can read the whole room at a glance |
-| <img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/tokens.svg" alt="" width="20" height="20"> | **Token meter** | Paper piles up on a desk as its session uses tokens, growing at 250K, 2M and 16M; hover for the exact count |
+| <img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/tokens.svg" alt="" width="20" height="20"> | **Token meter** | Paper piles up on a desk as its session uses tokens; hover for the running total |
 | <img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/tree.svg" alt="" width="20" height="20"> | **Agent tree dashboard** | Press Tab to see every agent: which CLI it runs and what it's doing |
 | <img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/pets.svg" alt="" width="20" height="20"> | **Office pets** | A cat or dog (one per floor) roams desks, pantry, sofas; sleeps near idle agents. Click to pet — pixel-art hearts float up |
 | <img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/vibes.svg" alt="" width="20" height="20"> | **Office vibes** | Day turns to night outside the windows, the weather changes, and each theme gives the office a new look |
@@ -143,9 +143,9 @@ pixtuoid learns what each agent is doing from a tiny hook it installs, which nev
 ## Privacy & Security
 
 pixtuoid is **telemetry-free and local by default**: it makes no outbound connections, and
-accepts none unless you run `pixtuoid serve`, which sends agent status, model, usage, repo names,
-which agent CLIs you have and how each is connected, and this machine's name and OS, never paths, prompts or transcripts, to devices
-you paired on your local network, and announces the machine's name and its key's SPKI hash on that network. Those devices can also connect or disconnect the CLIs. Details: **[SECURITY.md](https://github.com/pixtuoid/pixtuoid/blob/HEAD/SECURITY.md)**.
+accepts none unless you run `pixtuoid serve`, which announces this machine on your local network
+and sends the devices you pair there a fixed allowlist of fields. What leaves, what never does and
+what a paired device may change: **[SECURITY.md](https://github.com/pixtuoid/pixtuoid/blob/HEAD/SECURITY.md)**.
 
 ## Contributing
 
