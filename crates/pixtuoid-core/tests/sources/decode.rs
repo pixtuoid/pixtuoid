@@ -1,14 +1,19 @@
 use pixtuoid_core::AgentId;
+use pixtuoid_core::harness::sources_root;
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::antigravity;
 use pixtuoid_core::source::claude_code::decode_cc_line;
 use pixtuoid_core::source::decoder::decode_hook_payload;
 use serde_json::json;
 
+/// A decode fixture, read off the corpus root rather than the runner's cwd.
+fn fixture(kind: &str, name: &str) -> serde_json::Value {
+    let path = sources_root().join(format!("decode/fixtures/{kind}/{name}.json"));
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
 fn load(name: &str) -> serde_json::Value {
-    let s = std::fs::read_to_string(format!("tests/sources/decode/fixtures/hooks/{name}.json"))
-        .unwrap();
-    serde_json::from_str(&s).unwrap()
+    fixture("hooks", name)
 }
 
 fn decode_single(v: serde_json::Value) -> AgentEvent {
@@ -39,9 +44,7 @@ fn decode_activity(v: serde_json::Value) -> AgentEvent {
 }
 
 fn load_jsonl(name: &str) -> serde_json::Value {
-    let s = std::fs::read_to_string(format!("tests/sources/decode/fixtures/jsonl/{name}.json"))
-        .unwrap();
-    serde_json::from_str(&s).unwrap()
+    fixture("jsonl", name)
 }
 
 #[test]
