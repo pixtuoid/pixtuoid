@@ -104,10 +104,10 @@ default:
 
 # ── rust ──────────────────────────────────────────────────────────
 
-# Format check only — fast, gates pre-commit. The justfile has a canonical
-# format too (`just --fmt`), so it is checked with the Rust; just gives its
-# formatter no cross-version guarantee, and `setup-tools` installs the newest
-# just, so a release that reformats fails this until `just --fmt`'s output lands.
+# just gives its formatter no cross-version guarantee, and `setup-tools` installs
+# the newest just, so a release that reformats fails this until `just --fmt`'s
+# output lands.
+[doc('Format check of the Rust and this justfile — fast, gates pre-commit')]
 [group('rust')]
 fmt-check:
     cargo fmt --all --check
@@ -307,20 +307,20 @@ clippy:
 machete:
     cargo machete
 
-# License + supply-chain gate (bans/licenses/sources). Advisories are NOT here:
-# an overnight RustSec advisory must not block a push of unchanged code.
+# An overnight RustSec advisory must not block a push of unchanged code.
+[doc('License + supply-chain gate: bans, licenses, sources (advisories are deny-advisories)')]
 [group('rust')]
 deny:
     cargo deny check bans licenses sources
 
 # Advisories judge the whole graph, so they run where it or its policy changes
 # (ci-lint's deny job) and on audit.yml's schedule.
+[doc('RustSec advisory gate over the whole dependency graph')]
 [group('rust')]
 deny-advisories:
     cargo deny check advisories
 
-# Architecture invariant #1, mechanized: pixtuoid-core + pixtuoid-scene depend
-# on only the crates deny-arch.toml lists.
+[doc('Architecture invariant #1: pixtuoid-core + pixtuoid-scene depend only on the crates deny-arch.toml lists')]
 [group('rust')]
 arch:
     #!/usr/bin/env bash
