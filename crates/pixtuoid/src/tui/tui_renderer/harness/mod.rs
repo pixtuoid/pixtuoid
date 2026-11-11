@@ -41,11 +41,11 @@ pub(super) fn slot(id: AgentId, floor: usize, desk: usize, started: SystemTime) 
 
 /// What a click reaches from a harness test: `focus` on `scene`'s agents,
 /// and no page, since a harness click names none.
-pub(super) fn clicks(
-    scene: &crate::runtime::SceneRx,
+pub(super) fn click_cx(
+    scene: &SceneState,
     focus: impl FnMut(&AgentSlot),
-) -> crate::panels::Clicks<'_, impl FnMut(&AgentSlot), impl FnMut(&str)> {
-    crate::panels::Clicks {
+) -> crate::panels::ClickCtx<'_, impl FnMut(&AgentSlot), impl FnMut(&str)> {
+    crate::panels::ClickCtx {
         scene: Some(scene),
         focus,
         open: |url| panic!("opened {url}"),

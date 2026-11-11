@@ -320,6 +320,7 @@ impl FloatingApp {
         let cursor = (self.cursor.x, self.cursor.y);
         let now = self.ui.now();
         let shown = self.renderer.shown_fit();
+        let scene = self.live.as_ref().map(|l| Arc::clone(&l.scene_rx.borrow()));
         let mut office = WindowOffice {
             renderer: &mut self.renderer,
             window,
@@ -333,8 +334,8 @@ impl FloatingApp {
             (size.width, size.height),
             shown,
             &mut office,
-            crate::panels::Clicks {
-                scene: self.live.as_ref().map(|l| &l.scene_rx),
+            crate::panels::ClickCtx {
+                scene: scene.as_deref(),
                 focus: crate::focus::focus_slot,
                 open: crate::open_url,
             },

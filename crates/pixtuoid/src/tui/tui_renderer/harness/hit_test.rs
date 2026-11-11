@@ -373,7 +373,6 @@ where
     let id = AgentId::from_transcript_path("/click/0.jsonl");
     let scene = scene_with(vec![running("/click/0.jsonl", 0, "Edit", t0())], 16);
     r.render(&scene, now).unwrap();
-    let (_tx, scene_rx) = tokio::sync::watch::channel(Arc::new(scene));
     let mut ui = crate::panels::ui_state::UiState::new(
         normal_theme(),
         crate::panels::welcome::WelcomeUi::from_detected(&[]),
@@ -404,14 +403,14 @@ where
             event(MouseEventKind::Down(MouseButton::Left), at),
             ui,
             r,
-            clicks(&scene_rx, |_| panic!("a press acts on nothing")),
+            click_cx(&scene, |_| panic!("a press acts on nothing")),
             now,
         );
         crate::tui::handle_mouse_event(
             event(MouseEventKind::Up(MouseButton::Left), at),
             ui,
             r,
-            clicks(&scene_rx, |slot| focus(slot)),
+            click_cx(&scene, |slot| focus(slot)),
             now,
         );
     };
@@ -454,14 +453,13 @@ where
     );
     // A press on the agent that drags lifts it: the next frame draws it
     // under the pointer, and a release clicks nothing but sets it down.
-    let scene = scene_rx.borrow().clone();
     let away = (on_agent.0.saturating_sub(12), on_agent.1 + 4);
     let send = |r: &mut TuiRenderer<B>, ui: &mut crate::panels::ui_state::UiState, kind, at| {
         crate::tui::handle_mouse_event(
             event(kind, at),
             ui,
             r,
-            clicks(&scene_rx, |_| panic!("a drag focuses nothing")),
+            click_cx(&scene, |_| panic!("a drag focuses nothing")),
             now,
         );
     };
@@ -511,7 +509,6 @@ fn a_petting_upstairs_leaves_the_pet_downstairs_to_pet() {
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use pixtuoid_scene::hit::HitAction;
     let scene = two_floor_scene();
-    let (_tx, scene_rx) = tokio::sync::watch::channel(Arc::new(scene.clone()));
     let mut ui = crate::panels::ui_state::UiState::new(
         normal_theme(),
         crate::panels::welcome::WelcomeUi::from_detected(&[]),
@@ -558,7 +555,7 @@ fn a_petting_upstairs_leaves_the_pet_downstairs_to_pet() {
             },
             &mut ui,
             &mut r,
-            clicks(&scene_rx, |_| panic!("the cat is no agent")),
+            click_cx(&scene, |_| panic!("the cat is no agent")),
             now,
         );
     }
@@ -589,7 +586,6 @@ fn a_panel_opened_mid_carry_still_sets_the_figure_down() {
     let now = t0() + Duration::from_secs(20);
     let id = AgentId::from_transcript_path("/carry/0.jsonl");
     let scene = scene_with(vec![running("/carry/0.jsonl", 0, "Edit", t0())], 16);
-    let (_tx, scene_rx) = tokio::sync::watch::channel(Arc::new(scene.clone()));
     let mut ui = crate::panels::ui_state::UiState::new(
         normal_theme(),
         crate::panels::welcome::WelcomeUi::from_detected(&[]),
@@ -618,7 +614,7 @@ fn a_panel_opened_mid_carry_still_sets_the_figure_down() {
             },
             ui,
             r,
-            clicks(&scene_rx, |_| panic!("nothing under a panel focuses")),
+            click_cx(&scene, |_| panic!("nothing under a panel focuses")),
             now,
         );
     };

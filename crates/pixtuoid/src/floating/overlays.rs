@@ -78,7 +78,7 @@ pub(crate) fn mouse_ladder(
     window: (u32, u32),
     shown: Option<PixelFit>,
     office: &mut impl crate::panels::Office,
-    clicks: crate::panels::Clicks<'_, impl FnMut(&pixtuoid_core::AgentSlot), impl FnMut(&str)>,
+    cx: crate::panels::ClickCtx<'_, impl FnMut(&pixtuoid_core::AgentSlot), impl FnMut(&str)>,
 ) -> crate::panels::ModalMouse {
     let cells = shown.map(|at| {
         let cell = chrome_cell(at);
@@ -92,7 +92,7 @@ pub(crate) fn mouse_ladder(
         cells.map(|(at, _)| at),
         || cells.map(|(_, screen)| screen),
         office,
-        clicks,
+        cx,
     )
 }
 
@@ -622,7 +622,7 @@ mod tests {
                 window,
                 shown,
                 &mut office,
-                crate::panels::Clicks {
+                crate::panels::ClickCtx {
                     scene: None,
                     focus: |_| panic!("a press focuses nothing"),
                     open: |url| panic!("a press off the link opened {url}"),

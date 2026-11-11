@@ -2,8 +2,8 @@
 //! help, the appearance picker, the version popup and the onboarding, with the one
 //! key dispatch that drives them ([`dispatch_key`] decodes, [`apply_key_action`]
 //! applies) and the one [`mouse_ladder`]. A painter draws them through
-//! [`widgets`] into a ratatui frame and carries out what only it can through
-//! [`Host`], [`Office`] and [`Clicks`].
+//! [`widgets`] into a ratatui frame, carries out what only it can through
+//! [`Host`] and [`Office`], and names a click's desktop launchers in [`ClickCtx`].
 
 pub(crate) mod connection;
 pub(crate) mod dashboard;
@@ -251,13 +251,15 @@ pub(crate) trait Office {
     fn pet(&mut self, kind: pixtuoid_scene::pet::PetKind);
 }
 
-/// What a click reaches outside the office, injected because the real
-/// `crate::focus::focus_slot` raises a terminal and `crate::open_url` launches
-/// a browser, so a test clicking either would drive the developer's desktop.
-pub(crate) struct Clicks<'a, F: FnMut(&AgentSlot), O: FnMut(&str)> {
-    /// The live office a focused agent is looked up in; `None` before one runs.
-    pub(crate) scene: Option<&'a crate::runtime::SceneRx>,
+/// What a click reaches outside the office.
+pub(crate) struct ClickCtx<'a, F: FnMut(&AgentSlot), O: FnMut(&str)> {
+    /// The office a focused agent is looked up in, as the painter's keys read
+    /// it; `None` before one runs.
+    pub(crate) scene: Option<&'a pixtuoid_core::state::SceneState>,
+    /// Injected because the real `crate::focus::focus_slot` raises a terminal,
+    /// so a test's click would drive the developer's desktop.
     pub(crate) focus: F,
+    /// Injected because the real `crate::open_url` launches a browser.
     pub(crate) open: O,
 }
 
@@ -274,10 +276,10 @@ pub(crate) fn mouse_ladder(
     at: Option<(u16, u16)>,
     screen: impl FnOnce() -> Option<(u16, u16)>,
     office: &mut impl Office,
-    mut clicks: Clicks<'_, impl FnMut(&AgentSlot), impl FnMut(&str)>,
+    mut cx: ClickCtx<'_, impl FnMut(&AgentSlot), impl FnMut(&str)>,
 ) -> ModalMouse {
     let left_down = at.filter(|_| event == PointerEvent::Press);
-    let modal = modal_mouse(ui, popup_scale, left_down, screen, &mut clicks.open);
+    let modal = modal_mouse(ui, popup_scale, left_down, screen, &mut cx.open);
     match event {
         PointerEvent::Press => {
             if modal == ModalMouse::Office {
@@ -287,18 +289,12 @@ pub(crate) fn mouse_ladder(
         PointerEvent::Move => office.moved(),
         PointerEvent::Release => match office.release().filter(|_| modal == ModalMouse::Office) {
             Some(HitAction::Focus(id)) => {
-                // Cloned out: the focus walks the process table, and a borrow
-                // held across it blocks the channel's sender (tokio's
-                // `watch::Receiver::borrow`).
-                let slot = clicks
-                    .scene
-                    .and_then(|rx| rx.borrow().agents.get(&id).cloned());
-                if let Some(slot) = slot {
-                    (clicks.focus)(&slot);
+                if let Some(slot) = cx.scene.and_then(|scene| scene.agents.get(&id)) {
+                    (cx.focus)(slot);
                 }
             }
             Some(HitAction::Pet(kind)) => office.pet(kind),
-            Some(HitAction::Open(url)) => (clicks.open)(url),
+            Some(HitAction::Open(url)) => (cx.open)(url),
             None => {}
         },
     }
@@ -1894,10 +1890,10 @@ mod mouse_tests {
     use std::sync::Arc;
 
     use super::{
-        Clicks, ModalMouse, NotedOffice, PointerEvent, modal_mouse, mouse_ladder,
+        ClickCtx, ModalMouse, NotedOffice, PointerEvent, modal_mouse, mouse_ladder,
         ui_state::UiState, welcome::WelcomeUi,
     };
-    use crate::runtime::SceneRx;
+    use pixtuoid_core::state::SceneState;
     use pixtuoid_core::{AgentId, AgentSlot};
     use pixtuoid_scene::hit::HitAction;
     use pixtuoid_scene::pet::PetKind;
@@ -1933,7 +1929,7 @@ mod mouse_tests {
     fn send(
         ui: &mut UiState,
         office: &mut NotedOffice,
-        scene: Option<&SceneRx>,
+        scene: Option<&SceneState>,
         event: PointerEvent,
     ) -> (ModalMouse, Carried) {
         let pets_before = office.pets.len();
@@ -1945,7 +1941,7 @@ mod mouse_tests {
             Some((0, 0)),
             no_screen,
             office,
-            Clicks {
+            ClickCtx {
                 scene,
                 focus: |slot| carried.focused.push(slot.agent_id),
                 open: |url| carried.opened.push(url.to_owned()),
@@ -1956,7 +1952,7 @@ mod mouse_tests {
     }
 
     /// An office holding one idle agent, `id`.
-    fn office_of(id: AgentId) -> SceneRx {
+    fn scene_of(id: AgentId) -> SceneState {
         let slot = AgentSlot {
             agent_id: id,
             source: Arc::from("claude-code"),
@@ -1980,9 +1976,9 @@ mod mouse_tests {
             tokens_used: 0,
             last_usage: None,
         };
-        let mut scene = pixtuoid_core::state::SceneState::uniform(1);
+        let mut scene = SceneState::uniform(1);
         scene.agents.insert(id, slot);
-        tokio::sync::watch::channel(Arc::new(scene)).1
+        scene
     }
 
     /// With nothing open the office takes the pointer; an inert panel
@@ -2009,7 +2005,7 @@ mod mouse_tests {
     fn a_panel_withholds_the_press_and_the_click_but_not_the_gesture() {
         use PointerEvent::{Move, Press, Release};
         let id = AgentId::from_parts("claude-code", "s");
-        let scene = office_of(id);
+        let scene = scene_of(id);
         let mut ui = ui();
         let mut office = NotedOffice {
             click: Some(HitAction::Focus(id)),
@@ -2063,7 +2059,7 @@ mod mouse_tests {
     #[test]
     fn a_click_is_carried_out_by_what_it_names() {
         let id = AgentId::from_parts("claude-code", "s");
-        let live = office_of(id);
+        let scene = scene_of(id);
         let mut ui = ui();
         let mut release = |click, scene| {
             let mut office = NotedOffice {
@@ -2076,7 +2072,7 @@ mod mouse_tests {
         };
         let url = pixtuoid_scene::hit::REPO_URL;
         assert_eq!(
-            release(HitAction::Focus(id), Some(&live)),
+            release(HitAction::Focus(id), Some(&scene)),
             Carried {
                 focused: vec![id],
                 ..Carried::default()
@@ -2085,7 +2081,7 @@ mod mouse_tests {
         assert_eq!(
             release(
                 HitAction::Focus(AgentId::from_parts("claude-code", "gone")),
-                Some(&live)
+                Some(&scene)
             ),
             Carried::default(),
             "an agent gone from the office is focused nowhere"
@@ -2096,14 +2092,14 @@ mod mouse_tests {
             "with no live office there is no agent to focus"
         );
         assert_eq!(
-            release(HitAction::Open(url), Some(&live)),
+            release(HitAction::Open(url), Some(&scene)),
             Carried {
                 opened: vec![url.to_owned()],
                 ..Carried::default()
             }
         );
         assert_eq!(
-            release(HitAction::Pet(PetKind::Cat), Some(&live)),
+            release(HitAction::Pet(PetKind::Cat), Some(&scene)),
             Carried {
                 petted: vec![PetKind::Cat],
                 ..Carried::default()

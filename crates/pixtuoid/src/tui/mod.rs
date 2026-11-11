@@ -26,8 +26,8 @@ use tokio::time::MissedTickBehavior;
 use tui_renderer::TuiRenderer;
 
 use crate::panels::{
-    Clicks, FloorNav, KeyAction, KeyCtx, ModalState, PointerEvent, apply_key_action, dispatch_key,
-    mouse_ladder, ui_state,
+    ClickCtx, FloorNav, KeyAction, KeyCtx, ModalState, PointerEvent, apply_key_action,
+    dispatch_key, mouse_ladder, ui_state,
 };
 use crate::runtime::{QuitArms, QuitSignal, SceneRx};
 use pixtuoid_scene::hit::HitAction;
@@ -421,7 +421,7 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     m: crossterm::event::MouseEvent,
     ui: &mut ui_state::UiState,
     renderer: &mut TuiRenderer<B>,
-    clicks: Clicks<'_, impl FnMut(&pixtuoid_core::AgentSlot), impl FnMut(&str)>,
+    cx: ClickCtx<'_, impl FnMut(&pixtuoid_core::AgentSlot), impl FnMut(&str)>,
     now: SystemTime,
 ) {
     let event = match m.kind {
@@ -445,7 +445,7 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
         Some(at),
         || crossterm::terminal::size().ok(),
         &mut office,
-        clicks,
+        cx,
     );
     renderer.set_mouse_pos(Some(at));
 }
@@ -588,8 +588,8 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                         m,
                         &mut ui,
                         &mut renderer,
-                        Clicks {
-                            scene: Some(&scene_rx),
+                        ClickCtx {
+                            scene: Some(&snapshot),
                             focus: crate::focus::focus_slot,
                             open: crate::open_url,
                         },

@@ -339,7 +339,6 @@ fn coffee_machine_tooltip_on_hover() {
 fn a_panel_opened_by_key_hides_the_tooltip_at_rest() {
     use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
     let scene = scene_with(vec![idle("/tt/k.jsonl", 0, t0())], 16);
-    let (_tx, scene_rx) = tokio::sync::watch::channel(Arc::new(scene.clone()));
     let mut ui = crate::panels::ui_state::UiState::new(
         normal_theme(),
         crate::panels::welcome::WelcomeUi::from_detected(&[]),
@@ -365,7 +364,7 @@ fn a_panel_opened_by_key_hides_the_tooltip_at_rest() {
         },
         &mut ui,
         &mut r,
-        clicks(&scene_rx, |_| panic!("a hover focuses nothing")),
+        click_cx(&scene, |_| panic!("a hover focuses nothing")),
         t0(),
     );
     assert!(
