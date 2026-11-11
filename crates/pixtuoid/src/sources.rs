@@ -935,6 +935,46 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
+    /// A Sources row shows its source's worst diagnostic: an install that can't
+    /// fire hooks outranks decode drift, and a soft note shows nothing.
+    #[test]
+    fn row_health_shows_the_worst_diagnostic() {
+        use crate::doctor::{LogScanResult, SourceDiagnostics};
+        use crate::install::verify::SchemaVerifyResult;
+        let health = |install, drift| row_health(&SourceDiagnostics { install, drift });
+        let sound = || Some(SchemaVerifyResult::default());
+        let drifted = |missing_field| LogScanResult {
+            missing_field,
+            ..Default::default()
+        };
+        let broken = Some(SchemaVerifyResult {
+            issues: vec!["shim binary missing: /x".into()],
+            ..Default::default()
+        });
+        let s = health(broken, drifted(2)).unwrap();
+        assert!(
+            s.contains("install broken") && s.contains("shim binary missing"),
+            "{s}"
+        );
+        assert!(!s.contains("decode drift"), "install-broken must win: {s}");
+        assert!(
+            health(sound(), drifted(3))
+                .unwrap()
+                .contains("3 decode drift")
+        );
+        let noted = Some(SchemaVerifyResult {
+            notes: vec!["pixtuoid-hook not on PATH".into()],
+            ..Default::default()
+        });
+        for (install, why) in [
+            (sound(), "healthy"),
+            (noted, "a soft note"),
+            (None, "unchecked"),
+        ] {
+            assert_eq!(health(install, LogScanResult::default()), None, "{why}");
+        }
+    }
+
     fn set(ids: &[&str]) -> HashSet<String> {
         ids.iter().map(|s| s.to_string()).collect()
     }

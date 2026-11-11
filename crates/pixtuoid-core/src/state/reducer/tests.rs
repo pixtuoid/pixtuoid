@@ -898,9 +898,10 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     use std::time::{Duration, SystemTime};
 
     /// The widest steady-state working set at one iteration a second:
-    /// `lifecycles` keeps each iteration's child end for `CHILD_END_RELINK_TTL`
-    /// and its unregistered id's hook end for `STRAGGLER_TTL`.
-    const STEADY: usize = (CHILD_END_RELINK_TTL.as_secs() + STRAGGLER_TTL.as_secs()) as usize + 1;
+    /// `lifecycles` keeps each iteration's child end for `CHILD_END_RELINK_TTL`,
+    /// and its unregistered id's and codex session's hook ends for `STRAGGLER_TTL`.
+    const STEADY: usize =
+        (CHILD_END_RELINK_TTL.as_secs() + 2 * STRAGGLER_TTL.as_secs()) as usize + 1;
     /// Twice the steady state and a third of the stream: a bound that merely
     /// clears the steady state proves nothing about a slow leak.
     const MAX_CORR_ENTRIES: usize = 2 * STEADY;

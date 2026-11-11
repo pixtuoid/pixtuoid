@@ -1443,7 +1443,6 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::ui_state::footer_warning;
     use crate::run_log::LogLocation;
     use crate::test_capture::capture;
     #[cfg(unix)]
@@ -2533,13 +2532,12 @@ mod tests {
     }
 
     #[test]
-    fn diagnostics_healthy_has_no_summary_and_is_not_broken() {
+    fn diagnostics_healthy_is_not_broken() {
         let d = diag(
             Some(crate::install::verify::SchemaVerifyResult::default()),
             LogScanResult::default(),
         );
         assert!(!d.is_broken());
-        assert_eq!(crate::sources::row_health(&d), None);
     }
 
     #[test]
@@ -2556,16 +2554,10 @@ mod tests {
             },
         );
         assert!(d.is_broken());
-        let s = crate::sources::row_health(&d).unwrap();
-        assert!(
-            s.contains("install broken") && s.contains("shim binary missing"),
-            "{s}"
-        );
-        assert!(!s.contains("decode drift"), "install-broken must win: {s}");
     }
 
     #[test]
-    fn diagnostics_drift_only_summarizes_when_install_is_sound() {
+    fn diagnostics_drift_alone_is_not_broken() {
         let d = diag(
             Some(crate::install::verify::SchemaVerifyResult::default()),
             LogScanResult {
@@ -2574,15 +2566,10 @@ mod tests {
             },
         );
         assert!(!d.is_broken());
-        assert!(
-            crate::sources::row_health(&d)
-                .unwrap()
-                .contains("3 decode drift")
-        );
     }
 
     #[test]
-    fn diagnostics_soft_notes_are_not_broken_and_do_not_summarize() {
+    fn diagnostics_soft_notes_are_not_broken() {
         let d = diag(
             Some(crate::install::verify::SchemaVerifyResult {
                 issues: vec![],
@@ -2592,14 +2579,12 @@ mod tests {
             LogScanResult::default(),
         );
         assert!(!d.is_broken());
-        assert_eq!(crate::sources::row_health(&d), None);
     }
 
     #[test]
     fn diagnostics_no_install_check_is_not_broken() {
         let d = diag(None, LogScanResult::default());
         assert!(!d.is_broken());
-        assert_eq!(crate::sources::row_health(&d), None);
     }
 
     #[test]
@@ -2621,10 +2606,11 @@ mod tests {
             d.is_broken(),
             "an install with a missing shim must read broken through the injected root"
         );
-        let s = crate::sources::row_health(&d).unwrap();
         assert!(
-            s.contains("install broken") && s.contains("shim binary missing"),
-            "unexpected summary: {s:?}"
+            (d.broken_install().map(|i| &i.issues).into_iter().flatten())
+                .any(|issue| issue.contains("shim binary missing")),
+            "{:?}",
+            d.install
         );
     }
 
@@ -2693,7 +2679,7 @@ mod tests {
     /// first seen first: no other event, nor a target that merely has the
     /// breadcrumbs' target as a prefix.
     #[test]
-    fn drift_seen_and_footer_warning() {
+    fn drift_seen_names_each_drifted_source_once() {
         use tracing_subscriber::layer::SubscriberExt;
         let seen = DriftSeen::default();
         tracing::subscriber::with_default(
@@ -2706,45 +2692,7 @@ mod tests {
                 drift::unknown_event("claude-code", "Again");
             },
         );
-        let d = seen.prefixes();
-        assert_eq!(d, vec!["cc".to_string(), "cx".to_string()]);
-        let died = |s: &str| pixtuoid_core::source::manager::SourceDeath::new(s, "boom");
-        assert_eq!(
-            footer_warning(&[died("claude-code")], &[], &d).as_deref(),
-            Some("claude-code source died — its agents are frozen; restart pixtuoid (see log)")
-        );
-        assert_eq!(
-            footer_warning(&[died("claude-code"), died("codex")], &[], &d).as_deref(),
-            Some("2 sources died — restart pixtuoid (see log)")
-        );
-        let w = footer_warning(&[], &[], &d).unwrap();
-        assert!(
-            w.contains("cc·") && w.contains("cx·") && w.contains("doctor"),
-            "{w}"
-        );
-        // The footer painter (`footer.rs` `" ⚠ {warn} "`) owns the warning glyph;
-        // an embedded one double-prints (`⚠ ⚠ …`).
-        assert!(!w.contains('⚠'), "drift msg must not embed ⚠: {w}");
-        let dw = footer_warning(&[died("claude-code")], &[], &d).unwrap();
-        assert!(!dw.contains('⚠'), "death msg must not embed ⚠: {dw}");
-        assert_eq!(footer_warning(&[], &[], &[]), None);
-    }
-
-    /// A setting the user just changed outranks the passive drift nudge, which
-    /// lasts the run, and yields only to a death.
-    #[test]
-    fn an_unsaved_setting_outranks_drift_and_yields_to_a_death() {
-        let died = pixtuoid_core::source::manager::SourceDeath::new("codex", "boom");
-        let drifted = ["cc"];
-        let unsaved = footer_warning(&[], &["appearance", "volume"], &drifted);
-        assert_eq!(
-            unsaved.as_deref(),
-            Some("appearance, volume not saved — reverts at the next launch (see log)")
-        );
-        assert_eq!(
-            footer_warning(std::slice::from_ref(&died), &["appearance"], &drifted),
-            footer_warning(&[died], &[], &[])
-        );
+        assert_eq!(seen.prefixes(), vec!["cc".to_string(), "cx".to_string()]);
     }
 
     #[test]

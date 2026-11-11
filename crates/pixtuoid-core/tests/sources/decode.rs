@@ -1,5 +1,5 @@
 use pixtuoid_core::AgentId;
-use pixtuoid_core::harness::sources_root;
+use pixtuoid_core::harness::{read_json, sources_root};
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::antigravity;
 use pixtuoid_core::source::claude_code::decode_cc_line;
@@ -8,8 +8,7 @@ use serde_json::json;
 
 /// A decode fixture, read off the corpus root rather than the runner's cwd.
 fn fixture(kind: &str, name: &str) -> serde_json::Value {
-    let path = sources_root().join(format!("decode/fixtures/{kind}/{name}.json"));
-    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    read_json(&sources_root().join(format!("decode/fixtures/{kind}/{name}.json"))).unwrap()
 }
 
 fn load(name: &str) -> serde_json::Value {

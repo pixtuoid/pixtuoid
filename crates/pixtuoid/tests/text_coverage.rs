@@ -8,14 +8,14 @@ use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
 
-/// The source trees whose literals can reach the screen, core's decoded
-/// labels and details among them: the binary's whole tree, so a module a
-/// painter comes to read is covered before anyone lists it.
-const RENDERERS: [&str; 3] = ["../pixtuoid-core/src", "../pixtuoid-scene/src", "src"];
+/// The source trees whose literals are held to the window's glyphs, core's
+/// decoded labels and details among them: the binary's whole tree, its
+/// terminal-only text too, so a module a painter comes to read is covered
+/// before anyone lists it.
+const SCANNED: [&str; 3] = ["../pixtuoid-core/src", "../pixtuoid-scene/src", "src"];
 
-/// What [`RENDERERS`] holds that no painter draws: the doctor's report, which
-/// it prints to the terminal. What a painter shows of it, the footer warning
-/// and a Sources row's health, lives beside that painter.
+/// What [`SCANNED`] leaves out: the doctor's terminal report, whose `✗` the
+/// window lacks; what a painter shows of the doctor lives beside that painter.
 const NEVER_PAINTED: [&str; 2] = ["src/doctor.rs", "src/doctor"];
 
 /// What world text (the badges, the board, the bubbles, the floor sign) is
@@ -176,12 +176,12 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Each source file under [`RENDERERS`] outside its crate's tests and
+/// Each source file under [`SCANNED`] outside its crate's tests and
 /// `harness`, with the characters its literals write.
 fn written() -> Vec<(PathBuf, Vec<char>)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
-    for tree in RENDERERS {
+    for tree in SCANNED {
         rust_files(&root.join(tree), &mut files);
     }
     files.retain(|file| {

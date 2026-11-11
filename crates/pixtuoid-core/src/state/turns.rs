@@ -56,7 +56,12 @@ impl TurnLedger {
     /// How many entries it keeps.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.open.len() + self.closed.len() + self.newest.len()
+        let Self {
+            open,
+            closed,
+            newest,
+        } = self;
+        open.len() + closed.len() + newest.len()
     }
 
     /// `id`'s turn `key` started.

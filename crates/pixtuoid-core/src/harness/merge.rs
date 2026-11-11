@@ -78,7 +78,6 @@ struct Trail {
     order: Vec<usize>,
     marks: Vec<Mark>,
     steps: Vec<Step>,
-    breadcrumbs: Vec<String>,
 }
 
 /// The fold just past one transcript line, and how much of the trail it had.
@@ -86,7 +85,6 @@ struct Trail {
 struct Mark {
     fold: Fold,
     steps: usize,
-    breadcrumbs: usize,
     last: SystemTime,
     taken: usize,
 }
@@ -244,12 +242,10 @@ impl Merges {
         let (mut fold, mut last, mut taken) = match trail.marks.last() {
             Some(mark) => {
                 trail.steps.truncate(mark.steps);
-                trail.breadcrumbs.truncate(mark.breadcrumbs);
                 (mark.fold.clone(), mark.last, mark.taken)
             }
             None => {
                 trail.steps.clear();
-                trail.breadcrumbs.clear();
                 let fold = Fold {
                     driven: Driven {
                         lines: self.decoded.lines,
@@ -262,36 +258,31 @@ impl Merges {
                 (fold, SystemTime::UNIX_EPOCH, 0)
             }
         };
-        let sink = BreadcrumbSink::default();
-        tracing::subscriber::with_default(sink.clone(), || {
-            // Each line at its arrival instant, never `Fold::feed`'s cascade tick
-            // after each event: that tick's gc expires `HOOK_WINS_WINDOW` before
-            // the other transport's twin arrives.
-            for (t, &before) in self.transcript.iter().zip(order).skip(shared) {
-                for h in self.hooks.get(taken..before).unwrap_or_default() {
-                    arrive(&mut fold, &mut trail.steps, &mut last, Transport::Hook, h);
-                }
-                taken = taken.max(before);
-                arrive(&mut fold, &mut trail.steps, &mut last, Transport::Jsonl, t);
-                trail.breadcrumbs.extend(sink.take());
-                trail.marks.push(Mark {
-                    fold: fold.clone(),
-                    steps: trail.steps.len(),
-                    breadcrumbs: trail.breadcrumbs.len(),
-                    last,
-                    taken,
-                });
-            }
-            for h in self.hooks.get(taken..).unwrap_or_default() {
+        // Each line at its arrival instant, never `Fold::feed`'s cascade tick
+        // after each event: that tick's gc expires `HOOK_WINS_WINDOW` before the
+        // other transport's twin arrives.
+        for (t, &before) in self.transcript.iter().zip(order).skip(shared) {
+            for h in self.hooks.get(taken..before).unwrap_or_default() {
                 arrive(&mut fold, &mut trail.steps, &mut last, Transport::Hook, h);
             }
-            fold.tick(last + CASCADE_TICK);
-        });
+            taken = taken.max(before);
+            arrive(&mut fold, &mut trail.steps, &mut last, Transport::Jsonl, t);
+            trail.marks.push(Mark {
+                fold: fold.clone(),
+                steps: trail.steps.len(),
+                last,
+                taken,
+            });
+        }
+        for h in self.hooks.get(taken..).unwrap_or_default() {
+            arrive(&mut fold, &mut trail.steps, &mut last, Transport::Hook, h);
+        }
+        fold.tick(last + CASCADE_TICK);
         trail.order = order.to_vec();
+        // A fold applies decoded events and logs no drift: decoding's
+        // breadcrumbs are every order's.
         let mut driven = fold.finish();
         driven.breadcrumbs = self.decoded.breadcrumbs.clone();
-        driven.breadcrumbs.extend(trail.breadcrumbs.iter().cloned());
-        driven.breadcrumbs.extend(sink.take());
         Merged {
             driven,
             steps: trail.steps.clone(),

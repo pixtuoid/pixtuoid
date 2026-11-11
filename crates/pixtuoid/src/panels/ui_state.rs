@@ -703,6 +703,40 @@ fn resolve_version_popup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A death outranks every other warning, then a setting the user just
+    /// changed, then the passive drift nudge; the footer painter owns the `⚠`.
+    #[test]
+    fn the_footer_warns_of_a_death_then_an_unsaved_setting_then_drift() {
+        let died = |s: &str| SourceDeath::new(s, "boom");
+        let drifted = ["cc", "cx"];
+        assert_eq!(
+            footer_warning(&[died("claude-code")], &[], &drifted).as_deref(),
+            Some("claude-code source died — its agents are frozen; restart pixtuoid (see log)")
+        );
+        assert_eq!(
+            footer_warning(&[died("claude-code"), died("codex")], &[], &drifted).as_deref(),
+            Some("2 sources died — restart pixtuoid (see log)")
+        );
+        assert_eq!(
+            footer_warning(&[], &["appearance", "volume"], &drifted).as_deref(),
+            Some("appearance, volume not saved — reverts at the next launch (see log)")
+        );
+        assert_eq!(
+            footer_warning(&[died("codex")], &["appearance"], &drifted),
+            footer_warning(&[died("codex")], &[], &[])
+        );
+        let w = footer_warning(&[], &[], &drifted).unwrap();
+        assert!(
+            w.contains("cc·") && w.contains("cx·") && w.contains("doctor"),
+            "{w}"
+        );
+        // An embedded glyph double-prints (`⚠ ⚠ …`).
+        assert!(!w.contains('⚠'), "drift msg must not embed ⚠: {w}");
+        let dw = footer_warning(&[died("claude-code")], &[], &drifted).unwrap();
+        assert!(!dw.contains('⚠'), "death msg must not embed ⚠: {dw}");
+        assert_eq!(footer_warning(&[], &[], &[]), None);
+    }
     use pixtuoid_scene::theme::ALL_THEMES;
 
     fn ui() -> UiState {

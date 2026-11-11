@@ -245,8 +245,8 @@ impl CopyHolders {
         }
     }
 
-    /// How many ids it keeps and holds. The release queue is not counted: by
-    /// design it keeps each release [`COPY_RETENTION`], past any test's stream.
+    /// How many ids it keeps, plus each agent's holds; `expiry` is not counted:
+    /// by design it keeps each release [`COPY_RETENTION`], past any test's stream.
     #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         let Self {
