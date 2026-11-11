@@ -370,6 +370,7 @@ mod tests {
                 neon: NeonLevels::FLASH,
                 beat: Beat::at_ms(0),
                 bulbs: crate::lighting::DeskBulbs::of(&crate::pack::test_office()),
+                text: crate::look::WorldText::Baked,
             },
         );
         let patch = Emitter {

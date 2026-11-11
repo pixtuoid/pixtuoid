@@ -684,8 +684,8 @@ impl AudioHandle {
         f32::from_bits(self.volume.load(std::sync::atomic::Ordering::Relaxed))
     }
 
-    /// The EFFECTIVE silence state — the m-toggle OR'd with pause, since the
-    /// caller stores the combined value here.
+    /// The EFFECTIVE silence state — the [`MUTE`](crate::panels::keys::MUTE)
+    /// toggle OR'd with pause, since the caller stores the combined value here.
     pub(crate) fn is_muted(&self) -> bool {
         self.muted.load(std::sync::atomic::Ordering::Relaxed)
     }

@@ -84,6 +84,7 @@ fn lights_at(w: u16, h: u16, hour: u32) -> (SceneLayout, Lights) {
             neon: NeonLevels::RUNNING,
             beat: Beat::at_ms(0),
             bulbs: crate::lighting::DeskBulbs::of(&crate::pack::test_office()),
+            text: crate::look::WorldText::Baked,
         },
     );
     (layout, lights)
@@ -144,6 +145,7 @@ fn the_neon_halo_throws_the_signs_own_levels() {
                 neon: levels,
                 beat,
                 bulbs: bulbs(),
+                text: crate::look::WorldText::Baked,
             },
         );
         assert_eq!(
@@ -253,6 +255,7 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
             neon: NeonLevels::RUNNING,
             beat: Beat::at_ms(0),
             bulbs: crate::lighting::DeskBulbs::of(&crate::pack::test_office()),
+            text: crate::look::WorldText::Baked,
         },
     );
     let kinds: Vec<_> = lights.monitor_halos.iter().map(|h| h.kind).collect();

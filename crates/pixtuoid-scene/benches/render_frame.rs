@@ -320,6 +320,7 @@ fn render_cutaway_frame(c: &mut Criterion) {
                     now: *now,
                     board,
                     dim: pixtuoid_scene::look::Dim::NONE,
+                    text: pixtuoid_scene::look::WorldText::Baked,
                 };
                 render_cutaway(
                     frame,
@@ -348,16 +349,10 @@ fn render_cutaway_frame(c: &mut Criterion) {
                     now: *now,
                     board,
                     dim: pixtuoid_scene::look::Dim::NONE,
+                    text: pixtuoid_scene::look::WorldText::Baked,
                 };
                 canvas
-                    .frame(
-                        floor,
-                        theme,
-                        scale,
-                        showing,
-                        pixtuoid_scene::look::WorldText::Baked,
-                        (&mut cache, &mut outside),
-                    )
+                    .frame(floor, theme, scale, showing, (&mut cache, &mut outside))
                     .dirty
             });
         });

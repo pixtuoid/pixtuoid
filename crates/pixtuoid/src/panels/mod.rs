@@ -716,7 +716,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::Quit => return true,
         KeyAction::TogglePause => {
             cx.ui.toggle_pause();
-            // Unpause restores the user's own m-key state rather than clobbering it.
+            // Unpause restores the user's own mute rather than clobbering it.
             cx.audio_ctl.set_paused(cx.ui.paused());
         }
         KeyAction::ToggleHelp => cx.ui.toggle_help(),
@@ -889,7 +889,7 @@ mod dispatch_tests {
     /// (the README's row is generated from `site/src/features.json`).
     #[test]
     fn the_site_and_the_docs_name_the_apps_keys() {
-        use super::keys::{APPEARANCE, MUTE, SOURCES, VOLUME_DOWN, VOLUME_UP};
+        use super::keys::{APPEARANCE, DASHBOARD, HELP, MUTE, SOURCES, VOLUME_DOWN, VOLUME_UP};
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
         // crates.io-packaged test runs don't ship the repo's site/ or docs/.
         if !std::path::Path::new(&format!("{root}/site")).is_dir() {
@@ -921,6 +921,20 @@ mod dispatch_tests {
             (
                 "docs/CONFIGURATION.md",
                 format!("**Sources panel** (`{SOURCES}`)"),
+            ),
+            (
+                "README.md",
+                format!("Press <kbd>{SOURCES}</kbd> and connect"),
+            ),
+            (
+                "README.md",
+                format!("<kbd>{DASHBOARD}</kbd> agent dashboard · <kbd>{APPEARANCE}</kbd> themes"),
+            ),
+            ("README.md", format!("<kbd>{MUTE}</kbd> sound")),
+            ("README.md", format!("<kbd>{HELP}</kbd> every other key")),
+            (
+                "README.md",
+                format!("Press <kbd>{APPEARANCE}</kbd> to preview every theme live"),
             ),
             (
                 "site/src/components/HowItWorks.astro",
@@ -1802,7 +1816,7 @@ mod dispatch_tests {
         assert_eq!(
             selected, "cursor",
             "the panel must open ON the failed row, not the first noted one — \
-             `t` acts on the SELECTED one"
+             the source toggle acts on the SELECTED one"
         );
         assert_ne!(
             ui.connection.selected, 0,

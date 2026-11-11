@@ -349,8 +349,8 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
       })();
     </script>
     <!-- Digits 1–6 ride to [data-floor] sections from ANY scroll depth, so unlike
-         `t` they are deliberately NOT focus-gated: WCAG 2.1.4 is satisfied by the
-         __pixKeys.enabled() off-switch instead. -->
+         the appearance key they are deliberately NOT focus-gated: WCAG 2.1.4 is
+         satisfied by the __pixKeys.enabled() off-switch instead. -->
     <script is:inline>
       (function () {
         document.addEventListener('keydown', function (e) {

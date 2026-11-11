@@ -662,7 +662,7 @@ fn a_shadow_falls_inside_its_pieces_reach() {
             0.0,
             Motion::Full.timing(std::time::UNIX_EPOCH),
         ),
-        quiet_board(),
+        (quiet_board(), crate::look::WorldText::Baked),
         (
             &mut crate::display::compose::LightCache::default(),
             &mut crate::outside::OutsideCache::default(),
@@ -991,7 +991,7 @@ fn a_shared_backdrop_cache_paints_every_frame_as_a_fresh_one() {
                     0.0,
                     Motion::Full.timing(now),
                 ),
-                quiet_board(),
+                (quiet_board(), crate::look::WorldText::Baked),
                 (
                     &mut crate::display::compose::LightCache::default(),
                     &mut crate::outside::OutsideCache::default(),
@@ -1049,7 +1049,7 @@ fn a_strike_lifts_the_room_and_its_glass_most() {
                 &frame,
                 office,
                 &Moment::resolve(sky, theme, 0.0, Motion::Full.timing(now)),
-                quiet_board(),
+                (quiet_board(), crate::look::WorldText::Baked),
                 (
                     &mut crate::display::compose::LightCache::default(),
                     &mut crate::outside::OutsideCache::default(),
@@ -2706,7 +2706,7 @@ fn the_outside_reaches_only_the_glass() {
                 &office.frame,
                 at,
                 shown,
-                quiet_board(),
+                (quiet_board(), crate::look::WorldText::Baked),
                 (
                     &mut crate::display::compose::LightCache::default(),
                     &mut crate::outside::OutsideCache::default(),
@@ -2982,7 +2982,7 @@ fn every_piece_paints_only_inside_its_span() {
                 frame,
                 office,
                 &moment,
-                quiet_board(),
+                (quiet_board(), crate::look::WorldText::Baked),
                 (
                     &mut crate::display::compose::LightCache::default(),
                     &mut clouds,
@@ -3229,7 +3229,7 @@ fn a_dressed_figure_at_a_top_insets_edge_keeps_its_hair_off_it() {
             scale,
         },
         &moment,
-        quiet_board(),
+        (quiet_board(), crate::look::WorldText::Baked),
         (
             &mut crate::display::compose::LightCache::default(),
             &mut crate::outside::OutsideCache::default(),
@@ -3615,7 +3615,7 @@ fn the_ground_takes_the_weathers_tint() {
                 scale: RenderScale::ONE,
             },
             &Moment::resolve(sky, theme, 0.0, Motion::Full.timing(now)),
-            quiet_board(),
+            (quiet_board(), crate::look::WorldText::Baked),
             (
                 &mut crate::display::compose::LightCache::default(),
                 &mut crate::outside::OutsideCache::default(),
@@ -3797,7 +3797,7 @@ fn one_span_and_fingerprint_always_paint_the_same_pixels() {
                         0.0,
                         Motion::Full.timing(now),
                     ),
-                    quiet_board(),
+                    (quiet_board(), crate::look::WorldText::Baked),
                     (
                         &mut crate::display::compose::LightCache::default(),
                         &mut crate::outside::OutsideCache::default(),
@@ -3854,7 +3854,7 @@ fn a_window_s_fingerprint_moves_with_the_moment_it_shows() {
                 0.0,
                 Motion::Full.timing(now),
             ),
-            quiet_board(),
+            (quiet_board(), crate::look::WorldText::Baked),
             (
                 &mut crate::display::compose::LightCache::default(),
                 &mut crate::outside::OutsideCache::default(),
@@ -4309,7 +4309,7 @@ fn a_sitters_fingerprint_moves_with_everything_their_figure_paints_from() {
                         0.0,
                         Motion::Full.timing(now),
                     ),
-                    quiet_board(),
+                    (quiet_board(), crate::look::WorldText::Baked),
                     (
                         &mut crate::display::compose::LightCache::default(),
                         &mut crate::outside::OutsideCache::default(),
@@ -4376,7 +4376,7 @@ fn one_frame_builds_one_list() {
                 0.0,
                 Motion::Full.timing(now)
             ),
-            quiet_board(),
+            (quiet_board(), crate::look::WorldText::Baked),
             (
                 &mut crate::display::compose::LightCache::default(),
                 &mut crate::outside::OutsideCache::default()
@@ -4396,7 +4396,7 @@ fn one_frame_builds_one_list() {
                 0.0,
                 Motion::Full.timing(now)
             ),
-            quiet_board(),
+            (quiet_board(), crate::look::WorldText::Baked),
             (
                 &mut crate::display::compose::LightCache::default(),
                 &mut crate::outside::OutsideCache::default()
@@ -4426,7 +4426,7 @@ fn each_drawn_agent_hovers_inside_its_piece() {
                 0.0,
                 Motion::Full.timing(std::time::SystemTime::UNIX_EPOCH),
             ),
-            quiet_board(),
+            (quiet_board(), crate::look::WorldText::Baked),
             (
                 &mut crate::display::compose::LightCache::default(),
                 &mut crate::outside::OutsideCache::default(),
@@ -4564,7 +4564,7 @@ fn list_now<'a>(
         frame,
         office,
         &Moment::resolve(sky, office.theme, 0.0, Motion::Full.timing(now)),
-        quiet_board(),
+        (quiet_board(), crate::look::WorldText::Baked),
         (
             &mut crate::display::compose::LightCache::default(),
             &mut crate::outside::OutsideCache::default(),

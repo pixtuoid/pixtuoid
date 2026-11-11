@@ -4583,3 +4583,149 @@ fn a_refit_mid_walk_draws_every_walker_where_a_direct_fit_does() {
         "walking home from where a pointer set it down"
     );
 }
+
+/// The frames an office of `scene` shows in `look` with its wall board hung or
+/// not: its floor, then, where it has a second, midway down a slide to it and
+/// landed there.
+fn office_frames(
+    scene: &SceneState,
+    look: crate::look::Look,
+    hung: bool,
+) -> Vec<(&'static str, crate::sprite::RgbBuffer)> {
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    crate::layout::roster::BOARD_HUNG.set(hung);
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    let shot = |office: &mut OfficeSession, now| {
+        let _ = office.render(
+            look,
+            crate::look::RenderInputs {
+                world: FloorInputs {
+                    scene,
+                    now,
+                    conditions: Conditions::default(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                viewport: Viewport::full(160, 96),
+                gateway: None,
+                debug_walkable: false,
+                dim: crate::look::Dim::NONE,
+            },
+            &[],
+            theme.surface.bg_fallback,
+        );
+        office.picture().expect("drawn").pixels().clone()
+    };
+    let mut frames = vec![("floor", shot(&mut office, t0))];
+    if office.n_floors() > 1 {
+        assert!(office.navigate(1, t0));
+        let half = Duration::from_millis(TRANSITION_DURATION_MS / 2);
+        frames.push(("slide", shot(&mut office, t0 + half)));
+        frames.push(("upstairs", shot(&mut office, t0 + half + half)));
+    }
+    crate::layout::roster::BOARD_HUNG.set(true);
+    frames
+}
+
+/// A frame hiding its world text draws nothing that only carries it: in
+/// either look, on a floor showing, on a slide and upstairs, it is the frame
+/// of the same office with no wall board hung, and off a slide it is the
+/// frame whose host sets the text, which bakes none, the floor indicator's
+/// plate included. A frame showing its text, baked or by its host, hangs the
+/// board.
+#[test]
+fn a_frame_hiding_its_text_shows_the_room_with_no_board() {
+    use crate::look::{Look, WorldText};
+    type Frames = Vec<(&'static str, crate::sprite::RgbBuffer)>;
+    let pairs = |a: &Frames, b: &Frames| -> Vec<(&'static str, bool)> {
+        (a.iter().zip(b))
+            .map(|((at, a), (_, b))| (*at, a.as_slice() == b.as_slice()))
+            .collect()
+    };
+    let scale =
+        crate::render_scale::RenderScale::from(crate::pack::test_office().max_density_variant());
+    let looks = [
+        |scale, text| Look::Classic { scale, text },
+        |scale, text| Look::Cutaway { scale, text },
+    ];
+    // One floor, then two: its floor, the slide and upstairs.
+    for (scene, frames) in [(make_scene(3, 8), 1), (make_scene(3, 2), 3)] {
+        for look in looks {
+            let hidden = office_frames(&scene, look(scale, WorldText::Hidden), true);
+            assert_eq!(hidden.len(), frames);
+            let no_board = office_frames(&scene, look(scale, WorldText::Hidden), false);
+            let same = pairs(&hidden, &no_board);
+            assert!(
+                same.iter().all(|&(_, same)| same),
+                "{:?}: the board hangs: {same:?}",
+                look(scale, WorldText::Hidden)
+            );
+            let host = office_frames(&scene, look(scale, WorldText::Host), false);
+            for (at, same) in pairs(&hidden, &host) {
+                assert!(same || at == "slide", "{at}: text drawn");
+            }
+            for text in [WorldText::Baked, WorldText::Host] {
+                let hung = office_frames(&scene, look(scale, text), true);
+                let bare = office_frames(&scene, look(scale, text), false);
+                for (at, same) in pairs(&hung, &bare) {
+                    assert!(!same, "{:?} {at}: no board hangs", look(scale, text));
+                }
+            }
+        }
+    }
+}
+
+/// Hiding the world text only paints: the walkable mask, the seats and where
+/// each figure stands are the same whoever sets the text, frame by frame.
+#[test]
+fn who_sets_the_world_text_moves_nothing() {
+    use crate::look::{Look, WorldText};
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+    let scene = make_scene(4, 8);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let scale =
+        crate::render_scale::RenderScale::from(crate::pack::test_office().max_density_variant());
+    let looks = [
+        |scale, text| Look::Classic { scale, text },
+        |scale, text| Look::Cutaway { scale, text },
+    ];
+    for look in looks {
+        let [baked, host, hidden] =
+            [WorldText::Baked, WorldText::Host, WorldText::Hidden].map(|text| {
+                let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+                (0..40u64)
+                    .map(|step| {
+                        let _ = office.render(
+                            look(scale, text),
+                            crate::look::RenderInputs {
+                                world: FloorInputs {
+                                    scene: &scene,
+                                    now: t0 + Duration::from_millis(step * 250),
+                                    conditions: Conditions::default(),
+                                    pets: PetInputs::default(),
+                                },
+                                theme,
+                                viewport: Viewport::full(160, 96),
+                                gateway: None,
+                                debug_walkable: false,
+                                dim: crate::look::Dim::NONE,
+                            },
+                            &[],
+                            theme.surface.bg_fallback,
+                        );
+                        let picture = office.picture().expect("drawn");
+                        let hits = picture.hits().expect("a floor");
+                        let figures: Vec<_> = (hits.figures())
+                            .map(|(target, at)| (target.clone(), at))
+                            .collect();
+                        let layout = hits.layout();
+                        (layout.walkable.clone(), layout.home_desks.clone(), figures)
+                    })
+                    .collect::<Vec<_>>()
+            });
+        assert!(!baked[0].2.is_empty(), "premise: figures stand");
+        assert!(host == baked, "{:?}", look(scale, WorldText::Host));
+        assert!(hidden == baked, "{:?}", look(scale, WorldText::Hidden));
+    }
+}

@@ -1180,9 +1180,9 @@ fn a_slide_bakes_every_hosts_text_but_the_half_blocks() {
 }
 
 /// A look hiding its world text draws none of it: in either look its frame is
-/// the one whose host sets the text, which bakes none, where the baked frame
-/// differs over a badge, a bubble, the board and the floor indicator; no host
-/// is handed any, and no star is found.
+/// the one whose host sets the text, which bakes none, of the office with no
+/// board hung, where the baked frame differs over a badge, a bubble, the board
+/// and the floor indicator; no host is handed any, and no star is found.
 #[test]
 fn a_look_hiding_its_text_draws_none_of_it() {
     use crate::display::{TextRole, TextRun};
@@ -1228,7 +1228,9 @@ fn a_look_hiding_its_text_draws_none_of_it() {
             (pixels, runs, floor.raster.star())
         };
         let (baked, _, _) = frame(WorldText::Baked);
+        crate::layout::roster::BOARD_HUNG.set(false);
         let (host, runs, _) = frame(WorldText::Host);
+        crate::layout::roster::BOARD_HUNG.set(true);
         let (hidden, handed, star) = frame(WorldText::Hidden);
         let look = look(scale, WorldText::Hidden);
         assert_eq!(handed, None, "{look:?}: a host is handed its text");

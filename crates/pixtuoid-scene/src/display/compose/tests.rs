@@ -32,6 +32,7 @@ pub(crate) fn showing(
         now,
         board: quiet_board(),
         dim: crate::look::Dim::NONE,
+        text: crate::look::WorldText::Baked,
     }
 }
 
@@ -430,19 +431,22 @@ fn chair_over_person(
 ) -> Option<bool> {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let order = collect_pieces(
-        frame,
-        Office {
-            layout,
-            pack,
-            theme,
-            scale: RenderScale::ONE,
+        ComposeInputs {
+            frame,
+            office: Office {
+                layout,
+                pack,
+                theme,
+                scale: RenderScale::ONE,
+            },
+            moment: &Moment::resolve(
+                crate::sky::Sky::clock(std::time::UNIX_EPOCH),
+                theme,
+                0.0,
+                Motion::Full.timing(std::time::UNIX_EPOCH),
+            ),
+            text: crate::look::WorldText::Baked,
         },
-        &Moment::resolve(
-            crate::sky::Sky::clock(std::time::UNIX_EPOCH),
-            theme,
-            0.0,
-            Motion::Full.timing(std::time::UNIX_EPOCH),
-        ),
         &mut crate::outside::OutsideCache::default(),
     )
     .0;
@@ -762,19 +766,22 @@ fn a_sitters_chair_casts_the_shadow_they_do_not() {
     let (mut standing, mut sitting) = (false, false);
     for frame in &frames {
         for (span, kind) in collect_pieces(
-            frame,
-            Office {
-                layout: &layout,
-                pack: &pack,
-                theme,
-                scale: RenderScale::ONE,
+            ComposeInputs {
+                frame,
+                office: Office {
+                    layout: &layout,
+                    pack: &pack,
+                    theme,
+                    scale: RenderScale::ONE,
+                },
+                moment: &Moment::resolve(
+                    crate::sky::Sky::clock(std::time::UNIX_EPOCH),
+                    theme,
+                    0.0,
+                    Motion::Full.timing(std::time::UNIX_EPOCH),
+                ),
+                text: crate::look::WorldText::Baked,
             },
-            &Moment::resolve(
-                crate::sky::Sky::clock(std::time::UNIX_EPOCH),
-                theme,
-                0.0,
-                Motion::Full.timing(std::time::UNIX_EPOCH),
-            ),
             &mut crate::outside::OutsideCache::default(),
         )
         .0
@@ -879,6 +886,7 @@ fn queued_at(
             scale,
         },
         moment: &moment,
+        text: crate::look::WorldText::Baked,
     };
     let mut order = Vec::new();
     for f in layout.fixtures().filter(|f| keep(f.kind)) {
@@ -1021,7 +1029,7 @@ pub(crate) fn list_at<'a>(frame: &SimFrame, office: Office<'a>, hour: u32) -> Di
         frame,
         office,
         &Moment::resolve(sky, office.theme, 0.0, Motion::Full.timing(now)),
-        quiet_board(),
+        (quiet_board(), crate::look::WorldText::Baked),
         (
             &mut crate::display::compose::LightCache::default(),
             &mut crate::outside::OutsideCache::default(),
@@ -1739,7 +1747,7 @@ fn a_frame_on_unchanged_inputs_reuses_the_last_frames_windows_and_lights() {
             &frame,
             office,
             &Moment::resolve(sky, office.theme, 0.0, Motion::Full.timing(now)),
-            quiet_board(),
+            (quiet_board(), crate::look::WorldText::Baked),
             (&mut lights, &mut outside),
         );
         let windows: Vec<_> = list

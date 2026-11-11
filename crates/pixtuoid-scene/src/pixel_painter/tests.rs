@@ -1732,6 +1732,7 @@ fn queued(layout: &SceneLayout, frame: &SimFrame) -> Furnishings<'static> {
         walks: &walks,
         debug_walkable: false,
         outside: &mut crate::outside::OutsideCache::default(),
+        text: crate::look::WorldText::Baked,
     };
     let lights = crate::lighting::Lights::of(
         layout,
@@ -1743,6 +1744,7 @@ fn queued(layout: &SceneLayout, frame: &SimFrame) -> Furnishings<'static> {
             neon: frame.neon,
             beat: ctx.timing.beat,
             bulbs: crate::lighting::DeskBulbs::of(ctx.pack),
+            text: crate::look::WorldText::Baked,
         },
     );
     queue_fixtures(
@@ -3220,6 +3222,7 @@ fn the_hover_list_omits_the_undrawn_and_follows_sort_drawables() {
             walks: &owned.route.walks,
             debug_walkable: false,
             outside: &mut crate::outside::OutsideCache::default(),
+            text: crate::look::WorldText::Baked,
         },
         &frame,
     );
@@ -3829,6 +3832,7 @@ fn paint_frame_is_pure_and_byte_identical() {
                 walks: &owned.route.walks,
                 debug_walkable: false,
                 outside: &mut crate::outside::OutsideCache::default(),
+                text: crate::look::WorldText::Baked,
             },
             &frame,
         );
@@ -5280,6 +5284,7 @@ fn paint_drawn(
             walks: &owned.route.walks,
             debug_walkable: false,
             outside: &mut crate::outside::OutsideCache::default(),
+            text: crate::look::WorldText::Baked,
         },
         frame,
     )
@@ -6042,6 +6047,7 @@ fn the_outside_reaches_only_the_glass() {
                 walks: &owned.route.walks,
                 debug_walkable: false,
                 outside: &mut crate::outside::OutsideCache::default(),
+                text: crate::look::WorldText::Baked,
             },
             &frame,
         );
@@ -6066,6 +6072,7 @@ fn the_outside_reaches_only_the_glass() {
             walks: &owned.route.walks,
             debug_walkable: false,
             outside: &mut crate::outside::OutsideCache::default(),
+            text: crate::look::WorldText::Baked,
         };
         let moment = Moment::resolve(weathered.sky, theme, 0.0, timing);
         let lights = Lights::of(
@@ -6078,6 +6085,7 @@ fn the_outside_reaches_only_the_glass() {
                 neon: frame.neon,
                 beat: timing.beat,
                 bulbs: crate::lighting::DeskBulbs::of(&pack),
+                text: crate::look::WorldText::Baked,
             },
         );
         let neon = crate::floor::neon_look(frame.neon, theme);
@@ -6188,6 +6196,7 @@ fn the_neon_halo_lifts_the_window_glass_it_falls_on() {
                 walks: &owned.route.walks,
                 debug_walkable: false,
                 outside: &mut crate::outside::OutsideCache::default(),
+                text: crate::look::WorldText::Baked,
             },
             &frame,
         );
@@ -6254,6 +6263,7 @@ fn the_classics_dark_carries_past_the_insets() {
                 walks: &walks,
                 debug_walkable: false,
                 outside: &mut crate::outside::OutsideCache::default(),
+                text: crate::look::WorldText::Baked,
             },
             &frame,
         );

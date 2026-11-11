@@ -58,8 +58,8 @@ someone else's publish would short-circuit every check below it). npm 12 is requ
   scrollspy + PR feed + install chip), `ElevatorShaft.astro` (click-to-ride
   rail), and the `#office-pause` switch. Digits `1–6` ride between floors
   document-global (typing surfaces, modifiers, the boot splash, and focused
-  `[data-keys-scope]` regions claim them locally); `t` retints, focus-gated
-  (WCAG 2.1.4); the statusline popover carries the persisted keys
+  `[data-keys-scope]` regions claim them locally); the appearance key retints,
+  focus-gated (WCAG 2.1.4); the statusline popover carries the persisted keys
   off-switch. 404 is the office at 3 a.m.
 - **Cross-component seams** (what a new section wires): `data-lit` (dimmer)
   and a `FLOORS` row in `consts.ts` (statusline, shaft, section ids all

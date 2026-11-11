@@ -153,7 +153,8 @@ pub enum WorldText {
     /// The host, in its own font over the image (`FloorPicture::text`).
     #[doc(hidden)]
     Host,
-    /// No one: the frame shows none, a slide's included.
+    /// No one: the frame shows none, a slide's included, nor what exists only
+    /// to carry it, so the wall board's place shows the room behind it.
     Hidden,
 }
 
@@ -172,6 +173,16 @@ impl WorldText {
         match self {
             Self::Host => true,
             Self::Baked | Self::Hidden => false,
+        }
+    }
+
+    /// Whether a frame draws `kind` and its light: what exists only to carry
+    /// world text hangs only where the frame shows some, in the image or by its
+    /// host, so a frame with none shows the room as if it never hung there.
+    pub(crate) const fn hangs(self, kind: crate::layout::FixtureKind) -> bool {
+        match self {
+            Self::Baked | Self::Host => true,
+            Self::Hidden => !kind.carries_only_world_text(),
         }
     }
 }
@@ -778,7 +789,7 @@ pub fn render(
                 (&mut classic.caches, &mut office.raster.outside),
                 &mut classic.buf,
                 &ctx.walks,
-                debug_walkable,
+                (debug_walkable, text),
             );
             let flash = paint.flash(&stepped.frame);
             let drawn = paint_frame(&mut paint, &stepped.frame);
@@ -836,8 +847,8 @@ pub fn render(
                     now: world.now,
                     board: &board,
                     dim,
+                    text,
                 },
-                text,
                 (&mut office.raster.cutaway, &mut office.raster.outside),
             );
             if let Some(note) = &mut raster.note {
