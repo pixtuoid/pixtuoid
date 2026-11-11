@@ -359,13 +359,34 @@ impl QuitSignal {
 /// meant to outlive its terminal.
 pub(crate) struct QuitArms(Vec<QuitArm>);
 
+/// Set by the first [`QuitArms::arm`]: a run that handles its own quit tears
+/// down before the process ends, so no other listener may end it first.
+#[cfg(unix)]
+static QUIT_OWNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 impl QuitArms {
+    /// The arms of a run that owns its quit: its caller re-raises the signal
+    /// once its teardown is done.
     pub(crate) fn arm() -> Self {
+        #[cfg(unix)]
+        QUIT_OWNED.store(true, Ordering::SeqCst);
+        Self::unowned()
+    }
+
+    /// [`Self::arm`]'s handlers, for a listener that leaves ending the process
+    /// to whoever [owns the quit](Self::owned).
+    pub(crate) fn unowned() -> Self {
         #[cfg(unix)]
         let arms = QUIT_SIGNALS.into_iter().filter_map(arm_signal).collect();
         #[cfg(not(unix))]
         let arms = windows_arms();
         Self(arms)
+    }
+
+    /// Whether a run [armed](Self::arm) to own its quit.
+    #[cfg(unix)]
+    pub(crate) fn owned() -> bool {
+        QUIT_OWNED.load(Ordering::SeqCst)
     }
 
     /// The first armed signal's arrival. Pin it ONCE outside a loop: a

@@ -576,47 +576,72 @@ fn doctor_gives_up_on_a_version_probe_that_never_exits() {
 #[cfg(unix)]
 #[test]
 fn an_interrupted_doctor_takes_its_hung_probes_down() {
-    use std::os::unix::process::ExitStatusExt;
     let home = tempfile::TempDir::new().expect("tempdir");
     let codex = home.path().join(".codex");
     std::fs::create_dir_all(&codex).expect("codex home");
     std::fs::write(codex.join("config.toml"), "").expect("codex config");
     let bin = home.path().join(".fake-bin");
     std::fs::create_dir_all(&bin).expect("fake bin dir");
-    let child = home.path().join("child.pid");
-    fake_cli(
-        &bin,
-        "codex",
-        &format!("sleep 600 &\necho $! > '{}'\nwait", child.display()),
-    );
-    let mut doctor = doctor(home.path(), &hook::private_endpoint(home.path(), "none"))
+    let job = home.path().join("job.pid");
+    fake_cli(&bin, "codex", &launcher(&job));
+    let doctor = doctor(home.path(), &hook::private_endpoint(home.path(), "none"))
         .env("PATH", path_to(&bin))
         .stdout(std::process::Stdio::null())
         .spawn()
         .expect("run pixtuoid doctor");
-    let started = pixtuoid_core::harness::wait_until(
-        "the probe's child",
-        pixtuoid_core::harness::BOOT,
-        || Ok(std::fs::read_to_string(&child).is_ok_and(|pid| !pid.trim().is_empty())),
-    );
+    assert_an_interrupt_takes_down(doctor, &job);
+}
+
+/// A connect's host CLI leads its own process group too: interrupted while the
+/// CLI runs, `connect` takes its group down with it and dies by the interrupt.
+#[cfg(unix)]
+#[test]
+fn an_interrupted_connect_takes_its_hung_cli_down() {
+    let home = tempfile::TempDir::new().expect("tempdir");
+    let mut connect = common::isolated(&["connect", "claude-code"], home.path());
+    let job = home.path().join("job.pid");
+    fake_cli(&home.path().join(".fake-bin"), "claude", &launcher(&job));
+    let connect = connect
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("run pixtuoid connect");
+    assert_an_interrupt_takes_down(connect, &job);
+}
+
+/// A CLI that starts a job, writes its pid to `job`, and waits on it.
+#[cfg(unix)]
+fn launcher(job: &std::path::Path) -> String {
+    format!("sleep 600 &\necho $! > '{}'\nwait", job.display())
+}
+
+/// Interrupt `run` once its CLI's [`launcher`] wrote `job`: `run` dies by the
+/// interrupt, and the job dies with it.
+#[cfg(unix)]
+fn assert_an_interrupt_takes_down(mut run: std::process::Child, job: &std::path::Path) {
+    use std::os::unix::process::ExitStatusExt;
+    let started =
+        pixtuoid_core::harness::wait_until("the CLI's job", pixtuoid_core::harness::BOOT, || {
+            Ok(std::fs::read_to_string(job).is_ok_and(|pid| !pid.trim().is_empty()))
+        });
     let signal = |name: &str, pid: &str| {
         std::process::Command::new("kill")
             .args([name, pid])
             .status()
             .is_ok_and(|status| status.success())
     };
-    assert!(signal("-INT", &doctor.id().to_string()), "interrupt doctor");
-    let status = doctor.wait().expect("doctor ends");
-    started.expect("the probe started its child");
+    assert!(signal("-INT", &run.id().to_string()), "interrupt pixtuoid");
+    let status = run.wait().expect("pixtuoid ends");
+    started.expect("the CLI started its job");
     assert_eq!(status.signal(), Some(libc::SIGINT), "{status:?}");
-    let pid = std::fs::read_to_string(&child).expect("its pid");
+    let pid = std::fs::read_to_string(job).expect("its pid");
     let gone =
         pixtuoid_core::harness::wait_until("its reaping", pixtuoid_core::harness::BOOT, || {
             Ok(!signal("-0", pid.trim()))
         });
     assert!(
         gone.is_ok(),
-        "the probe's child {} outlived doctor",
+        "the CLI's job {} outlived pixtuoid",
         pid.trim()
     );
 }
