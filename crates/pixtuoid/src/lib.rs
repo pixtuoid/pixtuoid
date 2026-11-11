@@ -189,8 +189,9 @@ pub fn report_fatal(e: &anyhow::Error) {
 pub(crate) const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Run `work` on a thread of its own named `name`, and wait for it at most
-/// `bound`, since std has no timed wait: outside work (a write to a reader, a
-/// device's close) can block for good, and the caller goes on either way. A
+/// `bound`, since a thread's [join](std::thread::JoinHandle::join) takes no
+/// timeout: outside work (a write to a reader, a device's close) can block for
+/// good, and the caller goes on either way. A
 /// thread still stuck finishes detached, or dies with the process. Returns
 /// whether the thread started; when it did not, `work` was dropped unrun.
 pub(crate) fn within(

@@ -103,8 +103,8 @@ pub fn run() -> Result<()> {
 }
 
 /// Run `cmd`: apart from [`run`] so every failure in it, a `?` included,
-/// reaches [`run`]'s log. The quit signal that ended a painter's or `serve`'s
-/// run is [`run`]'s to re-raise.
+/// reaches [`run`]'s log. The quit signal that ended a `run` (the TUI or
+/// headless), `floating` or `serve` command is [`run`]'s to re-raise.
 fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<Option<runtime::QuitSignal>> {
     let quit = match cmd {
         Cmd::Run {

@@ -663,9 +663,14 @@ fn kill_running_on_quit() {
 /// whose signal driver its handlers register with.
 #[cfg(unix)]
 fn arm_kill_running_on_quit() -> std::io::Result<()> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
+    // Leaked, as it lives as long as the process: a failed spawn below then
+    // drops no runtime, which inside doctor's async probe would panic (tokio's
+    // drop in an asynchronous context).
+    let runtime: &'static tokio::runtime::Runtime = Box::leak(Box::new(
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?,
+    ));
     let quit = {
         let _in = runtime.enter();
         crate::runtime::QuitArms::listener()
@@ -1457,6 +1462,16 @@ mod tests {
             let pid = std::fs::read_to_string(at).unwrap();
             assert!(gone(pid.trim()), "{} outlived the kill", at.display());
         }
+    }
+
+    /// A run that ends leaves the list, so a quit's kill never reaches a group
+    /// or job it no longer owns.
+    #[test]
+    fn a_finished_run_leaves_the_running_list() {
+        let none: [&std::ffi::OsStr; 0] = [];
+        let out = with_fake("echo done", "echo done", || FAKE.run_within(&none, LIMIT)).unwrap();
+        assert!(out.contains("done"), "{out}");
+        assert_eq!(running().kills.len(), 0, "the finished run is still listed");
     }
 
     /// A quit's kill closes the way to new CLIs: one asked to run past it never

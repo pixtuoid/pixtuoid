@@ -403,34 +403,20 @@ pub fn hold_lock(path: &Path) -> std::io::Result<std::fs::File> {
 
 /// A pipe that is full and that nobody reads, so the next write to it waits
 /// for good: a stalled reader. The reader is returned for the caller to hold
-/// open. Not the rig's: the binary's stall tests, its stalled log sink and its
-/// fatal report into a stalled stderr, share it here.
+/// open. Not the rig's: the binary's two stall tests (a stalled log sink; the
+/// fatal report into a stalled stderr) share it here.
 ///
 /// # Errors
 ///
 /// The pipe's own failure.
 #[cfg(unix)]
 pub fn full_pipe() -> std::io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
-    use std::os::fd::AsRawFd as _;
     let (reader, mut writer) = std::io::pipe()?;
-    let fd = writer.as_raw_fd();
-    let blocking = |on: bool| {
-        // SAFETY: fcntl on the pipe this fn just made.
-        unsafe {
-            let flags = libc::fcntl(fd, libc::F_GETFL);
-            let flags = if on {
-                flags & !libc::O_NONBLOCK
-            } else {
-                flags | libc::O_NONBLOCK
-            };
-            libc::fcntl(fd, libc::F_SETFL, flags);
-        }
-    };
-    blocking(false);
+    rustix::io::ioctl_fionbio(&writer, true)?;
     // Byte by byte at the end, so not even a short line fits.
     while writer.write(&[0; 4096]).is_ok() {}
     while writer.write(&[0]).is_ok() {}
-    blocking(true);
+    rustix::io::ioctl_fionbio(&writer, false)?;
     Ok((reader, writer))
 }
 
