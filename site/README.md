@@ -113,4 +113,4 @@ The site lives on **pixtuoid.dev** (`base: '/'`, `site` in
 deploys need no `CNAME` file), apex A/AAAA at GitHub Pages, `www` CNAME'd to
 `pixtuoid.github.io`. `robots.txt` + sitemap derive from the config. First
 deploy: set **Source: GitHub Actions**; after that every push to `main`
-touching `site/**` redeploys.
+redeploys.
