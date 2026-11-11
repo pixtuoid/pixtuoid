@@ -324,8 +324,8 @@ mod tests {
     }
 
     /// A silent fresh start would mint a new key and break every device's pin
-    /// with no word why; the error names the file, which `pair --reset` can't
-    /// mend either.
+    /// with no word why; the error names the file, and `pair --reset` reads it
+    /// too, so it fails the same way.
     #[test]
     fn an_unreadable_file_is_an_error_not_a_new_identity() {
         let (_dir, store) = fixture();

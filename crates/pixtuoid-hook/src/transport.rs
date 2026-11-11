@@ -79,7 +79,7 @@ fn peer_uid(fd: std::os::unix::io::RawFd) -> Option<u32> {
         gid: 0,
     };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    // Safety: `fd` is a live connected socket; the kernel writes `cred`/`len`.
+    // Safety: `cred` and `len` are live locals the kernel writes; it checks `fd` itself.
     let rc = unsafe {
         libc::getsockopt(
             fd,
@@ -96,7 +96,7 @@ fn peer_uid(fd: std::os::unix::io::RawFd) -> Option<u32> {
 fn peer_uid(fd: std::os::unix::io::RawFd) -> Option<u32> {
     let mut euid: libc::uid_t = 0;
     let mut egid: libc::gid_t = 0;
-    // Safety: `fd` is a live connected socket; the kernel writes the out-params.
+    // Safety: the out-params are live locals the kernel writes; it checks `fd` itself.
     let rc = unsafe { libc::getpeereid(fd, &mut euid, &mut egid) };
     (rc == 0).then_some(euid)
 }
@@ -151,6 +151,17 @@ mod tests {
         // Safety: `fd` is a fresh socket nothing else owns.
         let unconnected = unsafe { UnixStream::from_raw_fd(fd) };
         assert!(!peer_is_us(&unconnected));
+    }
+
+    /// A failed read is no uid: the out-param starts at uid 0, so a read taken without
+    /// its result would prove root a peer it never saw.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_read_names_no_peer_uid() {
+        use std::os::fd::AsRawFd;
+        let file = tempfile::tempfile().expect("a file");
+        assert_eq!(super::peer_uid(file.as_raw_fd()), None, "no socket");
+        assert_eq!(super::peer_uid(-1), None, "no fd");
     }
 
     #[cfg(unix)]
