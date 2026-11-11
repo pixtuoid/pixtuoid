@@ -1,5 +1,5 @@
-//! Liveness for sources whose hook plane supplies the agent CLI's pid —
-//! hook-only CLIs, plus omp, whose in-process bridge stamps its own pid.
+//! Liveness for the sources whose hook plane supplies the agent CLI's pid, the
+//! set [`bind_targets`](super::bind_targets) picks.
 //!
 //! A hook-only source has no tailable transcript and therefore none of the JSONL
 //! watcher's liveness ladder; its ONLY exit signal is the best-effort
