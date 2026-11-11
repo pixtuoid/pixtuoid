@@ -419,6 +419,7 @@ mod tests {
         for (feed, is_cut) in [
             (format!("{session}{cut}"), true),
             (session.to_owned(), false),
+            (String::new(), false),
         ] {
             let (logs, _guard) = crate::test_capture::capture_warns();
             let (mut owner, conn) = tokio::io::duplex(1024);
@@ -427,8 +428,10 @@ mod tests {
             let (tx, mut rx) = tokio::sync::mpsc::channel(4);
             let payloads = WholeLines::new(BufReader::new(conn));
             super::super::handle_conn(payloads, tx, None, None, None).await;
-            let (_, ev) = rx.recv().await.expect("the whole line decodes");
-            assert!(matches!(ev, AgentEvent::SessionStart { .. }));
+            if !feed.is_empty() {
+                let (_, ev) = rx.recv().await.expect("the whole line decodes");
+                assert!(matches!(ev, AgentEvent::SessionStart { .. }));
+            }
             let out = logs.contents();
             assert!(!out.contains("malformed hook line skipped"), "{out:?}");
             assert_eq!(
