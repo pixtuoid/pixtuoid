@@ -404,8 +404,8 @@ async fn probe_panic_changes_nothing() {
 
 /// A probe snapshot binds the vouched session id to the pid holding it; when
 /// that sole holder dies, the kernel watch (kqueue NOTE_EXIT / pidfd+poll) emits
-/// the SessionEnd within milliseconds. The negative-vouch span stays at its
-/// production 60s DEFAULT, so a SessionEnd inside the 5s window can ONLY have
+/// the SessionEnd within milliseconds. The 60s negative-vouch span this test
+/// passes dwarfs the 5s window, so a SessionEnd inside that window can ONLY have
 /// come from the instant-exit path.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[tokio::test]
