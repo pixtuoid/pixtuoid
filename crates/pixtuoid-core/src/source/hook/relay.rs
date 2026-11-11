@@ -526,7 +526,7 @@ mod tests {
 
     /// `tag`'s private endpoint and the directory keeping it so.
     fn endpoint(tag: &str) -> (tempfile::TempDir, PathBuf) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir_in(crate::harness::socket_root()).unwrap();
         let path = if cfg!(windows) {
             let pid = std::process::id();
             PathBuf::from(format!(r"\\.\pipe\pixtuoid-relay-{pid}-{tag}"))

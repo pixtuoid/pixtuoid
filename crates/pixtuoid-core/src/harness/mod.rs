@@ -67,6 +67,17 @@ pub fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
+/// The root a test's socket directory goes under. A unix socket's path must
+/// fit `sun_path`, and TMPDIR may sit too deep for that (a mutants copy, a
+/// nested sandbox), so unix takes `/tmp`; a Windows pipe fits under any root.
+pub fn socket_root() -> PathBuf {
+    if cfg!(unix) {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    }
+}
+
 /// A registered id as the modules for its CLI spell it (`claude-code` →
 /// `claude_code`): its decoder, its profile, its test module and their dirs.
 pub fn module_of(source: &str) -> String {
