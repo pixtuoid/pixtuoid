@@ -2,7 +2,7 @@
 // Regenerate the README's marker-delimited blocks from the site's single-source
 // JSON (features.json, sources.json, install.json) — the same files
 // Showcase/SupportedTools/Install read, so README and site can't drift — and
-// its captioned images from scripts/media.json's jobs.
+// its captioned images from scripts/media.json's jobs; links take Cargo.toml's `homepage`.
 // `--check` writes nothing and exits non-zero on drift.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -213,8 +213,8 @@ if (errors.length) {
 }
 console.log(
   check
-    ? 'README is in sync with features.json + sources.json + install.json + media.json ✓'
-    : 'README regenerated from features.json + sources.json + install.json + media.json ✓'
+    ? 'README is in sync with features.json + sources.json + install.json + media.json + Cargo.toml ✓'
+    : 'README regenerated from features.json + sources.json + install.json + media.json + Cargo.toml ✓'
 );
 
 /** @param {string} s */

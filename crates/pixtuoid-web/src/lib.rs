@@ -5,7 +5,7 @@
 //!
 //! Time is a PARAMETER (`now_ms` from JS): the engine never calls
 //! `SystemTime::now()` (it panics on wasm32-unknown-unknown). Only the flash
-//! hold reads a clock of its own, `page_clock`, when a frame is written.
+//! hold reads a clock of its own, the one its builder hands it (`page_clock` live), when a frame is written.
 
 // AGENTS.md's org rules, as a lint: no `unwrap()` outside tests.
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
