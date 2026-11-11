@@ -1,4 +1,4 @@
-//! The office's one bridge between an instant and the viewer's wall clock:
+//! The office's one bridge between an instant and the viewer's local time:
 //! `local_time` reads `now` for every reader of the local hour or date, and
 //! the helpers build instants from local times for tests, benches and the
 //! snapshot examples.
@@ -10,7 +10,7 @@ use std::time::SystemTime;
 
 use chrono::TimeZone;
 
-/// The zone the office reads the wall clock in: the viewer's.
+/// The zone the office reads local time in: the viewer's.
 #[cfg(not(test))]
 #[expect(
     clippy::disallowed_types,
@@ -28,7 +28,7 @@ const ZONE: chrono::FixedOffset = match chrono::FixedOffset::east_opt(5 * 3600 +
     None => panic!("the offset is within a day of UTC"),
 };
 
-/// `now` on the viewer's wall clock.
+/// `now` in the viewer's local time.
 #[expect(
     clippy::disallowed_methods,
     reason = "the office's one conversion into the viewer's zone"
@@ -57,7 +57,7 @@ fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
     local_instant(date, h, m)
 }
 
-/// The instant `date` reads `h:m` on the viewer's wall clock; `None` where
+/// The instant `date` reads `h:m` in the viewer's local time; `None` where
 /// that local time is skipped or ambiguous.
 #[expect(
     clippy::disallowed_methods,
