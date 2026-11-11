@@ -863,6 +863,83 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_requires_action(
     );
 }
 
+/// A parent that dispatched one Task at `t1`, by hook.
+fn dispatching(slug: &str) -> (Reducer, SceneState, AgentId, SystemTime) {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let parent = AgentId::from_parts(DRAIN_INFERRED, slug);
+    r.apply(
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: parent,
+            source: DRAIN_INFERRED.into(),
+            session_id: slug.into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        },
+        t0,
+        Transport::Hook,
+    );
+    let t1 = t0 + Duration::from_secs(1);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        t1,
+        Transport::Hook,
+    );
+    (r, scene, parent, t1)
+}
+
+/// A drained Task's transcript start, landing past the hook-wins window,
+/// re-opens nothing: its drain is remembered.
+#[test]
+fn a_drained_tasks_late_start_leaves_the_parent_idle() {
+    let (mut r, mut scene, parent, t1) = dispatching("late-start");
+    let drained = t1 + Duration::from_secs(1);
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        drained,
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
+    let late = drained + HOOK_WINS_WINDOW + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        late,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
+}
+
+/// A Task's lagging duplicate start keeps the delegating clock its first set.
+#[test]
+fn a_tasks_duplicate_start_keeps_the_delegating_clock() {
+    let (mut r, mut scene, parent, t1) = dispatching("duplicate-start");
+    let late = t1 + HOOK_WINS_WINDOW + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        late,
+        Transport::Jsonl,
+    );
+    assert_delegating(&scene, parent, "the Task is still in flight");
+    assert_eq!(scene.agents[&parent].state_started_at, t1);
+}
+
 #[test]
 fn task_drain_keeps_parallel_ordinary_tool_member() {
     let mut scene = SceneState::uniform(8);
