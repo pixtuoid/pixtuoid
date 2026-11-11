@@ -1989,6 +1989,7 @@ fn press(
             now: t0(),
             respawn: no_respawn,
             installed: Vec::new,
+            focus: |_| panic!("a look key focuses nothing"),
         },
     );
 }

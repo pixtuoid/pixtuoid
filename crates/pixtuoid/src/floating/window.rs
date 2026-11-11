@@ -189,6 +189,10 @@ impl crate::panels::Office for WindowOffice<'_> {
     fn release(&mut self) -> Option<pixtuoid_scene::hit::HitAction> {
         self.renderer.release(self.cursor)
     }
+
+    fn pet(&mut self, kind: pixtuoid_scene::pet::PetKind) {
+        self.renderer.pet(kind, self.now);
+    }
 }
 
 impl FloatingApp {
@@ -308,20 +312,15 @@ impl FloatingApp {
         }
     }
 
-    /// `event` at the pointer through the mouse ladder, as the TUI's
-    /// ([`super::overlays::mouse_ladder`]); `None` with no window.
-    fn mouse(
-        &mut self,
-        event: crate::panels::PointerEvent,
-    ) -> Option<(
-        crate::panels::ModalMouse,
-        Option<pixtuoid_scene::hit::HitAction>,
-    )> {
+    /// `event` at the pointer through the shared mouse ladder in the window's
+    /// panel cells ([`super::overlays::mouse_ladder`]); `None` with no window.
+    fn mouse(&mut self, event: crate::panels::PointerEvent) -> Option<crate::panels::ModalMouse> {
         let window = self.window.as_deref()?;
         let size = window.inner_size();
         let cursor = (self.cursor.x, self.cursor.y);
         let now = self.ui.now();
         let shown = self.renderer.shown_fit();
+        let scene = self.live.as_ref().map(|l| Arc::clone(&l.scene_rx.borrow()));
         let mut office = WindowOffice {
             renderer: &mut self.renderer,
             window,
@@ -335,46 +334,31 @@ impl FloatingApp {
             (size.width, size.height),
             shown,
             &mut office,
+            crate::panels::ClickCtx {
+                scene: scene.as_deref(),
+                focus: crate::focus::focus_slot,
+                open: crate::open_url,
+            },
         ))
     }
 
     fn press(&mut self) {
         use crate::panels::ModalMouse;
         match self.mouse(crate::panels::PointerEvent::Press) {
-            Some((ModalMouse::Office, _)) | None => {}
+            Some(ModalMouse::Office) | None => {}
             // A panel the press did nothing in leaves the window to drag.
-            Some((ModalMouse::Inert, _)) => {
+            Some(ModalMouse::Inert) => {
                 if let Some(window) = &self.window {
                     move_or_resize(window, None);
                 }
             }
-            Some((ModalMouse::Took, _)) => self.request_redraw(),
+            Some(ModalMouse::Took) => self.request_redraw(),
         }
     }
 
     /// The left button released: carry out its click.
     fn release(&mut self) {
-        use pixtuoid_scene::hit::HitAction;
-        let click = self
-            .mouse(crate::panels::PointerEvent::Release)
-            .and_then(|(_, click)| click);
-        let now = self.ui.now();
-        match click {
-            Some(HitAction::Focus(id)) => {
-                let slot = self
-                    .live
-                    .as_ref()
-                    .and_then(|l| l.scene_rx.borrow().agents.get(&id).cloned());
-                if let Some(slot) = slot {
-                    crate::focus::focus_slot(&slot);
-                }
-            }
-            Some(HitAction::Pet(kind)) => self.renderer.pet(kind, now),
-            Some(HitAction::Open(url)) => {
-                crate::open_url(url);
-            }
-            None => {}
-        }
+        self.mouse(crate::panels::PointerEvent::Release);
         self.request_redraw();
     }
 
@@ -404,6 +388,7 @@ impl FloatingApp {
                 now,
                 respawn: crate::audio::respawn,
                 installed: crate::sources::detect,
+                focus: crate::focus::focus_slot,
             },
         )
     }

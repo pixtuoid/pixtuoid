@@ -257,7 +257,7 @@ impl OfficeRenderer {
     }
 
     /// The press released at `cursor` over the frame on screen: the click's
-    /// action, the window's to carry out; a figure carried is set down.
+    /// action, the mouse ladder's to carry out; a figure carried is set down.
     pub fn release(&mut self, cursor: (f64, f64)) -> Option<pixtuoid_scene::hit::HitAction> {
         let at = self.shown_fit().and_then(|at| unit_in(cursor, at));
         match self.pointer.up(at)? {

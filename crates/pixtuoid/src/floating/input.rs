@@ -325,6 +325,7 @@ mod tests {
                     now: SystemTime::UNIX_EPOCH,
                     respawn: no_respawn,
                     installed: Vec::new,
+                    focus: |_| panic!("a window key focuses nothing"),
                 },
             )
         }
