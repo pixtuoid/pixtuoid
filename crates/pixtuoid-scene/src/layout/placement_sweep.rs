@@ -768,7 +768,7 @@ fn corner_routes_through_walls(w: u16, h: u16, seed: u64, l: &SceneLayout) -> Ve
     for probes in wall_corner_probes(l) {
         for (i, &from) in probes.iter().enumerate() {
             for &to in &probes[i + 1..] {
-                let Some(path) = find_path(&l.walkable, &overlay, None, from, to) else {
+                let Some(path) = find_path(&l.walkable, &overlay, None, from, to, to) else {
                     continue;
                 };
                 if let Some((p, wall)) = route_through_wall(l, &path) {
@@ -976,7 +976,7 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
                 kind: wp.kind,
                 origin,
                 approach: a,
-                path: find_path(&l.walkable, &overlay, None, origin, a),
+                path: find_path(&l.walkable, &overlay, None, origin, a, a),
             });
         }
     }
@@ -999,12 +999,13 @@ fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &Scene
                  side — every leg to it falls back to a straight line through the desk"
             )
         });
-        let path = find_path(&l.walkable, &overlay, None, door, approach).unwrap_or_else(|| {
-            panic!(
-                "{w}x{h} seed {seed}: home desk {i} at {desk:?} has approach {approach:?} \
+        let path =
+            find_path(&l.walkable, &overlay, None, door, approach, approach).unwrap_or_else(|| {
+                panic!(
+                    "{w}x{h} seed {seed}: home desk {i} at {desk:?} has approach {approach:?} \
                  unroutable from the door {door:?} — the coarse grid is severed"
-            )
-        });
+                )
+            });
         if let Some((p, wall)) = route_through_wall(l, &path) {
             panic!(
                 "{w}x{h} seed {seed}: the leg {door:?}->{approach:?} passes {p:?} inside {:?}",
@@ -2126,4 +2127,67 @@ fn the_route_sweeps_hold_inside_insets() {
         .flatten()
         .collect();
     assert_no_violations("inset-route", v);
+}
+
+/// A walk leg aims at its agent's [`crate::pose::jitter_dest`], which can stand
+/// across a desk row or a wall from where the leg ends, so the sweep routes each
+/// desk's way in for several agents, on the floors a user sees, bare and inside
+/// insets.
+#[test]
+#[cfg_attr(
+    coverage,
+    ignore = "an exhaustive sweep outlasts its budget instrumented; the plain suite asserts it on every PR"
+)]
+fn no_jittered_leg_crosses_blocked_floor() {
+    use crate::pathfind::{AStarRouter, Router};
+    let offices: Vec<(Viewport, u64)> = SWEEP_SIZES
+        .iter()
+        .flat_map(|&(w, h)| {
+            (0..crate::floor::MAX_FLOORS).flat_map(move |floor| {
+                std::iter::once(Insets::default())
+                    .chain(SWEEP_INSETS)
+                    .map(move |insets| {
+                        (
+                            inset_viewport(w, h, insets),
+                            crate::floor::floor_seed(floor),
+                        )
+                    })
+            })
+        })
+        .collect();
+    let overlay = crate::walkable::OccupancyOverlay::new();
+    let check = |&(viewport, seed): &(Viewport, u64)| {
+        let l = inset_layout(viewport, seed);
+        let mut router = AStarRouter::new();
+        router.new_layout(l.corridor);
+        let from = l.door_threshold;
+        let mut v = Vec::new();
+        for &desk in &l.home_desks {
+            let (to, _) = crate::pose::desk_leg_endpoint(desk, &l);
+            for agent in 0..8 {
+                let id = pixtuoid_core::AgentId::from_parts("probe", &format!("agent-{agent}"));
+                let path =
+                    crate::pose::route_jittered(&mut router, &l.walkable, &overlay, id, from, to);
+                let blocked = path
+                    .windows(2)
+                    .flat_map(|segment| crate::physics::segment_pixels(segment[0], segment[1]))
+                    .find(|&p| p != from && p != to && !l.walkable.is_walkable(p.x, p.y));
+                if let Some(p) = blocked {
+                    v.push(format!(
+                        "{viewport:?} seed {seed}: {id:?}'s leg {from:?}->{to:?} aimed at {:?} \
+                         crosses blocked floor at {p:?}: {path:?}",
+                        crate::pose::jitter_dest(id, to)
+                    ));
+                }
+            }
+        }
+        v
+    };
+    // the offices are independent: across the cores nextest reserves for it
+    // (`threads-required` in .config/nextest.toml)
+    let v: Vec<String> = crate::par::map(&offices, crate::par::cores(), check)
+        .into_iter()
+        .flatten()
+        .collect();
+    assert_no_violations("jittered-leg-crosses-blocked-floor", v);
 }

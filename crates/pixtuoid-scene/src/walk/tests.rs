@@ -67,16 +67,17 @@ impl Router for Straight {
         _: &OccupancyOverlay,
         from: Point,
         to: Point,
+        _: Point,
     ) -> Vec<Point> {
         vec![from, to]
     }
 }
 
-/// Captures every `(from, to)` route request — pins WHICH goal the profile
-/// snapshots route to.
+/// Captures every `(from, to, aim)` route request — pins WHICH goal the profile
+/// snapshots route to and aim at.
 #[derive(Debug)]
 struct Recording {
-    calls: Vec<(Point, Point)>,
+    calls: Vec<(Point, Point, Point)>,
 }
 impl Router for Recording {
     fn new_layout(&mut self, _: crate::layout::Bounds) {}
@@ -86,8 +87,9 @@ impl Router for Recording {
         _: &OccupancyOverlay,
         from: Point,
         to: Point,
+        aim: Point,
     ) -> Vec<Point> {
-        self.calls.push((from, to));
+        self.calls.push((from, to, aim));
         vec![from, to]
     }
 }
@@ -106,6 +108,7 @@ impl Router for FixedLen {
         _: &OccupancyOverlay,
         from: Point,
         _to: Point,
+        _: Point,
     ) -> Vec<Point> {
         let steps = (self.octile_len / crate::physics::OCTILE_STRAIGHT_COST) as u16;
         let mid = Point {
@@ -730,7 +733,7 @@ fn jittering_trip_agent(prefix: &str) -> AgentId {
 }
 
 #[test]
-fn wander_out_profile_routes_to_the_jittered_goal_the_render_uses() {
+fn wander_out_profile_aims_at_the_jittered_goal_the_render_uses() {
     let trip_id = jittering_trip_agent("jout");
     let now = t0();
     let slot = AgentSlot {
@@ -744,21 +747,22 @@ fn wander_out_profile_routes_to_the_jittered_goal_the_render_uses() {
 
     let walk = rig.state();
     assert!(matches!(walk.wander.phase, WanderPhase::WalkingOut(_)));
-    let (_, routed_to) = *rig
+    let (_, routed_to, aim) = *rig
         .route
         .router
         .calls
         .last()
         .expect("the trip snapshot routed");
+    let dest = walk.wander.target.dest;
     assert_eq!(
-        routed_to,
-        jitter_dest(trip_id, walk.wander.target.dest),
-        "the WalkingOut profile must route to the render's jittered goal"
+        (routed_to, aim),
+        (dest, jitter_dest(trip_id, dest)),
+        "the WalkingOut profile must route to the render's goal, aimed at its jitter"
     );
 }
 
 #[test]
-fn back_profile_routes_to_the_jittered_desk_goal_the_render_uses() {
+fn back_profile_aims_at_the_jittered_desk_goal_the_render_uses() {
     let trip_id = jittering_trip_agent("jback");
     let now = t0();
     let slot = AgentSlot {
@@ -781,8 +785,12 @@ fn back_profile_routes_to_the_jittered_desk_goal_the_render_uses() {
     let (snap_to, _) = desk_leg_endpoint(l.home_desks[0], &l);
     assert_eq!(
         router.calls,
-        vec![(walk.wander.target.dest, jitter_dest(trip_id, snap_to))],
-        "the walk-back profile must route to the render's jittered desk goal"
+        vec![(
+            walk.wander.target.dest,
+            snap_to,
+            jitter_dest(trip_id, snap_to)
+        )],
+        "the walk-back profile must route to the render's desk goal, aimed at its jitter"
     );
 }
 

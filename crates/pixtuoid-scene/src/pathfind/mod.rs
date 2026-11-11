@@ -28,13 +28,15 @@ pub(crate) const CELL_SIZE: u16 = COARSE_CELL_SIZE;
 /// overlay, returning a polyline (first = `from`, last = `to`, intermediate =
 /// corners).
 pub trait Router: std::fmt::Debug {
-    /// Compute or look up the route.
+    /// Compute or look up the route, coming in toward `aim`: a caller sets it
+    /// apart from `to` to vary the way in, and to `to` for the plain route.
     fn route(
         &mut self,
         mask: &WalkableMask,
         overlay: &OccupancyOverlay,
         from: Point,
         to: Point,
+        aim: Point,
     ) -> Vec<Point>;
 
     /// Route over a new layout from here, keeping nothing routed over the
@@ -43,8 +45,8 @@ pub trait Router: std::fmt::Debug {
     fn new_layout(&mut self, zone: Bounds);
 }
 
-/// Path-cache entry cap, sized above the recurring (from, to) pairs of a fully
-/// loaded floor. The key space is unbounded in steady state — aimless wander
+/// Path-cache entry cap, sized above the recurring routes of a fully loaded
+/// floor. The key space is unbounded in steady state — aimless wander
 /// mints a fresh destination every cycle and snap-back/exit legs route from live
 /// interpolated origins — so an always-on office would accumulate keys forever.
 /// Overflowing clears the whole map, which is safe: cornered in-flight legs are
@@ -55,7 +57,7 @@ const PATH_CACHE_CAP: usize = 512;
 /// A* router with an internal path cache.
 #[derive(Debug, Default, Clone)]
 pub struct AStarRouter {
-    paths: HashMap<(Point, Point), Vec<Point>>,
+    paths: HashMap<(Point, Point, Point), Vec<Point>>,
     last_overlay_sig: u64,
     /// Cells inside this zone get a cost discount during A*.
     preferred_zone: Option<Bounds>,
@@ -67,7 +69,7 @@ impl AStarRouter {
         Self::default()
     }
 
-    /// Number of cached `(from, to)` routes currently held.
+    /// Number of cached routes currently held.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.paths.len()
@@ -87,6 +89,7 @@ impl Router for AStarRouter {
         overlay: &OccupancyOverlay,
         from: Point,
         to: Point,
+        aim: Point,
     ) -> Vec<Point> {
         let overlay_sig = overlay.signature();
         // Invalidate only the entries that actually conflict with the new
@@ -95,7 +98,7 @@ impl Router for AStarRouter {
             self.paths.retain(|_, path| path_clear_under(path, overlay));
             self.last_overlay_sig = overlay_sig;
         }
-        if let Some(p) = self.paths.get(&(from, to)) {
+        if let Some(p) = self.paths.get(&(from, to, aim)) {
             return p.clone();
         }
         // Cache ONLY real routes. `path_clear_under` validates cached entries
@@ -103,9 +106,9 @@ impl Router for AStarRouter {
         // [from, to] fallback minted while a transient blocker severed the grid
         // would survive every retain() and serve a walk-through-walls line for
         // that key forever. Left uncached it re-routes next call.
-        match find_path(mask, overlay, self.preferred_zone, from, to) {
+        match find_path(mask, overlay, self.preferred_zone, from, to, aim) {
             Some(path) => {
-                self.paths.insert((from, to), path.clone());
+                self.paths.insert((from, to, aim), path.clone());
                 if self.paths.len() > PATH_CACHE_CAP {
                     self.paths.clear();
                 }
@@ -204,6 +207,7 @@ pub(crate) fn find_path(
     preferred: Option<Bounds>,
     from: Point,
     to: Point,
+    aim: Point,
 ) -> Option<Vec<Point>> {
     let Some((cell_w, cell_h)) = grid_dims(mask) else {
         return Some(vec![from, to]);
@@ -213,22 +217,22 @@ pub(crate) fn find_path(
     const PREFERRED_ZONE_COST_NUM: u32 = 7;
     const PREFERRED_ZONE_COST_DEN: u32 = 10;
 
-    let start = snap(
-        mask,
-        overlay,
-        snap_cell(mask, from),
-        cell_w,
-        cell_h,
-        MAX_SNAP_RADIUS,
-    )?;
-    let goal = snap(
-        mask,
-        overlay,
-        snap_cell(mask, to),
-        cell_w,
-        cell_h,
-        MAX_SNAP_RADIUS,
-    )?;
+    let cell_near = |p: Point| {
+        snap(
+            mask,
+            overlay,
+            snap_cell(mask, p),
+            cell_w,
+            cell_h,
+            MAX_SNAP_RADIUS,
+        )
+    };
+    let start = cell_near(from)?;
+    // `aim`'s cell stands in for `to`'s own only where `to` stands on open floor
+    // from its anchor: past a desk row or a wall, the last step would cut through.
+    let goal = cell_near(aim)
+        .filter(|&(cx, cy)| segment_clear(mask, cell_anchor(mask, cx, cy), to))
+        .or_else(|| cell_near(to))?;
 
     if start == goal {
         return Some(reconstruct(
@@ -344,8 +348,8 @@ fn reconstruct(
         .iter()
         .map(|&(cx, cy)| cell_anchor(mask, cx, cy))
         .collect();
-    // A raw endpoint stands in for its own cell's anchor only where the segment it
-    // shortens stays on open floor: its cell can be up to half wall, and the
+    // A raw endpoint stands in for its end cell's anchor only where the segment it
+    // shortens stays on open floor: that cell can be up to half wall, and the
     // straight segment past it then crosses the wall.
     let mut pts = vec![from];
     match anchors[..] {

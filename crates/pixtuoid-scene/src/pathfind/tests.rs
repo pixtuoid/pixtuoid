@@ -17,7 +17,7 @@ fn straight_line_when_unobstructed() {
         x: l.corridor.x + 60,
         y: l.corridor.y + 2,
     };
-    let path = find_path(&l.walkable, &overlay, None, from, to).expect("path");
+    let path = find_path(&l.walkable, &overlay, None, from, to, to).expect("path");
     assert!(path.len() >= 2);
     assert_eq!(path[0], from);
     assert_eq!(*path.last().unwrap(), to);
@@ -76,7 +76,7 @@ fn routes_around_meeting_room_wall() {
         .find(|w| w.kind == crate::layout::WaypointKind::Pantry)
         .expect("pantry wp")
         .pos;
-    let path = find_path(&l.walkable, &overlay, None, from, pantry).expect("path");
+    let path = find_path(&l.walkable, &overlay, None, from, pantry, pantry).expect("path");
     assert!(path.len() >= 3, "expected routed path, got {path:?}");
 }
 
@@ -102,7 +102,7 @@ fn vertical_wall_is_impassable_except_through_the_door() {
         y,
     };
     let to = Point { x: wall_x + 12, y };
-    let path = find_path(&l.walkable, &overlay, None, from, to)
+    let path = find_path(&l.walkable, &overlay, None, from, to, to)
         .expect("rooms stay connected through the door gap");
     let direct = crate::physics::octile_distance(from, to);
     let routed: u32 = path
@@ -149,7 +149,7 @@ fn every_wander_waypoint_is_routable_on_the_coarse_grid() {
             let origin = l.door_threshold;
             for wp in &l.waypoints {
                 assert!(
-                    find_path(&l.walkable, &overlay, None, origin, wp.pos).is_some(),
+                    find_path(&l.walkable, &overlay, None, origin, wp.pos, wp.pos).is_some(),
                     "seed {seed} {w}x{h}: {:?} at ({},{}) is unreachable on the coarse \
                      routing grid — an idle agent sent there would teleport",
                     wp.kind,
@@ -200,7 +200,7 @@ fn every_approach_point_is_routable_from_its_home_desk() {
                         continue;
                     }
                     assert!(
-                        find_path(&l.walkable, &overlay, None, desk, a).is_some(),
+                        find_path(&l.walkable, &overlay, None, desk, a, a).is_some(),
                         "{w}x{h} seed {seed}: {:?} approach_point {a:?} unroutable from \
                          desk {desk:?} — the agent would teleport",
                         wp.kind,
@@ -235,7 +235,7 @@ fn reachset_never_claims_an_unroutable_cell() {
                     let p = Point { x, y };
                     if l.reachable.reaches(p) {
                         assert!(
-                            find_path(&l.walkable, &overlay, None, door, p).is_some(),
+                            find_path(&l.walkable, &overlay, None, door, p, p).is_some(),
                             "{w}x{h} seed {seed}: ReachSet claims {p:?} reachable but \
                              find_path can't route there from the door {door:?}",
                         );
@@ -297,7 +297,8 @@ fn every_aimless_wander_destination_is_routable_from_its_home_desk() {
                         }
                         for &origin in &origins {
                             assert!(
-                                find_path(&l.walkable, &overlay, None, origin, dest).is_some(),
+                                find_path(&l.walkable, &overlay, None, origin, dest, dest)
+                                    .is_some(),
                                 "{w}x{h} floor {floor}: aimless dest {dest:?} unroutable from \
                                  desk approach {origin:?} — the leg degrades to a straight line \
                                  through furniture",
@@ -325,7 +326,7 @@ fn router_serves_the_cached_path_instead_of_re_running_astar() {
     let from = Point { x: 30, y: 80 };
     let to = Point { x: 30, y: 120 };
 
-    let first = router.route(&l.walkable, &overlay, from, to);
+    let first = router.route(&l.walkable, &overlay, from, to, to);
     assert!(
         first.len() > 2,
         "the fixture must CORNER, else a hit is indistinguishable from the \
@@ -333,7 +334,7 @@ fn router_serves_the_cached_path_instead_of_re_running_astar() {
     );
 
     let sealed = sealed_like(&l.walkable);
-    let second = router.route(&sealed, &overlay, from, to);
+    let second = router.route(&sealed, &overlay, from, to, to);
     assert_eq!(
         second, first,
         "a repeat leg must be served from the cache — a re-route on the sealed \
@@ -353,14 +354,14 @@ fn an_overlay_evicts_only_the_paths_it_actually_crosses() {
     let to = Point { x: 30, y: 120 };
     let sealed = sealed_like(&l.walkable);
 
-    let first = router.route(&l.walkable, &overlay, from, to);
+    let first = router.route(&l.walkable, &overlay, from, to, to);
     assert!(first.len() > 2, "fixture must corner: {first:?}");
 
     // Far from the polyline: changes the overlay SIGNATURE (so the invalidation
     // branch runs) but crosses nothing.
     overlay.add(0, 0, 8, 8);
     assert_eq!(
-        router.route(&sealed, &overlay, from, to),
+        router.route(&sealed, &overlay, from, to, to),
         first,
         "a rect clear of the polyline must leave its entry cached — `retain`, not `clear`"
     );
@@ -368,7 +369,7 @@ fn an_overlay_evicts_only_the_paths_it_actually_crosses() {
     let mid = first[first.len() / 2];
     overlay.add(mid.x.saturating_sub(4), mid.y.saturating_sub(4), 8, 8);
     assert_eq!(
-        router.route(&sealed, &overlay, from, to),
+        router.route(&sealed, &overlay, from, to, to),
         vec![from, to],
         "the crossed entry must be evicted and re-routed, not served stale"
     );
@@ -393,7 +394,7 @@ fn path_cache_is_bounded_and_still_routes_after_the_clear() {
             x: (8 + (i % 90) * 4) as u16,
             y: (8 + (i / 90) * 4) as u16,
         };
-        let _ = router.route(&mask, &overlay, from, to);
+        let _ = router.route(&mask, &overlay, from, to, to);
         assert!(
             router.len() <= PATH_CACHE_CAP,
             "cache must stay bounded: {} entries after {} distinct routes",
@@ -403,7 +404,7 @@ fn path_cache_is_bounded_and_still_routes_after_the_clear() {
     }
     let to = Point { x: 90, y: 50 };
     assert_eq!(
-        router.route(&mask, &overlay, from, to),
+        router.route(&mask, &overlay, from, to, to),
         vec![from, to],
         "post-clear routing must still return correct paths"
     );
@@ -415,11 +416,11 @@ fn routes_around_dynamic_obstacle() {
     let mut overlay = OccupancyOverlay::new();
     let from = Point { x: 10, y: 50 };
     let to = Point { x: 90, y: 50 };
-    let baseline = find_path(&mask, &overlay, None, from, to).expect("baseline");
+    let baseline = find_path(&mask, &overlay, None, from, to, to).expect("baseline");
     assert_eq!(baseline.len(), 2, "open mask should yield straight line");
 
     overlay.add(40, 40, 20, 20);
-    let detour = find_path(&mask, &overlay, None, from, to).expect("detour");
+    let detour = find_path(&mask, &overlay, None, from, to, to).expect("detour");
     assert!(
         detour.len() > 2,
         "detour must add at least one corner around the dynamic block, got {detour:?}"
@@ -626,7 +627,7 @@ fn find_path_returns_none_when_target_completely_surrounded() {
     overlay.add(wall_origin, wall_origin, wall_size, wall_size);
 
     let from = Point { x: 4, y: 4 };
-    let result = find_path(&mask, &overlay, None, from, target);
+    let result = find_path(&mask, &overlay, None, from, target, target);
     assert!(
         result.is_none(),
         "completely surrounded target should return None, got {result:?}"
@@ -644,7 +645,7 @@ fn transient_no_path_fallback_is_not_served_from_the_cache() {
     let from = Point { x: 10, y: 10 };
     let to = Point { x: 70, y: 10 };
 
-    let open = find_path(&mask, &OccupancyOverlay::new(), None, from, to).expect("gap routes");
+    let open = find_path(&mask, &OccupancyOverlay::new(), None, from, to, to).expect("gap routes");
     assert!(
         open.len() > 2,
         "expected a detour via the gap, got {open:?}"
@@ -654,12 +655,12 @@ fn transient_no_path_fallback_is_not_served_from_the_cache() {
     let mut blocked = OccupancyOverlay::new();
     blocked.add(36, 32, 8, 16); // close the gap → no path at all
     assert_eq!(
-        router.route(&mask, &blocked, from, to),
+        router.route(&mask, &blocked, from, to, to),
         vec![from, to],
         "with the gap closed the router falls back to the straight line"
     );
 
-    let recovered = router.route(&mask, &OccupancyOverlay::new(), from, to);
+    let recovered = router.route(&mask, &OccupancyOverlay::new(), from, to, to);
     assert!(
         recovered.len() > 2,
         "the transient no-path fallback must not be cached; got {recovered:?}"
@@ -703,7 +704,7 @@ fn degenerate_grid_returns_fallbacks() {
     let a = Point { x: 0, y: 0 };
     let b = Point { x: 2, y: 2 };
     assert_eq!(
-        find_path(&mask, &overlay, None, a, b),
+        find_path(&mask, &overlay, None, a, b, b),
         Some(vec![a, b]),
         "degenerate grid must fall back to the straight [from,to]"
     );
@@ -753,7 +754,7 @@ fn find_path_none_when_two_regions_split_by_a_full_wall() {
     assert!(point_in_walkable_cell(&mask, to));
 
     assert!(
-        find_path(&mask, &overlay, None, from, to).is_none(),
+        find_path(&mask, &overlay, None, from, to, to).is_none(),
         "a wall with no gap must leave the two regions unconnected (loop exhausts → None)"
     );
 }
@@ -840,7 +841,8 @@ fn a_route_through_a_one_pixel_gap_stays_on_open_floor() {
     let l = SceneLayout::compute(crate::layout::Viewport::full(127, 45), None, 0)
         .expect("127x45 lays out");
     let (from, to) = (Point { x: 55, y: 31 }, Point { x: 33, y: 39 });
-    let path = find_path(&l.walkable, &OccupancyOverlay::new(), None, from, to).expect("routable");
+    let path =
+        find_path(&l.walkable, &OccupancyOverlay::new(), None, from, to, to).expect("routable");
     let off: Vec<Point> = path
         .windows(2)
         .flat_map(|segment| crate::physics::segment_pixels(segment[0], segment[1]))

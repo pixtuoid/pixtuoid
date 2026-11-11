@@ -731,10 +731,9 @@ pub(crate) fn jitter_dest(id: AgentId, p: Point) -> Point {
     }
 }
 
-/// Route `from → to` against the per-agent JITTERED goal, then restore the
-/// polyline's endpoint to the true `to`. EVERY walk leg routes through here, so
-/// the rendered shape, the measured profile length and the router-cache key
-/// can't diverge (the [`jitter_dest`] lockstep contract).
+/// Route `from → to` aimed at the per-agent JITTERED goal. EVERY walk leg routes
+/// through here, so the rendered shape, the measured profile length and the
+/// router-cache key can't diverge (the [`jitter_dest`] lockstep contract).
 pub(crate) fn route_jittered(
     router: &mut dyn Router,
     mask: &WalkableMask,
@@ -743,11 +742,7 @@ pub(crate) fn route_jittered(
     from: Point,
     to: Point,
 ) -> Vec<Point> {
-    let mut p = router.route(mask, overlay, from, jitter_dest(id, to));
-    if let Some(last) = p.last_mut() {
-        *last = to;
-    }
-    p
+    router.route(mask, overlay, from, to, jitter_dest(id, to))
 }
 
 #[cfg(test)]
