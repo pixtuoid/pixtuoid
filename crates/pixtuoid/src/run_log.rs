@@ -180,7 +180,7 @@ fn open_private_append_vetted(
 /// from under a running sibling (its fd follows; a later rotation strands it on
 /// an unlinked inode).
 fn rotate_if_large(path: &Path) {
-    let too_large = std::fs::metadata(path).is_ok_and(|m| m.len() > LOG_ROTATE_BYTES);
+    let too_large = std::fs::symlink_metadata(path).is_ok_and(|m| m.len() > LOG_ROTATE_BYTES);
     if too_large {
         // APPEND ".old" rather than with_extension: a custom $PIXTUOID_LOG like
         // app.log must rotate to app.log.old (not clobber a sibling app.old), and a
@@ -417,7 +417,7 @@ mod tests {
     }
 
     /// The crash log sits beside the runs directory, in the socket's per-user
-    /// temp dir when there is no home at all.
+    /// `/tmp` dir on Unix (`temp_dir()`'s `pixtuoid` elsewhere) when there is no home at all.
     #[test]
     fn the_crash_log_sits_beside_the_runs_even_with_no_home() {
         let abs = if cfg!(windows) { "C:/state" } else { "/state" };
@@ -454,6 +454,25 @@ mod tests {
         std::os::unix::fs::symlink(&victim, &log).unwrap();
         assert!(open_private_append(&log, OpenOptions::new()).is_err());
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "theirs");
+    }
+
+    /// A named log that is a symlink is refused whatever its target's size:
+    /// one past the rotation cap is neither rotated away nor replaced.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_named_log_past_the_cap_is_refused_not_rotated() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = std::fs::File::create(dir.path().join("target")).unwrap();
+        target.set_len(LOG_ROTATE_BYTES + 1).unwrap();
+        let log = dir.path().join("pixtuoid.log");
+        std::os::unix::fs::symlink(dir.path().join("target"), &log).unwrap();
+        assert!(
+            LogLocation::File(log.clone())
+                .open_sink(SystemTime::now())
+                .is_err()
+        );
+        assert!(std::fs::symlink_metadata(&log).unwrap().is_symlink());
+        assert!(!dir.path().join("pixtuoid.log.old").exists());
     }
 
     /// A file already at a log's path keeps its maker's mode, so a hard link

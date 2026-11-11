@@ -56,7 +56,7 @@ instead of stderr:
 | | |
 |-----|-----|
 | Default path | `~/.local/state/pixtuoid/logs/` (or `$XDG_STATE_HOME/pixtuoid/logs/` if set to an absolute path): one file per run, named for its start |
-| Custom path | set `$PIXTUOID_LOG=/path/to/file` to log every run to that one file; it must not be a symlink, and must be yours with one link (a character device such as `/dev/null` aside) |
+| Custom path | set `$PIXTUOID_LOG=/path/to/file` to log every run to that one file; a run opens it only if it is not a symlink and is yours with one link (a character device such as `/dev/null` aside) |
 | Level | `warn` and above by default; `--log-level debug` or `trace` (or `$RUST_LOG`) raises it |
 | Retention | a run's file is removed a week after its last write, unless its run is still open; `doctor`, `sources` and the Sources panel read the newest 10 MB, across the runs or of a `$PIXTUOID_LOG` file; that file rotates to `<name>.old` past 5 MB at startup |
 

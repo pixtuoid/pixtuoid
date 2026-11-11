@@ -44,9 +44,9 @@ impl AcceptBackoff {
     }
 }
 
-/// Ensure [`owned_tmp_dir`] is a private, us-owned `0700` directory BEFORE a
-/// file in it is opened — the bind's lock and socket, a run's log — but ONLY when
-/// `path` lies in it (#485). Every other parent comes from the user's environment
+/// Ensure [`owned_tmp_dir`] is a us-owned directory no group or other can reach
+/// (created `0700`) BEFORE a file in it is opened — the bind's lock and socket, a
+/// run's log — but ONLY when `path` lies in it (#485). Every other parent comes from the user's environment
 /// (`XDG_RUNTIME_DIR`, `PIXTUOID_SOCKET`, `PIXTUOID_LOG`, `XDG_STATE_HOME`) or is
 /// under their home.
 ///

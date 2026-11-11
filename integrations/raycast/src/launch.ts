@@ -1,5 +1,5 @@
-// Apart from `pixtuoid.ts`, which imports `@raycast/api`, so `node:test` can drive it: that
-// package's `package.json` names `types` but no `main` or `exports` to load.
+// Kept out of `pixtuoid.ts` so `node:test` can load it: `pixtuoid.ts` imports `@raycast/api`,
+// whose `package.json` names `types` but no `main` or `exports`.
 import { spawn } from "node:child_process";
 
 /** How long a boot may take to write its ready newline before it counts as hung
@@ -33,7 +33,7 @@ function errorReport(stderr: string, errorPrefix: string): string {
  *  (https://skarnet.org/software/s6/notifywhenup.html). An exit first rejects
  *  with its code and its stderr from the last line that starts with
  *  `errorPrefix`; no ready newline within `deadlineMs` kills it and rejects.
- *  Either way the child is let go, so this process can exit while it runs. */
+ *  Once it is up, the child is let go, so this process can exit while it runs. */
 export function launchUntilReady(
   bin: string,
   args: string[],

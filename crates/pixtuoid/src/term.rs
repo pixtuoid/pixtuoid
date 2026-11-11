@@ -143,9 +143,9 @@ pub(crate) fn stderr_color() -> bool {
 }
 
 /// [`ColorEnv::stream_color`]'s rule: a tty with color allowed by the SAME
-/// [`color_preflight`] policy the launcher acts on, or [`clicolor_forced`] even
-/// piped — except where that policy refuses a dumb `$TERM`, which outranks the
-/// force.
+/// [`color_preflight`] policy `run`'s TUI preflight acts on, or
+/// [`clicolor_forced`] even piped — except where that policy refuses a dumb
+/// `$TERM`, which outranks the force.
 fn stream_color_under(tty: bool, pf: ColorPreflight, clicolor_force: Option<&str>) -> bool {
     pf != ColorPreflight::RefuseDumbTerm
         && (clicolor_forced(clicolor_force) || (tty && matches!(pf, ColorPreflight::Proceed)))
