@@ -11,6 +11,7 @@ use std::sync::Arc;
 use pixtuoid_scene::audio::bank::{AssetBank, Synthesis};
 use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::audio::{AudioEngine, AudioFrame, MAX_DT_S, OneShotPool, TickCommands};
+use serde::Serialize;
 
 #[derive(Debug)]
 pub(crate) struct WebAudioDriver {
@@ -81,46 +82,35 @@ impl WebAudioDriver {
     }
 }
 
-pub(crate) fn commands_json(cmd: &TickCommands) -> String {
-    let mut out = String::from("{\"gains\":[");
-    for (i, g) in cmd.gains.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&fmt_f32(*g));
-    }
-    out.push_str("],\"plays\":[");
-    for (i, p) in cmd.plays.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&format!(
-            "[{},{},{}]",
-            p.pool.wire(),
-            p.index,
-            fmt_f32(p.gain)
-        ));
-    }
-    out.push_str("],\"music\":");
-    match cmd.music {
-        Some(m) => {
-            let [daylight, intensity, rain] = pixtuoid_scene::audio::controls_wire(m.controls);
-            out.push_str(&format!(
-                "{{\"controls\":[{},{},{}],\"gain\":{}}}",
-                fmt_f32(daylight),
-                fmt_f32(intensity),
-                fmt_f32(rain),
-                fmt_f32(m.gain)
-            ));
-        }
-        None => out.push_str("null"),
-    }
-    out.push('}');
-    out
+/// A tick's commands as the site's WebAudio glue reads them
+/// ([`Office::audio_tick`](crate::Office::audio_tick)).
+#[derive(Serialize)]
+struct Commands {
+    gains: [f32; LoopStem::ALL.len()],
+    /// `[poolWire, index, gain]` each.
+    plays: Vec<(u8, usize, f32)>,
+    music: Option<Music>,
 }
 
-fn fmt_f32(v: f32) -> String {
-    format!("{v:.5}")
+#[derive(Serialize)]
+struct Music {
+    controls: [f32; 3],
+    gain: f32,
+}
+
+pub(crate) fn commands_json(cmd: &TickCommands) -> String {
+    let commands = Commands {
+        gains: cmd.gains,
+        plays: (cmd.plays.iter())
+            .map(|p| (p.pool.wire(), p.index, p.gain))
+            .collect(),
+        music: cmd.music.map(|m| Music {
+            controls: pixtuoid_scene::audio::controls_wire(m.controls),
+            gain: m.gain,
+        }),
+    };
+    // Plain structs serialize without error; an empty reply is one the page skips.
+    serde_json::to_string(&commands).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -243,6 +233,18 @@ mod tests {
             assert_eq!(OneShotPool::from_wire(p.wire()), Some(p));
         }
         assert_eq!(OneShotPool::from_wire(9), None);
+    }
+
+    /// A non-finite gain reaches the page as JSON's `null`, never as a token
+    /// that fails the whole tick's `JSON.parse`.
+    #[test]
+    fn a_non_finite_gain_still_makes_valid_json() {
+        let cmd = TickCommands {
+            gains: [f32::NAN; LoopStem::ALL.len()],
+            ..TickCommands::default()
+        };
+        let v: serde_json::Value = serde_json::from_str(&commands_json(&cmd)).expect("valid JSON");
+        assert!(v["gains"][0].is_null(), "{v}");
     }
 
     #[test]

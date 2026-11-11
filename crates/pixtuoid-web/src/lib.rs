@@ -15,6 +15,7 @@ mod script;
 
 use std::time::{Duration, SystemTime};
 
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use pixtuoid_core::source::daemon::apply_presence;
@@ -372,61 +373,40 @@ impl Office {
     /// right after `step` (it reads the step's clock); `board` is null before
     /// the first step and on a canvas too small to lay an office out.
     pub fn overlay_json(&mut self) -> String {
-        let head = {
-            let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
-                pixtuoid_scene::display::BADGE_INSETS;
-            format!("{{\"badge_insets\":{{\"rim\":{rim},\"ring_w\":{ring_w},\"gap\":{gap}}}")
-        };
+        let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
+            pixtuoid_scene::display::BADGE_INSETS;
         let rect = self.session.picture().map(|p| p.hits.layout().board());
-        let Some((now, rect)) = self.last_now.zip(rect) else {
-            return format!("{head},\"labels\":[],\"board\":null}}");
-        };
-        let theme = self.theme;
-
-        let board = self
-            .session
-            .board(&self.scene, self.conditions().motion, now);
-
-        let mut out = format!("{head},\"labels\":[");
-        for (i, badge) in self.shown_badges.iter().enumerate() {
-            let pixtuoid_scene::display::Badge {
-                at,
-                marker,
-                name,
-                plate,
-                ..
-            } = badge;
-            if i > 0 {
-                out.push(',');
+        let board = self.last_now.zip(rect).map(|(now, rect)| {
+            let theme = self.theme;
+            let board = self
+                .session
+                .board(&self.scene, self.conditions().motion, now);
+            Board {
+                rect: Rect {
+                    x: rect.x,
+                    y: rect.y,
+                    w: rect.width,
+                    h: rect.height,
+                },
+                brand: Segment::joined(std::slice::from_ref(&board.brand), theme),
+                star: Segment::joined(&board.star, theme),
+                mood: board.mood.iter().map(|s| Segment::of(s, theme)).collect(),
+                context: (board.context.iter())
+                    .map(|s| Segment::of(s, theme))
+                    .collect(),
             }
-            out.push_str(&format!("{{\"x\":{},\"y\":{},\"text\":", at.x, at.y));
-            push_json_string(&mut out, name.text());
-            out.push_str(&format!(
-                ",\"ring\":\"{}\",\"ink\":\"{}\",\"plate\":\"{}\"",
-                hex(*marker),
-                hex(name.ink),
-                hex(*plate)
-            ));
-            out.push('}');
-        }
-        let pixtuoid_scene::layout::Bounds {
-            x,
-            y,
-            width,
-            height,
-        } = rect;
-        out.push_str(&format!(
-            "],\"board\":{{\"rect\":{{\"x\":{x},\"y\":{y},\"w\":{width},\"h\":{height}}},"
-        ));
-        push_board_segment(&mut out, "brand", std::slice::from_ref(&board.brand), theme);
-        out.push(',');
-        push_board_segment(&mut out, "star", &board.star, theme);
-        out.push_str(",\"mood\":");
-        push_board_segments(&mut out, &board.mood, theme);
-        out.push_str(",\"context\":");
-        push_board_segments(&mut out, &board.context, theme);
-        out.push_str("}}");
-        out
+        });
+        let labels = match board {
+            Some(_) => self.shown_badges.iter().map(Label::of).collect(),
+            None => Vec::new(),
+        };
+        let overlay = Overlay {
+            badge_insets: Insets { rim, ring_w, gap },
+            labels,
+            board,
+        };
+        // Plain structs serialize without error; an empty reply is one the page skips.
+        serde_json::to_string(&overlay).unwrap_or_default()
     }
 
     // The site's office host drives the audio: audio_begin → pump
@@ -682,71 +662,95 @@ fn expand_rgba(rgba: &mut Vec<u8>, buf: &pixtuoid_scene::sprite::RgbBuffer) {
     }
 }
 
-// Hand-built JSON — the wasm artifact ships no serde.
-
 fn hex(c: pixtuoid_scene::sprite::Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
 }
 
-fn board_hex(theme: &Theme, tone: pixtuoid_scene::neon_sign::BoardTone) -> String {
-    hex(tone.rgb(theme))
+/// One frame's DOM overlay as the site lays it out ([`Office::overlay_json`]).
+#[derive(Serialize)]
+struct Overlay<'a> {
+    badge_insets: Insets,
+    labels: Vec<Label<'a>>,
+    board: Option<Board>,
 }
 
-/// Append `s` as a JSON string literal (quotes + escapes) to `out`. Agent labels
-/// derive from arbitrary cwds, so one unescaped char would break the whole
-/// frame's `JSON.parse` on the site.
-fn push_json_string(out: &mut String, s: &str) {
-    out.push('"');
-    for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
+#[derive(Serialize)]
+struct Insets {
+    rim: u16,
+    ring_w: u16,
+    gap: u16,
+}
+
+#[derive(Serialize)]
+struct Label<'a> {
+    x: u16,
+    y: u16,
+    text: &'a str,
+    ring: String,
+    ink: String,
+    plate: String,
+}
+
+impl<'a> Label<'a> {
+    fn of(badge: &'a pixtuoid_scene::display::Badge) -> Self {
+        Self {
+            x: badge.at.x,
+            y: badge.at.y,
+            text: badge.name.text(),
+            ring: hex(badge.marker),
+            ink: hex(badge.name.ink),
+            plate: hex(badge.plate),
         }
     }
-    out.push('"');
 }
 
-/// `segs` as one `key` segment: their terminal text end to end, in the first
-/// one's tone, which a brand or a star holds throughout.
-fn push_board_segment(
-    out: &mut String,
-    key: &str,
-    segs: &[pixtuoid_scene::neon_sign::BoardSegment],
-    theme: &Theme,
-) {
-    let text: String = segs.iter().map(|s| s.text()).collect();
-    let tone = segs
-        .first()
-        .map_or(pixtuoid_scene::neon_sign::BoardTone::Dim, |s| s.tone);
-    out.push_str(&format!("\"{key}\":{{\"text\":"));
-    push_json_string(out, &text);
-    out.push_str(&format!(",\"color\":\"{}\"}}", board_hex(theme, tone)));
+#[derive(Serialize)]
+struct Board {
+    rect: Rect,
+    brand: Segment,
+    star: Segment,
+    mood: Vec<Segment>,
+    context: Vec<Segment>,
 }
 
-fn push_board_segments(
-    out: &mut String,
-    segs: &[pixtuoid_scene::neon_sign::BoardSegment],
-    theme: &Theme,
-) {
-    out.push('[');
-    for (i, seg) in segs.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
+#[derive(Serialize)]
+struct Rect {
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
+}
+
+#[derive(Serialize)]
+struct Segment {
+    text: String,
+    /// A lamp's `text` is its terminal glyph, which the site draws as a lamp.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    lamp: bool,
+    color: String,
+}
+
+impl Segment {
+    fn of(seg: &pixtuoid_scene::neon_sign::BoardSegment, theme: &Theme) -> Self {
+        Self {
+            text: seg.text().to_owned(),
+            lamp: matches!(&seg.content, pixtuoid_scene::display::Content::Icon(i) if i.is_lamp()),
+            color: hex(seg.tone.rgb(theme)),
         }
-        out.push_str("{\"text\":");
-        push_json_string(out, seg.text());
-        // A lamp's `text` is its terminal glyph, which the site draws as a lamp.
-        if matches!(&seg.content, pixtuoid_scene::display::Content::Icon(i) if i.is_lamp()) {
-            out.push_str(",\"lamp\":true");
-        }
-        out.push_str(&format!(",\"color\":\"{}\"}}", board_hex(theme, seg.tone)));
     }
-    out.push(']');
+
+    /// `segs` as one segment: their terminal text end to end, in the first
+    /// one's tone, which a brand or a star holds throughout.
+    fn joined(segs: &[pixtuoid_scene::neon_sign::BoardSegment], theme: &Theme) -> Self {
+        let tone = segs
+            .first()
+            .map_or(pixtuoid_scene::neon_sign::BoardTone::Dim, |s| s.tone);
+        Self {
+            text: segs.iter().map(|s| s.text()).collect(),
+            lamp: false,
+            color: hex(tone.rgb(theme)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -876,10 +880,13 @@ mod tests {
         let mut o = office();
         o.step(T0_MS, 320, 180);
         o.step(T0_MS + 10_000.0, 320, 180);
-        assert!(o.overlay_json().contains("\"board\":{"), "premise: a board");
+        let overlay = |o: &mut Office| -> serde_json::Value {
+            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON")
+        };
+        assert!(overlay(&mut o)["board"].is_object(), "premise: a board");
         o.step(T0_MS + 10_100.0, 8, 8);
-        let json = o.overlay_json();
-        assert!(json.ends_with(",\"board\":null}"), "{json}");
+        let v = overlay(&mut o);
+        assert!(v["board"].is_null(), "{v}");
     }
 
     #[test]
@@ -887,17 +894,15 @@ mod tests {
         let mut o = office();
         o.step(T0_MS, 320, 180);
         o.step(T0_MS + 10_000.0, 320, 180);
-        let json = o.overlay_json();
-        let cc = NORMAL.source.claude_code;
-        let expect = format!("\"ring\":\"#{:02x}{:02x}{:02x}\"", cc.r, cc.g, cc.b);
+        let v: serde_json::Value =
+            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+        let labels = v["labels"].as_array().expect("labels");
+        assert!(!labels.is_empty(), "the seated cast produced labels");
+        let cc = hex(NORMAL.source.claude_code);
         assert!(
-            json.contains(&expect),
-            "the markers carry the cc badge hue: {json}"
+            labels.iter().any(|l| l["ring"] == cc.as_str()),
+            "the markers carry the cc badge hue: {v}"
         );
-        // Scope the count to the labels array: board segments also emit "text".
-        let labels_json = json.split("],\"board\"").next().unwrap();
-        let labels = labels_json.split("\"text\":").count() - 1;
-        assert!(labels > 0, "the seated cast produced labels");
     }
 
     #[test]
@@ -1189,23 +1194,6 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&o.overlay_json()).expect("valid JSON");
         assert!(v["labels"].as_array().unwrap().is_empty());
         assert!(v["board"].is_null());
-    }
-
-    #[test]
-    fn json_string_escapes_quotes_backslashes_and_controls() {
-        let mut s = String::new();
-        push_json_string(&mut s, "a\"b\\c\n\td");
-        assert_eq!(s, r#""a\"b\\c\n\td""#);
-        let mut ctrl = String::new();
-        push_json_string(&mut ctrl, "x\u{0001}y");
-        assert_eq!(ctrl, "\"x\\u0001y\"");
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&s)
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "a\"b\\c\n\td"
-        );
     }
 
     #[test]
