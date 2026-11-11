@@ -3229,6 +3229,7 @@ dependencies = [
  "image",
  "pixtuoid-core",
  "pixtuoid-scene",
+ "serde",
  "serde_json",
  "wasm-bindgen",
 ]

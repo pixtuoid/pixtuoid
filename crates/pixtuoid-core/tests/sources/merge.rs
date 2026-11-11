@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use pixtuoid_core::harness::Drive;
+use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::merge::{Merged, Step};
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::state::TurnKey;
@@ -32,7 +33,7 @@ impl Run {
         let dir = pixtuoid_core::harness::fixtures_dir(&super::captures::sources_root(), source)
             .join(scenario);
         let transcript = transcript_in(&dir);
-        let hooks = fixture_lines(&dir.join("hook-payloads.jsonl"));
+        let hooks = fixture_lines(&dir.join(HOOK_PAYLOADS));
         let lines = fixture_lines(&transcript);
         let parsed = |raw: &[String]| -> Vec<Value> {
             raw.iter()
@@ -93,7 +94,7 @@ struct Request {
 fn codex_requests(run: &Run) -> Vec<Request> {
     let hooks = &run.hook_values;
     let event = |v: &Value| text(v, "/hook_event_name").unwrap_or_default().to_owned();
-    hooks
+    let requests = hooks
         .iter()
         .enumerate()
         .filter(|(_, v)| event(v) == "PermissionRequest")
@@ -123,7 +124,9 @@ fn codex_requests(run: &Run) -> Vec<Request> {
                     .to_owned(),
             }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    assert!(!requests.is_empty(), "{}: no request recorded", run.name);
+    requests
 }
 
 /// Whether `step`'s line is one the spec resolves `req` by: its call's end
@@ -156,85 +159,78 @@ fn requires_action(step: &Step) -> bool {
     matches!(step.state, Some(ActivityState::RequiresAction { .. }))
 }
 
-/// A RequiresAction stands from its raise until its resolution event, in
-/// every order.
-fn a_request_stands_until_its_resolution(run: &Run) {
-    let requests = codex_requests(run);
-    assert!(!requests.is_empty(), "{}: no request recorded", run.name);
-    run.each(|m| {
-        for req in &requests {
-            let steps = &m.steps;
-            let raised = steps
-                .iter()
-                .position(|s| {
-                    s.transport == Transport::Hook
-                        && s.line == req.line
-                        && matches!(s.event, AgentEvent::UserActionRequest { .. })
-                })
-                .expect("the request's line raised it");
-            let until = steps[raised..]
-                .iter()
-                .position(|s| resolves(run, req, s))
-                .map_or(steps.len(), |k| raised + k);
-            for s in &steps[raised..until] {
-                assert!(
-                    requires_action(s),
-                    "{}: the request of hook line {} fell at {:?} line {} ({:?}) before \
-                     its resolution",
-                    run.name,
-                    req.line,
-                    s.transport,
-                    s.line,
-                    s.event
-                );
-            }
-        }
-    });
-}
-
-/// A top-level request is resolved once its call's rollout output applied,
-/// in every order, unless a later request already stands in its place.
-fn a_top_level_request_resolves_by_its_calls_output(run: &Run) {
-    let requests = codex_requests(run);
-    run.each(|m| {
-        let raised = |line: usize| {
-            m.steps.iter().position(|s| {
+/// A RequiresAction stands from its raise until its resolution event, in `m`'s
+/// order.
+fn a_request_stands_until_its_resolution(run: &Run, requests: &[Request], m: &Merged) {
+    for req in requests {
+        let steps = &m.steps;
+        let raised = steps
+            .iter()
+            .position(|s| {
                 s.transport == Transport::Hook
-                    && s.line == line
+                    && s.line == req.line
                     && matches!(s.event, AgentEvent::UserActionRequest { .. })
             })
-        };
-        for req in &requests {
-            let call = req.call.as_str();
-            let output = |s: &Step| {
-                s.transport == Transport::Jsonl
-                    && matches!(
-                        text(run.line(s), "/payload/type"),
-                        Some("function_call_output" | "custom_tool_call_output")
-                    )
-                    && text(run.line(s), "/payload/call_id") == Some(call)
-            };
-            let last = m
-                .steps
-                .iter()
-                .rposition(output)
-                .unwrap_or_else(|| panic!("{}: no rollout output of {call}", run.name));
-            let replaced = requests
-                .iter()
-                .filter(|later| later.line > req.line)
-                .filter_map(|later| raised(later.line))
-                .any(|at| at < last);
-            if replaced {
-                continue;
-            }
+            .expect("the request's line raised it");
+        let until = steps[raised..]
+            .iter()
+            .position(|s| resolves(run, req, s))
+            .map_or(steps.len(), |k| raised + k);
+        for s in &steps[raised..until] {
             assert!(
-                !requires_action(&m.steps[last]),
-                "{}: the request of hook line {} still stood once {call}'s output applied",
+                requires_action(s),
+                "{}: the request of hook line {} fell at {:?} line {} ({:?}) before \
+                 its resolution",
                 run.name,
-                req.line
+                req.line,
+                s.transport,
+                s.line,
+                s.event
             );
         }
-    });
+    }
+}
+
+/// A top-level request is resolved once its call's rollout output applied in
+/// `m`'s order, unless a later request already stands in its place.
+fn a_top_level_request_resolves_by_its_calls_output(run: &Run, requests: &[Request], m: &Merged) {
+    let raised = |line: usize| {
+        m.steps.iter().position(|s| {
+            s.transport == Transport::Hook
+                && s.line == line
+                && matches!(s.event, AgentEvent::UserActionRequest { .. })
+        })
+    };
+    for req in requests {
+        let call = req.call.as_str();
+        let output = |s: &Step| {
+            s.transport == Transport::Jsonl
+                && matches!(
+                    text(run.line(s), "/payload/type"),
+                    Some("function_call_output" | "custom_tool_call_output")
+                )
+                && text(run.line(s), "/payload/call_id") == Some(call)
+        };
+        let last = m
+            .steps
+            .iter()
+            .rposition(output)
+            .unwrap_or_else(|| panic!("{}: no rollout output of {call}", run.name));
+        let replaced = requests
+            .iter()
+            .filter(|later| later.line > req.line)
+            .filter_map(|later| raised(later.line))
+            .any(|at| at < last);
+        if replaced {
+            continue;
+        }
+        assert!(
+            !requires_action(&m.steps[last]),
+            "{}: the request of hook line {} still stood once {call}'s output applied",
+            run.name,
+            req.line
+        );
+    }
 }
 
 /// An item a Hook start set survives a Jsonl turn end that lags behind it,
@@ -337,88 +333,103 @@ fn a_lagging_jsonl_start_never_reopens_its_call(run: &Run) {
 }
 
 /// On a source that brackets its turns (codex's registry row), a turn the
-/// stream delivered open shows its agent working, in every order: its start
+/// stream delivered open shows its agent working in `m`'s order: its start
 /// arrived, and its end has not.
-fn a_delivered_open_turn_is_never_idle(run: &Run) {
+fn a_delivered_open_turn_is_never_idle(run: &Run, m: &Merged) {
+    let mut open: BTreeMap<AgentId, TurnKey> = BTreeMap::new();
+    for s in &m.steps {
+        match &s.event {
+            AgentEvent::TurnStart { agent_id, turn } => {
+                open.insert(*agent_id, turn.clone());
+            }
+            AgentEvent::TurnEnd { agent_id, turn }
+                if turn.is_none() || open.get(agent_id) == turn.as_ref() =>
+            {
+                open.remove(agent_id);
+            }
+            _ => {}
+        }
+        let agent = s.event.agent_id();
+        if let (Some(turn), Some(state)) = (open.get(&agent), &s.state) {
+            assert_ne!(
+                *state,
+                ActivityState::Idle,
+                "{}: turn {turn:?} was delivered open, yet {:?} line {} ({:?}) left its agent Idle",
+                run.name,
+                s.transport,
+                s.line,
+                s.event
+            );
+        }
+    }
+}
+
+/// Whether `m`'s order opens a turn at all.
+fn opens_a_turn(m: &Merged) -> bool {
+    (m.steps.iter()).any(|s| matches!(s.event, AgentEvent::TurnStart { .. }))
+}
+
+/// A turn delivered open shows its agent working in every order of `run`.
+fn turns_stay_working(run: &Run) {
     let mut opened = false;
     run.each(|m| {
-        let mut open: BTreeMap<AgentId, TurnKey> = BTreeMap::new();
-        for s in &m.steps {
-            match &s.event {
-                AgentEvent::TurnStart { agent_id, turn } => {
-                    open.insert(*agent_id, turn.clone());
-                    opened = true;
-                }
-                AgentEvent::TurnEnd { agent_id, turn }
-                    if turn.is_none() || open.get(agent_id) == turn.as_ref() =>
-                {
-                    open.remove(agent_id);
-                }
-                _ => {}
-            }
-            let agent = s.event.agent_id();
-            if let (Some(turn), Some(state)) = (open.get(&agent), &s.state) {
-                assert_ne!(
-                    *state,
-                    ActivityState::Idle,
-                    "{}: turn {turn:?} was delivered open, yet {:?} line {} ({:?}) left its agent Idle",
-                    run.name,
-                    s.transport,
-                    s.line,
-                    s.event
-                );
-            }
-        }
+        a_delivered_open_turn_is_never_idle(run, m);
+        opened |= opens_a_turn(m);
+    });
+    assert!(opened, "{}: no order opens a turn", run.name);
+}
+
+/// `run`'s requests and turns over one enumeration of its orders, each order
+/// folded once for all three checks.
+fn requests_and_turns_hold(run: &Run) {
+    let requests = codex_requests(run);
+    let mut opened = false;
+    run.each(|m| {
+        a_request_stands_until_its_resolution(run, &requests, m);
+        a_top_level_request_resolves_by_its_calls_output(run, &requests, m);
+        a_delivered_open_turn_is_never_idle(run, m);
+        opened |= opens_a_turn(m);
     });
     assert!(opened, "{}: no order opens a turn", run.name);
 }
 
 #[test]
 fn a_codex_turn_delivered_open_shows_its_agent_working_through_its_items() {
-    a_delivered_open_turn_is_never_idle(&Run::of("codex", "tool-run-hermetic"));
+    turns_stay_working(&Run::of("codex", "tool-run-hermetic"));
 }
 
 #[test]
 fn a_codex_turn_cancelled_or_failed_shows_its_agent_working_until_its_end() {
     for scenario in ["cancel-hermetic", "model-error-hermetic"] {
-        a_delivered_open_turn_is_never_idle(&Run::of("codex", scenario));
+        turns_stay_working(&Run::of("codex", scenario));
     }
 }
 
 #[test]
 fn a_codex_turn_a_stop_hook_continues_shows_its_agent_working() {
-    a_delivered_open_turn_is_never_idle(&Run::of("codex", "stop-hook-hermetic"));
+    turns_stay_working(&Run::of("codex", "stop-hook-hermetic"));
 }
 
 #[test]
 fn a_codex_code_mode_turn_shows_its_agent_working_around_its_cell() {
-    a_delivered_open_turn_is_never_idle(&Run::of("codex", "code-mode-failure-hermetic"));
+    turns_stay_working(&Run::of("codex", "code-mode-failure-hermetic"));
 }
 
 #[test]
 fn a_codex_request_refused_in_the_tui_stands_until_its_resolution() {
-    let run = Run::of("codex", "permission-hermetic");
-    a_request_stands_until_its_resolution(&run);
-    a_top_level_request_resolves_by_its_calls_output(&run);
-    a_delivered_open_turn_is_never_idle(&run);
+    requests_and_turns_hold(&Run::of("codex", "permission-hermetic"));
 }
 
 /// A refused turn's end can lag past the next turn's raise: it answers its
 /// own turn's request, never the next one's.
 #[test]
 fn a_refused_turn_s_lagging_end_leaves_the_next_turn_s_request_standing() {
-    let run = Run::of("codex", "refuse-then-prompt-hermetic");
-    a_request_stands_until_its_resolution(&run);
-    a_top_level_request_resolves_by_its_calls_output(&run);
-    a_delivered_open_turn_is_never_idle(&run);
+    requests_and_turns_hold(&Run::of("codex", "refuse-then-prompt-hermetic"));
 }
 
 #[test]
 fn a_codex_request_approved_in_the_tui_stands_until_its_resolution() {
-    let run = Run::of("codex", "approve-hermetic");
-    a_request_stands_until_its_resolution(&run);
-    a_top_level_request_resolves_by_its_calls_output(&run);
-    a_delivered_open_turn_is_never_idle(&run);
+    requests_and_turns_hold(&Run::of("codex", "approve-hermetic"));
 }
 
 /// A policy hook's deny fires no PostToolUse: the call's rollout output alone
@@ -426,8 +437,11 @@ fn a_codex_request_approved_in_the_tui_stands_until_its_resolution() {
 #[test]
 fn a_codex_request_a_policy_hook_denied_resolves_by_its_calls_output() {
     let run = Run::of("codex", "policy-deny-hermetic");
-    a_request_stands_until_its_resolution(&run);
-    a_top_level_request_resolves_by_its_calls_output(&run);
+    let requests = codex_requests(&run);
+    run.each(|m| {
+        a_request_stands_until_its_resolution(&run, &requests, m);
+        a_top_level_request_resolves_by_its_calls_output(&run, &requests, m);
+    });
 }
 
 /// A nested call has no rollout output: its request stands past its cell's
@@ -435,7 +449,9 @@ fn a_codex_request_a_policy_hook_denied_resolves_by_its_calls_output() {
 #[test]
 fn a_code_mode_cell_s_gated_call_stands_until_its_resolution() {
     for scenario in ["code-mode-gate-hermetic", "code-mode-approve-hermetic"] {
-        a_request_stands_until_its_resolution(&Run::of("codex", scenario));
+        let run = Run::of("codex", scenario);
+        let requests = codex_requests(&run);
+        run.each(|m| a_request_stands_until_its_resolution(&run, &requests, m));
     }
 }
 

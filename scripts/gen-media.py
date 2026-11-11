@@ -338,10 +338,9 @@ def run_clip(job, out_dirs, work, intermediates):
 
 
 def run_wasm_still(job, out_dirs, work, intermediates):
-    # The live-office backdrop's poster: a REAL frame of the pixtuoid-web Office,
-    # 16:9 at the height the live canvas aims for. Deterministic per
-    # (t0_ms, advance_ms) under the TZ=UTC pin, so a re-render reproduces it; it is
-    # site-only, so no gate compares it.
+    # A REAL frame of the pixtuoid-web Office per wasm-still job, deterministic
+    # per job under the TZ=UTC pin; site-only, so no gate compares it. A job's
+    # `advance_ms` reaches far enough into the loop that the cast has walked in.
     subprocess.run(
         [
             "cargo",
@@ -355,31 +354,27 @@ def run_wasm_still(job, out_dirs, work, intermediates):
         check=True,
         cwd=ROOT,
     )
+    # A job names what it sets, and hero_still's default owns the framing.
     # `t0_ms` (an exact epoch) and `hour` (a 0-23 convenience) are mutually
     # exclusive time pins; hero_still prefers `--t0-ms` if both are given.
-    extra = []
-    if "t0_ms" in job:
-        extra += ["--t0-ms", str(job["t0_ms"])]
-    if "hour" in job:
-        extra += ["--hour", str(job["hour"])]
-    if "weather" in job:
-        extra += ["--weather", str(job["weather"])]
-    # Layout seed: must match the LIVE canvas this poster falls back for, else
-    # the poster's office layout pops when the live canvas paints over it.
-    if "seed" in job:
-        extra += ["--seed", str(job["seed"])]
+    flags = {
+        "w": "--width",
+        "h": "--height",
+        "t0_ms": "--t0-ms",
+        "hour": "--hour",
+        "advance_ms": "--advance-ms",
+        "weather": "--weather",
+        "seed": "--seed",
+    }
+    args = [
+        a for key, flag in flags.items() if key in job for a in (flag, str(job[key]))
+    ]
     for d in out_dirs:
         subprocess.run(
             [
                 str(ROOT / "target/release/examples/hero_still"),
                 str(d / f"{job['id']}.png"),
-                "--width",
-                str(job["w"]),
-                "--height",
-                str(job["h"]),
-                "--advance-ms",
-                str(job["advance_ms"]),
-                *extra,
+                *args,
             ],
             check=True,
         )

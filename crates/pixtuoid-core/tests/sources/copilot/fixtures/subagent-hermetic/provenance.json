@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "copilot",
-  "version": "GitHub Copilot CLI 1.0.107.",
-  "captured": "2026-11-07",
+  "version": "GitHub Copilot CLI 1.0.109.",
+  "captured": "2026-11-11",
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -13,7 +13,6 @@
   "dropped": {
     "os": "macos",
     "at": {
-      "/data/toolName": [],
       "/type": [
         "assistant.message",
         "assistant.turn_end",
@@ -28,7 +27,7 @@
     }
   },
   "sentinel_reads": {
-    "9e641643-6c97-4c86-9e6c-b01406adf351/events.jsonl": [
+    "2efce397-424c-46c6-aa96-e2c02ec737b5/events.jsonl": [
       "16:/data/usage/cacheReadTokens",
       "22:/data/usage/cacheReadTokens",
       "28:/data/usage/cacheReadTokens",

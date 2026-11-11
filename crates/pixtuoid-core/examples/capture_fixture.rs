@@ -2146,7 +2146,7 @@ mod recorder {
             let p = rerun(
                 "tool-run",
                 (dsh_version(), AIMOCK),
-                |r| r["sentinel_reads"] = serde_json::json!({"hook-payloads.jsonl": ["1:/cwd"]}),
+                |r| r["sentinel_reads"] = serde_json::json!({HOOK_PAYLOADS: ["1:/cwd"]}),
                 unchanged,
             );
             assert!(!kept(&p));
@@ -2650,7 +2650,7 @@ mod recorder {
         #[test]
         fn a_re_record_lands_beside_the_committed_one_instead_of_over_it() {
             let d = tempfile::tempdir().expect("tempdir");
-            let p = d.path().join("hook-payloads.jsonl");
+            let p = d.path().join(HOOK_PAYLOADS);
             assert_eq!(no_clobber(p.clone()), p, "a fresh path is used as-is");
             std::fs::write(&p, "{}").expect("write");
             assert!(no_clobber(p).to_string_lossy().ends_with(".new"));

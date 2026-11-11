@@ -392,7 +392,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_listener_is_accepted_as_its_own_uid_and_refused_as_any_other() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir_in(crate::harness::socket_root()).unwrap();
         let path = dir.path().join("hook.sock");
         let _listener = UnixListener::bind(&path).unwrap();
         let ours = rustix::process::getuid().as_raw();

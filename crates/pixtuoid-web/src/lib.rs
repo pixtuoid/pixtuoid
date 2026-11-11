@@ -5,7 +5,7 @@
 //!
 //! Time is a PARAMETER (`now_ms` from JS): the engine never calls
 //! `SystemTime::now()` (it panics on wasm32-unknown-unknown). Only the flash
-//! hold reads a clock of its own, `page_clock`, when a frame is written.
+//! hold reads a clock of its own, the one its builder hands it (`page_clock` live), when a frame is written.
 
 // AGENTS.md's org rules, as a lint: no `unwrap()` outside tests.
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
@@ -15,6 +15,7 @@ mod script;
 
 use std::time::{Duration, SystemTime};
 
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use pixtuoid_core::source::daemon::apply_presence;
@@ -26,14 +27,16 @@ use crate::script::{
     Beat, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
 };
 
+use pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS;
 use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{RenderInputs, WorldText};
+use pixtuoid_scene::pack::PackError;
 use pixtuoid_scene::pack::load_bundled_pack;
 use pixtuoid_scene::render_scale::PixelFit;
-use pixtuoid_scene::screen::{Screen, ScreenClock};
+use pixtuoid_scene::screen::{ManualClock, Screen, ScreenClock};
 use pixtuoid_scene::sky::WeatherPolicy;
 use pixtuoid_scene::theme::{NORMAL, Theme};
 
@@ -170,7 +173,7 @@ pub struct Office {
 
 /// How many units tall [`Office::fit`] aims the site's office: a closer camera
 /// than the app's, since its sprites are fixed-size.
-const FRAMING_UNITS_H: u32 = 130;
+pub const FRAMING_UNITS_H: u32 = 130;
 
 /// The fewest whole device pixels [`Office::fit`] paints an art pixel as where
 /// the office still lays out (owner-delegated, #2029).
@@ -185,35 +188,7 @@ impl Office {
     /// If the bundled sprite pack fails to parse.
     #[wasm_bindgen(constructor)]
     pub fn new(seed: u32) -> Result<Office, JsError> {
-        let pack =
-            std::sync::Arc::new(load_bundled_pack().map_err(|e| JsError::new(&format!("{e:#}")))?);
-        let density = pack.max_density_variant();
-        // The browser upscales the frame, so it renders at the art's own
-        // density; `step` takes the surface in units.
-        let fit = PixelFit::at_least_density(density.get(), density, Size { w: 0, h: 0 });
-        Ok(Office {
-            // Capacity starts empty and is synced from the CANVAS's own layout
-            // on every `step` before any beat fires, so the reducer seats agents
-            // only at desks the rendered office has.
-            scene: SceneState::default(),
-            session: FloorSession::new(pack).with_floor_seed(u64::from(seed)),
-            rgba: Vec::new(),
-            theme: &NORMAL,
-            fit,
-            reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
-            beats: hero_script(),
-            cursor: 0,
-            presence_beats: lobster_beats(),
-            presence_cursor: 0,
-            epoch: None,
-            hires: VisitorHires::default(),
-            last_now: None,
-            caps_units: None,
-            weather: WeatherPolicy::Clock,
-            screen: Screen::on(page_clock()),
-            shown_badges: Vec::new(),
-            audio: None,
-        })
+        Self::on_screen(seed, page_clock()).map_err(|e| JsError::new(&format!("{e:#}")))
     }
 
     /// Advance to `now_ms` and render an office `w`×`h` layout units big into
@@ -371,62 +346,44 @@ impl Office {
     /// the face's pixels. Colors are RESOLVED against the CURRENT theme. Call
     /// right after `step` (it reads the step's clock); `board` is null before
     /// the first step and on a canvas too small to lay an office out.
-    pub fn overlay_json(&mut self) -> String {
-        let head = {
-            let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
-                pixtuoid_scene::display::BADGE_INSETS;
-            format!("{{\"badge_insets\":{{\"rim\":{rim},\"ring_w\":{ring_w},\"gap\":{gap}}}")
-        };
+    ///
+    /// # Errors
+    ///
+    /// If the overlay fails to serialize; JS sees a thrown `Error`.
+    pub fn overlay_json(&mut self) -> Result<String, JsError> {
+        let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
+            pixtuoid_scene::display::BADGE_INSETS;
         let rect = self.session.picture().map(|p| p.hits.layout().board());
-        let Some((now, rect)) = self.last_now.zip(rect) else {
-            return format!("{head},\"labels\":[],\"board\":null}}");
-        };
-        let theme = self.theme;
-
-        let board = self
-            .session
-            .board(&self.scene, self.conditions().motion, now);
-
-        let mut out = format!("{head},\"labels\":[");
-        for (i, badge) in self.shown_badges.iter().enumerate() {
-            let pixtuoid_scene::display::Badge {
-                at,
-                marker,
-                name,
-                plate,
-                ..
-            } = badge;
-            if i > 0 {
-                out.push(',');
+        let board = self.last_now.zip(rect).map(|(now, rect)| {
+            let theme = self.theme;
+            let board = self
+                .session
+                .board(&self.scene, self.conditions().motion, now);
+            Board {
+                rect: Rect {
+                    x: rect.x,
+                    y: rect.y,
+                    w: rect.width,
+                    h: rect.height,
+                },
+                brand: Segment::joined(std::slice::from_ref(&board.brand), theme),
+                star: Segment::joined(&board.star, theme),
+                mood: board.mood.iter().map(|s| Segment::of(s, theme)).collect(),
+                context: (board.context.iter())
+                    .map(|s| Segment::of(s, theme))
+                    .collect(),
             }
-            out.push_str(&format!("{{\"x\":{},\"y\":{},\"text\":", at.x, at.y));
-            push_json_string(&mut out, name.text());
-            out.push_str(&format!(
-                ",\"ring\":\"{}\",\"ink\":\"{}\",\"plate\":\"{}\"",
-                hex(*marker),
-                hex(name.ink),
-                hex(*plate)
-            ));
-            out.push('}');
-        }
-        let pixtuoid_scene::layout::Bounds {
-            x,
-            y,
-            width,
-            height,
-        } = rect;
-        out.push_str(&format!(
-            "],\"board\":{{\"rect\":{{\"x\":{x},\"y\":{y},\"w\":{width},\"h\":{height}}},"
-        ));
-        push_board_segment(&mut out, "brand", std::slice::from_ref(&board.brand), theme);
-        out.push(',');
-        push_board_segment(&mut out, "star", &board.star, theme);
-        out.push_str(",\"mood\":");
-        push_board_segments(&mut out, &board.mood, theme);
-        out.push_str(",\"context\":");
-        push_board_segments(&mut out, &board.context, theme);
-        out.push_str("}}");
-        out
+        });
+        let labels = match board {
+            Some(_) => self.shown_badges.iter().map(Label::of).collect(),
+            None => Vec::new(),
+        };
+        let overlay = Overlay {
+            badge_insets: Insets { rim, ring_w, gap },
+            labels,
+            board,
+        };
+        Ok(serde_json::to_string(&overlay)?)
     }
 
     // The site's office host drives the audio: audio_begin → pump
@@ -525,8 +482,16 @@ impl Office {
     /// stem — JS ramps each GainNode to its gain, spawns the one-shots, ramps
     /// the music's GainNode and hands its controls, unread, to the music
     /// worker (`null` until the first frame).
-    pub fn audio_tick(&mut self, now_ms: f64) -> String {
-        let silent = || audio::commands_json(&pixtuoid_scene::audio::TickCommands::default());
+    ///
+    /// # Errors
+    ///
+    /// If the commands fail to serialize; JS sees a thrown `Error`.
+    pub fn audio_tick(&mut self, now_ms: f64) -> Result<String, JsError> {
+        let silent = || {
+            Ok(audio::commands_json(
+                &pixtuoid_scene::audio::TickCommands::default(),
+            )?)
+        };
         let Some(now) = self.last_now else {
             return silent();
         };
@@ -537,7 +502,7 @@ impl Office {
         // The shared observer composes the whole AudioFrame, single-sourced with
         // the desktop painters. Single-floor hero → floor 0.
         let frame = self.session.audio_frame(&self.scene, conditions, now);
-        audio::commands_json(&audio.tick(now_ms, frame))
+        Ok(audio::commands_json(&audio.tick(now_ms, frame))?)
     }
 }
 
@@ -547,6 +512,64 @@ impl Office {
 const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
 
 impl Office {
+    /// [`Office::new`]'s office, its flash hold on `clock`.
+    fn on_screen(seed: u32, clock: ScreenClock) -> Result<Office, PackError> {
+        let pack = std::sync::Arc::new(load_bundled_pack()?);
+        let density = pack.max_density_variant();
+        // The browser upscales the frame, so it renders at the art's own
+        // density; `step` takes the surface in units.
+        let fit = PixelFit::at_least_density(density.get(), density, Size { w: 0, h: 0 });
+        Ok(Office {
+            // Capacity starts empty and is synced from the CANVAS's own layout
+            // on every `step` before any beat fires, so the reducer seats agents
+            // only at desks the rendered office has.
+            scene: SceneState::default(),
+            session: FloorSession::new(pack).with_floor_seed(u64::from(seed)),
+            rgba: Vec::new(),
+            theme: &NORMAL,
+            fit,
+            reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
+            beats: hero_script(),
+            cursor: 0,
+            presence_beats: lobster_beats(),
+            presence_cursor: 0,
+            epoch: None,
+            hires: VisitorHires::default(),
+            last_now: None,
+            caps_units: None,
+            weather: WeatherPolicy::Clock,
+            screen: Screen::on(clock),
+            shown_badges: Vec::new(),
+            audio: None,
+        })
+    }
+
+    /// `seed`'s office `advance_ms` after `t0_ms`, `w`×`h` units, as one still
+    /// frame: the step at `t0_ms` anchors the script's loop, and the next fires
+    /// its beats.
+    ///
+    /// # Errors
+    ///
+    /// If the bundled sprite pack fails to parse.
+    pub fn still(
+        seed: u32,
+        weather: Option<String>,
+        t0_ms: f64,
+        advance_ms: f64,
+        w: u32,
+        h: u32,
+    ) -> Result<Office, PackError> {
+        let screen = ManualClock::default();
+        let mut office = Self::on_screen(seed, screen.clock())?;
+        office.set_weather(weather);
+        office.step(t0_ms, w, h);
+        // No one sees the anchor frame, so its flash hold lapses before the
+        // still's frame is written.
+        screen.advance(Duration::from_millis(PHOTOSENSITIVE_PHASE_MIN_MS));
+        office.step(t0_ms + advance_ms, w, h);
+        Ok(office)
+    }
+
     /// The rendered RGBA frame ([`Office::frame_len`] bytes, opaque alpha) — the safe NATIVE accessor
     /// for rlib consumers; the wasm-JS boundary keeps the zero-copy
     /// [`Office::frame_ptr`]/[`Office::frame_len`] pair instead, because a
@@ -682,78 +705,102 @@ fn expand_rgba(rgba: &mut Vec<u8>, buf: &pixtuoid_scene::sprite::RgbBuffer) {
     }
 }
 
-// Hand-built JSON — the wasm artifact ships no serde.
-
 fn hex(c: pixtuoid_scene::sprite::Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
 }
 
-fn board_hex(theme: &Theme, tone: pixtuoid_scene::neon_sign::BoardTone) -> String {
-    hex(tone.rgb(theme))
+/// One frame's DOM overlay as the site lays it out ([`Office::overlay_json`]).
+#[derive(Serialize)]
+struct Overlay<'a> {
+    badge_insets: Insets,
+    labels: Vec<Label<'a>>,
+    board: Option<Board>,
 }
 
-/// Append `s` as a JSON string literal (quotes + escapes) to `out`. Agent labels
-/// derive from arbitrary cwds, so one unescaped char would break the whole
-/// frame's `JSON.parse` on the site.
-fn push_json_string(out: &mut String, s: &str) {
-    out.push('"');
-    for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
+#[derive(Serialize)]
+struct Insets {
+    rim: u16,
+    ring_w: u16,
+    gap: u16,
+}
+
+#[derive(Serialize)]
+struct Label<'a> {
+    x: u16,
+    y: u16,
+    text: &'a str,
+    ring: String,
+    ink: String,
+    plate: String,
+}
+
+impl<'a> Label<'a> {
+    fn of(badge: &'a pixtuoid_scene::display::Badge) -> Self {
+        Self {
+            x: badge.at.x,
+            y: badge.at.y,
+            text: badge.name.text(),
+            ring: hex(badge.marker),
+            ink: hex(badge.name.ink),
+            plate: hex(badge.plate),
         }
     }
-    out.push('"');
 }
 
-/// `segs` as one `key` segment: their terminal text end to end, in the first
-/// one's tone, which a brand or a star holds throughout.
-fn push_board_segment(
-    out: &mut String,
-    key: &str,
-    segs: &[pixtuoid_scene::neon_sign::BoardSegment],
-    theme: &Theme,
-) {
-    let text: String = segs.iter().map(|s| s.text()).collect();
-    let tone = segs
-        .first()
-        .map_or(pixtuoid_scene::neon_sign::BoardTone::Dim, |s| s.tone);
-    out.push_str(&format!("\"{key}\":{{\"text\":"));
-    push_json_string(out, &text);
-    out.push_str(&format!(",\"color\":\"{}\"}}", board_hex(theme, tone)));
+#[derive(Serialize)]
+struct Board {
+    rect: Rect,
+    brand: Segment,
+    star: Segment,
+    mood: Vec<Segment>,
+    context: Vec<Segment>,
 }
 
-fn push_board_segments(
-    out: &mut String,
-    segs: &[pixtuoid_scene::neon_sign::BoardSegment],
-    theme: &Theme,
-) {
-    out.push('[');
-    for (i, seg) in segs.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
+#[derive(Serialize)]
+struct Rect {
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
+}
+
+#[derive(Serialize)]
+struct Segment {
+    text: String,
+    /// A lamp's `text` is its terminal glyph, which the site draws as a lamp.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    lamp: bool,
+    color: String,
+}
+
+impl Segment {
+    fn of(seg: &pixtuoid_scene::neon_sign::BoardSegment, theme: &Theme) -> Self {
+        Self {
+            text: seg.text().to_owned(),
+            lamp: matches!(&seg.content, pixtuoid_scene::display::Content::Icon(i) if i.is_lamp()),
+            color: hex(seg.tone.rgb(theme)),
         }
-        out.push_str("{\"text\":");
-        push_json_string(out, seg.text());
-        // A lamp's `text` is its terminal glyph, which the site draws as a lamp.
-        if matches!(&seg.content, pixtuoid_scene::display::Content::Icon(i) if i.is_lamp()) {
-            out.push_str(",\"lamp\":true");
-        }
-        out.push_str(&format!(",\"color\":\"{}\"}}", board_hex(theme, seg.tone)));
     }
-    out.push(']');
+
+    /// `segs` as one segment: their terminal text end to end, in the first
+    /// one's tone, which a brand or a star holds throughout.
+    fn joined(segs: &[pixtuoid_scene::neon_sign::BoardSegment], theme: &Theme) -> Self {
+        let tone = segs
+            .first()
+            .map_or(pixtuoid_scene::neon_sign::BoardTone::Dim, |s| s.tone);
+        Self {
+            text: segs.iter().map(|s| s.text()).collect(),
+            lamp: false,
+            color: hex(tone.rgb(theme)),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::script::cast_id;
-    use pixtuoid_scene::screen::{Flashes, ManualClock};
+    use pixtuoid_scene::screen::Flashes;
 
     /// The hero [`office`] draws.
     const SEED: u32 = 1;
@@ -876,10 +923,14 @@ mod tests {
         let mut o = office();
         o.step(T0_MS, 320, 180);
         o.step(T0_MS + 10_000.0, 320, 180);
-        assert!(o.overlay_json().contains("\"board\":{"), "premise: a board");
+        let overlay = |o: &mut Office| -> serde_json::Value {
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("overlay_json is valid JSON")
+        };
+        assert!(overlay(&mut o)["board"].is_object(), "premise: a board");
         o.step(T0_MS + 10_100.0, 8, 8);
-        let json = o.overlay_json();
-        assert!(json.ends_with(",\"board\":null}"), "{json}");
+        let v = overlay(&mut o);
+        assert!(v["board"].is_null(), "{v}");
     }
 
     #[test]
@@ -887,17 +938,16 @@ mod tests {
         let mut o = office();
         o.step(T0_MS, 320, 180);
         o.step(T0_MS + 10_000.0, 320, 180);
-        let json = o.overlay_json();
-        let cc = NORMAL.source.claude_code;
-        let expect = format!("\"ring\":\"#{:02x}{:02x}{:02x}\"", cc.r, cc.g, cc.b);
+        let v: serde_json::Value =
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("overlay_json is valid JSON");
+        let labels = v["labels"].as_array().expect("labels");
+        assert!(!labels.is_empty(), "the seated cast produced labels");
+        let cc = hex(NORMAL.source.claude_code);
         assert!(
-            json.contains(&expect),
-            "the markers carry the cc badge hue: {json}"
+            labels.iter().any(|l| l["ring"] == cc.as_str()),
+            "the markers carry the cc badge hue: {v}"
         );
-        // Scope the count to the labels array: board segments also emit "text".
-        let labels_json = json.split("],\"board\"").next().unwrap();
-        let labels = labels_json.split("\"text\":").count() - 1;
-        assert!(labels > 0, "the seated cast produced labels");
     }
 
     #[test]
@@ -1045,7 +1095,8 @@ mod tests {
         step_at(&mut o, &screen, second - FLOOR_MS / 4);
         let labels = |o: &mut Office| {
             let v: serde_json::Value =
-                serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+                serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                    .expect("overlay_json is valid JSON");
             v["labels"].as_array().expect("labels").len()
         };
         let shown = labels(&mut o);
@@ -1119,6 +1170,32 @@ mod tests {
         );
     }
 
+    /// A still anchored inside a strike is the frame a page shows once the
+    /// strike has passed, though its two steps run back to back.
+    #[test]
+    fn a_still_anchored_in_a_strike_is_the_frame_the_page_shows_after_it() {
+        let strike = storm_strike();
+        let (t0, at) = (strike.changes[0], strike.end);
+        let (mut page, screen) = storm_on_screen();
+        step_at(&mut page, &screen, t0);
+        let anchor = page.frame().to_vec();
+        step_at(&mut page, &screen, at);
+        assert!(
+            page.frame() != anchor.as_slice(),
+            "premise: the page moved on"
+        );
+        let still = Office::still(
+            SEED,
+            Some("storm".into()),
+            t0 as f64,
+            (at - t0) as f64,
+            160,
+            96,
+        )
+        .expect("the bundled pack parses");
+        assert!(still.frame() == page.frame());
+    }
+
     #[test]
     fn resize_reshapes_the_frame_and_a_tiny_canvas_never_panics() {
         let mut o = office();
@@ -1186,26 +1263,11 @@ mod tests {
     #[test]
     fn overlay_json_before_first_step_is_empty_but_valid() {
         let mut o = office();
-        let v: serde_json::Value = serde_json::from_str(&o.overlay_json()).expect("valid JSON");
+        let v: serde_json::Value =
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("valid JSON");
         assert!(v["labels"].as_array().unwrap().is_empty());
         assert!(v["board"].is_null());
-    }
-
-    #[test]
-    fn json_string_escapes_quotes_backslashes_and_controls() {
-        let mut s = String::new();
-        push_json_string(&mut s, "a\"b\\c\n\td");
-        assert_eq!(s, r#""a\"b\\c\n\td""#);
-        let mut ctrl = String::new();
-        push_json_string(&mut ctrl, "x\u{0001}y");
-        assert_eq!(ctrl, "\"x\\u0001y\"");
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&s)
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "a\"b\\c\n\td"
-        );
     }
 
     #[test]
@@ -1214,7 +1276,8 @@ mod tests {
         o.step(T0_MS, 288, 180);
         o.step(T0_MS + 1_000.0, 288, 180);
         let overlay: serde_json::Value =
-            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("overlay_json is valid JSON");
         let context = overlay["board"]["context"].as_array().expect("a row");
         let row: String = (context.iter())
             .map(|segment| segment["text"].as_str().expect("text"))
@@ -1236,7 +1299,7 @@ mod tests {
             "the hero script populated the office"
         );
 
-        let json = o.overlay_json();
+        let json = o.overlay_json().expect("the overlay serializes");
         let v: serde_json::Value = serde_json::from_str(&json).expect("overlay_json is valid JSON");
 
         let board = &v["board"];
@@ -1279,7 +1342,8 @@ mod tests {
             t += 5_000;
         }
         let v: serde_json::Value =
-            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("overlay_json is valid JSON");
         let got: Vec<serde_json::Value> = v["labels"].as_array().expect("labels").clone();
         let want: Vec<serde_json::Value> = o
             .session
@@ -1310,13 +1374,25 @@ mod tests {
     }
 
     #[test]
+    fn hex_writes_each_channel_as_two_lowercase_digits() {
+        let c = pixtuoid_scene::sprite::Rgb {
+            r: 1,
+            g: 0xab,
+            b: 0xff,
+        };
+        assert_eq!(hex(c), "#01abff");
+    }
+
+    #[test]
     fn overlay_json_colors_track_set_theme() {
         let mut o = office();
         o.step(T0_MS, 288, 180);
-        let normal: serde_json::Value = serde_json::from_str(&o.overlay_json()).unwrap();
+        let normal: serde_json::Value =
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes")).unwrap();
         o.set_theme("cyberpunk");
         o.step(T0_MS + 100.0, 288, 180);
-        let cyber: serde_json::Value = serde_json::from_str(&o.overlay_json()).unwrap();
+        let cyber: serde_json::Value =
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes")).unwrap();
         assert_ne!(
             normal["board"]["brand"]["color"], cyber["board"]["brand"]["color"],
             "the brand hue differs between normal and cyberpunk"

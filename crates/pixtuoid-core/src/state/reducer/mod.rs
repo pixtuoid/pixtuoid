@@ -253,7 +253,7 @@ struct TaskTracking {
 
 /// The event coordinator: folds `AgentEvent`s into `SceneState`, owning the
 /// cross-slot correlation maps and the stale/exit sweeps.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Reducer {
     corr: Correlation,
     /// Parents whose last Task drained on a source that infers child ends from

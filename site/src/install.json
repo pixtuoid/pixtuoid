@@ -24,7 +24,7 @@
     "cmds": [
       "# prebuilt binaries for macOS (.tar.gz) and Windows (.zip):",
       "# https://github.com/pixtuoid/pixtuoid/releases/latest",
-      "# Linux: see the Homebrew or Cargo tab"
+      "# Linux: use Homebrew or Cargo"
     ],
     "readme": false
   }
