@@ -679,8 +679,8 @@ fn scanned(said: &str) -> Option<String> {
     let height = rows.len() * 2;
     let light = |x: usize, y: usize| match rows[y / 2].get(x) {
         Some('\u{2588}') => true,
-        Some('\u{2580}') => y % 2 == 0,
-        Some('\u{2584}') => y % 2 == 1,
+        Some('\u{2580}') => y.is_multiple_of(2),
+        Some('\u{2584}') => !y.is_multiple_of(2),
         _ => false,
     };
     let mut image = rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| {
