@@ -8,6 +8,8 @@ use anyhow::{Context as _, Result};
 
 use super::{SOURCE_NAME, grok_cwd_from_path, grok_home};
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
+#[cfg(unix)]
+use crate::source::proc_start::{Start, StartPins};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
 
@@ -33,6 +35,8 @@ const MAX_SESSION_REGISTRY_BYTES: u64 = 1024 * 1024;
 /// the enumeration itself failed, so the watcher changes nothing.
 #[cfg(unix)]
 pub(crate) fn live_grok_session_ids(grok_root: &Path) -> Option<ProbeSnapshot> {
+    // One for the probe and the focus lookup alike, as `cc_probe`'s.
+    static PINS: StartPins = StartPins::new();
     let path = session_registry(grok_root);
     let bytes = match crate::source::read_bounded_bytes(&path, MAX_SESSION_REGISTRY_BYTES) {
         Ok(b) => b,
@@ -43,7 +47,8 @@ pub(crate) fn live_grok_session_ids(grok_root: &Path) -> Option<ProbeSnapshot> {
     match grok_ids_from_registry(
         &bytes,
         crate::source::cc_probe::pid_alive,
-        crate::source::proc_start::pid_start_time_secs,
+        crate::source::proc_start::pid_start,
+        &PINS,
     ) {
         Some(snap) => Some(snap),
         None => {
@@ -76,15 +81,16 @@ pub(crate) fn live_grok_session_ids(_grok_root: &Path) -> Option<ProbeSnapshot> 
 /// Parse the registry array and keep entries whose pid is alive AND — when BOTH
 /// sides are available — whose `opened_at` matches the kernel-reported process
 /// start within `cc_probe::PID_START_TOLERANCE_SECS` (the pid-recycle identity
-/// check; either side missing → pid-alive-only). `None` ONLY when the DOCUMENT
-/// doesn't parse as an array of entries (format drift); junk VALUES inside an
-/// entry — a pid `decoder::checked_pid` rejects, an empty `session_id`, a
-/// recycled pid — skip that entry silently.
+/// check, held by `pins` once passed; either side missing → pid-alive-only).
+/// `None` ONLY when the DOCUMENT doesn't parse as an array of entries (format
+/// drift); junk VALUES inside an entry — a pid `decoder::checked_pid` rejects,
+/// an empty `session_id`, a recycled pid — skip that entry silently.
 #[cfg(unix)]
 fn grok_ids_from_registry(
     bytes: &[u8],
     alive: fn(i32) -> bool,
-    start_time: impl Fn(i32) -> Option<u64>,
+    start: impl Fn(i32) -> Option<Start>,
+    pins: &StartPins,
 ) -> Option<ProbeSnapshot> {
     #[derive(serde::Deserialize)]
     struct Entry {
@@ -107,30 +113,30 @@ fn grok_ids_from_registry(
         if e.session_id.is_empty() || !alive(pid) {
             continue;
         }
-        if let (Some(claimed_secs), Some(actual_secs)) = (
-            e.opened_at
-                .as_deref()
-                .and_then(crate::source::decoder::rfc3339_to_epoch_secs),
-            start_time(pid),
-        ) {
-            // `opened_at` is stamped at session OPEN, which can lag process
-            // start by however long the user sat on the welcome screen. Only a
-            // claim EARLIER than the process start is evidence of recycling —
-            // a session can't have opened before its process existed.
-            if claimed_secs + crate::source::cc_probe::PID_START_TOLERANCE_SECS < actual_secs {
-                tracing::debug!(
-                    pid,
-                    claimed_secs,
-                    actual_secs,
-                    "pid recycled — active_sessions opened_at predates process start; skipping"
-                );
-                continue;
-            }
+        if let Some(claimed_secs) = e
+            .opened_at
+            .as_deref()
+            .and_then(crate::source::decoder::rfc3339_to_epoch_secs)
+            && !pins.admits(pid, claimed_secs, start(pid), |actual_secs| {
+                // `opened_at` is stamped at session OPEN, which can lag process
+                // start by however long the user sat on the welcome screen. Only a
+                // claim EARLIER than the process start is evidence of recycling —
+                // a session can't have opened before its process existed.
+                actual_secs <= claimed_secs + crate::source::cc_probe::PID_START_TOLERANCE_SECS
+            })
+        {
+            tracing::debug!(
+                pid,
+                claimed_secs,
+                "pid recycled — active_sessions opened_at predates the pid's process; skipping"
+            );
+            continue;
         }
         // Duplicate session_id across entries is upstream junk — keep the
         // deterministic tiebreak winner (larger pid).
         snap.bind_pid(e.session_id, pid);
     }
+    pins.retain(|pid| snap.pid_of.values().any(|&bound| bound == pid));
     Some(snap)
 }
 
@@ -268,6 +274,11 @@ mod tests {
             false
         }
 
+        /// One marker for every start: these tests move the epoch start only.
+        fn started(secs: u64) -> Option<Start> {
+            Some(Start { marker: 1, secs })
+        }
+
         const REG: &str = r#"[
             {"session_id":"0197-a","pid":100,"cwd":"/r/a","opened_at":"2026-07-16T12:00:05Z"},
             {"session_id":"0197-b","pid":200,"cwd":"/r/b","opened_at":"2026-07-16T12:01:00+00:00"}
@@ -350,14 +361,18 @@ mod tests {
 
         #[test]
         fn live_entries_bind_ids_to_pids() {
-            let snap = grok_ids_from_registry(REG.as_bytes(), alive_all, |_| None).unwrap();
+            let snap =
+                grok_ids_from_registry(REG.as_bytes(), alive_all, |_| None, &StartPins::new())
+                    .unwrap();
             assert_eq!(snap.pid_of.get("0197-a"), Some(&100));
             assert_eq!(snap.pid_of.get("0197-b"), Some(&200));
         }
 
         #[test]
         fn dead_pids_and_junk_values_are_skipped_not_failures() {
-            let snap = grok_ids_from_registry(REG.as_bytes(), alive_none, |_| None).unwrap();
+            let snap =
+                grok_ids_from_registry(REG.as_bytes(), alive_none, |_| None, &StartPins::new())
+                    .unwrap();
             assert!(snap.pid_of.is_empty(), "dead pids yield a healthy empty");
             // Both halves of `checked_pid`'s narrowing — zero AND negative (a
             // negative pid would make `kill(-n, 0)` probe a process GROUP).
@@ -365,7 +380,9 @@ mod tests {
                            {"session_id":"s","pid":0,"cwd":"/r","opened_at":"x"},
                            {"session_id":"neg","pid":-42,"cwd":"/r","opened_at":"x"},
                            {"session_id":"live","pid":77,"cwd":"/r","opened_at":"x"}]"#;
-            let snap = grok_ids_from_registry(junk.as_bytes(), alive_all, |_| None).unwrap();
+            let snap =
+                grok_ids_from_registry(junk.as_bytes(), alive_all, |_| None, &StartPins::new())
+                    .unwrap();
             assert_eq!(
                 snap.pid_of.get("live"),
                 Some(&77),
@@ -389,8 +406,9 @@ mod tests {
             // BOTH orders: today the document fails whichever side the bad
             // entry sits on, so ordering must not be what makes this pass.
             for reg in [format!("[{over},{ok}]"), format!("[{ok},{over}]")] {
-                let snap = grok_ids_from_registry(reg.as_bytes(), alive_all, |_| None)
-                    .expect("one out-of-range VALUE is not document-level shape drift");
+                let snap =
+                    grok_ids_from_registry(reg.as_bytes(), alive_all, |_| None, &StartPins::new())
+                        .expect("one out-of-range VALUE is not document-level shape drift");
                 assert_eq!(snap.pid_of.get("ok"), Some(&200), "siblings still bind");
                 assert_eq!(snap.pid_of.get("over"), None, "the bad entry is skipped");
                 assert!(
@@ -402,8 +420,19 @@ mod tests {
 
         #[test]
         fn unparseable_document_is_format_drift_none() {
-            assert!(grok_ids_from_registry(b"not json", alive_all, |_| None).is_none());
-            assert!(grok_ids_from_registry(br#"{"an":"object"}"#, alive_all, |_| None).is_none());
+            assert!(
+                grok_ids_from_registry(b"not json", alive_all, |_| None, &StartPins::new())
+                    .is_none()
+            );
+            assert!(
+                grok_ids_from_registry(
+                    br#"{"an":"object"}"#,
+                    alive_all,
+                    |_| None,
+                    &StartPins::new()
+                )
+                .is_none()
+            );
         }
 
         /// The negative control for the test above: widening `pid` to `i64` must
@@ -420,7 +449,8 @@ mod tests {
                 r#"[{"session_id":"s","processId":100,"cwd":"/r"}]"#,
             ] {
                 assert!(
-                    grok_ids_from_registry(reg.as_bytes(), alive_all, |_| None).is_none(),
+                    grok_ids_from_registry(reg.as_bytes(), alive_all, |_| None, &StartPins::new())
+                        .is_none(),
                     "a mistyped/renamed pid key is SHAPE drift, not a junk value: {reg}"
                 );
             }
@@ -432,16 +462,52 @@ mod tests {
                 crate::source::decoder::rfc3339_to_epoch_secs("2026-07-16T12:00:05Z").unwrap();
             let tolerance = crate::source::cc_probe::PID_START_TOLERANCE_SECS;
             let recycled_start = opened + tolerance + 1;
-            let snap = grok_ids_from_registry(REG.as_bytes(), alive_all, |_| Some(recycled_start));
+            let snap = grok_ids_from_registry(
+                REG.as_bytes(),
+                alive_all,
+                |_| started(recycled_start),
+                &StartPins::new(),
+            );
             assert_eq!(snap.unwrap().pid_of.get("0197-a"), None);
             // At exactly claim + tolerance the entry SURVIVES.
             let boundary_start = opened + tolerance;
-            let snap = grok_ids_from_registry(REG.as_bytes(), alive_all, |_| Some(boundary_start));
+            let snap = grok_ids_from_registry(
+                REG.as_bytes(),
+                alive_all,
+                |_| started(boundary_start),
+                &StartPins::new(),
+            );
             assert_eq!(snap.unwrap().pid_of.get("0197-a"), Some(&100));
             // A process started BEFORE the claim is the NORMAL welcome-screen
             // lag — never rejected.
-            let snap = grok_ids_from_registry(REG.as_bytes(), alive_all, |_| Some(opened - 3600));
+            let snap = grok_ids_from_registry(
+                REG.as_bytes(),
+                alive_all,
+                |_| started(opened - 3600),
+                &StartPins::new(),
+            );
             assert_eq!(snap.unwrap().pid_of.get("0197-a"), Some(&100));
+        }
+
+        /// A realtime step moves the start read after it past the tolerance;
+        /// the session vouched before it keeps its vouch, and only a new
+        /// marker, a new process at the pid, drops it.
+        #[test]
+        fn an_entry_vouched_before_a_clock_step_keeps_its_vouch() {
+            let opened =
+                crate::source::decoder::rfc3339_to_epoch_secs("2026-07-16T12:00:05Z").unwrap();
+            let stepped = opened + crate::source::cc_probe::PID_START_TOLERANCE_SECS + 3_600;
+            let pins = StartPins::new();
+            let vouches = |marker, secs| {
+                let start = move |_| Some(Start { marker, secs });
+                grok_ids_from_registry(REG.as_bytes(), alive_all, start, &pins)
+                    .expect("a parseable registry")
+                    .pid_of
+                    .contains_key("0197-a")
+            };
+            assert!(vouches(1, opened), "judged at open");
+            assert!(vouches(1, stepped), "after the step, the marker holds it");
+            assert!(!vouches(2, stepped), "a new marker is a recycled pid");
         }
 
         #[test]
@@ -452,7 +518,9 @@ mod tests {
                 r#"[{"session_id":"s","pid":200,"cwd":"/r","opened_at":"2026-01-01T00:00:00Z"},
                     {"session_id":"s","pid":100,"cwd":"/r","opened_at":"2026-01-01T00:00:00Z"}]"#,
             ] {
-                let snap = grok_ids_from_registry(reg.as_bytes(), alive_all, |_| None).unwrap();
+                let snap =
+                    grok_ids_from_registry(reg.as_bytes(), alive_all, |_| None, &StartPins::new())
+                        .unwrap();
                 assert_eq!(snap.pid_of.get("s"), Some(&200));
             }
         }

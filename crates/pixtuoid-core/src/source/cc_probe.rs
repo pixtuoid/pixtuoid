@@ -4,8 +4,13 @@
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
-use super::proc_start::pid_start_time_secs;
+use super::proc_start::{StartPins, pid_start};
 use crate::source::jsonl::ProbeSnapshot;
+
+/// One for every reader of this host's registry, the probe and the focus
+/// lookup alike, so neither re-judges a session the other has pinned.
+#[cfg(unix)]
+static PINS: StartPins = StartPins::new();
 
 /// CC's first-party live-process registry: `<claude_home>/sessions/<pid>.json`,
 /// one tiny undocumented JSON file per running CC process (`{pid, sessionId,
@@ -22,7 +27,8 @@ use crate::source::jsonl::ProbeSnapshot;
 /// PID-reuse guard: kill(0) only proves SOME process owns the pid, so where the
 /// kernel reports the process start time it must agree with the entry's
 /// `startedAt` within `PID_START_TOLERANCE_SECS`, or the pid was recycled and
-/// the entry is skipped.
+/// the entry is skipped. An entry passes that once; its pid's start marker
+/// holds it after (`StartPins`).
 pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
     #[cfg(unix)]
     {
@@ -78,14 +84,14 @@ pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
             if !pid_alive(reg.pid) {
                 continue;
             }
-            if let Some(actual_secs) = pid_start_time_secs(reg.pid)
-                && (reg.started_at_ms / 1000).abs_diff(actual_secs) > PID_START_TOLERANCE_SECS
-            {
+            let claimed_secs = reg.started_at_ms / 1000;
+            if !PINS.admits(reg.pid, claimed_secs, pid_start(reg.pid), |actual_secs| {
+                claimed_secs.abs_diff(actual_secs) <= PID_START_TOLERANCE_SECS
+            }) {
                 tracing::debug!(
                     pid = reg.pid,
-                    claimed_secs = reg.started_at_ms / 1000,
-                    actual_secs,
-                    "pid recycled — registry startedAt does not match process start; skipping"
+                    claimed_secs,
+                    "pid recycled — registry startedAt does not name the pid's process; skipping"
                 );
                 continue;
             }
@@ -116,6 +122,7 @@ pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
         for (session_id, entry) in winners {
             live.pid_of.insert(session_id, entry.pid);
         }
+        PINS.retain(|pid| live.pid_of.values().any(|&vouched| vouched == pid));
         Some(live)
     }
     #[cfg(not(unix))]
@@ -207,9 +214,10 @@ fn parse_registry_entry(bytes: &[u8]) -> RegistryParse {
     })
 }
 
-/// Tolerance for the `startedAt` ↔ kernel-start-time identity check. CC writes
-/// `startedAt` ≈ 1.2s after `pbi_start_tvsec` (Node boot + module load before
-/// the stamp), so 10s is generous margin while far below any plausible
+/// Tolerance for the `startedAt` ↔ kernel-start-time identity check. CC stamps
+/// `startedAt` once its runtime has loaded, a little after the start the
+/// kernel reports (macOS's `pbi_start_tvsec`, Linux's `starttime` dated by the
+/// boot), so this is generous margin while far below any plausible
 /// pid-recycling interval.
 #[cfg(unix)]
 pub(crate) const PID_START_TOLERANCE_SECS: u64 = 10;
@@ -277,8 +285,8 @@ mod liveness_tests {
         // The pid's real start, so the PID-reuse guard vouches for a live one.
         let started = i32::try_from(pid)
             .ok()
-            .and_then(pid_start_time_secs)
-            .unwrap_or(0);
+            .and_then(pid_start)
+            .map_or(0, |start| start.secs);
         write_entry_started(dir, name, pid, session_id, started * 1000);
     }
 
@@ -462,7 +470,9 @@ mod liveness_tests {
     #[test]
     fn started_at_exactly_at_tolerance_still_vouches() {
         let own_pid = std::process::id() as i32;
-        let actual = pid_start_time_secs(own_pid).expect("own pid must be introspectable");
+        let actual = pid_start(own_pid)
+            .expect("own pid must be introspectable")
+            .secs;
         let dir = tempfile::tempdir().unwrap();
         let entry = |name: &str, claimed_secs: u64, sid: &str| {
             std::fs::write(
@@ -506,7 +516,7 @@ mod liveness_tests {
             serde_json::json!({
                 "pid": i64::from(std::process::id()),
                 "sessionId": "padded-session",
-                "startedAt": pid_start_time_secs(std::process::id() as i32).unwrap_or(0) * 1000,
+                "startedAt": pid_start(std::process::id() as i32).map_or(0, |start| start.secs) * 1000,
                 "future_upstream_key": "y".repeat(8 * 1024),
             })
             .to_string(),
@@ -676,7 +686,7 @@ mod liveness_tests {
     #[test]
     fn recycled_pid_entry_is_dropped_and_matching_one_kept() {
         let own_pid = std::process::id() as i32;
-        let own_start = pid_start_time_secs(own_pid).expect("own start time");
+        let own_start = pid_start(own_pid).expect("own start time").secs;
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("recycled.json"),
@@ -705,6 +715,39 @@ mod liveness_tests {
             HashSet::from(["genuine-session".to_string()]),
             "a recycled-pid entry must be dropped; the identity-matching one kept"
         );
+    }
+
+    /// A child of its own, so no other test's scan touches its pin.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn an_entry_judged_before_a_clock_step_keeps_its_vouch() {
+        let mut child = crate::test_child::sleeper();
+        let pid = child.id() as i32;
+        let start = pid_start(pid);
+        // After the step, the claim CC stamped no longer fits the start read now.
+        let claimed_secs = start.map_or(0, |start| start.secs) + PID_START_TOLERANCE_SECS + 3_600;
+        let dir = tempfile::tempdir().unwrap();
+        let entry = i64::from(pid);
+        write_entry_started(
+            dir.path(),
+            "stepped.json",
+            entry,
+            "stepped",
+            claimed_secs * 1000,
+        );
+        let unjudged = live_cc_session_ids(dir.path());
+        // Judged before the step, when the claim fitted.
+        PINS.admits(pid, claimed_secs, start, |_| true);
+        let judged = live_cc_session_ids(dir.path());
+        let _ = child.kill();
+        let _ = child.wait();
+        let vouches =
+            |snap: Option<ProbeSnapshot>| snap.expect("a healthy probe").contains("stepped");
+        assert!(
+            !vouches(unjudged),
+            "never judged, the misfit reads as a recycled pid"
+        );
+        assert!(vouches(judged), "judged once, the marker holds it");
     }
 
     #[cfg(unix)]
@@ -738,7 +781,7 @@ mod liveness_tests {
         let (pid_a, pid_b) = (i64::from(child_a.id()), i64::from(child_b.id()));
         let expected = pid_a.max(pid_b) as i32;
         // Both children start within the PID-reuse tolerance of this.
-        let started = pid_start_time_secs(child_a.id() as i32).unwrap_or(0) * 1000;
+        let started = pid_start(child_a.id() as i32).map_or(0, |start| start.secs) * 1000;
 
         // Probe inside the loop, assert only after the children are reaped —
         // a panicking assert here would leak two `sleep 30`s.

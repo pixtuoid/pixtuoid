@@ -93,11 +93,11 @@ mutatis     = { workspace = true, optional = true }
 libc = { workspace = true }
 # Safe wrappers for the liveness/exit-watch syscalls the `native` probe layer
 # makes: kqueue+kevent (macOS), pidfd_open+poll+self-pipe (Linux), kill(0),
-# and sysconf(_SC_CLK_TCK) for `proc_start`'s Linux start time. Unix-only like
-# `libc`, so the wasm32 core build never sees it. libc STAYS for the macOS
-# libproc calls rustix doesn't wrap (proc_pidinfo start-time in proc_start,
-# the fd→path table in fd_probe).
-rustix = { workspace = true, features = ["event", "process", "pipe", "param"] }
+# and sysconf(_SC_CLK_TCK) and clock_gettime for `proc_start`'s Linux start
+# time. Unix-only like `libc`, so the wasm32 core build never sees it. libc
+# STAYS for the macOS libproc calls rustix doesn't wrap (proc_pidinfo
+# start-time in proc_start, the fd→path table in fd_probe).
+rustix = { workspace = true, features = ["event", "process", "pipe", "param", "time"] }
 
 [target.'cfg(windows)'.dependencies]
 # Win32_System_Threading: OpenProcess + GetProcessTimes, the `proc_start`
