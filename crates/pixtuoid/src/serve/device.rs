@@ -687,6 +687,29 @@ mod tests {
         assert_eq!(started.elapsed(), HELLO_TIMEOUT);
     }
 
+    /// The deadline is the one `serve` sets before TLS, which the peer holding
+    /// the slot may never start.
+    #[tokio::test(start_paused = true)]
+    async fn a_peer_that_never_starts_tls_loses_its_slot_at_the_deadline() {
+        let fixture = fixture();
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("a port");
+        let address = listener.local_addr().expect("bound");
+        let _silent = TcpStream::connect(address).await.expect("it connects");
+        let (tcp, _) = listener.accept().await.expect("it accepts");
+        let key = rcgen::KeyPair::generate().expect("a key");
+        let acceptor = crate::serve::tls_acceptor(&key).expect("an acceptor");
+        let admitted = Admission::new().admit(Ipv4Addr::LOCALHOST);
+        let admitted = admitted.expect("an empty admission's slot");
+
+        let started = Instant::now();
+        let served = fixture.devices.clone().serve(tcp, acceptor, admitted);
+        let served = timeout(HELLO_TIMEOUT * 2, served).await;
+        assert!(served.expect("it ends").is_err());
+        assert_eq!(started.elapsed(), HELLO_TIMEOUT);
+    }
+
     /// One host's silent connections, however many it opens, leave a paired
     /// device on another address a slot.
     #[tokio::test]
