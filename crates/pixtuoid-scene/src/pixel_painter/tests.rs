@@ -3205,27 +3205,7 @@ fn the_hover_list_omits_the_undrawn_and_follows_sort_drawables() {
             door_anim_max_ms: 0,
         },
     );
-    let mut buf = RgbBuffer::filled(layout.buf_w, layout.buf_h, Rgb { r: 0, g: 0, b: 0 });
-    let hover = paint_frame(
-        &mut PaintCtx {
-            scene: &scene,
-            layout: &layout,
-            pack: &pack,
-            timing: Motion::Full.timing(now),
-            sky: crate::sky::Sky::clock(now),
-            window_sky: None,
-            buf: &mut buf,
-            cache: &mut FrameCache::new(),
-            base_fill: &mut BaseFillCache::new(),
-            shadows: &mut crate::ground::DepthsCache::default(),
-            theme: crate::theme::theme_by_name("normal").expect("normal theme"),
-            walks: &owned.route.walks,
-            debug_walkable: false,
-            outside: &mut crate::outside::OutsideCache::default(),
-            text: crate::look::WorldText::Baked,
-        },
-        &frame,
-    );
+    let hover = paint_drawn(&owned, &scene, &layout, &pack, now, &frame);
 
     let queued: Vec<_> = frame
         .characters

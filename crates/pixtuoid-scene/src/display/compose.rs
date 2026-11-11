@@ -224,9 +224,9 @@ pub struct Office<'a> {
     pub scale: RenderScale,
 }
 
-/// The conditions a frame shows under, when, what its wall board says, and
-/// how far the host's modal dims it: what moves a frame beyond its office and
-/// the sim's world.
+/// The conditions a frame shows under, when, what its wall board says, how far
+/// the host's modal dims it, and who sets its world text: what moves a frame
+/// beyond its office and the sim's world.
 #[derive(Debug, Clone, Copy)]
 pub struct Showing<'a> {
     /// What the host decides about how it reads.
@@ -669,8 +669,8 @@ fn meets(a: ArtRect, b: ArtRect) -> bool {
     a.x.0 < b.x.0 + b.w.0 && b.x.0 < a.x.0 + a.w.0 && a.y.0 < b.y.0 + b.h.0 && b.y.0 < a.y.0 + a.h.0
 }
 
-/// Every piece of the office, each with its [`Span`]. At one depth and layer,
-/// push order breaks the tie, so it is part of the result.
+/// Every piece the frame draws, each with its [`Span`]. At one depth and
+/// layer, push order breaks the tie, so it is part of the result.
 fn collect_pieces(
     inputs: ComposeInputs<'_, '_>,
     outside: &mut crate::outside::OutsideCache,

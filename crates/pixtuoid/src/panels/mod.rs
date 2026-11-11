@@ -901,6 +901,14 @@ mod dispatch_tests {
                 "site/src/features.json",
                 format!("`{MUTE}` mutes, `{VOLUME_UP}`/`{VOLUME_DOWN}` sets the volume"),
             ),
+            (
+                "site/src/features.json",
+                format!("Press {DASHBOARD} to see every agent"),
+            ),
+            (
+                "site/src/showcase.json",
+                format!("{DASHBOARD} ⇥ agent tree"),
+            ),
             ("docs/CONFIGURATION.md", format!("Press `{MUTE}`")),
             (
                 "docs/CONFIGURATION.md",

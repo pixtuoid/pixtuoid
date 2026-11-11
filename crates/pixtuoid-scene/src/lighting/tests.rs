@@ -64,8 +64,9 @@ fn neon_at(levels: NeonLevels, darkness: f32) -> f32 {
     neon_halo_strength(levels, Beat::at_ms(WALL_CLOCK_MS), darkness)
 }
 
-/// The lights of a `w`×`h` office with nobody in it, at `hour` under a clear sky.
-fn lights_at(w: u16, h: u16, hour: u32) -> (SceneLayout, Lights) {
+/// The lights of a `w`×`h` office with nobody in it, at `hour` under a clear
+/// sky, its world text set as `text` says.
+fn lights_at(w: u16, h: u16, hour: u32, text: crate::look::WorldText) -> (SceneLayout, Lights) {
     let layout = SceneLayout::compute(
         crate::layout::Viewport::full(w, h),
         Some(crate::layout::TEST_DEFAULT_DESKS),
@@ -84,7 +85,7 @@ fn lights_at(w: u16, h: u16, hour: u32) -> (SceneLayout, Lights) {
             neon: NeonLevels::RUNNING,
             beat: Beat::at_ms(0),
             bulbs: crate::lighting::DeskBulbs::of(&crate::pack::test_office()),
-            text: crate::look::WorldText::Baked,
+            text,
         },
     );
     (layout, lights)
@@ -156,12 +157,24 @@ fn the_neon_halo_throws_the_signs_own_levels() {
     }
 }
 
+/// The board exists only to carry world text, so at night a frame hiding its
+/// text throws none of the board's light, and one showing it does.
+#[test]
+fn a_frame_hiding_its_text_throws_no_board_light() {
+    use crate::look::WorldText;
+    let strength = |text| lights_at(192, 80, 0, text).1.neon.strength;
+    assert_eq!(strength(WorldText::Hidden), 0.0);
+    for text in [WorldText::Baked, WorldText::Host] {
+        assert!(strength(text) > 0.0, "{text:?}");
+    }
+}
+
 #[test]
 fn the_sun_spills_through_every_window_by_day_and_none_by_night() {
-    let (layout, noon) = lights_at(192, 80, 12);
+    let (layout, noon) = lights_at(192, 80, 12, crate::look::WorldText::Baked);
     assert_eq!(noon.spills.len(), layout.window_bays().count());
     assert!(noon.spills.iter().all(|s| s.strength > 0.0));
-    let (_, midnight) = lights_at(192, 80, 0);
+    let (_, midnight) = lights_at(192, 80, 0, crate::look::WorldText::Baked);
     assert!(midnight.spills.is_empty());
 }
 

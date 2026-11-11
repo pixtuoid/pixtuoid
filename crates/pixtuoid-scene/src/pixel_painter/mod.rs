@@ -458,7 +458,8 @@ struct Furnishings<'a> {
 }
 
 /// Every fixture [`SceneLayout::fixtures`](crate::layout::SceneLayout::fixtures)
-/// yields, joined to this frame's live state on the ids its kind carries.
+/// yields that the frame hangs ([`WorldText::hangs`](crate::look::WorldText::hangs)),
+/// joined to this frame's live state on the ids its kind carries.
 fn queue_fixtures<'a>(
     ctx: &PaintCtx<'_>,
     frame: &SimFrame,
