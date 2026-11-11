@@ -1432,7 +1432,7 @@ test('reduced motion: an install copy writes the clipboard but hires nobody', as
 
 test('docs pages keep the sticky nav with section links', async ({ page }) => {
   const errors = watchErrors(page);
-  await page.goto('./config');
+  await page.goto('./config/');
   const nav = page.locator('.nav');
   await expect(nav).not.toHaveClass(/nav--floating/);
   await expect
@@ -2136,7 +2136,7 @@ test('VIBING channel: live office paints, is pause-gated, chips drive it', async
 
 test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ page, browser }) => {
   const errors = watchErrors(page);
-  await page.goto('./config#themes'); // arrival-by-hash: the rail lights unscrolled
+  await page.goto('./config/#themes'); // arrival-by-hash: the rail lights unscrolled
   await expect(page.locator('[data-toc-link="themes"]')).toHaveAttribute(
     'aria-current',
     'location'
@@ -2174,7 +2174,7 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
     'aria-current',
     'location'
   );
-  await page.goto('./no-such-desk');
+  await page.goto('./no-such-desk/');
   await expect(page.locator('.lost h1')).toContainText('Session not');
   await expect
     .poll(() =>
@@ -2188,7 +2188,7 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
   const ctx = await browser.newContext({ viewport: { width: 480, height: 800 } });
   const m = await ctx.newPage();
   await m.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await m.goto('./config');
+  await m.goto('./config/');
   await m.locator('#nav-burger').click();
   await expect(m.locator('#nav-links')).toHaveClass(/is-open/);
   await expect(m.locator('#nav-burger')).toHaveAttribute('aria-expanded', 'true');
@@ -2233,13 +2233,13 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./', 390],
     ['./', 430],
     ['./', 768],
-    ['./config', 390],
-    ['./config', 768],
-    ['./architecture', 375],
-    ['./contributing', 375],
-    ['./architecture', 320], // #503's wide ASCII pre
-    ['./architecture', 768],
-    ['./contributing', 320], // #503's long link: `crates/pixtuoid-core/tests/AGENTS.md`
+    ['./config/', 390],
+    ['./config/', 768],
+    ['./architecture/', 375],
+    ['./contributing/', 375],
+    ['./architecture/', 320], // #503's wide ASCII pre
+    ['./architecture/', 768],
+    ['./contributing/', 320], // #503's long link: `crates/pixtuoid-core/tests/AGENTS.md`
   ] as const) {
     const context = await browser.newContext({
       viewport: { width, height: 820 },
@@ -2321,7 +2321,7 @@ test('docs-table code cells render single-line (column-collapse guard)', async (
   });
   const page = await context.newPage();
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./config');
+  await page.goto('./config/');
   const cells = await page.evaluate(() => {
     const code = [...document.querySelectorAll('.prose table th code, .prose table td code')];
     return {
@@ -2456,8 +2456,8 @@ atOfficeMoments(
         '.footer__sep',
         '.nav__version',
       ],
-      './404': ['.terminal__title'],
-      './architecture': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
+      './404.html': ['.terminal__title'],
+      './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
     };
 
     let swept = 0;
@@ -2889,7 +2889,7 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
   const TEXT_TAGS = 'p, li, strong, em, a, code';
   for (const theme of ['day', 'night', 'dracula'] as const) {
     await page.addInitScript((t) => localStorage.setItem('pix-theme', t), theme);
-    await page.goto('./config');
+    await page.goto('./config/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     const routes = await page.evaluate(() =>
       [...document.querySelectorAll('.docs__sidebar .docs__list:not(.docs__list--building) a')].map(

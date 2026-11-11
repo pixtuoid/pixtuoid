@@ -197,7 +197,7 @@ function demoAssets() {
 export default defineConfig({
   site: workspacePackageField(cargoToml, 'homepage'),
   base: '/',
-  trailingSlash: 'ignore',
+  trailingSlash: 'always',
   compressHTML: COMPRESS_HTML,
   markdown: {
     // excludeLangs keeps ```mermaid a RAW code node — the highlighter would

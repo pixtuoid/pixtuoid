@@ -15,7 +15,7 @@ test('docs mount the statusline: route path left, install chip right, no landing
   page,
 }) => {
   const errors = watchErrors(page);
-  await page.goto('./config');
+  await page.goto('./config/');
   const bar = page.locator('#statusline');
   await expect(bar).toBeVisible();
   await expect(bar).toContainText('~ pixtuoid docs · /config');
@@ -26,15 +26,45 @@ test('docs mount the statusline: route path left, install chip right, no landing
 });
 
 test('404 mounts the statusline too', async ({ page }) => {
-  await page.goto('./no-such-desk');
+  await page.goto('./no-such-desk/');
   await expect(page.locator('#statusline')).toContainText('~ pixtuoid docs · /404');
+});
+
+// GitHub Pages 301s a page's unslashed URL to its canonical, slashed one, so a
+// link that differs costs every click and hover-prefetch a round trip.
+test("every link to one of the site's pages names that page's canonical URL", async ({
+  page,
+  request,
+}) => {
+  const canonicalPath = (html: string) =>
+    new URL(/<link rel="canonical" href="([^"]+)"/.exec(html)![1]).pathname;
+  const targets = new Set<string>();
+  for (const from of ['./', './config/', './architecture/', './contributing/']) {
+    await page.goto(from);
+    const canonical = await page.locator('link[rel="canonical"]').getAttribute('href');
+    const site = new URL(canonical!).origin;
+    for (const href of await page
+      .locator('a[href]')
+      .evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href))) {
+      const url = new URL(href);
+      const internal = url.origin === site || url.origin === new URL(page.url()).origin;
+      // A file (an image, a feed) has no canonical to name.
+      if (internal && !/\.[^/]+$/.test(url.pathname)) targets.add(url.pathname);
+    }
+  }
+  expect(targets.size).toBeGreaterThan(1);
+  for (const path of targets) {
+    const response = await request.get(path);
+    expect(response.ok(), path).toBe(true);
+    expect(canonicalPath(await response.text()), path).toBe(path);
+  }
 });
 
 test('the docs sidebar is an elevator panel: current-doc LED + a building bank from FLOORS', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); // rails hide below 1000px
-  await page.goto('./config');
+  await page.goto('./config/');
   const panel = page.locator('.docs__sidebar');
   await expect(panel).toHaveClass(/hw-panel/);
   await expect(panel.locator('a[aria-current="page"] .led-dot')).toHaveClass(/led-selected/);
@@ -48,12 +78,12 @@ test('the docs sidebar is an elevator panel: current-doc LED + a building bank f
 test('markdown callouts render as terminal windows (note + warning)', async ({ page }) => {
   // CONTRIBUTING.md carries a "**Don't …**" blockquote → warning;
   // ARCHITECTURE.md a plain editorial one → note.
-  await page.goto('./contributing');
+  await page.goto('./contributing/');
   const warn = page.locator('.callout--warn').first();
   await expect(warn).toBeVisible();
   await expect(warn.locator('.callout__title')).toHaveText('~ warning');
   await expect(warn.locator('.terminal__dot--r')).toBeAttached();
-  await page.goto('./architecture');
+  await page.goto('./architecture/');
   const note = page.locator('.callout--note').first();
   await expect(note).toBeVisible();
   await expect(note.locator('.callout__title')).toHaveText('~ note');
