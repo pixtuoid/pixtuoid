@@ -282,8 +282,8 @@ fn loop_time(wall: SystemTime, pace: u64) -> u64 {
 }
 
 /// A painter's `[p]ause`: while paused, every read of the clock gives the
-/// instant the pause began, so the whole office holds still and resumes from
-/// where it stood.
+/// instant the pause began, so the whole office holds still; a resume shows
+/// the present, not that instant.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PauseClock {
