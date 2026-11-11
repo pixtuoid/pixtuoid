@@ -593,8 +593,8 @@ pub(crate) fn omp_parent_key_from_path(path: &Path) -> Option<String> {
 /// The header entry (line 2; line 1 is a fixed-width `title` slot that omp
 /// rewrites IN PLACE — pwrite at offset 0, and the tail cursor sits past it, so it
 /// is never re-read; legacy files lack the slot). Fork, branch, version migration
-/// and tool-output pruning REWRITE the file atomically (temp + rename → new inode)
-/// and the watcher re-stats by path, so a rewrite reads as a fresh transcript.
+/// and tool-output pruning REWRITE the file atomically (temp + rename); the
+/// path-keyed cursor re-reads it from the top only when it ends before the cursor.
 const SESSION: &str = "session";
 
 /// A turn entry. `role:"assistant"` content carries `toolCall` blocks
@@ -768,7 +768,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                                 fresh_tokens: fresh,
                                 // A prune or compaction rewrites the file whole with
                                 // each entry's own id (v18.15.0 `session-manager.ts`
-                                // `#serializeBody`), and the watcher re-reads it.
+                                // `#serializeBody`), so an entry read twice counts once.
                                 reading_id: non_empty(obj, "id").map(str::to_owned),
                                 copy_id: entry_copy(obj, "").map(CopyId::new),
                             });
