@@ -195,7 +195,7 @@ impl Walk {
             return None;
         }
         let planner = &mut ground.planner;
-        let path = (planner.router).route(&ground.layout.walkable, planner.overlay, from, to);
+        let path = (planner.router).route(&ground.layout.walkable, planner.overlay, from, to, to);
         let len = octile_path_len(&path);
         (len > 0).then(|| Walk {
             started_at: now,

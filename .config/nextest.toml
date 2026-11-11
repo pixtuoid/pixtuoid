@@ -28,5 +28,5 @@ threads-required = "num-cpus"
 # Layout sweeps that split their floors across the cores, so each holds every
 # test slot while it runs.
 [[profile.default.overrides]]
-filter = 'test(no_route_on_a_short_floor_passes_through_a_wall) | test(the_route_sweeps_hold_inside_insets)'
+filter = 'test(no_route_on_a_short_floor_passes_through_a_wall) | test(the_route_sweeps_hold_inside_insets) | test(no_jittered_leg_crosses_blocked_floor)'
 threads-required = "num-test-threads"

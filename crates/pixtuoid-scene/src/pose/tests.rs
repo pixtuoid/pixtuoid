@@ -34,6 +34,7 @@ impl Router for StubRouter {
         _: &crate::walkable::OccupancyOverlay,
         from: Point,
         to: Point,
+        _: Point,
     ) -> Vec<Point> {
         if self.path.is_empty() {
             vec![from, to]
@@ -63,6 +64,7 @@ impl Router for ChangingRouter {
         _: &crate::walkable::OccupancyOverlay,
         _from: Point,
         _to: Point,
+        _: Point,
     ) -> Vec<Point> {
         self.calls += 1;
         // Frame 1 makes two calls (entry-profile snapshot + route_walking_pose)
@@ -2020,6 +2022,7 @@ impl Router for FlipRouter {
         _: &crate::walkable::OccupancyOverlay,
         _from: Point,
         _to: Point,
+        _: Point,
     ) -> Vec<Point> {
         if self.flipped {
             self.b.clone()

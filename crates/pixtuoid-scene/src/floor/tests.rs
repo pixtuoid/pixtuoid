@@ -60,7 +60,7 @@ fn a_new_layout_drops_the_routers_cached_paths() {
         let from = walkable.next().expect("a walkable cell");
         let to = walkable.next_back().expect("another walkable cell");
         ctx.router
-            .route(&l.walkable, &OccupancyOverlay::new(), from, to);
+            .route(&l.walkable, &OccupancyOverlay::new(), from, to, to);
         assert!(!ctx.router.is_empty(), "the route was cached");
     };
     let mut ctx = FloorCtx::new();

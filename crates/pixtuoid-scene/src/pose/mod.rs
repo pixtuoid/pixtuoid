@@ -711,30 +711,30 @@ fn route_walking_pose(
     )
 }
 
-/// Half-range (px) of the per-agent destination jitter — the offset spans
+/// Half-range (px) of the per-agent routing aim's jitter — the offset spans
 /// `-JITTER_MAX_PX..=JITTER_MAX_PX`, so the modulus span is `2*MAX+1`.
 const JITTER_MAX_PX: i32 = 4;
 const JITTER_SPAN: u64 = (2 * JITTER_MAX_PX + 1) as u64;
 
-/// Per-agent routing-destination jitter, hashed from the agent_id, so converging
-/// agents take visibly different polylines (breaks the "ant trail"). Output must
-/// stay bit-identical across every call site — a site routing the RAW goal
+/// Per-agent routing aim, hashed from the agent_id, so converging agents take
+/// visibly different polylines (breaks the "ant trail"). Output must stay
+/// bit-identical across every call site — a site aiming at the RAW goal
 /// measures a differently-shaped polyline than the one rendered AND mints a
 /// second router-cache key per leg.
-pub(crate) fn jitter_dest(id: AgentId, p: Point) -> Point {
+pub(crate) fn jitter_aim(id: AgentId, p: Point) -> Point {
+    const Y_HASH_SHIFT: u32 = 16;
     let h = id.raw();
     let jx = ((h % JITTER_SPAN) as i32 - JITTER_MAX_PX) as i16;
-    let jy = (((h >> 16) % JITTER_SPAN) as i32 - JITTER_MAX_PX) as i16;
+    let jy = (((h >> Y_HASH_SHIFT) % JITTER_SPAN) as i32 - JITTER_MAX_PX) as i16;
     Point {
         x: p.x.saturating_add_signed(jx),
         y: p.y.saturating_add_signed(jy),
     }
 }
 
-/// Route `from → to` against the per-agent JITTERED goal, then restore the
-/// polyline's endpoint to the true `to`. EVERY walk leg routes through here, so
-/// the rendered shape, the measured profile length and the router-cache key
-/// can't diverge (the [`jitter_dest`] lockstep contract).
+/// Route `from → to` aimed at the per-agent JITTERED goal. EVERY walk leg routes
+/// through here, so the rendered shape, the measured profile length and the
+/// router-cache key can't diverge (the [`jitter_aim`] lockstep contract).
 pub(crate) fn route_jittered(
     router: &mut dyn Router,
     mask: &WalkableMask,
@@ -743,11 +743,7 @@ pub(crate) fn route_jittered(
     from: Point,
     to: Point,
 ) -> Vec<Point> {
-    let mut p = router.route(mask, overlay, from, jitter_dest(id, to));
-    if let Some(last) = p.last_mut() {
-        *last = to;
-    }
-    p
+    router.route(mask, overlay, from, to, jitter_aim(id, to))
 }
 
 #[cfg(test)]
