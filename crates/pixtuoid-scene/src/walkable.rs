@@ -103,10 +103,6 @@ impl WalkableMask {
 pub struct OccupancyOverlay {
     /// `(x, y, width, height)` of each blocked rect.
     rects: Vec<(u16, u16, u16, u16)>,
-    /// The pixels the rects cover. The router asks [`Self::blocks`] of every
-    /// pixel a route passes, which a scan of the rects made linear in the agents
-    /// standing.
-    covered: Grid<bool>,
 }
 
 impl OccupancyOverlay {
@@ -118,25 +114,11 @@ impl OccupancyOverlay {
     /// Drop every blocked rect, ready to rebuild for the next frame.
     pub(crate) fn clear(&mut self) {
         self.rects.clear();
-        self.covered.as_mut_slice().fill(false);
     }
 
     /// Block the rect at `(x, y)` of size `w × h`.
     pub(crate) fn add(&mut self, x: u16, y: u16, w: u16, h: u16) {
         self.rects.push((x, y, w, h));
-        let (right, bottom) = (x.saturating_add(w), y.saturating_add(h));
-        if right > self.covered.width() || bottom > self.covered.height() {
-            let (width, height) = (
-                right.max(self.covered.width()),
-                bottom.max(self.covered.height()),
-            );
-            self.covered = Grid::filled(width, height, false);
-            for &rect in &self.rects {
-                cover(&mut self.covered, rect);
-            }
-        } else {
-            cover(&mut self.covered, (x, y, w, h));
-        }
     }
 
     /// The number of blocked rects.
@@ -152,9 +134,12 @@ impl OccupancyOverlay {
     }
 
     /// True if (`x`, `y`) falls inside any current occupancy rect.
+    /// Linear scan — fine while N stays in the low tens.
     #[inline]
     pub(crate) fn blocks(&self, x: u16, y: u16) -> bool {
-        self.covered.get_or(x, y, false)
+        self.rects.iter().any(|&(rx, ry, rw, rh)| {
+            x >= rx && x < rx.saturating_add(rw) && y >= ry && y < ry.saturating_add(rh)
+        })
     }
 
     /// Order-stable hash of the current occupancy set — rects are sorted
@@ -169,14 +154,6 @@ impl OccupancyOverlay {
                 .flat_map(|&(x, y, w, h)| [x, y, w, h])
                 .map(u64::from),
         )
-    }
-}
-
-fn cover(covered: &mut Grid<bool>, (x, y, w, h): (u16, u16, u16, u16)) {
-    for yy in y..y.saturating_add(h) {
-        for xx in x..x.saturating_add(w) {
-            covered.set(xx, yy, true);
-        }
     }
 }
 
@@ -196,10 +173,6 @@ mod tests {
         assert!(!o.blocks(15, 10));
         o.clear();
         assert_eq!(o.len(), 0);
-        assert!(
-            !o.blocks(12, 12) && !o.blocks(21, 21),
-            "a cleared overlay blocks nothing"
-        );
     }
 
     #[test]

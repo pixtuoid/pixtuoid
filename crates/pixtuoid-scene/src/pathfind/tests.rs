@@ -32,11 +32,7 @@ fn simplify_collapses_collinear() {
         Point { x: 12, y: 0 },
         Point { x: 12, y: 4 },
     ];
-    let s = simplify_polyline(
-        &WalkableMask::new_open(64, 64),
-        &OccupancyOverlay::new(),
-        pts,
-    );
+    let s = simplify_polyline(&WalkableMask::new_open(64, 64), pts);
     assert_eq!(s.len(), 3);
 }
 
@@ -51,12 +47,7 @@ fn simplify_collapses_diagonal_collinear() {
         Point { x: 5, y: 5 },
     ];
     assert_eq!(
-        simplify_polyline(
-            &WalkableMask::new_open(64, 64),
-            &OccupancyOverlay::new(),
-            pts
-        )
-        .len(),
+        simplify_polyline(&WalkableMask::new_open(64, 64), pts).len(),
         2
     );
 }
@@ -69,12 +60,7 @@ fn simplify_keeps_genuine_corner() {
         Point { x: 2, y: 2 },
     ];
     assert_eq!(
-        simplify_polyline(
-            &WalkableMask::new_open(64, 64),
-            &OccupancyOverlay::new(),
-            pts
-        )
-        .len(),
+        simplify_polyline(&WalkableMask::new_open(64, 64), pts).len(),
         3
     );
 }
@@ -389,27 +375,6 @@ fn an_overlay_evicts_only_the_paths_it_actually_crosses() {
     );
 }
 
-/// The cache re-checks a path on every pixel a fresh route is checked on, so an
-/// agent the path passes by one pixel evicts it as surely as one it runs into.
-#[test]
-fn an_agent_on_one_pixel_of_a_cached_path_evicts_it() {
-    let l = make_layout();
-    let mut router = AStarRouter::new();
-    let (from, to) = (Point { x: 30, y: 80 }, Point { x: 30, y: 120 });
-    let first = router.route(&l.walkable, &OccupancyOverlay::new(), from, to, to);
-    assert!(first.len() > 2, "fixture must corner: {first:?}");
-    let next_to_the_start = crate::physics::segment_pixels(first[0], first[1])
-        .nth(1)
-        .expect("a segment past one pixel");
-    let mut overlay = OccupancyOverlay::new();
-    overlay.add(next_to_the_start.x, next_to_the_start.y, 1, 1);
-    assert_eq!(
-        router.route(&sealed_like(&l.walkable), &overlay, from, to, to),
-        vec![from, to],
-        "{first:?}"
-    );
-}
-
 #[test]
 fn path_cache_is_bounded_and_still_routes_after_the_clear() {
     // Aimless wander destinations + snap-back/exit origins mint ever-new keys,
@@ -654,99 +619,52 @@ fn cell_in_zone_true_on_inclusive_lower_edges() {
 fn find_path_returns_none_when_target_completely_surrounded() {
     // The mask is oversized so the wall around (100,100) can't saturate to
     // origin and cover `from` too: `snap` must succeed on `from`, fail on the goal.
-    // A WALL, not an agent: the router walks through agents where they close every way.
-    let mut mask = WalkableMask::new_open(200, 200);
+    let mask = WalkableMask::new_open(200, 200);
+    let mut overlay = OccupancyOverlay::new();
     let target = Point { x: 100, y: 100 };
     let wall_size = (MAX_SNAP_RADIUS + 1) * CELL_SIZE * 2;
     let wall_origin = 100u16 - wall_size / 2;
-    mask.mark_blocked(wall_origin, wall_origin, wall_size, wall_size, 0);
+    overlay.add(wall_origin, wall_origin, wall_size, wall_size);
 
     let from = Point { x: 4, y: 4 };
-    let result = find_path(&mask, &OccupancyOverlay::new(), None, from, target, target);
+    let result = find_path(&mask, &overlay, None, from, target, target);
     assert!(
         result.is_none(),
         "completely surrounded target should return None, got {result:?}"
     );
 }
 
-/// The pixels, `path`'s own two ends left out, that `blocked` holds.
-fn crossed(path: &[Point], blocked: impl Fn(Point) -> bool) -> Vec<Point> {
-    let (first, last) = (path[0], path[path.len() - 1]);
-    path.windows(2)
-        .flat_map(|segment| crate::physics::segment_pixels(segment[0], segment[1]))
-        .filter(|&p| p != first && p != last && blocked(p))
-        .collect()
-}
-
-/// Agents stand only for a while, so where they close every way round, the walker
-/// goes through them, never through a wall.
 #[test]
-fn an_agent_closing_the_only_gap_is_walked_through_never_the_wall() {
+fn transient_no_path_fallback_is_not_served_from_the_cache() {
+    // `path_clear_under` checks only the OVERLAY, never the static mask, so a
+    // cached wall-crossing fallback would survive every retain() and the agent
+    // would walk through the wall on every future leg.
     let mut mask = WalkableMask::new_open(80, 48);
     // Blocked strip x ∈ [36, 44) for y ∈ [0, 32); gap open at y ∈ [32, 48).
     mask.mark_blocked(36, 0, 8, 32, 0);
-    let (from, to) = (Point { x: 10, y: 10 }, Point { x: 70, y: 10 });
-    let mut in_the_gap = OccupancyOverlay::new();
-    in_the_gap.add(36, 32, 8, 16);
-    let path = AStarRouter::new().route(&mask, &in_the_gap, from, to, to);
-    assert_eq!(
-        crossed(&path, |p| !mask.is_walkable(p.x, p.y)),
-        [],
-        "{path:?}"
+    let from = Point { x: 10, y: 10 };
+    let to = Point { x: 70, y: 10 };
+
+    let open = find_path(&mask, &OccupancyOverlay::new(), None, from, to, to).expect("gap routes");
+    assert!(
+        open.len() > 2,
+        "expected a detour via the gap, got {open:?}"
     );
-    assert_eq!(path.last(), Some(&to), "{path:?}");
-}
 
-/// A cell half under an agent still routes, so the turn it routes on must be
-/// its open half's.
-#[test]
-fn a_route_keeps_off_an_agent_half_covering_its_cells() {
-    let open = WalkableMask::new_open(64, 64);
-    let mut agent = OccupancyOverlay::new();
-    agent.add(26, 25, 8, 12);
-    let (from, to) = (Point { x: 26, y: 2 }, Point { x: 28, y: 56 });
-    let path = find_path(&open, &agent, None, from, to, to).expect("routes");
-    assert_eq!(crossed(&path, |p| agent.blocks(p.x, p.y)), [], "{path:?}");
-}
+    let mut router = AStarRouter::new();
+    let mut blocked = OccupancyOverlay::new();
+    blocked.add(36, 32, 8, 16); // close the gap → no path at all
+    assert_eq!(
+        router.route(&mask, &blocked, from, to, to),
+        vec![from, to],
+        "with the gap closed the router falls back to the straight line"
+    );
 
-/// The shortcut that drops the aim cell's anchor must keep off the agents too.
-#[test]
-fn an_aimed_leg_keeps_the_anchor_its_shortcut_would_cut_an_agent_by() {
-    let open = WalkableMask::new_open(64, 64);
-    let mut agent = OccupancyOverlay::new();
-    agent.add(14, 10, 8, 12);
-    let (from, to) = (Point { x: 16, y: 22 }, Point { x: 25, y: 19 });
-    let aim = Point { x: 22, y: 22 };
-    let path = find_path(&open, &agent, None, from, to, aim).expect("routes");
-    assert_eq!(crossed(&path, |p| agent.blocks(p.x, p.y)), [], "{path:?}");
-}
-
-/// A walker can set off from inside an agent's rect, or walk into one at its
-/// goal: the route crosses only that rect, on its own first or last segment.
-#[test]
-fn a_route_out_of_or_into_an_agents_rect_crosses_only_that_rect_at_that_end() {
-    let open = WalkableMask::new_open(64, 64);
-    let (near, far) = (Point { x: 10, y: 30 }, Point { x: 54, y: 30 });
-    let (mut own, mut between) = (OccupancyOverlay::new(), OccupancyOverlay::new());
-    own.add(6, 24, 8, 12);
-    between.add(28, 24, 8, 12);
-    let mut agents = own.clone();
-    agents.add(28, 24, 8, 12);
-    for (from, to) in [(near, far), (far, near)] {
-        let path = find_path(&open, &agents, None, from, to, to).expect("routes");
-        assert_eq!(
-            crossed(&path, |p| between.blocks(p.x, p.y)),
-            [],
-            "the agent between: {path:?}"
-        );
-        let own_crossed_away_from_its_end: Vec<Point> = path
-            .windows(2)
-            .filter(|segment| !segment.contains(&near))
-            .flat_map(|segment| crate::physics::segment_pixels(segment[0], segment[1]))
-            .filter(|p| own.blocks(p.x, p.y))
-            .collect();
-        assert_eq!(own_crossed_away_from_its_end, [], "{path:?}");
-    }
+    let recovered = router.route(&mask, &OccupancyOverlay::new(), from, to, to);
+    assert!(
+        recovered.len() > 2,
+        "the transient no-path fallback must not be cached; got {recovered:?}"
+    );
 }
 
 #[test]
@@ -900,7 +818,7 @@ fn a_route_turns_on_the_open_pixel_nearest_a_blocked_centre() {
         cell.1
     ));
     assert_eq!(
-        cell_anchor(&mask, &OccupancyOverlay::new(), cell.0, cell.1),
+        cell_anchor(&mask, cell.0, cell.1),
         Point {
             x: centre.x,
             y: centre.y - 1
@@ -909,7 +827,7 @@ fn a_route_turns_on_the_open_pixel_nearest_a_blocked_centre() {
     );
     mask.mark_walkable(centre.x, centre.y, 1, 1);
     assert_eq!(
-        cell_anchor(&mask, &OccupancyOverlay::new(), cell.0, cell.1),
+        cell_anchor(&mask, cell.0, cell.1),
         centre,
         "an open centre is kept"
     );

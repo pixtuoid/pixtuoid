@@ -2107,37 +2107,14 @@ fn the_route_sweeps_hold_inside_insets() {
 /// A walk leg aims at its agent's [`crate::pose::jitter_aim`], which can stand
 /// across a desk row or a wall from where the leg ends, so the sweep routes each
 /// desk's way in for several agents, on the floors a user sees, bare and inside
-/// insets. It routes each office empty and again with agents standing at every
-/// desk's way in, in every doorway and at the door, where the router's open floor
-/// is narrowest: agents may be walked through, a wall never.
+/// insets.
 #[test]
 #[cfg_attr(
     coverage,
     ignore = "an exhaustive sweep outlasts its budget instrumented; the plain suite asserts it on every PR"
 )]
-fn no_walk_leg_crosses_blocked_floor() {
+fn no_jittered_leg_crosses_blocked_floor() {
     use crate::pathfind::{AStarRouter, Router};
-    use crate::walkable::OccupancyOverlay;
-    let standing = |l: &SceneLayout| {
-        let mut overlay = OccupancyOverlay::new();
-        let doorways = l.doorways.iter().map(|d| Point {
-            x: u16::midpoint(d.start.x, d.end.x),
-            y: u16::midpoint(d.start.y, d.end.y),
-        });
-        let desks = l
-            .home_desks
-            .iter()
-            .map(|&desk| crate::pose::desk_leg_endpoint(desk, l).0);
-        for at in desks.chain(doorways).chain([l.door_threshold]) {
-            overlay.add(
-                at.x.saturating_sub(CHARACTER_SPRITE_W / 2),
-                at.y.saturating_sub(WALKING_Y_OFF / 2),
-                CHARACTER_SPRITE_W,
-                WALKING_Y_OFF,
-            );
-        }
-        overlay
-    };
     let offices: Vec<(Viewport, u64)> = SWEEP_SIZES
         .iter()
         .flat_map(|&(w, h)| {
@@ -2153,41 +2130,29 @@ fn no_walk_leg_crosses_blocked_floor() {
             })
         })
         .collect();
+    let overlay = crate::walkable::OccupancyOverlay::new();
     let check = |&(viewport, seed): &(Viewport, u64)| {
         let l = swept_layout(viewport, seed);
+        let mut router = AStarRouter::new();
+        router.new_layout(l.corridor);
         let from = l.door_threshold;
         let mut v = Vec::new();
-        for overlay in [OccupancyOverlay::new(), standing(&l)] {
-            let mut router = AStarRouter::new();
-            router.new_layout(l.corridor);
-            for &desk in &l.home_desks {
-                let (to, _) = crate::pose::desk_leg_endpoint(desk, &l);
-                let mut legs = vec![(to, router.route(&l.walkable, &overlay, from, to, to))];
-                for agent in 0..8 {
-                    let id = pixtuoid_core::AgentId::from_parts("probe", &format!("agent-{agent}"));
-                    let path = crate::pose::route_jittered(
-                        &mut router,
-                        &l.walkable,
-                        &overlay,
-                        id,
-                        from,
-                        to,
-                    );
-                    legs.push((crate::pose::jitter_aim(id, to), path));
-                }
-                for (aim, path) in legs {
-                    let blocked = path
-                        .windows(2)
-                        .flat_map(|segment| crate::physics::segment_pixels(segment[0], segment[1]))
-                        .find(|&p| p != from && p != to && !l.walkable.is_walkable(p.x, p.y));
-                    if let Some(p) = blocked {
-                        v.push(format!(
-                            "{viewport:?} seed {seed}, {} agents standing: the leg \
-                             {from:?}->{to:?} aimed at {aim:?} crosses blocked floor at {p:?}: \
-                             {path:?}",
-                            overlay.len()
-                        ));
-                    }
+        for &desk in &l.home_desks {
+            let (to, _) = crate::pose::desk_leg_endpoint(desk, &l);
+            for agent in 0..8 {
+                let id = pixtuoid_core::AgentId::from_parts("probe", &format!("agent-{agent}"));
+                let path =
+                    crate::pose::route_jittered(&mut router, &l.walkable, &overlay, id, from, to);
+                let blocked = path
+                    .windows(2)
+                    .flat_map(|segment| crate::physics::segment_pixels(segment[0], segment[1]))
+                    .find(|&p| p != from && p != to && !l.walkable.is_walkable(p.x, p.y));
+                if let Some(p) = blocked {
+                    v.push(format!(
+                        "{viewport:?} seed {seed}: {id:?}'s leg {from:?}->{to:?} aimed at {:?} \
+                         crosses blocked floor at {p:?}: {path:?}",
+                        crate::pose::jitter_aim(id, to)
+                    ));
                 }
             }
         }
@@ -2199,5 +2164,5 @@ fn no_walk_leg_crosses_blocked_floor() {
         .into_iter()
         .flatten()
         .collect();
-    assert_no_violations("walk-leg-crosses-blocked-floor", v);
+    assert_no_violations("jittered-leg-crosses-blocked-floor", v);
 }

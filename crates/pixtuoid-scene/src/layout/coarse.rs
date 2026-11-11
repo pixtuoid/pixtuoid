@@ -93,16 +93,11 @@ pub(crate) fn cell_center(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
 
 /// The pixel a route turns on in coarse cell `(cx, cy)`: its centre, or the
 /// [`walk_piece`] pixel nearest it when the centre is off it. A cell counts as
-/// walkable at half open, so the half holding its centre can be a wall's or a
-/// standing agent's, and a walker turning on the centre would stand in it.
-pub(crate) fn cell_anchor(
-    mask: &WalkableMask,
-    overlay: &OccupancyOverlay,
-    cx: u16,
-    cy: u16,
-) -> Point {
+/// walkable at half open, so the half holding its centre can be a wall's, and a
+/// walker turning on the centre would stand in it.
+pub(crate) fn cell_anchor(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
     let centre = cell_center(mask, cx, cy);
-    let piece = walk_piece(mask, overlay, cx, cy);
+    let piece = walk_piece(mask, &OccupancyOverlay::new(), cx, cy);
     cell_pixels(mask, cx, cy)
         .filter(|&(bit, _)| piece & bit != 0)
         .map(|(_, p)| p)
@@ -181,7 +176,7 @@ fn walk_piece(mask: &WalkableMask, overlay: &OccupancyOverlay, cx: u16, cy: u16)
 
 /// Is pixel `(x, y)` open — walkable on the static `mask` and clear of the
 /// per-frame `overlay`?
-pub(crate) fn open(mask: &WalkableMask, overlay: &OccupancyOverlay, x: u16, y: u16) -> bool {
+fn open(mask: &WalkableMask, overlay: &OccupancyOverlay, x: u16, y: u16) -> bool {
     mask.is_walkable(x, y) && (overlay.is_empty() || !overlay.blocks(x, y))
 }
 
