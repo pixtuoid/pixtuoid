@@ -20,20 +20,6 @@ use crate::pose::{
 };
 use crate::pose::{desk_leg_endpoint, route_jittered};
 
-/// Frozen A* polyline for one in-flight walk leg. Snapshotted when the leg's
-/// `(from, to)` first appear and reused unchanged, so the frozen profile's
-/// progress `t` maps onto the shape it measured: mapped onto another shape
-/// mid-stride, the sprite visibly jumps.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WalkPathSnapshot {
-    /// Leg start point.
-    pub(crate) from: Point,
-    /// Leg end point.
-    pub(crate) to: Point,
-    /// The frozen A* polyline from `from` to `to`.
-    pub(crate) path: Vec<Point>,
-}
-
 /// Phase the wander cycle is currently in for a given agent.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum WanderPhase {
@@ -179,10 +165,8 @@ pub struct WalkState {
     /// The elastic cyclic-wander timeline state machine. See [`WanderState`].
     pub(crate) wander: WanderState,
 
-    /// Frozen A* polyline for the current walk leg, `None` while not walking.
-    /// Re-snapshotted when the leg's `(from, to)` change. See
-    /// [`WalkPathSnapshot`].
-    pub(crate) walk_path: Option<WalkPathSnapshot>,
+    /// The route the current walk leg follows, which the debug overlay draws.
+    pub(crate) walk_path: Option<Vec<Point>>,
 
     /// Lifted by a pointer, and walking home after: overrides the wander and
     /// the state's pose until it arrives.

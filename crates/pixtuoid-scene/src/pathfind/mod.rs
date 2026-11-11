@@ -40,9 +40,8 @@ pub(crate) trait Router: std::fmt::Debug {
 /// floor. The key space is unbounded in steady state — aimless wander
 /// mints a fresh destination every cycle and snap-back/exit legs route from live
 /// interpolated origins — so an always-on office would accumulate keys forever.
-/// Overflowing clears the whole map, which is safe: in-flight legs are frozen on
-/// `WalkState.walk_path` and never re-consult the router, and an evicted route
-/// re-routes to the same path.
+/// Overflowing clears the whole map, which is safe: an evicted route re-routes
+/// to the same path.
 const PATH_CACHE_CAP: usize = 512;
 
 /// A* router with an internal path cache.

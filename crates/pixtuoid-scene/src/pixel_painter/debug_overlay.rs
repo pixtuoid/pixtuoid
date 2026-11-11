@@ -154,10 +154,10 @@ fn paint_routes(buf: &mut RgbBuffer, scene: &SceneState, walks: &HashMap<AgentId
         let Some(walk) = walks.get(&agent.agent_id) else {
             continue;
         };
-        let Some(wp) = &walk.walk_path else {
+        let Some(path) = &walk.walk_path else {
             continue;
         };
-        for seg in wp.path.windows(2) {
+        for seg in path.windows(2) {
             line(buf, seg[0], seg[1], ROUTE);
         }
     }
@@ -292,8 +292,8 @@ mod tests {
     }
 
     #[test]
-    fn paint_routes_draws_frozen_paths_and_skips_the_rest() {
-        use crate::walk::{WalkPathSnapshot, WalkState};
+    fn paint_routes_draws_walk_paths_and_skips_the_rest() {
+        use crate::walk::WalkState;
         use std::collections::HashMap;
 
         let mut scene = SceneState::uniform(8);
@@ -305,11 +305,7 @@ mod tests {
         }
         let mut walks: HashMap<AgentId, WalkState> = HashMap::new();
         let ms_path = WalkState {
-            walk_path: Some(WalkPathSnapshot {
-                from: Point { x: 5, y: 5 },
-                to: Point { x: 80, y: 80 },
-                path: vec![Point { x: 5, y: 5 }, Point { x: 80, y: 80 }],
-            }),
+            walk_path: Some(vec![Point { x: 5, y: 5 }, Point { x: 80, y: 80 }]),
             ..WalkState::default()
         };
         walks.insert(id_path, ms_path);
@@ -322,7 +318,7 @@ mod tests {
         let painted = (0..50u16)
             .flat_map(|y| (0..50u16).map(move |x| (x, y)))
             .any(|(x, y)| buf.get(x, y) != bg);
-        assert!(painted, "the frozen walk_path must draw a route polyline");
+        assert!(painted, "the walk_path must draw a route polyline");
     }
 
     #[test]

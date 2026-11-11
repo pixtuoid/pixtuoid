@@ -14,8 +14,8 @@ use pixtuoid_core::state::AgentSlot;
 
 use crate::physics::{Segment, WalkIntent, WalkProfile, walk_arrived, walk_progress};
 use crate::walk::{
-    LegPlan, Lifted, Planner, Settle, WalkLeg, WalkPathSnapshot, WalkState, WanderKind,
-    WanderPhase, advance_wander, snapshot_leg_profile,
+    LegPlan, Lifted, Planner, Settle, WalkLeg, WalkState, WanderKind, WanderPhase, advance_wander,
+    snapshot_leg_profile,
 };
 use crate::walkable::WalkableMask;
 
@@ -538,7 +538,7 @@ fn routed_pose(
                     let (snap_target, chair_settle) = desk_leg_endpoint(desk, layout);
                     // The FROZEN origin from arm time, not the per-frame `prev`:
                     // history holds the advancing walker, so reading it back creeps
-                    // `from` deskward and breaks the freeze's `wp.from == from` guard.
+                    // `from` deskward, off the leg the armed profile measured.
                     Some((
                         LegPose {
                             from: snap_prev,
@@ -648,42 +648,27 @@ fn route_walking_pose(
         carrying_coffee,
     } = leg;
 
-    // Frozen per leg (`WalkPathSnapshot`), which also spares every frame a re-route's
-    // A* cost.
-    let path = {
-        let walk = walks.entry(slot.agent_id).or_default();
-        match &walk.walk_path {
-            Some(wp) if wp.from == from && wp.to == to => wp.path.clone(),
-            _ => {
-                let mut p = route_jittered(router, &layout.walkable, slot.agent_id, from, to);
-                match settle {
-                    Settle::End(s) if p.last() != Some(&s) => p.push(s),
-                    Settle::Start(s) if p.first() != Some(&s) => p.insert(0, s),
-                    Settle::Both { start, end } => {
-                        // Append the end first so the prepend can't shift it.
-                        if p.last() != Some(&end) {
-                            p.push(end);
-                        }
-                        if p.first() != Some(&start) {
-                            p.insert(0, start);
-                        }
-                    }
-                    _ => {}
-                }
-                walk.walk_path = Some(WalkPathSnapshot {
-                    from,
-                    to,
-                    path: p.clone(),
-                });
-                p
+    let mut path = route_jittered(router, &layout.walkable, slot.agent_id, from, to);
+    match settle {
+        Settle::End(s) if path.last() != Some(&s) => path.push(s),
+        Settle::Start(s) if path.first() != Some(&s) => path.insert(0, s),
+        Settle::Both { start, end } => {
+            // Append the end first so the prepend can't shift it.
+            if path.last() != Some(&end) {
+                path.push(end);
+            }
+            if path.first() != Some(&start) {
+                path.insert(0, start);
             }
         }
-    };
+        _ => {}
+    }
     let segment = if path.len() <= 2 {
         Segment::straight(from, to, progress)
     } else {
         Segment::on_route(&path, progress)
     };
+    walks.entry(slot.agent_id).or_default().walk_path = Some(path);
     let at = segment.at();
     (
         Pose::Walking {

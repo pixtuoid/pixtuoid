@@ -41,86 +41,6 @@ fn layout() -> SceneLayout {
     SceneLayout::compute(crate::layout::Viewport::full(120, 96), Some(4), 0).expect("fits")
 }
 
-/// Returns a stable polyline (`first`) for its first few calls then a DIFFERENT
-/// one (`rest`) — an A* reroute mid-walk. Counts calls.
-#[derive(Debug)]
-struct ChangingRouter {
-    calls: usize,
-    first: Vec<Point>,
-    rest: Vec<Point>,
-}
-impl Router for ChangingRouter {
-    fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(&mut self, _: &WalkableMask, _from: Point, _to: Point, _: Point) -> Vec<Point> {
-        self.calls += 1;
-        // Frame 1 makes two calls (entry-profile snapshot + route_walking_pose)
-        // that must agree, so only call #3+ can be a later-frame reroute.
-        if self.calls <= 2 {
-            self.first.clone()
-        } else {
-            self.rest.clone()
-        }
-    }
-}
-
-#[test]
-fn walk_leg_freezes_path_against_midleg_reroute() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let door = l.door_threshold;
-    let desk = l.home_desks[0];
-    let desk_target = Point {
-        x: desk.at.x + 6,
-        y: desk.at.y + 4,
-    };
-    let mid_a = Point {
-        x: door.x,
-        y: u16::midpoint(door.y, desk_target.y),
-    };
-    let mid_b = Point {
-        x: desk_target.x,
-        y: door.y,
-    };
-    assert_ne!(mid_a, mid_b, "test setup: corners must differ");
-
-    let mut rig = RouteRig::new(ChangingRouter {
-        calls: 0,
-        first: vec![door, mid_a, desk_target],
-        rest: vec![door, mid_b, desk_target],
-    });
-
-    let slot1 = entry_slot(now - Duration::from_millis(200));
-    let _ = derive_with_routing(&slot1, now, &l, &mut rig.rctx());
-    let calls_after_frame1 = rig.router.calls;
-
-    let slot2 = entry_slot(now - Duration::from_millis(200));
-    let later = now + Duration::from_millis(100);
-    let _ = derive_with_routing(&slot2, later, &l, &mut rig.rctx());
-
-    assert_eq!(
-        rig.router.calls,
-        calls_after_frame1,
-        "frozen leg must not re-route on a later frame (got {} extra calls)",
-        rig.router.calls - calls_after_frame1
-    );
-
-    let frozen = rig
-        .walks
-        .get(&slot2.agent_id)
-        .and_then(|walk| walk.walk_path.as_ref())
-        .expect("walk_path must be snapshotted while walking");
-    assert!(
-        frozen.path.contains(&mid_a),
-        "frozen path must keep the first leg's corner {mid_a:?}, got {:?}",
-        frozen.path
-    );
-    assert!(
-        !frozen.path.contains(&mid_b),
-        "frozen path must NOT adopt the rerouted corner {mid_b:?} mid-leg, got {:?}",
-        frozen.path
-    );
-}
-
 fn running_slot(state_started_at: SystemTime, arrived_at: SystemTime) -> AgentSlot {
     AgentSlot {
         cwd: Arc::from(PathBuf::from("/p").as_path()),
@@ -274,77 +194,6 @@ fn snap_back_origin_is_frozen_across_frames() {
              the interruption point {prev0:?} for the whole leg"
         );
     }
-}
-
-#[test]
-fn snap_back_cornered_leg_freezes_path_no_reroute() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let desk = l.home_desks[0];
-    let snap_target = Point {
-        x: desk.at.x + 6,
-        y: desk.at.y + 4,
-    };
-    let prev0 = Point {
-        x: desk.at.x + 50,
-        y: desk.at.y + 30,
-    };
-    let corner_a = Point {
-        x: prev0.x,
-        y: snap_target.y,
-    };
-    let corner_b = Point {
-        x: snap_target.x,
-        y: prev0.y,
-    };
-    assert_ne!(corner_a, corner_b, "test setup: corners must differ");
-
-    let mut rig = RouteRig::new(ChangingRouter {
-        calls: 0,
-        first: vec![prev0, corner_a, snap_target],
-        rest: vec![prev0, corner_b, snap_target],
-    });
-
-    // State flipped 100ms ago — inside `SNAP_BACK_MS` on both frames.
-    let slot = running_slot(
-        now - Duration::from_millis(100),
-        now - Duration::from_secs(60),
-    );
-    rig.history.set(slot.agent_id, Some(prev0));
-
-    // The arm routes once and route_walking_pose once — both inside
-    // ChangingRouter's `first` window, so they agree on the shape.
-    let _ = derive_with_routing(&slot, now, &l, &mut rig.rctx());
-    let calls_after_frame1 = rig.router.calls;
-    assert!(
-        calls_after_frame1 >= 1,
-        "frame 1 must route once to snapshot the cornered leg"
-    );
-
-    let later = now + Duration::from_millis(100);
-    let _ = derive_with_routing(&slot, later, &l, &mut rig.rctx());
-
-    assert_eq!(
-        rig.router.calls,
-        calls_after_frame1,
-        "frozen cornered snap-back must not re-route on a later frame (got {} extra calls)",
-        rig.router.calls - calls_after_frame1
-    );
-    let frozen = rig
-        .walks
-        .get(&slot.agent_id)
-        .and_then(|walk| walk.walk_path.as_ref())
-        .expect("walk_path must be snapshotted while snapping back");
-    assert!(
-        frozen.path.contains(&corner_a),
-        "frozen path must keep the first corner {corner_a:?}, got {:?}",
-        frozen.path
-    );
-    assert!(
-        !frozen.path.contains(&corner_b),
-        "frozen path must NOT adopt the rerouted corner {corner_b:?} mid-leg, got {:?}",
-        frozen.path
-    );
 }
 
 /// A record is the last place the agent was drawn: one drawn seated since it
@@ -547,18 +396,18 @@ fn snap_back_routes_via_the_approach_cell_then_settles_onto_the_chair() {
     let snap = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
-        .expect("the cornered snap-back leg is frozen (… approach, chair, len > 2)");
+        .expect("the snap-back leg records its route");
     assert_eq!(
-        snap.path.last(),
+        snap.last(),
         Some(&chair),
         "snap-back must settle onto the chair; got {:?}",
-        snap.path
+        snap
     );
     assert_eq!(
-        snap.path[snap.path.len() - 2],
+        snap[snap.len() - 2],
         approach,
         "snap-back must arrive via the N/E/W approach cell, not straight at the chair; got {:?}",
-        snap.path
+        snap
     );
 }
 
@@ -740,8 +589,7 @@ fn snap_back_progress_is_physics_eased_not_linear() {
             let route = &rig.walks[&slot_q.agent_id]
                 .walk_path
                 .as_ref()
-                .expect("the chair settle corners the route, so it is frozen")
-                .path;
+                .expect("the walk records its route");
             let linear = Segment::on_route(route, LegProgress::of(dur_ms / 4, dur_ms)).travelled();
             assert!(
                 travelled < linear,
@@ -1176,14 +1024,14 @@ fn desk_entry_routes_around_the_desk_then_settles_onto_the_chair() {
     let snap = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
-        .expect("the cornered entry+settle leg is frozen (len > 2)");
+        .expect("the entry leg records its route");
     assert_eq!(
-        snap.path,
+        *snap,
         vec![door, approach, chair],
         "the leg must go door→approach→chair, settling onto the chair"
     );
     assert_ne!(
-        snap.path,
+        *snap,
         vec![door, chair],
         "entry must not straight-line door→chair through the desk body"
     );
@@ -1230,29 +1078,29 @@ fn wander_legs_approach_the_desk_via_an_allowed_side_not_through_the_front() {
         else {
             continue;
         };
-        if let (Some(&f), Some(&la)) = (snap.path.first(), snap.path.last())
+        if let (Some(&f), Some(&la)) = (snap.first(), snap.last())
             && !seen_ends.contains(&(f, la))
         {
             seen_ends.push((f, la));
         }
-        if snap.path.first() == Some(&chair) {
+        if snap.first() == Some(&chair) {
             saw_out = true;
             assert_eq!(
-                snap.path.get(1),
+                snap.get(1),
                 Some(&approach),
                 "walk-out must leave the desk via the N/E/W approach cell, not \
                  straight through the south front; got {:?}",
-                snap.path
+                snap
             );
         }
-        if snap.path.last() == Some(&chair) && snap.path.len() >= 2 {
+        if snap.last() == Some(&chair) && snap.len() >= 2 {
             saw_back = true;
             assert_eq!(
-                snap.path[snap.path.len() - 2],
+                snap[snap.len() - 2],
                 approach,
                 "walk-back must arrive at the desk via the N/E/W approach cell, \
                  not the south front; got {:?}",
-                snap.path
+                snap
             );
         }
     }
@@ -1310,19 +1158,19 @@ fn exit_from_desk_rises_off_the_chair_via_the_approach_cell() {
     let snap = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
-        .expect("the cornered exit leg is frozen (chair → approach → door, len > 2)");
+        .expect("the exit leg records its route");
     assert_eq!(
-        snap.path.first(),
+        snap.first(),
         Some(&chair),
         "exit must START at the chair (Settle::Start glides off it); got {:?}",
-        snap.path
+        snap
     );
     assert_eq!(
-        snap.path.get(1),
+        snap.get(1),
         Some(&approach),
         "exit must rise off the chair via the N/E/W approach cell, not dip south; \
          got {:?}",
-        snap.path
+        snap
     );
 }
 
@@ -1977,102 +1825,12 @@ fn wander_continuous_across_layouts_and_agents() {
     }
 }
 
-/// Returns shape `a` until `flipped`, then `b` — switches the A* result mid-leg.
-#[derive(Debug)]
-struct FlipRouter {
-    flipped: bool,
-    a: Vec<Point>,
-    b: Vec<Point>,
-}
-impl Router for FlipRouter {
-    fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(&mut self, _: &WalkableMask, _from: Point, _to: Point, _: Point) -> Vec<Point> {
-        if self.flipped {
-            self.b.clone()
-        } else {
-            self.a.clone()
-        }
-    }
-}
-
-#[test]
-fn frozen_leg_anchor_continuous_across_router_shape_change() {
-    // The freeze-specific guard: it fails when the freeze is reverted.
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let door = l.door_threshold;
-    let desk = l.home_desks[0];
-    let desk_t = Point {
-        x: desk.at.x + 6,
-        y: desk.at.y + 4,
-    };
-    // Shape A is a long DOWN-then-across detour so the walk lasts many frames;
-    // shape B is short and very differently routed. Both share the endpoints.
-    let a = vec![
-        door,
-        Point {
-            x: door.x,
-            y: door.y + 40,
-        },
-        Point {
-            x: desk_t.x,
-            y: door.y + 40,
-        },
-        desk_t,
-    ];
-    let b = vec![
-        door,
-        Point {
-            x: desk_t.x,
-            y: door.y,
-        },
-        desk_t,
-    ];
-
-    // ~40% of the frozen entry duration — mid-walk, where A and B diverge most.
-    let entry_id = entry_slot(now).agent_id;
-    let dur = walk_profile(octile_path_len(&a).max(1), WalkIntent::Entry, entry_id).duration_ms;
-    let flip_frame = frames_in(Duration::from_millis(dur * 2 / 5)).max(2);
-
-    let mut rig = RouteRig::new(FlipRouter {
-        flipped: false,
-        a,
-        b,
-    });
-
-    let mut prev: Option<Point> = None;
-    let mut max_step = 0i32;
-    for i in 0..(flip_frame + 8) {
-        if i == flip_frame {
-            rig.router.flipped = true;
-        }
-        let slot = entry_slot(now - Duration::from_millis(200));
-        let t = now + PAINT_FRAME * i;
-        if let Some(Pose::Walking { segment, .. }) =
-            derive_with_routing(&slot, t, &l, &mut rig.rctx())
-        {
-            let pos = segment.at();
-            if let Some(p) = prev {
-                let step = (i32::from(pos.x) - i32::from(p.x))
-                    .abs()
-                    .max((i32::from(pos.y) - i32::from(p.y)).abs());
-                max_step = max_step.max(step);
-            }
-            prev = Some(pos);
-        }
-    }
-    assert!(
-        max_step <= 20,
-        "frozen leg must keep the anchor continuous despite a mid-leg router shape change (max jump {max_step}px)"
-    );
-}
-
 fn unit_slot(now: SystemTime) -> AgentSlot {
     running_slot(now, now - Duration::from_secs(60))
 }
 
 #[test]
-fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_freezes_its_path() {
+fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_records_its_route() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = unit_slot(now);
@@ -2107,10 +1865,9 @@ fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_freezes_its_path() {
     assert_eq!(
         rig.walks
             .get(&slot.agent_id)
-            .and_then(|walk| walk.walk_path.as_ref())
-            .map(|wp| wp.path.clone()),
+            .and_then(|walk| walk.walk_path.clone()),
         Some(vec![from, to]),
-        "a straight leg freezes as a cornered one does"
+        "a straight leg records its route as a cornered one does"
     );
     assert_eq!(
         drawn_at,

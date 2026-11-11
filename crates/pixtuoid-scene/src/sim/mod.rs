@@ -351,9 +351,9 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
 
     // The AUTHORITATIVE pose derivation, ONCE per frame: it runs the
     // advance_wander / walk_path / history side effects, and placement
-    // resolution below looks the result up instead of re-deriving (a second
-    // derive would double the A*). The `exiting_at` filter is INTENTIONALLY
-    // absent — an exiting agent's pose is still needed to place its character.
+    // resolution below looks the result up instead of re-deriving. The
+    // `exiting_at` filter is INTENTIONALLY absent — an exiting agent's pose is
+    // still needed to place its character.
     let poses: HashMap<AgentId, Option<Pose>> = agents
         .iter()
         .filter(|a| layout.home_desk_of(a).is_some())
