@@ -1,4 +1,4 @@
-//! Kernel process-start times — the identity half of pid-recycle guards.
+//! Kernel process reads: start times, the identity half of pid-recycle guards, and Linux's ppid.
 //!
 //! [`pid_start_marker`] returns an opaque per-OS value that is stable for a
 //! process's whole life and different for a recycled pid: macOS epoch seconds,
@@ -42,7 +42,7 @@ fn imp(pid: i32) -> Option<u64> {
 
 #[cfg(target_os = "linux")]
 fn imp(pid: i32) -> Option<u64> {
-    starttime_ticks(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)
+    stat_field(&stat_of(pid)?, STARTTIME)
 }
 
 #[cfg(windows)]
@@ -187,14 +187,33 @@ impl StartPins {
     }
 }
 
-/// `starttime`, field 22 of a `/proc/<pid>/stat`
-/// ([proc_pid_stat(5)](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html)).
+// A `/proc/<pid>/stat`'s fields, numbered as proc_pid_stat(5) numbers them
+// (https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html).
 #[cfg(any(test, target_os = "linux"))]
-fn starttime_ticks(stat: &str) -> Option<u64> {
-    // The comm field (2) can contain spaces/parens — so count from after the
-    // LAST ')', where starttime is the 20th token.
+const COMM: usize = 2;
+#[cfg(any(test, target_os = "linux"))]
+const PPID: usize = 4;
+#[cfg(any(test, target_os = "linux"))]
+const STARTTIME: usize = 22;
+
+#[cfg(target_os = "linux")]
+fn stat_of(pid: i32) -> Option<String> {
+    std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()
+}
+
+/// Field `n` of a `/proc/<pid>/stat`, parsed.
+#[cfg(any(test, target_os = "linux"))]
+fn stat_field<T: std::str::FromStr>(stat: &str, n: usize) -> Option<T> {
+    // `comm` can contain spaces/parens — so count from after the LAST ')'.
     let after = stat.rsplit_once(')')?.1;
-    after.split_whitespace().nth(19)?.parse().ok()
+    let index = n.checked_sub(COMM + 1)?;
+    after.split_whitespace().nth(index)?.parse().ok()
+}
+
+/// `pid`'s parent, `None` when the process is gone or unreadable.
+#[cfg(target_os = "linux")]
+pub fn pid_parent(pid: i32) -> Option<i32> {
+    stat_field(&stat_of(pid)?, PPID)
 }
 
 /// Fixtures stand in for the kernel, so these run off Linux too.
@@ -203,13 +222,14 @@ mod any_host_tests {
     use super::*;
 
     /// The comm `(my (odd) cmd)` holds spaces and both parens: a split at the
-    /// first `)` or on whitespace alone lands on a field other than 22.
+    /// first `)` or on whitespace alone lands on another field.
     #[test]
-    fn starttime_is_field_22_past_a_comm_with_spaces_and_parens() {
-        let stat = "4242 (my (odd) cmd) S 1 4242 4242 0 -1 4194560 1234 0 0 0 10 5 0 0 \
+    fn a_field_is_counted_past_a_comm_with_spaces_and_parens() {
+        let stat = "4242 (my (odd) cmd) S 777 4242 4242 0 -1 4194560 1234 0 0 0 10 5 0 0 \
                     20 0 1 0 98765 12345678 456 18446744073709551615 1 1 0 0 0 0 0";
-        assert_eq!(starttime_ticks(stat), Some(98_765));
-        assert_eq!(starttime_ticks("4242 (cut"), None);
+        assert_eq!(stat_field::<i32>(stat, PPID), Some(777));
+        assert_eq!(stat_field::<u64>(stat, STARTTIME), Some(98_765));
+        assert_eq!(stat_field::<u64>("4242 (cut", STARTTIME), None);
     }
 
     /// Realtime's 200 ms sit under boottime's 900 ms, so flooring each clock

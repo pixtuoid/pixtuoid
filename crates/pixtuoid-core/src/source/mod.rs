@@ -610,6 +610,11 @@ pub mod openclaw;
 pub mod opencode;
 #[cfg(feature = "native")]
 mod proc_start;
+// `doc(hidden)`: plumbing for the binary's Linux focus walk; a Linux-only item
+// in the published API would make `just api-surface`'s golden host-dependent.
+#[cfg(all(feature = "native", target_os = "linux"))]
+#[doc(hidden)]
+pub use proc_start::pid_parent;
 #[cfg(feature = "native")]
 pub use proc_start::pid_start_marker;
 pub mod reasonix;
