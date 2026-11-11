@@ -7,11 +7,6 @@ use std::path::{Path, PathBuf};
 use super::proc_start::{StartPins, pid_start};
 use crate::source::jsonl::ProbeSnapshot;
 
-/// One for every reader of this host's registry, the probe and the focus
-/// lookup alike, so neither re-judges a session the other has pinned.
-#[cfg(unix)]
-static PINS: StartPins = StartPins::new();
-
 /// CC's first-party live-process registry: `<claude_home>/sessions/<pid>.json`,
 /// one tiny undocumented JSON file per running CC process (`{pid, sessionId,
 /// cwd, status, startedAt, procStart, ...}`). Returns the session UUIDs (+
@@ -32,98 +27,10 @@ static PINS: StartPins = StartPins::new();
 pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
     #[cfg(unix)]
     {
-        // session_id → winning entry. The fold (not direct inserts) exists for
-        // the duplicate-id case (#252): binding id→pid by unspecified read_dir
-        // order flaps across refreshes, churning the exit-watch rebind, and the
-        // losing pid dying first emits a spurious SessionEnd for the live one.
-        let mut winners: std::collections::HashMap<String, RegistryEntry> =
-            std::collections::HashMap::new();
-        let Ok(entries) = std::fs::read_dir(sessions_dir) else {
-            tracing::debug!(
-                path = ?sessions_dir,
-                "CC session registry unreadable or missing; probe pass failed"
-            );
-            return None;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            // Regular files only, decided WITHOUT following symlinks (so a
-            // symlink-to-FIFO is rejected too): reading a writer-less FIFO
-            // named `x.json` blocks forever, silently killing the watcher task.
-            if !entry.file_type().is_ok_and(|t| t.is_file()) {
-                continue;
-            }
-            // An unreadable file is usually a CC exiting and removing its own
-            // entry mid-scan — not format drift; skip silently.
-            let Ok(bytes) = crate::source::read_bounded_bytes(&path, MAX_REGISTRY_ENTRY_BYTES)
-            else {
-                continue;
-            };
-            let reg = match parse_registry_entry(&bytes) {
-                RegistryParse::Entry(reg) => reg,
-                RegistryParse::Skip => continue,
-                RegistryParse::ShapeDrift(key) => {
-                    // Warn ONCE per process run, never per scan pass:
-                    // the registry is the one undocumented upstream surface
-                    // with no fetchable text to drift-diff (#247), so a silent
-                    // key rename would degrade the probe to mtime-only gating
-                    // with zero signal.
-                    static SHAPE_DRIFT_WARNED: std::sync::Once = std::sync::Once::new();
-                    SHAPE_DRIFT_WARNED.call_once(|| {
-                        crate::source::drift::shape_drift(
-                            crate::source::claude_code::SOURCE_NAME,
-                            crate::source::drift::ShapeDrift::RegistryKey { path: &path, key },
-                        );
-                    });
-                    continue;
-                }
-            };
-            if !pid_alive(reg.pid) {
-                continue;
-            }
-            let claimed_secs = reg.started_at_ms / 1000;
-            if !PINS.admits(reg.pid, claimed_secs, pid_start(reg.pid), |actual_secs| {
-                claimed_secs.abs_diff(actual_secs) <= PID_START_TOLERANCE_SECS
-            }) {
-                tracing::debug!(
-                    pid = reg.pid,
-                    claimed_secs,
-                    "pid recycled — registry startedAt does not name the pid's process; skipping"
-                );
-                continue;
-            }
-            match winners.entry(reg.session_id.clone()) {
-                std::collections::hash_map::Entry::Vacant(slot) => {
-                    slot.insert(reg);
-                }
-                std::collections::hash_map::Entry::Occupied(mut slot) => {
-                    // Real registries are one-file-per-pid with unique ids — a
-                    // duplicate is upstream junk worth ONE breadcrumb per
-                    // process run, not a per-scan log storm.
-                    static DUPLICATE_ID_WARNED: std::sync::Once = std::sync::Once::new();
-                    DUPLICATE_ID_WARNED.call_once(|| {
-                        tracing::warn!(
-                            session_id = ?reg.session_id,
-                            pids = ?(slot.get().pid, reg.pid),
-                            "two live CC registry entries claim the same sessionId — \
-                             keeping a deterministic winner"
-                        );
-                    });
-                    if prefer_candidate(slot.get(), &reg) {
-                        slot.insert(reg);
-                    }
-                }
-            }
-        }
-        let mut live = ProbeSnapshot::default();
-        for (session_id, entry) in winners {
-            live.pid_of.insert(session_id, entry.pid);
-        }
-        PINS.retain(|pid| live.pid_of.values().any(|&vouched| vouched == pid));
-        Some(live)
+        // One set for every reader of this host's registry, the probe and the
+        // focus lookup alike: `FocusProbe` takes a stateless `fn`.
+        static PINS: StartPins = StartPins::new();
+        scan(sessions_dir, &PINS)
     }
     #[cfg(not(unix))]
     {
@@ -133,6 +40,104 @@ pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
         let _ = sessions_dir;
         None
     }
+}
+
+/// [`live_cc_session_ids`] against `pins`.
+#[cfg(unix)]
+fn scan(sessions_dir: &Path, pins: &StartPins) -> Option<ProbeSnapshot> {
+    // session_id → winning entry. The fold (not direct inserts) exists for
+    // the duplicate-id case (#252): binding id→pid by unspecified read_dir
+    // order flaps across refreshes, churning the exit-watch rebind, and the
+    // losing pid dying first emits a spurious SessionEnd for the live one.
+    let mut winners: std::collections::HashMap<String, RegistryEntry> =
+        std::collections::HashMap::new();
+    let Ok(entries) = std::fs::read_dir(sessions_dir) else {
+        tracing::debug!(
+            path = ?sessions_dir,
+            "CC session registry unreadable or missing; probe pass failed"
+        );
+        return None;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        // Regular files only, decided WITHOUT following symlinks (so a
+        // symlink-to-FIFO is rejected too): reading a writer-less FIFO
+        // named `x.json` blocks forever, silently killing the watcher task.
+        if !entry.file_type().is_ok_and(|t| t.is_file()) {
+            continue;
+        }
+        // An unreadable file is usually a CC exiting and removing its own
+        // entry mid-scan — not format drift; skip silently.
+        let Ok(bytes) = crate::source::read_bounded_bytes(&path, MAX_REGISTRY_ENTRY_BYTES) else {
+            continue;
+        };
+        let reg = match parse_registry_entry(&bytes) {
+            RegistryParse::Entry(reg) => reg,
+            RegistryParse::Skip => continue,
+            RegistryParse::ShapeDrift(key) => {
+                // Warn ONCE per process run, never per scan pass:
+                // the registry is the one undocumented upstream surface
+                // with no fetchable text to drift-diff (#247), so a silent
+                // key rename would degrade the probe to mtime-only gating
+                // with zero signal.
+                static SHAPE_DRIFT_WARNED: std::sync::Once = std::sync::Once::new();
+                SHAPE_DRIFT_WARNED.call_once(|| {
+                    crate::source::drift::shape_drift(
+                        crate::source::claude_code::SOURCE_NAME,
+                        crate::source::drift::ShapeDrift::RegistryKey { path: &path, key },
+                    );
+                });
+                continue;
+            }
+        };
+        if !pid_alive(reg.pid) {
+            continue;
+        }
+        let claimed_secs = reg.started_at_ms / 1000;
+        let start = pid_start(reg.pid);
+        if !pins.admits(reg.pid, claimed_secs, start, |actual_secs| {
+            claimed_secs.abs_diff(actual_secs) <= PID_START_TOLERANCE_SECS
+        }) {
+            tracing::debug!(
+                pid = reg.pid,
+                claimed_secs,
+                start = ?start,
+                "registry startedAt does not match the pid's start; skipping"
+            );
+            continue;
+        }
+        match winners.entry(reg.session_id.clone()) {
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(reg);
+            }
+            std::collections::hash_map::Entry::Occupied(mut slot) => {
+                // Real registries are one-file-per-pid with unique ids — a
+                // duplicate is upstream junk worth ONE breadcrumb per
+                // process run, not a per-scan log storm.
+                static DUPLICATE_ID_WARNED: std::sync::Once = std::sync::Once::new();
+                DUPLICATE_ID_WARNED.call_once(|| {
+                    tracing::warn!(
+                        session_id = ?reg.session_id,
+                        pids = ?(slot.get().pid, reg.pid),
+                        "two live CC registry entries claim the same sessionId — \
+                         keeping a deterministic winner"
+                    );
+                });
+                if prefer_candidate(slot.get(), &reg) {
+                    slot.insert(reg);
+                }
+            }
+        }
+    }
+    let mut live = ProbeSnapshot::default();
+    for (session_id, entry) in winners {
+        live.pid_of.insert(session_id, entry.pid);
+    }
+    pins.retain(pid_start);
+    Some(live)
 }
 
 /// Deterministic winner between two LIVE entries claiming one sessionId
@@ -698,7 +703,6 @@ mod liveness_tests {
             .to_string(),
         )
         .unwrap();
-        // CC stamps startedAt ~1.2s after process start — inside the tolerance.
         std::fs::write(
             dir.path().join("genuine.json"),
             serde_json::json!({
@@ -717,37 +721,45 @@ mod liveness_tests {
         );
     }
 
-    /// A child of its own, so no other test's scan touches its pin.
+    /// The scan between holds the entry torn, as CC's in-place rewrite of
+    /// `sessions/<pid>.json` can leave it for one read.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn an_entry_judged_before_a_clock_step_keeps_its_vouch() {
-        let mut child = crate::test_child::sleeper();
-        let pid = child.id() as i32;
+        let pid = std::process::id() as i32;
         let start = pid_start(pid);
         // After the step, the claim CC stamped no longer fits the start read now.
         let claimed_secs = start.map_or(0, |start| start.secs) + PID_START_TOLERANCE_SECS + 3_600;
         let dir = tempfile::tempdir().unwrap();
-        let entry = i64::from(pid);
-        write_entry_started(
-            dir.path(),
-            "stepped.json",
-            entry,
-            "stepped",
-            claimed_secs * 1000,
-        );
-        let unjudged = live_cc_session_ids(dir.path());
-        // Judged before the step, when the claim fitted.
-        PINS.admits(pid, claimed_secs, start, |_| true);
-        let judged = live_cc_session_ids(dir.path());
-        let _ = child.kill();
-        let _ = child.wait();
-        let vouches =
-            |snap: Option<ProbeSnapshot>| snap.expect("a healthy probe").contains("stepped");
+        let write = || {
+            let entry = i64::from(pid);
+            write_entry_started(
+                dir.path(),
+                "stepped.json",
+                entry,
+                "stepped",
+                claimed_secs * 1000,
+            );
+        };
+        write();
+        let pins = StartPins::new();
+        let vouches = || {
+            scan(dir.path(), &pins)
+                .expect("a healthy probe")
+                .contains("stepped")
+        };
         assert!(
-            !vouches(unjudged),
+            !vouches(),
             "never judged, the misfit reads as a recycled pid"
         );
-        assert!(vouches(judged), "judged once, the marker holds it");
+        // Judged before the step, when the claim fitted.
+        pins.admits(pid, claimed_secs, start, |_| true);
+        assert!(vouches(), "judged once, the marker holds it");
+        std::fs::write(dir.path().join("stepped.json"), "").unwrap();
+        assert!(!vouches(), "a torn entry is skipped");
+        write();
+        assert!(vouches(), "the pin outlives the torn scan");
+        assert!(vouches(), "and the scan after it");
     }
 
     #[cfg(unix)]

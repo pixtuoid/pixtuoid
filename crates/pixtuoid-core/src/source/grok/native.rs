@@ -117,26 +117,29 @@ fn grok_ids_from_registry(
             .opened_at
             .as_deref()
             .and_then(crate::source::decoder::rfc3339_to_epoch_secs)
-            && !pins.admits(pid, claimed_secs, start(pid), |actual_secs| {
+        {
+            let started = start(pid);
+            if !pins.admits(pid, claimed_secs, started, |actual_secs| {
                 // `opened_at` is stamped at session OPEN, which can lag process
                 // start by however long the user sat on the welcome screen. Only a
                 // claim EARLIER than the process start is evidence of recycling —
                 // a session can't have opened before its process existed.
                 actual_secs <= claimed_secs + crate::source::cc_probe::PID_START_TOLERANCE_SECS
-            })
-        {
-            tracing::debug!(
-                pid,
-                claimed_secs,
-                "pid recycled — active_sessions opened_at predates the pid's process; skipping"
-            );
-            continue;
+            }) {
+                tracing::debug!(
+                    pid,
+                    claimed_secs,
+                    start = ?started,
+                    "active_sessions opened_at predates the pid's start; skipping"
+                );
+                continue;
+            }
         }
         // Duplicate session_id across entries is upstream junk — keep the
         // deterministic tiebreak winner (larger pid).
         snap.bind_pid(e.session_id, pid);
     }
-    pins.retain(|pid| snap.pid_of.values().any(|&bound| bound == pid));
+    pins.retain(start);
     Some(snap)
 }
 
@@ -508,6 +511,57 @@ mod tests {
             assert!(vouches(1, opened), "judged at open");
             assert!(vouches(1, stepped), "after the step, the marker holds it");
             assert!(!vouches(2, stepped), "a new marker is a recycled pid");
+        }
+
+        /// A pin lives as long as its process, never as one scan's vouch: a
+        /// scan that fails or leaves the entry out keeps it, and one whose
+        /// `start` finds the pid dead drops it.
+        #[test]
+        fn a_pin_outlives_a_scan_that_skips_its_entry() {
+            let opened =
+                crate::source::decoder::rfc3339_to_epoch_secs("2026-07-16T12:00:05Z").unwrap();
+            let stepped = opened + crate::source::cc_probe::PID_START_TOLERANCE_SECS + 3_600;
+            let running = move |_| {
+                Some(Start {
+                    marker: 1,
+                    secs: stepped,
+                })
+            };
+            let only_b = r#"[{"session_id":"0197-b","pid":200,"cwd":"/r/b",
+                              "opened_at":"2026-07-16T12:01:00+00:00"}]"#;
+            let held_across = |between: &dyn Fn(&StartPins)| {
+                let pins = StartPins::new();
+                let vouches = |secs| {
+                    let start = move |_| Some(Start { marker: 1, secs });
+                    grok_ids_from_registry(REG.as_bytes(), alive_all, start, &pins)
+                        .expect("a parseable registry")
+                        .pid_of
+                        .contains_key("0197-a")
+                };
+                assert!(vouches(opened), "judged at open");
+                between(&pins);
+                vouches(stepped)
+            };
+            assert!(
+                held_across(&|pins| {
+                    assert!(
+                        grok_ids_from_registry(b"not json", alive_all, running, pins).is_none()
+                    );
+                }),
+                "a failed scan keeps the pin"
+            );
+            assert!(
+                held_across(&|pins| {
+                    let _ = grok_ids_from_registry(only_b.as_bytes(), alive_all, running, pins);
+                }),
+                "a scan without the entry keeps the pin of its live process"
+            );
+            assert!(
+                !held_across(&|pins| {
+                    let _ = grok_ids_from_registry(REG.as_bytes(), alive_none, |_| None, pins);
+                }),
+                "a dead pid loses its pin"
+            );
         }
 
         #[test]

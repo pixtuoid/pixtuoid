@@ -106,14 +106,28 @@ pub(crate) fn pid_start(pid: i32) -> Option<Start> {
 }
 
 /// The boot in epoch seconds by the clock now. Realtime − Boottime is the
-/// `offs_real − offs_boot` that `getboottime64` reads
+/// `offs_real − offs_boot` that `getboottime64` takes
 /// (kernel/time/timekeeping.c), so a realtime step moves it, while the
 /// marker, ticks after boot, stays.
 #[cfg(target_os = "linux")]
 fn boot_secs() -> Option<u64> {
     use rustix::time::{ClockId, clock_gettime};
-    u64::try_from(clock_gettime(ClockId::Realtime).tv_sec - clock_gettime(ClockId::Boottime).tv_sec)
-        .ok()
+    let read = |clock| {
+        let now = clock_gettime(clock);
+        Some(std::time::Duration::new(
+            now.tv_sec.try_into().ok()?,
+            now.tv_nsec.try_into().ok()?,
+        ))
+    };
+    boot_from(read(ClockId::Realtime)?, read(ClockId::Boottime)?)
+}
+
+/// The boot from the two clocks read together.
+#[cfg(any(test, target_os = "linux"))]
+fn boot_from(realtime: std::time::Duration, boottime: std::time::Duration) -> Option<u64> {
+    // Whole clocks, subtracted before the floor: each clock floored first
+    // would flip the result by a second as their nanoseconds cross.
+    Some(realtime.checked_sub(boottime)?.as_secs())
 }
 
 /// The pids a registry probe has judged by their epoch start, each known by
@@ -155,14 +169,17 @@ impl StartPins {
         fits
     }
 
-    /// Forget every pin but `kept`'s, once a scan has judged its registry.
-    pub(crate) fn retain(&self, kept: impl Fn(i32) -> bool) {
-        self.lock().retain(|&(pid, _), _| kept(pid));
+    /// Forget each pin whose process `start` no longer finds at its pid, dead
+    /// or recycled: a pin lives as long as its process, never as one scan's
+    /// vouch, since a scan can skip a live entry CC is rewriting in place.
+    pub(crate) fn retain(&self, start: impl Fn(i32) -> Option<Start>) {
+        self.lock()
+            .retain(|&(pid, _), &mut marker| start(pid).is_some_and(|now| now.marker == marker));
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Pinned> {
-        // A panic mid-update leaves only a pin missing or kept, either a sound
-        // judgement.
+        // A panic mid-update leaves at most one pin unwritten, which only sends
+        // its entry back to the wall-clock check.
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -179,8 +196,7 @@ fn starttime_ticks(stat: &str) -> Option<u64> {
     after.split_whitespace().nth(19)?.parse().ok()
 }
 
-/// Every host runs these: the text and the clocks are Linux's, the parsing and
-/// the pinning aren't.
+/// Fixtures stand in for the kernel, so these run off Linux too.
 #[cfg(test)]
 mod any_host_tests {
     use super::*;
@@ -193,6 +209,23 @@ mod any_host_tests {
                     20 0 1 0 98765 12345678 456 18446744073709551615 1 1 0 0 0 0 0";
         assert_eq!(starttime_ticks(stat), Some(98_765));
         assert_eq!(starttime_ticks("4242 (cut"), None);
+    }
+
+    /// Realtime's 200 ms sit under boottime's 900 ms, so flooring each clock
+    /// first reads the boot a second late.
+    #[test]
+    fn the_boot_floors_the_clocks_difference() {
+        use std::time::Duration;
+        let at = |secs, millis| Duration::from_secs(secs) + Duration::from_millis(millis);
+        assert_eq!(
+            boot_from(at(1_700_000_000, 200), at(100, 900)),
+            Some(1_699_999_899)
+        );
+        assert_eq!(
+            boot_from(at(100, 0), at(200, 0)),
+            None,
+            "boottime past realtime"
+        );
     }
 
     /// A clock step moves the epoch start the kernel's marker doesn't: once a
@@ -214,6 +247,10 @@ mod any_host_tests {
             "a fit pins the marker"
         );
         assert!(
+            !pins.admits(7, later, at(1, claim + step), fits(later)),
+            "a new claim on a pinned pid is judged afresh"
+        );
+        assert!(
             pins.admits(7, later, at(1, later), fits(later)),
             "one pid, a second claim"
         );
@@ -233,10 +270,29 @@ mod any_host_tests {
             pins.admits(7, claim, None, |_| false),
             "no start leaves kill(0) to decide"
         );
-        pins.retain(|pid| pid != 7);
-        assert!(
-            !pins.admits(7, later, at(1, later + step), fits(later)),
-            "unkept, judged anew"
+    }
+
+    /// A pin lives as long as its process: the prune keeps it while the pid
+    /// still runs the marker it pinned, and drops it once the pid is dead or
+    /// recycled.
+    #[cfg(unix)]
+    #[test]
+    fn a_pin_lives_as_long_as_its_process() {
+        let pins = StartPins::new();
+        let at = |marker, secs| Some(Start { marker, secs });
+        for pid in [7, 8, 9] {
+            assert!(pins.admits(pid, 1_000, at(1, 1_000), |_| true));
+        }
+        pins.retain(|pid| match pid {
+            7 => at(1, 4_600),
+            8 => None,
+            _ => at(2, 1_000),
+        });
+        let pinned: Vec<i32> = pins.lock().keys().map(|&(pid, _)| pid).collect();
+        assert_eq!(
+            pinned,
+            [7],
+            "the live pid kept, the dead and the recycled dropped"
         );
     }
 }

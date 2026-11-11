@@ -33,12 +33,46 @@ enum Step {
     Wait,
 }
 
-fn step(state: i32) -> Step {
-    match state {
-        ESTABLISHED => Step::Announced,
-        COLLISION => Step::Rename,
-        FAILURE => Step::Dropped,
-        _ => Step::Wait,
+/// The office's service, as far as the entry group holds it: what each server
+/// and group state asks, taken as done.
+#[derive(Debug, Default)]
+struct Service {
+    holds: bool,
+}
+
+impl Service {
+    fn on_server(&mut self, state: i32) -> server::Step {
+        match (state, self.holds) {
+            // The SRV names the host as it was at `AddService` (our "" host
+            // turns NULL in avahi-daemon/dbus-entry-group.c, and
+            // avahi-core/entry.c fills it in), so defs.h registers only while
+            // RUNNING.
+            (server::RUNNING, false) => {
+                self.holds = true;
+                server::Step::Publish
+            }
+            // defs.h: remove the services on COLLISION or REGISTERING.
+            (server::REGISTERING | server::COLLISION, true) => {
+                self.holds = false;
+                server::Step::Withdraw
+            }
+            // avahi-daemon never signals INVALID or FAILURE (avahi-daemon/main.c's
+            // `server_callback`), and FAILURE quits it, which the owner watch ends.
+            _ => server::Step::Wait,
+        }
+    }
+
+    fn on_group(&mut self, state: i32) -> Step {
+        match state {
+            ESTABLISHED => Step::Announced,
+            // defs.h: on COLLISION "the entries have been withdrawn".
+            COLLISION => {
+                self.holds = false;
+                Step::Rename
+            }
+            FAILURE => Step::Dropped,
+            _ => Step::Wait,
+        }
     }
 }
 
@@ -58,41 +92,6 @@ mod server {
         Publish,
         Withdraw,
         Wait,
-    }
-
-    /// The office's service, as far as the entry group holds it.
-    #[derive(Debug, Default)]
-    pub(super) struct Service {
-        holds: bool,
-    }
-
-    impl Service {
-        /// What the server's `state` asks of the group, taken as done.
-        pub(super) fn step(&mut self, state: i32) -> Step {
-            match (state, self.holds) {
-                // The SRV names the host as it was at `AddService` (our "" host
-                // turns NULL in avahi-daemon/dbus-entry-group.c, and
-                // avahi-core/entry.c fills it in), so defs.h registers only
-                // while RUNNING.
-                (RUNNING, false) => {
-                    self.holds = true;
-                    Step::Publish
-                }
-                // defs.h: remove the services on COLLISION or REGISTERING.
-                (REGISTERING | COLLISION, true) => {
-                    self.holds = false;
-                    Step::Withdraw
-                }
-                // avahi-daemon never signals INVALID or FAILURE (avahi-daemon/main.c's
-                // `server_callback`), and FAILURE quits it, which the owner watch ends.
-                _ => Step::Wait,
-            }
-        }
-
-        /// The group's own collision withdrew the service.
-        pub(super) fn withdrawn(&mut self) {
-            self.holds = false;
-        }
     }
 
     #[zbus::proxy(
@@ -164,9 +163,9 @@ pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()
     let txt = vec![super::txt(spki).into_bytes()];
     let mut name = instance.to_owned();
     let mut server_state = server.get_state().await?;
-    let mut service = server::Service::default();
+    let mut service = Service::default();
     loop {
-        match service.step(server_state) {
+        match service.on_server(server_state) {
             server::Step::Publish => add(&server, &group, &mut name, port, &txt).await?,
             server::Step::Withdraw => group.reset().await?,
             server::Step::Wait => {}
@@ -181,12 +180,11 @@ pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()
             change = states.next() => {
                 let Some(change) = change else { return Ok(()) };
                 let Ok(change) = change.args() else { continue };
-                match step(change.state) {
+                match service.on_group(change.state) {
                     Step::Announced => tracing::info!(name = ?name, "announced on the local network"),
                     Step::Rename => {
                         name = server.get_alternative_service_name(&name).await?;
                         group.reset().await?;
-                        service.withdrawn();
                     }
                     Step::Dropped => {
                         tracing::debug!(error = ?change.error, "Avahi dropped the service");
@@ -247,8 +245,11 @@ mod tests {
     /// What a run of server states asks of a group that starts without the
     /// service.
     fn steps(states: &[i32]) -> Vec<server::Step> {
-        let mut service = server::Service::default();
-        states.iter().map(|&state| service.step(state)).collect()
+        let mut service = Service::default();
+        states
+            .iter()
+            .map(|&state| service.on_server(state))
+            .collect()
     }
 
     /// Each `AvahiServerState` by its defs.h number, `INVALID` first, against
@@ -290,18 +291,18 @@ mod tests {
     fn a_group_collision_republishes_only_while_the_server_runs() {
         use server::Step::{Publish, Wait, Withdraw};
         use server::{REGISTERING, RUNNING};
-        let mut service = server::Service::default();
-        assert_eq!(service.step(RUNNING), Publish);
-        assert_eq!(service.step(REGISTERING), Withdraw);
-        service.withdrawn();
+        let mut service = Service::default();
+        assert_eq!(service.on_server(RUNNING), Publish);
+        assert_eq!(service.on_group(COLLISION), Step::Rename);
+        assert_eq!(service.on_server(RUNNING), Publish, "renamed while running");
+        assert_eq!(service.on_server(REGISTERING), Withdraw);
+        assert_eq!(service.on_group(COLLISION), Step::Rename);
         assert_eq!(
-            service.step(REGISTERING),
+            service.on_server(REGISTERING),
             Wait,
             "no publish under REGISTERING"
         );
-        assert_eq!(service.step(RUNNING), Publish);
-        service.withdrawn();
-        assert_eq!(service.step(RUNNING), Publish, "renamed while running");
+        assert_eq!(service.on_server(RUNNING), Publish);
     }
 
     /// Each `AvahiEntryGroupState` by its defs.h number, `UNCOMMITED` first.
@@ -315,7 +316,7 @@ mod tests {
             Step::Dropped,
         ];
         for (state, want) in (0..).zip(steps) {
-            assert_eq!(step(state), want, "state {state}");
+            assert_eq!(Service::default().on_group(state), want, "state {state}");
         }
     }
 }

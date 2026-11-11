@@ -34,7 +34,6 @@ exclude_globs = [
 exclude_re = [
     # Equivalent mutants — each verified UNOBSERVABLE by hand, not merely untested.
     'unclaim\.rs.*replace < with <= in ChildEndUnclaims',       # same-instant monotonic reads
-    'cc_probe\.rs.*replace pid_start_time_secs',                # cfg-twin; both pinned per-platform
     'compute\.rs.*plant_ground_in_bounds',                      # targeted retain == clear-all in range
     'liveness\.rs.*replace > with >= in ProbeSnapshot::bind_pid',  # writes the value already there
     'jsonl/mod\.rs.*replace no_cwd_from_path ->',               # sole caller collapses both spellings
