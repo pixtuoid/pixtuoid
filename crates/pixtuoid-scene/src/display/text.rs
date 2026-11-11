@@ -102,8 +102,8 @@ pub fn cells(text: &str) -> u16 {
 }
 
 /// `text` on one line, each inner run of whitespace one space and its ends
-/// trimmed: a cell draws no control, so a command's line break or tab would
-/// run its words together.
+/// trimmed: a cell draws no control, so a tool detail's line break or tab
+/// would run its words together.
 pub fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

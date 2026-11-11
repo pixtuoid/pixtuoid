@@ -669,8 +669,9 @@ fn meets(a: ArtRect, b: ArtRect) -> bool {
     a.x.0 < b.x.0 + b.w.0 && b.x.0 < a.x.0 + a.w.0 && a.y.0 < b.y.0 + b.h.0 && b.y.0 < a.y.0 + a.h.0
 }
 
-/// Every piece the frame draws, each with its [`Span`]. At one depth and
-/// layer, push order breaks the tie, so it is part of the result.
+/// Every piece the frame draws but its signs' text, which `compose_at` adds
+/// after this call, each with its [`Span`]. At one depth and layer, push order
+/// breaks the tie, so it is part of the result.
 fn collect_pieces(
     inputs: ComposeInputs<'_, '_>,
     outside: &mut crate::outside::OutsideCache,
