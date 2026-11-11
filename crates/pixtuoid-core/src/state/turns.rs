@@ -53,6 +53,12 @@ pub(crate) struct TurnLedger {
 }
 
 impl TurnLedger {
+    /// How many entries it keeps.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.open.len() + self.closed.len() + self.newest.len()
+    }
+
     /// `id`'s turn `key` started.
     pub(crate) fn start(&mut self, id: AgentId, key: TurnKey, now: SystemTime) -> Start {
         if self.is_closed(id, &key, now) {

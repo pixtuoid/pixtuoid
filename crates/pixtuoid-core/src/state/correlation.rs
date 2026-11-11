@@ -306,6 +306,44 @@ pub(super) struct Correlation {
     pub(super) caught_up: HashSet<AgentId>,
 }
 
+#[cfg(test)]
+impl Correlation {
+    /// Each map's name and size, read off an exhaustive destructure: a map
+    /// added to the struct fails to compile here until it is measured.
+    pub(super) fn sizes(&self) -> [(&'static str, usize); 13] {
+        let Self {
+            recent_hook_tool_uses,
+            lifecycles,
+            tasks_in_flight,
+            recent_task_drains,
+            recent_proof_of_life,
+            action_requests,
+            turns,
+            item_started_on,
+            counted_calls,
+            counted_readings,
+            call_holders,
+            reading_holders,
+            caught_up,
+        } = self;
+        [
+            ("recent_hook_tool_uses", recent_hook_tool_uses.len()),
+            ("lifecycles", lifecycles.len()),
+            ("tasks_in_flight", tasks_in_flight.len()),
+            ("recent_task_drains", recent_task_drains.len()),
+            ("recent_proof_of_life", recent_proof_of_life.len()),
+            ("action_requests", action_requests.len()),
+            ("turns", turns.len()),
+            ("item_started_on", item_started_on.len()),
+            ("counted_calls", counted_calls.len()),
+            ("counted_readings", counted_readings.len()),
+            ("call_holders", call_holders.len()),
+            ("reading_holders", reading_holders.len()),
+            ("caught_up", caught_up.len()),
+        ]
+    }
+}
+
 /// Freshness under a TTL, clock-regression-safe: `duration_since` returns
 /// `Err` when `ts` is in the future, which folds to NOT-fresh. The ONE
 /// spelling of the `elapsed < ttl` policy every correlation map and predicate
