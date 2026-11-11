@@ -19,8 +19,8 @@ pub(crate) const HEAD_BYTES: usize = 1 << 20;
 /// fully retired by an exit un-claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Sight {
-    /// Registered as its reads last resolved it: every read showing life
-    /// re-registers it, so a slot the reducer forgot on its own comes back.
+    /// Registered as its reads last resolved it: a read [`Sight::registers`]
+    /// admits re-registers it, so a slot the reducer forgot comes back.
     Claimed(Registration),
     /// Its session ended: the last lifecycle evidence of a read or of an
     /// oversized span's tail is its end, or a child-end un-claim. The path
@@ -30,11 +30,18 @@ pub(crate) enum Sight {
 }
 
 impl Sight {
-    /// Whether a read after `prev` registers its session: a first sight always
-    /// does, a seen one only when the read `lives`, so a trailer flushed after
-    /// its end line (grok's `hook_execution{stop}`) registers nothing.
-    pub(crate) fn registers(prev: Option<&Self>, lives: bool) -> bool {
-        prev.is_none() || lives
+    /// Whether a read after `prev` registers its session: a first sight does, a
+    /// seen one only when the read `lives`, so a trailer flushed after its end line
+    /// (grok's `hook_execution{stop}`) registers nothing. A read whose `verdict` is
+    /// its end registers only live and holding life, walking in and out as a short
+    /// hook session does, so its work counts toward Today; a replay of it never.
+    pub(crate) fn registers(
+        prev: Option<&Self>,
+        lives: bool,
+        verdict: Option<Life>,
+        replays: bool,
+    ) -> bool {
+        (lives || prev.is_none()) && (verdict != Some(Life::Ended) || (lives && !replays))
     }
 }
 
@@ -232,6 +239,31 @@ mod tests {
     use super::*;
     use crate::source::decoder::is_subagent_path;
     use crate::source::registry::cwd_extractor_for;
+
+    /// The registration gate: a read that holds no life registers only as a
+    /// first sight that does not end; a live read that holds life registers even
+    /// when it ends; a replay that ends registers nothing.
+    #[test]
+    fn a_read_registers_on_life_and_a_replay_never_on_its_end() {
+        let ended = Some(Sight::Ended);
+        let rows = [
+            (None, false, None, false, true),
+            (None, false, Some(Life::Ended), false, false),
+            (None, false, Some(Life::Ended), true, false),
+            (ended.clone(), false, None, false, false),
+            (ended.clone(), true, Some(Life::Lives), true, true),
+            (ended.clone(), true, Some(Life::Ended), false, true),
+            (ended, true, Some(Life::Ended), true, false),
+            (None, true, Some(Life::Ended), true, false),
+        ];
+        for (prev, lives, verdict, replays, registers) in rows {
+            assert_eq!(
+                Sight::registers(prev.as_ref(), lives, verdict, replays),
+                registers,
+                "{prev:?} {lives} {verdict:?} {replays}"
+            );
+        }
+    }
 
     /// The lifecycle fold: the last evidence is the verdict, a start or a turn's
     /// traffic is life whoever it names, and only the path's own end is an end.

@@ -1152,6 +1152,121 @@ async fn session_end_ends_its_claim_so_later_activity_re_registers() {
     );
 }
 
+/// The office `events` leave, counting Today on one fixed day.
+fn office_after(events: &[(Transport, AgentEvent)]) -> crate::SceneState {
+    fn one_day(_: std::time::SystemTime) -> chrono::NaiveDate {
+        chrono::NaiveDate::MIN
+    }
+    let mut reducer = crate::Reducer::new().counting(one_day);
+    let mut office = crate::SceneState::uniform(8);
+    let at = std::time::SystemTime::now();
+    for (transport, event) in events {
+        reducer.apply(&mut office, event.clone(), at, *transport);
+    }
+    office
+}
+
+/// Whether `office` holds the session as walked in and out again, and the tool
+/// calls it counted toward Today.
+fn walked_in_and_out(office: &crate::SceneState) -> (bool, Option<u64>) {
+    let out = !office.agents.is_empty() && office.agents.values().all(|s| s.exiting_at.is_some());
+    (out, office.today.as_ref().map(|today| today.tool_calls))
+}
+
+/// An ended path whose one live append both works and ends walks in and out, as
+/// a short hook session does, and its call counts toward Today.
+#[tokio::test]
+async fn a_live_read_that_works_and_ends_walks_in_and_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ended.jsonl");
+    tokio::fs::write(&path, "{\"type\":\"system\",\"subtype\":\"session_end\"}\n")
+        .await
+        .unwrap();
+    let ended_at = tokio::fs::metadata(&path).await.unwrap().len();
+    let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), ended_at)])));
+    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Ended)])));
+
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(
+        &mut f,
+        b"{\"type\":\"tool_use\"}\n{\"type\":\"system\",\"subtype\":\"session_end\"}\n",
+    )
+    .unwrap();
+    let window = Duration::from_secs(3600);
+    let events = walk_once_with(&path, window, t_decode_lifecycle, &cursors, &seen).await;
+    assert_eq!(
+        walked_in_and_out(&office_after(&events)),
+        (true, Some(1)),
+        "{events:?}"
+    );
+    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Ended));
+}
+
+/// A resume a decoder bears, a child it spawns, its call and its shutdown in one
+/// read: read live, the session walks in and out with its call counted; replayed,
+/// the read registers nothing, the resume's own start included, and still sends
+/// the child's.
+#[tokio::test]
+async fn a_resume_that_ends_in_one_read_walks_in_live_and_nowhere_replayed() {
+    const SHUTDOWN: &str = r#"{"type":"session.shutdown","data":{"shutdownType":"routine"},"id":"s1","timestamp":"t"}"#;
+    const RESUME: &str =
+        r#"{"type":"session.resume","data":{"context":{"cwd":"/repo"}},"id":"r1","timestamp":"t"}"#;
+    const CALL: &str = r#"{"type":"tool.execution_start","data":{"toolCallId":"c1","toolName":"view","arguments":{"path":"/repo"}}}"#;
+    const SPAWN: &str = r#"{"type":"subagent.started","data":{"toolCallId":"call_c","agentName":"a","agentDisplayName":"A"},"id":"a1","timestamp":"t","parentId":"r1","agentId":"call_c"}"#;
+    let decoders = SourceDecoders {
+        decode_line: crate::source::copilot::decode_copilot_line,
+        id_derive: super::folded::FoldedDeriver::new(crate::source::copilot::copilot_id_from_path),
+        ..t_decoders()
+    };
+    for replayed in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sid").join("events.jsonl");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("{SHUTDOWN}\n")).unwrap();
+        let ended_at = std::fs::metadata(&path).unwrap().len();
+        // A cursor past the end reads the file again from its top: a replay.
+        let cursor = if replayed { u64::MAX } else { ended_at };
+        let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), cursor)])));
+        let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Ended)])));
+
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        std::io::Write::write_all(
+            &mut f,
+            format!("{RESUME}\n{SPAWN}\n{CALL}\n{SHUTDOWN}\n").as_bytes(),
+        )
+        .unwrap();
+        let events =
+            walk_decoded(&path, Duration::from_secs(3600), decoders, &cursors, &seen).await;
+        let starts = |child: bool| {
+            (events.iter())
+                .filter(|(_, e)| {
+                    matches!(e, AgentEvent::SessionStart { parent_id, .. } if parent_id.is_some() == child)
+                })
+                .count()
+        };
+        if replayed {
+            assert_eq!((starts(false), starts(true)), (0, 1), "{events:?}");
+        } else {
+            assert_eq!(
+                walked_in_and_out(&office_after(&events)),
+                (true, Some(1)),
+                "{events:?}"
+            );
+        }
+        assert_eq!(
+            seen.lock().await.get(&path),
+            Some(&Sight::Ended),
+            "replayed {replayed}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_post_end_trailer_that_decodes_to_nothing_never_re_registers() {
     let dir = tempfile::tempdir().unwrap();
@@ -4336,6 +4451,8 @@ mod backlog {
     const TOOL: &str = "{\"type\":\"tool_use\"}\n";
     const WORK: &str = "{\"type\":\"usage\",\"cwd\":\"/repo\"}\n{\"type\":\"tool_use\"}\n";
     const END: &str = "{\"type\":\"system\",\"subtype\":\"session_end\"}\n";
+    const TOOL_THEN_END: &str =
+        "{\"type\":\"tool_use\"}\n{\"type\":\"system\",\"subtype\":\"session_end\"}\n";
     const END_THEN_TOOL: &str =
         "{\"type\":\"system\",\"subtype\":\"session_end\"}\n{\"type\":\"tool_use\"}\n";
 
@@ -4627,7 +4744,19 @@ mod backlog {
 
     #[tokio::test]
     async fn a_read_declares_around_what_it_replays() {
-        let rows: [(&str, &[Step]); 9] = [
+        let rows: [(&str, &[Step]); 11] = [
+            (
+                "an end alone on a gated path registers nothing",
+                &[(History, Boot, &[]), (Append(END), Walk, &[Opens, End])],
+            ),
+            (
+                "a replay that works and ends registers nothing",
+                &[
+                    (Append(WORK), Walk, &[Start, Rename, Opens, Usage, Tool]),
+                    (Append(USAGE), Walk, &[Opens, Usage]),
+                    (Rewrite(TOOL_THEN_END), Walk, &[Closes, Tool, End, Opens]),
+                ],
+            ),
             (
                 "what predates the watch opens after its last event, and the next read is live",
                 &[

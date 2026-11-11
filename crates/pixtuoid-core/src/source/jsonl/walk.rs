@@ -359,12 +359,11 @@ pub(super) async fn walk_jsonl(
         // A skipped span may bury the session's end, leaving the slot to the
         // slow stale-sweep. Unconditional (a KNOWN file's span can end mid-skip) and
         // cursor-independent, so it must run before the seed below.
-        let ended_in_skip =
-            tail_life(path, TAIL_BYTES, source, decoders).await == Some(Life::Ended);
+        let verdict = tail_life(path, TAIL_BYTES, source, decoders).await;
         // Seed to EOF BEFORE the awaited head-read below, so a concurrent
         // walk_jsonl sees `known` and won't re-enter this branch.
         cursors.lock().await.insert(path.to_path_buf(), file_len);
-        if ended_in_skip {
+        if verdict == Some(Life::Ended) {
             // An already-ENDED span stays unregistered: a SessionStart or seeded
             // Task after the SessionEnd just sent would animate a ghost.
             let id = own_agent(path, source, decoders);
@@ -396,7 +395,7 @@ pub(super) async fn walk_jsonl(
         // stays invisible until its next small append; the backlog is not replayed.
         // Keys on `seen`, NOT `!known` — a first-sight-GATED file is already `known`,
         // and keying on `!known` left it invisible until a later ≤1 MiB append.
-        let registers = Sight::registers(seen.lock().await.get(path), lives);
+        let registers = Sight::registers(seen.lock().await.get(path), lives, verdict, false);
         if registers && !metadata_only {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
@@ -486,8 +485,15 @@ pub(super) async fn walk_jsonl(
             replaying,
         })
     };
-    for (nth, life) in each_life(decoded, own).into_iter().enumerate() {
-        if Sight::registers(seen.lock().await.get(path), holds_life(&life)) && !sidecar_only {
+    for (nth, mut life) in each_life(decoded, own).into_iter().enumerate() {
+        let verdict = last_life(&life, own);
+        let registers = Sight::registers(
+            seen.lock().await.get(path),
+            holds_life(&life),
+            verdict,
+            replays,
+        );
+        if registers && !sidecar_only {
             // A revived GATED file reads only the tail, which may lack what only a
             // head carries: Codex's `session_meta` cwd and parent, and the title.
             // Without them the revive registers empty-cwd onto the short reap, or a
@@ -512,7 +518,15 @@ pub(super) async fn walk_jsonl(
         {
             registration.label = Some(label.clone());
         }
-        let ended = last_life(&life, own) == Some(Life::Ended);
+        // A read that registers nothing sends no `SessionStart` of its own, a
+        // start a decoder bears (copilot's `session.resume`) refused as the
+        // watcher's is.
+        life.retain(|event| {
+            registers
+                || !matches!(event, AgentEvent::SessionStart { .. })
+                || event.agent_id() != own
+        });
+        let ended = verdict == Some(Life::Ended);
         // A replay declares `true` once, before its first life, and `false` after
         // its last; a live read declares `false` before each life, past any first
         // sight, since a revive forgets that the agent caught up.

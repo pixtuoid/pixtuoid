@@ -125,8 +125,6 @@ fn fixture_path(case: &WireCase) -> PathBuf {
 
 fn assert_renders_a_sprite(case: &WireCase) {
     let path = fixture_path(case);
-    let lines = read_nonblank_lines(&path);
-
     let drive = match case.wire {
         Wire::Transcript { seeded } => {
             let drive = Drive::transcript_at(case.source, &path).unwrap_or_else(|| {
@@ -140,7 +138,8 @@ fn assert_renders_a_sprite(case: &WireCase) {
         Wire::Hooks => Drive::hooks(),
     };
     let mut fold = Fold::default();
-    fold.feed(&drive, lines, t0());
+    let body = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    fold.feed_body(&drive, &body, t0());
     let driven = fold.finish();
 
     driven.assert_clean(case.name);

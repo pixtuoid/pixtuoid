@@ -740,7 +740,7 @@ fn judge(
             ));
         }
         reaches.extend(d.reaches.iter().copied());
-        events.extend(d.events.into_iter().skip(d.seed_events));
+        events.extend(d.into_wire());
     };
     if !payloads.is_empty() {
         absorb(HOOK_PAYLOADS, Drive::hooks().lines(&payloads), findings);

@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use serde_json::Value;
 
 use super::reads::{Spelling, WRITE_STAMPS};
-use super::{BreadcrumbSink, CASCADE_TICK, Decode, Drive, Driven, Fold};
+use super::{BreadcrumbSink, CASCADE_TICK, Decode, Delivered, Drive, Driven, Fold};
 use crate::source::DEFAULT_POLL_INTERVAL;
 use crate::source::decoder::rfc3339_to_epoch;
 use crate::state::ActivityState;
@@ -24,8 +24,8 @@ pub const SHIM_STAMP: &str = "_shim_ts_ms";
 pub struct Step {
     /// The stream its line rode.
     pub transport: Transport,
-    /// Its line's index among its stream's non-blank lines, from 0. The
-    /// first-sight seed rides in with the transcript's first line.
+    /// Its line's index among its stream's non-blank lines, from 0. A
+    /// transcript line is a read of its own, and its seed rides in with it.
     pub line: usize,
     /// When it reached the reducer.
     pub at: SystemTime,
@@ -44,14 +44,14 @@ pub struct Merged {
     pub steps: Vec<Step>,
 }
 
-/// A line that decoded to events, and when its CLI wrote it: exactly `at` when
-/// `within` is zero, else in `at..at + within`.
+/// A line `read` delivered events for, its seed alone included, and when its
+/// CLI wrote it: exactly `at` when `within` is zero, else in `at..at + within`.
 #[derive(Debug)]
 struct Written {
     line: usize,
     at: SystemTime,
     within: Duration,
-    events: Vec<AgentEvent>,
+    events: Vec<Delivered>,
 }
 
 /// Every order a session's two streams can reach the reducer in, each folded.
@@ -78,16 +78,22 @@ impl Drive {
         };
         let &(_, key, spelling) = WRITE_STAMPS.iter().find(|(s, ..)| s == source)?;
         let mut decoded = Driven::empty();
-        let head = super::joined(lines.iter());
-        let seed = self.seed(&head, &head);
-        decoded.seed_events = usize::from(seed.is_some());
+        // Each line arrives alone, so it is a read of its own.
+        let (own, mut fold) = (self.own_agent(), Fold::default());
+        let read = |line: &str, events| fold.deliver(self, own, &[Some(line)], events);
         let sink = BreadcrumbSink::default();
         let (hooks, transcript) = tracing::subscriber::with_default(sink.clone(), || {
-            let hooks = written(&Decode::Hooks, hooks, None, &mut decoded, |v| {
-                let ms = v.get(SHIM_STAMP)?.as_u64()?;
-                Some((Duration::from_millis(ms), Duration::ZERO))
-            });
-            let transcript = written(&self.decode, lines, seed, &mut decoded, |v| {
+            let hooks = written(
+                &Decode::Hooks,
+                hooks,
+                |_, e| e.into_iter().map(Delivered::Wire).collect(),
+                &mut decoded,
+                |v| {
+                    let ms = v.get(SHIM_STAMP)?.as_u64()?;
+                    Some((Duration::from_millis(ms), Duration::ZERO))
+                },
+            );
+            let transcript = written(&self.decode, lines, read, &mut decoded, |v| {
                 stamp_of(v.get(key)?, spelling)
             });
             (hooks, transcript)
@@ -114,14 +120,14 @@ fn stamp_of(v: &Value, spelling: Spelling) -> Option<(Duration, Duration)> {
     }
 }
 
-/// `lines`' lines that decoded to events, each stamped by `stamp`, counted in
-/// `d`; `seed` rides in with the first that decoded at all. A line with no
+/// `lines`' lines `read` delivers events for, each stamped by `stamp` and
+/// counted in `d`. A line with no
 /// stamp of its own was written no sooner than the one above it, and the
 /// file's first no sooner than the epoch.
 fn written<S: AsRef<str>>(
     decode: &Decode,
     lines: &[S],
-    mut seed: Option<AgentEvent>,
+    mut read: impl FnMut(&str, Vec<AgentEvent>) -> Vec<Delivered>,
     d: &mut Driven,
     stamp: impl Fn(&Value) -> Option<(Duration, Duration)>,
 ) -> Vec<Written> {
@@ -140,7 +146,7 @@ fn written<S: AsRef<str>>(
         let Some(own) = decode.line(Some(line), d, parsed) else {
             continue;
         };
-        let events: Vec<AgentEvent> = seed.take().into_iter().chain(own).collect();
+        let events = read(line, own);
         if !events.is_empty() {
             out.push(Written {
                 line: index,
@@ -228,7 +234,6 @@ impl Merges {
                 lines: self.decoded.lines,
                 unparseable: self.decoded.unparseable,
                 decode_errors: self.decoded.decode_errors.clone(),
-                seed_events: self.decoded.seed_events,
                 ..Driven::empty()
             },
             ..Fold::default()
@@ -241,8 +246,9 @@ impl Merges {
             // the other transport's twin arrives.
             for &(transport, w, at) in &arrivals {
                 fold.tick(at);
-                for event in &w.events {
-                    fold.apply(transport, event.clone(), at);
+                for delivered in &w.events {
+                    let event = delivered.event();
+                    fold.apply(transport, delivered.clone(), at);
                     steps.push(Step {
                         transport,
                         line: w.line,
@@ -462,6 +468,76 @@ mod tests {
             "the seed rides in with the transcript's first line"
         );
         assert_eq!(last.driven.events.len(), last.steps.len());
+    }
+
+    /// The transcript lines whose steps a Jsonl `SessionStart` leads.
+    fn led_by_a_start(merged: &Merged) -> Vec<usize> {
+        let (mut led, mut last) = (Vec::new(), None);
+        for s in merged.steps.iter().filter(|s| s.transport == J) {
+            if last != Some(s.line) && matches!(s.event, AgentEvent::SessionStart { .. }) {
+                led.push(s.line);
+            }
+            last = Some(s.line);
+        }
+        led
+    }
+
+    /// A seeded drive leads each transcript line that shows life with the
+    /// watcher's registration: each line arrives alone, a read of its own.
+    #[test]
+    fn a_seeded_drive_registers_ahead_of_each_line_that_lives() {
+        let (hooks, lines) = ([hook("SessionStart", 1_000)], [call(2_000), output(3_000)]);
+        for merged in drive().merges(&hooks, &lines).expect("codex merges") {
+            let registered = (led_by_a_start(&merged), merged.driven.seeds.len());
+            assert_eq!(registered, (vec![0, 1], 2), "{:?}", merged.steps);
+        }
+    }
+
+    /// A grok `updates.jsonl` line written at `secs`, as the recorded ones are.
+    fn grok_line(secs: u64, method: &str, update: Value) -> String {
+        let params = json!({"sessionId": "", "update": update, "_meta": {}});
+        json!({"timestamp": secs, "method": method, "params": params}).to_string()
+    }
+
+    /// A line that ends its own session registers nothing, and a life after an
+    /// end registers again.
+    #[test]
+    fn an_ending_line_registers_nothing_and_a_life_after_it_registers_again() {
+        let drive = Drive::transcript("grok", "/h/.grok/sessions/-repo/s-1/updates.jsonl")
+            .expect("grok has a transcript")
+            .seeded();
+        let tool = |secs| {
+            let call =
+                json!({"sessionUpdate": "tool_call", "toolCallId": "call_1", "title": "read_file"});
+            grok_line(secs, "session/update", call)
+        };
+        let end = |secs| {
+            let end = json!({"sessionUpdate": "hook_execution", "event_name": "session_end"});
+            grok_line(secs, "_x.ai/session/update", end)
+        };
+        let recordings = [
+            (vec![tool(1), end(2), tool(3)], vec![0, 2], 2),
+            (vec![end(1), tool(2)], vec![1], 1),
+        ];
+        for (lines, led, seeds) in recordings {
+            for merged in drive.merges(&[], &lines).expect("grok merges") {
+                let registered = (led_by_a_start(&merged), merged.driven.seeds.len());
+                assert_eq!(registered, (led.clone(), seeds), "{:?}", merged.steps);
+            }
+        }
+    }
+
+    /// Only a seeded drive leads its merges with the watcher's registration:
+    /// a transcript that carries its own start would get a duplicate.
+    #[test]
+    fn an_unseeded_drives_merges_carry_no_seed() {
+        let unseeded = Drive::transcript("codex", &rollout()).expect("codex has a transcript");
+        let (hooks, lines) = ([hook("SessionStart", 1_000)], [call(2_000)]);
+        for merged in unseeded.merges(&hooks, &lines).expect("codex merges") {
+            let seeds = (merged.steps.iter())
+                .filter(|s| s.transport == J && matches!(s.event, AgentEvent::SessionStart { .. }));
+            assert_eq!(seeds.count(), 0, "{:?}", merged.steps);
+        }
     }
 
     #[test]
