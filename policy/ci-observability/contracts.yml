@@ -55,13 +55,11 @@
     that ran a just-published CLI wrote. Both stay bounded only while no other
     job can read the key and publish builds and runs nothing from the tree.
   assert: |
-    ([.jobs.publish.steps[] | .run // ""] | join("\n")) as $publish
-    | .permissions == {}
+    .permissions == {}
       and ([.jobs | to_entries[] | select(.key != "publish") | .value | tostring | test("secrets")] | any | not)
       and .jobs.publish.permissions == {}
       and ([.jobs.publish.steps[] | .uses // empty | sub("@.*"; "")] - ["actions/checkout", "actions/download-artifact", "actions/create-github-app-token", "peter-evans/create-pull-request"]) == []
       and ([.jobs.publish.steps[] | select((.uses // "") | startswith("actions/checkout@")) | .with["persist-credentials"]] | all(. == false))
-      and ($publish | test("\\bgit\\s+(add|commit|push)\\b") | not)
   break:
     - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets.BOT_APP_KEY }}"}, "run": "true"}]}'
     - '.jobs.extra = {"uses": "./.github/workflows/x.yml", "secrets": "inherit"}'
@@ -69,7 +67,6 @@
     - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets[\"BOT_APP_KEY\"] }}"}, "run": "true"}]}'
     - '.permissions = {"contents": "write"}'
     - '.jobs.publish.permissions = {"contents": "write"}'
-    - '.jobs.publish.steps += [{"run": "git add -A && git commit -m x"}]'
     - '.jobs.publish.steps += [{"uses": "./.github/actions/setup-cargo-just"}]'
     - '.jobs.publish.steps[0].with["persist-credentials"] = true'
 

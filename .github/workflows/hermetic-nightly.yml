@@ -269,6 +269,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -uo pipefail
+          # A jq error inside a `< <(…)` below would only empty its loop, so a
+          # malformed plan stops the step before it files anything.
+          jq -e '[.actions, .lost, .unacquired] | all(type == "array")' plan.json >/dev/null ||
+            { echo "::error::plan.json is not the planner's output"; exit 1; }
           # Every action is tried: one gh error (a rate limit) leaves the rest
           # filed, and the step red, naming what it could not do.
           failed=0
@@ -280,9 +284,6 @@ jobs:
           gh issue list --label "$HERMETIC_LABEL" --state all --limit "$HERMETIC_LIMIT" \
             --json number,body >"$RUNNER_TEMP/labelled.json" ||
             { echo "::error::could not list the hermetic issues"; failed=1; }
-          # A jq error inside a `< <(…)` below would only leave its loop empty.
-          jq -e '[.actions, .lost, .unacquired] | all(type == "array")' plan.json >/dev/null ||
-            { echo "::error::plan.json is not the planner's output"; failed=1; }
           while IFS= read -r action; do
             jq -r '.body' <<<"$action" >"$RUNNER_TEMP/body.md"
             number=$(jq -r '.number // empty' <<<"$action")
