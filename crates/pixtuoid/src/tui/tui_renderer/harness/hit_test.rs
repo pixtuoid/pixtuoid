@@ -91,7 +91,7 @@ fn drawn(r: &TuiRenderer<TestBackend>, scene: &SceneState, id: AgentId, now: Sys
             pixtuoid_scene::floor::FloorInputs {
                 scene,
                 now,
-                floor: pixtuoid_scene::floor::FloorMeta::for_floor(0, 1),
+                conditions: pixtuoid_scene::floor::Conditions::default(),
                 pets: pixtuoid_scene::floor::PetInputs::default(),
             },
             pixtuoid_scene::layout::Viewport::full(layout.buf_w, layout.buf_h),
@@ -277,10 +277,11 @@ fn the_drawn_geometry_answers_every_cell_as_the_half_block_does() {
             office.stores(),
             normal_theme(),
             &scene,
+            0,
             now,
-            FloorMeta::ground(),
+            Conditions::default(),
         );
-        ctx.world.pets.pet = Some(&cat);
+        ctx.pets.pet = Some(&cat);
         let drawn = draw_scene(&mut term, &mut ctx)
             .expect("draw")
             .expect("drawn");
@@ -309,6 +310,50 @@ fn the_drawn_geometry_answers_every_cell_as_the_half_block_does() {
             "{cols}x{rows}: every kind is hit somewhere"
         );
     }
+}
+
+/// A still's tooltip names a hovered subagent's lead working upstairs, as the
+/// live frame's does: it reads the whole office, not the floor's projection.
+#[test]
+fn a_stills_tooltip_names_a_lead_on_another_floor() {
+    let now = t0() + Duration::from_secs(20);
+    let mut lead = slot(AgentId::from_transcript_path("/lead/0.jsonl"), 1, 0, t0());
+    lead.label = "UPSTAIRS".into();
+    let mut sub = running("/lead/1.jsonl", 0, "Edit", t0());
+    sub.parent_id = Some(lead.agent_id);
+    let sub_id = sub.agent_id;
+    let scene = scene_with(vec![lead, sub], 16);
+    let (cols, rows) = (140, 48);
+    let mut term = Terminal::new(TestBackend::new(cols, rows)).expect("test backend");
+    let mut floor = PerFloor::new(pack_arc());
+    let mut office = pixtuoid_scene::floor::PerOffice::new();
+    let mut ctx = DrawCtx::offscreen(
+        &mut floor,
+        office.stores(),
+        normal_theme(),
+        &scene,
+        0,
+        now,
+        Conditions::default(),
+    );
+    let drawn = draw_scene(&mut term, &mut ctx)
+        .expect("draw")
+        .expect("drawn");
+    ctx.mouse_pos = (0..rows)
+        .flat_map(|row| (0..cols).map(move |col| (col, row)))
+        .find(|&(col, row)| {
+            matches!(
+                drawn.at(CellArea::half_block(col, row).bounds(), None),
+                Some(SceneHit::Figure(HoverTarget::Agent(id))) if *id == sub_id
+            )
+        });
+    assert!(ctx.mouse_pos.is_some(), "premise: the subagent is drawn");
+    draw_scene(&mut term, &mut ctx).expect("draw");
+    let text = frame_text(term.backend().buffer());
+    assert!(
+        text.contains("under UPSTAIRS"),
+        "the tooltip names the lead; frame:\n{text}"
+    );
 }
 
 /// A click on an agent focuses it and a click on the pet pets it, through the
@@ -385,10 +430,14 @@ where
     assert_eq!(focused, Some(id), "the click focuses the agent it hits");
     let on_pet =
         cell(r, &|h| matches!(h, SceneHit::Figure(HoverTarget::Pet(_)))).expect("the pet's cell");
-    assert!(
-        r.active_pet_ref().is_none(),
-        "premise: nobody petted it yet"
-    );
+    // What a click there names, carried out by no one.
+    let names = |r: &mut TuiRenderer<B>| {
+        r.press(on_pet.0, on_pet.1, now);
+        r.release(on_pet.0, on_pet.1)
+    };
+    let pets = Some(pixtuoid_scene::hit::HitAction::Pet(PetKind::Cat));
+    assert_eq!(names(r), pets, "premise: a click there pets the cat");
+    assert_eq!(names(r), pets, "premise: and naming it records nothing");
     let mut pet = |r: &mut TuiRenderer<B>, at| {
         click(
             r,
@@ -397,13 +446,13 @@ where
             &mut |_| panic!("the pet is no agent"),
             at,
         );
-        r.active_pet_ref().map(|p| p.petted_at)
+        names(r)
     };
-    assert_eq!(pet(r, now), Some(now), "the click pets the cat");
+    assert_eq!(pet(r, now), None, "the click pets the cat: it purrs");
     assert_eq!(
         pet(r, now + Duration::from_millis(1)),
-        Some(now),
-        "a second click while it purrs pets nothing new"
+        None,
+        "a second click while it purrs pets nothing"
     );
     // A press on the agent that drags lifts it: the next frame draws it
     // under the pointer, and a release clicks nothing but sets it down.
@@ -455,6 +504,82 @@ where
     assert!(
         !r.pointer.carrying(),
         "a press over no drawn office still sets the lost carry down"
+    );
+}
+
+/// A petting plays on the floor it was given on: back downstairs while the
+/// cat upstairs still purrs, a click on the cat downstairs pets it.
+#[test]
+fn a_petting_upstairs_leaves_the_pet_downstairs_to_pet() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use pixtuoid_scene::hit::HitAction;
+    let scene = two_floor_scene();
+    let (_tx, scene_rx) = tokio::sync::watch::channel(Arc::new(scene.clone()));
+    let mut ui = crate::panels::ui_state::UiState::new(
+        normal_theme(),
+        crate::panels::welcome::WelcomeUi::from_detected(&[]),
+        std::path::PathBuf::from("/tmp/sock"),
+        None,
+        crate::doctor::DriftSeen::default(),
+    );
+    let mut r = build(140, 48, vec![PetKind::Cat]);
+    let on_pet = |r: &TuiRenderer<TestBackend>| {
+        r.frame_buffer()
+            .area()
+            .positions()
+            .find(|p| {
+                matches!(
+                    r.scene_hit_at(p.x, p.y),
+                    Some(SceneHit::Figure(HoverTarget::Pet(_)))
+                )
+            })
+            .map(|p| (p.x, p.y))
+            .expect("the cat's cell")
+    };
+    let press_release = |r: &mut TuiRenderer<TestBackend>, (col, row), now| {
+        r.press(col, row, now);
+        r.release(col, row)
+    };
+    let mut now = t0();
+    r.render(&scene, now).unwrap();
+    r.navigate_floor(1, now);
+    let slide = Duration::from_millis(r.transition().expect("a slide").duration_ms);
+    now += slide;
+    r.render(&scene, now).unwrap();
+    assert_eq!(r.current_floor(), 1, "premise: upstairs");
+    let upstairs = on_pet(&r);
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+    ] {
+        crate::tui::handle_mouse_event(
+            MouseEvent {
+                kind,
+                column: upstairs.0,
+                row: upstairs.1,
+                modifiers: KeyModifiers::NONE,
+            },
+            &mut ui,
+            &mut r,
+            &scene_rx,
+            |_| panic!("the cat is no agent"),
+            now,
+        );
+    }
+    assert_eq!(
+        press_release(&mut r, upstairs, now),
+        None,
+        "premise: the cat upstairs purrs"
+    );
+    r.navigate_floor(0, now);
+    now += slide;
+    r.render(&scene, now).unwrap();
+    assert_eq!(r.current_floor(), 0, "premise: downstairs");
+    let downstairs = on_pet(&r);
+    assert_eq!(
+        press_release(&mut r, downstairs, now),
+        Some(HitAction::Pet(PetKind::Cat)),
+        "nobody petted the cat downstairs"
     );
 }
 

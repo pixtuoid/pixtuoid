@@ -573,14 +573,14 @@ mod tests {
         let disc = |s: &crate::sky::Sky| Disc::of(s, 0..96, 40);
         let new_moon = (1..=31u32)
             .find(|&d| sky(d, 23).moon_phase() < 0.05)
-            .expect("a new moon in January");
+            .expect("a new moon in the helpers' days 1 to 31");
         assert!(
             disc(&sky(new_moon, 23)).is_none(),
             "a new moon is down at 23:00"
         );
         let full = (1..=31u32)
             .find(|&d| sky(d, 23).moon_phase() > 0.95)
-            .expect("a full moon in January");
+            .expect("a full moon in the helpers' days 1 to 31");
         let dusk = crate::sky::Sky::at_with(
             crate::localclock::on_day(full, 20) + std::time::Duration::from_secs(20 * 60),
             Weather::Clear,

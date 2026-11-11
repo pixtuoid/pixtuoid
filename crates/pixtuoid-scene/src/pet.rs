@@ -3,21 +3,19 @@ use std::time::SystemTime;
 /// Duration (ms) the pet stays frozen in place after being petted.
 pub(crate) const PET_DURATION_MS: u64 = 2000;
 
-/// State for the "pet the animal" interaction — render-side only, not a data
-/// model concern.
+/// A floor's petting, which only [`crate::floor::OfficeSession::pet`] records:
+/// outside this crate one is `None` or that session's borrow, never a copy.
 #[derive(Debug)]
 pub struct PetState {
     /// When the pet was last clicked — anchors the `PET_DURATION_MS` freeze.
-    pub petted_at: SystemTime,
+    pub(crate) petted_at: SystemTime,
     /// Which pet was petted.
-    pub kind: PetKind,
-    /// Index of the floor the petted animal is on.
-    pub floor_idx: usize,
+    pub(crate) kind: PetKind,
 }
 
 impl PetState {
     /// Whether the freeze/hearts effect is still playing at `now` (within `PET_DURATION_MS`).
-    pub fn is_active(&self, now: SystemTime) -> bool {
+    pub(crate) fn is_active(&self, now: SystemTime) -> bool {
         now.duration_since(self.petted_at)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(PET_DURATION_MS + 1)
@@ -202,7 +200,6 @@ mod tests {
         let pet = PetState {
             petted_at: t0,
             kind: PetKind::Cat,
-            floor_idx: 0,
         };
         assert!(pet.is_active(t0 + Duration::from_millis(PET_DURATION_MS / 2)));
         assert!(!pet.is_active(t0 + Duration::from_millis(PET_DURATION_MS)));

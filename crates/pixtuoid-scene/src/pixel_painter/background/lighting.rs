@@ -366,7 +366,6 @@ mod tests {
             &crate::lighting::LightInputs {
                 agents: &[],
                 seated: &std::collections::HashMap::new(),
-                floor_idx: 0,
                 indoor_scale: 1.0,
                 neon: NeonLevels::FLASH,
                 beat: Beat::at_ms(0),

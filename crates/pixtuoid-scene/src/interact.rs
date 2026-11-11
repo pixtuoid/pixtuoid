@@ -4,8 +4,6 @@
 //! units and carries out the [`Gesture`]s; what a press affords, a click or a
 //! lift, is [`Affordance`]'s.
 
-use std::time::SystemTime;
-
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::daemon::DaemonInstanceKey;
 
@@ -65,10 +63,10 @@ pub struct Affordance {
 }
 
 impl Affordance {
-    /// What a press on `hit` affords at `now`, with `petting` the last one.
-    pub fn of(hit: Option<SceneHit<'_>>, petting: Option<&PetState>, now: SystemTime) -> Self {
+    /// What a press on `hit` affords, `petting` its floor's ([`SceneHit::action`]).
+    pub fn of(hit: Option<SceneHit<'_>>, petting: Option<&PetState>) -> Self {
         Self {
-            click: hit.and_then(|hit| hit.action(petting, now)),
+            click: hit.and_then(|hit| hit.action(petting)),
             lift: match hit {
                 Some(SceneHit::Figure(target)) => Some(Figure::of(target)),
                 _ => None,
@@ -201,19 +199,18 @@ pub struct Pointer {
 }
 
 impl Pointer {
-    /// A press at `at` on `hit`, with `petting` the last petting, at `now`.
+    /// A press at `at` on `hit`, `petting` its floor's ([`SceneHit::action`]).
     pub fn down(
         &mut self,
         hit: Option<SceneHit<'_>>,
         at: Point,
         slop: Slop,
         petting: Option<&PetState>,
-        now: SystemTime,
     ) -> Down {
         // A carry whose release never came — the window lost focus, the
         // terminal dropped the mouse-up — sets its figure down first.
         let ended = self.cancel();
-        let affords = Affordance::of(hit, petting, now);
+        let affords = Affordance::of(hit, petting);
         let pressed = affords.pressed();
         self.state = match pressed {
             Pressed::Something => State::Pressed {
@@ -296,12 +293,11 @@ mod tests {
     /// moves past the jitter: then it carries, and drops on release.
     #[test]
     fn a_press_on_a_figure_clicks_or_drags_it() {
-        let now = SystemTime::UNIX_EPOCH;
         let id = AgentId::from_parts("claude-code", "s");
         let agent = HoverTarget::Agent(id);
         let mut p = Pointer::default();
         assert_eq!(
-            p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None, now)
+            p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None)
                 .pressed,
             Pressed::Something
         );
@@ -311,7 +307,7 @@ mod tests {
             Some(Gesture::Click(HitAction::Focus(id)))
         );
 
-        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None, now);
+        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None);
         assert_eq!(
             p.moved(pt(10, 10 + SLOP.y)),
             Some(Gesture::Lift {
@@ -324,7 +320,7 @@ mod tests {
         assert_eq!(p.up(Some(pt(31, 41))), Some(Gesture::Drop(pt(31, 41))));
         assert!(!p.carrying());
         assert_eq!(p.up(Some(pt(31, 41))), None, "one release per press");
-        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None, now);
+        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None);
         p.moved(pt(10, 20));
         p.moved(pt(12, 24));
         assert_eq!(
@@ -332,7 +328,7 @@ mod tests {
             Some(Gesture::Drop(pt(12, 24))),
             "released off the office, it lands where it was last carried"
         );
-        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None, now);
+        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None);
         assert_eq!(
             p.up(None),
             None,
@@ -344,19 +340,18 @@ mod tests {
     /// painter cancels it, setting its figure down where it was last carried.
     #[test]
     fn a_carry_without_its_release_still_sets_the_figure_down() {
-        let now = SystemTime::UNIX_EPOCH;
         let agent = HoverTarget::Agent(AgentId::from_parts("claude-code", "s"));
         let mut p = Pointer::default();
-        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None, now);
+        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None);
         p.moved(pt(20, 20));
-        let down = p.down(None, pt(50, 50), SLOP, None, now);
+        let down = p.down(None, pt(50, 50), SLOP, None);
         assert_eq!(
             down.ended,
             Some(Gesture::Drop(pt(20, 20))),
             "the next press sets it down"
         );
         assert!(!p.carrying());
-        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None, now);
+        p.down(Some(SceneHit::Figure(&agent)), pt(10, 10), SLOP, None);
         p.moved(pt(30, 30));
         assert_eq!(
             p.cancel(),
@@ -407,11 +402,9 @@ mod tests {
     /// bare office answers nothing: it is the painter's to drag the window by.
     #[test]
     fn a_link_only_clicks_and_the_bare_office_is_the_painters() {
-        let now = SystemTime::UNIX_EPOCH;
         let mut p = Pointer::default();
         assert_eq!(
-            p.down(Some(SceneHit::Star), pt(5, 5), SLOP, None, now)
-                .pressed,
+            p.down(Some(SceneHit::Star), pt(5, 5), SLOP, None).pressed,
             Pressed::Something
         );
         assert_eq!(p.moved(pt(50, 50)), None, "a link does not lift");
@@ -420,21 +413,18 @@ mod tests {
             None,
             "released away, it clicks nothing"
         );
-        p.down(Some(SceneHit::Star), pt(5, 5), SLOP, None, now);
+        p.down(Some(SceneHit::Star), pt(5, 5), SLOP, None);
         assert_eq!(
             p.up(Some(pt(6, 5))),
             Some(Gesture::Click(HitAction::Open(crate::hit::REPO_URL))),
             "released in place, within the slop"
         );
         assert_eq!(
-            p.down(Some(SceneHit::Furniture("Desk")), pt(5, 5), SLOP, None, now)
+            p.down(Some(SceneHit::Furniture("Desk")), pt(5, 5), SLOP, None)
                 .pressed,
             Pressed::Bare
         );
-        assert_eq!(
-            p.down(None, pt(5, 5), SLOP, None, now).pressed,
-            Pressed::Bare
-        );
+        assert_eq!(p.down(None, pt(5, 5), SLOP, None).pressed, Pressed::Bare);
         assert_eq!(p.moved(pt(50, 50)), None);
         assert_eq!(p.up(Some(pt(50, 50))), None);
     }
@@ -442,7 +432,7 @@ mod tests {
     /// A pet mid-petting has no click, but still lifts.
     #[test]
     fn a_pet_mid_petting_still_lifts() {
-        let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100);
+        let now = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100);
         let pet = HoverTarget::Pet(PetHover {
             kind: PetKind::Cat,
             centre: pt(0, 0),
@@ -451,28 +441,15 @@ mod tests {
         let playing = PetState {
             petted_at: now,
             kind: PetKind::Cat,
-            floor_idx: 0,
         };
         let mut p = Pointer::default();
         assert_eq!(
-            p.down(
-                Some(SceneHit::Figure(&pet)),
-                pt(5, 5),
-                SLOP,
-                Some(&playing),
-                now
-            )
-            .pressed,
+            p.down(Some(SceneHit::Figure(&pet)), pt(5, 5), SLOP, Some(&playing))
+                .pressed,
             Pressed::Something
         );
         assert_eq!(p.up(Some(pt(5, 5))), None, "no click while a petting plays");
-        p.down(
-            Some(SceneHit::Figure(&pet)),
-            pt(5, 5),
-            SLOP,
-            Some(&playing),
-            now,
-        );
+        p.down(Some(SceneHit::Figure(&pet)), pt(5, 5), SLOP, Some(&playing));
         assert!(matches!(
             p.moved(pt(9, 5)),
             Some(Gesture::Lift {
@@ -487,7 +464,7 @@ mod tests {
     /// alone on a link, and nothing on a fixture or the bare office.
     #[test]
     fn a_press_affords_its_hits_click_and_figure() {
-        let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100);
+        let now = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100);
         let id = AgentId::from_parts("claude-code", "s");
         let agent = HoverTarget::Agent(id);
         let key = DaemonInstanceKey::new(
@@ -503,7 +480,6 @@ mod tests {
         let playing = PetState {
             petted_at: now,
             kind: PetKind::Cat,
-            floor_idx: 0,
         };
         let affords = |click, lift| Affordance { click, lift };
         for (hit, petting, want) in [
@@ -543,12 +519,12 @@ mod tests {
             } else {
                 Pressed::Something
             };
-            let got = Affordance::of(hit, petting, now);
+            let got = Affordance::of(hit, petting);
             assert_eq!(got, want, "{hit:?}");
             assert_eq!(got.pressed(), pressed, "{hit:?}");
             assert_eq!(
                 Pointer::default()
-                    .down(hit, pt(5, 5), SLOP, petting, now)
+                    .down(hit, pt(5, 5), SLOP, petting)
                     .pressed,
                 pressed,
                 "a press lands where it affords: {hit:?}"

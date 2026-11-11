@@ -210,7 +210,7 @@ fn short_buffer_clamps_spill_and_window_without_panic() {
 }
 
 /// Render a full office wall through [`paint_band`] at a
-/// forced January `day` + local `hour` + weather.
+/// helpers' `day` + local `hour` + weather.
 fn render_office_on(
     day: u32,
     hour: u32,
@@ -252,7 +252,7 @@ fn render_office_themed(
     buf
 }
 
-/// `render_office_on` pinned to January 1st, for the hour/weather-only tests.
+/// `render_office_on` pinned to the helpers' day 1, for the hour/weather-only tests.
 fn render_office_at(hour: u32, weather: Weather, buf_w: u16, top_wall_h: u16) -> RgbBuffer {
     render_office_on(1, hour, weather, buf_w, top_wall_h)
 }
@@ -466,7 +466,7 @@ fn moon_disc_shows_at_night() {
     let (day, hour) = (1..=31u32)
         .filter(|&d| Sky::clock(crate::localclock::on_day(d, 0)).moon_phase() > 0.9)
         .find_map(|d| low_moon(d, buf_w, top_wall_h).map(|(h, _)| (d, h)))
-        .expect("a near-full moon shows low some January night");
+        .expect("a near-full moon shows low some night of the helpers' days 1 to 31");
     let clear = render_office_on(day, hour, Weather::Clear, buf_w, top_wall_h);
     let overcast = render_office_on(day, hour, Weather::Overcast, buf_w, top_wall_h);
     let clear_n = count_cool_bright(&clear, top_wall_h);
@@ -496,8 +496,10 @@ fn stars_appear_on_a_clear_night_and_vanish_under_overcast() {
                 sky.nightfall() >= 1.0 && want(sky.body().altitude)
             })
     };
-    let moonless = night(|alt| alt <= 0.0).expect("a moonless deep-night hour in January");
-    let high_moon = night(|alt| alt > 0.95).expect("a high-moon deep-night hour in January");
+    let moonless =
+        night(|alt| alt <= 0.0).expect("a moonless deep-night hour in the helpers' days 1 to 31");
+    let high_moon =
+        night(|alt| alt > 0.95).expect("a high-moon deep-night hour in the helpers' days 1 to 31");
     for (day, hour) in [moonless, high_moon] {
         let clear = render_office_on(day, hour, Weather::Clear, buf_w, top_wall_h);
         let overcast = render_office_on(day, hour, Weather::Overcast, buf_w, top_wall_h);
@@ -573,8 +575,10 @@ fn crescent_moon_leaves_the_dark_limb_unlit() {
             .filter(|&d| pick(Sky::clock(crate::localclock::on_day(d, 0)).moon_phase()))
             .find_map(|d| low_moon(d, buf_w, top_wall_h).map(|(h, geom)| (d, h, geom)))
     };
-    let crescent = shown(|p| p < 0.35).expect("a crescent shows low some January night");
-    let full = shown(|p| p > 0.9).expect("a near-full moon shows low some January night");
+    let crescent =
+        shown(|p| p < 0.35).expect("a crescent shows low some night of the helpers' days 1 to 31");
+    let full = shown(|p| p > 0.9)
+        .expect("a near-full moon shows low some night of the helpers' days 1 to 31");
 
     let count_dark_and_bright =
         |(day, hour, geom): (u32, u32, crate::celestial::Disc)| -> (usize, usize) {
@@ -632,16 +636,15 @@ fn crescent_moon_leaves_the_dark_limb_unlit() {
 }
 
 /// A waxing moon is lit on its right limb and a waning one on its left, as a
-/// northern-hemisphere sky shows them: 2026's first quarter falls on Jan 26 and
-/// its last on Jan 10 ([`Sky::moon_waxing`]'s test cites the table).
+/// northern-hemisphere sky shows them, on each low quarter moon of a lunar
+/// month from the helpers' day 0, waxing or waning as the sky reckons it.
 #[test]
 fn a_waning_moon_lights_its_left_limb() {
     let buf_w = 96u16;
     let top_wall_h = 40u16;
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     // Lit disc pixels left and right of the disc's centre column.
-    let lit_sides = |day: u32| -> (usize, usize) {
-        let (hour, geom) = low_moon(day, buf_w, top_wall_h).expect("the quarter moon shows low");
+    let lit_sides = |day: u32, (hour, geom): (u32, crate::celestial::Disc)| -> (usize, usize) {
         let buf = render_office_on(day, hour, Weather::Clear, buf_w, top_wall_h);
         let r = geom.r.ceil() as i32;
         let (cx, cy) = (geom.cx.round() as i32, geom.cy.round() as i32);
@@ -664,16 +667,28 @@ fn a_waning_moon_lights_its_left_limb() {
         }
         (left, right)
     };
-    // `on_day` counts from Jan 1, so day 9 is Jan 10 and day 25 is Jan 26.
-    let (waning_left, waning_right) = lit_sides(9);
+    let (mut waning, mut waxing) = (0, 0);
+    for day in 0..crate::sky::SYNODIC_DAYS.ceil() as u32 {
+        let sky = Sky::clock(crate::localclock::on_day(day, 0));
+        // half lit, give or take the days either side of the quarter
+        if !(0.35..0.65).contains(&sky.moon_phase()) {
+            continue;
+        }
+        let Some(low) = low_moon(day, buf_w, top_wall_h) else {
+            continue;
+        };
+        let (left, right) = lit_sides(day, low);
+        if sky.moon_waxing() {
+            waxing += 1;
+            assert!(right > left, "day {day} waxes: left={left} right={right}");
+        } else {
+            waning += 1;
+            assert!(left > right, "day {day} wanes: left={left} right={right}");
+        }
+    }
     assert!(
-        waning_left > waning_right,
-        "last quarter lights the left limb: left={waning_left} right={waning_right}"
-    );
-    let (waxing_left, waxing_right) = lit_sides(25);
-    assert!(
-        waxing_right > waxing_left,
-        "first quarter lights the right limb: left={waxing_left} right={waxing_right}"
+        waning > 0 && waxing > 0,
+        "the sample must hold a waning and a waxing quarter: {waning}, {waxing}"
     );
 }
 
@@ -743,7 +758,7 @@ fn glass_mean_luminance(buf: &RgbBuffer, top_wall_h: u16) -> f32 {
     (sum / f64::from(n)) as f32
 }
 
-/// The brightest night January 2026 can offer.
+/// The brightest night of the helpers' days 1 to 31.
 fn fullest_moon_day() -> u32 {
     (1..=31u32)
         .max_by(|&a, &b| {
@@ -752,11 +767,11 @@ fn fullest_moon_day() -> u32 {
                 .partial_cmp(&phase(b))
                 .expect("moon_phase is never NaN")
         })
-        .expect("January has days")
+        .expect("the range has days")
 }
 
 /// The pane-luminance rig every weather/time invariant below shares: the glass
-/// mean for one theme × hour × weather, at the year's brightest night.
+/// mean for one theme × hour × weather, on [`fullest_moon_day`].
 fn pane(theme: &'static crate::theme::Theme, hour: u32, w: Weather) -> f32 {
     const BUF_W: u16 = 120;
     const TOP_WALL_H: u16 = 26;

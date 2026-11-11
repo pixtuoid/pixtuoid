@@ -3,7 +3,7 @@
 use pixtuoid_core::state::SceneState;
 use pixtuoid_scene::sprite::RgbBuffer;
 
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, OfficeSession};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, OfficeSession, PetInputs};
 use pixtuoid_scene::footer::{FooterInputs, FooterModel, build_footer};
 use pixtuoid_scene::interact::{Gesture, Pointer, Pressed};
 use pixtuoid_scene::look::RenderInputs;
@@ -46,9 +46,14 @@ impl OfficeRenderer {
         self.pets = pets;
     }
 
-    /// [`OfficeSession::showing_pet`] of this window's pets.
-    pub(crate) fn showing_pet(&self) -> Option<&pixtuoid_scene::pet::Pet> {
-        self.session.showing_pet(&self.pets)
+    /// [`OfficeSession::showing_pets`] of this window's pets at `now`.
+    pub(crate) fn showing_pets(&self, now: std::time::SystemTime) -> PetInputs<'_> {
+        self.session.showing_pets(&self.pets, now)
+    }
+
+    /// [`OfficeSession::pet`].
+    pub(crate) fn pet(&mut self, kind: pixtuoid_scene::pet::PetKind, now: std::time::SystemTime) {
+        self.session.pet(kind, now);
     }
 
     /// Which floor shows, and the slide under way.
@@ -78,14 +83,14 @@ impl OfficeRenderer {
     }
 
     /// Feed the audio a frame of the office without drawing one
-    /// ([`OfficeSession::hear`]), in `scene` at `now` under `floor`.
+    /// ([`OfficeSession::hear`]), in `scene` at `now` under `conditions`.
     pub(crate) fn hear(
         &mut self,
         scene: &SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         now: std::time::SystemTime,
     ) {
-        self.audio.frame(self.session.hear(scene, floor, now));
+        self.audio.frame(self.session.hear(scene, conditions, now));
     }
 
     /// Render the office's floor showing, or its slide to another, into the
@@ -97,7 +102,7 @@ impl OfficeRenderer {
         let WindowFrame {
             world,
             theme,
-            place,
+            gateway,
             dim,
         } = frame;
         let gap = theme.surface.bg_fallback;
@@ -110,7 +115,7 @@ impl OfficeRenderer {
                 world,
                 theme,
                 viewport: at.logical().into(),
-                place,
+                gateway,
                 debug_walkable: false,
                 dim,
             },
@@ -171,16 +176,16 @@ impl OfficeRenderer {
         self.screen.shown().map(|shown| *shown.geometry())
     }
 
-    /// A left press at `cursor` (physical px) in a `window`-sized window, at
-    /// `now` with `petting` the last one: resize from the bottom-right
-    /// corner, else the pointer's — on what the frame on screen shows there,
-    /// a click or a drag follows ([`Pointer`]) — else, on the bare office or
-    /// a fixture, or before a frame shows, drag the frameless window.
+    /// A left press at `cursor` (physical px) in a `window`-sized window:
+    /// resize from the bottom-right corner, else the pointer's — on what the
+    /// frame on screen shows there, a click or a drag follows ([`Pointer`]) —
+    /// else, on the bare office or a fixture, or before a frame shows, drag
+    /// the frameless window.
     pub fn press_at(
         &mut self,
         cursor: (f64, f64),
         window: (u32, u32),
-        pressing: Pressing<'_>,
+        pressing: Pressing,
     ) -> Press {
         let Some(at) = self.shown_fit() else {
             return Press::Drag;
@@ -195,9 +200,8 @@ impl OfficeRenderer {
         let slop_px = DRAG_SLOP_DIP * pressing.scale_factor;
         let units = (slop_px / f64::from(at.scale().get())).ceil().max(1.0) as u16;
         let slop = pixtuoid_scene::interact::Slop { x: units, y: units };
-        let down = self
-            .pointer
-            .down(hit, unit, slop, pressing.petting, pressing.now);
+        let petting = self.session.showing_pets(&self.pets, pressing.now).petting;
+        let down = self.pointer.down(hit, unit, slop, petting);
         if let Some(ended) = &down.ended {
             self.session.grip(ended);
         }
@@ -207,16 +211,15 @@ impl OfficeRenderer {
         }
     }
 
-    /// The pointer's shape at `cursor` in a `window`-sized window, under the
-    /// panels `modal`: a closed hand while it carries a figure, else the
-    /// arrow under a panel, which takes every press, else what a press there
-    /// does ([`cursor_for`]).
+    /// The pointer's shape at `cursor` in a `window`-sized window at `now`,
+    /// under the panels `modal`: a closed hand while it carries a figure, else
+    /// the arrow under a panel, which takes every press, else what a press
+    /// there does ([`cursor_for`]).
     pub(crate) fn cursor_icon(
         &self,
         cursor: (f64, f64),
         window: (u32, u32),
         modal: &crate::panels::ModalState,
-        petting: Option<&pixtuoid_scene::pet::PetState>,
         now: std::time::SystemTime,
     ) -> winit::window::CursorIcon {
         if self.carrying() {
@@ -224,7 +227,8 @@ impl OfficeRenderer {
         } else if modal.any_open() {
             winit::window::CursorIcon::Default
         } else {
-            cursor_for(under(&self.screen, cursor, window), petting, now)
+            let petting = self.showing_pets(now).petting;
+            cursor_for(under(&self.screen, cursor, window), petting)
         }
     }
 
@@ -316,13 +320,7 @@ impl OfficeRenderer {
         let floor_scene = self.session.footer_scene(scene);
         let inputs = FooterInputs::new(
             &floor_scene,
-            crate::panels::widgets::footer_context(
-                scene,
-                self.session.footer_floor(scene),
-                audio_audible,
-                volume_flash,
-                warning,
-            ),
+            crate::panels::widgets::footer_context(scene, audio_audible, volume_flash, warning),
         );
         build_footer(&inputs, budget)
     }
@@ -366,13 +364,12 @@ fn hit_in(
 fn cursor_for(
     under: Under<'_>,
     petting: Option<&pixtuoid_scene::pet::PetState>,
-    now: std::time::SystemTime,
 ) -> winit::window::CursorIcon {
     use pixtuoid_scene::interact::Affordance;
     use winit::window::CursorIcon;
     match under {
         Under::Corner => CursorIcon::NwseResize,
-        Under::Office(hit) => match Affordance::of(hit, petting, now) {
+        Under::Office(hit) => match Affordance::of(hit, petting) {
             Affordance { click: Some(_), .. } => CursorIcon::Pointer,
             Affordance { lift: Some(_), .. } => CursorIcon::Grab,
             Affordance { .. } => CursorIcon::Default,
@@ -394,12 +391,11 @@ pub enum Press {
 /// scrolling" (`ViewConfiguration.TOUCH_SLOP`, 8 dips).
 const DRAG_SLOP_DIP: f64 = 8.0;
 
-/// What a press is made under, beside where: the display's scale factor,
-/// the last petting, and the time.
+/// What a press is made under, beside where: the display's scale factor and
+/// the time.
 #[derive(Debug, Clone, Copy)]
-pub struct Pressing<'a> {
+pub struct Pressing {
     pub scale_factor: f64,
-    pub petting: Option<&'a pixtuoid_scene::pet::PetState>,
     pub now: std::time::SystemTime,
 }
 
@@ -438,9 +434,9 @@ const RESIZE_CORNER_PX: f64 = 18.0;
 /// the window's [`window_geometry`](super::geometry::window_geometry) owns.
 #[derive(Debug, Clone, Copy)]
 pub struct WindowFrame<'a> {
-    pub world: FloorInputs<'a>,
+    pub world: FloorInputs<'a, SceneState>,
     pub theme: &'static pixtuoid_scene::theme::Theme,
-    pub place: pixtuoid_scene::look::Place,
+    pub gateway: Option<pixtuoid_core::state::DaemonState>,
     pub dim: pixtuoid_scene::look::Dim,
 }
 
@@ -476,11 +472,11 @@ mod tests {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             )
@@ -532,7 +528,7 @@ mod tests {
     struct Window {
         renderer: OfficeRenderer,
         scene: SceneState,
-        floor: FloorMeta,
+        conditions: Conditions,
         screen: pixtuoid_scene::screen::ManualClock,
         /// How long a present takes on the screen clock.
         present_takes: Duration,
@@ -550,7 +546,7 @@ mod tests {
             Self {
                 renderer,
                 scene: SceneState::new([8; pixtuoid_core::state::MAX_FLOORS]),
-                floor: FloorMeta::ground()
+                conditions: Conditions::default()
                     .with_weather(weather)
                     .with_motion(pixtuoid_scene::anim::Motion::Full),
                 screen,
@@ -580,11 +576,11 @@ mod tests {
                     world: FloorInputs {
                         scene: &self.scene,
                         now,
-                        floor: self.floor,
+                        conditions: self.conditions,
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
                 self.px,
@@ -658,7 +654,7 @@ mod tests {
                 window
                     .renderer
                     .hit_at(on_agent)
-                    .and_then(|hit| hit.action(None, held)),
+                    .and_then(|hit| hit.action(None)),
                 Some(HitAction::Focus(a)) if a == id
             ),
             "the held frame drew no agent, but the window still shows it"
@@ -675,8 +671,8 @@ mod tests {
     fn the_tooltip_reads_the_frame_rendered() {
         use pixtuoid_scene::hit::HoverTarget;
         use pixtuoid_scene::hit::SceneHit;
-        let (renderer, at, _, now, id) = one_agent_office();
-        let on_agent = agent_point(&renderer, at, now);
+        let (renderer, at, _, _, id) = one_agent_office();
+        let on_agent = agent_point(&renderer, at);
         assert!(matches!(
             renderer.drawn_hit_at(on_agent, at),
             Some(SceneHit::Figure(HoverTarget::Agent(a))) if *a == id
@@ -945,7 +941,6 @@ mod tests {
                     size,
                     Pressing {
                         scale_factor: 1.0,
-                        petting: None,
                         now,
                     },
                 ) {
@@ -966,7 +961,6 @@ mod tests {
                             size,
                             Pressing {
                                 scale_factor: 1.0,
-                                petting: None,
                                 now
                             }
                         ),
@@ -987,7 +981,6 @@ mod tests {
                 size,
                 Pressing {
                     scale_factor: 1.0,
-                    petting: None,
                     now
                 }
             ),
@@ -1002,7 +995,6 @@ mod tests {
                 size,
                 Pressing {
                     scale_factor: 1.0,
-                    petting: None,
                     now
                 }
             ),
@@ -1029,7 +1021,6 @@ mod tests {
             size,
             Pressing {
                 scale_factor: 1.0,
-                petting: None,
                 now,
             },
         );
@@ -1042,7 +1033,6 @@ mod tests {
             size,
             Pressing {
                 scale_factor: 1.0,
-                petting: None,
                 now,
             },
         );
@@ -1057,7 +1047,6 @@ mod tests {
             size,
             Pressing {
                 scale_factor: 1.0,
-                petting: None,
                 now,
             },
         );
@@ -1067,7 +1056,6 @@ mod tests {
             size,
             Pressing {
                 scale_factor: 1.0,
-                petting: None,
                 now,
             },
         );
@@ -1100,11 +1088,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1143,11 +1131,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1205,7 +1193,7 @@ mod tests {
         (0..budget).find(|&step| {
             let now = now0 + std::time::Duration::from_secs(2 * step);
             if heard_before == Some(step) {
-                renderer.hear(&scene, FloorMeta::ground(), now);
+                renderer.hear(&scene, Conditions::default(), now);
             }
             // 192x160: tall enough that the corridor hosts BOTH appliances
             // (the vending/printer height gates in layout::compute).
@@ -1215,11 +1203,11 @@ mod tests {
                     world: FloorInputs {
                         scene: &scene,
                         now,
-                        floor: FloorMeta::ground(),
+                        conditions: Conditions::default(),
                         pets: PetInputs::default(),
                     },
                     theme,
-                    place: pixtuoid_scene::look::Place::default(),
+                    gateway: None,
                     dim: pixtuoid_scene::look::Dim::NONE,
                 },
             );
@@ -1268,11 +1256,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1287,11 +1275,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1313,11 +1301,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1349,11 +1337,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
         );
@@ -1362,7 +1350,7 @@ mod tests {
         let scene = scene_with(agents, cap);
         renderer.hear(
             &scene,
-            FloorMeta::ground(),
+            Conditions::default(),
             now + pixtuoid_scene::floor::REST_TICK,
         );
         let heard: Vec<_> = crate::audio::drain_frames(&rx)
@@ -1385,7 +1373,7 @@ mod tests {
         use pixtuoid_core::state::DaemonInstanceId;
         use pixtuoid_scene::hit::SceneHit;
         use pixtuoid_scene::hit::{HoverTarget, PetHover};
-        use pixtuoid_scene::pet::{PetKind, PetState};
+        use pixtuoid_scene::pet::{Pet, PetKind};
         use winit::window::CursorIcon;
         let now = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         let agent = HoverTarget::Agent(pixtuoid_core::AgentId::from_transcript_path("/p/a.jsonl"));
@@ -1398,11 +1386,11 @@ mod tests {
             centre: pixtuoid_scene::layout::Point { x: 0, y: 0 },
             anim: pixtuoid_scene::pack::Piece::CatSit,
         });
-        let playing = PetState {
-            petted_at: now,
-            kind: PetKind::Cat,
-            floor_idx: 0,
-        };
+        let cats = [Pet::defaulted(PetKind::Cat)];
+        let mut office = OfficeSession::new(crate::test_flash::pack_arc());
+        assert!(office.pet(PetKind::Cat, now));
+        let playing = office.showing_pets(&cats, now).petting;
+        assert!(playing.is_some(), "premise: a petting plays");
         for (under, petting, want) in [
             (Under::Corner, None, CursorIcon::NwseResize),
             (
@@ -1427,7 +1415,7 @@ mod tests {
             ),
             (
                 Under::Office(Some(SceneHit::Figure(&pet))),
-                Some(&playing),
+                playing,
                 CursorIcon::Grab,
             ),
             (
@@ -1443,7 +1431,7 @@ mod tests {
             (Under::Office(None), None, CursorIcon::Default),
         ] {
             assert_eq!(
-                cursor_for(under, petting, now),
+                cursor_for(under, petting),
                 want,
                 "{under:?}, petting {}",
                 petting.is_some()
@@ -1462,13 +1450,12 @@ mod tests {
         let scene = scene_with(vec![running_on("/p/a.jsonl", 0, 0)], 16);
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme");
         assert!(unpresented.render_live(at, frame(&scene, theme, now), size));
-        let on_agent = agent_point(&rendered, at, now);
+        let on_agent = agent_point(&rendered, at);
         let corner = (f64::from(size.0) - 1.0, f64::from(size.1) - 1.0);
         for mut renderer in [fresh, unpresented] {
             for cursor in [on_agent, corner] {
                 let pressing = Pressing {
                     scale_factor: 1.0,
-                    petting: None,
                     now,
                 };
                 assert_eq!(renderer.press_at(cursor, size, pressing), Press::Drag);
@@ -1491,9 +1478,9 @@ mod tests {
             ..crate::panels::ModalState::closed()
         };
         let icon = |r: &OfficeRenderer, cursor, modal: &crate::panels::ModalState| {
-            r.cursor_icon(cursor, size, modal, None, now)
+            r.cursor_icon(cursor, size, modal, now)
         };
-        let on_agent = agent_point(&renderer, at, now);
+        let on_agent = agent_point(&renderer, at);
         assert_eq!(icon(&renderer, on_agent, &closed), CursorIcon::Pointer);
         assert_eq!(icon(&renderer, on_agent, &open), CursorIcon::Default);
         let corner = (f64::from(size.0) - 1.0, f64::from(size.1) - 1.0);
@@ -1503,7 +1490,6 @@ mod tests {
             size,
             Pressing {
                 scale_factor: 1.0,
-                petting: None,
                 now,
             },
         );
@@ -1511,6 +1497,86 @@ mod tests {
         assert!(renderer.pointer_moved(away), "the move lifts it");
         assert_eq!(icon(&renderer, away, &closed), CursorIcon::Grabbing);
         assert_eq!(icon(&renderer, away, &open), CursorIcon::Grabbing);
+    }
+
+    /// A petting upstairs leaves the cat downstairs to pet: back on the
+    /// ground floor while it plays, the cursor there offers a click, its
+    /// tooltip shows no cooldown, and a press pets it.
+    #[test]
+    fn a_petting_upstairs_leaves_the_cat_downstairs_to_pet() {
+        use pixtuoid_scene::hit::{HitAction, HoverTarget, PetHover, SceneHit};
+        use pixtuoid_scene::pet::{Pet, PetKind};
+        let pack = crate::test_flash::pack_arc();
+        let cap = 16;
+        let scene = scene_with(
+            vec![
+                running_on("/p/down.jsonl", 0, 0),
+                running_on("/p/up.jsonl", 1, cap),
+            ],
+            cap,
+        );
+        let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
+        let window = PhysicalSize::new(960u32, 640u32);
+        let at = window_geometry(window, pack.max_density_variant(), Zoom::default());
+        let size = (window.width, window.height);
+        let mut renderer = OfficeRenderer::new(pack);
+        renderer.set_pets(vec![Pet::defaulted(PetKind::Cat)]);
+        let show = |renderer: &mut OfficeRenderer, now| {
+            assert!(renderer.render_live(at, frame(&scene, theme, now), size));
+            renderer.presented();
+        };
+        let start = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        show(&mut renderer, start);
+        renderer.navigate(1, start);
+        let slide = slide_length();
+        let t0 = start + slide;
+        show(&mut renderer, t0);
+        renderer.pet(PetKind::Cat, t0);
+        assert!(
+            renderer.showing_pets(t0).petting.is_some(),
+            "premise: the cat upstairs purrs"
+        );
+        renderer.navigate(0, t0);
+        let t1 = t0 + slide;
+        show(&mut renderer, t1);
+        assert_eq!(renderer.nav().current(), 0, "premise: downstairs");
+        let (on_cat, anim) = (0..at.logical().h)
+            .flat_map(|y| {
+                (0..at.logical().w).map(move |x| (unit_centre(x, at), unit_centre(y, at)))
+            })
+            .find_map(|cursor| match renderer.hit_at(cursor) {
+                Some(SceneHit::Figure(&HoverTarget::Pet(PetHover { anim, .. }))) => {
+                    Some((cursor, anim))
+                }
+                _ => None,
+            })
+            .expect("the window shows the cat downstairs");
+        assert_eq!(
+            renderer.cursor_icon(on_cat, size, &crate::panels::ModalState::closed(), t1),
+            winit::window::CursorIcon::Pointer,
+            "the cursor offers a click"
+        );
+        let hit = renderer.drawn_hit_at(on_cat, at).expect("the cat");
+        assert_eq!(
+            pixtuoid_scene::tooltip::for_hit(hit, &scene, t1, renderer.showing_pets(t1)),
+            Some(pixtuoid_scene::tooltip::pet(
+                PetKind::Cat,
+                anim,
+                false,
+                PetKind::Cat.default_name()
+            )),
+            "the tooltip shows no cooldown"
+        );
+        let pressing = Pressing {
+            scale_factor: 1.0,
+            now: t1,
+        };
+        assert_eq!(renderer.press_at(on_cat, size, pressing), Press::Pointer);
+        assert_eq!(
+            renderer.release(on_cat),
+            Some(HitAction::Pet(PetKind::Cat)),
+            "a press pets it"
+        );
     }
 
     /// One agent's office drawn in a 960×640 window: the renderer, the fit
@@ -1540,11 +1606,11 @@ mod tests {
                 world: FloorInputs {
                     scene: &scene,
                     now,
-                    floor: FloorMeta::ground(),
+                    conditions: Conditions::default(),
                     pets: PetInputs::default(),
                 },
                 theme,
-                place: pixtuoid_scene::look::Place::default(),
+                gateway: None,
                 dim: pixtuoid_scene::look::Dim::NONE,
             },
             size,
@@ -1560,7 +1626,7 @@ mod tests {
     }
 
     /// A window point on the agent the frame drew.
-    fn agent_point(renderer: &OfficeRenderer, at: PixelFit, now: SystemTime) -> (f64, f64) {
+    fn agent_point(renderer: &OfficeRenderer, at: PixelFit) -> (f64, f64) {
         use pixtuoid_scene::hit::HitAction;
         (0..at.logical().h)
             .flat_map(|y| {
@@ -1568,9 +1634,7 @@ mod tests {
             })
             .find(|&cursor| {
                 matches!(
-                    renderer
-                        .hit_at(cursor)
-                        .and_then(|hit| hit.action(None, now)),
+                    renderer.hit_at(cursor).and_then(|hit| hit.action(None)),
                     Some(HitAction::Focus(_))
                 )
             })

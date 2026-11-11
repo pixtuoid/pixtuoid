@@ -295,11 +295,10 @@ mod tests {
             crate::display::Content::Text(text) => text.clone(),
             crate::display::Content::Icon(_) => String::new(),
         };
-        let mut text: String =
-            crate::layout::floor_indicator(crate::floor::FloorMeta::for_floor(11, 12))
-                .iter()
-                .map(written)
-                .collect();
+        let mut text: String = crate::layout::floor_indicator(crate::floor::FloorPlace::at(11, 12))
+            .iter()
+            .map(written)
+            .collect();
         let moods = [
             StateCounts::default(),
             StateCounts {

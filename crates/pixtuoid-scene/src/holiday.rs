@@ -254,7 +254,7 @@ mod tests {
 
     /// The occasion is the viewer's local date, its night running
     /// [`NIGHT_RUNS_PAST_MIDNIGHT`] past midnight either side of December,
-    /// which, in the justfile's `TEST_TZ`, is the other month in UTC.
+    /// which, in the tests' fixed zone, is the other month in UTC.
     #[test]
     fn the_occasion_turns_as_the_night_ends() {
         let christmas = Occasion(Some(Holiday::Christmas));
