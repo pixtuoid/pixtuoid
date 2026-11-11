@@ -164,13 +164,15 @@ fn fatal_error_text(e: &anyhow::Error) -> String {
 /// Write `e`'s [report](fatal_error_text) to stderr, [within](within)
 /// [`EXIT_WAIT`]: a failed run must still end with stderr into a paused pipe,
 /// where a quit signal no longer kills it once a run has armed its own (tokio
-/// never unregisters a signal handler). Not `eprintln!`, which panics when the
-/// write fails (a broken pipe): a clean failure must not turn into a crash.
+/// never unregisters a signal handler:
+/// <https://docs.rs/tokio/latest/tokio/signal/unix/fn.signal.html>).
 /// Mechanism for `main`, not contract.
 #[doc(hidden)]
 pub fn report_fatal(e: &anyhow::Error) {
     let write = |report: &str| {
         use std::io::Write as _;
+        // Not `eprintln!`, which panics when the write fails (a broken pipe): a
+        // clean failure must not turn into a crash.
         let _ = writeln!(std::io::stderr(), "{report}");
     };
     let report = fatal_error_text(e);
@@ -201,7 +203,8 @@ pub(crate) fn within(
 ) -> bool {
     let (done, finished) = std::sync::mpsc::channel();
     // `Builder::spawn`: running out of threads is then an `Err` the caller
-    // answers (`report_fatal` writes inline), where `thread::spawn` panics.
+    // answers (`report_fatal` writes inline), where `thread::spawn` panics
+    // (<https://doc.rust-lang.org/std/thread/struct.Builder.html#method.spawn>).
     let started = std::thread::Builder::new()
         .name(name.into())
         .spawn(move || {

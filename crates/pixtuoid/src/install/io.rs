@@ -663,8 +663,8 @@ fn kill_running_on_quit() {
 #[cfg(unix)]
 fn arm_kill_running_on_quit() -> std::io::Result<()> {
     // Leaked, as it lives as long as the process: a failed spawn below then
-    // drops no runtime, which inside doctor's async probe would panic (tokio's
-    // drop in an asynchronous context).
+    // drops no runtime, which inside doctor's async probe would panic (tokio
+    // 1.54.1 `src/runtime/blocking/shutdown.rs:52`).
     let runtime: &'static tokio::runtime::Runtime = Box::leak(Box::new(
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
