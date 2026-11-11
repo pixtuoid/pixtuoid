@@ -615,32 +615,35 @@ mod tests {
 
     #[test]
     fn hair_past_a_frames_side_is_reported() {
-        for (hair, what) in [
-            ("@frame 0\n@mark head.front 0 0\nA A A", "right"),
-            ("@frame 0\n@mark head.front 1 0\nA A", "left"),
-        ] {
-            let report = hair_findings(&dressed_pack(FRONT_BODY, MOP, &[("o.sprite", hair)]));
-            assert_eq!(
-                report.overhanging_hair,
-                vec![HairOverhang {
-                    style: "mop@2x".into(),
-                    view: HeadView::Front,
-                    name: "standing@2x".into(),
-                    frame: 0,
-                }],
-                "{what}"
-            );
-            assert_eq!(hair_finding_count(&report), 1);
-        }
-        for (hair, what) in [
-            (
-                "@frame 0\n@mark head.front 0 0\nA . .",
-                "transparent padding",
-            ),
-            ("@frame 0\n@mark head.front 0 0\nA\nA\nA", "past the bottom"),
-        ] {
-            let report = hair_findings(&dressed_pack(FRONT_BODY, MOP, &[("o.sprite", hair)]));
-            assert!(report.overhanging_hair.is_empty(), "{what}");
+        let behind = "[hairstyles.\"mop@2x\"]\nfront={ behind=\"o.sprite\" }\n";
+        for (style, layer) in [(MOP, "over"), (behind, "behind")] {
+            for (hair, what) in [
+                ("@frame 0\n@mark head.front 0 0\nA A A", "right"),
+                ("@frame 0\n@mark head.front 1 0\nA A", "left"),
+            ] {
+                let report = hair_findings(&dressed_pack(FRONT_BODY, style, &[("o.sprite", hair)]));
+                assert_eq!(
+                    report.overhanging_hair,
+                    vec![HairOverhang {
+                        style: "mop@2x".into(),
+                        view: HeadView::Front,
+                        name: "standing@2x".into(),
+                        frame: 0,
+                    }],
+                    "{layer} {what}"
+                );
+                assert_eq!(hair_finding_count(&report), 1, "{layer} {what}");
+            }
+            for (hair, what) in [
+                (
+                    "@frame 0\n@mark head.front 0 0\nA . .",
+                    "transparent padding",
+                ),
+                ("@frame 0\n@mark head.front 0 0\nA\nA\nA", "past the bottom"),
+            ] {
+                let report = hair_findings(&dressed_pack(FRONT_BODY, style, &[("o.sprite", hair)]));
+                assert!(report.overhanging_hair.is_empty(), "{layer} {what}");
+            }
         }
     }
 

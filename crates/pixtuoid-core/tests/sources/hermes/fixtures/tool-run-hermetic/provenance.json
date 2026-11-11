@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "hermes",
-  "version": "Hermes Agent v0.23.0 (2026.9.24) · stable · local 2bd378ed1b8d",
-  "captured": "2026-11-06",
+  "version": "Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882",
+  "captured": "2026-11-11",
   "command": "just hermetic --record hermes",
   "deidentified": {
     "method": "decoder-allowlist",

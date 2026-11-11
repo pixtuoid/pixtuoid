@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "openclaw",
-  "version": "OpenClaw 2026.11.2 (b556fdf)",
-  "captured": "2026-11-08",
+  "version": "OpenClaw 2026.11.3 (847611d)",
+  "captured": "2026-11-11",
   "command": "just hermetic --record openclaw",
   "deidentified": {
     "method": "decoder-allowlist",

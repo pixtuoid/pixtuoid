@@ -3,47 +3,47 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 9820997371099864414
+    agent_id: 522365951907927129
     source: copilot
-    session_id: def593f6-853c-4e73-aca6-e698168ec288
+    session_id: 54cf3501-19d1-4c81-b5aa-aa6a15e3d005
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 9820997371099864414
-    fresh_tokens: 7224
-    reading_id: f28933db-bfac-4ea0-bfc6-7e56b956c324
+    agent_id: 522365951907927129
+    fresh_tokens: 7293
+    reading_id: f0cf6079-c89a-473a-9e84-35b981a71670
 - ToolUseStart:
-    agent_id: 9820997371099864414
-    tool_use_id: call_MsSMWpzLFLNKsLJl
+    agent_id: 522365951907927129
+    tool_use_id: call_r0XCp3rr7qXqVBk6
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 9820997371099864414
-    tool_use_id: call_MsSMWpzLFLNKsLJl
+    agent_id: 522365951907927129
+    tool_use_id: call_r0XCp3rr7qXqVBk6
 - ModelInfo:
-    agent_id: 9820997371099864414
+    agent_id: 522365951907927129
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 9820997371099864414
-    fresh_tokens: 7219
-    reading_id: ac954d81-ebf8-4db3-abf1-3f5df8c7e22a
+    agent_id: 522365951907927129
+    fresh_tokens: 7287
+    reading_id: ea76df25-a77e-4771-b527-9dcf37d032c9
 - ToolUseStart:
-    agent_id: 9820997371099864414
-    tool_use_id: call_mKYLIXYQRA_IztmX
+    agent_id: 522365951907927129
+    tool_use_id: call_LYbbBqYxc8aqQgTT
     detail:
       Generic:
         display: task_complete
 - ToolUseEnd:
-    agent_id: 9820997371099864414
-    tool_use_id: call_mKYLIXYQRA_IztmX
+    agent_id: 522365951907927129
+    tool_use_id: call_LYbbBqYxc8aqQgTT
 - ModelInfo:
-    agent_id: 9820997371099864414
+    agent_id: 522365951907927129
     model: gpt-4.1
     effort: ~
 - TurnEnd:
-    agent_id: 9820997371099864414
+    agent_id: 522365951907927129
 - SessionEnd:
-    agent_id: 9820997371099864414
+    agent_id: 522365951907927129
     as_child: false

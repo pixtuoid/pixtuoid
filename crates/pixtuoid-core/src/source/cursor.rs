@@ -4,9 +4,8 @@
 //! `--output-format stream-json` is stdout of an invocation we would have to
 //! launch, and on-disk sessions are SQLite hex blobs. So **Cursor Hooks**
 //! (`~/.cursor/hooks.json`) is the seam. A per-session JSONL transcript does
-//! exist and the envelope carries its `transcript_path` (`null` on
-//! `sessionStart`, set from the first tool event on) — the seam if a watcher is
-//! ever wanted.
+//! exist and the envelope carries its `transcript_path`, null until the file
+//! exists (the child bullet below) — the seam if a watcher is ever wanted.
 //!
 //! The envelope reuses CC's `hook_event_name` field NAME with **camelCase
 //! values**; `tool_name` is PascalCase and the TOP-LEVEL `cwd` is empty —
@@ -29,8 +28,8 @@
 //!   the first is `<parent>/subagents/<child>.jsonl` (cursor-agent
 //!   2026.10.22: `1841.index.js:1` `getTranscriptPathIfExists`,
 //!   `7923.index.js:1` `agent-transcript/dist/paths.js`). That path links the
-//!   child (`nested_parent`), and its parent's `Task` post then ends it; the
-//!   committed delegation's child posts carry null, so its child ages out.
+//!   child (`nested_parent`), and its parent's `Task` post then ends it. In
+//!   `cursor/fixtures/delegation` the child's post carries that nested path.
 //! - `sessionEnd` FIRES on clean completion; `stop` is turn-end and did NOT fire
 //!   under `-p`. An abrupt exit rides the shim's `_pid` BEST-EFFORT: the walk
 //!   skips the `$SHELL -c` wrapper Cursor `eval`s hooks inside, but some hooks
@@ -55,7 +54,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Cursor CLI",
     label_prefix: "cu",
-    verified_version: "2026.11.05",
+    verified_version: "2026.11.11",
     version_probe: Some(&["cursor-agent", "--version"]),
     version_hyphen: Hyphen::Build,
     home_env: None,
