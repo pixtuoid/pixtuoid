@@ -504,19 +504,17 @@ pub(crate) fn output_within(
     command.wrap(process_wrap::std::ProcessGroup::leader());
     #[cfg(windows)]
     command.wrap(process_wrap::std::JobObject);
-    let (child, _listed) = spawn_listed(&mut command)?;
-    let (stdout, stderr) = {
-        let mut child = lock(&child);
-        (child.stdout().take(), child.stderr().take())
-    };
-    let stdout = drain(stdout)?;
-    let stderr = drain(stderr)?;
+    #[cfg(unix)]
+    let (mut child, _listed) = spawn_listed(&mut command)?;
+    #[cfg(windows)]
+    let mut child = command.spawn()?;
+    let stdout = drain(child.stdout().take())?;
+    let stderr = drain(child.stderr().take())?;
     let status = loop {
-        if let Some(status) = lock(&child).try_wait()? {
+        if let Some(status) = child.try_wait()? {
             break status;
         }
         if std::time::Instant::now() >= deadline {
-            let mut child = lock(&child);
             child.start_kill()?;
             // Reaped, so no zombie outlives the run. Windows leaves none, and
             // a Job Object's wait is for every process in it, whose exit
@@ -538,36 +536,29 @@ pub(crate) fn output_within(
         })),
         _ => {
             // The group can have emptied since the wait ran out.
-            let _ = lock(&child).start_kill();
+            let _ = child.start_kill();
             Ok(None)
         }
     }
 }
 
-/// A running CLI, shared with [`GROUPS`] so a quit's kill reaches it.
-type Shared = std::sync::Arc<std::sync::Mutex<Box<dyn process_wrap::std::ChildWrapper>>>;
-
-fn lock(child: &Shared) -> std::sync::MutexGuard<'_, Box<dyn process_wrap::std::ChildWrapper>> {
-    child
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// The CLIs this process runs, each leading its own process group (Unix) or
-/// Job Object (Windows), which neither a terminal's Ctrl-C nor this process's
-/// end reaches.
+/// The process groups of the CLIs this process runs. Each leads its own,
+/// which a terminal's Ctrl-C never reaches.
+#[cfg(unix)]
 struct Groups {
-    running: Vec<Shared>,
+    running: Vec<u32>,
     /// Set by [`kill_running`]: the process is ending, and a group started
     /// past it would outlive it.
     closed: bool,
 }
 
+#[cfg(unix)]
 static GROUPS: std::sync::Mutex<Groups> = std::sync::Mutex::new(Groups {
     running: Vec::new(),
     closed: false,
 });
 
+#[cfg(unix)]
 fn groups() -> std::sync::MutexGuard<'static, Groups> {
     GROUPS
         .lock()
@@ -577,34 +568,43 @@ fn groups() -> std::sync::MutexGuard<'static, Groups> {
 /// `command`'s child, listed in [`GROUPS`] for as long as the guard lives;
 /// refused once [`kill_running`] has closed it. Spawned under the lock, so no
 /// group starts between the kill and the close.
-fn spawn_listed(command: &mut process_wrap::std::CommandWrap) -> std::io::Result<(Shared, Listed)> {
+#[cfg(unix)]
+fn spawn_listed(
+    command: &mut process_wrap::std::CommandWrap,
+) -> std::io::Result<(Box<dyn process_wrap::std::ChildWrapper>, Listed)> {
     let mut groups = groups();
     if groups.closed {
         return Err(std::io::Error::other("pixtuoid is quitting"));
     }
-    let child: Shared = std::sync::Arc::new(std::sync::Mutex::new(command.spawn()?));
-    groups.running.push(std::sync::Arc::clone(&child));
-    Ok((std::sync::Arc::clone(&child), Listed(child)))
+    let child = command.spawn()?;
+    groups.running.push(child.id());
+    let listed = Listed(child.id());
+    Ok((child, listed))
 }
 
-/// A child's place in [`GROUPS`].
-struct Listed(Shared);
+/// A group's place in [`GROUPS`].
+#[cfg(unix)]
+struct Listed(u32);
 
+#[cfg(unix)]
 impl Drop for Listed {
     fn drop(&mut self) {
-        groups()
-            .running
-            .retain(|child| !std::sync::Arc::ptr_eq(child, &self.0));
+        groups().running.retain(|&group| group != self.0);
     }
 }
 
-/// Kill every running group or job and start no other: once this process is
-/// gone, nothing holds one to its limit.
+/// Kill every running group and start no other: once this process is gone,
+/// nothing holds one to its limit.
+#[cfg(unix)]
 pub(crate) fn kill_running() {
     let mut groups = groups();
     groups.closed = true;
-    for child in &groups.running {
-        let _ = lock(child).start_kill();
+    let running = groups
+        .running
+        .iter()
+        .filter_map(|&group| rustix::process::Pid::from_raw(i32::try_from(group).ok()?));
+    for group in running {
+        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
     }
 }
 
@@ -1384,9 +1384,9 @@ mod tests {
         }
     }
 
-    /// A quit's kill takes a running CLI's whole group or job: the run ends at
-    /// once, and on Unix, where a pid is checked, the launcher and the job it
-    /// started are gone.
+    /// A quit's kill takes a running CLI's whole group: the run ends at once,
+    /// with the launcher and the job it started gone.
+    #[cfg(unix)]
     #[test]
     fn kill_running_takes_a_running_clis_group() {
         let dir = TempDir::new().unwrap();
@@ -1394,17 +1394,15 @@ mod tests {
         let written = |at: &std::path::Path| {
             std::fs::read_to_string(at).is_ok_and(|pid| !pid.trim().is_empty())
         };
-        let secs = HANG.as_secs();
-        let unix = format!("echo $$ > \"$1\"\nsleep {secs} &\necho $! > \"$2\"\nwait");
-        let windows = format!(
-            "echo started> \"%~1\"\r\necho started> \"%~2\"\r\nping -n {} 127.0.0.1 >nul 2>nul",
-            secs + 1
+        let script = format!(
+            "echo $$ > \"$1\"\nsleep {} &\necho $! > \"$2\"\nwait",
+            HANG.as_secs()
         );
-        with_fake(&unix, &windows, || {
+        with_fake(&script, "", || {
             std::thread::scope(|scope| {
                 let run =
                     scope.spawn(|| FAKE.run_within(&[launcher.as_os_str(), job.as_os_str()], HANG));
-                pixtuoid_core::harness::wait_until("both written", SLACK, || {
+                pixtuoid_core::harness::wait_until("both pids", SLACK, || {
                     Ok(written(&launcher) && written(&job))
                 })
                 .expect("the launcher starts its job");
@@ -1415,7 +1413,6 @@ mod tests {
                 assert!(took < SLACK, "the run outlived the kill by {took:?}");
             });
         });
-        #[cfg(unix)]
         for at in [&launcher, &job] {
             let pid = std::fs::read_to_string(at).unwrap();
             assert!(gone(pid.trim()), "{} outlived the kill", at.display());
@@ -1424,12 +1421,13 @@ mod tests {
 
     /// A quit's kill closes the way to new groups: a CLI asked to run past it
     /// never starts, so none outlives the process.
+    #[cfg(unix)]
     #[test]
     fn no_cli_starts_once_a_quit_has_killed_the_running() {
         let dir = TempDir::new().unwrap();
         let ran = dir.path().join("ran");
         kill_running();
-        let err = with_fake("echo $$ > \"$1\"", "echo ran> \"%~1\"", || {
+        let err = with_fake("echo $$ > \"$1\"", "", || {
             FAKE.run_within(&[ran.as_os_str()], LIMIT)
         })
         .unwrap_err();

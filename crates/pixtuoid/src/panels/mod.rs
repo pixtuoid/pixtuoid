@@ -1060,6 +1060,11 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
             if let Some((state, source_id, name, hint)) = action {
                 use crate::sources::{ToggleIntent, toggle_intent};
                 match toggle_intent(state) {
+                    // Refused before its question, as `start_change` refuses a
+                    // connect: an answer would only meet the same refusal.
+                    ToggleIntent::Disconnect if let Some(running) = &cx.ui.changing => {
+                        cx.ui.connection.last_result = Some(running.busy_line());
+                    }
                     ToggleIntent::Disconnect => {
                         cx.ui.connection.confirm = Some(cx.ui.connection.selected);
                     }
@@ -1071,6 +1076,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
                             on: true,
                         },
                     ),
+                    // It starts nothing, so a change in flight refuses it nothing.
                     ToggleIntent::Hint => {
                         cx.ui.connection.last_result = Some(hint);
                     }

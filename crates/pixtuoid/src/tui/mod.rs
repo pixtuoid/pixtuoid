@@ -1487,13 +1487,15 @@ mod apply_key_action_tests {
     fn a_disconnect_runs_off_the_loop_and_lands_when_it_ends() {
         use pixtuoid_core::remote::{Changed, Outcome};
         let mut h = Harness::new();
-        h.sources_on("codex", &["codex"]);
+        h.sources_on("codex", &["codex", "cursor"]);
         h.apply(KeyAction::ConnectionToggle);
         h.apply(KeyAction::ConnectionConfirm);
         let frame = h.frame();
         assert!(frame.contains("\u{2026} disconnecting"), "{frame}");
+        // A second disconnect is refused before it asks.
         h.ui.select_connection_source("cursor");
         h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(h.ui.connection.confirm, None);
         assert_eq!(
             h.ui.connection.last_result,
             Some(format!(
