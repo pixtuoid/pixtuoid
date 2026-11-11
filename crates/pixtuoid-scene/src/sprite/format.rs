@@ -285,7 +285,7 @@ pub(crate) fn variant_fits(base: &Frame, density: Density, variant: &Frame) -> b
 
 /// Whether `variant` redraws `base` at `density`: frame for frame, each frame
 /// exactly the size its density claims over the matching base frame
-/// ([`variant_fits`]). The one rule a renderer takes a variant by.
+/// ([`variant_fits`]). The one rule a pack loads a variant by.
 pub(crate) fn variant_redraws(base: &Sprite, density: Density, variant: &Sprite) -> bool {
     let (base, variant) = (base.frames(), variant.frames());
     !variant.is_empty()
