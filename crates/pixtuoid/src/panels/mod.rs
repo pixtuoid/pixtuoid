@@ -544,8 +544,8 @@ fn start_change<H: Host>(cx: &mut KeyCtx<'_, H>, change: PanelChange) {
         log: cx.ui.log().cloned(),
     };
     let (run, change_tx) = (cx.run_change, cx.change_tx.clone());
-    // Detached, not `spawn_blocking`: a runtime's drop waits for its blocking
-    // work (tokio's `Runtime` docs), so a quit mid-change would wait out the CLI.
+    // Not `spawn_blocking`: a runtime's drop waits for its blocking work
+    // (tokio's `Runtime` docs), so a quit mid-change would wait out the CLI.
     let started = std::thread::Builder::new()
         .name("sources-change".into())
         .spawn(move || {
