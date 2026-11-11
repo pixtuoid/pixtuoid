@@ -813,6 +813,8 @@ fn second_drain_inside_grace_restarts_the_cascade_clock() {
     );
 }
 
+/// A drained Task's END replayed inside its tombstone is the tracker's, so it
+/// answers no standing prompt.
 #[test]
 fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_requires_action() {
     let mut scene = SceneState::uniform(8);
@@ -861,6 +863,178 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_requires_action(
         ),
         "a late JSONL replay of the drained Task END must not match a stale member and false-resolve a still-pending permission RequiresAction"
     );
+}
+
+/// A parent that dispatched one Task at `t1`, by hook.
+fn dispatching(slug: &str) -> (Reducer, SceneState, AgentId, SystemTime) {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let parent = AgentId::from_parts(DRAIN_INFERRED, slug);
+    r.apply(
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: parent,
+            source: DRAIN_INFERRED.into(),
+            session_id: slug.into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        },
+        t0,
+        Transport::Hook,
+    );
+    let t1 = t0 + Duration::from_secs(1);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        t1,
+        Transport::Hook,
+    );
+    (r, scene, parent, t1)
+}
+
+/// A drained Task's transcript start, landing past the hook-wins window,
+/// re-opens nothing: its drain is remembered.
+#[test]
+fn a_drained_tasks_late_start_leaves_the_parent_idle() {
+    let (mut r, mut scene, parent, t1) = dispatching("late-start");
+    let drained = t1 + Duration::from_secs(1);
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        drained,
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
+    let late = drained + HOOK_WINS_WINDOW + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        late,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
+}
+
+/// A drained Task's refused late start leaves nothing in flight, so the
+/// parent's next own call settles it Idle, not back to Delegating.
+#[test]
+fn a_refused_late_task_start_tracks_nothing_in_flight() {
+    let (mut r, mut scene, parent, t1) = dispatching("refused-start");
+    let drained = t1 + Duration::from_secs(1);
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        drained,
+        Transport::Hook,
+    );
+    let late = drained + HOOK_WINS_WINDOW + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        late,
+        Transport::Jsonl,
+    );
+    let own = late + Duration::from_secs(1);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("bash-1"),
+        Some("Bash: ls"),
+        own,
+        Transport::Jsonl,
+    );
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("bash-1"),
+        own,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
+}
+
+/// A drained Task's transcript replay, its start and its end past the
+/// hook-wins window, ends nothing the parent shows: its drain already ran.
+#[test]
+fn a_drained_tasks_replayed_end_leaves_the_parents_own_call_shown() {
+    let (mut r, mut scene, parent, t1) = dispatching("replayed-end");
+    let drained = t1 + Duration::from_secs(1);
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        drained,
+        Transport::Hook,
+    );
+    let own = drained + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        None,
+        Some("Bash: ls"),
+        own,
+        Transport::Jsonl,
+    );
+    let late = drained + HOOK_WINS_WINDOW + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        late,
+        Transport::Jsonl,
+    );
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        late,
+        Transport::Jsonl,
+    );
+    match &scene.agents[&parent].state {
+        ActivityState::Running {
+            item: Some(ToolUse { detail, .. }),
+        } => assert_eq!(detail.as_deref(), Some("Bash: ls")),
+        other => panic!("expected the parent's own call, got {other:?}"),
+    }
+}
+
+/// A Task's lagging duplicate start keeps the delegating clock its first set.
+#[test]
+fn a_tasks_duplicate_start_keeps_the_delegating_clock() {
+    let (mut r, mut scene, parent, t1) = dispatching("duplicate-start");
+    let late = t1 + HOOK_WINS_WINDOW + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        late,
+        Transport::Jsonl,
+    );
+    assert_delegating(&scene, parent, "the Task is still in flight");
+    assert_eq!(scene.agents[&parent].state_started_at, t1);
 }
 
 #[test]
@@ -1100,58 +1274,60 @@ fn a_turn_end_while_delegating_keeps_the_delegating_clock() {
     assert_eq!(scene.agents[&parent].state_started_at, dispatched);
 }
 
-/// The drain settles only a slot showing a Task: a parent showing its own call
-/// keeps it until that call ends.
+/// The drain settles only a slot showing a Task: a parent showing its own call,
+/// named or not, keeps it until that call ends.
 #[test]
 fn a_task_drain_leaves_the_parents_own_call_shown() {
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-drain-own", t0);
-    let t1 = t0 + Duration::from_secs(1);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        parent,
-        Some("task-T"),
-        Some("Agent"),
-        t1,
-        Transport::Hook,
-    );
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        parent,
-        Some("bash-1"),
-        Some("Bash: ls"),
-        t1 + Duration::from_millis(100),
-        Transport::Jsonl,
-    );
-    let drained = t1 + Duration::from_secs(1);
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        parent,
-        Some("task-T"),
-        drained,
-        Transport::Hook,
-    );
-    r.tick(&mut scene, drained + Duration::from_secs(2));
-    match &scene.agents[&parent].state {
-        ActivityState::Running {
-            item: Some(ToolUse { detail, .. }),
-        } => assert_eq!(detail.as_deref(), Some("Bash: ls")),
-        other => panic!("expected the parent's own call, got {other:?}"),
+    for own in [Some("bash-1"), None] {
+        let mut scene = SceneState::uniform(8);
+        let mut r = Reducer::new();
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-drain-own", t0);
+        let t1 = t0 + Duration::from_secs(1);
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            parent,
+            Some("task-T"),
+            Some("Agent"),
+            t1,
+            Transport::Hook,
+        );
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            parent,
+            own,
+            Some("Bash: ls"),
+            t1 + Duration::from_millis(100),
+            Transport::Jsonl,
+        );
+        let drained = t1 + Duration::from_secs(1);
+        tool_use_end(
+            &mut r,
+            &mut scene,
+            parent,
+            Some("task-T"),
+            drained,
+            Transport::Hook,
+        );
+        r.tick(&mut scene, drained + Duration::from_secs(2));
+        match &scene.agents[&parent].state {
+            ActivityState::Running {
+                item: Some(ToolUse { detail, .. }),
+            } => assert_eq!(detail.as_deref(), Some("Bash: ls"), "{own:?}"),
+            other => panic!("expected the parent's own call {own:?}, got {other:?}"),
+        }
+        tool_use_end(
+            &mut r,
+            &mut scene,
+            parent,
+            own,
+            drained + Duration::from_secs(3),
+            Transport::Jsonl,
+        );
+        assert_eq!(scene.agents[&parent].state, ActivityState::Idle, "{own:?}");
     }
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        parent,
-        Some("bash-1"),
-        drained + Duration::from_secs(3),
-        Transport::Jsonl,
-    );
-    assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
 }
 
 /// The shown Task's drain re-points the slot at a Task still in flight, on the

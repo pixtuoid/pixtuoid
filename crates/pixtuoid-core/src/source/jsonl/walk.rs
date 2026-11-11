@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 use crate::AgentId;
 use crate::source::first_sight::{
     HEAD_BYTES, HeadFields, Life, Registration, Sight, each_life, extract_head_fields,
-    first_sight_start, holds_life, last_life,
+    first_sight_start, holds_life, last_life, transcript_session,
 };
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
@@ -120,9 +120,16 @@ pub(super) async fn tail_life(
     window_life(&read_tail(path, bytes).await?, path, source, decoders)
 }
 
+/// The row's session-id deriver: hook slots carry the bare session UUID and
+/// nothing heals a slot's session_id, so a raw file-stem disagrees with the
+/// hook-created twin forever.
+fn id_deriver(decoders: SourceDecoders) -> impl Fn(&Path) -> String {
+    move |path| decoders.id_derive.id_for(path)
+}
+
 /// The agent `path` is the transcript of.
 pub(super) fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
-    AgentId::from_parts(source, &decoders.id_derive.id_for(path))
+    transcript_session(source, path, id_deriver(decoders)).1
 }
 
 #[derive(Default)]
@@ -572,8 +579,7 @@ pub(super) async fn park_if_truncated_below_cursor(path: &Path, ctx: &WatchCtx<'
 /// Emit `path`'s registration as a `SessionStart`: the one its first sight
 /// claimed, else one resolved from `head`, awaited only then, which its label
 /// follows. Shared by the normal tail-read path and the oversized path so the
-/// two emit IDENTICAL events from one place. A `None`/empty `cwd` falls back to
-/// the project-dir label in `derive_label`.
+/// two emit IDENTICAL events from one place.
 async fn emit_registration(
     path: &Path,
     source: &Arc<str>,
@@ -603,16 +609,7 @@ async fn emit_registration(
                 .label
                 .unwrap_or_else(|| (decoders.derive_label)(path, source, &cwd));
             let registration = Registration {
-                start: first_sight_start(
-                    path,
-                    source,
-                    // Same deriver as the AgentId: hook slots carry the bare session
-                    // UUID and nothing heals a slot's session_id, so a raw file-stem
-                    // here disagrees with the hook-created twin forever.
-                    decoders.id_derive.id_for(path),
-                    cwd,
-                    head.parent,
-                ),
+                start: first_sight_start(path, source, id_deriver(decoders), cwd, head.parent),
                 label: Some(label),
             };
             seen.lock()

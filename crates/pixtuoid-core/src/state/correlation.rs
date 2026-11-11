@@ -57,13 +57,12 @@ pub const CHILD_END_GATE_TTL: Duration = DEFAULT_POLL_INTERVAL.saturating_add(HA
 #[doc(hidden)]
 pub const CHILD_END_RELINK_TTL: Duration = Duration::from_secs(300);
 
-/// How long a drained Task `tool_use_id` is remembered so a lagged JSONL
-/// replay of its Start cannot re-fire `enter_delegating`. After the drain the
-/// transcript's batched Start+End pair replays into an EMPTY set, so the
-/// first-insert gate reads it as a fresh dispatch and would clobber a RequiresAction
-/// the parent raised in the gap. Sized past the `scan_root` poll backstop; a
-/// `tool_use_id` is never legitimately re-dispatched, so generosity costs only
-/// the tombstone's map entry.
+/// How long a drained Task `tool_use_id` is remembered, so a lagged JSONL
+/// replay of its Start re-tracks nothing and its End stays the tracker's: the
+/// batched Start+End pair replays after the drain, where the Start would clobber
+/// a RequiresAction the parent raised in the gap and the End an id-less call it
+/// shows. Sized past the `scan_root` poll backstop; a `tool_use_id` is never
+/// legitimately re-dispatched, so generosity costs only the tombstone's map entry.
 pub(crate) const DRAINED_TASK_TOMBSTONE_TTL: Duration =
     DEFAULT_POLL_INTERVAL.saturating_add(HALF_A_POLL);
 
@@ -270,11 +269,11 @@ pub(super) struct Correlation {
     /// stays Delegating while one is, an unnamed child's hook activity is
     /// dropped, and the set's drain may arm b1.
     pub(super) tasks_in_flight: HashMap<AgentId, HashSet<String>>,
-    /// Tombstones for Task tool_use_ids whose drain already completed: a
-    /// lagged JSONL pair-replay after the drain re-inserts the tuid as a
-    /// FRESH first insert (set empty, dedup record GC'd), so the tracker's
-    /// first-insert gate alone can't stop `enter_delegating` from clobbering
-    /// a [`AgentEvent::UserActionRequest`](crate::AgentEvent::UserActionRequest) raised since.
+    /// Tombstones for Task tool_use_ids whose drain already completed. A lagged
+    /// JSONL pair-replay past the dedup window must neither re-track the tuid
+    /// nor re-enter Delegating over a
+    /// [`AgentEvent::UserActionRequest`](crate::AgentEvent::UserActionRequest) raised since,
+    /// and its End is the tracker's, so it ends no id-less call the parent shows.
     pub(super) recent_task_drains: HashMap<(AgentId, String), SystemTime>,
     /// Sweep-exemption timestamps from [`AgentEvent::ProofOfLife`](crate::AgentEvent::ProofOfLife) (#220):
     /// a slot vouched for within [`PROOF_OF_LIFE_TTL`] is skipped by

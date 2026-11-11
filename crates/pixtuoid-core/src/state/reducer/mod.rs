@@ -243,7 +243,8 @@ enum Preprocessed {
 }
 
 struct TaskTracking {
-    /// A `ToolUseEnd` drained a tracked Task, applying its transition.
+    /// The tracker owns this Task `ToolUseEnd`: it drained the Task now, or the
+    /// Task's drain already ran (a replay).
     handled_by_task_tracking: bool,
     /// A `ToolUseStart` was a Task dispatch, which the tracker owns — replays
     /// included.
@@ -377,10 +378,9 @@ impl Reducer {
                 };
                 self.apply_tool_use_start(scene, agent_id, ids, detail.as_ref(), from, now);
             }
-            // The pre-pass tracker already drained a tracked Task with this End:
-            // the drain applied the transition itself, so re-running it would
-            // restart Delegating — resetting `state_started_at` — whenever
-            // parallel Tasks remain.
+            // The tracker owns this End (it drained the Task, now or earlier),
+            // which must not also end an id-less call the parent shows: an End
+            // ends any shown call that names none.
             AgentEvent::ToolUseEnd { .. } if tracking.handled_by_task_tracking => {}
             AgentEvent::ToolUseEnd {
                 agent_id,
@@ -857,7 +857,8 @@ impl Reducer {
             from,
             is_requires_action(scene, agent_id),
         );
-        // grok's transcript reads `turn_completed` past its hooks' next call.
+        // grok's transcript reads `turn_completed` past its hooks' next call,
+        // which, id-less, no in-flight ledger would show again.
         let lags_the_hooks = from == Transport::Jsonl
             && turn.is_none()
             && self.corr.item_started_on.get(&agent_id) == Some(&Transport::Hook);
@@ -1454,17 +1455,18 @@ impl Reducer {
             } if d.is_task() => {
                 handled_by_task_start = true;
                 // Delegating only on a FIRST insert of a never-drained tuid: an
-                // out-of-window replay would clobber a since-RequiresAction parent.
-                if self
+                // out-of-window replay would clobber a since-RequiresAction parent,
+                // and, tracked, would settle the parent back to Delegating.
+                if !self
                     .corr
-                    .tasks_in_flight
-                    .entry(*agent_id)
-                    .or_default()
-                    .insert(tuid.clone())
-                    && !self
+                    .recent_task_drains
+                    .contains_key(&(*agent_id, tuid.clone()))
+                    && self
                         .corr
-                        .recent_task_drains
-                        .contains_key(&(*agent_id, tuid.clone()))
+                        .tasks_in_flight
+                        .entry(*agent_id)
+                        .or_default()
+                        .insert(tuid.clone())
                     && scene.agents.contains_key(agent_id)
                 {
                     self.register_pending(
@@ -1529,6 +1531,13 @@ impl Reducer {
                             fsm::settle(slot, self.settle_ctx(agent_id), now);
                         }
                     }
+                } else if self
+                    .corr
+                    .recent_task_drains
+                    .contains_key(&(*agent_id, tuid.clone()))
+                {
+                    // A drained Task's replayed End: its drain already ran.
+                    handled_by_task_tracking = true;
                 }
             }
             _ => {}

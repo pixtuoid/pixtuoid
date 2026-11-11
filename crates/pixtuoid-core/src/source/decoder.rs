@@ -195,7 +195,6 @@ pub(crate) fn label_prefix_for(source: &str) -> &str {
 /// `"{prefix}·{basename}"` from a working directory, prefix looked up from the
 /// registry by `source`; falls back to the bare prefix when `cwd` has no
 /// basename.
-#[cfg(any(feature = "native", test))]
 pub(crate) fn derive_prefixed_label(source: &str, cwd: &Path) -> String {
     let prefix = label_prefix_for(source);
     cwd_basename_label(prefix, cwd).unwrap_or_else(|| prefix.to_string())
@@ -251,9 +250,7 @@ pub const SOURCE_STAMP: &str = "_pixtuoid_source";
 /// "startup" and split it from the claude-code-keyed tool/JSONL/SessionEnd events:
 /// an un-reapable ghost.
 pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
-    obj.get(SOURCE_STAMP)
-        .and_then(|s| s.as_str())
-        .unwrap_or(crate::source::claude_code::SOURCE_NAME)
+    non_empty(obj, SOURCE_STAMP).unwrap_or(crate::source::claude_code::SOURCE_NAME)
 }
 
 /// A test payload as the object every hook decoder is handed.
@@ -1128,6 +1125,24 @@ mod tests {
                     AgentId::from_parts(crate::source::claude_code::SOURCE_NAME, "ses-abc"),
                     "must coalesce with tool/JSONL/SessionEnd events on the claude-code id"
                 );
+            }
+            other => panic!("expected SessionStart, got {other:?}"),
+        }
+    }
+
+    /// A blank stamp names no CLI, as an absent one: a writer past the shim
+    /// that stamps `""` mints no slot whose source the gate cannot resolve.
+    #[test]
+    fn a_blank_source_stamp_reads_as_none() {
+        let ev = decode_single(json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "ses-abc",
+            "cwd": "/repo",
+            SOURCE_STAMP: "",
+        }));
+        match ev {
+            AgentEvent::SessionStart { source, .. } => {
+                assert_eq!(source, crate::source::claude_code::SOURCE_NAME);
             }
             other => panic!("expected SessionStart, got {other:?}"),
         }

@@ -591,10 +591,14 @@ pub(crate) fn omp_parent_key_from_path(path: &Path) -> Option<String> {
 }
 
 /// The header entry (line 2; line 1 is a fixed-width `title` slot that omp
-/// rewrites IN PLACE — pwrite at offset 0, and the tail cursor sits past it, so it
-/// is never re-read; legacy files lack the slot). Fork, branch, version migration
-/// and tool-output pruning REWRITE the file atomically (temp + rename → new inode)
-/// and the watcher re-stats by path, so a rewrite reads as a fresh transcript.
+/// rewrites IN PLACE at offset 0, which the tail cursor sits past, so it is never
+/// re-read). omp appends, but some writes rewrite the file whole at its path, e.g.
+/// a tool-output prune (`rewriteEntries`) or the next write after a load migration
+/// (`#rewriteRequired`); the path-keyed cursor re-reads such a file from the top
+/// only when it ends before the cursor. A fork or a move (`fork`, `moveTo`) writes
+/// a new path, a new transcript whose copies [`entry_copy`] counts once. All at
+/// v18.16.0: `session-title-slot.ts` `serializeTitleSlot`, `session-storage.ts`
+/// `updateSessionTitle`, `session-manager.ts` `#fileIsCurrent`.
 const SESSION: &str = "session";
 
 /// A turn entry. `role:"assistant"` content carries `toolCall` blocks
@@ -671,8 +675,8 @@ fn omp_label(source: &str, text: &str) -> String {
 /// the shared cwd derivation as its FLOOR — superseded by the session title,
 /// which reaches first sight through [`omp_head_title`] and the live stream
 /// through the decoder's `title_change` arm.
-// Rides `derive_prefixed_label`'s gate: the watcher wiring is `native`, and the
-// registry conformance test is the only other caller.
+// The watcher wiring is `native`, and the registry conformance test is the only
+// other caller.
 #[cfg(any(feature = "native", test))]
 pub(crate) fn omp_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
     if omp_parent_key_from_path(path).is_some()
@@ -768,7 +772,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                                 fresh_tokens: fresh,
                                 // A prune or compaction rewrites the file whole with
                                 // each entry's own id (v18.15.0 `session-manager.ts`
-                                // `#serializeBody`), and the watcher re-reads it.
+                                // `#serializeBody`), so an entry read twice counts once.
                                 reading_id: non_empty(obj, "id").map(str::to_owned),
                                 copy_id: entry_copy(obj, "").map(CopyId::new),
                             });

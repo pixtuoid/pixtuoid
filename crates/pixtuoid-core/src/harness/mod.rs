@@ -33,7 +33,7 @@ use crate::source::daemon::{PresenceMsg, apply_presence};
 use crate::source::decoder::{DecodeError, LineDecoder, decode_hook_payload, display_safe};
 use crate::source::first_sight::{
     HEAD_BYTES, Life, Registration, Sight, each_life, extract_head_fields, first_sight_start,
-    holds_life, last_life,
+    holds_life, last_life, transcript_session,
 };
 use crate::source::registry;
 use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
@@ -442,33 +442,32 @@ impl Drive {
         fold.finish()
     }
 
-    /// The source, key and session id a transcript drive's own agent keys on.
-    fn keyed_on(&self) -> Option<(&str, &Path, String)> {
+    /// The source and key a transcript drive's own agent keys on.
+    fn keyed_on(&self) -> Option<(&str, &Path)> {
         let Decode::Transcript {
             source, logical, ..
         } = &self.decode
         else {
             return None;
         };
-        let path = Path::new(logical.as_str());
-        // The id deriver over the normalized key, as the watcher derives it:
+        // The id deriver reads the normalized key, as the watcher's does:
         // nothing heals a slot's session_id, so any other spelling keys a twin
         // of the hook-created slot forever.
-        Some((source, path, registry::id_deriver_for(source)(path)))
+        Some((source, Path::new(logical.as_str())))
     }
 
     /// The agent a transcript drive's lifecycle evidence is judged for, as the
     /// watcher's `own_agent`.
     fn own_agent(&self) -> Option<AgentId> {
-        let (source, _, session_id) = self.keyed_on()?;
-        Some(AgentId::from_parts(source, &session_id))
+        let (source, path) = self.keyed_on()?;
+        Some(transcript_session(source, path, registry::id_deriver_for(source)).1)
     }
 
     /// The `SessionStart` the watcher's first sight emits for this transcript:
     /// its head read off `read`, or off `head`, the transcript's start, where
     /// `read` lacks what only a head carries.
     fn seed(&self, read: &[u8], head: &[u8]) -> Option<AgentEvent> {
-        let (source, path, session_id) = self.keyed_on()?;
+        let (source, path) = self.keyed_on()?;
         let parent = registry::parent_extractor_for(source);
         let scan = |bytes: &[u8]| {
             // The title deriver is in the native-only `NativeTranscript` column.
@@ -481,7 +480,7 @@ impl Drive {
         Some(first_sight_start(
             path,
             source,
-            session_id,
+            registry::id_deriver_for(source),
             fields.cwd.unwrap_or_else(|| PathBuf::from(SEED_CWD)),
             fields.parent,
         ))

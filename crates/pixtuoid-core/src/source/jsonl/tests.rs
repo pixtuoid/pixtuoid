@@ -3388,13 +3388,7 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
     // first-sight gate is skipped for a known file).
     let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), 999u64)])));
     let claimed = Sight::Claimed(Registration {
-        start: first_sight_start(
-            &path,
-            "test",
-            default_id_from_path(&path),
-            "/repo".into(),
-            None,
-        ),
+        start: first_sight_start(&path, "test", default_id_from_path, "/repo".into(), None),
         label: Some("cc·repo".into()),
     });
     let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), claimed)])));

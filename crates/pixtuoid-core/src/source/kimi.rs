@@ -27,7 +27,7 @@
 use crate::source::decoder::{
     DecodeResult as Result, hook_identity, hook_session_id, shared_hook_arms,
 };
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::registry::{
@@ -87,44 +87,28 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// `decoder::decode_hook_payload`'s shared arms.
 ///
 /// - `PostToolUseFailure` — a FAILED tool fires this beside/instead of
-///   `PostToolUse`; it must close the activity or the tool's `ToolUseStart`
+///   `PostToolUse`, decoded as that shared arm, or the tool's `ToolUseStart`
 ///   lingers Running. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
 ///   on an already-idle slot.
-/// - `Stop`, and `StopFailure`, a failed turn end — kimi's only per-turn
-///   hooks (`KIMI_EVENTS`), so each claims its session: a chat-only session
-///   running before the office, or swept since, registers on its next turn
-///   end. Claimed here, not in the shared `Stop` arm, whose CC children an
-///   `Identity` would re-create past their cascade.
+/// - `Stop`, and `StopFailure`, a failed turn end decoded as `Stop` — kimi's
+///   only per-turn hooks (`KIMI_EVENTS`), so each claims its session: a
+///   chat-only session running before the office, or swept since, registers on
+///   its next turn end. Claimed here, not in the shared `Stop` arm, whose CC
+///   children an `Identity` would re-create past their cascade.
 pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    let event = match obj.get("hook_event_name").and_then(|s| s.as_str()) {
-        Some(event @ ("PostToolUseFailure" | "Stop" | "StopFailure")) => event,
+    let (event, shared) = match obj.get("hook_event_name").and_then(|s| s.as_str()) {
+        Some(event @ "PostToolUseFailure") => (event, "PostToolUse"),
+        Some(event @ ("Stop" | "StopFailure")) => (event, "Stop"),
         _ => return Ok(None),
     };
+    // Read under the event's own name, so a missing id breadcrumbs as sent.
     let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
-    let mut evs = vec![hook_identity(agent_id, SOURCE_NAME, &session_id, obj)];
-    match event {
-        "PostToolUseFailure" => evs.push(AgentEvent::ToolUseEnd {
-            agent_id,
-            tool_use_id: kimi_tool_call_id(obj),
-        }),
-        "StopFailure" => evs.push(AgentEvent::turn_end(agent_id)),
-        _ => evs.extend(shared_hook_arms(
-            obj,
-            SOURCE_NAME,
-            registry::descriptor_for(SOURCE_NAME),
-        )?),
-    }
-    Ok(Some(evs))
-}
-
-/// Kimi's per-call id, read through the registry variant the shared arms read —
-/// a second copy of the string here is exactly the drift that made the id
-/// decode to `None` for this whole source.
-fn kimi_tool_call_id(obj: &Map<String, Value>) -> Option<String> {
-    obj.get(registry::ToolIdKey::ToolCall.wire_name())
-        .and_then(|s| s.as_str())
-        .map(String::from)
+    let claim = (shared == "Stop").then(|| hook_identity(agent_id, SOURCE_NAME, &session_id, obj));
+    let mut own = obj.clone();
+    own.insert("hook_event_name".into(), Value::from(shared));
+    let arms = shared_hook_arms(&own, SOURCE_NAME, registry::descriptor_for(SOURCE_NAME))?;
+    Ok(Some(claim.into_iter().chain(arms).collect()))
 }
 
 #[cfg(test)]
@@ -172,6 +156,29 @@ mod tests {
                 assert_eq!(tool_use_id.as_deref(), Some("t1"));
             }
             other => panic!("expected ToolUseEnd, got {other:?}"),
+        }
+    }
+
+    /// A failure decodes as its shared success arm, so an empty call id names
+    /// no call there either.
+    #[test]
+    fn a_failure_decodes_as_its_shared_success_arm() {
+        for (failure, success) in [
+            ("PostToolUseFailure", "PostToolUse"),
+            ("StopFailure", "Stop"),
+        ] {
+            let decode = |event| {
+                crate::source::decoder::decode_hook_payload(json!({
+                    "hook_event_name": event,
+                    "session_id": "s",
+                    "cwd": "/repo",
+                    "tool_name": "Read",
+                    "tool_call_id": "",
+                    "_pixtuoid_source": SOURCE_NAME,
+                }))
+                .expect("decodes")
+            };
+            assert_eq!(decode(failure), decode(success), "{failure}");
         }
     }
 
