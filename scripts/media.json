@@ -146,10 +146,8 @@
   "targets": [
    "site"
   ],
-  "w": 231,
-  "h": 130,
   "t0_ms": 1768498200000,
-  "advance_ms": 100000
+  "seed": 0
  },
  {
   "id": "vibing-poster",
@@ -161,8 +159,7 @@
   "h": 99,
   "hour": 18,
   "weather": "clear",
-  "seed": 11,
-  "advance_ms": 100000
+  "seed": 11
  },
  {
   "id": "multi-floor",

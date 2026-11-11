@@ -355,31 +355,28 @@ def run_wasm_still(job, out_dirs, work, intermediates):
         check=True,
         cwd=ROOT,
     )
-    # `t0_ms` (an exact epoch) and `hour` (a 0-23 convenience) are mutually
-    # exclusive time pins; hero_still prefers `--t0-ms` if both are given.
-    extra = []
-    if "t0_ms" in job:
-        extra += ["--t0-ms", str(job["t0_ms"])]
-    if "hour" in job:
-        extra += ["--hour", str(job["hour"])]
-    if "weather" in job:
-        extra += ["--weather", str(job["weather"])]
-    # Layout seed: must match the LIVE canvas this poster falls back for, else
-    # the poster's office layout pops when the live canvas paints over it.
-    if "seed" in job:
-        extra += ["--seed", str(job["seed"])]
+    # A job names what it sets, and hero_still's defaults own the rest: the
+    # framing and the advance. `t0_ms` (an exact epoch) and `hour` (a 0-23
+    # convenience) are mutually exclusive time pins; hero_still prefers
+    # `--t0-ms` if both are given.
+    flags = {
+        "w": "--width",
+        "h": "--height",
+        "t0_ms": "--t0-ms",
+        "hour": "--hour",
+        "advance_ms": "--advance-ms",
+        "weather": "--weather",
+        "seed": "--seed",
+    }
+    args = [
+        a for key, flag in flags.items() if key in job for a in (flag, str(job[key]))
+    ]
     for d in out_dirs:
         subprocess.run(
             [
                 str(ROOT / "target/release/examples/hero_still"),
                 str(d / f"{job['id']}.png"),
-                "--width",
-                str(job["w"]),
-                "--height",
-                str(job["h"]),
-                "--advance-ms",
-                str(job["advance_ms"]),
-                *extra,
+                *args,
             ],
             check=True,
         )

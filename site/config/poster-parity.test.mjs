@@ -1,6 +1,6 @@
-// The VIBING poster must be a truthful still of the live canvas it covers, and
+// Each wasm poster must be a truthful still of the live canvas it covers, and
 // the layout units ARE the camera (fewer units = closer zoom). The values
-// necessarily live in three files, so pin the copies together.
+// necessarily live in more than one file, so pin the copies together.
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,10 @@ const showcase = JSON.parse(readFileSync(join(here, '..', 'src', 'showcase.json'
 const media = JSON.parse(readFileSync(join(here, '..', '..', 'scripts', 'media.json'), 'utf8'));
 const astro = readFileSync(join(here, '..', 'src', 'components', 'Showcase.astro'), 'utf8');
 const stage = readFileSync(join(here, '..', 'src', 'components', 'ChannelStage.astro'), 'utf8');
+const backdrop = readFileSync(
+  join(here, '..', 'src', 'components', 'OfficeBackdrop.astro'),
+  'utf8'
+);
 
 const vibing = showcase.find((c) => c.id === 'vibing');
 const poster = media.find((j) => j.id === 'vibing-poster');
@@ -35,4 +39,12 @@ test('vibing poster job mirrors the live canvas (dims + seed)', () => {
   const weatherMatch = stage.match(/weather: '([a-z]+)'/);
   assert.ok(weatherMatch, 'ChannelStage.astro declares the default weather chip id');
   assert.equal(weatherMatch[1], poster.weather, 'poster weather == default-active chip');
+});
+
+test('hero poster job draws the backdrop office (seed)', () => {
+  const hero = media.find((j) => j.id === 'hero-wide');
+  assert.ok(hero, 'media.json has a hero-wide job');
+  const seedMatch = backdrop.match(/const SEED = (\d+);/);
+  assert.ok(seedMatch, 'OfficeBackdrop.astro declares SEED as a numeric literal');
+  assert.equal(hero.seed, Number(seedMatch[1]), 'poster layout seed == the live backdrop seed');
 });

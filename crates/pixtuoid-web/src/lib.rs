@@ -170,7 +170,7 @@ pub struct Office {
 
 /// How many units tall [`Office::fit`] aims the site's office: a closer camera
 /// than the app's, since its sprites are fixed-size.
-const FRAMING_UNITS_H: u32 = 130;
+pub const FRAMING_UNITS_H: u32 = 130;
 
 /// The fewest whole device pixels [`Office::fit`] paints an art pixel as where
 /// the office still lays out (owner-delegated, #2029).
