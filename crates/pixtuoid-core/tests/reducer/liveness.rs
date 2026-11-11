@@ -247,7 +247,8 @@ fn a_quit_opencode_idle_slot_is_swept_short_and_walks_back_in_on_its_next_turn()
     );
 }
 
-/// An `Identity` never revives a walking-out slot (`authorizes`), and a sweep
+/// An `Identity` on an existing slot only backfills it (`apply_identity`), so it
+/// never revives a walking-out slot, and a sweep
 /// stamps no hook end, so a swept session's next claiming hook after its walkout
 /// (cursor's turn end) re-registers it.
 #[test]

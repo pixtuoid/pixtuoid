@@ -402,8 +402,8 @@ async fn probe_panic_changes_nothing() {
     handle.abort();
 }
 
-/// A probe snapshot binds the vouched session id to its owning OS pid; when
-/// that process dies, the kernel watch (kqueue NOTE_EXIT / pidfd+poll) emits
+/// A probe snapshot binds the vouched session id to the pid holding it; when
+/// that sole holder dies, the kernel watch (kqueue NOTE_EXIT / pidfd+poll) emits
 /// the SessionEnd within milliseconds. The negative-vouch span stays at its
 /// production 60s DEFAULT, so a SessionEnd inside the 5s window can ONLY have
 /// come from the instant-exit path.
