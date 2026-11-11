@@ -18,7 +18,10 @@ use crate::{
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn vouch_snapshot_with_pid(ids: &[&str], pid: i32) -> Option<ProbeSnapshot> {
     Some(ProbeSnapshot {
-        pid_of: ids.iter().map(|s| (s.to_string(), pid)).collect(),
+        pids_of: ids
+            .iter()
+            .map(|s| (s.to_string(), std::collections::BTreeSet::from([pid])))
+            .collect(),
     })
 }
 
@@ -94,11 +97,11 @@ async fn poll_arm_refreshes_probe_snapshot_and_reemits_proof_of_life() {
             // that never instant-exits.
             let pid = std::process::id() as i32;
             Some(ProbeSnapshot {
-                pid_of: probe_view
+                pids_of: probe_view
                     .lock()
                     .unwrap()
                     .iter()
-                    .map(|s| (s.clone(), pid))
+                    .map(|s| (s.clone(), std::collections::BTreeSet::from([pid])))
                     .collect(),
             })
         }));
@@ -698,6 +701,71 @@ async fn rebound_session_survives_old_pid_death_and_follows_the_new_pid() {
     assert!(
         ended,
         "the migrated binding must follow the new pid — its death is the session's instant exit"
+    );
+    handle.abort();
+}
+
+/// One session two live processes hold (a CC session resumed in a second
+/// terminal): the first one's death leaves it running, the last one's ends it.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[tokio::test]
+async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
+    let dir = TempDir::new().unwrap();
+    let uuid = "01000000-0000-7000-8000-0000000000b4";
+    let sleeper = || {
+        std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap()
+    };
+    let (mut first, mut last) = (sleeper(), sleeper());
+    let (first_pid, last_pid) = (first.id() as i32, last.id() as i32);
+    let both = ProbeSnapshot {
+        pids_of: [(
+            uuid.to_string(),
+            std::collections::BTreeSet::from([first_pid, last_pid]),
+        )]
+        .into(),
+    };
+    let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
+        dir.path().to_path_buf(),
+        uuid,
+        Duration::from_secs(60), // production span — only the instant-exit rung is in play
+        Some(both),
+    )
+    .await;
+    let expected = AgentId::from_parts("codex", uuid);
+
+    // Give the 100ms poll a few passes to fold both bindings; the probe still
+    // lists the first pid when its exit lands, as the kernel watch outruns a refresh.
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    let _ = first.kill();
+    let _ = first.wait();
+    assert_no_session_end_within(
+        &mut rx,
+        expected,
+        Duration::from_millis(1500),
+        "a holder's death must not end a session another live pid holds",
+    )
+    .await;
+
+    *probe_state.lock().unwrap() = vouch_snapshot_with_pid(&[uuid], last_pid);
+    let _ = last.kill();
+    let _ = last.wait();
+    let mut ended = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(Some((Transport::Jsonl, AgentEvent::SessionEnd { agent_id, .. }))) =
+            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
+            && agent_id == expected
+        {
+            ended = true;
+            break;
+        }
+    }
+    assert!(
+        ended,
+        "the last holder's death is the session's instant exit"
     );
     handle.abort();
 }

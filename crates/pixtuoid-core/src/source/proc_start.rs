@@ -171,8 +171,7 @@ impl StartPins {
 
     /// Forget each pin whose process `start` no longer finds at its pid, dead
     /// or recycled: a pin lives as long as its process, never as one scan's
-    /// vouch, since a scan skips a live entry it reads half-written and the
-    /// #252 tiebreak's loser.
+    /// vouch, since a scan skips a live entry it reads half-written.
     pub(crate) fn retain(&self, start: impl Fn(i32) -> Option<Start>) {
         self.lock()
             .retain(|&(pid, _), &mut marker| start(pid).is_some_and(|now| now.marker == marker));

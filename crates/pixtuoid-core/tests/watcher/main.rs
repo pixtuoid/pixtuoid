@@ -36,7 +36,10 @@ const POLL: Duration = Duration::from_millis(25);
 fn vouch_snapshot(ids: &[&str]) -> Option<ProbeSnapshot> {
     let pid = std::process::id() as i32;
     Some(ProbeSnapshot {
-        pid_of: ids.iter().map(|s| (s.to_string(), pid)).collect(),
+        pids_of: ids
+            .iter()
+            .map(|s| (s.to_string(), std::collections::BTreeSet::from([pid])))
+            .collect(),
     })
 }
 

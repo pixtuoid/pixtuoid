@@ -15,8 +15,8 @@ static PINS: StartPins = StartPins::new();
 /// CC's first-party live-process registry: `<claude_home>/sessions/<pid>.json`,
 /// one tiny undocumented JSON file per running CC process (`{pid, sessionId,
 /// cwd, status, startedAt, procStart, ...}`). Returns the session UUIDs (+
-/// owning pid each) of entries whose pid is still ALIVE — a registry file can
-/// outlive a crashed CC, so each entry is verified with kill(pid, 0).
+/// every pid registering each) of entries whose pid is still ALIVE — a registry
+/// file can outlive a crashed CC, so each entry is verified with kill(pid, 0).
 ///
 /// Failure is explicit (#223): an UNREADABLE-or-MISSING registry dir is
 /// `None` — its absence is ambiguous (older CC without the registry, a
@@ -48,12 +48,7 @@ pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
 /// [`live_cc_session_ids`] against `pins`.
 #[cfg(unix)]
 fn scan(sessions_dir: &Path, pins: &StartPins) -> Option<ProbeSnapshot> {
-    // session_id → winning entry. The fold (not direct inserts) exists for
-    // the duplicate-id case (#252): binding id→pid by unspecified read_dir
-    // order flaps across refreshes, churning the exit-watch rebind, and the
-    // losing pid dying first emits a spurious SessionEnd for the live one.
-    let mut winners: std::collections::HashMap<String, RegistryEntry> =
-        std::collections::HashMap::new();
+    let mut live = ProbeSnapshot::default();
     let Ok(entries) = std::fs::read_dir(sessions_dir) else {
         tracing::debug!(
             path = ?sessions_dir,
@@ -112,47 +107,14 @@ fn scan(sessions_dir: &Path, pins: &StartPins) -> Option<ProbeSnapshot> {
             );
             continue;
         }
-        match winners.entry(reg.session_id.clone()) {
-            std::collections::hash_map::Entry::Vacant(slot) => {
-                slot.insert(reg);
-            }
-            std::collections::hash_map::Entry::Occupied(mut slot) => {
-                // Real registries are one-file-per-pid with unique ids — a
-                // duplicate is upstream junk worth ONE breadcrumb per
-                // process run, not a per-scan log storm.
-                static DUPLICATE_ID_WARNED: std::sync::Once = std::sync::Once::new();
-                DUPLICATE_ID_WARNED.call_once(|| {
-                    tracing::warn!(
-                        session_id = ?reg.session_id,
-                        pids = ?(slot.get().pid, reg.pid),
-                        "two live CC registry entries claim the same sessionId — \
-                         keeping a deterministic winner"
-                    );
-                });
-                if prefer_candidate(slot.get(), &reg) {
-                    slot.insert(reg);
-                }
-            }
-        }
-    }
-    let mut live = ProbeSnapshot::default();
-    for (session_id, entry) in winners {
-        live.pid_of.insert(session_id, entry.pid);
+        // Two live entries share a sessionId when one session is resumed in a
+        // second terminal without forking: each CC registers its own pid under
+        // it (code.claude.com/docs/en/sessions: "messages from both
+        // interleave"), and the session lives while either does.
+        live.bind_pid(reg.session_id, reg.pid);
     }
     pins.retain(pid_start);
     Some(live)
-}
-
-/// Deterministic winner between two LIVE entries claiming one sessionId
-/// (#252): read_dir order is unspecified and the binding must not flap.
-/// Newest `startedAt` wins, and a tie falls to the larger pid.
-#[cfg(unix)]
-fn prefer_candidate(incumbent: &RegistryEntry, candidate: &RegistryEntry) -> bool {
-    match candidate.started_at_ms.cmp(&incumbent.started_at_ms) {
-        std::cmp::Ordering::Greater => true,
-        std::cmp::Ordering::Less => false,
-        std::cmp::Ordering::Equal => candidate.pid > incumbent.pid,
-    }
 }
 
 /// Bounds ONE registry entry — real entries are <1 KiB, and the bound keeps
@@ -346,8 +308,8 @@ mod liveness_tests {
             "an entry with a live pid must be kept, got {live:?}"
         );
         assert_eq!(
-            live.pid_of.get("alive-session"),
-            Some(&(std::process::id() as i32)),
+            live.pids("alive-session"),
+            [std::process::id() as i32],
             "the vouched id must bind to the registry entry's pid"
         );
     }
@@ -459,21 +421,6 @@ mod liveness_tests {
         assert!(live_cc_session_ids(&missing).is_none());
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn prefer_candidate_orders_by_started_at_then_pid() {
-        let e = |started_at_ms: u64, pid: i32| RegistryEntry {
-            pid,
-            session_id: "s".to_string(),
-            started_at_ms,
-        };
-        assert!(prefer_candidate(&e(1_000, 99), &e(2_000, 1)));
-        assert!(!prefer_candidate(&e(2_000, 1), &e(1_000, 99)));
-        assert!(prefer_candidate(&e(1_000, 5), &e(1_000, 9)));
-        assert!(!prefer_candidate(&e(1_000, 9), &e(1_000, 5)));
-        assert!(!prefer_candidate(&e(1_000, 7), &e(1_000, 7)));
-    }
-
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn started_at_exactly_at_tolerance_still_vouches() {
@@ -552,7 +499,6 @@ mod liveness_tests {
         let dir = tempfile::tempdir().unwrap();
         let snap = live_cc_session_ids(dir.path()).expect("empty readable dir is healthy");
         assert!(snap.is_empty());
-        assert!(snap.pid_of.is_empty());
     }
 
     #[cfg(unix)]
@@ -783,66 +729,25 @@ mod liveness_tests {
     }
 
     #[cfg(unix)]
-    fn entry(pid: i32, started_at_ms: u64) -> RegistryEntry {
-        RegistryEntry {
-            pid,
-            session_id: "dup".into(),
-            started_at_ms,
-        }
-    }
-
-    #[cfg(unix)]
     #[test]
-    fn duplicate_winner_rule_is_symmetric_and_total() {
-        // Every pair is asserted in BOTH presentation orders: the symmetry IS
-        // the scan-order independence.
-        assert!(prefer_candidate(&entry(1, 100), &entry(2, 200)));
-        assert!(!prefer_candidate(&entry(2, 200), &entry(1, 100)));
-        assert!(prefer_candidate(&entry(1, 100), &entry(2, 100)));
-        assert!(!prefer_candidate(&entry(2, 100), &entry(1, 100)));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn duplicate_session_id_binds_a_stable_pid_regardless_of_scan_order() {
-        // The same pair is presented under file names sorting in OPPOSITE
-        // orders; whatever order read_dir yields, the binding must come out
-        // identical. One shared startedAt, so the pid tiebreak decides.
-        let mut child_a = crate::test_child::sleeper();
-        let mut child_b = crate::test_child::sleeper();
-        let (pid_a, pid_b) = (i64::from(child_a.id()), i64::from(child_b.id()));
-        let expected = pid_a.max(pid_b) as i32;
-        // Both children start within the PID-reuse tolerance of this.
-        let started = pid_start(child_a.id() as i32).map_or(0, |start| start.secs) * 1000;
-
-        // Probe inside the loop, assert only after the children are reaped —
-        // a panicking assert here would leak two `sleep 30`s.
-        let mut snapshots = Vec::new();
-        for (first, second) in [(pid_a, pid_b), (pid_b, pid_a)] {
-            let dir = tempfile::tempdir().unwrap();
-            write_entry_started(dir.path(), "aaa.json", first, "dup", started);
-            write_entry_started(dir.path(), "zzz.json", second, "dup", started);
-            snapshots.push(live_cc_session_ids(dir.path()));
+    fn a_session_id_two_live_entries_register_binds_both_pids() {
+        let mut children = [crate::test_child::sleeper(), crate::test_child::sleeper()];
+        let dir = tempfile::tempdir().unwrap();
+        for (name, child) in ["aaa.json", "zzz.json"].into_iter().zip(&children) {
+            write_entry(dir.path(), name, i64::from(child.id()), "dup");
         }
-
-        let _ = child_a.kill();
-        let _ = child_a.wait();
-        let _ = child_b.kill();
-        let _ = child_b.wait();
-
-        for snapshot in snapshots {
-            let live = snapshot.expect("readable dir is a healthy probe");
-            assert_eq!(
-                live.ids().cloned().collect::<HashSet<_>>(),
-                HashSet::from(["dup".to_string()]),
-                "a duplicate id must yield ONE vouch, not two"
-            );
-            assert_eq!(
-                live.pid_of.get("dup"),
-                Some(&expected),
-                "the winning pid must be the deterministic tiebreak winner in both name orders"
-            );
+        let mut expected = children.each_ref().map(|c| c.id() as i32);
+        expected.sort_unstable();
+        // Probe, then reap, then assert: a panicking assert would leak two
+        // `sleep 30`s.
+        let snapshot = live_cc_session_ids(dir.path());
+        for child in &mut children {
+            let _ = child.kill();
+            let _ = child.wait();
         }
+        let live = snapshot.expect("readable dir is a healthy probe");
+        assert_eq!(live.ids().cloned().collect::<Vec<_>>(), ["dup"]);
+        assert_eq!(live.pids("dup"), expected);
     }
 
     #[test]

@@ -263,10 +263,7 @@ fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
 /// slot's `session_id`, so a nested subagent resolves its OWN pid — which is
 /// the parent's, since omp subagents run in-process and inherit the fd).
 fn pid_for_session(sessions_root: &Path, session_id: &str) -> Option<i32> {
-    live_omp_session_ids(sessions_root)?
-        .pid_of
-        .get(session_id)
-        .copied()
+    live_omp_session_ids(sessions_root)?.focus_pid(session_id)
 }
 
 #[cfg(test)]
@@ -312,7 +309,7 @@ mod tests {
                 crate::id::normalize_path_key(&format!("{STEM}/Alpha"))
             ]
         );
-        assert_eq!(got.pid_of.get(&stem_key), Some(&42));
+        assert_eq!(got.pids(&stem_key), [42]);
     }
 
     #[test]
@@ -323,7 +320,6 @@ mod tests {
         let no_ext = root.join("-dev-proj/README");
         let got = snap_of(root, vec![outside, wrong_ext, no_ext]);
         assert!(got.is_empty());
-        assert!(got.pid_of.is_empty());
     }
 
     #[test]
@@ -334,7 +330,6 @@ mod tests {
         let missing = Path::new("/definitely/not/a/real/.omp/agent/sessions");
         let snap = live_omp_session_ids(missing).expect("absent root is not a probe failure");
         assert!(snap.is_empty());
-        assert!(snap.pid_of.is_empty());
     }
 
     #[test]

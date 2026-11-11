@@ -13,26 +13,22 @@ use crate::source::first_sight::{Registration, first_sight_start};
 use crate::source::{AgentEvent, Transport};
 
 fn snap(pairs: &[(&str, i32)]) -> ProbeSnapshot {
-    ProbeSnapshot {
-        pid_of: pairs
-            .iter()
-            .map(|(id, pid)| (id.to_string(), *pid))
-            .collect(),
+    let mut s = ProbeSnapshot::default();
+    for (id, pid) in pairs {
+        s.bind_pid(id.to_string(), *pid);
     }
+    s
 }
 
 #[test]
-fn bind_pid_keeps_the_larger_pid_in_both_orders() {
+fn bind_pid_keeps_every_holder_in_both_orders() {
     for pids in [[100, 200], [200, 100]] {
         let mut s = ProbeSnapshot::default();
         for pid in pids {
             s.bind_pid("sess".to_string(), pid);
         }
-        assert_eq!(
-            s.pid_of.get("sess"),
-            Some(&200),
-            "larger pid wins ({pids:?})"
-        );
+        assert_eq!(s.pids("sess"), [100, 200], "{pids:?}");
+        assert_eq!(s.focus_pid("sess"), Some(200), "the larger pid is focused");
     }
 }
 
@@ -51,8 +47,8 @@ fn from_open_fd_pairs_filters_under_root_then_recognizes_and_derives() {
         vec!["keep".to_string()]
     );
     assert_eq!(
-        got.pid_of.get("keep"),
-        Some(&7),
+        got.pids("keep"),
+        [7],
         "only the under-root .jsonl vouches, bound to its pid"
     );
 }
@@ -121,12 +117,8 @@ fn from_open_fds_with_joins_each_pid_to_the_transcripts_it_holds_open() {
         !got.is_empty(),
         "a probe that found live sessions is not empty"
     );
-    assert_eq!(got.pid_of.get("a"), Some(&7));
-    assert_eq!(
-        got.pid_of.get("b"),
-        Some(&9),
-        "each pid keeps its own rollout"
-    );
+    assert_eq!(got.pids("a"), [7]);
+    assert_eq!(got.pids("b"), [9], "each pid keeps its own rollout");
 }
 
 /// Safe to call from a unit test: only `RootWatch::new` reads this process-wide
@@ -196,6 +188,34 @@ fn fold_migrates_a_rebound_id_and_keeps_the_old_pids_sibling() {
     assert_eq!(out.newly_watched, vec![2], "only the new pid 2 registers");
     assert_eq!(ladder.pid_died(1), vec!["b".to_string()]);
     assert_eq!(ladder.pid_died(2), vec!["a".to_string()]);
+}
+
+/// A CC session resumed in a second terminal: two live processes each
+/// register it under their own pid ("messages from both interleave",
+/// code.claude.com/docs/en/sessions), so either one's exit alone leaves it running.
+#[cfg(unix)]
+#[test]
+fn a_session_two_live_registry_entries_hold_outlives_either_exit() {
+    let mut children = [crate::test_child::sleeper(), crate::test_child::sleeper()];
+    let pids = children.each_ref().map(|c| c.id() as i32);
+    let dir = tempfile::tempdir().unwrap();
+    for pid in pids {
+        let started = crate::source::proc_start::pid_start(pid).map_or(0, |s| s.secs) * 1000;
+        let entry = serde_json::json!({ "pid": pid, "sessionId": "s", "startedAt": started });
+        std::fs::write(dir.path().join(format!("{pid}.json")), entry.to_string()).unwrap();
+    }
+    let snapshot = crate::source::claude_code::live_cc_session_ids(dir.path());
+    for child in &mut children {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    let snapshot = snapshot.expect("a readable registry is a healthy probe");
+    for [first, last] in [pids, [pids[1], pids[0]]] {
+        let mut ladder = ProbeLadder::new(Duration::from_secs(60));
+        ladder.fold(&snapshot, Instant::now());
+        assert!(ladder.pid_died(first).is_empty(), "pid {first} died first");
+        assert_eq!(ladder.pid_died(last), vec!["s".to_string()]);
+    }
 }
 
 #[test]
@@ -3715,7 +3735,7 @@ mod ladder_props {
                     Op::Fold { live, advance_ms } => {
                         now += Duration::from_millis(*advance_ms);
                         let snap = snap_of(live);
-                        for id in snap.pid_of.keys() {
+                        for id in snap.pids_of.keys() {
                             dead.remove(id);
                         }
                         for id in ladder.fold(&snap, now).exits {
@@ -3738,27 +3758,39 @@ mod ladder_props {
         }
 
         #[test]
-        fn an_id_is_bound_under_at_most_one_pid(ops in arb_ops()) {
+        fn a_pid_death_never_ends_an_id_another_holder_keeps(ops in arb_ops()) {
             let mut ladder = ProbeLadder::new(SPAN);
             let mut now = Instant::now();
+            // id → the pids its latest vouch named that have not died since.
+            let mut holders: HashMap<String, HashSet<i32>> = HashMap::new();
             for op in &ops {
                 match op {
                     Op::Fold { live, advance_ms } => {
                         now += Duration::from_millis(*advance_ms);
-                        ladder.fold(&snap_of(live), now);
+                        let snap = snap_of(live);
+                        for (id, pids) in &snap.pids_of {
+                            holders.insert(id.clone(), pids.iter().copied().collect());
+                        }
+                        for id in ladder.fold(&snap, now).exits {
+                            holders.remove(&id);
+                        }
                     }
                     Op::PidDied(p) => {
-                        ladder.pid_died(PIDS[*p]);
+                        let pid = PIDS[*p];
+                        for id in ladder.pid_died(pid) {
+                            let others: Vec<i32> = holders
+                                .get(&id)
+                                .into_iter()
+                                .flatten()
+                                .copied()
+                                .filter(|&other| other != pid)
+                                .collect();
+                            prop_assert!(others.is_empty(), "{id} ended while {others:?} held it");
+                        }
+                        for pids in holders.values_mut() {
+                            pids.remove(&pid);
+                        }
                     }
-                }
-            }
-            let mut seen: HashSet<String> = HashSet::new();
-            for pid in PIDS {
-                for id in ladder.pid_died(pid) {
-                    prop_assert!(
-                        seen.insert(id.clone()),
-                        "{id} was bound under more than one pid"
-                    );
                 }
             }
         }
