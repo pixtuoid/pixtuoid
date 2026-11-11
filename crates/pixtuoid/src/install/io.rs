@@ -486,7 +486,7 @@ const EXIT_POLL: Duration = Duration::from_millis(20);
 /// `command`'s output with stdin null, or `None` past `limit`, which kills its
 /// process group (Unix) or Job Object (Windows): a launcher can leave the hung
 /// work to a child of its own.
-pub(crate) fn output_within(
+fn output_within(
     command: std::process::Command,
     limit: Duration,
 ) -> std::io::Result<Option<std::process::Output>> {
@@ -1401,9 +1401,8 @@ mod tests {
         }
     }
 
-    /// A `sh` fake hands a pipe to a background job as POSIX `&` does, and the
-    /// limit's kill takes the job with its group; `cmd`'s `start /b` documents
-    /// no such inheritance, so Windows has the test above.
+    /// A `sh` fake's background job holds the run's pipes, and the limit's kill
+    /// takes the job with its group.
     #[cfg(unix)]
     #[test]
     fn a_grandchild_holding_the_pipes_cannot_hold_the_run_past_its_limit() {
@@ -1428,31 +1427,31 @@ mod tests {
         }
     }
 
-    /// A quit's kill takes a running CLI's whole group or job: the run ends at
-    /// once, with the launcher and the job it started gone.
+    /// A quit's kill takes a running CLI's whole group or Job Object: the run
+    /// ends at once, with the launcher and what it started gone.
     #[test]
     fn kill_running_takes_a_running_clis_group() {
         let dir = TempDir::new().unwrap();
-        let (launcher, job) = (dir.path().join("launcher"), dir.path().join("job"));
+        let (launcher, sleeper) = (dir.path().join("launcher"), dir.path().join("sleeper"));
         let written = |at: &std::path::Path| {
             std::fs::read_to_string(at).is_ok_and(|pid| !pid.trim().is_empty())
         };
         let secs = HANG.as_secs();
         let unix = format!("echo $$ > \"$1\"\nsleep {secs} &\necho $! > \"$2\"\nwait");
-        // `ping` keeps the run's pipes as the Unix job does, so only the job's
-        // kill ends the run within the slack.
+        // `ping` keeps the run's pipes as the background `sleep` does, so only
+        // the Job Object's kill ends the run within the slack.
         let windows = format!(
             "echo up> \"%~1\"\r\necho up> \"%~2\"\r\nping -n {} 127.0.0.1",
             secs + 1
         );
         with_fake(&unix, &windows, || {
             std::thread::scope(|scope| {
-                let run =
-                    scope.spawn(|| FAKE.run_within(&[launcher.as_os_str(), job.as_os_str()], HANG));
+                let run = scope
+                    .spawn(|| FAKE.run_within(&[launcher.as_os_str(), sleeper.as_os_str()], HANG));
                 pixtuoid_core::harness::wait_until("both pids", SLACK, || {
-                    Ok(written(&launcher) && written(&job))
+                    Ok(written(&launcher) && written(&sleeper))
                 })
-                .expect("the launcher starts its job");
+                .expect("the launcher starts its sleeper");
                 let killed = std::time::Instant::now();
                 kill_running();
                 let _ = run.join().expect("the run ends");
@@ -1461,7 +1460,7 @@ mod tests {
             });
         });
         #[cfg(unix)]
-        for at in [&launcher, &job] {
+        for at in [&launcher, &sleeper] {
             let pid = std::fs::read_to_string(at).unwrap();
             assert!(gone(pid.trim()), "{} outlived the kill", at.display());
         }
