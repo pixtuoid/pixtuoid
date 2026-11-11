@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 use crate::AgentId;
 use crate::source::first_sight::{
     HEAD_BYTES, HeadFields, Life, Registration, Sight, each_life, extract_head_fields,
-    first_sight_start, holds_life, last_life,
+    first_sight_start, holds_life, last_life, transcript_session,
 };
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
@@ -120,9 +120,16 @@ pub(super) async fn tail_life(
     window_life(&read_tail(path, bytes).await?, path, source, decoders)
 }
 
+/// The session `path` is the transcript of, keyed by its row's deriver: hook
+/// slots carry the bare session UUID and nothing heals a slot's session_id, so
+/// a raw file-stem disagrees with the hook-created twin forever.
+fn session(path: &Path, source: &str, decoders: SourceDecoders) -> (String, AgentId) {
+    transcript_session(source, path, |path| decoders.id_derive.id_for(path))
+}
+
 /// The agent `path` is the transcript of.
 pub(super) fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
-    AgentId::from_parts(source, &decoders.id_derive.id_for(path))
+    session(path, source, decoders).1
 }
 
 #[derive(Default)]
@@ -605,10 +612,7 @@ async fn emit_registration(
                 start: first_sight_start(
                     path,
                     source,
-                    // Same deriver as the AgentId: hook slots carry the bare session
-                    // UUID and nothing heals a slot's session_id, so a raw file-stem
-                    // here disagrees with the hook-created twin forever.
-                    decoders.id_derive.id_for(path),
+                    session(path, source, decoders),
                     cwd,
                     head.parent,
                 ),

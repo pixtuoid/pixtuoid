@@ -9,7 +9,7 @@ use super::*;
 use crate::AgentId;
 use crate::source::claude_code::{cc_activity_recency, decode_cc_line};
 use crate::source::decoder::{accept_all_paths, default_id_from_path};
-use crate::source::first_sight::{Registration, first_sight_start};
+use crate::source::first_sight::{Registration, first_sight_start, transcript_session};
 use crate::source::{AgentEvent, Transport};
 
 fn snap(pairs: &[(&str, i32)]) -> ProbeSnapshot {
@@ -3391,7 +3391,7 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
         start: first_sight_start(
             &path,
             "test",
-            default_id_from_path(&path),
+            transcript_session("test", &path, default_id_from_path),
             "/repo".into(),
             None,
         ),

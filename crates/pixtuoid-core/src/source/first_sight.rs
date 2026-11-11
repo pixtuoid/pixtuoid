@@ -215,17 +215,31 @@ impl HeadFields {
     }
 }
 
-/// The `SessionStart` a transcript's first sight registers, keyed by
-/// `session_id`; its `subagents/` nesting names the parent before its head does.
+/// A transcript's session id, as `id_for` keys `path`, and the agent it names:
+/// the one derivation its registration and each read's own-agent judgement
+/// share, or one session splits into two slots.
+pub(crate) fn transcript_session(
+    source: &str,
+    path: &Path,
+    id_for: impl FnOnce(&Path) -> String,
+) -> (String, AgentId) {
+    let session_id = id_for(path);
+    let agent_id = AgentId::from_parts(source, &session_id);
+    (session_id, agent_id)
+}
+
+/// The `SessionStart` a transcript's first sight registers for its
+/// [`transcript_session`]; its `subagents/` nesting names the parent before its
+/// head does.
 pub(crate) fn first_sight_start(
     path: &Path,
     source: &str,
-    session_id: String,
+    (session_id, agent_id): (String, AgentId),
     cwd: PathBuf,
     head_parent: Option<String>,
 ) -> AgentEvent {
     AgentEvent::SessionStart {
-        agent_id: AgentId::from_parts(source, &session_id),
+        agent_id,
         source: source.to_string(),
         session_id,
         cwd,
