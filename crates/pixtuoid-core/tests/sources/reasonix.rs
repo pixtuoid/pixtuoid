@@ -1,7 +1,8 @@
 //! reasonix's DELEGATING runs, recorded by the hermetic tier: a dispatch
-//! (`spawn_agents`, or a skill tool such as `explore`) brackets nothing, and
-//! its child's hooks carry a session id of its own, so each run is two sprites
-//! and cannot sit under the conformance one-AgentId rule.
+//! (`spawn_agents`, or a skill tool such as `explore`) fires no event at its
+//! child's start or end, and its child's hooks carry a session id of its own,
+//! so each run is two sprites and cannot sit under the conformance one-AgentId
+//! rule.
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::Drive;

@@ -30,8 +30,9 @@ use crate::install::verify::{SchemaParse, ShimRef};
 /// hooks registered under PostToolUse / Stop with the event re-labeled, and ours
 /// are native-format — registering both spellings would double-fire every failed
 /// tool/turn for the same decoded end. SubagentStart / SubagentStop fire only
-/// around a `task` call, a tool upstream no longer registers
-/// (`internal/runtime/agent/execute_one.go:682-687` @ v2.60.0).
+/// around a `task` call (`internal/runtime/agent/execute_one.go:682-687`), a
+/// tool upstream does not register
+/// (`internal/assembly/boot/delegation_tools.go:8-11` @ v2.60.0).
 pub(crate) const REASONIX_EVENTS: &[&str] = &[
     "SessionStart",
     "PreToolUse",

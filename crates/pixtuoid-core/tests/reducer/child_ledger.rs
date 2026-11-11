@@ -354,7 +354,7 @@ fn a_late_transcript_restart_of_an_ended_child_is_gated_by_the_child_end_gate() 
 fn walked_out_child(r: &mut Reducer, scene: &mut SceneState) -> (AgentId, AgentId, SystemTime) {
     use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW};
     let parent = AgentId::from_parts("reasonix", "root");
-    let child = AgentId::from_parts("reasonix", "root:subagent:sa_1");
+    let child = AgentId::from_parts("reasonix", "root:subagent:call_1");
     let session_start = |agent_id, parent_id| AgentEvent::SessionStart {
         agent_id,
         source: "reasonix".into(),
@@ -393,9 +393,8 @@ fn walked_out_child(r: &mut Reducer, scene: &mut SceneState) -> (AgentId, AgentI
 
 /// An end pixtuoid only inferred (its slot swept after its parent's cascade)
 /// is a guess a later hook from the child disproves: a background child a
-/// sibling's drain walked out, or reasonix's `continue_from` resuming the same
-/// id. A transcript first-sight can be a replay, and a parent that is gone
-/// re-admits nothing.
+/// sibling's drain walked out. A transcript first-sight can be a replay, and a
+/// parent that is gone re-admits nothing.
 #[test]
 fn a_hook_start_re_admits_a_child_whose_end_was_only_inferred() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;

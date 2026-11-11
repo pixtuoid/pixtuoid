@@ -414,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn a_skill_calls_return_restates_its_task_before_the_end() {
+    fn a_dispatch_calls_return_restates_its_task_before_the_end() {
         let post = |tool| {
             decode_all(
                 json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/r", "toolName": tool}),
