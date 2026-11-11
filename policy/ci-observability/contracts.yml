@@ -111,29 +111,29 @@
     - .github/workflows/media-regen.yml
     - .github/workflows/hermetic-nightly.yml
   parse-runs: true
-  expected: "[ continue echo exit false gh:issue git:apply git:checkout git:status jq mv read rm set IFS= action= count= failed= is_marker= leg= markers= number= what="
+  expected: "[:-z continue echo exit false gh:issue git:apply git:checkout git:status jq mv read rm set IFS= action= failed= is_marker= leg= markers= number= what= File Lit Word SglQuoted DblQuoted CmdSubst ProcSubst:<( Block IfClause WhileClause CaseClause TestClause BinaryTest:== BinaryCmd:&& BinaryCmd:|| ${} ${:-} [@] < <<< >"
   why: >-
     Beside `bot-publish-runs-no-tree-code` and
-    `nightly-files-issues-from-a-job-that-runs-no-tree-code`: what a
-    write-token job's `run:` text runs and assigns, as shfmt parses it, is
-    what `expected` lists today. That is each simple command's first literal
-    word, written `cmd:sub` for a command with a `cmd:` entry, which a plain
-    `cmd` then never matches (`git` and `gh`, as `git -c` and a
-    `gh alias set --shell` alias run what they are handed); each declaration
-    builtin (shfmt's `DeclClause`, such as `export`, `declare`, `local` or
-    `readonly`) or `let`; and, written `name=`, each name assigned before a
-    command, alone, by `read` (its every operand but `-r`) or as a `for`
-    variable. An allowlist, as
-    REVIEW.md's Traps prefer, so anything unlisted fails, and so do a quoted
-    or expanded word and a `run` shfmt cannot parse (a `${{ }}` among
-    them). Code also runs outside the `run:` text. A write-token job sets no
-    `container`, which picks where its steps run, and no `services`, which
-    run other images beside it and can share volumes with its steps; its
-    steps set no `shell`, and neither it nor the workflow sets `defaults`.
-    Every `env` a write-token job sees, the workflow's included, is a
-    mapping of the keys those jobs see today. A write-token job's `run`
-    names neither `PATH` nor `GITHUB_ENV`/`GITHUB_PATH`, which set the next
-    steps' environment and command lookup.
+    `nightly-files-issues-from-a-job-that-runs-no-tree-code`: a write-token
+    job's `run:` text, as shfmt parses it, yields only what `expected` lists
+    today, and any typed node or redirect not listed fails, so a new shfmt
+    node type fails safe. A simple command yields its first literal word,
+    written `cmd:sub` for a command with a `cmd:` entry, which a plain `cmd`
+    then never matches (`git -c`, a `gh alias set --shell` alias and `[ -v`
+    run code from what they are handed), and `name=` for each name assigned
+    before it, alone, or as a `read` operand but `-r`. Any other typed node
+    yields its type and op (`BinaryTest:==`), a parameter expansion its
+    modifiers (`${:-}`), a redirect its fd and op, and a subscript must be
+    `[@]`: arithmetic, `[[ -eq ]]`, a subscript and `${!x}` run a value's
+    `$(…)`, however quoted or read. A quoted or expanded word fails, as does
+    a `run` shfmt refuses (a `${{ }}` among them). Code also runs outside
+    the `run:` text. A write-token job sets no `container`, which picks where
+    its steps run, and no `services`, whose images can share volumes with its
+    steps; its steps set no `shell`, and neither it nor the workflow sets
+    `defaults`. Every `env` a write-token job sees, the workflow's included,
+    maps only the keys those jobs see today. A write-token job's `run` names
+    neither `GITHUB_ENV` nor `GITHUB_PATH`, which set the next steps'
+    environment and command lookup.
   assert: |
     def literal: if (.Parts | length) == 1 and .Parts[0].Type == "Lit" then .Parts[0].Value else "a word not one literal" end;
     ($expected | split(" ")) as $listed
@@ -142,16 +142,18 @@
     | ([$steps[] | select(has("run")) | .run_ast
         | if . == null then "a run shfmt refused"
           else .. | objects
-            | if .Type == "DeclClause" then .Variant.Value
-              elif .Type == "LetClause" then "let"
-              elif .Type == "WordIter" then .Name.Value + "="
-              elif .Type == "CallExpr" then
-                (.Assigns[]? | .Name.Value + "="),
-                ([.Args[]? | literal] as $w
-                 | select($w != [])
-                 | (if any($listed[]; startswith($w[0] + ":")) then $w[0] + ":" + ($w[1] // "a word not one literal") else $w[0] end),
-                   (select($w[0] == "read") | $w[1:][] | select(. != "-r") | . + "="))
-              else empty end
+            | (if .Type == "CallExpr" then
+                 (.Assigns[]? | .Name.Value + "="),
+                 ([.Args[]? | literal] as $w
+                  | select($w != [])
+                  | (if any($listed[]; startswith($w[0] + ":")) then $w[0] + ":" + ($w[1] // "a word not one literal") else $w[0] end),
+                    (select($w[0] == "read") | $w[1:][] | select(. != "-r") | . + "="))
+               elif .Type == "ParamExp" then
+                 . as $p | "${" + ([keys[] | select(IN("Type", "Pos", "End", "Dollar", "Rbrace", "Short", "Param", "Index") | not) | if . == "Exp" then $p.Exp.Op else . end] | join(",")) + "}"
+               elif has("Type") then .Type + (if .Op then ":\(.Op)" else "" end)
+               else empty end),
+              (select(.Index != null) | "[" + (.Index | literal) + "]"),
+              (.Redirs[]? | (.N.Value // "") + .Op)
           end]
        - $listed == [])
       and ([$jobs[] | has("container") or has("services")] | any | not)
@@ -159,7 +161,7 @@
       and ([.defaults, $jobs[].defaults] | all(. == null))
       and ([.env, $jobs[].env, $steps[].env | select(. != null)]
            | all(type == "object" and keys - ["GH_REPO", "GH_TOKEN", "HERMETIC_LABEL", "HERMETIC_LIMIT", "SOURCE"] == []))
-      and ([$steps[] | .run // "" | test("GITHUB_(ENV|PATH)|\\bPATH\\b")] | any | not)
+      and ([$steps[] | .run // "" | test("GITHUB_(ENV|PATH)")] | any | not)
   break:
     - '.jobs.publish.steps += [{"run": "perl scripts/x.pl"}]'
     - '.jobs.file.steps += [{"run": "npx some-bin"}]'
@@ -172,25 +174,25 @@
     - '.jobs.file.defaults = {"run": {"shell": "bash scripts/x.sh {0}"}}'
     - '.defaults = {"run": {"shell": "bash scripts/x.sh {0}"}}'
     - '.jobs.publish.steps += [{"env": {"BASH_ENV": "scripts/x.sh"}, "run": "echo"}]'
-    - '.jobs.file.steps += [{"run": "echo BASH_ENV=scripts/x.sh >> \"$GITHUB_ENV\""}]'
-    - '.jobs.publish.steps += [{"run": "echo scripts >> \"$GITHUB_PATH\""}]'
+    - '.jobs.file.steps += [{"run": "echo BASH_ENV=scripts/x.sh > \"$GITHUB_ENV\""}]'
+    - '.jobs.publish.steps += [{"run": "echo scripts > \"$GITHUB_PATH\""}]'
     - '.jobs.publish.env = {"PATH": "scripts:/usr/bin"}'
     - '.env.PATH = "scripts:/usr/bin"'
     - '.jobs.file.steps += [{"env": "${{ fromJSON(needs.x.outputs.vars) }}", "run": "echo"}]'
-    - '.jobs.publish.steps += [{"run": "PATH=scripts:$PATH git status"}]'
-    - '.jobs.file.steps += [{"run": "export PATH=scripts"}]'
     - '.jobs.publish.container = {"image": "ubuntu", "env": {"BASH_ENV": "scripts/x.sh"}}'
     - '.jobs.file.services = {"x": {"image": "ubuntu"}}'
     - '.jobs.publish.steps += [{"run": "git -c core.fsmonitor=scripts/x status"}]'
+    - '.jobs.file.steps += [{"run": "gh alias set --shell x scripts/x"}]'
+    - '.jobs.file.steps += [{"run": "[ -v \"$what\" ]"}]'
     - '.jobs.publish.steps += [{"run": "LD_PRELOAD=scripts/x.so git status"}]'
     - '.jobs.file.steps += [{"run": "HOME=scripts"}]'
-    - '.jobs.file.steps += [{"run": "export LD_PRELOAD=scripts/x.so"}]'
     - '.jobs.file.steps += [{"run": "read -r HOME"}]'
-    - '.jobs.file.steps += [{"run": "for HOME in scripts; do echo; done"}]'
-    - '.jobs.file.steps += [{"run": "let HOME=1"}]'
-    - '.jobs.file.steps += [{"run": "gh alias set --shell x scripts/x"}]'
     - '.jobs.file.steps += [{"run": "read -aHOME"}]'
-    - '.jobs.file.steps += [{"run": "((PATH = 1))"}]'
+    - '.jobs.publish.steps += [{"run": "echo x {PATH}>/dev/null"}]'
+    - '.jobs.publish.steps += [{"run": "what=''a[$(perl x)]''; [[ $what -eq 0 ]]"}]'
+    - '.jobs.publish.steps += [{"run": "what=$''a[\\x24(perl x)]''; echo $((what))"}]'
+    - '.jobs.publish.steps += [{"run": "what=''a[$''\"(perl x)]\"; echo \"${!what}\""}]'
+    - '.jobs.file.steps += [{"run": "what=$(jq -r .do plan.json); echo \"${markers[$what]}\""}]'
 
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml

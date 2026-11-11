@@ -280,9 +280,7 @@ jobs:
           gh issue list --label "$HERMETIC_LABEL" --state all --limit "$HERMETIC_LIMIT" \
             --json number,body >"$RUNNER_TEMP/labelled.json" ||
             { echo "::error::could not list the hermetic issues"; failed=1; }
-          count=$(jq '.actions | length' plan.json)
-          for ((i = 0; i < count; i++)); do
-            action=$(jq -c ".actions[$i]" plan.json)
+          while IFS= read -r action; do
             jq -r '.body' <<<"$action" >"$RUNNER_TEMP/body.md"
             number=$(jq -r '.number // empty' <<<"$action")
             what=$(jq -r '.do' <<<"$action")
@@ -303,7 +301,7 @@ jobs:
             close) gh issue comment "$number" --body-file "$RUNNER_TEMP/body.md" && gh issue close "$number" ;;
             *) false ;;
             esac || { echo "::error::could not $what issue ${number:-$(jq -r '.title' <<<"$action")}"; failed=1; }
-          done
+          done < <(jq -c '.actions[]' plan.json)
           while IFS= read -r leg; do
             echo "::error::$leg"
             failed=1
