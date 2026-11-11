@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 use crate::AgentId;
 use crate::source::first_sight::{
     HEAD_BYTES, HeadFields, Life, Registration, Sight, each_life, extract_head_fields,
-    first_sight_start, holds_life, last_life, sends,
+    first_sight_start, holds_life, last_life,
 };
 use crate::source::registry::{cwd_extractor_for, parent_extractor_for};
 use crate::source::{AgentEvent, TaggedSender, Transport};
@@ -518,7 +518,14 @@ pub(super) async fn walk_jsonl(
         {
             registration.label = Some(label.clone());
         }
-        life.retain(|event| sends(event, own, registers));
+        // A read that registers nothing sends no `SessionStart` of its own, a
+        // start a decoder bears (copilot's `session.resume`) refused as the
+        // watcher's is.
+        life.retain(|event| {
+            registers
+                || !matches!(event, AgentEvent::SessionStart { .. })
+                || event.agent_id() != own
+        });
         let ended = verdict == Some(Life::Ended);
         // A replay declares `true` once, before its first life, and `false` after
         // its last; a live read declares `false` before each life, past any first

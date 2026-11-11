@@ -94,13 +94,6 @@ pub(crate) fn holds_life<'a>(events: impl IntoIterator<Item = &'a AgentEvent>) -
     events.into_iter().any(lives)
 }
 
-/// Whether a read sends its decoded `event`: not its own `SessionStart` when
-/// the read `registers` nothing ([`Sight::registers`]), a start a decoder bears
-/// (copilot's `session.resume`) refused as the watcher's is.
-pub(crate) fn sends(event: &AgentEvent, own: AgentId, registers: bool) -> bool {
-    registers || !matches!(event, AgentEvent::SessionStart { .. }) || event.agent_id() != own
-}
-
 /// `events` cut into lives, a new one starting at the first [`Life::Lives`]
 /// evidence after the session's own end: a read judges each as a read of its
 /// own, because the reducer revives an exiting slot only on a start, and a

@@ -136,7 +136,8 @@ pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
     /// Every event folded for the reads fed, in order: each life's decoded
-    /// events, led by its seed when `Sight::registers` admits it.
+    /// events, led by its seed when the drive is [`Drive::seeded`] and
+    /// `Sight::registers` admits it.
     pub events: Vec<AgentEvent>,
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
