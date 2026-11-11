@@ -23,7 +23,8 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd, non_empty,
+    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd, first_present_str,
+    generic_tool_display, non_empty,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -669,6 +670,14 @@ const TOOL_ASK: &str = "ask";
 /// persisted `arguments`.
 const INTENT_FIELD: &str = "i";
 
+/// The call's intent, trimmed, or `None` when blank: its schema admits a blank
+/// string, which omp's own reader counts as no intent
+/// (`packages/agent/src/agent-loop.ts:1045`, `:1099-1108` at `v18.18.8`).
+fn omp_intent(args: Option<&Value>) -> Option<&str> {
+    let intent = args?.get(INTENT_FIELD)?.as_str()?.trim();
+    (!intent.is_empty()).then_some(intent)
+}
+
 /// `prefix·<text>` at the label cap — the ONE place omp assembles a
 /// content-derived label, shared by the subagent-stem deriver and the session
 /// title, so neither can bypass the bound that keeps an untrusted string out of
@@ -889,8 +898,9 @@ fn omp_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     // The intent sits LAST, below every concrete target — a path beats a
     // paraphrase of that path. It earns its place on the tools with no keyed
     // target at all (`edit`, `todo`, `job`, `hub`, …).
-    const KEYS: &[&str] = &["command", "path", "pattern", "query", INTENT_FIELD];
-    crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
+    const KEYS: &[&str] = &["command", "path", "pattern", "query"];
+    let target = args.and_then(|a| first_present_str(a, KEYS));
+    generic_tool_display(tool, target.or_else(|| omp_intent(args)))
 }
 
 /// The [`AgentEvent::UserActionRequest`] reason for an `ask` round: the call's
@@ -898,16 +908,10 @@ fn omp_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 /// (`packages/coding-agent/src/tools/ask.ts:61-63` at `v18.18.8`), which the
 /// intent paraphrases.
 fn omp_ask_reason(args: Option<&Value>) -> String {
-    args.and_then(|a| a.get(INTENT_FIELD))
-        .and_then(Value::as_str)
-        // Its schema is a bare string, and a blank one is no intent to omp
-        // either (`packages/agent/src/agent-loop.ts:1045`, `:1104-1108` at
-        // v18.18.8).
-        .filter(|i| !i.trim().is_empty())
-        .map_or_else(
-            || TOOL_ASK.to_owned(),
-            |i| ellipsize(i, MAX_DECODED_FIELD_CHARS),
-        )
+    omp_intent(args).map_or_else(
+        || TOOL_ASK.to_owned(),
+        |i| ellipsize(i, MAX_DECODED_FIELD_CHARS),
+    )
 }
 
 // --- extension-bridge hook payloads (#951) ---------------------------------
@@ -1604,6 +1608,11 @@ mod tests {
             display_of(r#"{"input":"…"}"#),
             "edit",
             "no target and no intent stays a bare verb"
+        );
+        assert_eq!(
+            display_of(r#"{"i":"  ","input":"…"}"#),
+            "edit",
+            "a blank intent is no intent"
         );
         // The intent rides the same target cap as every other key, so a
         // model that writes an essay can't blow out the sprite's detail line.

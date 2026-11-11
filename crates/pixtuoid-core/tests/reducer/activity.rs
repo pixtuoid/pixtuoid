@@ -688,7 +688,7 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
     }
 }
 
-// Line shapes follow omp 18.18.8's recorded ask round (`omp/fixtures/ask-hermetic`), sanitized.
+// Line shapes follow the recorded ask round (`omp/fixtures/ask-hermetic`), sanitized.
 #[test]
 fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     use pixtuoid_core::source::omp::decode_omp_line;
