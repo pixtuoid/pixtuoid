@@ -98,7 +98,7 @@ struct Music {
     gain: f32,
 }
 
-pub(crate) fn commands_json(cmd: &TickCommands) -> String {
+pub(crate) fn commands_json(cmd: &TickCommands) -> serde_json::Result<String> {
     let commands = Commands {
         gains: cmd.gains,
         plays: (cmd.plays.iter())
@@ -109,8 +109,7 @@ pub(crate) fn commands_json(cmd: &TickCommands) -> String {
             gain: m.gain,
         }),
     };
-    // Plain structs serialize without error; an empty reply is one the page skips.
-    serde_json::to_string(&commands).unwrap_or_default()
+    serde_json::to_string(&commands)
 }
 
 #[cfg(test)]
@@ -211,7 +210,7 @@ mod tests {
                 gain: 0.75,
             }),
         };
-        let json = commands_json(&cmd);
+        let json = commands_json(&cmd).expect("the commands serialize");
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(v["music"]["gain"], 0.75);
         let wire: Vec<f32> =
@@ -221,8 +220,10 @@ mod tests {
             cmd.music.map(|m| m.controls),
             "the worker hands back what the wire carried"
         );
-        let silent: serde_json::Value =
-            serde_json::from_str(&commands_json(&TickCommands::default())).expect("valid JSON");
+        let silent: serde_json::Value = serde_json::from_str(
+            &commands_json(&TickCommands::default()).expect("the commands serialize"),
+        )
+        .expect("valid JSON");
         assert!(silent["music"].is_null(), "no frame, no song");
         assert_eq!(v["gains"].as_array().unwrap().len(), LoopStem::ALL.len());
         assert_eq!(v["gains"][at(LoopStem::Rain)].as_f64().unwrap(), 0.35);
@@ -243,7 +244,9 @@ mod tests {
             gains: [f32::NAN; LoopStem::ALL.len()],
             ..TickCommands::default()
         };
-        let v: serde_json::Value = serde_json::from_str(&commands_json(&cmd)).expect("valid JSON");
+        let v: serde_json::Value =
+            serde_json::from_str(&commands_json(&cmd).expect("the commands serialize"))
+                .expect("valid JSON");
         assert!(v["gains"][0].is_null(), "{v}");
     }
 

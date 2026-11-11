@@ -372,7 +372,11 @@ impl Office {
     /// the face's pixels. Colors are RESOLVED against the CURRENT theme. Call
     /// right after `step` (it reads the step's clock); `board` is null before
     /// the first step and on a canvas too small to lay an office out.
-    pub fn overlay_json(&mut self) -> String {
+    ///
+    /// # Errors
+    ///
+    /// If the overlay fails to serialize; JS sees a thrown `Error`.
+    pub fn overlay_json(&mut self) -> Result<String, JsError> {
         let pixtuoid_scene::display::PlateInsets { rim, ring_w, gap } =
             pixtuoid_scene::display::BADGE_INSETS;
         let rect = self.session.picture().map(|p| p.hits.layout().board());
@@ -405,8 +409,7 @@ impl Office {
             labels,
             board,
         };
-        // Plain structs serialize without error; an empty reply is one the page skips.
-        serde_json::to_string(&overlay).unwrap_or_default()
+        Ok(serde_json::to_string(&overlay)?)
     }
 
     // The site's office host drives the audio: audio_begin → pump
@@ -505,8 +508,16 @@ impl Office {
     /// stem — JS ramps each GainNode to its gain, spawns the one-shots, ramps
     /// the music's GainNode and hands its controls, unread, to the music
     /// worker (`null` until the first frame).
-    pub fn audio_tick(&mut self, now_ms: f64) -> String {
-        let silent = || audio::commands_json(&pixtuoid_scene::audio::TickCommands::default());
+    ///
+    /// # Errors
+    ///
+    /// If the commands fail to serialize; JS sees a thrown `Error`.
+    pub fn audio_tick(&mut self, now_ms: f64) -> Result<String, JsError> {
+        let silent = || {
+            Ok(audio::commands_json(
+                &pixtuoid_scene::audio::TickCommands::default(),
+            )?)
+        };
         let Some(now) = self.last_now else {
             return silent();
         };
@@ -517,7 +528,7 @@ impl Office {
         // The shared observer composes the whole AudioFrame, single-sourced with
         // the desktop painters. Single-floor hero → floor 0.
         let frame = self.session.audio_frame(&self.scene, conditions, now);
-        audio::commands_json(&audio.tick(now_ms, frame))
+        Ok(audio::commands_json(&audio.tick(now_ms, frame))?)
     }
 }
 
@@ -881,7 +892,8 @@ mod tests {
         o.step(T0_MS, 320, 180);
         o.step(T0_MS + 10_000.0, 320, 180);
         let overlay = |o: &mut Office| -> serde_json::Value {
-            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON")
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("overlay_json is valid JSON")
         };
         assert!(overlay(&mut o)["board"].is_object(), "premise: a board");
         o.step(T0_MS + 10_100.0, 8, 8);
@@ -895,7 +907,8 @@ mod tests {
         o.step(T0_MS, 320, 180);
         o.step(T0_MS + 10_000.0, 320, 180);
         let v: serde_json::Value =
-            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("overlay_json is valid JSON");
         let labels = v["labels"].as_array().expect("labels");
         assert!(!labels.is_empty(), "the seated cast produced labels");
         let cc = hex(NORMAL.source.claude_code);
@@ -1050,7 +1063,8 @@ mod tests {
         step_at(&mut o, &screen, second - FLOOR_MS / 4);
         let labels = |o: &mut Office| {
             let v: serde_json::Value =
-                serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+                serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                    .expect("overlay_json is valid JSON");
             v["labels"].as_array().expect("labels").len()
         };
         let shown = labels(&mut o);
@@ -1191,7 +1205,9 @@ mod tests {
     #[test]
     fn overlay_json_before_first_step_is_empty_but_valid() {
         let mut o = office();
-        let v: serde_json::Value = serde_json::from_str(&o.overlay_json()).expect("valid JSON");
+        let v: serde_json::Value =
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("valid JSON");
         assert!(v["labels"].as_array().unwrap().is_empty());
         assert!(v["board"].is_null());
     }
@@ -1202,7 +1218,8 @@ mod tests {
         o.step(T0_MS, 288, 180);
         o.step(T0_MS + 1_000.0, 288, 180);
         let overlay: serde_json::Value =
-            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("overlay_json is valid JSON");
         let context = overlay["board"]["context"].as_array().expect("a row");
         let row: String = (context.iter())
             .map(|segment| segment["text"].as_str().expect("text"))
@@ -1224,7 +1241,7 @@ mod tests {
             "the hero script populated the office"
         );
 
-        let json = o.overlay_json();
+        let json = o.overlay_json().expect("the overlay serializes");
         let v: serde_json::Value = serde_json::from_str(&json).expect("overlay_json is valid JSON");
 
         let board = &v["board"];
@@ -1267,7 +1284,8 @@ mod tests {
             t += 5_000;
         }
         let v: serde_json::Value =
-            serde_json::from_str(&o.overlay_json()).expect("overlay_json is valid JSON");
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes"))
+                .expect("overlay_json is valid JSON");
         let got: Vec<serde_json::Value> = v["labels"].as_array().expect("labels").clone();
         let want: Vec<serde_json::Value> = o
             .session
@@ -1298,13 +1316,25 @@ mod tests {
     }
 
     #[test]
+    fn hex_writes_each_channel_as_two_lowercase_digits() {
+        let c = pixtuoid_scene::sprite::Rgb {
+            r: 1,
+            g: 0xab,
+            b: 0xff,
+        };
+        assert_eq!(hex(c), "#01abff");
+    }
+
+    #[test]
     fn overlay_json_colors_track_set_theme() {
         let mut o = office();
         o.step(T0_MS, 288, 180);
-        let normal: serde_json::Value = serde_json::from_str(&o.overlay_json()).unwrap();
+        let normal: serde_json::Value =
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes")).unwrap();
         o.set_theme("cyberpunk");
         o.step(T0_MS + 100.0, 288, 180);
-        let cyber: serde_json::Value = serde_json::from_str(&o.overlay_json()).unwrap();
+        let cyber: serde_json::Value =
+            serde_json::from_str(&o.overlay_json().expect("the overlay serializes")).unwrap();
         assert_ne!(
             normal["board"]["brand"]["color"], cyber["board"]["brand"]["color"],
             "the brand hue differs between normal and cyberpunk"
