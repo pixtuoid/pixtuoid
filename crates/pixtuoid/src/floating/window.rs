@@ -234,10 +234,10 @@ impl FloatingApp {
         });
         let connected = boot.connected.clone();
         let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
-        let change_proxy = proxy.clone();
+        let job_proxy = proxy.clone();
         boot.rt.spawn(async move {
             while let Some(done) = job_done.recv().await {
-                if change_proxy
+                if job_proxy
                     .send_event(FloatingEvent::PanelJobDone(done))
                     .is_err()
                 {

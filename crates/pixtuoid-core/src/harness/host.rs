@@ -1,7 +1,7 @@
 //! What the capture rig asks of the host: the sandbox its CLIs run in, a known
 //! folder as the shell resolves it, a directory no other local user can write into, whether this process
 //! owns a path, a lock on a file it owns, a removal that waits out a process
-//! holding the tree, and whether a registry key exists.
+//! holding the tree, whether a registry key exists, and a pipe no reader drains.
 
 use std::ffi::{OsStr, OsString};
 use std::io::Write;
@@ -399,6 +399,38 @@ pub fn hold_lock(path: &Path) -> std::io::Result<std::fs::File> {
     }
     lock.lock()?;
     Ok(lock)
+}
+
+/// A pipe that is full and that nobody reads, so the next write to it waits
+/// for good: a stalled reader. The reader is returned for the caller to hold
+/// open.
+///
+/// # Errors
+///
+/// The pipe's own failure.
+#[cfg(unix)]
+pub fn full_pipe() -> std::io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
+    use std::os::fd::AsRawFd as _;
+    let (reader, mut writer) = std::io::pipe()?;
+    let fd = writer.as_raw_fd();
+    let blocking = |on: bool| {
+        // SAFETY: fcntl on the pipe this fn just made.
+        unsafe {
+            let flags = libc::fcntl(fd, libc::F_GETFL);
+            let flags = if on {
+                flags & !libc::O_NONBLOCK
+            } else {
+                flags | libc::O_NONBLOCK
+            };
+            libc::fcntl(fd, libc::F_SETFL, flags);
+        }
+    };
+    blocking(false);
+    // Byte by byte at the end, so not even a short line fits.
+    while writer.write(&[0; 4096]).is_ok() {}
+    while writer.write(&[0]).is_ok() {}
+    blocking(true);
+    Ok((reader, writer))
 }
 
 /// The lock beside a recording's fixed `dir`, `<name>.lock`, which every user

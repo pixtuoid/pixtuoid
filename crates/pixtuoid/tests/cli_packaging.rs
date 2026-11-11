@@ -146,7 +146,7 @@ fn a_fatal_error_into_a_broken_pipe_still_exits_1() {
 #[test]
 fn a_fatal_error_into_a_stalled_stderr_still_exits_1() {
     let state = tempfile::TempDir::new().expect("tempdir");
-    let (_reader, stalled) = pixtuoid::dev::full_pipe().expect("a full pipe");
+    let (_reader, stalled) = pixtuoid_core::harness::host::full_pipe().expect("a full pipe");
     let mut run = refused(&["run", "--headless"], state.path())
         .stderr(stalled)
         .spawn()

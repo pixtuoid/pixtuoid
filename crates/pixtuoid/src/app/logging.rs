@@ -107,36 +107,6 @@ impl Drop for LogFlush {
     }
 }
 
-/// A pipe that is full and that nobody reads, so the next write to it waits
-/// for good: the stalled reader a quit's write must not wait on. The reader is
-/// returned for the caller to hold open. Mechanism for the stalled-sink tests,
-/// not a contract.
-#[cfg(unix)]
-#[doc(hidden)]
-pub fn full_pipe() -> std::io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
-    use std::os::fd::AsRawFd as _;
-    let (reader, mut writer) = std::io::pipe()?;
-    let fd = writer.as_raw_fd();
-    let blocking = |on: bool| {
-        // SAFETY: fcntl on the pipe this fn just made.
-        unsafe {
-            let flags = libc::fcntl(fd, libc::F_GETFL);
-            let flags = if on {
-                flags & !libc::O_NONBLOCK
-            } else {
-                flags | libc::O_NONBLOCK
-            };
-            libc::fcntl(fd, libc::F_SETFL, flags);
-        }
-    };
-    blocking(false);
-    // Byte by byte at the end, so not even a short line fits.
-    while writer.write(&[0; 4096]).is_ok() {}
-    while writer.write(&[0]).is_ok() {}
-    blocking(true);
-    Ok((reader, writer))
-}
-
 /// The formatting layer, its field values escaped by [`EscapedFields`] and its
 /// internal-error report off: on a failed write that report is an
 /// `eprintln!`, which panics when stderr is the pipe that failed, and lands on
@@ -430,7 +400,7 @@ mod tests {
     impl StalledStdout {
         fn install() -> Self {
             use std::os::fd::{AsRawFd as _, FromRawFd as _};
-            let (reader, writer) = full_pipe().expect("a full pipe");
+            let (reader, writer) = pixtuoid_core::harness::host::full_pipe().expect("a full pipe");
             // SAFETY: dup and dup2 of fds this process holds open.
             unsafe {
                 let saved = std::os::fd::OwnedFd::from_raw_fd(libc::dup(libc::STDOUT_FILENO));

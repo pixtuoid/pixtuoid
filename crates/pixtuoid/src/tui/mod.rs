@@ -1531,25 +1531,6 @@ mod apply_key_action_tests {
         );
     }
 
-    /// A job its test never lets end stops with its harness, so a quit's wait
-    /// on the jobs, another test's in one process, never waits on it.
-    #[test]
-    fn a_held_job_ends_with_its_harness() {
-        /// Far past a job's own time on a loaded machine.
-        const ENDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
-        let mut h = Harness::new();
-        h.apply(KeyAction::ToggleConnection);
-        drop(h);
-        let (done, joined) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            crate::panels::join_jobs();
-            let _ = done.send(());
-        });
-        joined
-            .recv_timeout(ENDS_WITHIN)
-            .expect("the held job outlived its harness");
-    }
-
     /// The panel opens at once on rows no probe has read, and reads them off
     /// the loop: until they land, a change waits its turn.
     #[test]

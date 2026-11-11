@@ -529,8 +529,8 @@ pub(crate) fn run_job(input: JobInput) -> JobDone {
 /// Start `job` on a thread of its own, which sends its [`JobDone`] to
 /// `cx.job_tx`: a host CLI's run can take [minutes](crate::install::io::HostCli::run),
 /// which a painter's loop must not wait out. One runs at a time, as a paired
-/// device's changes do (`serve::device`'s gate): two changes would race the
-/// config's lock, which [fails on contention](crate::install::io::lock_config).
+/// device's changes do (`serve::device`'s gate): a hung host CLI holds its job
+/// until its limit, and each job's rows replace the panel's.
 fn start_job<H: Host>(cx: &mut KeyCtx<'_, H>, job: PanelJob) {
     if let Some(running) = &cx.ui.running_job {
         // A refresh needs none of its own: the running job brings fresh rows.
@@ -1080,7 +1080,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
                             on: true,
                         },
                     ),
-                    // It starts nothing, so a change in flight refuses it nothing.
+                    // It starts nothing, so a job in flight refuses it nothing.
                     ToggleIntent::Hint => {
                         cx.ui.connection.last_result = Some(hint);
                     }
@@ -2268,9 +2268,6 @@ pub(crate) mod noted {
         let fails = loop {
             match std::fs::read_to_string(&gate) {
                 Ok(held) => break held == FAILS,
-                // Its harness ended with the gate shut, and its directory with
-                // it: nothing waits on the result.
-                Err(_) if !gate.parent().is_some_and(std::path::Path::exists) => break true,
                 Err(_) => std::thread::sleep(std::time::Duration::from_millis(5)),
             }
         };

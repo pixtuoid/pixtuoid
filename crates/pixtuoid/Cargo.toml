@@ -137,7 +137,7 @@ audio = ["dep:rodio", "dep:rtrb"]
 serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami", "dep:zbus"]
 
 # termios/select/tcflush for `term`'s terminal queries, O_NOFOLLOW in
-# install/io.rs, the stderr dup in audio/sink.rs, `logging::full_pipe`.
+# install/io.rs, the stderr dup in audio/sink.rs.
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 # The kitty `t=s` objects (graphics/shm.rs), whose `shm_open` libc types

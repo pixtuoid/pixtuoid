@@ -543,7 +543,8 @@ pub(crate) fn output_within(
 }
 
 /// The process groups of the CLIs this process runs. Each leads its own,
-/// which a terminal's Ctrl-C never reaches.
+/// which a terminal's Ctrl-C never reaches: INTR signals the foreground group
+/// only (POSIX Base Definitions 11.1.9).
 #[cfg(unix)]
 struct Groups {
     running: Vec<u32>,
