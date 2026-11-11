@@ -11,12 +11,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::task::{self, Poll};
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{
+    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf,
+};
 use tokio::sync::broadcast;
 use tracing::warn;
 
@@ -229,8 +233,47 @@ async fn write_line(conn: &mut (impl AsyncWrite + Unpin), line: &str) -> bool {
     )
 }
 
-/// The payload lines of the instance holding an endpoint, until it exits.
-pub(super) type Payloads = BufReader<Client>;
+/// The payload lines of the instance holding an endpoint, until it exits or cuts this feed.
+pub(super) type Payloads = WholeLines<BufReader<Client>>;
+
+/// A feed read only to its last whole line: [`Relay::forward`] ends every line
+/// in `\n`, so a tail without one is a line [`write_line`] cut off, a hang-up
+/// rather than a malformed payload.
+pub(super) struct WholeLines<R> {
+    feed: R,
+    at_line_end: bool,
+}
+
+impl<R> WholeLines<R> {
+    fn new(feed: R) -> Self {
+        Self {
+            feed,
+            at_line_end: true,
+        }
+    }
+}
+
+impl<R: AsyncRead + Unpin> AsyncRead for WholeLines<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let start = buf.filled().len();
+        task::ready!(Pin::new(&mut self.feed).poll_read(cx, buf))?;
+        match buf.filled()[start..].last() {
+            Some(&last) => self.at_line_end = last == b'\n',
+            None if buf.remaining() > 0 && !self.at_line_end => {
+                return Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "relay feed cut by its owner",
+                )));
+            }
+            None => {}
+        }
+        Poll::Ready(Ok(()))
+    }
+}
 
 /// The subscriber's half.
 pub(super) async fn subscribe(path: &Path) -> Result<Payloads> {
@@ -245,7 +288,7 @@ pub(super) async fn subscribe(path: &Path) -> Result<Payloads> {
         matches!(read, Ok(Ok(_))) && ack == SUBSCRIBED_LINE,
         "its owner took no subscription: quit it if it is an older pixtuoid, then restart this one"
     );
-    Ok(conn)
+    Ok(WholeLines::new(conn))
 }
 
 /// Ask `path`'s owner what it knows, which changes nothing there. With no owner
@@ -366,6 +409,38 @@ mod tests {
             .await
             .expect("a stalled write times out");
         assert_eq!(tx.receiver_count(), 0, "its receiver pins no line");
+    }
+
+    #[tokio::test]
+    async fn only_a_feed_cut_mid_line_reads_as_a_hang_up() {
+        let session = "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
+                       \"transcript_path\":\"/p/s.jsonl\",\"cwd\":\"/repo\"}\n";
+        let cut = &session[..session.len() / 2];
+        for (feed, is_cut) in [
+            (format!("{session}{cut}"), true),
+            (session.to_owned(), false),
+            (String::new(), false),
+        ] {
+            let (logs, _guard) = crate::test_capture::capture_warns();
+            let (mut owner, conn) = tokio::io::duplex(1024);
+            owner.write_all(feed.as_bytes()).await.unwrap();
+            drop(owner);
+            let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+            let payloads = WholeLines::new(BufReader::new(conn));
+            super::super::handle_conn(payloads, tx, None, None, None).await;
+            if !feed.is_empty() {
+                let (_, ev) = rx.recv().await.expect("the whole line decodes");
+                assert!(matches!(ev, AgentEvent::SessionStart { .. }));
+            }
+            let out = logs.contents();
+            assert!(!out.contains("malformed hook line skipped"), "{out:?}");
+            assert_eq!(
+                out.contains("relay feed cut by its owner"),
+                is_cut,
+                "{out:?}"
+            );
+            assert_eq!(out.contains("hook conn read error"), is_cut, "{out:?}");
+        }
     }
 
     // An owner older than the relay is the one reader of this line that isn't
@@ -526,7 +601,7 @@ mod tests {
 
     /// `tag`'s private endpoint and the directory keeping it so.
     fn endpoint(tag: &str) -> (tempfile::TempDir, PathBuf) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir_in(crate::harness::socket_root()).unwrap();
         let path = if cfg!(windows) {
             let pid = std::process::id();
             PathBuf::from(format!(r"\\.\pipe\pixtuoid-relay-{pid}-{tag}"))

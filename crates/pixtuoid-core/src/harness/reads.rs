@@ -456,6 +456,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+    use crate::harness::HOOK_PAYLOADS;
     use crate::harness::sources_root;
 
     #[test]
@@ -537,7 +538,7 @@ mod tests {
 
     #[test]
     fn a_daemon_capture_keeps_what_its_presence_decoder_reads() {
-        let (_d, hooks) = stripped_copy("openclaw", "tool-run-hermetic", "hook-payloads.jsonl");
+        let (_d, hooks) = stripped_copy("openclaw", "tool-run-hermetic", HOOK_PAYLOADS);
         let files = vec![hooks.clone()];
         let before = scenario_events("openclaw", &files);
         let wire = std::fs::read_to_string(&hooks).expect("read");
@@ -611,7 +612,7 @@ mod tests {
     #[test]
     fn a_hook_lines_cwd_is_unread_unless_a_decoder_reads_it() {
         const CWD: &str = "/planted/proj";
-        let (_d, hooks) = stripped_copy("hermes", "permission-hermetic", "hook-payloads.jsonl");
+        let (_d, hooks) = stripped_copy("hermes", "permission-hermetic", HOOK_PAYLOADS);
         let (_, mut lines) = parsed_lines(&hooks).expect("read").expect("json");
         for line in &mut lines {
             line["cwd"] = CWD.into();
@@ -638,14 +639,14 @@ mod tests {
 
     #[test]
     fn the_shim_stamps_survive_the_strip() {
-        let (_d, hooks) = stripped_copy("claude-code", "tool-run-hermetic", "hook-payloads.jsonl");
+        let (_d, hooks) = stripped_copy("claude-code", "tool-run-hermetic", HOOK_PAYLOADS);
         let stamps = |p: &Path| -> Vec<serde_json::Value> {
             parsed_lines(p)
                 .expect("read")
                 .expect("json")
                 .1
                 .iter()
-                .map(|l| l["_shim_ts_ms"].clone())
+                .map(|l| l[crate::harness::merge::SHIM_STAMP].clone())
                 .collect()
         };
         let before = stamps(&hooks);
@@ -661,7 +662,7 @@ mod tests {
             "codex",
             &sources_root().join("codex/fixtures/tool-run-hermetic"),
         ));
-        let (_e, hooks) = stripped_copy("codex", "tool-run-hermetic", "hook-payloads.jsonl");
+        let (_e, hooks) = stripped_copy("codex", "tool-run-hermetic", HOOK_PAYLOADS);
         for file in [&rollout, &hooks] {
             let (_, mut lines) = parsed_lines(file).expect("read").expect("json");
             for line in &mut lines {
@@ -695,17 +696,14 @@ mod tests {
     fn stripping_blanks_what_no_decoder_reads_and_changes_no_event() {
         let d = tempfile::tempdir().expect("tempdir");
         let src = sources_root().join("codex/fixtures/tool-run-hermetic");
-        let files: Vec<PathBuf> = [
-            transcript_in("codex", &src),
-            src.join("hook-payloads.jsonl"),
-        ]
-        .iter()
-        .map(|from| {
-            let to = d.path().join(from.file_name().expect("file name"));
-            std::fs::copy(from, &to).expect("copy");
-            to
-        })
-        .collect();
+        let files: Vec<PathBuf> = [transcript_in("codex", &src), src.join(HOOK_PAYLOADS)]
+            .iter()
+            .map(|from| {
+                let to = d.path().join(from.file_name().expect("file name"));
+                std::fs::copy(from, &to).expect("copy");
+                to
+            })
+            .collect();
 
         plant_unread(&files[0], "installed_skills", "example-skill-1");
         let before = scenario_events("codex", &files);
@@ -1046,7 +1044,7 @@ mod tests {
     #[test]
     fn a_file_with_a_non_json_line_is_left_whole_and_named_with_its_error() {
         let d = tempfile::tempdir().expect("tempdir");
-        let file = d.path().join("hook-payloads.jsonl");
+        let file = d.path().join(HOOK_PAYLOADS);
         let wire = "{\"hook_event_name\":\"SessionStart\",\"stray\":1}\nnot json\n";
         std::fs::write(&file, wire).expect("write");
         let strip = strip_unread("claude-code", std::slice::from_ref(&file)).expect("strip");

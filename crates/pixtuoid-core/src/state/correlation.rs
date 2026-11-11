@@ -131,7 +131,7 @@ pub(super) enum ToolEventKind {
 /// Per agent, the wire ids already counted. Nested (not `(AgentId, String)`-keyed)
 /// so a membership probe borrows `&str` without allocating and a life's eviction
 /// is one `remove`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct Counted(HashMap<AgentId, HashSet<String>>);
 
 impl Counted {
@@ -175,7 +175,7 @@ pub const COPY_RETENTION: Duration = Duration::from_hours(24);
 /// counting it. An id is kept while any reader lives and for
 /// [`COPY_RETENTION`] after the last one's slot goes: a slot's end releases its
 /// ids rather than dropping them.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct CopyHolders {
     ids: HashMap<SourceCopy, Readers>,
     held: HashMap<AgentId, HashSet<SourceCopy>>,
@@ -184,7 +184,7 @@ pub(super) struct CopyHolders {
 }
 
 /// Who counts one [`CopyId`], and who holds it now.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Readers {
     /// The one that counted it, whose re-read in any life is its own again.
     counter: AgentId,
@@ -245,10 +245,16 @@ impl CopyHolders {
         }
     }
 
-    /// How many ids it keeps.
+    /// How many ids it keeps, plus each agent's holds; `expiry` is not counted:
+    /// by design it keeps each release [`COPY_RETENTION`], past any test's stream.
     #[cfg(test)]
     pub(super) fn len(&self) -> usize {
-        self.ids.len()
+        let Self {
+            ids,
+            held,
+            expiry: _,
+        } = self;
+        ids.len() + held.values().map(HashSet::len).sum::<usize>()
     }
 }
 
@@ -256,7 +262,7 @@ impl CopyHolders {
 /// map: PASSIVE cross-event memory (consulted to interpret a later event)
 /// lives here; ARMED actions that mutate the scene on a schedule
 /// (`pending_b1_cascades` and its fire pass) stay on `Reducer`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct Correlation {
     /// Recent hook-derived events, so JSONL duplicates can be dropped. A hook
     /// End overwrites its tool's Start entry (kind-in-the-VALUE, not the key),
@@ -304,6 +310,44 @@ pub(super) struct Correlation {
     /// reader that fails to declare costs its agent the count, and never counts
     /// a replay.
     pub(super) caught_up: HashSet<AgentId>,
+}
+
+#[cfg(test)]
+impl Correlation {
+    /// Each map's name and size, read off an exhaustive destructure: a map
+    /// added to the struct fails to compile here until it is measured.
+    pub(super) fn sizes(&self) -> [(&'static str, usize); 13] {
+        let Self {
+            recent_hook_tool_uses,
+            lifecycles,
+            tasks_in_flight,
+            recent_task_drains,
+            recent_proof_of_life,
+            action_requests,
+            turns,
+            item_started_on,
+            counted_calls,
+            counted_readings,
+            call_holders,
+            reading_holders,
+            caught_up,
+        } = self;
+        [
+            ("recent_hook_tool_uses", recent_hook_tool_uses.len()),
+            ("lifecycles", lifecycles.len()),
+            ("tasks_in_flight", tasks_in_flight.len()),
+            ("recent_task_drains", recent_task_drains.len()),
+            ("recent_proof_of_life", recent_proof_of_life.len()),
+            ("action_requests", action_requests.len()),
+            ("turns", turns.len()),
+            ("item_started_on", item_started_on.len()),
+            ("counted_calls", counted_calls.len()),
+            ("counted_readings", counted_readings.len()),
+            ("call_holders", call_holders.len()),
+            ("reading_holders", reading_holders.len()),
+            ("caught_up", caught_up.len()),
+        ]
+    }
 }
 
 /// Freshness under a TTL, clock-regression-safe: `duration_since` returns

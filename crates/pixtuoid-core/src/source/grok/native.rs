@@ -618,7 +618,7 @@ mod tests {
         #[test]
         fn a_present_leader_socket_binds_nothing_the_registry_did_not() {
             let build = |with_socket: bool| {
-                let tmp = tempfile::tempdir().unwrap();
+                let tmp = tempfile::tempdir_in(crate::harness::socket_root()).unwrap();
                 let me = std::process::id();
                 std::fs::write(
                     tmp.path().join("active_sessions.json"),

@@ -898,29 +898,19 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     use std::time::{Duration, SystemTime};
 
     /// The widest steady-state working set at one iteration a second:
-    /// `lifecycles` keeps each iteration's child end for `CHILD_END_RELINK_TTL`
-    /// and its unregistered id's hook end for `STRAGGLER_TTL`.
-    const STEADY: usize = (CHILD_END_RELINK_TTL.as_secs() + STRAGGLER_TTL.as_secs()) as usize + 1;
+    /// `lifecycles` keeps each iteration's child end for `CHILD_END_RELINK_TTL`,
+    /// and its unregistered id's and codex session's hook ends for `STRAGGLER_TTL`.
+    const STEADY: usize =
+        (CHILD_END_RELINK_TTL.as_secs() + 2 * STRAGGLER_TTL.as_secs()) as usize + 1;
     /// Twice the steady state and a third of the stream: a bound that merely
     /// clears the steady state proves nothing about a slow leak.
     const MAX_CORR_ENTRIES: usize = 2 * STEADY;
     const ITERS: u64 = 3 * MAX_CORR_ENTRIES as u64;
-    const MAP_NAMES: [&str; 8] = [
-        "recent_hook_tool_uses",
-        "tasks_in_flight",
-        "recent_task_drains",
-        "lifecycles",
-        "recent_proof_of_life",
-        "action_requests",
-        "counted_calls",
-        "counted_readings",
-    ];
-
     let mut r = super::Reducer::new();
     let mut scene = SceneState::uniform(32);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    let mut peak = [0usize; MAP_NAMES.len()];
+    let mut peak = r.corr.sizes().map(|(name, _)| (name, 0));
 
     for i in 0..ITERS {
         let now = t0 + Duration::from_secs(i);
@@ -1007,6 +997,73 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             now,
             Transport::Hook,
         );
+        // A turn-bracketing session whose transcript is live work, so the turn
+        // and caught-up maps fill too. Its call and reading carry the one copy
+        // every session re-reads, as forks do: an id outlives its last reader
+        // by `COPY_RETENTION`, longer than this stream.
+        let c = AgentId::from_parts("codex", &format!("c{i}"));
+        let copy = || Some(crate::source::CopyId::new("fork-copy"));
+        let turn = crate::state::TurnKey::Id(format!("t{i}").into());
+        for (event, transport) in [
+            (
+                AgentEvent::SessionStart {
+                    agent_id: c,
+                    source: "codex".into(),
+                    session_id: format!("c{i}"),
+                    cwd: PathBuf::from("/repo"),
+                    parent_id: None,
+                },
+                Transport::Hook,
+            ),
+            (
+                AgentEvent::Backlog {
+                    agent_id: c,
+                    replaying: false,
+                },
+                Transport::Jsonl,
+            ),
+            (
+                AgentEvent::TurnStart {
+                    agent_id: c,
+                    turn: turn.clone(),
+                },
+                Transport::Jsonl,
+            ),
+            (
+                AgentEvent::ToolUseStart {
+                    agent_id: c,
+                    tool_use_id: Some("call1".into()),
+                    detail: None,
+                    copy_id: copy(),
+                },
+                Transport::Jsonl,
+            ),
+            (
+                AgentEvent::Usage {
+                    agent_id: c,
+                    fresh_tokens: 1,
+                    reading_id: None,
+                    copy_id: copy(),
+                },
+                Transport::Jsonl,
+            ),
+            (
+                AgentEvent::TurnEnd {
+                    agent_id: c,
+                    turn: Some(turn),
+                },
+                Transport::Jsonl,
+            ),
+            (
+                AgentEvent::SessionEnd {
+                    agent_id: c,
+                    as_child: false,
+                },
+                Transport::Hook,
+            ),
+        ] {
+            r.apply(&mut scene, event, now, transport);
+        }
         // An UNREGISTERED id (fresh each iter) stamps a hook end.
         r.apply(
             &mut scene,
@@ -1033,30 +1090,18 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
 
         r.tick(&mut scene, now);
 
-        let lens = [
-            r.corr.recent_hook_tool_uses.len(),
-            r.corr.tasks_in_flight.len(),
-            r.corr.recent_task_drains.len(),
-            r.corr.lifecycles.len(),
-            r.corr.recent_proof_of_life.len(),
-            r.corr.action_requests.len(),
-            r.corr.counted_calls.len(),
-            r.corr.counted_readings.len(),
-        ];
-        for (p, &l) in peak.iter_mut().zip(lens.iter()) {
+        for ((name, l), (_, p)) in r.corr.sizes().into_iter().zip(peak.iter_mut()) {
             *p = (*p).max(l);
-        }
-        for (l, name) in lens.iter().zip(MAP_NAMES) {
             assert!(
-                *l <= MAX_CORR_ENTRIES,
+                l <= MAX_CORR_ENTRIES,
                 "Correlation map `{name}` grew to {l} at iter {i} (> {MAX_CORR_ENTRIES}) — a prune site is missing"
             );
         }
     }
 
-    for (p, name) in peak.iter().zip(MAP_NAMES) {
+    for (name, p) in peak {
         assert!(
-            *p > 0,
+            p > 0,
             "Correlation map `{name}` was never populated — its bound check was vacuous"
         );
     }

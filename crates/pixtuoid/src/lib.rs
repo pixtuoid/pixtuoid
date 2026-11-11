@@ -40,7 +40,6 @@ pub mod dev {
     pub use crate::audio::promote_to_user_initiated;
     pub use crate::cli::desk_cap_parser;
     pub use crate::config::{FLOATING_DEFAULT_H, FLOATING_DEFAULT_W};
-    pub use crate::doctor::footer_warning;
     pub use crate::floating::compose::{Change, XrgbSurface, composite, composition};
     pub use crate::floating::geometry::{Zoom, floor_caps_for_buffer, window_geometry};
     pub use crate::floating::offscreen::{OfficeRenderer, Pressing, WindowFrame};
@@ -50,7 +49,8 @@ pub mod dev {
     pub use crate::panels::connection::{ConnectionFrame, DaemonRollup, LiveFacet, LiveInfo};
     pub use crate::panels::dashboard::{DashboardFolds, DashboardFrame, build_dashboard_rows};
     pub use crate::panels::ui_state::{
-        AppearanceFrame, AppearancePick, RenderFrames, VersionPopupFrame, popup_whole,
+        AppearanceFrame, AppearancePick, RenderFrames, VersionPopupFrame, footer_warning,
+        popup_whole,
     };
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
     pub use crate::panels::widgets::grid_of;
