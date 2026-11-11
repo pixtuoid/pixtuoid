@@ -114,23 +114,27 @@
   expected: "[ continue echo exit false gh:issue git:apply git:checkout git:status jq mv read rm set IFS= action= count= failed= is_marker= leg= markers= number= what="
   why: >-
     Beside `bot-publish-runs-no-tree-code` and
-    `nightly-files-issues-from-a-job-that-runs-no-tree-code`: in a
-    write-token job's `run:` text, as shfmt parses it, each of these is a
-    literal `expected` lists, what those jobs run today. They are every
-    simple command's first word (`git`'s and `gh`'s with their subcommand,
-    as `git -c` can run what it is handed), every `export`, `declare` or
-    `let`, and every name a run assigns before a command, alone, through
-    `read` or as a `for` variable. An allowlist, as REVIEW.md's Traps
-    prefer, so anything unlisted fails, and so do a quoted or expanded word
-    and a `run` shfmt cannot parse (a `${{ }}` among them). Code also runs
-    outside the `run:` text. A write-token job sets no `container`, which
-    picks where its steps run, and no `services`, which run other images
-    beside it and can share volumes with its steps; its steps set no
-    `shell`, and neither it nor the workflow sets `defaults`. Every `env` a
-    write-token job sees, the workflow's included, is a mapping of the keys
-    those jobs see today. A write-token job's `run` names neither `PATH` nor
-    `GITHUB_ENV`/`GITHUB_PATH`, which set the next steps' environment and
-    command lookup.
+    `nightly-files-issues-from-a-job-that-runs-no-tree-code`: what a
+    write-token job's `run:` text runs and assigns, as shfmt parses it, is
+    what `expected` lists today. That is each simple command's first literal
+    word, written `cmd:sub` for a command with a `cmd:` entry, which a plain
+    `cmd` then never matches (`git` and `gh`, as `git -c` and a
+    `gh alias set --shell` alias run what they are handed); each `export`,
+    `declare` or `let`; and, written `name=`, each name assigned before a
+    command, alone, by `read` or as a `for` variable. An allowlist, as
+    REVIEW.md's Traps prefer, so anything unlisted fails, and so do a quoted
+    or expanded word and a `run` shfmt cannot parse (a `${{ }}` among
+    them). Code also runs outside the `run:` text. A write-token job sets no
+    `container`, which picks where its steps run, and no `services`, which
+    run other images beside it and can share volumes with its steps; its
+    steps set no `shell`, and neither it nor the workflow sets `defaults`.
+    Every `env` a write-token job sees, the workflow's included, is a
+    mapping of the keys those jobs see today. A write-token job's `run`
+    names neither `PATH` nor `GITHUB_ENV`/`GITHUB_PATH`, which set the next
+    steps' environment and command lookup. It guards against an accidental
+    tree-running step; a deliberate evasion is the review's to catch
+    (REVIEW.md, Do not flag: speculative defense in depth where a primary
+    defense holds).
   assert: |
     def literal: if (.Parts | length) == 1 and .Parts[0].Type == "Lit" then .Parts[0].Value else "a word not one literal" end;
     ($expected | split(" ")) as $listed
@@ -185,6 +189,7 @@
     - '.jobs.file.steps += [{"run": "read -r HOME"}]'
     - '.jobs.file.steps += [{"run": "for HOME in scripts; do echo; done"}]'
     - '.jobs.file.steps += [{"run": "let HOME=1"}]'
+    - '.jobs.file.steps += [{"run": "gh alias set --shell x scripts/x"}]'
 
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml
