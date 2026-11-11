@@ -1888,9 +1888,9 @@ impl Office for NotedOffice {
     }
 }
 
-/// The desktop calls a test's click or key makes, noted per thread in place of
-/// `crate::focus::focus_slot` and `crate::open_url`, which an injected `fn`
-/// can reach only through shared state.
+/// The desktop calls a test's click or key makes, noted in place of
+/// `crate::focus::focus_slot` and `crate::open_url`. The record is per thread
+/// because an injected `fn` captures nothing to note them in.
 #[cfg(test)]
 pub(crate) mod noted {
     use std::cell::RefCell;
