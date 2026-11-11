@@ -10,7 +10,7 @@ use pixtuoid_core::{AgentSlot, ToolKind};
 
 use crate::atmosphere::SkyTones;
 use crate::floor::NeonLevels;
-use crate::layout::{Facing, HomeDesk, Point, SceneLayout};
+use crate::layout::{Facing, FixtureKind, HomeDesk, Point, SceneLayout};
 
 /// The floor lamp's level at full dark, before the room's own level.
 const FLOOR_LAMP_GAIN: f32 = 0.55;
@@ -318,6 +318,9 @@ pub(crate) struct LightInputs<'a> {
     pub(crate) beat: crate::anim::Beat,
     /// Where each desk's lamp hangs its bulb.
     pub(crate) bulbs: DeskBulbs,
+    /// Who sets the frame's world text, which decides whether the board hangs
+    /// to throw its light ([`WorldText::hangs`](crate::look::WorldText::hangs)).
+    pub(crate) text: crate::look::WorldText,
 }
 
 impl Lights {
@@ -356,7 +359,14 @@ impl Lights {
                         reach: NEON_HALO_RADIUS,
                     }
                 },
-                strength: neon_halo_strength(inputs.neon, inputs.beat, darkness),
+                strength: if layout
+                    .fixtures()
+                    .any(|f| f.kind == FixtureKind::NeonSign && inputs.text.hangs(f.kind))
+                {
+                    neon_halo_strength(inputs.neon, inputs.beat, darkness)
+                } else {
+                    0.0
+                },
             },
             // `sunlight` already carries the weather, so heavy cloud dims the
             // spill with it.

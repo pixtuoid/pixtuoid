@@ -34,29 +34,35 @@ use pixtuoid_scene::hit::HitAction;
 use pixtuoid_scene::{pet, theme};
 
 /// Windows delivers Press AND Release per keystroke, so without this guard every key
-/// double-fires there — `p` would pause then instantly unpause. Inert on Unix, which
-/// is why a local green run is no evidence. Pinned by `only_press_events_dispatch`.
+/// double-fires there — [`keys::PAUSE`](crate::panels::keys::PAUSE) would pause then
+/// instantly unpause. Inert on Unix, which is why a local green run is no evidence.
+/// Pinned by `only_press_events_dispatch`.
 fn should_dispatch_key(kind: KeyEventKind) -> bool {
     kind == KeyEventKind::Press
 }
 
 /// What the terminal's help lists beside the shared shortcuts, when
 /// [`TuiRenderer::offers_walkable_debug`] says it does.
-pub(crate) const WALKABLE_SHORTCUTS: &[crate::panels::widgets::Shortcut] =
-    &[("w", "walkable / approach / route debug")];
+pub(crate) static WALKABLE_SHORTCUTS: std::sync::LazyLock<[crate::panels::widgets::Shortcut; 1]> =
+    std::sync::LazyLock::new(|| {
+        [crate::panels::widgets::shortcut(
+            crate::panels::keys::WALKABLE,
+            "walkable / approach / route debug",
+        )]
+    });
 
-/// Flip the half-block painter's walkable debug layer on `w`; whether it did.
-/// It does when no panel owns input and the last frame was the half-blocks
+/// Flip the half-block painter's walkable debug layer on
+/// [`keys::WALKABLE`](crate::panels::keys::WALKABLE); whether it did. It does
+/// when no panel owns input and the last frame was the half-blocks
 /// ([`TuiRenderer::offers_walkable_debug`]), which alone draw that layer.
-pub(crate) fn toggle_walkable_debug_on_w<
-    B: ratatui::backend::Backend<Error: Send + Sync + 'static>,
->(
+pub(crate) fn toggle_walkable_debug<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
     code: KeyCode,
     modal: &ModalState,
 ) -> bool {
-    let toggles =
-        renderer.offers_walkable_debug() && code == KeyCode::Char('w') && !modal.any_open();
+    let toggles = renderer.offers_walkable_debug()
+        && code == crate::panels::keys::WALKABLE
+        && !modal.any_open();
     if toggles {
         let on = renderer.debug_walkable();
         renderer.set_debug_walkable(!on);
@@ -64,15 +70,16 @@ pub(crate) fn toggle_walkable_debug_on_w<
     toggles
 }
 
-/// What a key does: the terminal's own `w` first, which neither the window nor
-/// the cutaway share, then the shared dispatch.
+/// What a key does: the terminal's own
+/// [`keys::WALKABLE`](crate::panels::keys::WALKABLE) first, which neither the
+/// window nor the cutaway share, then the shared dispatch.
 pub(crate) fn route_key<B: ratatui::backend::Backend<Error: Send + Sync + 'static>>(
     renderer: &mut TuiRenderer<B>,
     (code, mods): (KeyCode, crossterm::event::KeyModifiers),
     modal: ModalState,
     floor: FloorNav,
 ) -> KeyAction {
-    if toggle_walkable_debug_on_w(renderer, code, &modal) {
+    if toggle_walkable_debug(renderer, code, &modal) {
         KeyAction::None
     } else {
         dispatch_key(code, mods, modal, floor)
@@ -1126,13 +1133,13 @@ mod route_tests {
         )
         .expect("a half-block frame");
         let before = r.debug_walkable();
-        assert!(super::toggle_walkable_debug_on_w(
+        assert!(super::toggle_walkable_debug(
             &mut r,
             KeyCode::Char('w'),
             &modal(false)
         ));
         assert_eq!(r.debug_walkable(), !before, "w must FLIP");
-        assert!(super::toggle_walkable_debug_on_w(
+        assert!(super::toggle_walkable_debug(
             &mut r,
             KeyCode::Char('w'),
             &modal(false)
@@ -1142,13 +1149,14 @@ mod route_tests {
             (KeyCode::Char('w'), modal(true)),
             (KeyCode::Char('x'), modal(false)),
         ] {
-            assert!(!super::toggle_walkable_debug_on_w(&mut r, code, &modal));
+            assert!(!super::toggle_walkable_debug(&mut r, code, &modal));
             assert_eq!(r.debug_walkable(), before);
         }
     }
 
-    /// The loop's routing: `w` flips the layer and is swallowed with no panel
-    /// open; with one open, and for every other key, the shared dispatch decides.
+    /// The loop's routing: [`keys::WALKABLE`](crate::panels::keys::WALKABLE)
+    /// flips the layer and is swallowed with no panel open; with one open, and
+    /// for every other key, the shared dispatch decides.
     #[test]
     fn route_key_reads_w_before_the_shared_dispatch() {
         use crate::panels::{FloorNav, ModalState};
@@ -1431,8 +1439,9 @@ mod apply_key_action_tests {
         assert!(footer.contains("volume not saved"), "{footer}");
     }
 
-    /// `v` reopens the popup with the notices due against the LIVE connections:
-    /// a host connected since boot is not named.
+    /// [`keys::VERSION`](crate::panels::keys::VERSION) reopens the popup with the
+    /// notices due against the LIVE connections: a host connected since boot is
+    /// not named.
     #[test]
     fn v_reopens_the_popup_with_the_notices_still_due() {
         let mut h = Harness::new();
@@ -1452,7 +1461,8 @@ mod apply_key_action_tests {
 
     /// The highest-blast-radius pair: `Quit` must be the ONLY action that ends
     /// the loop. A mutant returning a constant makes every keypress quit (or
-    /// makes `q` inert), and nothing else in the suite would notice.
+    /// makes [`keys::QUIT`](crate::panels::keys::QUIT) inert), and nothing else
+    /// in the suite would notice.
     #[test]
     fn only_quit_returns_true() {
         let mut h = Harness::new();

@@ -42,7 +42,7 @@ pub mod dev {
     pub use crate::config::{FLOATING_DEFAULT_H, FLOATING_DEFAULT_W};
     pub use crate::doctor::footer_warning;
     pub use crate::floating::compose::{Change, XrgbSurface, composite, composition};
-    pub use crate::floating::geometry::{Zoom, window_geometry};
+    pub use crate::floating::geometry::{Zoom, floor_caps_for_buffer, window_geometry};
     pub use crate::floating::offscreen::{OfficeRenderer, Pressing, WindowFrame};
     pub use crate::floating::overlays::{OverlayLayers, Overlays, footer_budget, panel_preview};
     pub use crate::pacing::{Protocol, cutaway_office, forget_frame, renderer, warm};

@@ -101,6 +101,13 @@ pub fn cells(text: &str) -> u16 {
     clusters(text).fold(0, |sum, (_, n)| sum.saturating_add(n))
 }
 
+/// `text` on one line, each inner run of whitespace one space and its ends
+/// trimmed: a cell draws no control, so a tool detail's line break or tab
+/// would run its words together.
+pub fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// [`columns`] past all of `text`: where the run after it starts.
 pub(crate) fn advance(text: &str) -> ArtPx {
     columns(cells(text))

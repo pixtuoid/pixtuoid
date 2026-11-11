@@ -19,7 +19,7 @@ const PANEL_MIN_W: u16 = 4;
 const PANEL_MIN_H: u16 = 3;
 
 /// Rows at the bottom of `bounds` a panel may never occupy: the footer, the one
-/// persistent affordance (`[q]uit`, `[?]help`). Without it a panel taller than
+/// persistent affordance (the quit and help hints). Without it a panel taller than
 /// the terminal clamps to `bounds.height` and paints straight over it. Reserved
 /// HERE rather than by shrinking each caller's `bounds`, because centering in a
 /// shorter box would also move every panel that already fits.

@@ -256,7 +256,7 @@ fn num_floors_empty() {
 
 /// A desk past the top floor counts the building as tall as it can be,
 /// wherever it is counted: the session navigates the floors every
-/// projection's breadcrumb names.
+/// projection's `F{floor}/{floors}` names.
 #[test]
 fn a_desk_past_the_top_floor_counts_one_building() {
     let mut scene = make_scene(1, 1);
@@ -2771,7 +2771,7 @@ fn floor_nav_slides_lands_and_clamps() {
 }
 
 /// A slide's footer speaks for its destination from the first frame, so its
-/// count matches the breadcrumb it names.
+/// count matches the `F{floor}/{floors}` it names.
 #[test]
 fn a_slides_footer_speaks_for_its_destination() {
     let pack = Arc::new(crate::pack::test_office());
@@ -2783,7 +2783,7 @@ fn a_slides_footer_speaks_for_its_destination() {
         office
             .footer_scene(&scene)
             .floor_place()
-            .breadcrumb()
+            .of_floors()
             .map(|(floor, _)| floor),
         Some(1)
     );
@@ -2792,7 +2792,7 @@ fn a_slides_footer_speaks_for_its_destination() {
         office
             .footer_scene(&scene)
             .floor_place()
-            .breadcrumb()
+            .of_floors()
             .map(|(floor, _)| floor),
         Some(2)
     );
@@ -2987,7 +2987,7 @@ fn a_grip_stays_on_the_floor_it_lifted_on() {
 }
 
 /// An office shows the floor its navigation holds, of the floors its scene
-/// fills, with that floor's breadcrumb; a slide composes both floors, hits
+/// fills, with that floor's `F{floor}/{floors}`; a slide composes both floors, hits
 /// nothing, and lands on its destination.
 #[test]
 fn an_office_session_shows_each_floor_and_slides_between_them() {
@@ -3021,14 +3021,14 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         "floor 1 lays out"
     );
     assert_eq!(office.n_floors(), 2);
-    let bread = |office: &OfficeSession| {
+    let shown_floor = |office: &OfficeSession| {
         office
             .footer_scene(&scene)
             .floor_place()
-            .breadcrumb()
+            .of_floors()
             .map(|(floor, _)| floor)
     };
-    assert_eq!(bread(&office), Some(1));
+    assert_eq!(shown_floor(&office), Some(1));
     assert!(office.navigate(1, t0));
     let mid = t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2);
     let _ = render(&mut office, mid);
@@ -3044,7 +3044,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         office.picture(),
         Some(crate::look::Picture::Floor(_))
     ));
-    assert_eq!((office.nav().current(), bread(&office)), (1, Some(2)));
+    assert_eq!((office.nav().current(), shown_floor(&office)), (1, Some(2)));
     let pets: Vec<crate::pet::Pet> = (0..8)
         .map(|i| crate::pet::Pet {
             kind: crate::pet::PetKind::Cat,
@@ -3358,7 +3358,7 @@ fn a_frame_without_the_office_ends_a_slide_on_its_destination() {
 }
 
 /// An office whose upper floor empties shows one floor: the count and the
-/// breadcrumb follow the live scene, not the views kept.
+/// `F{floor}/{floors}` follow the live scene, not the views kept.
 #[test]
 fn an_office_session_follows_its_floors_down() {
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
@@ -3394,9 +3394,9 @@ fn an_office_session_follows_its_floors_down() {
         office
             .footer_scene(&one)
             .floor_place()
-            .breadcrumb()
+            .of_floors()
             .is_none(),
-        "one floor has no breadcrumb"
+        "one floor shows no F1/1"
     );
 }
 
@@ -4582,4 +4582,150 @@ fn a_refit_mid_walk_draws_every_walker_where_a_direct_fit_does() {
         drawn, fresh,
         "walking home from where a pointer set it down"
     );
+}
+
+/// The frames an office of `scene` shows in `look` with its wall board hung or
+/// not: its floor, then, where it has a second, midway down a slide to it and
+/// landed there.
+fn office_frames(
+    scene: &SceneState,
+    look: crate::look::Look,
+    hung: bool,
+) -> Vec<(&'static str, crate::sprite::RgbBuffer)> {
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    crate::layout::roster::BOARD_HUNG.set(hung);
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    let shot = |office: &mut OfficeSession, now| {
+        let _ = office.render(
+            look,
+            crate::look::RenderInputs {
+                world: FloorInputs {
+                    scene,
+                    now,
+                    conditions: Conditions::default(),
+                    pets: PetInputs::default(),
+                },
+                theme,
+                viewport: Viewport::full(160, 96),
+                gateway: None,
+                debug_walkable: false,
+                dim: crate::look::Dim::NONE,
+            },
+            &[],
+            theme.surface.bg_fallback,
+        );
+        office.picture().expect("drawn").pixels().clone()
+    };
+    let mut frames = vec![("floor", shot(&mut office, t0))];
+    if office.n_floors() > 1 {
+        assert!(office.navigate(1, t0));
+        let half = Duration::from_millis(TRANSITION_DURATION_MS / 2);
+        frames.push(("slide", shot(&mut office, t0 + half)));
+        frames.push(("upstairs", shot(&mut office, t0 + half + half)));
+    }
+    crate::layout::roster::BOARD_HUNG.set(true);
+    frames
+}
+
+/// A frame hiding its world text draws nothing that only carries it: in
+/// either look, on a floor showing, on a slide and upstairs, it is the frame
+/// of the same office with no wall board hung, and off a slide it is the
+/// frame whose host sets the text, which bakes none, the floor indicator's
+/// plate included. A frame showing its text, baked or by its host, hangs the
+/// board.
+#[test]
+fn a_frame_hiding_its_text_shows_the_room_with_no_board() {
+    use crate::look::{Look, WorldText};
+    type Frames = Vec<(&'static str, crate::sprite::RgbBuffer)>;
+    let pairs = |a: &Frames, b: &Frames| -> Vec<(&'static str, bool)> {
+        (a.iter().zip(b))
+            .map(|((at, a), (_, b))| (*at, a.as_slice() == b.as_slice()))
+            .collect()
+    };
+    let scale =
+        crate::render_scale::RenderScale::from(crate::pack::test_office().max_density_variant());
+    let looks = [
+        |scale, text| Look::Classic { scale, text },
+        |scale, text| Look::Cutaway { scale, text },
+    ];
+    // One floor, then two: its floor, the slide and upstairs.
+    for (scene, frames) in [(make_scene(3, 8), 1), (make_scene(3, 2), 3)] {
+        for look in looks {
+            let hidden = office_frames(&scene, look(scale, WorldText::Hidden), true);
+            assert_eq!(hidden.len(), frames);
+            let no_board = office_frames(&scene, look(scale, WorldText::Hidden), false);
+            let same = pairs(&hidden, &no_board);
+            assert!(
+                same.iter().all(|&(_, same)| same),
+                "{:?}: the board hangs: {same:?}",
+                look(scale, WorldText::Hidden)
+            );
+            let host = office_frames(&scene, look(scale, WorldText::Host), false);
+            for (at, same) in pairs(&hidden, &host) {
+                assert!(same || at == "slide", "{at}: text drawn");
+            }
+            for text in [WorldText::Baked, WorldText::Host] {
+                let hung = office_frames(&scene, look(scale, text), true);
+                let bare = office_frames(&scene, look(scale, text), false);
+                for (at, same) in pairs(&hung, &bare) {
+                    assert!(!same, "{:?} {at}: no board hangs", look(scale, text));
+                }
+            }
+        }
+    }
+}
+
+/// Hiding the world text only paints: the walkable mask, the seats and where
+/// each figure stands are the same whoever sets the text, frame by frame.
+#[test]
+fn who_sets_the_world_text_moves_nothing() {
+    use crate::look::{Look, WorldText};
+    let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
+    let scene = make_scene(4, 8);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let scale =
+        crate::render_scale::RenderScale::from(crate::pack::test_office().max_density_variant());
+    let looks = [
+        |scale, text| Look::Classic { scale, text },
+        |scale, text| Look::Cutaway { scale, text },
+    ];
+    for look in looks {
+        let [baked, host, hidden] =
+            [WorldText::Baked, WorldText::Host, WorldText::Hidden].map(|text| {
+                let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+                (0..40u64)
+                    .map(|step| {
+                        let _ = office.render(
+                            look(scale, text),
+                            crate::look::RenderInputs {
+                                world: FloorInputs {
+                                    scene: &scene,
+                                    now: t0 + Duration::from_millis(step * 250),
+                                    conditions: Conditions::default(),
+                                    pets: PetInputs::default(),
+                                },
+                                theme,
+                                viewport: Viewport::full(160, 96),
+                                gateway: None,
+                                debug_walkable: false,
+                                dim: crate::look::Dim::NONE,
+                            },
+                            &[],
+                            theme.surface.bg_fallback,
+                        );
+                        let picture = office.picture().expect("drawn");
+                        let hits = picture.hits().expect("a floor");
+                        let figures: Vec<_> = (hits.figures())
+                            .map(|(target, at)| (target.clone(), at))
+                            .collect();
+                        let layout = hits.layout();
+                        (layout.walkable.clone(), layout.home_desks.clone(), figures)
+                    })
+                    .collect::<Vec<_>>()
+            });
+        assert!(!baked[0].2.is_empty(), "premise: figures stand");
+        assert!(host == baked, "{:?}", look(scale, WorldText::Host));
+        assert!(hidden == baked, "{:?}", look(scale, WorldText::Hidden));
+    }
 }

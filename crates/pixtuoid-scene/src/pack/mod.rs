@@ -348,9 +348,7 @@ impl Pack {
     ///
     /// A painter picks its render scale against these (the scene's
     /// `RenderScale::fit`), since a variant only lands at a scale its density
-    /// divides. Only a variant of a registered animation that redraws its base
-    /// (`variant_redraws`) counts: a stray key names nothing a painter asks
-    /// for, and every renderer skips a variant that does not redraw its base.
+    /// divides.
     pub(crate) fn density_variants(&self) -> &[Density] {
         &self.densities
     }

@@ -262,6 +262,41 @@ impl FixtureKind {
         }
     }
 
+    /// Whether it exists only to carry world text, which a frame showing none
+    /// leaves out with its light ([`WorldText::hangs`](crate::look::WorldText::hangs)).
+    pub(crate) const fn carries_only_world_text(self) -> bool {
+        match self {
+            FixtureKind::NeonSign => true,
+            FixtureKind::Desk(_)
+            | FixtureKind::FilingCabinet(_)
+            | FixtureKind::DeskChair(_)
+            | FixtureKind::Station { .. }
+            | FixtureKind::Plant { .. }
+            | FixtureKind::Pod { .. }
+            | FixtureKind::Wall { .. }
+            | FixtureKind::MeetingRug { .. }
+            | FixtureKind::MeetingSofa { .. }
+            | FixtureKind::MeetingTable { .. }
+            | FixtureKind::MeetingChair { .. }
+            | FixtureKind::CoatRack { .. }
+            | FixtureKind::Doormat { .. }
+            | FixtureKind::NoticeBoard { .. }
+            | FixtureKind::LoungeRug
+            | FixtureKind::LoungeCouch
+            | FixtureKind::SideTable
+            | FixtureKind::FloorLamp
+            | FixtureKind::FishTank
+            | FixtureKind::KitchenIsland
+            | FixtureKind::PantryMat
+            | FixtureKind::IslandMat
+            | FixtureKind::WaterCooler
+            | FixtureKind::TrashBin
+            | FixtureKind::Door
+            | FixtureKind::Runner
+            | FixtureKind::Clock => false,
+        }
+    }
+
     /// What hovering it says on `occasion`, or `None` where a tooltip would
     /// be noise.
     pub(crate) fn hover_label(self, occasion: crate::holiday::Occasion) -> Option<&'static str> {
@@ -452,6 +487,25 @@ pub(crate) fn pod_decor_fixtures(pod_decor: &[PodDecorItem]) -> impl Iterator<It
         })
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Whether the wall board hangs: a test takes it down to draw the room
+    /// with none, which a frame hiding its world text must match.
+    pub(crate) static BOARD_HUNG: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+#[cfg(test)]
+fn board_hung() -> bool {
+    BOARD_HUNG.get()
+}
+
+/// Whether the wall board hangs: always, but where a test takes it down
+/// (`BOARD_HUNG`).
+#[cfg(not(test))]
+const fn board_hung() -> bool {
+    true
+}
+
 /// A centre-pinned furniture row at `pos`, sorting at its south row.
 fn centred_row(kind: FixtureKind, pos: Point, row: Furniture) -> Fixture {
     let size = furniture_def(row).visual;
@@ -554,6 +608,7 @@ impl SceneLayout {
         };
         let floor_end = self.inner.bottom();
         std::iter::once(backdrop(FixtureKind::NeonSign, self.board_panel()))
+            .filter(|_| board_hung())
             .chain(
                 self.clock_pos()
                     .map(|at| backdrop(FixtureKind::Clock, boxed(at, CLOCK))),

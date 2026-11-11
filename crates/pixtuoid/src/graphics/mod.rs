@@ -243,7 +243,7 @@ impl clap::ValueEnum for LookMode {
                     }
                     LookKind::Classic => format!(
                         "The classic, asking the terminal where `auto` does for the cutaway `{}` switches to",
-                        crate::panels::APPEARANCE_KEY
+                        crate::panels::keys::APPEARANCE
                     ),
                 },
             ),
@@ -921,7 +921,7 @@ fn named_why(cutaway: Option<CutawayPlan>) -> String {
         .map(|_| {
             format!(
                 " — `{}` switches to the cutaway",
-                crate::panels::APPEARANCE_KEY
+                crate::panels::keys::APPEARANCE
             )
         })
         .unwrap_or_default();

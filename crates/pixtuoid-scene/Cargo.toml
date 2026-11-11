@@ -35,7 +35,7 @@ tracing       = { workspace = true }
 lru           = { workspace = true }
 unicode-width = { workspace = true }
 unicode-segmentation = { workspace = true }
-# `clock` gives `Local`, the viewer's zone `localclock` reads the wall clock in.
+# `clock` gives `Local`, the viewer's zone `localclock` reads local time in.
 chrono        = { workspace = true, features = ["clock"] }
 foldhash      = { workspace = true }
 strum         = { workspace = true }

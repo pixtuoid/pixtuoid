@@ -141,7 +141,7 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
           const T = window.__pixTheme;
           const forced = new URLSearchParams(location.search).get('theme');
           const pick = T.ok(forced) ? forced : localStorage.getItem(T.KEY);
-          // Until the visitor chooses a theme the site follows the wall clock,
+          // Until the visitor chooses a theme the site follows their local time,
           // like the office lighting — but the clock only ever turns night ON, so
           // a dark-preference user still keeps night at noon via T.fallback.
           const afterHours = window.__pixNight();
@@ -327,7 +327,7 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
         });
       })();
     </script>
-    <!-- the app's literal `t` key: retint the page through the THEMES palette.
+    <!-- the app's appearance key: retint the page through the THEMES palette.
          Decorative hues only — the AA-tuned --coral-deep is deliberately
          exempt. -->
     <script is:inline define:vars={{ accents: THEMES.map((t) => ({ a: t.accent, b: t.accent2 })) }}>
@@ -349,8 +349,8 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
       })();
     </script>
     <!-- Digits 1–6 ride to [data-floor] sections from ANY scroll depth, so unlike
-         `t` they are deliberately NOT focus-gated: WCAG 2.1.4 is satisfied by the
-         __pixKeys.enabled() off-switch instead. -->
+         the appearance key they are deliberately NOT focus-gated: WCAG 2.1.4 is
+         satisfied by the __pixKeys.enabled() off-switch instead. -->
     <script is:inline>
       (function () {
         document.addEventListener('keydown', function (e) {

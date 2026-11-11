@@ -9,6 +9,7 @@ use super::{Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_s
 use crate::panels::connection::{
     ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, no_action_hint,
 };
+use crate::panels::keys;
 use pixtuoid_scene::theme::Theme;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -71,7 +72,11 @@ pub(crate) fn paint_connection_panel(
 
     let detail = if let Some(ci) = confirm {
         let name = rows.get(ci).map_or("", |(r, _)| r.display_name);
-        format!("\u{26a0} disconnect {name}? (y/n)")
+        format!(
+            "\u{26a0} disconnect {name}? ({}/{})",
+            keys::CONFIRM,
+            keys::DECLINE
+        )
     } else if let Some(res) = result {
         res.clone()
     } else if let Some((row, _)) = rows.get(selected) {
@@ -85,7 +90,12 @@ pub(crate) fn paint_connection_panel(
                     Some(p) => format!("installed at: {}", p.display()),
                     None => "connected".to_string(),
                 },
-                ConnState::Disconnected => "disconnected \u{2014} press t to connect".to_string(),
+                ConnState::Disconnected => {
+                    format!(
+                        "disconnected \u{2014} press {} to connect",
+                        keys::SOURCE_TOGGLE
+                    )
+                }
                 ConnState::NoCli { .. } => no_action_hint(row),
             }
         }
@@ -102,13 +112,18 @@ pub(crate) fn paint_connection_panel(
             dim,
         )),
         Line::from(Span::styled(
-            "  j/k move \u{00b7} t toggle \u{00b7} s/esc close",
+            format!(
+                "  j/k move \u{00b7} {} toggle \u{00b7} {}/esc close",
+                keys::SOURCE_TOGGLE,
+                keys::SOURCES
+            ),
             dim,
         )),
     ];
+    let title = format!("Sources \u{2014} {}/esc close", keys::SOURCES);
 
     Panel {
-        title: Some("Sources \u{2014} s/esc close"),
+        title: Some(&title),
         content_w: CONNECTION_POPUP_W,
         above,
         list,

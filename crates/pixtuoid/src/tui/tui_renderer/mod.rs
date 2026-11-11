@@ -51,7 +51,8 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     mouse_pos: Option<(u16, u16)>,
     /// The left button's gesture over the office.
     pointer: pixtuoid_scene::interact::Pointer,
-    /// Live walkable/approach/route debug layer toggle (`w`); not persisted.
+    /// Live walkable/approach/route debug layer toggle
+    /// ([`keys::WALKABLE`](crate::panels::keys::WALKABLE)); not persisted.
     debug_walkable: bool,
     chrome: Chrome,
     /// What the terminal shows, the half-blocks or the cutaway's tiles, and
@@ -81,7 +82,10 @@ struct Chrome {
     frames: crate::panels::ui_state::RenderFrames,
     /// Ambient-audio gateway; inert unless installed.
     audio: crate::audio::AudioHandle,
-    /// Transient +/- volume readout (percent); `None` past [`crate::audio::VOLUME_FLASH_MS`].
+    /// Transient volume readout (percent) after
+    /// [`VOLUME_UP`](crate::panels::keys::VOLUME_UP) or
+    /// [`VOLUME_DOWN`](crate::panels::keys::VOLUME_DOWN); `None` past
+    /// [`crate::audio::VOLUME_FLASH_MS`].
     volume_flash: Option<u8>,
     weather: pixtuoid_scene::sky::WeatherPolicy,
     motion: pixtuoid_scene::anim::Motion,
@@ -118,7 +122,7 @@ impl Chrome {
         offers_walkable_debug: bool,
     ) -> crate::panels::OverlayFrame<'_> {
         let host_keys = if offers_walkable_debug {
-            crate::tui::WALKABLE_SHORTCUTS
+            &crate::tui::WALKABLE_SHORTCUTS[..]
         } else {
             &[]
         };
@@ -288,9 +292,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     /// Whether the last office frame drawn was the half-blocks of a debug
     /// build, which draw the walkable debug layer where the cutaway never does:
-    /// `w` is listed and read only then, including while a cutaway too big for
-    /// the cell falls back to them. A footer-only frame draws no office, so it
-    /// keeps the answer of the one before it.
+    /// [`keys::WALKABLE`](crate::panels::keys::WALKABLE) is listed and read only
+    /// then, including while a cutaway too big for the cell falls back to them.
+    /// A footer-only frame draws no office, so it keeps the answer of the one
+    /// before it.
     pub(crate) fn offers_walkable_debug(&self) -> bool {
         cfg!(debug_assertions)
             && self

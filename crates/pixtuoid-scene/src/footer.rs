@@ -206,7 +206,7 @@ pub(crate) fn footer_tool_tally(scene: &SceneState) -> Vec<ToolTally> {
 }
 
 /// The per-frame inputs `build_footer` renders: `counts`, `tools` and the
-/// breadcrumb's floor come from the drawn floor's projection, everything else
+/// `F{floor}/{floors}` come from the drawn floor's projection, everything else
 /// from the [`FooterContext`], whose unseated agents at a prompt
 /// `build_footer` counts with the drawn floor's.
 #[derive(Debug)]
@@ -238,12 +238,12 @@ pub struct FooterContext<'a> {
     pub(crate) unseated: StateCounts,
     pub gateway: Option<DaemonState>,
     /// How many agents the office holds: the `total` of the `n/total` count a
-    /// multi-floor footer shows beside its breadcrumb.
+    /// multi-floor footer shows beside its `F{floor}/{floors}`.
     pub(crate) agents: usize,
     /// "You would hear sound right now": audio live AND not effectively muted
-    /// (m-state OR pause).
+    /// (the mute or a pause).
     pub(crate) audio_audible: bool,
-    /// Transient +/- readout: `Some(percent)` just after a volume nudge —
+    /// Transient readout: `Some(percent)` just after a volume nudge —
     /// renders as `♩ N%`.
     pub(crate) volume_flash: Option<u8>,
     /// The painter's one-line warning, pre-merged by its priority; `None` while
@@ -319,7 +319,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     // truncated to fit rather than tiered away.
     if let Some(warn) = ctx.warning {
         let w = budget as usize;
-        // Clipped, never dropped: a row with no `[q]` is a user stuck in the
+        // Clipped, never dropped: a row with no quit hint is a user stuck in the
         // alternate screen.
         let quit = clip_cols(ctx.keys_alert, w);
         let avail = w.saturating_sub(cols(&quit));
@@ -362,19 +362,19 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
         return FooterModel { segments: out };
     }
 
-    let breadcrumb = inputs.place.breadcrumb();
-    let count_str = match breadcrumb {
+    let of_floors = inputs.place.of_floors();
+    let count_str = match of_floors {
         Some(_) => format!("{}/{}", counts.total, ctx.agents),
         None => format!("{}", counts.total),
     };
 
     // The cross-floor `▲F{n}` cue: any OTHER floor holding a requires-action agent.
-    let cross_floor = breadcrumb.and_then(|_| {
+    let cross_floor = of_floors.and_then(|_| {
         (0..MAX_FLOORS)
             .find(|&fl| fl != inputs.place.index() && ctx.per_floor[fl].requires_action > 0)
             .map(|fl| fl + 1)
     });
-    let floor_suffix = match breadcrumb {
+    let floor_suffix = match of_floors {
         Some((floor, floors)) => {
             let cross = match cross_floor {
                 Some(n) => format!(" {}F{n}", Icon::Alert.terminal()),
@@ -494,7 +494,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
 
 /// Right-flush the widest tier that fits `budget`, else fall to the keys-only
 /// rung. The fallback degrades the TAIL whole — full hints, then the alert tail,
-/// then a clip — rather than clipping mid-token and losing `[q]uit` with it.
+/// then a clip — rather than clipping mid-token and losing the quit hint with it.
 fn fit_tiers(
     tiers: impl IntoIterator<Item = Vec<FooterSegment>>,
     quit: &str,

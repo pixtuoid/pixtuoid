@@ -833,8 +833,8 @@ fn a_still_floor_holds_its_wall_board_flap() {
     );
 }
 
-/// In the half-blocks `w` is listed in the help the frame draws and flips a
-/// layer the frame shows.
+/// In the half-blocks [`keys::WALKABLE`](crate::panels::keys::WALKABLE) is listed
+/// in the help the frame draws and flips a layer the frame shows.
 #[cfg(debug_assertions)]
 #[test]
 fn the_classic_lists_w_and_its_key_tints_the_frame() {
@@ -854,7 +854,7 @@ fn the_classic_lists_w_and_its_key_tints_the_frame() {
     r.set_frames(RenderFrames::default(), t0());
     r.render(&scene, t0()).unwrap();
     let before = r.buf().expect("a frame").clone();
-    assert!(crate::tui::toggle_walkable_debug_on_w(
+    assert!(crate::tui::toggle_walkable_debug(
         &mut r,
         KeyCode::Char('w'),
         &crate::panels::ModalState::closed()

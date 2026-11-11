@@ -41,40 +41,37 @@ fn bucket_slot(c: &mut StateCounts, slot: &AgentSlot) {
     }
 }
 
+/// [`bucket_slot`] over `slots`.
+fn counts<'a>(slots: impl Iterator<Item = &'a AgentSlot>) -> StateCounts {
+    let mut c = StateCounts::default();
+    for slot in slots {
+        bucket_slot(&mut c, slot);
+    }
+    c
+}
+
 /// Bucket every agent in `scene` — the office-wide (or current-projected-floor)
 /// tally.
 pub fn scene_stats(scene: &SceneState) -> StateCounts {
-    let mut c = StateCounts::default();
-    for slot in scene.agents.values() {
-        bucket_slot(&mut c, slot);
-    }
+    let c = counts(scene.agents.values());
     debug_assert_eq!(c.running + c.requires_action + c.idle + c.exiting, c.total);
     c
 }
 
-/// Per-floor [`StateCounts`], bucketed by each agent's desk's floor (clamped to the
-/// last floor), so an unseated agent is on no floor's count.
+/// Per-floor [`StateCounts`]: a floor counts the agents its projection draws
+/// ([`floor_agents`](crate::floor::floor_agents)), so an unseated agent is on
+/// no floor's count.
 /// Computed from the FULL scene, deliberately distinct from `scene_stats` on
 /// the projected floor — don't derive one from the other.
 #[doc(hidden)]
 pub fn per_floor_counts(scene: &SceneState) -> [StateCounts; MAX_FLOORS] {
-    let mut floors = [StateCounts::default(); MAX_FLOORS];
-    for slot in scene.agents.values() {
-        if let Some(desk) = slot.desk {
-            bucket_slot(&mut floors[desk.floor.min(MAX_FLOORS - 1)], slot);
-        }
-    }
-    floors
+    std::array::from_fn(|floor| counts(crate::floor::floor_agents(scene, floor)))
 }
 
 /// The unseated agents' [`StateCounts`]: on no floor, so no
 /// [`per_floor_counts`] bucket holds them.
 pub(crate) fn unseated_counts(scene: &SceneState) -> StateCounts {
-    let mut c = StateCounts::default();
-    for slot in scene.agents.values().filter(|slot| slot.desk.is_none()) {
-        bucket_slot(&mut c, slot);
-    }
-    c
+    counts(scene.agents.values().filter(|slot| slot.desk.is_none()))
 }
 
 /// The worst-of daemon-liveness rollup for the gateway chip. `None` = no daemon
@@ -153,6 +150,24 @@ mod tests {
         for (tokens, tool_calls, words) in rows {
             let today = Today::new(NaiveDate::MIN, tokens, tool_calls);
             assert_eq!(today_headline(today).as_deref(), words);
+        }
+    }
+
+    /// A floor counts the agents its projection draws, so one on a floor past
+    /// the building's counts on none.
+    #[test]
+    fn a_floor_counts_the_agents_its_projection_draws() {
+        let mut scene = SceneState::uniform(1);
+        for (key, floor) in [("ground", 0), ("top", MAX_FLOORS - 1), ("past", MAX_FLOORS)] {
+            let id = pixtuoid_core::AgentId::from_transcript_path(&format!("/tally/{key}.jsonl"));
+            let mut slot = crate::character::test_support::make_slot(id, ActivityState::Idle);
+            slot.desk = Some(pixtuoid_core::FloorDesk::new(floor, 0));
+            scene.agents.insert(id, slot);
+        }
+        let counts = per_floor_counts(&scene);
+        for (floor, counted) in counts.iter().enumerate() {
+            let drawn = crate::floor::floor_agents(&scene, floor).count();
+            assert_eq!(counted.total, drawn, "floor {floor}");
         }
     }
 }

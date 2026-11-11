@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use pixtuoid_core::SceneState;
 use pixtuoid_scene::footer::{FooterContext, FooterInputs, build_footer};
 use ratatui::layout::Rect;
@@ -6,11 +8,27 @@ use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
 use super::to_color;
+use crate::panels::keys;
 
-const KEYS_STATS: &str = " [?]help [p]ause [t]heme [q]uit ";
-const KEYS_ALERT: &str = " [q]uit ";
+/// `word`'s hint: its command's `key` in brackets, standing for the word's
+/// first letter where it is that letter (`[x]ray` for `x`), else before the word.
+fn hint(key: crossterm::event::KeyCode, word: &str) -> String {
+    let key = key.to_string();
+    format!("[{key}]{}", word.strip_prefix(key.as_str()).unwrap_or(word))
+}
 
-/// [`FooterContext::new`] with the TUI's keybind tails.
+static KEYS_STATS: LazyLock<String> = LazyLock::new(|| {
+    let hints = [
+        (keys::HELP, "help"),
+        (keys::PAUSE, "pause"),
+        (keys::APPEARANCE, "theme"),
+        (keys::QUIT, "quit"),
+    ];
+    format!(" {} ", hints.map(|(key, word)| hint(key, word)).join(" "))
+});
+static KEYS_ALERT: LazyLock<String> = LazyLock::new(|| format!(" {} ", hint(keys::QUIT, "quit")));
+
+/// [`FooterContext::new`] with the panels' keybind tails.
 pub(crate) fn footer_context<'a>(
     office: &SceneState,
     audio_audible: bool,
@@ -22,8 +40,8 @@ pub(crate) fn footer_context<'a>(
         audio_audible,
         volume_flash,
         warning,
-        KEYS_STATS,
-        KEYS_ALERT,
+        &KEYS_STATS,
+        &KEYS_ALERT,
     )
 }
 

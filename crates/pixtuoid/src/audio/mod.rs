@@ -25,7 +25,8 @@ use sink::AudioSink;
 #[cfg(feature = "audio")]
 use pixtuoid_scene::audio::bank::Synthesis;
 
-/// The +/- keys' volume increment.
+/// The volume keys' increment ([`VOLUME_UP`](crate::panels::keys::VOLUME_UP),
+/// [`VOLUME_DOWN`](crate::panels::keys::VOLUME_DOWN)).
 pub(crate) const VOLUME_STEP: f32 = 0.05;
 /// How long the transient volume readout stays up after a nudge — also the
 /// volume-persist debounce window on both painters.
@@ -53,15 +54,17 @@ pub(crate) struct Persist {
     /// The mute flag CHANGED — persist now.
     pub(crate) muted: bool,
     /// A volume key was pressed, even one clamped at a rail — flash the readout
-    /// and persist DEBOUNCED (the +/- keys autorepeat).
+    /// and persist DEBOUNCED ([`VOLUME_UP`](crate::panels::keys::VOLUME_UP) and
+    /// [`VOLUME_DOWN`](crate::panels::keys::VOLUME_DOWN) autorepeat).
     pub(crate) volume_nudged: bool,
 }
 
 /// THE audio mute/volume transition — the single authority both painters run. Mute toggles;
 /// volume-up from muted IS the un-mute gesture; the lazy spawn (re)fires whenever sound is
-/// wanted but the system is down, so `+`/`m` are never dead keys (boot-muted and
-/// failed-spawn both recover). `paused` folds an external hold (the TUI's `[p]ause`) into
-/// the effective mute; floating passes `false`.
+/// wanted but the system is down, so [`VOLUME_UP`](crate::panels::keys::VOLUME_UP) and
+/// [`MUTE`](crate::panels::keys::MUTE) are never dead keys (boot-muted and failed-spawn
+/// both recover). `paused` folds the pause ([`PAUSE`](crate::panels::keys::PAUSE)
+/// toggles it) into the effective mute, in both painters.
 pub(crate) fn apply_audio_action(
     st: &mut AudioUi,
     action: AudioAction,
@@ -98,7 +101,7 @@ pub(crate) fn apply_audio_action(
 /// The mute/volume PERSIST protocol both painters share: the pure
 /// [`apply_audio_action`] transition plus its side effects — mute saves NOW, a
 /// volume nudge arms the `♩ N%` readout and a save debounced behind it (a held
-/// `+`/`-` writes once, not per repeat), flushed on shutdown.
+/// volume key writes once, not per repeat), flushed on shutdown.
 pub(crate) struct AudioController {
     ui: AudioUi,
     config_path: std::path::PathBuf,
@@ -416,7 +419,7 @@ mod controller_tests {
     }
 
     #[test]
-    fn drop_persists_a_pending_nudge_even_without_the_q_path() {
+    fn drop_persists_a_pending_nudge_even_without_the_quit_path() {
         let (mut c, _dir) = ctl(false, 0.50);
         let path = c.config_path.clone();
         let _ = c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
@@ -424,7 +427,7 @@ mod controller_tests {
             !std::fs::read_to_string(&path).unwrap().contains("volume"),
             "not yet persisted — still inside the debounce window"
         );
-        drop(c); // the ONLY exit signal: no `q`, no explicit flush_on_exit()
+        drop(c); // the ONLY exit signal: no quit key, no explicit flush_on_exit()
         assert!(
             std::fs::read_to_string(&path).unwrap().contains("volume"),
             "AudioController::drop must persist a pending nudge (the #752 Ctrl-C fix)"
@@ -630,7 +633,8 @@ pub(crate) struct AudioHandle {
     /// respawn. `None` = disabled (no device, or sound not requested yet).
     tx: std::sync::Arc<std::sync::Mutex<Option<mpsc::SyncSender<AudioFrame>>>>,
     /// Mute is STATE, not an event: it rides this atomic instead of the
-    /// droppable frame channel, so an `m`/`p` keypress lands even when a
+    /// droppable frame channel, so a [`MUTE`](crate::panels::keys::MUTE) or
+    /// [`PAUSE`](crate::panels::keys::PAUSE) keypress lands even when a
     /// `try_send` drops.
     muted: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Master volume (f32 bits) — same state-not-event rationale as `muted`.
@@ -680,8 +684,8 @@ impl AudioHandle {
         f32::from_bits(self.volume.load(std::sync::atomic::Ordering::Relaxed))
     }
 
-    /// The EFFECTIVE silence state — the m-toggle OR'd with pause, since the
-    /// caller stores the combined value here.
+    /// The EFFECTIVE silence state — the [`MUTE`](crate::panels::keys::MUTE)
+    /// toggle OR'd with pause, since the caller stores the combined value here.
     pub(crate) fn is_muted(&self) -> bool {
         self.muted.load(std::sync::atomic::Ordering::Relaxed)
     }

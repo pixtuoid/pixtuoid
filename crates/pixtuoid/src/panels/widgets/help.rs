@@ -3,70 +3,75 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use super::{Overflow, Panel, to_color};
+use crate::panels::keys;
 use pixtuoid_scene::theme::Theme;
 
 /// A key and what it does, one help row.
-pub(crate) type Shortcut = (&'static str, &'static str);
+pub(crate) type Shortcut = (String, String);
 
-/// The shared rows over the appearance key's.
-const OVER: &[Shortcut] = &[
-    ("q", "quit"),
-    ("Ctrl+C", "quit"),
-    ("p", "pause / resume"),
-    #[cfg(feature = "audio")]
-    ("m", "sound on/off"),
-    #[cfg(feature = "audio")]
-    ("+/-", "volume; + unmutes"),
-];
-
-/// The appearance key's row: the look it sets too where the picker offers one.
-fn appearance(look_offered: bool) -> Shortcut {
-    (
-        "t",
-        if look_offered {
-            "look & theme"
-        } else {
-            "themes"
-        },
-    )
+/// The row naming `key`, a command's from [`keys`] or keys spelled out.
+pub(crate) fn shortcut(key: impl std::fmt::Display, does: impl Into<String>) -> Shortcut {
+    (key.to_string(), does.into())
 }
-
-/// The shared rows under the appearance key's.
-const UNDER: &[Shortcut] = &[
-    ("Tab", "agent dashboard"),
-    ("s", "sources (connect / health)"),
-    ("?", "toggle this overlay"),
-    ("\u{2191} \u{2193} j k", "switch floor"),
-    ("PgUp / PgDn", "switch floor"),
-    ("click agent", "focus its terminal"),
-    ("f (dashboard)", "focus selected agent's terminal"),
-    ("v", "what's new (version popup)"),
-    ("Enter / Esc", "dismiss popup"),
-];
 
 const ROW_INDENT: &str = "  ";
 
-/// Every row the help lists: the shared ones, then `host`'s.
-fn rows(host: &[Shortcut], look_offered: bool) -> impl Iterator<Item = Shortcut> + Clone + '_ {
-    OVER.iter()
-        .copied()
-        .chain(std::iter::once(appearance(look_offered)))
-        .chain(UNDER.iter().copied())
-        .chain(host.iter().copied())
+/// Every row the help lists: the shared ones, then `host`'s. The appearance
+/// key's names the look too where the picker offers one.
+fn rows(host: &[Shortcut], look_offered: bool) -> Vec<Shortcut> {
+    let mut rows = vec![
+        shortcut(keys::QUIT, "quit"),
+        shortcut("Ctrl+C", "quit"),
+        shortcut(keys::PAUSE, "pause / resume"),
+    ];
+    #[cfg(feature = "audio")]
+    rows.extend([
+        shortcut(keys::MUTE, "sound on/off"),
+        shortcut(
+            format!("{}/{}", keys::VOLUME_UP, keys::VOLUME_DOWN),
+            format!("volume; {} unmutes", keys::VOLUME_UP),
+        ),
+    ]);
+    let appearance = if look_offered {
+        "look & theme"
+    } else {
+        "themes"
+    };
+    rows.extend([
+        shortcut(keys::APPEARANCE, appearance),
+        shortcut(keys::DASHBOARD, "agent dashboard"),
+        shortcut(keys::SOURCES, "sources (connect / health)"),
+        shortcut(keys::HELP, "toggle this overlay"),
+        shortcut("\u{2191} \u{2193} j k", "switch floor"),
+        shortcut("PgUp / PgDn", "switch floor"),
+        shortcut("click agent", "focus its terminal"),
+        shortcut(
+            format!("{} (dashboard)", keys::DASHBOARD_FOCUS),
+            "focus selected agent's terminal",
+        ),
+        shortcut(keys::VERSION, "what's new (version popup)"),
+        shortcut("Enter / Esc", "dismiss popup"),
+    ]);
+    rows.extend_from_slice(host);
+    rows
 }
 
 /// The widest key plus a one-space gutter, so even a full-width key keeps a gap
 /// before its description instead of running into it.
-fn key_col_width(rows: impl Iterator<Item = Shortcut>) -> usize {
-    rows.map(|(k, _)| k.chars().count()).max().unwrap_or(0) + 1
+fn key_col_width(rows: &[Shortcut]) -> usize {
+    rows.iter()
+        .map(|(k, _)| k.chars().count())
+        .max()
+        .unwrap_or(0)
+        + 1
 }
 
 /// DERIVED from the rows it lists, never a literal — a hardcoded width hard-clips
 /// every long row mid-word at ANY terminal size (the panel is centered, not
 /// edge-limited).
-fn content_width(rows: impl Iterator<Item = Shortcut> + Clone) -> u16 {
+fn content_width(rows: &[Shortcut]) -> u16 {
     let widest_desc = rows
-        .clone()
+        .iter()
         .map(|(_, d)| d.chars().count())
         .max()
         .unwrap_or(0);
@@ -83,9 +88,9 @@ pub(crate) fn paint_help_overlay(
     look_offered: bool,
 ) {
     let rows = rows(host, look_offered);
-    let key_col = key_col_width(rows.clone());
+    let key_col = key_col_width(&rows);
     let mut lines: Vec<Line<'static>> = vec![Line::from("")];
-    for (key, desc) in rows.clone() {
+    for (key, desc) in &rows {
         lines.push(Line::from(vec![
             Span::raw(ROW_INDENT),
             Span::styled(
@@ -95,14 +100,15 @@ pub(crate) fn paint_help_overlay(
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                desc.to_string(),
+                desc.clone(),
                 Style::default().fg(to_color(theme.ui.label_idle)),
             ),
         ]));
     }
+    let title = format!("{} Keyboard", keys::HELP);
     Panel {
-        title: Some("? Keyboard"),
-        content_w: content_width(rows),
+        title: Some(&title),
+        content_w: content_width(&rows),
         above: vec![],
         list: lines,
         below: vec![],
@@ -172,7 +178,7 @@ mod tests {
     fn every_shortcut_row_renders_in_full() {
         for offered in [false, true] {
             let text = frame_offering(140, 40, &[], offered);
-            let key_col = key_col_width(rows(&[], offered));
+            let key_col = key_col_width(&rows(&[], offered));
             for (key, desc) in rows(&[], offered) {
                 let row = format!("{ROW_INDENT}{key:<key_col$}{desc}");
                 assert!(
@@ -184,17 +190,14 @@ mod tests {
     }
 
     /// The appearance key's row names the look only where the picker has a
-    /// look row, and is the key the dispatch opens the picker on.
+    /// look row.
     #[test]
     fn the_appearance_row_names_the_look_only_where_offered() {
-        assert_eq!(
-            appearance(false).0,
-            crate::panels::APPEARANCE_KEY.to_string()
-        );
+        let key = format!("{} ", keys::APPEARANCE);
         let row = |offered| {
             frame_offering(140, 40, &[], offered)
                 .lines()
-                .find(|l| l.trim_start().starts_with("t "))
+                .find(|l| l.trim_start().starts_with(&key))
                 .map(|l| l.split_whitespace().skip(1).collect::<Vec<_>>().join(" "))
         };
         assert_eq!(row(false).as_deref(), Some("themes"));
@@ -205,11 +208,11 @@ mod tests {
     /// column, which widens to the widest; a host with none lists none.
     #[test]
     fn a_hosts_shortcuts_list_after_the_shared_ones() {
-        let host: &[Shortcut] = &[("a-much-wider-key-than-any", "host only")];
+        let host = &[shortcut("a-much-wider-key-than-any", "host only")];
         let text = frame_text(160, 50, host);
-        let key_col = key_col_width(rows(host, false));
+        let key_col = key_col_width(&rows(host, false));
         assert!(
-            key_col > key_col_width(rows(&[], false)),
+            key_col > key_col_width(&rows(&[], false)),
             "the column widens to the host's key"
         );
         for (key, desc) in rows(host, false) {

@@ -32,8 +32,8 @@ interface Window {
     fallback: () => string;
   };
   /** Key-shortcut guards (Base.astro): the typing-surface check shared by every
-   * single-char shortcut, and the WCAG 2.1.4 focus gate that only `t` rides —
-   * the digit shortcuts are document-global, gated by enabled()/typing(). */
+   * single-char shortcut, and the WCAG 2.1.4 focus gate the appearance key alone
+   * rides — the digits are document-global, gated by enabled()/typing(). */
   __pixKeys?: {
     typing: (_e: Event) => boolean;
     shortcutContext: () => boolean;

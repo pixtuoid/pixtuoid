@@ -263,9 +263,9 @@ pub(crate) fn min_window(density: Density) -> LogicalSize<u32> {
 }
 
 /// Per-floor desk capacities for an office buffer of `buf_w`×`buf_h`. THE one
-/// derivation: the boot seed and every redraw's [`sync_floor_caps`] both call it, so
+/// derivation: the boot seed and every redraw's `sync_floor_caps` both call it, so
 /// their agreement is structural rather than two loops that happen to agree.
-pub(crate) fn floor_caps_for_buffer(buf_w: u16, buf_h: u16) -> [usize; MAX_FLOORS] {
+pub fn floor_caps_for_buffer(buf_w: u16, buf_h: u16) -> [usize; MAX_FLOORS] {
     std::array::from_fn(|i| {
         pixtuoid_scene::floor::floor_capacity(
             pixtuoid_scene::layout::Viewport::full(buf_w, buf_h),

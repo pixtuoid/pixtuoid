@@ -1,4 +1,4 @@
-//! Live debug layer toggled by `w`: the walkable mask (red), allowed approach
+//! Live debug layer toggled by the walkable key: the walkable mask (red), allowed approach
 //! sides (green) / on-furniture seat cells (magenta), and the live A* route
 //! polylines of walking agents (cyan), composited over the finished scene.
 //!

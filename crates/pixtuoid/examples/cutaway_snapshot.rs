@@ -37,7 +37,6 @@ const _: () = assert!(
 );
 
 fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String], floor: usize) {
-    let cap = scene.floor_capacities()[0];
     let seated = now.checked_sub(Duration::from_secs(120)).unwrap_or(now);
     let recent = now.checked_sub(Duration::from_secs(3)).unwrap_or(now);
     for i in 0..n {
@@ -74,7 +73,7 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String],
                 arrived_at: Some(seated),
                 last_event_at: recent,
                 exiting_at: None,
-                desk: Some(FloorDesk::new(floor + i / cap, i % cap)),
+                desk: Some(FloorDesk::new(floor, i)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -164,8 +163,11 @@ fn main() -> Result<()> {
     let now = now + Duration::from_secs(now_sec);
     let conditions = Conditions::default().with_weather(policy);
 
-    let mut scene = SceneState::uniform(64);
+    let desks = pixtuoid::dev::floor_caps_for_buffer(lw, lh);
+    let mut scene = SceneState::new(desks);
     populate(&mut scene, now, agents, &repos, floor);
+    // As the app takes a layout: an agent it has no desk for moves to a free one.
+    scene.set_capacities(desks, now);
 
     // The real sim, at LOGICAL size, drawn through the painters' one entry
     // from floor `--floor`'s projection, the building's top while `--agents`

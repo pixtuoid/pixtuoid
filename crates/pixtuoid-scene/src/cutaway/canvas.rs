@@ -173,21 +173,21 @@ impl CutawayCanvas {
     }
 
     /// Paint `stepped` as [`render_cutaway`](crate::cutaway::paint::render_cutaway)
-    /// does, its world text as `text` says, unless the frame would be the one
-    /// already shown.
+    /// does, its world text as `showing` says, unless the frame would be the
+    /// one already shown.
     pub fn frame(
         &mut self,
         stepped: &SteppedFloor,
         theme: &crate::theme::Theme,
         scale: RenderScale,
         showing: Showing<'_>,
-        text: crate::look::WorldText,
         (cache, outside): (
             &mut crate::cutaway::paint::CutawayCache,
             &mut crate::outside::OutsideCache,
         ),
     ) -> CanvasFrame {
         let layout = &stepped.layout;
+        let text = showing.text;
         let office = Office {
             layout,
             pack: &self.pack,
@@ -499,7 +499,6 @@ mod tests {
                     dim,
                     ..crate::display::compose::tests::showing(conditions, *now)
                 },
-                crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             );
             assert!(
@@ -603,7 +602,6 @@ mod tests {
                     dim,
                     ..crate::display::compose::tests::showing(clear_sky(), now)
                 },
-                crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             )
         };
@@ -731,7 +729,6 @@ mod tests {
                     theme,
                     scale,
                     crate::display::compose::tests::showing(clear_sky(), now),
-                    crate::look::WorldText::Baked,
                     (&mut cache, &mut outside),
                 )
                 .dirty
@@ -815,7 +812,6 @@ mod tests {
                 normal(),
                 self.scale,
                 crate::display::compose::tests::showing(clear_sky(), Self::now()),
-                crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             );
             Hovers::clone(canvas.hovers().expect("a frame"))
@@ -1057,7 +1053,6 @@ mod tests {
                 normal(),
                 h.scale,
                 crate::display::compose::tests::showing(clear_sky(), Hovering::now()),
-                crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             )
             .dirty;
@@ -1100,7 +1095,6 @@ mod tests {
                 normal(),
                 scale,
                 showing,
-                crate::look::WorldText::Baked,
                 (
                     &mut crate::cutaway::paint::CutawayCache::default(),
                     &mut crate::outside::OutsideCache::default(),
@@ -1201,7 +1195,6 @@ mod tests {
                 normal(),
                 h.scale,
                 busy,
-                crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             )
             .dirty;
@@ -1367,7 +1360,6 @@ mod tests {
             normal(),
             scale,
             crate::display::compose::tests::showing(conditions, now),
-            crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
         let again = canvas.frame(
@@ -1375,7 +1367,6 @@ mod tests {
             normal(),
             scale,
             crate::display::compose::tests::showing(conditions, now),
-            crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
         assert_eq!(
@@ -1389,7 +1380,6 @@ mod tests {
             normal(),
             scale,
             crate::display::compose::tests::showing(conditions, now),
-            crate::look::WorldText::Baked,
             (&mut cache, &mut outside),
         );
         assert_eq!(shown.dirty, Dirty::All);
@@ -1596,7 +1586,6 @@ mod tests {
                             conditions,
                             crate::localclock::on_day(new_moon, hour),
                         ),
-                        crate::look::WorldText::Baked,
                         (
                             &mut crate::cutaway::paint::CutawayCache::default(),
                             &mut crate::outside::OutsideCache::default(),

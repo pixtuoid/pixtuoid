@@ -693,6 +693,32 @@ pub(crate) fn config_present(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    /// A file pixtuoid writes into another CLI's tree, installed or as an
+    /// uninstall leaves it, names the Sources panel's key in plain text, out
+    /// of reach of `panels::keys`, so the pair is pinned here.
+    #[test]
+    fn every_file_naming_the_sources_panel_names_its_key() {
+        let named = format!("press {}", crate::panels::keys::SOURCES);
+        let mut checked = 0;
+        for t in TARGETS {
+            let Primary::Owned {
+                render, uninstall, ..
+            } = &t.primary
+            else {
+                continue;
+            };
+            let installed = render("pixtuoid-hook").expect("renders");
+            let removed = uninstall(&installed).expect("uninstalls").content;
+            for text in [installed.as_str(), removed.as_str()] {
+                if text.contains("Sources panel") {
+                    assert!(text.contains(&named), "{}: {text}", t.name);
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "no file names the Sources panel");
+    }
+
     #[test]
     fn by_name_resolves_claude_and_rejects_unknown() {
         assert_eq!(by_name("claude").unwrap().name, "claude");

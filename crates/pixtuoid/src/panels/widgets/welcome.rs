@@ -7,6 +7,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use super::{Overflow, Panel, badge_color_for, to_color};
+use crate::panels::keys;
 use crate::panels::welcome::OnboardingFrame;
 use pixtuoid_scene::theme::Theme;
 
@@ -92,7 +93,11 @@ pub(crate) fn paint_welcome(
     let mut below = vec![Line::from("")];
     below.push(if shown_hints {
         Line::from(Span::styled(
-            "  \u{2191}\u{2193} move \u{00b7} space toggle \u{00b7} enter connect \u{00b7} esc skip",
+            // The legend's keys are lower case.
+            format!(
+                "  \u{2191}\u{2193} move \u{00b7} {} toggle \u{00b7} enter connect \u{00b7} esc skip",
+                keys::ONBOARDING_TOGGLE.to_string().to_lowercase()
+            ),
             dim,
         ))
     } else {
@@ -102,8 +107,11 @@ pub(crate) fn paint_welcome(
         below.push(if shown_hints {
             Line::from(Span::styled(
                 // Must fit WELCOME_W incl. the 2-col indent, or it clips mid-word.
-                // Absent on no-audio builds: a dead m key reads as broken.
-                "  \u{2669} office sound \u{2014} press m anytime",
+                // Absent on no-audio builds: a dead mute key reads as broken.
+                format!(
+                    "  \u{2669} office sound \u{2014} press {} anytime",
+                    keys::MUTE
+                ),
                 dim,
             ))
         } else {

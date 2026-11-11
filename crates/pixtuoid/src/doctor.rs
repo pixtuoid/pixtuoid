@@ -1145,7 +1145,8 @@ fn sources_category(rows: &[DoctorSourceRow], ink: &Ink) -> Category {
         };
     }
     details.push(ink.hint(&format!(
-        "{DETAIL_INDENT}→ fix: reconnect in the Sources panel (press s)"
+        "{DETAIL_INDENT}→ fix: reconnect in the Sources panel (press {})",
+        crate::panels::keys::SOURCES
     )));
     let verb = if broken == 1 { "needs" } else { "need" };
     Category {

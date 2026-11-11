@@ -1897,7 +1897,7 @@ test('theme chain: saved choice, URL override, toggle persist, Escape restore, s
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#282a36');
   await page.goto('./?theme=night');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
-  // Seed 'day' so the flip lands 'night' regardless of the wall clock.
+  // Seed 'day' so the flip lands 'night' regardless of the visitor's local time.
   await page.evaluate(() => localStorage.setItem('pix-theme', 'day'));
   await page.goto('./');
   await expect(page.locator('.nav__mark')).toHaveAttribute('src', /favicon-32\.png$/);

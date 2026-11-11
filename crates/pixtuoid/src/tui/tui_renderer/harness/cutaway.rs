@@ -1624,9 +1624,10 @@ fn a_floor_clamped_into_view_repaints_whole() {
     );
 }
 
-/// `w` follows the look the last frame drew: not listed or read under the
-/// cutaway, which never draws the walkable layer, and listed, read and drawn
-/// while a cell too small for the art falls back to the half-blocks.
+/// [`keys::WALKABLE`](crate::panels::keys::WALKABLE) follows the look the last
+/// frame drew: not listed or read under the cutaway, which never draws the
+/// walkable layer, and listed, read and drawn while a cell too small for the
+/// art falls back to the half-blocks.
 #[cfg(debug_assertions)]
 #[test]
 fn w_follows_the_look_the_frame_drew() {
@@ -1635,7 +1636,7 @@ fn w_follows_the_look_the_frame_drew() {
     let scene = office();
     let cadence = ImageProtocol::Kitty.cadence();
     let w = |r: &mut TuiRenderer<Window>| {
-        crate::tui::toggle_walkable_debug_on_w(
+        crate::tui::toggle_walkable_debug(
             r,
             KeyCode::Char('w'),
             &crate::panels::ModalState::closed(),

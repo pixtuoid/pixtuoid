@@ -170,7 +170,7 @@ struct SnapshotArgs {
     #[arg(long)]
     weather: Option<String>,
 
-    /// Force the `?` keyboard help overlay open (for screenshots).
+    /// Force the keyboard help overlay open (for screenshots).
     #[arg(long, conflicts_with = "animation")]
     help_open: bool,
 

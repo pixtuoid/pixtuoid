@@ -134,6 +134,9 @@ pub(crate) struct PaintCtx<'a> {
     debug_walkable: bool,
     /// The office's outside, kept across frames.
     outside: &'a mut crate::outside::OutsideCache,
+    /// Who sets the frame's world text, which decides what hangs
+    /// ([`WorldText::hangs`](crate::look::WorldText::hangs)).
+    text: crate::look::WorldText,
 }
 
 impl<'a> PaintCtx<'a> {
@@ -146,7 +149,7 @@ impl<'a> PaintCtx<'a> {
         (caches, outside): (&'a mut ClassicCaches, &'a mut crate::outside::OutsideCache),
         buf: &'a mut RgbBuffer,
         walks: &'a HashMap<pixtuoid_core::AgentId, WalkState>,
-        debug_walkable: bool,
+        (debug_walkable, text): (bool, crate::look::WorldText),
     ) -> Self {
         let timing = world.conditions.motion.timing(world.now);
         Self {
@@ -164,6 +167,7 @@ impl<'a> PaintCtx<'a> {
             walks,
             debug_walkable,
             outside,
+            text,
         }
     }
 
@@ -203,6 +207,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
             neon: frame.neon,
             beat: ctx.timing.beat,
             bulbs: crate::lighting::DeskBulbs::of(ctx.pack),
+            text: ctx.text,
         },
     );
     let top_wall_h = ctx.layout.wall_band_h();
@@ -453,7 +458,8 @@ struct Furnishings<'a> {
 }
 
 /// Every fixture [`SceneLayout::fixtures`](crate::layout::SceneLayout::fixtures)
-/// yields, joined to this frame's live state on the ids its kind carries.
+/// yields that the frame hangs ([`WorldText::hangs`](crate::look::WorldText::hangs)),
+/// joined to this frame's live state on the ids its kind carries.
 fn queue_fixtures<'a>(
     ctx: &PaintCtx<'_>,
     frame: &SimFrame,
@@ -465,7 +471,7 @@ fn queue_fixtures<'a>(
         backdrop: Vec::new(),
         sorted: Vec::new(),
     };
-    for f in layout.fixtures() {
+    for f in layout.fixtures().filter(|f| ctx.text.hangs(f.kind)) {
         let kind = match f.kind {
             FixtureKind::Desk(i) => {
                 let facing = layout.home_desks[i.0].facing;

@@ -335,8 +335,9 @@ pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) 
             .all(|(_, probed)| *probed == ShimProbe::Delivered);
     if failed {
         details.push(ink.hint(&format!(
-            "{DETAIL_INDENT}\u{2192} fix: reconnect in the Sources panel (press s); if it \
-             still fails, reinstall pixtuoid, which ships {HOOK_BIN}"
+            "{DETAIL_INDENT}\u{2192} fix: reconnect in the Sources panel (press {}); if it \
+             still fails, reinstall pixtuoid, which ships {HOOK_BIN}",
+            crate::panels::keys::SOURCES
         )));
     }
     let status = if failed {

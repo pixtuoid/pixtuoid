@@ -43,7 +43,8 @@ pub struct DrawCtx<'a> {
     /// The office stores its frame steps and draws with.
     pub(crate) office: OfficeStores<'a>,
     pub mouse_pos: Option<(u16, u16)>,
-    /// Walkable/approach/route debug layer toggle (`w`) — transient, never
+    /// Walkable/approach/route debug layer toggle
+    /// (`keys::WALKABLE`) — transient, never
     /// persisted to config.
     pub debug_walkable: bool,
     pub theme: &'static pixtuoid_scene::theme::Theme,
@@ -110,9 +111,11 @@ pub fn scene_buf_size(cols: u16, rows: u16) -> (u16, u16) {
 /// footer-only frame instead of leaving a stale, clipped, footer-less one frozen.
 ///
 /// It paints the modal overlays too: every modal's key handler stays live at any
-/// size, so suppressing the overlay here made `?`/`s`/`Tab` toggle something
-/// invisible on any terminal below the office layout's minimum — and first run
-/// opens the onboarding modal there.
+/// size, so suppressing the overlay here made [`HELP`](crate::panels::keys::HELP),
+/// [`SOURCES`](crate::panels::keys::SOURCES) or
+/// [`DASHBOARD`](crate::panels::keys::DASHBOARD) toggle something invisible on
+/// any terminal below the office layout's minimum — and first run opens the
+/// onboarding modal there.
 pub(crate) fn draw_footer_only_frame<B: Backend<Error: Send + Sync + 'static>>(
     term: &mut Terminal<B>,
     footer: &FooterInputs<'_>,

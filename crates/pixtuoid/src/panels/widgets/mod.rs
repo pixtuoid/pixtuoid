@@ -15,7 +15,7 @@ pub(crate) use connection::{fmt_age, paint_connection_panel};
 pub(crate) use dashboard::paint_dashboard;
 pub(crate) use footer::footer_context;
 pub(crate) use footer::paint_footer;
-pub(crate) use help::{Shortcut, paint_help_overlay};
+pub(crate) use help::{Shortcut, paint_help_overlay, shortcut};
 pub(crate) use panel::{Overflow, Panel, PanelGeometry, borderless_panel};
 pub(crate) use tooltip::{TooltipAt, paint_host_text, paint_tooltip, star_area};
 pub(crate) use version_popup::{paint_version_popup, release_url, version_popup_url_rect};
@@ -184,7 +184,7 @@ fn dim_cell(f: &mut ratatui::Frame<'_>, x: u16, y: u16, bounds: Rect, top_half_o
 /// reads as a 1px contact line instead of a full 2px cell.
 ///
 /// Clipped to `scene_rect`, NOT the frame: the footer is painted before every card and
-/// the bottom band dims `fg` only, so a band reaching that row repaints the live `[q]uit`
+/// the bottom band dims `fg` only, so a band reaching that row repaints the live quit hint
 /// over its still-lit bg. Keeping the card BODY off the footer
 /// (`panel::RESERVED_FOOTER_ROWS`) is only half the rule — the silhouette is offset a row
 /// further DOWN.

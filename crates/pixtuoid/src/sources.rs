@@ -622,8 +622,9 @@ fn disconnected_change(sid: &'static str, done: DisconnectOutcome) -> Changed {
     Changed::new(sid, false, outcome, false, None, plugin_left)
 }
 
-/// What a toggle of a source in a [`ConnState`] does, the Sources panel's `t` and
-/// a paired device's change alike.
+/// What a toggle of a source in a [`ConnState`] does, the Sources panel's
+/// [`keys::SOURCE_TOGGLE`](crate::panels::keys::SOURCE_TOGGLE) and a paired
+/// device's change alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToggleIntent {
     /// It is connected, so it disconnects; the panel asks first.

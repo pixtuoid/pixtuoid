@@ -224,9 +224,9 @@ pub struct Office<'a> {
     pub scale: RenderScale,
 }
 
-/// The conditions a frame shows under, when, what its wall board says, and
-/// how far the host's modal dims it: what moves a frame beyond its office and
-/// the sim's world.
+/// The conditions a frame shows under, when, what its wall board says, how far
+/// the host's modal dims it, and who sets its world text: what moves a frame
+/// beyond its office and the sim's world.
 #[derive(Debug, Clone, Copy)]
 pub struct Showing<'a> {
     /// What the host decides about how it reads.
@@ -238,6 +238,8 @@ pub struct Showing<'a> {
     pub board: &'a crate::neon_sign::BoardModel,
     /// The brightness the host's modal leaves it.
     pub dim: crate::look::Dim,
+    /// Who sets its world text.
+    pub text: crate::look::WorldText,
 }
 
 /// `frame`'s [`DisplayList`] as `showing` says.
@@ -249,6 +251,7 @@ pub(crate) fn compose<'a>(
         now,
         board,
         dim,
+        text,
     }: Showing<'_>,
     caches: (&mut LightCache, &mut crate::outside::OutsideCache),
 ) -> DisplayList<'a> {
@@ -259,7 +262,7 @@ pub(crate) fn compose<'a>(
         frame.floor_place.altitude(),
         timing,
     );
-    let mut list = compose_at(frame, office, &moment, board, caches);
+    let mut list = compose_at(frame, office, &moment, (board, text), caches);
     list.dim = dim;
     list
 }
@@ -271,14 +274,20 @@ pub(crate) fn compose_at<'a>(
     frame: &SimFrame,
     office: Office<'a>,
     moment: &Moment,
-    board: &crate::neon_sign::BoardModel,
+    (board, text): (&crate::neon_sign::BoardModel, crate::look::WorldText),
     (lights_cache, outside): (&mut LightCache, &mut crate::outside::OutsideCache),
 ) -> DisplayList<'a> {
     let Office {
         pack, theme, scale, ..
     } = office;
     let ambient = crate::display::light::Ambient::of(&moment.look);
-    let (mut collected, mut host_text) = collect_pieces(frame, office, moment, outside);
+    let inputs = ComposeInputs {
+        frame,
+        office,
+        moment,
+        text,
+    };
+    let (mut collected, mut host_text) = collect_pieces(inputs, outside);
     host_text.signs = TextRun::signs(board, office.layout, frame.floor_place, theme);
     collected.extend(signs(office, &host_text.signs));
     let sorted = depth_sort(
@@ -297,7 +306,7 @@ pub(crate) fn compose_at<'a>(
         })
         .collect();
     DisplayList {
-        lights: lights(frame, office, moment, ambient, lights_cache),
+        lights: lights(inputs, ambient, lights_cache),
         ambient,
         carpet: moment.look.carpet(theme),
         flash: crate::display::light::Flash::of(&moment.sky),
@@ -412,9 +421,12 @@ fn push_creatures(frame: &SimFrame, office: Office<'_>, order: &mut Vec<(Span, P
 
 /// The room's own lights (`crate::lighting`) this frame that the cutaway paints.
 fn lights(
-    frame: &SimFrame,
-    office: Office<'_>,
-    moment: &Moment,
+    ComposeInputs {
+        frame,
+        office,
+        moment,
+        text,
+    }: ComposeInputs<'_, '_>,
     ambient: crate::display::light::Ambient,
     cache: &mut LightCache,
 ) -> Vec<LightPiece> {
@@ -434,6 +446,7 @@ fn lights(
             neon: frame.neon,
             beat: moment.timing.beat,
             bulbs: crate::lighting::DeskBulbs::of(pack),
+            text,
         },
     );
     let pen = Pen::for_pack(scale, pack);
@@ -656,20 +669,20 @@ fn meets(a: ArtRect, b: ArtRect) -> bool {
     a.x.0 < b.x.0 + b.w.0 && b.x.0 < a.x.0 + a.w.0 && a.y.0 < b.y.0 + b.h.0 && b.y.0 < a.y.0 + a.h.0
 }
 
-/// Every piece of the office, each with its [`Span`]. At one depth and layer,
-/// push order breaks the tie, so it is part of the result.
+/// Every piece the frame draws but its signs' text, which `compose_at` adds
+/// after this call, each with its [`Span`]. At one depth and layer, push order
+/// breaks the tie, so it is part of the result.
 fn collect_pieces(
-    frame: &SimFrame,
-    office: Office<'_>,
-    moment: &Moment,
+    inputs: ComposeInputs<'_, '_>,
     outside: &mut crate::outside::OutsideCache,
 ) -> (Vec<(Span, PieceKind)>, crate::display::text::HostRuns) {
-    let layout = office.layout;
-    let inputs = ComposeInputs {
+    let ComposeInputs {
         frame,
         office,
         moment,
-    };
+        ..
+    } = inputs;
+    let layout = office.layout;
     let mut order: Vec<(Span, PieceKind)> = Vec::new();
     push_windows(
         office,
@@ -686,7 +699,7 @@ fn collect_pieces(
         ..Default::default()
     };
     push_creatures(frame, office, &mut order);
-    for fixture in layout.fixtures() {
+    for fixture in layout.fixtures().filter(|f| inputs.text.hangs(f.kind)) {
         push_fixture(fixture, inputs, &carried, &mut order);
     }
     wall_segments(layout, crate::glass::WallTrim::of(office.theme), &mut order);
@@ -698,6 +711,9 @@ struct ComposeInputs<'a, 'f> {
     frame: &'f SimFrame,
     office: Office<'a>,
     moment: &'f Moment,
+    /// Who sets the frame's world text, which decides what hangs
+    /// ([`WorldText::hangs`](crate::look::WorldText::hangs)).
+    text: crate::look::WorldText,
 }
 
 /// How `fixture` ties a figure at its row here: the roster's tie, but for
@@ -769,6 +785,7 @@ fn push_fixture(
         frame,
         office,
         moment,
+        ..
     } = inputs;
     let Office {
         layout,
@@ -1085,6 +1102,7 @@ fn push_desk(
         frame,
         office,
         moment,
+        ..
     } = inputs;
     let Office {
         layout,
