@@ -41,12 +41,7 @@ fn imp(pid: i32) -> Option<u64> {
 
 #[cfg(target_os = "linux")]
 fn imp(pid: i32) -> Option<u64> {
-    // `/proc/<pid>/stat` field 22 is starttime, but the comm field (2) can
-    // contain spaces/parens — so count from after the LAST ')', where starttime
-    // is the 20th token.
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let after = stat.rsplit_once(')')?.1;
-    after.split_whitespace().nth(19)?.parse().ok()
+    starttime_ticks(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)
 }
 
 #[cfg(windows)]
@@ -87,6 +82,69 @@ fn imp(pid: i32) -> Option<u64> {
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn imp(_pid: i32) -> Option<u64> {
     None
+}
+
+/// When `pid` started, in epoch seconds, for a guard that checks a CLI's own
+/// wall-clock stamp. `None` on the same terms as [`pid_start_marker`].
+#[cfg(unix)]
+pub(crate) fn pid_start_time_secs(pid: i32) -> Option<u64> {
+    let start = pid_start_marker(pid)?;
+    // Linux's marker is ticks after a boot that `btime` dates by the clock
+    // now, so a clock step since the start moves the result; macOS's is
+    // `pbi_start_tvsec`, epoch seconds already.
+    #[cfg(target_os = "linux")]
+    let start = boot_time_secs(&std::fs::read_to_string("/proc/stat").ok()?)?
+        + start.checked_div(rustix::param::clock_ticks_per_second())?;
+    Some(start)
+}
+
+/// `starttime`, field 22 of a `/proc/<pid>/stat`
+/// ([proc_pid_stat(5)](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html)).
+#[cfg(any(test, target_os = "linux"))]
+fn starttime_ticks(stat: &str) -> Option<u64> {
+    // The comm field (2) can contain spaces/parens — so count from after the
+    // LAST ')', where starttime is the 20th token.
+    let after = stat.rsplit_once(')')?.1;
+    after.split_whitespace().nth(19)?.parse().ok()
+}
+
+/// The `btime` line of `/proc/stat`
+/// ([proc_stat(5)](https://man7.org/linux/man-pages/man5/proc_stat.5.html)).
+#[cfg(any(test, target_os = "linux"))]
+fn boot_time_secs(stat: &str) -> Option<u64> {
+    stat.lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .parse()
+        .ok()
+}
+
+/// Every host runs these: the text is Linux's, the parsing isn't.
+#[cfg(test)]
+mod procfs_tests {
+    use super::*;
+
+    #[test]
+    fn boot_time_is_the_btime_line() {
+        let stat = "cpu  10132153 290696 3084719 46828483 16683 0 25195 0 0 0\n\
+                    cpu0 1393280 32966 572056 13343292 6130 0 17875 0 0 0\n\
+                    intr 1462898 0 0 0\n\
+                    ctxt 115315\n\
+                    btime 769041601\n\
+                    processes 86031\n\
+                    procs_running 6\n";
+        assert_eq!(boot_time_secs(stat), Some(769_041_601));
+        assert_eq!(boot_time_secs("cpu  1 2 3\nctxt 115315\n"), None);
+    }
+
+    /// The comm `(my (odd) cmd)` holds spaces and both parens: a split at the
+    /// first `)` or on whitespace alone lands on a field other than 22.
+    #[test]
+    fn starttime_is_field_22_past_a_comm_with_spaces_and_parens() {
+        let stat = "4242 (my (odd) cmd) S 1 4242 4242 0 -1 4194560 1234 0 0 0 10 5 0 0 \
+                    20 0 1 0 98765 12345678 456 18446744073709551615 1 1 0 0 0 0 0";
+        assert_eq!(starttime_ticks(stat), Some(98_765));
+        assert_eq!(starttime_ticks("4242 (cut"), None);
+    }
 }
 
 #[cfg(all(test, any(target_os = "macos", target_os = "linux", windows)))]
@@ -136,5 +194,44 @@ mod tests {
     fn garbage_pid_is_none() {
         assert_eq!(pid_start_marker(-1), None);
         assert_eq!(pid_start_marker(i32::MAX), None);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn pid_start_time_is_plausible_epoch_seconds_for_own_process() {
+        let start =
+            pid_start_time_secs(std::process::id() as i32).expect("own pid must be introspectable");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(
+            start > 1_400_000_000 && start <= now + 1,
+            "the start must be epoch seconds in (2014, now], got {start}"
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn pid_start_time_secs_reports_a_fresh_child_as_just_started() {
+        let mut child = sleeper();
+        let started = pid_start_time_secs(child.id() as i32);
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let _ = child.kill();
+        let _ = child.wait();
+        let started = started.expect("the kernel must report a live child's start time");
+        assert!(
+            started.abs_diff(now_secs) <= 5,
+            "child start time {started} should be within 5s of now {now_secs}"
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn pid_start_time_secs_none_for_dead_pid() {
+        assert_eq!(pid_start_time_secs(999_999_999), None);
     }
 }

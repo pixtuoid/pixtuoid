@@ -40,9 +40,11 @@ pub(crate) fn live_grok_session_ids(grok_root: &Path) -> Option<ProbeSnapshot> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Some(ProbeSnapshot::default()),
         Err(_) => return None,
     };
-    match grok_ids_from_registry(&bytes, crate::source::cc_probe::pid_alive, |pid| {
-        crate::source::cc_probe::pid_start_time_secs(pid)
-    }) {
+    match grok_ids_from_registry(
+        &bytes,
+        crate::source::cc_probe::pid_alive,
+        crate::source::proc_start::pid_start_time_secs,
+    ) {
         Some(snap) => Some(snap),
         None => {
             // A read that hit the cap parses as garbage too, so say which it

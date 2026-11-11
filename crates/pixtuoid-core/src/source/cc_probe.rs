@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
+use super::proc_start::pid_start_time_secs;
 use crate::source::jsonl::ProbeSnapshot;
 
 /// CC's first-party live-process registry: `<claude_home>/sessions/<pid>.json`,
@@ -17,11 +19,10 @@ use crate::source::jsonl::ProbeSnapshot;
 /// dir is `Some(empty)`: a healthy "no CC running" observation the negative
 /// vouch may act on.
 ///
-/// PID-reuse guard (#220): kill(0) only proves SOME process owns the pid. When
-/// the kernel can report the process start time, it must agree with the
-/// entry's `startedAt` within `PID_START_TOLERANCE_SECS` or the pid was
-/// recycled and the entry is skipped; a kernel that can't falls back to
-/// pid-alive-only.
+/// PID-reuse guard: kill(0) only proves SOME process owns the pid, so where the
+/// kernel reports the process start time it must agree with the entry's
+/// `startedAt` within `PID_START_TOLERANCE_SECS`, or the pid was recycled and
+/// the entry is skipped.
 pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
     #[cfg(unix)]
     {
@@ -212,23 +213,6 @@ fn parse_registry_entry(bytes: &[u8]) -> RegistryParse {
 /// pid-recycling interval.
 #[cfg(unix)]
 pub(crate) const PID_START_TOLERANCE_SECS: u64 = 10;
-
-/// Kernel-reported process start time in epoch seconds — the identity half of
-/// the PID-reuse guard. macOS: `proc_pidinfo(PROC_PIDTBSDINFO)` →
-/// `pbi_start_tvsec`. Linux's `/proc/<pid>/stat` field 22 is clock ticks since
-/// BOOT, so the identity check is macOS-only for now and Linux returns `None`
-/// (pid-alive-only). `None` on failure — never an error: the check is additive.
-#[cfg(target_os = "macos")]
-pub(crate) fn pid_start_time_secs(pid: i32) -> Option<u64> {
-    super::proc_start::pid_start_marker(pid)
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-pub(crate) fn pid_start_time_secs(_pid: i32) -> Option<u64> {
-    // The Linux MARKER is ticks-since-boot — NOT epoch — so this wall-clock
-    // comparison must not ride it; epoch conversion stays deferred (#220).
-    None
-}
 
 /// `kill(pid, 0)` liveness: Ok = alive and signalable; EPERM = alive but owned
 /// by another user; anything else = no such process.
@@ -474,28 +458,7 @@ mod liveness_tests {
         assert!(!prefer_candidate(&e(1_000, 7), &e(1_000, 7)));
     }
 
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn pid_start_time_is_plausible_epoch_seconds_for_own_process() {
-        let start =
-            pid_start_time_secs(std::process::id() as i32).expect("own pid must be introspectable");
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        assert!(
-            start > 1_400_000_000 && start <= now + 1,
-            "pbi_start_tvsec must be epoch seconds in (2014, now], got {start}"
-        );
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    #[test]
-    fn pid_start_time_is_deliberately_unavailable_off_macos() {
-        assert_eq!(pid_start_time_secs(std::process::id() as i32), None);
-    }
-
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn started_at_exactly_at_tolerance_still_vouches() {
         let own_pid = std::process::id() as i32;
@@ -709,31 +672,7 @@ mod liveness_tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn pid_start_time_secs_reports_a_fresh_child_as_just_started() {
-        let mut child = crate::test_child::sleeper();
-        let started = pid_start_time_secs(child.id() as i32);
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let _ = child.kill();
-        let _ = child.wait();
-        let started = started.expect("proc_pidinfo must report a live child's start time");
-        assert!(
-            started.abs_diff(now_secs) <= 5,
-            "child start time {started} should be within 5s of now {now_secs}"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn pid_start_time_secs_none_for_dead_pid() {
-        assert_eq!(pid_start_time_secs(999_999_999), None);
-    }
-
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn recycled_pid_entry_is_dropped_and_matching_one_kept() {
         let own_pid = std::process::id() as i32;
