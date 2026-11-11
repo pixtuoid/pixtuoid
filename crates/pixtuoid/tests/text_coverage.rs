@@ -8,14 +8,14 @@ use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
 
-/// The source trees whose literals reach the screen, core's decoded labels
-/// and details among them.
-const RENDERERS: [&str; 4] = [
-    "../pixtuoid-core/src",
-    "../pixtuoid-scene/src",
-    "src/tui",
-    "src/floating",
-];
+/// The source trees whose literals can reach the screen, core's decoded
+/// labels and details among them: the binary's whole tree, so a module a
+/// painter comes to read is covered before anyone lists it.
+const RENDERERS: [&str; 3] = ["../pixtuoid-core/src", "../pixtuoid-scene/src", "src"];
+
+/// What [`RENDERERS`] holds that no painter draws: the doctor's report, which
+/// it prints to the terminal.
+const NEVER_PAINTED: [&str; 2] = ["src/doctor.rs", "src/doctor"];
 
 /// What world text (the badges, the board, the bubbles, the floor sign) is
 /// written by: core's labels and the scene's signs.
@@ -183,7 +183,12 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
     for tree in RENDERERS {
         rust_files(&root.join(tree), &mut files);
     }
-    files.retain(|file| *file != root.join(PALETTE_KEYS));
+    files.retain(|file| {
+        *file != root.join(PALETTE_KEYS)
+            && !NEVER_PAINTED
+                .iter()
+                .any(|off| file.starts_with(root.join(off)))
+    });
     let parsed: Vec<(PathBuf, Written)> = files
         .into_iter()
         .map(|file| {
