@@ -828,7 +828,10 @@ fn new_types(
         Some(b) if !b.judges_here() => return Ok(Some(Unjudged::RecordedOn(b.os.to_string()))),
         Some(b) => b,
     };
-    for (at, value) in b.new_in(&dropped::pairs(p.source, &jsonl_files_under(dir))?) {
+    for (at, value) in b.new_in(
+        p.source,
+        &dropped::pairs(p.source, &jsonl_files_under(dir))?,
+    )? {
         findings.push((
             Label::New,
             format!("{at}: `{value}` went unread, as it never did in the recording"),

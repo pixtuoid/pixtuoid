@@ -80,8 +80,8 @@ pub struct Dropped {
     /// The OS it was recorded on.
     pub(crate) os: NonEmpty,
     /// Each discriminator, a pointer (`*` for an array index) where the strip
-    /// kept a non-blank string a decoder of the source names, with the values
-    /// the strip blanked at it.
+    /// kept non-blank strings a decoder of the source names, and no other,
+    /// with the values the strip blanked at it.
     pub(crate) at: BTreeMap<String, BTreeSet<String>>,
 }
 

@@ -30,11 +30,12 @@ impl Dropped {
 
     fn of(source: &str, pairs: &[Pair]) -> std::io::Result<Self> {
         let named = literals::own_exact(source)?;
+        let shown = shown_at(&named, pairs);
         let mut at: BTreeMap<String, BTreeSet<String>> = pairs
             .iter()
             .flat_map(|(_, kept)| kept)
             .flat_map(string_set)
-            .filter(|(_, s)| named.contains(s))
+            .filter(|(p, s)| named.contains(s) && !shown.contains(p))
             .map(|(p, _)| (p, BTreeSet::new()))
             .collect();
         for (p, v) in blanked(&at, pairs) {
@@ -56,11 +57,24 @@ impl Dropped {
 
     /// Each `(pointer, value)` `pairs` drop at this baseline's discriminators
     /// that it lacks.
-    pub(crate) fn new_in(&self, pairs: &[Pair]) -> BTreeSet<(String, String)> {
-        blanked(&self.at, pairs)
+    ///
+    /// # Errors
+    ///
+    /// If `source`'s decoders cannot be parsed.
+    pub(crate) fn new_in(
+        &self,
+        source: &str,
+        pairs: &[Pair],
+    ) -> std::io::Result<BTreeSet<(String, String)>> {
+        // Judged again on the run, so a baseline recorded before a pointer
+        // proved to be text names nothing New there.
+        let shown = shown_at(&literals::own_exact(source)?, pairs);
+        Ok(blanked(&self.at, pairs)
             .into_iter()
-            .filter(|(p, v)| !self.at.get(p).is_some_and(|seen| seen.contains(v)))
-            .collect()
+            .filter(|(p, v)| {
+                !shown.contains(p) && !self.at.get(p).is_some_and(|seen| seen.contains(v))
+            })
+            .collect())
     }
 }
 
@@ -122,6 +136,18 @@ fn blanked(at: &BTreeMap<String, BTreeSet<String>>, pairs: &[Pair]) -> BTreeSet<
         }
     }
     out
+}
+
+/// Each pointer where `pairs` keep a string no decoder names: text a decoder
+/// shows, not a type it dispatches on, so no discriminator.
+fn shown_at(named: &BTreeSet<String>, pairs: &[Pair]) -> BTreeSet<String> {
+    pairs
+        .iter()
+        .flat_map(|(_, kept)| kept)
+        .flat_map(string_set)
+        .filter(|(_, s)| !s.is_empty() && !named.contains(s))
+        .map(|(p, _)| p)
+        .collect()
 }
 
 fn string_set(v: &Value) -> BTreeSet<(String, String)> {
@@ -191,10 +217,39 @@ mod tests {
         );
     }
 
+    /// grok's `title` names a call's tool, `spawn_subagent` a literal of its
+    /// decoder, and an update's display text: text it shows, not a type it
+    /// dispatches on.
+    #[test]
+    fn a_pointer_that_keeps_text_no_decoder_names_is_no_discriminator() {
+        let titled = |title| json!({"params": {"update": {"title": title}}});
+        let raw = vec![
+            titled("spawn_subagent"),
+            titled("read_file"),
+            titled("Read `NOTE.txt`"),
+        ];
+        let kept = vec![titled("spawn_subagent"), titled("read_file"), titled("")];
+        let pairs = [(raw, kept)];
+        let d = Dropped::of("grok", &pairs).expect("parse");
+        assert!(!d.at.contains_key("/params/update/title"), "{d:?}");
+        let recorded = Dropped {
+            os: d.os.clone(),
+            at: BTreeMap::from([("/params/update/title".to_owned(), BTreeSet::new())]),
+        };
+        assert_eq!(
+            recorded.new_in("grok", &pairs).expect("parse"),
+            BTreeSet::new()
+        );
+    }
+
     #[test]
     fn a_run_is_new_only_where_its_recording_did_not_drop_the_value() {
         let d = Dropped::of("copilot", &[copilot_run()]).expect("parse");
-        assert!(d.new_in(&[copilot_run()]).is_empty());
+        assert!(
+            d.new_in("copilot", &[copilot_run()])
+                .expect("parse")
+                .is_empty()
+        );
         let run = (
             vec![
                 json!({"type": "assistant.reasoning_start"}),
@@ -203,7 +258,7 @@ mod tests {
             vec![json!({}), json!({})],
         );
         assert_eq!(
-            d.new_in(&[run]),
+            d.new_in("copilot", &[run]).expect("parse"),
             BTreeSet::from([
                 ("/type".to_owned(), "assistant.reasoning_start".to_owned()),
                 ("/type".to_owned(), "x".to_owned()),
