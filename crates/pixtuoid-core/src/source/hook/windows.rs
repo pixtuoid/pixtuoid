@@ -25,8 +25,8 @@ use super::{CONN_TIMEOUT, MAX_CONCURRENT_CONNS};
 /// the shim's sync write can't stall behind a busy daemon task.
 const IN_BUFFER_SIZE: u32 = 1 << 20;
 
-/// Owner-only, the named-pipe equivalent of the Unix socket's umask-0700,
-/// closing the default DACL's Everyone-READ.
+/// Owner-only, as `unix.rs`'s `Listener::bind` leaves the socket, closing the
+/// default DACL's Everyone-READ.
 const OWNER_ONLY: &str = "D:P(A;;GA;;;OW)";
 
 /// A hook pipe instance under `sd`. `first` claims `first_pipe_instance`: ONLY
