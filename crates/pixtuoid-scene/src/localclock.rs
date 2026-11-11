@@ -41,7 +41,8 @@ pub(crate) fn local_time(now: SystemTime) -> chrono::NaiveDateTime {
 
 /// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders: a day no
 /// holiday touches, so a test meets only the holidays it names. A holiday that
-/// reaches it fails `day_zero_is_an_ordinary_day`, so the move is chosen.
+/// reaches it fails `day_zero_is_an_ordinary_day`, so day 0, and every render
+/// counted from it, moves only by an edit here.
 const DAY_ZERO: chrono::NaiveDate = match chrono::NaiveDate::from_ymd_opt(2026, 1, 2) {
     Some(date) => date,
     None => panic!("a calendar date"),
