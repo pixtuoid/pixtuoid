@@ -587,26 +587,16 @@ mod liveness_tests {
         }
     }
 
-    /// Pin of the CURRENT live `<claude_home>/sessions/<pid>.json` shape —
-    /// synthesized values, but the same keys as a real entry. The format is
-    /// undocumented with no upstream text to diff, so this fixture is the
-    /// shape's only regression detector.
+    /// The keys the probe consumes, typed as CC 2.1.318 writes them, beside
+    /// one it doesn't: `procStart`, a date string despite its name. The format
+    /// is undocumented, so no upstream text pins the rest.
     #[cfg(unix)]
     fn live_shape_entry(pid: i64, session_id: &str) -> String {
         serde_json::json!({
             "pid": pid,
             "sessionId": session_id,
             "startedAt": 1_781_109_422_174_u64,
-            "procStart": 1_781_109_420_000_u64,
-            "cwd": "/Users/someone/project",
-            "version": "2.1.0",
-            "peerProtocol": 1,
-            "kind": "repl",
-            "entrypoint": "cli",
-            "status": "idle",
-            "updatedAt": 1_781_109_500_000_u64,
-            "name": "project",
-            "bridgeSessionId": "00000000-0000-7000-8000-00000000bb1d"
+            "procStart": "Wed Jun 10 16:37:00 2026",
         })
         .to_string()
     }
