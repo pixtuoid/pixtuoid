@@ -523,7 +523,7 @@ pub(crate) fn output_within(
         if std::time::Instant::now() >= deadline {
             let mut child = locked(&child);
             child.start_kill()?;
-            // Reaped, so no zombie outlives the run. Windows leaves none, and
+            // Reaped, so no zombie outlives the run. Not on Windows:
             // process-wrap's wait there waits out every process in the job,
             // whose exit message is "not guaranteed"
             // (<https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_associate_completion_port>).
@@ -549,7 +549,7 @@ pub(crate) fn output_within(
     }
 }
 
-/// A host CLI's child, which its run and [`kill_running`] share.
+/// A host CLI's child, which its run and, on Windows, [`kill_running`] share.
 type Shared = std::sync::Arc<std::sync::Mutex<Box<dyn process_wrap::std::ChildWrapper>>>;
 
 /// `child`, locked for one call: [`kill_running`] takes it too on Windows.
