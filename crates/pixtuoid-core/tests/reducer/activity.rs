@@ -2156,29 +2156,28 @@ fn a_start_on_the_transport_that_did_not_raise_only_counts() {
     ));
 }
 
-/// grok's transcript reads `turn_completed` past its hooks' next call.
+/// grok's transcript reads `turn_completed` past its hooks' next call, which an
+/// id-less one no in-flight ledger shows again.
 #[test]
 fn a_transcript_turn_end_naming_no_turn_leaves_a_hook_started_call() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for (started_on, settles) in [(Transport::Hook, false), (Transport::Jsonl, true)] {
+    let runs = [Some("x"), None].into_iter().flat_map(|call| {
+        [
+            (call, Transport::Hook, false),
+            (call, Transport::Jsonl, true),
+        ]
+    });
+    for (call, started_on, settles) in runs {
         let mut scene = SceneState::uniform(4);
         let mut r = Reducer::new();
         let id = AgentId::from_parts("grok", "/Users/dev/proj");
         start_as(&mut r, &mut scene, id, "grok");
-        tool_use_start(
-            &mut r,
-            &mut scene,
-            id,
-            Some("x"),
-            Some("bash"),
-            t0,
-            started_on,
-        );
+        tool_use_start(&mut r, &mut scene, id, call, Some("bash"), t0, started_on);
         turn_end(&mut r, &mut scene, id, t0, Transport::Jsonl);
         assert_eq!(
             scene.agents[&id].state == ActivityState::Idle,
             settles,
-            "started on {started_on:?}"
+            "{call:?} started on {started_on:?}"
         );
         turn_end(&mut r, &mut scene, id, t0, Transport::Hook);
         assert_eq!(scene.agents[&id].state, ActivityState::Idle);

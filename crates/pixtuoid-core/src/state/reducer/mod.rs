@@ -377,10 +377,9 @@ impl Reducer {
                 };
                 self.apply_tool_use_start(scene, agent_id, ids, detail.as_ref(), from, now);
             }
-            // The pre-pass tracker already drained a tracked Task with this End:
-            // the drain applied the transition itself, so re-running it would
-            // restart Delegating — resetting `state_started_at` — whenever
-            // parallel Tasks remain.
+            // The pre-pass tracker already drained a tracked Task with this End,
+            // which must not also end an id-less call the parent shows: an End
+            // ends any shown call that names none.
             AgentEvent::ToolUseEnd { .. } if tracking.handled_by_task_tracking => {}
             AgentEvent::ToolUseEnd {
                 agent_id,
@@ -857,7 +856,8 @@ impl Reducer {
             from,
             is_requires_action(scene, agent_id),
         );
-        // grok's transcript reads `turn_completed` past its hooks' next call.
+        // grok's transcript reads `turn_completed` past its hooks' next call,
+        // which, id-less, no in-flight ledger would show again.
         let lags_the_hooks = from == Transport::Jsonl
             && turn.is_none()
             && self.corr.item_started_on.get(&agent_id) == Some(&Transport::Hook);
