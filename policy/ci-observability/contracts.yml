@@ -114,19 +114,20 @@
   expected: "[ continue echo exit false gh git jq mv read rm set"
   why: >-
     Beside `bot-publish-runs-no-tree-code` and
-    `nightly-files-issues-from-a-job-that-runs-no-tree-code`: every command a
-    write-token job's `run:` holds, as shfmt parses it, starts with a literal
-    word `expected` lists, the commands those jobs run today. An allowlist, as
-    REVIEW.md's Traps prefer, so an unlisted command fails, and so do a quoted
-    or expanded command word and a `run` shfmt cannot parse (a `${{ }}` among
-    them). Code also runs outside the `run:` text, and that is judged as
-    narrowly. A write-token job and its steps set no `shell` and no
-    `defaults`, nor does the workflow, since those pick the interpreter given
-    the script. Every `env` a write-token job sees, the workflow's included,
-    is a mapping of the keys those jobs set today, so `PATH`, `BASH_ENV` and
-    any other key fail. A write-token job's `run` names neither `PATH` nor
-    `GITHUB_ENV`/`GITHUB_PATH`, which set the next steps' environment and
-    command lookup.
+    `nightly-files-issues-from-a-job-that-runs-no-tree-code`: every simple
+    command a write-token job's `run:` holds (shfmt's `CallExpr`; `[[`,
+    `export` and `declare` are not one) starts with a literal word `expected`
+    lists, the commands those jobs run today. An allowlist, as REVIEW.md's
+    Traps prefer, so an unlisted command fails, and so do a quoted or expanded
+    command word and a `run` shfmt cannot parse (a `${{ }}` among them). Code
+    also runs outside the `run:` text, and that is judged as narrowly. A
+    write-token job sets no `container` or `services`, it and its steps no
+    `shell`, and neither it nor the workflow `defaults`: those pick where and
+    with what the script runs. Every `env` a write-token job sees, the
+    workflow's included, is a mapping of the keys those jobs see today, so
+    `PATH`, `BASH_ENV` and any other key fail. A write-token job's `run` names
+    neither `PATH` nor `GITHUB_ENV`/`GITHUB_PATH`, which set the next steps'
+    environment and command lookup.
   assert: |
     [.jobs.publish, .jobs.file | objects] as $jobs
     | [$jobs[].steps[]?] as $steps
@@ -136,6 +137,7 @@
             | if .Parts | length == 1 and .[0].Type == "Lit" then .Parts[0].Value else "a word not one literal" end
           end]
        - ($expected | split(" ")) == [])
+      and ([$jobs[] | has("container") or has("services")] | any | not)
       and ([$steps[] | select(has("shell"))] == [])
       and ([.defaults, $jobs[].defaults] | all(. == null))
       and ([.env, $jobs[].env, $steps[].env | select(. != null)]
@@ -160,6 +162,7 @@
     - '.jobs.file.steps += [{"env": "${{ fromJSON(needs.x.outputs.vars) }}", "run": "echo"}]'
     - '.jobs.publish.steps += [{"run": "PATH=scripts:$PATH git status"}]'
     - '.jobs.file.steps += [{"run": "export PATH=scripts"}]'
+    - '.jobs.publish.container = {"image": "ubuntu", "env": {"BASH_ENV": "scripts/x.sh"}}'
 
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml
