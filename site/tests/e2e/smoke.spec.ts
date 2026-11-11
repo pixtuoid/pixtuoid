@@ -3291,6 +3291,33 @@ for (const viewport of [
         const box = (await link.boundingBox())!;
         expect(box.y + box.height, path).toBeLessThanOrEqual(main.y);
       }
+      // Each link's ink against every pixel painted under it, read off a screenshot with
+      // the links hidden: paintedContrast grades the office canvas, which no script
+      // uncovers here, so it cannot see the poster a ground-less bar would show.
+      const inks = await links.evaluateAll((as) => as.map((a) => getComputedStyle(a).color));
+      await links.evaluateAll((as) => as.forEach((a) => (a.style.visibility = 'hidden')));
+      const png = (await page.screenshot()).toString('base64');
+      const grounds = await links.evaluateAll(async (as, png) => {
+        const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+        const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+        const ctx = new OffscreenCanvas(bmp.width, bmp.height).getContext('2d')!;
+        ctx.drawImage(bmp, 0, 0);
+        return as.map((a) => {
+          const r = a.getBoundingClientRect();
+          const { data } = ctx.getImageData(r.left, r.top, r.width, r.height);
+          const seen = new Set<string>();
+          for (let p = 0; p < data.length; p += 4)
+            seen.add(`${data[p]},${data[p + 1]},${data[p + 2]}`);
+          return [...seen].map((s) => s.split(',').map(Number));
+        });
+      }, png);
+      for (const [i, ground] of grounds.entries()) {
+        const ink = parseRgb(inks[i]).slice(0, 3) as [number, number, number];
+        const worst = Math.min(
+          ...ground.map((px) => contrastRatio(ink, px as [number, number, number]))
+        );
+        expect(worst, `${path} link ${i}`).toBeGreaterThanOrEqual(4.5);
+      }
       for (const button of ['#nav-burger', '#docs-btn', '#theme-toggle'])
         await expect(page.locator(button), path).toBeHidden();
       const overflow = await page.evaluate(
