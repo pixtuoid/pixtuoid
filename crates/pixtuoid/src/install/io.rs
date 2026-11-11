@@ -1401,20 +1401,20 @@ mod tests {
         }
     }
 
-    /// A `sh` fake's background job holds the run's pipes, and the limit's kill
-    /// takes the job with its group.
+    /// A `sh` fake's background `sleep` holds the run's pipes, and the limit's
+    /// kill takes it with its group.
     #[cfg(unix)]
     #[test]
     fn a_grandchild_holding_the_pipes_cannot_hold_the_run_past_its_limit() {
         let secs = HANG.as_secs();
         for then in [format!("exec sleep {secs}"), "exit 0".to_owned()] {
             let dir = TempDir::new().unwrap();
-            let job = dir.path().join("job");
+            let sleeper = dir.path().join("sleeper");
             let started = std::time::Instant::now();
             let err = with_fake(
                 &format!("sleep {secs} &\necho $! > \"$1\"\n{then}"),
                 "",
-                || FAKE.run_within(&[job.as_os_str()], LIMIT),
+                || FAKE.run_within(&[sleeper.as_os_str()], LIMIT),
             )
             .unwrap_err();
             assert!(started.elapsed() < LIMIT + SLACK, "{then}");
@@ -1422,8 +1422,8 @@ mod tests {
                 format!("{err:#}").contains("did not finish within"),
                 "{then}: {err:#}"
             );
-            let pid = std::fs::read_to_string(&job).unwrap();
-            assert!(gone(pid.trim()), "{then}: the job outlived the run");
+            let pid = std::fs::read_to_string(&sleeper).unwrap();
+            assert!(gone(pid.trim()), "{then}: the sleeper outlived the run");
         }
     }
 
