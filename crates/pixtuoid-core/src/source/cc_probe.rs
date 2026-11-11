@@ -7,6 +7,11 @@ use std::path::{Path, PathBuf};
 use super::proc_start::{StartPins, pid_start};
 use crate::source::jsonl::ProbeSnapshot;
 
+/// One set for every reader of this host's registry, the probe and the focus
+/// lookup alike: `FocusProbe` takes a stateless `fn`.
+#[cfg(unix)]
+static PINS: StartPins = StartPins::new();
+
 /// CC's first-party live-process registry: `<claude_home>/sessions/<pid>.json`,
 /// one tiny undocumented JSON file per running CC process (`{pid, sessionId,
 /// cwd, status, startedAt, procStart, ...}`). Returns the session UUIDs (+
@@ -28,9 +33,6 @@ use crate::source::jsonl::ProbeSnapshot;
 pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
     #[cfg(unix)]
     {
-        // One set for every reader of this host's registry, the probe and the
-        // focus lookup alike: `FocusProbe` takes a stateless `fn`.
-        static PINS: StartPins = StartPins::new();
         scan(sessions_dir, &PINS)
     }
     #[cfg(not(unix))]
@@ -723,6 +725,31 @@ mod liveness_tests {
                 "scan {scan_no}: a recycled-pid entry must be dropped; the identity-matching one kept"
             );
         }
+    }
+
+    /// The probe's own pins outlive a call: a running pixtuoid keeps the vouch
+    /// of an entry it judged before a clock step.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn the_probe_keeps_its_pins_between_calls() {
+        let pid = std::process::id() as i32;
+        let start = pid_start(pid);
+        let claimed_secs = start.map_or(0, |start| start.secs) + PID_START_TOLERANCE_SECS + 3_600;
+        let dir = tempfile::tempdir().unwrap();
+        write_entry_started(
+            dir.path(),
+            "kept.json",
+            i64::from(pid),
+            "kept",
+            claimed_secs * 1000,
+        );
+        PINS.admits(pid, claimed_secs, start, |_| true);
+        assert!(
+            live_cc_session_ids(dir.path())
+                .expect("a healthy probe")
+                .contains("kept"),
+            "judged once by the probe's pins, the marker holds it"
+        );
     }
 
     /// A session judged before a clock step keeps its vouch, across a torn scan.

@@ -20,6 +20,10 @@ use crate::source::{Source, TaggedSender};
 #[cfg(unix)]
 const MAX_SESSION_REGISTRY_BYTES: u64 = 1024 * 1024;
 
+/// One set for the probe and the focus lookup alike, as `cc_probe`'s.
+#[cfg(unix)]
+static PINS: StartPins = StartPins::new();
+
 /// grok's liveness probe: the session ids of every entry in
 /// `{grok_home}/active_sessions.json` whose pid is alive, plus the owning pid
 /// per id for the instant-exit watch.
@@ -35,8 +39,6 @@ const MAX_SESSION_REGISTRY_BYTES: u64 = 1024 * 1024;
 /// the enumeration itself failed, so the watcher changes nothing.
 #[cfg(unix)]
 pub(crate) fn live_grok_session_ids(grok_root: &Path) -> Option<ProbeSnapshot> {
-    // One for the probe and the focus lookup alike, as `cc_probe`'s.
-    static PINS: StartPins = StartPins::new();
     let path = session_registry(grok_root);
     let bytes = match crate::source::read_bounded_bytes(&path, MAX_SESSION_REGISTRY_BYTES) {
         Ok(b) => b,
@@ -361,6 +363,28 @@ mod tests {
                 snap.pid_of.get("live-1"),
                 Some(&(me as i32)),
                 "a live registry entry must bind its id to its pid"
+            );
+        }
+
+        /// The probe's own pins outlive a call, as `cc_probe`'s.
+        #[test]
+        fn the_probe_keeps_its_pins_between_calls() {
+            let dir = tempfile::tempdir().unwrap();
+            let me = std::process::id() as i32;
+            let opened = "2020-01-01T00:00:00Z";
+            let claim = crate::source::decoder::rfc3339_to_epoch_secs(opened).unwrap();
+            std::fs::write(
+                dir.path().join("active_sessions.json"),
+                format!(r#"[{{"session_id":"kept","pid":{me},"opened_at":"{opened}"}}]"#),
+            )
+            .unwrap();
+            PINS.admits(me, claim, crate::source::proc_start::pid_start(me), |_| {
+                true
+            });
+            let snap = live_grok_session_ids(dir.path()).expect("a readable registry is healthy");
+            assert!(
+                snap.pid_of.contains_key("kept"),
+                "judged once by the probe's pins, the marker holds it"
             );
         }
 
