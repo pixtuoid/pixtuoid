@@ -27,9 +27,7 @@ const {
 
 const idx = DOCS.findIndex((d) => d.id === current);
 const prev = idx > 0 ? DOCS[idx - 1] : undefined;
-const next = idx >= 0 && idx < DOCS.length - 1 ? DOCS[idx + 1] : undefined;
-
-const routeSlug = idx >= 0 ? DOCS[idx].route : current;
+const next = idx < DOCS.length - 1 ? DOCS[idx + 1] : undefined;
 
 // h2 sections, folding in h3s when a doc has few. Trailing parentheticals are
 // stripped so a long heading doesn't wrap to three lines in the 13rem rail.
@@ -115,7 +113,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     </nav>}
   </main>
   <Footer />
-  <Statusline doc={routeSlug} />
+  <Statusline doc={current} />
 </Base>
 
 <script is:inline>

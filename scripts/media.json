@@ -146,10 +146,9 @@
   "targets": [
    "site"
   ],
-  "w": 231,
-  "h": 130,
   "t0_ms": 1768498200000,
-  "advance_ms": 100000
+  "advance_ms": 100000,
+  "seed": 0
  },
  {
   "id": "vibing-poster",

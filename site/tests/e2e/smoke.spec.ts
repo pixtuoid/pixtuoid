@@ -1432,7 +1432,7 @@ test('reduced motion: an install copy writes the clipboard but hires nobody', as
 
 test('docs pages keep the sticky nav with section links', async ({ page }) => {
   const errors = watchErrors(page);
-  await page.goto('./config');
+  await page.goto('./config/');
   const nav = page.locator('.nav');
   await expect(nav).not.toHaveClass(/nav--floating/);
   await expect
@@ -2136,7 +2136,7 @@ test('VIBING channel: live office paints, is pause-gated, chips drive it', async
 
 test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ page, browser }) => {
   const errors = watchErrors(page);
-  await page.goto('./config#themes'); // arrival-by-hash: the rail lights unscrolled
+  await page.goto('./config/#themes'); // arrival-by-hash: the rail lights unscrolled
   await expect(page.locator('[data-toc-link="themes"]')).toHaveAttribute(
     'aria-current',
     'location'
@@ -2174,7 +2174,7 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
     'aria-current',
     'location'
   );
-  await page.goto('./no-such-desk');
+  await page.goto('./no-such-desk/');
   await expect(page.locator('.lost h1')).toContainText('Session not');
   await expect
     .poll(() =>
@@ -2188,7 +2188,7 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
   const ctx = await browser.newContext({ viewport: { width: 480, height: 800 } });
   const m = await ctx.newPage();
   await m.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await m.goto('./config');
+  await m.goto('./config/');
   await m.locator('#nav-burger').click();
   await expect(m.locator('#nav-links')).toHaveClass(/is-open/);
   await expect(m.locator('#nav-burger')).toHaveAttribute('aria-expanded', 'true');
@@ -2233,13 +2233,13 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./', 390],
     ['./', 430],
     ['./', 768],
-    ['./config', 390],
-    ['./config', 768],
-    ['./architecture', 375],
-    ['./contributing', 375],
-    ['./architecture', 320], // #503's wide ASCII pre
-    ['./architecture', 768],
-    ['./contributing', 320], // #503's long link: `crates/pixtuoid-core/tests/AGENTS.md`
+    ['./config/', 390],
+    ['./config/', 768],
+    ['./architecture/', 375],
+    ['./contributing/', 375],
+    ['./architecture/', 320], // #503's wide ASCII pre
+    ['./architecture/', 768],
+    ['./contributing/', 320], // #503's long link: `crates/pixtuoid-core/tests/AGENTS.md`
   ] as const) {
     const context = await browser.newContext({
       viewport: { width, height: 820 },
@@ -2321,7 +2321,7 @@ test('docs-table code cells render single-line (column-collapse guard)', async (
   });
   const page = await context.newPage();
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./config');
+  await page.goto('./config/');
   const cells = await page.evaluate(() => {
     const code = [...document.querySelectorAll('.prose table th code, .prose table td code')];
     return {
@@ -2457,8 +2457,8 @@ atOfficeMoments(
         '.footer__sep',
         '.nav__version',
       ],
-      './404': ['.terminal__title'],
-      './architecture': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
+      './404.html': ['.terminal__title'],
+      './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
     };
 
     let swept = 0;
@@ -2588,8 +2588,6 @@ for (const { width, rootPx } of [
   }) => {
     // Every chip, each waiting out the typed reveal.
     test.setTimeout(90_000);
-    // Raw mouse.move, NOT page.hover(): the page's html { scroll-behavior: smooth } lets hover()'s actionability pass
-    // queue a smooth CDP scroll that slides the page out from under the pointer.
     await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
     const rect = (sel: string) =>
       page.evaluate((s) => {
@@ -2599,8 +2597,6 @@ for (const { width, rootPx } of [
     const settle = () => settleAnimations(page);
     await page.setViewportSize({ width, height: 900 });
     await page.goto('./');
-    // Let the hero's `rise` entrance settle first — a one-shot mouse.move to a mid-animation center lands off the settled chip.
-    await page.waitForLoadState('networkidle');
     await page.evaluate((px) => (document.documentElement.style.fontSize = `${px}px`), rootPx);
     const chips = page.locator('.hero__badges .hero__badge');
     const watched = ['.hero__copy h1', '.hero__prompt', '.hero__badges', '.hero__cta'];
@@ -2620,6 +2616,8 @@ for (const { width, rootPx } of [
     for (let i = 0; i < supportedSources.length; i++) {
       const chip = chips.nth(i);
       const chipRest = (await chip.boundingBox())!;
+      // Raw mouse.move, NOT page.hover(): the page's html { scroll-behavior: smooth } lets hover()'s actionability pass
+      // queue a smooth CDP scroll that slides the page out from under the pointer.
       await page.mouse.move(chipRest.x + chipRest.width / 2, chipRest.y + chipRest.height / 2);
       await settle();
       const at = `${width}px, root ${rootPx}px, chip ${i}`;
@@ -2888,7 +2886,7 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
   const TEXT_TAGS = 'p, li, strong, em, a, code';
   for (const theme of ['day', 'night', 'dracula'] as const) {
     await page.addInitScript((t) => localStorage.setItem('pix-theme', t), theme);
-    await page.goto('./config');
+    await page.goto('./config/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     const routes = await page.evaluate(() =>
       [...document.querySelectorAll('.docs__sidebar .docs__list:not(.docs__list--building) a')].map(
@@ -3267,6 +3265,76 @@ test('proof split: without JS the poster still shows, as a plain image', async (
   await expect(page.locator('.proof__video--tall')).toBeHidden();
   await context.close();
 });
+
+// Nothing opens the burger, the Docs menu or an Install tab without script.
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 1280, height: 800 },
+]) {
+  test(`without JS at ${viewport.width}px every nav link and install method shows, and the nav's and Install's script-only controls go`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false, viewport });
+    const page = await context.newPage();
+    // The home page's floating nav, whose floors the script-only statusline otherwise carries.
+    for (const path of ['./config/', './']) {
+      await page.goto(path);
+      const links = page.locator('#nav-links a');
+      expect(await links.count()).toBeGreaterThan(0);
+      const main = (await page.locator('main').boundingBox())!;
+      for (const link of await links.all()) {
+        await expect(link, path).toBeVisible();
+        // The open links sit above the page, never over it.
+        const box = (await link.boundingBox())!;
+        expect(box.y + box.height, path).toBeLessThanOrEqual(main.y);
+      }
+      // Each link's ink against every pixel painted under it, read off a screenshot with
+      // the links hidden: paintedContrast grades the office canvas, which no script
+      // uncovers here, so it cannot see the poster a ground-less bar would show.
+      const inks = await links.evaluateAll((as) => as.map((a) => getComputedStyle(a).color));
+      await links.evaluateAll((as) => as.forEach((a) => (a.style.visibility = 'hidden')));
+      const png = (await page.screenshot()).toString('base64');
+      const grounds = await links.evaluateAll(async (as, png) => {
+        const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+        const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+        const ctx = new OffscreenCanvas(bmp.width, bmp.height).getContext('2d')!;
+        ctx.drawImage(bmp, 0, 0);
+        return as.map((a) => {
+          const r = a.getBoundingClientRect();
+          const { data } = ctx.getImageData(r.left, r.top, r.width, r.height);
+          const seen = new Set<string>();
+          for (let p = 0; p < data.length; p += 4)
+            seen.add(`${data[p]},${data[p + 1]},${data[p + 2]}`);
+          return [...seen].map((s) => s.split(',').map(Number));
+        });
+      }, png);
+      for (const [i, ground] of grounds.entries()) {
+        const ink = parseRgb(inks[i]).slice(0, 3) as [number, number, number];
+        const worst = Math.min(
+          ...ground.map((px) => contrastRatio(ink, px as [number, number, number]))
+        );
+        expect(worst, `${path} link ${i}`).toBeGreaterThanOrEqual(4.5);
+      }
+      for (const button of ['#nav-burger', '#docs-btn', '#theme-toggle'])
+        await expect(page.locator(button), path).toBeHidden();
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      );
+      expect(overflow, path).toBeLessThanOrEqual(0);
+    }
+
+    const install = page.locator('#install');
+    await install.scrollIntoViewIfNeeded();
+    await expect(install.locator('.section-head.reveal')).toHaveCSS('opacity', '1');
+    const panels = install.locator('.install__panel');
+    expect(await panels.count()).toBeGreaterThan(1);
+    for (const panel of await panels.all()) await expect(panel.locator('pre')).toBeVisible();
+    await expect(install.locator('.install__tabs')).toBeHidden();
+    for (const copy of await install.locator('.install__copy').all())
+      await expect(copy).toBeHidden();
+    await context.close();
+  });
+}
 
 test('proof split: narrow viewport swaps to the tall stack of the SAME render', async ({
   browser,

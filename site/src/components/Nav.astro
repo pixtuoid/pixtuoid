@@ -1,6 +1,6 @@
 ---
 import { REPO, SPONSOR, asset, DOCS } from '../consts';
-// Absolute home so the section anchors work from any page (e.g. /config).
+// Absolute home so the section anchors work from any page (e.g. /config/).
 const home = asset('');
 // `floating` = the index treatment: corner chrome over the live office that
 // scrolls away, because the statusline is that page's persistent chrome.
@@ -370,6 +370,45 @@ const { floating = false } = Astro.props;
     .nav__toggle {
       width: 44px;
       height: 44px;
+    }
+  }
+  /* Scripting off: nothing opens the burger or the Docs menu or flips the theme,
+     so the buttons go and every link lays out open on rows of its own. The bar
+     keeps to the page's flow, so the rows never cover the page, on a ground of
+     its own: no script dims the office under it. */
+  @media (scripting: none) {
+    .nav__burger,
+    .nav__docs-btn,
+    .nav__toggle {
+      display: none;
+    }
+    .nav {
+      position: relative;
+      background: var(--bg);
+    }
+    .nav__inner {
+      flex-wrap: wrap;
+      height: auto;
+      min-height: var(--nav-h);
+    }
+    .nav__links {
+      display: flex;
+      position: static;
+      flex: 1 0 100%;
+      flex-flow: row wrap;
+      gap: 0 1.2rem;
+      margin: 0;
+    }
+    .nav__docs,
+    .nav__menu {
+      display: contents;
+    }
+    /* The statusline that carries the home page's floors needs script. */
+    .nav--floating .nav__section-link {
+      display: inline;
+    }
+    .nav__links a {
+      padding: 0.3rem 0;
     }
   }
 </style>
