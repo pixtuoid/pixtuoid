@@ -7,8 +7,8 @@
 #              on-demand e2e / capture / fixture recipes
 #   site     — the Astro landing page under site/ (npm + the wasm build)
 #   gen      — regenerate + check committed artifacts
-#   release  — what release.yml builds: the cross builds, the .deb, the version
-#              read; plus the Node gates (npm-check)
+#   release  — what release.yml builds: the cross builds, the notices they
+#              ship, the version read; plus the Node gates (npm-check)
 #   meta     — tooling setup, the local gate (preflight), the fixture
 #              gates, and the gates' selftests
 
@@ -91,11 +91,11 @@ DOC_TARGETS := "x86_64-pc-windows-msvc aarch64-apple-darwin"
 # hashed pins, so no venv is provisioned or kept (CI runs the same recipes).
 UV_DEV := "uv run --no-project --with-requirements requirements-dev.txt --"
 
-# The zone every test run reads the clock in, so a test anchored to its
-# writer's own zone fails on their machine, not first in CI (#1377). Its +05:45
-# is neither UTC nor a whole hour, so epoch and local hours never coincide.
-# chrono reads `TZ` on Unix only (chrono 0.4.45 `src/offset/local/unix.rs:92`);
-# Windows tests keep the runner's own zone.
+# The zone a test run reads the clock in, so a test anchored to its writer's
+# zone fails on their machine, not first in CI (#1377). Its offset is neither
+# UTC nor a whole hour, so epoch and local hours never coincide. chrono reads
+# `TZ` on Unix only (chrono 0.4.45 `src/offset/local/unix.rs:92`), so Windows
+# tests keep the runner's zone; pixtuoid-scene's unit tests read `localclock`'s.
 TEST_TZ := "Asia/Kathmandu"
 
 # List available recipes.
@@ -207,19 +207,6 @@ ci-observability:
     bash policy/ci-observability/check.sh
     bash policy/ci-observability/action_behavior_test.sh
 
-# Every committed JSON Schema, held to the metaschema. These are contracts a
-# consumer reads at runtime — the raycast ones pin the `--json` shape — and
-# nothing else parses them: a broken one is invisible until the consumer
-# refuses to start.
-[doc('Validate every committed JSON Schema against the metaschema (check-jsonschema)')]
-[group('rust')]
-json-schemas:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    schemas=(integrations/raycast/contract/*.schema.json)
-    check-jsonschema --check-metaschema "${schemas[@]}"
-    echo "${#schemas[@]} JSON Schemas validated"
-
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link
 # must resolve and every `#anchor` exist. `--offline`, so external-URL decay is
@@ -228,8 +215,12 @@ json-schemas:
 [group('rust')]
 links:
     # Source CSS uses Vite package specifiers; its module graph belongs to the
-    # site build, while this gate owns documentation links and anchors.
-    lychee --offline --include-fragments --extensions md --hidden .
+    # site build, while this gate owns documentation links and anchors. The
+    # README links this repo absolutely (gen-readme.mjs's RAW says why), so
+    # those links are remapped onto this tree to stay checked.
+    lychee --offline --include-fragments --extensions md --hidden \
+        --remap '^https://github\.com/pixtuoid/pixtuoid/blob/HEAD/ file://{{ replace(justfile_directory(), ' ', '%20') }}/' \
+        --remap '^https://raw\.githubusercontent\.com/pixtuoid/pixtuoid/HEAD/ file://{{ replace(justfile_directory(), ' ', '%20') }}/' .
 
 [doc('Lint and format-check the Python (ruff)')]
 [group('rust')]
@@ -372,7 +363,6 @@ lint: (_npm ".")
     run composites just actionlint-composites & pids+=($!)
     run zizmor  just zizmor              & pids+=($!)
     run ci-obs  just ci-observability     & pids+=($!)
-    run schemas just json-schemas         & pids+=($!)
     run links   just links               & pids+=($!)
     run ruff    just ruff                & pids+=($!)
     run pyright just pyright             & pids+=($!)
@@ -398,13 +388,11 @@ test *args:
     @TZ={{ TEST_TZ }} cargo nextest run "$@"
 
 # The filter forwards to every target, and one matching nothing in a target is
-# not an error: `just bench 360` runs every 360x240 case, `just bench hook` only
-# the hook-transport fold.
-[doc('Render-path + wire-path criterion benchmarks; forwards a filter')]
+# not an error: `just bench 360` runs every 360x240 case.
+[doc('Render-path criterion benchmarks; forwards a filter')]
 [group('rust')]
 bench *args:
     cargo bench -p pixtuoid-scene --bench render_frame -- "$@"
-    cargo bench -p pixtuoid-core --bench decode_reduce -- "$@"
     cargo bench -p pixtuoid --no-default-features --bench render_tiles -- "$@"
 
 [doc('Frame pacing through the real TUI painter per protocol: frame time, budget overruns, interval jitter, bytes per frame')]
@@ -632,7 +620,7 @@ coverage *args:
 # line/region coverage can't see (a covered-but-toothless assertion). DIFF-scoped
 # (`--in-diff` vs `$MUTANTS_BASE`, default origin/main) so cost scales with the
 # change, not the whole tree; reads `.cargo/mutants.toml` (nextest + the
-# untestable/timing exclusions). ADVISORY — CI runs it NON-blocking; a surviving
+# untestable/timing exclusions). ADVISORY — a surviving
 # mutant is a hint to strengthen a test, not a merge gate. Run on a
 # reducer/decoder/layout PR; forwards args (e.g. `just mutants --list`). Needs
 # cargo-mutants + nextest.
@@ -692,7 +680,7 @@ corpus-all:
     #!/usr/bin/env bash
     set -uo pipefail
     cc=target/release/examples/corpus_check
-    cargo build --release -q --example corpus_check -p pixtuoid-scene || exit 2
+    cargo build --release -q --example corpus_check -p pixtuoid || exit 2
     # Read the roster BEFORE the loop: as a process substitution its exit status
     # is unobservable, so a roster that dies would feed an empty loop and the
     # census would report "everything clean" having censused nothing.
@@ -1007,35 +995,13 @@ gen-media-check:
 workspace-version:
     @grep -m1 '^version' Cargo.toml | cut -d'"' -f2
 
-# Pass `true` for targets that need the Docker-backed `cross` toolchain
-# (CI installs it via taiki-e/install-action with `tool: cross`).
 [doc('Cross-compile a release for ONE target triple (release.yml build matrix)')]
 [group('release')]
-build-target target cross="false":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    target="$1"
-    use_cross="$2"
-    # Every LINUX artifact drops `audio` (musl can't link ALSA statically; the
-    # aarch64 cross image has no ALSA headers), so prebuilt Linux binaries ship
-    # SILENT and Linux audio is a from-source feature (#633; see
-    # docs/CONFIGURATION.md). Every other default feature rides `portable`
-    # (pixtuoid's Cargo.toml). Derived here, not passed: the flags are a
-    # property of the target. $flags stays UNQUOTED below — quoting the empty
-    # non-Linux case would pass cargo an empty positional arg.
-    flags=""
-    case "$target" in
-    *linux*) flags="--no-default-features --features portable" ;;
-    esac
-    if [ "$use_cross" = "true" ]; then
-        cross build --release --target "$target" $flags
-    else
-        cargo build --release --target "$target" $flags
-    fi
+build-target target:
+    cargo build --release --target "$1"
 
 # Globbed, not listed, so a font embedded later ships its notice too: a font's
-# notice is any .txt under the `fonts/` beside it. The tree mirrors the repo's
-# (licenses/<crate>/fonts/…), as pixtuoid's .deb assets do with the same glob.
+# notice is any .txt under the `fonts/` beside it.
 [doc("Copy LICENSE + every embedded font's notice (licenses/) into a release archive's DIR")]
 [group('release')]
 stage-notices dir:
@@ -1048,18 +1014,10 @@ stage-notices dir:
         cp "$notice" "$dest"
     done
 
-# `--no-build`: the target is already built by `build-target`. Needs cargo-deb
-# (CI installs it via taiki-e/install-action with `tool: cargo-deb`).
-[doc('Package the .deb for ONE already-built target (release.yml deb job)')]
-[group('release')]
-deb target:
-    cargo deb -p pixtuoid --no-build --no-strip --target "$1"
-    cargo deb -p pixtuoid-hook --no-build --no-strip --target "$1"
-
-# The npm package generator's tests, its only run before a tag-push, and every
+# The npm packages' tests, their only run before a tag-push, and every
 # plugin's selftest, which executes it against `plugin-contract.json`; a
 # selftest is found by its name, the one the census pairs with its plugin.
-[doc('Node tests: the npm package generator and every plugin selftest (CI)')]
+[doc('Node tests: the npm generator and launcher, and every plugin selftest (CI)')]
 [group('release')]
 npm-check:
     node --test 'npm/*.test.mjs' 'scripts/*.test.mjs'

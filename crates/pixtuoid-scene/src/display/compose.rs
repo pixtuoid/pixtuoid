@@ -224,13 +224,13 @@ pub struct Office<'a> {
     pub scale: RenderScale,
 }
 
-/// Which floor a frame shows, when, what its wall board says, and how far the
-/// host's modal dims it: what moves a frame beyond its office and the sim's
-/// world.
+/// The conditions a frame shows under, when, what its wall board says, and
+/// how far the host's modal dims it: what moves a frame beyond its office and
+/// the sim's world.
 #[derive(Debug, Clone, Copy)]
 pub struct Showing<'a> {
-    /// The floor of the building it shows.
-    pub floor: crate::floor::FloorMeta,
+    /// What the host decides about how it reads.
+    pub conditions: crate::floor::Conditions,
     /// The wall-clock instant: the sky, the room's light, the board's flap.
     pub now: std::time::SystemTime,
     /// The wall board, the classic painter's
@@ -245,33 +245,32 @@ pub(crate) fn compose<'a>(
     frame: &SimFrame,
     office: Office<'a>,
     Showing {
-        floor,
+        conditions,
         now,
         board,
         dim,
     }: Showing<'_>,
     caches: (&mut LightCache, &mut crate::outside::OutsideCache),
 ) -> DisplayList<'a> {
-    let timing = floor.motion.timing(now);
+    let timing = conditions.motion.timing(now);
     let moment = Moment::resolve(
-        crate::sky::Sky::at(timing, floor.weather),
+        crate::sky::Sky::at(timing, conditions.weather),
         office.theme,
-        floor.altitude,
+        frame.floor_place.altitude(),
         timing,
     );
-    let mut list = compose_at(frame, office, &moment, floor, board, caches);
+    let mut list = compose_at(frame, office, &moment, board, caches);
     list.dim = dim;
     list
 }
 
-/// Compose `frame`'s [`DisplayList`] at `moment`, on `floor`. Every
+/// Compose `frame`'s [`DisplayList`] at `moment`. Every
 /// figure, window view and light is resolved here, so painting the list reads
 /// neither `frame` nor the moment again.
 pub(crate) fn compose_at<'a>(
     frame: &SimFrame,
     office: Office<'a>,
     moment: &Moment,
-    floor: crate::floor::FloorMeta,
     board: &crate::neon_sign::BoardModel,
     (lights_cache, outside): (&mut LightCache, &mut crate::outside::OutsideCache),
 ) -> DisplayList<'a> {
@@ -280,7 +279,7 @@ pub(crate) fn compose_at<'a>(
     } = office;
     let ambient = crate::display::light::Ambient::of(&moment.look);
     let (mut collected, mut host_text) = collect_pieces(frame, office, moment, outside);
-    host_text.signs = TextRun::signs(board, office.layout, floor, theme);
+    host_text.signs = TextRun::signs(board, office.layout, frame.floor_place, theme);
     collected.extend(signs(office, &host_text.signs));
     let sorted = depth_sort(
         collected
@@ -298,13 +297,7 @@ pub(crate) fn compose_at<'a>(
         })
         .collect();
     DisplayList {
-        lights: lights(
-            frame,
-            office,
-            moment,
-            (floor.floor_idx, ambient),
-            lights_cache,
-        ),
+        lights: lights(frame, office, moment, ambient, lights_cache),
         ambient,
         carpet: moment.look.carpet(theme),
         flash: crate::display::light::Flash::of(&moment.sky),
@@ -422,7 +415,7 @@ fn lights(
     frame: &SimFrame,
     office: Office<'_>,
     moment: &Moment,
-    (floor_idx, ambient): (usize, crate::display::light::Ambient),
+    ambient: crate::display::light::Ambient,
     cache: &mut LightCache,
 ) -> Vec<LightPiece> {
     let Office {
@@ -437,7 +430,6 @@ fn lights(
         &crate::lighting::LightInputs {
             agents: &frame.agents,
             seated: &frame.seated_agents,
-            floor_idx,
             indoor_scale: frame.indoor_scale,
             neon: frame.neon,
             beat: moment.timing.beat,

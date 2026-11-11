@@ -78,16 +78,11 @@ jobs:
             os: macos-latest
           - target: x86_64-apple-darwin
             os: macos-latest
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            cross: true
-          # aarch64 cross-links on the same x64 runner (VC ARM64 components preinstalled).
           # `windows-latest` is validated only at TAG time (release.yml doesn't run on
           # PRs) — re-pin to a dated label if a runner-image bump regresses it.
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+          # Cross-links on the same x64 runner (VC ARM64 components preinstalled).
           - target: aarch64-pc-windows-msvc
             os: windows-latest
     steps:
@@ -101,19 +96,8 @@ jobs:
 
       - uses: ./.github/actions/setup-tools
 
-      - name: Install cross
-        if: matrix.cross
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: cross
-
-      - if: contains(matrix.target, 'musl')
-        uses: ./.github/actions/apt-install
-        with:
-          packages: musl-tools
-
       - name: Build
-        run: just build-target ${{ matrix.target }} "${{ matrix.cross || 'false' }}"
+        run: just build-target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
@@ -147,55 +131,9 @@ jobs:
             *.zip
           if-no-files-found: error
 
-  deb:
-    name: deb (${{ matrix.target }})
-    needs: ci-passed
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-          - target: aarch64-unknown-linux-gnu
-            cross: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: pixtuoid/.github/.github/actions/setup-rust@main
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: ./.github/actions/setup-tools
-
-      - name: Install cross
-        if: matrix.cross
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: cross
-
-      - name: Install cargo-deb
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: cargo-deb
-
-      - name: Build
-        run: just build-target ${{ matrix.target }} "${{ matrix.cross || 'false' }}"
-
-      - name: Build .deb packages
-        run: just deb ${{ matrix.target }}
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: deb-${{ matrix.target }}
-          path: target/${{ matrix.target }}/debian/*.deb
-          if-no-files-found: error
-
   release:
     name: release
-    needs: [build, deb]
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -217,7 +155,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum -- *.tar.gz *.deb *.zip > sha256sums.txt
+          sha256sum -- *.tar.gz *.zip > sha256sums.txt
 
       # Before the release goes public, so a failed attestation leaves a draft,
       # never a published release without provenance.
@@ -227,7 +165,6 @@ jobs:
         with:
           subject-path: |
             artifacts/*.tar.gz
-            artifacts/*.deb
             artifacts/*.zip
 
       # Lets a download be verified offline (`gh attestation verify --bundle`);
@@ -253,7 +190,6 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             artifacts/*.tar.gz
-            artifacts/*.deb
             artifacts/*.zip
             artifacts/sha256sums.txt
             artifacts/*.intoto.jsonl
@@ -263,7 +199,7 @@ jobs:
     # The full build matrix gates this one: an npm publish is irreversible (no
     # unpublish after 72h) and its packages ARE those binaries, so a target that
     # fails to build must not reach the registry as a missing optional dep.
-    needs: [build, deb]
+    needs: build
     # Never publish a pre-release to npm — tester tags build artifacts only.
     if: ${{ !contains(github.ref_name, '-') }}
     # Its required reviewer is the publish approval, and the npm Trusted

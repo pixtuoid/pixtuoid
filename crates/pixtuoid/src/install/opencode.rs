@@ -73,8 +73,21 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
 /// file — keying on our own artifact would chicken-and-egg (opencode could never
 /// be auto-detected until AFTER we'd installed into it).
 pub(crate) fn detect_installed() -> bool {
-    opencode_config_dir().map(|d| d.exists()).unwrap_or(false)
-        || io::home_relative(".local/share/opencode").exists()
+    use pixtuoid_core::platform::{path_env, user_home_opt};
+    opencode_config_dir().is_ok_and(|d| d.exists())
+        || data_dir_from(
+            path_env("XDG_DATA_HOME").as_deref(),
+            user_home_opt().as_deref(),
+        )
+        .is_some_and(|d| d.exists())
+}
+
+/// opencode's data dir, its `roots("opencode").data` (`packages/util/src/global-roots.ts:5`,
+/// `:13` @ v2.2.6): `$XDG_DATA_HOME/opencode`, else `<home>/.local/share/opencode`.
+fn data_dir_from(xdg: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
+    xdg.map(Path::to_path_buf)
+        .or_else(|| home.map(|h| h.join(".local").join("share")))
+        .map(|d| d.join("opencode"))
 }
 
 /// The plugin spawns the shim by embedded path (no PATH reliance), so
@@ -288,6 +301,30 @@ mod tests {
         // (`platform::path_env`), which is where that policy now lives.
         // No home anywhere → a hard error (never a CWD-relative file).
         assert!(config_dir_from(None, None, None).is_err());
+    }
+
+    #[test]
+    fn detection_also_finds_the_data_dir_wherever_xdg_puts_it() {
+        let root = tempfile::tempdir().unwrap();
+        let (absent, xdg) = (root.path().join("absent"), root.path().join("xdg"));
+        temp_env::with_vars(
+            [
+                ("OPENCODE_CONFIG_DIR", Some(absent.as_path())),
+                ("HOME", Some(root.path())),
+                ("USERPROFILE", Some(root.path())),
+                ("XDG_DATA_HOME", None),
+            ],
+            || {
+                assert!(!detect_installed());
+                std::fs::create_dir_all(root.path().join(".local/share/opencode")).unwrap();
+                assert!(detect_installed());
+                temp_env::with_var("XDG_DATA_HOME", Some(&xdg), || {
+                    assert!(!detect_installed(), "XDG_DATA_HOME replaces the home arm");
+                    std::fs::create_dir_all(xdg.join("opencode")).unwrap();
+                    assert!(detect_installed());
+                });
+            },
+        );
     }
 
     #[test]

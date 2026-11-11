@@ -25,9 +25,10 @@ pub const HOOK_WINS_WINDOW: Duration = Duration::from_millis(500);
 /// [`ChildEnd::Reported`] end, are refused (#242, either transport), and how long a top-level life a hook
 /// ended revives only on a hook start. Hook connections are per-connection
 /// spawned tasks, so a session's SessionEnd and a trailing TurnEnd/ToolUseEnd can
-/// be DELIVERED reordered, and the straggler would otherwise synthesize a blank
-/// Idle ghost with NO SessionEnd left to remove it. The window covers same-machine
-/// scheduling jitter while never visibly delaying a genuine revival.
+/// be DELIVERED reordered, and the straggler's `Identity` would otherwise
+/// re-register the ended session with NO SessionEnd left to remove it. The
+/// window covers same-machine scheduling jitter while never visibly delaying a
+/// genuine revival.
 #[doc(hidden)]
 pub const STRAGGLER_TTL: Duration = Duration::from_secs(5);
 

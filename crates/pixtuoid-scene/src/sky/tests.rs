@@ -441,7 +441,7 @@ fn solar_noon_outshines_the_brightest_night() {
                 .partial_cmp(&moon_phase_at(on_day(b, 2)))
                 .expect("moon_phase is never NaN")
         })
-        .expect("January has days");
+        .expect("the range has days");
     // The night's brightest ten-minute mark, since the moon's apex moves with
     // its age.
     let night = (0..9 * 6u64)
@@ -1080,7 +1080,7 @@ fn nightfall_begins_when_nightfall_on_says() {
 /// calendar-to-sky path (painter tests inject bursts with
 /// [`Sky::with_bursts`]): on a moving tier they fire and never flash past
 /// WCAG's three a second, the midnight finale included, which holds more
-/// bursts at once than the rest of that night; Calm holds each phase a Calm
+/// bursts at once than the all-night lanes do; Calm holds each phase a Calm
 /// tick; at rest, and on the night before, none fire.
 #[test]
 fn new_years_eve_bursts_through_the_sky_on_every_tier() {
@@ -1125,20 +1125,46 @@ fn new_years_eve_bursts_through_the_sky_on_every_tier() {
         let fired = night.iter().any(|(_, b)| b.iter().any(Option::is_some));
         assert_eq!(fired, motion != Motion::Still, "{motion:?}");
         floor(&night);
-        let midnight = bursts(at(31, 23, 59), 2 * MINUTE_MS);
-        floor(&midnight);
-        let most = |finale: bool| {
-            midnight
-                .iter()
-                .filter(|(now, _)| crate::holiday::finale_at(*now) == finale)
-                .map(|(_, b)| b.iter().flatten().count())
-                .max()
-                .unwrap_or(0)
+        // A burst the finale set off is the finale's while it burns, though the
+        // finale has ended: `bursts_at` fires a lane by its burst's start.
+        let from_finale = |now: SystemTime, b: &[Option<fireworks::Burst>; fireworks::LANES]| {
+            let all_night =
+                fireworks::bursts_at(motion.timing(now).beat, &[fireworks::Hue::Gold], |_| false);
+            b.iter()
+                .zip(all_night)
+                .any(|(b, a)| b.is_some() && a.is_none())
         };
-        if motion != Motion::Still {
+        assert!(
+            night.iter().all(|(now, b)| !from_finale(*now, b)),
+            "{motion:?}: before the finale, only the all-night lanes fire"
+        );
+        // a century of midnights, each laying the lanes' buckets anew
+        for year in 2026..2126 {
+            if motion == Motion::Still {
+                break;
+            }
+            let date = chrono::NaiveDate::from_ymd_opt(year, 12, 31).expect("a date");
+            let eve = crate::localclock::local_instant(date, 23, 59).expect("a local time");
+            let midnight = bursts(eve, 2 * MINUTE_MS);
+            floor(&midnight);
+            let most = |finale: bool| {
+                midnight
+                    .iter()
+                    .filter(|(now, b)| {
+                        let during = crate::holiday::finale_at(*now);
+                        if finale {
+                            during
+                        } else {
+                            !during && !from_finale(*now, b)
+                        }
+                    })
+                    .map(|(_, b)| b.iter().flatten().count())
+                    .max()
+                    .unwrap_or(0)
+            };
             assert!(
                 most(true) > most(false),
-                "{motion:?}: the finale fills the sky"
+                "{motion:?}, {year}: the finale fills the sky"
             );
         }
         assert!(

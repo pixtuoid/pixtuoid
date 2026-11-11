@@ -1,5 +1,5 @@
 use pixtuoid_core::SceneState;
-use pixtuoid_scene::footer::{FooterContext, FooterFloor, FooterInputs, build_footer};
+use pixtuoid_scene::footer::{FooterContext, FooterInputs, build_footer};
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Span;
@@ -11,16 +11,14 @@ const KEYS_STATS: &str = " [?]help [p]ause [t]heme [q]uit ";
 const KEYS_ALERT: &str = " [q]uit ";
 
 /// [`FooterContext::new`] with the TUI's keybind tails.
-pub fn footer_context<'a>(
+pub(crate) fn footer_context<'a>(
     office: &SceneState,
-    floor: Option<FooterFloor>,
     audio_audible: bool,
     volume_flash: Option<u8>,
     warning: Option<&'a str>,
 ) -> FooterContext<'a> {
     FooterContext::new(
         office,
-        floor,
         audio_audible,
         volume_flash,
         warning,
@@ -75,7 +73,7 @@ pub(crate) fn build_status_summary(inputs: &FooterInputs<'_>, term_width: u16) -
 mod tests {
     use super::*;
     use pixtuoid_core::state::{ActivityState, ToolUse};
-    use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
+    use pixtuoid_core::{AgentId, AgentSlot, FloorDesk};
     use pixtuoid_scene::footer::{FooterTone, RungKind};
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -102,8 +100,7 @@ mod tests {
             arrived_at: Some(SystemTime::UNIX_EPOCH),
             last_event_at: SystemTime::UNIX_EPOCH,
             exiting_at: None,
-            desk_index: GlobalDeskIndex(0),
-            floor_idx: 0,
+            desk: Some(FloorDesk::new(0, 0)),
             tool_call_count: 0,
             running_ms: 0,
             unknown_cwd: false,
@@ -116,7 +113,10 @@ mod tests {
         };
         let mut scene = SceneState::uniform(16);
         scene.agents.insert(slot.agent_id, slot);
-        let inputs = FooterInputs::new(&scene, footer_context(&scene, None, false, None, None));
+        let inputs = FooterInputs::new(
+            &pixtuoid_scene::floor::project_floor_scene(&scene, 0),
+            footer_context(&scene, false, None, None),
+        );
         let spans = build_status_spans(&inputs, 200, theme);
         let running_rgb = FooterTone::Rung(RungKind::Running).rgb(theme);
         let rung = spans

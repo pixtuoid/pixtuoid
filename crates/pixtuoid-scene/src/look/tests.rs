@@ -3,11 +3,11 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use pixtuoid_core::state::{ActivityState, GlobalDeskIndex};
+use pixtuoid_core::state::{ActivityState, FloorDesk};
 use pixtuoid_core::{AgentId, AgentSlot, SceneState};
 
 use super::*;
-use crate::floor::{FloorMeta, PerOffice, PetInputs};
+use crate::floor::{Conditions, PerOffice, PetInputs};
 use crate::layout::Size;
 
 const SIZE: Size = Size { w: 192, h: 160 };
@@ -37,7 +37,7 @@ fn office(t0: SystemTime) -> SceneState {
                 created_at: started,
                 arrived_at: Some(started),
                 last_event_at: started,
-                desk_index: GlobalDeskIndex(i),
+                desk: Some(FloorDesk::new(0, i)),
                 ..make_slot(id, ActivityState::Idle)
             },
         );
@@ -45,17 +45,17 @@ fn office(t0: SystemTime) -> SceneState {
     scene
 }
 
-fn inputs(scene: &SceneState, now: SystemTime) -> RenderInputs<'_> {
+fn inputs(scene: &crate::floor::FloorScene, now: SystemTime) -> RenderInputs<'_> {
     RenderInputs {
         world: FloorInputs {
             scene,
             now,
-            floor: FloorMeta::ground(),
+            conditions: Conditions::default(),
             pets: PetInputs::default(),
         },
         theme: theme(),
         viewport: VIEWPORT,
-        place: Place::default(),
+        gateway: None,
         debug_walkable: false,
         dim: crate::look::Dim::NONE,
     }
@@ -148,8 +148,9 @@ fn no_figure_is_drawn_under_an_inset() {
             left: 5,
         },
     };
+    let floor_scene = crate::floor::project_floor_scene(&scene, 0);
     let at = |now| {
-        let bare = inputs(&scene, now);
+        let bare = inputs(&floor_scene, now);
         RenderInputs {
             world: FloorInputs {
                 pets: PetInputs {
@@ -159,10 +160,7 @@ fn no_figure_is_drawn_under_an_inset() {
                 ..bare.world
             },
             viewport,
-            place: Place {
-                gateway: crate::tally::office_gateway(&scene),
-                floor: None,
-            },
+            gateway: crate::tally::office_gateway(&scene),
             ..bare
         }
     };
@@ -306,7 +304,7 @@ fn no_text_is_set_under_an_inset() {
                     look,
                     RenderInputs {
                         viewport,
-                        ..inputs(&scene, now)
+                        ..inputs(&crate::floor::project_floor_scene(&scene, 0), now)
                     },
                 ),
                 crate::interact::Figure::Agent(held),
@@ -463,8 +461,13 @@ fn each_drawn_agent_names_the_plate_its_badge_is_drawn_on() {
                     let look = look(scale, text);
                     let (mut floor, mut office) =
                         (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
-                    let rendered = render(&mut floor, office.stores(), look, inputs(&scene, now))
-                        .expect("lays out");
+                    let rendered = render(
+                        &mut floor,
+                        office.stores(),
+                        look,
+                        inputs(&crate::floor::project_floor_scene(&scene, 0), now),
+                    )
+                    .expect("lays out");
                     assert_eq!(rendered.hits.badge(&absent), None, "{look:?}");
                     (look, rendered.hits)
                 });
@@ -538,7 +541,10 @@ fn a_carried_agents_badge_is_cut_as_its_painter_cuts_it() {
                 look,
                 RenderInputs {
                     viewport,
-                    ..inputs(&scene, t0 + Duration::from_secs(600))
+                    ..inputs(
+                        &crate::floor::project_floor_scene(&scene, 0),
+                        t0 + Duration::from_secs(600),
+                    )
                 },
             ),
             crate::interact::Figure::Agent(held),
@@ -585,7 +591,7 @@ fn the_entry_runs_the_epilogue_every_frame() {
             &mut floor,
             office.stores(),
             Look::HALF_BLOCKS,
-            inputs(&scene, now),
+            inputs(&crate::floor::project_floor_scene(&scene, 0), now),
         )
         .expect("lays out");
         for (id, at) in office.coffee.map() {
@@ -635,7 +641,10 @@ fn a_floor_switching_looks_repaints_whole_and_keeps_each_raster() {
             floor,
             office.stores(),
             look,
-            inputs(&scene, t0 + Duration::from_millis(ms)),
+            inputs(
+                &crate::floor::project_floor_scene(&scene, 0),
+                t0 + Duration::from_millis(ms),
+            ),
         )
         .expect("lays out");
         let px = floor.raster.pixels().expect("drawn");
@@ -682,7 +691,13 @@ fn a_cutaway_leaving_its_text_to_the_host_hands_over_the_classics() {
             scale: RenderScale::new(4).expect("nonzero"),
             text,
         };
-        render(&mut floor, office.stores(), look, inputs(&scene, t0)).expect("lays out");
+        render(
+            &mut floor,
+            office.stores(),
+            look,
+            inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
+        )
+        .expect("lays out");
         let pixels = floor.raster.pixels().expect("drawn").clone();
         (floor, pixels)
     };
@@ -701,7 +716,7 @@ fn a_cutaway_leaving_its_text_to_the_host_hands_over_the_classics() {
         &mut classic,
         office.stores(),
         Look::HALF_BLOCKS,
-        inputs(&scene, t0),
+        inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
     )
     .expect("lays out");
     let classic = classic.raster.host_text().expect("shown");
@@ -728,7 +743,13 @@ fn the_cutaways_figures_leave_with_their_agents() {
         scale: RenderScale::new(4).expect("nonzero"),
         text: WorldText::Baked,
     };
-    render(&mut floor, office.stores(), cutaway, inputs(&scene, t0)).expect("lays out");
+    render(
+        &mut floor,
+        office.stores(),
+        cutaway,
+        inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
+    )
+    .expect("lays out");
     assert!(
         office.raster.cutaway.figures_len() > 0,
         "premise: the frame drew its agents"
@@ -752,7 +773,7 @@ fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
         &mut floor,
         office.stores(),
         Look::HALF_BLOCKS,
-        inputs(&scene, t0),
+        inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
     )
     .expect("lays out");
     let text = floor.raster.host_text().expect("shown");
@@ -766,9 +787,10 @@ fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
         !signs.iter().any(|r| matches!(r, TextRole::Badge(_))),
         "{signs:?}"
     );
+    let floor_scene = crate::floor::project_floor_scene(&scene, 0);
     let refused = RenderInputs {
         viewport: Viewport::full(1, 1),
-        ..inputs(&scene, t0)
+        ..inputs(&floor_scene, t0)
     };
     assert!(render(&mut floor, office.stores(), Look::HALF_BLOCKS, refused).is_none());
     let text = floor.raster.host_text().expect("shown");
@@ -894,8 +916,13 @@ fn a_scaled_classic_shown_under_its_dirt_is_each_whole_frame() {
     for step in 0..300u64 {
         let now = t0 + Duration::from_millis(step * 100);
         let look = scaled(scale, WorldText::Baked);
-        let rendered =
-            render(&mut floor, office.stores(), look, inputs(&scene, now)).expect("lays out");
+        let rendered = render(
+            &mut floor,
+            office.stores(),
+            look,
+            inputs(&crate::floor::project_floor_scene(&scene, 0), now),
+        )
+        .expect("lays out");
         let pixels = floor.raster.pixels().expect("a frame");
         match (&rendered.dirty, &mut screen) {
             (Dirty::Rects(rects), Some(shown)) => {
@@ -931,9 +958,14 @@ fn a_change_of_look_repaints_the_scaled_classic_whole() {
     let (mut floor, mut office) = (PerFloor::new(pack), PerOffice::new());
     let double = RenderScale::new(scale.get() * 2).expect("a scale");
     let mut dirty = |look: Look| {
-        render(&mut floor, office.stores(), look, inputs(&scene, t0))
-            .expect("lays out")
-            .dirty
+        render(
+            &mut floor,
+            office.stores(),
+            look,
+            inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
+        )
+        .expect("lays out")
+        .dirty
     };
     let baked = scaled(scale, WorldText::Baked);
     assert_eq!(dirty(baked), Dirty::All, "the first frame");
@@ -961,7 +993,13 @@ fn the_scaled_classic_is_the_half_blocks_blown_up() {
     let scene = office(t0);
     let frame = |look: Look| {
         let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
-        render(&mut floor, office.stores(), look, inputs(&scene, t0)).expect("lays out");
+        render(
+            &mut floor,
+            office.stores(),
+            look,
+            inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
+        )
+        .expect("lays out");
         let text = floor.raster.host_text().map(|t| t.badges.len());
         (floor.raster.pixels().expect("a frame").clone(), text)
     };
@@ -992,7 +1030,13 @@ fn the_baked_classic_upscales_whole() {
     let frame = |scale| {
         let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
         let look = scaled(scale, WorldText::Baked);
-        render(&mut floor, office.stores(), look, inputs(&scene, t0)).expect("lays out");
+        render(
+            &mut floor,
+            office.stores(),
+            look,
+            inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
+        )
+        .expect("lays out");
         floor.raster.pixels().expect("a frame").clone()
     };
     let k = 2;
@@ -1024,7 +1068,7 @@ fn baked_classic_text_is_the_cutaways_paint_of_its_runs() {
             &mut floor,
             office.stores(),
             scaled(scale, text),
-            inputs(&scene, t0),
+            inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
         )
         .expect("lays out");
         floor
@@ -1063,8 +1107,13 @@ fn the_baked_classic_sets_the_star_the_cutaway_does() {
     let scene = office(t0);
     let star = |look: Look| {
         let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
-        let rendered =
-            render(&mut floor, office.stores(), look, inputs(&scene, t0)).expect("lays out");
+        let rendered = render(
+            &mut floor,
+            office.stores(),
+            look,
+            inputs(&crate::floor::project_floor_scene(&scene, 0), t0),
+        )
+        .expect("lays out");
         let star = floor.raster.star();
         if let Some(star) = star {
             assert!(matches!(
@@ -1148,7 +1197,7 @@ fn a_look_hiding_its_text_draws_none_of_it() {
                 &mut floor,
                 office.stores(),
                 Look::HALF_BLOCKS,
-                inputs(&scene, now),
+                inputs(&crate::floor::project_floor_scene(&scene, 0), now),
             )
             .expect("lays out");
             (floor.raster.host_text()).is_some_and(|text| !text.bubbles.is_empty())
@@ -1166,7 +1215,7 @@ fn a_look_hiding_its_text_draws_none_of_it() {
                 &mut floor,
                 office.stores(),
                 look(scale, text),
-                inputs(&scene, now),
+                inputs(&crate::floor::project_floor_scene(&scene, 0), now),
             )
             .expect("lays out");
             let runs: Option<Vec<TextRun>> = floor.raster.host_text().map(|text| {
@@ -1222,11 +1271,12 @@ fn a_dim_darkens_the_baked_classic_after_its_text() {
     let scene = office(t0);
     let look = scaled(scale, WorldText::Baked);
     let dim = Dim::from_brightness(0.5);
+    let floor_scene = crate::floor::project_floor_scene(&scene, 0);
     let frame = |dim: Dim| {
         let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
         let inputs = RenderInputs {
             dim,
-            ..inputs(&scene, t0)
+            ..inputs(&floor_scene, t0)
         };
         render(&mut floor, office.stores(), look, inputs).expect("lays out");
         floor.raster.pixels().expect("a frame").clone()
@@ -1245,10 +1295,11 @@ fn a_scaled_classic_changed_all_over_repaints_whole() {
     let scene = office(t0);
     let (mut floor, mut office) = (PerFloor::new(pack), PerOffice::new());
     let look = scaled(scale, WorldText::Baked);
+    let floor_scene = crate::floor::project_floor_scene(&scene, 0);
     let mut dirty = |dim: Dim| {
         let inputs = RenderInputs {
             dim,
-            ..inputs(&scene, t0)
+            ..inputs(&floor_scene, t0)
         };
         render(&mut floor, office.stores(), look, inputs)
             .expect("lays out")
@@ -1296,8 +1347,13 @@ fn a_frame_hovers_its_plants_as_the_occasion_draws_them() {
         scale: density,
         text: WorldText::Baked,
     };
-    let rendered =
-        render(&mut floor, office.stores(), look, inputs(&scene, now)).expect("lays out");
+    let rendered = render(
+        &mut floor,
+        office.stores(),
+        look,
+        inputs(&crate::floor::project_floor_scene(&scene, 0), now),
+    )
+    .expect("lays out");
     let occasion = crate::holiday::Occasion::at(now);
     let mut stood_in = 0;
     for f in rendered.hits.layout().fixtures() {

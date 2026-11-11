@@ -8,9 +8,10 @@ use tracing::debug;
 
 use crate::AgentId;
 use crate::source::exit_watch::ExitWatch;
+use crate::source::first_sight::Life;
 use crate::source::{AgentEvent, TaggedSender, Transport, fd_probe};
 
-use super::walk::{check_session_ended, park_if_truncated_below_cursor, walk_jsonl};
+use super::walk::{TAIL_BYTES, park_if_truncated_below_cursor, tail_life, walk_jsonl};
 use super::{SourceDecoders, WatchCtx};
 
 /// One healthy liveness-probe observation: which agent processes are verified
@@ -458,8 +459,10 @@ pub(super) async fn revouch_gated_files(decoders: SourceDecoders, ctx: &WatchCtx
             continue;
         }
         // Last, so the bounded tail read costs only the vouched candidates. An
-        // ENDED one is refused here — resetting undoes the terminator gate.
-        if check_session_ended(&path, decoders.check_ended).await {
+        // ENDED one is refused here — resetting undoes the terminator gate — and
+        // stays unseen, not `Sight::Ended`: an ended mark would keep a resume
+        // whose first append shows no life from ever registering.
+        if tail_life(&path, TAIL_BYTES, ctx.source, decoders).await == Some(Life::Ended) {
             continue;
         }
         ctx.cursors.lock().await.insert(path, 0);

@@ -740,8 +740,8 @@ async fn codex_permission_hermetic_fixture_drives_the_reducer_through_its_turn()
 
     // `codex_id_from_path` keys on the filename's trailing UUID, so the replay
     // name (not the fixture's own) is what identifies the session.
-    let recorded = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/sources/codex/fixtures/permission-hermetic");
+    let recorded =
+        pixtuoid_core::harness::sources_root().join("codex/fixtures/permission-hermetic");
     let fixture = pixtuoid_core::harness::transcript_in("codex", &recorded)
         .unwrap_or_else(|found| panic!("one recorded rollout, found {found:?}"));
     let body = std::fs::read_to_string(&fixture).expect("committed permission-hermetic fixture");
@@ -760,9 +760,6 @@ async fn codex_permission_hermetic_fixture_drives_the_reducer_through_its_turn()
     // events arrive in file order without a flaky per-line sleep.
     tokio::fs::write(&transcript, &body).await.unwrap();
 
-    // `SceneState::uniform` — NOT `default()`, whose all-zero floor_capacities
-    // make `total_capacity()` 0 so `register_slot` refuses every SessionStart
-    // and the scene stays silently empty.
     let mut scene = SceneState::uniform(8);
     let mut reducer = Reducer::new();
     let mut states: Vec<ActivityState> = Vec::new();

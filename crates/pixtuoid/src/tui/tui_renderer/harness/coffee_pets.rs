@@ -23,7 +23,7 @@ fn coffee_state_is_evicted_during_a_floor_transition() {
     let cap = 16;
     let a = AgentId::from_transcript_path("/cof/slide0.jsonl");
     let b = AgentId::from_transcript_path("/cof/slide1.jsonl");
-    let scene = scene_with(vec![slot(a, 0, 0, t0()), slot(b, 1, cap, t0())], cap);
+    let scene = scene_with(vec![slot(a, 0, 0, t0()), slot(b, 1, 0, t0())], cap);
     let mut r = build(100, 40, vec![]);
     r.inject_coffee(a, t0());
     let mut now = t0();
@@ -33,7 +33,7 @@ fn coffee_state_is_evicted_during_a_floor_transition() {
 
     now += PAINT_FRAME;
     r.navigate_floor(1, now);
-    let gone = scene_with(vec![slot(b, 1, cap, t0())], cap);
+    let gone = scene_with(vec![slot(b, 1, 0, t0())], cap);
     now += PAINT_FRAME;
     r.evict_missing(&gone);
     r.render(&gone, now).expect("render");
@@ -189,21 +189,28 @@ fn pet_position_varies_over_its_roam() {
     );
 }
 
+/// A pet petted through the renderer sits where it stands: on an idle floor,
+/// where an unpetted one walks or sleeps.
 #[test]
 fn petting_freezes_pet_position() {
-    let scene = scene_with(vec![running("/pet/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(
+        vec![idle("/pet/0.jsonl", 0, t0() - Duration::from_secs(120))],
+        16,
+    );
     let mut r = build(100, 40, vec![PetKind::Cat]);
     r.render(&scene, t0()).unwrap();
     let PetHover {
-        centre: pos, kind, ..
-    } = r.drawn_pet().expect("pet placed");
-    r.set_active_pet(Some(PetState {
-        petted_at: t0(),
+        centre: pos,
         kind,
-        floor_idx: 0,
-    }));
+        anim,
+    } = r.drawn_pet().expect("pet placed");
+    assert_ne!(anim, kind.sit_anim(), "premise: an unpetted pet sits");
+    r.pet(kind, t0());
     r.render(&scene, t0() + Duration::from_millis(500)).unwrap();
-    let PetHover { centre: pos2, .. } = r.drawn_pet().expect("pet still placed");
+    let PetHover {
+        centre: pos2, anim, ..
+    } = r.drawn_pet().expect("pet still placed");
+    assert_eq!(anim, kind.sit_anim(), "a petted pet sits");
     assert_eq!(pos, pos2, "a petted pet holds its position");
 }
 
@@ -297,11 +304,7 @@ fn pet_tooltip_shows_cooldown_reaction_for_cat_and_dog() {
         let mut r = build(140, 48, vec![kind]);
         r.render(&scene, t0()).unwrap();
         let PetHover { centre: pos, .. } = r.drawn_pet().expect("pet placed");
-        r.set_active_pet(Some(PetState {
-            petted_at: t0(),
-            kind,
-            floor_idx: 0,
-        }));
+        r.pet(kind, t0());
         r.set_mouse_pos(Some((pos.x, pos.y / 2)));
         r.render(&scene, t0() + Duration::from_millis(200)).unwrap();
         let text = frame_text(r.frame_buffer());

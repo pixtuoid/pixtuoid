@@ -142,31 +142,32 @@ impl<'a> Namesakes<'a> {
 
 /// Each floor's [`Namesakes`], counted over the agents that floor draws, so a
 /// list of a whole multi-floor office names each agent as its floor's badges
-/// do.
+/// do; the unseated, on no floor, are counted as a group of their own.
 #[derive(Debug)]
-pub struct FloorNamesakes<'a>(Vec<Namesakes<'a>>);
+pub struct FloorNamesakes<'a> {
+    floors: Vec<Namesakes<'a>>,
+    unseated: Namesakes<'a>,
+}
 
 impl<'a> FloorNamesakes<'a> {
-    /// The floors of `scene`, the whole office: a floor's
-    /// [projection](crate::floor::project_floor_scene) re-hosts its desks, so
-    /// it reads as no floor's.
+    /// The floors of `scene`, the whole office.
     pub fn of(scene: &'a SceneState) -> Self {
-        let floors = 0..scene.floor_capacities.len();
-        Self(
-            floors
+        let floors = 0..pixtuoid_core::state::MAX_FLOORS;
+        Self {
+            floors: floors
                 .map(|floor| Namesakes::of(crate::floor::floor_agents(scene, floor)))
                 .collect(),
-        )
+            unseated: Namesakes::of(scene.agents.values().filter(|a| a.desk.is_none())),
+        }
     }
 
-    /// `agent`'s name as its floor's badges read it; an agent no floor draws
-    /// is counted on none.
+    /// `agent`'s name as its floor's badges read it, or among the unseated.
     pub fn nameplate(&self, agent: &AgentSlot) -> Nameplate {
-        let shared = self
-            .0
-            .get(agent.floor_idx)
-            .is_some_and(|floor| floor.shares(agent));
-        Nameplate::of(agent, shared)
+        let counted = match agent.desk {
+            Some(desk) => self.floors.get(desk.floor),
+            None => Some(&self.unseated),
+        };
+        Nameplate::of(agent, counted.is_some_and(|group| group.shares(agent)))
     }
 }
 
@@ -202,7 +203,9 @@ mod tests {
         let label = "cc\u{b7}a-very-long-project-name";
         let a = agent(label, "a");
         let mut b = agent(label, "b");
-        b.floor_idx = a.floor_idx + 1;
+        b.desk = a
+            .desk
+            .map(|desk| pixtuoid_core::state::FloorDesk::new(desk.floor + 1, desk.index.0));
         let all = [a.clone(), b.clone()];
         let namesakes = Namesakes::of(&all);
         let want_a = format!("{label}{}", Suffix::of(a.agent_id).tail());

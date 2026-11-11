@@ -147,7 +147,7 @@ pub(crate) fn character_top_left(
     now: SystemTime,
     rctx: &mut pose::RouteCtx<'_>,
 ) -> Option<Point> {
-    let desk = layout.home_desk(agent.desk_index.single_floor_local())?;
+    let desk = layout.home_desk_of(agent)?;
     use crate::pose::Pose;
     let pose = pose::derive_with_routing(agent, now, layout, rctx)?;
     let w = CHARACTER_SPRITE_W;

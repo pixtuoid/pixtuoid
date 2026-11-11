@@ -18,10 +18,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use pixtuoid_core::harness::Drive;
+use pixtuoid_core::harness::{Drive, Fold};
 use pixtuoid_core::source::decoder::TailActivity;
 use pixtuoid_core::source::registry;
-use pixtuoid_scene::floor::{FloorMeta, FloorSession};
+use pixtuoid_scene::floor::{Conditions, FloorSession};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pack::load_bundled_pack;
 
@@ -89,11 +89,12 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
     };
     v.newest_activity = newest_activity(source, &body);
 
-    let driven = Drive::transcript_at(source, path)
+    let drive = Drive::transcript_at(source, path)
         .expect("main admits only a transcript-bearing source")
-        .seeded()
-        .at(now())
-        .body(&body);
+        .seeded();
+    let mut fold = Fold::default();
+    fold.feed_body(&drive, &body, now());
+    let driven = fold.finish();
 
     v.lines = driven.lines;
     v.unparseable = driven.unparseable;
@@ -115,7 +116,7 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
             pixtuoid_scene::floor::FloorInputs {
                 scene: &driven.scene,
                 now: now(),
-                floor: FloorMeta::ground(),
+                conditions: Conditions::default(),
                 pets: pixtuoid_scene::floor::PetInputs::default(),
             },
             pixtuoid_scene::layout::Viewport::full(192, 80),

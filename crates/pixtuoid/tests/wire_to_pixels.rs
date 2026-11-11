@@ -12,8 +12,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::SceneState;
-use pixtuoid_core::harness::{DRIVEN_DESKS, Drive, Reach};
-use pixtuoid_core::source::daemon::apply_presence;
+use pixtuoid_core::harness::{DRIVEN_DESKS, Drive, Fold, Reach, sources_root};
 use pixtuoid_core::source::registry;
 use pixtuoid_scene::anim::PAINT_FRAME;
 use pixtuoid_scene::floor::VacancyDim;
@@ -28,16 +27,6 @@ use pixtuoid::dev::TuiRenderer;
 /// A fixed wall-clock so motion/animation is deterministic across runs.
 fn t0() -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800)
-}
-
-/// The core crate's source-test tree, so these tests decode the SAME captured
-/// wire bytes that crate pins, never a hand-rolled re-encoding.
-fn core_sources() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("pixtuoid-core")
-        .join("tests")
-        .join("sources")
 }
 
 fn read_nonblank_lines(path: &Path) -> Vec<String> {
@@ -106,15 +95,15 @@ enum Wire {
         seeded: bool,
     },
     /// The fixture is a `hook-payloads.jsonl`, driven through the shared
-    /// `decode_hook_payload` on `Transport::Hook`. Never seeded: a hook event
-    /// for an unknown session id REGISTERS it (hooks are proof of life).
+    /// `decode_hook_payload` on `Transport::Hook`. Never seeded: a hook that may
+    /// register carries its identity, and a seed would hide one that doesn't.
     Hooks,
 }
 
 struct WireCase {
     name: &'static str,
     source: &'static str,
-    /// Path to the fixture file, relative to `core_sources()`, or to a
+    /// Path to the fixture file, relative to `sources_root()`, or to a
     /// capture holding one transcript of `source`'s under a session id that
     /// each re-record changes.
     fixture: &'static str,
@@ -126,7 +115,7 @@ struct WireCase {
 }
 
 fn fixture_path(case: &WireCase) -> PathBuf {
-    let path = core_sources().join(case.fixture);
+    let path = sources_root().join(case.fixture);
     if !path.is_dir() {
         return path;
     }
@@ -138,7 +127,7 @@ fn assert_renders_a_sprite(case: &WireCase) {
     let path = fixture_path(case);
     let lines = read_nonblank_lines(&path);
 
-    let driven = match case.wire {
+    let drive = match case.wire {
         Wire::Transcript { seeded } => {
             let drive = Drive::transcript_at(case.source, &path).unwrap_or_else(|| {
                 panic!(
@@ -146,11 +135,13 @@ fn assert_renders_a_sprite(case: &WireCase) {
                     case.name, case.source
                 )
             });
-            let drive = if seeded { drive.seeded() } else { drive };
-            drive.at(t0()).lines(lines)
+            if seeded { drive.seeded() } else { drive }
         }
-        Wire::Hooks => Drive::hooks().at(t0()).lines(lines),
+        Wire::Hooks => Drive::hooks(),
     };
+    let mut fold = Fold::default();
+    fold.feed(&drive, lines, t0());
+    let driven = fold.finish();
 
     driven.assert_clean(case.name);
     assert!(
@@ -394,54 +385,53 @@ fn lobster_px(r: &mut TuiRenderer<TestBackend>, scene: &SceneState, times: &[Sys
         .count()
 }
 
-/// Drives one openclaw capture through the presence seam and hands back what the
-/// office would paint. `attach_after` starts the stream just past the first
+/// Drives one openclaw capture through the presence seam and hands back the
+/// office it leaves. `attach_after` starts the stream just past the first
 /// envelope of a type, where a listener that attached late picks it up;
 /// `stop_at` ends it before a type, as the lobster test does to stay inside the
 /// live window.
+fn openclaw_scene(scenario: &str, attach_after: Option<&str>, stop_at: &[&str]) -> SceneState {
+    let hooks = sources_root().join(format!("openclaw/fixtures/{scenario}/hook-payloads.jsonl"));
+    let lines = read_nonblank_lines(&hooks);
+    let type_of = |line: &String| {
+        let v: serde_json::Value = serde_json::from_str(line).expect("openclaw hook json");
+        v.get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_owned()
+    };
+    let from = attach_after.map_or(0, |after| {
+        1 + lines
+            .iter()
+            .position(|l| type_of(l) == after)
+            .unwrap_or_else(|| panic!("{scenario} has no {after}"))
+    });
+    let fed = lines[from..]
+        .iter()
+        .take_while(|l| !stop_at.contains(&type_of(l).as_str()));
+    let mut fold = Fold::default();
+    fold.feed(&Drive::hooks(), fed, t0());
+    let driven = fold.finish();
+    driven.assert_clean(scenario);
+    driven.scene
+}
+
+/// The openclaw gateway's presence in `scene`.
+fn openclaw_presence(scene: &SceneState) -> &pixtuoid_core::state::DaemonPresence {
+    let (_, _, presence) = scene
+        .daemons()
+        .find(|(source, _, _)| *source == pixtuoid_core::source::openclaw::SOURCE_NAME)
+        .expect("openclaw presence must be populated");
+    presence
+}
+
+/// What the office would paint of [`openclaw_scene`]'s gateway.
 fn openclaw_state(
     scenario: &str,
     attach_after: Option<&str>,
     stop_at: &[&str],
 ) -> pixtuoid_core::state::DaemonState {
-    let hooks = core_sources().join(format!("openclaw/fixtures/{scenario}/hook-payloads.jsonl"));
-    let mut scene = SceneState::uniform(16);
-    let now = t0();
-    let envelopes: Vec<serde_json::Value> = read_nonblank_lines(&hooks)
-        .iter()
-        .map(|line| serde_json::from_str(line).expect("openclaw hook json"))
-        .collect();
-    fn type_of(v: &serde_json::Value) -> &str {
-        v.get("type").and_then(|t| t.as_str()).unwrap_or("")
-    }
-    let from = attach_after.map_or(0, |after| {
-        1 + envelopes
-            .iter()
-            .position(|v| type_of(v) == after)
-            .unwrap_or_else(|| panic!("{scenario} has no {after}"))
-    });
-    for v in &envelopes[from..] {
-        let ty = type_of(v);
-        if stop_at.contains(&ty) {
-            break;
-        }
-        let decoded = pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(
-            v.as_object().expect("an object"),
-        )
-        .expect("decode_openclaw_hook_payload");
-        let key = pixtuoid_core::source::daemon::DaemonInstanceKey::new(
-            pixtuoid_core::source::openclaw::SOURCE_NAME,
-            decoded.instance.clone(),
-        );
-        for update in decoded.updates {
-            apply_presence(&mut scene, &key, update, now);
-        }
-    }
-    let (_, _, presence) = scene
-        .daemons()
-        .find(|(source, _, _)| *source == pixtuoid_core::source::openclaw::SOURCE_NAME)
-        .expect("openclaw presence must be populated");
-    presence.display_state()
+    openclaw_presence(&openclaw_scene(scenario, attach_after, stop_at)).display_state()
 }
 
 /// pixtuoid usually starts AFTER the gateway, so `gateway_start` is the one
@@ -482,42 +472,10 @@ fn a_failed_provider_degrades_the_gateway_rather_than_downing_it() {
 /// `runtime/driver.rs` uses — NEVER `Reducer::apply`, which is `AgentId`-pure.
 #[test]
 fn openclaw_presence_envelope_renders_a_lobster() {
-    let hooks = core_sources().join("openclaw/fixtures/tool-run-hermetic/hook-payloads.jsonl");
-
-    let lines = read_nonblank_lines(&hooks);
-    let mut scene = SceneState::uniform(16);
     let now = t0();
-    let mut applied = 0;
-    for line in &lines {
-        let v: serde_json::Value = serde_json::from_str(line).expect("openclaw hook json");
-        let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
-        if ty == "session_end" || ty == "gateway_stop" {
-            break;
-        }
-        let decoded = pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(
-            v.as_object().expect("an object"),
-        )
-        .expect("decode_openclaw_hook_payload");
-        let key = pixtuoid_core::source::daemon::DaemonInstanceKey::new(
-            pixtuoid_core::source::openclaw::SOURCE_NAME,
-            decoded.instance.clone(),
-        );
-        for update in decoded.updates {
-            apply_presence(&mut scene, &key, update, now);
-            applied += 1;
-        }
-    }
-    assert!(
-        applied > 0,
-        "the openclaw fixture must decode to presence deltas (got 0)"
-    );
-
-    let (_, _, presence) = scene
-        .daemons()
-        .find(|(source, _, _)| *source == pixtuoid_core::source::openclaw::SOURCE_NAME)
-        .expect("openclaw presence must be populated");
+    let scene = openclaw_scene("tool-run-hermetic", None, &["session_end", "gateway_stop"]);
     assert_ne!(
-        presence.liveness,
+        openclaw_presence(&scene).liveness,
         pixtuoid_core::state::DaemonLiveness::Down,
         "the in-session presence stream must leave the gateway UP"
     );

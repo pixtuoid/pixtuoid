@@ -20,8 +20,6 @@ mod tests;
 mod unclaim;
 mod walk;
 
-#[cfg(test)]
-pub(crate) use crate::source::decoder::is_subagent_path;
 pub use liveness::LivenessProbe;
 pub use liveness::ProbeSnapshot;
 pub use unclaim::ChildEndUnclaims;
@@ -37,6 +35,7 @@ use unclaim::drain_child_end_unclaims;
 use walk::{RootRead, scan_root, walk_jsonl};
 
 use crate::source::decoder::LineDecoder;
+use crate::source::first_sight::{HeadLabel, Sight};
 
 pub use crate::source::decoder::PathFilter;
 pub use crate::source::decoder::{IdDeriver, TailActivity};
@@ -49,10 +48,6 @@ pub(crate) type LabelDeriver = fn(&Path, &str, &Path) -> String;
 fn default_prefixed_label(_path: &Path, source: &str, cwd: &Path) -> String {
     crate::source::decoder::derive_prefixed_label(source, cwd)
 }
-
-/// Predicate on a transcript's raw bytes: `true` when they carry a session-end
-/// marker, so the first-sight gate never seeds an already-ended transcript.
-pub(crate) type SessionEndChecker = fn(&[u8]) -> bool;
 
 /// Reads a transcript tail into a [`TailActivity`] verdict. Only **CC**
 /// supplies one (see `claude_code::cc_activity_recency` for the write that made
@@ -75,19 +70,10 @@ fn no_cwd_from_path(_p: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Pulls a display label out of ONE decoded head line, for a source that names
-/// its session in the transcript HEAD rather than only in the tail stream.
-/// `None` on a source's registry row means it has no such name — which is
-/// load-bearing, not merely absent: it lets the head scan stop at the first
-/// `cwd` instead of reading on for a label that can never arrive. **omp** is
-/// the one override; see its `omp_head_title`.
-pub(crate) type HeadLabel = fn(&serde_json::Value) -> Option<String>;
-
 #[derive(Clone, Copy)]
 struct SourceDecoders {
     decode_line: LineDecoder,
     derive_label: LabelDeriver,
-    check_ended: SessionEndChecker,
     activity_recency: ActivityRecency,
     id_derive: folded::FoldedDeriver,
     path_filter: PathFilter,
@@ -118,20 +104,6 @@ mod folded {
             (self.0)(&super::walk::id_path(path))
         }
     }
-}
-
-/// What the watcher's first sight of a transcript still holds. Absent = never
-/// registered, or fully retired by an exit un-claim.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Sight {
-    /// Registered: appends decode without re-registering.
-    Claimed,
-    /// Its session ended: a DECODED terminator, an oversized span whose tail
-    /// its [`SessionEndChecker`] matches, or a child-end un-claim: the path
-    /// stays KNOWN, so [`revouch_gated_files`](liveness::revouch_gated_files)
-    /// won't replay it however live the probe says the (still-open) rollout is,
-    /// and only an append that shows activity re-registers it.
-    Ended,
 }
 
 #[derive(Clone, Copy)]
@@ -228,7 +200,6 @@ impl JsonlWatcher {
             decoders: SourceDecoders {
                 decode_line: row.line_decoder,
                 derive_label: native.derive_label.unwrap_or(default_prefixed_label),
-                check_ended: native.check_ended,
                 activity_recency: native.activity_recency.unwrap_or(no_activity_recency),
                 id_derive: folded::FoldedDeriver::new(row.id_from_path),
                 path_filter: row.path_filter,
@@ -445,7 +416,7 @@ impl JsonlWatcher {
         let decoders = self.decoders;
 
         // The initial seed rides the same `scan_root` → `walk_jsonl` path every
-        // later scan uses, so a file is gated identically (recency + session_end)
+        // later scan uses, so a file is gated identically (recency + its end)
         // no matter which pass first sees it (#85).
         {
             let ctx = WatchCtx {

@@ -495,8 +495,10 @@ impl TileCutaway {
         self.last
     }
 
-    /// Owe every tile again: the terminal may have dropped them.
+    /// Owe every tile again, sending none this frame queued: the terminal may
+    /// have dropped them.
     pub(crate) fn forget(&mut self) {
+        self.pending = None;
         self.tiles.forget();
     }
 
@@ -505,9 +507,8 @@ impl TileCutaway {
     /// until the next [`Self::fit_to`].
     pub(crate) fn stand_aside(&mut self) -> std::io::Result<()> {
         self.fitted = None;
-        self.pending = None;
         self.shown = None;
-        self.tiles.forget();
+        self.forget();
         if self.route.protocol() == ImageProtocol::Kitty {
             let delete = kitty::delete_sent();
             if !delete.is_empty() {

@@ -460,9 +460,8 @@ fn max_desks_no_config_file() {
 
 #[test]
 fn max_desks_zero_in_config_is_ignored_with_warning() {
-    // 0 would permanently zero every floor (the per-frame re-seed guards
-    // `capacity > 0`, so the boot atomics never grow), silently dropping every
-    // agent.
+    // 0 would zero every floor's capacity, so every agent would stay unseated
+    // forever.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "max-desks = 0\n").unwrap();
@@ -629,6 +628,31 @@ fn update_config_refuses_a_type_invalid_config() {
         "error must name the value failure: {err:#}"
     );
     assert_eq!(std::fs::read_to_string(&p).unwrap(), original);
+}
+
+#[test]
+fn update_config_names_a_config_it_cannot_read_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::create_dir(&p).unwrap();
+    let err = save_appearance(&p, "cyberpunk", None).expect_err("a dir is no readable config");
+    let msg = format!("{err:#}");
+    assert_eq!(msg.matches(&p.display().to_string()).count(), 1, "{msg}");
+}
+
+#[test]
+fn update_config_keeps_a_crlf_config_crlf() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::write(&p, "# mine\r\ntheme = \"normal\"\r\n").unwrap();
+    save_audio_volume(&p, 0.5).unwrap();
+    let saved = std::fs::read_to_string(&p).unwrap();
+    assert!(
+        saved.starts_with("# mine\r\ntheme = \"normal\"\r\n")
+            && saved.ends_with("\r\n")
+            && !saved.replace("\r\n", "").contains('\n'),
+        "{saved:?}"
+    );
 }
 
 #[test]

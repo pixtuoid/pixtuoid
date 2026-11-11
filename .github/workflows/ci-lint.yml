@@ -90,7 +90,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-tools
         with:
-          tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee pypi:check-jsonschema uv ruff
+          tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee uv ruff
       # pyright and tsc.
       - uses: ./.github/actions/setup-npm
         with:
@@ -104,7 +104,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - run: just ci-observability
-      - run: just json-schemas
       - run: just links
       - run: just ruff
       - run: just pyright
