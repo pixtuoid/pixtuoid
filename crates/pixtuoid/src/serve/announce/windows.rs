@@ -182,4 +182,23 @@ mod tests {
             format!("Windows refused the service (status {ERROR_TIMEOUT})")
         );
     }
+
+    /// The registration `announce` makes, through dnsapi itself: the request
+    /// is taken, its callback reaches the waiter through the context, the
+    /// responder holds the service, and a drop deregisters it.
+    #[tokio::test]
+    async fn dnsapi_holds_a_registration_until_it_is_dropped() {
+        let instance = format!("pixtuoid-test-{}", std::process::id());
+        let (registration, mut completed) =
+            register(&instance, 47_998, "AB").expect("dnsapi takes the request");
+        let status = *tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            completed.wait_for(|&status| status != PENDING),
+        )
+        .await
+        .expect("the callback reports")
+        .expect("the completion lives");
+        assert_eq!(status, ERROR_SUCCESS);
+        drop(registration);
+    }
 }

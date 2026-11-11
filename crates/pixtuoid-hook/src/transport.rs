@@ -253,11 +253,39 @@ mod peer {
     }
 }
 
-// No in-process tests for `send_line` ON PURPOSE: it spawns a watchdog that
-// exit(0)s the whole process a `WRITE_TIMEOUT` later, which would kill sibling tests under
-// `cargo test`'s shared-process runner. Its coverage lives at the child-process
-// level (tests/shim.rs and its Windows twin tests/shim_pipe.rs), where
-// exit-is-the-contract is observable, not fatal.
+/// `send_line` on an unarmed [`TimeBound`]: an armed one's watchdog exit(0)s the
+/// whole test process, so the bound itself is pinned a child process away
+/// (tests/shim.rs and its Windows twin tests/shim_pipe.rs).
+#[cfg(all(windows, test))]
+mod win_send_tests {
+    use tokio::io::AsyncReadExt;
+    use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
+
+    use super::{TimeBound, WRITE_TIMEOUT, send_line};
+
+    /// A pipe whose every instance is taken answers ERROR_PIPE_BUSY, which the
+    /// send waits out: an instance the daemon frees within the bound gets the line.
+    #[tokio::test]
+    async fn a_busy_pipe_gets_the_line_once_an_instance_frees() {
+        let name = format!(r"\\.\pipe\pixtuoid-busy-selftest-{}", std::process::id());
+        let _taken = ServerOptions::new()
+            .first_pipe_instance(true)
+            .create(&name)
+            .expect("the lone instance");
+        let _client = ClientOptions::new().open(&name).expect("taken");
+        let path = std::path::PathBuf::from(&name);
+        let sending = std::thread::spawn(move || send_line(&TimeBound(()), &path, b"line\n"));
+        tokio::time::sleep(WRITE_TIMEOUT / 2).await;
+        let mut next = ServerOptions::new()
+            .create(&name)
+            .expect("the next instance");
+        next.connect().await.expect("the send connects");
+        let mut got = Vec::new();
+        next.read_to_end(&mut got).await.expect("read");
+        assert_eq!(got, b"line\n");
+        sending.join().expect("the send returns");
+    }
+}
 
 #[cfg(all(windows, test))]
 mod win_peer_tests {

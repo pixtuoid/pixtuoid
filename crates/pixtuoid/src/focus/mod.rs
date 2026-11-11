@@ -447,6 +447,25 @@ mod tests {
         );
         assert_eq!(activated, None, "no focusable ancestor ⇒ nothing activated");
     }
+
+    /// Each hop of the walk is the OS table's real answer: a child it is asked
+    /// about names this process. The child lives until its stdin closes.
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[test]
+    fn the_os_table_names_a_childs_parent() {
+        let reader = if cfg!(windows) { "cmd.exe" } else { "cat" };
+        let mut child = std::process::Command::new(reader)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("a child");
+        let pid = i32::try_from(child.id()).expect("a pid");
+        let parent = OsProcessTable.ppid(pid);
+        drop(child.stdin.take());
+        child.wait().expect("the child exits");
+        let me = i32::try_from(std::process::id()).expect("a pid");
+        assert_eq!(parent, Some(me));
+    }
 }
 
 /// Live dogfood (manual, `--ignored`): walks THIS test process's own ancestor
