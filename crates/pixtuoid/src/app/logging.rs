@@ -93,8 +93,8 @@ fn queued(writer: impl Write + Send + 'static) -> (NonBlocking, LogFlush) {
 }
 
 /// The queue's guard, whose drop flushes what is queued, so it outlives every
-/// runtime. Its own drop runs on a thread of its own, waited on for its bound:
-/// with the queue full it `println!`s (tracing-appender 0.2.5,
+/// runtime. Its own drop runs [within](crate::within) its bound: with the
+/// queue full it `println!`s (tracing-appender 0.2.5,
 /// `src/non_blocking.rs:296`), which waits for good on a stalled stdout, and a
 /// quit must still end.
 pub(crate) struct LogFlush(Option<WorkerGuard>);
@@ -106,18 +106,8 @@ impl Drop for LogFlush {
         /// stuck in that `println!`.
         const GUARD_TIMEOUTS: Duration =
             Duration::from_millis(100).saturating_add(Duration::from_secs(1));
-        let Some(guard) = self.0.take() else {
-            return;
-        };
-        let (dropped, done) = std::sync::mpsc::channel();
-        let flushing = std::thread::Builder::new()
-            .name("log-flush".into())
-            .spawn(move || {
-                drop(guard);
-                let _ = dropped.send(());
-            });
-        if flushing.is_ok() {
-            let _ = done.recv_timeout(GUARD_TIMEOUTS);
+        if let Some(guard) = self.0.take() {
+            crate::within("log-flush", GUARD_TIMEOUTS, move || drop(guard));
         }
     }
 }

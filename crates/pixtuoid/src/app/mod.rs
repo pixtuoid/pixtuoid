@@ -19,7 +19,7 @@ use clap::Parser;
 /// # Errors
 ///
 /// The subcommand's failure, which `main` reports through
-/// [`crate::fatal_error_text`].
+/// [`crate::report_fatal`].
 pub fn run() -> Result<()> {
     crash::install_crash_hook();
     let (log_level, cmd) = Cli::parse().cmd_or_default();

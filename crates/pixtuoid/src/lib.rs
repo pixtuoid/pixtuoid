@@ -1,6 +1,6 @@
 //! The pixtuoid program: `main.rs` only calls [`run`] and reports its error
-//! through [`fatal_error_text`]. What else is public is for the examples and
-//! the integration tests, which are separate crates.
+//! through [`report_fatal`]. What else is public is for the examples and the
+//! integration tests, which are separate crates.
 
 // A print macro panics when its reader leaves (`| head`): CLI and headless
 // output goes through a `CliOut`, a stderr notice through a `let _ = writeln!`.
@@ -154,10 +154,44 @@ pub(crate) fn cli_stdout() -> CliOut<std::io::Stdout> {
 }
 
 /// A fatal error's chain as `main` returning `Err` would print it, stripped line
-/// by line so the chain keeps its shape. Mechanism for `main`, not contract.
-#[doc(hidden)]
-pub fn fatal_error_text(e: &anyhow::Error) -> String {
+/// by line so the chain keeps its shape.
+fn fatal_error_text(e: &anyhow::Error) -> String {
     format!("Error: {}", strip_lines(&format!("{e:?}"), "\n"))
+}
+
+/// Write `e`'s [report](fatal_error_text) to stderr, [within](within) a bound:
+/// a failed run must still end with stderr into a paused pipe, where a quit
+/// signal no longer kills it once a run has armed its own (tokio never
+/// unregisters a signal handler). Not `eprintln!`, which panics when the
+/// write fails (a broken pipe): a clean failure must not turn into a crash.
+/// Mechanism for `main`, not contract.
+#[doc(hidden)]
+pub fn report_fatal(e: &anyhow::Error) {
+    /// Far past one short line's write to a reader that reads: one that takes
+    /// none in that long has stopped, and the exit outranks the report.
+    const REPORT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+    let report = fatal_error_text(e);
+    within("fatal-report", REPORT_WAIT, move || {
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), "{report}");
+    });
+}
+
+/// Run `work` (an exit's write or flush, which a stalled reader can hold for
+/// good) on a thread of its own named `name`, and wait for it at most
+/// `bound`: the exit goes on either way, and a thread still stuck dies with
+/// the process.
+pub(crate) fn within(name: &str, bound: std::time::Duration, work: impl FnOnce() + Send + 'static) {
+    let (done, finished) = std::sync::mpsc::channel();
+    let started = std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            work();
+            let _ = done.send(());
+        });
+    if started.is_ok() {
+        let _ = finished.recv_timeout(bound);
+    }
 }
 
 /// The one URL launcher: `open::that` blocks on Linux until the

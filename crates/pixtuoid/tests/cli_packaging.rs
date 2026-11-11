@@ -140,6 +140,28 @@ fn a_fatal_error_into_a_broken_pipe_still_exits_1() {
     assert_eq!(status.code(), Some(1), "{status:?}");
 }
 
+/// A failed run's report waits on stderr only so long: with stderr into a
+/// paused pipe, the run still exits 1, its report unwritten.
+#[cfg(unix)]
+#[test]
+fn a_fatal_error_into_a_stalled_stderr_still_exits_1() {
+    let state = tempfile::TempDir::new().expect("tempdir");
+    let (_reader, stalled) = common::full_pipe();
+    let mut run = refused(&["run", "--headless"], state.path())
+        .stderr(stalled)
+        .spawn()
+        .expect("run pixtuoid");
+    let ended =
+        pixtuoid_core::harness::wait_until("its exit", pixtuoid_core::harness::BOOT, || {
+            Ok(run.try_wait()?.is_some())
+        });
+    if ended.is_err() {
+        let _ = run.kill();
+    }
+    ended.expect("the report waited on a stalled stderr");
+    assert_eq!(run.wait().expect("its status").code(), Some(1));
+}
+
 /// A detached `floating`'s stderr goes unread once its launcher lets go, so a
 /// painter that logs to a file records its fatal error there too.
 #[test]
