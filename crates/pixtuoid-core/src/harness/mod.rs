@@ -399,7 +399,7 @@ impl Drive {
         }
     }
 
-    /// Lead each life of the transcript the watcher's gate registers on, a life
+    /// Lead each life of the transcript that `Sight::registers` admits, a life
     /// after its own end within one feed included, with the `SessionStart` the
     /// watcher's `emit_registration` would emit for it, keyed by the source's
     /// registry row.
@@ -493,7 +493,7 @@ fn joined<S: AsRef<str>>(lines: impl Iterator<Item = S>) -> Vec<u8> {
 pub struct Fold {
     reducer: Reducer,
     driven: Driven,
-    /// Each seeded transcript's claim, through the watcher's own gate.
+    /// Each seeded transcript's claim, through `Sight::registers`.
     sights: HashMap<AgentId, Sighted>,
 }
 
@@ -558,8 +558,8 @@ impl Fold {
         self.driven.events.push(event);
     }
 
-    /// The seed `drive` leads `life`, one life of a feed of `lines`, with when
-    /// the watcher's gate registers on it, else `None`; the claim then follows
+    /// The seed `drive` leads `life` with, one life of a feed of `lines`, when
+    /// `Sight::registers` admits it, else `None`; the claim then follows
     /// `life`'s verdict.
     fn registration<S: AsRef<str>>(
         &mut self,
