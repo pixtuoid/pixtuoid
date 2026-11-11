@@ -3284,14 +3284,19 @@ for (const viewport of [
       await page.goto(path);
       const links = page.locator('#nav-links a');
       expect(await links.count()).toBeGreaterThan(0);
-      for (const link of await links.all()) await expect(link, path).toBeVisible();
+      const main = (await page.locator('main').boundingBox())!;
+      for (const link of await links.all()) {
+        await expect(link, path).toBeVisible();
+        // The open links sit above the page, never over it.
+        const box = (await link.boundingBox())!;
+        expect(box.y + box.height, path).toBeLessThanOrEqual(main.y);
+      }
       for (const button of ['#nav-burger', '#docs-btn', '#theme-toggle'])
         await expect(page.locator(button), path).toBeHidden();
-      // The open links sit above the page, never over it.
-      const nav = (await page.locator('header.nav').boundingBox())!;
-      expect((await page.locator('main').boundingBox())!.y, path).toBeGreaterThanOrEqual(
-        nav.y + nav.height
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
       );
+      expect(overflow, path).toBeLessThanOrEqual(0);
     }
 
     const install = page.locator('#install');
