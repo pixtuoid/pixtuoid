@@ -16,14 +16,13 @@ use super::{SourceDecoders, WatchCtx};
 
 /// One healthy liveness-probe observation: which agent processes are verified
 /// alive RIGHT NOW, and which OS pids hold each. The live-id set IS `pids_of`'s
-/// key set; a separate `ids` set would only make "id without pid" representable.
+/// key set, and `bind_pid`, its only writer, never leaves an id without a pid.
 #[derive(Debug, Clone, Default)]
 pub struct ProbeSnapshot {
-    /// id → every live OS pid holding it, for the exit watch: a session two
-    /// processes hold (a CC session resumed in a second terminal, a codex
-    /// rollout a resume reopened) lives while either does. Many ids may share
-    /// one pid — one codex process holds every rollout it has open.
-    pub pids_of: HashMap<String, BTreeSet<i32>>,
+    /// id → every live OS pid holding it: the exit watch ends a session only
+    /// when the last of them dies. Many ids may share one pid — one codex
+    /// process holds every rollout it has open.
+    pids_of: HashMap<String, BTreeSet<i32>>,
 }
 
 impl ProbeSnapshot {
@@ -53,7 +52,7 @@ impl ProbeSnapshot {
     }
 
     /// Record `pid` as one of `id`'s holders.
-    pub(crate) fn bind_pid(&mut self, id: String, pid: i32) {
+    pub fn bind_pid(&mut self, id: String, pid: i32) {
         self.pids_of.entry(id).or_default().insert(pid);
     }
 
@@ -282,8 +281,8 @@ impl ProbeLadder {
 
         let mut newly_watched = Vec::new();
         for (id, pids) in &snap.pids_of {
-            // A pid that let go of the id (a codex `resume` that moved the
-            // rollout to a second process) no longer holds it up.
+            // A pid the snapshot no longer names under the id no longer holds
+            // it up, so the pids it does name keep their instant exit.
             self.pid_bindings.retain(|pid, ids| {
                 if !pids.contains(pid) {
                     ids.remove(id);

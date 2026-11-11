@@ -12,8 +12,8 @@ use crate::source::{Source, TaggedSender};
 
 /// Codex's liveness probe: the rollout UUIDs (in `codex_id_from_path` id-space,
 /// so they join the watcher's first-sight gate directly) of every rollout under
-/// `sessions_root` held OPEN by a running `codex` process, plus the owning pid
-/// per id.
+/// `sessions_root` held OPEN by a running `codex` process, plus every pid
+/// holding each.
 ///
 /// Codex has no session registry (unlike CC's `sessions/<pid>.json`), but a live
 /// `codex` process holds its rollout file open in append mode for the whole

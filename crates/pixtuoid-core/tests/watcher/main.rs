@@ -34,13 +34,16 @@ const POLL: Duration = Duration::from_millis(25);
 /// process's pid — a placeholder that can never spuriously instant-exit. The
 /// id→pid exit-watch join belongs to `vouch_snapshot_with_pid`.
 fn vouch_snapshot(ids: &[&str]) -> Option<ProbeSnapshot> {
-    let pid = std::process::id() as i32;
-    Some(ProbeSnapshot {
-        pids_of: ids
-            .iter()
-            .map(|s| (s.to_string(), std::collections::BTreeSet::from([pid])))
-            .collect(),
-    })
+    vouch_snapshot_with_pid(ids, std::process::id() as i32)
+}
+
+/// A HEALTHY snapshot vouching `ids`, each bound to `pid`.
+fn vouch_snapshot_with_pid(ids: &[&str], pid: i32) -> Option<ProbeSnapshot> {
+    let mut snap = ProbeSnapshot::default();
+    for id in ids {
+        snap.bind_pid(id.to_string(), pid);
+    }
+    Some(snap)
 }
 
 fn cc_watcher(root: std::path::PathBuf) -> JsonlWatcher {

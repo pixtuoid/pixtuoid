@@ -10,20 +10,11 @@ use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::Transport;
 use pixtuoid_core::source::jsonl::ProbeSnapshot;
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::vouch_snapshot_with_pid;
 use crate::{
     backdate, codex_meta_line, codex_watcher, codex_work_line, vouch_snapshot, write_lines,
 };
-
-/// A HEALTHY snapshot vouching `ids`, each bound to `pid`.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn vouch_snapshot_with_pid(ids: &[&str], pid: i32) -> Option<ProbeSnapshot> {
-    Some(ProbeSnapshot {
-        pids_of: ids
-            .iter()
-            .map(|s| (s.to_string(), std::collections::BTreeSet::from([pid])))
-            .collect(),
-    })
-}
 
 #[tokio::test]
 async fn watcher_emits_proof_of_life_for_probe_live_ids() {
@@ -93,17 +84,8 @@ async fn poll_arm_refreshes_probe_snapshot_and_reemits_proof_of_life() {
         .with_initial_window(Duration::from_secs(60))
         .with_poll_interval(Duration::from_millis(100))
         .with_liveness_probe(Arc::new(move || {
-            // Bind each vouched id to this live process's pid: a placeholder
-            // that never instant-exits.
-            let pid = std::process::id() as i32;
-            Some(ProbeSnapshot {
-                pids_of: probe_view
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .map(|s| (s.clone(), std::collections::BTreeSet::from([pid])))
-                    .collect(),
-            })
+            let ids = probe_view.lock().unwrap().clone();
+            vouch_snapshot(&ids.iter().map(String::as_str).collect::<Vec<_>>())
         }));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
@@ -221,6 +203,31 @@ async fn assert_no_session_end_within(
     }
 }
 
+/// Drain `rx` until a root `SessionEnd` for `expected` arrives, panicking with
+/// `why` if none does within `window`.
+async fn expect_session_end_within(
+    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    expected: AgentId,
+    window: Duration,
+    why: &str,
+) {
+    let deadline = tokio::time::Instant::now() + window;
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(Some((
+            Transport::Jsonl,
+            AgentEvent::SessionEnd {
+                agent_id,
+                as_child: false,
+            },
+        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
+            && agent_id == expected
+        {
+            return;
+        }
+    }
+    panic!("{why}");
+}
+
 #[tokio::test]
 async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
     let dir = TempDir::new().unwrap();
@@ -237,26 +244,13 @@ async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
     // The owning process exits: the probe stays HEALTHY but stops vouching.
     *probe_state.lock().unwrap() = vouch_snapshot(&[]);
 
-    let mut ended = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            Transport::Jsonl,
-            AgentEvent::SessionEnd {
-                agent_id,
-                as_child: false,
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            ended = true;
-            break;
-        }
-    }
-    assert!(
-        ended,
-        "two healthy snapshots ≥ the span apart without the vouch must emit SessionEnd"
-    );
+    expect_session_end_within(
+        &mut rx,
+        expected,
+        Duration::from_secs(15),
+        "two healthy snapshots ≥ the span apart without the vouch must emit SessionEnd",
+    )
+    .await;
 
     let mut f = tokio::fs::OpenOptions::new()
         .append(true)
@@ -471,27 +465,14 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
     let _ = child.kill();
     let _ = child.wait();
 
-    let mut ended = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            Transport::Jsonl,
-            AgentEvent::SessionEnd {
-                agent_id,
-                as_child: false,
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            ended = true;
-            break;
-        }
-    }
-    assert!(
-        ended,
+    expect_session_end_within(
+        &mut rx,
+        expected,
+        Duration::from_secs(5),
         "a bound pid dying must SessionEnd within seconds (instant exit), \
-         not wait out the 60s negative vouch"
-    );
+         not wait out the 60s negative vouch",
+    )
+    .await;
 
     let mut f = tokio::fs::OpenOptions::new()
         .append(true)
@@ -547,23 +528,13 @@ async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {
 
     // The session ends while its process lives on: healthy probe, no vouch.
     *probe_state.lock().unwrap() = vouch_snapshot(&[]);
-    let mut ended = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            Transport::Jsonl,
-            AgentEvent::SessionEnd {
-                agent_id,
-                as_child: false,
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            ended = true;
-            break;
-        }
-    }
-    assert!(ended, "the negative vouch must confirm the first exit");
+    expect_session_end_within(
+        &mut rx,
+        expected,
+        Duration::from_secs(15),
+        "the negative vouch must confirm the first exit",
+    )
+    .await;
 
     let _ = child.kill();
     let _ = child.wait();
@@ -607,23 +578,13 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
     let _ = child.kill();
     let _ = child.wait();
 
-    let mut ended = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            Transport::Jsonl,
-            AgentEvent::SessionEnd {
-                agent_id,
-                as_child: false,
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            ended = true;
-            break;
-        }
-    }
-    assert!(ended, "the instant exit must emit the SessionEnd");
+    expect_session_end_within(
+        &mut rx,
+        expected,
+        Duration::from_secs(5),
+        "the instant exit must emit the SessionEnd",
+    )
+    .await;
 
     let quiet_until = tokio::time::Instant::now() + Duration::from_millis(1500);
     while tokio::time::Instant::now() < quiet_until {
@@ -639,12 +600,11 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
     handle.abort();
 }
 
-/// An id that REBINDS to a new pid (a codex `resume` of the same rollout in
-/// process B while process A still lives) must MIGRATE between pid sets: the
-/// binding moves rather than being dropped.
+/// An id a later snapshot names under a new pid alone MIGRATES: the old pid,
+/// still alive, no longer holds it up, so the new pid's death is its instant exit.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[tokio::test]
-async fn rebound_session_survives_old_pid_death_and_follows_the_new_pid() {
+async fn a_rebound_session_ends_with_its_new_pid_while_the_old_one_lives() {
     let dir = TempDir::new().unwrap();
     let uuid = "01000000-0000-7000-8000-0000000000b3";
     let mut old = std::process::Command::new("sleep")
@@ -670,38 +630,17 @@ async fn rebound_session_survives_old_pid_death_and_follows_the_new_pid() {
     *probe_state.lock().unwrap() = vouch_snapshot_with_pid(&[uuid], new_pid);
     tokio::time::sleep(Duration::from_millis(700)).await;
 
-    let _ = old.kill();
-    let _ = old.wait();
-    assert_no_session_end_within(
-        &mut rx,
-        expected,
-        Duration::from_millis(1500),
-        "the old pid's death must not end a session that rebound to a new pid",
-    )
-    .await;
-
     let _ = new.kill();
     let _ = new.wait();
-    let mut ended = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            Transport::Jsonl,
-            AgentEvent::SessionEnd {
-                agent_id,
-                as_child: false,
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            ended = true;
-            break;
-        }
-    }
-    assert!(
-        ended,
-        "the migrated binding must follow the new pid — its death is the session's instant exit"
-    );
+    expect_session_end_within(
+        &mut rx,
+        expected,
+        Duration::from_secs(5),
+        "the migrated binding must follow the new pid — its death is the session's instant exit",
+    )
+    .await;
+    let _ = old.kill();
+    let _ = old.wait();
     handle.abort();
 }
 
@@ -719,14 +658,14 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
             .unwrap()
     };
     let (mut first, mut last) = (sleeper(), sleeper());
+    // The larger pid dies first, so binding only the largest holder ends it.
+    if first.id() < last.id() {
+        std::mem::swap(&mut first, &mut last);
+    }
     let (first_pid, last_pid) = (first.id() as i32, last.id() as i32);
-    let both = ProbeSnapshot {
-        pids_of: [(
-            uuid.to_string(),
-            std::collections::BTreeSet::from([first_pid, last_pid]),
-        )]
-        .into(),
-    };
+    let mut both = ProbeSnapshot::default();
+    both.bind_pid(uuid.to_string(), first_pid);
+    both.bind_pid(uuid.to_string(), last_pid);
     let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
@@ -752,20 +691,12 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
     *probe_state.lock().unwrap() = vouch_snapshot_with_pid(&[uuid], last_pid);
     let _ = last.kill();
     let _ = last.wait();
-    let mut ended = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((Transport::Jsonl, AgentEvent::SessionEnd { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            ended = true;
-            break;
-        }
-    }
-    assert!(
-        ended,
-        "the last holder's death is the session's instant exit"
-    );
+    expect_session_end_within(
+        &mut rx,
+        expected,
+        Duration::from_secs(5),
+        "the last holder's death is the session's instant exit",
+    )
+    .await;
     handle.abort();
 }

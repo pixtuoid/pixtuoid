@@ -186,13 +186,17 @@ fn fold_migrates_a_rebound_id_and_keeps_the_old_pids_sibling() {
     ladder.fold(&snap(&[("a", 1), ("b", 1)]), t);
     let out = ladder.fold(&snap(&[("a", 2), ("b", 1)]), t);
     assert_eq!(out.newly_watched, vec![2], "only the new pid 2 registers");
+    assert_eq!(
+        ladder.pid_died(2),
+        vec!["a".to_string()],
+        "pid 1, still alive, no longer holds the migrated id"
+    );
     assert_eq!(ladder.pid_died(1), vec!["b".to_string()]);
-    assert_eq!(ladder.pid_died(2), vec!["a".to_string()]);
 }
 
 /// A CC session resumed in a second terminal: two live processes each
 /// register it under their own pid ("messages from both interleave",
-/// code.claude.com/docs/en/sessions), so either one's exit alone leaves it running.
+/// code.claude.com/docs/en/sessions), so either one's death alone leaves it running.
 #[cfg(unix)]
 #[test]
 fn a_session_two_live_registry_entries_hold_outlives_either_exit() {
@@ -3735,7 +3739,7 @@ mod ladder_props {
                     Op::Fold { live, advance_ms } => {
                         now += Duration::from_millis(*advance_ms);
                         let snap = snap_of(live);
-                        for id in snap.pids_of.keys() {
+                        for id in snap.ids() {
                             dead.remove(id);
                         }
                         for id in ladder.fold(&snap, now).exits {
@@ -3768,8 +3772,8 @@ mod ladder_props {
                     Op::Fold { live, advance_ms } => {
                         now += Duration::from_millis(*advance_ms);
                         let snap = snap_of(live);
-                        for (id, pids) in &snap.pids_of {
-                            holders.insert(id.clone(), pids.iter().copied().collect());
+                        for id in snap.ids() {
+                            holders.insert(id.clone(), snap.pids(id).into_iter().collect());
                         }
                         for id in ladder.fold(&snap, now).exits {
                             holders.remove(&id);

@@ -25,8 +25,8 @@ const MAX_SESSION_REGISTRY_BYTES: u64 = 1024 * 1024;
 static PINS: StartPins = StartPins::new();
 
 /// grok's liveness probe: the session ids of every entry in
-/// `{grok_home}/active_sessions.json` whose pid is alive, plus the owning pid
-/// per id for the instant-exit watch.
+/// `{grok_home}/active_sessions.json` whose pid is alive, plus every pid
+/// holding each for the instant-exit watch.
 ///
 /// The registry is grok's OWN crash-recovery design: registered per TUI session
 /// with `std::process::id()`, removed on clean quit, left behind on crash. grok
@@ -412,7 +412,7 @@ mod tests {
                 [77],
                 "a junk entry must not cost its healthy siblings"
             );
-            assert_eq!(snap.pids_of.len(), 1, "junk VALUES skip entries silently");
+            assert_eq!(snap.ids().count(), 1, "junk VALUES skip entries silently");
         }
 
         /// A pid outside `i32` range skips ITS OWN entry, exactly like every
@@ -436,7 +436,7 @@ mod tests {
                 assert_eq!(snap.pids("ok"), [200], "siblings still bind");
                 assert!(!snap.contains("over"), "the bad entry is skipped");
                 assert!(
-                    !snap.pids_of.values().flatten().any(|&p| p == 1),
+                    !snap.ids().any(|id| snap.pids(id).contains(&1)),
                     "narrowing must reject, never truncate ({over} casts to pid 1)"
                 );
             }
@@ -630,20 +630,22 @@ mod tests {
                 let snap =
                     live_grok_session_ids(tmp.path()).expect("a readable registry is healthy");
                 drop(listener);
-                snap
+                snap.ids()
+                    .map(|id| (id.clone(), snap.pids(id)))
+                    .collect::<std::collections::BTreeMap<_, _>>()
             };
             let without = build(false);
             let with = build(true);
             assert_eq!(
-                with.pids_of, without.pids_of,
+                with, without,
                 "a live leader.sock must not change what the probe vouches"
             );
             assert!(
-                !with.contains("leader-1"),
+                !with.contains_key("leader-1"),
                 "a leader-kept session is deliberately unvouched (#826)"
             );
             assert!(
-                with.contains("client-1"),
+                with.contains_key("client-1"),
                 "control: the registry's own live entry still binds"
             );
         }

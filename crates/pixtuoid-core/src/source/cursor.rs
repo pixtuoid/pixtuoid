@@ -67,8 +67,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // shim-stamped pid, which reaches the CLI only because the ancestor walk
             // skips Cursor's wrapper shell (#896).
             has_exit_signal: true,
-            // No prompt hook is registered (`CURSOR_EVENTS`): a swept session
-            // walks back in on its turn end, never on its prompt.
+            // No prompt hook is registered (`CURSOR_EVENTS`).
             resurrects_on_prompt: false,
             // A child's events ride its own session, so the parent's goes quiet
             // until its `Task` post.

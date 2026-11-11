@@ -110,7 +110,7 @@ fn scan(sessions_dir: &Path, pins: &StartPins) -> Option<ProbeSnapshot> {
         // Two live entries share a sessionId when one session is resumed in a
         // second terminal without forking: each CC registers its own pid under
         // it (code.claude.com/docs/en/sessions: "messages from both
-        // interleave"), and the session lives while either does.
+        // interleave"), and both bind, so neither pid's death alone ends it.
         live.bind_pid(reg.session_id, reg.pid);
     }
     pins.retain(pid_start);

@@ -205,8 +205,8 @@ impl Source for OmpSource {
 
 /// omp's liveness probe: the session ids (in the `omp_id_from_path` id-space,
 /// so they join the watcher's first-sight gate directly) of every transcript
-/// under `sessions_root` held OPEN by a running omp process, plus the owning
-/// pid per id.
+/// under `sessions_root` held OPEN by a running omp process, plus every pid
+/// holding each.
 ///
 /// omp keeps a for-lifetime append fd on its session file, so an open
 /// transcript fd IS the first-party liveness signal. BOTH process names are

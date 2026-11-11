@@ -1,4 +1,4 @@
-//! Kernel process reads: start times, the identity half of pid-recycle guards, and Linux's ppid.
+//! Kernel process reads: start times (the identity half of pid-recycle guards) and Linux's ppid.
 //!
 //! [`pid_start_marker`] returns an opaque per-OS value that is stable for a
 //! process's whole life and different for a recycled pid: macOS epoch seconds,
