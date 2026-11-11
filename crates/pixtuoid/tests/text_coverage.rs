@@ -14,9 +14,15 @@ use syn::visit::Visit;
 /// before anyone lists it.
 const SCANNED: [&str; 3] = ["../pixtuoid-core/src", "../pixtuoid-scene/src", "src"];
 
-/// What [`SCANNED`] leaves out: the doctor's terminal report, whose `✗` the
-/// window lacks; what a painter shows of the doctor lives beside that painter.
-const NEVER_PAINTED: [&str; 2] = ["src/doctor.rs", "src/doctor"];
+/// What [`SCANNED`] leaves out.
+const NEVER_PAINTED: [&str; 3] = [
+    // The doctor's terminal report, whose `✗` the window lacks; what a painter
+    // shows of the doctor lives beside that painter.
+    "src/doctor.rs",
+    "src/doctor",
+    // The pack's palette keys, which name art colours and never show.
+    "../pixtuoid-scene/src/pack/lookup.rs",
+];
 
 /// What world text (the badges, the board, the bubbles, the floor sign) is
 /// written by: core's labels and the scene's signs.
@@ -31,9 +37,6 @@ const WORLD_WRITERS: [&str; 5] = [
 /// What [`WORLD_WRITERS`] holds that the office never draws: a change's line,
 /// which a panel shows (the window test covers it) and a device.
 const OFF_THE_OFFICE: [&str; 1] = ["../pixtuoid-core/src/remote/change.rs"];
-
-/// The pack's palette keys, which name art colours and never show.
-const PALETTE_KEYS: &str = "../pixtuoid-scene/src/pack/lookup.rs";
 
 /// The characters of a file's string and char literals outside tests, the
 /// `harness`, attributes and patterns, and the off-screen modules it declares
@@ -176,9 +179,8 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Each source file under [`SCANNED`], less [`NEVER_PAINTED`] and
-/// [`PALETTE_KEYS`], outside its crate's tests and `harness`, with the
-/// characters its literals write.
+/// Each source file under [`SCANNED`], less [`NEVER_PAINTED`], outside its
+/// crate's tests and `harness`, with the characters its literals write.
 fn written() -> Vec<(PathBuf, Vec<char>)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
@@ -186,10 +188,9 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
         rust_files(&root.join(tree), &mut files);
     }
     files.retain(|file| {
-        *file != root.join(PALETTE_KEYS)
-            && !NEVER_PAINTED
-                .iter()
-                .any(|off| file.starts_with(root.join(off)))
+        !NEVER_PAINTED
+            .iter()
+            .any(|off| file.starts_with(root.join(off)))
     });
     let parsed: Vec<(PathBuf, Written)> = files
         .into_iter()
