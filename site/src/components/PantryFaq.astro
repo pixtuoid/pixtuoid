@@ -126,6 +126,12 @@ import { asset, REPO } from '../consts';
       animation: pantry-pop 0.3s ease backwards;
       animation-delay: calc(var(--turn) * 1.6s + 0.3s);
     }
+    /* A focused cite link shows at once (WCAG 2.4.7). A changed delay applies
+       as if set from the start, where `animation: none` would replay the pop on
+       blur (https://www.w3.org/TR/css-animations-1/). */
+    .pantry__scene.in:not(.is-paused) .pantry__cite:focus-within {
+      animation-delay: 0s;
+    }
   }
   @keyframes pantry-pop {
     from {

@@ -103,15 +103,28 @@ test('pantry FAQ: an indented answer stays inside the chat column', async ({ pag
   }
 });
 
-test('pantry FAQ: every answer cites its source as a link to that file in the repo', async ({
-  page,
-}) => {
+test('pantry FAQ: every answer cites its source as a link', async ({ page }) => {
   await page.goto('./');
   const answers = await page.locator('.pantry__bubble--a').count();
   const cites = page.locator('.pantry__cite a');
   await expect(cites).toHaveCount(answers);
   for (const cite of await cites.all())
     await expect(cite).toHaveAttribute('href', /\/blob\/main\/[\w.-]+\.md#[\w-]+$/);
+});
+
+test('pantry FAQ: a cite focused before its turn pops shows at once', async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  await page.evaluate(() =>
+    document.querySelector('.pantry')!.scrollIntoView({ block: 'center', behavior: 'instant' })
+  );
+  await expect(page.locator('.pantry__scene')).toHaveClass(/\bin\b/);
+  // The last cite's turn comes latest, seconds after the reveal.
+  const cite = page.locator('.pantry__cite').last();
+  await cite.locator('a').focus();
+  await expect
+    .poll(() => cite.evaluate((el) => getComputedStyle(el).opacity), { timeout: 1_000 })
+    .toBe('1');
 });
 
 test('pantry FAQ: bubbles pop in sequence, join pix:paused, reduced-motion is static', async ({
