@@ -900,6 +900,10 @@ fn omp_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 fn omp_ask_reason(args: Option<&Value>) -> String {
     args.and_then(|a| a.get(INTENT_FIELD))
         .and_then(Value::as_str)
+        // Its schema is a bare string, and a blank one is no intent to omp
+        // either (`packages/agent/src/agent-loop.ts:1045`, `:1104-1108` at
+        // v18.18.8).
+        .filter(|i| !i.trim().is_empty())
         .map_or_else(
             || TOOL_ASK.to_owned(),
             |i| ellipsize(i, MAX_DECODED_FIELD_CHARS),
@@ -1737,12 +1741,24 @@ mod tests {
             }
             other => panic!("expected ToolUseStart then UserActionRequest, got {other:?}"),
         }
-        let bare = r#"{"type":"message","id":"m9","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK3","name":"ask"}],"timestamp":1}}"#;
-        match &decode(bare)[..] {
-            [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                assert_eq!(reason.as_deref(), Some("ask"))
+        // No intent, and one the model left blank, which omp's schema admits.
+        for arguments in [
+            json!(null),
+            json!({"i": ""}),
+            json!({"i": "  ", "html": "<form/>"}),
+        ] {
+            let mut call = json!({"type": "toolCall", "id": "tool_ASK3", "name": "ask"});
+            if !arguments.is_null() {
+                call["arguments"] = arguments.clone();
             }
-            other => panic!("expected Start+UserActionRequest, got {other:?}"),
+            let line = json!({"type": "message", "id": "m9", "parentId": null, "timestamp": "t",
+                              "message": {"role": "assistant", "content": [call], "timestamp": 1}});
+            match &decode(&line.to_string())[..] {
+                [_, AgentEvent::UserActionRequest { reason, .. }] => {
+                    assert_eq!(reason.as_deref(), Some("ask"), "{arguments}")
+                }
+                other => panic!("expected Start+UserActionRequest, got {other:?}"),
+            }
         }
     }
 

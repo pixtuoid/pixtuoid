@@ -688,7 +688,7 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
     }
 }
 
-// Line shapes follow a captured omp ask round, sanitized.
+// Line shapes follow omp 18.18.8's recorded ask round (`omp/fixtures/ask-hermetic`), sanitized.
 #[test]
 fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     use pixtuoid_core::source::omp::decode_omp_line;
@@ -714,7 +714,7 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     feed(
         &mut r,
         &mut scene,
-        r#"{"type":"message","id":"f689ad6b","parentId":"71a1e3cb","timestamp":"2026-07-05T20:39:46.078Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"toolu_01ASKASKASKASKASKASKASKA","name":"ask","arguments":{"i":"Resolving packages/ui collision","questions":[{"id":"ui_collision","question":"packages/ui already exists. What should happen?","options":[{"label":"Replace"},{"label":"Merge"}],"recommended":1}]}}],"stopReason":"toolUse","timestamp":1783283963575}}"#,
+        r#"{"type":"message","id":"f689ad6b","parentId":"71a1e3cb","timestamp":"2026-07-05T20:39:46.078Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"toolu_01ASKASKASKASKASKASKASKA","name":"ask","arguments":{"i":"Resolving packages/ui collision","html":"<form><p>packages/ui already exists.</p><label><input type=\"radio\" name=\"ui\" value=\"replace\"> Replace</label><label><input type=\"radio\" name=\"ui\" value=\"merge\" checked> Merge</label></form>"}}],"stopReason":"toolUse","timestamp":1783283963575}}"#,
         t0 + Duration::from_millis(100),
     );
     assert!(
@@ -728,7 +728,7 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     feed(
         &mut r,
         &mut scene,
-        r#"{"type":"message","id":"4a4176db","parentId":"98404700","timestamp":"2026-07-05T20:40:39.589Z","message":{"role":"toolResult","toolCallId":"toolu_01ASKASKASKASKASKASKASKA","toolName":"ask","content":[{"type":"text","text":"User selected: Merge"}],"isError":false,"timestamp":1783284039588}}"#,
+        r#"{"type":"message","id":"4a4176db","parentId":"98404700","timestamp":"2026-07-05T20:40:39.589Z","message":{"role":"toolResult","toolCallId":"toolu_01ASKASKASKASKASKASKASKA","toolName":"ask","content":[{"type":"text","text":"User answers:\n{\n  \"ui\": \"merge\"\n}"}],"isError":false,"timestamp":1783284039588}}"#,
         t0 + Duration::from_millis(500),
     );
     assert!(
