@@ -7,8 +7,8 @@ use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
 use crate::{
-    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, proof_of_life, sess_end, tool_use_start,
-    turn_end, user_action_request,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, identity, proof_of_life, sess_end,
+    tool_use_start, turn_end, user_action_request,
 };
 
 #[test]
@@ -244,6 +244,44 @@ fn a_quit_opencode_idle_slot_is_swept_short_and_walks_back_in_on_its_next_turn()
         (&*slot.cwd, &*slot.label),
         (std::path::Path::new("/repo"), "oc·repo"),
         "with the identity the turn's SessionStart carries"
+    );
+}
+
+/// An `Identity` never revives a walking-out slot (`authorizes`), and a sweep
+/// stamps no hook end, so a swept session's next claiming hook after its walkout
+/// (cursor's turn end) re-registers it.
+#[test]
+fn a_swept_sessions_claiming_hook_re_registers_it_after_its_walkout() {
+    use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, STALE_IDLE_TIMEOUT};
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let id = AgentId::from_parts("cursor", "s");
+    let exiting = |scene: &SceneState| scene.agents.get(&id).map(|s| s.exiting_at.is_some());
+    identity(&mut r, &mut scene, id, "cursor", t0);
+    let swept = t0 + STALE_IDLE_TIMEOUT + Duration::from_secs(1);
+    r.tick(&mut scene, swept);
+    assert_eq!(exiting(&scene), Some(true), "the stale sweep walks it out");
+    identity(
+        &mut r,
+        &mut scene,
+        id,
+        "cursor",
+        swept + Duration::from_secs(1),
+    );
+    assert_eq!(
+        exiting(&scene),
+        Some(true),
+        "a claim mid-walkout revives nothing"
+    );
+    let gone = swept + EXIT_GRACE_WINDOW + Duration::from_millis(1);
+    r.tick(&mut scene, gone);
+    assert_eq!(exiting(&scene), None);
+    identity(&mut r, &mut scene, id, "cursor", gone);
+    assert_eq!(
+        exiting(&scene),
+        Some(false),
+        "the next claim re-registers it"
     );
 }
 

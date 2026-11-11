@@ -178,7 +178,9 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             ])
             .collect()),
         // Claims, unlike the shared `Stop`: a child's loop ends on `subagentStop`, and
-        // `stop` blocks its loop for a follow-up reply, so none lands past a `Task` post.
+        // `stop` blocks its loop for a follow-up reply, so none lands past a `Task` post
+        // (cursor-agent 2026.11.11-043ef28: `index.js` `case"stop"` replies `followupMessage`;
+        // `9448.index.js` `shouldSkipHookDueToLoopLimit` pairs `stop` with `subagentStop`).
         "stop" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
         "sessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,

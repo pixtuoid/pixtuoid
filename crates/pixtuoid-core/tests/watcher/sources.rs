@@ -13,7 +13,7 @@ use pixtuoid_core::source::codex::CodexSource;
 use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::grok::GrokSource;
 
-use crate::fast_watch;
+use crate::{fast_watch, wait_for_session_start};
 
 #[tokio::test]
 async fn codex_source_run_emits_events_from_rollout() {
@@ -523,25 +523,6 @@ async fn write_omp_header(path: &std::path::Path, id: &str) {
         .unwrap();
     f.write_all(format!("{header}\n").as_bytes()).await.unwrap();
     f.flush().await.unwrap();
-}
-
-/// Drain until `want`'s SessionStart or a deadline; true on arrival.
-async fn wait_for_session_start(
-    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-    want: pixtuoid_core::AgentId,
-) -> bool {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) if agent_id == want => {
-                return true;
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => return false,
-            Err(_) => {}
-        }
-    }
-    false
 }
 
 // Layout: <sessions_root>/<encoded-cwd>/<ts>_<uuid>.jsonl with a subagent child

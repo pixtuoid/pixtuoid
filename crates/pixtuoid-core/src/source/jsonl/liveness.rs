@@ -324,8 +324,9 @@ impl ProbeLadder {
 
     /// Disarm the negative-vouch ledger for `id` WITHOUT confirming anything —
     /// a later healthy snapshot must not open/age a miss window toward
-    /// re-confirming an exit a faster rung already emitted. Always paired with
-    /// `unbind`, its bindings inverse.
+    /// re-confirming an exit a faster rung already emitted. Every exit also drops
+    /// the id's bindings: `unbind` on a confirmed one, the dead pid's own entry
+    /// (the id's last) in `pid_died`.
     fn forget(&mut self, id: &str) {
         self.prev_vouched.remove(id);
         self.miss_since.remove(id);

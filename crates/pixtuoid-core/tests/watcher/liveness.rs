@@ -11,9 +11,10 @@ use pixtuoid_core::source::Transport;
 use pixtuoid_core::source::jsonl::ProbeSnapshot;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-use crate::vouch_snapshot_with_pid;
+use crate::vouch_snapshot_with_pids;
 use crate::{
-    backdate, codex_meta_line, codex_watcher, codex_work_line, vouch_snapshot, write_lines,
+    backdate, codex_meta_line, codex_watcher, codex_work_line, vouch_snapshot,
+    wait_for_session_start, write_lines,
 };
 
 #[tokio::test]
@@ -168,19 +169,8 @@ async fn admitted_with_mutable_probe(
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let expected = AgentId::from_parts("codex", uuid);
-    let mut registered = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            registered = true;
-            break;
-        }
-    }
     assert!(
-        registered,
+        wait_for_session_start(&mut rx, expected).await,
         "the probe-vouched stale transcript must register"
     );
     (probe_state, rx, stale, handle)
@@ -263,19 +253,8 @@ async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut restarted = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            restarted = true;
-            break;
-        }
-    }
     assert!(
-        restarted,
+        wait_for_session_start(&mut rx, expected).await,
         "an append after the negative-vouch exit must re-register the session (seen un-claim)"
     );
     handle.abort();
@@ -403,19 +382,8 @@ async fn probe_panic_changes_nothing() {
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let expected = AgentId::from_parts("codex", uuid);
-    let mut registered = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            registered = true;
-            break;
-        }
-    }
     assert!(
-        registered,
+        wait_for_session_start(&mut rx, expected).await,
         "the probe-vouched stale transcript must register while the probe is healthy"
     );
 
@@ -453,7 +421,7 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
         dir.path().to_path_buf(),
         uuid,
         Duration::from_secs(60),
-        vouch_snapshot_with_pid(&[uuid], pid),
+        vouch_snapshot_with_pids(&[uuid], &[pid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
@@ -485,19 +453,8 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut restarted = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            restarted = true;
-            break;
-        }
-    }
     assert!(
-        restarted,
+        wait_for_session_start(&mut rx, expected).await,
         "an append after the instant exit must re-register the session (seen un-claim)"
     );
     handle.abort();
@@ -521,7 +478,7 @@ async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {
         dir.path().to_path_buf(),
         uuid,
         Duration::from_millis(300),
-        vouch_snapshot_with_pid(&[uuid], pid),
+        vouch_snapshot_with_pids(&[uuid], &[pid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
@@ -567,7 +524,7 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
         dir.path().to_path_buf(),
         uuid,
         Duration::from_secs(60), // production span — the negative vouch stays out of the picture
-        vouch_snapshot_with_pid(&[uuid], pid),
+        vouch_snapshot_with_pids(&[uuid], &[pid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
@@ -621,13 +578,13 @@ async fn a_rebound_session_ends_with_its_new_pid_while_the_old_one_lives() {
         dir.path().to_path_buf(),
         uuid,
         Duration::from_secs(60), // production span — only the instant-exit rung is in play
-        vouch_snapshot_with_pid(&[uuid], old_pid),
+        vouch_snapshot_with_pids(&[uuid], &[old_pid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
 
     // Give the 100ms poll a few passes to fold the migration.
-    *probe_state.lock().unwrap() = vouch_snapshot_with_pid(&[uuid], new_pid);
+    *probe_state.lock().unwrap() = vouch_snapshot_with_pids(&[uuid], &[new_pid]);
     tokio::time::sleep(Duration::from_millis(700)).await;
 
     let _ = new.kill();
@@ -663,14 +620,11 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
         std::mem::swap(&mut first, &mut last);
     }
     let (first_pid, last_pid) = (first.id() as i32, last.id() as i32);
-    let mut both = ProbeSnapshot::default();
-    both.bind_pid(uuid.to_string(), first_pid);
-    both.bind_pid(uuid.to_string(), last_pid);
     let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
         Duration::from_secs(60), // production span — only the instant-exit rung is in play
-        Some(both),
+        vouch_snapshot_with_pids(&[uuid], &[first_pid, last_pid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
@@ -688,7 +642,7 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
     )
     .await;
 
-    *probe_state.lock().unwrap() = vouch_snapshot_with_pid(&[uuid], last_pid);
+    *probe_state.lock().unwrap() = vouch_snapshot_with_pids(&[uuid], &[last_pid]);
     let _ = last.kill();
     let _ = last.wait();
     expect_session_end_within(

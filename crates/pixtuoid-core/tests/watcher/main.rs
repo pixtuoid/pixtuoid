@@ -32,18 +32,39 @@ const POLL: Duration = Duration::from_millis(25);
 
 /// A HEALTHY probe snapshot vouching exactly `ids`, each bound to this live
 /// process's pid — a placeholder that can never spuriously instant-exit. The
-/// id→pid exit-watch join belongs to `vouch_snapshot_with_pid`.
+/// id→pid exit-watch join belongs to `vouch_snapshot_with_pids`.
 fn vouch_snapshot(ids: &[&str]) -> Option<ProbeSnapshot> {
-    vouch_snapshot_with_pid(ids, std::process::id() as i32)
+    vouch_snapshot_with_pids(ids, &[std::process::id() as i32])
 }
 
-/// A HEALTHY snapshot vouching `ids`, each bound to `pid`.
-fn vouch_snapshot_with_pid(ids: &[&str], pid: i32) -> Option<ProbeSnapshot> {
+/// A HEALTHY snapshot vouching `ids`, each held by every one of `pids`.
+fn vouch_snapshot_with_pids(ids: &[&str], pids: &[i32]) -> Option<ProbeSnapshot> {
     let mut snap = ProbeSnapshot::default();
     for id in ids {
-        snap.bind_pid(id.to_string(), pid);
+        for &pid in pids {
+            snap.bind_pid(id.to_string(), pid);
+        }
     }
     Some(snap)
+}
+
+/// Drain until `want`'s SessionStart or a deadline; true on arrival.
+async fn wait_for_session_start(
+    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    want: pixtuoid_core::AgentId,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+            Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) if agent_id == want => {
+                return true;
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => return false,
+            Err(_) => {}
+        }
+    }
+    false
 }
 
 fn cc_watcher(root: std::path::PathBuf) -> JsonlWatcher {
