@@ -206,7 +206,7 @@ pub(crate) fn footer_tool_tally(scene: &SceneState) -> Vec<ToolTally> {
 }
 
 /// The per-frame inputs `build_footer` renders: `counts`, `tools` and the
-/// breadcrumb's floor come from the drawn floor's projection, everything else
+/// floor number come from the drawn floor's projection, everything else
 /// from the [`FooterContext`], whose unseated agents at a prompt
 /// `build_footer` counts with the drawn floor's.
 #[derive(Debug)]
@@ -238,7 +238,7 @@ pub struct FooterContext<'a> {
     pub(crate) unseated: StateCounts,
     pub gateway: Option<DaemonState>,
     /// How many agents the office holds: the `total` of the `n/total` count a
-    /// multi-floor footer shows beside its breadcrumb.
+    /// multi-floor footer shows beside its floor number.
     pub(crate) agents: usize,
     /// "You would hear sound right now": audio live AND not effectively muted
     /// (m-state OR pause).
@@ -362,19 +362,19 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
         return FooterModel { segments: out };
     }
 
-    let breadcrumb = inputs.place.breadcrumb();
-    let count_str = match breadcrumb {
+    let floor_number = inputs.place.number();
+    let count_str = match floor_number {
         Some(_) => format!("{}/{}", counts.total, ctx.agents),
         None => format!("{}", counts.total),
     };
 
     // The cross-floor `▲F{n}` cue: any OTHER floor holding a requires-action agent.
-    let cross_floor = breadcrumb.and_then(|_| {
+    let cross_floor = floor_number.and_then(|_| {
         (0..MAX_FLOORS)
             .find(|&fl| fl != inputs.place.index() && ctx.per_floor[fl].requires_action > 0)
             .map(|fl| fl + 1)
     });
-    let floor_suffix = match breadcrumb {
+    let floor_suffix = match floor_number {
         Some((floor, floors)) => {
             let cross = match cross_floor {
                 Some(n) => format!(" {}F{n}", Icon::Alert.terminal()),

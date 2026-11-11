@@ -125,9 +125,9 @@ impl FloorPlace {
         self.floors
     }
 
-    /// Its breadcrumb, `(floor, floors)` counted from 1; none in a one-floor
+    /// Its floor number, `(floor, floors)` counted from 1; none in a one-floor
     /// building.
-    pub(crate) fn breadcrumb(self) -> Option<(usize, usize)> {
+    pub(crate) fn number(self) -> Option<(usize, usize)> {
         (self.floors > 1).then_some((self.index + 1, self.floors))
     }
 

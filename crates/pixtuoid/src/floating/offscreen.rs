@@ -308,7 +308,7 @@ impl OfficeRenderer {
     }
 
     /// The status-footer model for the current scene, with the office's floor
-    /// breadcrumb. `budget` is the caller's column budget ([`footer_budget`](super::overlays::footer_budget) at
+    /// number. `budget` is the caller's column budget ([`footer_budget`](super::overlays::footer_budget) at
     /// the live width).
     pub fn footer(
         &self,
@@ -1088,8 +1088,8 @@ mod tests {
         assert!(renderer.pointer_moved(wander(slop_px + 1.0)), "past it");
     }
 
-    /// The footer counts the floor showing, beside the breadcrumb's whole
-    /// office: one agent of four on the ground floor reads 1/4.
+    /// The footer counts the floor showing out of the whole office, beside its
+    /// floor number: one agent of four on the ground floor reads 1/4.
     #[test]
     fn the_footer_counts_the_floor_showing() {
         let cap = 16;

@@ -455,7 +455,7 @@ fn board_mood_at(counts: StateCounts, now_ms: u64) -> Vec<BoardSegment> {
     }
 }
 
-/// Assemble the whole board model. `breadcrumb` is the drawn floor's `FloorPlace::breadcrumb`,
+/// Assemble the whole board model. `floor_number` is the drawn floor's `FloorPlace::number`,
 /// `(floor, floors)` counted from 1, `None` drawing none; `headline` is the day's count in
 /// words, which yields first when the row can't hold it; `gateway` is the
 /// [`gateway_rollup`](crate::tally::gateway_rollup), where `None` suppresses the
@@ -464,7 +464,7 @@ fn board_mood_at(counts: StateCounts, now_ms: u64) -> Vec<BoardSegment> {
 pub fn build_board(
     counts: StateCounts,
     uptime_secs: u64,
-    breadcrumb: Option<(usize, usize)>,
+    floor_number: Option<(usize, usize)>,
     headline: Option<&str>,
     gateway: Option<DaemonState>,
     motion: crate::anim::Motion,
@@ -474,7 +474,7 @@ pub fn build_board(
         format!("up {}", compact_hms(uptime_secs)),
         BoardTone::Dim,
     )];
-    if let Some((floor, floors)) = breadcrumb {
+    if let Some((floor, floors)) = floor_number {
         context.push(BoardSegment::new(
             format!("  F{floor}/{floors}"),
             BoardTone::Dim,
@@ -520,7 +520,7 @@ pub(crate) fn wall_board(
     build_board(
         scene_stats(drawn),
         scene_uptime_secs(drawn, now),
-        place.breadcrumb(),
+        place.number(),
         headline.as_deref(),
         gateway,
         motion,

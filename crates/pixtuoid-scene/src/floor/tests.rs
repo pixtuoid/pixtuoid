@@ -256,7 +256,7 @@ fn num_floors_empty() {
 
 /// A desk past the top floor counts the building as tall as it can be,
 /// wherever it is counted: the session navigates the floors every
-/// projection's breadcrumb names.
+/// projection's floor number names.
 #[test]
 fn a_desk_past_the_top_floor_counts_one_building() {
     let mut scene = make_scene(1, 1);
@@ -2771,7 +2771,7 @@ fn floor_nav_slides_lands_and_clamps() {
 }
 
 /// A slide's footer speaks for its destination from the first frame, so its
-/// count matches the breadcrumb it names.
+/// count matches the floor number it names.
 #[test]
 fn a_slides_footer_speaks_for_its_destination() {
     let pack = Arc::new(crate::pack::test_office());
@@ -2783,7 +2783,7 @@ fn a_slides_footer_speaks_for_its_destination() {
         office
             .footer_scene(&scene)
             .floor_place()
-            .breadcrumb()
+            .number()
             .map(|(floor, _)| floor),
         Some(1)
     );
@@ -2792,7 +2792,7 @@ fn a_slides_footer_speaks_for_its_destination() {
         office
             .footer_scene(&scene)
             .floor_place()
-            .breadcrumb()
+            .number()
             .map(|(floor, _)| floor),
         Some(2)
     );
@@ -2987,7 +2987,7 @@ fn a_grip_stays_on_the_floor_it_lifted_on() {
 }
 
 /// An office shows the floor its navigation holds, of the floors its scene
-/// fills, with that floor's breadcrumb; a slide composes both floors, hits
+/// fills, with that floor's number; a slide composes both floors, hits
 /// nothing, and lands on its destination.
 #[test]
 fn an_office_session_shows_each_floor_and_slides_between_them() {
@@ -3025,7 +3025,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         office
             .footer_scene(&scene)
             .floor_place()
-            .breadcrumb()
+            .number()
             .map(|(floor, _)| floor)
     };
     assert_eq!(bread(&office), Some(1));
@@ -3358,7 +3358,7 @@ fn a_frame_without_the_office_ends_a_slide_on_its_destination() {
 }
 
 /// An office whose upper floor empties shows one floor: the count and the
-/// breadcrumb follow the live scene, not the views kept.
+/// floor number follow the live scene, not the views kept.
 #[test]
 fn an_office_session_follows_its_floors_down() {
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
@@ -3391,12 +3391,8 @@ fn an_office_session_follows_its_floors_down() {
     let _ = render(&mut office, &one);
     assert_eq!(office.n_floors(), 1);
     assert!(
-        office
-            .footer_scene(&one)
-            .floor_place()
-            .breadcrumb()
-            .is_none(),
-        "one floor has no breadcrumb"
+        office.footer_scene(&one).floor_place().number().is_none(),
+        "one floor has no floor number"
     );
 }
 
