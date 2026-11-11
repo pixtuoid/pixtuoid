@@ -1087,7 +1087,6 @@ fn terminal_category(r: &DoctorReport) -> Category {
         "{DETAIL_INDENT}{}",
         r.graphics_plan.diagnostic_row(r.run_plan)
     )];
-    // Whenever it has something to say.
     if let Some(row) = crate::term::color_status_row(r.color_pf) {
         details.push(format!("{DETAIL_INDENT}{row}"));
     }

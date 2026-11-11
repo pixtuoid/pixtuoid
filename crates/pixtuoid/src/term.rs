@@ -150,8 +150,9 @@ impl ColorEnv {
     }
 }
 
-/// [`ColorEnv::stream_color`] for stderr, its one answer for everything
-/// written there.
+/// [`ColorEnv::stream_color`] for stderr: the answer for what pixtuoid itself
+/// writes there. clap's usage errors color by anstream's rule (1.0.0
+/// `src/auto.rs:198-222`), where `$CLICOLOR_FORCE` outranks `$TERM=dumb`.
 pub(crate) fn stderr_color() -> bool {
     ColorEnv::read().stream_color(std::io::IsTerminal::is_terminal(&std::io::stderr()))
 }

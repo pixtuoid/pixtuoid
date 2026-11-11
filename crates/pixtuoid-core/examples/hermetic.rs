@@ -1804,8 +1804,6 @@ mod run {
                 .command(&built.pixtuoid)
                 .args(["run", "--headless", "--log-level", "warn", "--socket"])
                 .arg(sandbox.scene.path())
-                // Its log colors a file too, and the scene log is read as text.
-                .env("NO_COLOR", "1")
                 .stdout(log(dir, SCENE_LOG)?)
                 .stderr(log(dir, SCENE_LOG)?)
                 .spawn()?,
