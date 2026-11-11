@@ -510,7 +510,7 @@ pub(crate) mod keys {
     pub(crate) const DASHBOARD: KeyCode = KeyCode::Tab;
     /// The dashboard's: focuses the selected agent's terminal.
     pub(crate) const DASHBOARD_FOCUS: KeyCode = KeyCode::Char('f');
-    /// The dashboard's: folds or unfolds every lead.
+    /// The dashboard's: folds or unfolds every root.
     pub(crate) const DASHBOARD_FOLD_ALL: KeyCode = KeyCode::Char('z');
     pub(crate) const SOURCES: KeyCode = KeyCode::Char('s');
     /// The Sources panel's: connects or disconnects the selected source.
@@ -883,6 +883,45 @@ mod dispatch_tests {
 
     const NONE: KeyModifiers = KeyModifiers::NONE;
     const CTRL: KeyModifiers = KeyModifiers::CONTROL;
+
+    /// The site and the user docs write the app's keys as text no build
+    /// reaches, so each copy is pinned to its [`keys`](super::keys) const here
+    /// (the README's row is generated from `site/src/features.json`).
+    #[test]
+    fn the_site_and_the_docs_name_the_apps_keys() {
+        use super::keys::{APPEARANCE, MUTE, SOURCES, VOLUME_DOWN, VOLUME_UP};
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        // crates.io-packaged test runs don't ship the repo's site/ or docs/.
+        if !std::path::Path::new(&format!("{root}/site")).is_dir() {
+            return;
+        }
+        let read = |file: &str| std::fs::read_to_string(format!("{root}/{file}")).expect(file);
+        for (file, says) in [
+            (
+                "site/src/features.json",
+                format!("`{MUTE}` mutes, `{VOLUME_UP}`/`{VOLUME_DOWN}` sets the volume"),
+            ),
+            ("docs/CONFIGURATION.md", format!("Press `{MUTE}`")),
+            (
+                "docs/CONFIGURATION.md",
+                format!("`{VOLUME_UP}`/`{VOLUME_DOWN}` nudge it live"),
+            ),
+            (
+                "docs/CONFIGURATION.md",
+                format!("`{VOLUME_UP}` from muted also unmutes"),
+            ),
+            (
+                "site/src/components/HowItWorks.astro",
+                format!("press {SOURCES} → connect"),
+            ),
+            (
+                "site/src/layouts/Base.astro",
+                format!("e.key !== '{APPEARANCE}'"),
+            ),
+        ] {
+            assert!(read(file).contains(&says), "{file} no longer says {says:?}");
+        }
+    }
 
     fn modal() -> ModalState {
         ModalState::closed()

@@ -73,7 +73,7 @@ impl Mixer {
         self.target = stems;
     }
 
-    /// Live master-volume update (the +/- keys) — targets rescale next
+    /// Live master-volume update (the volume keys) — targets rescale next
     /// step, riding the same slew as any level change (no zipper).
     pub(crate) fn set_master(&mut self, master: f32) {
         self.master = master.clamp(0.0, 1.0);

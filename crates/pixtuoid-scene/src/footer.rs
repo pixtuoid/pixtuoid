@@ -494,7 +494,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
 
 /// Right-flush the widest tier that fits `budget`, else fall to the keys-only
 /// rung. The fallback degrades the TAIL whole — full hints, then the alert tail,
-/// then a clip — rather than clipping mid-token and losing `[q]uit` with it.
+/// then a clip — rather than clipping mid-token and losing the quit hint with it.
 fn fit_tiers(
     tiers: impl IntoIterator<Item = Vec<FooterSegment>>,
     quit: &str,

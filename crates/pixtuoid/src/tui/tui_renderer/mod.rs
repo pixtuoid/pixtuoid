@@ -82,7 +82,10 @@ struct Chrome {
     frames: crate::panels::ui_state::RenderFrames,
     /// Ambient-audio gateway; inert unless installed.
     audio: crate::audio::AudioHandle,
-    /// Transient +/- volume readout (percent); `None` past [`crate::audio::VOLUME_FLASH_MS`].
+    /// Transient volume readout (percent) after
+    /// [`VOLUME_UP`](crate::panels::keys::VOLUME_UP) or
+    /// [`VOLUME_DOWN`](crate::panels::keys::VOLUME_DOWN); `None` past
+    /// [`crate::audio::VOLUME_FLASH_MS`].
     volume_flash: Option<u8>,
     weather: pixtuoid_scene::sky::WeatherPolicy,
     motion: pixtuoid_scene::anim::Motion,

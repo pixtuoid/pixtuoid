@@ -25,7 +25,8 @@ use sink::AudioSink;
 #[cfg(feature = "audio")]
 use pixtuoid_scene::audio::bank::Synthesis;
 
-/// The +/- keys' volume increment.
+/// The volume keys' increment ([`VOLUME_UP`](crate::panels::keys::VOLUME_UP),
+/// [`VOLUME_DOWN`](crate::panels::keys::VOLUME_DOWN)).
 pub(crate) const VOLUME_STEP: f32 = 0.05;
 /// How long the transient volume readout stays up after a nudge — also the
 /// volume-persist debounce window on both painters.
@@ -53,7 +54,8 @@ pub(crate) struct Persist {
     /// The mute flag CHANGED — persist now.
     pub(crate) muted: bool,
     /// A volume key was pressed, even one clamped at a rail — flash the readout
-    /// and persist DEBOUNCED (the +/- keys autorepeat).
+    /// and persist DEBOUNCED ([`VOLUME_UP`](crate::panels::keys::VOLUME_UP) and
+    /// [`VOLUME_DOWN`](crate::panels::keys::VOLUME_DOWN) autorepeat).
     pub(crate) volume_nudged: bool,
 }
 
@@ -61,8 +63,8 @@ pub(crate) struct Persist {
 /// volume-up from muted IS the un-mute gesture; the lazy spawn (re)fires whenever sound is
 /// wanted but the system is down, so [`VOLUME_UP`](crate::panels::keys::VOLUME_UP) and
 /// [`MUTE`](crate::panels::keys::MUTE) are never dead keys (boot-muted and failed-spawn
-/// both recover). `paused` folds an external hold (the TUI's
-/// [`PAUSE`](crate::panels::keys::PAUSE)) into the effective mute; floating passes `false`.
+/// both recover). `paused` folds the pause ([`PAUSE`](crate::panels::keys::PAUSE)
+/// toggles it) into the effective mute, in both painters.
 pub(crate) fn apply_audio_action(
     st: &mut AudioUi,
     action: AudioAction,
@@ -417,7 +419,7 @@ mod controller_tests {
     }
 
     #[test]
-    fn drop_persists_a_pending_nudge_even_without_the_q_path() {
+    fn drop_persists_a_pending_nudge_even_without_the_quit_path() {
         let (mut c, _dir) = ctl(false, 0.50);
         let path = c.config_path.clone();
         let _ = c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});

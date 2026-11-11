@@ -45,8 +45,8 @@ pub(crate) struct FloatingApp {
     theme: &'static Theme,
     pack: std::sync::Arc<OfficeArt>,
     config_path: PathBuf,
-    /// The panels, the [`PAUSE`](crate::panels::keys::PAUSE) and the theme picker,
-    /// as the TUI holds them.
+    /// The panels, the pause (toggled by [`PAUSE`](crate::panels::keys::PAUSE)) and
+    /// the theme picker, as the TUI holds them.
     ui: crate::panels::ui_state::UiState,
     /// The Sources panel's mutation seam, as the TUI's.
     connected: crate::runtime::ConnectedSources,

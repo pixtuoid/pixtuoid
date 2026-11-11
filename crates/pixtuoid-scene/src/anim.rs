@@ -281,7 +281,7 @@ fn loop_time(wall: SystemTime, pace: u64) -> u64 {
     epoch_ms(wall) / (FULL_TICK_MS * pace) * FULL_TICK_MS
 }
 
-/// A painter's `[p]ause`: while paused, every read of the clock gives the
+/// A painter's pause: while paused, every read of the clock gives the
 /// instant the pause began, so the whole office holds still; a resume shows
 /// the present, not that instant.
 #[doc(hidden)]

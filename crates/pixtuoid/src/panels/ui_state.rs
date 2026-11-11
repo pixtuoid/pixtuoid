@@ -105,9 +105,9 @@ pub(crate) struct UiState {
     version_popup_open: bool,
     notices: Notices,
     help_open: bool,
-    /// [`keys::PAUSE`](super::keys::PAUSE): while paused, `now()` returns the
-    /// frozen instant so every clock-driven animation (and the dashboard
-    /// marquee) holds still.
+    /// The pause (toggled by [`PAUSE`](super::keys::PAUSE)): while paused, `now()`
+    /// returns the frozen instant so every clock-driven animation (and the
+    /// dashboard marquee) holds still.
     pause: pixtuoid_scene::anim::PauseClock,
     /// `$PIXTUOID_FAKE_NOW`'s instant, Unix seconds, and when it was read:
     /// the clock `just pace-check` starts at a transition or at dusk, read

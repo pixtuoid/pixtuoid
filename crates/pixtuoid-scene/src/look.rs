@@ -190,7 +190,7 @@ pub struct RenderInputs<'a, S = crate::floor::FloorScene> {
     /// The office's gateway chip on the wall board, which only the office
     /// knows: [`office_gateway`](crate::tally::office_gateway).
     pub gateway: Option<DaemonState>,
-    /// The classic's walkable/approach/route debug layer (the `w` toggle).
+    /// The classic's walkable/approach/route debug layer (the walkable toggle).
     pub debug_walkable: bool,
     /// The brightness the host's modal leaves the frame.
     pub dim: Dim,
