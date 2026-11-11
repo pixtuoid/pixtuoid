@@ -15,7 +15,7 @@ use crate::walkable::{OccupancyOverlay, WalkableMask};
 
 use crate::layout::{
     Bounds, COARSE_CELL_SIZE, CoarseGrid, Point, cell_anchor, cell_center, cell_dims, cell_holding,
-    cell_walkable, grid_origin, snap, snap_cell, snap_where,
+    cell_walkable, grid_origin, open, snap, snap_cell, snap_where,
 };
 use crate::physics::{OCTILE_DIAGONAL_COST, OCTILE_STRAIGHT_COST, octile_cost};
 
@@ -101,21 +101,15 @@ impl Router for AStarRouter {
         if let Some(p) = self.paths.get(&(from, to, aim)) {
             return p.clone();
         }
-        // Cache ONLY real routes. `path_clear_under` validates cached entries
-        // against the OVERLAY only, never the static mask, so a straight
-        // [from, to] fallback minted while a transient blocker severed the grid
-        // would survive every retain() and serve a walk-through-walls line for
-        // that key forever. Left uncached it re-routes next call.
-        match find_path(mask, overlay, self.preferred_zone, from, to, aim) {
-            Some(path) => {
-                self.paths.insert((from, to, aim), path.clone());
-                if self.paths.len() > PATH_CACHE_CAP {
-                    self.paths.clear();
-                }
-                path
-            }
-            None => vec![from, to],
+        // `find_path` falls back to the static floor, so no agent can leave a pair
+        // unroutable: its straight line answers what the layout itself can't route.
+        let path = find_path(mask, overlay, self.preferred_zone, from, to, aim)
+            .unwrap_or_else(|| vec![from, to]);
+        self.paths.insert((from, to, aim), path.clone());
+        if self.paths.len() > PATH_CACHE_CAP {
+            self.paths.clear();
         }
+        path
     }
 
     fn new_layout(&mut self, zone: Bounds) {
@@ -126,29 +120,12 @@ impl Router for AStarRouter {
     }
 }
 
-/// Is `path` still walkable under the current `overlay`? Samples each segment at
-/// a small stride, so it tolerates a tiny overshoot (a 1-px clip into an obstacle
-/// won't invalidate, but a real intersection at any corner will).
+/// Does `path` still pass clear of `overlay`, on the pixels [`segment_clear`]
+/// checks? This is [`open`]'s overlay half alone: the mask half held when the
+/// path was built, and a new layout drops every cached path.
 fn path_clear_under(path: &[Point], overlay: &OccupancyOverlay) -> bool {
-    const SAMPLE_STRIDE_PX: i32 = 4;
-    if overlay.is_empty() {
-        return true;
-    }
-    for w in path.windows(2) {
-        let (a, b) = (w[0], w[1]);
-        let dx = i32::from(b.x) - i32::from(a.x);
-        let dy = i32::from(b.y) - i32::from(a.y);
-        let steps = dx.abs().max(dy.abs()).max(1) / SAMPLE_STRIDE_PX;
-        let n = steps.max(2);
-        for i in 0..=n {
-            let x = (i32::from(a.x) + dx * i / n) as u16;
-            let y = (i32::from(a.y) + dy * i / n) as u16;
-            if overlay.blocks(x, y) {
-                return false;
-            }
-        }
-    }
-    true
+    path.windows(2)
+        .all(|segment| strictly_between(segment[0], segment[1]).all(|p| !overlay.blocks(p.x, p.y)))
 }
 
 #[derive(Eq, PartialEq)]
@@ -199,8 +176,29 @@ fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
 /// Max rings the A\* start/goal snap probes for a walkable coarse cell.
 const MAX_SNAP_RADIUS: u16 = 12;
 
-/// Run A* on the layout's walkability mask + per-frame occupancy.
+/// Run A* on the layout's walkability mask + per-frame occupancy. The route is
+/// built on [`open`] floor, clear of the standing agents; where that finds no
+/// way, or its way would cut a wall, it is built on the static floor alone and
+/// walks through the agents, which move on, never through a wall.
 pub(crate) fn find_path(
+    mask: &WalkableMask,
+    overlay: &OccupancyOverlay,
+    preferred: Option<Bounds>,
+    from: Point,
+    to: Point,
+    aim: Point,
+) -> Option<Vec<Point>> {
+    let static_floor = OccupancyOverlay::new();
+    route_over(mask, overlay, preferred, from, to, aim)
+        .filter(|path| {
+            path.windows(2)
+                .all(|segment| segment_clear(mask, &static_floor, segment[0], segment[1]))
+        })
+        .or_else(|| route_over(mask, &static_floor, preferred, from, to, aim))
+}
+
+/// [`find_path`] on the floor [`open`] under `overlay` leaves.
+fn route_over(
     mask: &WalkableMask,
     overlay: &OccupancyOverlay,
     preferred: Option<Bounds>,
@@ -225,16 +223,14 @@ pub(crate) fn find_path(
     let mut coarse = CoarseGrid::new(mask, overlay);
     let mut search = |goal| Some((goal, a_star(&mut coarse, mask, preferred, start, goal)?));
     // `aim`'s cell stands in for `to`'s own only where A* reaches it and the last step,
-    // from that cell's anchor to `to`, stays on open floor and clear of the agents.
-    let aimed = cell_near(aim).filter(|&(cx, cy)| {
-        let anchor = cell_anchor(mask, cx, cy);
-        segment_clear(mask, anchor, to) && path_clear_under(&[anchor, to], overlay)
-    });
+    // from that cell's anchor to `to`, stays on open floor.
+    let aimed = cell_near(aim)
+        .filter(|&(cx, cy)| segment_clear(mask, overlay, cell_anchor(mask, overlay, cx, cy), to));
     let (goal, came_from) = match aimed.and_then(&mut search) {
         Some(reached) => reached,
         None => search(cell_near(to)?)?,
     };
-    Some(reconstruct(mask, &came_from, goal, from, to))
+    Some(reconstruct(mask, overlay, &came_from, goal, from, to))
 }
 
 /// The cell each cell on A*'s way from `start` to `goal` was reached from, or
@@ -333,13 +329,14 @@ pub(crate) fn snap_point_where(
         cell_w,
         cell_h,
         MAX_SNAP_RADIUS,
-        |(cx, cy)| cell_walkable(mask, &empty, cx, cy) && fits(cell_anchor(mask, cx, cy)),
+        |(cx, cy)| cell_walkable(mask, &empty, cx, cy) && fits(cell_anchor(mask, &empty, cx, cy)),
     )?;
-    Some(cell_anchor(mask, cx, cy))
+    Some(cell_anchor(mask, &empty, cx, cy))
 }
 
 fn reconstruct(
     mask: &WalkableMask,
+    overlay: &OccupancyOverlay,
     came_from: &Grid<Option<(u16, u16)>>,
     end: (u16, u16),
     from: Point,
@@ -354,7 +351,7 @@ fn reconstruct(
     cells.reverse();
     let anchors: Vec<Point> = cells
         .iter()
-        .map(|&(cx, cy)| cell_anchor(mask, cx, cy))
+        .map(|&(cx, cy)| cell_anchor(mask, overlay, cx, cy))
         .collect();
     // A raw endpoint replaces the anchor beside it only where the segment it
     // shortens stays on open floor: that anchor's cell can be up to half wall, and
@@ -362,16 +359,19 @@ fn reconstruct(
     let mut pts = vec![from];
     match anchors[..] {
         [only] => {
-            if !segment_clear(mask, from, to) {
+            if !segment_clear(mask, overlay, from, to) {
                 pts.push(only);
             }
         }
         [first, ref inner @ .., last] => {
-            if !segment_clear(mask, from, inner.first().copied().unwrap_or(last)) {
+            if !segment_clear(mask, overlay, from, inner.first().copied().unwrap_or(last)) {
                 pts.push(first);
             }
             pts.extend_from_slice(inner);
-            if pts.last().is_some_and(|&p| !segment_clear(mask, p, to)) {
+            if pts
+                .last()
+                .is_some_and(|&p| !segment_clear(mask, overlay, p, to))
+            {
                 pts.push(last);
             }
         }
@@ -381,22 +381,27 @@ fn reconstruct(
     let mut turned = Vec::with_capacity(pts.len() * 2);
     for segment in pts.windows(2) {
         turned.push(segment[0]);
-        turned.extend(segment_corners(mask, segment[0], segment[1]));
+        turned.extend(segment_corners(mask, overlay, segment[0], segment[1]));
     }
     turned.push(to);
-    simplify_polyline(mask, turned)
+    simplify_polyline(mask, overlay, turned)
 }
 
 /// The corners a segment from `a` to `b` turns on to stay on open floor: none
 /// when the straight segment does, an [`elbow`] when an L does, else a
 /// [`pixel_detour`]. A segment neither clears stays straight.
-fn segment_corners(mask: &WalkableMask, a: Point, b: Point) -> Vec<Point> {
-    if segment_clear(mask, a, b) {
+fn segment_corners(
+    mask: &WalkableMask,
+    overlay: &OccupancyOverlay,
+    a: Point,
+    b: Point,
+) -> Vec<Point> {
+    if segment_clear(mask, overlay, a, b) {
         return Vec::new();
     }
-    elbow(mask, a, b)
+    elbow(mask, overlay, a, b)
         .map(|c| vec![c])
-        .or_else(|| pixel_detour(mask, a, b))
+        .or_else(|| pixel_detour(mask, overlay, a, b))
         .unwrap_or_default()
 }
 
@@ -409,7 +414,12 @@ const DETOUR_MARGIN: u16 = CELL_SIZE;
 /// straight wherever a segment stays on open floor; `None` when the box holds no
 /// such walk. Two routing cells are walkable at half open, so the gap joining
 /// them can be a pixel wide, where neither the straight segment nor an L fits.
-fn pixel_detour(mask: &WalkableMask, a: Point, b: Point) -> Option<Vec<Point>> {
+fn pixel_detour(
+    mask: &WalkableMask,
+    overlay: &OccupancyOverlay,
+    a: Point,
+    b: Point,
+) -> Option<Vec<Point>> {
     let lo = |p: u16, q: u16| p.min(q).saturating_sub(DETOUR_MARGIN);
     let hi = |p: u16, q: u16, end: u16| {
         Some(
@@ -439,7 +449,7 @@ fn pixel_detour(mask: &WalkableMask, a: Point, b: Point) -> Option<Vec<Point>> {
                 continue;
             };
             let q = Point { x, y };
-            if inside(q) && came_from[at(q)].is_none() && (q == b || mask.is_walkable(x, y)) {
+            if inside(q) && came_from[at(q)].is_none() && (q == b || open(mask, overlay, x, y)) {
                 came_from[at(q)] = Some(p);
                 queue.push_back(q);
             }
@@ -455,7 +465,7 @@ fn pixel_detour(mask: &WalkableMask, a: Point, b: Point) -> Option<Vec<Point>> {
     while i + 1 < walk.len() {
         i = (i + 1..walk.len())
             .rev()
-            .find(|&j| segment_clear(mask, walk[i], walk[j]))
+            .find(|&j| segment_clear(mask, overlay, walk[i], walk[j]))
             .unwrap_or(i + 1);
         corners.extend(walk.get(i).filter(|_| i + 1 < walk.len()));
     }
@@ -466,29 +476,39 @@ fn pixel_detour(mask: &WalkableMask, a: Point, b: Point) -> Option<Vec<Point>> {
 /// straight segment crosses blocked floor and one of the two L-shaped ones doesn't.
 /// Two adjacent routing cells are walkable at half open, so the straight segment
 /// between their anchors can clip the corner of a wall standing in either.
-fn elbow(mask: &WalkableMask, a: Point, b: Point) -> Option<Point> {
-    if segment_clear(mask, a, b) {
+fn elbow(mask: &WalkableMask, overlay: &OccupancyOverlay, a: Point, b: Point) -> Option<Point> {
+    if segment_clear(mask, overlay, a, b) {
         return None;
     }
     [Point { x: b.x, y: a.y }, Point { x: a.x, y: b.y }]
         .into_iter()
         .find(|&c| {
-            mask.is_walkable(c.x, c.y) && segment_clear(mask, a, c) && segment_clear(mask, c, b)
+            open(mask, overlay, c.x, c.y)
+                && segment_clear(mask, overlay, a, c)
+                && segment_clear(mask, overlay, c, b)
         })
 }
 
-/// Does every pixel a walker passes strictly between `a` and `b` stand on the
-/// static `mask`? The ends are exempt: a raw endpoint may sit in a routing pad.
-fn segment_clear(mask: &WalkableMask, a: Point, b: Point) -> bool {
-    crate::physics::segment_pixels(a, b)
-        .filter(|&p| p != a && p != b)
-        .all(|p| mask.is_walkable(p.x, p.y))
+/// Does every pixel a walker passes strictly between `a` and `b` stand on
+/// [`open`] floor? The ends are exempt: a raw endpoint may sit in a routing pad,
+/// or in its own walker's or its goal's occupant's footprint.
+fn segment_clear(mask: &WalkableMask, overlay: &OccupancyOverlay, a: Point, b: Point) -> bool {
+    strictly_between(a, b).all(|p| open(mask, overlay, p.x, p.y))
+}
+
+/// The pixels a walker passes going straight from `a` to `b`, its ends left out.
+fn strictly_between(a: Point, b: Point) -> impl Iterator<Item = Point> {
+    crate::physics::segment_pixels(a, b).filter(move |&p| p != a && p != b)
 }
 
 /// Drop each corner collinear with its neighbours, unless the merged segment would
 /// cross blocked floor its two halves step around: a walk truncates toward its
 /// start, so one long segment lands on different pixels than its halves.
-fn simplify_polyline(mask: &WalkableMask, pts: Vec<Point>) -> Vec<Point> {
+fn simplify_polyline(
+    mask: &WalkableMask,
+    overlay: &OccupancyOverlay,
+    pts: Vec<Point>,
+) -> Vec<Point> {
     if pts.len() < 3 {
         return pts;
     }
@@ -503,8 +523,9 @@ fn simplify_polyline(mask: &WalkableMask, pts: Vec<Point>) -> Vec<Point> {
         let dx_out = i32::from(next.x) - i32::from(here.x);
         let dy_out = i32::from(next.y) - i32::from(here.y);
         let collinear = dx_in * dy_out == dy_in * dx_out;
-        let crossed_clean = segment_clear(mask, prev, here) && segment_clear(mask, here, next);
-        if !collinear || (crossed_clean && !segment_clear(mask, prev, next)) {
+        let clear = |a, b| segment_clear(mask, overlay, a, b);
+        let crossed_clean = clear(prev, here) && clear(here, next);
+        if !collinear || (crossed_clean && !clear(prev, next)) {
             out.push(here);
         }
     }
