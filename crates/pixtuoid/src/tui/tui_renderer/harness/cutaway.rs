@@ -1990,7 +1990,7 @@ fn press(
             respawn: no_respawn,
             installed: Vec::new,
             focus: |_| panic!("a look key focuses nothing"),
-            changed: &tokio::sync::mpsc::unbounded_channel().0,
+            change_tx: &tokio::sync::mpsc::unbounded_channel().0,
             run_change: |_| panic!("a look key changes no source"),
         },
     );

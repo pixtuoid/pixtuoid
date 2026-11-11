@@ -486,13 +486,13 @@ const EXIT_POLL: Duration = Duration::from_millis(20);
 /// `command`'s output with stdin null, or `None` past `limit`, which kills its
 /// process group (Unix) or Job Object (Windows): a launcher can leave the hung
 /// work to a child of its own.
-fn output_within(
+pub(crate) fn output_within(
     command: std::process::Command,
     limit: Duration,
 ) -> std::io::Result<Option<std::process::Output>> {
     use std::process::Stdio;
     #[cfg(unix)]
-    kill_running_on_quit()?;
+    kill_running_on_quit();
     let deadline = std::time::Instant::now() + limit;
     let mut command = process_wrap::std::CommandWrap::from(command);
     command
@@ -504,9 +504,10 @@ fn output_within(
     command.wrap(process_wrap::std::ProcessGroup::leader());
     #[cfg(windows)]
     command.wrap(process_wrap::std::JobObject);
-    let mut child = command.spawn()?;
     #[cfg(unix)]
-    let _running = Running::listed(child.id());
+    let (mut child, _listed) = spawn_listed(&mut command)?;
+    #[cfg(windows)]
+    let mut child = command.spawn()?;
     let stdout = drain(child.stdout().take())?;
     let stderr = drain(child.stderr().take())?;
     let status = loop {
@@ -515,7 +516,12 @@ fn output_within(
         }
         if std::time::Instant::now() >= deadline {
             child.start_kill()?;
-            reap(child.as_mut())?;
+            // Reaped, so no zombie outlives the run. Windows leaves none, and
+            // a Job Object's wait is for every process in it, whose exit
+            // message is "not guaranteed" (learn.microsoft.com,
+            // `JOBOBJECT_ASSOCIATE_COMPLETION_PORT`).
+            #[cfg(unix)]
+            child.wait()?;
             return Ok(None);
         }
         std::thread::sleep(EXIT_POLL);
@@ -536,96 +542,107 @@ fn output_within(
     }
 }
 
-/// Reap a killed child, so no zombie outlives the run. Unix's only: Windows
-/// leaves none, and a Job Object's wait is for every process in it, whose exit
-/// message is "not guaranteed" (learn.microsoft.com,
-/// `JOBOBJECT_ASSOCIATE_COMPLETION_PORT`), so it could block forever.
-fn reap(child: &mut dyn process_wrap::std::ChildWrapper) -> std::io::Result<()> {
-    #[cfg(unix)]
-    child.wait()?;
-    #[cfg(windows)]
-    let _ = child;
-    Ok(())
+/// The process groups of the CLIs this process runs. Each leads its own,
+/// which a terminal's Ctrl-C never reaches.
+#[cfg(unix)]
+struct Groups {
+    running: Vec<u32>,
+    /// Set by [`kill_running`]: the process is ending, and a group started
+    /// past it would outlive it.
+    closed: bool,
 }
 
-/// The process groups of the CLIs running now. Each leads its own, which a
-/// terminal's Ctrl-C never reaches.
 #[cfg(unix)]
-static RUNNING: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
-
-/// Group `0`'s place in [`RUNNING`], for as long as this lives.
-#[cfg(unix)]
-pub(crate) struct Running(u32);
+static GROUPS: std::sync::Mutex<Groups> = std::sync::Mutex::new(Groups {
+    running: Vec::new(),
+    closed: false,
+});
 
 #[cfg(unix)]
-impl Running {
-    pub(crate) fn listed(group: u32) -> Self {
-        let mut running = RUNNING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        running.push(group);
-        Self(group)
+fn groups() -> std::sync::MutexGuard<'static, Groups> {
+    GROUPS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// `command`'s child, listed in [`GROUPS`] for as long as the guard lives;
+/// refused once [`kill_running`] has closed it. Spawned under the lock, so no
+/// group starts between the kill and the close.
+#[cfg(unix)]
+fn spawn_listed(
+    command: &mut process_wrap::std::CommandWrap,
+) -> std::io::Result<(Box<dyn process_wrap::std::ChildWrapper>, Listed)> {
+    let mut groups = groups();
+    if groups.closed {
+        return Err(std::io::Error::other("pixtuoid is quitting"));
     }
+    let child = command.spawn()?;
+    groups.running.push(child.id());
+    let listed = Listed(child.id());
+    Ok((child, listed))
 }
 
+/// A group's place in [`GROUPS`].
 #[cfg(unix)]
-impl Drop for Running {
+struct Listed(u32);
+
+#[cfg(unix)]
+impl Drop for Listed {
     fn drop(&mut self) {
-        let mut running = RUNNING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        running.retain(|&group| group != self.0);
+        groups().running.retain(|&group| group != self.0);
     }
 }
 
-/// Kill every [`RUNNING`] group: once this process is gone, nothing holds one
-/// to its limit.
+/// Kill every running group and start no other: once this process is gone,
+/// nothing holds one to its limit.
 #[cfg(unix)]
 pub(crate) fn kill_running() {
-    let running = RUNNING
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let groups = running
+    let mut groups = groups();
+    groups.closed = true;
+    let running = groups
+        .running
         .iter()
         .filter_map(|&group| rustix::process::Pid::from_raw(i32::try_from(group).ok()?));
-    for group in groups {
+    for group in running {
         let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
     }
 }
 
 /// From the first call on, a quit signal [kills every running group](kill_running),
 /// then ends the process by its default disposition, unless a run that
-/// [owns the quit](crate::runtime::QuitArms::owned) caught it too, whose
+/// [owns the quit](crate::runtime::QuitArms::is_owned) caught it too, whose
 /// teardown comes first. Called before a group's spawn: a signal landing
 /// before the arm would end the process with the group left running.
 #[cfg(unix)]
-pub(crate) fn kill_running_on_quit() -> std::io::Result<()> {
-    // Not a `OnceLock`: arming can fail, and its fallible init is unstable.
-    static ARMED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
-    let mut armed = ARMED
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if *armed {
-        return Ok(());
-    }
+fn kill_running_on_quit() {
+    static ARMED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    ARMED.get_or_init(|| {
+        if let Err(e) = arm_kill_running_on_quit() {
+            tracing::warn!(error = %e, "a quit will leave the CLIs this process runs running");
+        }
+    });
+}
+
+/// [`kill_running_on_quit`]'s listener: a thread on a runtime of its own,
+/// whose signal driver its handlers register with.
+#[cfg(unix)]
+fn arm_kill_running_on_quit() -> std::io::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     let quit = {
-        // The handlers register with this runtime's signal driver.
         let _in = runtime.enter();
-        crate::runtime::QuitArms::unowned()
+        crate::runtime::QuitArms::listener()
     };
     std::thread::Builder::new()
         .name("quit-kills-clis".into())
         .spawn(move || {
             let signal = runtime.block_on(quit.signalled());
             kill_running();
-            if !crate::runtime::QuitArms::owned() {
+            if !crate::runtime::QuitArms::is_owned() {
                 signal.reraise();
             }
         })?;
-    *armed = true;
     Ok(())
 }
 
@@ -1400,6 +1417,25 @@ mod tests {
             let pid = std::fs::read_to_string(at).unwrap();
             assert!(gone(pid.trim()), "{} outlived the kill", at.display());
         }
+    }
+
+    /// A quit's kill closes the way to new groups: a CLI asked to run past it
+    /// never starts, so none outlives the process.
+    #[cfg(unix)]
+    #[test]
+    fn no_cli_starts_once_a_quit_has_killed_the_running() {
+        let dir = TempDir::new().unwrap();
+        let ran = dir.path().join("ran");
+        kill_running();
+        let err = with_fake("echo $$ > \"$1\"", "", || {
+            FAKE.run_within(&[ran.as_os_str()], LIMIT)
+        })
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("pixtuoid is quitting"),
+            "{err:#}"
+        );
+        assert!(!ran.exists(), "the CLI ran past the quit");
     }
 
     /// More than a pipe holds, so a run that waits before it reads never ends.

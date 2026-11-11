@@ -350,7 +350,7 @@ impl QuitSignal {
 }
 
 /// The platform's quit signals (`QUIT_SIGNALS`; `windows_arms` on Windows), their
-/// handlers installed at [`arm`](Self::arm): armed before a painter sets up what its exit
+/// handlers installed as they are built: armed before a painter sets up what its exit
 /// undoes (the TUI's terminal modes, the floating window's saved geometry, the
 /// kitty shared-memory unlink), so no signal can land in between and kill the
 /// process by its default disposition. A signal inherited as SIG_IGN stays
@@ -370,12 +370,12 @@ impl QuitArms {
     pub(crate) fn arm() -> Self {
         #[cfg(unix)]
         QUIT_OWNED.store(true, Ordering::SeqCst);
-        Self::unowned()
+        Self::listener()
     }
 
     /// [`Self::arm`]'s handlers, for a listener that leaves ending the process
-    /// to whoever [owns the quit](Self::owned).
-    pub(crate) fn unowned() -> Self {
+    /// to a run that armed its own.
+    pub(crate) fn listener() -> Self {
         #[cfg(unix)]
         let arms = QUIT_SIGNALS.into_iter().filter_map(arm_signal).collect();
         #[cfg(not(unix))]
@@ -385,7 +385,7 @@ impl QuitArms {
 
     /// Whether a run [armed](Self::arm) to own its quit.
     #[cfg(unix)]
-    pub(crate) fn owned() -> bool {
+    pub(crate) fn is_owned() -> bool {
         QUIT_OWNED.load(Ordering::SeqCst)
     }
 

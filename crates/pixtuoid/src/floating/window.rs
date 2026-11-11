@@ -54,7 +54,7 @@ pub(crate) struct FloatingApp {
     connected: crate::runtime::ConnectedSources,
     /// Where a Sources change sends its result, which reaches the loop as
     /// [`FloatingEvent::SourcesChanged`].
-    changed: crate::panels::ChangeTx,
+    change_tx: crate::panels::ChangeTx,
     /// The modifier keys held, which a key is read with.
     modifiers: winit::keyboard::ModifiersState,
     /// What the frame on screen shows beside the office.
@@ -233,7 +233,7 @@ impl FloatingApp {
             look: None,
         });
         let connected = boot.connected.clone();
-        let (changed, mut change_done) = tokio::sync::mpsc::unbounded_channel();
+        let (change_tx, mut change_done) = tokio::sync::mpsc::unbounded_channel();
         let change_proxy = proxy.clone();
         boot.rt.spawn(async move {
             while let Some(done) = change_done.recv().await {
@@ -252,7 +252,7 @@ impl FloatingApp {
             config_path,
             ui,
             connected,
-            changed,
+            change_tx,
             modifiers: winit::keyboard::ModifiersState::empty(),
             // Until `resumed` names the platform: presenting every frame is
             // safe on any.
@@ -407,7 +407,7 @@ impl FloatingApp {
                 respawn: crate::audio::respawn,
                 installed: crate::sources::detect,
                 focus: crate::focus::focus_slot,
-                changed: &self.changed,
+                change_tx: &self.change_tx,
                 run_change: crate::panels::make_change,
             },
         )

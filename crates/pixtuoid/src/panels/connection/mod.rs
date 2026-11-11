@@ -15,7 +15,7 @@ use pixtuoid_core::state::SceneState;
 
 // Re-exported so this module, the painter and the harness keep their
 // `connection::…` paths; the model itself lives in `crate::sources`.
-pub(crate) use crate::sources::{ConnState, ConnectionRow, build_rows};
+pub(crate) use crate::sources::{ConnState, ConnectionRow, build_rows, rows_without_health};
 
 /// WHAT is live for one row — a TYPED split, because the two source classes have
 /// nothing to count in common. An `Agent` source's liveness is its `AgentSlot`s; a
@@ -68,7 +68,7 @@ pub struct LiveInfo {
     /// watcher dead.
     pub dead: bool,
     /// A change of the source runs off the loop: to connected when `true`.
-    pub changing: Option<bool>,
+    pub in_flight: Option<bool>,
 }
 
 /// The Sources panel's per-tick render frame, `RenderFrames::connection`: one
@@ -92,8 +92,8 @@ pub(crate) struct ConnectionUi {
     /// because the row set doesn't churn frame-to-frame (unlike the dashboard,
     /// which is AgentId-keyed).
     pub selected: usize,
-    /// Cached CONNECTION facet — rebuilt on open + after each change, NEVER per
-    /// frame. The LIVE facet is recomputed per frame instead.
+    /// Cached CONNECTION facet — rebuilt off the loop on open and after each
+    /// change, NEVER per frame. The LIVE facet is recomputed per frame instead.
     pub rows: Vec<ConnectionRow>,
     /// `Some(row_idx)` ⇒ a disconnect is armed on that row, awaiting
     /// [`keys::CONFIRM`](crate::panels::keys::CONFIRM) or
@@ -128,7 +128,7 @@ pub(crate) fn live_for(
         return LiveInfo {
             facet: LiveFacet::Daemon(rollup),
             dead,
-            changing: None,
+            in_flight: None,
         };
     }
     let mut agents = 0usize;
@@ -147,7 +147,7 @@ pub(crate) fn live_for(
             last_event_age: max_evt.map(|t| now.duration_since(t).unwrap_or_default()),
         },
         dead,
-        changing: None,
+        in_flight: None,
     }
 }
 
@@ -157,12 +157,12 @@ pub(crate) fn live_view(
     rows: &[ConnectionRow],
     scene: &SceneState,
     health: &[SourceDeath],
-    changing: Option<&super::SourcesChange>,
+    changing: Option<&super::PanelChange>,
 ) -> Vec<(ConnectionRow, LiveInfo)> {
     rows.iter()
         .map(|r| {
             let live = LiveInfo {
-                changing: changing.and_then(|c| c.on_for(r.source_id)),
+                in_flight: changing.and_then(|c| c.on_for(r.source_id)),
                 ..live_for(now, r.source_id, scene, health)
             };
             (r.clone(), live)
@@ -196,7 +196,7 @@ impl FailedOp {
 }
 
 /// How the panel words a change to `on` while it runs.
-pub(crate) fn changing(on: bool) -> &'static str {
+pub(crate) fn progress_word(on: bool) -> &'static str {
     if on { "connecting" } else { "disconnecting" }
 }
 

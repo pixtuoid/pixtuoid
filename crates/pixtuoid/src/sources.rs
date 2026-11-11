@@ -806,9 +806,25 @@ pub(crate) fn build_rows_from(inputs: Vec<RowInput>) -> Vec<ConnectionRow> {
         .collect()
 }
 
+/// [`build_rows`] less its health rollup: what the Sources panel shows until
+/// that rollup, whose `doctor::diagnose` can run a CLI, lands from off its loop.
+pub(crate) fn rows_without_health(connected: &HashSet<String>) -> Vec<ConnectionRow> {
+    rows_with(connected, |_| None)
+}
+
 /// Performs FS reads AND, for connected rows, the health rollup
 /// (`doctor::diagnose`). `log` is the warn-floor log text.
 pub(crate) fn build_rows(connected: &HashSet<String>, log: &str) -> Vec<ConnectionRow> {
+    rows_with(connected, |sid| {
+        crate::doctor::diagnose(sid, log, None).summary()
+    })
+}
+
+/// The rows from FS reads, each connected one's health `health`'s.
+fn rows_with(
+    connected: &HashSet<String>,
+    health: impl Fn(&str) -> Option<String>,
+) -> Vec<ConnectionRow> {
     let inputs = pixtuoid_core::source::registry::REGISTRY
         .iter()
         .map(|d| {
@@ -826,9 +842,7 @@ pub(crate) fn build_rows(connected: &HashSet<String>, log: &str) -> Vec<Connecti
                 target,
                 facts,
                 connected,
-                health: connected
-                    .then(|| crate::doctor::diagnose(d.name, log, None).summary())
-                    .flatten(),
+                health: connected.then(|| health(d.name)).flatten(),
             }
         })
         .collect();

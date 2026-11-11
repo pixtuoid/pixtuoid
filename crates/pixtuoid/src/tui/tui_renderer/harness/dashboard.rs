@@ -61,7 +61,7 @@ fn connection_panel_renders_both_facets_borderless() {
                     last_event_age: Some(std::time::Duration::from_secs(3)),
                 },
                 dead: false,
-                changing: None,
+                in_flight: None,
             },
         ),
         (
@@ -80,7 +80,7 @@ fn connection_panel_renders_both_facets_borderless() {
                     last_event_age: Some(std::time::Duration::from_secs(12)),
                 },
                 dead: false,
-                changing: None,
+                in_flight: None,
             },
         ),
     ];

@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use super::{Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_span, to_color};
 
 use crate::panels::connection::{
-    ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, changing, no_action_hint,
+    ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, no_action_hint, progress_word,
 };
 use crate::panels::keys;
 use pixtuoid_scene::theme::Theme;
@@ -79,8 +79,10 @@ pub(crate) fn paint_connection_panel(
         )
     } else if let Some(res) = result {
         res.clone()
-    } else if let Some((row, _)) = rows.get(selected) {
-        if let Some(h) = &row.health {
+    } else if let Some((row, live)) = rows.get(selected) {
+        if let Some(on) = live.in_flight {
+            format!("{} \u{2026}", progress_word(on))
+        } else if let Some(h) = &row.health {
             h.clone()
         } else {
             // The install path is surfaced ONLY when Connected — otherwise it is a
@@ -156,8 +158,8 @@ fn connection_line(
         Style::default()
     };
 
-    let (c_glyph, c_text, c_color) = match (live.changing, row.state) {
-        (Some(on), _) => ('\u{2026}', changing(on), theme.ui.label_warn),
+    let (c_glyph, c_text, c_color) = match (live.in_flight, row.state) {
+        (Some(on), _) => ('\u{2026}', progress_word(on), theme.ui.label_warn),
         (None, ConnState::Connected) => ('\u{25cf}', "connected", theme.ui.label_ok),
         (None, ConnState::Disconnected) => ('\u{25cb}', "disconnected", theme.ui.label_idle),
         (None, ConnState::NoCli { .. }) => ('\u{2014}', "no CLI", theme.ui.label_idle),
@@ -426,7 +428,7 @@ mod tests {
                 last_event_age: Some(Duration::from_secs(3)),
             },
             dead: false,
-            changing: None,
+            in_flight: None,
         };
         let line = connection_line(&r, &live, false, SystemTime::UNIX_EPOCH, &NORMAL);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -443,7 +445,7 @@ mod tests {
             let live = LiveInfo {
                 facet,
                 dead: false,
-                changing: None,
+                in_flight: None,
             };
             connection_line(&r, &live, false, SystemTime::UNIX_EPOCH, &NORMAL)
                 .spans
@@ -500,7 +502,7 @@ mod tests {
                 last_event_age: Some(Duration::from_secs(1)),
             },
             dead: true,
-            changing: None,
+            in_flight: None,
         };
         let line = connection_line(&r, &live, false, SystemTime::UNIX_EPOCH, &NORMAL);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -518,7 +520,7 @@ mod tests {
                     last_event_age: Some(Duration::from_secs(0)),
                 },
                 dead: false,
-                changing: None,
+                in_flight: None,
             },
             false,
             SystemTime::UNIX_EPOCH,

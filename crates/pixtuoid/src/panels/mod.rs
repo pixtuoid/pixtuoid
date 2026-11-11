@@ -424,7 +424,7 @@ pub(crate) enum KeyAction {
 
 /// A change of the sources the Sources panel or the onboarding asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SourcesChange {
+pub(crate) enum PanelChange {
     /// The panel's toggle: connect `source_id` when `on`, else disconnect it.
     Toggle {
         source_id: &'static str,
@@ -433,17 +433,20 @@ pub(crate) enum SourcesChange {
     },
     /// The onboarding's confirm: connect each, in order.
     Onboarding(Vec<&'static str>),
+    /// The panel's open: its rows, read again.
+    Refresh,
 }
 
-impl SourcesChange {
+impl PanelChange {
     /// Whether it connects (`true`) or disconnects `source_id`, when it
     /// changes that source at all.
-    pub(crate) fn on_for(&self, source_id: &str) -> Option<bool> {
+    fn on_for(&self, source_id: &str) -> Option<bool> {
         match self {
             Self::Toggle {
                 source_id: id, on, ..
             } => (*id == source_id).then_some(*on),
             Self::Onboarding(ids) => ids.contains(&source_id).then_some(true),
+            Self::Refresh => None,
         }
     }
 
@@ -452,11 +455,13 @@ impl SourcesChange {
         match self {
             Self::Toggle { name, on, .. } => format!(
                 "{name}: still {} \u{2014} one change at a time",
-                connection::changing(*on)
+                connection::progress_word(*on)
             ),
-            Self::Onboarding(_) => {
-                "still connecting what the welcome picked \u{2014} one change at a time".into()
-            }
+            Self::Onboarding(_) => format!(
+                "still {} what you picked \u{2014} one change at a time",
+                connection::progress_word(true)
+            ),
+            Self::Refresh => "still reading the sources \u{2014} one change at a time".into(),
         }
     }
 
@@ -481,20 +486,21 @@ impl SourcesChange {
                     failed(id, name, connection::FailedOp::Connect)
                 })
                 .collect(),
+            Self::Refresh => Vec::new(),
         }
     }
 }
 
-/// A [`SourcesChange`] and what its thread makes it with.
+/// A [`PanelChange`] and what its thread makes it with.
 pub(crate) struct ChangeJob {
-    pub(crate) change: SourcesChange,
-    pub(crate) config_path: std::path::PathBuf,
-    pub(crate) connected: crate::runtime::ConnectedSources,
+    change: PanelChange,
+    config_path: std::path::PathBuf,
+    connected: crate::runtime::ConnectedSources,
     /// Where the rebuilt rows read their drift history.
-    pub(crate) log: Option<crate::run_log::LogLocation>,
+    log: Option<crate::run_log::LogLocation>,
 }
 
-/// A finished [`SourcesChange`]: what the user must hear of it, and the Sources
+/// A finished [`PanelChange`]: what the user must hear of it, and the Sources
 /// panel's rows rebuilt after it.
 #[derive(Debug, Clone)]
 pub(crate) struct ChangeDone {
@@ -518,21 +524,22 @@ pub(crate) fn make_change(job: ChangeJob) -> ChangeDone {
         log,
     } = job;
     let (onboarding, notices) = match change {
-        SourcesChange::Toggle {
+        PanelChange::Toggle {
             source_id,
             name,
             on,
         } => (
             false,
-            vec![toggle(&config_path, &connected, source_id, name, on)],
+            vec![set_connected(&config_path, &connected, source_id, name, on)],
         ),
-        SourcesChange::Onboarding(ids) => {
+        PanelChange::Onboarding(ids) => {
             let outcomes = crate::sources::connect_each(&config_path, &ids);
             for (id, _) in &outcomes {
                 crate::sources::refresh_gate(&config_path, &connected, id);
             }
             (true, onboarding_notices(&outcomes))
         }
+        PanelChange::Refresh => (false, Vec::new()),
     };
     let rows = connection::build_rows(&connected.snapshot(), &ui_state::log_text(log.as_ref()));
     ChangeDone {
@@ -543,13 +550,16 @@ pub(crate) fn make_change(job: ChangeJob) -> ChangeDone {
 }
 
 /// Start `change` on a thread of its own, which sends its [`ChangeDone`] to
-/// `cx.changed`: a host CLI's run can take [minutes](crate::install::io::HostCli::run),
+/// `cx.change_tx`: a host CLI's run can take [minutes](crate::install::io::HostCli::run),
 /// which a painter's loop must not wait out. One runs at a time, as a paired
 /// device's changes do (`serve::device`'s gate): two would race the config's
 /// lock, which [fails on contention](crate::install::io::lock_config).
-fn start_change<H: Host>(cx: &mut KeyCtx<'_, H>, change: SourcesChange) {
+fn start_change<H: Host>(cx: &mut KeyCtx<'_, H>, change: PanelChange) {
     if let Some(running) = &cx.ui.changing {
-        cx.ui.connection.last_result = Some(running.busy_line());
+        // A refresh needs none of its own: the running change brings fresh rows.
+        if change != PanelChange::Refresh {
+            cx.ui.connection.last_result = Some(running.busy_line());
+        }
         return;
     }
     let job = ChangeJob {
@@ -558,20 +568,20 @@ fn start_change<H: Host>(cx: &mut KeyCtx<'_, H>, change: SourcesChange) {
         connected: cx.connected.clone(),
         log: cx.ui.log().cloned(),
     };
-    let (run, changed) = (cx.run_change, cx.changed.clone());
+    let (run, change_tx) = (cx.run_change, cx.change_tx.clone());
     // Detached, not `spawn_blocking`: a runtime's drop waits for its blocking
     // work (tokio's `Runtime` docs), so a quit mid-change would wait out the CLI.
     let started = std::thread::Builder::new()
         .name("sources-change".into())
         .spawn(move || {
-            let _ = changed.send(run(job));
+            let _ = change_tx.send(run(job));
         });
     match started {
         Ok(_) => cx.ui.changing = Some(change),
         Err(e) => {
             tracing::warn!(error = %e, "could not start a Sources change");
             let done = ChangeDone {
-                onboarding: matches!(change, SourcesChange::Onboarding(_)),
+                onboarding: matches!(change, PanelChange::Onboarding(_)),
                 notices: change.unstarted(&e),
                 rows: cx.ui.connection.rows.clone(),
             };
@@ -596,9 +606,8 @@ pub(crate) fn finish_change(ui: &mut ui_state::UiState, done: ChangeDone) {
     surface_notices(ui, rows, notices);
 }
 
-/// Connect `source_id` when `on`, else disconnect it: the panel's line for
-/// what that did.
-fn toggle(
+/// Connect `source_id` when `on`, else disconnect it, and word what that did.
+fn set_connected(
     config_path: &std::path::Path,
     connected: &crate::runtime::ConnectedSources,
     source_id: &'static str,
@@ -943,7 +952,7 @@ pub(crate) struct KeyCtx<'a, H: Host> {
     /// so a test's focus key would drive the developer's desktop.
     pub(crate) focus: fn(&AgentSlot),
     /// Where a started change sends its [`ChangeDone`] back to the loop.
-    pub(crate) changed: &'a ChangeTx,
+    pub(crate) change_tx: &'a ChangeTx,
     /// Injected because the real [`make_change`] runs host CLIs and rewrites
     /// other CLIs' configs, so a test's toggle would reach the developer's own.
     pub(crate) run_change: fn(ChangeJob) -> ChangeDone,
@@ -1024,16 +1033,21 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
             if cx.ui.connection.open {
                 cx.ui.close_connection();
             } else {
-                // FS reads happen on open and after each toggle, never per frame.
-                let rows = connection::build_rows(&cx.connected.snapshot(), &cx.ui.read_conn_log());
+                // On the rows it last showed, else ones without their health,
+                // which the refresh brings: its rollup can run a CLI.
+                let rows = match std::mem::take(&mut cx.ui.connection.rows) {
+                    rows if rows.is_empty() => {
+                        connection::rows_without_health(&cx.connected.snapshot())
+                    }
+                    rows => rows,
+                };
                 cx.ui.open_connection(rows);
+                start_change(cx, PanelChange::Refresh);
             }
         }
         KeyAction::ConnectionUp => cx.ui.connection_move(-1),
         KeyAction::ConnectionDown => cx.ui.connection_move(1),
         KeyAction::ConnectionToggle => {
-            // Copy the fields out before any rebuild of `rows` (which would
-            // invalidate a `&ConnectionRow` borrow).
             let action = cx
                 .ui
                 .connection
@@ -1055,7 +1069,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
                     }
                     ToggleIntent::Connect => start_change(
                         cx,
-                        SourcesChange::Toggle {
+                        PanelChange::Toggle {
                             source_id,
                             name,
                             on: true,
@@ -1078,7 +1092,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
             if let Some((source_id, name)) = action {
                 start_change(
                     cx,
-                    SourcesChange::Toggle {
+                    PanelChange::Toggle {
                         source_id,
                         name,
                         on: false,
@@ -1096,7 +1110,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
             if checked.is_empty() {
                 cx.ui.close_onboarding();
             } else {
-                start_change(cx, SourcesChange::Onboarding(checked));
+                start_change(cx, PanelChange::Onboarding(checked));
             }
         }
         KeyAction::OnboardingSkip => cx.ui.close_onboarding(),
@@ -1111,7 +1125,9 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
 
 #[cfg(test)]
 mod dispatch_tests {
-    use super::{FloorNav, KeyAction, ModalState, connection, dispatch_key, toggle, ui_state};
+    use super::{
+        FloorNav, KeyAction, ModalState, connection, dispatch_key, set_connected, ui_state,
+    };
     use crossterm::event::{KeyCode, KeyModifiers};
 
     const NONE: KeyModifiers = KeyModifiers::NONE;
@@ -1897,7 +1913,7 @@ mod dispatch_tests {
         let connected = crate::runtime::ConnectedSources::default();
         for (on, outcome) in [(true, Outcome::Connected), (false, Outcome::Disconnected)] {
             let device = Changed::new("copilot", on, outcome, false, None, None);
-            let panel = toggle(&cfg, &connected, "copilot", "Copilot CLI", on).line;
+            let panel = set_connected(&cfg, &connected, "copilot", "Copilot CLI", on).line;
             assert_eq!(panel, device.line("Copilot CLI"));
         }
     }
@@ -1908,7 +1924,7 @@ mod dispatch_tests {
         let cfg = tmp.path().join("config.toml");
         let connected = crate::runtime::ConnectedSources::default();
 
-        let res = toggle(&cfg, &connected, "copilot", "Copilot CLI", true).line;
+        let res = set_connected(&cfg, &connected, "copilot", "Copilot CLI", true).line;
         assert!(res.contains("connected"), "result: {res}");
         assert!(connected.is_connected("copilot"), "gate opened");
         let written = std::fs::read_to_string(&cfg).unwrap();
@@ -1925,7 +1941,7 @@ mod dispatch_tests {
         let connected =
             crate::runtime::ConnectedSources::new(std::iter::once("copilot".to_string()).collect());
 
-        let res = toggle(&cfg, &connected, "copilot", "Copilot CLI", false).line;
+        let res = set_connected(&cfg, &connected, "copilot", "Copilot CLI", false).line;
         assert!(res.contains("disconnected"), "result: {res}");
         assert!(!connected.is_connected("copilot"), "gate closed");
         let written = std::fs::read_to_string(&cfg).unwrap();
@@ -1945,7 +1961,7 @@ mod dispatch_tests {
         let cfg = blocker.join("config.toml");
         let connected = crate::runtime::ConnectedSources::default();
 
-        let res = toggle(&cfg, &connected, "copilot", "Copilot CLI", true).line;
+        let res = set_connected(&cfg, &connected, "copilot", "Copilot CLI", true).line;
         assert!(res.contains("failed"), "must report the failure: {res}");
         assert!(
             !connected.is_connected("copilot"),
@@ -1965,7 +1981,7 @@ mod dispatch_tests {
         // A held lock refuses the rewrite (`lock_config` fails on contention)
         // while the flag still reads back.
         let held = crate::install::io::lock_config(&cfg).unwrap();
-        let res = toggle(&cfg, &connected, "copilot", "Copilot CLI", false).line;
+        let res = set_connected(&cfg, &connected, "copilot", "Copilot CLI", false).line;
         drop(held);
         assert!(res.contains("disconnect failed"), "result: {res}");
         assert!(
@@ -2208,7 +2224,7 @@ pub(crate) mod noted {
             }
         };
         let (onboarding, notices) = match &job.change {
-            &super::SourcesChange::Toggle {
+            &super::PanelChange::Toggle {
                 source_id,
                 name,
                 on,
@@ -2221,10 +2237,11 @@ pub(crate) mod noted {
                     name,
                 )],
             ),
-            super::SourcesChange::Onboarding(ids) => {
+            super::PanelChange::Onboarding(ids) => {
                 let outcomes: Vec<_> = ids.iter().map(|&id| (id, done(id, true))).collect();
                 (true, super::onboarding_notices(&outcomes))
             }
+            super::PanelChange::Refresh => (false, Vec::new()),
         };
         super::ChangeDone {
             onboarding,

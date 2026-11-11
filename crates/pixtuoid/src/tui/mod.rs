@@ -526,7 +526,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     });
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
-    let (changed, mut change_done) = tokio::sync::mpsc::unbounded_channel();
+    let (change_tx, mut change_done) = tokio::sync::mpsc::unbounded_channel();
 
     let mut fired = None;
     let result: Result<()> = (async {
@@ -580,7 +580,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                                 respawn: crate::audio::respawn,
                                 installed: crate::sources::detect,
                                 focus: crate::focus::focus_slot,
-                                changed: &changed,
+                                change_tx: &change_tx,
                                 run_change: crate::panels::make_change,
                             },
                         );
@@ -1225,7 +1225,7 @@ mod apply_key_action_tests {
         installed: fn() -> Vec<&'static str>,
         _tmp: tempfile::TempDir,
         config_path: std::path::PathBuf,
-        changed: crate::panels::ChangeTx,
+        change_tx: crate::panels::ChangeTx,
         change_done: tokio::sync::mpsc::UnboundedReceiver<crate::panels::ChangeDone>,
         run_change: fn(crate::panels::ChangeJob) -> crate::panels::ChangeDone,
     }
@@ -1234,7 +1234,7 @@ mod apply_key_action_tests {
         fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let config_path = tmp.path().join("config.toml");
-            let (changed, change_done) = tokio::sync::mpsc::unbounded_channel();
+            let (change_tx, change_done) = tokio::sync::mpsc::unbounded_channel();
             Self {
                 ui: super::ui_state::UiState::new(
                     &theme::NORMAL,
@@ -1266,7 +1266,7 @@ mod apply_key_action_tests {
                 installed: Vec::new,
                 _tmp: tmp,
                 config_path,
-                changed,
+                change_tx,
                 change_done,
                 run_change: crate::panels::noted::gated_change,
             }
@@ -1307,7 +1307,7 @@ mod apply_key_action_tests {
                     respawn: no_respawn,
                     installed: self.installed,
                     focus: crate::panels::noted::focus,
-                    changed: &self.changed,
+                    change_tx: &self.change_tx,
                     run_change: self.run_change,
                 },
             )
@@ -1353,11 +1353,11 @@ mod apply_key_action_tests {
             self.frame().lines().last().unwrap_or_default().to_owned()
         }
 
-        /// The Sources panel open on rows no machine's CLIs decide, on
-        /// `source_id`'s row.
-        fn sources_on(&mut self, source_id: &str) {
+        /// The Sources panel open on rows no machine's CLIs decide, those of
+        /// `connected` connected, on `source_id`'s row.
+        fn sources_on(&mut self, source_id: &str, connected: &[&str]) {
             self.ui
-                .open_connection(crate::panels::noted::rows(|_| false));
+                .open_connection(crate::panels::noted::rows(|id| connected.contains(&id)));
             self.ui.select_connection_source(source_id);
         }
 
@@ -1448,12 +1448,13 @@ mod apply_key_action_tests {
     #[test]
     fn a_connect_runs_off_the_loop_and_lands_when_it_ends() {
         let mut h = Harness::new();
-        h.sources_on("codex");
+        h.sources_on("codex", &[]);
         assert!(!h.apply(KeyAction::ConnectionToggle));
         assert!(h.ui.changing.is_some(), "the change runs");
         assert_eq!(h.ui.connection.last_result, None, "nothing has landed");
         let frame = h.frame();
         assert!(frame.contains("\u{2026} connecting"), "{frame}");
+        assert!(frame.contains("connecting \u{2026}"), "its detail: {frame}");
 
         h.ui.select_connection_source("cursor");
         h.apply(KeyAction::ConnectionToggle);
@@ -1477,6 +1478,57 @@ mod apply_key_action_tests {
         assert!(
             codex.is_some_and(|r| r.state == crate::sources::ConnState::Connected),
             "the rows are the change's"
+        );
+    }
+
+    /// A confirmed disconnect leaves the loop as a connect does, its row
+    /// reading as disconnecting until it lands.
+    #[test]
+    fn a_disconnect_runs_off_the_loop_and_lands_when_it_ends() {
+        use pixtuoid_core::remote::{Changed, Outcome};
+        let mut h = Harness::new();
+        h.sources_on("codex", &["codex"]);
+        h.apply(KeyAction::ConnectionToggle);
+        h.apply(KeyAction::ConnectionConfirm);
+        let frame = h.frame();
+        assert!(frame.contains("\u{2026} disconnecting"), "{frame}");
+        h.ui.select_connection_source("cursor");
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(
+            h.ui.connection.last_result,
+            Some(format!(
+                "{}: still disconnecting \u{2014} one change at a time",
+                name("codex")
+            ))
+        );
+
+        h.open_gate(false);
+        h.settle();
+        let gone = Changed::new("codex", false, Outcome::Disconnected, false, None, None);
+        assert_eq!(h.ui.connection.last_result, Some(gone.line(name("codex"))));
+        let codex = h.ui.connection.rows.iter().find(|r| r.source_id == "codex");
+        assert!(codex.is_some_and(|r| r.state == crate::sources::ConnState::Disconnected));
+    }
+
+    /// The panel opens at once on rows no probe has read, and reads them off
+    /// the loop: until they land, a change waits its turn.
+    #[test]
+    fn the_sources_panel_opens_at_once_and_reads_its_rows_off_the_loop() {
+        let mut h = Harness::new();
+        h.apply(KeyAction::ToggleConnection);
+        assert!(h.ui.connection.open && h.ui.connection.rows.len() > 1);
+        assert_eq!(h.ui.changing, Some(crate::panels::PanelChange::Refresh));
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(
+            h.ui.connection.last_result.as_deref(),
+            Some("still reading the sources \u{2014} one change at a time")
+        );
+        h.open_gate(false);
+        h.settle();
+        assert_eq!(h.ui.changing, None);
+        assert_eq!(
+            h.ui.connection.rows.len(),
+            crate::panels::noted::rows(|_| false).len()
         );
     }
 
@@ -1518,7 +1570,7 @@ mod apply_key_action_tests {
     #[test]
     fn a_failure_that_lands_on_a_closed_panel_reopens_it() {
         let mut h = Harness::new();
-        h.sources_on("cursor");
+        h.sources_on("cursor", &[]);
         h.apply(KeyAction::ConnectionToggle);
         h.apply(KeyAction::ConnectionClose);
         h.open_gate(true);

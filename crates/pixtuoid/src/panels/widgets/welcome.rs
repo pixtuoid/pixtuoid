@@ -93,7 +93,13 @@ pub(crate) fn paint_welcome(
     let shown_hints = elapsed_ms >= all_in;
     let mut below = vec![Line::from("")];
     below.push(if busy {
-        Line::from(Span::styled("  connecting \u{2026} \u{00b7} esc hide", dim))
+        Line::from(Span::styled(
+            format!(
+                "  {} \u{2026} \u{00b7} esc hide",
+                crate::panels::connection::progress_word(true)
+            ),
+            dim,
+        ))
     } else if shown_hints {
         Line::from(Span::styled(
             // The legend's keys are lower case.

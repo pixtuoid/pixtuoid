@@ -28,6 +28,8 @@ const DA1: usize = 2;
 const LINK_RTT: Duration = Duration::from_millis(500);
 /// crossterm's `EnterAlternateScreen`: the startup is past its queries.
 const ALT_SCREEN: &[u8] = b"\x1b[?1049h";
+/// crossterm's `LeaveAlternateScreen`, which only the office's teardown writes.
+const LEFT_ALT_SCREEN: &[u8] = b"\x1b[?1049l";
 /// A size the office lays out in.
 const SIZE: PtySize = PtySize {
     rows: 40,
@@ -117,6 +119,8 @@ struct Office {
     closed: Arc<AtomicBool>,
     /// Every byte the office has written.
     wrote: Arc<AtomicUsize>,
+    /// Whether it has left the alternate screen.
+    left: Arc<AtomicBool>,
     scanner: std::thread::JoinHandle<()>,
     replier: std::thread::JoinHandle<()>,
 }
@@ -166,17 +170,30 @@ impl Office {
         let mut reader = pty.master.try_clone_reader().expect("pty reader");
         let closed = Arc::new(AtomicBool::new(false));
         let wrote = Arc::new(AtomicUsize::new(0));
+        let left = Arc::new(AtomicBool::new(false));
         let scanner = {
-            let (seen, send, closed, wrote) = (
+            let (seen, send, closed, wrote, left) = (
                 Arc::clone(&seen),
                 send.clone(),
                 Arc::clone(&closed),
                 Arc::clone(&wrote),
+                Arc::clone(&left),
             );
             std::thread::spawn(move || {
                 let (mut out, mut chunk, mut scanned) = (Vec::new(), [0u8; 4096], 0);
+                // The last bytes of the read before, so a sequence a read cuts is
+                // still seen.
+                let mut tail = Vec::new();
                 while let Ok(n @ 1..) = reader.read(&mut chunk) {
                     wrote.fetch_add(n, Ordering::Relaxed);
+                    tail.extend_from_slice(&chunk[..n]);
+                    if tail
+                        .windows(LEFT_ALT_SCREEN.len())
+                        .any(|w| w == LEFT_ALT_SCREEN)
+                    {
+                        left.store(true, Ordering::Relaxed);
+                    }
+                    tail.drain(..tail.len().saturating_sub(LEFT_ALT_SCREEN.len()));
                     if seen.lock().expect("seen").started {
                         continue;
                     }
@@ -207,6 +224,7 @@ impl Office {
             seen,
             closed,
             wrote,
+            left,
             scanner,
             replier,
         }
@@ -276,8 +294,8 @@ fn run_office(link_rtt: Duration, answer: Answer) -> Run {
     }
 }
 
-/// Every terminal's answer, on time.
-fn prompt(row: usize) -> Vec<u8> {
+/// [`ANSWERS`]' reply to `row`'s query.
+fn reply(row: usize) -> Vec<u8> {
     ANSWERS[row].1.to_vec()
 }
 
@@ -302,7 +320,7 @@ fn a_hung_connect_leaves_the_office_live_and_a_quit_takes_its_cli() {
             ),
         )
         .expect("a hung claude");
-        let mut office = Office::start(run, Duration::ZERO, prompt);
+        let mut office = Office::start(run, Duration::ZERO, reply);
         office.type_until(b"\r", "the connect's CLI", |_| {
             std::fs::read_to_string(&job).is_ok_and(|pid| !pid.trim().is_empty())
         });
@@ -338,6 +356,7 @@ fn a_hung_connect_leaves_the_office_live_and_a_quit_takes_its_cli() {
             status.expect("ended")
         };
         assert!(quit_at.elapsed() < BUDGET);
+        let left = Arc::clone(&office.left);
         // SAFETY: `strsignal` returns a static string for a valid signal.
         let sigterm = unsafe { std::ffi::CStr::from_ptr(libc::strsignal(libc::SIGTERM)) };
         let want = by_signal.then(|| sigterm.to_string_lossy().into_owned());
@@ -351,6 +370,11 @@ fn a_hung_connect_leaves_the_office_live_and_a_quit_takes_its_cli() {
                 .is_ok_and(|status| status.success())
         });
         office.finish();
+        // Its teardown ran before the end: a quit's own kill never cut it short.
+        assert!(
+            left.load(Ordering::Relaxed),
+            "the office ended on its alternate screen"
+        );
     }
 }
 
@@ -363,7 +387,7 @@ fn a_slow_terminals_startup_replies_never_reach_the_office_as_keys() {
         LINK_RTT < pixtuoid::dev::QUERY_TIMEOUT,
         "the query budget no longer covers the link this test models"
     );
-    let run = run_office(LINK_RTT, prompt);
+    let run = run_office(LINK_RTT, reply);
     assert_eq!(
         run.config, run.seeded,
         "a late reply reached the office as keys"
@@ -408,7 +432,7 @@ fn bytes_queued_behind_the_last_reply_never_reach_the_office_as_keys() {
 /// lands after the flush, where crossterm keeps it as an internal event.
 #[test]
 fn a_reply_that_outlives_its_probe_is_read_by_the_next_one() {
-    let run = run_office(pixtuoid::dev::QUERY_TIMEOUT * 3 / 2, prompt);
+    let run = run_office(pixtuoid::dev::QUERY_TIMEOUT * 3 / 2, reply);
     assert_eq!(
         run.config, run.seeded,
         "a reply that outlived its probe reached the office as keys"

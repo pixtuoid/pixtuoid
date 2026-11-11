@@ -3,8 +3,8 @@
 //! projects the dispatch-facing [`ModalState`] (one source of truth instead of
 //! an ad-hoc literal per key event), and computes the per-frame renderer
 //! mirrors ([`RenderFrames`]). The loop keeps its painter's lifecycle and every
-//! renderer/config side effect; a Sources change runs off the loop
-//! ([`super::SourcesChange`]), and only the panel's open reads its rows inline.
+//! renderer/config side effect; a Sources change, the panel's rows included,
+//! runs off the loop ([`super::PanelChange`]).
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -119,7 +119,7 @@ pub(crate) struct UiState {
     pub(crate) dashboard: DashboardUi,
     pub(crate) connection: ConnectionUi,
     /// The Sources change running off the loop, until its result lands.
-    pub(crate) changing: Option<super::SourcesChange>,
+    pub(crate) changing: Option<super::PanelChange>,
     /// The settings changed this run whose last save failed.
     unsaved: enum_map::EnumMap<crate::config::Setting, bool>,
     drift: crate::doctor::DriftSeen,
@@ -446,10 +446,8 @@ impl UiState {
         self.dashboard.selected
     }
 
-    /// [`keys::SOURCES`](super::keys::SOURCES) on a closed panel: open with the
-    /// freshly rebuilt connection facet. The rows' blocking I/O (`build_rows` —
-    /// FS probes + per-source `diagnose`) runs at the loop and is handed in; it
-    /// happens ON OPEN only, never per frame.
+    /// Open the Sources panel on `rows`, built off the loop (`build_rows` can
+    /// run a CLI) or kept from its last change; never rebuilt per frame.
     pub(crate) fn open_connection(&mut self, rows: Vec<ConnectionRow>) {
         self.connection.open = true;
         self.connection.confirm = None;

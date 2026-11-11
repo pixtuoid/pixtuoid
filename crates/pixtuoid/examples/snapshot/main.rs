@@ -621,7 +621,7 @@ fn main() -> Result<()> {
                 last_event_age: Some(Duration::from_secs(age_s)),
             },
             dead: false,
-            changing: None,
+            in_flight: None,
         };
         let rows = vec![
             (
@@ -653,7 +653,7 @@ fn main() -> Result<()> {
                 LiveInfo {
                     facet: LiveFacet::default(),
                     dead: true,
-                    changing: None,
+                    in_flight: None,
                 },
             ),
             (
@@ -679,7 +679,7 @@ fn main() -> Result<()> {
                         state: pixtuoid_core::state::DaemonState::Running,
                     })),
                     dead: false,
-                    changing: None,
+                    in_flight: None,
                 },
             ),
         ];
