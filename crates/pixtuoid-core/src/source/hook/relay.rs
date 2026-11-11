@@ -233,7 +233,7 @@ async fn write_line(conn: &mut (impl AsyncWrite + Unpin), line: &str) -> bool {
     )
 }
 
-/// The payload lines of the instance holding an endpoint, until it exits.
+/// The payload lines of the instance holding an endpoint, until it exits or cuts this feed.
 pub(super) type Payloads = WholeLines<BufReader<Client>>;
 
 /// A feed read only to its last whole line: [`Relay::forward`] ends every line
@@ -412,25 +412,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_feed_cut_mid_line_reads_as_a_hang_up_not_a_malformed_payload() {
-        let (logs, _guard) = crate::test_capture::capture_warns();
+    async fn only_a_feed_cut_mid_line_reads_as_a_hang_up() {
         let session = "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
                        \"transcript_path\":\"/p/s.jsonl\",\"cwd\":\"/repo\"}\n";
         let cut = &session[..session.len() / 2];
-        let (mut owner, conn) = tokio::io::duplex(1024);
-        owner
-            .write_all(format!("{session}{cut}").as_bytes())
-            .await
-            .unwrap();
-        drop(owner);
-        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
-        let payloads = WholeLines::new(BufReader::new(conn));
-        super::super::handle_conn(payloads, tx, None, None, None).await;
-        let (_, ev) = rx.recv().await.expect("the whole line decodes");
-        assert!(matches!(ev, AgentEvent::SessionStart { .. }));
-        let out = logs.contents();
-        assert!(!out.contains("malformed hook line skipped"), "got {out:?}");
-        assert!(out.contains("relay feed cut by its owner"), "got {out:?}");
+        for (feed, is_cut) in [
+            (format!("{session}{cut}"), true),
+            (session.to_owned(), false),
+        ] {
+            let (logs, _guard) = crate::test_capture::capture_warns();
+            let (mut owner, conn) = tokio::io::duplex(1024);
+            owner.write_all(feed.as_bytes()).await.unwrap();
+            drop(owner);
+            let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+            let payloads = WholeLines::new(BufReader::new(conn));
+            super::super::handle_conn(payloads, tx, None, None, None).await;
+            let (_, ev) = rx.recv().await.expect("the whole line decodes");
+            assert!(matches!(ev, AgentEvent::SessionStart { .. }));
+            let out = logs.contents();
+            assert!(!out.contains("malformed hook line skipped"), "{out:?}");
+            assert_eq!(
+                out.contains("relay feed cut by its owner"),
+                is_cut,
+                "{out:?}"
+            );
+            assert_eq!(out.contains("hook conn read error"), is_cut, "{out:?}");
+        }
     }
 
     // An owner older than the relay is the one reader of this line that isn't
