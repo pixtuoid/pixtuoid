@@ -21,8 +21,9 @@ use crate::source::jsonl::ProbeSnapshot;
 ///
 /// PID-reuse guard: kill(0) only proves SOME process owns the pid, so where the
 /// kernel reports the process start time it must agree with the entry's
-/// `startedAt` within `PID_START_TOLERANCE_SECS`, or the pid was recycled and
-/// the entry is skipped. An entry passes that once; its pid's start marker
+/// `startedAt` within `PID_START_TOLERANCE_SECS`, or the entry is skipped: a
+/// recycled pid, or a realtime step before this process first judged it,
+/// which reads the same. An entry passes that once; its pid's start marker
 /// holds it after (`StartPins`).
 pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
     #[cfg(unix)]
@@ -713,16 +714,18 @@ mod liveness_tests {
             .to_string(),
         )
         .unwrap();
-        let live = live_cc_session_ids(dir.path()).expect("readable dir is a healthy probe");
-        assert_eq!(
-            live.ids().cloned().collect::<HashSet<_>>(),
-            HashSet::from(["genuine-session".to_string()]),
-            "a recycled-pid entry must be dropped; the identity-matching one kept"
-        );
+        let pins = StartPins::new();
+        for scan_no in 1..=2 {
+            let live = scan(dir.path(), &pins).expect("readable dir is a healthy probe");
+            assert_eq!(
+                live.ids().cloned().collect::<HashSet<_>>(),
+                HashSet::from(["genuine-session".to_string()]),
+                "scan {scan_no}: a recycled-pid entry must be dropped; the identity-matching one kept"
+            );
+        }
     }
 
-    /// The scan between holds the entry torn, as CC's in-place rewrite of
-    /// `sessions/<pid>.json` can leave it for one read.
+    /// A session judged before a clock step keeps its vouch, across a torn scan.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn an_entry_judged_before_a_clock_step_keeps_its_vouch() {
@@ -732,11 +735,10 @@ mod liveness_tests {
         let claimed_secs = start.map_or(0, |start| start.secs) + PID_START_TOLERANCE_SECS + 3_600;
         let dir = tempfile::tempdir().unwrap();
         let write = || {
-            let entry = i64::from(pid);
             write_entry_started(
                 dir.path(),
                 "stepped.json",
-                entry,
+                i64::from(pid),
                 "stepped",
                 claimed_secs * 1000,
             );
@@ -755,6 +757,7 @@ mod liveness_tests {
         // Judged before the step, when the claim fitted.
         pins.admits(pid, claimed_secs, start, |_| true);
         assert!(vouches(), "judged once, the marker holds it");
+        // Half-written, as a read can find an entry mid-write (`RegistryParse::Skip`).
         std::fs::write(dir.path().join("stepped.json"), "").unwrap();
         assert!(!vouches(), "a torn entry is skipped");
         write();

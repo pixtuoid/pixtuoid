@@ -171,7 +171,8 @@ impl StartPins {
 
     /// Forget each pin whose process `start` no longer finds at its pid, dead
     /// or recycled: a pin lives as long as its process, never as one scan's
-    /// vouch, since a scan can skip a live entry CC is rewriting in place.
+    /// vouch, since a scan skips a live entry it reads half-written and the
+    /// #252 tiebreak's loser.
     pub(crate) fn retain(&self, start: impl Fn(i32) -> Option<Start>) {
         self.lock()
             .retain(|&(pid, _), &mut marker| start(pid).is_some_and(|now| now.marker == marker));
@@ -241,6 +242,10 @@ mod any_host_tests {
         assert!(
             !pins.admits(7, claim, at(1, claim + 1), fits(claim)),
             "a misfit, by its secs"
+        );
+        assert!(
+            !pins.admits(7, claim, at(1, claim + 1), fits(claim)),
+            "a refusal pins nothing"
         );
         assert!(
             pins.admits(7, claim, at(1, claim), fits(claim)),

@@ -84,7 +84,9 @@ pub(crate) fn live_grok_session_ids(_grok_root: &Path) -> Option<ProbeSnapshot> 
 /// check, held by `pins` once passed; either side missing → pid-alive-only).
 /// `None` ONLY when the DOCUMENT doesn't parse as an array of entries (format
 /// drift); junk VALUES inside an entry — a pid `decoder::checked_pid` rejects,
-/// an empty `session_id`, a recycled pid — skip that entry silently.
+/// an empty `session_id`, a recycled pid or a realtime step before this
+/// process first judged the entry, which read the same — skip that entry
+/// silently.
 #[cfg(unix)]
 fn grok_ids_from_registry(
     bytes: &[u8],
