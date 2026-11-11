@@ -55,6 +55,11 @@ jobs:
         with:
           components: llvm-tools-preview
           tools: aqua:nextest-rs/nextest/cargo-nextest aqua:taiki-e/cargo-llvm-cov
+      # Only these legs compile their OS's own arms, so they lint them; ci-lint's
+      # clippy job lints the linux leg's. First, so a lint failure costs no test run.
+      - name: Clippy
+        if: matrix.platform != 'linux'
+        run: just clippy
       # Both tiers run the instrumented suite: rust-cache keys a job's cache on
       # the job and toolchain, not the build, and a PR restores what main's full
       # tier saved, so a plain PR build recompiled the whole graph.

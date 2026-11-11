@@ -1,8 +1,9 @@
 //! Every plugin the installer ships has its contract row
 //! (`install/plugin-contract.json`), its selftest, and the host API it is typed
-//! against. Which sources a checker reads at all is `just lang-census`'s, from
-//! the checkers themselves. Reads the tree at runtime, so it is workspace-only
-//! and sits in `Cargo.toml`'s `exclude`.
+//! against, and the scripts' Python floor is one version. Which sources a
+//! checker reads at all is `just lang-census`'s, from the checkers themselves.
+//! Reads the tree at runtime, so it is workspace-only and sits in `Cargo.toml`'s
+//! `exclude`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -101,4 +102,19 @@ fn every_shipped_plugin_has_its_contract_row_and_its_selftest() {
              publishes in its profile's plugin_types, or declare what it uses in {PLUGIN_DIR}/{source}_host.*"
         );
     }
+}
+
+/// uv runs the scripts that import a third-party package (`UV_DEV`) on an
+/// interpreter `requires-python` admits, while pyright checks every script
+/// against its own `pythonVersion`, never derived from `requires-python`.
+#[test]
+fn the_scripts_python_floor_is_one_version() {
+    let pyproject: toml::Table = read("pyproject.toml").parse().expect("pyproject.toml");
+    let checked = pyproject["tool"]["pyright"]["pythonVersion"]
+        .as_str()
+        .expect("[tool.pyright] pythonVersion");
+    let run = pyproject["project"]["requires-python"]
+        .as_str()
+        .expect("[project] requires-python");
+    assert_eq!(run, format!(">={checked}"), "pyproject.toml");
 }

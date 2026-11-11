@@ -85,6 +85,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           shared-key: site
+          tools: uv
       - uses: ./.github/actions/gen-demos
       - run: npm run test:demos
       # Built fresh, so a Rust change that breaks a wasm export the page calls fails before it deploys.

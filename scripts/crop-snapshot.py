@@ -2,17 +2,13 @@
 """Crop a snapshot PNG into per-quadrant images for visual inspection.
 
 Usage:
-    .venv/bin/python3 scripts/crop-snapshot.py /tmp/snap.png          # 2× scale
-    .venv/bin/python3 scripts/crop-snapshot.py /tmp/snap.png --scale 3
+    uv run --locked -- python3 scripts/crop-snapshot.py /tmp/snap.png [--scale 3]   # 2× by default
 
 Outputs four files next to the input:
     <name>_meeting.png   — top-left (meeting room + sofas)
     <name>_pantry.png    — bottom-left (pantry + floor seats)
     <name>_cubicle.png   — top-right (cubicle pods)
     <name>_corridor.png  — bottom-right (walkway + baseboard)
-
-Setup (once):
-    python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 """
 
 import argparse

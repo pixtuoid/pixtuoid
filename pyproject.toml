@@ -1,3 +1,16 @@
+# The dev Python's uv project, which the justfile's UV_DEV runs; nothing builds
+# or publishes it.
+[project]
+name = "pixtuoid-dev"
+version = "0"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = ["brotli==1.2.1", "fonttools==4.68.0", "pillow==13.0.0"]
+
+[tool.uv]
+package = false
+
 [tool.pyright]
 include = ["scripts", "crates/pixtuoid/src/install"]
 # The scripts' floor (`tomllib`, `datetime.UTC`), so every machine's verdict is CI's.

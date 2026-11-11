@@ -9,7 +9,6 @@ Cargo.lock.bak
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 /*.png
-.venv
 node_modules/
 .superpowers/
 docs/superpowers/

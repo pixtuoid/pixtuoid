@@ -13,6 +13,7 @@ unused-ignored-advisory = "deny"
 ignore = []
 
 [licenses]
+unused-allowed-license = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -21,7 +22,6 @@ allow = [
     "CC0-1.0",
     "ISC",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "Zlib",
 ]
 # Our own crates embed OFL fonts; scoped here so a third-party OFL crate still

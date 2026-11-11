@@ -87,6 +87,11 @@ HAWK_INSTALLER_SHA256 := "4e1b85fc15d3d4efa9b3bd7c62620655cc5504b7164272292043e3
 # it builds C (`cargo doc` still runs build scripts).
 DOC_TARGETS := "x86_64-pc-windows-msvc aarch64-apple-darwin"
 
+# Every Python recipe that imports a third-party package runs in uv's project
+# env, installed from uv.lock with its hashes checked (CI runs the same recipes);
+# `--locked` fails on a lock pyproject.toml has outgrown instead of re-resolving.
+UV_DEV := "uv run --locked --"
+
 # The zone a test run reads the clock in, so a test anchored to its writer's
 # zone fails on their machine, not first in CI (#1377). Its offset is neither
 # UTC nor a whole hour, so epoch and local hours never coincide. chrono reads
@@ -100,10 +105,10 @@ default:
 
 # ── rust ──────────────────────────────────────────────────────────
 
-# Format check only — fast, gates pre-commit. The justfile has a canonical
-# format too (`just --fmt`), so it is checked with the Rust; just gives its
-# formatter no cross-version guarantee, and `setup-tools` installs the newest
-# just, so a release that reformats fails this until `just --fmt`'s output lands.
+# just gives its formatter no cross-version guarantee, and `setup-tools` installs
+# the newest just, so a release that reformats fails this until `just --fmt`'s
+# output lands.
+[doc('Format check of the Rust and this justfile — fast, gates pre-commit')]
 [group('rust')]
 fmt-check:
     cargo fmt --all --check
@@ -224,12 +229,12 @@ ruff:
     ruff check
     ruff format --check
 
-# Every tracked Python file, so none escapes an `include`. The env uv builds
-# out of requirements-dev.txt resolves the scripts' imports.
+# Every tracked Python file, so none escapes an `include`. UV_DEV's env
+# resolves the scripts' imports.
 [doc('Type-check the Python (pyright, as pyproject.toml configures it)')]
 [group('rust')]
 pyright: (_npm ".")
-    git ls-files -z -- '*.py' '*.pyi' {{ SELF_GATED }} | xargs -0 uv run --no-project --with-requirements requirements-dev.txt -- node_modules/.bin/pyright
+    git ls-files -z -- '*.py' '*.pyi' {{ SELF_GATED }} | xargs -0 {{ UV_DEV }} node_modules/.bin/pyright
 
 [doc('Type-check the JavaScript (tsc --checkJs, as tsconfig.json configures it)')]
 [group('rust')]
@@ -303,20 +308,20 @@ clippy:
 machete:
     cargo machete
 
-# License + supply-chain gate (bans/licenses/sources). Advisories are NOT here:
-# an overnight RustSec advisory must not block a push of unchanged code.
+# An overnight RustSec advisory must not block a push of unchanged code.
+[doc('License + supply-chain gate: bans, licenses, sources (advisories are deny-advisories)')]
 [group('rust')]
 deny:
     cargo deny check bans licenses sources
 
 # Advisories judge the whole graph, so they run where it or its policy changes
 # (ci-lint's deny job) and on audit.yml's schedule.
+[doc('RustSec advisory gate over the whole dependency graph')]
 [group('rust')]
 deny-advisories:
     cargo deny check advisories
 
-# Architecture invariant #1, mechanized: pixtuoid-core + pixtuoid-scene depend
-# on only the crates deny-arch.toml lists.
+[doc('Architecture invariant #1: pixtuoid-core + pixtuoid-scene depend only on the crates deny-arch.toml lists')]
 [group('rust')]
 arch:
     #!/usr/bin/env bash
@@ -419,7 +424,7 @@ hack:
 # It catches cfg(windows)-only compile and lint errors locally; a string path
 # assert still fails only in `windows-test`. `serve` stays out: ring's build
 # script can't find the target's C headers.
-[doc('Cross-lint the workspace for x86_64-pc-windows-msvc via clippy (no linking; ubuntu runner suffices)')]
+[doc('Cross-lint the workspace for x86_64-pc-windows-msvc via clippy, from any host (no linking)')]
 [group('rust')]
 check-windows: (_targets "x86_64-pc-windows-msvc")
     cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc --no-default-features --features pixtuoid/audio -- -D warnings
@@ -763,7 +768,7 @@ site-demos:
     # re-renders instead of passing on the inputs alone.
     have() { find site/public/demos -type f -exec cksum {} + 2>/dev/null | sort | shasum | cut -d' ' -f1; }
     [ "$(cat "$stamp" 2>/dev/null)" = "$want $(have)" ] && exit 0
-    .venv/bin/python3 scripts/gen-media.py --only site
+    {{ UV_DEV }} python3 scripts/gen-media.py --only site
     mkdir -p target && echo "$want $(have)" > "$stamp"
 
 [doc('Site dev server with HMR → http://localhost:4321/ (foreground; agents: site-dev-bg)')]
@@ -835,7 +840,7 @@ gen: gen-art gen-banner gen-icons gen-readme gen-cutaway-golden
 gen-art:
     python3 scripts/gen-art.py crates/pixtuoid-scene/sprites/default
 
-# Stdlib-only, so `lint` runs it without the venv `gen-check` needs.
+# Stdlib-only, so `lint` runs it without the UV_DEV env `gen-check` needs.
 [doc('Fail if a committed generated sprite differs from what scripts/gen-art.py draws')]
 [group('gen')]
 gen-art-check:
@@ -856,11 +861,11 @@ gen-banner-check:
     python3 scripts/gen-banner.py --selftest
     python3 scripts/gen-banner.py --check docs/images/banner
 
-# Not in `gen`: it downloads its pinned fonts. Requires the .venv (fontTools).
+# Not in `gen`: it downloads its pinned fonts.
 [doc("Regenerate Fusion Pixel 8px + its licenses for the scene (crates/pixtuoid-scene/fonts/) and the site (site/src/assets/fonts/) from scripts/gen-fonts.py")]
 [group('gen')]
 gen-fonts:
-    .venv/bin/python3 scripts/gen-fonts.py
+    {{ UV_DEV }} python3 scripts/gen-fonts.py
 
 [doc('Sync README install/features/tools sections from site/src/*.json, and its images from scripts/media.json + docs/images')]
 [group('gen')]
@@ -896,12 +901,12 @@ gen-readme-check:
 [doc('Regenerate docs/images/ + site/public/demos/ from scripts/media.json')]
 [group('gen')]
 gen-media *args:
-    .venv/bin/python3 scripts/gen-media.py "$@"
+    {{ UV_DEV }} python3 scripts/gen-media.py "$@"
 
 [doc("Regenerate the site's and the README's pix icons from the bundled sprite-pack palette")]
 [group('gen')]
 gen-icons:
-    .venv/bin/python3 scripts/gen-pix-icons.py
+    {{ UV_DEV }} python3 scripts/gen-pix-icons.py
 
 # The wasm-bindgen CLI must match the crate's version exactly; CI installs Cargo.lock's.
 [private]
@@ -967,20 +972,19 @@ gen-check: compare-selftest gen-readme-check gen-art-check gen-banner-check gen-
 gen-icons-check:
     #!/usr/bin/env bash
     set -eu
-    .venv/bin/python3 scripts/gen-pix-icons.py --selftest
-    .venv/bin/python3 scripts/gen-pix-icons.py --check
+    {{ UV_DEV }} python3 scripts/gen-pix-icons.py --selftest
+    {{ UV_DEV }} python3 scripts/gen-pix-icons.py --check
 
 # scripts/gen-media.py's docstring says what `--check` compares. The README's
 # media only: the site's demos are rendered in CI and never committed. On a PR
 # a drift here is evidence for REVIEW.md's Render and look, not a gate; main's
 # land through media-regen.yml.
-# Requires the .venv; it builds the examples it renders with.
 [doc("Diff the README's committed media against what gen-media renders")]
 [group('gen')]
 gen-media-check:
     #!/usr/bin/env bash
     set -eu
-    .venv/bin/python3 scripts/gen-media.py --check --only docs
+    {{ UV_DEV }} python3 scripts/gen-media.py --check --only docs
 
 # ── release ───────────────────────────────────────────────────────
 
@@ -1066,7 +1070,7 @@ setup-tools:
 compare-selftest:
     #!/usr/bin/env bash
     set -eu
-    .venv/bin/python3 scripts/compare-screenshots.py --selftest
+    {{ UV_DEV }} python3 scripts/compare-screenshots.py --selftest
 
 [doc("Self-test the git env scrub of the pre-push hook")]
 [group('meta')]

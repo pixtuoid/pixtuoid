@@ -169,15 +169,8 @@ jobs:
         with:
           node-version-file: mise.toml
       - uses: ./.github/actions/setup-tools
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.x"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - name: Set up Python virtual environment
-        run: |
-          python3 -m venv .venv
-          .venv/bin/pip install -r requirements-dev.txt
+          tools: uv
       - name: Generated-file drift
         run: just gen-check
       # gen-icons-check's overlays.

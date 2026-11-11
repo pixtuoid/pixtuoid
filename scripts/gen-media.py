@@ -17,8 +17,8 @@ selected targets (scripts/compare-screenshots.py); video clips (.mp4/.webm) and 
 demo.gif are presence-checked only, since ffmpeg/gifsicle output is not
 byte-stable across versions. Exits non-zero on any drift.
 
-Requires the .venv (Pillow) + ffmpeg + gifsicle for a full run (`--check` needs
-neither). Run via `.venv/bin/python3`.
+Requires Pillow (`just gen-media` provisions it) + ffmpeg + gifsicle for a full
+run (`--check` needs neither).
 """
 
 import argparse

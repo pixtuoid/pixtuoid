@@ -383,11 +383,13 @@ STUB
 chmod +x "$file_bin/gh"
 plans="$test_dir/file-plans"
 mkdir -p "$plans"
-# The step in a dir holding $1 as its plan.json, $2 the one gh call that fails: its status.
+# The step in a dir holding $1 as its plan.json (none for an empty $1), $2 the
+# one gh call that fails: its status.
 file_plan() {
     : >"$test_dir/gh.log"
     : >"$test_dir/gh.bodies"
-    printf '%s' "$1" >"$plans/plan.json"
+    rm -f "$plans/plan.json"
+    [[ -z "$1" ]] || printf '%s' "$1" >"$plans/plan.json"
     (cd "$plans" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" GH_BODIES="$test_dir/gh.bodies" FAKE_FAIL="$2" \
         HERMETIC_LABEL=hermetic HERMETIC_LIMIT=1000 GH_TOKEN=t GH_REPO=o/r RUNNER_TEMP="$test_dir" \
         bash -c "$file_script") >"$test_dir/file.out" 2>&1
@@ -444,6 +446,17 @@ if grep -qF '::error::' "$test_dir/file.out"; then fail "a leg no runner took is
 # Nothing to do: no call but the list, and green.
 file_plan '{"actions":[],"lost":[],"unacquired":[]}' '' || fail "the file step failed an empty plan: $(<"$test_dir/file.out")"
 [[ "$(<"$test_dir/gh.log")" == "$listed" ]] || fail "an empty plan made a gh call: $(<"$test_dir/gh.log")"
+# A plan the planner could not have written, or none, is red and named.
+for malformed in '{"actions":1,"lost":[],"unacquired":[]}' '{"actions":[],"lost":"x","unacquired":[]}' 'not json' ''; do
+    if file_plan "$malformed" ''; then fail "the file step passed the plan '$malformed'"; fi
+    grep -qxF "::error::plan.json is not the planner's output" "$test_dir/file.out" ||
+        fail "the plan '$malformed' is not named: $(<"$test_dir/file.out")"
+done
+# A rejected plan files nothing, its valid actions included.
+if file_plan '{"actions":[{"do":"open","title":"hermetic: hermes","body":"'"$opened"'"}],"lost":"x","unacquired":[]}' ''; then
+    fail "the file step passed a plan whose lost is no list"
+fi
+if grep -q '^issue create' "$test_dir/gh.log"; then fail "a rejected plan filed an issue: $(<"$test_dir/gh.log")"; fi
 
 # ── justfile api-surface: the leak check names each reference to a stripped
 # item, in a signature or a `pub use`, its own crate's or a published sibling's

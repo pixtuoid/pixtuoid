@@ -17,7 +17,6 @@ mod imp;
 
 use std::time::Duration;
 
-use pixtuoid_core::remote::SPKI_KEY;
 use tokio::task::JoinHandle;
 
 /// RFC 6763 §4.1.1: "DNS labels are currently limited to 63 octets".
@@ -78,8 +77,10 @@ fn instance(name: &str) -> String {
     }
 }
 
-/// The TXT record's one string.
+/// The TXT record's one string; Windows' arm takes the key and value apart.
+#[cfg(unix)]
 fn txt(spki: &str) -> String {
+    use pixtuoid_core::remote::SPKI_KEY;
     format!("{SPKI_KEY}={spki}")
 }
 

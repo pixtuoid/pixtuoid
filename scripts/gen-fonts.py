@@ -4,7 +4,7 @@ licenses beside it: crates/pixtuoid-scene/fonts/fusion-pixel-8px.bin, every text
 cutaway and the floating window draw, from Fusion Pixel 8px; and the site's
 copy of its Latin, site/src/assets/fonts/, the live office's captions' face.
 
-Usage: .venv/bin/python3 scripts/gen-fonts.py   (just gen-fonts)
+Usage: just gen-fonts
 
 Fusion Pixel 8px is the one open pixel font whose CJK fits a terminal cell's
 art (an 8x8 box); it has no Cyrillic or Greek, which draw as tofu bar the

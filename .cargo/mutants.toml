@@ -1,14 +1,17 @@
 # cargo-mutants config (`just mutants`). Advisory: exclude only where a surviving
 # mutant is NOISE, never where it is killable. Rationale for each entry lives in
 # the commit that added it. `test_workspace` stays at its default, the mutated
-# package's tests only, so the binary's harness may kill a core/scene survivor:
-# re-run it with `--test-workspace=true` before acting on it. A
+# package's tests plus pixtuoid-hook's (`additional_cargo_args` below), so the
+# binary's harness may kill a core/scene survivor: re-run it with
+# `--test-workspace=true` before acting on it. A
 # `--timeout-multiplier` passed through keeps cargo-mutants' timeout above
 # nextest's `[profile.default] slow-timeout`, or a real hang files as `timeout`,
 # not `caught`.
 test_tool = "nextest"
-# These run the real shim, which a baseline scoped to `pixtuoid` never builds.
-additional_cargo_test_args = ["-E", "not test(built_shim)"]
+# The binary's tests run the real shim, which only its own package builds.
+additional_cargo_args = ["--package=pixtuoid-hook"]
+# lang_gates lists the tracked files with `git ls-files`.
+copy_vcs = true
 
 exclude_globs = [
     # winit / async glue: no headless test can kill these. Shared with codecov.yml's

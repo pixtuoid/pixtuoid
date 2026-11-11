@@ -11,9 +11,8 @@ PixIcon.astro with image-rendering: pixelated; GitHub strips that CSS, so the
 README instead embeds an SVG per icon, crisp at any pixel density.
 
 Usage:
-  .venv/bin/python3 scripts/gen-pix-icons.py             # (re)generate (just gen-icons)
-  .venv/bin/python3 scripts/gen-pix-icons.py --check     # exit 1 on drift
-  .venv/bin/python3 scripts/gen-pix-icons.py --selftest  # the drift gate fails when it should
+  just gen-icons                                         # (re)generate
+  just gen-icons-check                                   # --selftest, then --check: exit 1 on drift
 
 --check decode-compares the PNGs' pixels rather than their raw bytes: a raw-byte
 compare is Pillow-version-fragile (re-encoding the identical pixels can change

@@ -14,7 +14,7 @@ on:
       - scripts/media.json
       # themes-composite's `over` file, and the Pillow pin its PNGs come from.
       - site/src/themes.json
-      - requirements-dev.txt
+      - uv.lock
   workflow_dispatch:
 
 permissions: {}
@@ -35,15 +35,14 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-cargo-just
+        with:
+          tools: uv
       # The `demo` gif's optimizer; the runner image doesn't ship it.
       - uses: ./.github/actions/apt-install
         with:
           packages: gifsicle
           recommends: 'false'
-      - run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --quiet -r requirements-dev.txt
-          .venv/bin/python3 scripts/gen-media.py --only docs
+      - run: just gen-media --only docs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: media-${{ github.sha }}
