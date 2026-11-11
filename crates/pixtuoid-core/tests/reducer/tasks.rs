@@ -922,6 +922,51 @@ fn a_drained_tasks_late_start_leaves_the_parent_idle() {
     assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
 }
 
+/// A drained Task's refused late start leaves nothing in flight, so the
+/// parent's next own call settles it Idle, not back to Delegating.
+#[test]
+fn a_refused_late_task_start_tracks_nothing_in_flight() {
+    let (mut r, mut scene, parent, t1) = dispatching("refused-start");
+    let drained = t1 + Duration::from_secs(1);
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        drained,
+        Transport::Hook,
+    );
+    let late = drained + HOOK_WINS_WINDOW + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        late,
+        Transport::Jsonl,
+    );
+    let own = late + Duration::from_secs(1);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("bash-1"),
+        Some("Bash: ls"),
+        own,
+        Transport::Jsonl,
+    );
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("bash-1"),
+        own,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
+}
+
 /// A Task's lagging duplicate start keeps the delegating clock its first set.
 #[test]
 fn a_tasks_duplicate_start_keeps_the_delegating_clock() {

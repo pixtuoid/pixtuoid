@@ -1454,17 +1454,18 @@ impl Reducer {
             } if d.is_task() => {
                 handled_by_task_start = true;
                 // Delegating only on a FIRST insert of a never-drained tuid: an
-                // out-of-window replay would clobber a since-RequiresAction parent.
-                if self
+                // out-of-window replay would clobber a since-RequiresAction parent,
+                // and, tracked, would settle the parent back to Delegating.
+                if !self
                     .corr
-                    .tasks_in_flight
-                    .entry(*agent_id)
-                    .or_default()
-                    .insert(tuid.clone())
-                    && !self
+                    .recent_task_drains
+                    .contains_key(&(*agent_id, tuid.clone()))
+                    && self
                         .corr
-                        .recent_task_drains
-                        .contains_key(&(*agent_id, tuid.clone()))
+                        .tasks_in_flight
+                        .entry(*agent_id)
+                        .or_default()
+                        .insert(tuid.clone())
                     && scene.agents.contains_key(agent_id)
                 {
                     self.register_pending(
