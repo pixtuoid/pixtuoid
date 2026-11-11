@@ -229,7 +229,7 @@ mod tests {
             serde_json::json!({
                 "pid": std::process::id(),
                 "sessionId": "focus-sess",
-                "startedAt": crate::source::cc_probe::pid_start_time_secs(std::process::id() as i32).unwrap_or(0) * 1000,
+                "startedAt": crate::source::proc_start::pid_start(std::process::id() as i32).map_or(0, |start| start.secs) * 1000,
                 "status": "idle"
             })
             .to_string(),

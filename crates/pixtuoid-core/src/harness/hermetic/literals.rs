@@ -846,7 +846,7 @@ mod tests {
         item("antigravity.rs", "TRANSCRIPT", PATH_AXIS),
         item("antigravity.rs", "KEYS", LABEL_DETAIL),
         item("cc_probe.rs", "cc_sessions_dir", PATH_AXIS),
-        item("cc_probe.rs", "live_cc_session_ids", PATH_AXIS),
+        item("cc_probe.rs", "scan", PATH_AXIS),
         item(
             "cc_probe.rs",
             "parse_registry_entry",
