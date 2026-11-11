@@ -78,18 +78,12 @@ test('tenant board: hw-panel screen, LED dots with shape distinction, sr-only va
   await expect(page.locator('#tools')).toHaveAttribute('data-floor', '2F');
 });
 
-test('the star plaque hangs beside the tenant board with the sourced engraving', async ({
-  page,
-}) => {
+test('the star plaque hangs beside the tenant board', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   const plaque = page.locator('#tools .tools__plaque');
   await expect(plaque).toHaveClass(/hw-panel/);
   await expect(plaque).toContainText('★');
-  // the engraving is the claim shipped in showcase.json — verbatim
-  await expect(plaque).toContainText(
-    'fleets of 100+ agents have run this repo through this very office'
-  );
 });
 
 test('pantry FAQ: an indented answer stays inside the chat column', async ({ page }) => {

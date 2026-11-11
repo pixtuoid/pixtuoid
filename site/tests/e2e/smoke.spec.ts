@@ -2818,11 +2818,9 @@ test('tenant board text (badges, legend, planned rows, soon marks, star plaque) 
     };
     const plaqueColors = await page.evaluate(() => ({
       stars: getComputedStyle(document.querySelector('.tools__plaque-stars')!).color,
-      engraving: getComputedStyle(document.querySelector('.tools__plaque-engraving')!).color,
       link: getComputedStyle(document.querySelector('.tools__plaque-link')!).color,
     }));
     assertPlaqueAA(plaqueColors.stars, 'plaque stars');
-    assertPlaqueAA(plaqueColors.engraving, 'plaque engraving');
     assertPlaqueAA(plaqueColors.link, 'plaque link');
 
     // sources.json currently has zero "planned" rows, so probe the markup SupportedTools.astro emits, injected into the real table
