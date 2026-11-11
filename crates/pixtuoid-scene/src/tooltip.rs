@@ -291,16 +291,13 @@ pub fn agent(office: &SceneState, id: AgentId, now: SystemTime) -> Option<Toolti
                 state.push(TipSpan::new(tool, TipTone::Tool(*tool_kind)));
             }
             if !rest.is_empty() {
-                detail = Some(rest.chars().take(DETAIL_CHARS).collect());
+                detail = Some(detail_line(rest));
             }
         } else if let ActivityState::RequiresAction {
             reason: Some(reason),
         } = &agent.state
         {
-            detail = Some(format!(
-                "?{}",
-                reason.chars().take(DETAIL_CHARS).collect::<String>()
-            ));
+            detail = Some(format!("?{}", detail_line(reason)));
         }
     }
     let dim = |text: String| TipRow::Spans(vec![TipSpan::new(text, TipTone::Dim)]);
@@ -385,6 +382,18 @@ fn fresh_effort(slot: &pixtuoid_core::AgentSlot, now: SystemTime) -> Option<&str
             .unwrap_or(true);
         fresh.then_some(&*obs.value)
     })
+}
+
+/// `text` on one card row, its first [`DETAIL_CHARS`]: a card cell draws no
+/// control, so each run of whitespace, a command's line break or tab, is one
+/// space.
+fn detail_line(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(DETAIL_CHARS)
+        .collect()
 }
 
 /// A short form of a cwd path: the TAIL (most informative — project dir) with a
@@ -523,6 +532,46 @@ mod tests {
                 .all(|x| card.get(x, y).and_then(|c| c.bg) == Some(theme.ui.tooltip_bg))
         }));
         assert!(card.get(1, 1).is_some_and(|c| c.bold));
+    }
+
+    /// A tool detail's and a reason's line breaks and tabs read as spaces on
+    /// the card, whose cells draw no control, so a multi-line command's
+    /// words stay apart.
+    #[test]
+    fn a_details_line_breaks_read_as_spaces() {
+        let theme = crate::theme::ALL_THEMES[0];
+        let id = AgentId::from_transcript_path("/tip/detail.jsonl");
+        let card_rows = |state| {
+            let mut office = SceneState::uniform(1);
+            let slot = crate::character::test_support::make_slot(id, state);
+            office.agents.insert(id, slot);
+            let card = agent(&office, id, SystemTime::UNIX_EPOCH)
+                .expect("the agent's card")
+                .card(theme);
+            (0..card.height())
+                .map(|y| row(&card, y))
+                .collect::<Vec<_>>()
+        };
+        let running = ActivityState::Running {
+            item: Some(ToolUse {
+                tool_use_id: None,
+                detail: Some("Bash: cd crates\ncargo\ttest".into()),
+                kind: ToolKind::Bash,
+            }),
+        };
+        let rows = card_rows(running);
+        assert!(
+            rows.iter().any(|r| r.contains("  cd crates cargo test ")),
+            "{rows:#?}"
+        );
+        let asking = ActivityState::RequiresAction {
+            reason: Some("allow\r\nthis".into()),
+        };
+        let rows = card_rows(asking);
+        assert!(
+            rows.iter().any(|r| r.contains("  ?allow this ")),
+            "{rows:#?}"
+        );
     }
 
     /// An office of two four-desk floors.
