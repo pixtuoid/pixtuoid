@@ -290,9 +290,8 @@ fn a_tracing_warning_into_a_gone_stderr_exits_0() {
 }
 
 /// A log on stderr colors as `doctor`'s report on stdout does: not into a
-/// pipe (`2>file`, `| grep`) unless a force forces it — `$FORCE_COLOR` even
-/// over `$NO_COLOR`, `$CLICOLOR_FORCE` only without it — and never for
-/// `$TERM=dumb`.
+/// pipe (`2>file`, `| grep`) unless `$CLICOLOR_FORCE` or its alias `$FORCE_COLOR`
+/// forces it without `$NO_COLOR`, and never for `$TERM=dumb`.
 #[cfg(unix)]
 #[test]
 fn a_log_on_stderr_colors_by_the_one_stream_rule() {
@@ -303,7 +302,7 @@ fn a_log_on_stderr_colors_by_the_one_stream_rule() {
         (&[("CLICOLOR_FORCE", "1"), ("TERM", "dumb")][..], false),
         (&[("CLICOLOR_FORCE", "1"), ("NO_COLOR", "1")][..], false),
         (&[("FORCE_COLOR", "0")][..], true),
-        (&[("FORCE_COLOR", "1"), ("NO_COLOR", "1")][..], true),
+        (&[("FORCE_COLOR", "1"), ("NO_COLOR", "1")][..], false),
         (&[("FORCE_COLOR", "1"), ("TERM", "dumb")][..], false),
     ] {
         let out = common::isolated(&["sources"], home.path())

@@ -108,9 +108,9 @@ explains why when color is turned off:
 
 - **`$NO_COLOR`** (the [no-color.org](https://no-color.org) convention; any
   non-empty value): color output is disabled, so the office can't render. Unset
-  `NO_COLOR`, or override it with **`$FORCE_COLOR=1`** ([force-color.org](https://force-color.org);
-  any non-empty value); `$CLICOLOR_FORCE` forces color only without `$NO_COLOR`.
-  An *empty* `$NO_COLOR` is ignored (it doesn't actually disable color).
+  `NO_COLOR` to run it: `$CLICOLOR_FORCE` and its alias `$FORCE_COLOR` force color
+  only without it ([bixense](https://bixense.com/clicolors/)). An *empty*
+  `$NO_COLOR` is ignored (it doesn't actually disable color).
 - **`$TERM=dumb`**: the terminal can't render escape sequences or color at all.
 
 In both cases use a graphical terminal, or `pixtuoid run --headless` for a plain

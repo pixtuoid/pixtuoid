@@ -35,19 +35,17 @@ pub fn run() -> Result<()> {
     );
 
     // The office has no legible monochrome fallback, so refuse the canvas with an
-    // explanation rather than render block-soup. crossterm needs the
-    // $FORCE_COLOR override applied explicitly — it ignores the var on its own.
-    // Runs before the truecolor probe, so a dumb terminal never gets DECRQSS.
+    // explanation rather than render block-soup. Runs before the truecolor
+    // probe, so a dumb terminal never gets DECRQSS.
     if is_run_tui {
         use crate::term::ColorPreflight;
         match crate::term::ColorEnv::read().preflight {
             ColorPreflight::Proceed => {}
-            ColorPreflight::ForceColor => crossterm::style::force_color_output(true),
             ColorPreflight::RefuseNoColor => anyhow::bail!(
                 "$NO_COLOR is set, so color output is disabled — the pixel-art office \
                  is 24-bit color with no legible monochrome mode and would render as \
-                 unreadable blocks. Unset NO_COLOR (or set FORCE_COLOR=1 to override) \
-                 to run it, or use `pixtuoid run --headless` for a text summary."
+                 unreadable blocks. Unset NO_COLOR to run it, or use `pixtuoid run \
+                 --headless` for a text summary."
             ),
             ColorPreflight::RefuseDumbTerm => anyhow::bail!(
                 "$TERM=dumb — this terminal can't render the pixel-art office (no cursor \

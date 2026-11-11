@@ -978,11 +978,6 @@ fn collect(
     let tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let probe_ok = tty && color_pf != crate::term::ColorPreflight::RefuseDumbTerm;
     let color = color_env.stream_color(tty);
-    if color {
-        // crossterm strips color under `$NO_COLOR` unless forced; pin it rather
-        // than rely on the Display path happening not to check today.
-        crossterm::style::force_color_output(true);
-    }
     let max_density = pixtuoid_scene::pack::load_bundled_pack()?.max_density_variant();
     let (truecolor_probe, graphics_plan) = probe_terminal_caps(probe_ok, look, max_density);
     let run_look = crate::graphics::LookChoice::new(
@@ -1092,8 +1087,7 @@ fn terminal_category(r: &DoctorReport) -> Category {
         "{DETAIL_INDENT}{}",
         r.graphics_plan.diagnostic_row(r.run_plan)
     )];
-    // Whenever it has something to say — incl. the ForceColor note, so a
-    // NO_COLOR+FORCE_COLOR report still states that color is being forced.
+    // Whenever it has something to say.
     if let Some(row) = crate::term::color_status_row(r.color_pf) {
         details.push(format!("{DETAIL_INDENT}{row}"));
     }
