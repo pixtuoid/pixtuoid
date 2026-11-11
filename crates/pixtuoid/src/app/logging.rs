@@ -12,12 +12,12 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
 /// Install the global tracing subscriber, and return what its drift layer
-/// sees. TUI mode (and `floating`, a long-running GUI whose launching terminal
-/// would just collect noise) ALWAYS logs to a file — the alternate screen owns
-/// the terminal, so the log file is the only place a runtime error can surface
-/// — at a `warn` floor unless $RUST_LOG, $PIXTUOID_LOG or --log-level raises
-/// it. Every other mode goes to stderr.
-pub(crate) fn init(tui_active: bool, log_level: &'static str) -> DriftSeen {
+/// sees. A `file_log` run (the TUI, and `floating`, a long-running GUI whose
+/// launching terminal would just collect noise) logs to a file — the alternate
+/// screen owns the terminal, so the log file is the only place a runtime error
+/// can surface — at a `warn` floor unless $RUST_LOG, $PIXTUOID_LOG or
+/// --log-level raises it. Every other mode goes to stderr.
+pub(crate) fn init(file_log: bool, log_level: &'static str) -> DriftSeen {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     let rust_log = pixtuoid_core::platform::text_env("RUST_LOG");
@@ -32,7 +32,7 @@ pub(crate) fn init(tui_active: bool, log_level: &'static str) -> DriftSeen {
     let drift = DriftSeen::default();
     let registry = tracing_subscriber::registry().with(drift.layer());
 
-    if tui_active {
+    if file_log {
         let rust_log_set = rust_log.as_deref().is_some_and(|v| !v.is_empty());
         let filter = if wants_verbose || explicit_log_file {
             make_filter()
@@ -69,6 +69,7 @@ pub(crate) fn init(tui_active: bool, log_level: &'static str) -> DriftSeen {
         registry
             .with(
                 fmt_layer()
+                    .with_ansi(crate::term::stderr_color())
                     .with_writer(std::io::stderr)
                     .with_filter(make_filter()),
             )

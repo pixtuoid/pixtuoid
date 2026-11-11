@@ -215,8 +215,8 @@ serde_json = { workspace = true }
 # `benches/render_tiles.rs`.
 criterion  = { workspace = true }
 
-# `tests/tui_startup.rs` plays the terminal on the TUI's pty; the startup
-# queries it answers are Unix-only.
+# Tests that drive a pty: `tests/tui_startup.rs`, whose startup queries are
+# Unix-only, and `app::crash`'s color test, Unix-only like every crash re-exec.
 [target.'cfg(unix)'.dev-dependencies]
 portable-pty = { workspace = true }
 

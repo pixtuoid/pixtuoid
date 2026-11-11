@@ -35,23 +35,17 @@ pub fn run() -> Result<()> {
     );
 
     // The office has no legible monochrome fallback, so refuse the canvas with an
-    // explanation rather than render block-soup. crossterm needs the
-    // $CLICOLOR_FORCE override applied explicitly — it ignores the var on its own.
-    // Runs before the truecolor probe, so a dumb terminal never gets DECRQSS.
+    // explanation rather than render block-soup. Runs before the truecolor
+    // probe, so a dumb terminal never gets DECRQSS.
     if is_run_tui {
         use crate::term::ColorPreflight;
-        match crate::term::color_preflight(
-            pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
-            pixtuoid_core::platform::text_env("CLICOLOR_FORCE").as_deref(),
-            pixtuoid_core::platform::text_env("TERM").as_deref(),
-        ) {
+        match crate::term::ColorEnv::read().preflight {
             ColorPreflight::Proceed => {}
-            ColorPreflight::ForceColor => crossterm::style::force_color_output(true),
             ColorPreflight::RefuseNoColor => anyhow::bail!(
                 "$NO_COLOR is set, so color output is disabled — the pixel-art office \
                  is 24-bit color with no legible monochrome mode and would render as \
-                 unreadable blocks. Unset NO_COLOR (or set CLICOLOR_FORCE=1 to override) \
-                 to run it, or use `pixtuoid run --headless` for a text summary."
+                 unreadable blocks. Unset NO_COLOR to run it, or use `pixtuoid run \
+                 --headless` for a text summary."
             ),
             ColorPreflight::RefuseDumbTerm => anyhow::bail!(
                 "$TERM=dumb — this terminal can't render the pixel-art office (no cursor \
@@ -85,10 +79,20 @@ pub fn run() -> Result<()> {
         );
     }
     let log_level: &'static str = log_level.as_str();
-    let tui_active = matches!(&cmd, Cmd::Run { headless, .. } if !*headless)
-        || matches!(&cmd, Cmd::Floating { .. });
-    let drift = logging::init(tui_active, log_level);
+    let file_log = is_run_tui || matches!(&cmd, Cmd::Floating { .. });
+    let drift = logging::init(file_log, log_level);
+    let ran = dispatch(cmd, drift);
+    // The log file's copy of `main`'s stderr report, which no one reads once a
+    // detached `floating`'s launcher lets go; a stderr log would show it twice.
+    if file_log && let Err(e) = &ran {
+        tracing::error!(error = ?e, "pixtuoid exited with an error");
+    }
+    ran
+}
 
+/// Run `cmd`: apart from [`run`] so every failure in it, a `?` included,
+/// reaches [`run`]'s log.
+fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
     match cmd {
         Cmd::Run {
             source,
@@ -105,7 +109,11 @@ pub fn run() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Floating { source, paint } => {
+        Cmd::Floating {
+            source,
+            paint,
+            notify_ready,
+        } => {
             // No desk cap: floating seeds its capacity from the window.
             let rc = build_run_config(
                 paint,
@@ -115,7 +123,7 @@ pub fn run() -> Result<()> {
                 crate::cli::LookArgs::default(),
                 drift,
             )?;
-            if let Some(signal) = floating::run(rc)? {
+            if let Some(signal) = floating::run(rc, notify_ready)? {
                 signal.reraise();
             }
             Ok(())
@@ -249,6 +257,7 @@ fn build_run_config(
         audio: config::resolve_audio(&cfg),
         look,
         motion,
+        floating: config::resolve_floating(&cfg),
     })
 }
 

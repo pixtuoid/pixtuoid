@@ -26,11 +26,11 @@ Homebrew / Cargo / `~/.local/bin` locations. If yours lives elsewhere, set
 
 ## How it works
 
-| Command               | CLI call                                   |
-| --------------------- | ------------------------------------------ |
-| Manage Sources (list) | `pixtuoid sources --json`                  |
-| Connect / Disconnect  | `pixtuoid connect\|disconnect <id> --json` |
-| Start Floating Window | `pixtuoid floating` (detached)             |
+| Command               | CLI call                                      |
+| --------------------- | --------------------------------------------- |
+| Manage Sources (list) | `pixtuoid sources --json`                     |
+| Connect / Disconnect  | `pixtuoid connect\|disconnect <id> --json`    |
+| Start Floating Window | `pixtuoid floating --notify-ready` (detached) |
 
 Connecting installs any hooks that CLI takes; disconnecting removes them. A Pixtuoid
 office already running picks up the change on its next launch (the CLI is the

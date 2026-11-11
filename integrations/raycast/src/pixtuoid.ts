@@ -1,5 +1,5 @@
 import { getPreferenceValues } from "@raycast/api";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,9 @@ import { promisify } from "node:util";
 import type { SourceStatus } from "./contract";
 import type { OutcomeRow } from "./contract-outcome";
 import { rowsOf } from "./conforms";
+import { LaunchFailedError, launchUntilReady } from "./launch";
+// Pinned against the binary by `cli_packaging`'s `the_floating_launch_contract_holds`.
+import floatingLaunch from "../contract/floating-launch.json";
 import outcomeRowSchema from "../contract/outcome-row.schema.json";
 import sourceStatusSchema from "../contract/source-status.schema.json";
 
@@ -127,17 +130,15 @@ export async function toggleSource(id: string, connected: boolean): Promise<Outc
   return row;
 }
 
-/** Spawn `pixtuoid floating` DETACHED so the desktop window outlives Raycast,
- *  which closes as soon as the no-view command returns. Without the `error`
- *  listener a spawn failure would be an UNCATCHABLE event. */
+/** Open `pixtuoid floating`, settling once its window is up: a boot that fails
+ *  (a config error, no GPU adapter) rejects with its reason instead of passing
+ *  for an open window. */
 export async function startFloating(): Promise<void> {
-  const bin = await resolveBinary();
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(bin, ["floating"], { detached: true, stdio: "ignore" });
-    child.once("error", reject);
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
-    });
-  });
+  await launchUntilReady(await resolveBinary(), floatingLaunch.args, floatingLaunch.error_prefix);
+}
+
+/** Whether `e` is an exit with the contract's `usage_exit`: a binary too old for
+ *  the launch's args rejects them so. */
+export function predatesFloatingLaunch(e: unknown): boolean {
+  return e instanceof LaunchFailedError && e.code === floatingLaunch.usage_exit;
 }

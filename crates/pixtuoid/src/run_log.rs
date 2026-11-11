@@ -6,8 +6,28 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-fn runs_under(base: &Path) -> LogLocation {
-    LogLocation::Runs(base.join("pixtuoid").join("logs"))
+/// The directory the runs directory and the crash log share: pixtuoid's
+/// [state directory](crate::config::state_dir).
+fn diagnostics_dir() -> PathBuf {
+    diagnostics_under(crate::config::state_dir())
+}
+
+/// [`diagnostics_dir`] of a resolved state directory, so a test can drive the
+/// no-home arm.
+fn diagnostics_under(state: Option<PathBuf>) -> PathBuf {
+    // No home dir at all: the log must exist somewhere — it is the only runtime
+    // diagnostics channel. Unix's is the socket's per-user `/tmp` dir, which
+    // `open_private_append` vets as the socket's bind does.
+    #[cfg(unix)]
+    let tmp = pixtuoid_core::source::hook::owned_tmp_dir;
+    #[cfg(not(unix))]
+    let tmp = || std::env::temp_dir().join("pixtuoid");
+    state.unwrap_or_else(tmp)
+}
+
+/// Where a panic's report goes, whatever `$PIXTUOID_LOG` names.
+pub(crate) fn crash_log_path() -> PathBuf {
+    diagnostics_dir().join("crash.log")
 }
 
 /// How long a run's log outlives its last write before a later run removes
@@ -79,15 +99,40 @@ fn prune_runs(dir: &Path, now: SystemTime) {
 ///
 /// The mode binds AT CREATION — race-free, no window in which a co-located user
 /// can open the sink. An already-existing DIRECTORY keeps its mode: silently
-/// re-moding a user's `~/.cache` is not ours.
+/// re-moding a user's `~/.local/state` is not ours.
 ///
 /// # Errors
 ///
-/// If the directory can't be created or the file can't be opened.
+/// If the directory can't be created or vetted, or the file can't be opened or
+/// is not ours alone (a character device such as `/dev/null` aside).
 pub(crate) fn open_private_append(
     path: &Path,
-    mut opts: OpenOptions,
+    opts: OpenOptions,
 ) -> std::io::Result<std::fs::File> {
+    open_private_append_vetted(path, opts, log_guard())
+}
+
+/// The guard every access to a log path passes, write or read: a squatted
+/// per-user `/tmp` dir is refused whichever way it is reached.
+fn log_guard() -> impl Fn(&Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    return |path: &Path| {
+        pixtuoid_core::source::hook::vet_owned_tmp_path(path).map_err(std::io::Error::other)
+    };
+    #[cfg(not(unix))]
+    |_: &Path| Ok(())
+}
+
+/// [`open_private_append`] with its guard on the shared `/tmp` dir passed in,
+/// so a test can refuse without squatting the real one.
+fn open_private_append_vetted(
+    path: &Path,
+    mut opts: OpenOptions,
+    vet: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<std::fs::File> {
+    // `recursive` keeps a directory that exists, whoever made it (std 1.99.1
+    // `fs.rs:3591`), so the shared `/tmp` one must be ours first.
+    vet(path)?;
     if let Some(parent) = path.parent() {
         #[cfg(unix)]
         {
@@ -102,44 +147,63 @@ pub(crate) fn open_private_append(
     }
     opts.create(true).append(true);
     crate::install::owner_only_create(&mut opts);
-    opts.open(path)
-}
-
-/// One-deep rotation at startup of the file `$PIXTUOID_LOG` names (log →
-/// log.old) keeps the last two generations. Accepted edge: with several
-/// instances sharing that file, one instance's startup rotation renames it out
-/// from under a running sibling (its fd follows; a later rotation strands it on
-/// an unlinked inode).
-fn rotate_if_large(path: &Path) {
-    let too_large = std::fs::metadata(path).is_ok_and(|m| m.len() > LOG_ROTATE_BYTES);
-    if too_large {
-        // APPEND ".old" rather than with_extension: a custom $PIXTUOID_LOG like
-        // app.log must rotate to app.log.old (not clobber a sibling app.old), and a
-        // path already ending in .old must not rename onto itself. OsString
-        // concatenation, not format!/display(): display() is lossy on non-UTF-8
-        // paths, and a U+FFFD-mangled target would silently break the rotation.
-        let mut old = path.as_os_str().to_os_string();
-        old.push(".old");
-        let _ = std::fs::rename(path, &old);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(libc::O_NOFOLLOW);
     }
+    let file = opts.open(path)?;
+    // `O_CREAT` leaves a file already there as its maker made it (POSIX `open`,
+    // https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html):
+    // another user's, or a hard link to one they read, would hand them the log.
+    // A character device is exempt: only a privileged caller makes one (mknod(2),
+    // https://man7.org/linux/man-pages/man2/mknod.2.html; FreeBSD's "requires
+    // super-user privileges"), so `/dev/null` was never another user's plant.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        let md = file.metadata()?;
+        let ours = md.uid() == rustix::process::geteuid().as_raw() && md.nlink() == 1;
+        if !ours && !md.file_type().is_char_device() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "the file there is another user's or hard-linked",
+            ));
+        }
+    }
+    Ok(file)
 }
 
-/// Read the warn-floor log for a drift scan, separating "there is no log yet" from "the log
+/// [`open_private_append`] of the file `$PIXTUOID_LOG` names, after a one-deep
+/// rotation at startup (log → log.old) that keeps the last two generations.
+/// Sized through the opened file, so a path is renamed only once the opener has
+/// judged it. Accepted edge: with several instances sharing that file, one
+/// instance's startup rotation renames it out from under a running sibling (its
+/// fd follows; a later rotation strands it on an unlinked inode).
+fn open_rotated(path: &Path) -> std::io::Result<std::fs::File> {
+    let file = open_private_append(path, OpenOptions::new())?;
+    if !file.metadata().is_ok_and(|m| m.len() > LOG_ROTATE_BYTES) {
+        return Ok(file);
+    }
+    drop(file);
+    // APPEND ".old" rather than with_extension: a custom $PIXTUOID_LOG like
+    // app.log must rotate to app.log.old (not clobber a sibling app.old), and a
+    // path already ending in .old must not rename onto itself. OsString
+    // concatenation, not format!/display(): display() is lossy on non-UTF-8
+    // paths, and a U+FFFD-mangled target would silently break the rotation.
+    let mut old = path.as_os_str().to_os_string();
+    old.push(".old");
+    let _ = std::fs::rename(path, &old);
+    open_private_append(path, OpenOptions::new())
+}
+
+/// Read the last `max` bytes of the warn-floor log, from their first whole
+/// line, for a drift scan, separating "there is no log yet" from "the log
 /// could not be read" — the latter gets a warning line. A missing log is the ordinary
 /// no-TUI-run-yet state and genuinely means "no drift recorded"; every other error class
 /// leaves the counts UNKNOWN, and folding those into the same silent empty string made
 /// `doctor` positively assert `✓ no decode drift` off an input it never read.
-///
-/// The warning is [`crate::strip_control_chars`]-ed where it is MINTED, for the
-/// reason `crate::display_path` gives: the path comes from
-/// `PIXTUOID_LOG`/`XDG_STATE_HOME`.
-pub(crate) fn read_log(path: &std::path::Path) -> (String, Option<String>) {
-    read_log_tail(path, u64::MAX)
-}
-
-/// [`read_log`] of the last `max` bytes of `path`, from the first whole line
-/// in them.
-fn read_log_tail(path: &std::path::Path, max: u64) -> (String, Option<String>) {
+fn read_log(path: &std::path::Path, max: u64) -> (String, Option<String>) {
     let tail = || -> std::io::Result<String> {
         use std::io::{Read, Seek, SeekFrom};
         let mut file = std::fs::File::open(path)?;
@@ -162,14 +226,18 @@ fn read_log_tail(path: &std::path::Path, max: u64) -> (String, Option<String>) {
     match tail() {
         Ok(s) => (s, None),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (String::new(), None),
-        Err(e) => (
-            String::new(),
-            Some(crate::strip_control_chars(&format!(
-                "log unreadable: {} ({e}) — the decode-drift counts are not meaningful",
-                path.display()
-            ))),
-        ),
+        Err(e) => (String::new(), Some(unreadable(path, &e))),
     }
+}
+
+/// The warning for a log that can't be read, [`crate::strip_control_chars`]-ed
+/// where it is MINTED, for the reason `crate::display_path` gives: the path
+/// comes from `PIXTUOID_LOG`/`XDG_STATE_HOME`.
+fn unreadable(path: &Path, e: &std::io::Error) -> String {
+    crate::strip_control_chars(&format!(
+        "log unreadable: {} ({e}) — the decode-drift counts are not meaningful",
+        path.display()
+    ))
 }
 
 /// Where the runtime log lives: the one file `$PIXTUOID_LOG` names, or a
@@ -186,27 +254,19 @@ const RUN_LOG_EXT: &str = "log";
 /// The size past which the file `$PIXTUOID_LOG` names rotates at startup.
 const LOG_ROTATE_BYTES: u64 = 5 * 1024 * 1024;
 
-/// The most one [`LogLocation::read`] takes of the retained runs, newest first: what
-/// the named file holds at most across its two generations, so a week of
-/// verbose runs costs a reader no more than it did.
+/// The most one [`LogLocation::read`] takes, of the named file's tail or the
+/// newest runs: twice what the named file rotates past, so neither a long
+/// verbose run nor a week of runs makes a reader take more.
 const LOG_READ_BYTES: u64 = 2 * LOG_ROTATE_BYTES;
 
 impl LogLocation {
     /// Where this process's log goes: `$PIXTUOID_LOG`'s file, else a runs
-    /// directory in the state, cache or temp directory.
+    /// directory in the state or temp directory.
     pub(crate) fn from_env() -> Self {
-        if let Some(p) = pixtuoid_core::platform::path_env("PIXTUOID_LOG") {
-            return LogLocation::File(p);
+        match pixtuoid_core::platform::path_env("PIXTUOID_LOG") {
+            Some(p) => LogLocation::File(p),
+            None => LogLocation::Runs(diagnostics_dir().join("logs")),
         }
-        if let Some(state) = crate::install::nonempty_abs_env("XDG_STATE_HOME") {
-            return runs_under(&state);
-        }
-        if let Some(home) = pixtuoid_core::platform::user_home_opt() {
-            return runs_under(&home.join(".cache"));
-        }
-        // No home dir at all: the log must exist somewhere — it is the only runtime
-        // diagnostics channel.
-        runs_under(&std::env::temp_dir())
     }
 
     pub(crate) fn path(&self) -> &std::path::Path {
@@ -226,17 +286,15 @@ impl LogLocation {
         &self,
         now: SystemTime,
     ) -> Result<std::fs::File, (PathBuf, std::io::Error)> {
-        let (path, opts) = match self {
-            LogLocation::File(path) => {
-                rotate_if_large(path);
-                (path.clone(), OpenOptions::new())
+        let (path, sink) = match self {
+            LogLocation::File(path) => (path.clone(), open_rotated(path)),
+            LogLocation::Runs(dir) => {
+                let path = dir.join(run_file_name(now, std::process::id()));
+                let sink = open_private_append(&path, live_run_options());
+                (path, sink)
             }
-            LogLocation::Runs(dir) => (
-                dir.join(run_file_name(now, std::process::id())),
-                live_run_options(),
-            ),
         };
-        let sink = open_private_append(&path, opts).map_err(|e| (path, e))?;
+        let sink = sink.map_err(|e| (path, e))?;
         if let LogLocation::Runs(dir) = self {
             // Held for the run's life, it marks the file live to [`prune_runs`] on
             // Unix, where removing an open file succeeds.
@@ -250,8 +308,17 @@ impl LogLocation {
     /// The log here, its tail within the read budget; of a runs directory,
     /// the tail across its runs, oldest run first.
     pub(crate) fn read(&self) -> (String, Option<String>) {
+        self.read_vetted(log_guard())
+    }
+
+    /// [`Self::read`] behind `vet`, which a refused path reports as unreadable:
+    /// logs a squatter planted are no drift record.
+    fn read_vetted(&self, vet: impl Fn(&Path) -> std::io::Result<()>) -> (String, Option<String>) {
+        if let Err(e) = vet(self.path()) {
+            return (String::new(), Some(unreadable(self.path(), &e)));
+        }
         match self {
-            LogLocation::File(path) => read_log(path),
+            LogLocation::File(path) => read_log(path, LOG_READ_BYTES),
             LogLocation::Runs(dir) => read_runs(dir, LOG_READ_BYTES),
         }
     }
@@ -267,15 +334,7 @@ fn read_runs(dir: &std::path::Path, budget: u64) -> (String, Option<String>) {
             .filter(|p| p.extension().is_some_and(|e| e == RUN_LOG_EXT))
             .collect(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (String::new(), None),
-        Err(e) => {
-            return (
-                String::new(),
-                Some(crate::strip_control_chars(&format!(
-                    "log unreadable: {} ({e}) — the decode-drift counts are not meaningful",
-                    dir.display()
-                ))),
-            );
-        }
+        Err(e) => return (String::new(), Some(unreadable(dir, &e))),
     };
     runs.sort();
     let (mut read, mut warning, mut left) = (Vec::new(), None, budget);
@@ -284,7 +343,7 @@ fn read_runs(dir: &std::path::Path, budget: u64) -> (String, Option<String>) {
             break;
         }
         let len = std::fs::metadata(run).map_or(0, |m| m.len());
-        let (run_text, run_warning) = read_log_tail(run, left);
+        let (run_text, run_warning) = read_log(run, left);
         left = left.saturating_sub(len);
         read.push(run_text);
         warning = warning.or(run_warning);
@@ -326,18 +385,24 @@ mod tests {
 
     #[test]
     fn log_location_rejects_a_relative_xdg_state_home() {
-        // Pins the CALL SITE, not just the primitive: a revert to plain
-        // `path_env` here would leak a relative log path.
-        temp_env::with_var_unset("PIXTUOID_LOG", || {
-            let home =
-                pixtuoid_core::platform::user_home_opt().expect("a home dir in the test env");
-            let cache = LogLocation::Runs(home.join(".cache").join("pixtuoid").join("logs"));
+        // The log dir derives from `config::state_dir`, which rejects a
+        // relative value: this pins that path through `from_env`.
+        let home = tempfile::tempdir().unwrap();
+        let vars = [
+            ("PIXTUOID_LOG", None),
+            (
+                pixtuoid_core::platform::USER_HOME_VAR,
+                Some(home.path().as_os_str()),
+            ),
+        ];
+        temp_env::with_vars(vars, || {
+            let state = LogLocation::Runs(home.path().join(".local/state/pixtuoid/logs"));
             for rel in ["", "   ", "rel/state", "~/state"] {
                 temp_env::with_var("XDG_STATE_HOME", Some(rel), || {
                     assert_eq!(
                         LogLocation::from_env(),
-                        cache,
-                        "relative XDG_STATE_HOME {rel:?} must fall back to ~/.cache"
+                        state,
+                        "relative XDG_STATE_HOME {rel:?} must fall back to ~/.local/state"
                     );
                 });
             }
@@ -353,36 +418,196 @@ mod tests {
         });
     }
 
+    /// The crash log sits beside the runs directory, in the socket's per-user
+    /// `/tmp` dir on Unix (`temp_dir()`'s `pixtuoid` elsewhere) when there is no home at all.
     #[test]
-    fn rotate_if_large_rotates_once_past_the_cap() {
+    fn the_crash_log_sits_beside_the_runs_even_with_no_home() {
+        let abs = if cfg!(windows) { "C:/state" } else { "/state" };
+        temp_env::with_vars(
+            [("PIXTUOID_LOG", None), ("XDG_STATE_HOME", Some(abs))],
+            || {
+                let LogLocation::Runs(runs) = LogLocation::from_env() else {
+                    panic!("no $PIXTUOID_LOG reads as a runs directory");
+                };
+                assert_eq!(crash_log_path().parent(), runs.parent());
+            },
+        );
+        #[cfg(unix)]
+        assert_eq!(
+            diagnostics_under(None),
+            pixtuoid_core::source::hook::owned_tmp_dir()
+        );
+        #[cfg(not(unix))]
+        assert_eq!(
+            diagnostics_under(None),
+            std::env::temp_dir().join("pixtuoid")
+        );
+    }
+
+    /// A symlink planted at a log's path is refused, not followed to a file
+    /// its planter chose.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_planted_at_a_log_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, "theirs").unwrap();
+        let log = dir.path().join("crash.log");
+        std::os::unix::fs::symlink(&victim, &log).unwrap();
+        assert!(open_private_append(&log, OpenOptions::new()).is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "theirs");
+    }
+
+    /// On Unix, a named log that is a symlink is refused whatever its target's
+    /// size: one past the rotation cap is neither rotated away nor replaced.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_named_log_past_the_cap_is_refused_not_rotated() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = std::fs::File::create(dir.path().join("target")).unwrap();
+        target.set_len(LOG_ROTATE_BYTES + 1).unwrap();
+        let log = dir.path().join("pixtuoid.log");
+        std::os::unix::fs::symlink(dir.path().join("target"), &log).unwrap();
+        assert!(
+            LogLocation::File(log.clone())
+                .open_sink(SystemTime::now())
+                .is_err()
+        );
+        assert!(std::fs::symlink_metadata(&log).unwrap().is_symlink());
+        assert!(!dir.path().join("pixtuoid.log.old").exists());
+    }
+
+    /// A named log hard-linked to another file is refused at any size: one past
+    /// the rotation cap is neither rotated away nor replaced.
+    #[cfg(unix)]
+    #[test]
+    fn a_hard_linked_named_log_past_the_cap_is_refused_not_rotated() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("pixtuoid.log");
+        let file = std::fs::File::create(&log).unwrap();
+        file.set_len(LOG_ROTATE_BYTES + 1).unwrap();
+        std::fs::hard_link(&log, dir.path().join("theirs")).unwrap();
+        let refused = LogLocation::File(log.clone())
+            .open_sink(SystemTime::now())
+            .expect_err("a linked log");
+        assert_eq!(refused.1.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(std::fs::metadata(&log).unwrap().len(), LOG_ROTATE_BYTES + 1);
+        assert!(!dir.path().join("pixtuoid.log.old").exists());
+    }
+
+    /// A hard link planted at a log's path is refused (the `O_CREAT` note in
+    /// [`open_private_append_vetted`]); the run's own file reopens.
+    #[cfg(unix)]
+    #[test]
+    fn a_hard_link_planted_at_a_log_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("pixtuoid.log");
+        drop(open_private_append(&log, OpenOptions::new()).expect("creates"));
+        drop(open_private_append(&log, OpenOptions::new()).expect("reopens its own"));
+        let theirs = dir.path().join("theirs");
+        std::fs::hard_link(&log, &theirs).unwrap();
+        let refused = open_private_append(&log, OpenOptions::new()).expect_err("a linked log");
+        assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    /// `PIXTUOID_LOG=/dev/null` throws the log away, as it always did.
+    #[cfg(unix)]
+    #[test]
+    fn a_log_into_dev_null_opens() {
+        open_private_append(Path::new("/dev/null"), OpenOptions::new()).expect("opens");
+    }
+
+    /// Behind core's guard (`log_guard`'s, over a given dir and uid), writes and
+    /// reads refuse a per-user dir another uid owns or a group can write.
+    #[cfg(unix)]
+    #[test]
+    fn the_log_guard_refuses_a_squatted_dir_on_write_and_read() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let owned = tmp.path().join("pixtuoid-42");
+        let logs = owned.join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::set_permissions(&owned, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(logs.join("1.log"), "planted\n").unwrap();
+        let uid = rustix::process::getuid().as_raw();
+        let guard = |uid| {
+            let owned = owned.clone();
+            move |path: &Path| {
+                pixtuoid_core::source::hook::vet_owned_tmp_path_in(path, &owned, uid)
+                    .map_err(std::io::Error::other)
+            }
+        };
+        let runs = LogLocation::Runs(logs.clone());
+        assert_eq!(runs.read_vetted(guard(uid)), ("planted\n".to_owned(), None));
+        let theirs = uid.wrapping_add(1);
+        let (text, warning) = runs.read_vetted(guard(theirs));
+        assert!(text.is_empty() && warning.is_some_and(|w| w.contains("log unreadable")));
+        let log = logs.join("2.log");
+        assert!(open_private_append_vetted(&log, OpenOptions::new(), guard(theirs)).is_err());
+        std::fs::set_permissions(&owned, std::fs::Permissions::from_mode(0o770)).unwrap();
+        assert!(
+            runs.read_vetted(guard(uid)).1.is_some(),
+            "a group-writable dir"
+        );
+        assert!(
+            guard(uid)(tmp.path()).is_ok(),
+            "a path outside the dir is not the guard's"
+        );
+    }
+
+    /// The guard runs before anything is made: a refused path leaves neither
+    /// the log nor its directory, and an allowed one opens.
+    #[test]
+    fn a_log_the_guard_refuses_is_never_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("logs").join("run.log");
+        let refuse = |_: &Path| Err(std::io::Error::other("squatted"));
+        assert!(open_private_append_vetted(&log, OpenOptions::new(), refuse).is_err());
+        assert!(
+            !log.parent().unwrap().exists(),
+            "the guard ran after a create"
+        );
+        open_private_append_vetted(&log, OpenOptions::new(), |_| Ok(())).expect("opens");
+    }
+
+    #[test]
+    fn open_rotated_rotates_once_past_the_cap() {
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("log");
 
         std::fs::write(&log, b"recent").unwrap();
-        rotate_if_large(&log);
-        assert!(log.exists(), "under-cap log must not rotate");
+        drop(open_rotated(&log).unwrap());
+        assert_eq!(
+            std::fs::read(&log).unwrap(),
+            b"recent",
+            "under-cap log must not rotate"
+        );
 
         // Sparse via set_len — no real `LOG_ROTATE_BYTES` write.
         let f = std::fs::OpenOptions::new().write(true).open(&log).unwrap();
         f.set_len(LOG_ROTATE_BYTES + 1).unwrap();
         drop(f);
-        rotate_if_large(&log);
-        assert!(!log.exists(), "over-cap log rotates away");
-        assert!(
-            dir.path().join("log.old").exists(),
+        drop(open_rotated(&log).unwrap());
+        assert_eq!(
+            std::fs::metadata(&log).unwrap().len(),
+            0,
+            "a fresh log in its place"
+        );
+        assert_eq!(
+            std::fs::metadata(dir.path().join("log.old")).unwrap().len(),
+            LOG_ROTATE_BYTES + 1,
             "one prior generation is kept"
         );
     }
 
     #[test]
-    fn rotate_if_large_appends_old_to_dotted_custom_paths() {
+    fn open_rotated_appends_old_to_dotted_custom_paths() {
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("app.log");
         let f = std::fs::File::create(&log).unwrap();
         f.set_len(LOG_ROTATE_BYTES + 1).unwrap();
         drop(f);
-        rotate_if_large(&log);
-        assert!(!log.exists());
+        drop(open_rotated(&log).unwrap());
         assert!(
             dir.path().join("app.log.old").exists(),
             ".old is appended, not substituted"
@@ -538,5 +763,25 @@ mod tests {
             "a1\na2\nb1\nb2\nc1\n",
             "every run under a budget that holds them"
         );
+    }
+
+    /// The named file is read within the budget a runs directory is, from
+    /// its first whole line.
+    #[test]
+    fn a_named_files_read_takes_its_tail_within_the_budget() {
+        use std::io::{Seek, Write};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pixtuoid.log");
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(b"old\n").unwrap();
+        // A sparse line of NULs that ends past the budget.
+        let nuls_from = f.stream_position().unwrap();
+        f.set_len(nuls_from + LOG_READ_BYTES).unwrap();
+        f.seek(std::io::SeekFrom::End(0)).unwrap();
+        f.write_all(b"\nnew\n").unwrap();
+        drop(f);
+        let (text, warning) = LogLocation::File(path).read();
+        assert_eq!(warning, None);
+        assert!(text == "new\n", "read {} bytes", text.len());
     }
 }

@@ -16,7 +16,7 @@ pub(crate) struct Cli {
     /// Log verbosity.
     ///
     /// The TUI and the floating window always log warn+ to a file per run (in
-    /// ~/.cache/pixtuoid/logs/ or $XDG_STATE_HOME/pixtuoid/logs/, or the one file
+    /// ~/.local/state/pixtuoid/logs/ or $XDG_STATE_HOME/pixtuoid/logs/, or the one file
     /// $PIXTUOID_LOG names); debug/trace raise the file's verbosity. Everything
     /// else logs to stderr at this level. ($RUST_LOG remains the escape hatch for
     /// full directive syntax.)
@@ -129,6 +129,9 @@ pub(crate) enum Cmd {
         source: SourceArgs,
         #[command(flatten)]
         paint: PaintArgs,
+        // A launcher's, not a user's: Raycast's Start Floating waits on it.
+        #[arg(long, hide = true)]
+        notify_ready: bool,
     },
     /// Serve the office to paired devices on your local network.
     ///
@@ -587,6 +590,34 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// A launcher's flag: it parses, and neither the help nor the man page
+    /// names it. Completion scripts do, as they do `--max-desks`.
+    #[test]
+    fn notify_ready_parses_and_stays_out_of_help_and_man() {
+        use clap::CommandFactory;
+        let cli = Cli::try_parse_from(["pixtuoid", "floating", "--notify-ready"]).unwrap();
+        assert!(matches!(
+            cli.cmd,
+            Some(Cmd::Floating {
+                notify_ready: true,
+                ..
+            })
+        ));
+        let mut docs = vec![
+            Cli::command()
+                .find_subcommand_mut("floating")
+                .unwrap()
+                .render_long_help()
+                .to_string(),
+        ];
+        let mut man = Vec::new();
+        render_man(&mut man).unwrap();
+        docs.push(String::from_utf8(man).unwrap().replace("\\-", "-"));
+        for doc in docs {
+            assert!(!doc.contains("notify-ready"), "{doc}");
+        }
     }
 
     #[cfg(feature = "serve")]

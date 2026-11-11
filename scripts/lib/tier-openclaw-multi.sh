@@ -25,7 +25,7 @@ PORTS=("$@")
 # 0700 by construction, with the SOCKET inside it: a fixed or `mktemp -u`
 # socket name in shared temp lets concurrent runs clobber each other and is
 # pre-plantable by another user, which nothing downstream polices —
-# `ensure_owned_socket_dir` leaves an explicit PIXTUOID_SOCKET path alone.
+# `vet_owned_tmp_path` leaves an explicit PIXTUOID_SOCKET path alone.
 MG="$(mktemp -d)"
 SOCK="$MG/pixtuoid.sock"
 OUT="$MG/pixtuoid.log"

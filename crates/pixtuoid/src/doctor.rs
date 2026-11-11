@@ -821,8 +821,8 @@ struct DoctorReport {
     log_path: ShownPath,
     config_path: ShownPath,
     config_warnings: Vec<String>,
-    /// Minted only by [`read_log`](crate::run_log::read_log), which strips it; the render prints it as
-    /// is.
+    /// Minted only by [`LogLocation::read`](crate::run_log::LogLocation::read), which strips it;
+    /// the render prints it as is.
     log_warning: Option<String>,
     term_env: Option<String>,
     colorterm_env: Option<String>,
@@ -844,19 +844,8 @@ struct DoctorReport {
     /// One per probe-backed source, in registry order.
     probes: Vec<ProbePath>,
     home_split: Option<String>,
-    /// Whether the report may carry ANSI color — see [`report_color`].
+    /// Whether the report may carry ANSI color — see [`crate::term::ColorEnv::stream_color`].
     color: bool,
-}
-
-/// Whether the report may carry ANSI color: a tty with color allowed by the
-/// SAME `color_preflight` policy the launcher acts on, or `$CLICOLOR_FORCE`
-/// (bixense: forces color even piped) — except `$TERM=dumb`, which outranks
-/// the force (the preflight's own rule: forcing color can't fix a terminal
-/// that renders no escapes).
-fn report_color(tty: bool, pf: crate::term::ColorPreflight, clicolor_force: Option<&str>) -> bool {
-    pf != crate::term::ColorPreflight::RefuseDumbTerm
-        && (crate::term::clicolor_forced(clicolor_force)
-            || (tty && matches!(pf, crate::term::ColorPreflight::Proceed)))
 }
 
 /// ANSI paint, a no-op when [`DoctorReport::color`] is off. The escape codes
@@ -896,7 +885,7 @@ impl Ink {
 }
 
 /// Each query only on a real tty and a non-dumb `$TERM` (`probe_ok`): the same
-/// `color_preflight` gate the launcher acts on, so the rows match `run`.
+/// `color_preflight` gate `run`'s TUI preflight acts on, so the rows match `run`.
 fn probe_terminal_caps(
     probe_ok: bool,
     look: crate::graphics::LookChoice,
@@ -984,20 +973,11 @@ fn collect(
 
     let term_env = pixtuoid_core::platform::text_env("TERM");
     let colorterm_env = pixtuoid_core::platform::text_env("COLORTERM");
-    let clicolor_force = pixtuoid_core::platform::text_env("CLICOLOR_FORCE");
-    let color_pf = crate::term::color_preflight(
-        pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
-        clicolor_force.as_deref(),
-        term_env.as_deref(),
-    );
+    let color_env = crate::term::ColorEnv::read();
+    let color_pf = color_env.preflight;
     let tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let probe_ok = tty && color_pf != crate::term::ColorPreflight::RefuseDumbTerm;
-    let color = report_color(tty, color_pf, clicolor_force.as_deref());
-    if color {
-        // crossterm strips color under `$NO_COLOR` unless forced; pin it rather
-        // than rely on the Display path happening not to check today.
-        crossterm::style::force_color_output(true);
-    }
+    let color = color_env.stream_color(tty);
     let max_density = pixtuoid_scene::pack::load_bundled_pack()?.max_density_variant();
     let (truecolor_probe, graphics_plan) = probe_terminal_caps(probe_ok, look, max_density);
     let run_look = crate::graphics::LookChoice::new(
@@ -1107,12 +1087,10 @@ fn terminal_category(r: &DoctorReport) -> Category {
         "{DETAIL_INDENT}{}",
         r.graphics_plan.diagnostic_row(r.run_plan)
     )];
-    // Whenever it has something to say — incl. the ForceColor note, so a
-    // NO_COLOR+CLICOLOR_FORCE report still states that color is being forced.
     if let Some(row) = crate::term::color_status_row(r.color_pf) {
         details.push(format!("{DETAIL_INDENT}{row}"));
     }
-    // Same predicate as the launcher's warning, so the two never disagree; a skipped
+    // Same predicate as `run`'s warning, so the two never disagree; a skipped
     // probe (piped) stays ✓.
     let unconfirmed = r
         .truecolor_probe
@@ -1520,7 +1498,7 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::run_log::read_log;
+    use crate::run_log::LogLocation;
     use crate::test_capture::capture;
     #[cfg(unix)]
     use std::time::Duration;
@@ -1818,7 +1796,7 @@ mod tests {
         r.log_path = ShownPath::new(evil());
         r.config_path = ShownPath::new(evil());
         r.config_warnings = vec![evil()];
-        // Through `read_log`, which mints it: a directory is no readable log.
+        // Through the read that mints it: a directory is no readable log.
         // Windows forbids the Cc half in a file name, as
         // `the_unreadable_log_warning_is_stripped_where_it_is_minted` notes.
         let dir = tempfile::tempdir().unwrap();
@@ -1828,7 +1806,7 @@ mod tests {
             dir.path().join(format!("log{EVIL}"))
         };
         std::fs::create_dir(&unreadable).unwrap();
-        r.log_warning = read_log(&unreadable).1;
+        r.log_warning = LogLocation::File(unreadable).read().1;
         assert!(
             r.log_warning.is_some(),
             "a directory must not read as a log"
@@ -1852,48 +1830,11 @@ mod tests {
         }
     }
 
-    /// The color policy is a pure fn precisely so these arms are testable —
-    /// force-when-piped and dumb-beats-force both survived mutation before the
-    /// extraction.
-    #[test]
-    fn report_color_truth_table() {
-        use crate::term::ColorPreflight as Pf;
-        assert!(report_color(true, Pf::Proceed, None), "tty + Proceed → on");
-        assert!(
-            !report_color(false, Pf::Proceed, None),
-            "piped + Proceed → off"
-        );
-        assert!(
-            report_color(false, Pf::Proceed, Some("1")),
-            "CLICOLOR_FORCE forces even piped"
-        );
-        assert!(
-            !report_color(false, Pf::Proceed, Some("0")),
-            "CLICOLOR_FORCE=0 does not force"
-        );
-        assert!(
-            !report_color(false, Pf::Proceed, Some("  ")),
-            "a whitespace CLICOLOR_FORCE does not force"
-        );
-        assert!(
-            !report_color(true, Pf::RefuseNoColor, None),
-            "NO_COLOR refuses"
-        );
-        assert!(
-            report_color(false, Pf::ForceColor, Some("1")),
-            "the force overrides NO_COLOR (pf is already ForceColor)"
-        );
-        assert!(
-            !report_color(true, Pf::RefuseDumbTerm, Some("1")),
-            "TERM=dumb outranks everything, force included"
-        );
-    }
-
     #[test]
     fn terminal_category_warns_when_an_attempted_probe_did_not_confirm() {
         let mut r = summary_report(vec![]);
         use crate::term::Truecolor;
-        // Asked, no answer — the launcher warned here.
+        // Asked, no answer — `run` warned here.
         r.truecolor_probe = Some(Truecolor::NoAnswer);
         let c = terminal_category(&r);
         assert_eq!(c.status, CategoryStatus::Warn);
@@ -2231,15 +2172,18 @@ mod tests {
     #[test]
     fn an_unreadable_log_is_reported_but_a_missing_one_is_not() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(read_log(&dir.path().join("nope")), (String::new(), None));
+        assert_eq!(
+            LogLocation::File(dir.path().join("nope")).read(),
+            (String::new(), None)
+        );
 
         let f = dir.path().join("log");
         std::fs::write(&f, "hello").unwrap();
-        assert_eq!(read_log(&f), ("hello".to_string(), None));
+        assert_eq!(LogLocation::File(f).read(), ("hello".to_string(), None));
 
         // A directory reads as IsADirectory / PermissionDenied — never NotFound,
         // on any platform and any uid (a chmod-000 file would not bind as root).
-        let (text, warning) = read_log(dir.path());
+        let (text, warning) = LogLocation::File(dir.path().to_owned()).read();
         assert!(text.is_empty());
         let warning = warning.expect("an unreadable log must be reported");
         assert!(
@@ -2259,11 +2203,11 @@ mod tests {
             dir.path().join("l\u{1b}]0;PWNED\u{7}\u{202e}og")
         };
         std::fs::create_dir(&hostile).unwrap(); // a directory never reads as NotFound
-        let (_, warning) = read_log(&hostile);
+        let (_, warning) = LogLocation::File(hostile).read();
         let warning = warning.expect("an unreadable log must be reported");
         assert!(
             !warning.contains(['\u{1b}', '\u{7}', '\u{202e}']),
-            "asserted on `read_log`'s OWN return, not on either presenter — sanitizing per \
+            "asserted on `LogLocation::read`'s OWN return, not on either presenter — sanitizing per \
              presenter is how one of them shipped raw. This warning carries a live OSC / \
              Trojan-Source override: {warning:?}"
         );

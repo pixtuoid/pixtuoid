@@ -10,7 +10,7 @@ pub(crate) mod host_plugin;
 pub(crate) mod io;
 pub(crate) mod jcode;
 pub(crate) mod kimi;
-pub(crate) use io::{nonempty_abs_env, owner_only_create};
+pub(crate) use io::owner_only_create;
 pub(crate) mod dsh;
 pub(crate) mod merge;
 pub(crate) mod omp;

@@ -50,15 +50,15 @@ your choice is written back to `config.toml`. Override for one run with `--theme
 
 ## Logging & troubleshooting
 
-The TUI owns your terminal (alternate screen), so runtime diagnostics go to a
-**log file** instead of stderr:
+The TUI and the floating window log runtime diagnostics to a **log file**
+instead of stderr:
 
 | | |
 |-----|-----|
-| Default path | `~/.cache/pixtuoid/logs/` (or `$XDG_STATE_HOME/pixtuoid/logs/` if set to an absolute path): one file per run, named for its start |
-| Custom path | set `$PIXTUOID_LOG=/path/to/file` to log every run to that one file |
+| Default path | `~/.local/state/pixtuoid/logs/` (or `$XDG_STATE_HOME/pixtuoid/logs/` if set to an absolute path): one file per run, named for its start |
+| Custom path | set `$PIXTUOID_LOG=/path/to/file` to log every run to that one file; on Unix, a run opens it only if it is not a symlink and is yours with one link (a character device such as `/dev/null` aside) |
 | Level | `warn` and above by default; `--log-level debug` or `trace` (or `$RUST_LOG`) raises it |
-| Retention | a run's file is removed a week after its last write, unless its run is still open; `doctor` and the Sources panel read the newest 10 MB across runs; a `$PIXTUOID_LOG` file instead rotates to `<name>.old` past 5 MB at startup |
+| Retention | a run's file is removed a week after its last write, unless its run is still open; `doctor`, `sources` and the Sources panel read the newest 10 MB, across the runs or of a `$PIXTUOID_LOG` file; that file rotates to `<name>.old` past 5 MB at startup |
 
 Warnings about a misconfigured `config.toml` (unknown theme, bad `[[pets]]`
 kind, malformed TOML) are also printed to stderr **before** the office takes
@@ -66,9 +66,9 @@ over the screen — scroll back after quitting to see them. If a data source
 dies mid-run (e.g. the hook listener), the footer shows a persistent ⚠ warning
 and the full error is in the log file.
 
-Crashes are reported separately, to `crash.log` in the default path's parent.
+Crashes go to `crash.log` in the default path's parent, whatever `$PIXTUOID_LOG` names.
 
-Non-TUI commands (`--headless`, `doctor`, …) log to stderr directly.
+Every other command (`--headless`, `doctor`, …) logs to stderr directly.
 
 ### `pixtuoid connect` says it can't locate `pixtuoid-hook`
 
@@ -108,8 +108,8 @@ explains why when color is turned off:
 
 - **`$NO_COLOR`** (the [no-color.org](https://no-color.org) convention; any
   non-empty value): color output is disabled, so the office can't render. Unset
-  `NO_COLOR`, or override per the standard precedence with **`$CLICOLOR_FORCE=1`**
-  (forces color on despite `$NO_COLOR`; a `0` value does not force). An *empty*
+  `NO_COLOR` to run it: `$CLICOLOR_FORCE` and its alias `$FORCE_COLOR` force color
+  only without it ([bixense](https://bixense.com/clicolors/)). An *empty*
   `$NO_COLOR` is ignored (it doesn't actually disable color).
 - **`$TERM=dumb`**: the terminal can't render escape sequences or color at all.
 

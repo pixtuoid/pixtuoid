@@ -1,11 +1,12 @@
 //! Crash reporting: the panic hook that restores the terminal, appends a
-//! timestamped backtrace to [`crash_log_path`], and prints a pre-filled GitHub
-//! issue URL.
-
-use std::path::PathBuf;
+//! timestamped backtrace to [`crate::run_log::crash_log_path`], and prints a
+//! pre-filled GitHub issue URL.
 
 pub(crate) fn install_crash_hook() {
-    std::panic::set_hook(Box::new(|info| {
+    // stderr's color rule, so a launcher reading the notice through a pipe gets
+    // plain text.
+    let color = crate::term::stderr_color();
+    std::panic::set_hook(Box::new(move |info| {
         // stdout is the stream `setup_terminal` ENTERED the alt screen on, so the
         // restore must go there — on stderr, `pixtuoid run 2>/dev/null` strands it.
         let _ = crate::tui::unwind_terminal_modes(
@@ -14,7 +15,7 @@ pub(crate) fn install_crash_hook() {
         );
 
         let version = env!("CARGO_PKG_VERSION");
-        let crash_path = crash_log_path();
+        let crash_path = crate::run_log::crash_log_path();
         #[expect(
             clippy::disallowed_types,
             reason = "the crash report is stamped in the user's own zone"
@@ -38,14 +39,11 @@ pub(crate) fn install_crash_hook() {
 
         // Owner-only: a backtrace carries the same project paths and agent ids
         // the runtime log does.
-        if let Ok(mut f) =
-            crate::run_log::open_private_append(&crash_path, std::fs::OpenOptions::new())
-        {
-            use std::io::Write;
-            let _ = f.write_all(report.as_bytes());
-        }
+        let saved = crate::run_log::open_private_append(&crash_path, std::fs::OpenOptions::new())
+            .and_then(|mut f| std::io::Write::write_all(&mut f, report.as_bytes()));
 
-        let issue_url = build_issue_url(version, &panic_msg, &location, &bt_str, &crash_path);
+        let saved_to = saved.is_ok().then_some(crash_path.as_path());
+        let issue_url = build_issue_url(version, &panic_msg, &location, &bt_str, saved_to);
 
         // The payload and the path are text we don't control, so stripped
         // before they reach the terminal; the URL is percent-encoded already.
@@ -53,15 +51,32 @@ pub(crate) fn install_crash_hook() {
             crate::strip_lines(&panic_msg, "\n  "),
             crate::display_path(&crash_path),
         );
+        let sgr = |code: &'static str| if color { code } else { "" };
+        let (red, dim, bold, underline, off) = (
+            sgr("\x1b[1;31m"),
+            sgr("\x1b[2m"),
+            sgr("\x1b[1m"),
+            sgr("\x1b[4m"),
+            sgr("\x1b[0m"),
+        );
+        let saved_note = match saved {
+            Ok(()) => format!(
+                "\x20 Full backtrace saved to {dim}{path}{off}\n\
+                 \x20 {dim}(attach if the reviewer asks — the link above only carries a truncated trace){off}\n\n"
+            ),
+            Err(e) => format!(
+                "\x20 Couldn't save the full backtrace to {dim}{path}{off}: {}\n\n",
+                crate::strip_control_chars(&e.to_string())
+            ),
+        };
         let notice = format!(
-            "\n\x1b[1;31mpixtuoid v{version} crashed — sorry about that.\x1b[0m\n\n\
-             \x20 \x1b[2m{msg}\x1b[0m\n\
-             \x20 \x1b[2mat {location}\x1b[0m\n\n\
-             \x20 \x1b[1mHelp fix it\x1b[0m — open this link to file a pre-filled bug report\n\
+            "\n{red}pixtuoid v{version} crashed — sorry about that.{off}\n\n\
+             \x20 {dim}{msg}{off}\n\
+             \x20 {dim}at {location}{off}\n\n\
+             \x20 {bold}Help fix it{off} — open this link to file a pre-filled bug report\n\
              \x20 (panic + backtrace already included, no typing needed):\n\n\
-             \x20 \x1b[4m{issue_url}\x1b[0m\n\n\
-             \x20 Full backtrace saved to \x1b[2m{path}\x1b[0m\n\
-             \x20 \x1b[2m(attach if the reviewer asks — the link above only carries a truncated trace)\x1b[0m\n\n"
+             \x20 {underline}{issue_url}{off}\n\n\
+             {saved_note}"
         );
         // Not `eprintln!`: a panic inside the hook aborts the process.
         let _ = std::io::Write::write_all(&mut std::io::stderr(), notice.as_bytes());
@@ -83,7 +98,7 @@ fn build_issue_url(
     panic_msg: &str,
     location: &str,
     backtrace: &str,
-    crash_path: &std::path::Path,
+    saved_to: Option<&std::path::Path>,
 ) -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
@@ -102,11 +117,11 @@ fn build_issue_url(
     const MAX_BT: usize = 1500;
     let bt_body = if backtrace.len() > MAX_BT {
         let cut = truncate_to_char_boundary(backtrace, MAX_BT);
-        format!(
-            "{}\n\n... truncated — see {} for full trace",
-            &backtrace[..cut],
-            crash_path.display()
-        )
+        // No pointer to a crash log the hook failed to write.
+        let see = saved_to.map_or_else(String::new, |p| {
+            format!(" — see {} for full trace", p.display())
+        });
+        format!("{}\n\n... truncated{see}", &backtrace[..cut])
     } else {
         backtrace.to_string()
     };
@@ -156,18 +171,6 @@ fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> usize {
     cut
 }
 
-fn crash_log_path() -> PathBuf {
-    // Empty or RELATIVE XDG_STATE_HOME = unset (XDG spec): an unfiltered "" yields
-    // root `/pixtuoid/...`, a relative one lands CWD-relative.
-    if let Some(state) = crate::install::nonempty_abs_env("XDG_STATE_HOME") {
-        return state.join("pixtuoid").join("crash.log");
-    }
-    if let Some(home) = pixtuoid_core::platform::user_home_opt() {
-        return home.join(".cache").join("pixtuoid").join("crash.log");
-    }
-    std::env::temp_dir().join("pixtuoid-crash.log")
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -191,6 +194,76 @@ mod tests {
     #[cfg(unix)]
     const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
 
+    /// The notice colors as the one stream rule says for stderr, re-exec'd as
+    /// the stream test is: plain into a pipe unless `$CLICOLOR_FORCE` forces it,
+    /// and colored on a terminal even with stdout a pipe.
+    #[cfg(unix)]
+    #[test]
+    fn the_crash_notice_colors_by_the_one_stream_rule() {
+        const CHILD: &str = "PIXTUOID_CRASH_HOOK_COLOR_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            install_crash_hook();
+            panic!("deliberate panic: the crash-hook color probe");
+        }
+        let state = tempfile::tempdir().unwrap();
+        let child = |force: Option<&str>| {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    &this_test("the_crash_notice_colors_by_the_one_stream_rule"),
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("XDG_STATE_HOME", state.path())
+                .env("TERM", "xterm-256color")
+                .env_remove("NO_COLOR")
+                .env_remove("CLICOLOR_FORCE")
+                .env_remove("FORCE_COLOR");
+            if let Some(force) = force {
+                child.env("CLICOLOR_FORCE", force);
+            }
+            child
+        };
+        for (force, colored) in [(None, false), (Some("1"), true)] {
+            let stderr =
+                String::from_utf8_lossy(&child(force).output().unwrap().stderr).into_owned();
+            assert!(stderr.contains("crashed"), "{stderr:?}");
+            assert_eq!(stderr.contains('\u{1b}'), colored, "{force:?}: {stderr:?}");
+        }
+
+        let pty = portable_pty::native_pty_system()
+            .openpty(portable_pty::PtySize::default())
+            .unwrap();
+        let tty = pty.master.tty_name().expect("the pty's name");
+        let mut reader = pty.master.try_clone_reader().unwrap();
+        let (sent, received) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let _ = std::io::Read::read_to_end(&mut reader, &mut out);
+            let _ = sent.send(out);
+        });
+        let mut on_tty = child(None);
+        on_tty.stdout(std::process::Stdio::piped()).stderr(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(tty)
+                .unwrap(),
+        );
+        let mut run = on_tty.spawn().unwrap();
+        drop((on_tty, pty.slave));
+        run.wait().unwrap();
+        let stderr = received
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .expect("the pty's output");
+        let stderr = String::from_utf8_lossy(&stderr);
+        assert!(
+            stderr.contains("crashed") && stderr.contains('\u{1b}'),
+            "{stderr:?}"
+        );
+    }
+
     /// The panic hook is process-global and writes to a real fd, so the only way
     /// to observe which stream it chose is from outside: re-exec this test binary
     /// with the child marker, let a real panic fire the hook, read the pipes apart.
@@ -203,7 +276,7 @@ mod tests {
             panic!("deliberate panic: the crash-hook stream probe");
         }
         // Isolated XDG_STATE_HOME so the child's crash.log never lands in the
-        // developer's real ~/.cache.
+        // developer's real ~/.local/state.
         let state = tempfile::tempdir().unwrap();
         let out = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -231,6 +304,45 @@ mod tests {
             stderr.contains("crashed"),
             "the crash report itself still belongs on stderr: {stderr:?}"
         );
+    }
+
+    /// The notice and the issue link point at the crash log only when it was
+    /// written; one that can't be is said to be unsaved, with why.
+    #[cfg(unix)]
+    #[test]
+    fn the_hook_points_at_the_backtrace_only_when_it_saved_it() {
+        const CHILD: &str = "PIXTUOID_CRASH_HOOK_SAVE_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            install_crash_hook();
+            panic!("deliberate panic: the crash-hook save probe");
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let writable = tmp.path().join("writable");
+        // A file where the state dir goes, so the crash log's dir can't be made.
+        let blocked = tmp.path().join("blocked");
+        std::fs::write(&blocked, "").unwrap();
+        for (state, saved) in [(writable, true), (blocked, false)] {
+            let out = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    &this_test("the_hook_points_at_the_backtrace_only_when_it_saved_it"),
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("XDG_STATE_HOME", &state)
+                .output()
+                .unwrap();
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            // The link cuts the trace, the case its pointer is for.
+            assert!(stderr.contains("truncated"), "{stderr:?}");
+            assert_eq!(stderr.contains("saved to"), saved, "{stderr:?}");
+            assert_eq!(stderr.contains("for%20full%20trace"), saved, "{stderr:?}");
+            assert_eq!(
+                stderr.contains("Couldn't save the full backtrace"),
+                !saved,
+                "{stderr:?}"
+            );
+        }
     }
 
     #[cfg(unix)]
@@ -330,7 +442,7 @@ mod tests {
             "test panic",
             "file.rs:1:1",
             "bt",
-            Path::new("/tmp/x"),
+            Some(Path::new("/tmp/x")),
         );
         assert!(url.starts_with(&format!("{}/issues/new?", pixtuoid_scene::hit::REPO_URL)));
         assert!(url.contains("title="));
@@ -344,30 +456,8 @@ mod tests {
         // A newline percent-encodes to three bytes, so untruncated this trace
         // alone is three times the limit.
         let long_bt = "\n".repeat(GITHUB_URL_LIMIT);
-        let url = build_issue_url("0.4.0", "msg", "loc", &long_bt, Path::new("/tmp/x"));
+        let url = build_issue_url("0.4.0", "msg", "loc", &long_bt, Some(Path::new("/tmp/x")));
         assert!(url.len() < GITHUB_URL_LIMIT, "{}", url.len());
         assert!(url.contains("truncated"));
-    }
-
-    #[test]
-    fn crash_log_path_rejects_a_relative_xdg_state_home() {
-        for rel in ["", "   ", "rel/state", "~/state"] {
-            temp_env::with_var("XDG_STATE_HOME", Some(rel), || {
-                let home =
-                    pixtuoid_core::platform::user_home_opt().expect("a home dir in the test env");
-                assert_eq!(
-                    crash_log_path(),
-                    home.join(".cache").join("pixtuoid").join("crash.log"),
-                    "relative XDG_STATE_HOME {rel:?} must fall back to ~/.cache"
-                );
-            });
-        }
-        let abs = if cfg!(windows) { "C:/state" } else { "/state" };
-        temp_env::with_var("XDG_STATE_HOME", Some(abs), || {
-            assert_eq!(
-                crash_log_path(),
-                PathBuf::from(format!("{abs}/pixtuoid/crash.log"))
-            );
-        });
     }
 }

@@ -26,7 +26,6 @@ use anyhow::{Context, Result};
 use pixtuoid_core::source::claude_code::ClaudeCodeSource;
 use winit::event_loop::EventLoop;
 
-use crate::config;
 use crate::runtime::{ConnectedSources, RunConfig};
 use window::{FloatingApp, FloatingEvent};
 
@@ -40,7 +39,10 @@ use window::{FloatingApp, FloatingEvent};
 /// # Errors
 ///
 /// If the sprite pack cannot be loaded, the tokio runtime or the winit event loop cannot be built, the event loop exits with an error, or the window or its GPU fails to start or is lost.
-pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> {
+pub(crate) fn run(
+    cfg: RunConfig,
+    notify_ready: bool,
+) -> Result<Option<crate::runtime::QuitSignal>> {
     let RunConfig {
         socket,
         theme,
@@ -52,13 +54,13 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> 
         drift,
         log,
         first_run,
+        floating,
         ..
     } = cfg;
-    let app_config = config::load(&config_path, &mut Vec::new());
     let pack = pixtuoid_scene::pack::load_bundled_pack()
         .context("loading the bundled sprite pack for the floating window")?;
     let min = geometry::min_window(pack.max_density_variant());
-    let floating_cfg = config::resolve_floating(&app_config).at_least(min.width, min.height);
+    let floating_cfg = floating.at_least(min.width, min.height);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -107,6 +109,7 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> 
             log,
             first_run,
             drift,
+            notify_ready,
         },
         PipelineBoot {
             socket_path,
@@ -229,5 +232,23 @@ impl PipelineBoot {
             floor_caps,
             health_rx,
         }
+    }
+}
+
+/// The notice a launcher waits on: a newline, as in s6's readiness protocol
+/// (<https://skarnet.org/software/s6/notifywhenup.html>), less its close of
+/// the fd: the launcher stops reading at the newline. A launcher gone by then
+/// is no failure of the window's.
+fn say_ready(mut out: impl std::io::Write) {
+    let _ = out.write_all(b"\n").and_then(|()| out.flush());
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_ready_notice_is_one_newline() {
+        let mut out = Vec::new();
+        super::say_ready(&mut out);
+        assert_eq!(out, b"\n");
     }
 }
