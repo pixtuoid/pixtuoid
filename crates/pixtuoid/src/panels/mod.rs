@@ -488,9 +488,10 @@ pub(crate) fn is_quit_chord(code: KeyCode, mods: KeyModifiers) -> bool {
 
 /// The one key of each command a hint names: the dispatch matches it and the
 /// hint writes it, so a rebind is one edit. Spelled out instead: the moves
-/// (arrows, `j`/`k`, `h`/`l`, Page Up and Down), Enter, Esc, Ctrl+C and Ctrl+L,
-/// which no one command owns, and the files pixtuoid writes into another CLI's
-/// tree, which a test pins to [`SOURCES`](keys::SOURCES)
+/// (arrows, `j`/`k`, `h`/`l`, Page Up and Down), Enter and Esc, which no one
+/// command owns; Ctrl+C and Ctrl+L, chords a `KeyCode` holds no modifier of;
+/// and the files pixtuoid writes into another CLI's tree, which a test pins
+/// to [`SOURCES`](keys::SOURCES)
 /// (`every_file_naming_the_sources_panel_names_its_key`). The window's zoom
 /// chords keep their own table, `floating::input::ZOOM_CHORDS`.
 pub(crate) mod keys {
@@ -1102,8 +1103,9 @@ mod dispatch_tests {
         assert_eq!(dispatch_key(KeyCode::Up, NONE, c, nav()), KeyAction::None);
     }
 
-    /// `v` reopens the popup from the office only: every panel's own key map
-    /// leaves it unbound, so it never acts behind an open panel.
+    /// [`keys::VERSION`](crate::panels::keys::VERSION) reopens the popup from the
+    /// office only: every panel's own key map leaves it unbound, so it never
+    /// acts behind an open panel.
     #[test]
     fn v_reopens_the_version_popup_from_the_office_only() {
         let v = KeyCode::Char('v');

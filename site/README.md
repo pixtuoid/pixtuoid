@@ -45,7 +45,7 @@ someone else's publish would short-circuit every check below it). npm 12 is requ
   Neon (UI/code) · Lora (body) · Fusion Pixel 8px (the office's captions);
   ASCII dividers, blinking cursor, CRT scanlines.
 - **Palette** — warm "Coworking" (cream + Claude coral). Day = cream, night =
-  after-hours; until the visitor picks, the site follows their wall clock
+  after-hours; until the visitor picks, the site follows their local time
   (19:00–07:00 → night; `prefers-color-scheme` keeps night at noon for
   dark-preference systems). `dracula` is a hidden easter egg (type it, or
   `?theme=dracula`).

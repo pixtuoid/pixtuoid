@@ -1007,9 +1007,9 @@ mod tests {
         );
     }
 
-    /// Only the run an upgrade booted says it updated, even on a `v` after
-    /// the onboarding held its popup back; a later run, or a first install,
-    /// does not.
+    /// Only the run an upgrade booted says it updated, even on a
+    /// [`keys::VERSION`](crate::panels::keys::VERSION) after the onboarding held its
+    /// popup back; a later run, or a first install, does not.
     #[test]
     fn only_the_run_an_upgrade_booted_says_it_updated() {
         let tmp = tempfile::tempdir().expect("tempdir");

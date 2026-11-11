@@ -184,7 +184,7 @@ fn dim_cell(f: &mut ratatui::Frame<'_>, x: u16, y: u16, bounds: Rect, top_half_o
 /// reads as a 1px contact line instead of a full 2px cell.
 ///
 /// Clipped to `scene_rect`, NOT the frame: the footer is painted before every card and
-/// the bottom band dims `fg` only, so a band reaching that row repaints the live `[q]uit`
+/// the bottom band dims `fg` only, so a band reaching that row repaints the live quit hint
 /// over its still-lit bg. Keeping the card BODY off the footer
 /// (`panel::RESERVED_FOOTER_ROWS`) is only half the rule — the silhouette is offset a row
 /// further DOWN.

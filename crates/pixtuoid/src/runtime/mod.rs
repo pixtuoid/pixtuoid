@@ -55,7 +55,8 @@ pub(crate) struct RunConfig {
     /// the onboarding "move-in" overlay may open (`UiState::boot`). Ignored by headless.
     pub(crate) first_run: bool,
     /// Resolved `[audio]` settings — muted defaults TRUE (the lazy spawn waits for the
-    /// first `m`), volume pre-clamped by `config::resolve_audio`. Headless ignores it.
+    /// first [`keys::MUTE`](crate::panels::keys::MUTE)), volume pre-clamped by
+    /// `config::resolve_audio`. Headless ignores it.
     pub(crate) audio: crate::config::AudioConfig,
     /// `--protocol` over `config::resolve_look`'s mode. Headless and `floating` ignore it.
     pub(crate) look: crate::graphics::LookChoice,

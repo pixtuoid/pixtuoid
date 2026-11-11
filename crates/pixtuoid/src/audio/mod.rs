@@ -59,9 +59,10 @@ pub(crate) struct Persist {
 
 /// THE audio mute/volume transition — the single authority both painters run. Mute toggles;
 /// volume-up from muted IS the un-mute gesture; the lazy spawn (re)fires whenever sound is
-/// wanted but the system is down, so `+`/`m` are never dead keys (boot-muted and
-/// failed-spawn both recover). `paused` folds an external hold (the TUI's `[p]ause`) into
-/// the effective mute; floating passes `false`.
+/// wanted but the system is down, so [`VOLUME_UP`](crate::panels::keys::VOLUME_UP) and
+/// [`MUTE`](crate::panels::keys::MUTE) are never dead keys (boot-muted and failed-spawn
+/// both recover). `paused` folds an external hold (the TUI's
+/// [`PAUSE`](crate::panels::keys::PAUSE)) into the effective mute; floating passes `false`.
 pub(crate) fn apply_audio_action(
     st: &mut AudioUi,
     action: AudioAction,
@@ -98,7 +99,7 @@ pub(crate) fn apply_audio_action(
 /// The mute/volume PERSIST protocol both painters share: the pure
 /// [`apply_audio_action`] transition plus its side effects — mute saves NOW, a
 /// volume nudge arms the `♩ N%` readout and a save debounced behind it (a held
-/// `+`/`-` writes once, not per repeat), flushed on shutdown.
+/// volume key writes once, not per repeat), flushed on shutdown.
 pub(crate) struct AudioController {
     ui: AudioUi,
     config_path: std::path::PathBuf,
@@ -424,7 +425,7 @@ mod controller_tests {
             !std::fs::read_to_string(&path).unwrap().contains("volume"),
             "not yet persisted — still inside the debounce window"
         );
-        drop(c); // the ONLY exit signal: no `q`, no explicit flush_on_exit()
+        drop(c); // the ONLY exit signal: no quit key, no explicit flush_on_exit()
         assert!(
             std::fs::read_to_string(&path).unwrap().contains("volume"),
             "AudioController::drop must persist a pending nudge (the #752 Ctrl-C fix)"
@@ -630,7 +631,8 @@ pub(crate) struct AudioHandle {
     /// respawn. `None` = disabled (no device, or sound not requested yet).
     tx: std::sync::Arc<std::sync::Mutex<Option<mpsc::SyncSender<AudioFrame>>>>,
     /// Mute is STATE, not an event: it rides this atomic instead of the
-    /// droppable frame channel, so an `m`/`p` keypress lands even when a
+    /// droppable frame channel, so a [`MUTE`](crate::panels::keys::MUTE) or
+    /// [`PAUSE`](crate::panels::keys::PAUSE) keypress lands even when a
     /// `try_send` drops.
     muted: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Master volume (f32 bits) — same state-not-event rationale as `muted`.

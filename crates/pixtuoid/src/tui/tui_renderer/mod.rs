@@ -51,7 +51,8 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     mouse_pos: Option<(u16, u16)>,
     /// The left button's gesture over the office.
     pointer: pixtuoid_scene::interact::Pointer,
-    /// Live walkable/approach/route debug layer toggle (`w`); not persisted.
+    /// Live walkable/approach/route debug layer toggle
+    /// ([`keys::WALKABLE`](crate::panels::keys::WALKABLE)); not persisted.
     debug_walkable: bool,
     chrome: Chrome,
     /// What the terminal shows, the half-blocks or the cutaway's tiles, and
@@ -288,9 +289,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     /// Whether the last office frame drawn was the half-blocks of a debug
     /// build, which draw the walkable debug layer where the cutaway never does:
-    /// `w` is listed and read only then, including while a cutaway too big for
-    /// the cell falls back to them. A footer-only frame draws no office, so it
-    /// keeps the answer of the one before it.
+    /// [`keys::WALKABLE`](crate::panels::keys::WALKABLE) is listed and read only
+    /// then, including while a cutaway too big for the cell falls back to them.
+    /// A footer-only frame draws no office, so it keeps the answer of the one
+    /// before it.
     pub(crate) fn offers_walkable_debug(&self) -> bool {
         cfg!(debug_assertions)
             && self

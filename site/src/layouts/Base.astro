@@ -141,7 +141,7 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
           const T = window.__pixTheme;
           const forced = new URLSearchParams(location.search).get('theme');
           const pick = T.ok(forced) ? forced : localStorage.getItem(T.KEY);
-          // Until the visitor chooses a theme the site follows the wall clock,
+          // Until the visitor chooses a theme the site follows their local time,
           // like the office lighting — but the clock only ever turns night ON, so
           // a dark-preference user still keeps night at noon via T.fallback.
           const afterHours = window.__pixNight();

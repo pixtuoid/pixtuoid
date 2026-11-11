@@ -93,7 +93,7 @@ watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
   contrast failure still clears the category budget — anything that must never regress gets
   its own per-audit assertion with `aggregationMethod: pessimistic` (median
   greens a binary audit that failed one run). Collect URLs pin `?theme=day`
-  (otherwise the wall clock picks the palette — half of CI runs would audit
+  (otherwise local time picks the palette — half of CI runs would audit
   each). **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
   doubled collect list. LCP, `interactive` and `speed-index` are CI's median
   plus run spread; the office's wasm is fetched by its worker, which

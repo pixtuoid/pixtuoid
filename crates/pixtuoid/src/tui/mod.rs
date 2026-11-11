@@ -1154,8 +1154,9 @@ mod route_tests {
         }
     }
 
-    /// The loop's routing: `w` flips the layer and is swallowed with no panel
-    /// open; with one open, and for every other key, the shared dispatch decides.
+    /// The loop's routing: [`keys::WALKABLE`](crate::panels::keys::WALKABLE)
+    /// flips the layer and is swallowed with no panel open; with one open, and
+    /// for every other key, the shared dispatch decides.
     #[test]
     fn route_key_reads_w_before_the_shared_dispatch() {
         use crate::panels::{FloorNav, ModalState};
@@ -1438,8 +1439,9 @@ mod apply_key_action_tests {
         assert!(footer.contains("volume not saved"), "{footer}");
     }
 
-    /// `v` reopens the popup with the notices due against the LIVE connections:
-    /// a host connected since boot is not named.
+    /// [`keys::VERSION`](crate::panels::keys::VERSION) reopens the popup with the
+    /// notices due against the LIVE connections: a host connected since boot is
+    /// not named.
     #[test]
     fn v_reopens_the_popup_with_the_notices_still_due() {
         let mut h = Harness::new();
@@ -1459,7 +1461,8 @@ mod apply_key_action_tests {
 
     /// The highest-blast-radius pair: `Quit` must be the ONLY action that ends
     /// the loop. A mutant returning a constant makes every keypress quit (or
-    /// makes `q` inert), and nothing else in the suite would notice.
+    /// makes [`keys::QUIT`](crate::panels::keys::QUIT) inert), and nothing else
+    /// in the suite would notice.
     #[test]
     fn only_quit_returns_true() {
         let mut h = Harness::new();

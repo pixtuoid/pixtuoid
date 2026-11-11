@@ -11,7 +11,7 @@ use super::to_color;
 use crate::panels::keys;
 
 /// `word`'s hint: its command's `key` in brackets, standing for the word's
-/// first letter where it is that letter (`[p]ause`), else before the word.
+/// first letter where it is that letter (`[x]ray` for `x`), else before the word.
 fn hint(key: crossterm::event::KeyCode, word: &str) -> String {
     let key = key.to_string();
     format!("[{key}]{}", word.strip_prefix(key.as_str()).unwrap_or(word))

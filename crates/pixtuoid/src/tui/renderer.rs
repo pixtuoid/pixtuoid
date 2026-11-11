@@ -43,7 +43,8 @@ pub struct DrawCtx<'a> {
     /// The office stores its frame steps and draws with.
     pub(crate) office: OfficeStores<'a>,
     pub mouse_pos: Option<(u16, u16)>,
-    /// Walkable/approach/route debug layer toggle (`w`) — transient, never
+    /// Walkable/approach/route debug layer toggle
+    /// (`keys::WALKABLE`) — transient, never
     /// persisted to config.
     pub debug_walkable: bool,
     pub theme: &'static pixtuoid_scene::theme::Theme,

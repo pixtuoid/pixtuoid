@@ -45,7 +45,8 @@ pub(crate) struct FloatingApp {
     theme: &'static Theme,
     pack: std::sync::Arc<OfficeArt>,
     config_path: PathBuf,
-    /// The panels, the `[p]ause` and the theme picker, as the TUI holds them.
+    /// The panels, the [`PAUSE`](crate::panels::keys::PAUSE) and the theme picker,
+    /// as the TUI holds them.
     ui: crate::panels::ui_state::UiState,
     /// The Sources panel's mutation seam, as the TUI's.
     connected: crate::runtime::ConnectedSources,
@@ -720,7 +721,7 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
             WindowEvent::CloseRequested => event_loop.exit(),
             // `is_synthetic: false`: winit fabricates a Pressed for every key
             // physically held when the window GAINS FOCUS (X11 + Windows). A
-            // muted user holding `+`/`m` who clicks in would otherwise be
+            // muted user holding the volume-up or mute key who clicks in would be
             // spuriously unmuted AND have it persisted.
             WindowEvent::KeyboardInput {
                 event,

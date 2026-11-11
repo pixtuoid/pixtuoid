@@ -143,7 +143,10 @@ fn repeats(code: KeyCode) -> bool {
             | KeyCode::Right
             | KeyCode::PageUp
             | KeyCode::PageDown
-            | KeyCode::Char('j' | 'k' | 'h' | 'l' | '+' | '=' | '-' | '_')
+            | crate::panels::keys::VOLUME_UP
+            | crate::panels::keys::VOLUME_DOWN
+            // The moves, and the volume keys' Shift twins as the dispatch reads them.
+            | KeyCode::Char('j' | 'k' | 'h' | 'l' | '=' | '_')
     )
 }
 

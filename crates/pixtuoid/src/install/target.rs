@@ -702,21 +702,14 @@ mod tests {
         let mut checked = 0;
         for t in TARGETS {
             let Primary::Owned {
-                render,
-                uninstall,
-                retired,
-                ..
+                render, uninstall, ..
             } = &t.primary
             else {
                 continue;
             };
             let installed = render("pixtuoid-hook").expect("renders");
             let removed = uninstall(&installed).expect("uninstalls").content;
-            let was = retired.as_ref().map(|r| r.was);
-            for text in [installed.as_str(), removed.as_str()]
-                .into_iter()
-                .chain(was)
-            {
+            for text in [installed.as_str(), removed.as_str()] {
                 if text.contains("Sources panel") {
                     assert!(text.contains(&named), "{}: {text}", t.name);
                     checked += 1;

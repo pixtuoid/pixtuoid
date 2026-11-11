@@ -93,7 +93,8 @@ pub(crate) struct ConnectionUi {
     /// frame. The LIVE facet is recomputed per frame instead.
     pub rows: Vec<ConnectionRow>,
     /// `Some(row_idx)` ⇒ a disconnect is armed on that row, awaiting
-    /// `keys::CONFIRM` or `keys::DECLINE`.
+    /// [`keys::CONFIRM`](crate::panels::keys::CONFIRM) or
+    /// [`keys::DECLINE`](crate::panels::keys::DECLINE).
     pub confirm: Option<usize>,
     pub last_result: Option<String>,
 }

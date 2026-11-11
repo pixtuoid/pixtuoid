@@ -241,9 +241,9 @@ pub struct FooterContext<'a> {
     /// multi-floor footer shows beside its `F{floor}/{floors}`.
     pub(crate) agents: usize,
     /// "You would hear sound right now": audio live AND not effectively muted
-    /// (m-state OR pause).
+    /// (the mute or a pause).
     pub(crate) audio_audible: bool,
-    /// Transient +/- readout: `Some(percent)` just after a volume nudge —
+    /// Transient readout: `Some(percent)` just after a volume nudge —
     /// renders as `♩ N%`.
     pub(crate) volume_flash: Option<u8>,
     /// The painter's one-line warning, pre-merged by its priority; `None` while
@@ -319,7 +319,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     // truncated to fit rather than tiered away.
     if let Some(warn) = ctx.warning {
         let w = budget as usize;
-        // Clipped, never dropped: a row with no `[q]` is a user stuck in the
+        // Clipped, never dropped: a row with no quit hint is a user stuck in the
         // alternate screen.
         let quit = clip_cols(ctx.keys_alert, w);
         let avail = w.saturating_sub(cols(&quit));
