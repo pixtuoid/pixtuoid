@@ -87,6 +87,10 @@ pub fn run() -> Result<()> {
     if file_log && let Err(e) = &ran {
         tracing::error!(error = ?e, "pixtuoid exited with an error");
     }
+    // A quit by key, or an error, can leave a Sources change running on its
+    // own thread, whose CLI nothing holds to its limit once this process is gone.
+    #[cfg(unix)]
+    crate::install::io::kill_running();
     // Before the re-raise, which ends the process with the queue unwritten.
     drop(log_flush);
     // After every Drop the run held: the unwind is done, so the signal can now

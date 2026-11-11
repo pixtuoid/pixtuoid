@@ -3,7 +3,7 @@
 #![cfg(unix)]
 
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
@@ -97,110 +97,260 @@ fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
     }
 }
 
-/// Start the office on a pty whose terminal replies with `answer`, each reply
-/// `link_rtt` after its query, in order; once it is past its queries and every
-/// reply is in, type `q` until it quits. Over ssh, where the graphics probe
-/// isn't asked: the truecolor and sync queries are the whole startup.
-fn run_office(link_rtt: Duration, answer: Answer) -> Run {
-    let home = tempfile::tempdir().expect("home");
-    let config = home.path().join(".config/pixtuoid/config.toml");
+/// The office's config under `home`, seeded with this version already seen,
+/// so the run has nothing of its own to save; and what it was seeded with.
+fn seed_config(home: &std::path::Path) -> (std::path::PathBuf, String) {
+    let config = home.join(".config/pixtuoid/config.toml");
     std::fs::create_dir_all(config.parent().expect("config dir")).expect("config dir");
-    // This version already seen, so the run has nothing of its own to save.
     let seeded = format!("last-seen-version = \"{}\"\n", env!("CARGO_PKG_VERSION"));
     std::fs::write(&config, &seeded).expect("seed config");
+    (config, seeded)
+}
 
-    let mut run = common::isolated(&["run"], home.path());
-    run.env("TERM", "xterm-256color")
-        .env("SSH_CONNECTION", "10.0.0.2 51234 10.0.0.1 22");
-    let mut on_pty = CommandBuilder::new(run.get_program());
-    on_pty.args(run.get_args());
-    on_pty.env_clear();
-    for (key, value) in run.get_envs() {
-        if let Some(value) = value {
-            on_pty.env(key, value);
+/// The office running on a pty, this test its terminal.
+struct Office {
+    child: Reaped,
+    master: Box<dyn portable_pty::MasterPty + Send>,
+    /// What the terminal types: when, the bytes, and whether they answer a query.
+    send: mpsc::Sender<(Instant, Vec<u8>, bool)>,
+    seen: Arc<Mutex<Seen>>,
+    closed: Arc<AtomicBool>,
+    /// Every byte the office has written.
+    wrote: Arc<AtomicUsize>,
+    scanner: std::thread::JoinHandle<()>,
+    replier: std::thread::JoinHandle<()>,
+}
+
+impl Office {
+    /// Start `run` (an [`common::isolated`] `run`) on a pty whose terminal
+    /// replies with `answer`, each reply `link_rtt` after its query, in order,
+    /// and wait until the office is past its queries and every reply is in.
+    /// Over ssh, where the graphics probe isn't asked: the truecolor and sync
+    /// queries are the whole startup.
+    fn start(mut run: std::process::Command, link_rtt: Duration, answer: Answer) -> Self {
+        run.env("TERM", "xterm-256color")
+            .env("SSH_CONNECTION", "10.0.0.2 51234 10.0.0.1 22");
+        let mut on_pty = CommandBuilder::new(run.get_program());
+        on_pty.args(run.get_args());
+        on_pty.env_clear();
+        for (key, value) in run.get_envs() {
+            if let Some(value) = value {
+                on_pty.env(key, value);
+            }
+        }
+        let pty = NativePtySystem::default().openpty(SIZE).expect("openpty");
+        let child = Reaped(pty.slave.spawn_command(on_pty).expect("spawn pixtuoid run"));
+        drop(pty.slave);
+
+        let seen = Arc::new(Mutex::new(Seen::default()));
+        let (send, sends) = mpsc::channel::<(Instant, Vec<u8>, bool)>();
+        let mut writer = pty.master.take_writer().expect("pty writer");
+        let replier = {
+            let seen = Arc::clone(&seen);
+            std::thread::spawn(move || {
+                for (due, bytes, reply) in sends {
+                    std::thread::sleep(due.saturating_duration_since(Instant::now()));
+                    if writer
+                        .write_all(&bytes)
+                        .and_then(|()| writer.flush())
+                        .is_err()
+                    {
+                        return;
+                    }
+                    if reply {
+                        seen.lock().expect("seen").pending -= 1;
+                    }
+                }
+            })
+        };
+        let mut reader = pty.master.try_clone_reader().expect("pty reader");
+        let closed = Arc::new(AtomicBool::new(false));
+        let wrote = Arc::new(AtomicUsize::new(0));
+        let scanner = {
+            let (seen, send, closed, wrote) = (
+                Arc::clone(&seen),
+                send.clone(),
+                Arc::clone(&closed),
+                Arc::clone(&wrote),
+            );
+            std::thread::spawn(move || {
+                let (mut out, mut chunk, mut scanned) = (Vec::new(), [0u8; 4096], 0);
+                while let Ok(n @ 1..) = reader.read(&mut chunk) {
+                    wrote.fetch_add(n, Ordering::Relaxed);
+                    if seen.lock().expect("seen").started {
+                        continue;
+                    }
+                    out.extend_from_slice(&chunk[..n]);
+                    while let Some((row, end)) = next_query(&out[scanned..]) {
+                        let mut s = seen.lock().expect("seen");
+                        s.asked.push(row);
+                        s.pending += 1;
+                        let _ = send.send((Instant::now() + link_rtt, answer(row), true));
+                        scanned += end;
+                    }
+                    if out.windows(ALT_SCREEN.len()).any(|w| w == ALT_SCREEN) {
+                        seen.lock().expect("seen").started = true;
+                    }
+                }
+                closed.store(true, Ordering::Relaxed);
+            })
+        };
+
+        wait_for("the office past its queries, every reply sent", || {
+            let s = seen.lock().expect("seen");
+            s.started && s.pending == 0
+        });
+        Self {
+            child,
+            master: pty.master,
+            send,
+            seen,
+            closed,
+            wrote,
+            scanner,
+            replier,
         }
     }
-    let pty = NativePtySystem::default().openpty(SIZE).expect("openpty");
-    let mut child = Reaped(pty.slave.spawn_command(on_pty).expect("spawn pixtuoid run"));
-    drop(pty.slave);
 
-    let seen = Arc::new(Mutex::new(Seen::default()));
-    let (send, sends) = mpsc::channel::<(Instant, Vec<u8>, bool)>();
-    let mut writer = pty.master.take_writer().expect("pty writer");
-    let replier = {
-        let seen = Arc::clone(&seen);
-        std::thread::spawn(move || {
-            for (due, bytes, reply) in sends {
-                std::thread::sleep(due.saturating_duration_since(Instant::now()));
-                if writer
-                    .write_all(&bytes)
-                    .and_then(|()| writer.flush())
-                    .is_err()
-                {
+    /// Type `key` until `done` holds: one typed before the office reads input
+    /// is discarded with what the startup left.
+    fn type_until(&mut self, key: &[u8], what: &str, mut done: impl FnMut(&mut Self) -> bool) {
+        let deadline = Instant::now() + BUDGET;
+        loop {
+            self.send
+                .send((Instant::now(), key.to_vec(), false))
+                .expect("type");
+            let retype = Instant::now() + RETYPE;
+            while Instant::now() < retype {
+                if done(self) {
                     return;
                 }
-                if reply {
-                    seen.lock().expect("seen").pending -= 1;
-                }
+                std::thread::sleep(POLL);
             }
-        })
-    };
-    let mut reader = pty.master.try_clone_reader().expect("pty reader");
-    let closed = Arc::new(AtomicBool::new(false));
-    let scanner = {
-        let (seen, send, closed) = (Arc::clone(&seen), send.clone(), Arc::clone(&closed));
-        std::thread::spawn(move || {
-            let (mut out, mut chunk, mut scanned) = (Vec::new(), [0u8; 4096], 0);
-            while let Ok(n @ 1..) = reader.read(&mut chunk) {
-                if seen.lock().expect("seen").started {
-                    continue;
-                }
-                out.extend_from_slice(&chunk[..n]);
-                while let Some((row, end)) = next_query(&out[scanned..]) {
-                    let mut s = seen.lock().expect("seen");
-                    s.asked.push(row);
-                    s.pending += 1;
-                    let _ = send.send((Instant::now() + link_rtt, answer(row), true));
-                    scanned += end;
-                }
-                if out.windows(ALT_SCREEN.len()).any(|w| w == ALT_SCREEN) {
-                    seen.lock().expect("seen").started = true;
-                }
-            }
-            closed.store(true, Ordering::Relaxed);
-        })
-    };
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        }
+    }
 
-    wait_for("the office past its queries, every reply sent", || {
-        let s = seen.lock().expect("seen");
-        s.started && s.pending == 0
-    });
+    /// How the office ended, once it has.
+    fn exited(&mut self) -> Option<ExitStatus> {
+        self.child.0.try_wait().expect("try_wait")
+    }
+
+    /// Wait for the pty to close, and the startup queries the office asked.
+    fn finish(self) -> Vec<usize> {
+        let Self {
+            send,
+            seen,
+            closed,
+            scanner,
+            replier,
+            ..
+        } = self;
+        drop(send);
+        wait_for("the pty to close", || closed.load(Ordering::Relaxed));
+        scanner.join().expect("scanner");
+        replier.join().expect("replier");
+        std::mem::take(&mut seen.lock().expect("seen").asked)
+    }
+}
+
+/// Start the office on a pty whose terminal replies with `answer` (see
+/// [`Office::start`]); once it is past its queries and every reply is in, type
+/// `q` until it quits.
+fn run_office(link_rtt: Duration, answer: Answer) -> Run {
+    let home = tempfile::tempdir().expect("home");
+    let (config, seeded) = seed_config(home.path());
+    let mut office = Office::start(common::isolated(&["run"], home.path()), link_rtt, answer);
     // Each `q` lands behind every reply, so the office dispatches any reply
     // that reached it as keys before it quits.
-    let deadline = Instant::now() + BUDGET;
-    let status = 'quit: loop {
-        send.send((Instant::now(), b"q".to_vec(), false))
-            .expect("type q");
-        let retype = Instant::now() + RETYPE;
-        while Instant::now() < retype {
-            if let Some(status) = child.0.try_wait().expect("try_wait") {
-                break 'quit status;
-            }
-            std::thread::sleep(POLL);
-        }
-        assert!(Instant::now() < deadline, "the office ignored q");
-    };
-    drop(send);
-    wait_for("the pty to close", || closed.load(Ordering::Relaxed));
-    scanner.join().expect("scanner");
-    replier.join().expect("replier");
-
-    let asked = std::mem::take(&mut seen.lock().expect("seen").asked);
+    let mut status = None;
+    office.type_until(b"q", "the office to quit on q", |office| {
+        status = office.exited();
+        status.is_some()
+    });
     Run {
-        asked,
-        status,
+        asked: office.finish(),
+        status: status.expect("the office quit"),
         seeded,
         config: std::fs::read_to_string(&config).expect("config"),
+    }
+}
+
+/// Every terminal's answer, on time.
+fn prompt(row: usize) -> Vec<u8> {
+    ANSWERS[row].1.to_vec()
+}
+
+/// A first run's connect runs off the office's loop: while its host CLI hangs,
+/// a resize still repaints, and a quit, by signal or by key, ends the office at
+/// once, the CLI's job with it.
+#[test]
+fn a_hung_connect_leaves_the_office_live_and_a_quit_takes_its_cli() {
+    for by_signal in [true, false] {
+        let home = tempfile::tempdir().expect("home");
+        seed_config(home.path());
+        // Claude Code's home, so the onboarding offers it, checked.
+        std::fs::create_dir_all(home.path().join(".claude")).expect("claude home");
+        let run = common::isolated(&["run"], home.path());
+        let job = home.path().join("job.pid");
+        let claude = home.path().join(".fake-bin/claude");
+        std::fs::write(
+            &claude,
+            format!(
+                "#!/bin/sh\nsleep 600 &\necho $! > '{}'\nwait\n",
+                job.display()
+            ),
+        )
+        .expect("a hung claude");
+        let mut office = Office::start(run, Duration::ZERO, prompt);
+        office.type_until(b"\r", "the connect's CLI", |_| {
+            std::fs::read_to_string(&job).is_ok_and(|pid| !pid.trim().is_empty())
+        });
+
+        let painted = office.wrote.load(Ordering::Relaxed);
+        office
+            .master
+            .resize(PtySize { cols: 100, ..SIZE })
+            .expect("resize");
+        wait_for("a repaint while the CLI hangs", || {
+            office.wrote.load(Ordering::Relaxed) > painted
+        });
+
+        let quit_at = Instant::now();
+        let status = if by_signal {
+            let pid = office.child.0.process_id().expect("its pid");
+            // SAFETY: signalling the office this test spawned and still owns.
+            unsafe {
+                libc::kill(i32::try_from(pid).expect("a pid"), libc::SIGTERM);
+            }
+            let mut status = None;
+            wait_for("the office to end on SIGTERM", || {
+                status = office.exited();
+                status.is_some()
+            });
+            status.expect("ended")
+        } else {
+            let mut status = None;
+            office.type_until(b"q", "the office to quit on q", |office| {
+                status = office.exited();
+                status.is_some()
+            });
+            status.expect("ended")
+        };
+        assert!(quit_at.elapsed() < BUDGET);
+        // SAFETY: `strsignal` returns a static string for a valid signal.
+        let sigterm = unsafe { std::ffi::CStr::from_ptr(libc::strsignal(libc::SIGTERM)) };
+        let want = by_signal.then(|| sigterm.to_string_lossy().into_owned());
+        assert_eq!(status.signal().map(str::to_owned), want, "{status}");
+        let pid = std::fs::read_to_string(&job).expect("its pid");
+        wait_for("the CLI's job to die with the office", || {
+            !std::process::Command::new("kill")
+                .args(["-0", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
+        });
+        office.finish();
     }
 }
 
@@ -213,7 +363,7 @@ fn a_slow_terminals_startup_replies_never_reach_the_office_as_keys() {
         LINK_RTT < pixtuoid::dev::QUERY_TIMEOUT,
         "the query budget no longer covers the link this test models"
     );
-    let run = run_office(LINK_RTT, |row| ANSWERS[row].1.to_vec());
+    let run = run_office(LINK_RTT, prompt);
     assert_eq!(
         run.config, run.seeded,
         "a late reply reached the office as keys"
@@ -258,9 +408,7 @@ fn bytes_queued_behind_the_last_reply_never_reach_the_office_as_keys() {
 /// lands after the flush, where crossterm keeps it as an internal event.
 #[test]
 fn a_reply_that_outlives_its_probe_is_read_by_the_next_one() {
-    let run = run_office(pixtuoid::dev::QUERY_TIMEOUT * 3 / 2, |row| {
-        ANSWERS[row].1.to_vec()
-    });
+    let run = run_office(pixtuoid::dev::QUERY_TIMEOUT * 3 / 2, prompt);
     assert_eq!(
         run.config, run.seeded,
         "a reply that outlived its probe reached the office as keys"

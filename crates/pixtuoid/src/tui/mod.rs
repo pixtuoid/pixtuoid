@@ -526,6 +526,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     });
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
+    let (changed, mut change_done) = tokio::sync::mpsc::unbounded_channel();
 
     let mut fired = None;
     let result: Result<()> = (async {
@@ -579,6 +580,8 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                                 respawn: crate::audio::respawn,
                                 installed: crate::sources::detect,
                                 focus: crate::focus::focus_slot,
+                                changed: &changed,
+                                run_change: crate::panels::make_change,
                             },
                         );
                         if quit {
@@ -598,6 +601,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     ),
                     _ => {}
                 },
+                Some(done) = change_done.recv() => crate::panels::finish_change(&mut ui, done),
                 signal = &mut quit => {
                     fired = Some(signal);
                     break;
@@ -1221,12 +1225,16 @@ mod apply_key_action_tests {
         installed: fn() -> Vec<&'static str>,
         _tmp: tempfile::TempDir,
         config_path: std::path::PathBuf,
+        changed: crate::panels::ChangeTx,
+        change_done: tokio::sync::mpsc::UnboundedReceiver<crate::panels::ChangeDone>,
+        run_change: fn(crate::panels::ChangeJob) -> crate::panels::ChangeDone,
     }
 
     impl Harness {
         fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let config_path = tmp.path().join("config.toml");
+            let (changed, change_done) = tokio::sync::mpsc::unbounded_channel();
             Self {
                 ui: super::ui_state::UiState::new(
                     &theme::NORMAL,
@@ -1258,6 +1266,9 @@ mod apply_key_action_tests {
                 installed: Vec::new,
                 _tmp: tmp,
                 config_path,
+                changed,
+                change_done,
+                run_change: crate::panels::noted::gated_change,
             }
         }
 
@@ -1296,8 +1307,34 @@ mod apply_key_action_tests {
                     respawn: no_respawn,
                     installed: self.installed,
                     focus: crate::panels::noted::focus,
+                    changed: &self.changed,
+                    run_change: self.run_change,
                 },
             )
+        }
+
+        /// Take in the change that ends next, as the loop's arm does.
+        fn settle(&mut self) {
+            /// Far past a change's own time on a loaded machine.
+            const LANDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+            let deadline = std::time::Instant::now() + LANDS_WITHIN;
+            loop {
+                match self.change_done.try_recv() {
+                    Ok(done) => return crate::panels::finish_change(&mut self.ui, done),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+                        if std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                    Err(e) => panic!("no change landed: {e}"),
+                }
+            }
+        }
+
+        /// Let the change [`crate::panels::noted::gated_change`] holds end, a
+        /// failure when `fails`.
+        fn open_gate(&self, fails: bool) {
+            crate::panels::noted::open_gate(&self.config_path, fails);
         }
     }
 
@@ -1314,6 +1351,14 @@ mod apply_key_action_tests {
         /// The footer row of [`Self::frame`].
         fn footer(&mut self) -> String {
             self.frame().lines().last().unwrap_or_default().to_owned()
+        }
+
+        /// The Sources panel open on rows no machine's CLIs decide, on
+        /// `source_id`'s row.
+        fn sources_on(&mut self, source_id: &str) {
+            self.ui
+                .open_connection(crate::panels::noted::rows(|_| false));
+            self.ui.select_connection_source(source_id);
         }
 
         /// Onboarding open on `welcome`, as a first run shows it.
@@ -1353,7 +1398,9 @@ mod apply_key_action_tests {
             }],
             selected: 0,
         });
+        h.run_change = crate::panels::make_change;
         h.apply(KeyAction::OnboardingConfirm);
+        h.settle();
         assert!(!h.ui.onboarding_open());
         assert!(h.connected.is_connected("copilot"));
         let cfg = crate::config::load(&h.config_path, &mut Vec::new());
@@ -1375,7 +1422,9 @@ mod apply_key_action_tests {
             || {
                 let mut h =
                     Harness::onboarding(crate::panels::welcome::WelcomeUi::from_ids(&["openclaw"]));
+                h.run_change = crate::panels::make_change;
                 h.apply(KeyAction::OnboardingConfirm);
+                h.settle();
                 assert!(h.connected.is_connected("openclaw"));
                 let step = crate::sources::post_install_hint("openclaw").expect("declared");
                 assert_eq!(
@@ -1386,6 +1435,103 @@ mod apply_key_action_tests {
                 assert!(frame.contains("Sources"), "{frame}");
                 assert!(frame.contains("\u{2713} OpenClaw connected"), "{frame}");
             },
+        );
+    }
+
+    fn name(source_id: &str) -> &'static str {
+        pixtuoid_core::source::display_name(source_id).expect("a registered source")
+    }
+
+    /// A Sources connect leaves the loop at once: while it runs, its row reads
+    /// as connecting, another change is refused and a quit still applies; once
+    /// it ends, its line lands on the rows rebuilt after it.
+    #[test]
+    fn a_connect_runs_off_the_loop_and_lands_when_it_ends() {
+        let mut h = Harness::new();
+        h.sources_on("codex");
+        assert!(!h.apply(KeyAction::ConnectionToggle));
+        assert!(h.ui.changing.is_some(), "the change runs");
+        assert_eq!(h.ui.connection.last_result, None, "nothing has landed");
+        let frame = h.frame();
+        assert!(frame.contains("\u{2026} connecting"), "{frame}");
+
+        h.ui.select_connection_source("cursor");
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(
+            h.ui.connection.last_result,
+            Some(format!(
+                "{}: still connecting \u{2014} one change at a time",
+                name("codex")
+            ))
+        );
+        assert!(h.apply(KeyAction::Quit), "a quit applies while it runs");
+
+        h.open_gate(false);
+        h.settle();
+        assert_eq!(h.ui.changing, None);
+        assert_eq!(
+            h.ui.connection.last_result,
+            Some(format!("\u{2713} {} connected", name("codex")))
+        );
+        let codex = h.ui.connection.rows.iter().find(|r| r.source_id == "codex");
+        assert!(
+            codex.is_some_and(|r| r.state == crate::sources::ConnState::Connected),
+            "the rows are the change's"
+        );
+    }
+
+    /// The onboarding's connects leave the loop too: its card stays and says
+    /// they run; Esc hides it while they go on, and once they end their
+    /// failures surface on the Sources panel.
+    #[test]
+    fn onboarding_stays_live_while_it_connects() {
+        let mut h = Harness::onboarding(crate::panels::welcome::WelcomeUi::from_ids(&[
+            "codex", "cursor",
+        ]));
+        h.apply(KeyAction::OnboardingConfirm);
+        assert!(h.ui.onboarding_open() && h.ui.modal().onboarding_busy);
+        let frame = h.frame();
+        assert!(frame.contains("connecting \u{2026}"), "{frame}");
+
+        h.apply(KeyAction::OnboardingSkip);
+        assert!(!h.ui.onboarding_open(), "Esc hides the card");
+        assert!(h.ui.changing.is_some(), "and the connects go on");
+
+        h.open_gate(true);
+        h.settle();
+        assert!(h.ui.connection.open, "a failure opens the panel");
+        assert_eq!(
+            h.ui.connection.rows[h.ui.connection.selected].source_id, "codex",
+            "on the first failed row"
+        );
+        let line = h.ui.connection.last_result.clone().unwrap_or_default();
+        for id in ["codex", "cursor"] {
+            assert!(
+                line.contains(&format!("{}: connect failed", name(id))),
+                "{line}"
+            );
+        }
+    }
+
+    /// A change that fails once its panel has closed opens it again on its
+    /// row, so the failure is not lost.
+    #[test]
+    fn a_failure_that_lands_on_a_closed_panel_reopens_it() {
+        let mut h = Harness::new();
+        h.sources_on("cursor");
+        h.apply(KeyAction::ConnectionToggle);
+        h.apply(KeyAction::ConnectionClose);
+        h.open_gate(true);
+        h.settle();
+        assert!(h.ui.connection.open);
+        assert_eq!(
+            h.ui.connection.rows[h.ui.connection.selected].source_id,
+            "cursor"
+        );
+        let line = h.ui.connection.last_result.clone().unwrap_or_default();
+        assert!(
+            line.starts_with(&format!("{}: connect failed", name("cursor"))),
+            "{line}"
         );
     }
 

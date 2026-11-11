@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use super::{Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_span, to_color};
 
 use crate::panels::connection::{
-    ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, no_action_hint,
+    ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, changing, no_action_hint,
 };
 use crate::panels::keys;
 use pixtuoid_scene::theme::Theme;
@@ -156,10 +156,11 @@ fn connection_line(
         Style::default()
     };
 
-    let (c_glyph, c_text, c_color) = match row.state {
-        ConnState::Connected => ('\u{25cf}', "connected", theme.ui.label_ok),
-        ConnState::Disconnected => ('\u{25cb}', "disconnected", theme.ui.label_idle),
-        ConnState::NoCli { .. } => ('\u{2014}', "no CLI", theme.ui.label_idle),
+    let (c_glyph, c_text, c_color) = match (live.changing, row.state) {
+        (Some(on), _) => ('\u{2026}', changing(on), theme.ui.label_warn),
+        (None, ConnState::Connected) => ('\u{25cf}', "connected", theme.ui.label_ok),
+        (None, ConnState::Disconnected) => ('\u{25cb}', "disconnected", theme.ui.label_idle),
+        (None, ConnState::NoCli { .. }) => ('\u{2014}', "no CLI", theme.ui.label_idle),
     };
     // glyph + space (2) + text padded to CONN_W - 2.
     let conn_cell = format!("{c_glyph} {:<width$}", c_text, width = CONN_W - 2);
@@ -425,6 +426,7 @@ mod tests {
                 last_event_age: Some(Duration::from_secs(3)),
             },
             dead: false,
+            changing: None,
         };
         let line = connection_line(&r, &live, false, SystemTime::UNIX_EPOCH, &NORMAL);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -438,7 +440,11 @@ mod tests {
     fn connection_line_daemon_names_its_gateways_and_their_state() {
         let r = row("openclaw", "ok", ConnState::Connected);
         let cell = |facet: LiveFacet| -> String {
-            let live = LiveInfo { facet, dead: false };
+            let live = LiveInfo {
+                facet,
+                dead: false,
+                changing: None,
+            };
             connection_line(&r, &live, false, SystemTime::UNIX_EPOCH, &NORMAL)
                 .spans
                 .iter()
@@ -494,6 +500,7 @@ mod tests {
                 last_event_age: Some(Duration::from_secs(1)),
             },
             dead: true,
+            changing: None,
         };
         let line = connection_line(&r, &live, false, SystemTime::UNIX_EPOCH, &NORMAL);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -511,6 +518,7 @@ mod tests {
                     last_event_age: Some(Duration::from_secs(0)),
                 },
                 dead: false,
+                changing: None,
             },
             false,
             SystemTime::UNIX_EPOCH,

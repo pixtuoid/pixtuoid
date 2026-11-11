@@ -621,6 +621,7 @@ fn main() -> Result<()> {
                 last_event_age: Some(Duration::from_secs(age_s)),
             },
             dead: false,
+            changing: None,
         };
         let rows = vec![
             (
@@ -652,6 +653,7 @@ fn main() -> Result<()> {
                 LiveInfo {
                     facet: LiveFacet::default(),
                     dead: true,
+                    changing: None,
                 },
             ),
             (
@@ -677,6 +679,7 @@ fn main() -> Result<()> {
                         state: pixtuoid_core::state::DaemonState::Running,
                     })),
                     dead: false,
+                    changing: None,
                 },
             ),
         ];
@@ -705,6 +708,7 @@ fn main() -> Result<()> {
             selected: 0,
             elapsed_ms: 100_000,
             dim: pixtuoid::dev::dim_opening(100_000),
+            busy: false,
         }
     } else {
         pixtuoid::dev::OnboardingFrame::default()

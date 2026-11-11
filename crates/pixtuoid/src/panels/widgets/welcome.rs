@@ -33,6 +33,7 @@ pub(crate) fn paint_welcome(
         selected,
         elapsed_ms,
         dim: _,
+        busy,
     } = frame;
     let dim = Style::default().fg(to_color(theme.ui.label_idle));
     let bright = Style::default().fg(to_color(theme.ui.neon_brand));
@@ -91,7 +92,9 @@ pub(crate) fn paint_welcome(
     let all_in = base + rows.len().saturating_sub(1) as u64 * ROW_STAGGER_MS;
     let shown_hints = elapsed_ms >= all_in;
     let mut below = vec![Line::from("")];
-    below.push(if shown_hints {
+    below.push(if busy {
+        Line::from(Span::styled("  connecting \u{2026} \u{00b7} esc hide", dim))
+    } else if shown_hints {
         Line::from(Span::styled(
             // The legend's keys are lower case.
             format!(

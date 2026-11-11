@@ -3,9 +3,8 @@
 //! projects the dispatch-facing [`ModalState`] (one source of truth instead of
 //! an ad-hoc literal per key event), and computes the per-frame renderer
 //! mirrors ([`RenderFrames`]). The loop keeps its painter's lifecycle and every
-//! renderer/config/install side effect; the blocking-I/O sites (`build_rows`,
-//! connect/disconnect, the onboarding apply) stay at the loop as brief inline
-//! stalls.
+//! renderer/config side effect; a Sources change runs off the loop
+//! ([`super::SourcesChange`]), and only the panel's open reads its rows inline.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -119,6 +118,8 @@ pub(crate) struct UiState {
     pub(crate) saved: AppearancePick,
     pub(crate) dashboard: DashboardUi,
     pub(crate) connection: ConnectionUi,
+    /// The Sources change running off the loop, until its result lands.
+    pub(crate) changing: Option<super::SourcesChange>,
     /// The settings changed this run whose last save failed.
     unsaved: enum_map::EnumMap<crate::config::Setting, bool>,
     drift: crate::doctor::DriftSeen,
@@ -246,6 +247,7 @@ impl UiState {
             saved: AppearancePick { theme, look: None },
             dashboard: DashboardUi::default(),
             connection: ConnectionUi::default(),
+            changing: None,
             unsaved: enum_map::EnumMap::default(),
             drift,
             socket_path,
@@ -258,6 +260,7 @@ impl UiState {
     pub(crate) fn modal(&self) -> ModalState {
         ModalState {
             onboarding_open: self.onboarding_open(),
+            onboarding_busy: self.onboarding_open() && self.changing.is_some(),
             help_open: self.help_open,
             version_popup_open: self.version_popup_open,
             appearance: self.appearance,
@@ -561,7 +564,13 @@ impl UiState {
             let socket_line = format!("socket  {}", self.socket_path.display());
             ConnectionFrame {
                 open: true,
-                rows: connection::live_view(now, &self.connection.rows, scene, health),
+                rows: connection::live_view(
+                    now,
+                    &self.connection.rows,
+                    scene,
+                    health,
+                    self.changing.as_ref(),
+                ),
                 selected: self.connection.selected,
                 confirm: self.connection.confirm,
                 result: self.connection.last_result.clone(),
@@ -579,6 +588,7 @@ impl UiState {
                 selected: self.onboarding_ui.selected,
                 elapsed_ms: e,
                 dim: welcome::dim_opening(e),
+                busy: self.changing.is_some(),
             }
         } else if let Some((closing, from)) = self.onboarding_closing_at {
             match welcome::dim_closing(from, closing.elapsed().as_millis() as u64) {
@@ -616,8 +626,18 @@ impl UiState {
     /// The Sources panel's cached rows carry a per-source HEALTH summary that
     /// scans the retained logs, so read them fresh at each (infrequent) rebuild.
     pub(crate) fn read_conn_log(&self) -> String {
-        self.log.as_ref().map(|at| at.read().0).unwrap_or_default()
+        log_text(self.log())
     }
+
+    /// Where the Sources panel's drift history comes from.
+    pub(crate) fn log(&self) -> Option<&crate::run_log::LogLocation> {
+        self.log.as_ref()
+    }
+}
+
+/// `log`'s text: none for a preview, which has no run.
+pub(crate) fn log_text(log: Option<&crate::run_log::LogLocation>) -> String {
+    log.map(|at| at.read().0).unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -57,7 +57,8 @@ impl Default for LiveFacet {
     }
 }
 
-/// Live-connection facet, derived per frame from the scene snapshot.
+/// Live-connection facet, derived per frame from the scene snapshot and the
+/// change in flight.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LiveInfo {
     pub facet: LiveFacet,
@@ -66,6 +67,8 @@ pub struct LiveInfo {
     /// one router death would otherwise falsely mark every healthy transcript
     /// watcher dead.
     pub dead: bool,
+    /// A change of the source runs off the loop: to connected when `true`.
+    pub changing: Option<bool>,
 }
 
 /// The Sources panel's per-tick render frame, `RenderFrames::connection`: one
@@ -89,7 +92,7 @@ pub(crate) struct ConnectionUi {
     /// because the row set doesn't churn frame-to-frame (unlike the dashboard,
     /// which is AgentId-keyed).
     pub selected: usize,
-    /// Cached CONNECTION facet — rebuilt on open + after each toggle, NEVER per
+    /// Cached CONNECTION facet — rebuilt on open + after each change, NEVER per
     /// frame. The LIVE facet is recomputed per frame instead.
     pub rows: Vec<ConnectionRow>,
     /// `Some(row_idx)` ⇒ a disconnect is armed on that row, awaiting
@@ -125,6 +128,7 @@ pub(crate) fn live_for(
         return LiveInfo {
             facet: LiveFacet::Daemon(rollup),
             dead,
+            changing: None,
         };
     }
     let mut agents = 0usize;
@@ -143,17 +147,26 @@ pub(crate) fn live_for(
             last_event_age: max_evt.map(|t| now.duration_since(t).unwrap_or_default()),
         },
         dead,
+        changing: None,
     }
 }
 
+/// Each row's [`live_for`], marked where `changing` changes its source.
 pub(crate) fn live_view(
     now: SystemTime,
     rows: &[ConnectionRow],
     scene: &SceneState,
     health: &[SourceDeath],
+    changing: Option<&super::SourcesChange>,
 ) -> Vec<(ConnectionRow, LiveInfo)> {
     rows.iter()
-        .map(|r| (r.clone(), live_for(now, r.source_id, scene, health)))
+        .map(|r| {
+            let live = LiveInfo {
+                changing: changing.and_then(|c| c.on_for(r.source_id)),
+                ..live_for(now, r.source_id, scene, health)
+            };
+            (r.clone(), live)
+        })
         .collect()
 }
 
@@ -173,6 +186,18 @@ pub(crate) fn no_action_hint(row: &ConnectionRow) -> String {
 pub(crate) enum FailedOp {
     Connect,
     Disconnect,
+}
+
+impl FailedOp {
+    /// The operation a change to `on` is.
+    pub(crate) fn of(on: bool) -> Self {
+        if on { Self::Connect } else { Self::Disconnect }
+    }
+}
+
+/// How the panel words a change to `on` while it runs.
+pub(crate) fn changing(on: bool) -> &'static str {
+    if on { "connecting" } else { "disconnecting" }
 }
 
 /// THE Sources-panel failure line, `{display_name}: {what failed} — {reason}`.

@@ -38,6 +38,8 @@ pub(crate) enum FloatingEvent {
     GpuFailed(String),
     /// A quit signal ([`QuitArms`](crate::runtime::QuitArms)): quit as the close button does.
     Quit,
+    /// A Sources change finished off the loop.
+    SourcesChanged(crate::panels::ChangeDone),
 }
 
 pub(crate) struct FloatingApp {
@@ -50,6 +52,9 @@ pub(crate) struct FloatingApp {
     ui: crate::panels::ui_state::UiState,
     /// The Sources panel's mutation seam, as the TUI's.
     connected: crate::runtime::ConnectedSources,
+    /// Where a Sources change sends its result, which reaches the loop as
+    /// [`FloatingEvent::SourcesChanged`].
+    changed: crate::panels::ChangeTx,
     /// The modifier keys held, which a key is read with.
     modifiers: winit::keyboard::ModifiersState,
     /// What the frame on screen shows beside the office.
@@ -228,6 +233,18 @@ impl FloatingApp {
             look: None,
         });
         let connected = boot.connected.clone();
+        let (changed, mut change_done) = tokio::sync::mpsc::unbounded_channel();
+        let change_proxy = proxy.clone();
+        boot.rt.spawn(async move {
+            while let Some(done) = change_done.recv().await {
+                if change_proxy
+                    .send_event(FloatingEvent::SourcesChanged(done))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
         Self {
             cfg,
             theme,
@@ -235,6 +252,7 @@ impl FloatingApp {
             config_path,
             ui,
             connected,
+            changed,
             modifiers: winit::keyboard::ModifiersState::empty(),
             // Until `resumed` names the platform: presenting every frame is
             // safe on any.
@@ -389,6 +407,8 @@ impl FloatingApp {
                 respawn: crate::audio::respawn,
                 installed: crate::sources::detect,
                 focus: crate::focus::focus_slot,
+                changed: &self.changed,
+                run_change: crate::panels::make_change,
             },
         )
     }
@@ -701,6 +721,10 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
                 }
             }
             FloatingEvent::Quit => event_loop.exit(),
+            FloatingEvent::SourcesChanged(done) => {
+                crate::panels::finish_change(&mut self.ui, done);
+                self.request_redraw();
+            }
         }
     }
 

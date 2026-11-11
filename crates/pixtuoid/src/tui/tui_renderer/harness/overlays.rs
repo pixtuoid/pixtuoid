@@ -153,6 +153,7 @@ fn onboarding_overlay_renders_roster_and_hint() {
                 selected: 0,
                 elapsed_ms: 100_000,
                 dim: pixtuoid_scene::look::Dim::from_brightness(0.4),
+                busy: false,
             },
             ..Default::default()
         },
@@ -210,6 +211,7 @@ fn onboarding_dims_the_office_buffer() {
                 selected: 0,
                 elapsed_ms: 100_000,
                 dim: pixtuoid_scene::look::Dim::from_brightness(0.4),
+                busy: false,
             },
             ..Default::default()
         },
@@ -244,6 +246,7 @@ fn onboarding_dims_the_world_text_over_the_half_blocks() {
         RenderFrames {
             onboarding: OnboardingFrame {
                 dim,
+                busy: false,
                 ..OnboardingFrame::default()
             },
             ..RenderFrames::default()
@@ -286,6 +289,7 @@ fn onboarding_dims_the_composed_slide_on_the_transition_path() {
                 selected: 0,
                 elapsed_ms: 100_000,
                 dim: pixtuoid_scene::look::Dim::from_brightness(0.4),
+                busy: false,
             },
             ..Default::default()
         },
