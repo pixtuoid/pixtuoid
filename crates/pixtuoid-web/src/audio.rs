@@ -236,6 +236,19 @@ mod tests {
         assert_eq!(OneShotPool::from_wire(9), None);
     }
 
+    /// A gain crosses in its shortest round-trip form, which the page parses to
+    /// the same value, rather than at a fixed precision.
+    #[test]
+    fn a_gain_crosses_in_its_shortest_form() {
+        let cmd = TickCommands {
+            gains: [0.35; LoopStem::ALL.len()],
+            ..TickCommands::default()
+        };
+        let json = commands_json(&cmd).expect("the commands serialize");
+        let want = format!("\"gains\":[{}]", ["0.35"; LoopStem::ALL.len()].join(","));
+        assert!(json.contains(&want), "{json}");
+    }
+
     /// A non-finite gain reaches the page as JSON's `null`, never as a token
     /// that fails the whole tick's `JSON.parse`.
     #[test]
