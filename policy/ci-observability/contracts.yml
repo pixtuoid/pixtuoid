@@ -61,7 +61,7 @@
       and .jobs.publish.permissions == {}
       and ([.jobs.publish.steps[] | .uses // empty | sub("@.*"; "")] - ["actions/checkout", "actions/download-artifact", "actions/create-github-app-token", "peter-evans/create-pull-request"]) == []
       and ([.jobs.publish.steps[] | select((.uses // "") | startswith("actions/checkout@")) | .with["persist-credentials"]] | all(. == false))
-      and ($publish | test("\\b(cargo|just|npm|node|pip|python3?|make|bash|sh)\\b|\\./") | not)
+      and ($publish | test("\\b(cargo|just|npm|node|pip|python3?|uvx?|make|bash|sh)\\b|\\./") | not)
       and ($publish | test("\\bgit\\s+(add|commit|push)\\b") | not)
   break:
     - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets.BOT_APP_KEY }}"}, "run": "true"}]}'
@@ -75,6 +75,7 @@
     - '.jobs.publish.steps += [{"uses": "./.github/actions/setup-cargo-just"}]'
     - '.jobs.publish.steps[0].with["persist-credentials"] = true'
     - '.jobs.publish.steps += [{"run": "bash scripts/x.sh"}]'
+    - '.jobs.publish.steps += [{"run": "uv run scripts/x.py"}]'
 
 - id: media-render-job-only-reads
   file: .github/workflows/media-regen.yml
@@ -102,7 +103,7 @@
       and ([.jobs | to_entries[] | select(.key != "file") | .value.permissions // {} | .[]]
            | all(. != "write"))
       and ([.jobs.file.steps[] | .uses // empty | sub("@.*"; "")] - ["actions/download-artifact"]) == []
-      and ($file | test("\\b(cargo|just|npm|node|pip|python3?|make|bash|sh)\\b|\\./") | not)
+      and ($file | test("\\b(cargo|just|npm|node|pip|python3?|uvx?|make|bash|sh)\\b|\\./") | not)
   break:
     - '.permissions = {"issues": "write"}'
     - '.jobs.drift.permissions.issues = "write"'
@@ -111,6 +112,7 @@
     - '.jobs.other = {"permissions": {"pull-requests": "write"}}'
     - '.jobs.file.steps = [{"uses": "actions/checkout@v7"}] + .jobs.file.steps'
     - '.jobs.file.steps += [{"run": "just hermetic"}]'
+    - '.jobs.file.steps += [{"run": "uvx some-tool"}]'
 
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml

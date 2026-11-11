@@ -87,9 +87,10 @@ HAWK_INSTALLER_SHA256 := "4e1b85fc15d3d4efa9b3bd7c62620655cc5504b7164272292043e3
 # it builds C (`cargo doc` still runs build scripts).
 DOC_TARGETS := "x86_64-pc-windows-msvc aarch64-apple-darwin"
 
-# Every Python recipe runs in the ephemeral environment uv builds out of the
-# hashed pins, so no venv is provisioned or kept (CI runs the same recipes).
-UV_DEV := "uv run --no-project --with-requirements requirements-dev.txt --"
+# Every Python recipe that imports a third-party package runs in uv's project
+# env, installed from uv.lock with its hashes checked (CI runs the same recipes);
+# `--locked` fails on a lock pyproject.toml has outgrown instead of re-resolving.
+UV_DEV := "uv run --locked --"
 
 # The zone a test run reads the clock in, so a test anchored to its writer's
 # zone fails on their machine, not first in CI (#1377). Its offset is neither
@@ -228,8 +229,8 @@ ruff:
     ruff check
     ruff format --check
 
-# Every tracked Python file, so none escapes an `include`. The env uv builds
-# out of requirements-dev.txt resolves the scripts' imports.
+# Every tracked Python file, so none escapes an `include`. UV_DEV's env
+# resolves the scripts' imports.
 [doc('Type-check the Python (pyright, as pyproject.toml configures it)')]
 [group('rust')]
 pyright: (_npm ".")
@@ -839,7 +840,7 @@ gen: gen-art gen-banner gen-icons gen-readme gen-cutaway-golden
 gen-art:
     python3 scripts/gen-art.py crates/pixtuoid-scene/sprites/default
 
-# Stdlib-only, so `lint` runs it without the venv `gen-check` needs.
+# Stdlib-only, so `lint` runs it without the UV_DEV env `gen-check` needs.
 [doc('Fail if a committed generated sprite differs from what scripts/gen-art.py draws')]
 [group('gen')]
 gen-art-check:
@@ -978,7 +979,6 @@ gen-icons-check:
 # media only: the site's demos are rendered in CI and never committed. On a PR
 # a drift here is evidence for REVIEW.md's Render and look, not a gate; main's
 # land through media-regen.yml.
-# It builds the examples it renders with.
 [doc("Diff the README's committed media against what gen-media renders")]
 [group('gen')]
 gen-media-check:

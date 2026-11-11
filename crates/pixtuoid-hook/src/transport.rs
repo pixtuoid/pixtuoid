@@ -264,9 +264,9 @@ mod win_send_tests {
     use super::{TimeBound, WRITE_TIMEOUT, send_line};
 
     /// A pipe whose every instance is taken answers ERROR_PIPE_BUSY, which the
-    /// send waits out: an instance the daemon frees within the bound gets the line.
+    /// send waits out: an instance the daemon opens within the bound gets the line.
     #[tokio::test]
-    async fn a_busy_pipe_gets_the_line_once_an_instance_frees() {
+    async fn a_busy_pipe_gets_the_line_once_the_next_instance_opens() {
         let name = format!(r"\\.\pipe\pixtuoid-busy-selftest-{}", std::process::id());
         let _taken = ServerOptions::new()
             .first_pipe_instance(true)

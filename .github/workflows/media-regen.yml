@@ -14,7 +14,7 @@ on:
       - scripts/media.json
       # themes-composite's `over` file, and the Pillow pin its PNGs come from.
       - site/src/themes.json
-      - requirements-dev.txt
+      - uv.lock
   workflow_dispatch:
 
 permissions: {}

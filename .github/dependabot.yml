@@ -102,9 +102,9 @@ updates:
     cooldown:
       default-days: 7
 
-  # requirements-dev.txt pins exact versions and hashes (pip.pypa.io
-  # topics/secure-installs); this moves both.
-  - package-ecosystem: pip
+  # pyproject.toml pins exact versions and uv.lock their hashes, which
+  # `uv run --locked` checks; this moves both.
+  - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly

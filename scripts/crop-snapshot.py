@@ -2,8 +2,7 @@
 """Crop a snapshot PNG into per-quadrant images for visual inspection.
 
 Usage:
-    uv run --no-project --with-requirements requirements-dev.txt -- \
-        python3 scripts/crop-snapshot.py /tmp/snap.png [--scale 3]   # 2× by default
+    uv run --locked -- python3 scripts/crop-snapshot.py /tmp/snap.png [--scale 3]   # 2× by default
 
 Outputs four files next to the input:
     <name>_meeting.png   — top-left (meeting room + sofas)

@@ -34,7 +34,7 @@ pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()
 /// The status dnsapi gives a registration still in progress.
 const PENDING: u32 = DNS_REQUEST_PENDING.cast_unsigned();
 
-/// A registration's status, [`PENDING`] until its callback reports one.
+/// The responder's last status for a request, [`PENDING`] until its first.
 type Completion = watch::Sender<u32>;
 
 /// Whether the callback's `status` leaves the service held.
@@ -115,7 +115,6 @@ unsafe impl Send for Registered {}
 
 impl Drop for Registered {
     fn drop(&mut self) {
-        self.0.pRegisterCompletionCallback = Some(deregistered);
         // SAFETY: the request registered the service.
         unsafe { DnsServiceDeRegister(&raw const **self.0, ptr::null_mut()) };
     }
@@ -126,9 +125,9 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain([0]).collect()
 }
 
-/// The responder's word on the registration, sent to `announce`. "If not
-/// nullptr, then you are responsible for freeing the data using
-/// DnsServiceFreeInstance."
+/// The responder's word on the registration, and later on its deregistration,
+/// sent to the request's [`Completion`]. "If not nullptr, then you are
+/// responsible for freeing the data using DnsServiceFreeInstance."
 unsafe extern "system" fn registered(
     status: u32,
     context: *const c_void,
@@ -137,15 +136,6 @@ unsafe extern "system" fn registered(
     // SAFETY: the context is the request's own `Completion`, never freed once
     // the registration succeeds.
     unsafe { &*context.cast::<Completion>() }.send_replace(status);
-    free(instance);
-}
-
-/// The responder's word on the deregistration, the instance freed as above.
-unsafe extern "system" fn deregistered(
-    _status: u32,
-    _context: *const c_void,
-    instance: *const DNS_SERVICE_INSTANCE,
-) {
     free(instance);
 }
 
@@ -183,22 +173,26 @@ mod tests {
         );
     }
 
-    /// The registration `announce` makes, through dnsapi itself: the request
-    /// is taken, its callback reaches the waiter through the context, the
-    /// responder holds the service, and a drop deregisters it.
+    /// The registration `announce` makes, through dnsapi itself: the responder
+    /// holds the service, then deregisters it on the drop, each reported
+    /// through the request's context.
     #[tokio::test]
     async fn dnsapi_holds_a_registration_until_it_is_dropped() {
+        let reported = std::time::Duration::from_secs(10);
         let instance = format!("pixtuoid-test-{}", std::process::id());
         let (registration, mut completed) =
             register(&instance, 47_998, "AB").expect("dnsapi takes the request");
-        let status = *tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            completed.wait_for(|&status| status != PENDING),
-        )
-        .await
-        .expect("the callback reports")
-        .expect("the completion lives");
+        let status =
+            *tokio::time::timeout(reported, completed.wait_for(|&status| status != PENDING))
+                .await
+                .expect("the registration reports")
+                .expect("the completion lives");
         assert_eq!(status, ERROR_SUCCESS);
         drop(registration);
+        tokio::time::timeout(reported, completed.changed())
+            .await
+            .expect("the deregistration reports")
+            .expect("the completion lives");
+        assert_eq!(*completed.borrow(), ERROR_SUCCESS);
     }
 }
