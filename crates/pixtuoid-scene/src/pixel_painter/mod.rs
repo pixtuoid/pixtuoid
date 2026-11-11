@@ -130,7 +130,6 @@ pub(crate) struct PaintCtx<'a> {
     base_fill: &'a mut background::BaseFillCache,
     shadows: &'a mut crate::ground::DepthsCache,
     theme: &'a crate::theme::Theme,
-    floor: crate::floor::FloorMeta,
     walks: &'a HashMap<pixtuoid_core::AgentId, WalkState>,
     debug_walkable: bool,
     /// The office's outside, kept across frames.
@@ -149,20 +148,19 @@ impl<'a> PaintCtx<'a> {
         walks: &'a HashMap<pixtuoid_core::AgentId, WalkState>,
         debug_walkable: bool,
     ) -> Self {
-        let timing = world.floor.motion.timing(world.now);
+        let timing = world.conditions.motion.timing(world.now);
         Self {
-            scene: world.scene,
+            scene: world.scene.scene(),
             layout,
             pack,
             timing,
-            sky: crate::sky::Sky::at(timing, world.floor.weather),
+            sky: crate::sky::Sky::at(timing, world.conditions.weather),
             window_sky: None,
             buf,
             cache: &mut caches.sprites,
             base_fill: &mut caches.base_fill,
             shadows: &mut caches.shadows,
             theme,
-            floor: world.floor,
             walks,
             debug_walkable,
             outside,
@@ -193,7 +191,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
     let agents: &[AgentSlot] = &frame.agents;
     let buf_h = ctx.layout.buf_h;
 
-    let moment = Moment::resolve(ctx.sky, ctx.theme, ctx.floor.altitude, ctx.timing);
+    let moment = Moment::resolve(ctx.sky, ctx.theme, frame.floor_place.altitude(), ctx.timing);
     let look = &moment.look;
     let lights = Lights::of(
         ctx.layout,
@@ -201,7 +199,6 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
         &LightInputs {
             agents,
             seated: &frame.seated_agents,
-            floor_idx: ctx.floor.floor_idx,
             indoor_scale: frame.indoor_scale,
             neon: frame.neon,
             beat: ctx.timing.beat,
@@ -213,7 +210,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
     paint_ground_and_walls(ctx.base_fill, ctx.buf, &wall, &moment, ctx.theme);
     let window_moment = ctx
         .window_sky
-        .map(|sky| Moment::resolve(sky, ctx.theme, ctx.floor.altitude, ctx.timing));
+        .map(|sky| Moment::resolve(sky, ctx.theme, frame.floor_place.altitude(), ctx.timing));
     paint_windows(
         ctx.buf,
         wall,

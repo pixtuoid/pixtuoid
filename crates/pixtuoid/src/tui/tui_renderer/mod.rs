@@ -16,13 +16,9 @@ use ratatui::backend::Backend;
 
 use ratatui::layout::{Position, Rect};
 
-use crate::tui::renderer::PetState;
-use pixtuoid_scene::floor::{
-    FloorInputs, FloorMeta, FloorScene, FloorTransition, OfficeSession, PetInputs,
-    project_floor_scene,
-};
+use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorTransition, OfficeSession, PetInputs};
 use pixtuoid_scene::layout::{SceneLayout, Size};
-use pixtuoid_scene::look::{FrameNote, Look, LookKind, Picture, Place, RenderInputs};
+use pixtuoid_scene::look::{FrameNote, Look, LookKind, Picture, RenderInputs};
 use pixtuoid_scene::screen::Screen;
 
 #[derive(Debug, Default)]
@@ -78,7 +74,6 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
 #[derive(Debug)]
 struct Chrome {
     theme: &'static pixtuoid_scene::theme::Theme,
-    active_pet: Option<PetState>,
     pets: Vec<pixtuoid_scene::pet::Pet>,
     popup: PopupState,
     /// The panels the loop computed, which the frame paints: their
@@ -130,52 +125,29 @@ impl Chrome {
         self.frames.overlays(popup_scale, host_keys)
     }
 
-    /// Floor `floor` of `session`'s office in `scene`, `floor_scene` its
-    /// projection: its inputs as [`OfficeSession::floor_world`] gives every
-    /// painter's floors.
-    fn world<'a>(
-        &'a self,
-        session: &OfficeSession,
-        scene: &'a SceneState,
-        floor_scene: &'a FloorScene,
-        now: SystemTime,
-        floor: usize,
-    ) -> FloorInputs<'a> {
-        session.floor_world(
-            self.office_world(scene, now),
-            floor_scene,
-            floor,
-            &self.pets,
-        )
-    }
-
     /// The office's inputs over `scene`, as [`OfficeSession::render`] takes
-    /// them: its weather and motion, and the petting the session keeps to
-    /// its own floor.
-    fn office_world<'a>(&'a self, scene: &'a SceneState, now: SystemTime) -> FloorInputs<'a> {
+    /// them: its weather and motion; the office fills each floor's pets.
+    fn office_world<'a>(
+        &'a self,
+        scene: &'a SceneState,
+        now: SystemTime,
+    ) -> FloorInputs<'a, SceneState> {
         FloorInputs {
             scene,
             now,
-            floor: FloorMeta::ground()
-                .with_weather(self.weather)
-                .with_motion(self.motion),
-            pets: PetInputs {
-                pet: None,
-                petting: self.active_pet.as_ref(),
+            conditions: Conditions {
+                weather: self.weather,
+                motion: self.motion,
+                ..Conditions::default()
             },
+            pets: PetInputs::default(),
         }
     }
 
-    /// The footer's context over the FULL `scene`, for the floor `session`'s
-    /// footer speaks for.
-    fn footer<'a>(
-        &'a self,
-        session: &OfficeSession,
-        scene: &SceneState,
-    ) -> pixtuoid_scene::footer::FooterContext<'a> {
+    /// The footer's context over the FULL `scene`.
+    fn footer<'a>(&'a self, scene: &SceneState) -> pixtuoid_scene::footer::FooterContext<'a> {
         crate::panels::widgets::footer_context(
             scene,
-            session.footer_floor(scene),
             self.audio.is_audible(),
             self.volume_flash,
             self.frames.warning.as_deref(),
@@ -201,7 +173,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             debug_walkable: false,
             chrome: Chrome {
                 theme,
-                active_pet: None,
                 pets,
                 popup: PopupState::default(),
                 frames: crate::panels::ui_state::RenderFrames::default(),
@@ -364,10 +335,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
                 world: self.chrome.office_world(scene, now),
                 theme: self.chrome.theme,
                 viewport: size.into(),
-                place: Place {
-                    gateway: pixtuoid_scene::tally::office_gateway(scene),
-                    floor: None,
-                },
+                gateway: pixtuoid_scene::tally::office_gateway(scene),
                 debug_walkable,
                 dim: self.chrome.frames.onboarding.dim,
             },
@@ -535,13 +503,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             x: bounds.width,
             y: bounds.height,
         };
-        let down = self.pointer.down(
-            hit,
-            centre(bounds),
-            slop,
-            self.chrome.active_pet.as_ref(),
-            now,
-        );
+        let petting = self.session.showing_pets(&self.chrome.pets, now).petting;
+        let down = self.pointer.down(hit, centre(bounds), slop, petting);
         if let Some(ended) = &down.ended {
             self.grip(ended);
         }
@@ -607,11 +570,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn current_floor_seed(&self) -> u64 {
-        FloorMeta::for_floor(self.session.nav().current(), self.session.n_floors()).floor_seed
-    }
-
     pub fn transition(&self) -> Option<&FloorTransition> {
         self.session.nav().transition()
     }
@@ -652,7 +610,11 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     /// The office's inputs over `scene` at `now`, as [`Self::render`] steps
     /// its floors with them.
-    pub fn office_world<'a>(&'a self, scene: &'a SceneState, now: SystemTime) -> FloorInputs<'a> {
+    pub fn office_world<'a>(
+        &'a self,
+        scene: &'a SceneState,
+        now: SystemTime,
+    ) -> FloorInputs<'a, SceneState> {
         self.chrome.office_world(scene, now)
     }
 
@@ -676,13 +638,9 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.chrome.popup.last_scale
     }
 
-    pub fn set_active_pet(&mut self, pet: Option<PetState>) {
-        self.chrome.active_pet = pet;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn active_pet_ref(&self) -> Option<&PetState> {
-        self.chrome.active_pet.as_ref()
+    /// [`OfficeSession::pet`].
+    pub(crate) fn pet(&mut self, kind: pixtuoid_scene::pet::PetKind, now: SystemTime) {
+        self.session.pet(kind, now);
     }
 
     /// The pet the frame the terminal shows drew.
@@ -718,10 +676,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         use crate::panels::paint_overlays;
         use crate::tui::renderer::{flush_buffer_to_term, paint_footer, scene_rect};
         let footer_scene = self.session.footer_scene(scene);
-        let footer = pixtuoid_scene::footer::FooterInputs::new(
-            &footer_scene,
-            self.chrome.footer(&self.session, scene),
-        );
+        let footer =
+            pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
         let overlays = self
             .chrome
@@ -760,10 +716,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     ) -> Result<Option<FrameNote>> {
         self.session.prepare(scene, now);
         let footer_scene = self.session.footer_scene(scene);
-        let footer = pixtuoid_scene::footer::FooterInputs::new(
-            &footer_scene,
-            self.chrome.footer(&self.session, scene),
-        );
+        let footer =
+            pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
         let offers_walkable_debug = self.offers_walkable_debug();
         let flushed = crate::tui::renderer::draw_footer_only_frame(
@@ -774,8 +728,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             now,
         );
         if !stepped {
-            let office_floor = self.chrome.office_world(scene, now).floor;
-            let audio = self.session.drew_no_office(scene, office_floor, now);
+            let conditions = self.chrome.office_world(scene, now).conditions;
+            let audio = self.session.drew_no_office(scene, conditions, now);
             self.chrome.audio.frame(audio);
         }
         self.screen.blank(term_size);
@@ -837,15 +791,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
 
     /// One frame of `scene`, whichever path draws it: what it was drawn under.
     fn draw_frame(&mut self, scene: &SceneState, now: SystemTime) -> Result<Option<FrameNote>> {
-        if self
-            .chrome
-            .active_pet
-            .as_ref()
-            .is_some_and(|p| !p.is_active(now))
-        {
-            self.chrome.active_pet = None;
-        }
-
         let window = self.window_cell();
         let term_size = self.terminal.size()?;
         let full_rect = Rect::from((Position::ORIGIN, term_size));
@@ -882,17 +827,10 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
                 .flush_classic_slide(scene, now, term_size)
                 .map(|()| drawn);
         };
-        let current = self.session.nav().current();
         let footer_scene = self.session.footer_scene(scene);
-        let footer = pixtuoid_scene::footer::FooterInputs::new(
-            &footer_scene,
-            self.chrome.footer(&self.session, scene),
-        );
+        let footer =
+            pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
-        let floor_scene = project_floor_scene(scene, current);
-        let world = self
-            .chrome
-            .world(&self.session, scene, &floor_scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -912,7 +850,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             theme: self.chrome.theme,
             office: scene,
             now,
-            pets: world.pets,
+            pets: self.session.showing_pets(&self.chrome.pets, now),
             mouse_pos,
             placement,
         };
@@ -950,18 +888,11 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let Some(picture) = self.session.picture() else {
             return self.draw_too_small(scene, now, term_size, true);
         };
-        let current = self.session.nav().current();
         let footer_scene = self.session.footer_scene(scene);
-        let footer = pixtuoid_scene::footer::FooterInputs::new(
-            &footer_scene,
-            self.chrome.footer(&self.session, scene),
-        );
+        let footer =
+            pixtuoid_scene::footer::FooterInputs::new(&footer_scene, self.chrome.footer(scene));
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
-        let floor_scene = project_floor_scene(scene, current);
-        let world = self
-            .chrome
-            .world(&self.session, scene, &floor_scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -986,8 +917,9 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             Some((_, _, SceneHit::Figure(HoverTarget::Agent(id)))) => Some(*id),
             _ => None,
         };
+        let pets = self.session.showing_pets(&self.chrome.pets, now);
         let tooltip = mouse.and_then(|(mx, my, hit)| {
-            pixtuoid_scene::tooltip::for_hit(hit, scene, now, world.pets).map(|tip| (mx, my, tip))
+            pixtuoid_scene::tooltip::for_hit(hit, scene, now, pets).map(|tip| (mx, my, tip))
         });
         cutaway.before_flush(now)?;
         let mut carves = Vec::new();

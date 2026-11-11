@@ -454,7 +454,7 @@ const NIGHTFALL_H: f32 = 0.75;
 const MOON_PEAK_LUM: f32 = 0.12;
 /// The mean synodic month: NASA GSFC, "Phases of the Moon 2001 to 2100"
 /// (<https://eclipse.gsfc.nasa.gov/phase/phases2001.html>).
-const SYNODIC_DAYS: f32 = 29.530_588;
+pub(crate) const SYNODIC_DAYS: f32 = 29.530_588;
 /// The MEAN new moon of 2019-11-27 02:56 TT, in unix days (Meeus, *Astronomical
 /// Algorithms*, eq. 49.1, k = 246): a true new moon would carry its own
 /// lunation's offset from the mean into every phase.
@@ -605,7 +605,7 @@ fn moon_phase_at(now: SystemTime) -> f32 {
 
 /// Lightning cadence: one strike per bucket this long, at a hashed offset
 /// ([`LIGHTNING`]) — a much faster cadence reads as a hyperactive storm.
-const LIGHTNING_PERIOD_MS: u64 = 15000;
+pub(crate) const LIGHTNING_PERIOD_MS: u64 = 15000;
 // A slot's start is a bucket's start on every moving tier's loop clock, so no
 // strike runs into the next slot's weather.
 const _: () = {
@@ -620,7 +620,7 @@ const _: () = {
 };
 /// How long each of [`STRIKE`]'s phases holds: a whole Full beat, so the beat
 /// neither skips one nor stretches it.
-const STRIKE_PHASE_MS: u64 = crate::anim::FULL_TICK_MS;
+pub(crate) const STRIKE_PHASE_MS: u64 = crate::anim::FULL_TICK_MS;
 /// A strike's phases in order, each held [`STRIKE_PHASE_MS`]: the primary
 /// strike, a brief dim, an after-flash, so it reads as a flicker rather than a
 /// single blink.
@@ -656,8 +656,7 @@ const LIGHTNING: crate::anim::FlashSchedule = crate::anim::FlashSchedule {
 }
 .floored();
 /// How long one strike's [`STRIKE`] phases last together.
-#[cfg(test)]
-const STRIKE_MS: u64 = LIGHTNING.run_ms();
+pub(crate) const STRIKE_MS: u64 = LIGHTNING.run_ms();
 
 /// The phase of a strike `since_strike_ms` after it began: [`STRIKE`]'s in
 /// turn, then none.

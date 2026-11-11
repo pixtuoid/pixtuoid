@@ -27,8 +27,7 @@ use super::geometry::{DESKTOP_UNIT, Monitor};
 use super::offscreen::{OfficeRenderer, WindowFrame};
 use crate::config::{self, FloatingConfig};
 use pixtuoid_scene::cutaway::chrome_cell;
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
-use pixtuoid_scene::look::Place;
+use pixtuoid_scene::floor::{Conditions, FloorInputs, PetInputs};
 use pixtuoid_scene::theme::Theme;
 
 /// Wake reasons delivered to the winit loop from the background tokio pipeline.
@@ -81,8 +80,6 @@ pub(crate) struct FloatingApp {
     /// The cursor last set, so it is set only when it changes; `None` once
     /// the pointer leaves, whatever the OS showed meanwhile.
     cursor_icon: Option<winit::window::CursorIcon>,
-    /// The last petting, played while it lasts.
-    petting: Option<pixtuoid_scene::pet::PetState>,
     /// The animation-tick deadline — see [`super::cadence`] for why the redraw
     /// REQUEST (not just the wait) has to be gated on it.
     clock: super::cadence::FrameClock,
@@ -154,7 +151,6 @@ struct WindowOffice<'a> {
     window: &'a Window,
     /// Physical px.
     cursor: (f64, f64),
-    petting: Option<&'a pixtuoid_scene::pet::PetState>,
     now: std::time::SystemTime,
 }
 
@@ -170,7 +166,6 @@ impl crate::panels::Office for WindowOffice<'_> {
             (size.width, size.height),
             super::offscreen::Pressing {
                 scale_factor: self.window.scale_factor(),
-                petting: self.petting,
                 now: self.now,
             },
         );
@@ -245,7 +240,6 @@ impl FloatingApp {
             cursor: PhysicalPosition::new(0.0, 0.0),
             cursor_in: false,
             hovered: false,
-            petting: None,
             clock: super::cadence::FrameClock::new(Instant::now()),
             cursor_icon: None,
             zoom: cfg.zoom,
@@ -283,7 +277,6 @@ impl FloatingApp {
             (self.cursor.x, self.cursor.y),
             (size.width, size.height),
             &self.ui.modal(),
-            self.petting.as_ref(),
             self.ui.now(),
         );
         if self.cursor_icon != Some(icon) {
@@ -327,7 +320,6 @@ impl FloatingApp {
             renderer: &mut self.renderer,
             window,
             cursor,
-            petting: self.petting.as_ref(),
             now,
         };
         Some(super::overlays::mouse_ladder(
@@ -371,13 +363,7 @@ impl FloatingApp {
                     crate::focus::focus_slot(&slot);
                 }
             }
-            Some(HitAction::Pet(kind)) => {
-                self.petting = Some(pixtuoid_scene::pet::PetState {
-                    petted_at: now,
-                    kind,
-                    floor_idx: self.renderer.nav().current(),
-                });
-            }
+            Some(HitAction::Pet(kind)) => self.renderer.pet(kind, now),
             Some(HitAction::Open(url)) => {
                 crate::open_url(url);
             }
@@ -416,9 +402,9 @@ impl FloatingApp {
         )
     }
 
-    /// The office's weather and motion; the office picks each floor's own.
-    fn floor_meta(&self) -> FloorMeta {
-        FloorMeta::ground().with_motion(self.motion)
+    /// The office's weather and motion, which every floor shares.
+    fn conditions(&self) -> Conditions {
+        Conditions::default().with_motion(self.motion)
     }
 
     /// Feed the audio what the office sounds like now, painting nothing.
@@ -427,7 +413,7 @@ impl FloatingApp {
             return;
         };
         crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
-        self.renderer.hear(&scene, self.floor_meta(), self.ui.now());
+        self.renderer.hear(&scene, self.conditions(), self.ui.now());
     }
 
     fn paint(&mut self) {
@@ -461,13 +447,10 @@ impl FloatingApp {
         // ONE clock read, so the overlays below annotate the frame actually rendered.
         let now = self.ui.now();
         let world = FloorInputs {
-            scene: &scene,
+            scene: &*scene,
             now,
-            floor: self.floor_meta(),
-            pets: PetInputs {
-                pet: None,
-                petting: self.petting.as_ref(),
-            },
+            conditions: self.conditions(),
+            pets: PetInputs::default(),
         };
         let health = self
             .live
@@ -480,10 +463,7 @@ impl FloatingApp {
             WindowFrame {
                 world,
                 theme: self.theme,
-                place: Place {
-                    gateway: pixtuoid_scene::tally::office_gateway(&scene),
-                    floor: None,
-                },
+                gateway: pixtuoid_scene::tally::office_gateway(&scene),
                 dim: frames.onboarding.dim,
             },
             (win_w, win_h),
@@ -517,12 +497,7 @@ impl FloatingApp {
                 .then(|| self.renderer.drawn_hit_at(cursor, at))
                 .flatten()
                 .and_then(|hit| {
-                    // The office picks each floor's pet as it renders; the
-                    // tooltip names the one the floor showing drew.
-                    let pets = PetInputs {
-                        pet: self.renderer.showing_pet(),
-                        ..world.pets
-                    };
+                    let pets = self.renderer.showing_pets(now);
                     pixtuoid_scene::tooltip::for_hit(hit, &scene, now, pets)
                 })
                 .map(|tip| (tip, (cursor.0 as i32, cursor.1 as i32))),

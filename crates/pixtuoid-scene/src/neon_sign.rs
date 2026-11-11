@@ -455,16 +455,16 @@ fn board_mood_at(counts: StateCounts, now_ms: u64) -> Vec<BoardSegment> {
     }
 }
 
-/// Assemble the whole board model. `floor` is `(current, total_floors)` — a
-/// single-floor office passes `None`; `headline` is the day's count in words,
-/// which yields first when the row can't hold it; `gateway` is the
+/// Assemble the whole board model. `breadcrumb` is the drawn floor's `FloorPlace::breadcrumb`,
+/// `(floor, floors)` counted from 1, `None` drawing none; `headline` is the day's count in
+/// words, which yields first when the row can't hold it; `gateway` is the
 /// [`gateway_rollup`](crate::tally::gateway_rollup), where `None` suppresses the
 /// chip; `now` on `motion`'s beat drives L2's flap. The context separators (`"  "`)
 /// are baked into each following segment so painters just concatenate.
 pub fn build_board(
     counts: StateCounts,
     uptime_secs: u64,
-    floor: Option<(usize, usize)>,
+    breadcrumb: Option<(usize, usize)>,
     headline: Option<&str>,
     gateway: Option<DaemonState>,
     motion: crate::anim::Motion,
@@ -474,9 +474,9 @@ pub fn build_board(
         format!("up {}", compact_hms(uptime_secs)),
         BoardTone::Dim,
     )];
-    if let Some((current, total)) = floor {
+    if let Some((floor, floors)) = breadcrumb {
         context.push(BoardSegment::new(
-            format!("  F{current}/{total}"),
+            format!("  F{floor}/{floors}"),
             BoardTone::Dim,
         ));
     }
@@ -505,20 +505,22 @@ pub fn build_board(
 }
 
 /// The wall board every painter shows over `drawn`, the floor it draws: that
-/// floor's tally and uptime, and what only the office knows — its `gateway`
-/// ([`office_gateway`](crate::tally::office_gateway)) and `floor`'s place among its floors.
-pub fn wall_board(
-    drawn: &SceneState,
+/// floor's tally, uptime and place among the building's floors (none in a
+/// one-floor office), and the office's `gateway`
+/// ([`office_gateway`](crate::tally::office_gateway)).
+pub(crate) fn wall_board(
+    drawn: &crate::floor::FloorScene,
     gateway: Option<DaemonState>,
-    floor: Option<crate::footer::FooterFloor>,
     motion: crate::anim::Motion,
     now: SystemTime,
 ) -> BoardModel {
+    let place = drawn.floor_place();
+    let drawn = drawn.scene();
     let headline = drawn.today.and_then(today_headline);
     build_board(
         scene_stats(drawn),
         scene_uptime_secs(drawn, now),
-        floor.map(|f| (f.current, f.total_floors)),
+        place.breadcrumb(),
         headline.as_deref(),
         gateway,
         motion,
@@ -1187,7 +1189,12 @@ mod tests {
     fn board_of(today: Option<Today>) -> String {
         let mut scene = SceneState::uniform(16);
         scene.today = today;
-        let board = wall_board(&scene, None, None, Motion::Full, SystemTime::UNIX_EPOCH);
+        let board = wall_board(
+            &crate::floor::project_floor_scene(&scene, 0),
+            None,
+            Motion::Full,
+            SystemTime::UNIX_EPOCH,
+        );
         text_of(&board.context)
     }
 

@@ -4,8 +4,6 @@
 //! what a press does. A tooltip and a press both resolve an area through the
 //! same hits, so a press acts on exactly what the tooltip names.
 
-use std::time::SystemTime;
-
 use pixtuoid_core::AgentId;
 
 use pixtuoid_core::source::daemon::DaemonInstanceKey;
@@ -67,15 +65,16 @@ pub enum HitAction {
 }
 
 impl SceneHit<'_> {
-    /// What a press on it does at `now`, with `petting` the last one; `None`
-    /// where it does nothing — a fixture, a mascot, a pet mid-petting — and a
-    /// painter treats the press as on the bare office.
-    pub fn action(self, petting: Option<&PetState>, now: SystemTime) -> Option<HitAction> {
+    /// What a press on it does, `petting` its floor's
+    /// ([`crate::floor::OfficeSession::showing_pets`]); `None` where it does
+    /// nothing — a fixture, a mascot, a pet mid-petting — and a painter treats
+    /// the press as on the bare office.
+    pub fn action(self, petting: Option<&PetState>) -> Option<HitAction> {
         match self {
             Self::Figure(&HoverTarget::Agent(id)) => Some(HitAction::Focus(id)),
-            Self::Figure(&HoverTarget::Pet(PetHover { kind, .. })) => petting
-                .is_none_or(|p| !p.is_active(now))
-                .then_some(HitAction::Pet(kind)),
+            Self::Figure(&HoverTarget::Pet(PetHover { kind, .. })) => {
+                petting.is_none().then_some(HitAction::Pet(kind))
+            }
             Self::Star => Some(HitAction::Open(REPO_URL)),
             Self::Coffee => Some(HitAction::Open(COFFEE_URL)),
             Self::Figure(HoverTarget::Mascot(_)) | Self::Furniture(_) => None,
@@ -160,7 +159,7 @@ mod tests {
     /// nothing.
     #[test]
     fn a_press_does_what_its_hit_names() {
-        let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        let now = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
         let id = AgentId::from_parts("claude-code", "s");
         let pet = HoverTarget::Pet(PetHover {
             kind: PetKind::Dog,
@@ -170,23 +169,14 @@ mod tests {
         let playing = PetState {
             petted_at: now,
             kind: PetKind::Dog,
-            floor_idx: 0,
         };
-        let over = PetState {
-            petted_at: now - std::time::Duration::from_secs(60),
-            ..playing
-        };
-        let act = |hit: SceneHit<'_>, petting| hit.action(petting, now);
+        let act = |hit: SceneHit<'_>, petting| hit.action(petting);
         assert_eq!(
             act(SceneHit::Figure(&HoverTarget::Agent(id)), None),
             Some(HitAction::Focus(id))
         );
         assert_eq!(
             act(SceneHit::Figure(&pet), None),
-            Some(HitAction::Pet(PetKind::Dog))
-        );
-        assert_eq!(
-            act(SceneHit::Figure(&pet), Some(&over)),
             Some(HitAction::Pet(PetKind::Dog))
         );
         assert_eq!(act(SceneHit::Figure(&pet), Some(&playing)), None);

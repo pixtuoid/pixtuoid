@@ -335,7 +335,7 @@ impl TextRun {
     /// floor its way dim.
     pub(crate) fn indicator(
         layout: &crate::layout::SceneLayout,
-        floor: crate::floor::FloorMeta,
+        floor: crate::floor::FloorPlace,
         theme: &Theme,
     ) -> Self {
         let door = layout.door;
@@ -367,7 +367,7 @@ impl TextRun {
     pub(crate) fn signs(
         board: &crate::neon_sign::BoardModel,
         layout: &crate::layout::SceneLayout,
-        floor: crate::floor::FloorMeta,
+        floor: crate::floor::FloorPlace,
         theme: &Theme,
     ) -> Vec<Self> {
         let mut runs = board.runs(theme, layout.board(), layout.text_area());
@@ -459,8 +459,7 @@ mod tests {
             crate::layout::SceneLayout::compute(crate::layout::Viewport::full(160, 96), None, 0)
                 .expect("lays out");
         let arrows = |floor, floors| -> Vec<(Icon, Rgb)> {
-            let meta = crate::floor::FloorMeta::for_floor(floor, floors);
-            TextRun::indicator(&layout, meta, theme)
+            TextRun::indicator(&layout, crate::floor::FloorPlace::at(floor, floors), theme)
                 .spans
                 .into_iter()
                 .filter_map(|s| match s.content {

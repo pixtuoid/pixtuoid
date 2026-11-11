@@ -136,7 +136,7 @@ pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
     /// Every event folded for the reads fed, in order: each life's decoded
-    /// events, led by the seed the watcher's gate registers for it.
+    /// events, led by its seed when `Sight::registers` admits it.
     pub events: Vec<AgentEvent>,
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
@@ -408,7 +408,7 @@ impl Drive {
         }
     }
 
-    /// Lead each life of the transcript the watcher's gate registers on, a life
+    /// Lead each life of the transcript that `Sight::registers` admits, a life
     /// after its own end within one read included, with the `SessionStart` the
     /// watcher's `emit_registration` would emit for it, keyed by the source's
     /// registry row.
@@ -502,7 +502,7 @@ fn joined<S: AsRef<str>>(lines: impl Iterator<Item = S>) -> Vec<u8> {
 pub struct Fold {
     reducer: Reducer,
     driven: Driven,
-    /// Each seeded transcript's claim, through the watcher's own gate.
+    /// Each seeded transcript's claim, through [`Sight::registers`].
     sights: HashMap<AgentId, Sighted>,
 }
 
@@ -591,7 +591,7 @@ impl Fold {
     }
 
     /// The seed `drive` leads `life` with, one life of a read of `lines`, when
-    /// `drive` is seeded and the watcher's gate registers on it, else `None`. A
+    /// `drive` is seeded and [`Sight::registers`] admits it, else `None`. A
     /// seeded `drive`'s claim then follows `life`'s verdict.
     fn registration<S: AsRef<str>>(
         &mut self,
