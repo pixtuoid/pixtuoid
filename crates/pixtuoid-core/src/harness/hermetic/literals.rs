@@ -904,8 +904,6 @@ mod tests {
         literal("copilot.rs", "approved", LOSS_APPROVE),
         literal("dsh.rs", "allowed-once", LOSS_APPROVE),
         sibling("dsh.rs", "subagent_fork", "subagent"),
-        sibling("reasonix.rs", "read_only_task", "explore"),
-        sibling("reasonix.rs", "parallel_tasks", "explore"),
         sibling("reasonix.rs", "locate", "explore"),
         sibling("reasonix.rs", "research", "explore"),
         sibling("reasonix.rs", "review", "explore"),

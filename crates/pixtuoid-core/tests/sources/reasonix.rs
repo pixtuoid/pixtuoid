@@ -1,105 +1,55 @@
-//! reasonix's DELEGATING runs, recorded by the hermetic tier: a foreground
-//! `task` brackets its child with `SubagentStart`/`SubagentStop`, a skill
-//! tool (`explore`) brackets nothing, and either child's hooks carry a
-//! session id of its own, so each run is two sprites and cannot sit under the
-//! conformance one-AgentId rule.
+//! reasonix's DELEGATING runs, recorded by the hermetic tier: a dispatch
+//! (`spawn_agents`, or a skill tool such as `explore`) brackets nothing, and
+//! its child's hooks carry a session id of its own, so each run is two sprites
+//! and cannot sit under the conformance one-AgentId rule.
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::Drive;
-use pixtuoid_core::source::{AgentEvent, ToolDetail};
 use serde_json::Value;
 
-fn lines() -> Vec<String> {
-    super::captures::fixture_lines(
-        &super::captures::sources_root()
-            .join("reasonix/fixtures/subagent-hermetic/hook-payloads.jsonl"),
-    )
-}
-
-fn events() -> Vec<AgentEvent> {
-    let d = Drive::hooks().lines(lines());
-    d.assert_clean("reasonix delegation hooks");
-    d.events
-}
-
-/// The `SubagentStart` payload's own fields: its session, and its call.
-fn spawn() -> (String, String) {
-    let start = lines()
-        .iter()
-        .map(|l| serde_json::from_str::<Value>(l).expect("a captured payload is JSON"))
-        .find(|v| v["event"] == "SubagentStart")
-        .expect("the run spawns a foreground child");
-    let field = |k: &str| start[k].as_str().expect("a string field").to_string();
-    (field("sessionId"), field("callId"))
-}
+/// Each recorded delegating scenario, by fixture dir, and its dispatch tool.
+const DELEGATIONS: &[(&str, &str)] = &[
+    ("subagent-hermetic", "spawn_agents"),
+    ("explore-hermetic", "explore"),
+];
 
 #[test]
-fn the_runs_one_task_sits_on_the_spawning_calls_id() {
-    let (_, call) = spawn();
-    let tasks: Vec<Option<String>> = events()
-        .into_iter()
-        .filter_map(|e| match e {
-            AgentEvent::ToolUseStart {
-                tool_use_id,
-                detail: Some(ToolDetail::Task),
-                ..
-            } => Some(tool_use_id),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(tasks, [Some(call)]);
-}
-
-#[test]
-fn the_childs_session_registers_under_its_parent() {
-    let (parent, _) = spawn();
-    let parent = AgentId::from_parts("reasonix", &parent);
-    let children: Vec<AgentId> = events()
-        .into_iter()
-        .filter_map(|e| match e {
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id: Some(p),
-                ..
-            } if p == parent => Some(agent_id),
-            _ => None,
-        })
-        .collect();
-    assert!(
-        !children.is_empty(),
-        "no session registered under the parent"
-    );
-    assert!(
-        children.iter().all(|c| *c != parent),
-        "the parent is its own child"
-    );
-}
-
-#[test]
-fn a_skill_calls_return_walks_its_child_out() {
-    let mut lines = super::captures::fixture_lines(
-        &super::captures::sources_root()
-            .join("reasonix/fixtures/explore-hermetic/hook-payloads.jsonl"),
-    );
-    // Up to the call's return, before the turn's own end could end the child
-    // instead.
-    lines.truncate(
-        lines
+fn a_dispatchs_child_registers_under_it_and_its_return_walks_the_child_out() {
+    for (scenario, tool) in DELEGATIONS {
+        let mut lines = super::captures::fixture_lines(
+            &super::captures::sources_root()
+                .join("reasonix/fixtures")
+                .join(scenario)
+                .join("hook-payloads.jsonl"),
+        );
+        let payloads: Vec<Value> = lines
             .iter()
-            .position(|l| {
-                serde_json::from_str::<Value>(l).expect("a captured payload is JSON")["event"]
-                    == "Stop"
-            })
-            .expect("the turn ends"),
-    );
-    let d = Drive::hooks().lines(lines);
-    d.assert_clean("reasonix explore hooks");
-    let (child, _) = d.linked_child().expect("the recording's child session");
-    assert!(
-        d.scene
-            .agents
-            .get(&child)
-            .is_none_or(|s| s.exiting_at.is_some()),
-        "the call returned and its child stayed"
-    );
+            .map(|l| serde_json::from_str(l).expect("a captured payload is JSON"))
+            .collect();
+        let dispatcher = payloads
+            .iter()
+            .find(|v| v["event"] == "PreToolUse" && v["toolName"] == *tool)
+            .and_then(|v| v["sessionId"].as_str())
+            .map(|s| AgentId::from_parts("reasonix", s))
+            .unwrap_or_else(|| panic!("{scenario}: no {tool} dispatch"));
+        // Up to the call's return, before the turn's own end could end the
+        // child instead.
+        lines.truncate(
+            payloads
+                .iter()
+                .position(|v| v["event"] == "Stop")
+                .expect("the turn ends"),
+        );
+        let d = Drive::hooks().lines(lines);
+        d.assert_clean(scenario);
+        let (child, parent) = d.linked_child().expect("the recording's child session");
+        assert_eq!(parent, dispatcher, "{scenario}: the child's parent");
+        assert!(
+            d.scene
+                .agents
+                .get(&child)
+                .is_none_or(|s| s.exiting_at.is_some()),
+            "{scenario}: the call returned and its child stayed"
+        );
+    }
 }

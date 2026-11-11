@@ -29,7 +29,9 @@ use crate::install::verify::{SchemaParse, ShimRef};
 /// StopFailure are deliberately ABSENT: the runner re-fires failures to NATIVE
 /// hooks registered under PostToolUse / Stop with the event re-labeled, and ours
 /// are native-format — registering both spellings would double-fire every failed
-/// tool/turn for the same decoded end.
+/// tool/turn for the same decoded end. SubagentStart / SubagentStop fire only
+/// around a `task` call, a tool upstream no longer registers
+/// (`internal/runtime/agent/execute_one.go:682-687` @ v2.60.0).
 pub(crate) const REASONIX_EVENTS: &[&str] = &[
     "SessionStart",
     "PreToolUse",
@@ -39,8 +41,6 @@ pub(crate) const REASONIX_EVENTS: &[&str] = &[
     "Stop",
     "Notification",
     "SessionEnd",
-    "SubagentStart",
-    "SubagentStop",
 ];
 
 /// `reasonix plugin install`'s flags: link in place, re-link over an existing
@@ -625,8 +625,6 @@ mod tests {
                 "Stop",
                 "Notification",
                 "SessionEnd",
-                "SubagentStart",
-                "SubagentStop",
             ],
         );
     }

@@ -2177,7 +2177,7 @@ mod tests {
         use crate::source::ToolDetail;
         let (parent, child) = (
             AgentId::from_parts("reasonix", "p"),
-            AgentId::from_parts("reasonix", "p:subagent:sa_1"),
+            AgentId::from_parts("reasonix", "p:subagent:call_1"),
         );
         let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
             agent_id,
@@ -2199,12 +2199,12 @@ mod tests {
         let read = || ToolDetail::Generic {
             display: "read_file".into(),
         };
-        // As a reasonix skill call decodes: no call id, and its return re-states
+        // As a reasonix dispatch decodes: no call id, and its return re-states
         // the Task its end closes.
         let run = vec![
             session(parent, "p", None),
             started(parent, ToolDetail::Task),
-            session(child, "p:subagent:sa_1", Some(parent)),
+            session(child, "p:subagent:call_1", Some(parent)),
             started(child, read()),
             end(child),
             started(parent, ToolDetail::Task),
@@ -2434,11 +2434,14 @@ mod tests {
 
     #[test]
     fn a_child_that_names_no_parent_or_never_ends_fails() {
-        // The one line that ends each child: dsh's and claude-code's own end,
-        // reasonix's SubagentStop (its dispatch's end, under AnyTaskEnd).
+        // The lines that end each child: dsh's and claude-code's own end,
+        // reasonix's dispatch return and its turn's end (either ends the
+        // parent's id-less Task, under AnyTaskEnd).
         let dsh: fn(&Value) -> bool =
             |v| v["type"] == "session_end" && v.get("parentSession").is_some();
-        let reasonix: fn(&Value) -> bool = |v| v["event"] == "SubagentStop";
+        let reasonix: fn(&Value) -> bool = |v| {
+            v["event"] == "Stop" || (v["event"] == "PostToolUse" && v["toolName"] == "spawn_agents")
+        };
         let claude: fn(&Value) -> bool = |v| v["hook_event_name"] == "SubagentStop";
         let never = "child session never ended";
         for (source, scene, end) in [

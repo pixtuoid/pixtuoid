@@ -541,15 +541,6 @@ const ID_FAMILIES: &[IdFamily] = &[
         renamed: &[("agent_7ca434ad", "agent_66a9c2b8")],
     },
     IdFamily {
-        name: "reasonix-subagent",
-        pattern: r"sa_\d{8}_\d{6}_\d{9}_[0-9a-f]{12}",
-        seen_in: "reasonix/fixtures/subagent-hermetic",
-        renamed: &[(
-            "sa_20261019_162721_000000000_167006df8d3b",
-            "sa_20261019_162729_000000000_53910816d8e4",
-        )],
-    },
-    IdFamily {
         name: "reasonix-session-start",
         pattern: r"\d{8}-\d{6}\.\d{9}",
         seen_in: "reasonix/fixtures/tool-run-hermetic",
@@ -993,14 +984,15 @@ mod tests {
 
     #[test]
     fn a_token_one_family_starts_wins_over_another_nested_in_it() {
+        // A message id's tail holding a uuid, the earlier row.
         assert!(same_up_to_ids(
             &[(
                 "h.jsonl",
-                r#"{"subagentId":"sa_20261019_162721_000000000_167006df8d3b"}"#
+                r#"{"id":"msg_Q-01234567-89ab-cdef-0123-456789abcdef"}"#
             )],
             &[(
                 "h.jsonl",
-                r#"{"subagentId":"sa_20261020_101010_000000000_aaaaaaaaaaaa"}"#
+                r#"{"id":"msg_Z-fedcba98-7654-3210-fedc-ba9876543210"}"#
             )]
         ));
     }
