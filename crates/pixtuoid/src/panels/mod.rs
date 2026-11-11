@@ -1865,7 +1865,7 @@ mod dispatch_tests {
 pub(crate) struct NotedOffice {
     pub(crate) got: Vec<PointerEvent>,
     pub(crate) click: Option<pixtuoid_scene::hit::HitAction>,
-    pub(crate) pets: Vec<pixtuoid_scene::pet::PetKind>,
+    pub(crate) petted: Vec<pixtuoid_scene::pet::PetKind>,
 }
 
 #[cfg(test)]
@@ -1884,7 +1884,7 @@ impl Office for NotedOffice {
     }
 
     fn pet(&mut self, kind: pixtuoid_scene::pet::PetKind) {
-        self.pets.push(kind);
+        self.petted.push(kind);
     }
 }
 
@@ -1952,7 +1952,7 @@ mod mouse_tests {
         panic!("opened {url}");
     }
 
-    /// What one pointer event carried out beyond the office.
+    /// What one pointer event carried out: the agents focused, the pages opened and the pets petted.
     #[derive(Debug, Default, PartialEq)]
     struct Carried {
         focused: Vec<AgentId>,
@@ -1968,7 +1968,7 @@ mod mouse_tests {
         scene: Option<&SceneState>,
         event: PointerEvent,
     ) -> (ModalMouse, Carried) {
-        let pets_before = office.pets.len();
+        let petted_before = office.petted.len();
         let modal = mouse_ladder(
             ui,
             0.0,
@@ -1985,7 +1985,7 @@ mod mouse_tests {
         let carried = Carried {
             focused: noted::take_focused(),
             opened: noted::take_opened(),
-            petted: office.pets[pets_before..].to_vec(),
+            petted: office.petted[petted_before..].to_vec(),
         };
         (modal, carried)
     }
