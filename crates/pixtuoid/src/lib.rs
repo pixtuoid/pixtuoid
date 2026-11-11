@@ -200,8 +200,8 @@ pub(crate) fn within(
     work: impl FnOnce() + Send + 'static,
 ) -> bool {
     let (done, finished) = std::sync::mpsc::channel();
-    // `Builder::spawn`, so running out of threads is an `Err`, not a panic: a
-    // caller can run during an unwind, where a second panic aborts.
+    // `Builder::spawn`: running out of threads is then an `Err` the caller
+    // answers (`report_fatal` writes inline), where `thread::spawn` panics.
     let started = std::thread::Builder::new()
         .name(name.into())
         .spawn(move || {

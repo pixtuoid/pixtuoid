@@ -506,10 +506,10 @@ pub(crate) fn output_within(
         || Ok(std::sync::Arc::new(std::sync::Mutex::new(command.spawn()?))),
         |child| {
             #[cfg(unix)]
-            let kill = locked(child).id();
+            let handle = locked(child).id();
             #[cfg(windows)]
-            let kill = std::sync::Arc::clone(child);
-            Some(kill)
+            let handle = std::sync::Arc::clone(child);
+            Some(handle)
         },
     )?;
     let (stdout, stderr) = {
@@ -559,27 +559,27 @@ fn locked(child: &Shared) -> std::sync::MutexGuard<'_, Box<dyn process_wrap::std
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// What [`kill_running`] kills of a running CLI: its process group, which it
+/// How [`kill_running`] reaches a running CLI: its process group, which it
 /// leads, and which a terminal's Ctrl-C never reaches, since INTR signals the
 /// foreground group only (POSIX Base Definitions 11.1.9).
 #[cfg(unix)]
-pub(crate) type Kill = u32;
+pub(crate) type KillHandle = u32;
 
-/// What [`kill_running`] kills of a running CLI: its child, whose kill
+/// How [`kill_running`] reaches a running CLI: its child, whose kill
 /// terminates its Job Object.
 #[cfg(windows)]
-pub(crate) type Kill = Shared;
+pub(crate) type KillHandle = Shared;
 
 /// The CLIs this process runs.
 struct Running {
-    kills: Vec<Kill>,
+    handles: Vec<KillHandle>,
     /// Set by [`kill_running`]: the process is ending, and a CLI started past
     /// it would outlive it.
     closed: bool,
 }
 
 static RUNNING: std::sync::Mutex<Running> = std::sync::Mutex::new(Running {
-    kills: Vec::new(),
+    handles: Vec::new(),
     closed: false,
 });
 
@@ -589,13 +589,12 @@ fn running() -> std::sync::MutexGuard<'static, Running> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// The CLI `spawn` starts, with what `kill` takes of it listed in [`RUNNING`]
-/// for as long as the guard lives; refused once [`kill_running`] has closed
-/// the list. Spawned under its lock, so no CLI starts between the kill and the
-/// close.
+/// The CLI `spawn` starts, with its `handle` listed in [`RUNNING`] for as long
+/// as the guard lives; refused once [`kill_running`] has closed the list.
+/// Spawned under its lock, so no CLI starts between the kill and the close.
 pub(crate) fn spawn_listed<C>(
     spawn: impl FnOnce() -> std::io::Result<C>,
-    kill: impl FnOnce(&C) -> Option<Kill>,
+    handle: impl FnOnce(&C) -> Option<KillHandle>,
 ) -> std::io::Result<(C, Listed)> {
     #[cfg(unix)]
     kill_running_on_quit();
@@ -604,22 +603,22 @@ pub(crate) fn spawn_listed<C>(
         return Err(std::io::Error::other("pixtuoid is quitting"));
     }
     let child = spawn()?;
-    let kill = kill(&child);
-    running.kills.extend(kill.iter().cloned());
-    Ok((child, Listed(kill)))
+    let handle = handle(&child);
+    running.handles.extend(handle.iter().cloned());
+    Ok((child, Listed(handle)))
 }
 
 /// A CLI's place in [`RUNNING`].
-pub(crate) struct Listed(Option<Kill>);
+pub(crate) struct Listed(Option<KillHandle>);
 
 impl Drop for Listed {
     fn drop(&mut self) {
         if let Some(listed) = &self.0 {
             #[cfg(unix)]
-            running().kills.retain(|group| group != listed);
+            running().handles.retain(|group| group != listed);
             #[cfg(windows)]
             running()
-                .kills
+                .handles
                 .retain(|child| !std::sync::Arc::ptr_eq(child, listed));
         }
     }
@@ -632,14 +631,14 @@ pub(crate) fn kill_running() {
     running.closed = true;
     #[cfg(unix)]
     for group in running
-        .kills
+        .handles
         .iter()
         .filter_map(|&group| rustix::process::Pid::from_raw(i32::try_from(group).ok()?))
     {
         let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
     }
     #[cfg(windows)]
-    for child in &running.kills {
+    for child in &running.handles {
         let _ = locked(child).start_kill();
     }
 }
@@ -1471,7 +1470,11 @@ mod tests {
         let none: [&std::ffi::OsStr; 0] = [];
         let out = with_fake("echo done", "echo done", || FAKE.run_within(&none, LIMIT)).unwrap();
         assert!(out.contains("done"), "{out}");
-        assert_eq!(running().kills.len(), 0, "the finished run is still listed");
+        assert_eq!(
+            running().handles.len(),
+            0,
+            "the finished run is still listed"
+        );
     }
 
     /// A quit's kill closes the way to new CLIs: one asked to run past it never
