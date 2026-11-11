@@ -176,8 +176,9 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Each source file under [`SCANNED`] outside its crate's tests and
-/// `harness`, with the characters its literals write.
+/// Each source file under [`SCANNED`], less [`NEVER_PAINTED`] and
+/// [`PALETTE_KEYS`], outside its crate's tests and `harness`, with the
+/// characters its literals write.
 fn written() -> Vec<(PathBuf, Vec<char>)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();

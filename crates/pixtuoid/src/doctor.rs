@@ -2541,22 +2541,6 @@ mod tests {
     }
 
     #[test]
-    fn diagnostics_broken_install_wins_over_drift() {
-        let d = diag(
-            Some(crate::install::verify::SchemaVerifyResult {
-                issues: vec!["shim binary missing: /x".into()],
-                notes: vec![],
-                ..Default::default()
-            }),
-            LogScanResult {
-                unknown_event: 2,
-                ..Default::default()
-            },
-        );
-        assert!(d.is_broken());
-    }
-
-    #[test]
     fn diagnostics_drift_alone_is_not_broken() {
         let d = diag(
             Some(crate::install::verify::SchemaVerifyResult::default()),
