@@ -45,6 +45,18 @@ impl Stored {
     fn outstanding(&self, code: &Hashed, now: SystemTime) -> bool {
         (self.code.as_ref()).is_some_and(|pending| pending.hash == *code && now < pending.expires)
     }
+
+    /// Pair the device holding `token` if `code` is still outstanding, spending
+    /// it: under the lock, since two hellos with one code can both pass
+    /// [`Store::redeem`]'s unlocked read.
+    fn spend(&mut self, code: &Hashed, now: SystemTime, token: String) -> Option<String> {
+        if !self.outstanding(code, now) {
+            return None;
+        }
+        self.code = None;
+        self.devices.push(Hashed::of(&token));
+        Some(token)
+    }
 }
 
 /// A code's or a token's hash, as a paired device is known. Compared in the open:
@@ -154,14 +166,7 @@ impl Store {
             return Ok(None);
         }
         let token = secret()?;
-        self.update(|stored| {
-            if !stored.outstanding(&presented, now) {
-                return Ok(None);
-            }
-            stored.code = None;
-            stored.devices.push(Hashed::of(&token));
-            Ok(Some(token))
-        })
+        self.update(|stored| Ok(stored.spend(&presented, now, token)))
     }
 
     pub(super) fn knows(&self, device: &Hashed) -> Result<bool> {
@@ -269,6 +274,21 @@ mod tests {
         assert_eq!(store.redeem(&code, expires).expect("it redeems"), None);
         let in_time = expires - Duration::from_millis(1);
         assert!(store.redeem(&code, in_time).expect("it redeems").is_some());
+    }
+
+    /// The second of two hellos that both passed the unlocked read pairs no
+    /// device.
+    #[test]
+    fn a_code_spent_since_the_unlocked_read_pairs_nobody() {
+        let (_dir, store) = fixture();
+        let code = Hashed::of(&store.issue_code(now()).expect("a code").code);
+        let mut stored = store.read().expect("it reads");
+        assert_eq!(
+            stored.spend(&code, now(), "first".into()).as_deref(),
+            Some("first")
+        );
+        assert_eq!(stored.spend(&code, now(), "second".into()), None);
+        assert_eq!(stored.devices, [Hashed::of("first")]);
     }
 
     #[test]
