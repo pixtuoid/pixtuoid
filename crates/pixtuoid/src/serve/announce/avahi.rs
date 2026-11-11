@@ -4,7 +4,8 @@
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use pixtuoid_core::remote::SERVICE_TYPE;
-use zbus::{Connection, OwnedObjectPath};
+use server::ServerProxy;
+use zbus::Connection;
 
 /// Avahi's bus name (avahi-common/dbus.h), which the proxies below spell again:
 /// a macro attribute takes only a literal.
@@ -41,14 +42,49 @@ fn step(state: i32) -> Step {
     }
 }
 
-#[zbus::proxy(
-    interface = "org.freedesktop.Avahi.Server",
-    default_service = "org.freedesktop.Avahi",
-    default_path = "/"
-)]
-trait Server {
-    fn entry_group_new(&self) -> zbus::Result<OwnedObjectPath>;
-    fn get_alternative_service_name(&self, name: &str) -> zbus::Result<String>;
+/// `AvahiServerState` (avahi-common/defs.h), numbered from 0.
+const SERVER_REGISTERING: i32 = 1;
+const SERVER_RUNNING: i32 = 2;
+const SERVER_COLLISION: i32 = 3;
+
+/// What the server's state asks of a group that holds the service or not: the
+/// SRV names the host as it was at `AddService` (avahi-core/entry.c), so
+/// avahi-common/defs.h has a client register only while the server is RUNNING
+/// and remove its services on COLLISION or REGISTERING.
+#[derive(Debug, PartialEq, Eq)]
+enum ServerStep {
+    Publish,
+    Withdraw,
+    Wait,
+}
+
+fn server_step(state: i32, published: bool) -> ServerStep {
+    match (state, published) {
+        (SERVER_RUNNING, false) => ServerStep::Publish,
+        (SERVER_REGISTERING | SERVER_COLLISION, true) => ServerStep::Withdraw,
+        // avahi-daemon never signals INVALID or FAILURE (avahi-daemon/main.c's
+        // `server_callback`), and FAILURE quits it, which the owner watch ends.
+        _ => ServerStep::Wait,
+    }
+}
+
+/// A module of its own: zbus names a signal's types after the signal, and the
+/// entry group's is a `StateChanged` too.
+mod server {
+    use zbus::OwnedObjectPath;
+
+    #[zbus::proxy(
+        interface = "org.freedesktop.Avahi.Server",
+        default_service = "org.freedesktop.Avahi",
+        default_path = "/"
+    )]
+    pub(super) trait Server {
+        fn entry_group_new(&self) -> zbus::Result<OwnedObjectPath>;
+        fn get_alternative_service_name(&self, name: &str) -> zbus::Result<String>;
+        fn get_state(&self) -> zbus::Result<i32>;
+        #[zbus(signal)]
+        fn state_changed(&self, state: i32, error: String) -> zbus::Result<()>;
+    }
 }
 
 #[zbus::proxy(
@@ -78,10 +114,11 @@ trait EntryGroup {
     fn state_changed(&self, state: i32, error: String) -> zbus::Result<()>;
 }
 
-/// Announce `instance` on `port`, with the pin `spki`, until Avahi lets the service
-/// go or leaves the bus, which frees a client's groups with it. A taken name is
-/// renamed as avahi-common/defs.h asks: "add your services back to the entry
-/// group (but with new names …) and commit again".
+/// Announce `instance` on `port`, with the pin `spki`, whenever Avahi's host
+/// name is established, until Avahi lets the service go or leaves the bus,
+/// which frees a client's groups with it. A taken name is renamed as
+/// avahi-common/defs.h asks: "add your services back to the entry group (but
+/// with new names …) and commit again".
 pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()> {
     let connection = Connection::system()
         .await
@@ -91,6 +128,8 @@ pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()
         .receive_name_owner_changed_with_args(&[(0, AVAHI)])
         .await?;
     let server = ServerProxy::new(&connection).await?;
+    // Subscribed before `get_state` below, so no change falls between them.
+    let mut server_states = server.receive_state_changed().await?;
     let path = server
         .entry_group_new()
         .await
@@ -102,9 +141,27 @@ pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()
     let mut states = group.receive_state_changed().await?;
     let txt = vec![super::txt(spki).into_bytes()];
     let mut name = instance.to_owned();
-    add(&server, &group, &mut name, port, &txt).await?;
+    let mut server_state = server.get_state().await?;
+    let mut published = false;
     loop {
+        match server_step(server_state, published) {
+            ServerStep::Publish => {
+                add(&server, &group, &mut name, port, &txt).await?;
+                published = true;
+            }
+            ServerStep::Withdraw => {
+                group.reset().await?;
+                published = false;
+            }
+            ServerStep::Wait => {}
+        }
         tokio::select! {
+            change = server_states.next() => {
+                let Some(change) = change else { return Ok(()) };
+                if let Ok(change) = change.args() {
+                    server_state = change.state;
+                }
+            }
             change = states.next() => {
                 let Some(change) = change else { return Ok(()) };
                 let Ok(change) = change.args() else { continue };
@@ -113,7 +170,7 @@ pub(super) async fn announce(instance: &str, port: u16, spki: &str) -> Result<()
                     Step::Rename => {
                         name = server.get_alternative_service_name(&name).await?;
                         group.reset().await?;
-                        add(&server, &group, &mut name, port, &txt).await?;
+                        published = false;
                     }
                     Step::Dropped => {
                         tracing::debug!(error = ?change.error, "Avahi dropped the service");
@@ -170,6 +227,23 @@ async fn add(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each `AvahiServerState` by its defs.h number, `INVALID` first, against
+    /// a group without the service and one holding it.
+    #[test]
+    fn each_server_state_is_its_step() {
+        let steps = [
+            (ServerStep::Wait, ServerStep::Wait),
+            (ServerStep::Wait, ServerStep::Withdraw),
+            (ServerStep::Publish, ServerStep::Wait),
+            (ServerStep::Wait, ServerStep::Withdraw),
+            (ServerStep::Wait, ServerStep::Wait),
+        ];
+        for (state, (empty, holding)) in (0..).zip(steps) {
+            assert_eq!(server_step(state, false), empty, "state {state}, empty");
+            assert_eq!(server_step(state, true), holding, "state {state}, holding");
+        }
+    }
 
     /// Each `AvahiEntryGroupState` by its defs.h number, `UNCOMMITED` first.
     #[test]
