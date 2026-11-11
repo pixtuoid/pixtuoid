@@ -85,7 +85,7 @@ keeps becomes a FOLLOW-UP PR.
 | Thought | Reality |
 |---------|---------|
 | "CI is green, that's enough" | CI can't see design, blast radius, drift, or a deliberate-looking real bug. |
-| "The bots will render it" | A bot reads the diff and the base tree; a must-run item is yours. |
+| "The bots will render it" | The CI review only reads; a must-run item is yours. |
 | "I'll note the finding and move on" | Every finding needs a terminal state. |
 | "The diff looks clean, we're done" (audit) | Drift, debt accretion and erosion accumulate between PRs; only the audit sees them. |
 | "The finder found it, report it" (audit) | A separate skeptic tries to REFUTE each survivor first. |
