@@ -2587,8 +2587,6 @@ for (const { width, rootPx } of [
   }) => {
     // Every chip, each waiting out the typed reveal.
     test.setTimeout(90_000);
-    // Raw mouse.move, NOT page.hover(): the page's html { scroll-behavior: smooth } lets hover()'s actionability pass
-    // queue a smooth CDP scroll that slides the page out from under the pointer.
     await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
     const rect = (sel: string) =>
       page.evaluate((s) => {
@@ -2617,6 +2615,8 @@ for (const { width, rootPx } of [
     for (let i = 0; i < supportedSources.length; i++) {
       const chip = chips.nth(i);
       const chipRest = (await chip.boundingBox())!;
+      // Raw mouse.move, NOT page.hover(): the page's html { scroll-behavior: smooth } lets hover()'s actionability pass
+      // queue a smooth CDP scroll that slides the page out from under the pointer.
       await page.mouse.move(chipRest.x + chipRest.width / 2, chipRest.y + chipRest.height / 2);
       await settle();
       const at = `${width}px, root ${rootPx}px, chip ${i}`;
