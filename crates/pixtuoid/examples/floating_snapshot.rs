@@ -28,7 +28,6 @@ use pixtuoid_scene::theme::theme_by_name;
 /// The two `cc` labels are a DELIBERATE collision, so the snapshot exercises the
 /// `·xxxx` suffix as well as every label tone.
 fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
-    let cap = scene.floor_capacities()[0];
     let archetypes: [(&str, ActivityState); 6] = [
         (
             "claude-code",
@@ -92,7 +91,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
                 arrived_at: Some(seated_since),
                 last_event_at: recent,
                 exiting_at: None,
-                desk: Some(FloorDesk::new(i / cap, i % cap)),
+                desk: Some(FloorDesk::new(0, i)),
                 tool_call_count: 0,
                 running_ms: 0,
                 unknown_cwd: false,
@@ -221,8 +220,18 @@ fn main() -> Result<()> {
     let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack()?);
     let now = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
 
-    let mut scene = SceneState::uniform(64);
+    let (win_w, win_h) = (u32::from(size.0), u32::from(size.1));
+    let at = window_geometry(
+        winit::dpi::PhysicalSize::new(win_w, win_h),
+        pack.max_density_variant(),
+        zoom,
+    );
+    let office = at.logical();
+    let desks = pixtuoid::dev::floor_caps_for_buffer(office.w, office.h);
+    let mut scene = SceneState::new(desks);
     populate_demo_agents(&mut scene, now, n_agents);
+    // As the app takes a layout: an agent it has no desk for moves to a free one.
+    scene.set_capacities(desks, now);
     let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
     renderer.set_pets(
         pet.map(|kind| pixtuoid_scene::pet::Pet {
@@ -231,12 +240,6 @@ fn main() -> Result<()> {
         })
         .into_iter()
         .collect(),
-    );
-    let (win_w, win_h) = (u32::from(size.0), u32::from(size.1));
-    let at = window_geometry(
-        winit::dpi::PhysicalSize::new(win_w, win_h),
-        pack.max_density_variant(),
-        zoom,
     );
     // Shown as the window shows a frame, so a press finds what it shows.
     let render = |renderer: &mut OfficeRenderer, now| {
