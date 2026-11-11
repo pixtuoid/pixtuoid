@@ -81,7 +81,7 @@ fn reconnect(hosts: &[&Target], facts: &Facts<'_>) -> Option<String> {
         })
         .map(|t| t.display_name())
         .collect();
-    let key = crate::panels::SOURCES_KEY;
+    let key = crate::panels::keys::SOURCES;
     let ask = match names.as_slice() {
         [] => return None,
         [_] => format!("reconnect it in Sources ({key}) if you use it"),

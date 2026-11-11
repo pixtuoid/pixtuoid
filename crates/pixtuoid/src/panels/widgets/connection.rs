@@ -9,6 +9,7 @@ use super::{Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_s
 use crate::panels::connection::{
     ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, no_action_hint,
 };
+use crate::panels::keys;
 use pixtuoid_scene::theme::Theme;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -102,13 +103,18 @@ pub(crate) fn paint_connection_panel(
             dim,
         )),
         Line::from(Span::styled(
-            "  j/k move \u{00b7} t toggle \u{00b7} s/esc close",
+            format!(
+                "  j/k move \u{00b7} {} toggle \u{00b7} {}/esc close",
+                keys::SOURCE_TOGGLE,
+                keys::SOURCES
+            ),
             dim,
         )),
     ];
+    let title = format!("Sources \u{2014} {}/esc close", keys::SOURCES);
 
     Panel {
-        title: Some("Sources \u{2014} s/esc close"),
+        title: Some(&title),
         content_w: CONNECTION_POPUP_W,
         above,
         list,

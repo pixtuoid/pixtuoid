@@ -480,15 +480,32 @@ fn surface_onboarding_notices(
 pub(crate) fn is_quit_chord(code: KeyCode, mods: KeyModifiers) -> bool {
     matches!(
         (code, mods),
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL)
+        (keys::QUIT, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL)
     )
 }
 
-/// The key that opens and closes the Sources panel.
-pub(crate) const SOURCES_KEY: char = 's';
+/// The one key of each command the footer, the help or the Sources panel
+/// names: [`dispatch_key`] matches it and they write it from here, so a rebind
+/// leaves none of them naming a dead key. The panels' moves (arrows, `j`/`k`,
+/// `h`/`l`), Enter, Esc and Ctrl+C are conventions every panel shares.
+pub(crate) mod keys {
+    use crossterm::event::KeyCode;
 
-/// The key that opens the appearance picker.
-pub(crate) const APPEARANCE_KEY: char = 't';
+    pub(crate) const QUIT: KeyCode = KeyCode::Char('q');
+    pub(crate) const PAUSE: KeyCode = KeyCode::Char('p');
+    pub(crate) const MUTE: KeyCode = KeyCode::Char('m');
+    /// Opens the appearance picker.
+    pub(crate) const APPEARANCE: KeyCode = KeyCode::Char('t');
+    pub(crate) const HELP: KeyCode = KeyCode::Char('?');
+    /// Opens the version popup.
+    pub(crate) const VERSION: KeyCode = KeyCode::Char('v');
+    pub(crate) const DASHBOARD: KeyCode = KeyCode::Tab;
+    /// The dashboard's: focuses the selected agent's terminal.
+    pub(crate) const DASHBOARD_FOCUS: KeyCode = KeyCode::Char('f');
+    pub(crate) const SOURCES: KeyCode = KeyCode::Char('s');
+    /// The Sources panel's: connects or disconnects the selected source.
+    pub(crate) const SOURCE_TOGGLE: KeyCode = KeyCode::Char('t');
+}
 
 /// The look after `look` in [`LookKind::ALL`](pixtuoid_scene::look::LookKind::ALL),
 /// or before it, round the ends: the picker's row cycles.
@@ -557,9 +574,7 @@ pub(crate) fn dispatch_key(
     }
     if modal.help_open {
         return match (code, mods) {
-            (KeyCode::Enter, _) | (KeyCode::Esc, _) | (KeyCode::Char('?'), _) => {
-                KeyAction::CloseHelp
-            }
+            (KeyCode::Enter, _) | (KeyCode::Esc, _) | (keys::HELP, _) => KeyAction::CloseHelp,
             _ if is_quit_chord(code, mods) => KeyAction::Quit,
             _ => KeyAction::None,
         };
@@ -582,19 +597,19 @@ pub(crate) fn dispatch_key(
         }
         return match (code, mods) {
             _ if is_quit_chord(code, mods) => KeyAction::Quit,
-            (KeyCode::Esc, _) | (KeyCode::Char(SOURCES_KEY), _) => KeyAction::ConnectionClose,
+            (KeyCode::Esc, _) | (keys::SOURCES, _) => KeyAction::ConnectionClose,
             (KeyCode::Up, _) | (KeyCode::Char('k'), _) => KeyAction::ConnectionUp,
             (KeyCode::Down, _) | (KeyCode::Char('j'), _) => KeyAction::ConnectionDown,
-            (KeyCode::Char('t'), _) => KeyAction::ConnectionToggle,
+            (keys::SOURCE_TOGGLE, _) => KeyAction::ConnectionToggle,
             _ => KeyAction::None,
         };
     }
     if modal.dashboard_open {
         return match (code, mods) {
             _ if is_quit_chord(code, mods) => KeyAction::Quit,
-            (KeyCode::Esc, _) | (KeyCode::Tab, _) => KeyAction::DashboardClose,
+            (KeyCode::Esc, _) | (keys::DASHBOARD, _) => KeyAction::DashboardClose,
             (KeyCode::Enter, _) => KeyAction::DashboardJump,
-            (KeyCode::Char('f'), _) => KeyAction::DashboardFocus,
+            (keys::DASHBOARD_FOCUS, _) => KeyAction::DashboardFocus,
             (KeyCode::Up, _) | (KeyCode::Char('k'), _) => KeyAction::DashboardUp,
             (KeyCode::Down, _) | (KeyCode::Char('j'), _) => KeyAction::DashboardDown,
             (KeyCode::Left, _) | (KeyCode::Char('h'), _) => KeyAction::DashboardFoldLeft,
@@ -628,15 +643,15 @@ pub(crate) fn dispatch_key(
         return KeyAction::Quit;
     }
     match code {
-        KeyCode::Char('p') => KeyAction::TogglePause,
-        KeyCode::Char('m') => KeyAction::ToggleAudioMute,
+        keys::PAUSE => KeyAction::TogglePause,
+        keys::MUTE => KeyAction::ToggleAudioMute,
         KeyCode::Char('+') | KeyCode::Char('=') => KeyAction::AdjustVolume(true),
         KeyCode::Char('-') | KeyCode::Char('_') => KeyAction::AdjustVolume(false),
-        KeyCode::Char(APPEARANCE_KEY) => KeyAction::OpenAppearance,
-        KeyCode::Char('?') => KeyAction::ToggleHelp,
-        KeyCode::Char('v') => KeyAction::OpenVersionPopup,
-        KeyCode::Tab => KeyAction::ToggleDashboard,
-        KeyCode::Char(SOURCES_KEY) => KeyAction::ToggleConnection,
+        keys::APPEARANCE => KeyAction::OpenAppearance,
+        keys::HELP => KeyAction::ToggleHelp,
+        keys::VERSION => KeyAction::OpenVersionPopup,
+        keys::DASHBOARD => KeyAction::ToggleDashboard,
+        keys::SOURCES => KeyAction::ToggleConnection,
         KeyCode::PageUp | KeyCode::Up | KeyCode::Char('k') => {
             if floor.current_floor + 1 < floor.n_floors && !floor.in_transition {
                 KeyAction::NavigateFloor(floor.current_floor + 1)
