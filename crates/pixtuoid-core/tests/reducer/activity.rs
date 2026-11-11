@@ -1944,6 +1944,34 @@ fn the_end_of_a_turn_whose_start_went_unseen_ends_what_the_turn_left() {
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
+/// A request that names no turn takes the one open when it was raised, so it
+/// ends with that turn: by its own key, or by the turn that supersedes it.
+#[test]
+fn a_turnless_request_ends_with_the_turn_it_was_raised_in() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let id = AgentId::from_parts("opencode", "ses_p");
+    for close in [keyed_turn_end(id, "t1"), turn_start(id, "t2")] {
+        let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+        start_as(&mut r, &mut scene, id, "opencode");
+        apply(
+            &mut r,
+            &mut scene,
+            turn_start(id, "t1"),
+            t0,
+            Transport::Hook,
+        );
+        user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+        apply(&mut r, &mut scene, close.clone(), t0, Transport::Hook);
+        assert!(
+            !matches!(
+                scene.agents[&id].state,
+                ActivityState::RequiresAction { .. }
+            ),
+            "{close:?}"
+        );
+    }
+}
+
 #[test]
 fn a_codex_request_binds_its_tools_pending_call_and_resolves_on_its_output() {
     let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
