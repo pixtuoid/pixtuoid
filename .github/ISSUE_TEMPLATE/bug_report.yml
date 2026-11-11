@@ -66,14 +66,11 @@ body:
         - Not applicable
     validations:
       required: true
-  - type: dropdown
+  - type: input
     id: install
     attributes:
       label: How did you install it?
-      options:
-        - Pre-built binary (release)
-        - Cargo (crates.io)
-        - From source (cargo build --release)
+      placeholder: brew install pixtuoid
     validations:
       required: true
   - type: input
@@ -88,7 +85,7 @@ body:
     id: logs
     attributes:
       label: Relevant logs
-      description: Anything printed to stderr, or output from `pixtuoid run --headless`. Will be formatted as code.
+      description: Output of `pixtuoid doctor`, anything printed to stderr, and the lines around the bug from the log `pixtuoid doctor` names (by default a directory, one file per run). Redact any path or name you'd rather not post. Will be formatted as code.
       render: shell
     validations:
       required: false

@@ -81,7 +81,7 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 ```
 
 - clippy doesn't warm test's build ([why](docs/CONTRIBUTING.md#build--test)) — iterate with one of them. Never pipe preflight through `tail`/`head` (exit code eaten).
-- Touched `--json` / `SourceStatus` / `OutcomeRow` / the source roster → `just gen-contract` (regenerates schemas + Raycast types).
+- Touched `--json` / `SourceStatus` / `OutcomeRow` → `just gen-contract` (regenerates schemas + Raycast types).
 - Look-changing PR → `just gen`, commit everything it rewrote. Media is not a PR's: the site's demos render in CI, the README's `docs/images` in `media-regen.yml` from main.
 - Real wire bytes ride ONE pipeline, `pixtuoid_core::harness::Drive` — rules in [`tests/AGENTS.md`](crates/pixtuoid-core/tests/AGENTS.md#the-one-pipeline).
 - Fixtures are RECORDED, never composed (`just hermetic --record` for a scenario a profile records, else `just capture-fixture` — BILLED), and the recorder blanks every subtree no decoder reads (derived by probe, never listed); every scenario declares `provenance.json`. Rules: [`tests/sources/README.md`](crates/pixtuoid-core/tests/sources/README.md). `just restrip-fixtures` re-strips the committed corpus offline; `just corpus-all` censuses local corpora.
