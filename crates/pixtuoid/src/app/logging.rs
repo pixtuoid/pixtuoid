@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::doctor::DriftSeen;
 use crate::run_log::LogLocation;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
@@ -93,23 +93,48 @@ fn queued(writer: impl Write + Send + 'static) -> (NonBlocking, LogFlush) {
 }
 
 /// The queue's guard, whose drop flushes what is queued, so it outlives every
-/// runtime. Its own drop runs [within](crate::within) its bound: with the
-/// queue full it `println!`s (tracing-appender 0.2.5,
-/// `src/non_blocking.rs:296`), which waits for good on a stalled stdout, and a
-/// quit must still end.
+/// runtime. Its own drop runs [within](crate::within)
+/// [`EXIT_WAIT`](crate::EXIT_WAIT): with the queue full it `println!`s
+/// (tracing-appender 0.2.5, `src/non_blocking.rs:296`), which waits for good
+/// on a stalled stdout, and a quit must still end.
 pub(crate) struct LogFlush(Option<WorkerGuard>);
 
 impl Drop for LogFlush {
     fn drop(&mut self) {
-        /// `WorkerGuard::drop`'s own two timeouts, its shutdown send and its
-        /// flush wait (`src/non_blocking.rs:286`, `:293`): past them it is
-        /// stuck in that `println!`.
-        const GUARD_TIMEOUTS: Duration =
-            Duration::from_millis(100).saturating_add(Duration::from_secs(1));
         if let Some(guard) = self.0.take() {
-            crate::within("log-flush", GUARD_TIMEOUTS, move || drop(guard));
+            crate::within("log-flush", crate::EXIT_WAIT, move || drop(guard));
         }
     }
+}
+
+/// A pipe that is full and that nobody reads, so the next write to it waits
+/// for good: the stalled reader a quit's write must not wait on. The reader is
+/// returned for the caller to hold open. Mechanism for the stalled-sink tests,
+/// not a contract.
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn full_pipe() -> std::io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
+    use std::os::fd::AsRawFd as _;
+    let (reader, mut writer) = std::io::pipe()?;
+    let fd = writer.as_raw_fd();
+    let blocking = |on: bool| {
+        // SAFETY: fcntl on the pipe this fn just made.
+        unsafe {
+            let flags = libc::fcntl(fd, libc::F_GETFL);
+            let flags = if on {
+                flags & !libc::O_NONBLOCK
+            } else {
+                flags | libc::O_NONBLOCK
+            };
+            libc::fcntl(fd, libc::F_SETFL, flags);
+        }
+    };
+    blocking(false);
+    // Byte by byte at the end, so not even a short line fits.
+    while writer.write(&[0; 4096]).is_ok() {}
+    while writer.write(&[0]).is_ok() {}
+    blocking(true);
+    Ok((reader, writer))
 }
 
 /// The formatting layer, its field values escaped by [`EscapedFields`] and its
@@ -405,29 +430,11 @@ mod tests {
     impl StalledStdout {
         fn install() -> Self {
             use std::os::fd::{AsRawFd as _, FromRawFd as _};
-            let (reader, mut writer) = std::io::pipe().expect("a pipe");
-            let fd = writer.as_raw_fd();
-            let blocking = |on: bool| {
-                // SAFETY: fcntl on the pipe this test just made.
-                unsafe {
-                    let flags = libc::fcntl(fd, libc::F_GETFL);
-                    let flags = if on {
-                        flags & !libc::O_NONBLOCK
-                    } else {
-                        flags | libc::O_NONBLOCK
-                    };
-                    libc::fcntl(fd, libc::F_SETFL, flags);
-                }
-            };
-            blocking(false);
-            // Byte by byte at the end, so not even a short line fits.
-            while writer.write(&[0; 4096]).is_ok() {}
-            while writer.write(&[0]).is_ok() {}
-            blocking(true);
+            let (reader, writer) = full_pipe().expect("a full pipe");
             // SAFETY: dup and dup2 of fds this process holds open.
             unsafe {
                 let saved = std::os::fd::OwnedFd::from_raw_fd(libc::dup(libc::STDOUT_FILENO));
-                libc::dup2(fd, libc::STDOUT_FILENO);
+                libc::dup2(writer.as_raw_fd(), libc::STDOUT_FILENO);
                 Self {
                     saved,
                     reader: Some(reader),

@@ -144,31 +144,3 @@ pub(crate) fn isolated(args: &[&str], home: &std::path::Path) -> std::process::C
     }
     cmd
 }
-
-/// A pipe that is full, so the next write to it waits for a reader that
-/// never comes; the reader is returned for the caller to hold open.
-#[cfg(unix)]
-pub(crate) fn full_pipe() -> (std::io::PipeReader, std::io::PipeWriter) {
-    use std::io::Write as _;
-    use std::os::fd::AsRawFd as _;
-    let (reader, mut writer) = std::io::pipe().expect("a pipe");
-    let fd = writer.as_raw_fd();
-    let blocking = |on: bool| {
-        // SAFETY: fcntl on the pipe this helper just made.
-        unsafe {
-            let flags = libc::fcntl(fd, libc::F_GETFL);
-            let flags = if on {
-                flags & !libc::O_NONBLOCK
-            } else {
-                flags | libc::O_NONBLOCK
-            };
-            libc::fcntl(fd, libc::F_SETFL, flags);
-        }
-    };
-    blocking(false);
-    // Byte by byte at the end, so not even a short line fits.
-    while writer.write(&[0; 4096]).is_ok() {}
-    while writer.write(&[0]).is_ok() {}
-    blocking(true);
-    (reader, writer)
-}

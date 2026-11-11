@@ -526,7 +526,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     });
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
-    let (change_tx, mut change_done) = tokio::sync::mpsc::unbounded_channel();
+    let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
 
     let mut fired = None;
     let result: Result<()> = (async {
@@ -580,8 +580,8 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                                 respawn: crate::audio::respawn,
                                 installed: crate::sources::detect,
                                 focus: crate::focus::focus_slot,
-                                change_tx: &change_tx,
-                                run_change: crate::panels::make_change,
+                                job_tx: &job_tx,
+                                run_job: crate::panels::run_job,
                             },
                         );
                         if quit {
@@ -601,7 +601,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     ),
                     _ => {}
                 },
-                Some(done) = change_done.recv() => crate::panels::finish_change(&mut ui, done),
+                Some(done) = job_done.recv() => crate::panels::finish_job(&mut ui, done),
                 signal = &mut quit => {
                     fired = Some(signal);
                     break;
@@ -1225,16 +1225,16 @@ mod apply_key_action_tests {
         installed: fn() -> Vec<&'static str>,
         _tmp: tempfile::TempDir,
         config_path: std::path::PathBuf,
-        change_tx: crate::panels::ChangeTx,
-        change_done: tokio::sync::mpsc::UnboundedReceiver<crate::panels::ChangeDone>,
-        run_change: fn(crate::panels::ChangeJob) -> crate::panels::ChangeDone,
+        job_tx: crate::panels::JobTx,
+        job_done: tokio::sync::mpsc::UnboundedReceiver<crate::panels::JobDone>,
+        run_job: fn(crate::panels::JobInput) -> crate::panels::JobDone,
     }
 
     impl Harness {
         fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let config_path = tmp.path().join("config.toml");
-            let (change_tx, change_done) = tokio::sync::mpsc::unbounded_channel();
+            let (job_tx, job_done) = tokio::sync::mpsc::unbounded_channel();
             Self {
                 ui: super::ui_state::UiState::new(
                     &theme::NORMAL,
@@ -1266,9 +1266,9 @@ mod apply_key_action_tests {
                 installed: Vec::new,
                 _tmp: tmp,
                 config_path,
-                change_tx,
-                change_done,
-                run_change: crate::panels::noted::gated_change,
+                job_tx,
+                job_done,
+                run_job: crate::panels::noted::gated_job,
             }
         }
 
@@ -1307,31 +1307,31 @@ mod apply_key_action_tests {
                     respawn: no_respawn,
                     installed: self.installed,
                     focus: crate::panels::noted::focus,
-                    change_tx: &self.change_tx,
-                    run_change: self.run_change,
+                    job_tx: &self.job_tx,
+                    run_job: self.run_job,
                 },
             )
         }
 
-        /// Take in the change that ends next, as the loop's arm does.
+        /// Take in the job that ends next, as the loop's arm does.
         fn settle(&mut self) {
-            /// Far past a change's own time on a loaded machine.
+            /// Far past a job's own time on a loaded machine.
             const LANDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
             let deadline = std::time::Instant::now() + LANDS_WITHIN;
             loop {
-                match self.change_done.try_recv() {
-                    Ok(done) => return crate::panels::finish_change(&mut self.ui, done),
+                match self.job_done.try_recv() {
+                    Ok(done) => return crate::panels::finish_job(&mut self.ui, done),
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty)
                         if std::time::Instant::now() < deadline =>
                     {
                         std::thread::sleep(std::time::Duration::from_millis(5));
                     }
-                    Err(e) => panic!("no change landed: {e}"),
+                    Err(e) => panic!("no job landed: {e}"),
                 }
             }
         }
 
-        /// Let the change [`crate::panels::noted::gated_change`] holds end, a
+        /// Let the job [`crate::panels::noted::gated_job`] holds end, a
         /// failure when `fails`.
         fn open_gate(&self, fails: bool) {
             crate::panels::noted::open_gate(&self.config_path, fails);
@@ -1398,7 +1398,7 @@ mod apply_key_action_tests {
             }],
             selected: 0,
         });
-        h.run_change = crate::panels::make_change;
+        h.run_job = crate::panels::run_job;
         h.apply(KeyAction::OnboardingConfirm);
         h.settle();
         assert!(!h.ui.onboarding_open());
@@ -1422,7 +1422,7 @@ mod apply_key_action_tests {
             || {
                 let mut h =
                     Harness::onboarding(crate::panels::welcome::WelcomeUi::from_ids(&["openclaw"]));
-                h.run_change = crate::panels::make_change;
+                h.run_job = crate::panels::run_job;
                 h.apply(KeyAction::OnboardingConfirm);
                 h.settle();
                 assert!(h.connected.is_connected("openclaw"));
@@ -1450,7 +1450,7 @@ mod apply_key_action_tests {
         let mut h = Harness::new();
         h.sources_on("codex", &[]);
         assert!(!h.apply(KeyAction::ConnectionToggle));
-        assert!(h.ui.changing.is_some(), "the change runs");
+        assert!(h.ui.running_job.is_some(), "the change runs");
         assert_eq!(h.ui.connection.last_result, None, "nothing has landed");
         let frame = h.frame();
         assert!(frame.contains("\u{2026} connecting"), "{frame}");
@@ -1469,7 +1469,7 @@ mod apply_key_action_tests {
 
         h.open_gate(false);
         h.settle();
-        assert_eq!(h.ui.changing, None);
+        assert_eq!(h.ui.running_job, None);
         assert_eq!(
             h.ui.connection.last_result,
             Some(format!("\u{2713} {} connected", name("codex")))
@@ -1512,7 +1512,7 @@ mod apply_key_action_tests {
         assert!(codex.is_some_and(|r| r.state == crate::sources::ConnState::Disconnected));
     }
 
-    /// A quit lets a running change end, a killed CLI's rollback included,
+    /// A quit lets a running job end, a killed CLI's rollback included,
     /// before the process goes.
     #[test]
     fn a_quit_waits_for_a_running_change_to_end() {
@@ -1524,11 +1524,30 @@ mod apply_key_action_tests {
             std::thread::sleep(std::time::Duration::from_millis(100));
             crate::panels::noted::open_gate(&config, false);
         });
-        crate::panels::join_changes();
+        crate::panels::join_jobs();
         assert!(
-            h.change_done.try_recv().is_ok(),
-            "the wait ended before the change"
+            h.job_done.try_recv().is_ok(),
+            "the wait ended before the job"
         );
+    }
+
+    /// A job its test never lets end stops with its harness, so a quit's wait
+    /// on the jobs, another test's in one process, never waits on it.
+    #[test]
+    fn a_held_job_ends_with_its_harness() {
+        /// Far past a job's own time on a loaded machine.
+        const ENDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+        let mut h = Harness::new();
+        h.apply(KeyAction::ToggleConnection);
+        drop(h);
+        let (done, joined) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            crate::panels::join_jobs();
+            let _ = done.send(());
+        });
+        joined
+            .recv_timeout(ENDS_WITHIN)
+            .expect("the held job outlived its harness");
     }
 
     /// The panel opens at once on rows no probe has read, and reads them off
@@ -1542,15 +1561,15 @@ mod apply_key_action_tests {
             h.ui.connection.rows.iter().all(|r| r.config_path.is_none()),
             "the placeholders read no file"
         );
-        assert_eq!(h.ui.changing, Some(crate::panels::PanelChange::Refresh));
+        assert_eq!(h.ui.running_job, Some(crate::panels::PanelJob::Refresh));
         h.apply(KeyAction::ConnectionToggle);
         assert_eq!(
             h.ui.connection.last_result.as_deref(),
-            Some("still reading the sources \u{2014} one change at a time")
+            Some("still reading the sources \u{2014} try again in a moment")
         );
         h.open_gate(false);
         h.settle();
-        assert_eq!(h.ui.changing, None);
+        assert_eq!(h.ui.running_job, None);
         assert_eq!(
             h.ui.connection.last_result, None,
             "its refusal ended with it"
@@ -1576,7 +1595,7 @@ mod apply_key_action_tests {
 
         h.apply(KeyAction::OnboardingSkip);
         assert!(!h.ui.onboarding_open(), "Esc hides the card");
-        assert!(h.ui.changing.is_some(), "and the connects go on");
+        assert!(h.ui.running_job.is_some(), "and the connects go on");
 
         h.open_gate(true);
         h.settle();

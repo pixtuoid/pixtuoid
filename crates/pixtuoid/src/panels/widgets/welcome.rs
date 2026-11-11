@@ -96,7 +96,7 @@ pub(crate) fn paint_welcome(
         Line::from(Span::styled(
             format!(
                 "  {} \u{2026} \u{00b7} esc hide",
-                crate::panels::connection::progress_word(true)
+                crate::panels::connection::SourceOp::Connect.progress_word()
             ),
             dim,
         ))

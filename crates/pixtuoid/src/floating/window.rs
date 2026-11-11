@@ -38,8 +38,8 @@ pub(crate) enum FloatingEvent {
     GpuFailed(String),
     /// A quit signal ([`QuitArms`](crate::runtime::QuitArms)): quit as the close button does.
     Quit,
-    /// A Sources change finished off the loop.
-    SourcesChanged(crate::panels::ChangeDone),
+    /// A panel job finished off the loop.
+    PanelJobDone(crate::panels::JobDone),
 }
 
 pub(crate) struct FloatingApp {
@@ -52,9 +52,9 @@ pub(crate) struct FloatingApp {
     ui: crate::panels::ui_state::UiState,
     /// The Sources panel's mutation seam, as the TUI's.
     connected: crate::runtime::ConnectedSources,
-    /// Where a Sources change sends its result, which reaches the loop as
-    /// [`FloatingEvent::SourcesChanged`].
-    change_tx: crate::panels::ChangeTx,
+    /// Where a panel job sends its result, which reaches the loop as
+    /// [`FloatingEvent::PanelJobDone`].
+    job_tx: crate::panels::JobTx,
     /// The modifier keys held, which a key is read with.
     modifiers: winit::keyboard::ModifiersState,
     /// What the frame on screen shows beside the office.
@@ -233,12 +233,12 @@ impl FloatingApp {
             look: None,
         });
         let connected = boot.connected.clone();
-        let (change_tx, mut change_done) = tokio::sync::mpsc::unbounded_channel();
+        let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
         let change_proxy = proxy.clone();
         boot.rt.spawn(async move {
-            while let Some(done) = change_done.recv().await {
+            while let Some(done) = job_done.recv().await {
                 if change_proxy
-                    .send_event(FloatingEvent::SourcesChanged(done))
+                    .send_event(FloatingEvent::PanelJobDone(done))
                     .is_err()
                 {
                     break;
@@ -252,7 +252,7 @@ impl FloatingApp {
             config_path,
             ui,
             connected,
-            change_tx,
+            job_tx,
             modifiers: winit::keyboard::ModifiersState::empty(),
             // Until `resumed` names the platform: presenting every frame is
             // safe on any.
@@ -407,8 +407,8 @@ impl FloatingApp {
                 respawn: crate::audio::respawn,
                 installed: crate::sources::detect,
                 focus: crate::focus::focus_slot,
-                change_tx: &self.change_tx,
-                run_change: crate::panels::make_change,
+                job_tx: &self.job_tx,
+                run_job: crate::panels::run_job,
             },
         )
     }
@@ -721,8 +721,8 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
                 }
             }
             FloatingEvent::Quit => event_loop.exit(),
-            FloatingEvent::SourcesChanged(done) => {
-                crate::panels::finish_change(&mut self.ui, done);
+            FloatingEvent::PanelJobDone(done) => {
+                crate::panels::finish_job(&mut self.ui, done);
                 self.request_redraw();
             }
         }

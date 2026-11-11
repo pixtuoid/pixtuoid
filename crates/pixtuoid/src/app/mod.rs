@@ -87,17 +87,12 @@ pub fn run() -> Result<()> {
     if file_log && let Err(e) = &ran {
         tracing::error!(error = ?e, "pixtuoid exited with an error");
     }
-    // A quit by key, or an error, can leave a Sources change running on its
-    // own thread, whose CLI nothing holds to its limit once this process is gone.
+    // A quit by key, or an error, can leave a panel job running on its own
+    // thread, whose CLI nothing holds to its limit once this process is gone.
     #[cfg(unix)]
     crate::install::io::kill_running();
-    {
-        /// A killed CLI's change still restores what it wrote, a config write
-        /// of milliseconds: a disk that holds it this long has stalled, and
-        /// must not hold the exit either.
-        const ROLLBACK_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
-        crate::within("changes-end", ROLLBACK_WAIT, crate::panels::join_changes);
-    }
+    // A killed CLI's change still restores what it wrote.
+    crate::within("panel-jobs-end", crate::EXIT_WAIT, crate::panels::join_jobs);
     // Before the re-raise, which ends the process with the queue unwritten.
     drop(log_flush);
     // After every Drop the run held: the unwind is done, so the signal can now

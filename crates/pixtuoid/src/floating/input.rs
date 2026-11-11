@@ -309,7 +309,7 @@ mod tests {
 
         /// Press `code`; whether it quit.
         fn press(&mut self, code: crossterm::event::KeyCode) -> bool {
-            press_key(
+            let quit = press_key(
                 (code, crossterm::event::KeyModifiers::NONE),
                 &mut crate::panels::KeyCtx {
                     ui: &mut self.ui,
@@ -326,10 +326,16 @@ mod tests {
                     respawn: no_respawn,
                     installed: Vec::new,
                     focus: |_| panic!("a window key focuses nothing"),
-                    change_tx: &tokio::sync::mpsc::unbounded_channel().0,
-                    run_change: |_| panic!("a window key here changes no source"),
+                    job_tx: &tokio::sync::mpsc::unbounded_channel().0,
+                    run_job: |_| panic!("a window key here changes no source"),
                 },
-            )
+            );
+            // The stand-in panics on its own thread, which fails no test.
+            assert!(
+                self.ui.running_job.is_none(),
+                "a window key here starts no job"
+            );
+            quit
         }
 
         fn saved_theme(&self) -> Option<String> {

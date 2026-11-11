@@ -67,8 +67,8 @@ pub struct LiveInfo {
     /// one router death would otherwise falsely mark every healthy transcript
     /// watcher dead.
     pub dead: bool,
-    /// A change of the source runs off the loop: to connected when `true`.
-    pub in_flight: Option<bool>,
+    /// The change of the source a panel job runs off the loop.
+    pub in_flight: Option<SourceOp>,
 }
 
 /// The Sources panel's per-tick render frame, `RenderFrames::connection`: one
@@ -151,18 +151,18 @@ pub(crate) fn live_for(
     }
 }
 
-/// Each row's [`live_for`], marked where `changing` changes its source.
+/// Each row's [`live_for`], marked where `job` changes its source.
 pub(crate) fn live_view(
     now: SystemTime,
     rows: &[ConnectionRow],
     scene: &SceneState,
     health: &[SourceDeath],
-    changing: Option<&super::PanelChange>,
+    job: Option<&super::PanelJob>,
 ) -> Vec<(ConnectionRow, LiveInfo)> {
     rows.iter()
         .map(|r| {
             let live = LiveInfo {
-                in_flight: changing.and_then(|c| c.on_for(r.source_id)),
+                in_flight: job.and_then(|j| j.op_for(r.source_id)),
                 ..live_for(now, r.source_id, scene, health)
             };
             (r.clone(), live)
@@ -181,23 +181,27 @@ pub(crate) fn no_action_hint(row: &ConnectionRow) -> String {
     }
 }
 
-/// WHICH operation a panel failure line reports.
+/// A source's connect or disconnect: the one a panel line reports, and the
+/// one a row shows in flight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FailedOp {
+pub enum SourceOp {
     Connect,
     Disconnect,
 }
 
-impl FailedOp {
+impl SourceOp {
     /// The operation a change to `on` is.
     pub(crate) fn of(on: bool) -> Self {
         if on { Self::Connect } else { Self::Disconnect }
     }
-}
 
-/// How the panel words a change to `on` while it runs.
-pub(crate) fn progress_word(on: bool) -> &'static str {
-    if on { "connecting" } else { "disconnecting" }
+    /// How the panel words it while it runs.
+    pub(crate) fn progress_word(self) -> &'static str {
+        match self {
+            Self::Connect => "connecting",
+            Self::Disconnect => "disconnecting",
+        }
+    }
 }
 
 /// THE Sources-panel failure line, `{display_name}: {what failed} — {reason}`.
@@ -207,10 +211,10 @@ pub(crate) fn progress_word(on: bool) -> &'static str {
 /// toggle and the onboarding apply's surfacing, which routes its failures onto
 /// this very panel — so a retry on the row reads the sentence the failure first
 /// gave.
-pub(crate) fn format_failure(op: FailedOp, display_name: &str, reason: &str) -> String {
+pub(crate) fn format_failure(op: SourceOp, display_name: &str, reason: &str) -> String {
     let what = match op {
-        FailedOp::Connect => "connect failed",
-        FailedOp::Disconnect => "disconnect failed",
+        SourceOp::Connect => "connect failed",
+        SourceOp::Disconnect => "disconnect failed",
     };
     format!("{display_name}: {what} \u{2014} {reason}")
 }

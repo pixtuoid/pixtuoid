@@ -36,6 +36,8 @@ pub(crate) mod version;
 /// reports. Not an API: it moves with them.
 #[doc(hidden)]
 pub mod dev {
+    #[cfg(unix)]
+    pub use crate::app::logging::full_pipe;
     #[cfg(target_os = "macos")]
     pub use crate::audio::promote_to_user_initiated;
     pub use crate::cli::desk_cap_parser;
@@ -46,7 +48,9 @@ pub mod dev {
     pub use crate::floating::overlays::{OverlayLayers, Overlays, footer_budget, panel_preview};
     pub use crate::pacing::{Protocol, cutaway_office, forget_frame, renderer, warm};
     pub use crate::panels::OverlayFrame;
-    pub use crate::panels::connection::{ConnectionFrame, DaemonRollup, LiveFacet, LiveInfo};
+    pub use crate::panels::connection::{
+        ConnectionFrame, DaemonRollup, LiveFacet, LiveInfo, SourceOp,
+    };
     pub use crate::panels::dashboard::{DashboardFolds, DashboardFrame, build_dashboard_rows};
     pub use crate::panels::ui_state::{
         AppearanceFrame, AppearancePick, RenderFrames, VersionPopupFrame, footer_warning,
@@ -159,38 +163,56 @@ fn fatal_error_text(e: &anyhow::Error) -> String {
     format!("Error: {}", strip_lines(&format!("{e:?}"), "\n"))
 }
 
-/// Write `e`'s [report](fatal_error_text) to stderr, [within](within) a bound:
-/// a failed run must still end with stderr into a paused pipe, where a quit
-/// signal no longer kills it once a run has armed its own (tokio never
-/// unregisters a signal handler). Not `eprintln!`, which panics when the
+/// Write `e`'s [report](fatal_error_text) to stderr, [within](within)
+/// [`EXIT_WAIT`]: a failed run must still end with stderr into a paused pipe,
+/// where a quit signal no longer kills it once a run has armed its own (tokio
+/// never unregisters a signal handler). Not `eprintln!`, which panics when the
 /// write fails (a broken pipe): a clean failure must not turn into a crash.
 /// Mechanism for `main`, not contract.
 #[doc(hidden)]
 pub fn report_fatal(e: &anyhow::Error) {
-    /// Far past one short line's write to a reader that reads: one that takes
-    /// none in that long has stopped, and the exit outranks the report.
-    const REPORT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
-    let report = fatal_error_text(e);
-    within("fatal-report", REPORT_WAIT, move || {
+    let write = |report: &str| {
         use std::io::Write as _;
         let _ = writeln!(std::io::stderr(), "{report}");
-    });
+    };
+    let report = fatal_error_text(e);
+    let bounded = report.clone();
+    if !within("fatal-report", EXIT_WAIT, move || write(&bounded)) {
+        // No thread to bound it, as when the run failed for want of one: an
+        // unbounded report beats none.
+        write(&report);
+    }
 }
 
-/// Run `work` (an exit's write or flush, which a stalled reader can hold for
-/// good) on a thread of its own named `name`, and wait for it at most
-/// `bound`: the exit goes on either way, and a thread still stuck dies with
-/// the process.
-pub(crate) fn within(name: &str, bound: std::time::Duration, work: impl FnOnce() + Send + 'static) {
+/// How long an exit gives each piece of its outside work (a log flush, the
+/// fatal report, a panel job's rollback) before it goes on without it: a
+/// stalled sink would hold it for good, and a sink that keeps up needs far
+/// less for any of them, so the exit outranks what is left.
+pub(crate) const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Run `work` on a thread of its own named `name`, and wait for it at most
+/// `bound`, since std has no timed wait: outside work (a write to a reader, a
+/// device's close) can block for good, and the caller goes on either way. A
+/// thread still stuck finishes detached, or dies with the process. Returns
+/// whether the thread started; when it did not, `work` was dropped unrun.
+pub(crate) fn within(
+    name: &str,
+    bound: std::time::Duration,
+    work: impl FnOnce() + Send + 'static,
+) -> bool {
     let (done, finished) = std::sync::mpsc::channel();
-    // A spawn that fails drops `done`, which ends the wait at once.
-    let _ = std::thread::Builder::new()
+    // `Builder::spawn`, so running out of threads is an `Err`, not a panic: a
+    // caller can run during an unwind, where a second panic aborts.
+    let started = std::thread::Builder::new()
         .name(name.into())
         .spawn(move || {
             work();
             let _ = done.send(());
-        });
+        })
+        .is_ok();
+    // A spawn that fails drops `done`, which ends the wait at once.
     let _ = finished.recv_timeout(bound);
+    started
 }
 
 /// The one URL launcher: `open::that` blocks on Linux until the

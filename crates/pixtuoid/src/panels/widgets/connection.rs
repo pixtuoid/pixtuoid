@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use super::{Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_span, to_color};
 
 use crate::panels::connection::{
-    ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, no_action_hint, progress_word,
+    ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, no_action_hint,
 };
 use crate::panels::keys;
 use pixtuoid_scene::theme::Theme;
@@ -80,8 +80,8 @@ pub(crate) fn paint_connection_panel(
     } else if let Some(res) = result {
         res.clone()
     } else if let Some((row, live)) = rows.get(selected) {
-        if let Some(on) = live.in_flight {
-            format!("{} \u{2026}", progress_word(on))
+        if let Some(op) = live.in_flight {
+            format!("{} \u{2026}", op.progress_word())
         } else if let Some(h) = &row.health {
             h.clone()
         } else {
@@ -159,7 +159,7 @@ fn connection_line(
     };
 
     let (c_glyph, c_text, c_color) = match (live.in_flight, row.state) {
-        (Some(on), _) => ('\u{2026}', progress_word(on), theme.ui.label_warn),
+        (Some(op), _) => ('\u{2026}', op.progress_word(), theme.ui.label_warn),
         (None, ConnState::Connected) => ('\u{25cf}', "connected", theme.ui.label_ok),
         (None, ConnState::Disconnected) => ('\u{25cb}', "disconnected", theme.ui.label_idle),
         (None, ConnState::NoCli { .. }) => ('\u{2014}', "no CLI", theme.ui.label_idle),
