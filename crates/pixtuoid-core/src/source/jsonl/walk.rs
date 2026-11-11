@@ -120,16 +120,16 @@ pub(super) async fn tail_life(
     window_life(&read_tail(path, bytes).await?, path, source, decoders)
 }
 
-/// A transcript's session id, by its row's deriver: hook slots carry the bare
-/// session UUID and nothing heals a slot's session_id, so a raw file-stem
-/// disagrees with the hook-created twin forever.
-fn id_for(decoders: SourceDecoders) -> impl Fn(&Path) -> String {
+/// The row's session-id deriver: hook slots carry the bare session UUID and
+/// nothing heals a slot's session_id, so a raw file-stem disagrees with the
+/// hook-created twin forever.
+fn id_deriver(decoders: SourceDecoders) -> impl Fn(&Path) -> String {
     move |path| decoders.id_derive.id_for(path)
 }
 
 /// The agent `path` is the transcript of.
 pub(super) fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
-    transcript_session(source, path, id_for(decoders)).1
+    transcript_session(source, path, id_deriver(decoders)).1
 }
 
 #[derive(Default)]
@@ -609,7 +609,7 @@ async fn emit_registration(
                 .label
                 .unwrap_or_else(|| (decoders.derive_label)(path, source, &cwd));
             let registration = Registration {
-                start: first_sight_start(path, source, id_for(decoders), cwd, head.parent),
+                start: first_sight_start(path, source, id_deriver(decoders), cwd, head.parent),
                 label: Some(label),
             };
             seen.lock()

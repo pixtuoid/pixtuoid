@@ -1530,6 +1530,13 @@ impl Reducer {
                             fsm::settle(slot, self.settle_ctx(agent_id), now);
                         }
                     }
+                } else if self
+                    .corr
+                    .recent_task_drains
+                    .contains_key(&(*agent_id, tuid.clone()))
+                {
+                    // A drained Task's replayed End: its drain already ran.
+                    handled_by_task_tracking = true;
                 }
             }
             _ => {}

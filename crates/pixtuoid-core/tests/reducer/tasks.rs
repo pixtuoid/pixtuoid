@@ -967,6 +967,56 @@ fn a_refused_late_task_start_tracks_nothing_in_flight() {
     assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
 }
 
+/// A drained Task's transcript replay, its start and its end past the
+/// hook-wins window, ends nothing the parent shows: its drain already ran.
+#[test]
+fn a_drained_tasks_replayed_end_leaves_the_parents_own_call_shown() {
+    let (mut r, mut scene, parent, t1) = dispatching("replayed-end");
+    let drained = t1 + Duration::from_secs(1);
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        drained,
+        Transport::Hook,
+    );
+    let own = drained + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        None,
+        Some("Bash: ls"),
+        own,
+        Transport::Jsonl,
+    );
+    let late = drained + HOOK_WINS_WINDOW + Duration::from_millis(100);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        late,
+        Transport::Jsonl,
+    );
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        late,
+        Transport::Jsonl,
+    );
+    match &scene.agents[&parent].state {
+        ActivityState::Running {
+            item: Some(ToolUse { detail, .. }),
+        } => assert_eq!(detail.as_deref(), Some("Bash: ls")),
+        other => panic!("expected the parent's own call, got {other:?}"),
+    }
+}
+
 /// A Task's lagging duplicate start keeps the delegating clock its first set.
 #[test]
 fn a_tasks_duplicate_start_keeps_the_delegating_clock() {

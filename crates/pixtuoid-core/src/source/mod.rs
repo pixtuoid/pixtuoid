@@ -235,11 +235,11 @@ pub enum AgentEvent {
         /// `None` when the payload carries no usable cwd — the registration is
         /// then label-ordinal but still reap-exempt.
         cwd: Option<PathBuf>,
-        /// The agent process's pid (+ recycle marker), from the shim/plugin
-        /// `_pid` stamp — the focus-jump channel for hook-only sources.
-        /// Transcript-family sources resolve pid via their liveness probes and
-        /// always carry `None` here. serde-skipped so the conformance/scene
-        /// goldens don't churn on `None`.
+        /// The agent process's pid (+ recycle marker), stamped from the
+        /// envelope's `_pid` only where the source's focus channel is a shim or
+        /// plugin stamp (`patch_identity_pids`), omp's included; a source whose
+        /// liveness probe resolves its pid carries `None` here. serde-skipped so
+        /// the conformance/scene goldens don't churn on `None`.
         #[serde(skip_serializing_if = "Option::is_none", default)]
         pid: Option<PidIdentity>,
     },
