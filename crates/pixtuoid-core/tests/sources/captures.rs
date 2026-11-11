@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::merge::SHIM_STAMP;
 use pixtuoid_core::harness::provenance::{Deidentified, NonEmpty, Provenance, Recorded};
 pub(crate) use pixtuoid_core::harness::sources_root;
@@ -43,7 +44,7 @@ impl Capture {
     }
 
     pub(crate) fn hook_payloads(&self) -> Option<PathBuf> {
-        let p = self.dir.join("hook-payloads.jsonl");
+        let p = self.dir.join(HOOK_PAYLOADS);
         p.is_file().then_some(p)
     }
 
@@ -72,7 +73,7 @@ fn push_transcripts(dir: &Path, out: &mut Vec<PathBuf>) {
         if p.is_dir() {
             push_transcripts(&p, out);
         } else if p.extension().and_then(|s| s.to_str()) == Some("jsonl")
-            && p.file_name().and_then(|s| s.to_str()) != Some("hook-payloads.jsonl")
+            && p.file_name().and_then(|s| s.to_str()) != Some(HOOK_PAYLOADS)
         {
             out.push(p);
         }

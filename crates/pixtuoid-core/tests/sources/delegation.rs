@@ -7,6 +7,7 @@
 use std::path::PathBuf;
 
 use pixtuoid_core::harness::Drive;
+use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::source::{AgentEvent, ToolDetail};
 
 fn lines(cli: &str, name: &str) -> Vec<String> {
@@ -53,13 +54,13 @@ fn omp_events() -> Vec<AgentEvent> {
 }
 
 fn dsh_events() -> Vec<AgentEvent> {
-    let d = Drive::hooks().lines(lines("dsh", "hook-payloads.jsonl"));
+    let d = Drive::hooks().lines(lines("dsh", HOOK_PAYLOADS));
     d.assert_clean("dsh delegation hooks");
     d.events
 }
 
 fn opencode_lines() -> Vec<String> {
-    lines("opencode", "hook-payloads.jsonl")
+    lines("opencode", HOOK_PAYLOADS)
 }
 
 fn opencode_events() -> Vec<AgentEvent> {
@@ -169,12 +170,7 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
             super::captures::fixture_lines(&omp_transcript()),
             "task",
         ),
-        (
-            "dsh",
-            dsh_events(),
-            lines("dsh", "hook-payloads.jsonl"),
-            "subagent",
-        ),
+        ("dsh", dsh_events(), lines("dsh", HOOK_PAYLOADS), "subagent"),
         ("opencode", opencode_events(), opencode_lines(), "subagent"),
     ] {
         let dispatch = task_call_ids(&raw, name);
@@ -217,7 +213,7 @@ fn dsh_s_dispatch_end_leaves_its_running_child_standing() {
 
     use pixtuoid_core::harness::Fold;
 
-    let lines = lines("dsh", "hook-payloads.jsonl");
+    let lines = lines("dsh", HOOK_PAYLOADS);
     let raw: Vec<serde_json::Value> = lines
         .iter()
         .map(|l| serde_json::from_str(l).expect("valid capture json"))

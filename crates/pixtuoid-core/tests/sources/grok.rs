@@ -11,6 +11,7 @@
 use std::path::PathBuf;
 
 use pixtuoid_core::AgentId;
+use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::{Drive, Driven};
 use pixtuoid_core::source::{AgentEvent, ToolDetail};
 
@@ -42,7 +43,7 @@ fn sessions() -> (String, String) {
 }
 
 fn hooks() -> Driven {
-    let d = Drive::hooks().lines(fixture_lines(&capture().join("hook-payloads.jsonl")));
+    let d = Drive::hooks().lines(fixture_lines(&capture().join(HOOK_PAYLOADS)));
     d.assert_clean("grok delegation hooks");
     d
 }

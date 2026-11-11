@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use pixtuoid_core::harness::Drive;
+use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::merge::{Merged, Step};
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::state::TurnKey;
@@ -32,7 +33,7 @@ impl Run {
         let dir = pixtuoid_core::harness::fixtures_dir(&super::captures::sources_root(), source)
             .join(scenario);
         let transcript = transcript_in(&dir);
-        let hooks = fixture_lines(&dir.join("hook-payloads.jsonl"));
+        let hooks = fixture_lines(&dir.join(HOOK_PAYLOADS));
         let lines = fixture_lines(&transcript);
         let parsed = |raw: &[String]| -> Vec<Value> {
             raw.iter()
