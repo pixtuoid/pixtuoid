@@ -89,7 +89,6 @@ pub fn run() -> Result<()> {
     }
     // A quit by key, or an error, can leave a panel job running on its own
     // thread, whose CLI nothing holds to its limit once this process is gone.
-    #[cfg(unix)]
     crate::install::io::kill_running();
     // A killed CLI's change still restores what it wrote.
     crate::within("panel-jobs-end", crate::EXIT_WAIT, crate::panels::join_jobs);

@@ -47,9 +47,12 @@ itoa               = "1"
 miniz_oxide        = "0.8"
 # `event-stream`: the TUI loop awaits input beside its frame clock and signals.
 crossterm          = { workspace = true, features = ["event-stream"] }
-futures-util       = { version = "0.3", default-features = false }
+# `alloc`: doctor runs its version probes at once through `join_all`.
+futures-util       = { version = "0.3", default-features = false, features = ["alloc"] }
 # A host CLI's process group or Job Object, which its limit's kill takes whole.
-process-wrap       = { workspace = true }
+# `tokio1` and `kill-on-drop`: doctor's version probes, whose Job Object closes
+# with pixtuoid (`doctor::probe_version`).
+process-wrap       = { workspace = true, features = ["tokio1", "kill-on-drop"] }
 clap               = { workspace = true }
 enum-map           = { workspace = true }
 serde              = { workspace = true }

@@ -460,7 +460,8 @@ impl InstalledVersion {
     }
 }
 
-/// The current-thread runtime doctor's delivery check runs on.
+/// The current-thread runtime doctor's version probes and its delivery check
+/// run on.
 ///
 /// # Errors
 ///
@@ -473,58 +474,96 @@ fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
         .context("building doctor's tokio runtime")
 }
 
-/// Each of `probes`' `--version` at once, each on a thread of its own, so k
-/// hung CLIs cost doctor one `deadline`, not k; a `None` is not asked.
-fn probe_versions<'a, A: AsRef<[&'a str]> + Sync>(
+/// Each of `probes`' `--version` at once, so k hung CLIs cost doctor one
+/// `deadline`, not k; a `None` is not asked.
+///
+/// # Errors
+///
+/// If no tokio runtime can be built.
+fn probe_versions<'a, A: AsRef<[&'a str]>>(
     probes: &[Option<A>],
     deadline: std::time::Duration,
-) -> Vec<InstalledVersion> {
-    std::thread::scope(|scope| {
-        let asked: Vec<_> = probes
-            .iter()
-            .map(|argv| {
-                scope.spawn(move || match argv {
-                    Some(argv) => probe_version(argv.as_ref(), deadline),
-                    None => InstalledVersion::Unasked,
-                })
-            })
-            .collect();
-        asked
-            .into_iter()
-            .map(|probe| {
-                probe
-                    .join()
-                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
-            })
-            .collect()
-    })
+) -> anyhow::Result<Vec<InstalledVersion>> {
+    let asked = probes.iter().map(|argv| async move {
+        match argv {
+            Some(argv) => probe_version(argv.as_ref(), deadline).await,
+            None => InstalledVersion::Unasked,
+        }
+    });
+    Ok(runtime()?.block_on(futures_util::future::join_all(asked)))
 }
 
 /// A source's `<cli> --version` (argv from the static registry, never user
-/// input), run as [`output_within`](crate::install::io::output_within) runs a
-/// host CLI. A NONZERO exit's text never shows as a version.
-fn probe_version(argv: &[&str], deadline: std::time::Duration) -> InstalledVersion {
+/// input), killed with its whole process group (Unix) or Job Object (Windows)
+/// once `deadline` passes: a launcher can leave the hung work to a child of its
+/// own. A NONZERO exit's text never shows as a version. On process-wrap's tokio
+/// side: 10.0.1's std Job Object has no kill on close (`src/std/job_object.rs:106`)
+/// until watchexec/process-wrap#69 ships, and the tokio side's `KillOnDrop` has
+/// one (`src/tokio/job_object.rs:86`).
+async fn probe_version(argv: &[&str], deadline: std::time::Duration) -> InstalledVersion {
+    use std::process::Stdio;
     let Some((cmd, args)) = argv.split_first() else {
         return InstalledVersion::Unknown("its probe names no command".into());
     };
-    let mut command = std::process::Command::new(cmd);
-    command.args(args);
-    let out = match crate::install::io::output_within(command, deadline) {
-        Ok(Some(out)) => out,
-        Ok(None) => {
-            return InstalledVersion::Unknown(format!("it did not exit within {deadline:?}"));
-        }
+    let mut command = process_wrap::tokio::CommandWrap::with_new(cmd, |command| {
+        command
+            .args(args)
+            // A CLI reading the terminal would wait on it.
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    });
+    #[cfg(unix)]
+    command.wrap(process_wrap::tokio::ProcessGroup::leader());
+    #[cfg(windows)]
+    {
+        command.wrap(process_wrap::tokio::JobObject);
+        // The job's kill on close: doctor's end, however it comes, takes the job.
+        command.wrap(process_wrap::tokio::KillOnDrop);
+    }
+    #[cfg(unix)]
+    let spawned = crate::install::io::spawn_listed(|| command.spawn(), |child| child.id());
+    #[cfg(windows)]
+    let spawned = command.spawn().map(|child| (child, ()));
+    let (mut child, _listed) = match spawned {
+        Ok(spawned) => spawned,
         Err(e) => return InstalledVersion::Unknown(format!("it would not run: {e}")),
     };
-    if !out.status.success() {
-        return InstalledVersion::Unknown(format!("it ended with {}", out.status));
+    let (stdout, stderr) = (child.stdout().take(), child.stderr().take());
+    let ran = tokio::time::timeout(deadline, async {
+        tokio::join!(child.wait(), read_all(stdout), read_all(stderr))
+    })
+    .await;
+    let (status, stdout, stderr) = match ran {
+        Ok((Ok(status), stdout, stderr)) => (status, stdout, stderr),
+        Ok((Err(e), ..)) => {
+            return InstalledVersion::Unknown(format!("could not wait for it: {e}"));
+        }
+        Err(_) => {
+            // `kill` waits on what it killed, so nothing is left to reap.
+            let _ = Box::into_pin(child.kill()).await;
+            return InstalledVersion::Unknown(format!("it did not exit within {deadline:?}"));
+        }
+    };
+    if !status.success() {
+        return InstalledVersion::Unknown(format!("it ended with {status}"));
     }
-    first_sanitized_line(&out.stdout)
-        .or_else(|| first_sanitized_line(&out.stderr))
+    first_sanitized_line(&stdout)
+        .or_else(|| first_sanitized_line(&stderr))
         .map_or_else(
             || InstalledVersion::Unknown("it printed nothing".into()),
             InstalledVersion::Read,
         )
+}
+
+/// What `pipe` carries until it closes; a read error keeps what came before it.
+async fn read_all(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> Vec<u8> {
+    use tokio::io::AsyncReadExt as _;
+    let mut read = Vec::new();
+    if let Some(mut pipe) = pipe {
+        let _ = pipe.read_to_end(&mut read).await;
+    }
+    read
 }
 
 /// Whether `doctor` may spawn this source's `<cli> --version` probe: only with
@@ -852,7 +891,7 @@ fn collect(
             (row, probe)
         })
         .unzip();
-    for (row, version) in rows.iter_mut().zip(probe_versions(&probes, EXIT_DEADLINE)) {
+    for (row, version) in rows.iter_mut().zip(probe_versions(&probes, EXIT_DEADLINE)?) {
         row.installed_version = version;
     }
     let delivery = delivery(&rows)?;
@@ -2094,7 +2133,7 @@ mod tests {
             Some(vec![failed.as_str(), "--version"]),
             Some(vec![missing.as_str(), "--version"]),
         ];
-        let got = probe_versions(&probes, EXIT_DEADLINE);
+        let got = probe_versions(&probes, EXIT_DEADLINE).unwrap();
         assert_eq!(got[0], InstalledVersion::Unasked);
         assert_eq!(got[1], InstalledVersion::Read("1.2.3".into()));
         let why = |v: &InstalledVersion| match v {
@@ -2103,7 +2142,7 @@ mod tests {
         };
         assert!(why(&got[2]).contains('3'), "{got:?}");
         assert!(why(&got[3]).contains("would not run"), "{got:?}");
-        let got = probe_versions(&[Some([hung.as_str()])], SHORT);
+        let got = probe_versions(&[Some([hung.as_str()])], SHORT).unwrap();
         assert!(why(&got[0]).contains("did not exit within"), "{got:?}");
     }
 
@@ -2121,7 +2160,7 @@ mod tests {
             "launcher",
             &format!("sleep 600 &\necho $! > '{}'\nwait", pid.display()),
         );
-        let got = probe_versions(&[Some([launcher.as_str()])], SHORT);
+        let got = probe_versions(&[Some([launcher.as_str()])], SHORT).unwrap();
         assert!(
             matches!(&got[0], InstalledVersion::Unknown(why) if why.contains("did not exit within")),
             "{got:?}"
@@ -2165,7 +2204,7 @@ mod tests {
         };
         let (a, b) = (meets("a", "b"), meets("b", "a"));
         let probes = [Some(vec![a.as_str()]), Some(vec![b.as_str()])];
-        let got = probe_versions(&probes, LONG);
+        let got = probe_versions(&probes, LONG).unwrap();
         assert_eq!(got, vec![InstalledVersion::Read("1.0.0".into()); 2]);
     }
 
