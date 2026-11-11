@@ -199,9 +199,7 @@ fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
 /// Max rings the A\* start/goal snap probes for a walkable coarse cell.
 const MAX_SNAP_RADIUS: u16 = 12;
 
-/// Run A* on the layout's walkability mask + per-frame occupancy. Cells whose
-/// center falls inside `preferred` get a step-cost discount, so paths hug that
-/// zone even when an off-zone diagonal cut would be slightly shorter.
+/// Run A* on the layout's walkability mask + per-frame occupancy.
 pub(crate) fn find_path(
     mask: &WalkableMask,
     overlay: &OccupancyOverlay,
@@ -213,11 +211,6 @@ pub(crate) fn find_path(
     let Some((cell_w, cell_h)) = grid_dims(mask) else {
         return Some(vec![from, to]);
     };
-
-    // A step inside the preferred zone is discounted — a bias, not a hard constraint.
-    const PREFERRED_ZONE_COST_NUM: u32 = 7;
-    const PREFERRED_ZONE_COST_DEN: u32 = 10;
-
     let cell_near = |p: Point| {
         snap(
             mask,
@@ -229,23 +222,37 @@ pub(crate) fn find_path(
         )
     };
     let start = cell_near(from)?;
-    // `aim`'s cell stands in for `to`'s own only where `to` stands on open floor
-    // from its anchor: past a desk row or a wall, the last step would cut through.
-    let goal = cell_near(aim)
-        .filter(|&(cx, cy)| segment_clear(mask, cell_anchor(mask, cx, cy), to))
-        .or_else(|| cell_near(to))?;
-
-    if start == goal {
-        return Some(reconstruct(
-            mask,
-            &Grid::filled(0, 0, None),
-            start,
-            from,
-            to,
-        ));
-    }
-
     let mut coarse = CoarseGrid::new(mask, overlay);
+    let mut search = |goal| Some((goal, a_star(&mut coarse, mask, preferred, start, goal)?));
+    // `aim`'s cell stands in for `to`'s own only where A* reaches it and the last step,
+    // from that cell's anchor to `to`, stays on open floor and clear of the agents.
+    let aimed = cell_near(aim).filter(|&(cx, cy)| {
+        let anchor = cell_anchor(mask, cx, cy);
+        segment_clear(mask, anchor, to) && path_clear_under(&[anchor, to], overlay)
+    });
+    let (goal, came_from) = match aimed.and_then(&mut search) {
+        Some(reached) => reached,
+        None => search(cell_near(to)?)?,
+    };
+    Some(reconstruct(mask, &came_from, goal, from, to))
+}
+
+/// The cell each cell on A*'s way from `start` to `goal` was reached from, or
+/// `None` when `goal` is out of reach. Cells whose center falls inside
+/// `preferred` get a step-cost discount, so paths hug that zone even when an
+/// off-zone diagonal cut would be slightly shorter.
+fn a_star(
+    coarse: &mut CoarseGrid<'_>,
+    mask: &WalkableMask,
+    preferred: Option<Bounds>,
+    start: (u16, u16),
+    goal: (u16, u16),
+) -> Option<Grid<Option<(u16, u16)>>> {
+    // A step inside the preferred zone is discounted — a bias, not a hard constraint.
+    const PREFERRED_ZONE_COST_NUM: u32 = 7;
+    const PREFERRED_ZONE_COST_DEN: u32 = 10;
+
+    let (cell_w, cell_h) = cell_dims(mask);
     let mut open: BinaryHeap<Node> = BinaryHeap::new();
     // indexed by cell: a cell's lookups run on every expansion
     let mut came_from: Grid<Option<(u16, u16)>> = Grid::filled(cell_w, cell_h, None);
@@ -259,7 +266,7 @@ pub(crate) fn find_path(
 
     while let Some(current) = open.pop() {
         if current.cell == goal {
-            return Some(reconstruct(mask, &came_from, goal, from, to));
+            return Some(came_from);
         }
         if current.g > g_score.get_or(current.cell.0, current.cell.1, u32::MAX) {
             continue;

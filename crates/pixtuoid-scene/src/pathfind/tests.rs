@@ -881,3 +881,40 @@ fn a_route_comes_in_toward_its_aim_only_where_its_end_stays_on_open_floor() {
         "an aim across a wall from `to` routes as the plain leg"
     );
 }
+
+/// The aim's gate reads the live agents too: their rects can stand across the
+/// aim's last step, or ring its cell off from the router.
+#[test]
+fn an_aim_the_overlay_crosses_or_rings_off_routes_as_the_plain_leg() {
+    let open = WalkableMask::new_open(64, 64);
+    let (from, to) = (Point { x: 2, y: 30 }, Point { x: 30, y: 30 });
+    let aim = Point { x: 30, y: 50 };
+    let plain = |overlay: &OccupancyOverlay| find_path(&open, overlay, None, from, to, to);
+
+    let mut across = OccupancyOverlay::new();
+    across.add(16, 36, 32, 8);
+    assert_eq!(
+        find_path(&open, &across, None, from, to, aim),
+        plain(&across),
+        "an agent across the aim's last step"
+    );
+
+    // The ring's one gap is the pixel column the aim's line to `to` runs up,
+    // too narrow for a routing cell.
+    let mut ring = OccupancyOverlay::new();
+    for (x, y, w, h) in [
+        (24, 44, 6, 4),
+        (31, 44, 5, 4),
+        (24, 48, 4, 8),
+        (32, 48, 4, 8),
+        (24, 52, 12, 4),
+    ] {
+        ring.add(x, y, w, h);
+    }
+    assert!(plain(&ring).is_some(), "premise: `to` routes");
+    assert_eq!(
+        find_path(&open, &ring, None, from, to, aim),
+        plain(&ring),
+        "agents ringing the aim's cell off"
+    );
+}
