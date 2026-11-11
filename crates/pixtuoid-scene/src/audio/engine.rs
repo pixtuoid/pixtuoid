@@ -79,7 +79,7 @@ impl AudioEngine {
         }
     }
 
-    /// Live mute (the native mute key). No-op on wasm (mute = JS suspends the context).
+    /// Live mute: the native painter's effective mute (the mute key or a pause). No-op on wasm (mute = JS suspends the context).
     pub fn set_muted(&mut self, muted: bool) {
         self.mixer.set_muted(muted);
     }

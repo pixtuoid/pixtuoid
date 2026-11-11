@@ -911,6 +911,18 @@ mod dispatch_tests {
                 format!("`{VOLUME_UP}` from muted also unmutes"),
             ),
             (
+                "docs/CONFIGURATION.md",
+                format!("Press `{APPEARANCE}` in the TUI"),
+            ),
+            (
+                "docs/CONFIGURATION.md",
+                format!("cutaway `{APPEARANCE}` can switch"),
+            ),
+            (
+                "docs/CONFIGURATION.md",
+                format!("**Sources panel** (`{SOURCES}`)"),
+            ),
+            (
                 "site/src/components/HowItWorks.astro",
                 format!("press {SOURCES} → connect"),
             ),
