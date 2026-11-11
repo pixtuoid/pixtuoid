@@ -10,8 +10,9 @@ import { LaunchFailedError, launchUntilReady } from "../src/launch.ts";
  *  so a launch that ignores the one it is handed fails. */
 const PREFIX = "Fatal: ";
 
-// In a process of its own, which must exit while the child it launched runs on,
-// as Raycast's does once the command returns.
+// In a process of its own, which must exit while the child it launched runs on: Raycast
+// unloads a no-view command "after the script finishes"
+// (https://developers.raycast.com/information/lifecycle).
 test("a launch settles once its child says it is up, and the child outlives the launcher", () => {
   const pidFile = join(mkdtempSync(join(tmpdir(), "launch-")), "pid");
   const child =
@@ -26,7 +27,7 @@ test("a launch settles once its child says it is up, and the child outlives the 
     assert.equal(run.status, 0, `the launcher did not exit on its own: ${run.signal ?? run.stderr}`);
     assert.doesNotThrow(() => process.kill(pid, 0), "the child must outlive the launcher");
   } finally {
-    // Detached, so a failed run would leave it running.
+    // A failed run would leave it running.
     try {
       process.kill(pid);
     } catch {

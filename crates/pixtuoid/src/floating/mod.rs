@@ -237,9 +237,8 @@ impl PipelineBoot {
 
 /// The notice a launcher waits on: a newline, as in s6's readiness protocol
 /// (<https://skarnet.org/software/s6/notifywhenup.html>), less its close of
-/// the fd: a closed fd 1 is the next opened file's, and the launcher stops
-/// reading at the newline. A launcher gone by then is no failure of the
-/// window's.
+/// the fd: the launcher stops reading at the newline. A launcher gone by then
+/// is no failure of the window's.
 fn say_ready(mut out: impl std::io::Write) {
     let _ = out.write_all(b"\n").and_then(|()| out.flush());
 }

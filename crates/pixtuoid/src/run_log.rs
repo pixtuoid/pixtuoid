@@ -7,13 +7,13 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 /// The directory the runs directory and the crash log share: pixtuoid's
-/// [state directory](crate::config::state_dir), where the XDG spec puts logs.
+/// [state directory](crate::config::state_dir).
 fn diagnostics_dir() -> PathBuf {
     diagnostics_under(crate::config::state_dir())
 }
 
-/// [`diagnostics_dir`] of a resolved state directory, so the no-home arm
-/// tests without the passwd lookup the home read makes.
+/// [`diagnostics_dir`] of a resolved state directory, so a test can drive the
+/// no-home arm.
 fn diagnostics_under(state: Option<PathBuf>) -> PathBuf {
     // No home dir at all: the log must exist somewhere — it is the only runtime
     // diagnostics channel. Unix's is the socket's per-user `/tmp` dir, which
@@ -149,7 +149,6 @@ fn open_private_append_vetted(
     crate::install::owner_only_create(&mut opts);
     #[cfg(unix)]
     {
-        // A symlink planted at the log would append it to its planter's choice.
         use std::os::unix::fs::OpenOptionsExt;
         opts.custom_flags(libc::O_NOFOLLOW);
     }
@@ -472,8 +471,7 @@ mod tests {
         assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
-    /// `PIXTUOID_LOG=/dev/null` throws the log away, as it always did: only a
-    /// privileged caller can make a character device, so no other user can plant one.
+    /// `PIXTUOID_LOG=/dev/null` throws the log away, as it always did.
     #[cfg(unix)]
     #[test]
     fn a_log_into_dev_null_opens() {

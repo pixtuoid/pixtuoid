@@ -1,4 +1,5 @@
-// Apart from `pixtuoid.ts`, which imports `@raycast/api`, so `node:test` can drive it.
+// Apart from `pixtuoid.ts`, which imports `@raycast/api`, so `node:test` can drive it: that
+// package's `package.json` names `types` but no `main` or `exports` to load.
 import { spawn } from "node:child_process";
 
 /** How long a boot may take to write its ready newline before it counts as hung
@@ -27,12 +28,12 @@ function errorReport(stderr: string, errorPrefix: string): string {
   return lines.slice(Math.max(at, 0)).join("\n").trim();
 }
 
-/** Spawn `bin` detached, so it outlives Raycast, and settle once it says it is
- *  up: its first newline on stdout, s6's readiness protocol
+/** Spawn `bin` detached and settle once it says it is up: its first newline on
+ *  stdout, s6's readiness protocol
  *  (https://skarnet.org/software/s6/notifywhenup.html). An exit first rejects
  *  with its code and its stderr from the last line that starts with
  *  `errorPrefix`; no ready newline within `deadlineMs` kills it and rejects.
- *  Either way the child is let go: no pipe or ref of ours keeps this process alive. */
+ *  Either way the child is let go, so this process can exit while it runs. */
 export function launchUntilReady(
   bin: string,
   args: string[],
@@ -62,7 +63,8 @@ export function launchUntilReady(
       resolve();
     });
     // An `error` event with no listener is thrown (https://nodejs.org/api/events.html#error-events);
-    // after a settle, a reject is a no-op.
+    // after a settle, a reject is a no-op
+    // (https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise).
     child.once("error", (e) => {
       clearTimeout(deadline);
       reject(e);

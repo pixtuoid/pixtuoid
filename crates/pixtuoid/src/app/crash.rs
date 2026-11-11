@@ -52,14 +52,14 @@ pub(crate) fn install_crash_hook() {
             crate::display_path(&crash_path),
         );
         let sgr = |code: &'static str| if color { code } else { "" };
-        let (red, dim, bold, line, off) = (
+        let (red, dim, bold, underline, off) = (
             sgr("\x1b[1;31m"),
             sgr("\x1b[2m"),
             sgr("\x1b[1m"),
             sgr("\x1b[4m"),
             sgr("\x1b[0m"),
         );
-        let saved = match saved {
+        let saved_note = match saved {
             Ok(()) => format!(
                 "\x20 Full backtrace saved to {dim}{path}{off}\n\
                  \x20 {dim}(attach if the reviewer asks — the link above only carries a truncated trace){off}\n\n"
@@ -75,8 +75,8 @@ pub(crate) fn install_crash_hook() {
              \x20 {dim}at {location}{off}\n\n\
              \x20 {bold}Help fix it{off} — open this link to file a pre-filled bug report\n\
              \x20 (panic + backtrace already included, no typing needed):\n\n\
-             \x20 {line}{issue_url}{off}\n\n\
-             {saved}"
+             \x20 {underline}{issue_url}{off}\n\n\
+             {saved_note}"
         );
         // Not `eprintln!`: a panic inside the hook aborts the process.
         let _ = std::io::Write::write_all(&mut std::io::stderr(), notice.as_bytes());

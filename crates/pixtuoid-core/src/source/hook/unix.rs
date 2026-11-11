@@ -46,12 +46,14 @@ impl AcceptBackoff {
 
 /// Ensure [`owned_tmp_dir`] is a private, us-owned `0700` directory BEFORE a
 /// file in it is opened — the bind's lock and socket, a run's log — but ONLY when
-/// `path` lies in it (#485). Every other parent is outside a shared `/tmp`:
-/// `XDG_RUNTIME_DIR` is systemd-managed 0700, an explicit `PIXTUOID_SOCKET` or
-/// `PIXTUOID_LOG` is the user's own, and the default log dir is under their home.
+/// `path` lies in it (#485). Every other parent comes from the user's environment
+/// (`XDG_RUNTIME_DIR`, `PIXTUOID_SOCKET`, `PIXTUOID_LOG`, `XDG_STATE_HOME`) or is
+/// under their home.
 ///
-/// TOCTOU-safe: `mkdir(0700)` is atomic create-if-absent, and `/tmp`'s sticky bit
-/// stops another uid swapping the validated `lstat` result before the open.
+/// TOCTOU-safe where `/tmp` is sticky: `mkdir` fails on anything already at the
+/// path (https://pubs.opengroup.org/onlinepubs/9799919799/functions/mkdir.html),
+/// and no other unprivileged uid may then rename or remove the dir (XBD 4.5,
+/// https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html).
 ///
 /// Excluded by function in `.cargo/mutants.toml` — driving it means
 /// creating/validating the REAL per-user dir, which would race a live
