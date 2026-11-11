@@ -103,20 +103,13 @@ fn main() -> ExitCode {
         }
     };
 
-    let mut office = match Office::new(seed) {
+    let office = match Office::still(seed, weather, t0_ms, advance_ms as f64, width, height) {
         Ok(o) => o,
-        Err(_) => {
-            eprintln!("bundled sprite pack failed to parse (build bug)");
+        Err(e) => {
+            eprintln!("bundled sprite pack failed to parse (build bug): {e:#}");
             return ExitCode::FAILURE;
         }
     };
-    if let Some(name) = weather {
-        office.set_weather(Some(name));
-    }
-    // The first step anchors the script epoch at t0 (only the at_ms=0 beat is
-    // due); the second advances the loop so the beats actually fire.
-    office.step(t0_ms, width, height);
-    office.step(t0_ms + advance_ms as f64, width, height);
 
     let px = office.frame().to_vec();
     let (width, height) = office.frame_size(width, height);

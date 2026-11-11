@@ -26,14 +26,16 @@ use crate::script::{
     Beat, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
 };
 
+use pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS;
 use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{RenderInputs, WorldText};
+use pixtuoid_scene::pack::PackError;
 use pixtuoid_scene::pack::load_bundled_pack;
 use pixtuoid_scene::render_scale::PixelFit;
-use pixtuoid_scene::screen::{Screen, ScreenClock};
+use pixtuoid_scene::screen::{ManualClock, Screen, ScreenClock};
 use pixtuoid_scene::sky::WeatherPolicy;
 use pixtuoid_scene::theme::{NORMAL, Theme};
 
@@ -185,35 +187,7 @@ impl Office {
     /// If the bundled sprite pack fails to parse.
     #[wasm_bindgen(constructor)]
     pub fn new(seed: u32) -> Result<Office, JsError> {
-        let pack =
-            std::sync::Arc::new(load_bundled_pack().map_err(|e| JsError::new(&format!("{e:#}")))?);
-        let density = pack.max_density_variant();
-        // The browser upscales the frame, so it renders at the art's own
-        // density; `step` takes the surface in units.
-        let fit = PixelFit::at_least_density(density.get(), density, Size { w: 0, h: 0 });
-        Ok(Office {
-            // Capacity starts empty and is synced from the CANVAS's own layout
-            // on every `step` before any beat fires, so the reducer seats agents
-            // only at desks the rendered office has.
-            scene: SceneState::default(),
-            session: FloorSession::new(pack).with_floor_seed(u64::from(seed)),
-            rgba: Vec::new(),
-            theme: &NORMAL,
-            fit,
-            reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
-            beats: hero_script(),
-            cursor: 0,
-            presence_beats: lobster_beats(),
-            presence_cursor: 0,
-            epoch: None,
-            hires: VisitorHires::default(),
-            last_now: None,
-            caps_units: None,
-            weather: WeatherPolicy::Clock,
-            screen: Screen::on(page_clock()),
-            shown_badges: Vec::new(),
-            audio: None,
-        })
+        Self::on_screen(seed, page_clock()).map_err(|e| JsError::new(&format!("{e:#}")))
     }
 
     /// Advance to `now_ms` and render an office `w`×`h` layout units big into
@@ -547,6 +521,64 @@ impl Office {
 const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
 
 impl Office {
+    /// [`Office::new`]'s office, its flash hold on `clock`.
+    fn on_screen(seed: u32, clock: ScreenClock) -> Result<Office, PackError> {
+        let pack = std::sync::Arc::new(load_bundled_pack()?);
+        let density = pack.max_density_variant();
+        // The browser upscales the frame, so it renders at the art's own
+        // density; `step` takes the surface in units.
+        let fit = PixelFit::at_least_density(density.get(), density, Size { w: 0, h: 0 });
+        Ok(Office {
+            // Capacity starts empty and is synced from the CANVAS's own layout
+            // on every `step` before any beat fires, so the reducer seats agents
+            // only at desks the rendered office has.
+            scene: SceneState::default(),
+            session: FloorSession::new(pack).with_floor_seed(u64::from(seed)),
+            rgba: Vec::new(),
+            theme: &NORMAL,
+            fit,
+            reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
+            beats: hero_script(),
+            cursor: 0,
+            presence_beats: lobster_beats(),
+            presence_cursor: 0,
+            epoch: None,
+            hires: VisitorHires::default(),
+            last_now: None,
+            caps_units: None,
+            weather: WeatherPolicy::Clock,
+            screen: Screen::on(clock),
+            shown_badges: Vec::new(),
+            audio: None,
+        })
+    }
+
+    /// `seed`'s office `advance_ms` after `t0_ms`, `w`×`h` units, as one still
+    /// frame: the step at `t0_ms` anchors the script's loop, and the next fires
+    /// its beats.
+    ///
+    /// # Errors
+    ///
+    /// If the bundled sprite pack fails to parse.
+    pub fn still(
+        seed: u32,
+        weather: Option<String>,
+        t0_ms: f64,
+        advance_ms: f64,
+        w: u32,
+        h: u32,
+    ) -> Result<Office, PackError> {
+        let screen = ManualClock::default();
+        let mut office = Self::on_screen(seed, screen.clock())?;
+        office.set_weather(weather);
+        office.step(t0_ms, w, h);
+        // No one sees the anchor frame, so its flash hold lapses before the
+        // still's frame is written.
+        screen.advance(Duration::from_millis(PHOTOSENSITIVE_PHASE_MIN_MS));
+        office.step(t0_ms + advance_ms, w, h);
+        Ok(office)
+    }
+
     /// The rendered RGBA frame ([`Office::frame_len`] bytes, opaque alpha) — the safe NATIVE accessor
     /// for rlib consumers; the wasm-JS boundary keeps the zero-copy
     /// [`Office::frame_ptr`]/[`Office::frame_len`] pair instead, because a
@@ -753,7 +785,7 @@ fn push_board_segments(
 mod tests {
     use super::*;
     use crate::script::cast_id;
-    use pixtuoid_scene::screen::{Flashes, ManualClock};
+    use pixtuoid_scene::screen::Flashes;
 
     /// The hero [`office`] draws.
     const SEED: u32 = 1;
@@ -1117,6 +1149,32 @@ mod tests {
             o.frame() != shown.as_slice(),
             "the paused frame went out once the hold ran out"
         );
+    }
+
+    /// A still anchored inside a strike is the frame a page shows once the
+    /// strike has passed, though its two steps run back to back.
+    #[test]
+    fn a_still_anchored_in_a_strike_is_the_frame_the_page_shows_after_it() {
+        let strike = storm_strike();
+        let (t0, at) = (strike.changes[0], strike.end);
+        let (mut page, screen) = storm_on_screen();
+        step_at(&mut page, &screen, t0);
+        let anchor = page.frame().to_vec();
+        step_at(&mut page, &screen, at);
+        assert!(
+            page.frame() != anchor.as_slice(),
+            "premise: the page moved on"
+        );
+        let still = Office::still(
+            SEED,
+            Some("storm".into()),
+            t0 as f64,
+            (at - t0) as f64,
+            160,
+            96,
+        )
+        .expect("the bundled pack parses");
+        assert!(still.frame() == page.frame());
     }
 
     #[test]
