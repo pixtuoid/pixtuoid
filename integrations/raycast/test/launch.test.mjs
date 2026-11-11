@@ -6,8 +6,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { LaunchFailedError, launchUntilReady } from "../src/launch.ts";
 
-/** `launchUntilReady` of a node child running `script`. */
-const launch = (script) => launchUntilReady(process.execPath, ["-e", script]);
+/** The error prefix these launches' reports start with: not the contract's,
+ *  so a launch that ignores the one it is handed fails. */
+const PREFIX = "Fatal: ";
 
 // In a process of its own, which must exit while the child it launched runs on,
 // as Raycast's does once the command returns.
@@ -18,7 +19,7 @@ test("a launch settles once its child says it is up, and the child outlives the 
     "process.stdout.write('\\n'); setInterval(() => {}, 1000);";
   const launcher =
     `import { launchUntilReady } from ${JSON.stringify(new URL("../src/launch.ts", import.meta.url).href)};` +
-    `await launchUntilReady(process.execPath, ["-e", ${JSON.stringify(child)}, ${JSON.stringify(pidFile)}]);`;
+    `await launchUntilReady(process.execPath, ["-e", ${JSON.stringify(child)}, ${JSON.stringify(pidFile)}], ${JSON.stringify(PREFIX)});`;
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", launcher], { timeout: 10_000 });
   const pid = Number(readFileSync(pidFile, "utf8"));
   try {
@@ -35,13 +36,18 @@ test("a launch settles once its child says it is up, and the child outlives the 
 });
 
 /** A launch of a child that writes `stderr` and exits 1, settled. */
-const failed = (stderr) => launch(`process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);`).catch((e) => e);
+const failed = (stderr) =>
+  launchUntilReady(
+    process.execPath,
+    ["-e", `process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);`],
+    PREFIX,
+  ).catch((e) => e);
 
 test("a child that exits before it is up fails the launch with its code and its error report", async () => {
-  const e = await failed("⚠ pixtuoid: a notice\nError: an old line\nError: no adapter\n\nCaused by:\n    0: gone\n");
+  const e = await failed("⚠ pixtuoid: a notice\nFatal: an old line\nFatal: no adapter\n\nCaused by:\n    0: gone\n");
   assert.ok(e instanceof LaunchFailedError);
   assert.equal(e.code, 1);
-  assert.equal(e.message, "Error: no adapter\n\nCaused by:\n    0: gone");
+  assert.equal(e.message, "Fatal: no adapter\n\nCaused by:\n    0: gone");
 });
 
 test("a failed launch's stderr with no error report is its message whole", async () => {
@@ -49,5 +55,5 @@ test("a failed launch's stderr with no error report is its message whole", async
 });
 
 test("a binary that cannot be spawned fails the launch", async () => {
-  await assert.rejects(launchUntilReady(join(tmpdir(), "no-such-pixtuoid"), []), { code: "ENOENT" });
+  await assert.rejects(launchUntilReady(join(tmpdir(), "no-such-pixtuoid"), [], PREFIX), { code: "ENOENT" });
 });

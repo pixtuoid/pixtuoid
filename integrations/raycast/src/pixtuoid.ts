@@ -134,7 +134,7 @@ export async function toggleSource(id: string, connected: boolean): Promise<Outc
  *  (a config error, no GPU adapter) rejects with its reason instead of passing
  *  for an open window. */
 export async function startFloating(): Promise<void> {
-  await launchUntilReady(await resolveBinary(), floatingLaunch.args);
+  await launchUntilReady(await resolveBinary(), floatingLaunch.args, floatingLaunch.error_prefix);
 }
 
 /** Whether `e` is the binary refusing that launch's command line, as one older

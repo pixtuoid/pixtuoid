@@ -19,7 +19,7 @@ fn diagnostics_under(state: Option<PathBuf>) -> PathBuf {
     // diagnostics channel. Unix's is the socket's per-user `/tmp` dir, which
     // `open_private_append` vets as the socket's bind does.
     #[cfg(unix)]
-    let tmp = pixtuoid_core::source::hook::private_tmp_dir;
+    let tmp = pixtuoid_core::source::hook::owned_tmp_dir;
     #[cfg(not(unix))]
     let tmp = || std::env::temp_dir().join("pixtuoid");
     state.unwrap_or_else(tmp)
@@ -112,7 +112,7 @@ pub(crate) fn open_private_append(
     // `recursive` keeps a directory that exists, whoever made it, so the shared
     // `/tmp` one must be ours first.
     #[cfg(unix)]
-    pixtuoid_core::source::hook::vet_private_tmp_path(path).map_err(std::io::Error::other)?;
+    pixtuoid_core::source::hook::vet_owned_tmp_path(path).map_err(std::io::Error::other)?;
     if let Some(parent) = path.parent() {
         #[cfg(unix)]
         {
@@ -358,12 +358,18 @@ mod tests {
 
     #[test]
     fn log_location_rejects_a_relative_xdg_state_home() {
-        // Pins the CALL SITE, not just the primitive: a revert to plain
-        // `path_env` here would leak a relative log path.
-        temp_env::with_var_unset("PIXTUOID_LOG", || {
-            let home =
-                pixtuoid_core::platform::user_home_opt().expect("a home dir in the test env");
-            let state = LogLocation::Runs(home.join(".local/state/pixtuoid/logs"));
+        // The log dir derives from `config::state_dir`, which rejects a
+        // relative value: this pins that path through `from_env`.
+        let home = tempfile::tempdir().unwrap();
+        let vars = [
+            ("PIXTUOID_LOG", None),
+            (
+                pixtuoid_core::platform::USER_HOME_VAR,
+                Some(home.path().as_os_str()),
+            ),
+        ];
+        temp_env::with_vars(vars, || {
+            let state = LogLocation::Runs(home.path().join(".local/state/pixtuoid/logs"));
             for rel in ["", "   ", "rel/state", "~/state"] {
                 temp_env::with_var("XDG_STATE_HOME", Some(rel), || {
                     assert_eq!(
@@ -402,7 +408,7 @@ mod tests {
         #[cfg(unix)]
         assert_eq!(
             diagnostics_under(None),
-            pixtuoid_core::source::hook::private_tmp_dir()
+            pixtuoid_core::source::hook::owned_tmp_dir()
         );
         #[cfg(not(unix))]
         assert_eq!(

@@ -40,11 +40,7 @@ pub fn run() -> Result<()> {
     // Runs before the truecolor probe, so a dumb terminal never gets DECRQSS.
     if is_run_tui {
         use crate::term::ColorPreflight;
-        match crate::term::color_preflight(
-            pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
-            pixtuoid_core::platform::text_env("CLICOLOR_FORCE").as_deref(),
-            pixtuoid_core::platform::text_env("TERM").as_deref(),
-        ) {
+        match crate::term::ColorEnv::read().preflight {
             ColorPreflight::Proceed => {}
             ColorPreflight::ForceColor => crossterm::style::force_color_output(true),
             ColorPreflight::RefuseNoColor => anyhow::bail!(
@@ -85,8 +81,7 @@ pub fn run() -> Result<()> {
         );
     }
     let log_level: &'static str = log_level.as_str();
-    let file_log = matches!(&cmd, Cmd::Run { headless, .. } if !*headless)
-        || matches!(&cmd, Cmd::Floating { .. });
+    let file_log = is_run_tui || matches!(&cmd, Cmd::Floating { .. });
     let drift = logging::init(file_log, log_level);
     let ran = dispatch(cmd, drift);
     // The log file's copy of `main`'s stderr report, which no one reads once a

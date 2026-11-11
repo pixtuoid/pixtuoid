@@ -70,7 +70,7 @@ pub(crate) fn init(file_log: bool, log_level: &'static str) -> DriftSeen {
         registry
             .with(
                 fmt_layer()
-                    .with_ansi(crate::term::stream_color(tty))
+                    .with_ansi(crate::term::ColorEnv::read().stream_color(tty))
                     .with_writer(std::io::stderr)
                     .with_filter(make_filter()),
             )

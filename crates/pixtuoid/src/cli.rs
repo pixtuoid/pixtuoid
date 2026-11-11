@@ -595,7 +595,7 @@ mod tests {
     /// A launcher's flag: it parses, and neither the help nor the man page
     /// names it. Completion scripts do, as they do `--max-desks`.
     #[test]
-    fn notify_ready_parses_and_no_user_doc_names_it() {
+    fn notify_ready_parses_and_stays_out_of_help_and_man() {
         use clap::CommandFactory;
         let cli = Cli::try_parse_from(["pixtuoid", "floating", "--notify-ready"]).unwrap();
         assert!(matches!(

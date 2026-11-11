@@ -844,7 +844,7 @@ struct DoctorReport {
     /// One per probe-backed source, in registry order.
     probes: Vec<ProbePath>,
     home_split: Option<String>,
-    /// Whether the report may carry ANSI color — see [`crate::term::stream_color`].
+    /// Whether the report may carry ANSI color — see [`crate::term::ColorEnv::stream_color`].
     color: bool,
 }
 
@@ -973,14 +973,11 @@ fn collect(
 
     let term_env = pixtuoid_core::platform::text_env("TERM");
     let colorterm_env = pixtuoid_core::platform::text_env("COLORTERM");
-    let color_pf = crate::term::color_preflight(
-        pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
-        pixtuoid_core::platform::text_env("CLICOLOR_FORCE").as_deref(),
-        term_env.as_deref(),
-    );
+    let color_env = crate::term::ColorEnv::read();
+    let color_pf = color_env.preflight;
     let tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let probe_ok = tty && color_pf != crate::term::ColorPreflight::RefuseDumbTerm;
-    let color = crate::term::stream_color(tty);
+    let color = color_env.stream_color(tty);
     if color {
         // crossterm strips color under `$NO_COLOR` unless forced; pin it rather
         // than rely on the Display path happening not to check today.

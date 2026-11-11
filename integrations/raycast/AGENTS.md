@@ -15,10 +15,10 @@ workspace [`../../AGENTS.md`](../../AGENTS.md).
 
 ## What it is
 
-A login-shell-resolved shell over the CLI — it does **not** bundle the binary
-(resolves it via `$PATH` + a `binaryPath` preference). `src/pixtuoid.ts` is the
-CLI bridge; `manage-sources.tsx` / `start-floating.tsx` are the Raycast command
-UIs. No server, no state of its own — every fact comes from the CLI's JSON.
+A login-shell-resolved shell over the CLI — it does **not** bundle the binary (resolves it via
+`$PATH` + a `binaryPath` preference). `src/pixtuoid.ts` is the CLI bridge; `manage-sources.tsx` /
+`start-floating.tsx` are the Raycast command UIs. No server, no state of its own — every fact
+comes from the CLI: its `--json` rows, and Start Floating's ready line, exit code and stderr.
 
 ## The contract is GENERATED, not hand-mirrored (read this first)
 

@@ -103,25 +103,42 @@ pub(crate) fn color_preflight(
 
 /// The bixense `$CLICOLOR_FORCE` convention: set and `!= 0` forces color "no
 /// matter what" — including into a pipe. Shared by [`color_preflight`] (the
-/// `$NO_COLOR` override) and doctor's paint decision, so the two can't parse
-/// the variable differently.
+/// `$NO_COLOR` override) and [`stream_color_under`] (doctor's report and the
+/// stderr log), so the two can't parse the variable differently.
 pub(crate) fn clicolor_forced(v: Option<&str>) -> bool {
     matches!(v.map(str::trim), Some(v) if !v.is_empty() && v != "0")
 }
 
-/// Whether a stream, a `tty` or not, may carry ANSI color under this
-/// environment: the one rule `doctor`'s report and the stderr log share.
-pub(crate) fn stream_color(tty: bool) -> bool {
-    let force = pixtuoid_core::platform::text_env("CLICOLOR_FORCE");
-    let pf = color_preflight(
-        pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
-        force.as_deref(),
-        pixtuoid_core::platform::text_env("TERM").as_deref(),
-    );
-    stream_color_under(tty, pf, force.as_deref())
+/// This process's color environment, read once for every decision on color:
+/// the TUI's preflight, doctor's report and the stderr log.
+pub(crate) struct ColorEnv {
+    pub(crate) preflight: ColorPreflight,
+    clicolor_force: Option<String>,
 }
 
-/// [`stream_color`]'s rule: a tty with color allowed by the SAME
+impl ColorEnv {
+    /// [`color_preflight`] of `$NO_COLOR`, `$CLICOLOR_FORCE` and `$TERM`.
+    pub(crate) fn read() -> Self {
+        let clicolor_force = pixtuoid_core::platform::text_env("CLICOLOR_FORCE");
+        let preflight = color_preflight(
+            pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
+            clicolor_force.as_deref(),
+            pixtuoid_core::platform::text_env("TERM").as_deref(),
+        );
+        Self {
+            preflight,
+            clicolor_force,
+        }
+    }
+
+    /// Whether a stream, a `tty` or not, may carry ANSI color: the one rule
+    /// `doctor`'s report and the stderr log share.
+    pub(crate) fn stream_color(&self, tty: bool) -> bool {
+        stream_color_under(tty, self.preflight, self.clicolor_force.as_deref())
+    }
+}
+
+/// [`ColorEnv::stream_color`]'s rule: a tty with color allowed by the SAME
 /// [`color_preflight`] policy the launcher acts on, or `$CLICOLOR_FORCE`
 /// (bixense: forces color even piped) — except `$TERM=dumb`, which outranks
 /// the force (the preflight's own rule: forcing color can't fix a terminal

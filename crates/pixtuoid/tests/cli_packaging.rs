@@ -311,9 +311,10 @@ fn a_log_on_stderr_colors_by_the_one_stream_rule() {
     }
 }
 
-/// Raycast's Start Floating passes the contract's args and reads its exit
-/// code as a binary older than them, so this binary takes the one and exits
-/// with the other on a command line it doesn't know.
+/// Raycast's Start Floating passes the contract's args, reads its exit code
+/// as a binary older than them, and cuts a failed boot's stderr from the last
+/// line its error prefix starts: this binary takes the args, exits with the
+/// code on a command line it doesn't know, and starts its fatal report so.
 #[test]
 fn the_floating_launch_contract_holds() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -328,11 +329,21 @@ fn the_floating_launch_contract_holds() {
         .collect();
     let help = run(&[&args[..], &["--help"]].concat());
     assert!(help.status.success(), "{help:?}");
-    let refused = run(&[args[0], "--no-such-flag"]);
+    let unknown = run(&[args[0], "--no-such-flag"]);
     assert_eq!(
-        refused.status.code().map(i64::from),
+        unknown.status.code().map(i64::from),
         contract["usage_exit"].as_i64(),
-        "{refused:?}"
+        "{unknown:?}"
+    );
+    let prefix = contract["error_prefix"].as_str().expect("error_prefix");
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let failed = refused(&[args[0]], tmp.path())
+        .output()
+        .expect("run pixtuoid");
+    let stderr = String::from_utf8_lossy(&failed.stderr);
+    assert!(
+        stderr.lines().any(|line| line.starts_with(prefix)),
+        "{stderr:?}"
     );
 }
 

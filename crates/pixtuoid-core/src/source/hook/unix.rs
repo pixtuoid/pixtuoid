@@ -44,7 +44,7 @@ impl AcceptBackoff {
     }
 }
 
-/// Ensure [`private_tmp_dir`] is a private, us-owned `0700` directory BEFORE a
+/// Ensure [`owned_tmp_dir`] is a private, us-owned `0700` directory BEFORE a
 /// file in it is opened — the bind's lock and socket, a run's log — but ONLY when
 /// `path` lies in it, the fallback we manage (#485). `XDG_RUNTIME_DIR` is
 /// systemd-managed 0700, and any other parent is the user's choice — neither is
@@ -55,7 +55,7 @@ impl AcceptBackoff {
 ///
 /// Excluded by function in `.cargo/mutants.toml` — driving it means
 /// creating/validating the REAL per-user dir, which would race a live
-/// daemon. Keep it a pure substitution into [`vet_private_tmp_path_in`]: any
+/// daemon. Keep it a pure substitution into [`vet_owned_tmp_path_in`]: any
 /// logic added HERE becomes unmeasurable.
 ///
 /// # Errors
@@ -63,22 +63,22 @@ impl AcceptBackoff {
 /// If `path` lies in the dir and the dir is not, and can't be made, ours and `0700`.
 #[cfg(unix)]
 #[doc(hidden)]
-pub fn vet_private_tmp_path(path: &Path) -> Result<()> {
-    vet_private_tmp_path_in(path, &private_tmp_dir(), rustix::process::getuid().as_raw())
+pub fn vet_owned_tmp_path(path: &Path) -> Result<()> {
+    vet_owned_tmp_path_in(path, &owned_tmp_dir(), rustix::process::getuid().as_raw())
 }
 
 /// Harden `owned` only when `path` actually lives inside it, else no-op.
 /// `owned` + `uid` are parameters so the FIRES direction is reachable from a
 /// test without touching the real per-user dir.
 #[cfg(unix)]
-fn vet_private_tmp_path_in(path: &Path, owned: &Path, uid: u32) -> Result<()> {
+fn vet_owned_tmp_path_in(path: &Path, owned: &Path, uid: u32) -> Result<()> {
     if !is_owned_fallback_in(path, owned) {
         return Ok(());
     }
     ensure_private_dir(owned, uid)
 }
 
-/// The socket file name inside [`private_tmp_dir`]. Shared with
+/// The socket file name inside [`owned_tmp_dir`]. Shared with
 /// `ClaudeCodeSource::default_socket_path` so the endpoint and the guard below
 /// are built from the same two pieces.
 #[cfg(unix)]
@@ -92,7 +92,7 @@ pub(crate) const SOCKET_FILE_NAME: &str = "pixtuoid.sock";
 /// the two crates — pinned to this one by `tests/socket_path_parity.rs`.)
 #[cfg(unix)]
 #[doc(hidden)]
-pub fn private_tmp_dir() -> std::path::PathBuf {
+pub fn owned_tmp_dir() -> std::path::PathBuf {
     let uid = rustix::process::getuid().as_raw();
     std::path::PathBuf::from(format!("/tmp/pixtuoid-{uid}"))
 }
@@ -203,7 +203,7 @@ async fn reclaim(path: &Path, busy: impl FnOnce() -> anyhow::Error) -> Result<()
 /// the exclusive lock, or [`super::SocketBusy`]. Synchronous file IO, so
 /// [`Listener::bind`] runs it on tokio's blocking pool.
 fn acquire_bind_lock(path: &Path) -> Result<std::fs::File> {
-    vet_private_tmp_path(path)?;
+    vet_owned_tmp_path(path)?;
     // An EXCLUSIVE advisory lock on a sibling `<sock>.lock`, NOT connect()
     // errnos: a backlog-saturated LIVE daemon yields ECONNREFUSED on macOS and
     // EAGAIN on Linux, so an errno-guessing probe unlinks a live socket and
@@ -525,7 +525,7 @@ mod tests {
     /// with the whole suite green.
     #[test]
     fn is_owned_fallback_fires_for_the_dir_the_socket_path_is_built_from() {
-        let owned = private_tmp_dir();
+        let owned = owned_tmp_dir();
         assert!(is_owned_fallback_in(&owned.join(SOCKET_FILE_NAME), &owned));
         assert!(!is_owned_fallback_in(
             Path::new("/tmp/pixtuoid.sock"),
@@ -535,11 +535,11 @@ mod tests {
     }
 
     #[test]
-    fn vet_private_tmp_path_in_is_a_noop_for_non_fallback_parents() {
+    fn vet_owned_tmp_path_in_is_a_noop_for_non_fallback_parents() {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let owned = tmp.path().join("owned");
         let sock = tmp.path().join("elsewhere").join("pixtuoid.sock");
-        vet_private_tmp_path_in(&sock, &owned, my_uid()).expect("non-fallback parent is a no-op");
+        vet_owned_tmp_path_in(&sock, &owned, my_uid()).expect("non-fallback parent is a no-op");
         assert!(
             !sock.parent().expect("parent").exists(),
             "a non-fallback parent must not be created"
@@ -551,11 +551,11 @@ mod tests {
     }
 
     #[test]
-    fn vet_private_tmp_path_in_hardens_the_dir_the_socket_lives_in() {
+    fn vet_owned_tmp_path_in_hardens_the_dir_the_socket_lives_in() {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let owned = tmp.path().join("pixtuoid-42");
         let sock = owned.join(SOCKET_FILE_NAME);
-        vet_private_tmp_path_in(&sock, &owned, my_uid()).expect("must harden");
+        vet_owned_tmp_path_in(&sock, &owned, my_uid()).expect("must harden");
         let md = std::fs::symlink_metadata(&owned).expect("the managed dir must now exist");
         assert!(md.is_dir());
         assert_eq!(md.mode() & 0o777, 0o700, "created private");
@@ -564,30 +564,30 @@ mod tests {
     /// A file deeper in the dir, a run's `logs/<run>.log`, vets it as the
     /// socket does: refused when another uid owns it or a group can write it.
     #[test]
-    fn vet_private_tmp_path_in_refuses_a_squatted_dir_any_file_lies_in() {
+    fn vet_owned_tmp_path_in_refuses_a_squatted_dir_any_file_lies_in() {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let owned = tmp.path().join("pixtuoid-42");
         let log = owned.join("logs").join("run.log");
         ensure_private_dir(&owned, my_uid()).expect("ours");
         assert!(
-            vet_private_tmp_path_in(&log, &owned, my_uid().wrapping_add(1)).is_err(),
+            vet_owned_tmp_path_in(&log, &owned, my_uid().wrapping_add(1)).is_err(),
             "another uid's dir"
         );
         std::fs::set_permissions(&owned, std::fs::Permissions::from_mode(0o770)).expect("chmod");
         assert!(
-            vet_private_tmp_path_in(&log, &owned, my_uid()).is_err(),
+            vet_owned_tmp_path_in(&log, &owned, my_uid()).is_err(),
             "a group-writable dir"
         );
     }
 
     #[test]
-    fn vet_private_tmp_path_in_refuses_a_squatted_dir_the_socket_lives_in() {
+    fn vet_owned_tmp_path_in_refuses_a_squatted_dir_the_socket_lives_in() {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let owned = tmp.path().join("squatted");
         std::fs::create_dir(&owned).expect("mkdir");
         std::fs::set_permissions(&owned, std::fs::Permissions::from_mode(0o755)).expect("chmod");
         assert!(
-            vet_private_tmp_path_in(&owned.join(SOCKET_FILE_NAME), &owned, my_uid()).is_err(),
+            vet_owned_tmp_path_in(&owned.join(SOCKET_FILE_NAME), &owned, my_uid()).is_err(),
             "a group/other-accessible dir at the socket's parent must refuse the bind"
         );
     }
