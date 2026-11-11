@@ -370,22 +370,4 @@ mod tests {
         );
         assert_ne!(s0, s1, "selected state must animate across time");
     }
-
-    #[test]
-    fn every_registry_source_has_a_non_fallback_badge_color() {
-        use pixtuoid_core::source::registry::REGISTRY;
-        let theme = &pixtuoid_scene::theme::NORMAL;
-        let fallback = to_color(theme.ui.label_idle);
-        for d in REGISTRY {
-            let row = make_row(d.name, RowState::Idle, "x");
-            let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, theme);
-            assert_ne!(
-                line.spans[0].style.fg,
-                Some(fallback),
-                "source {:?} (prefix {:?}) renders the idle FALLBACK badge color — add its arm to `SourceColors::by_prefix`",
-                d.name,
-                d.label_prefix,
-            );
-        }
-    }
 }

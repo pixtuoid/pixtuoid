@@ -867,7 +867,7 @@ gen-banner-check:
 gen-fonts:
     {{ UV_DEV }} python3 scripts/gen-fonts.py
 
-[doc('Sync README install/features/tools sections from site/src/*.json, and its images from scripts/media.json + docs/images')]
+[doc('Sync README install/features/tools sections from site/src/*.json, its images from scripts/media.json + docs/images, and its links from Cargo.toml homepage')]
 [group('gen')]
 gen-readme:
     node scripts/gen-readme.mjs
@@ -891,7 +891,7 @@ gen-cutaway-golden:
     SNAPSHOTS=overwrite just test -p pixtuoid-scene --lib the_canvas_paints_the_pinned_frames
 
 # Pure node:builtins — no npm ci.
-[doc('Fail if the committed README drifted from site data (features/sources/install.json) or scripts/media.json')]
+[doc('Fail if the committed README drifted from site data (features/sources/install.json), scripts/media.json or Cargo.toml homepage')]
 [group('gen')]
 gen-readme-check:
     node scripts/gen-readme.mjs --check

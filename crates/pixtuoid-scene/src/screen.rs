@@ -269,7 +269,7 @@ impl<S: Copy + PartialEq, G> Screen<S, G> {
     }
 }
 
-/// A [`ScreenClock`] a test moves by hand.
+/// A [`ScreenClock`] its owner moves by hand.
 #[doc(hidden)]
 #[derive(Debug, Clone, Default)]
 pub struct ManualClock(Arc<Mutex<Duration>>);

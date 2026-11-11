@@ -267,4 +267,18 @@ const tabs = install.map((t) => ({ ...t, commands: splitCmds(t.cmds).commands })
       padding-block: 0.55rem;
     }
   }
+  /* Scripting off: nothing switches a tab or copies, so every method shows and
+     the tabs and Copy buttons go. */
+  @media (scripting: none) {
+    .install__tabs,
+    .install__copy {
+      display: none;
+    }
+    .install__panel {
+      display: block;
+    }
+    .install__panel + .install__panel {
+      margin-top: 0.8rem;
+    }
+  }
 </style>

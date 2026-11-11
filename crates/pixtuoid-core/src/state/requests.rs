@@ -67,7 +67,7 @@ pub(crate) struct PendingStart {
 
 /// A pending call, once per id however many of its starts arrive: a pre-use
 /// and its start, or the two transports' starts of one call.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Pending {
     call: Arc<str>,
     tool_name: Option<Arc<str>>,
@@ -77,7 +77,7 @@ struct Pending {
     item: Option<ToolUse>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Member {
     call: Arc<str>,
     /// The wire named it, so its start on the raising transport is the
@@ -85,7 +85,7 @@ struct Member {
     named: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ActionRequest {
     /// The calls it holds on. The last member's end means the prompt was
     /// answered; a parallel call's end is no member's, so it cannot.
@@ -133,7 +133,7 @@ impl ActionRequest {
 /// event answers it or its slot goes; whether it stands is the slot's
 /// `RequiresAction`. A pending start lives until its call's end, its turn's
 /// end, or its slot goes.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct ActionRequests {
     open: HashMap<AgentId, ActionRequest>,
     pending: HashMap<AgentId, Vec<Pending>>,
@@ -404,9 +404,11 @@ impl ActionRequests {
         self.open.contains_key(id)
     }
 
+    /// How many requests stand and calls are pending.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.open.len()
+        let Self { open, pending } = self;
+        open.len() + pending.values().map(Vec::len).sum::<usize>()
     }
 }
 

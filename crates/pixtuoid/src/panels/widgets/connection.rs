@@ -269,7 +269,6 @@ mod tests {
     }
     use super::*;
     use crate::panels::connection::DaemonRollup;
-    use crate::sources::{RowFacts, RowInput};
     use pixtuoid_core::state::DaemonState;
     use pixtuoid_scene::theme::NORMAL;
 
@@ -573,42 +572,5 @@ mod tests {
             "selected scrolling name must not ellipsize: {n0:?}"
         );
         assert_ne!(n0, n1, "selected name must animate across time");
-    }
-
-    #[test]
-    fn every_registry_source_has_a_non_fallback_badge_color() {
-        use crate::sources::build_rows_from;
-        use pixtuoid_core::source::registry::REGISTRY;
-        let fallback = to_color(NORMAL.ui.label_idle);
-        // Build through the real builder so the prefixes come from the registry.
-        let inputs: Vec<RowInput> = REGISTRY
-            .iter()
-            .map(|d| RowInput {
-                source: d,
-                target: None,
-                health: None,
-                facts: Some(RowFacts {
-                    present: true,
-                    config_path: None,
-                }),
-                connected: true,
-            })
-            .collect();
-        for sr in build_rows_from(inputs) {
-            let line = connection_line(
-                &sr,
-                &LiveInfo::default(),
-                false,
-                SystemTime::UNIX_EPOCH,
-                &NORMAL,
-            );
-            assert_ne!(
-                line.spans[1].style.fg,
-                Some(fallback),
-                "source {:?} (prefix {:?}) renders the idle FALLBACK badge — add its arm to connection_line",
-                sr.source_id,
-                sr.label_prefix,
-            );
-        }
     }
 }

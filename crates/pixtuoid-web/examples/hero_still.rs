@@ -14,8 +14,8 @@ use std::process::ExitCode;
 
 use pixtuoid_web::Office;
 
-const USAGE: &str = "usage: hero_still <out.png> [--width W] [--height H] \
-(--t0-ms EPOCH_MS | --hour 0-23) [--advance-ms MS] [--weather NAME] [--seed N] \
+const USAGE: &str = "usage: hero_still <out.png> --seed N --advance-ms MS [--width W] \
+[--height H] (--t0-ms EPOCH_MS | --hour 0-23) [--weather NAME] \
 (<out.png> and the flags may appear in any order)";
 
 // Each takes one value token — skipped in pairs so the lone positional
@@ -46,15 +46,8 @@ fn positional_out(args: &[String]) -> Option<&str> {
 }
 
 // A 16:9 office at the height the live canvas's `Office::fit` aims for; the PNG is `Office::scale` times it.
-const DEFAULT_WIDTH: u32 = 231;
-const DEFAULT_HEIGHT: u32 = 130;
-// Far enough into the loop that the cast has walked in and seated, rather than
-// an empty office at t0.
-const DEFAULT_ADVANCE_MS: u64 = 100_000;
-// The hero backdrop (OfficeBackdrop.astro) is seed 0, so this default keeps
-// `hero-wide.png` byte-identical; `--seed` matches a DIFFERENT live canvas.
-const DEFAULT_SEED: u32 = 0;
-
+const DEFAULT_HEIGHT: u32 = pixtuoid_web::FRAMING_UNITS_H;
+const DEFAULT_WIDTH: u32 = DEFAULT_HEIGHT * 16 / 9;
 // Arbitrary but FIXED — never "today": only the hour-of-day drives the sky, and
 // pinning the date keeps an `--hour` render byte-identical across machines.
 const T0_REFERENCE_YMD: (i32, u32, u32) = (2024, 6, 1);
@@ -84,8 +77,15 @@ fn main() -> ExitCode {
     };
     let width: u32 = arg(&args, "--width").unwrap_or(DEFAULT_WIDTH);
     let height: u32 = arg(&args, "--height").unwrap_or(DEFAULT_HEIGHT);
-    let advance_ms: u64 = arg(&args, "--advance-ms").unwrap_or(DEFAULT_ADVANCE_MS);
-    let seed: u32 = arg(&args, "--seed").unwrap_or(DEFAULT_SEED);
+    // No defaults: each poster's job names the live canvas it stands in for and
+    // its capture instant, which the neon roll guard reads from the manifest.
+    let (Some(seed), Some(advance_ms)) = (
+        arg::<u32>(&args, "--seed"),
+        arg::<u64>(&args, "--advance-ms"),
+    ) else {
+        eprintln!("{USAGE}");
+        return ExitCode::FAILURE;
+    };
     let weather: Option<String> = arg(&args, "--weather");
 
     let t0_ms: f64 = match (arg::<u64>(&args, "--t0-ms"), arg::<u32>(&args, "--hour")) {
@@ -103,20 +103,13 @@ fn main() -> ExitCode {
         }
     };
 
-    let mut office = match Office::new(seed) {
+    let office = match Office::still(seed, weather, t0_ms, advance_ms as f64, width, height) {
         Ok(o) => o,
-        Err(_) => {
-            eprintln!("bundled sprite pack failed to parse (build bug)");
+        Err(e) => {
+            eprintln!("bundled sprite pack failed to parse (build bug): {e:#}");
             return ExitCode::FAILURE;
         }
     };
-    if let Some(name) = weather {
-        office.set_weather(Some(name));
-    }
-    // The first step anchors the script epoch at t0 (only the at_ms=0 beat is
-    // due); the second advances the loop so the beats actually fire.
-    office.step(t0_ms, width, height);
-    office.step(t0_ms + advance_ms as f64, width, height);
 
     let px = office.frame().to_vec();
     let (width, height) = office.frame_size(width, height);

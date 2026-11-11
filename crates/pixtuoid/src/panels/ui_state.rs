@@ -27,7 +27,7 @@ pub struct RenderFrames {
     pub appearance: AppearanceFrame,
     pub version_popup: VersionPopupFrame,
     pub help_open: bool,
-    /// [`crate::doctor::footer_warning`]'s.
+    /// [`footer_warning`]'s.
     pub warning: Option<String>,
     pub dashboard: DashboardFrame,
     pub connection: ConnectionFrame,
@@ -530,7 +530,7 @@ impl UiState {
             .filter(|&(_, &failed)| failed)
             .map(|(setting, _)| setting.name())
             .collect();
-        let warning = crate::doctor::footer_warning(health, &unsaved, &self.drift.prefixes());
+        let warning = footer_warning(health, &unsaved, &self.drift.prefixes());
 
         // Re-anchor the selection by AgentId — an agent may have exited.
         let dashboard_frame = if self.dashboard.open {
@@ -638,6 +638,49 @@ pub(crate) fn log_text(log: Option<&crate::run_log::LogLocation>) -> String {
     log.map(|at| at.read().0).unwrap_or_default()
 }
 
+/// The one footer warning every painter shows: a source's death (HIGHEST
+/// priority — the office is partially frozen), else each setting named
+/// `unsaved`, which the user just changed and which reverts at the next launch,
+/// else a passive decode-drift nudge naming each `drifted` source prefix.
+pub fn footer_warning(
+    deaths: &[SourceDeath],
+    unsaved: &[&str],
+    drifted: &[&str],
+) -> Option<String> {
+    match deaths {
+        [] => {}
+        [d] => {
+            return Some(format!(
+                "{} source died — its agents are frozen; restart pixtuoid (see log)",
+                d.source
+            ));
+        }
+        many => {
+            return Some(format!(
+                "{} sources died — restart pixtuoid (see log)",
+                many.len()
+            ));
+        }
+    }
+    if !unsaved.is_empty() {
+        return Some(format!(
+            "{} not saved — reverts at the next launch (see log)",
+            unsaved.join(", ")
+        ));
+    }
+    if drifted.is_empty() {
+        return None;
+    }
+    let prefixes = drifted
+        .iter()
+        .map(|p| format!("{p}·"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    // No leading `⚠`: the footer painter (`footer.rs` `" ⚠ {warn} "`) owns the
+    // glyph, so embedding one here double-prints it (`⚠ ⚠ decode drift`).
+    Some(format!("decode drift: {prefixes} — run `pixtuoid doctor`"))
+}
+
 #[cfg(test)]
 impl UiState {
     /// A run an upgrade from `previous` to `current` booted, with its popup
@@ -678,6 +721,40 @@ fn resolve_version_popup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A death outranks every other warning, then a setting the user just
+    /// changed, then the passive drift nudge; the footer painter owns the `⚠`.
+    #[test]
+    fn the_footer_warns_of_a_death_then_an_unsaved_setting_then_drift() {
+        let died = |s: &str| SourceDeath::new(s, "boom");
+        let drifted = ["cc", "cx"];
+        assert_eq!(
+            footer_warning(&[died("claude-code")], &[], &drifted).as_deref(),
+            Some("claude-code source died — its agents are frozen; restart pixtuoid (see log)")
+        );
+        assert_eq!(
+            footer_warning(&[died("claude-code"), died("codex")], &[], &drifted).as_deref(),
+            Some("2 sources died — restart pixtuoid (see log)")
+        );
+        assert_eq!(
+            footer_warning(&[], &["appearance", "volume"], &drifted).as_deref(),
+            Some("appearance, volume not saved — reverts at the next launch (see log)")
+        );
+        assert_eq!(
+            footer_warning(&[died("codex")], &["appearance"], &drifted),
+            footer_warning(&[died("codex")], &[], &[])
+        );
+        let w = footer_warning(&[], &[], &drifted).unwrap();
+        assert!(
+            w.contains("cc·") && w.contains("cx·") && w.contains("doctor"),
+            "{w}"
+        );
+        // An embedded glyph double-prints (`⚠ ⚠ …`).
+        assert!(!w.contains('⚠'), "drift msg must not embed ⚠: {w}");
+        let dw = footer_warning(&[died("claude-code")], &[], &drifted).unwrap();
+        assert!(!dw.contains('⚠'), "death msg must not embed ⚠: {dw}");
+        assert_eq!(footer_warning(&[], &[], &[]), None);
+    }
     use pixtuoid_scene::theme::ALL_THEMES;
 
     fn ui() -> UiState {

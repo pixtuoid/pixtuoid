@@ -29,9 +29,9 @@
 
 <p align="center">
   <a href="https://pixtuoid.dev/"><img src="https://raw.githubusercontent.com/pixtuoid/pixtuoid/HEAD/docs/images/pix-icons/window.svg" alt="" width="20" height="20" align="top" />&nbsp;<strong>Live demo ↗</strong></a>
-  &nbsp;·&nbsp; <a href="https://pixtuoid.dev/architecture">Architecture</a>
-  &nbsp;·&nbsp; <a href="https://pixtuoid.dev/config">Configuration</a>
-  &nbsp;·&nbsp; <a href="https://pixtuoid.dev/contributing">Contributing</a>
+  &nbsp;·&nbsp; <a href="https://pixtuoid.dev/architecture/">Architecture</a>
+  &nbsp;·&nbsp; <a href="https://pixtuoid.dev/config/">Configuration</a>
+  &nbsp;·&nbsp; <a href="https://pixtuoid.dev/contributing/">Contributing</a>
 </p>
 
 <p align="center">
@@ -138,7 +138,7 @@ Every other setting — desks per floor, pet names, cutaway or classic — lives
 
 pixtuoid learns what each agent is doing from a tiny hook it installs, which never holds up your agent, and from the agent's own session logs. It turns that into office life and draws it in your terminal.
 
-**[Full architecture with diagrams →](https://pixtuoid.dev/architecture)**
+**[Full architecture with diagrams →](https://pixtuoid.dev/architecture/)**
 
 ## Privacy & Security
 

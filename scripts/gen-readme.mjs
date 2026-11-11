@@ -2,7 +2,7 @@
 // Regenerate the README's marker-delimited blocks from the site's single-source
 // JSON (features.json, sources.json, install.json) — the same files
 // Showcase/SupportedTools/Install read, so README and site can't drift — and
-// its captioned images from scripts/media.json's jobs.
+// its captioned images from scripts/media.json's jobs; links take Cargo.toml's `homepage`.
 // `--check` writes nothing and exits non-zero on drift.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -14,13 +14,12 @@ import install from '../site/src/install.json' with { type: 'json' };
 import media from './media.json' with { type: 'json' };
 import { featureText } from '../site/config/feature-text.mjs';
 import { splitCmds } from '../site/config/install-cmds.mjs';
+import { workspacePackageField } from '../site/config/workspace-package.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readmePath = join(root, 'README.md');
 
-// MUST match `site` in site/astro.config.mjs — a hand-kept copy (importing the
-// astro config here would pull @astrojs/*), and nothing gates the two.
-const SITE = 'https://pixtuoid.dev';
+const SITE = workspacePackageField(readFileSync(join(root, 'Cargo.toml'), 'utf8'), 'homepage');
 // Absolute: each published crate's crates.io page is this README, and crates.io
 // resolves a relative link against the crate's own directory
 // (crates/pixtuoid-core/tests/published_package.rs).
@@ -214,8 +213,8 @@ if (errors.length) {
 }
 console.log(
   check
-    ? 'README is in sync with features.json + sources.json + install.json + media.json ✓'
-    : 'README regenerated from features.json + sources.json + install.json + media.json ✓'
+    ? 'README is in sync with features.json + sources.json + install.json + media.json + Cargo.toml ✓'
+    : 'README regenerated from features.json + sources.json + install.json + media.json + Cargo.toml ✓'
 );
 
 /** @param {string} s */
