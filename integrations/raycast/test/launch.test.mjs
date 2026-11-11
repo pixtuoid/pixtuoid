@@ -60,7 +60,10 @@ test("a binary that cannot be spawned fails the launch", async () => {
 
 test("a child that never says it is up is killed at the deadline", { timeout: 15_000 }, async () => {
   const pidFile = join(mkdtempSync(join(tmpdir(), "launch-")), "pid");
-  const hung = "require('fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000);";
+  // It ignores SIGTERM, as a boot stuck on its main thread does.
+  const hung =
+    "process.on('SIGTERM', () => {}); require('fs').writeFileSync(process.argv[1], String(process.pid));" +
+    "setInterval(() => {}, 1000);";
   const deadlineMs = 2_000;
   await assert.rejects(
     launchUntilReady(process.execPath, ["-e", hung, pidFile], PREFIX, deadlineMs),

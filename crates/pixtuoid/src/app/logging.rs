@@ -66,11 +66,10 @@ pub(crate) fn init(file_log: bool, log_level: &'static str) -> DriftSeen {
             }
         }
     } else {
-        let tty = std::io::IsTerminal::is_terminal(&std::io::stderr());
         registry
             .with(
                 fmt_layer()
-                    .with_ansi(crate::term::ColorEnv::read().stream_color(tty))
+                    .with_ansi(crate::term::stderr_color())
                     .with_writer(std::io::stderr)
                     .with_filter(make_filter()),
             )

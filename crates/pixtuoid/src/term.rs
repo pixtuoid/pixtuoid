@@ -103,14 +103,14 @@ pub(crate) fn color_preflight(
 
 /// The bixense `$CLICOLOR_FORCE` convention: set and `!= 0` forces color "no
 /// matter what" — including into a pipe. Shared by [`color_preflight`] (the
-/// `$NO_COLOR` override) and [`stream_color_under`] (doctor's report and the
-/// stderr log), so the two can't parse the variable differently.
+/// `$NO_COLOR` override) and [`stream_color_under`] (every stream pixtuoid
+/// writes SGR to), so the two can't parse the variable differently.
 pub(crate) fn clicolor_forced(v: Option<&str>) -> bool {
     matches!(v.map(str::trim), Some(v) if !v.is_empty() && v != "0")
 }
 
-/// This process's color environment, read once for every decision on color:
-/// the TUI's preflight, doctor's report and the stderr log.
+/// This process's color environment, the one read behind every decision on
+/// color.
 pub(crate) struct ColorEnv {
     pub(crate) preflight: ColorPreflight,
     clicolor_force: Option<String>,
@@ -132,10 +132,16 @@ impl ColorEnv {
     }
 
     /// Whether a stream, a `tty` or not, may carry ANSI color: the one rule
-    /// `doctor`'s report and the stderr log share.
+    /// every stream pixtuoid writes SGR to follows.
     pub(crate) fn stream_color(&self, tty: bool) -> bool {
         stream_color_under(tty, self.preflight, self.clicolor_force.as_deref())
     }
+}
+
+/// [`ColorEnv::stream_color`] for stderr, its one answer for everything
+/// written there.
+pub(crate) fn stderr_color() -> bool {
+    ColorEnv::read().stream_color(std::io::IsTerminal::is_terminal(&std::io::stderr()))
 }
 
 /// [`ColorEnv::stream_color`]'s rule: a tty with color allowed by the SAME

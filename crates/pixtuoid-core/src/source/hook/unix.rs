@@ -57,21 +57,21 @@ impl AcceptBackoff {
 /// creating/validating the REAL per-user dir, which would race a live
 /// daemon. Keep it a pure substitution into [`vet_owned_tmp_path_in`]: any
 /// logic added HERE becomes unmeasurable.
-///
-/// # Errors
-///
-/// If `path` lies in the dir and the dir is not, and can't be made, ours and `0700`.
 #[cfg(unix)]
-#[doc(hidden)]
-pub fn vet_owned_tmp_path(path: &Path) -> Result<()> {
+fn vet_owned_tmp_path(path: &Path) -> Result<()> {
     vet_owned_tmp_path_in(path, &owned_tmp_dir(), rustix::process::getuid().as_raw())
 }
 
 /// Harden `owned` only when `path` actually lives inside it, else no-op.
 /// `owned` + `uid` are parameters so the FIRES direction is reachable from a
 /// test without touching the real per-user dir.
+///
+/// # Errors
+///
+/// If `path` lies in `owned` and `owned` is not, and can't be made, `uid`'s and `0700`.
 #[cfg(unix)]
-fn vet_owned_tmp_path_in(path: &Path, owned: &Path, uid: u32) -> Result<()> {
+#[doc(hidden)]
+pub fn vet_owned_tmp_path_in(path: &Path, owned: &Path, uid: u32) -> Result<()> {
     if !is_owned_fallback_in(path, owned) {
         return Ok(());
     }

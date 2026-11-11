@@ -3,10 +3,9 @@
 //! pre-filled GitHub issue URL.
 
 pub(crate) fn install_crash_hook() {
-    // Read now, not in the panic: the notice colors as the one stream rule says
-    // for stderr, so a launcher reading it through a pipe gets plain text.
-    let color = crate::term::ColorEnv::read()
-        .stream_color(std::io::IsTerminal::is_terminal(&std::io::stderr()));
+    // Read now, not in the panic, so a launcher reading it through a pipe gets
+    // plain text.
+    let color = crate::term::stderr_color();
     std::panic::set_hook(Box::new(move |info| {
         // stdout is the stream `setup_terminal` ENTERED the alt screen on, so the
         // restore must go there — on stderr, `pixtuoid run 2>/dev/null` strands it.
@@ -195,11 +194,9 @@ mod tests {
     #[cfg(unix)]
     const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
 
-    /// The panic hook is process-global and writes to a real fd, so the only way
-    /// to observe which stream it chose is from outside: re-exec this test binary
-    /// with the child marker, let a real panic fire the hook, read the pipes apart.
-    /// The notice colors as the one stream rule says for stderr: plain into a
-    /// pipe, as a launcher reading it gets, unless `$CLICOLOR_FORCE` forces it.
+    /// The notice colors as the one stream rule says for stderr, re-exec'd as
+    /// the stream test is: plain into a pipe unless `$CLICOLOR_FORCE` forces it,
+    /// and colored on a terminal even with stdout a pipe.
     #[cfg(unix)]
     #[test]
     fn the_crash_notice_colors_by_the_one_stream_rule() {
@@ -209,7 +206,7 @@ mod tests {
             panic!("deliberate panic: the crash-hook color probe");
         }
         let state = tempfile::tempdir().unwrap();
-        for (force, colored) in [(None, false), (Some("1"), true)] {
+        let child = |force: Option<&str>| {
             let mut child = std::process::Command::new(std::env::current_exe().unwrap());
             child
                 .args([
@@ -225,12 +222,52 @@ mod tests {
             if let Some(force) = force {
                 child.env("CLICOLOR_FORCE", force);
             }
-            let stderr = String::from_utf8_lossy(&child.output().unwrap().stderr).into_owned();
+            child
+        };
+        for (force, colored) in [(None, false), (Some("1"), true)] {
+            let stderr =
+                String::from_utf8_lossy(&child(force).output().unwrap().stderr).into_owned();
             assert!(stderr.contains("crashed"), "{stderr:?}");
             assert_eq!(stderr.contains('\u{1b}'), colored, "{force:?}: {stderr:?}");
         }
+
+        let pty = portable_pty::native_pty_system()
+            .openpty(portable_pty::PtySize::default())
+            .unwrap();
+        let tty = pty.master.tty_name().expect("the pty's name");
+        let mut reader = pty.master.try_clone_reader().unwrap();
+        let (sent, received) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            // The master reads EIO once the child's end closes.
+            let _ = std::io::Read::read_to_end(&mut reader, &mut out);
+            let _ = sent.send(out);
+        });
+        let mut on_tty = child(None);
+        on_tty.stdout(std::process::Stdio::piped()).stderr(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(tty)
+                .unwrap(),
+        );
+        let mut run = on_tty.spawn().unwrap();
+        // Only the child's end may stay open, or the master never reads its close.
+        drop((on_tty, pty.slave));
+        run.wait().unwrap();
+        let stderr = received
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .expect("the pty's output");
+        let stderr = String::from_utf8_lossy(&stderr);
+        assert!(
+            stderr.contains("crashed") && stderr.contains('\u{1b}'),
+            "{stderr:?}"
+        );
     }
 
+    /// The panic hook is process-global and writes to a real fd, so the only way
+    /// to observe which stream it chose is from outside: re-exec this test binary
+    /// with the child marker, let a real panic fire the hook, read the pipes apart.
     #[cfg(unix)]
     #[test]
     fn the_hook_restores_on_stdout_and_keeps_the_report_on_stderr() {

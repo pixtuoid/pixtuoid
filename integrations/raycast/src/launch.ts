@@ -1,11 +1,11 @@
 // Apart from `pixtuoid.ts`, which imports `@raycast/api`, so `node:test` can drive it.
 import { spawn } from "node:child_process";
 
-/** How long a boot may stay silent before it counts as hung and is killed:
- *  Raycast bounds a no-view command's memory, not its time
- *  (https://developers.raycast.com/information/lifecycle), so a hung boot would
- *  leave Start Floating pending for good. The margin over a real boot is my
- *  choice, not a measured bound. */
+/** How long a boot may take to write its ready newline before it counts as hung
+ *  and is killed (stderr output does not extend it): Raycast bounds a no-view
+ *  command's memory, not its time (https://developers.raycast.com/information/lifecycle),
+ *  so a hung boot would leave Start Floating pending for good. The 30 s is an
+ *  unmeasured margin over a real boot (about 1 s in the walks), not a measured bound. */
 export const READY_DEADLINE_MS = 30_000;
 
 /** A launch whose child exited before it said it was up. */
@@ -31,8 +31,8 @@ function errorReport(stderr: string, errorPrefix: string): string {
  *  up: its first newline on stdout, s6's readiness protocol
  *  (https://skarnet.org/software/s6/notifywhenup.html). An exit first rejects
  *  with its code and its stderr from the last line that starts with
- *  `errorPrefix`; silence past `deadlineMs` kills it and rejects. Once up, the
- *  child is let go: no pipe or ref of ours keeps this process alive. */
+ *  `errorPrefix`; no ready newline within `deadlineMs` kills it and rejects.
+ *  Either way the child is let go: no pipe or ref of ours keeps this process alive. */
 export function launchUntilReady(
   bin: string,
   args: string[],
@@ -41,8 +41,15 @@ export function launchUntilReady(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    const letGo = () => {
+      child.stdout.destroy();
+      child.stderr.destroy();
+      child.unref();
+    };
     const deadline = setTimeout(() => {
-      child.kill();
+      // SIGKILL: a boot stuck on its main thread never reads the SIGTERM its quit arm queues.
+      child.kill("SIGKILL");
+      letGo();
       reject(new Error(`pixtuoid did not open its window within ${deadlineMs / 1000} s`));
     }, deadlineMs);
     let stderr = "";
@@ -51,9 +58,7 @@ export function launchUntilReady(
     child.stdout.on("data", (chunk: Buffer) => {
       if (!chunk.includes("\n")) return;
       clearTimeout(deadline);
-      child.stdout.destroy();
-      child.stderr.destroy();
-      child.unref();
+      letGo();
       resolve();
     });
     // An `error` event with no listener is thrown (https://nodejs.org/api/events.html#error-events);

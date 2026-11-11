@@ -109,13 +109,28 @@ pub(crate) fn open_private_append(
     path: &Path,
     opts: OpenOptions,
 ) -> std::io::Result<std::fs::File> {
+    open_private_append_vetted(path, opts, log_guard())
+}
+
+/// The guard every access to a log path passes, write or read: a squatted
+/// per-user `/tmp` dir is refused whichever way it is reached.
+fn log_guard() -> impl Fn(&Path) -> std::io::Result<()> {
     #[cfg(unix)]
-    let vet = |path: &Path| {
-        pixtuoid_core::source::hook::vet_owned_tmp_path(path).map_err(std::io::Error::other)
-    };
+    return log_guard_in(
+        pixtuoid_core::source::hook::owned_tmp_dir(),
+        rustix::process::getuid().as_raw(),
+    );
     #[cfg(not(unix))]
-    let vet = |_: &Path| Ok(());
-    open_private_append_vetted(path, opts, vet)
+    |_: &Path| Ok(())
+}
+
+/// [`log_guard`] over a given per-user dir and uid, so a test can squat one.
+#[cfg(unix)]
+fn log_guard_in(owned: PathBuf, uid: u32) -> impl Fn(&Path) -> std::io::Result<()> {
+    move |path| {
+        pixtuoid_core::source::hook::vet_owned_tmp_path_in(path, &owned, uid)
+            .map_err(std::io::Error::other)
+    }
 }
 
 /// [`open_private_append`] with its guard on the shared `/tmp` dir passed in,
@@ -195,10 +210,6 @@ fn rotate_if_large(path: &Path) {
 /// no-TUI-run-yet state and genuinely means "no drift recorded"; every other error class
 /// leaves the counts UNKNOWN, and folding those into the same silent empty string made
 /// `doctor` positively assert `✓ no decode drift` off an input it never read.
-///
-/// The warning is [`crate::strip_control_chars`]-ed where it is MINTED, for the
-/// reason `crate::display_path` gives: the path comes from
-/// `PIXTUOID_LOG`/`XDG_STATE_HOME`.
 fn read_log(path: &std::path::Path, max: u64) -> (String, Option<String>) {
     let tail = || -> std::io::Result<String> {
         use std::io::{Read, Seek, SeekFrom};
@@ -222,14 +233,18 @@ fn read_log(path: &std::path::Path, max: u64) -> (String, Option<String>) {
     match tail() {
         Ok(s) => (s, None),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (String::new(), None),
-        Err(e) => (
-            String::new(),
-            Some(crate::strip_control_chars(&format!(
-                "log unreadable: {} ({e}) — the decode-drift counts are not meaningful",
-                path.display()
-            ))),
-        ),
+        Err(e) => (String::new(), Some(unreadable(path, &e))),
     }
+}
+
+/// The warning for a log that can't be read, [`crate::strip_control_chars`]-ed
+/// where it is MINTED, for the reason `crate::display_path` gives: the path
+/// comes from `PIXTUOID_LOG`/`XDG_STATE_HOME`.
+fn unreadable(path: &Path, e: &std::io::Error) -> String {
+    crate::strip_control_chars(&format!(
+        "log unreadable: {} ({e}) — the decode-drift counts are not meaningful",
+        path.display()
+    ))
 }
 
 /// Where the runtime log lives: the one file `$PIXTUOID_LOG` names, or a
@@ -302,6 +317,15 @@ impl LogLocation {
     /// The log here, its tail within the read budget; of a runs directory,
     /// the tail across its runs, oldest run first.
     pub(crate) fn read(&self) -> (String, Option<String>) {
+        self.read_vetted(log_guard())
+    }
+
+    /// [`Self::read`] behind `vet`, which a refused path reports as unreadable:
+    /// logs a squatter planted are no drift record.
+    fn read_vetted(&self, vet: impl Fn(&Path) -> std::io::Result<()>) -> (String, Option<String>) {
+        if let Err(e) = vet(self.path()) {
+            return (String::new(), Some(unreadable(self.path(), &e)));
+        }
         match self {
             LogLocation::File(path) => read_log(path, LOG_READ_BYTES),
             LogLocation::Runs(dir) => read_runs(dir, LOG_READ_BYTES),
@@ -319,15 +343,7 @@ fn read_runs(dir: &std::path::Path, budget: u64) -> (String, Option<String>) {
             .filter(|p| p.extension().is_some_and(|e| e == RUN_LOG_EXT))
             .collect(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (String::new(), None),
-        Err(e) => {
-            return (
-                String::new(),
-                Some(crate::strip_control_chars(&format!(
-                    "log unreadable: {} ({e}) — the decode-drift counts are not meaningful",
-                    dir.display()
-                ))),
-            );
-        }
+        Err(e) => return (String::new(), Some(unreadable(dir, &e))),
     };
     runs.sort();
     let (mut read, mut warning, mut left) = (Vec::new(), None, budget);
@@ -466,12 +482,44 @@ mod tests {
         assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
-    /// `PIXTUOID_LOG=/dev/null` throws the log away, as it always did: a
-    /// character device is root's, which no other user can plant.
+    /// `PIXTUOID_LOG=/dev/null` throws the log away, as it always did: only a
+    /// privileged caller can make a character device, so no other user can plant one.
     #[cfg(unix)]
     #[test]
     fn a_log_into_dev_null_opens() {
         open_private_append(Path::new("/dev/null"), OpenOptions::new()).expect("opens");
+    }
+
+    /// The guard writes and reads take refuses a per-user dir another uid owns
+    /// or a group can write, so planted logs are neither appended to nor read.
+    #[cfg(unix)]
+    #[test]
+    fn the_log_guard_refuses_a_squatted_dir_on_write_and_read() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let owned = tmp.path().join("pixtuoid-42");
+        let logs = owned.join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::set_permissions(&owned, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(logs.join("1.log"), "planted\n").unwrap();
+        let uid = rustix::process::getuid().as_raw();
+        let guard = |uid| log_guard_in(owned.clone(), uid);
+        let runs = LogLocation::Runs(logs.clone());
+        assert_eq!(runs.read_vetted(guard(uid)), ("planted\n".to_owned(), None));
+        let theirs = uid.wrapping_add(1);
+        let (text, warning) = runs.read_vetted(guard(theirs));
+        assert!(text.is_empty() && warning.is_some_and(|w| w.contains("log unreadable")));
+        let log = logs.join("2.log");
+        assert!(open_private_append_vetted(&log, OpenOptions::new(), guard(theirs)).is_err());
+        std::fs::set_permissions(&owned, std::fs::Permissions::from_mode(0o770)).unwrap();
+        assert!(
+            runs.read_vetted(guard(uid)).1.is_some(),
+            "a group-writable dir"
+        );
+        assert!(
+            guard(uid)(tmp.path()).is_ok(),
+            "a path outside the dir is not the guard's"
+        );
     }
 
     /// The guard runs before anything is made: a refused path leaves neither

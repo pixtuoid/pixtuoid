@@ -50,8 +50,8 @@ your choice is written back to `config.toml`. Override for one run with `--theme
 
 ## Logging & troubleshooting
 
-The TUI owns your terminal (alternate screen), so runtime diagnostics go to a
-**log file** instead of stderr:
+The TUI and the floating window log runtime diagnostics to a **log file**
+instead of stderr:
 
 | | |
 |-----|-----|
@@ -68,7 +68,7 @@ and the full error is in the log file.
 
 Crashes go to `crash.log` in the default path's parent, whatever `$PIXTUOID_LOG` names.
 
-Non-TUI commands (`--headless`, `doctor`, …) log to stderr directly.
+Every other command (`--headless`, `doctor`, …) logs to stderr directly.
 
 ### `pixtuoid connect` says it can't locate `pixtuoid-hook`
 
