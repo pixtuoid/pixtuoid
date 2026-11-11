@@ -592,11 +592,13 @@ pub(crate) fn omp_parent_key_from_path(path: &Path) -> Option<String> {
 
 /// The header entry (line 2; line 1 is a fixed-width `title` slot that omp
 /// rewrites IN PLACE at offset 0, which the tail cursor sits past, so it is never
-/// re-read; a file may lack the slot). omp rewrites the whole file by temp-write
-/// and rename; the path-keyed cursor re-reads it from the top only when it ends
-/// before the cursor. All at v18.16.0: `session-title-slot.ts`
-/// `serializeTitleSlot`, `session-storage.ts` `updateSessionTitle`,
-/// `session-manager.ts` `hasTitleSlot` and `#rewriteAtomically`.
+/// re-read; a file may lack the slot). omp appends, but a fork, a move or a
+/// tool-output prune rewrites the whole file by temp-write and rename; the
+/// path-keyed cursor re-reads it from the top only when it ends before the
+/// cursor. All at v18.16.0: `session-title-slot.ts` `serializeTitleSlot`,
+/// `session-storage.ts` `updateSessionTitle`, `session-manager.ts`
+/// `hasTitleSlot`, `#fileIsCurrent`, and `#rewriteAtomically` from `fork`,
+/// `moveTo` and `rewriteEntries`.
 const SESSION: &str = "session";
 
 /// A turn entry. `role:"assistant"` content carries `toolCall` blocks

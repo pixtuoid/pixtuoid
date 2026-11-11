@@ -1568,3 +1568,48 @@ fn every_order_of_two_turns_and_a_gated_request_keeps_the_property() {
     }
     assert_eq!(orders, 120, "5! orders");
 }
+
+/// A drained Task's End read past its tombstone reaches the request ledger,
+/// where only the drain's retirement of the call keeps it from answering a
+/// prompt still standing (#152).
+#[test]
+fn a_drained_tasks_end_past_its_tombstone_resolves_no_standing_prompt() {
+    use crate::source::{AgentEvent, RequestKeys, Transport};
+    use crate::state::ActivityState;
+    use crate::state::correlation::DRAINED_TASK_TOMBSTONE_TTL;
+    use crate::{AgentId, Reducer, SceneState};
+    use std::path::PathBuf;
+    use std::time::{Duration, SystemTime};
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = AgentId::from_parts("omp", "/p/tombstone.jsonl");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let start = AgentEvent::SessionStart {
+        agent_id: id,
+        source: "omp".into(),
+        session_id: "p".into(),
+        cwd: PathBuf::from("/repo"),
+        parent_id: None,
+    };
+    r.apply(&mut scene, start, t0, Transport::Hook);
+    let task = AgentEvent::tool_use_start(id, Some("task-T".into()), Some("Agent".into()));
+    r.apply(&mut scene, task, t0, Transport::Hook);
+    let prompt =
+        AgentEvent::user_action_request(id, Some("permission".into()), RequestKeys::default());
+    r.apply(&mut scene, prompt, t0, Transport::Hook);
+    let end = || AgentEvent::ToolUseEnd {
+        agent_id: id,
+        tool_use_id: Some("task-T".into()),
+    };
+    let drained = t0 + Duration::from_secs(1);
+    r.apply(&mut scene, end(), drained, Transport::Hook);
+    let late = drained + DRAINED_TASK_TOMBSTONE_TTL + Duration::from_secs(1);
+    r.apply(&mut scene, end(), late, Transport::Jsonl);
+    assert!(
+        matches!(
+            scene.agents[&id].state,
+            ActivityState::RequiresAction { .. }
+        ),
+        "{:?}",
+        scene.agents[&id].state
+    );
+}

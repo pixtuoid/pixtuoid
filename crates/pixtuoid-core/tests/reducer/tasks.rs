@@ -813,6 +813,8 @@ fn second_drain_inside_grace_restarts_the_cascade_clock() {
     );
 }
 
+/// A drained Task's END replayed inside its tombstone is the tracker's, so it
+/// answers no standing prompt.
 #[test]
 fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_requires_action() {
     let mut scene = SceneState::uniform(8);

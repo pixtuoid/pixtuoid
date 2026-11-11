@@ -243,7 +243,8 @@ enum Preprocessed {
 }
 
 struct TaskTracking {
-    /// A `ToolUseEnd` drained a tracked Task, applying its transition.
+    /// The tracker owns this Task `ToolUseEnd`: it drained the Task now, or the
+    /// Task's drain already ran (a replay).
     handled_by_task_tracking: bool,
     /// A `ToolUseStart` was a Task dispatch, which the tracker owns — replays
     /// included.
@@ -377,7 +378,7 @@ impl Reducer {
                 };
                 self.apply_tool_use_start(scene, agent_id, ids, detail.as_ref(), from, now);
             }
-            // The pre-pass tracker already drained a tracked Task with this End,
+            // The tracker owns this End (it drained the Task, now or earlier),
             // which must not also end an id-less call the parent shows: an End
             // ends any shown call that names none.
             AgentEvent::ToolUseEnd { .. } if tracking.handled_by_task_tracking => {}
