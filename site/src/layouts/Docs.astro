@@ -27,7 +27,7 @@ const {
 
 const idx = DOCS.findIndex((d) => d.id === current);
 const prev = idx > 0 ? DOCS[idx - 1] : undefined;
-const next = idx >= 0 && idx < DOCS.length - 1 ? DOCS[idx + 1] : undefined;
+const next = idx < DOCS.length - 1 ? DOCS[idx + 1] : undefined;
 
 // h2 sections, folding in h3s when a doc has few. Trailing parentheticals are
 // stripped so a long heading doesn't wrap to three lines in the 13rem rail.

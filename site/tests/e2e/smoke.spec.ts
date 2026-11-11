@@ -3274,7 +3274,7 @@ for (const viewport of [
   { width: 390, height: 844 },
   { width: 1280, height: 800 },
 ]) {
-  test(`without JS at ${viewport.width}px every nav link and install method shows, and no control is dead`, async ({
+  test(`without JS at ${viewport.width}px every nav link and install method shows, and the nav's and Install's script-only controls go`, async ({
     browser,
   }) => {
     const context = await browser.newContext({ javaScriptEnabled: false, viewport });

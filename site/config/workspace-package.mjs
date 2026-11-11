@@ -1,5 +1,5 @@
-// The workspace Cargo.toml's [workspace.package] is the one source of the
-// version and the site's origin (`homepage`) that the site and the README read.
+// A regex, not smol-toml: gen-readme runs on node builtins with no npm ci
+// (`just gen-readme-check`).
 
 /**
  * `key`'s string in `cargoToml`'s [workspace.package] table. Scoped to that

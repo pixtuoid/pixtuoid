@@ -423,7 +423,7 @@ const PIN_BYTES: usize = 32;
 /// until then, or with no App installed, it opens the site's page. The fields ride
 /// the fragment, which a browser keeps: "the fragment identifier is separated from
 /// the rest of the URI prior to a dereference" (RFC 3986 §3.5).
-const PAIR_LINK_PREFIX: &str = "https://pixtuoid.dev/pair/#";
+const PAIR_LINK_PREFIX: &str = concat!(env!("CARGO_PKG_HOMEPAGE"), "/pair/#");
 
 /// What every link began with before [`PAIR_LINK_PREFIX`], none of which a
 /// device can pair with.
@@ -2166,16 +2166,6 @@ mod tests {
             assert!(text.starts_with(PAIR_LINK_PREFIX), "{text}");
             assert_eq!(text.parse::<PairLink>().expect("it parses"), link);
         }
-    }
-
-    /// The site is built at the workspace's `homepage`, so a link outside it
-    /// opens a page no build serves.
-    #[test]
-    fn a_pair_link_opens_on_the_site_the_workspace_builds() {
-        assert_eq!(
-            PAIR_LINK_PREFIX,
-            format!("{}/pair/#", env!("CARGO_PKG_HOMEPAGE"))
-        );
     }
 
     /// A link can reach a device from anywhere a URL can, so nothing it carries

@@ -338,10 +338,9 @@ def run_clip(job, out_dirs, work, intermediates):
 
 
 def run_wasm_still(job, out_dirs, work, intermediates):
-    # The live-office backdrop's poster: a REAL frame of the pixtuoid-web Office,
-    # 16:9 at the height the live canvas aims for. Deterministic per
-    # (t0_ms, advance_ms) under the TZ=UTC pin, so a re-render reproduces it; it is
-    # site-only, so no gate compares it.
+    # A REAL frame of the pixtuoid-web Office per wasm-still job, deterministic
+    # per job under the TZ=UTC pin; site-only, so no gate compares it. A job's
+    # `advance_ms` reaches far enough into the loop that the cast has walked in.
     subprocess.run(
         [
             "cargo",
@@ -355,10 +354,9 @@ def run_wasm_still(job, out_dirs, work, intermediates):
         check=True,
         cwd=ROOT,
     )
-    # A job names what it sets, and hero_still's defaults own the rest: the
-    # framing and the advance. `t0_ms` (an exact epoch) and `hour` (a 0-23
-    # convenience) are mutually exclusive time pins; hero_still prefers
-    # `--t0-ms` if both are given.
+    # A job names what it sets, and hero_still's default owns the framing.
+    # `t0_ms` (an exact epoch) and `hour` (a 0-23 convenience) are mutually
+    # exclusive time pins; hero_still prefers `--t0-ms` if both are given.
     flags = {
         "w": "--width",
         "h": "--height",

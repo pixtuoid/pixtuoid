@@ -14,8 +14,8 @@ use std::process::ExitCode;
 
 use pixtuoid_web::Office;
 
-const USAGE: &str = "usage: hero_still <out.png> --seed N [--width W] [--height H] \
-(--t0-ms EPOCH_MS | --hour 0-23) [--advance-ms MS] [--weather NAME] \
+const USAGE: &str = "usage: hero_still <out.png> --seed N --advance-ms MS [--width W] \
+[--height H] (--t0-ms EPOCH_MS | --hour 0-23) [--weather NAME] \
 (<out.png> and the flags may appear in any order)";
 
 // Each takes one value token — skipped in pairs so the lone positional
@@ -48,9 +48,6 @@ fn positional_out(args: &[String]) -> Option<&str> {
 // A 16:9 office at the height the live canvas's `Office::fit` aims for; the PNG is `Office::scale` times it.
 const DEFAULT_HEIGHT: u32 = pixtuoid_web::FRAMING_UNITS_H;
 const DEFAULT_WIDTH: u32 = DEFAULT_HEIGHT * 16 / 9;
-// Far enough into the loop that the cast has walked in and seated, rather than
-// an empty office at t0.
-const DEFAULT_ADVANCE_MS: u64 = 100_000;
 // Arbitrary but FIXED — never "today": only the hour-of-day drives the sky, and
 // pinning the date keeps an `--hour` render byte-identical across machines.
 const T0_REFERENCE_YMD: (i32, u32, u32) = (2024, 6, 1);
@@ -80,9 +77,12 @@ fn main() -> ExitCode {
     };
     let width: u32 = arg(&args, "--width").unwrap_or(DEFAULT_WIDTH);
     let height: u32 = arg(&args, "--height").unwrap_or(DEFAULT_HEIGHT);
-    let advance_ms: u64 = arg(&args, "--advance-ms").unwrap_or(DEFAULT_ADVANCE_MS);
-    // No default: each poster names the live canvas it stands in for.
-    let Some(seed) = arg::<u32>(&args, "--seed") else {
+    // No defaults: each poster's job names the live canvas it stands in for and
+    // its capture instant, which the neon roll guard reads from the manifest.
+    let (Some(seed), Some(advance_ms)) = (
+        arg::<u32>(&args, "--seed"),
+        arg::<u64>(&args, "--advance-ms"),
+    ) else {
         eprintln!("{USAGE}");
         return ExitCode::FAILURE;
     };

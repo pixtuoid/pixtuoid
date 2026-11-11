@@ -147,6 +147,7 @@
    "site"
   ],
   "t0_ms": 1768498200000,
+  "advance_ms": 100000,
   "seed": 0
  },
  {
@@ -159,7 +160,8 @@
   "h": 99,
   "hour": 18,
   "weather": "clear",
-  "seed": 11
+  "seed": 11,
+  "advance_ms": 100000
  },
  {
   "id": "multi-floor",
