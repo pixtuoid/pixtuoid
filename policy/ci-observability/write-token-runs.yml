@@ -1,0 +1,64 @@
+# The reviewed `run:` text of each write-token job, by workflow `name`:
+# `write-token-jobs-run-no-tree-code` fails until a script and its copy here agree.
+
+media regen:
+  publish:
+    - |
+      set -euo pipefail
+      rm -rf docs/images
+      mv rendered docs/images
+      # demo.gif isn't byte-stable across gifsicle builds (gen-media.py), so it
+      # rides along with a real change but never opens a PR on its own.
+      if [ -z "$(git status --porcelain -- docs/images ':!docs/images/demo.gif')" ]; then
+        git checkout -- docs/images/demo.gif
+      fi
+hermetic-nightly:
+  publish:
+    - git apply "$RUNNER_TEMP/$SOURCE.patch"
+  file:
+    - |
+      set -uo pipefail
+      # Every action is tried: one gh error (a rate limit) leaves the rest
+      # filed, and the step red, naming what it could not do.
+      failed=0
+      # The plan is the triage build's output: it acts only on an issue with a
+      # marker line (`hermetic::issues::Subject::of`), and opens one led by one.
+      markers=(--arg source '<!-- hermetic-source: ' --arg leg '<!-- hermetic-leg: ' --arg end ' -->')
+      # shellcheck disable=SC2016 # jq's own variables
+      is_marker='def is_marker: gsub("^\\s+|\\s+$"; "") | (startswith($source) or startswith($leg)) and endswith($end);'
+      gh issue list --label "$HERMETIC_LABEL" --state all --limit "$HERMETIC_LIMIT" \
+        --json number,body >"$RUNNER_TEMP/labelled.json" ||
+        { echo "::error::could not list the hermetic issues"; failed=1; }
+      # A jq error inside a `< <(…)` below would only leave its loop empty.
+      jq -e '[.actions, .lost, .unacquired] | all(type == "array")' plan.json >/dev/null ||
+        { echo "::error::plan.json is not the planner's output"; failed=1; }
+      while IFS= read -r action; do
+        jq -r '.body' <<<"$action" >"$RUNNER_TEMP/body.md"
+        number=$(jq -r '.number // empty' <<<"$action")
+        what=$(jq -r '.do' <<<"$action")
+        if [[ $what == open ]]; then
+          jq -e "${markers[@]}" "$is_marker"' .body | split("\n")[0] | is_marker' <<<"$action" >/dev/null
+        else
+          jq -e "${markers[@]}" --arg n "$number" "$is_marker"' any(.[]; (.number | tostring) == $n and (.body | split("\n") | any(is_marker)))' \
+            "$RUNNER_TEMP/labelled.json" >/dev/null
+        fi || {
+          echo "::error::refused to $what issue ${number:-$(jq -r '.title' <<<"$action")}: no marker of the planner's"
+          failed=1
+          continue
+        }
+        case $what in
+        open) gh issue create --title "$(jq -r '.title' <<<"$action")" --label "$HERMETIC_LABEL" --body-file "$RUNNER_TEMP/body.md" ;;
+        comment) gh issue comment "$number" --body-file "$RUNNER_TEMP/body.md" ;;
+        reopen) gh issue reopen "$number" && gh issue comment "$number" --body-file "$RUNNER_TEMP/body.md" ;;
+        close) gh issue comment "$number" --body-file "$RUNNER_TEMP/body.md" && gh issue close "$number" ;;
+        *) false ;;
+        esac || { echo "::error::could not $what issue ${number:-$(jq -r '.title' <<<"$action")}"; failed=1; }
+      done < <(jq -c '.actions[]' plan.json)
+      while IFS= read -r leg; do
+        echo "::error::$leg"
+        failed=1
+      done < <(jq -r '.lost[]' plan.json)
+      while IFS= read -r leg; do
+        echo "::warning::$leg"
+      done < <(jq -r '.unacquired[]' plan.json)
+      exit "$failed"

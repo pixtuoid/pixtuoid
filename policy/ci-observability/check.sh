@@ -19,7 +19,7 @@ fi
 shape=$(jq -r '
     def text: type == "string" and length > 0;
     .[] | (.id // "?") as $id
-    | ((keys - ["id", "file", "why", "assert", "break", "expected", "covers", "against", "parse-runs"])[] | "\($id): unknown key `\(.)`"),
+    | ((keys - ["id", "file", "why", "assert", "break", "expected", "covers", "against"])[] | "\($id): unknown key `\(.)`"),
       (select(.break | text or (type == "array" and length > 0 and all(.[]; text)) | not)
           | "\($id): break must be a jq edit or a non-empty list of them")' <<<"$contracts")
 if [[ -n $shape ]]; then
@@ -27,32 +27,6 @@ if [[ -n $shape ]]; then
     exit 1
 fi
 count=$(jq 'length' <<<"$contracts")
-# Here, not where shfmt runs: from inside a judgment, the exit would end only a
-# subshell, and the missing tool would read as each file breaking its contract.
-if jq -e 'any(.[]; .["parse-runs"] == true)' <<<"$contracts" >/dev/null && ! command -v shfmt >/dev/null; then
-    echo "error: a parse-runs contract needs shfmt (mise.toml)" >&2
-    exit 1
-fi
-
-# The document a `parse-runs` contract judges: each `run` beside its bash AST
-# from shfmt, or null where shfmt refuses it, which an assert must judge red
-# itself.
-with_run_asts() {
-    local document=$1 path ast
-    while IFS= read -r path; do
-        ast=$(jq -r --argjson p "$path" 'getpath($p).run' <<<"$document" | shfmt --to-json 2>/dev/null) || ast=null
-        document=$(jq -c --argjson p "$path" --argjson ast "$ast" 'setpath($p + ["run_ast"]; $ast)' <<<"$document")
-    done < <(jq -c 'paths(objects | .run | type == "string")' <<<"$document")
-    printf '%s\n' "$document"
-}
-
-# The current contract's verdict on a document, committed or broken, so both
-# sides are judged on the same input.
-judge() {
-    local document=$1
-    [[ $parse_runs != true ]] || document=$(with_run_asts "$document") || return
-    jq -e --arg expected "$expected" --argjson against "$against" "$assertion" <<<"$document"
-}
 
 failed=0
 for ((i = 0; i < count; i++)); do
@@ -62,7 +36,6 @@ for ((i = 0; i < count; i++)); do
     # One JSON string per line: a break written as a YAML block spans lines.
     breaks=$(jq -c ".[$i].break | [.] | flatten | .[]" <<<"$contracts")
     expected=$(jq -r ".[$i].expected // \"\"" <<<"$contracts")
-    parse_runs=$(jq -r ".[$i][\"parse-runs\"] // false" <<<"$contracts")
     against_path=$(jq -r ".[$i].against // \"\"" <<<"$contracts")
     against=null
     if [[ -n $against_path ]] && { ! against=$(yq -o=json '.' "$against_path") ||
@@ -90,7 +63,7 @@ for ((i = 0; i < count; i++)); do
             failed=1
             continue
         fi
-        if ! judge "$document" >/dev/null; then
+        if ! jq -e --arg expected "$expected" --argjson against "$against" "$assertion" <<<"$document" >/dev/null; then
             printf 'error: %s breaks contract %s\n  %s\n' "$file" "$id" "$(jq -r ".[$i].why" <<<"$contracts")" >&2
             failed=1
             continue
@@ -101,9 +74,7 @@ for ((i = 0; i < count; i++)); do
                 [[ $(jq -s 'length == 1 and (.[0] | type) == "object"' <<<"$broken") != true ]]; then
                 printf "error: %s's break does not yield one document from %s:\n%s\n" "$id" "$file" "$breakage" >&2
                 failed=1
-                continue
-            fi
-            if judge "$broken" >/dev/null 2>&1; then
+            elif jq -e --arg expected "$expected" --argjson against "$against" "$assertion" <<<"$broken" >/dev/null 2>&1; then
                 printf 'error: %s still passes on %s after this break, so that clause cannot fire:\n%s\n' "$id" "$file" "$breakage" >&2
                 failed=1
             fi
