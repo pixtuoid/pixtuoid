@@ -168,16 +168,6 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
         }
       } catch (e) {}
     </script>
-    {/* .reveal starts opacity:0 and JS adds .in on scroll, so with JS disabled
-        (or a script/CSP failure) every below-hero section would stay invisible. */}
-    <noscript>
-      <style>
-        .reveal {
-          opacity: 1 !important;
-          transform: none !important;
-        }
-      </style>
-    </noscript>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>

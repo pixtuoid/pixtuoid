@@ -3269,6 +3269,42 @@ test('proof split: without JS the poster still shows, as a plain image', async (
   await context.close();
 });
 
+// Nothing opens the burger, the Docs menu or an Install tab without script.
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 1280, height: 800 },
+]) {
+  test(`without JS at ${viewport.width}px every nav link and install method shows, and no control is dead`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false, viewport });
+    const page = await context.newPage();
+    await page.goto('./config/');
+    const links = page.locator('#nav-links a');
+    expect(await links.count()).toBeGreaterThan(0);
+    for (const link of await links.all()) await expect(link).toBeVisible();
+    for (const button of ['#nav-burger', '#docs-btn', '#theme-toggle'])
+      await expect(page.locator(button)).toBeHidden();
+    // The open links sit above the page, never over it.
+    const nav = (await page.locator('header.nav').boundingBox())!;
+    expect((await page.locator('main').boundingBox())!.y).toBeGreaterThanOrEqual(
+      nav.y + nav.height
+    );
+
+    await page.goto('./');
+    const install = page.locator('#install');
+    await install.scrollIntoViewIfNeeded();
+    await expect(install.locator('.section-head.reveal')).toHaveCSS('opacity', '1');
+    const panels = install.locator('.install__panel');
+    expect(await panels.count()).toBeGreaterThan(1);
+    for (const panel of await panels.all()) await expect(panel.locator('pre')).toBeVisible();
+    await expect(install.locator('.install__tabs')).toBeHidden();
+    for (const copy of await install.locator('.install__copy').all())
+      await expect(copy).toBeHidden();
+    await context.close();
+  });
+}
+
 test('proof split: narrow viewport swaps to the tall stack of the SAME render', async ({
   browser,
 }) => {
