@@ -512,7 +512,7 @@ impl AudioObserver {
         }
         // You hear the floor you're LOOKING AT — but rain stays global, since
         // it's weather, not agent activity.
-        let counts = crate::tally::per_floor_counts(scene)[floor_idx.min(MAX_FLOORS - 1)];
+        let counts = crate::tally::per_floor_counts(scene)[floor_idx];
         let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), weather);
         let rain = sky.rain();
         let floor_ids = floor_agents(scene, floor_idx).map(|slot| &slot.agent_id);

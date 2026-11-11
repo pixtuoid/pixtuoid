@@ -3,9 +3,9 @@
 //! `AStarRouter` runs A* on a coarsened cell grid whose primitives
 //! (`cell_walkable`/`snap`/`CoarseGrid`/`CELL_SIZE`) are the SHARED
 //! `layout::coarse` ones `layout::reach` also rides, so router reachability
-//! can't drift from `ReachSet`. Routes are memoized per (from, to) and
-//! auto-invalidated when the overlay signature changes, so per-frame agent
-//! movement still routes around live agents.
+//! can't drift from `ReachSet`. Routes are memoized per `(from, to, aim)`, and
+//! an overlay change evicts the ones it crosses, so per-frame agent movement
+//! still routes around live agents.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
@@ -27,14 +27,16 @@ pub(crate) const CELL_SIZE: u16 = COARSE_CELL_SIZE;
 /// Abstract pathfinder — routes from `from` to `to` over the supplied mask +
 /// overlay, returning a polyline (first = `from`, last = `to`, intermediate =
 /// corners).
-pub trait Router: std::fmt::Debug {
-    /// Compute or look up the route.
+pub(crate) trait Router: std::fmt::Debug {
+    /// Compute or look up the route, coming in toward `aim`: a caller sets it
+    /// apart from `to` to vary the way in, and to `to` for the plain route.
     fn route(
         &mut self,
         mask: &WalkableMask,
         overlay: &OccupancyOverlay,
         from: Point,
         to: Point,
+        aim: Point,
     ) -> Vec<Point>;
 
     /// Route over a new layout from here, keeping nothing routed over the
@@ -43,8 +45,8 @@ pub trait Router: std::fmt::Debug {
     fn new_layout(&mut self, zone: Bounds);
 }
 
-/// Path-cache entry cap, sized above the recurring (from, to) pairs of a fully
-/// loaded floor. The key space is unbounded in steady state — aimless wander
+/// Path-cache entry cap, sized above the recurring routes of a fully loaded
+/// floor. The key space is unbounded in steady state — aimless wander
 /// mints a fresh destination every cycle and snap-back/exit legs route from live
 /// interpolated origins — so an always-on office would accumulate keys forever.
 /// Overflowing clears the whole map, which is safe: cornered in-flight legs are
@@ -54,8 +56,8 @@ const PATH_CACHE_CAP: usize = 512;
 
 /// A* router with an internal path cache.
 #[derive(Debug, Default, Clone)]
-pub struct AStarRouter {
-    paths: HashMap<(Point, Point), Vec<Point>>,
+pub(crate) struct AStarRouter {
+    paths: HashMap<(Point, Point, Point), Vec<Point>>,
     last_overlay_sig: u64,
     /// Cells inside this zone get a cost discount during A*.
     preferred_zone: Option<Bounds>,
@@ -67,7 +69,7 @@ impl AStarRouter {
         Self::default()
     }
 
-    /// Number of cached `(from, to)` routes currently held.
+    /// Number of cached routes currently held.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.paths.len()
@@ -87,6 +89,7 @@ impl Router for AStarRouter {
         overlay: &OccupancyOverlay,
         from: Point,
         to: Point,
+        aim: Point,
     ) -> Vec<Point> {
         let overlay_sig = overlay.signature();
         // Invalidate only the entries that actually conflict with the new
@@ -95,7 +98,7 @@ impl Router for AStarRouter {
             self.paths.retain(|_, path| path_clear_under(path, overlay));
             self.last_overlay_sig = overlay_sig;
         }
-        if let Some(p) = self.paths.get(&(from, to)) {
+        if let Some(p) = self.paths.get(&(from, to, aim)) {
             return p.clone();
         }
         // Cache ONLY real routes. `path_clear_under` validates cached entries
@@ -103,9 +106,9 @@ impl Router for AStarRouter {
         // [from, to] fallback minted while a transient blocker severed the grid
         // would survive every retain() and serve a walk-through-walls line for
         // that key forever. Left uncached it re-routes next call.
-        match find_path(mask, overlay, self.preferred_zone, from, to) {
+        match find_path(mask, overlay, self.preferred_zone, from, to, aim) {
             Some(path) => {
-                self.paths.insert((from, to), path.clone());
+                self.paths.insert((from, to, aim), path.clone());
                 if self.paths.len() > PATH_CACHE_CAP {
                     self.paths.clear();
                 }
@@ -127,6 +130,7 @@ impl Router for AStarRouter {
 /// a small stride, so it tolerates a tiny overshoot (a 1-px clip into an obstacle
 /// won't invalidate, but a real intersection at any corner will).
 fn path_clear_under(path: &[Point], overlay: &OccupancyOverlay) -> bool {
+    const SAMPLE_STRIDE_PX: i32 = 4;
     if overlay.is_empty() {
         return true;
     }
@@ -134,7 +138,7 @@ fn path_clear_under(path: &[Point], overlay: &OccupancyOverlay) -> bool {
         let (a, b) = (w[0], w[1]);
         let dx = i32::from(b.x) - i32::from(a.x);
         let dy = i32::from(b.y) - i32::from(a.y);
-        let steps = dx.abs().max(dy.abs()).max(1) / 4;
+        let steps = dx.abs().max(dy.abs()).max(1) / SAMPLE_STRIDE_PX;
         let n = steps.max(2);
         for i in 0..=n {
             let x = (i32::from(a.x) + dx * i / n) as u16;
@@ -195,52 +199,60 @@ fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
 /// Max rings the A\* start/goal snap probes for a walkable coarse cell.
 const MAX_SNAP_RADIUS: u16 = 12;
 
-/// Run A* on the layout's walkability mask + per-frame occupancy. Cells whose
-/// center falls inside `preferred` get a step-cost discount, so paths hug that
-/// zone even when an off-zone diagonal cut would be slightly shorter.
+/// Run A* on the layout's walkability mask + per-frame occupancy.
 pub(crate) fn find_path(
     mask: &WalkableMask,
     overlay: &OccupancyOverlay,
     preferred: Option<Bounds>,
     from: Point,
     to: Point,
+    aim: Point,
 ) -> Option<Vec<Point>> {
     let Some((cell_w, cell_h)) = grid_dims(mask) else {
         return Some(vec![from, to]);
     };
+    let cell_near = |p: Point| {
+        snap(
+            mask,
+            overlay,
+            snap_cell(mask, p),
+            cell_w,
+            cell_h,
+            MAX_SNAP_RADIUS,
+        )
+    };
+    let start = cell_near(from)?;
+    let mut coarse = CoarseGrid::new(mask, overlay);
+    let mut search = |goal| Some((goal, a_star(&mut coarse, mask, preferred, start, goal)?));
+    // `aim`'s cell stands in for `to`'s own only where A* reaches it and the last step,
+    // from that cell's anchor to `to`, stays on open floor and clear of the agents.
+    let aimed = cell_near(aim).filter(|&(cx, cy)| {
+        let anchor = cell_anchor(mask, cx, cy);
+        segment_clear(mask, anchor, to) && path_clear_under(&[anchor, to], overlay)
+    });
+    let (goal, came_from) = match aimed.and_then(&mut search) {
+        Some(reached) => reached,
+        None => search(cell_near(to)?)?,
+    };
+    Some(reconstruct(mask, &came_from, goal, from, to))
+}
 
+/// The cell each cell on A*'s way from `start` to `goal` was reached from, or
+/// `None` when `goal` is out of reach. Cells whose center falls inside
+/// `preferred` get a step-cost discount, so paths hug that zone even when an
+/// off-zone diagonal cut would be slightly shorter.
+fn a_star(
+    coarse: &mut CoarseGrid<'_>,
+    mask: &WalkableMask,
+    preferred: Option<Bounds>,
+    start: (u16, u16),
+    goal: (u16, u16),
+) -> Option<Grid<Option<(u16, u16)>>> {
     // A step inside the preferred zone is discounted — a bias, not a hard constraint.
     const PREFERRED_ZONE_COST_NUM: u32 = 7;
     const PREFERRED_ZONE_COST_DEN: u32 = 10;
 
-    let start = snap(
-        mask,
-        overlay,
-        snap_cell(mask, from),
-        cell_w,
-        cell_h,
-        MAX_SNAP_RADIUS,
-    )?;
-    let goal = snap(
-        mask,
-        overlay,
-        snap_cell(mask, to),
-        cell_w,
-        cell_h,
-        MAX_SNAP_RADIUS,
-    )?;
-
-    if start == goal {
-        return Some(reconstruct(
-            mask,
-            &Grid::filled(0, 0, None),
-            start,
-            from,
-            to,
-        ));
-    }
-
-    let mut coarse = CoarseGrid::new(mask, overlay);
+    let (cell_w, cell_h) = cell_dims(mask);
     let mut open: BinaryHeap<Node> = BinaryHeap::new();
     // indexed by cell: a cell's lookups run on every expansion
     let mut came_from: Grid<Option<(u16, u16)>> = Grid::filled(cell_w, cell_h, None);
@@ -254,7 +266,7 @@ pub(crate) fn find_path(
 
     while let Some(current) = open.pop() {
         if current.cell == goal {
-            return Some(reconstruct(mask, &came_from, goal, from, to));
+            return Some(came_from);
         }
         if current.g > g_score.get_or(current.cell.0, current.cell.1, u32::MAX) {
             continue;
@@ -344,9 +356,9 @@ fn reconstruct(
         .iter()
         .map(|&(cx, cy)| cell_anchor(mask, cx, cy))
         .collect();
-    // A raw endpoint stands in for its own cell's anchor only where the segment it
-    // shortens stays on open floor: its cell can be up to half wall, and the
-    // straight segment past it then crosses the wall.
+    // A raw endpoint replaces the anchor beside it only where the segment it
+    // shortens stays on open floor: that anchor's cell can be up to half wall, and
+    // the straight segment past it then crosses the wall.
     let mut pts = vec![from];
     match anchors[..] {
         [only] => {

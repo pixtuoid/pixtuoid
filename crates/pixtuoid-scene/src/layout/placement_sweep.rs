@@ -54,37 +54,39 @@ const SWEEP_SIZES: &[(u16, u16)] = &[
 /// hash, pinned by `the_sweep_reaches_every_floor_variant`.
 pub(super) const SWEEP_SEEDS: std::ops::Range<u64> = 0..12;
 
-/// Run `f` over `SWEEP_SIZES` × `seeds` at production fill (`max_desks: None`,
-/// the densest desk grid — the strictest placement case). A `None` layout is
-/// asserted to be a legitimate refusal, never silently skipped.
+/// Run `f` over `SWEEP_SIZES` × `seeds`, each office laid out by [`swept_layout`].
 fn sweep_over(
     seeds: impl Iterator<Item = u64> + Clone,
     mut f: impl FnMut(u16, u16, u64, &SceneLayout),
 ) {
     for &(w, h) in SWEEP_SIZES {
         for seed in seeds.clone() {
-            match SceneLayout::compute(Viewport::full(w, h), None, seed) {
-                Some(l) => {
-                    // The dual of the None arm below: that one prices a refusal, this
-                    // one prices an acceptance.
-                    assert!(
-                        !l.home_desks.is_empty(),
-                        "{w}x{h} seed {seed}: a layout above the advertised minimum with \
-                         no desk to seat anyone"
-                    );
-                    f(w, h, seed, &l);
-                }
-                // Every entry is meant to sit above both floors, so a refusal means a
-                // floor rose past a hand-pinned size and this axis lost it SILENTLY.
-                None => panic!(
-                    "{w}x{h} seed {seed}: a SWEEP_SIZES entry fell under the floor \
-                     ({}x{}) — the sweep lost it",
-                    super::compute::MIN_LAYOUT_W,
-                    super::compute::MIN_LAYOUT_H
-                ),
-            }
+            f(w, h, seed, &swept_layout(Viewport::full(w, h), seed));
         }
     }
+}
+
+/// `viewport`'s office at `seed`, at production fill (`max_desks: None`, the
+/// densest desk grid — the strictest placement case).
+fn swept_layout(viewport: Viewport, seed: u64) -> SceneLayout {
+    // Every swept office is meant to sit above both floors, so a refusal means a
+    // floor rose past a hand-pinned size and the sweep lost it SILENTLY.
+    let l = SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
+        panic!(
+            "{viewport:?} seed {seed}: a swept office fell under the floor ({}x{}) — the \
+             sweep lost it",
+            super::compute::MIN_LAYOUT_W,
+            super::compute::MIN_LAYOUT_H
+        )
+    });
+    // The dual of the refusal above: that one prices a refusal, this one an
+    // acceptance, and an office with no desk passes every desk check vacuously.
+    assert!(
+        !l.home_desks.is_empty(),
+        "{viewport:?} seed {seed}: a layout above the advertised minimum with no desk \
+         to seat anyone"
+    );
+    l
 }
 
 fn sweep(f: impl FnMut(u16, u16, u64, &SceneLayout)) {
@@ -164,17 +166,10 @@ fn inset_offices() -> impl Iterator<Item = (Viewport, u64)> {
     })
 }
 
-/// `viewport`'s office at `seed`, at production fill.
-fn inset_layout(viewport: Viewport, seed: u64) -> SceneLayout {
-    SceneLayout::compute(viewport, None, seed).unwrap_or_else(|| {
-        panic!("{viewport:?} seed {seed}: the area inside the insets fell under the floor")
-    })
-}
-
 /// Run `f` over [`inset_offices`], each laid out.
 fn sweep_insets(mut f: impl FnMut(Viewport, u64, &SceneLayout)) {
     for (viewport, seed) in inset_offices() {
-        f(viewport, seed, &inset_layout(viewport, seed));
+        f(viewport, seed, &swept_layout(viewport, seed));
     }
 }
 
@@ -768,7 +763,7 @@ fn corner_routes_through_walls(w: u16, h: u16, seed: u64, l: &SceneLayout) -> Ve
     for probes in wall_corner_probes(l) {
         for (i, &from) in probes.iter().enumerate() {
             for &to in &probes[i + 1..] {
-                let Some(path) = find_path(&l.walkable, &overlay, None, from, to) else {
+                let Some(path) = find_path(&l.walkable, &overlay, None, from, to, to) else {
                     continue;
                 };
                 if let Some((p, wall)) = route_through_wall(l, &path) {
@@ -817,9 +812,7 @@ fn no_route_on_a_short_floor_passes_through_a_wall() {
         })
         .collect();
     let check = |&(w, h, seed): &(u16, u16, u64)| {
-        let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
-            panic!("{w}x{h} seed {seed}: refused above the floor");
-        };
+        let l = swept_layout(Viewport::full(w, h), seed);
         let mut v = corner_routes_through_walls(w, h, seed, &l);
         v.extend(wander_legs(&l).into_iter().filter_map(|leg| {
             let (p, wall) = route_through_wall(&l, leg.path.as_ref()?)?;
@@ -976,7 +969,7 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
                 kind: wp.kind,
                 origin,
                 approach: a,
-                path: find_path(&l.walkable, &overlay, None, origin, a),
+                path: find_path(&l.walkable, &overlay, None, origin, a, a),
             });
         }
     }
@@ -999,12 +992,13 @@ fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &Scene
                  side — every leg to it falls back to a straight line through the desk"
             )
         });
-        let path = find_path(&l.walkable, &overlay, None, door, approach).unwrap_or_else(|| {
-            panic!(
-                "{w}x{h} seed {seed}: home desk {i} at {desk:?} has approach {approach:?} \
+        let path =
+            find_path(&l.walkable, &overlay, None, door, approach, approach).unwrap_or_else(|| {
+                panic!(
+                    "{w}x{h} seed {seed}: home desk {i} at {desk:?} has approach {approach:?} \
                  unroutable from the door {door:?} — the coarse grid is severed"
-            )
-        });
+                )
+            });
         if let Some((p, wall)) = route_through_wall(l, &path) {
             panic!(
                 "{w}x{h} seed {seed}: the leg {door:?}->{approach:?} passes {p:?} inside {:?}",
@@ -1107,13 +1101,7 @@ fn short_band_connectivity_boundary_scan() {
     for h in super::compute::MIN_LAYOUT_H..60 {
         for &w in &[super::compute::MIN_LAYOUT_W, 80, 120, 200] {
             for seed in SWEEP_SEEDS {
-                let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
-                    panic!("{w}x{h} seed {seed}: refused above the floor");
-                };
-                assert!(
-                    !l.home_desks.is_empty(),
-                    "{w}x{h} seed {seed}: lays out with no desk to seat anyone"
-                );
+                let l = swept_layout(Viewport::full(w, h), seed);
                 assert_walkable_connected(w, h, seed, &l);
                 assert_home_desk_approaches_are_routable(w, h, seed, &l);
             }
@@ -1131,21 +1119,9 @@ fn narrow_band_connectivity_boundary_scan() {
         // 46 reaches the SHORT band, where the appliance aisle sits at its 8px minimum.
         for &h in &[46u16, 80, 100, 120, 148, 160] {
             for seed in SWEEP_SEEDS {
-                let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
-                    // Every size here is above BOTH floors, so a refusal is a bug —
-                    // and `sweep_over`'s None arm covers only the discrete grid.
-                    panic!("{w}x{h} seed {seed}: refused above the floor");
-                };
-                {
-                    // `assert_home_desk_approaches_are_routable` passes VACUOUSLY on an
-                    // empty one, and this scan visits the widths between the grid points.
-                    assert!(
-                        !l.home_desks.is_empty(),
-                        "{w}x{h} seed {seed}: lays out with no desk to seat anyone"
-                    );
-                    assert_walkable_connected(w, h, seed, &l);
-                    assert_home_desk_approaches_are_routable(w, h, seed, &l);
-                }
+                let l = swept_layout(Viewport::full(w, h), seed);
+                assert_walkable_connected(w, h, seed, &l);
+                assert_home_desk_approaches_are_routable(w, h, seed, &l);
             }
         }
     }
@@ -2065,7 +2041,7 @@ fn the_routing_grid_tiles_from_the_floors_origin() {
         ),
     ];
     for viewport in offices {
-        let l = inset_layout(viewport, 0);
+        let l = swept_layout(viewport, 0);
         let (inner, top_margin) = (l.inner, l.top_margin);
         assert_ne!(
             (top_margin - inner.y) % COARSE_CELL_SIZE,
@@ -2101,7 +2077,7 @@ fn the_routing_grid_tiles_from_the_floors_origin() {
 fn the_route_sweeps_hold_inside_insets() {
     let offices: Vec<(Viewport, u64)> = inset_offices().collect();
     let check = |&(viewport, seed): &(Viewport, u64)| {
-        let l = inset_layout(viewport, seed);
+        let l = swept_layout(viewport, seed);
         let Size { w, h } = viewport.size;
         assert_walkable_connected(w, h, seed, &l);
         assert_spawn_stands_on_open_floor(w, h, seed, &l);
@@ -2126,4 +2102,67 @@ fn the_route_sweeps_hold_inside_insets() {
         .flatten()
         .collect();
     assert_no_violations("inset-route", v);
+}
+
+/// A walk leg aims at its agent's [`crate::pose::jitter_aim`], which can stand
+/// across a desk row or a wall from where the leg ends, so the sweep routes each
+/// desk's way in for several agents, on the floors a user sees, bare and inside
+/// insets.
+#[test]
+#[cfg_attr(
+    coverage,
+    ignore = "an exhaustive sweep outlasts its budget instrumented; the plain suite asserts it on every PR"
+)]
+fn no_jittered_leg_crosses_blocked_floor() {
+    use crate::pathfind::{AStarRouter, Router};
+    let offices: Vec<(Viewport, u64)> = SWEEP_SIZES
+        .iter()
+        .flat_map(|&(w, h)| {
+            (0..crate::floor::MAX_FLOORS).flat_map(move |floor| {
+                std::iter::once(Insets::default())
+                    .chain(SWEEP_INSETS)
+                    .map(move |insets| {
+                        (
+                            inset_viewport(w, h, insets),
+                            crate::floor::floor_seed(floor),
+                        )
+                    })
+            })
+        })
+        .collect();
+    let overlay = crate::walkable::OccupancyOverlay::new();
+    let check = |&(viewport, seed): &(Viewport, u64)| {
+        let l = swept_layout(viewport, seed);
+        let mut router = AStarRouter::new();
+        router.new_layout(l.corridor);
+        let from = l.door_threshold;
+        let mut v = Vec::new();
+        for &desk in &l.home_desks {
+            let (to, _) = crate::pose::desk_leg_endpoint(desk, &l);
+            for agent in 0..8 {
+                let id = pixtuoid_core::AgentId::from_parts("probe", &format!("agent-{agent}"));
+                let path =
+                    crate::pose::route_jittered(&mut router, &l.walkable, &overlay, id, from, to);
+                let blocked = path
+                    .windows(2)
+                    .flat_map(|segment| crate::physics::segment_pixels(segment[0], segment[1]))
+                    .find(|&p| p != from && p != to && !l.walkable.is_walkable(p.x, p.y));
+                if let Some(p) = blocked {
+                    v.push(format!(
+                        "{viewport:?} seed {seed}: {id:?}'s leg {from:?}->{to:?} aimed at {:?} \
+                         crosses blocked floor at {p:?}: {path:?}",
+                        crate::pose::jitter_aim(id, to)
+                    ));
+                }
+            }
+        }
+        v
+    };
+    // the offices are independent: across the cores nextest reserves for it
+    // (`threads-required` in .config/nextest.toml)
+    let v: Vec<String> = crate::par::map(&offices, crate::par::cores(), check)
+        .into_iter()
+        .flatten()
+        .collect();
+    assert_no_violations("jittered-leg-crosses-blocked-floor", v);
 }
