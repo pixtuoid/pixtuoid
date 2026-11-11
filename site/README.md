@@ -100,17 +100,17 @@ enforces the invariants at build time (one default live channel, unique ids,
 assets present, features↔showcase bijection).
 
 **Adding a demo channel**: one `showcase.json` entry + `just gen-media --only site`
-assets (a `clip` channel also adds its render + `encode_clip` block in
-`scripts/gen-media.py`). No component edits.
+assets (a `clip` channel also adds its `"kind": "clip"` job, named by the
+channel's `asset`, to `scripts/media.json`). No component edits.
 
 **Adding a theme**: one row in `src/themes.json` + `just gen-media --only site`. Chips,
 counts, retint, and renders all pick it up automatically.
 
 ## Custom domain & deploy
 
-The site lives on **pixtuoid.dev** (`base: '/'`, `site` in
-`astro.config.mjs`); the domain is configured in **Settings → Pages** (Actions
+The site lives on **pixtuoid.dev** (`base: '/'`, `site` is the workspace
+`homepage` in `Cargo.toml`); the domain is configured in **Settings → Pages** (Actions
 deploys need no `CNAME` file), apex A/AAAA at GitHub Pages, `www` CNAME'd to
 `pixtuoid.github.io`. `robots.txt` + sitemap derive from the config. First
 deploy: set **Source: GitHub Actions**; after that every push to `main`
-touching `site/**` redeploys.
+redeploys.

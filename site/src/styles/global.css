@@ -729,6 +729,13 @@ code {
   opacity: 1;
   transform: none;
 }
+/* Scripting off: nothing ever adds `.in`. */
+@media (scripting: none) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   html {

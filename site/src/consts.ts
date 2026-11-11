@@ -67,13 +67,13 @@ export const DIM_RESTING = 0.55;
 // rendered doc still needs its content collection + page file (site/AGENTS.md).
 export interface DocPage {
   id: string;
-  route: string; // base-path-relative slug (asset(route))
+  route: string; // base-path-relative, slashed as its page's canonical URL (asset(route))
   label: string;
 }
 export const DOCS = [
-  { id: 'config', route: 'config', label: 'Configuration' },
-  { id: 'architecture', route: 'architecture', label: 'Architecture' },
-  { id: 'contributing', route: 'contributing', label: 'Contributing' },
+  { id: 'config', route: 'config/', label: 'Configuration' },
+  { id: 'architecture', route: 'architecture/', label: 'Architecture' },
+  { id: 'contributing', route: 'contributing/', label: 'Contributing' },
 ] as const satisfies readonly DocPage[];
 export type DocId = (typeof DOCS)[number]['id'];
 
