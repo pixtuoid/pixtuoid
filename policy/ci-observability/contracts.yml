@@ -119,14 +119,22 @@
     word `expected` lists, the commands those jobs run today. An allowlist, as
     REVIEW.md's Traps prefer, so an unlisted command fails, and so do a quoted
     or expanded command word and a `run` shfmt cannot parse (a `${{ }}` among
-    them).
+    them). Code also runs outside the `run:` text, so none of these may appear:
+    a guarded step's `shell` or any `defaults`, which pick the interpreter
+    given the script; a `BASH_ENV`, which a non-interactive bash sources; a
+    guarded `run` naming `GITHUB_ENV` or `GITHUB_PATH`, which set the next
+    steps' environment and command lookup.
   assert: |
-    [.jobs.publish, .jobs.file | objects | .steps[] | select(has("run")) | .run_ast
-     | if . == null then "a run shfmt refused"
-       else .. | objects | select(.Type == "CallExpr") | .Args[0] // empty
-         | if .Parts | length == 1 and .[0].Type == "Lit" then .Parts[0].Value else "a word not one literal" end
-       end]
-    - ($expected | split(" ")) == []
+    ([.jobs.publish, .jobs.file | objects | .steps[]? | select(has("run")) | .run_ast
+      | if . == null then "a run shfmt refused"
+        else .. | objects | select(.Type == "CallExpr") | .Args[0] // empty
+          | if .Parts | length == 1 and .[0].Type == "Lit" then .Parts[0].Value else "a word not one literal" end
+        end]
+     - ($expected | split(" ")) == [])
+    and ([.jobs.publish, .jobs.file | objects | .steps[]? | select(has("shell"))] == [])
+    and ([.defaults, .jobs[].defaults] | all(. == null))
+    and ([.. | objects | .env? | objects | has("BASH_ENV")] | any | not)
+    and ([.jobs.publish, .jobs.file | objects | .steps[]? | .run // "" | test("GITHUB_(ENV|PATH)")] | any | not)
   break:
     - '.jobs.publish.steps += [{"run": "perl scripts/x.pl"}]'
     - '.jobs.file.steps += [{"run": "npx some-bin"}]'
@@ -134,7 +142,13 @@
     - '.jobs.file.steps += [{"run": "./scripts/x.sh"}]'
     - '.jobs.publish.steps += [{"run": "\"bash\" scripts/x.sh"}]'
     - '.jobs.file.steps += [{"run": "echo ${{ github.ref }}"}]'
-    - '.jobs.file.steps += [{"run": "if true; then echo \"$(perl x)\"; fi"}]'
+    - '.jobs.file.steps += [{"run": "if false; then echo \"$(perl x)\"; fi"}]'
+    - '.jobs.publish.steps += [{"shell": "bash scripts/x.sh {0}", "run": "echo"}]'
+    - '.jobs.file.defaults = {"run": {"shell": "bash scripts/x.sh {0}"}}'
+    - '.defaults = {"run": {"shell": "bash scripts/x.sh {0}"}}'
+    - '.jobs.publish.steps += [{"env": {"BASH_ENV": "scripts/x.sh"}, "run": "echo"}]'
+    - '.jobs.file.steps += [{"run": "echo BASH_ENV=scripts/x.sh >> \"$GITHUB_ENV\""}]'
+    - '.jobs.publish.steps += [{"run": "echo scripts >> \"$GITHUB_PATH\""}]'
 
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml

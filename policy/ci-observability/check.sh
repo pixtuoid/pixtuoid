@@ -27,16 +27,18 @@ if [[ -n $shape ]]; then
     exit 1
 fi
 count=$(jq 'length' <<<"$contracts")
+# Here, not where shfmt runs: from inside a judgment, the exit would end only a
+# subshell, and the missing tool would read as each file breaking its contract.
+if jq -e 'any(.[]; .["parse-runs"] == true)' <<<"$contracts" >/dev/null && ! command -v shfmt >/dev/null; then
+    echo "error: a parse-runs contract needs shfmt (mise.toml)" >&2
+    exit 1
+fi
 
 # The document a `parse-runs` contract judges: each `run` beside its bash AST
 # from shfmt, or null where shfmt refuses it, which an assert must judge red
 # itself.
 with_run_asts() {
     local document=$1 path ast
-    command -v shfmt >/dev/null || {
-        echo "error: a parse-runs contract needs shfmt (mise.toml)" >&2
-        exit 1
-    }
     while IFS= read -r path; do
         ast=$(jq -r --argjson p "$path" 'getpath($p).run' <<<"$document" | shfmt --to-json 2>/dev/null) || ast=null
         document=$(jq -c --argjson p "$path" --argjson ast "$ast" 'setpath($p + ["run_ast"]; $ast)' <<<"$document")
