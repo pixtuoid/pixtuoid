@@ -35,7 +35,8 @@ pub(crate) fn install_crash_hook() {
         let saved = crate::run_log::open_private_append(&crash_path, std::fs::OpenOptions::new())
             .and_then(|mut f| std::io::Write::write_all(&mut f, report.as_bytes()));
 
-        let issue_url = build_issue_url(version, &panic_msg, &location, &bt_str, &crash_path);
+        let saved_to = saved.is_ok().then_some(crash_path.as_path());
+        let issue_url = build_issue_url(version, &panic_msg, &location, &bt_str, saved_to);
 
         // The payload and the path are text we don't control, so stripped
         // before they reach the terminal; the URL is percent-encoded already.
@@ -82,7 +83,7 @@ fn build_issue_url(
     panic_msg: &str,
     location: &str,
     backtrace: &str,
-    crash_path: &std::path::Path,
+    saved_to: Option<&std::path::Path>,
 ) -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
@@ -101,11 +102,11 @@ fn build_issue_url(
     const MAX_BT: usize = 1500;
     let bt_body = if backtrace.len() > MAX_BT {
         let cut = truncate_to_char_boundary(backtrace, MAX_BT);
-        format!(
-            "{}\n\n... truncated — see {} for full trace",
-            &backtrace[..cut],
-            crash_path.display()
-        )
+        // No pointer to a crash log the hook failed to write.
+        let see = saved_to.map_or_else(String::new, |p| {
+            format!(" — see {} for full trace", p.display())
+        });
+        format!("{}\n\n... truncated{see}", &backtrace[..cut])
     } else {
         backtrace.to_string()
     };
@@ -220,35 +221,43 @@ mod tests {
         );
     }
 
-    /// A crash log that can't be written is said to be unsaved, with why.
+    /// The notice and the issue link point at the crash log only when it was
+    /// written; one that can't be is said to be unsaved, with why.
     #[cfg(unix)]
     #[test]
-    fn the_hook_says_the_backtrace_is_saved_only_when_it_is() {
+    fn the_hook_points_at_the_backtrace_only_when_it_saved_it() {
         const CHILD: &str = "PIXTUOID_CRASH_HOOK_SAVE_CHILD";
         if std::env::var_os(CHILD).is_some() {
             install_crash_hook();
             panic!("deliberate panic: the crash-hook save probe");
         }
         let tmp = tempfile::tempdir().unwrap();
+        let writable = tmp.path().join("writable");
         // A file where the state dir goes, so the crash log's dir can't be made.
-        let state = tmp.path().join("state");
-        std::fs::write(&state, "").unwrap();
-        let out = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                &this_test("the_hook_says_the_backtrace_is_saved_only_when_it_is"),
-                "--nocapture",
-            ])
-            .env(CHILD, "1")
-            .env("XDG_STATE_HOME", &state)
-            .output()
-            .unwrap();
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(!stderr.contains("saved to"), "{stderr:?}");
-        assert!(
-            stderr.contains("Couldn't save the full backtrace"),
-            "{stderr:?}"
-        );
+        let blocked = tmp.path().join("blocked");
+        std::fs::write(&blocked, "").unwrap();
+        for (state, saved) in [(writable, true), (blocked, false)] {
+            let out = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    &this_test("the_hook_points_at_the_backtrace_only_when_it_saved_it"),
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("XDG_STATE_HOME", &state)
+                .output()
+                .unwrap();
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            // The link cuts the trace, the case its pointer is for.
+            assert!(stderr.contains("truncated"), "{stderr:?}");
+            assert_eq!(stderr.contains("saved to"), saved, "{stderr:?}");
+            assert_eq!(stderr.contains("for%20full%20trace"), saved, "{stderr:?}");
+            assert_eq!(
+                stderr.contains("Couldn't save the full backtrace"),
+                !saved,
+                "{stderr:?}"
+            );
+        }
     }
 
     #[cfg(unix)]
@@ -348,7 +357,7 @@ mod tests {
             "test panic",
             "file.rs:1:1",
             "bt",
-            Path::new("/tmp/x"),
+            Some(Path::new("/tmp/x")),
         );
         assert!(url.starts_with(&format!("{}/issues/new?", pixtuoid_scene::hit::REPO_URL)));
         assert!(url.contains("title="));
@@ -362,7 +371,7 @@ mod tests {
         // A newline percent-encodes to three bytes, so untruncated this trace
         // alone is three times the limit.
         let long_bt = "\n".repeat(GITHUB_URL_LIMIT);
-        let url = build_issue_url("0.4.0", "msg", "loc", &long_bt, Path::new("/tmp/x"));
+        let url = build_issue_url("0.4.0", "msg", "loc", &long_bt, Some(Path::new("/tmp/x")));
         assert!(url.len() < GITHUB_URL_LIMIT, "{}", url.len());
         assert!(url.contains("truncated"));
     }
