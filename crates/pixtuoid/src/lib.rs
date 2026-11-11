@@ -160,7 +160,7 @@ pub fn fatal_error_text(e: &anyhow::Error) -> String {
     format!("Error: {}", strip_lines(&format!("{e:?}"), "\n"))
 }
 
-/// The one URL launcher both painters call: `open::that` blocks on Linux until the
+/// The one URL launcher: `open::that` blocks on Linux until the
 /// browser exits (`xdg-open`), freezing frames, input and the quit arm on the event
 /// loop. A failed launch only logs: the click does nothing on screen.
 pub(crate) fn open_url(url: &str) {

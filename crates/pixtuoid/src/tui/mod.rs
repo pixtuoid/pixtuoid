@@ -26,8 +26,8 @@ use tokio::time::MissedTickBehavior;
 use tui_renderer::TuiRenderer;
 
 use crate::panels::{
-    FloorNav, KeyAction, KeyCtx, ModalState, PointerEvent, apply_key_action, dispatch_key,
-    mouse_ladder, ui_state,
+    ClickCtx, FloorNav, KeyAction, KeyCtx, ModalState, PointerEvent, apply_key_action,
+    dispatch_key, mouse_ladder, ui_state,
 };
 use crate::runtime::{QuitArms, QuitSignal, SceneRx};
 use pixtuoid_scene::hit::HitAction;
@@ -410,6 +410,10 @@ impl<B: ratatui::backend::Backend<Error: Send + Sync + 'static>> crate::panels::
     fn release(&mut self) -> Option<HitAction> {
         self.renderer.release(self.at.0, self.at.1)
     }
+
+    fn pet(&mut self, kind: pet::PetKind) {
+        self.renderer.pet(kind, self.now);
+    }
 }
 
 /// `m` through the mouse ladder ([`crate::panels::mouse_ladder`]).
@@ -417,8 +421,7 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     m: crossterm::event::MouseEvent,
     ui: &mut ui_state::UiState,
     renderer: &mut TuiRenderer<B>,
-    scene_rx: &SceneRx,
-    focus: impl FnOnce(&pixtuoid_core::AgentSlot),
+    cx: ClickCtx<'_>,
     now: SystemTime,
 ) {
     let event = match m.kind {
@@ -435,28 +438,16 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
         held: matches!(m.kind, MouseEventKind::Drag(MouseButton::Left)),
         now,
     };
-    let (_, click) = mouse_ladder(
+    mouse_ladder(
         ui,
         popup_scale,
         event,
         Some(at),
         || crossterm::terminal::size().ok(),
         &mut office,
+        cx,
     );
     renderer.set_mouse_pos(Some(at));
-    match click {
-        Some(HitAction::Focus(id)) => {
-            let slot = scene_rx.borrow().agents.get(&id).cloned();
-            if let Some(slot) = slot {
-                focus(&slot);
-            }
-        }
-        Some(HitAction::Pet(kind)) => renderer.pet(kind, now),
-        Some(HitAction::Open(url)) => {
-            crate::open_url(url);
-        }
-        None => {}
-    }
 }
 
 /// Hand `renderer` the half-blocks' painter on this terminal and the cutaway
@@ -587,6 +578,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                                 now,
                                 respawn: crate::audio::respawn,
                                 installed: crate::sources::detect,
+                                focus: crate::focus::focus_slot,
                             },
                         );
                         if quit {
@@ -597,8 +589,11 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                         m,
                         &mut ui,
                         &mut renderer,
-                        &scene_rx,
-                        crate::focus::focus_slot,
+                        ClickCtx {
+                            scene: Some(&snapshot),
+                            focus: crate::focus::focus_slot,
+                            open: crate::open_url,
+                        },
                         now,
                     ),
                     _ => {}
@@ -1300,6 +1295,7 @@ mod apply_key_action_tests {
                     now: SystemTime::UNIX_EPOCH,
                     respawn: no_respawn,
                     installed: self.installed,
+                    focus: crate::panels::noted::focus,
                 },
             )
         }
@@ -1551,6 +1547,22 @@ mod apply_key_action_tests {
             h.ui.connection.selected, start,
             "ConnectionUp must undo ConnectionDown, not advance further"
         );
+    }
+
+    /// The focus key focuses the agent on the selected dashboard row, and only
+    /// that one.
+    #[test]
+    fn the_focus_key_focuses_the_selected_rows_agent() {
+        let mut h = Harness::new();
+        h.seed_agents(3);
+        h.apply(KeyAction::ToggleDashboard);
+        let first = h.ui.dashboard.selected;
+        h.apply(KeyAction::DashboardDown);
+        let chosen = h.ui.dashboard.selected.expect("a selected row");
+        assert_ne!(Some(chosen), first, "premise: the row is not the first one");
+        crate::panels::noted::take_focused();
+        h.apply(KeyAction::DashboardFocus);
+        assert_eq!(crate::panels::noted::take_focused(), [chosen]);
     }
 
     /// A commit persists the theme it showed, and no look where the picker

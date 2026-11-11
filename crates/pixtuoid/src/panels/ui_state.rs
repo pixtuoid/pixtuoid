@@ -986,7 +986,8 @@ mod tests {
     }
 
     /// A press meets the link where the popup paints it below the notices
-    /// it holds: one where the link would sit without them is swallowed.
+    /// it holds and opens this release's page; one where the link would sit
+    /// without them is swallowed.
     #[test]
     fn a_press_meets_the_link_below_the_notices() {
         use crate::panels::widgets::version_popup_url_rect;
@@ -1001,10 +1002,19 @@ mod tests {
         let bare = version_popup_url_rect(bounds, &[], 1.0).expect("a link");
         let held = version_popup_url_rect(bounds, ui.version_notices(), 1.0).expect("a link");
         assert_ne!(bare, held, "the notices move the link");
+        let press = |ui: &mut UiState, at: ratatui::layout::Rect, open: fn(&str)| {
+            crate::panels::modal_mouse(ui, 1.0, Some((at.x, at.y)), || Some(screen), open)
+        };
         assert_eq!(
-            crate::panels::modal_mouse(&mut ui, 1.0, Some((bare.x, bare.y)), || Some(screen)),
+            press(&mut ui, bare, |url| panic!("opened {url}")),
             crate::panels::ModalMouse::Inert
         );
+        assert_eq!(
+            press(&mut ui, held, crate::panels::noted::open),
+            crate::panels::ModalMouse::Took
+        );
+        let page = crate::panels::widgets::release_url(env!("CARGO_PKG_VERSION"));
+        assert_eq!(crate::panels::noted::take_opened(), [page]);
     }
 
     /// Only the run an upgrade booted says it updated, even on a
