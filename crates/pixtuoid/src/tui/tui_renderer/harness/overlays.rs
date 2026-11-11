@@ -178,6 +178,36 @@ fn onboarding_overlay_renders_roster_and_hint() {
         text.contains("press m anytime"),
         "the one-line audio offer rides the hints (#633); frame:\n{text}"
     );
+
+    // Its connects running, the card takes only a quit and Esc: it offers
+    // neither its keys nor the mute.
+    let onboarding = OnboardingFrame {
+        open: true,
+        rows: vec![WelcomeRow {
+            source_id: "codex",
+            label_prefix: "cx",
+            display_name: "Codex".into(),
+            checked: true,
+        }],
+        selected: 0,
+        elapsed_ms: 100_000,
+        dim: pixtuoid_scene::look::Dim::from_brightness(0.4),
+        busy: true,
+    };
+    r.set_frames(
+        RenderFrames {
+            onboarding,
+            ..Default::default()
+        },
+        t0(),
+    );
+    r.render(&scene, t0()).unwrap();
+    let text = frame_text(r.frame_buffer());
+    assert!(text.contains("connecting \u{2026}"), "frame:\n{text}");
+    assert!(
+        !text.contains("space toggle") && !text.contains("press m anytime"),
+        "frame:\n{text}"
+    );
 }
 
 #[test]

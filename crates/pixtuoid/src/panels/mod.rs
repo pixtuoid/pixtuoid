@@ -464,31 +464,6 @@ impl PanelChange {
             Self::Refresh => "still reading the sources \u{2014} one change at a time".into(),
         }
     }
-
-    /// A line per source it changes, each the failure `e` is.
-    fn unstarted(&self, e: &std::io::Error) -> Vec<ChangeNotice> {
-        let failed = |source_id, name, op| ChangeNotice {
-            source_id,
-            line: connection::format_failure(op, name, &e.to_string()),
-            failed: true,
-            quiet: false,
-        };
-        match self {
-            Self::Toggle {
-                source_id,
-                name,
-                on,
-            } => vec![failed(*source_id, name, connection::FailedOp::of(*on))],
-            Self::Onboarding(ids) => ids
-                .iter()
-                .map(|&id| {
-                    let name = pixtuoid_core::source::display_name(id).unwrap_or(id);
-                    failed(id, name, connection::FailedOp::Connect)
-                })
-                .collect(),
-            Self::Refresh => Vec::new(),
-        }
-    }
 }
 
 /// A [`PanelChange`] and what its thread makes it with.
@@ -577,16 +552,35 @@ fn start_change<H: Host>(cx: &mut KeyCtx<'_, H>, change: PanelChange) {
             let _ = change_tx.send(run(job));
         });
     match started {
-        Ok(_) => cx.ui.changing = Some(change),
-        Err(e) => {
-            tracing::warn!(error = %e, "could not start a Sources change");
-            let done = ChangeDone {
-                onboarding: matches!(change, PanelChange::Onboarding(_)),
-                notices: change.unstarted(&e),
-                rows: cx.ui.connection.rows.clone(),
-            };
-            finish_change(cx.ui, done);
+        Ok(thread) => {
+            change_threads().push(thread);
+            // The line a change before it left would stand for this one.
+            if change != PanelChange::Refresh {
+                cx.ui.connection.last_result = None;
+            }
+            cx.ui.changing = Some(change);
         }
+        Err(e) => cx.ui.connection.last_result = Some(format!("could not start the change: {e}")),
+    }
+}
+
+/// The threads of the Sources changes started this run, for a quit to let
+/// them finish: a killed CLI leaves its change a rollback to write.
+static CHANGE_THREADS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn change_threads() -> std::sync::MutexGuard<'static, Vec<std::thread::JoinHandle<()>>> {
+    let mut threads = CHANGE_THREADS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    threads.retain(|thread| !thread.is_finished());
+    threads
+}
+
+/// Wait for every Sources change started this run to end.
+pub(crate) fn join_changes() {
+    for thread in std::mem::take(&mut *change_threads()) {
+        let _ = thread.join();
     }
 }
 
@@ -705,14 +699,16 @@ fn surface_notices(
         }
         _ => ui.connection.rows = rows,
     }
-    if ui.connection.open && !notices.is_empty() {
-        ui.connection.last_result = Some(
+    // A change with nothing to say still ends a refusal's "one change at a
+    // time".
+    if ui.connection.open {
+        ui.connection.last_result = (!notices.is_empty()).then(|| {
             notices
                 .into_iter()
                 .map(|n| n.line)
                 .collect::<Vec<_>>()
-                .join("  \u{b7}  "),
-        );
+                .join("  \u{b7}  ")
+        });
     }
 }
 
@@ -1033,11 +1029,11 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
             if cx.ui.connection.open {
                 cx.ui.close_connection();
             } else {
-                // On the rows it last showed, else ones without their health,
-                // which the refresh brings: its rollup can run a CLI.
+                // On the rows it last showed, else placeholders, until the
+                // refresh brings what the files say: its reads can stall.
                 let rows = match std::mem::take(&mut cx.ui.connection.rows) {
                     rows if rows.is_empty() => {
-                        connection::rows_without_health(&cx.connected.snapshot())
+                        connection::placeholder_rows(&cx.connected.snapshot())
                     }
                     rows => rows,
                 };
@@ -2250,21 +2246,15 @@ pub(crate) mod noted {
         }
     }
 
-    /// A row per registered source, as a machine with none of their CLIs
-    /// probes them, each connected where `connected` says.
+    /// The [placeholder rows](super::connection::placeholder_rows) with each
+    /// source connected where `connected` says.
     pub(crate) fn rows(connected: impl Fn(&str) -> bool) -> Vec<super::connection::ConnectionRow> {
-        crate::sources::build_rows_from(
-            pixtuoid_core::source::registry::REGISTRY
-                .iter()
-                .map(|source| crate::sources::RowInput {
-                    source,
-                    target: None,
-                    facts: None,
-                    connected: connected(source.name),
-                    health: None,
-                })
-                .collect(),
-        )
+        let set = pixtuoid_core::source::registry::REGISTRY
+            .iter()
+            .filter(|source| connected(source.name))
+            .map(|source| source.name.to_owned())
+            .collect();
+        super::connection::placeholder_rows(&set)
     }
 }
 

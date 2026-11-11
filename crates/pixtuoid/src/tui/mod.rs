@@ -1510,6 +1510,25 @@ mod apply_key_action_tests {
         assert!(codex.is_some_and(|r| r.state == crate::sources::ConnState::Disconnected));
     }
 
+    /// A quit lets a running change end, a killed CLI's rollback included,
+    /// before the process goes.
+    #[test]
+    fn a_quit_waits_for_a_running_change_to_end() {
+        let mut h = Harness::new();
+        h.sources_on("codex", &[]);
+        h.apply(KeyAction::ConnectionToggle);
+        let config = h.config_path.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            crate::panels::noted::open_gate(&config, false);
+        });
+        crate::panels::join_changes();
+        assert!(
+            h.change_done.try_recv().is_ok(),
+            "the wait ended before the change"
+        );
+    }
+
     /// The panel opens at once on rows no probe has read, and reads them off
     /// the loop: until they land, a change waits its turn.
     #[test]
@@ -1517,6 +1536,10 @@ mod apply_key_action_tests {
         let mut h = Harness::new();
         h.apply(KeyAction::ToggleConnection);
         assert!(h.ui.connection.open && h.ui.connection.rows.len() > 1);
+        assert!(
+            h.ui.connection.rows.iter().all(|r| r.config_path.is_none()),
+            "the placeholders read no file"
+        );
         assert_eq!(h.ui.changing, Some(crate::panels::PanelChange::Refresh));
         h.apply(KeyAction::ConnectionToggle);
         assert_eq!(
@@ -1526,6 +1549,10 @@ mod apply_key_action_tests {
         h.open_gate(false);
         h.settle();
         assert_eq!(h.ui.changing, None);
+        assert_eq!(
+            h.ui.connection.last_result, None,
+            "its refusal ended with it"
+        );
         assert_eq!(
             h.ui.connection.rows.len(),
             crate::panels::noted::rows(|_| false).len()
@@ -1585,6 +1612,12 @@ mod apply_key_action_tests {
             line.starts_with(&format!("{}: connect failed", name("cursor"))),
             "{line}"
         );
+
+        // A retry from the failed row: the failure gives way to its progress.
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(h.ui.connection.last_result, None);
+        let frame = h.frame();
+        assert!(frame.contains("connecting \u{2026}"), "{frame}");
     }
 
     /// A choice the config refuses still shows this run, and the footer says it

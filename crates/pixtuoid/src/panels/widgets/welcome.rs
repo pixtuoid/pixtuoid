@@ -113,7 +113,8 @@ pub(crate) fn paint_welcome(
         Line::from("")
     });
     if cfg!(feature = "audio") {
-        below.push(if shown_hints {
+        // A busy card takes no mute key, so it offers none.
+        below.push(if shown_hints && !busy {
             Line::from(Span::styled(
                 // Must fit WELCOME_W incl. the 2-col indent, or it clips mid-word.
                 // Absent on no-audio builds: a dead mute key reads as broken.

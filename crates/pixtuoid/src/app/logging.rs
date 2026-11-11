@@ -393,9 +393,13 @@ mod tests {
     }
 
     /// Stdout swapped for a pipe that is full and that nobody reads, until
-    /// this drops.
+    /// this drops: stdout comes back, then the reader goes, so a write still
+    /// waiting fails and lets go of std's stdout lock.
     #[cfg(unix)]
-    struct StalledStdout(std::os::fd::OwnedFd);
+    struct StalledStdout {
+        saved: std::os::fd::OwnedFd,
+        reader: Option<std::io::PipeReader>,
+    }
 
     #[cfg(unix)]
     impl StalledStdout {
@@ -420,13 +424,14 @@ mod tests {
             while writer.write(&[0; 4096]).is_ok() {}
             while writer.write(&[0]).is_ok() {}
             blocking(true);
-            // Never closed, so a write waits rather than fails.
-            std::mem::forget(reader);
             // SAFETY: dup and dup2 of fds this process holds open.
             unsafe {
                 let saved = std::os::fd::OwnedFd::from_raw_fd(libc::dup(libc::STDOUT_FILENO));
                 libc::dup2(fd, libc::STDOUT_FILENO);
-                Self(saved)
+                Self {
+                    saved,
+                    reader: Some(reader),
+                }
             }
         }
     }
@@ -437,8 +442,9 @@ mod tests {
             use std::os::fd::AsRawFd as _;
             // SAFETY: dup2 of the stdout this process saved.
             unsafe {
-                libc::dup2(self.0.as_raw_fd(), libc::STDOUT_FILENO);
+                libc::dup2(self.saved.as_raw_fd(), libc::STDOUT_FILENO);
             }
+            drop(self.reader.take());
         }
     }
 

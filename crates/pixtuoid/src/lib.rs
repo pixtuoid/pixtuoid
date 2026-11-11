@@ -183,15 +183,14 @@ pub fn report_fatal(e: &anyhow::Error) {
 /// the process.
 pub(crate) fn within(name: &str, bound: std::time::Duration, work: impl FnOnce() + Send + 'static) {
     let (done, finished) = std::sync::mpsc::channel();
-    let started = std::thread::Builder::new()
+    // A spawn that fails drops `done`, which ends the wait at once.
+    let _ = std::thread::Builder::new()
         .name(name.into())
         .spawn(move || {
             work();
             let _ = done.send(());
         });
-    if started.is_ok() {
-        let _ = finished.recv_timeout(bound);
-    }
+    let _ = finished.recv_timeout(bound);
 }
 
 /// The one URL launcher: `open::that` blocks on Linux until the

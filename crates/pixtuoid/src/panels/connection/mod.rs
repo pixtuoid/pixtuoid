@@ -15,7 +15,7 @@ use pixtuoid_core::state::SceneState;
 
 // Re-exported so this module, the painter and the harness keep their
 // `connection::…` paths; the model itself lives in `crate::sources`.
-pub(crate) use crate::sources::{ConnState, ConnectionRow, build_rows, rows_without_health};
+pub(crate) use crate::sources::{ConnState, ConnectionRow, build_rows, placeholder_rows};
 
 /// WHAT is live for one row — a TYPED split, because the two source classes have
 /// nothing to count in common. An `Agent` source's liveness is its `AgentSlot`s; a

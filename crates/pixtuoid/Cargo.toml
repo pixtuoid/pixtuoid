@@ -141,8 +141,7 @@ serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami"
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 # The kitty `t=s` objects (graphics/shm.rs), whose `shm_open` libc types
-# differently on each Unix; `process`: a quit signal's kill of doctor's probe
-# groups.
+# differently on each Unix; `process`: the run log's owner check.
 rustix = { workspace = true, features = ["shm", "mm", "process"] }
 
 # Focus-jump activation (focus/macos.rs). Pinned to the SAME objc2 stack winit
