@@ -103,6 +103,17 @@ test('pantry FAQ: an indented answer stays inside the chat column', async ({ pag
   }
 });
 
+test('pantry FAQ: every answer cites its source as a link to that file in the repo', async ({
+  page,
+}) => {
+  await page.goto('./');
+  const answers = await page.locator('.pantry__bubble--a').count();
+  const cites = page.locator('.pantry__cite a');
+  await expect(cites).toHaveCount(answers);
+  for (const cite of await cites.all())
+    await expect(cite).toHaveAttribute('href', /\/blob\/main\/[\w.-]+\.md#[\w-]+$/);
+});
+
 test('pantry FAQ: bubbles pop in sequence, join pix:paused, reduced-motion is static', async ({
   page,
   browser,
