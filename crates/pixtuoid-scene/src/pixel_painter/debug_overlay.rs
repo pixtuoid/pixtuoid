@@ -319,11 +319,11 @@ mod tests {
             !painted(&walks),
             "an agent with no walk_path, or no walk at all, draws nothing"
         );
-        let ms_path = WalkState {
+        let with_route = WalkState {
             walk_path: Some(vec![Point { x: 5, y: 5 }, Point { x: 80, y: 80 }]),
             ..WalkState::default()
         };
-        walks.insert(id_path, ms_path);
+        walks.insert(id_path, with_route);
         assert!(painted(&walks), "the walk_path must draw a route polyline");
     }
 

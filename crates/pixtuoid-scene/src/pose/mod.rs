@@ -239,7 +239,7 @@ pub(crate) fn derive_with_routing(
     rctx: &mut RouteCtx<'_>,
 ) -> Option<Pose> {
     // Only `route_walking_pose` records a route, so a frame that isn't walking
-    // leaves none for the debug layer to draw.
+    // leaves none for the walkable debug layer to draw.
     if let Some(walk) = rctx.walks.get_mut(&slot.agent_id) {
         walk.walk_path = None;
     }

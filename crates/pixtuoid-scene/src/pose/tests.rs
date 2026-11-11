@@ -921,7 +921,8 @@ const MAX_FRAME_STEP_PX: i32 = 20;
 
 /// Step `slot` for `frames` frames of [`PAINT_FRAME`], sampling
 /// `character_top_left` against a real `AStarRouter`. Returns
-/// `(max_chebyshev_step, drawn_frame_count)`.
+/// `(max_chebyshev_step, walking_frame_count)`, a walking frame being one that
+/// records a route.
 fn max_top_left_step(
     slot: &AgentSlot,
     l: &SceneLayout,
@@ -936,7 +937,7 @@ fn max_top_left_step(
 
     let mut prev: Option<Point> = None;
     let mut max_step = 0i32;
-    let mut drawn = 0usize;
+    let mut walking = 0usize;
     for i in 0..frames {
         let now = start + PAINT_FRAME * i;
         if let Some(a) = character_top_left(slot, l, now, &mut rig.rctx()) {
@@ -947,10 +948,16 @@ fn max_top_left_step(
                 max_step = max_step.max(step);
             }
             prev = Some(a);
-            drawn += 1;
+        }
+        if rig
+            .walks
+            .get(&slot.agent_id)
+            .is_some_and(|walk| walk.walk_path.is_some())
+        {
+            walking += 1;
         }
     }
-    (max_step, drawn)
+    (max_step, walking)
 }
 
 #[test]
@@ -958,8 +965,8 @@ fn entry_walk_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = entry_slot(now);
-    let (max_step, drawn) = max_top_left_step(&slot, &l, now, 150);
-    assert!(drawn > 20, "entry walk should render many frames");
+    let (max_step, walking) = max_top_left_step(&slot, &l, now, 150);
+    assert!(walking > 20, "the entry walk should walk many frames");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
         "entry walk teleported: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
@@ -1147,8 +1154,8 @@ fn exit_walk_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = exiting_slot(now, now - Duration::from_secs(60));
-    let (max_step, drawn) = max_top_left_step(&slot, &l, now, 200);
-    assert!(drawn > 20, "exit walk should render many frames");
+    let (max_step, walking) = max_top_left_step(&slot, &l, now, 200);
+    assert!(walking > 20, "the exit walk should walk many frames");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
         "exit walk teleported: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"

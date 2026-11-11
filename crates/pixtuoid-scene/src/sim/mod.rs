@@ -256,8 +256,9 @@ pub struct SimFrame {
     /// The tick's agent snapshot — placements index into it, paint borrows
     /// from it.
     pub agents: Vec<AgentSlot>,
-    /// The authoritative routed pose per home-desk agent this tick (`None` =
-    /// no renderable pose). Unread by paint BY DESIGN;
+    /// The authoritative routed pose per agent this tick (`None` = no
+    /// renderable pose, as for an agent without a desk in this layout). Unread
+    /// by paint BY DESIGN;
     /// `floor::FloorSession::step` is the lib-side consumer.
     pub(crate) poses: HashMap<AgentId, Option<Pose>>,
     /// Per-desk "occupant is actually seated right now" (drives screen glow +

@@ -164,7 +164,7 @@ pub struct WalkState {
     pub(crate) wander: WanderState,
 
     /// The route this frame's walk leg follows, `None` on a frame that isn't
-    /// walking; the debug overlay draws it.
+    /// walking; the walkable debug layer draws it.
     pub(crate) walk_path: Option<Vec<Point>>,
 
     /// Lifted by a pointer, and walking home after: overrides the wander and
