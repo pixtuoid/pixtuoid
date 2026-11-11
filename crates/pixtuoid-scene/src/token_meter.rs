@@ -11,9 +11,7 @@ use std::time::SystemTime;
 
 use pixtuoid_core::AgentSlot;
 
-/// T1's threshold; T2/T3 derive by `TIER_FACTOR`. The site copy
-/// (`site/src/features.json` "Token meter" desc → the README table) repeats the
-/// derived thresholds — update it on recalibration.
+/// T1's threshold; T2/T3 derive by `TIER_FACTOR`.
 pub(crate) const TIER_BASE_TOKENS: u64 = 250_000;
 /// The geometric step between tiers — wide enough that crossing a tier stays
 /// an event (a linear ladder saturates by mid-session).

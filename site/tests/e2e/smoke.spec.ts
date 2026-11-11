@@ -2430,6 +2430,7 @@ atOfficeMoments(
       '#install .section-head .lead',
       '#amenities .eyebrow',
       '.pantry__cite',
+      '.pantry__cite a',
     ]) {
       const ratio = await paintedContrast(page, selector);
       expect(
@@ -2818,11 +2819,9 @@ test('tenant board text (badges, legend, planned rows, soon marks, star plaque) 
     };
     const plaqueColors = await page.evaluate(() => ({
       stars: getComputedStyle(document.querySelector('.tools__plaque-stars')!).color,
-      engraving: getComputedStyle(document.querySelector('.tools__plaque-engraving')!).color,
       link: getComputedStyle(document.querySelector('.tools__plaque-link')!).color,
     }));
     assertPlaqueAA(plaqueColors.stars, 'plaque stars');
-    assertPlaqueAA(plaqueColors.engraving, 'plaque engraving');
     assertPlaqueAA(plaqueColors.link, 'plaque link');
 
     // sources.json currently has zero "planned" rows, so probe the markup SupportedTools.astro emits, injected into the real table
@@ -3336,10 +3335,10 @@ test('audit C1: night theme does not repaint chrome anchors coral (a:not(.btn) i
   });
   await page.goto('./');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
-  // The global `:root[data-theme='night'] a:not(.btn)` rule (0,3,1) outranks
-  // these anchors' own (0,2,0) colours unless it stays :where()-scoped.
+  // The night `a:not(.btn)` repaint (global.css) must not reach these anchors'
+  // own colours; `.pantry__cite a` holds its cite ink by `color: inherit`.
   const coral = await resolvedCoral(page);
-  for (const sel of ['.hero__ghost', '.nav__logo', '.tools__plaque-link']) {
+  for (const sel of ['.hero__ghost', '.nav__logo', '.tools__plaque-link', '.pantry__cite a']) {
     const color = await page
       .locator(sel)
       .first()

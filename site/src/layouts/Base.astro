@@ -21,14 +21,12 @@ interface Props {
   title?: string;
   description?: string;
   preloadImage?: string;
-  jsonLd?: Record<string, unknown>;
 }
 
 const {
   title = 'pixtuoid — your coding agents, alive in a pixel office',
   description = 'A terminal-native pixel-art office that visualizes your AI coding agents (Claude Code, Codex, and more) as little animated coworkers — day/night lighting, weather, themes, and pets included.',
   preloadImage,
-  jsonLd,
 } = Astro.props;
 
 const SITE = Astro.site;
@@ -37,10 +35,6 @@ const ogImage = new URL(asset('demos/hero-poster.png'), SITE).href;
 // doesn't self-declare the homepage as canonical.
 const canonical = new URL(Astro.url.pathname, SITE).href;
 const version = __PIXTUOID_VERSION__; // the latest release TAG, not Cargo.toml (config/released-version.mjs)
-
-// Escape `<` so no string value can break out of the <script> block (a `</script`
-// or `<!--` in serialized JSON would otherwise close it).
-const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : null;
 ---
 
 <!doctype html>
@@ -72,8 +66,6 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
     <meta property="og:description" content={description} />
     <meta property="og:image" content={ogImage} />
     <meta name="twitter:card" content="summary_large_image" />
-
-    {jsonLdSafe && <script type="application/ld+json" is:inline set:html={jsonLdSafe} />}
 
     <!-- No-FOUC theme init: ?theme= override → saved choice → system → day -->
     <script

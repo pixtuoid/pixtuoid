@@ -128,11 +128,6 @@ const legendStates = (['yes', 'experimental', 'planned', 'no'] as OsState[]).fil
         <p class="tools__plaque-stars">
           {starText(stars)}<span class="sr-only">GitHub stars</span>
         </p>
-        {/* the engraving: the same sourced claim showcase.json already ships
-             on the AGENTS channel caption — one sentence, two mounts */}
-        <p class="tools__plaque-engraving">
-          fleets of 100+ agents have run this repo through this very office.
-        </p>
         <a class="tools__plaque-link" href={REPO} target="_blank" rel="noreferrer">star it →</a>
       </aside>
     </div>
@@ -158,11 +153,6 @@ const legendStates = (['yes', 'experimental', 'planned', 'no'] as OsState[]).fil
     color: var(--led);
     text-shadow: 0 0 6px var(--led-glow);
     margin: 0 0 0.5rem;
-  }
-  .tools__plaque-engraving {
-    font-size: 0.82rem;
-    color: var(--chip-dim);
-    margin: 0 0 0.8rem;
   }
   .tools__plaque-link {
     font-size: 0.82rem;

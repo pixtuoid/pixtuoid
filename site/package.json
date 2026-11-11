@@ -44,6 +44,7 @@
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-astro": "^3.2.1",
+    "github-slugger": "^2.0.0",
     "globals": "^17.13.0",
     "hast-util-from-html": "^2.0.3",
     "hast-util-to-text": "^4.0.2",
