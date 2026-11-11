@@ -156,8 +156,7 @@ fn proc_row(pid: u32) -> Option<ProcRow> {
     })
 }
 
-/// `pbsi_comm` is a fixed 16-byte field the kernel leaves UNTERMINATED at
-/// exactly that length, so the array bound — not a NUL — ends the name.
+/// `pbsi_comm` is NUL-terminated inside its `MAXCOMLEN` bytes; decode up to the NUL.
 #[cfg(target_os = "macos")]
 fn comm_name(raw: &[libc::c_char]) -> String {
     let bytes: Vec<u8> = raw
@@ -412,6 +411,19 @@ mod tests {
             proc_row(dead.id()).is_none(),
             "a reaped pid must read as no row, not a stale one"
         );
+    }
+
+    /// Our own name as the kernel cuts it, which a test binary's runs past: a
+    /// name decoded wrong hides every interposer shell from the walk (#896).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_macos_row_reader_names_this_binary() {
+        let exe = std::env::current_exe().expect("our own path");
+        let name = exe.file_name().expect("a file name").as_encoded_bytes();
+        // `MAXCOMLEN - 1` bytes, then the NUL (xnu-12377.1.9 `bsd/kern/proc_info.c:828-829`).
+        let comm = name.get(..libc::MAXCOMLEN - 1).unwrap_or(name);
+        let me = proc_row(std::process::id()).expect("our own row is readable");
+        assert_eq!(me.exe, String::from_utf8_lossy(comm));
     }
 
     /// The real resolver against the real process table.
