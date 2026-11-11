@@ -11,6 +11,7 @@ use std::sync::Arc;
 use pixtuoid_scene::audio::bank::{AssetBank, Synthesis};
 use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::audio::{AudioEngine, AudioFrame, MAX_DT_S, OneShotPool, TickCommands};
+use serde::Serialize;
 
 #[derive(Debug)]
 pub(crate) struct WebAudioDriver {
@@ -81,46 +82,33 @@ impl WebAudioDriver {
     }
 }
 
-pub(crate) fn commands_json(cmd: &TickCommands) -> String {
-    let mut out = String::from("{\"gains\":[");
-    for (i, g) in cmd.gains.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&fmt_f32(*g));
-    }
-    out.push_str("],\"plays\":[");
-    for (i, p) in cmd.plays.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&format!(
-            "[{},{},{}]",
-            p.pool.wire(),
-            p.index,
-            fmt_f32(p.gain)
-        ));
-    }
-    out.push_str("],\"music\":");
-    match cmd.music {
-        Some(m) => {
-            let [daylight, intensity, rain] = pixtuoid_scene::audio::controls_wire(m.controls);
-            out.push_str(&format!(
-                "{{\"controls\":[{},{},{}],\"gain\":{}}}",
-                fmt_f32(daylight),
-                fmt_f32(intensity),
-                fmt_f32(rain),
-                fmt_f32(m.gain)
-            ));
-        }
-        None => out.push_str("null"),
-    }
-    out.push('}');
-    out
+/// A tick's commands as the site's WebAudio glue reads them
+/// ([`Office::audio_tick`](crate::Office::audio_tick)).
+#[derive(Serialize)]
+struct Commands {
+    gains: [f32; LoopStem::ALL.len()],
+    plays: Vec<(u8, usize, f32)>,
+    music: Option<Music>,
 }
 
-fn fmt_f32(v: f32) -> String {
-    format!("{v:.5}")
+#[derive(Serialize)]
+struct Music {
+    controls: [f32; 3],
+    gain: f32,
+}
+
+pub(crate) fn commands_json(cmd: &TickCommands) -> serde_json::Result<String> {
+    let commands = Commands {
+        gains: cmd.gains,
+        plays: (cmd.plays.iter())
+            .map(|p| (p.pool.wire(), p.index, p.gain))
+            .collect(),
+        music: cmd.music.map(|m| Music {
+            controls: pixtuoid_scene::audio::controls_wire(m.controls),
+            gain: m.gain,
+        }),
+    };
+    serde_json::to_string(&commands)
 }
 
 #[cfg(test)]
@@ -221,7 +209,7 @@ mod tests {
                 gain: 0.75,
             }),
         };
-        let json = commands_json(&cmd);
+        let json = commands_json(&cmd).expect("the commands serialize");
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(v["music"]["gain"], 0.75);
         let wire: Vec<f32> =
@@ -231,8 +219,10 @@ mod tests {
             cmd.music.map(|m| m.controls),
             "the worker hands back what the wire carried"
         );
-        let silent: serde_json::Value =
-            serde_json::from_str(&commands_json(&TickCommands::default())).expect("valid JSON");
+        let silent: serde_json::Value = serde_json::from_str(
+            &commands_json(&TickCommands::default()).expect("the commands serialize"),
+        )
+        .expect("valid JSON");
         assert!(silent["music"].is_null(), "no frame, no song");
         assert_eq!(v["gains"].as_array().unwrap().len(), LoopStem::ALL.len());
         assert_eq!(v["gains"][at(LoopStem::Rain)].as_f64().unwrap(), 0.35);
@@ -243,6 +233,33 @@ mod tests {
             assert_eq!(OneShotPool::from_wire(p.wire()), Some(p));
         }
         assert_eq!(OneShotPool::from_wire(9), None);
+    }
+
+    /// A gain crosses in its shortest round-trip form, which the page parses to
+    /// the same value, rather than at a fixed precision.
+    #[test]
+    fn a_gain_crosses_in_its_shortest_form() {
+        let cmd = TickCommands {
+            gains: [0.35; LoopStem::ALL.len()],
+            ..TickCommands::default()
+        };
+        let json = commands_json(&cmd).expect("the commands serialize");
+        let want = format!("\"gains\":[{}]", ["0.35"; LoopStem::ALL.len()].join(","));
+        assert!(json.contains(&want), "{json}");
+    }
+
+    /// A non-finite gain reaches the page as JSON's `null`, never as a token
+    /// that fails the whole tick's `JSON.parse`.
+    #[test]
+    fn a_non_finite_gain_still_makes_valid_json() {
+        let cmd = TickCommands {
+            gains: [f32::NAN; LoopStem::ALL.len()],
+            ..TickCommands::default()
+        };
+        let v: serde_json::Value =
+            serde_json::from_str(&commands_json(&cmd).expect("the commands serialize"))
+                .expect("valid JSON");
+        assert!(v["gains"][0].is_null(), "{v}");
     }
 
     #[test]
