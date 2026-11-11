@@ -119,9 +119,11 @@
     what `expected` lists today. That is each simple command's first literal
     word, written `cmd:sub` for a command with a `cmd:` entry, which a plain
     `cmd` then never matches (`git` and `gh`, as `git -c` and a
-    `gh alias set --shell` alias run what they are handed); each `export`,
-    `declare` or `let`; and, written `name=`, each name assigned before a
-    command, alone, by `read` or as a `for` variable. An allowlist, as
+    `gh alias set --shell` alias run what they are handed); each declaration
+    builtin (shfmt's `DeclClause`, such as `export`, `declare`, `local` or
+    `readonly`) or `let`; and, written `name=`, each name assigned before a
+    command, alone, by `read` (its every operand but `-r`) or as a `for`
+    variable. An allowlist, as
     REVIEW.md's Traps prefer, so anything unlisted fails, and so do a quoted
     or expanded word and a `run` shfmt cannot parse (a `${{ }}` among
     them). Code also runs outside the `run:` text. A write-token job sets no
@@ -131,10 +133,7 @@
     Every `env` a write-token job sees, the workflow's included, is a
     mapping of the keys those jobs see today. A write-token job's `run`
     names neither `PATH` nor `GITHUB_ENV`/`GITHUB_PATH`, which set the next
-    steps' environment and command lookup. It guards against an accidental
-    tree-running step; a deliberate evasion is the review's to catch
-    (REVIEW.md, Do not flag: speculative defense in depth where a primary
-    defense holds).
+    steps' environment and command lookup.
   assert: |
     def literal: if (.Parts | length) == 1 and .Parts[0].Type == "Lit" then .Parts[0].Value else "a word not one literal" end;
     ($expected | split(" ")) as $listed
@@ -151,7 +150,7 @@
                 ([.Args[]? | literal] as $w
                  | select($w != [])
                  | (if any($listed[]; startswith($w[0] + ":")) then $w[0] + ":" + ($w[1] // "a word not one literal") else $w[0] end),
-                   (select($w[0] == "read") | $w[1:][] | select(startswith("-") | not) | . + "="))
+                   (select($w[0] == "read") | $w[1:][] | select(. != "-r") | . + "="))
               else empty end
           end]
        - $listed == [])
@@ -190,6 +189,8 @@
     - '.jobs.file.steps += [{"run": "for HOME in scripts; do echo; done"}]'
     - '.jobs.file.steps += [{"run": "let HOME=1"}]'
     - '.jobs.file.steps += [{"run": "gh alias set --shell x scripts/x"}]'
+    - '.jobs.file.steps += [{"run": "read -aHOME"}]'
+    - '.jobs.file.steps += [{"run": "((PATH = 1))"}]'
 
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml
