@@ -1323,6 +1323,16 @@ fn audio_observer_keeps_cue_edges_warm_so_delivery_resume_fires_no_volley() {
     );
 }
 
+/// A floor past the last fails where it comes from, as the office's views do,
+/// instead of playing the top floor's stems over a floor showing nobody.
+#[test]
+#[should_panic(expected = "out of bounds")]
+fn audio_observer_refuses_a_floor_past_the_last() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let past_the_last = (MAX_FLOORS, crate::sky::WeatherPolicy::default());
+    let _ = AudioObserver::default().frame(&make_scene(4, 16), None, |_| None, past_the_last, now);
+}
+
 // The frame-seam scale-invariance property lives in `render_scale.rs` — the
 // version here asserted only desk count + buffer width, which hold on a garbled frame.
 
