@@ -91,7 +91,16 @@ impl Store {
         if text.is_empty() && !self.0.exists() {
             return Ok(Stored::default());
         }
-        serde_json::from_str(text).context("the pairing state is unreadable")
+        serde_json::from_str(text).with_context(|| self.unreadable("the pairing state"))
+    }
+
+    /// Where `what` failed to read, and what deleting that file costs.
+    fn unreadable(&self, what: &str) -> String {
+        format!(
+            "{what} in {} is unreadable; deleting that file starts over with a new key and no \
+             device paired",
+            self.0.display()
+        )
     }
 
     /// Unlocked: the write is an atomic rename, so a reader sees a whole file.
@@ -114,7 +123,7 @@ impl Store {
     pub(super) fn key(&self) -> Result<KeyPair> {
         self.update(|stored| {
             if let Some(pem) = &stored.key_pem {
-                return KeyPair::from_pem(pem).context("the stored TLS key is unreadable");
+                return KeyPair::from_pem(pem).with_context(|| self.unreadable("the TLS key"));
             }
             let key = KeyPair::generate()?;
             stored.key_pem = Some(key.serialize_pem());
@@ -295,16 +304,28 @@ mod tests {
     }
 
     /// A silent fresh start would mint a new key and break every device's pin
-    /// with no word why.
+    /// with no word why; the error names the file, which `pair --reset` can't
+    /// mend either.
     #[test]
     fn an_unreadable_file_is_an_error_not_a_new_identity() {
         let (_dir, store) = fixture();
         store.key().expect("a new key");
+        let file = store.0.display().to_string();
         for unreadable in ["{not json", ""] {
             std::fs::write(&store.0, unreadable).expect("it writes");
-            assert!(store.key().is_err(), "{unreadable:?}");
+            for said in [said(store.key()), said(store.reset())] {
+                assert!(said.contains(&file), "{said}");
+            }
             assert!(store.knows(&Hashed::of("t")).is_err(), "{unreadable:?}");
         }
+        std::fs::write(&store.0, r#"{"key_pem":"not a key"}"#).expect("it writes");
+        let said = said(store.key());
+        assert!(said.contains(&file), "{said}");
+    }
+
+    /// The error `result` must be, as a user reads it.
+    fn said<T>(result: Result<T>) -> String {
+        format!("{:#}", result.err().expect("an error"))
     }
 
     #[test]
