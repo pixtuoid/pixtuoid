@@ -234,10 +234,11 @@ pub(crate) fn transcript_session(
 pub(crate) fn first_sight_start(
     path: &Path,
     source: &str,
-    (session_id, agent_id): (String, AgentId),
+    id_for: impl FnOnce(&Path) -> String,
     cwd: PathBuf,
     head_parent: Option<String>,
 ) -> AgentEvent {
+    let (session_id, agent_id) = transcript_session(source, path, id_for);
     AgentEvent::SessionStart {
         agent_id,
         source: source.to_string(),

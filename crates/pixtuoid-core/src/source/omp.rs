@@ -671,8 +671,8 @@ fn omp_label(source: &str, text: &str) -> String {
 /// the shared cwd derivation as its FLOOR — superseded by the session title,
 /// which reaches first sight through [`omp_head_title`] and the live stream
 /// through the decoder's `title_change` arm.
-// Rides `derive_prefixed_label`'s gate: the watcher wiring is `native`, and the
-// registry conformance test is the only other caller.
+// The watcher wiring is `native`, and the registry conformance test is the only
+// other caller.
 #[cfg(any(feature = "native", test))]
 pub(crate) fn omp_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
     if omp_parent_key_from_path(path).is_some()

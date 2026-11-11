@@ -220,9 +220,9 @@ pub enum AgentEvent {
     },
     /// Identity context a hook decoder attaches ahead of a hook event that may
     /// be its session's first sight (an activity event or a turn end), or after
-    /// a start to carry its pid (omp, antigravity): hook payloads carry
-    /// source/session_id/cwd that those variants don't, so this, not the event,
-    /// registers an unknown id. The reducer registers-or-back-fills from it on
+    /// a start, as its pid carrier: hook payloads carry source/session_id/cwd
+    /// that those variants don't, so this, not the event, registers an unknown
+    /// id. The reducer registers-or-back-fills from it on
     /// the Hook transport ONLY (a JSONL `Identity` is a structural no-op — a
     /// transcript line can be a historical replay).
     Identity {

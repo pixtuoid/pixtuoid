@@ -2156,8 +2156,8 @@ fn a_start_on_the_transport_that_did_not_raise_only_counts() {
     ));
 }
 
-/// grok's transcript reads `turn_completed` past its hooks' next call, which an
-/// id-less one no in-flight ledger shows again.
+/// grok's transcript reads `turn_completed` past its hooks' next call; a call
+/// naming no id has no in-flight entry to show it again.
 #[test]
 fn a_transcript_turn_end_naming_no_turn_leaves_a_hook_started_call() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);

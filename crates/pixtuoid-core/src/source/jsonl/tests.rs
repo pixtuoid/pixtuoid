@@ -9,7 +9,7 @@ use super::*;
 use crate::AgentId;
 use crate::source::claude_code::{cc_activity_recency, decode_cc_line};
 use crate::source::decoder::{accept_all_paths, default_id_from_path};
-use crate::source::first_sight::{Registration, first_sight_start, transcript_session};
+use crate::source::first_sight::{Registration, first_sight_start};
 use crate::source::{AgentEvent, Transport};
 
 fn snap(pairs: &[(&str, i32)]) -> ProbeSnapshot {
@@ -3388,13 +3388,7 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
     // first-sight gate is skipped for a known file).
     let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), 999u64)])));
     let claimed = Sight::Claimed(Registration {
-        start: first_sight_start(
-            &path,
-            "test",
-            transcript_session("test", &path, default_id_from_path),
-            "/repo".into(),
-            None,
-        ),
+        start: first_sight_start(&path, "test", default_id_from_path, "/repo".into(), None),
         label: Some("cc·repo".into()),
     });
     let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), claimed)])));

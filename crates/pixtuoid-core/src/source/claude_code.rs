@@ -6,8 +6,7 @@ use serde_json::Value;
 #[cfg(any(feature = "native", test))]
 use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, cwd_basename_label, ellipsize, extract_top_level_cwd,
-    make_tool_detail, non_empty,
+    MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, make_tool_detail, non_empty,
 };
 
 use crate::AgentId;
@@ -478,16 +477,15 @@ pub(crate) fn cc_activity_recency(tail: &[u8]) -> TailActivity {
 
 /// CC label: subagent paths → "subagent", else "cc·" + cwd basename. With `cwd`
 /// unknown, the bare prefix, which never replaces a label a hook gave: the
-/// project dir slugs every non-alphanumeric to '-', so no basename reads back.
+/// project dir writes the cwd's '/', '.' and '_' alike as '-' (observed;
+/// anthropics/claude-code#19972), so no basename reads back from it.
 pub fn cc_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
     // Slash-bounded, and shared with `detect_parent_id`: a loose `"subagents"`
     // substring mislabels a `subagents-paper` repo's parent transcript.
     if crate::source::decoder::is_subagent_path(path) {
         return "subagent".to_string();
     }
-    // The `cc` prefix is a registry fact, not a literal (invariant #3).
-    let prefix = crate::source::decoder::label_prefix_for(source);
-    cwd_basename_label(prefix, cwd).unwrap_or_else(|| prefix.to_string())
+    crate::source::decoder::derive_prefixed_label(source, cwd)
 }
 
 #[cfg(test)]
@@ -1052,9 +1050,7 @@ mod tests {
         );
     }
 
-    /// A first read that names no cwd keeps the label a hook gave its session:
-    /// the project dir slugs every non-alphanumeric to '-', so no basename can
-    /// be read back from it.
+    /// A first read that names no cwd keeps the label a hook gave its session.
     #[test]
     fn an_unknown_cwd_never_relabels_a_hook_labelled_session() {
         let path = Path::new("/Users/me/.claude/projects/-x-my-repo/sid.jsonl");
@@ -1076,11 +1072,9 @@ mod tests {
     }
 
     #[test]
-    fn label_final_fallback_to_cc_when_no_project_dir() {
-        assert_eq!(
-            cc_derive_label(Path::new("abc.jsonl"), "claude-code", Path::new("")),
-            "cc"
-        );
+    fn an_unknown_cwd_labels_the_bare_prefix() {
+        let path = Path::new("/Users/me/.claude/projects/-Users-me-dotfiles/abc.jsonl");
+        assert_eq!(cc_derive_label(path, "claude-code", Path::new("")), "cc");
     }
 
     // If the per-line decode ever keys differently from the registry row's
