@@ -8,6 +8,7 @@
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
+use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::{Drive, Fold};
 use pixtuoid_core::id::normalize_path_key;
 use pixtuoid_core::source::AgentEvent;
@@ -39,7 +40,7 @@ fn lines_at(capture: &str) -> Vec<String> {
     super::captures::fixture_lines(
         &super::captures::sources_root()
             .join(capture)
-            .join("hook-payloads.jsonl"),
+            .join(HOOK_PAYLOADS),
     )
 }
 

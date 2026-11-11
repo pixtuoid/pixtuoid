@@ -290,7 +290,7 @@ mod tests {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn open_vnode_paths_never_reports_a_unix_socket() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir_in(crate::harness::socket_root()).unwrap();
         let sock = dir.path().join("leader.sock");
         let listener = std::os::unix::net::UnixListener::bind(&sock).expect("bind");
         let canonical = sock.canonicalize().unwrap();

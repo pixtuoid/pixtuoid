@@ -15,6 +15,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::{Drive, Driven};
 use pixtuoid_core::source::{AgentEvent, registry};
 
@@ -105,7 +106,7 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
         driven
     });
 
-    let hooks_path = dir.join("hook-payloads.jsonl");
+    let hooks_path = dir.join(HOOK_PAYLOADS);
     // `{{TRANSCRIPT_PATH}}` lets a path-keyed hook (CC) line up with its
     // transcript.
     let hook_lines: Vec<String> = if hooks_path.exists() {

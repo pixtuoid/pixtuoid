@@ -8,13 +8,20 @@ use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
 
-/// The source trees whose literals reach the screen, core's decoded labels
-/// and details among them.
-const RENDERERS: [&str; 4] = [
-    "../pixtuoid-core/src",
-    "../pixtuoid-scene/src",
-    "src/tui",
-    "src/floating",
+/// The source trees whose literals are held to the window's glyphs, core's
+/// decoded labels and details among them: the binary's whole tree, its
+/// terminal-only text too, so a module a painter comes to read is covered
+/// before anyone lists it.
+const SCANNED: [&str; 3] = ["../pixtuoid-core/src", "../pixtuoid-scene/src", "src"];
+
+/// What [`SCANNED`] leaves out.
+const NEVER_PAINTED: [&str; 3] = [
+    // The doctor's terminal report, whose `✗` the window lacks; what a painter
+    // shows of the doctor lives beside that painter.
+    "src/doctor.rs",
+    "src/doctor",
+    // The pack's palette keys, which name art colours and never show.
+    "../pixtuoid-scene/src/pack/lookup.rs",
 ];
 
 /// What world text (the badges, the board, the bubbles, the floor sign) is
@@ -30,9 +37,6 @@ const WORLD_WRITERS: [&str; 5] = [
 /// What [`WORLD_WRITERS`] holds that the office never draws: a change's line,
 /// which a panel shows (the window test covers it) and a device.
 const OFF_THE_OFFICE: [&str; 1] = ["../pixtuoid-core/src/remote/change.rs"];
-
-/// The pack's palette keys, which name art colours and never show.
-const PALETTE_KEYS: &str = "../pixtuoid-scene/src/pack/lookup.rs";
 
 /// The characters of a file's string and char literals outside tests, the
 /// `harness`, attributes and patterns, and the off-screen modules it declares
@@ -175,15 +179,19 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Each source file under [`RENDERERS`] outside its crate's tests and
-/// `harness`, with the characters its literals write.
+/// Each source file under [`SCANNED`], less [`NEVER_PAINTED`], outside its
+/// crate's tests and `harness`, with the characters its literals write.
 fn written() -> Vec<(PathBuf, Vec<char>)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
-    for tree in RENDERERS {
+    for tree in SCANNED {
         rust_files(&root.join(tree), &mut files);
     }
-    files.retain(|file| *file != root.join(PALETTE_KEYS));
+    files.retain(|file| {
+        !NEVER_PAINTED
+            .iter()
+            .any(|off| file.starts_with(root.join(off)))
+    });
     let parsed: Vec<(PathBuf, Written)> = files
         .into_iter()
         .map(|file| {
