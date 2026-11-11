@@ -711,7 +711,7 @@ fn route_walking_pose(
     )
 }
 
-/// Half-range (px) of the per-agent destination jitter — the offset spans
+/// Half-range (px) of the per-agent routing aim's jitter — the offset spans
 /// `-JITTER_MAX_PX..=JITTER_MAX_PX`, so the modulus span is `2*MAX+1`.
 const JITTER_MAX_PX: i32 = 4;
 const JITTER_SPAN: u64 = (2 * JITTER_MAX_PX + 1) as u64;
