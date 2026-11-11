@@ -138,12 +138,12 @@ impl ProbeSnapshot {
 
 /// Optional first-party liveness probe: the session ids — in the source's
 /// `IdDeriver` id-space — of agent processes known to be ALIVE right now.
-/// ADDITIVE-ONLY for admission: membership bypasses the first-sight
-/// recency/ended gate. Failure is EXPLICIT: `None` means the probe itself FAILED
-/// and callers must change NOTHING; `Some` with an empty snapshot means it ran
-/// fine and nothing is alive — the distinction `ProbeLadder`'s negative vouch
-/// (#223) rests on. `Arc<dyn Fn>` rather than a fn pointer because the real
-/// probe captures its registry dir.
+/// ADDITIVE-ONLY for admission: membership bypasses the first-sight gate's
+/// recency half, never its ended-tail half. Failure is EXPLICIT: `None` means
+/// the probe itself FAILED and callers must change NOTHING; `Some` with an
+/// empty snapshot means it ran fine and nothing is alive — the distinction
+/// `ProbeLadder`'s negative vouch (#223) rests on. `Arc<dyn Fn>` rather than a
+/// fn pointer because the real probe captures its registry dir.
 pub type LivenessProbe = Arc<dyn Fn() -> Option<ProbeSnapshot> + Send + Sync>;
 
 /// Negative vouch (#223): a previously-vouched id must be MISSING from two
