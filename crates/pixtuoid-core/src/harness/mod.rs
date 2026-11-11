@@ -493,7 +493,7 @@ fn joined<S: AsRef<str>>(lines: impl Iterator<Item = S>) -> Vec<u8> {
 pub struct Fold {
     reducer: Reducer,
     driven: Driven,
-    /// Each seeded transcript's claim, through `Sight::registers`.
+    /// Each seeded transcript's claim, through [`Sight::registers`].
     sights: HashMap<AgentId, Sighted>,
 }
 
@@ -559,7 +559,7 @@ impl Fold {
     }
 
     /// The seed `drive` leads `life` with, one life of a feed of `lines`, when
-    /// `Sight::registers` admits it, else `None`; the claim then follows
+    /// [`Sight::registers`] admits it, else `None`; the claim then follows
     /// `life`'s verdict.
     fn registration<S: AsRef<str>>(
         &mut self,
