@@ -43,7 +43,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Oh My Pi",
     label_prefix: "om",
-    verified_version: "18.18.1",
+    verified_version: "18.18.8",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),
@@ -656,6 +656,11 @@ const BLOCK_TOOL_CALL: &str = "toolCall";
 /// directly follows its own start, never a sibling's.
 const TOOL_ASK: &str = "ask";
 
+/// The per-call intent omp's harness asks of every tool call by default
+/// (`packages/agent/src/types.ts:1227-1233` at `v18.18.8`), kept in the
+/// persisted `arguments`.
+const INTENT_FIELD: &str = "i";
+
 /// `prefix·<text>` at the label cap — the ONE place omp assembles a
 /// content-derived label, shared by the subagent-stem deriver and the session
 /// title, so neither can bypass the bound that keeps an untrusted string out of
@@ -863,26 +868,24 @@ fn omp_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     if tool == "task" {
         return ToolDetail::Task;
     }
-    // `i` is omp's mandated per-call INTENT, so it sits LAST, below every concrete
-    // target — a path beats a paraphrase of that path. It earns its place on the
-    // tools with no keyed target at all (`edit`, `todo`, `job`, `hub`, …).
-    const KEYS: &[&str] = &["command", "path", "pattern", "query", "i"];
+    // The intent sits LAST, below every concrete target — a path beats a
+    // paraphrase of that path. It earns its place on the tools with no keyed
+    // target at all (`edit`, `todo`, `job`, `hub`, …).
+    const KEYS: &[&str] = &["command", "path", "pattern", "query", INTENT_FIELD];
     crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
 }
 
-/// The [`AgentEvent::UserActionRequest`] reason for an `ask` round: the first question's text, falling
-/// back to the call's intent (`arguments.i`), then the bare tool name.
+/// The [`AgentEvent::UserActionRequest`] reason for an `ask` round: the call's
+/// intent, else the bare tool name. The question itself sits in one HTML form
+/// (`packages/coding-agent/src/tools/ask.ts:61-63` at `v18.18.8`), which the
+/// intent paraphrases.
 fn omp_ask_reason(args: Option<&Value>) -> String {
-    args.and_then(|a| {
-        a.get("questions")
-            .and_then(|q| q.as_array())
-            .and_then(|q| q.first())
-            .and_then(|q| q.get("question"))
-            .and_then(|q| q.as_str())
-            .or_else(|| a.get("i").and_then(|i| i.as_str()))
-    })
-    .map(|t| ellipsize(t, MAX_DECODED_FIELD_CHARS))
-    .unwrap_or_else(|| "ask".to_string())
+    args.and_then(|a| a.get(INTENT_FIELD))
+        .and_then(Value::as_str)
+        .map_or_else(
+            || TOOL_ASK.to_owned(),
+            |i| ellipsize(i, MAX_DECODED_FIELD_CHARS),
+        )
 }
 
 // --- extension-bridge hook payloads (#951) ---------------------------------
@@ -1668,8 +1671,8 @@ mod tests {
     }
 
     #[test]
-    fn ask_call_starts_activity_then_waits_on_the_question() {
-        let line = r#"{"type":"message","id":"m7","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK1","name":"ask","arguments":{"i":"Resolving packages/ui collision","questions":[{"id":"ui_collision","question":"packages/ui already exists. What should happen?","options":[{"label":"Replace"},{"label":"Merge"}]}]}}],"timestamp":1}}"#;
+    fn ask_call_starts_activity_then_waits_on_its_intent() {
+        let line = r#"{"type":"message","id":"m7","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK1","name":"ask","arguments":{"i":"Resolving packages/ui collision","html":"<form><p>packages/ui already exists.</p><label><input type=\"radio\" name=\"ui\" value=\"replace\" checked> Replace</label><label><input type=\"radio\" name=\"ui\" value=\"merge\"> Merge</label></form>"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
                 AgentEvent::ToolUseStart {
@@ -1688,25 +1691,9 @@ mod tests {
                 assert_eq!(*wid, root());
                 assert_eq!(tool_use_id.as_deref(), Some("tool_ASK1"));
                 assert_eq!(asked, tool_use_id, "the question names its own call");
-                assert!(
-                    reason
-                        .as_deref()
-                        .is_some_and(|r| r.contains("packages/ui already exists")),
-                    "reason carries the question text, got {reason:?}"
-                );
+                assert_eq!(reason.as_deref(), Some("Resolving packages/ui collision"));
             }
             other => panic!("expected ToolUseStart then UserActionRequest, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn ask_reason_falls_back_to_intent_then_bare_name() {
-        let intent = r#"{"type":"message","id":"m8","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK2","name":"ask","arguments":{"i":"Confirming scope"}}],"timestamp":1}}"#;
-        match &decode(intent)[..] {
-            [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                assert_eq!(reason.as_deref(), Some("Confirming scope"))
-            }
-            other => panic!("expected Start+UserActionRequest, got {other:?}"),
         }
         let bare = r#"{"type":"message","id":"m9","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK3","name":"ask"}],"timestamp":1}}"#;
         match &decode(bare)[..] {
