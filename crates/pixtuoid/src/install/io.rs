@@ -1434,12 +1434,13 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let (launcher, sleeper) = (dir.path().join("launcher"), dir.path().join("sleeper"));
         let written = |at: &std::path::Path| {
-            std::fs::read_to_string(at).is_ok_and(|pid| !pid.trim().is_empty())
+            std::fs::read_to_string(at).is_ok_and(|mark| !mark.trim().is_empty())
         };
         let secs = HANG.as_secs();
         let unix = format!("echo $$ > \"$1\"\nsleep {secs} &\necho $! > \"$2\"\nwait");
         // Opinion, unverified on a Windows host here: `cmd` starts `ping` with the
         // batch's inherited pipes, so only the Job Object's kill ends the run in time.
+        // Its markers land before `ping` starts, so the wait proves only `cmd` is up.
         let windows = format!(
             "echo up> \"%~1\"\r\necho up> \"%~2\"\r\nping -n {} 127.0.0.1",
             secs + 1
@@ -1448,10 +1449,10 @@ mod tests {
             std::thread::scope(|scope| {
                 let run = scope
                     .spawn(|| FAKE.run_within(&[launcher.as_os_str(), sleeper.as_os_str()], HANG));
-                pixtuoid_core::harness::wait_until("both pids", SLACK, || {
+                pixtuoid_core::harness::wait_until("both markers", SLACK, || {
                     Ok(written(&launcher) && written(&sleeper))
                 })
-                .expect("the launcher starts its sleeper");
+                .expect("the fake comes up");
                 let killed = std::time::Instant::now();
                 kill_running();
                 let _ = run.join().expect("the run ends");
@@ -1536,18 +1537,24 @@ mod tests {
     /// starts, so none outlives the process.
     #[test]
     fn no_cli_starts_once_a_quit_has_killed_the_running() {
-        let dir = TempDir::new().unwrap();
-        let ran = dir.path().join("ran");
         kill_running();
-        let err = with_fake("echo $$ > \"$1\"", "echo up> \"%~1\"", || {
-            FAKE.run_within(&[ran.as_os_str()], LIMIT)
-        })
-        .unwrap_err();
+        let mut spawned = false;
+        let refused = spawn_listed(
+            || {
+                spawned = true;
+                Ok(())
+            },
+            |_: &()| None,
+        );
+        assert!(
+            refused.is_err() && !spawned,
+            "a CLI was spawned past the quit"
+        );
+        let err = with_fake("exit 0", "exit /b 0", || FAKE.run_within(&[], LIMIT)).unwrap_err();
         assert!(
             format!("{err:#}").contains("pixtuoid is quitting"),
             "{err:#}"
         );
-        assert!(!ran.exists(), "the CLI ran past the quit");
     }
 
     /// More than a pipe holds, so a run that waits before it reads never ends.
