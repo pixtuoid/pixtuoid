@@ -317,7 +317,7 @@ fn every_aimless_wander_destination_is_routable_from_its_home_desk() {
 /// instead of a fresh A* run. A `router.len()` assertion cannot do this —
 /// `route`'s miss arm re-`insert`s the SAME key, so it is green either way. The
 /// mask is a sound probe because the cache is deliberately mask-BLIND: it keys
-/// on `(from, to)` and invalidates on the OVERLAY signature.
+/// on `(from, to, aim)` and invalidates on the OVERLAY signature.
 #[test]
 fn router_serves_the_cached_path_instead_of_re_running_astar() {
     let l = make_layout();
@@ -377,16 +377,16 @@ fn an_overlay_evicts_only_the_paths_it_actually_crosses() {
 
 #[test]
 fn path_cache_is_bounded_and_still_routes_after_the_clear() {
-    // Aimless wander destinations + snap-back/exit origins mint ever-new
-    // (from, to) keys, so without the cap the cache (and the per-overlay retain
-    // scan over it) grows without bound in an always-on office.
+    // Aimless wander destinations + snap-back/exit origins mint ever-new keys,
+    // so without the cap the cache (and the per-overlay retain scan over it)
+    // grows without bound in an always-on office.
     let mask = WalkableMask::new_open(400, 400);
     let overlay = OccupancyOverlay::new();
     let mut router = AStarRouter::new();
     // On a cell-center (x % 4 == 2) so same-row routes collapse to the
     // straight 2-point polyline.
     let from = Point { x: 10, y: 50 };
-    // Strictly more distinct pairs than the cap holds, so the overflow clear
+    // Strictly more distinct routes than the cap holds, so the overflow clear
     // provably fires at least once.
     let distinct_routes = PATH_CACHE_CAP + 100;
     for i in 0..distinct_routes {
@@ -849,4 +849,35 @@ fn a_route_through_a_one_pixel_gap_stays_on_open_floor() {
         .filter(|p| !l.walkable.is_walkable(p.x, p.y))
         .collect();
     assert_eq!(off, [], "{path:?}");
+}
+
+/// Both sides of the aim's gate: a gate always open passes the first half, one
+/// always shut the second.
+#[test]
+fn a_route_comes_in_toward_its_aim_only_where_its_end_stays_on_open_floor() {
+    let overlay = OccupancyOverlay::new();
+    let (from, to) = (Point { x: 2, y: 30 }, Point { x: 30, y: 30 });
+    let aim = Point { x: 30, y: 50 };
+    let open = WalkableMask::new_open(64, 64);
+    let mut router = AStarRouter::new();
+    let aimed = router.route(&open, &overlay, from, to, aim);
+    let plain = router.route(&open, &overlay, from, to, to);
+    assert_eq!(aimed.last(), Some(&to), "{aimed:?}");
+    assert!(
+        aimed.iter().any(|p| p.y > to.y),
+        "the way in comes from the aim's side: {aimed:?}"
+    );
+    assert_eq!(
+        plain,
+        [from, to],
+        "the plain leg routed after the aimed one is not served its path"
+    );
+
+    let mut walled = WalkableMask::new_open(64, 64);
+    walled.mark_blocked(16, 36, 32, 8, 0);
+    assert_eq!(
+        find_path(&walled, &overlay, None, from, to, aim),
+        find_path(&walled, &overlay, None, from, to, to),
+        "an aim across a wall from `to` routes as the plain leg"
+    );
 }

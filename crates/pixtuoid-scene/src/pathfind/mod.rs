@@ -3,9 +3,9 @@
 //! `AStarRouter` runs A* on a coarsened cell grid whose primitives
 //! (`cell_walkable`/`snap`/`CoarseGrid`/`CELL_SIZE`) are the SHARED
 //! `layout::coarse` ones `layout::reach` also rides, so router reachability
-//! can't drift from `ReachSet`. Routes are memoized per (from, to) and
-//! auto-invalidated when the overlay signature changes, so per-frame agent
-//! movement still routes around live agents.
+//! can't drift from `ReachSet`. Routes are memoized per `(from, to, aim)`, and
+//! an overlay change evicts the ones it crosses, so per-frame agent movement
+//! still routes around live agents.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
@@ -27,7 +27,7 @@ pub(crate) const CELL_SIZE: u16 = COARSE_CELL_SIZE;
 /// Abstract pathfinder — routes from `from` to `to` over the supplied mask +
 /// overlay, returning a polyline (first = `from`, last = `to`, intermediate =
 /// corners).
-pub trait Router: std::fmt::Debug {
+pub(crate) trait Router: std::fmt::Debug {
     /// Compute or look up the route, coming in toward `aim`: a caller sets it
     /// apart from `to` to vary the way in, and to `to` for the plain route.
     fn route(
@@ -56,7 +56,7 @@ const PATH_CACHE_CAP: usize = 512;
 
 /// A* router with an internal path cache.
 #[derive(Debug, Default, Clone)]
-pub struct AStarRouter {
+pub(crate) struct AStarRouter {
     paths: HashMap<(Point, Point, Point), Vec<Point>>,
     last_overlay_sig: u64,
     /// Cells inside this zone get a cost discount during A*.
@@ -349,9 +349,9 @@ fn reconstruct(
         .iter()
         .map(|&(cx, cy)| cell_anchor(mask, cx, cy))
         .collect();
-    // A raw endpoint stands in for its end cell's anchor only where the segment it
-    // shortens stays on open floor: that cell can be up to half wall, and the
-    // straight segment past it then crosses the wall.
+    // A raw endpoint replaces the anchor beside it only where the segment it
+    // shortens stays on open floor: that anchor's cell can be up to half wall, and
+    // the straight segment past it then crosses the wall.
     let mut pts = vec![from];
     match anchors[..] {
         [only] => {

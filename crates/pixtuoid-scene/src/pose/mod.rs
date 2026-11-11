@@ -716,9 +716,9 @@ fn route_walking_pose(
 const JITTER_MAX_PX: i32 = 4;
 const JITTER_SPAN: u64 = (2 * JITTER_MAX_PX + 1) as u64;
 
-/// Per-agent routing-destination jitter, hashed from the agent_id, so converging
-/// agents take visibly different polylines (breaks the "ant trail"). Output must
-/// stay bit-identical across every call site — a site routing the RAW goal
+/// Per-agent routing aim, hashed from the agent_id, so converging agents take
+/// visibly different polylines (breaks the "ant trail"). Output must stay
+/// bit-identical across every call site — a site aiming at the RAW goal
 /// measures a differently-shaped polyline than the one rendered AND mints a
 /// second router-cache key per leg.
 pub(crate) fn jitter_dest(id: AgentId, p: Point) -> Point {

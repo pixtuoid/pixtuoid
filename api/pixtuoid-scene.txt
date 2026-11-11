@@ -1809,29 +1809,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pack::PackError
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pack::PackError
 pub fn pixtuoid_scene::pack::load_bundled_pack() -> core::result::Result<pixtuoid_scene::pack::OfficeArt, pixtuoid_scene::pack::PackError>
 pub mod pixtuoid_scene::pathfind
-pub struct pixtuoid_scene::pathfind::AStarRouter
-impl core::clone::Clone for pixtuoid_scene::pathfind::AStarRouter
-pub fn pixtuoid_scene::pathfind::AStarRouter::clone(&self) -> Self
-impl core::default::Default for pixtuoid_scene::pathfind::AStarRouter
-pub fn pixtuoid_scene::pathfind::AStarRouter::default() -> Self
-impl core::fmt::Debug for pixtuoid_scene::pathfind::AStarRouter
-pub fn pixtuoid_scene::pathfind::AStarRouter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl pixtuoid_scene::pathfind::Router for pixtuoid_scene::pathfind::AStarRouter
-pub fn pixtuoid_scene::pathfind::AStarRouter::new_layout(&mut self, pixtuoid_scene::layout::Bounds)
-pub fn pixtuoid_scene::pathfind::AStarRouter::route(&mut self, &pixtuoid_scene::walkable::WalkableMask, &pixtuoid_scene::walkable::OccupancyOverlay, pixtuoid_scene::layout::Point, pixtuoid_scene::layout::Point, pixtuoid_scene::layout::Point) -> alloc::vec::Vec<pixtuoid_scene::layout::Point>
-impl core::marker::Freeze for pixtuoid_scene::pathfind::AStarRouter
-impl core::marker::Send for pixtuoid_scene::pathfind::AStarRouter
-impl core::marker::Sync for pixtuoid_scene::pathfind::AStarRouter
-impl core::marker::Unpin for pixtuoid_scene::pathfind::AStarRouter
-impl core::marker::UnsafeUnpin for pixtuoid_scene::pathfind::AStarRouter
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::pathfind::AStarRouter
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::pathfind::AStarRouter
-pub trait pixtuoid_scene::pathfind::Router: core::fmt::Debug
-pub fn pixtuoid_scene::pathfind::Router::new_layout(&mut self, pixtuoid_scene::layout::Bounds)
-pub fn pixtuoid_scene::pathfind::Router::route(&mut self, &pixtuoid_scene::walkable::WalkableMask, &pixtuoid_scene::walkable::OccupancyOverlay, pixtuoid_scene::layout::Point, pixtuoid_scene::layout::Point, pixtuoid_scene::layout::Point) -> alloc::vec::Vec<pixtuoid_scene::layout::Point>
-impl pixtuoid_scene::pathfind::Router for pixtuoid_scene::pathfind::AStarRouter
-pub fn pixtuoid_scene::pathfind::AStarRouter::new_layout(&mut self, pixtuoid_scene::layout::Bounds)
-pub fn pixtuoid_scene::pathfind::AStarRouter::route(&mut self, &pixtuoid_scene::walkable::WalkableMask, &pixtuoid_scene::walkable::OccupancyOverlay, pixtuoid_scene::layout::Point, pixtuoid_scene::layout::Point, pixtuoid_scene::layout::Point) -> alloc::vec::Vec<pixtuoid_scene::layout::Point>
 pub fn pixtuoid_scene::pathfind::point_in_walkable_cell(&pixtuoid_scene::walkable::WalkableMask, pixtuoid_scene::layout::Point) -> bool
 pub mod pixtuoid_scene::pet
 pub enum pixtuoid_scene::pet::PetKind
