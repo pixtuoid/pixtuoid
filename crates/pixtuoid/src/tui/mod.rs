@@ -1580,6 +1580,27 @@ mod apply_key_action_tests {
         );
     }
 
+    /// A landing job ends the refusal it caused, and only that: a no-CLI
+    /// row's hint, shown while the open's refresh runs, stays.
+    #[test]
+    fn a_landing_job_keeps_a_line_it_did_not_cause() {
+        let mut h = Harness::new();
+        h.apply(KeyAction::ToggleConnection);
+        let selected = h.ui.connection.selected;
+        let row = &mut h.ui.connection.rows[selected];
+        row.state = crate::sources::ConnState::NoCli { connected: false };
+        let hint = crate::panels::connection::no_action_hint(row);
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(h.ui.connection.last_result.as_ref(), Some(&hint));
+        h.open_gate(false);
+        h.settle();
+        assert_eq!(
+            h.ui.connection.last_result,
+            Some(hint),
+            "the refresh took the hint"
+        );
+    }
+
     /// The onboarding's connects leave the loop too: its card stays and says
     /// they run; Esc hides it while they go on, and once they end their
     /// failures surface on the Sources panel.

@@ -594,7 +594,12 @@ pub(crate) fn finish_job(ui: &mut ui_state::UiState, done: JobDone) {
         notices,
         rows,
     } = done;
-    ui.running_job = None;
+    // The refusal it caused ends with it; a line it did not cause stays.
+    if let Some(job) = ui.running_job.take()
+        && ui.connection.last_result.as_ref() == Some(&job.busy_line())
+    {
+        ui.connection.last_result = None;
+    }
     if onboarding && ui.onboarding_open() {
         ui.close_onboarding();
     }
@@ -700,16 +705,14 @@ fn surface_notices(
         }
         _ => ui.connection.rows = rows,
     }
-    // A change with nothing to say still ends a refusal's "one change at a
-    // time".
-    if ui.connection.open {
-        ui.connection.last_result = (!notices.is_empty()).then(|| {
+    if ui.connection.open && !notices.is_empty() {
+        ui.connection.last_result = Some(
             notices
                 .into_iter()
                 .map(|n| n.line)
                 .collect::<Vec<_>>()
-                .join("  \u{b7}  ")
-        });
+                .join("  \u{b7}  "),
+        );
     }
 }
 

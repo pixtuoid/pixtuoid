@@ -299,9 +299,25 @@ fn reply(row: usize) -> Vec<u8> {
     ANSWERS[row].1.to_vec()
 }
 
+/// Each `hooks.json` under `dir`: what a Claude Code connect writes before its
+/// CLI registers the plugin.
+fn hooks_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(dir).expect("a readable home").flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(hooks_files(&path));
+        } else if path.file_name().is_some_and(|name| name == "hooks.json") {
+            found.push(path);
+        }
+    }
+    found
+}
+
 /// A first run's connect runs off the office's loop: while its host CLI hangs,
 /// a resize still repaints, and a quit, by signal or by key, ends the office at
-/// once, the CLI's job with it.
+/// once, the CLI's job with it, and only once the killed connect has put back
+/// the hooks it wrote.
 #[test]
 fn a_hung_connect_leaves_the_office_live_and_a_quit_takes_its_cli() {
     for by_signal in [true, false] {
@@ -324,6 +340,10 @@ fn a_hung_connect_leaves_the_office_live_and_a_quit_takes_its_cli() {
         office.type_until(b"\r", "the connect's CLI", |_| {
             std::fs::read_to_string(&job).is_ok_and(|pid| !pid.trim().is_empty())
         });
+        assert!(
+            !hooks_files(home.path()).is_empty(),
+            "its hooks, written first"
+        );
 
         let painted = office.wrote.load(Ordering::Relaxed);
         office
@@ -369,6 +389,11 @@ fn a_hung_connect_leaves_the_office_live_and_a_quit_takes_its_cli() {
                 .status()
                 .is_ok_and(|status| status.success())
         });
+        assert_eq!(
+            hooks_files(home.path()),
+            Vec::<std::path::PathBuf>::new(),
+            "the office ended before the killed connect put its hooks back"
+        );
         office.finish();
         // Its teardown ran before the end: a quit's own kill never cut it short.
         assert!(
