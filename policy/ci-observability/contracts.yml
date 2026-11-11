@@ -61,7 +61,6 @@
       and .jobs.publish.permissions == {}
       and ([.jobs.publish.steps[] | .uses // empty | sub("@.*"; "")] - ["actions/checkout", "actions/download-artifact", "actions/create-github-app-token", "peter-evans/create-pull-request"]) == []
       and ([.jobs.publish.steps[] | select((.uses // "") | startswith("actions/checkout@")) | .with["persist-credentials"]] | all(. == false))
-      and ($publish | test("\\b(cargo|just|npm|node|pip|python3?|uvx?|make|bash|sh)\\b|\\./") | not)
       and ($publish | test("\\bgit\\s+(add|commit|push)\\b") | not)
   break:
     - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets.BOT_APP_KEY }}"}, "run": "true"}]}'
@@ -70,12 +69,9 @@
     - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets[\"BOT_APP_KEY\"] }}"}, "run": "true"}]}'
     - '.permissions = {"contents": "write"}'
     - '.jobs.publish.permissions = {"contents": "write"}'
-    - '.jobs.publish.steps += [{"run": "cargo build"}]'
     - '.jobs.publish.steps += [{"run": "git add -A && git commit -m x"}]'
     - '.jobs.publish.steps += [{"uses": "./.github/actions/setup-cargo-just"}]'
     - '.jobs.publish.steps[0].with["persist-credentials"] = true'
-    - '.jobs.publish.steps += [{"run": "bash scripts/x.sh"}]'
-    - '.jobs.publish.steps += [{"run": "uv run scripts/x.py"}]'
 
 - id: media-render-job-only-reads
   file: .github/workflows/media-regen.yml
@@ -95,15 +91,12 @@
     jobs' tokens only read. The token that writes issues lives in a job that
     checks nothing out and runs no build, so no code of the tree ever holds it.
   assert: |
-    ([.jobs.file.steps[] | .run // "" | split("\n")[] | select(test("^\\s*#") | not)]
-     | join("\n")) as $file
-    | .permissions == {}
+    .permissions == {}
       and .jobs.drift.permissions == {"contents": "read"}
       and .jobs.file.permissions == {"issues": "write"}
       and ([.jobs | to_entries[] | select(.key != "file") | .value.permissions // {} | .[]]
            | all(. != "write"))
       and ([.jobs.file.steps[] | .uses // empty | sub("@.*"; "")] - ["actions/download-artifact"]) == []
-      and ($file | test("\\b(cargo|just|npm|node|pip|python3?|uvx?|make|bash|sh)\\b|\\./") | not)
   break:
     - '.permissions = {"issues": "write"}'
     - '.jobs.drift.permissions.issues = "write"'
@@ -111,8 +104,32 @@
     - '.jobs.file.permissions.contents = "read"'
     - '.jobs.other = {"permissions": {"pull-requests": "write"}}'
     - '.jobs.file.steps = [{"uses": "actions/checkout@v7"}] + .jobs.file.steps'
-    - '.jobs.file.steps += [{"run": "just hermetic"}]'
-    - '.jobs.file.steps += [{"run": "uvx some-tool"}]'
+
+- id: write-token-jobs-run-no-tree-code
+  file:
+    - .github/workflows/media-regen.yml
+    - .github/workflows/hermetic-nightly.yml
+  expected: case continue do done echo esac exit false fi for gh git if jq mv read rm set while
+  why: >-
+    Beside `bot-publish-runs-no-tree-code` and
+    `nightly-files-issues-from-a-job-that-runs-no-tree-code`: every command a
+    write-token job's `run:` reaches is one `expected` lists, the words those
+    jobs run today. An allowlist, as REVIEW.md's Traps prefer, so an
+    interpreter, package runner or sourced script nobody named fails too.
+    Comment lines and single-quoted text run nothing, so they are skipped.
+  assert: |
+    def command_words:
+      split("\n") | map(select(test("^\\s*#") | not)) | join("\n")
+      | gsub("'[^'\n]*'"; "''")
+      | gsub("\\(\\([^)]*\\)\\)"; "")
+      | [scan("(?:^|[\n;&|(`)]|(?<!\\$)\\{|\\$\\(|\\b[A-Za-z_][A-Za-z0-9_]*=[^\\s(]*\\s)\\s*(?:(?:then|do|else|elif|if|while|until|!)\\s+)*([A-Za-z0-9_./][A-Za-z0-9_./:-]*)(?![=)A-Za-z0-9_./:-])")[0]];
+    [.jobs.publish, .jobs.file | objects | .steps[] | .run // empty | command_words[]]
+    - ($expected | split(" ")) == []
+  break:
+    - '.jobs.publish.steps += [{"run": "perl scripts/x.pl"}]'
+    - '.jobs.file.steps += [{"run": "npx some-bin"}]'
+    - '.jobs.publish.steps += [{"run": ". scripts/x.sh"}]'
+    - '.jobs.file.steps += [{"run": "./scripts/x.sh"}]'
 
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml
