@@ -477,9 +477,8 @@ pub(crate) fn cc_activity_recency(tail: &[u8]) -> TailActivity {
 }
 
 /// CC label: subagent paths → "subagent", else "cc·" + cwd basename. With `cwd`
-/// unknown (a seed line carrying no `cwd` still fires the JSONL Rename), fall back
-/// to the CC **project dir**, whose name encodes the cwd with '/'→'-' — or an
-/// empty-cwd Rename silently degrades a good hook-derived `cc·dotfiles` to `cc`.
+/// unknown, the bare prefix, which never replaces a label a hook gave: the
+/// project dir slugs every non-alphanumeric to '-', so no basename reads back.
 pub fn cc_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
     // Slash-bounded, and shared with `detect_parent_id`: a loose `"subagents"`
     // substring mislabels a `subagents-paper` repo's parent transcript.
@@ -488,25 +487,7 @@ pub fn cc_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
     }
     // The `cc` prefix is a registry fact, not a literal (invariant #3).
     let prefix = crate::source::decoder::label_prefix_for(source);
-    if let Some(label) = cwd_basename_label(prefix, cwd) {
-        return label;
-    }
-    if let Some(base) = path
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .and_then(|proj| proj.rsplit('-').find(|s| !s.is_empty()))
-    {
-        // This branch BYPASSES `cwd_basename_label`'s cap chokepoint.
-        return crate::state::SlotLabel::join(
-            prefix,
-            &crate::source::decoder::ellipsize(
-                base,
-                crate::source::decoder::MAX_DECODED_FIELD_CHARS,
-            ),
-        );
-    }
-    prefix.to_string()
+    cwd_basename_label(prefix, cwd).unwrap_or_else(|| prefix.to_string())
 }
 
 #[cfg(test)]
@@ -1054,41 +1035,6 @@ mod tests {
     }
 
     #[test]
-    fn label_falls_back_to_project_dir_when_cwd_empty() {
-        let path = Path::new("/Users/me/.claude/projects/-Users-me-dotfiles/abc.jsonl");
-        assert_eq!(
-            cc_derive_label(path, "claude-code", Path::new("")),
-            "cc·dotfiles"
-        );
-    }
-
-    /// The project-dir fallback BYPASSES the `cwd_basename_label` chokepoint,
-    /// so it needs the cap applied at its own site — an uncapped label persists
-    /// in `AgentSlot.label` and reaches the painter.
-    #[test]
-    fn label_project_dir_fallback_is_capped_like_the_cwd_branch() {
-        let long = "z".repeat(MAX_DECODED_FIELD_CHARS * 2);
-        let path = PathBuf::from(format!("/Users/me/.claude/projects/-{long}/abc.jsonl"));
-        let label = cc_derive_label(&path, "claude-code", Path::new(""));
-        assert!(
-            label.chars().count() < long.chars().count(),
-            "project-dir fallback label must be capped, got {} chars: {label:?}",
-            label.chars().count()
-        );
-        let via_cwd = cc_derive_label(
-            Path::new("/x/.claude/projects/-p/abc.jsonl"),
-            "claude-code",
-            &PathBuf::from(format!("/{long}")),
-        );
-        assert_eq!(
-            label, via_cwd,
-            "both label branches must cap identically — comparing to the sibling, \
-             which caps via the `cwd_basename_label` chokepoint, rather than to a \
-             hand-computed width keeps this honest if `ellipsize`'s accounting moves"
-        );
-    }
-
-    #[test]
     fn label_marks_subagent_paths() {
         let path = Path::new("/x/projects/proj/subagents/agent-1.jsonl");
         assert_eq!(
@@ -1106,23 +1052,27 @@ mod tests {
         );
     }
 
+    /// A first read that names no cwd keeps the label a hook gave its session:
+    /// the project dir slugs every non-alphanumeric to '-', so no basename can
+    /// be read back from it.
     #[test]
-    fn label_uses_project_dir_when_cwd_is_root() {
-        let path = Path::new("/Users/me/.claude/projects/-Users-me-dotfiles/abc.jsonl");
-        assert_eq!(
-            cc_derive_label(path, "claude-code", Path::new("/")),
-            "cc·dotfiles"
-        );
-    }
-
-    #[test]
-    fn label_uses_project_dir_when_cwd_has_no_basename() {
-        // ".." is non-empty and non-root but has no `file_name()`.
-        let path = Path::new("/Users/me/.claude/projects/-Users-me-dotfiles/abc.jsonl");
-        assert_eq!(
-            cc_derive_label(path, "claude-code", Path::new("..")),
-            "cc·dotfiles"
-        );
+    fn an_unknown_cwd_never_relabels_a_hook_labelled_session() {
+        let path = Path::new("/Users/me/.claude/projects/-x-my-repo/sid.jsonl");
+        let agent_id = crate::AgentId::from_parts(SOURCE_NAME, "sid");
+        let (mut reducer, mut scene) = (crate::Reducer::new(), crate::SceneState::uniform(1));
+        let at = std::time::SystemTime::now();
+        let start = AgentEvent::SessionStart {
+            agent_id,
+            source: SOURCE_NAME.into(),
+            session_id: "sid".into(),
+            cwd: PathBuf::from("/x/my-repo"),
+            parent_id: None,
+        };
+        reducer.apply(&mut scene, start, at, crate::Transport::Hook);
+        let label = cc_derive_label(path, SOURCE_NAME, Path::new(""));
+        let rename = AgentEvent::Rename { agent_id, label };
+        reducer.apply(&mut scene, rename, at, crate::Transport::Jsonl);
+        assert_eq!(&*scene.agents[&agent_id].label, "cc·my-repo");
     }
 
     #[test]
@@ -1130,17 +1080,6 @@ mod tests {
         assert_eq!(
             cc_derive_label(Path::new("abc.jsonl"), "claude-code", Path::new("")),
             "cc"
-        );
-    }
-
-    // CC on Windows slugs `C:\Users\foo\bar` into the project dir name
-    // `C--Users-foo-bar` (upstream's `[^a-zA-Z0-9]→'-'`, drive letter kept).
-    #[test]
-    fn label_falls_back_to_project_dir_for_windows_slug() {
-        let path = Path::new("/Users/me/.claude/projects/C--Users-foo-bar/abc.jsonl");
-        assert_eq!(
-            cc_derive_label(path, "claude-code", Path::new("")),
-            "cc·bar"
         );
     }
 

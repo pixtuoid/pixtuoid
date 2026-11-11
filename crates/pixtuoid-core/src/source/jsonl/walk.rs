@@ -572,8 +572,7 @@ pub(super) async fn park_if_truncated_below_cursor(path: &Path, ctx: &WatchCtx<'
 /// Emit `path`'s registration as a `SessionStart`: the one its first sight
 /// claimed, else one resolved from `head`, awaited only then, which its label
 /// follows. Shared by the normal tail-read path and the oversized path so the
-/// two emit IDENTICAL events from one place. A `None`/empty `cwd` falls back to
-/// the project-dir label in `derive_label`.
+/// two emit IDENTICAL events from one place.
 async fn emit_registration(
     path: &Path,
     source: &Arc<str>,
