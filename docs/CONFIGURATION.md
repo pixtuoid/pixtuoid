@@ -56,7 +56,7 @@ instead of stderr:
 | | |
 |-----|-----|
 | Default path | `~/.local/state/pixtuoid/logs/` (or `$XDG_STATE_HOME/pixtuoid/logs/` if set to an absolute path): one file per run, named for its start |
-| Custom path | set `$PIXTUOID_LOG=/path/to/file` to log every run to that one file; a run opens it only if it is not a symlink and is yours with one link (a character device such as `/dev/null` aside) |
+| Custom path | set `$PIXTUOID_LOG=/path/to/file` to log every run to that one file; on Unix, a run opens it only if it is not a symlink and is yours with one link (a character device such as `/dev/null` aside) |
 | Level | `warn` and above by default; `--log-level debug` or `trace` (or `$RUST_LOG`) raises it |
 | Retention | a run's file is removed a week after its last write, unless its run is still open; `doctor`, `sources` and the Sources panel read the newest 10 MB, across the runs or of a `$PIXTUOID_LOG` file; that file rotates to `<name>.old` past 5 MB at startup |
 
@@ -108,9 +108,9 @@ explains why when color is turned off:
 
 - **`$NO_COLOR`** (the [no-color.org](https://no-color.org) convention; any
   non-empty value): color output is disabled, so the office can't render. Unset
-  `NO_COLOR`, or override per the standard precedence with **`$CLICOLOR_FORCE=1`**
-  (forces color on despite `$NO_COLOR`; a `0` value does not force). An *empty*
-  `$NO_COLOR` is ignored (it doesn't actually disable color).
+  `NO_COLOR`, or override it with **`$CLICOLOR_FORCE=1`** (any non-empty value
+  forces color on despite `$NO_COLOR`). An *empty* `$NO_COLOR` is ignored (it
+  doesn't actually disable color).
 - **`$TERM=dumb`**: the terminal can't render escape sequences or color at all.
 
 In both cases use a graphical terminal, or `pixtuoid run --headless` for a plain

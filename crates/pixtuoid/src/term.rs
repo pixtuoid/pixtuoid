@@ -74,14 +74,16 @@ pub(crate) enum ColorPreflight {
 }
 
 /// Decide the color preflight from the environment. `$TERM=dumb` outranks
-/// everything (forcing color can't fix a terminal that renders no escapes), then
-/// a NON-EMPTY `$NO_COLOR` refuses unless `$CLICOLOR_FORCE` overrides it.
+/// everything: ncurses' `dumb` entry has no color capability
+/// (<https://invisible-island.net/ncurses/terminfo.src.html>), so forcing color
+/// can't fix it. Then a NON-EMPTY `$NO_COLOR` refuses unless [`clicolor_forced`]
+/// overrides it. bixense lets `$NO_COLOR` win (<https://bixense.com/clicolors/>);
+/// the reverse is our choice, since the force is the refusal's one escape hatch.
 ///
 /// The emptiness rule matches crossterm, the thing that actually strips the
-/// color; `$CLICOLOR_FORCE` follows the bixense convention (set and `!= 0`), so
-/// `$CLICOLOR_FORCE=0` does NOT override. `$FORCE_COLOR` (npm) and `$CLICOLOR`
-/// are intentionally NOT read: crossterm keys only on `$NO_COLOR`, so they would
-/// have no effect on the render.
+/// color (0.29.0 `src/style/types/colored.rs:75-79`). `$CLICOLOR` is NOT read:
+/// it would not change the render, since crossterm's `src/` reads no color
+/// variable but `$NO_COLOR`.
 pub(crate) fn color_preflight(
     no_color: Option<&str>,
     clicolor_force: Option<&str>,
@@ -101,12 +103,12 @@ pub(crate) fn color_preflight(
     ColorPreflight::Proceed
 }
 
-/// The bixense `$CLICOLOR_FORCE` convention: set and `!= 0` forces color "no
-/// matter what" — including into a pipe. Shared by [`color_preflight`] (the
-/// `$NO_COLOR` override) and [`stream_color_under`], so the two can't parse the
-/// variable differently.
+/// `$CLICOLOR_FORCE` set, which an empty value is not, means "ANSI colors should
+/// be enabled no matter what" (<https://bixense.com/clicolors/>), a pipe included.
+/// Shared by [`color_preflight`] (the `$NO_COLOR` override) and
+/// [`stream_color_under`], so the two can't parse the variable differently.
 pub(crate) fn clicolor_forced(v: Option<&str>) -> bool {
-    matches!(v.map(str::trim), Some(v) if !v.is_empty() && v != "0")
+    matches!(v, Some(v) if !v.is_empty())
 }
 
 /// This process's color environment.
@@ -526,12 +528,12 @@ mod tests {
             "CLICOLOR_FORCE forces even piped"
         );
         assert!(
-            !color(false, Pf::Proceed, Some("0")),
-            "CLICOLOR_FORCE=0 does not force"
+            color(false, Pf::Proceed, Some("0")),
+            "CLICOLOR_FORCE=0 is set, so it forces"
         );
         assert!(
-            !color(false, Pf::Proceed, Some("  ")),
-            "a whitespace CLICOLOR_FORCE does not force"
+            !color(false, Pf::Proceed, Some("")),
+            "an empty CLICOLOR_FORCE is unset"
         );
         assert!(!color(true, Pf::RefuseNoColor, None), "NO_COLOR refuses");
         assert!(
@@ -615,8 +617,7 @@ mod tests {
         assert_eq!(color_preflight(Some("1"), Some("1"), None), ForceColor);
         assert_eq!(color_preflight(Some("1"), Some("yes"), None), ForceColor);
         assert_eq!(color_preflight(Some("1"), Some(""), None), RefuseNoColor);
-        assert_eq!(color_preflight(Some("1"), Some("0"), None), RefuseNoColor);
-        assert_eq!(color_preflight(Some("1"), Some(" 0 "), None), RefuseNoColor);
+        assert_eq!(color_preflight(Some("1"), Some("0"), None), ForceColor);
         assert_eq!(color_preflight(None, Some("1"), None), Proceed);
         assert_eq!(color_preflight(None, None, Some("dumb")), RefuseDumbTerm);
         assert_eq!(

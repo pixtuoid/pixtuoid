@@ -180,7 +180,15 @@ fn open_private_append_vetted(
 /// from under a running sibling (its fd follows; a later rotation strands it on
 /// an unlinked inode).
 fn rotate_if_large(path: &Path) {
-    let too_large = std::fs::symlink_metadata(path).is_ok_and(|m| m.len() > LOG_ROTATE_BYTES);
+    // Unix's open refuses a symlink, so there one is sized as itself and never
+    // rotated; elsewhere `metadata` sizes its target (std 1.99.1 `fs.rs:2770`),
+    // so the log it names still rotates.
+    let stat = if cfg!(unix) {
+        std::fs::symlink_metadata(path)
+    } else {
+        std::fs::metadata(path)
+    };
+    let too_large = stat.is_ok_and(|m| m.len() > LOG_ROTATE_BYTES);
     if too_large {
         // APPEND ".old" rather than with_extension: a custom $PIXTUOID_LOG like
         // app.log must rotate to app.log.old (not clobber a sibling app.old), and a
@@ -456,8 +464,8 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "theirs");
     }
 
-    /// A named log that is a symlink is refused whatever its target's size:
-    /// one past the rotation cap is neither rotated away nor replaced.
+    /// On Unix, a named log that is a symlink is refused whatever its target's
+    /// size: one past the rotation cap is neither rotated away nor replaced.
     #[cfg(unix)]
     #[test]
     fn a_symlinked_named_log_past_the_cap_is_refused_not_rotated() {
