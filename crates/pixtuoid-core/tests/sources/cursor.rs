@@ -3,8 +3,8 @@
 //! is an INDEPENDENT session — two sprites, which the conformance harness's
 //! one-AgentId rule cannot hold.
 //!
-//! It pins that the child is a session of its own and that the parent's `Task`
-//! dispatch ends on its own post.
+//! It pins that the child is a session of its own, linked to its parent by its
+//! nested transcript path, and that the parent's `Task` dispatch ends on its own post.
 
 use std::collections::BTreeSet;
 
@@ -18,20 +18,37 @@ fn lines() -> Vec<String> {
 }
 
 #[test]
-fn a_delegating_run_is_two_sessions_only_the_parent_starts() {
+fn a_delegating_run_is_two_sessions_the_child_linked_to_the_parent() {
     let mut ids = BTreeSet::new();
-    let mut starts = 0;
+    let mut parents = Vec::new();
     let d = Drive::hooks().lines(lines());
     d.assert_clean("cursor delegation hooks");
     for ev in d.events {
         ids.insert(ev.agent_id());
-        if let AgentEvent::SessionStart { parent_id, .. } = ev {
-            starts += 1;
-            assert_eq!(parent_id, None, "the parent is a root");
+        if let AgentEvent::SessionStart {
+            agent_id,
+            parent_id,
+            ..
+        } = ev
+        {
+            parents.push((agent_id, parent_id));
         }
     }
     assert_eq!(ids.len(), 2, "parent + subagent, keyed apart by session_id");
-    assert_eq!(starts, 1, "only the parent's sessionStart is registered");
+    assert_eq!(
+        parents.len(),
+        2,
+        "the parent's sessionStart and the child's link"
+    );
+    let roots: Vec<_> = parents.iter().filter(|(_, p)| p.is_none()).collect();
+    assert_eq!(roots.len(), 1, "the parent is the one root");
+    assert_eq!(
+        parents
+            .iter()
+            .find_map(|(a, p)| p.filter(|_| *a != roots[0].0)),
+        Some(roots[0].0),
+        "the child's link names the parent"
+    );
 }
 
 /// The parent leaves Delegating when its child is done: the post that ends
