@@ -1438,8 +1438,8 @@ mod tests {
         };
         let secs = HANG.as_secs();
         let unix = format!("echo $$ > \"$1\"\nsleep {secs} &\necho $! > \"$2\"\nwait");
-        // `ping` keeps the run's pipes as the background `sleep` does, so only
-        // the Job Object's kill ends the run within the slack.
+        // Opinion, unverified on a Windows host here: `cmd` starts `ping` with the
+        // batch's inherited pipes, so only the Job Object's kill ends the run in time.
         let windows = format!(
             "echo up> \"%~1\"\r\necho up> \"%~2\"\r\nping -n {} 127.0.0.1",
             secs + 1
