@@ -87,7 +87,6 @@ impl WebAudioDriver {
 #[derive(Serialize)]
 struct Commands {
     gains: [f32; LoopStem::ALL.len()],
-    /// `[poolWire, index, gain]` each.
     plays: Vec<(u8, usize, f32)>,
     music: Option<Music>,
 }
