@@ -71,6 +71,9 @@ saphyr             = "0.3.1"
 anyhow             = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
+# The log sinks' worker thread, which a stalled reader or a hung disk parks
+# instead of the `tracing` caller.
+tracing-appender   = "0.2"
 which              = "8"
 # The throwaway hook endpoint `doctor` proves the shim against.
 tempfile           = { workspace = true }

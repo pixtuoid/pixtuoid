@@ -8,16 +8,17 @@ use std::path::Path;
 use crate::doctor::DriftSeen;
 use crate::run_log::LogLocation;
 use std::time::SystemTime;
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
 /// Install the global tracing subscriber, and return what its drift layer
-/// sees. A `file_log` run (the TUI, and `floating`, a long-running GUI whose
+/// sees and the guard that flushes its sink. A `file_log` run (the TUI, and `floating`, a long-running GUI whose
 /// launching terminal would just collect noise) logs to a file — the alternate
 /// screen owns the terminal, so the log file is the only place a runtime error
 /// can surface — at a `warn` floor unless $RUST_LOG, $PIXTUOID_LOG or
 /// --log-level raises it. Every other mode goes to stderr.
-pub(crate) fn init(file_log: bool, log_level: &'static str) -> DriftSeen {
+pub(crate) fn init(file_log: bool, log_level: &'static str) -> (DriftSeen, Option<WorkerGuard>) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     let rust_log = pixtuoid_core::platform::text_env("RUST_LOG");
@@ -49,33 +50,46 @@ pub(crate) fn init(file_log: bool, log_level: &'static str) -> DriftSeen {
         };
         match log_at.open_sink(SystemTime::now()) {
             Ok(f) => {
+                let (sink, flush) = queued(f);
                 registry
                     .with(
                         fmt_layer()
                             .with_ansi(false)
-                            .with_writer(f)
+                            .with_writer(sink)
                             .with_filter(filter),
                     )
                     .init();
+                (drift, Some(flush))
             }
             Err((path, e)) => {
                 // The footer's "see log" advice would point at nothing — say so on
                 // the pre-altscreen stderr channel rather than degrading silently.
                 let _ = writeln!(std::io::stderr(), "{}", log_open_failure(&path, &e));
                 registry.init();
+                (drift, None)
             }
         }
     } else {
+        let (sink, flush) = queued(std::io::stderr());
         registry
             .with(
                 fmt_layer()
                     .with_ansi(crate::term::stderr_color())
-                    .with_writer(std::io::stderr)
+                    .with_writer(sink)
                     .with_filter(make_filter()),
             )
             .init();
+        (drift, Some(flush))
     }
-    drift
+}
+
+/// `writer` behind a queue only its worker thread writes from, so a stalled
+/// reader or a hung disk parks that thread, never a `tracing` caller (the
+/// reducer's task, a painter's loop, a quit's own `shutting down`). A line that
+/// finds the queue full is dropped: the queue's lossy default. Dropping the guard
+/// flushes what is queued, so it outlives every runtime.
+fn queued(writer: impl Write + Send + 'static) -> (NonBlocking, WorkerGuard) {
+    tracing_appender::non_blocking(writer)
 }
 
 /// The formatting layer, its field values escaped by [`EscapedFields`] and its
@@ -339,6 +353,55 @@ mod tests {
                 "ansi={ansi}"
             );
         }
+    }
+
+    /// A sink whose reader stopped: it takes one line, says so, and never
+    /// returns.
+    struct Stalled(std::sync::mpsc::Sender<()>);
+
+    impl Write for Stalled {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            let _ = self.0.send(());
+            loop {
+                std::thread::park();
+            }
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Past a stalled sink's first line, a logger fills the queue and goes on:
+    /// it never waits on the sink, and each line past the queue is lost, by
+    /// design.
+    #[test]
+    fn a_stalled_sink_parks_only_its_worker_and_drops_past_its_queue() {
+        use tracing_appender::non_blocking::DEFAULT_BUFFERED_LINES_LIMIT;
+        use tracing_subscriber::layer::SubscriberExt;
+        const OVER: usize = 3;
+        // Far past the flood's own time on a loaded machine; a logger that
+        // waits on the sink never ends.
+        const BOUND: std::time::Duration = std::time::Duration::from_secs(60);
+        let (took, taken) = std::sync::mpsc::channel();
+        let (sink, _flush) = queued(Stalled(took));
+        let dropped = sink.error_counter();
+        let subscriber = tracing_subscriber::registry().with(fmt_layer().with_writer(sink));
+        let (done, logged) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::warn!("the line the sink takes");
+                taken.recv().expect("the worker hands the sink its line");
+                for _ in 0..DEFAULT_BUFFERED_LINES_LIMIT + OVER {
+                    tracing::warn!("queued, or dropped once the queue is full");
+                }
+            });
+            let _ = done.send(());
+        });
+        logged
+            .recv_timeout(BOUND)
+            .expect("a logger waited on a stalled sink");
+        assert_eq!(dropped.dropped_lines(), OVER);
     }
 
     #[test]
