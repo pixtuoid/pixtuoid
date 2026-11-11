@@ -318,6 +318,21 @@ async fn walk_once_with_recency(
     walk_decoded(path, window, decoders, cursors, seen).await
 }
 
+/// What `pass` sends, collected while it runs: a bounded channel drained only
+/// once it returned would block a pass that sends more than it holds.
+async fn collected<F: AsyncFnOnce(&TaggedSender)>(pass: F) -> Vec<(Transport, AgentEvent)> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+    let run = async move { pass(&tx).await };
+    let collect = async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+        events
+    };
+    tokio::join!(run, collect).1
+}
+
 async fn walk_decoded(
     path: &Path,
     window: Duration,
@@ -325,21 +340,44 @@ async fn walk_decoded(
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
     seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
 ) -> Vec<(Transport, AgentEvent)> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
-    let source: Arc<str> = Arc::from("test");
-    let live = Arc::new(Mutex::new(HashSet::new()));
-    let ctx = WatchCtx {
-        source: &source,
-        cursors,
-        seen,
-        tx: &tx,
-        window,
-        live: &live,
-        follower: None,
+    collected(async |tx: &TaggedSender| {
+        let source: Arc<str> = Arc::from("test");
+        let live = Arc::new(Mutex::new(HashSet::new()));
+        let ctx = WatchCtx {
+            source: &source,
+            cursors,
+            seen,
+            tx,
+            window,
+            live: &live,
+            follower: None,
+        };
+        walk_jsonl(path, decoders, &ctx, false).await;
+    })
+    .await
+}
+
+/// A walk that sends more than the test channel holds still returns, with
+/// every event.
+#[tokio::test]
+async fn a_walk_sending_past_the_channels_capacity_returns_every_event() {
+    const CALLS: usize = 40;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("busy.jsonl");
+    std::fs::write(&path, "{\"type\":\"tool_use\"}\n".repeat(CALLS)).unwrap();
+    let decoders = SourceDecoders {
+        decode_line: t_decode_lifecycle,
+        ..t_decoders()
     };
-    walk_jsonl(path, decoders, &ctx, false).await;
-    drop(tx);
-    drain_events(&mut rx)
+    let (cursors, seen) = (Arc::default(), Arc::default());
+    let walk = walk_decoded(&path, Duration::from_secs(3600), decoders, &cursors, &seen);
+    let events = tokio::time::timeout(Duration::from_secs(5), walk)
+        .await
+        .expect("the walk returned");
+    let calls = (events.iter())
+        .filter(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. }))
+        .count();
+    assert_eq!(calls, CALLS);
 }
 
 #[tokio::test]
@@ -4539,24 +4577,26 @@ mod backlog {
         }
 
         async fn sends<F: AsyncFnOnce(&WatchCtx<'_>)>(&self, pass: F) -> Vec<AgentEvent> {
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
-            let source: Arc<str> = Arc::from("test");
-            let ctx = WatchCtx {
-                source: &source,
-                cursors: &self.cursors,
-                seen: &self.seen,
-                tx: &tx,
-                window: WINDOW,
-                live: &self.live,
-                follower: None,
-            };
-            pass(&ctx).await;
-            let mut events = Vec::new();
-            while let Ok((transport, event)) = rx.try_recv() {
-                assert_eq!(transport, Transport::Jsonl);
-                events.push(event);
-            }
-            events
+            let sent = super::collected(async |tx: &TaggedSender| {
+                let source: Arc<str> = Arc::from("test");
+                let ctx = WatchCtx {
+                    source: &source,
+                    cursors: &self.cursors,
+                    seen: &self.seen,
+                    tx,
+                    window: WINDOW,
+                    live: &self.live,
+                    follower: None,
+                };
+                pass(&ctx).await;
+            })
+            .await;
+            (sent.into_iter())
+                .map(|(transport, event)| {
+                    assert_eq!(transport, Transport::Jsonl);
+                    event
+                })
+                .collect()
         }
     }
 

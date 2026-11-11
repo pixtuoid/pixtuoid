@@ -197,6 +197,7 @@ pub fn judge(
 mod tests {
     use super::super::SHARDS;
     use super::*;
+    use crate::harness::HOOK_PAYLOADS;
     use crate::harness::hermetic::profile;
 
     fn v(s: &str) -> Version {
@@ -493,7 +494,7 @@ mod tests {
             .expect("a move");
         let ok = [
             descriptor_relative("codex"),
-            fixture_path("hook-payloads.jsonl"),
+            fixture_path(HOOK_PAYLOADS),
             fixture_path("new.jsonl"),
         ];
         assert_eq!(judge(codex(), &up, &before, &after, &ok), Ok(()));

@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn a_payload_is_kept_and_teed() {
-        let d = tempfile::tempdir().expect("tempdir");
+        let d = tempfile::tempdir_in(crate::harness::socket_root()).expect("tempdir");
         let tee_at = Endpoint::in_dir(d.path(), "tee");
         let tee = Tap::bind(&tee_at, None).expect("tee");
         let at = Endpoint::in_dir(d.path(), "tap");
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn accepting_turns_true_on_bind_and_takes_no_instance() {
-        let d = tempfile::tempdir().expect("tempdir");
+        let d = tempfile::tempdir_in(crate::harness::socket_root()).expect("tempdir");
         let at = Endpoint::in_dir(d.path(), "tap");
         assert!(!at.accepting(), "nothing listens yet");
         let tap = Tap::bind(&at, None).expect("tap");
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn a_second_tap_on_one_endpoint_is_refused_as_in_use() {
-        let d = tempfile::tempdir().expect("tempdir");
+        let d = tempfile::tempdir_in(crate::harness::socket_root()).expect("tempdir");
         let at = Endpoint::in_dir(d.path(), "tap");
         let _first = Tap::bind(&at, None).expect("first");
         let second = Tap::bind(&at, None).expect_err("a live listener holds it");
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn a_payload_is_cut_at_the_listeners_byte_cap() {
         let cap = usize::try_from(crate::source::hook::MAX_CONN_BYTES).expect("fits");
-        let d = tempfile::tempdir().expect("tempdir");
+        let d = tempfile::tempdir_in(crate::harness::socket_root()).expect("tempdir");
         let at = Endpoint::in_dir(d.path(), "tap");
         let tap = Tap::bind(&at, None).expect("tap");
         // The tap closes once it holds the cap, so the write past it may break.
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn a_listener_that_stops_is_reported_with_its_reason() {
-        let d = tempfile::tempdir().expect("tempdir");
+        let d = tempfile::tempdir_in(crate::harness::socket_root()).expect("tempdir");
         let live = Tap::bind(&Endpoint::in_dir(d.path(), "tap"), None).expect("tap");
         assert_eq!(live.stopped(), None, "a live listener");
         let gone = Tap::watching(
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn a_tee_with_no_listener_costs_the_recording_nothing() {
-        let d = tempfile::tempdir().expect("tempdir");
+        let d = tempfile::tempdir_in(crate::harness::socket_root()).expect("tempdir");
         let at = Endpoint::in_dir(d.path(), "tap");
         let tap = Tap::bind(&at, Some(Endpoint::in_dir(d.path(), "absent"))).expect("tap");
         deliver(&at, LINE);
@@ -338,7 +338,7 @@ mod tests {
     #[tokio::test]
     async fn accepting_reads_a_single_instance_server() {
         use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
-        let d = tempfile::tempdir().expect("tempdir");
+        let d = tempfile::tempdir_in(crate::harness::socket_root()).expect("tempdir");
         let at = Endpoint::in_dir(d.path(), "single");
         let server = ServerOptions::new()
             .first_pipe_instance(true)
@@ -357,7 +357,7 @@ mod tests {
         use crate::source::hook::{PIPE_BUSY_BACKOFF, PIPE_BUSY_BOUND};
         use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
         const INSTANCES: usize = 2;
-        let d = tempfile::tempdir().expect("tempdir");
+        let d = tempfile::tempdir_in(crate::harness::socket_root()).expect("tempdir");
         let at = Endpoint::in_dir(d.path(), "busy");
         let first = ServerOptions::new()
             .first_pipe_instance(true)
