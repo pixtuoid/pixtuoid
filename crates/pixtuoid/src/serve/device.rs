@@ -1101,7 +1101,6 @@ mod tests {
         let [(who, source, on)] = made(&fixture).try_into().expect("one change");
         assert_eq!((source.as_str(), on), ("copilot", true));
         assert_eq!(who, Hashed::of(&token).short());
-        assert!(who.len() < token.len() && !token.contains(&who), "{who}");
 
         peer.ask(&change("no-such-cli", false)).await;
         assert_eq!(peer.answer().await, Answer::Unsupported);

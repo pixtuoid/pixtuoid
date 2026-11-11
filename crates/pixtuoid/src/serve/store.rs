@@ -365,4 +365,11 @@ mod tests {
         let _held = lock_config(&store.0).expect("the lock");
         assert_eq!(store.redeem("guess", now()).expect("it redeems"), None);
     }
+
+    #[test]
+    fn a_short_hash_tells_devices_apart_and_no_more() {
+        let (one, two) = (Hashed::of("one"), Hashed::of("two"));
+        assert_ne!(one.short(), two.short());
+        assert_eq!(one.short().len(), SHORT_HEX);
+    }
 }
