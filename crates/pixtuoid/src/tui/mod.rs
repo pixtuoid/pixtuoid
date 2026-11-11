@@ -26,7 +26,7 @@ use tokio::time::MissedTickBehavior;
 use tui_renderer::TuiRenderer;
 
 use crate::panels::{
-    FloorNav, KeyAction, KeyCtx, ModalState, PointerEvent, apply_key_action, dispatch_key,
+    Clicks, FloorNav, KeyAction, KeyCtx, ModalState, PointerEvent, apply_key_action, dispatch_key,
     mouse_ladder, ui_state,
 };
 use crate::runtime::{QuitArms, QuitSignal, SceneRx};
@@ -410,6 +410,10 @@ impl<B: ratatui::backend::Backend<Error: Send + Sync + 'static>> crate::panels::
     fn release(&mut self) -> Option<HitAction> {
         self.renderer.release(self.at.0, self.at.1)
     }
+
+    fn pet(&mut self, kind: pet::PetKind) {
+        self.renderer.pet(kind, self.now);
+    }
 }
 
 /// `m` through the mouse ladder ([`crate::panels::mouse_ladder`]).
@@ -417,8 +421,7 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     m: crossterm::event::MouseEvent,
     ui: &mut ui_state::UiState,
     renderer: &mut TuiRenderer<B>,
-    scene_rx: &SceneRx,
-    focus: impl FnOnce(&pixtuoid_core::AgentSlot),
+    clicks: Clicks<'_, impl FnMut(&pixtuoid_core::AgentSlot), impl FnMut(&str)>,
     now: SystemTime,
 ) {
     let event = match m.kind {
@@ -435,28 +438,16 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
         held: matches!(m.kind, MouseEventKind::Drag(MouseButton::Left)),
         now,
     };
-    let (_, click) = mouse_ladder(
+    mouse_ladder(
         ui,
         popup_scale,
         event,
         Some(at),
         || crossterm::terminal::size().ok(),
         &mut office,
+        clicks,
     );
     renderer.set_mouse_pos(Some(at));
-    match click {
-        Some(HitAction::Focus(id)) => {
-            let slot = scene_rx.borrow().agents.get(&id).cloned();
-            if let Some(slot) = slot {
-                focus(&slot);
-            }
-        }
-        Some(HitAction::Pet(kind)) => renderer.pet(kind, now),
-        Some(HitAction::Open(url)) => {
-            crate::open_url(url);
-        }
-        None => {}
-    }
 }
 
 /// Hand `renderer` the half-blocks' painter on this terminal and the cutaway
@@ -597,8 +588,11 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                         m,
                         &mut ui,
                         &mut renderer,
-                        &scene_rx,
-                        crate::focus::focus_slot,
+                        Clicks {
+                            scene: Some(&scene_rx),
+                            focus: crate::focus::focus_slot,
+                            open: crate::open_url,
+                        },
                         now,
                     ),
                     _ => {}

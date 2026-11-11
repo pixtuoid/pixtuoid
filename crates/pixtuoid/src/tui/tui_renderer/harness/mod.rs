@@ -39,6 +39,19 @@ pub(super) fn slot(id: AgentId, floor: usize, desk: usize, started: SystemTime) 
     }
 }
 
+/// What a click reaches from a harness test: `focus` on `scene`'s agents,
+/// and no page, since a harness click names none.
+pub(super) fn clicks(
+    scene: &crate::runtime::SceneRx,
+    focus: impl FnMut(&AgentSlot),
+) -> crate::panels::Clicks<'_, impl FnMut(&AgentSlot), impl FnMut(&str)> {
+    crate::panels::Clicks {
+        scene: Some(scene),
+        focus,
+        open: |url| panic!("opened {url}"),
+    }
+}
+
 pub(super) fn render_until_settled<B: Backend<Error: Send + Sync + 'static>>(
     r: &mut TuiRenderer<B>,
     scene: &SceneState,

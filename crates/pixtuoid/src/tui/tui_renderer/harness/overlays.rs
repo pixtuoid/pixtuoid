@@ -365,8 +365,7 @@ fn a_panel_opened_by_key_hides_the_tooltip_at_rest() {
         },
         &mut ui,
         &mut r,
-        &scene_rx,
-        |_| panic!("a hover focuses nothing"),
+        clicks(&scene_rx, |_| panic!("a hover focuses nothing")),
         t0(),
     );
     assert!(

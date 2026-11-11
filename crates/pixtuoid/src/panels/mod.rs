@@ -3,7 +3,7 @@
 //! key dispatch that drives them ([`dispatch_key`] decodes, [`apply_key_action`]
 //! applies) and the one [`mouse_ladder`]. A painter draws them through
 //! [`widgets`] into a ratatui frame and carries out what only it can through
-//! [`Host`] and [`Office`].
+//! [`Host`], [`Office`] and [`Clicks`].
 
 pub(crate) mod connection;
 pub(crate) mod dashboard;
@@ -14,6 +14,8 @@ pub(crate) mod widgets;
 use std::time::{Instant, SystemTime};
 
 use crossterm::event::{KeyCode, KeyModifiers};
+use pixtuoid_core::AgentSlot;
+use pixtuoid_scene::hit::HitAction;
 use pixtuoid_scene::theme;
 use ratatui::layout::Rect;
 
@@ -245,14 +247,26 @@ pub(crate) trait Office {
     /// The left button released: the click's action; a figure in hand is set
     /// down.
     fn release(&mut self) -> Option<pixtuoid_scene::hit::HitAction>;
+    /// A click on the floor's `kind` of pet.
+    fn pet(&mut self, kind: pixtuoid_scene::pet::PetKind);
+}
+
+/// What a click reaches outside the office, injected because the real
+/// `crate::focus::focus_slot` raises a terminal and `crate::open_url` launches
+/// a browser, so a test clicking either would drive the developer's desktop.
+pub(crate) struct Clicks<'a, F: FnMut(&AgentSlot), O: FnMut(&str)> {
+    /// The live office a focused agent is looked up in; `None` before one runs.
+    pub(crate) scene: Option<&'a crate::runtime::SceneRx>,
+    pub(crate) focus: F,
+    pub(crate) open: O,
 }
 
 /// The mouse ladder both painters run: [`modal_mouse`], then `office`. Only a
 /// press waits on the panels; the move and release of a gesture the office
 /// began reach it whatever opened since, so a figure lifted before a panel
-/// opened still follows the pointer and is set down. A release's click, the
-/// painter's to carry out, lands only with no panel open. `at` is the cell
-/// the pointer is on, read for a press.
+/// opened still follows the pointer and is set down. A release's click is
+/// carried out only with no panel open. `at` is the cell the pointer is on,
+/// read for a press.
 pub(crate) fn mouse_ladder(
     ui: &mut ui_state::UiState,
     popup_scale: f32,
@@ -260,23 +274,35 @@ pub(crate) fn mouse_ladder(
     at: Option<(u16, u16)>,
     screen: impl FnOnce() -> Option<(u16, u16)>,
     office: &mut impl Office,
-) -> (ModalMouse, Option<pixtuoid_scene::hit::HitAction>) {
+    mut clicks: Clicks<'_, impl FnMut(&AgentSlot), impl FnMut(&str)>,
+) -> ModalMouse {
     let left_down = at.filter(|_| event == PointerEvent::Press);
-    let modal = modal_mouse(ui, popup_scale, left_down, screen);
-    let click = match event {
+    let modal = modal_mouse(ui, popup_scale, left_down, screen, &mut clicks.open);
+    match event {
         PointerEvent::Press => {
             if modal == ModalMouse::Office {
                 office.press();
             }
-            None
         }
-        PointerEvent::Move => {
-            office.moved();
-            None
-        }
-        PointerEvent::Release => office.release().filter(|_| modal == ModalMouse::Office),
-    };
-    (modal, click)
+        PointerEvent::Move => office.moved(),
+        PointerEvent::Release => match office.release().filter(|_| modal == ModalMouse::Office) {
+            Some(HitAction::Focus(id)) => {
+                // Cloned out: the focus walks the process table, and a borrow
+                // held across it blocks the channel's sender (tokio's
+                // `watch::Receiver::borrow`).
+                let slot = clicks
+                    .scene
+                    .and_then(|rx| rx.borrow().agents.get(&id).cloned());
+                if let Some(slot) = slot {
+                    (clicks.focus)(&slot);
+                }
+            }
+            Some(HitAction::Pet(kind)) => office.pet(kind),
+            Some(HitAction::Open(url)) => (clicks.open)(url),
+            None => {}
+        },
+    }
+    modal
 }
 
 /// The modal half of the mouse ladder, in order: the onboarding swallows
@@ -286,12 +312,14 @@ pub(crate) fn mouse_ladder(
 /// key ([`dispatch_key`]). A click never leaks to the office behind a panel,
 /// where a coffee-machine or branding hit launches a browser. `left_down` is
 /// the cell a left press landed on; `popup_scale` the popup's painted scale;
-/// `screen` the surface's size in cells, read only for a press on the popup.
+/// `screen` the surface's size in cells, read only for a press on the popup;
+/// `open` what launches the popup's URL.
 fn modal_mouse(
     ui: &mut ui_state::UiState,
     popup_scale: f32,
     left_down: Option<(u16, u16)>,
     screen: impl FnOnce() -> Option<(u16, u16)>,
+    open: impl FnOnce(&str),
 ) -> ModalMouse {
     if ui.onboarding_open() {
         return ModalMouse::Inert;
@@ -312,7 +340,7 @@ fn modal_mouse(
         if !on_url {
             return ModalMouse::Inert;
         }
-        crate::open_url(&widgets::release_url(env!("CARGO_PKG_VERSION")));
+        open(&widgets::release_url(env!("CARGO_PKG_VERSION")));
         return ModalMouse::Took;
     }
     if ui.appearance.is_some() || ui.dashboard.open || ui.connection.open {
@@ -1838,6 +1866,7 @@ mod dispatch_tests {
 pub(crate) struct NotedOffice {
     pub(crate) got: Vec<PointerEvent>,
     pub(crate) click: Option<pixtuoid_scene::hit::HitAction>,
+    pub(crate) pets: Vec<pixtuoid_scene::pet::PetKind>,
 }
 
 #[cfg(test)]
@@ -1854,15 +1883,24 @@ impl Office for NotedOffice {
         self.got.push(PointerEvent::Release);
         self.click
     }
+
+    fn pet(&mut self, kind: pixtuoid_scene::pet::PetKind) {
+        self.pets.push(kind);
+    }
 }
 
 #[cfg(test)]
 mod mouse_tests {
+    use std::sync::Arc;
+
     use super::{
-        ModalMouse, NotedOffice, PointerEvent, modal_mouse, mouse_ladder, ui_state::UiState,
-        welcome::WelcomeUi,
+        Clicks, ModalMouse, NotedOffice, PointerEvent, modal_mouse, mouse_ladder,
+        ui_state::UiState, welcome::WelcomeUi,
     };
+    use crate::runtime::SceneRx;
+    use pixtuoid_core::{AgentId, AgentSlot};
     use pixtuoid_scene::hit::HitAction;
+    use pixtuoid_scene::pet::PetKind;
 
     fn ui() -> UiState {
         UiState::new(
@@ -1878,18 +1916,87 @@ mod mouse_tests {
         None
     }
 
+    fn no_open(url: &str) {
+        panic!("opened {url}");
+    }
+
+    /// What one pointer event carried out beyond the office.
+    #[derive(Debug, Default, PartialEq)]
+    struct Carried {
+        focused: Vec<AgentId>,
+        opened: Vec<String>,
+        petted: Vec<PetKind>,
+    }
+
+    /// `event` at cell (0, 0) through the ladder, with no popup, recording
+    /// what it carried out.
+    fn send(
+        ui: &mut UiState,
+        office: &mut NotedOffice,
+        scene: Option<&SceneRx>,
+        event: PointerEvent,
+    ) -> (ModalMouse, Carried) {
+        let pets_before = office.pets.len();
+        let mut carried = Carried::default();
+        let modal = mouse_ladder(
+            ui,
+            0.0,
+            event,
+            Some((0, 0)),
+            no_screen,
+            office,
+            Clicks {
+                scene,
+                focus: |slot| carried.focused.push(slot.agent_id),
+                open: |url| carried.opened.push(url.to_owned()),
+            },
+        );
+        carried.petted = office.pets[pets_before..].to_vec();
+        (modal, carried)
+    }
+
+    /// An office holding one idle agent, `id`.
+    fn office_of(id: AgentId) -> SceneRx {
+        let slot = AgentSlot {
+            agent_id: id,
+            source: Arc::from("claude-code"),
+            session_id: Arc::from("s"),
+            cwd: Arc::from(std::path::Path::new("/repo")),
+            label: "x".into(),
+            state: pixtuoid_core::state::ActivityState::Idle,
+            state_started_at: std::time::SystemTime::UNIX_EPOCH,
+            last_event_at: std::time::SystemTime::UNIX_EPOCH,
+            created_at: std::time::SystemTime::UNIX_EPOCH,
+            arrived_at: None,
+            exiting_at: None,
+            desk: None,
+            tool_call_count: 0,
+            running_ms: 0,
+            unknown_cwd: false,
+            parent_id: None,
+            pid: None,
+            model: None,
+            effort: None,
+            tokens_used: 0,
+            last_usage: None,
+        };
+        let mut scene = pixtuoid_core::state::SceneState::uniform(1);
+        scene.agents.insert(id, slot);
+        tokio::sync::watch::channel(Arc::new(scene)).1
+    }
+
     /// With nothing open the office takes the pointer; an inert panel
     /// swallows it whole.
     #[test]
     fn only_a_closed_ladder_reaches_the_office() {
         let mut ui = ui();
         assert_eq!(
-            modal_mouse(&mut ui, 0.0, Some((0, 0)), no_screen),
+            modal_mouse(&mut ui, 0.0, Some((0, 0)), no_screen, no_open),
             ModalMouse::Office
         );
         ui.open_appearance();
         assert_eq!(
-            modal_mouse(&mut ui, 0.0, Some((0, 0)), no_screen),
+            modal_mouse(&mut ui, 0.0, Some((0, 0)), no_screen, no_open),
             ModalMouse::Inert
         );
         assert!(ui.appearance.is_some(), "a click never closes the picker");
@@ -1901,42 +2008,106 @@ mod mouse_tests {
     #[test]
     fn a_panel_withholds_the_press_and_the_click_but_not_the_gesture() {
         use PointerEvent::{Move, Press, Release};
-        fn send(
-            ui: &mut UiState,
-            office: &mut NotedOffice,
-            event: PointerEvent,
-        ) -> (ModalMouse, Option<HitAction>) {
-            mouse_ladder(ui, 0.0, event, Some((0, 0)), no_screen, office)
-        }
-        let focus = HitAction::Focus(pixtuoid_core::AgentId::from_parts("claude-code", "s"));
+        let id = AgentId::from_parts("claude-code", "s");
+        let scene = office_of(id);
         let mut ui = ui();
         let mut office = NotedOffice {
-            click: Some(focus),
+            click: Some(HitAction::Focus(id)),
             ..NotedOffice::default()
         };
+        let mut pointer = |ui: &mut UiState, event| send(ui, &mut office, Some(&scene), event);
         assert_eq!(
-            send(&mut ui, &mut office, Press),
-            (ModalMouse::Office, None)
+            pointer(&mut ui, Press),
+            (ModalMouse::Office, Carried::default())
         );
-        assert_eq!(send(&mut ui, &mut office, Move), (ModalMouse::Office, None));
+        assert_eq!(
+            pointer(&mut ui, Move),
+            (ModalMouse::Office, Carried::default())
+        );
         ui.open_appearance();
-        assert_eq!(send(&mut ui, &mut office, Move), (ModalMouse::Inert, None));
         assert_eq!(
-            send(&mut ui, &mut office, Release),
-            (ModalMouse::Inert, None),
-            "under a panel the click lands nowhere"
+            pointer(&mut ui, Move),
+            (ModalMouse::Inert, Carried::default())
         );
-        assert_eq!(send(&mut ui, &mut office, Press), (ModalMouse::Inert, None));
         assert_eq!(
-            office.got,
-            [Press, Move, Move, Release],
-            "the gesture's move and release reach the office, the press under the panel does not"
+            pointer(&mut ui, Release),
+            (ModalMouse::Inert, Carried::default()),
+            "under a panel the click is carried out nowhere"
+        );
+        assert_eq!(
+            pointer(&mut ui, Press),
+            (ModalMouse::Inert, Carried::default())
         );
         ui.cancel_appearance();
         assert_eq!(
-            send(&mut ui, &mut office, Release),
-            (ModalMouse::Office, Some(focus)),
-            "with no panel the click lands"
+            pointer(&mut ui, Release),
+            (
+                ModalMouse::Office,
+                Carried {
+                    focused: vec![id],
+                    ..Carried::default()
+                }
+            ),
+            "with no panel the click is carried out"
+        );
+        assert_eq!(
+            office.got,
+            [Press, Move, Move, Release, Release],
+            "the gesture's move and release reach the office, the press under the panel does not"
+        );
+    }
+
+    /// A released click is carried out by what it names: a focus on the
+    /// office's live slot, and only there; a page through the launcher; a
+    /// petting through the office.
+    #[test]
+    fn a_click_is_carried_out_by_what_it_names() {
+        let id = AgentId::from_parts("claude-code", "s");
+        let live = office_of(id);
+        let mut ui = ui();
+        let mut release = |click, scene| {
+            let mut office = NotedOffice {
+                click: Some(click),
+                ..NotedOffice::default()
+            };
+            let (modal, carried) = send(&mut ui, &mut office, scene, PointerEvent::Release);
+            assert_eq!(modal, ModalMouse::Office, "premise: no panel is open");
+            carried
+        };
+        let url = pixtuoid_scene::hit::REPO_URL;
+        assert_eq!(
+            release(HitAction::Focus(id), Some(&live)),
+            Carried {
+                focused: vec![id],
+                ..Carried::default()
+            }
+        );
+        assert_eq!(
+            release(
+                HitAction::Focus(AgentId::from_parts("claude-code", "gone")),
+                Some(&live)
+            ),
+            Carried::default(),
+            "an agent gone from the office is focused nowhere"
+        );
+        assert_eq!(
+            release(HitAction::Focus(id), None),
+            Carried::default(),
+            "with no live office there is no agent to focus"
+        );
+        assert_eq!(
+            release(HitAction::Open(url), Some(&live)),
+            Carried {
+                opened: vec![url.to_owned()],
+                ..Carried::default()
+            }
+        );
+        assert_eq!(
+            release(HitAction::Pet(PetKind::Cat), Some(&live)),
+            Carried {
+                petted: vec![PetKind::Cat],
+                ..Carried::default()
+            }
         );
     }
 
@@ -1946,12 +2117,12 @@ mod mouse_tests {
         let mut ui = ui();
         ui.toggle_help();
         assert_eq!(
-            modal_mouse(&mut ui, 0.0, None, no_screen),
+            modal_mouse(&mut ui, 0.0, None, no_screen, no_open),
             ModalMouse::Inert
         );
         assert!(ui.help_open());
         assert_eq!(
-            modal_mouse(&mut ui, 1.0, Some((0, 0)), no_screen),
+            modal_mouse(&mut ui, 1.0, Some((0, 0)), no_screen, no_open),
             ModalMouse::Took
         );
         assert!(!ui.help_open(), "the help wins over the popup");
@@ -1962,7 +2133,7 @@ mod mouse_tests {
     fn the_popup_swallows_a_press_off_its_url() {
         let mut ui = ui();
         assert_eq!(
-            modal_mouse(&mut ui, 1.0, Some((0, 0)), || Some((120, 44))),
+            modal_mouse(&mut ui, 1.0, Some((0, 0)), || Some((120, 44)), no_open),
             ModalMouse::Inert
         );
     }

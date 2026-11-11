@@ -404,16 +404,14 @@ where
             event(MouseEventKind::Down(MouseButton::Left), at),
             ui,
             r,
-            &scene_rx,
-            |_| panic!("a press acts on nothing"),
+            clicks(&scene_rx, |_| panic!("a press acts on nothing")),
             now,
         );
         crate::tui::handle_mouse_event(
             event(MouseEventKind::Up(MouseButton::Left), at),
             ui,
             r,
-            &scene_rx,
-            |slot| focus(slot),
+            clicks(&scene_rx, |slot| focus(slot)),
             now,
         );
     };
@@ -463,8 +461,7 @@ where
             event(kind, at),
             ui,
             r,
-            &scene_rx,
-            |_| panic!("a drag focuses nothing"),
+            clicks(&scene_rx, |_| panic!("a drag focuses nothing")),
             now,
         );
     };
@@ -561,8 +558,7 @@ fn a_petting_upstairs_leaves_the_pet_downstairs_to_pet() {
             },
             &mut ui,
             &mut r,
-            &scene_rx,
-            |_| panic!("the cat is no agent"),
+            clicks(&scene_rx, |_| panic!("the cat is no agent")),
             now,
         );
     }
@@ -622,8 +618,7 @@ fn a_panel_opened_mid_carry_still_sets_the_figure_down() {
             },
             ui,
             r,
-            &scene_rx,
-            |_| panic!("nothing under a panel focuses"),
+            clicks(&scene_rx, |_| panic!("nothing under a panel focuses")),
             now,
         );
     };
