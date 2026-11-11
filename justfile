@@ -424,7 +424,7 @@ hack:
 # It catches cfg(windows)-only compile and lint errors locally; a string path
 # assert still fails only in `windows-test`. `serve` stays out: ring's build
 # script can't find the target's C headers.
-[doc('Cross-lint the workspace for x86_64-pc-windows-msvc via clippy (no linking; ubuntu runner suffices)')]
+[doc('Cross-lint the workspace for x86_64-pc-windows-msvc via clippy, from any host (no linking)')]
 [group('rust')]
 check-windows: (_targets "x86_64-pc-windows-msvc")
     cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc --no-default-features --features pixtuoid/audio -- -D warnings
