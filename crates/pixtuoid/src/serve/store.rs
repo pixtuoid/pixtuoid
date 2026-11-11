@@ -371,5 +371,9 @@ mod tests {
         let (one, two) = (Hashed::of("one"), Hashed::of("two"));
         assert_ne!(one.short(), two.short());
         assert_eq!(one.short().len(), SHORT_HEX);
+        assert!(
+            one.short().len() < one.0.len(),
+            "a short is less than the hash"
+        );
     }
 }
