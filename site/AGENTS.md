@@ -16,9 +16,9 @@ docs, demo media all flow in from outside `site/`. Parent guide: the workspace
 `Cargo.toml` + the `docs/` pages below); a rename/move of any FAILS the
 build:
 
-- workspace `Cargo.toml` → displayed-version FALLBACK only; the primary source
-  is the latest release tag (`config/released-version.mjs`, unit-tested — main
-  runs ahead of the released version mid-cycle). Both workflows checkout with
+- workspace `Cargo.toml` → the origin (`homepage`) and the displayed-version
+  FALLBACK; the primary version is the latest release tag (`released-version.mjs`,
+  unit-tested — main runs ahead of it mid-cycle). Both workflows checkout with
   `fetch-depth: 0`. `pages.yml` deploys on push to `main`, not on tag push, so
   a fresh tag shows after the next `main` commit or a `workflow_dispatch`.
 - `docs/{CONFIGURATION, ARCHITECTURE, CONTRIBUTING}.md`

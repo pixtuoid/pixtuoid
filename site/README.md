@@ -108,8 +108,8 @@ counts, retint, and renders all pick it up automatically.
 
 ## Custom domain & deploy
 
-The site lives on **pixtuoid.dev** (`base: '/'`, `site` in
-`astro.config.mjs`); the domain is configured in **Settings → Pages** (Actions
+The site lives on **pixtuoid.dev** (`base: '/'`, `site` is the workspace
+`homepage` in `Cargo.toml`); the domain is configured in **Settings → Pages** (Actions
 deploys need no `CNAME` file), apex A/AAAA at GitHub Pages, `www` CNAME'd to
 `pixtuoid.github.io`. `robots.txt` + sitemap derive from the config. First
 deploy: set **Source: GitHub Actions**; after that every push to `main`

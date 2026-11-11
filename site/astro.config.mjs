@@ -13,21 +13,15 @@ import rehypeScrollFocus from './config/rehype-scroll-focus.mjs';
 import { REPO_SLUG, fetchStarCount } from './config/gh-stars.mjs';
 import { latestReleaseTag, resolveDisplayedVersion } from './config/released-version.mjs';
 import { COMPRESS_HTML } from './config/compress-html.mjs';
+import { workspacePackageField } from './config/workspace-package.mjs';
 
 // The DISPLAYED version is the latest RELEASE tag — what `cargo install`/brew
 // actually serve — not main's Cargo.toml, which runs AHEAD between a mid-cycle
-// bump and its release tag; the Cargo.toml parse is only the tag-less fallback.
-// Scope the match to [workspace.package] so a dependency's line-anchored
-// `version = "…"` can't be picked up.
+// bump and its release tag; the Cargo.toml version is only the tag-less fallback.
 const cargoToml = readFileSync(fileURLToPath(new URL('../Cargo.toml', import.meta.url)), 'utf8');
-const pkgSection = cargoToml.match(/\[workspace\.package\]([\s\S]*?)(?:\n\[|$)/)?.[1] ?? '';
-const cargoVersion = pkgSection.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
-if (!cargoVersion) {
-  throw new Error('astro.config: could not parse [workspace.package] version from ../Cargo.toml');
-}
 const { version, source: versionSource } = resolveDisplayedVersion(
   latestReleaseTag(),
-  cargoVersion
+  workspacePackageField(cargoToml, 'version')
 );
 console.log(`[pixtuoid] displayed version ${version} (from ${versionSource})`);
 
@@ -201,7 +195,7 @@ function demoAssets() {
 // The custom domain lives in the repo's Settings → Pages, not in the artifact —
 // Actions deploys need no CNAME file.
 export default defineConfig({
-  site: 'https://pixtuoid.dev',
+  site: workspacePackageField(cargoToml, 'homepage'),
   base: '/',
   trailingSlash: 'ignore',
   compressHTML: COMPRESS_HTML,

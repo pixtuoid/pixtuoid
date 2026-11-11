@@ -2168,6 +2168,16 @@ mod tests {
         }
     }
 
+    /// The site is built at the workspace's `homepage`, so a link outside it
+    /// opens a page no build serves.
+    #[test]
+    fn a_pair_link_opens_on_the_site_the_workspace_builds() {
+        assert_eq!(
+            PAIR_LINK_PREFIX,
+            format!("{}/pair/#", env!("CARGO_PKG_HOMEPAGE"))
+        );
+    }
+
     /// A link can reach a device from anywhere a URL can, so nothing it carries
     /// is taken on trust.
     #[test]

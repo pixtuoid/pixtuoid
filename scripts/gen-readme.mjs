@@ -14,13 +14,12 @@ import install from '../site/src/install.json' with { type: 'json' };
 import media from './media.json' with { type: 'json' };
 import { featureText } from '../site/config/feature-text.mjs';
 import { splitCmds } from '../site/config/install-cmds.mjs';
+import { workspacePackageField } from '../site/config/workspace-package.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readmePath = join(root, 'README.md');
 
-// MUST match `site` in site/astro.config.mjs — a hand-kept copy (importing the
-// astro config here would pull @astrojs/*), and nothing gates the two.
-const SITE = 'https://pixtuoid.dev';
+const SITE = workspacePackageField(readFileSync(join(root, 'Cargo.toml'), 'utf8'), 'homepage');
 // Absolute: each published crate's crates.io page is this README, and crates.io
 // resolves a relative link against the crate's own directory
 // (crates/pixtuoid-core/tests/published_package.rs).
