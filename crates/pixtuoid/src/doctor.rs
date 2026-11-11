@@ -885,7 +885,7 @@ impl Ink {
 }
 
 /// Each query only on a real tty and a non-dumb `$TERM` (`probe_ok`): the same
-/// `color_preflight` gate the launcher acts on, so the rows match `run`.
+/// `color_preflight` gate `run`'s TUI preflight acts on, so the rows match `run`.
 fn probe_terminal_caps(
     probe_ok: bool,
     look: crate::graphics::LookChoice,
@@ -1093,11 +1093,11 @@ fn terminal_category(r: &DoctorReport) -> Category {
         r.graphics_plan.diagnostic_row(r.run_plan)
     )];
     // Whenever it has something to say — incl. the ForceColor note, so a
-    // NO_COLOR+CLICOLOR_FORCE report still states that color is being forced.
+    // NO_COLOR+FORCE_COLOR report still states that color is being forced.
     if let Some(row) = crate::term::color_status_row(r.color_pf) {
         details.push(format!("{DETAIL_INDENT}{row}"));
     }
-    // Same predicate as the launcher's warning, so the two never disagree; a skipped
+    // Same predicate as `run`'s warning, so the two never disagree; a skipped
     // probe (piped) stays ✓.
     let unconfirmed = r
         .truecolor_probe
@@ -1841,7 +1841,7 @@ mod tests {
     fn terminal_category_warns_when_an_attempted_probe_did_not_confirm() {
         let mut r = summary_report(vec![]);
         use crate::term::Truecolor;
-        // Asked, no answer — the launcher warned here.
+        // Asked, no answer — `run` warned here.
         r.truecolor_probe = Some(Truecolor::NoAnswer);
         let c = terminal_category(&r);
         assert_eq!(c.status, CategoryStatus::Warn);

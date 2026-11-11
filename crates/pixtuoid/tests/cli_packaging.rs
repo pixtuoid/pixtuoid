@@ -175,6 +175,7 @@ fn a_color_refusal_exits_1_with_its_reason() {
             .env_remove("PIXTUOID_LOG")
             .env_remove("NO_COLOR")
             .env_remove("CLICOLOR_FORCE")
+            .env_remove("FORCE_COLOR")
             .env("TERM", "xterm-256color")
             .env(var, value)
             .env("XDG_CONFIG_HOME", tmp.path())
@@ -289,8 +290,9 @@ fn a_tracing_warning_into_a_gone_stderr_exits_0() {
 }
 
 /// A log on stderr colors as `doctor`'s report on stdout does: not into a
-/// pipe (`2>file`, `| grep`) unless `$CLICOLOR_FORCE` forces it, and never
-/// for `$TERM=dumb`.
+/// pipe (`2>file`, `| grep`) unless a force forces it — `$FORCE_COLOR` even
+/// over `$NO_COLOR`, `$CLICOLOR_FORCE` only without it — and never for
+/// `$TERM=dumb`.
 #[cfg(unix)]
 #[test]
 fn a_log_on_stderr_colors_by_the_one_stream_rule() {
@@ -299,6 +301,10 @@ fn a_log_on_stderr_colors_by_the_one_stream_rule() {
         (&[][..], false),
         (&[("CLICOLOR_FORCE", "1")][..], true),
         (&[("CLICOLOR_FORCE", "1"), ("TERM", "dumb")][..], false),
+        (&[("CLICOLOR_FORCE", "1"), ("NO_COLOR", "1")][..], false),
+        (&[("FORCE_COLOR", "0")][..], true),
+        (&[("FORCE_COLOR", "1"), ("NO_COLOR", "1")][..], true),
+        (&[("FORCE_COLOR", "1"), ("TERM", "dumb")][..], false),
     ] {
         let out = common::isolated(&["sources"], home.path())
             .env("PIXTUOID_LOG", home.path())

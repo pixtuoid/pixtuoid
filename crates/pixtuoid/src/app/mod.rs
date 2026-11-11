@@ -36,7 +36,7 @@ pub fn run() -> Result<()> {
 
     // The office has no legible monochrome fallback, so refuse the canvas with an
     // explanation rather than render block-soup. crossterm needs the
-    // $CLICOLOR_FORCE override applied explicitly — it ignores the var on its own.
+    // $FORCE_COLOR override applied explicitly — it ignores the var on its own.
     // Runs before the truecolor probe, so a dumb terminal never gets DECRQSS.
     if is_run_tui {
         use crate::term::ColorPreflight;
@@ -46,7 +46,7 @@ pub fn run() -> Result<()> {
             ColorPreflight::RefuseNoColor => anyhow::bail!(
                 "$NO_COLOR is set, so color output is disabled — the pixel-art office \
                  is 24-bit color with no legible monochrome mode and would render as \
-                 unreadable blocks. Unset NO_COLOR (or set CLICOLOR_FORCE=1 to override) \
+                 unreadable blocks. Unset NO_COLOR (or set FORCE_COLOR=1 to override) \
                  to run it, or use `pixtuoid run --headless` for a text summary."
             ),
             ColorPreflight::RefuseDumbTerm => anyhow::bail!(

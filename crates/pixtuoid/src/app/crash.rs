@@ -218,7 +218,8 @@ mod tests {
                 .env("XDG_STATE_HOME", state.path())
                 .env("TERM", "xterm-256color")
                 .env_remove("NO_COLOR")
-                .env_remove("CLICOLOR_FORCE");
+                .env_remove("CLICOLOR_FORCE")
+                .env_remove("FORCE_COLOR");
             if let Some(force) = force {
                 child.env("CLICOLOR_FORCE", force);
             }

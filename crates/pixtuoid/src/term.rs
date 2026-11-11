@@ -66,7 +66,7 @@ pub(crate) fn warn_zone(
 pub(crate) enum ColorPreflight {
     Proceed,
     /// The caller MUST `crossterm::style::force_color_output(true)`: crossterm
-    /// strips color under `$NO_COLOR` and does NOT honor `$CLICOLOR_FORCE` itself,
+    /// strips color under `$NO_COLOR` and does NOT honor `$FORCE_COLOR` itself,
     /// so without the explicit force the office renders colorless anyway.
     ForceColor,
     RefuseNoColor,
@@ -76,25 +76,19 @@ pub(crate) enum ColorPreflight {
 /// Decide the color preflight from the environment. `$TERM=dumb` outranks
 /// everything: ncurses' `dumb` entry has no color capability
 /// (<https://invisible-island.net/ncurses/terminfo.src.html>), so forcing color
-/// can't fix it. Then a NON-EMPTY `$NO_COLOR` refuses unless [`clicolor_forced`]
-/// overrides it. bixense lets `$NO_COLOR` win (<https://bixense.com/clicolors/>);
-/// the reverse is our choice, since the force is the refusal's one escape hatch.
+/// can't fix it. Then a set `$NO_COLOR` refuses unless [`color_forced`] says
+/// `forced`, which only `$FORCE_COLOR` can there.
 ///
-/// The emptiness rule matches crossterm, the thing that actually strips the
-/// color (0.29.0 `src/style/types/colored.rs:75-79`). `$CLICOLOR` is NOT read:
+/// `$NO_COLOR`'s emptiness rule matches crossterm, the thing that actually strips
+/// the color (0.29.0 `src/style/types/colored.rs:75-79`). `$CLICOLOR` is NOT read:
 /// it would not change the render, since crossterm's `src/` reads no color
 /// variable but `$NO_COLOR`.
-pub(crate) fn color_preflight(
-    no_color: Option<&str>,
-    clicolor_force: Option<&str>,
-    term: Option<&str>,
-) -> ColorPreflight {
+fn color_preflight(no_color: Option<&str>, forced: bool, term: Option<&str>) -> ColorPreflight {
     if matches!(term, Some(t) if t == "dumb") {
         return ColorPreflight::RefuseDumbTerm;
     }
-    let no_color_set = matches!(no_color, Some(v) if !v.is_empty());
-    if no_color_set {
-        return if clicolor_forced(clicolor_force) {
+    if is_set(no_color) {
+        return if forced {
             ColorPreflight::ForceColor
         } else {
             ColorPreflight::RefuseNoColor
@@ -103,38 +97,63 @@ pub(crate) fn color_preflight(
     ColorPreflight::Proceed
 }
 
-/// `$CLICOLOR_FORCE` set, which an empty value is not, means "ANSI colors should
-/// be enabled no matter what" (<https://bixense.com/clicolors/>), a pipe included.
-/// Shared by [`color_preflight`] (the `$NO_COLOR` override) and
-/// [`stream_color_under`], so the two can't parse the variable differently.
-pub(crate) fn clicolor_forced(v: Option<&str>) -> bool {
+/// Whether a color variable is set: non-empty, whatever its value, as
+/// <https://no-color.org/>, <https://bixense.com/clicolors/> and
+/// <https://force-color.org/> each define theirs.
+fn is_set(v: Option<&str>) -> bool {
     matches!(v, Some(v) if !v.is_empty())
+}
+
+/// Whether color is forced, a pipe included. A set `$CLICOLOR_FORCE` forces it
+/// only with `$NO_COLOR` unset (<https://bixense.com/clicolors/>: "CLICOLOR_FORCE
+/// set, but NO_COLOR unset"); a set `$FORCE_COLOR` even over a set `$NO_COLOR`,
+/// which <https://force-color.org/>'s example checks before it. bixense would
+/// have `$FORCE_COLOR`, as its alias, yield to `$NO_COLOR` too; it defers to
+/// force-color.org, so that one is followed.
+fn color_forced(
+    no_color: Option<&str>,
+    clicolor_force: Option<&str>,
+    force_color: Option<&str>,
+) -> bool {
+    is_set(force_color) || (is_set(clicolor_force) && !is_set(no_color))
 }
 
 /// This process's color environment.
 pub(crate) struct ColorEnv {
     pub(crate) preflight: ColorPreflight,
-    clicolor_force: Option<String>,
+    forced: bool,
 }
 
 impl ColorEnv {
-    /// [`color_preflight`] of `$NO_COLOR`, `$CLICOLOR_FORCE` and `$TERM`.
+    /// [`color_forced`] of `$NO_COLOR`, `$CLICOLOR_FORCE` and `$FORCE_COLOR`, and
+    /// the [`color_preflight`] it and `$TERM` make.
     pub(crate) fn read() -> Self {
-        let clicolor_force = pixtuoid_core::platform::text_env("CLICOLOR_FORCE");
-        let preflight = color_preflight(
-            pixtuoid_core::platform::text_env("NO_COLOR").as_deref(),
-            clicolor_force.as_deref(),
-            pixtuoid_core::platform::text_env("TERM").as_deref(),
-        );
+        let env = pixtuoid_core::platform::text_env;
+        Self::of(
+            env("NO_COLOR").as_deref(),
+            env("CLICOLOR_FORCE").as_deref(),
+            env("FORCE_COLOR").as_deref(),
+            env("TERM").as_deref(),
+        )
+    }
+
+    /// The color environment these values make.
+    fn of(
+        no_color: Option<&str>,
+        clicolor_force: Option<&str>,
+        force_color: Option<&str>,
+        term: Option<&str>,
+    ) -> Self {
+        let forced = color_forced(no_color, clicolor_force, force_color);
         Self {
-            preflight,
-            clicolor_force,
+            preflight: color_preflight(no_color, forced, term),
+            forced,
         }
     }
 
     /// Whether a stream, a `tty` or not, may carry ANSI color.
     pub(crate) fn stream_color(&self, tty: bool) -> bool {
-        stream_color_under(tty, self.preflight, self.clicolor_force.as_deref())
+        stream_color_under(tty, self.preflight, self.forced)
     }
 }
 
@@ -145,26 +164,24 @@ pub(crate) fn stderr_color() -> bool {
 }
 
 /// [`ColorEnv::stream_color`]'s rule: a tty with color allowed by the SAME
-/// [`color_preflight`] policy `run`'s TUI preflight acts on, or
-/// [`clicolor_forced`] even piped — except where that policy refuses a dumb
+/// [`color_preflight`] policy `run`'s TUI preflight acts on, or a
+/// [`color_forced`] force even piped — except where that policy refuses a dumb
 /// `$TERM`, which outranks the force.
-fn stream_color_under(tty: bool, pf: ColorPreflight, clicolor_force: Option<&str>) -> bool {
+fn stream_color_under(tty: bool, pf: ColorPreflight, forced: bool) -> bool {
     pf != ColorPreflight::RefuseDumbTerm
-        && (clicolor_forced(clicolor_force) || (tty && matches!(pf, ColorPreflight::Proceed)))
+        && (forced || (tty && matches!(pf, ColorPreflight::Proceed)))
 }
 
 /// The `pixtuoid doctor` color-availability line, derived from the SAME
-/// `color_preflight` policy the launcher acts on so the diagnostic matches what
-/// `run` would do. `None` when color is plainly available.
+/// `color_preflight` policy `run`'s TUI preflight acts on, so the diagnostic
+/// matches what `run` would do. `None` when color is plainly available.
 pub(crate) fn color_status_row(pf: ColorPreflight) -> Option<&'static str> {
     match pf {
         ColorPreflight::Proceed => None,
-        ColorPreflight::ForceColor => {
-            Some("color: forced on ($CLICOLOR_FORCE overrides $NO_COLOR)")
-        }
+        ColorPreflight::ForceColor => Some("color: forced on ($FORCE_COLOR overrides $NO_COLOR)"),
         ColorPreflight::RefuseNoColor => Some(
             "color: DISABLED — $NO_COLOR is set, so colors are stripped and the \
-             office can't render. Unset NO_COLOR, or set CLICOLOR_FORCE=1 to override.",
+             office can't render. Unset NO_COLOR, or set FORCE_COLOR=1 to override.",
         ),
         ColorPreflight::RefuseDumbTerm => Some(
             "color: DISABLED — $TERM=dumb; this terminal can't render escape \
@@ -221,7 +238,7 @@ pub(crate) enum Truecolor {
 }
 
 impl Truecolor {
-    /// Whether the launcher's stderr warning and doctor's ⚠ row fire. Both read
+    /// Whether `run`'s stderr warning and doctor's ⚠ row fire. Both read
     /// this, so they cannot disagree; `CantAsk` stays quiet because a platform
     /// with nothing to ask would nag on every launch.
     pub(crate) fn warrants_warning(self) -> bool {
@@ -514,36 +531,35 @@ pub(crate) fn query_truecolor() -> Truecolor {
 mod tests {
     use super::*;
 
-    /// The color policy is a pure fn precisely so these arms are testable —
-    /// force-when-piped and dumb-beats-force both survived mutation before the
-    /// extraction.
+    /// Through [`ColorEnv::of`], the pure rule `read` applies, so each arm is
+    /// testable.
     #[test]
     fn stream_color_truth_table() {
-        use ColorPreflight as Pf;
-        let color = stream_color_under;
-        assert!(color(true, Pf::Proceed, None), "tty + Proceed → on");
-        assert!(!color(false, Pf::Proceed, None), "piped + Proceed → off");
-        assert!(
-            color(false, Pf::Proceed, Some("1")),
-            "CLICOLOR_FORCE forces even piped"
-        );
-        assert!(
-            color(false, Pf::Proceed, Some("0")),
-            "CLICOLOR_FORCE=0 is set, so it forces"
-        );
-        assert!(
-            !color(false, Pf::Proceed, Some("")),
-            "an empty CLICOLOR_FORCE is unset"
-        );
-        assert!(!color(true, Pf::RefuseNoColor, None), "NO_COLOR refuses");
-        assert!(
-            color(false, Pf::ForceColor, Some("1")),
-            "the force overrides NO_COLOR (pf is already ForceColor)"
-        );
-        assert!(
-            !color(true, Pf::RefuseDumbTerm, Some("1")),
-            "TERM=dumb outranks everything, force included"
-        );
+        // (tty, $NO_COLOR, $CLICOLOR_FORCE, $FORCE_COLOR, $TERM) → color
+        for (tty, no, cf, fc, term, on) in [
+            (true, None, None, None, None, true),
+            (false, None, None, None, None, false),
+            (false, None, Some("1"), None, None, true),
+            (false, None, Some("0"), None, None, true),
+            (false, None, Some(""), None, None, false),
+            (true, Some("1"), None, None, None, false),
+            (true, Some("1"), Some("1"), None, None, false),
+            (false, Some("1"), Some("1"), None, None, false),
+            (false, None, None, Some("1"), None, true),
+            (false, None, None, Some("0"), None, true),
+            (false, None, None, Some(""), None, false),
+            (true, Some("1"), None, Some("1"), None, true),
+            (false, Some("1"), None, Some("1"), None, true),
+            (true, None, Some("1"), None, Some("dumb"), false),
+            (true, Some("1"), None, Some("1"), Some("dumb"), false),
+        ] {
+            let row = (tty, no, cf, fc, term);
+            assert_eq!(
+                ColorEnv::of(no, cf, fc, term).stream_color(tty),
+                on,
+                "{row:?}"
+            );
+        }
     }
 
     /// Mode 2026 counts as supported when reported set or reset, not when
@@ -610,20 +626,24 @@ mod tests {
     #[test]
     fn color_preflight_precedence_and_thresholds() {
         use ColorPreflight::*;
-        assert_eq!(color_preflight(None, None, Some("xterm-256color")), Proceed);
-        assert_eq!(color_preflight(Some(""), None, None), Proceed);
-        assert_eq!(color_preflight(Some("1"), None, None), RefuseNoColor);
-        assert_eq!(color_preflight(Some("anything"), None, None), RefuseNoColor);
-        assert_eq!(color_preflight(Some("1"), Some("1"), None), ForceColor);
-        assert_eq!(color_preflight(Some("1"), Some("yes"), None), ForceColor);
-        assert_eq!(color_preflight(Some("1"), Some(""), None), RefuseNoColor);
-        assert_eq!(color_preflight(Some("1"), Some("0"), None), ForceColor);
-        assert_eq!(color_preflight(None, Some("1"), None), Proceed);
-        assert_eq!(color_preflight(None, None, Some("dumb")), RefuseDumbTerm);
-        assert_eq!(
-            color_preflight(Some("1"), Some("1"), Some("dumb")),
-            RefuseDumbTerm
-        );
+        // ($NO_COLOR, $CLICOLOR_FORCE, $FORCE_COLOR, $TERM) → preflight
+        for (no, cf, fc, term, pf) in [
+            (None, None, None, Some("xterm-256color"), Proceed),
+            (Some(""), None, None, None, Proceed),
+            (Some("1"), None, None, None, RefuseNoColor),
+            (Some("anything"), None, None, None, RefuseNoColor),
+            (Some("1"), Some("1"), None, None, RefuseNoColor),
+            (Some("1"), None, Some("1"), None, ForceColor),
+            (Some("1"), None, Some("0"), None, ForceColor),
+            (Some("1"), None, Some(""), None, RefuseNoColor),
+            (None, Some("1"), None, None, Proceed),
+            (None, None, Some("1"), None, Proceed),
+            (None, None, None, Some("dumb"), RefuseDumbTerm),
+            (Some("1"), None, Some("1"), Some("dumb"), RefuseDumbTerm),
+        ] {
+            let row = (no, cf, fc, term);
+            assert_eq!(ColorEnv::of(no, cf, fc, term).preflight, pf, "{row:?}");
+        }
     }
 
     #[test]
@@ -633,7 +653,7 @@ mod tests {
         assert!(
             color_status_row(ForceColor)
                 .unwrap()
-                .contains("CLICOLOR_FORCE")
+                .contains("FORCE_COLOR")
         );
         assert!(
             color_status_row(RefuseNoColor)
@@ -688,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    fn cant_ask_never_warns_the_launcher_or_doctor() {
+    fn cant_ask_never_warns_run_or_doctor() {
         for (probe, warns) in [
             (Truecolor::Answered(true), false),
             (Truecolor::Answered(false), true),

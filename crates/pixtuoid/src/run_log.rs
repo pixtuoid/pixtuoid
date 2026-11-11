@@ -174,31 +174,27 @@ fn open_private_append_vetted(
     Ok(file)
 }
 
-/// One-deep rotation at startup of the file `$PIXTUOID_LOG` names (log →
-/// log.old) keeps the last two generations. Accepted edge: with several
-/// instances sharing that file, one instance's startup rotation renames it out
-/// from under a running sibling (its fd follows; a later rotation strands it on
-/// an unlinked inode).
-fn rotate_if_large(path: &Path) {
-    // Unix's open refuses a symlink, so there one is sized as itself and never
-    // rotated; elsewhere `metadata` sizes its target (std 1.99.1 `fs.rs:2770`),
-    // so the log it names still rotates.
-    let stat = if cfg!(unix) {
-        std::fs::symlink_metadata(path)
-    } else {
-        std::fs::metadata(path)
-    };
-    let too_large = stat.is_ok_and(|m| m.len() > LOG_ROTATE_BYTES);
-    if too_large {
-        // APPEND ".old" rather than with_extension: a custom $PIXTUOID_LOG like
-        // app.log must rotate to app.log.old (not clobber a sibling app.old), and a
-        // path already ending in .old must not rename onto itself. OsString
-        // concatenation, not format!/display(): display() is lossy on non-UTF-8
-        // paths, and a U+FFFD-mangled target would silently break the rotation.
-        let mut old = path.as_os_str().to_os_string();
-        old.push(".old");
-        let _ = std::fs::rename(path, &old);
+/// [`open_private_append`] of the file `$PIXTUOID_LOG` names, after a one-deep
+/// rotation at startup (log → log.old) that keeps the last two generations.
+/// Sized through the opened file, so a path is renamed only once the opener has
+/// judged it. Accepted edge: with several instances sharing that file, one
+/// instance's startup rotation renames it out from under a running sibling (its
+/// fd follows; a later rotation strands it on an unlinked inode).
+fn open_rotated(path: &Path) -> std::io::Result<std::fs::File> {
+    let file = open_private_append(path, OpenOptions::new())?;
+    if !file.metadata().is_ok_and(|m| m.len() > LOG_ROTATE_BYTES) {
+        return Ok(file);
     }
+    drop(file);
+    // APPEND ".old" rather than with_extension: a custom $PIXTUOID_LOG like
+    // app.log must rotate to app.log.old (not clobber a sibling app.old), and a
+    // path already ending in .old must not rename onto itself. OsString
+    // concatenation, not format!/display(): display() is lossy on non-UTF-8
+    // paths, and a U+FFFD-mangled target would silently break the rotation.
+    let mut old = path.as_os_str().to_os_string();
+    old.push(".old");
+    let _ = std::fs::rename(path, &old);
+    open_private_append(path, OpenOptions::new())
 }
 
 /// Read the last `max` bytes of the warn-floor log, from their first whole
@@ -290,17 +286,15 @@ impl LogLocation {
         &self,
         now: SystemTime,
     ) -> Result<std::fs::File, (PathBuf, std::io::Error)> {
-        let (path, opts) = match self {
-            LogLocation::File(path) => {
-                rotate_if_large(path);
-                (path.clone(), OpenOptions::new())
+        let (path, sink) = match self {
+            LogLocation::File(path) => (path.clone(), open_rotated(path)),
+            LogLocation::Runs(dir) => {
+                let path = dir.join(run_file_name(now, std::process::id()));
+                let sink = open_private_append(&path, live_run_options());
+                (path, sink)
             }
-            LogLocation::Runs(dir) => (
-                dir.join(run_file_name(now, std::process::id())),
-                live_run_options(),
-            ),
         };
-        let sink = open_private_append(&path, opts).map_err(|e| (path, e))?;
+        let sink = sink.map_err(|e| (path, e))?;
         if let LogLocation::Runs(dir) = self {
             // Held for the run's life, it marks the file live to [`prune_runs`] on
             // Unix, where removing an open file succeeds.
@@ -483,8 +477,26 @@ mod tests {
         assert!(!dir.path().join("pixtuoid.log.old").exists());
     }
 
-    /// A file already at a log's path keeps its maker's mode, so a hard link
-    /// to a file its planter reads is refused; the run's own file reopens.
+    /// A named log hard-linked to another file is refused at any size: one past
+    /// the rotation cap is neither rotated away nor replaced.
+    #[cfg(unix)]
+    #[test]
+    fn a_hard_linked_named_log_past_the_cap_is_refused_not_rotated() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("pixtuoid.log");
+        let file = std::fs::File::create(&log).unwrap();
+        file.set_len(LOG_ROTATE_BYTES + 1).unwrap();
+        std::fs::hard_link(&log, dir.path().join("theirs")).unwrap();
+        let refused = LogLocation::File(log.clone())
+            .open_sink(SystemTime::now())
+            .expect_err("a linked log");
+        assert_eq!(refused.1.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(std::fs::metadata(&log).unwrap().len(), LOG_ROTATE_BYTES + 1);
+        assert!(!dir.path().join("pixtuoid.log.old").exists());
+    }
+
+    /// A hard link planted at a log's path is refused (the `O_CREAT` note in
+    /// [`open_private_append_vetted`]); the run's own file reopens.
     #[cfg(unix)]
     #[test]
     fn a_hard_link_planted_at_a_log_path_is_refused() {
@@ -559,35 +571,43 @@ mod tests {
     }
 
     #[test]
-    fn rotate_if_large_rotates_once_past_the_cap() {
+    fn open_rotated_rotates_once_past_the_cap() {
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("log");
 
         std::fs::write(&log, b"recent").unwrap();
-        rotate_if_large(&log);
-        assert!(log.exists(), "under-cap log must not rotate");
+        drop(open_rotated(&log).unwrap());
+        assert_eq!(
+            std::fs::read(&log).unwrap(),
+            b"recent",
+            "under-cap log must not rotate"
+        );
 
         // Sparse via set_len — no real `LOG_ROTATE_BYTES` write.
         let f = std::fs::OpenOptions::new().write(true).open(&log).unwrap();
         f.set_len(LOG_ROTATE_BYTES + 1).unwrap();
         drop(f);
-        rotate_if_large(&log);
-        assert!(!log.exists(), "over-cap log rotates away");
-        assert!(
-            dir.path().join("log.old").exists(),
+        drop(open_rotated(&log).unwrap());
+        assert_eq!(
+            std::fs::metadata(&log).unwrap().len(),
+            0,
+            "a fresh log in its place"
+        );
+        assert_eq!(
+            std::fs::metadata(dir.path().join("log.old")).unwrap().len(),
+            LOG_ROTATE_BYTES + 1,
             "one prior generation is kept"
         );
     }
 
     #[test]
-    fn rotate_if_large_appends_old_to_dotted_custom_paths() {
+    fn open_rotated_appends_old_to_dotted_custom_paths() {
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("app.log");
         let f = std::fs::File::create(&log).unwrap();
         f.set_len(LOG_ROTATE_BYTES + 1).unwrap();
         drop(f);
-        rotate_if_large(&log);
-        assert!(!log.exists());
+        drop(open_rotated(&log).unwrap());
         assert!(
             dir.path().join("app.log.old").exists(),
             ".old is appended, not substituted"
