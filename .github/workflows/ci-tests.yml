@@ -11,6 +11,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # No clippy job builds Windows' `serve` arms or any macOS-only one, so these
+  # native builds deny warnings themselves. Not RUSTFLAGS, which would replace
+  # .cargo/config.toml's linux flags; those outrank this, and clippy lints linux.
+  CARGO_BUILD_RUSTFLAGS: -D warnings
 
 jobs:
   # Unit tests on every platform run on every PR push
