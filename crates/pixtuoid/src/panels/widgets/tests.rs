@@ -603,7 +603,7 @@ fn footer_death_keeps_the_requires_action_alarm() {
 fn footer_with_floor_info() {
     let s = office_of(vec![idle("a"), idle("b")], 1, 3, 5);
     let line = footer_line(&s, 120, 1, None);
-    assert!(line.contains(" F2/3 "), "floor number: {line}");
+    assert!(line.contains(" F2/3 "), "the floor: {line}");
     insta::assert_snapshot!(line);
 }
 

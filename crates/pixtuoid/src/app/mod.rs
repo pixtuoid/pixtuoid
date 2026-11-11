@@ -292,9 +292,10 @@ fn warn_broken_installs(connected: &std::collections::HashSet<String>) {
             let _ = writeln!(
                 std::io::stderr(),
                 "⚠ pixtuoid: {} hooks are installed but BROKEN: {} — \
-                 reconnect in the Sources panel (press s)",
+                 reconnect in the Sources panel (press {})",
                 t.core_source,
-                broken.issues.join("; ")
+                broken.issues.join("; "),
+                crate::panels::keys::SOURCES
             );
         }
     }

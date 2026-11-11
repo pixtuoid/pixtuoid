@@ -51,8 +51,9 @@ pub(crate) fn paint_dashboard(
     }
 
     let title = format!(
-        " Agents ({})  [\u{2191}\u{2193} \u{2190}\u{2192} z \u{23ce} esc] ",
-        rows.len()
+        " Agents ({})  [\u{2191}\u{2193} \u{2190}\u{2192} {} \u{23ce} esc] ",
+        rows.len(),
+        crate::panels::keys::DASHBOARD_FOLD_ALL
     );
     // Build EVERY row; `Panel::paint` windows the list at the real inner height,
     // follows the selection, and appends the `⋮ N more ▾` cue. A `None` selection
@@ -108,11 +109,12 @@ fn dashboard_line(
         marquee_or_truncate(&name, LABEL_W, is_selected, now)
     );
 
+    use pixtuoid_scene::display::text::one_line;
     use pixtuoid_scene::footer::{FooterTone, RungKind};
     let (kind, text) = match &row.state {
-        RowState::Running(Some(detail)) => (RungKind::Running, detail.to_string()),
+        RowState::Running(Some(detail)) => (RungKind::Running, one_line(detail)),
         RowState::Running(None) => (RungKind::Running, "running".to_string()),
-        RowState::RequiresAction(Some(reason)) => (RungKind::RequiresAction, reason.to_string()),
+        RowState::RequiresAction(Some(reason)) => (RungKind::RequiresAction, one_line(reason)),
         RowState::RequiresAction(None) => (RungKind::RequiresAction, "requires action".to_string()),
         RowState::Idle => (RungKind::Idle, "idle".to_string()),
     };
@@ -317,6 +319,24 @@ mod tests {
             Some(to_color(NORMAL.ui.label_idle)),
             "unknown source badge fg must fall back to label_idle"
         );
+    }
+
+    /// A multi-line tool detail and reason keep their words apart, as on the
+    /// tooltip card.
+    #[test]
+    fn a_rows_multi_line_detail_keeps_its_words_apart() {
+        for (state, shown) in [
+            (RowState::Running(Some(Arc::from("cd a\nb"))), "cd a b"),
+            (
+                RowState::RequiresAction(Some(Arc::from("allow\r\nthis"))),
+                "allow this",
+            ),
+        ] {
+            let row = make_row("cc", state, "agent");
+            let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
+            let cell = line.spans[4].content.to_string();
+            assert!(cell.contains(shown), "{cell:?}");
+        }
     }
 
     #[test]

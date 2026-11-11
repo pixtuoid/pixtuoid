@@ -105,8 +105,9 @@ pub(crate) struct UiState {
     version_popup_open: bool,
     notices: Notices,
     help_open: bool,
-    /// `[p]ause`: while paused, `now()` returns the frozen instant so every
-    /// clock-driven animation (and the dashboard marquee) holds still.
+    /// [`keys::PAUSE`](super::keys::PAUSE): while paused, `now()` returns the
+    /// frozen instant so every clock-driven animation (and the dashboard
+    /// marquee) holds still.
     pause: pixtuoid_scene::anim::PauseClock,
     /// `$PIXTUOID_FAKE_NOW`'s instant, Unix seconds, and when it was read:
     /// the clock `just pace-check` starts at a transition or at dusk, read
@@ -406,7 +407,8 @@ impl UiState {
         }
     }
 
-    /// `z`: fold-all / unfold-all toggle across every root.
+    /// [`keys::DASHBOARD_FOLD_ALL`](super::keys::DASHBOARD_FOLD_ALL): fold-all / unfold-all toggle
+    /// across every root.
     pub(crate) fn dashboard_fold_all(&mut self, scene: &SceneState) {
         let rows = dashboard::build_dashboard_rows(scene, &self.dashboard.folds);
         let roots: Vec<_> = rows
@@ -433,17 +435,18 @@ impl UiState {
         floor
     }
 
-    /// `f` in the dashboard: the selected row's agent, for the focus-jump. The
-    /// panel STAYS open — focusing a terminal is a glance-and-return action,
-    /// unlike Enter's floor navigation which closes to show it.
+    /// [`keys::DASHBOARD_FOCUS`](super::keys::DASHBOARD_FOCUS): the selected
+    /// row's agent, for the focus-jump. The panel STAYS open — focusing a
+    /// terminal is a glance-and-return action, unlike Enter's floor navigation
+    /// which closes to show it.
     pub(crate) fn dashboard_focus(&self) -> Option<pixtuoid_core::AgentId> {
         self.dashboard.selected
     }
 
-    /// `s` on a closed panel: open with the freshly rebuilt connection facet.
-    /// The rows' blocking I/O (`build_rows` — FS probes + per-source `diagnose`)
-    /// runs at the loop and is handed in; it happens ON OPEN only, never per
-    /// frame.
+    /// [`keys::SOURCES`](super::keys::SOURCES) on a closed panel: open with the
+    /// freshly rebuilt connection facet. The rows' blocking I/O (`build_rows` —
+    /// FS probes + per-source `diagnose`) runs at the loop and is handed in; it
+    /// happens ON OPEN only, never per frame.
     pub(crate) fn open_connection(&mut self, rows: Vec<ConnectionRow>) {
         self.connection.open = true;
         self.connection.confirm = None;
@@ -456,8 +459,9 @@ impl UiState {
     /// Park the selection on `source_id`'s row, leaving it where it is when the
     /// panel has no such row. `open_connection` deliberately CARRIES the previous
     /// index, so a caller that opens the panel about ONE source has to say which;
-    /// otherwise the `t` it offers acts on an unrelated row. Unlike
-    /// `connection_move` this keeps `last_result` — the reason the panel opened.
+    /// otherwise the [`keys::SOURCE_TOGGLE`](super::keys::SOURCE_TOGGLE) it
+    /// offers acts on an unrelated row. Unlike `connection_move` this keeps
+    /// `last_result` — the reason the panel opened.
     pub(crate) fn select_connection_source(&mut self, source_id: &str) {
         if let Some(idx) = self
             .connection

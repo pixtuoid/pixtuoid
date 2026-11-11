@@ -28,7 +28,7 @@ static KEYS_STATS: LazyLock<String> = LazyLock::new(|| {
 });
 static KEYS_ALERT: LazyLock<String> = LazyLock::new(|| format!(" {} ", hint(keys::QUIT, "quit")));
 
-/// [`FooterContext::new`] with the TUI's keybind tails.
+/// [`FooterContext::new`] with the panels' keybind tails.
 pub(crate) fn footer_context<'a>(
     office: &SceneState,
     audio_audible: bool,

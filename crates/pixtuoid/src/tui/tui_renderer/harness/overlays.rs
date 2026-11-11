@@ -854,7 +854,7 @@ fn the_classic_lists_w_and_its_key_tints_the_frame() {
     r.set_frames(RenderFrames::default(), t0());
     r.render(&scene, t0()).unwrap();
     let before = r.buf().expect("a frame").clone();
-    assert!(crate::tui::toggle_walkable_debug_on_w(
+    assert!(crate::tui::toggle_walkable_debug(
         &mut r,
         KeyCode::Char('w'),
         &crate::panels::ModalState::closed()

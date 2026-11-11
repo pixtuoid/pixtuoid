@@ -15,7 +15,7 @@ pub(crate) use connection::{fmt_age, paint_connection_panel};
 pub(crate) use dashboard::paint_dashboard;
 pub(crate) use footer::footer_context;
 pub(crate) use footer::paint_footer;
-pub(crate) use help::{Shortcut, paint_help_overlay};
+pub(crate) use help::{Shortcut, paint_help_overlay, shortcut};
 pub(crate) use panel::{Overflow, Panel, PanelGeometry, borderless_panel};
 pub(crate) use tooltip::{TooltipAt, paint_host_text, paint_tooltip, star_area};
 pub(crate) use version_popup::{paint_version_popup, release_url, version_popup_url_rect};

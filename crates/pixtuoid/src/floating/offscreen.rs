@@ -307,8 +307,8 @@ impl OfficeRenderer {
             .map_or(&pixtuoid_scene::look::Dirty::All, |picture| picture.dirty())
     }
 
-    /// The status-footer model for the current scene, with the office's floor
-    /// number. `budget` is the caller's column budget ([`footer_budget`](super::overlays::footer_budget) at
+    /// The status-footer model for the current scene, with the office's
+    /// `F{floor}/{floors}`. `budget` is the caller's column budget ([`footer_budget`](super::overlays::footer_budget) at
     /// the live width).
     pub fn footer(
         &self,
@@ -1089,7 +1089,7 @@ mod tests {
     }
 
     /// The footer counts the floor showing out of the whole office, beside its
-    /// floor number: one agent of four on the ground floor reads 1/4.
+    /// `F{floor}/{floors}`: one agent of four on the ground floor reads 1/4.
     #[test]
     fn the_footer_counts_the_floor_showing() {
         let cap = 16;

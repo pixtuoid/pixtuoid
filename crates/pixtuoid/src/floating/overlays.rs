@@ -29,7 +29,7 @@ pub(crate) fn window_panels(
 ) -> crate::panels::OverlayFrame<'_> {
     frames.overlays(
         crate::panels::ui_state::popup_whole(frames.version_popup.open),
-        super::input::ZOOM_SHORTCUTS,
+        &super::input::ZOOM_SHORTCUTS[..],
     )
 }
 

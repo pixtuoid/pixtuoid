@@ -72,7 +72,11 @@ pub(crate) fn paint_connection_panel(
 
     let detail = if let Some(ci) = confirm {
         let name = rows.get(ci).map_or("", |(r, _)| r.display_name);
-        format!("\u{26a0} disconnect {name}? (y/n)")
+        format!(
+            "\u{26a0} disconnect {name}? ({}/{})",
+            keys::CONFIRM,
+            keys::DECLINE
+        )
     } else if let Some(res) = result {
         res.clone()
     } else if let Some((row, _)) = rows.get(selected) {
@@ -86,7 +90,12 @@ pub(crate) fn paint_connection_panel(
                     Some(p) => format!("installed at: {}", p.display()),
                     None => "connected".to_string(),
                 },
-                ConnState::Disconnected => "disconnected \u{2014} press t to connect".to_string(),
+                ConnState::Disconnected => {
+                    format!(
+                        "disconnected \u{2014} press {} to connect",
+                        keys::SOURCE_TOGGLE
+                    )
+                }
                 ConnState::NoCli { .. } => no_action_hint(row),
             }
         }

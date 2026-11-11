@@ -173,7 +173,8 @@ pub(crate) struct ModalState {
     pub(crate) appearance: Option<ui_state::AppearancePick>,
     pub(crate) dashboard_open: bool,
     pub(crate) connection_open: bool,
-    /// A disconnect is armed on the Sources panel, awaiting y/n.
+    /// A disconnect is armed on the Sources panel, awaiting [`keys::CONFIRM`]
+    /// or [`keys::DECLINE`].
     pub(crate) connection_confirm: bool,
 }
 
@@ -425,7 +426,7 @@ fn result_line(
 }
 
 /// An onboarding connect's line, and the row it is about, which the panel
-/// selects: on a failed row `t` retries the connect.
+/// selects: on a failed row [`keys::SOURCE_TOGGLE`] retries the connect.
 #[derive(Debug)]
 struct OnboardingNotice {
     source_id: &'static str,
@@ -454,8 +455,9 @@ fn onboarding_notices(outcomes: &[crate::sources::SourceChange]) -> Vec<Onboardi
     notices
 }
 
-/// Open the Sources panel on the first failed row, where `t` retries it, else on
-/// the first noted one, and seed its result line with every notice.
+/// Open the Sources panel on the first failed row, where [`keys::SOURCE_TOGGLE`]
+/// retries it, else on the first noted one, and seed its result line with
+/// every notice.
 fn surface_onboarding_notices(
     ui: &mut ui_state::UiState,
     connected: &crate::runtime::ConnectedSources,
@@ -484,16 +486,21 @@ pub(crate) fn is_quit_chord(code: KeyCode, mods: KeyModifiers) -> bool {
     )
 }
 
-/// The one key of each command the footer, the help or the Sources panel
-/// names: [`dispatch_key`] matches it and they write it from here, so a rebind
-/// leaves none of them naming a dead key. The panels' moves (arrows, `j`/`k`,
-/// `h`/`l`), Enter, Esc and Ctrl+C are conventions every panel shares.
+/// The one key of each command a hint names: the dispatch matches it and the
+/// hint writes it, so a rebind is one edit. Spelled out instead: the moves
+/// (arrows, `j`/`k`, `h`/`l`, Page Up and Down), Enter, Esc, Ctrl+C and Ctrl+L,
+/// which no one command owns, and the files pixtuoid writes into another CLI's
+/// tree, which a test pins to [`SOURCES`](keys::SOURCES)
+/// (`every_file_naming_the_sources_panel_names_its_key`). The window's zoom
+/// chords keep their own table, `floating::input::ZOOM_CHORDS`.
 pub(crate) mod keys {
     use crossterm::event::KeyCode;
 
     pub(crate) const QUIT: KeyCode = KeyCode::Char('q');
     pub(crate) const PAUSE: KeyCode = KeyCode::Char('p');
     pub(crate) const MUTE: KeyCode = KeyCode::Char('m');
+    pub(crate) const VOLUME_UP: KeyCode = KeyCode::Char('+');
+    pub(crate) const VOLUME_DOWN: KeyCode = KeyCode::Char('-');
     /// Opens the appearance picker.
     pub(crate) const APPEARANCE: KeyCode = KeyCode::Char('t');
     pub(crate) const HELP: KeyCode = KeyCode::Char('?');
@@ -502,9 +509,18 @@ pub(crate) mod keys {
     pub(crate) const DASHBOARD: KeyCode = KeyCode::Tab;
     /// The dashboard's: focuses the selected agent's terminal.
     pub(crate) const DASHBOARD_FOCUS: KeyCode = KeyCode::Char('f');
+    /// The dashboard's: folds or unfolds every lead.
+    pub(crate) const DASHBOARD_FOLD_ALL: KeyCode = KeyCode::Char('z');
     pub(crate) const SOURCES: KeyCode = KeyCode::Char('s');
     /// The Sources panel's: connects or disconnects the selected source.
     pub(crate) const SOURCE_TOGGLE: KeyCode = KeyCode::Char('t');
+    /// The Sources panel's answers to a disconnect's question.
+    pub(crate) const CONFIRM: KeyCode = KeyCode::Char('y');
+    pub(crate) const DECLINE: KeyCode = KeyCode::Char('n');
+    /// The onboarding's: ticks or unticks the selected source.
+    pub(crate) const ONBOARDING_TOGGLE: KeyCode = KeyCode::Char(' ');
+    /// The terminal's own: flips the half-blocks' walkable debug layer.
+    pub(crate) const WALKABLE: KeyCode = KeyCode::Char('w');
 }
 
 /// The look after `look` in [`LookKind::ALL`](pixtuoid_scene::look::LookKind::ALL),
@@ -566,7 +582,7 @@ pub(crate) fn dispatch_key(
             _ if is_quit_chord(code, mods) => KeyAction::Quit,
             (KeyCode::Up, _) | (KeyCode::Char('k'), _) => KeyAction::OnboardingUp,
             (KeyCode::Down, _) | (KeyCode::Char('j'), _) => KeyAction::OnboardingDown,
-            (KeyCode::Char(' '), _) => KeyAction::OnboardingToggle,
+            (keys::ONBOARDING_TOGGLE, _) => KeyAction::OnboardingToggle,
             (KeyCode::Enter, _) => KeyAction::OnboardingConfirm,
             (KeyCode::Esc, _) => KeyAction::OnboardingSkip,
             _ => KeyAction::None,
@@ -590,8 +606,8 @@ pub(crate) fn dispatch_key(
         if modal.connection_confirm {
             return match (code, mods) {
                 _ if is_quit_chord(code, mods) => KeyAction::Quit,
-                (KeyCode::Char('y'), _) => KeyAction::ConnectionConfirm,
-                (KeyCode::Char('n'), _) | (KeyCode::Esc, _) => KeyAction::ConnectionCancelConfirm,
+                (keys::CONFIRM, _) => KeyAction::ConnectionConfirm,
+                (keys::DECLINE, _) | (KeyCode::Esc, _) => KeyAction::ConnectionCancelConfirm,
                 _ => KeyAction::None,
             };
         }
@@ -614,7 +630,7 @@ pub(crate) fn dispatch_key(
             (KeyCode::Down, _) | (KeyCode::Char('j'), _) => KeyAction::DashboardDown,
             (KeyCode::Left, _) | (KeyCode::Char('h'), _) => KeyAction::DashboardFoldLeft,
             (KeyCode::Right, _) | (KeyCode::Char('l'), _) => KeyAction::DashboardFoldRight,
-            (KeyCode::Char('z'), _) => KeyAction::DashboardFoldAll,
+            (keys::DASHBOARD_FOLD_ALL, _) => KeyAction::DashboardFoldAll,
             _ => KeyAction::None,
         };
     }
@@ -645,8 +661,9 @@ pub(crate) fn dispatch_key(
     match code {
         keys::PAUSE => KeyAction::TogglePause,
         keys::MUTE => KeyAction::ToggleAudioMute,
-        KeyCode::Char('+') | KeyCode::Char('=') => KeyAction::AdjustVolume(true),
-        KeyCode::Char('-') | KeyCode::Char('_') => KeyAction::AdjustVolume(false),
+        // `=` and `_` are the same keys without and with Shift.
+        keys::VOLUME_UP | KeyCode::Char('=') => KeyAction::AdjustVolume(true),
+        keys::VOLUME_DOWN | KeyCode::Char('_') => KeyAction::AdjustVolume(false),
         keys::APPEARANCE => KeyAction::OpenAppearance,
         keys::HELP => KeyAction::ToggleHelp,
         keys::VERSION => KeyAction::OpenVersionPopup,

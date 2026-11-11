@@ -49,8 +49,9 @@ pub(crate) struct AppConfig {
     /// Keep BEFORE `pets` (see `pets`).
     #[serde(rename = "floating", default, skip_serializing_if = "Option::is_none")]
     pub floating: Option<FloatingConfigRaw>,
-    /// Ambient office sound. Absent ⇒ MUTED — the office starts silent and `m`
-    /// is the whole opt-in. Keep BEFORE `pets` (see `pets`).
+    /// Ambient office sound. Absent ⇒ MUTED — the office starts silent and
+    /// [`keys::MUTE`](crate::panels::keys::MUTE) is the whole opt-in. Keep
+    /// BEFORE `pets` (see `pets`).
     #[serde(rename = "audio", default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<AudioConfigRaw>,
     /// Keep `pets` LAST in the struct: it is an array-of-tables, and any `[table]`

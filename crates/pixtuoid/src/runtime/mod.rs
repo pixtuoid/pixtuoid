@@ -127,6 +127,7 @@ pub(crate) fn resolve_boot_caps(
 // reach the user's terminal verbatim (the TUI is immune — ratatui neutralizes escapes
 // in its cell buffer).
 use crate::strip_control_chars as sanitize_line;
+use pixtuoid_scene::display::text::one_line;
 
 fn summarize(scene: &SceneState) -> String {
     let agents: Vec<String> = scene
@@ -142,7 +143,7 @@ fn summarize(scene: &SceneState) -> String {
                             ..
                         }),
                 } => {
-                    format!("running({})", sanitize_line(detail))
+                    format!("running({})", sanitize_line(&one_line(detail)))
                 }
                 ActivityState::Running {
                     item: Some(ToolUse { detail: None, .. }),
@@ -151,7 +152,7 @@ fn summarize(scene: &SceneState) -> String {
                 ActivityState::RequiresAction {
                     reason: Some(reason),
                 } => {
-                    format!("requires_action({})", sanitize_line(reason))
+                    format!("requires_action({})", sanitize_line(&one_line(reason)))
                 }
                 ActivityState::RequiresAction { reason: None } => "requires_action".to_string(),
             };
@@ -808,6 +809,56 @@ mod tests {
         );
         assert!(summary.contains(":idle"), "got: {summary}");
         assert!(summary.contains('@'), "got: {summary}");
+    }
+
+    /// A multi-line tool detail and reason keep their words apart, as on the
+    /// tooltip card.
+    #[test]
+    fn summarize_keeps_a_multi_line_details_words_apart() {
+        use pixtuoid_core::AgentId;
+        use pixtuoid_core::source::AgentEvent;
+
+        let mut scene = SceneState::new([8; MAX_FLOORS]);
+        let mut reducer = Reducer::new();
+        let now = SystemTime::now();
+        let start = |reducer: &mut Reducer, scene: &mut SceneState, id: AgentId| {
+            reducer.apply(
+                scene,
+                AgentEvent::SessionStart {
+                    agent_id: id,
+                    source: "claude-code".into(),
+                    session_id: "s".into(),
+                    cwd: std::path::PathBuf::from("/repo"),
+                    parent_id: None,
+                },
+                now,
+                Transport::Hook,
+            );
+        };
+        let running = AgentId::from_transcript_path("/p/run.jsonl");
+        start(&mut reducer, &mut scene, running);
+        reducer.apply(
+            &mut scene,
+            AgentEvent::tool_use_start(running, None, Some("Bash: cd a\nb\tc".into())),
+            now,
+            Transport::Hook,
+        );
+        let asking = AgentId::from_transcript_path("/p/ask.jsonl");
+        start(&mut reducer, &mut scene, asking);
+        reducer.apply(
+            &mut scene,
+            AgentEvent::user_action_request(
+                asking,
+                Some("allow\r\nthis".into()),
+                pixtuoid_core::source::RequestKeys::default(),
+            ),
+            now,
+            Transport::Hook,
+        );
+
+        let summary = summarize(&scene);
+        assert!(summary.contains("running(Bash: cd a b c)"), "{summary}");
+        assert!(summary.contains("requires_action(allow this)"), "{summary}");
     }
 
     /// A desk counts on from the floors below it; an unseated agent has none to

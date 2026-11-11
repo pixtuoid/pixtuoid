@@ -122,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn center_sort_row_is_half_of_h_less_one_below_pos() {
+    fn center_sort_row_is_h_less_one_halved_below_pos() {
         let pos = Point { x: 30, y: 25 };
         for h in 1u16..24 {
             assert_eq!(

@@ -92,7 +92,8 @@ pub(crate) struct ConnectionUi {
     /// Cached CONNECTION facet — rebuilt on open + after each toggle, NEVER per
     /// frame. The LIVE facet is recomputed per frame instead.
     pub rows: Vec<ConnectionRow>,
-    /// `Some(row_idx)` ⇒ a disconnect is armed on that row, awaiting y/n.
+    /// `Some(row_idx)` ⇒ a disconnect is armed on that row, awaiting
+    /// `keys::CONFIRM` or `keys::DECLINE`.
     pub confirm: Option<usize>,
     pub last_result: Option<String>,
 }
@@ -175,7 +176,8 @@ pub(crate) enum FailedOp {
 
 /// THE Sources-panel failure line, `{display_name}: {what failed} — {reason}`.
 ///
-/// Every site that words a failed bind/unbind rides this — the panel's own `t`
+/// Every site that words a failed bind/unbind rides this — the panel's own
+/// [`keys::SOURCE_TOGGLE`](crate::panels::keys::SOURCE_TOGGLE)
 /// toggle and the onboarding apply's surfacing, which routes its failures onto
 /// this very panel — so a retry on the row reads the sentence the failure first
 /// gave.

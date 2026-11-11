@@ -110,9 +110,11 @@ pub fn scene_buf_size(cols: u16, rows: u16) -> (u16, u16) {
 /// footer-only frame instead of leaving a stale, clipped, footer-less one frozen.
 ///
 /// It paints the modal overlays too: every modal's key handler stays live at any
-/// size, so suppressing the overlay here made `?`/`s`/`Tab` toggle something
-/// invisible on any terminal below the office layout's minimum — and first run
-/// opens the onboarding modal there.
+/// size, so suppressing the overlay here made [`HELP`](crate::panels::keys::HELP),
+/// [`SOURCES`](crate::panels::keys::SOURCES) or
+/// [`DASHBOARD`](crate::panels::keys::DASHBOARD) toggle something invisible on
+/// any terminal below the office layout's minimum — and first run opens the
+/// onboarding modal there.
 pub(crate) fn draw_footer_only_frame<B: Backend<Error: Send + Sync + 'static>>(
     term: &mut Terminal<B>,
     footer: &FooterInputs<'_>,

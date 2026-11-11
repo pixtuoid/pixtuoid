@@ -11,7 +11,7 @@ use pixtuoid_core::{AgentId, SceneState};
 
 use crate::display::GatewayCard;
 use crate::display::cells::{CellGrid, CellRect};
-use crate::display::text::cells;
+use crate::display::text::{cells, one_line};
 use crate::floor::PetInputs;
 use crate::footer::{FooterTone, RungKind};
 use crate::hit::SceneHit;
@@ -384,16 +384,9 @@ fn fresh_effort(slot: &pixtuoid_core::AgentSlot, now: SystemTime) -> Option<&str
     })
 }
 
-/// `text` on one card row, its first [`DETAIL_CHARS`]: a card cell draws no
-/// control, so each run of whitespace, a command's line break or tab, is one
-/// space.
+/// The first [`DETAIL_CHARS`] of `text` on one card row ([`one_line`]).
 fn detail_line(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(DETAIL_CHARS)
-        .collect()
+    one_line(text).chars().take(DETAIL_CHARS).collect()
 }
 
 /// A short form of a cwd path: the TAIL (most informative — project dir) with a

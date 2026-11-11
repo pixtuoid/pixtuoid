@@ -118,7 +118,7 @@ impl Chrome {
         offers_walkable_debug: bool,
     ) -> crate::panels::OverlayFrame<'_> {
         let host_keys = if offers_walkable_debug {
-            crate::tui::WALKABLE_SHORTCUTS
+            &crate::tui::WALKABLE_SHORTCUTS[..]
         } else {
             &[]
         };

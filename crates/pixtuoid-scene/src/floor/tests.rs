@@ -256,7 +256,7 @@ fn num_floors_empty() {
 
 /// A desk past the top floor counts the building as tall as it can be,
 /// wherever it is counted: the session navigates the floors every
-/// projection's floor number names.
+/// projection's `F{floor}/{floors}` names.
 #[test]
 fn a_desk_past_the_top_floor_counts_one_building() {
     let mut scene = make_scene(1, 1);
@@ -2771,7 +2771,7 @@ fn floor_nav_slides_lands_and_clamps() {
 }
 
 /// A slide's footer speaks for its destination from the first frame, so its
-/// count matches the floor number it names.
+/// count matches the `F{floor}/{floors}` it names.
 #[test]
 fn a_slides_footer_speaks_for_its_destination() {
     let pack = Arc::new(crate::pack::test_office());
@@ -2783,7 +2783,7 @@ fn a_slides_footer_speaks_for_its_destination() {
         office
             .footer_scene(&scene)
             .floor_place()
-            .number()
+            .of_floors()
             .map(|(floor, _)| floor),
         Some(1)
     );
@@ -2792,7 +2792,7 @@ fn a_slides_footer_speaks_for_its_destination() {
         office
             .footer_scene(&scene)
             .floor_place()
-            .number()
+            .of_floors()
             .map(|(floor, _)| floor),
         Some(2)
     );
@@ -2987,7 +2987,7 @@ fn a_grip_stays_on_the_floor_it_lifted_on() {
 }
 
 /// An office shows the floor its navigation holds, of the floors its scene
-/// fills, with that floor's number; a slide composes both floors, hits
+/// fills, with that floor's `F{floor}/{floors}`; a slide composes both floors, hits
 /// nothing, and lands on its destination.
 #[test]
 fn an_office_session_shows_each_floor_and_slides_between_them() {
@@ -3021,14 +3021,14 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         "floor 1 lays out"
     );
     assert_eq!(office.n_floors(), 2);
-    let bread = |office: &OfficeSession| {
+    let shown_floor = |office: &OfficeSession| {
         office
             .footer_scene(&scene)
             .floor_place()
-            .number()
+            .of_floors()
             .map(|(floor, _)| floor)
     };
-    assert_eq!(bread(&office), Some(1));
+    assert_eq!(shown_floor(&office), Some(1));
     assert!(office.navigate(1, t0));
     let mid = t0 + Duration::from_millis(TRANSITION_DURATION_MS / 2);
     let _ = render(&mut office, mid);
@@ -3044,7 +3044,7 @@ fn an_office_session_shows_each_floor_and_slides_between_them() {
         office.picture(),
         Some(crate::look::Picture::Floor(_))
     ));
-    assert_eq!((office.nav().current(), bread(&office)), (1, Some(2)));
+    assert_eq!((office.nav().current(), shown_floor(&office)), (1, Some(2)));
     let pets: Vec<crate::pet::Pet> = (0..8)
         .map(|i| crate::pet::Pet {
             kind: crate::pet::PetKind::Cat,
@@ -3358,7 +3358,7 @@ fn a_frame_without_the_office_ends_a_slide_on_its_destination() {
 }
 
 /// An office whose upper floor empties shows one floor: the count and the
-/// floor number follow the live scene, not the views kept.
+/// `F{floor}/{floors}` follow the live scene, not the views kept.
 #[test]
 fn an_office_session_follows_its_floors_down() {
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
@@ -3391,8 +3391,12 @@ fn an_office_session_follows_its_floors_down() {
     let _ = render(&mut office, &one);
     assert_eq!(office.n_floors(), 1);
     assert!(
-        office.footer_scene(&one).floor_place().number().is_none(),
-        "one floor has no floor number"
+        office
+            .footer_scene(&one)
+            .floor_place()
+            .of_floors()
+            .is_none(),
+        "one floor shows no F1/1"
     );
 }
 

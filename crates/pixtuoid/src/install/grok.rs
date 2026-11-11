@@ -25,7 +25,7 @@ use crate::install::verify::{SchemaParse, ShimRef, reconnect};
 /// who opens the file.
 const SENTINEL_KEY: &str = "_pixtuoid";
 const SENTINEL_NOTE: &str =
-    "managed by pixtuoid — disconnect grok in the Sources panel (s) to remove";
+    "managed by pixtuoid — disconnect grok in the Sources panel (press s) to remove";
 
 /// Written on uninstall: a valid hooks file registering nothing, WITHOUT the
 /// sentinel, so a re-uninstall is a clean no-op.

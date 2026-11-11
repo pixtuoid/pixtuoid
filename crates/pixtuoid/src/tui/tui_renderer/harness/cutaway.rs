@@ -1635,7 +1635,7 @@ fn w_follows_the_look_the_frame_drew() {
     let scene = office();
     let cadence = ImageProtocol::Kitty.cadence();
     let w = |r: &mut TuiRenderer<Window>| {
-        crate::tui::toggle_walkable_debug_on_w(
+        crate::tui::toggle_walkable_debug(
             r,
             KeyCode::Char('w'),
             &crate::panels::ModalState::closed(),

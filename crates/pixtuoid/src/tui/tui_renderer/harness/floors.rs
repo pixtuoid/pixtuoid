@@ -456,11 +456,11 @@ fn theme_picker_renders_during_floor_transition() {
     );
 }
 
-/// The board's floor number comes from the drawn floor's projection and its
+/// The board's `F{floor}/{floors}` comes from the drawn floor's projection and its
 /// gateway chip from the office-wide gateway: the projection carries daemons
 /// only on floor 0, so a board built from it alone would drop `⬢gw` upstairs.
 #[test]
-fn the_wall_board_upstairs_shows_the_floor_number_and_the_office_gateway() {
+fn the_wall_board_upstairs_names_its_floor_and_the_office_gateway() {
     let theme = pixtuoid_scene::theme::ALL_THEMES[0];
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let cap = 16;

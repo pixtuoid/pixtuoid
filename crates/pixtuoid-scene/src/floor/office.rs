@@ -465,7 +465,7 @@ impl OfficeSession {
     /// `inputs.world.scene` is the FULL live scene: the office evicts against
     /// it and projects each floor out of it. `inputs.world.conditions` carries
     /// what its floors share, `inputs.gateway` its gateway; each floor's pet
-    /// (of `pets`) and petting are the office's, its floor number its
+    /// (of `pets`) and petting are the office's, its `F{floor}/{floors}` its
     /// projection's. Its picture is [`Self::picture`].
     pub fn render(
         &mut self,
@@ -616,7 +616,7 @@ impl OfficeSession {
     }
 
     /// The floor the footer speaks for: the one showing, or a slide's
-    /// destination for the whole slide, so its count matches the floor number.
+    /// destination for the whole slide, so its count matches its `F{floor}/{floors}`.
     fn footer_floor_index(&self) -> usize {
         self.nav
             .transition()
