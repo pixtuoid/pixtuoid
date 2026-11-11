@@ -6,7 +6,7 @@
   },
   {
     "q": "is anything uploaded?",
-    "a": "nothing — read-only local logs, no telemetry. only pixtuoid serve, if you start it, sends agent status, model, usage, repo names, which agent CLIs you have and how each is connected, and this machine's name and OS, to devices you paired on your LAN, and announces the machine's name and its key's SPKI hash on that network; paired devices can connect or disconnect those CLIs.",
+    "a": "nothing — read-only local logs, no telemetry. only pixtuoid serve, if you start it, announces this machine on your LAN and sends the devices you paired there a fixed allowlist of fields.",
     "cite": "the privacy posture (SECURITY.md)"
   }
 ]

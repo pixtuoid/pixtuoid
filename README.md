@@ -143,9 +143,9 @@ pixtuoid learns what each agent is doing from a tiny hook it installs, which nev
 ## Privacy & Security
 
 pixtuoid is **telemetry-free and local by default**: it makes no outbound connections, and
-accepts none unless you run `pixtuoid serve`, which sends agent status, model, usage, repo names,
-which agent CLIs you have and how each is connected, and this machine's name and OS, never paths, prompts or transcripts, to devices
-you paired on your local network, and announces the machine's name and its key's SPKI hash on that network. Those devices can also connect or disconnect the CLIs. Details: **[SECURITY.md](https://github.com/pixtuoid/pixtuoid/blob/HEAD/SECURITY.md)**.
+accepts none unless you run `pixtuoid serve`, which announces this machine on your local network
+and sends the devices you pair there a fixed allowlist of fields. What leaves, what never does and
+what a paired device may change: **[SECURITY.md](https://github.com/pixtuoid/pixtuoid/blob/HEAD/SECURITY.md)**.
 
 ## Contributing
 
