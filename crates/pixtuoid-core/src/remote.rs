@@ -423,7 +423,7 @@ const PIN_BYTES: usize = 32;
 /// until then, or with no App installed, it opens the site's page. The fields ride
 /// the fragment, which a browser keeps: "the fragment identifier is separated from
 /// the rest of the URI prior to a dereference" (RFC 3986 §3.5).
-const PAIR_LINK_PREFIX: &str = "https://pixtuoid.dev/pair/#";
+const PAIR_LINK_PREFIX: &str = concat!(env!("CARGO_PKG_HOMEPAGE"), "/pair/#");
 
 /// What every link began with before [`PAIR_LINK_PREFIX`], none of which a
 /// device can pair with.
