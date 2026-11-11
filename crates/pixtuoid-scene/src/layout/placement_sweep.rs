@@ -1127,21 +1127,9 @@ fn narrow_band_connectivity_boundary_scan() {
         // 46 reaches the SHORT band, where the appliance aisle sits at its 8px minimum.
         for &h in &[46u16, 80, 100, 120, 148, 160] {
             for seed in SWEEP_SEEDS {
-                let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
-                    // Every size here is above BOTH floors, so a refusal is a bug —
-                    // and `sweep_over`'s None arm covers only the discrete grid.
-                    panic!("{w}x{h} seed {seed}: refused above the floor");
-                };
-                {
-                    // `assert_home_desk_approaches_are_routable` passes VACUOUSLY on an
-                    // empty one, and this scan visits the widths between the grid points.
-                    assert!(
-                        !l.home_desks.is_empty(),
-                        "{w}x{h} seed {seed}: lays out with no desk to seat anyone"
-                    );
-                    assert_walkable_connected(w, h, seed, &l);
-                    assert_home_desk_approaches_are_routable(w, h, seed, &l);
-                }
+                let l = swept_layout(Viewport::full(w, h), seed);
+                assert_walkable_connected(w, h, seed, &l);
+                assert_home_desk_approaches_are_routable(w, h, seed, &l);
             }
         }
     }
@@ -2124,7 +2112,7 @@ fn the_route_sweeps_hold_inside_insets() {
     assert_no_violations("inset-route", v);
 }
 
-/// A walk leg aims at its agent's [`crate::pose::jitter_dest`], which can stand
+/// A walk leg aims at its agent's [`crate::pose::jitter_aim`], which can stand
 /// across a desk row or a wall from where the leg ends, so the sweep routes each
 /// desk's way in for several agents, on the floors a user sees, bare and inside
 /// insets.
@@ -2171,7 +2159,7 @@ fn no_jittered_leg_crosses_blocked_floor() {
                     v.push(format!(
                         "{viewport:?} seed {seed}: {id:?}'s leg {from:?}->{to:?} aimed at {:?} \
                          crosses blocked floor at {p:?}: {path:?}",
-                        crate::pose::jitter_dest(id, to)
+                        crate::pose::jitter_aim(id, to)
                     ));
                 }
             }

@@ -721,7 +721,7 @@ const JITTER_SPAN: u64 = (2 * JITTER_MAX_PX + 1) as u64;
 /// bit-identical across every call site — a site aiming at the RAW goal
 /// measures a differently-shaped polyline than the one rendered AND mints a
 /// second router-cache key per leg.
-pub(crate) fn jitter_dest(id: AgentId, p: Point) -> Point {
+pub(crate) fn jitter_aim(id: AgentId, p: Point) -> Point {
     const Y_HASH_SHIFT: u32 = 16;
     let h = id.raw();
     let jx = ((h % JITTER_SPAN) as i32 - JITTER_MAX_PX) as i16;
@@ -734,7 +734,7 @@ pub(crate) fn jitter_dest(id: AgentId, p: Point) -> Point {
 
 /// Route `from → to` aimed at the per-agent JITTERED goal. EVERY walk leg routes
 /// through here, so the rendered shape, the measured profile length and the
-/// router-cache key can't diverge (the [`jitter_dest`] lockstep contract).
+/// router-cache key can't diverge (the [`jitter_aim`] lockstep contract).
 pub(crate) fn route_jittered(
     router: &mut dyn Router,
     mask: &WalkableMask,
@@ -743,7 +743,7 @@ pub(crate) fn route_jittered(
     from: Point,
     to: Point,
 ) -> Vec<Point> {
-    router.route(mask, overlay, from, to, jitter_dest(id, to))
+    router.route(mask, overlay, from, to, jitter_aim(id, to))
 }
 
 #[cfg(test)]

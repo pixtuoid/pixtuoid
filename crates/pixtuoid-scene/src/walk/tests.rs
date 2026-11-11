@@ -720,7 +720,7 @@ fn long_dwell_never_trips_stale_resume_on_screen() {
     );
 }
 
-use crate::pose::jitter_dest;
+use crate::pose::jitter_aim;
 
 /// A trip agent whose [`crate::pose::JITTER_MAX_PX`] goal jitter is nonzero, so the lockstep
 /// assertions below have teeth.
@@ -728,7 +728,7 @@ fn jittering_trip_agent(prefix: &str) -> AgentId {
     let probe = Point { x: 50, y: 50 };
     (0u64..2000)
         .map(|i| AgentId::from_transcript_path(&format!("/p/{prefix}_{i}.jsonl")))
-        .find(|id| takes_trip(*id, 0) && jitter_dest(*id, probe) != probe)
+        .find(|id| takes_trip(*id, 0) && jitter_aim(*id, probe) != probe)
         .expect("should find a jittering trip agent quickly")
 }
 
@@ -756,7 +756,7 @@ fn wander_out_profile_aims_at_the_jittered_goal_the_render_uses() {
     let dest = walk.wander.target.dest;
     assert_eq!(
         (routed_to, aim),
-        (dest, jitter_dest(trip_id, dest)),
+        (dest, jitter_aim(trip_id, dest)),
         "the WalkingOut profile must route to the render's goal, aimed at its jitter"
     );
 }
@@ -788,7 +788,7 @@ fn back_profile_aims_at_the_jittered_desk_goal_the_render_uses() {
         vec![(
             walk.wander.target.dest,
             snap_to,
-            jitter_dest(trip_id, snap_to)
+            jitter_aim(trip_id, snap_to)
         )],
         "the walk-back profile must route to the render's desk goal, aimed at its jitter"
     );
