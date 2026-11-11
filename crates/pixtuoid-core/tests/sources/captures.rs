@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use pixtuoid_core::harness::merge::SHIM_STAMP;
 use pixtuoid_core::harness::provenance::{Deidentified, NonEmpty, Provenance, Recorded};
 pub(crate) use pixtuoid_core::harness::sources_root;
 use pixtuoid_core::source::decoder::SOURCE_STAMP;
@@ -572,7 +573,7 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
                 if let Some(src) = v.get(SOURCE_STAMP).and_then(|s| s.as_str()) {
                     stamps.insert(src.to_string());
                 }
-                if let Some(ms) = v.get("_shim_ts_ms").and_then(serde_json::Value::as_i64) {
+                if let Some(ms) = v.get(SHIM_STAMP).and_then(serde_json::Value::as_i64) {
                     dates.insert(utc_date(ms));
                 }
             }

@@ -645,7 +645,7 @@ mod tests {
                 .expect("json")
                 .1
                 .iter()
-                .map(|l| l["_shim_ts_ms"].clone())
+                .map(|l| l[crate::harness::merge::SHIM_STAMP].clone())
                 .collect()
         };
         let before = stamps(&hooks);
