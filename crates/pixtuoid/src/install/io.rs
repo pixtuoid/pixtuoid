@@ -504,13 +504,7 @@ pub(crate) fn output_within(
     command.wrap(process_wrap::std::JobObject);
     let (child, _listed) = spawn_listed(
         || Ok(std::sync::Arc::new(std::sync::Mutex::new(command.spawn()?))),
-        |child| {
-            #[cfg(unix)]
-            let handle = locked(child).id();
-            #[cfg(windows)]
-            let handle = std::sync::Arc::clone(child);
-            Some(handle)
-        },
+        handle_of,
     )?;
     let (stdout, stderr) = {
         let mut child = locked(&child);
@@ -552,6 +546,16 @@ pub(crate) fn output_within(
 /// A host CLI's child, which its run and, on Windows, [`kill_running`] share.
 type Shared = std::sync::Arc<std::sync::Mutex<Box<dyn process_wrap::std::ChildWrapper>>>;
 
+/// How [`kill_running`] reaches `child`, which leads its group (Unix) or sits
+/// in its Job Object (Windows).
+fn handle_of(child: &Shared) -> Option<KillHandle> {
+    #[cfg(unix)]
+    let handle = locked(child).id();
+    #[cfg(windows)]
+    let handle = std::sync::Arc::clone(child);
+    Some(handle)
+}
+
 /// `child`, locked for one call: [`kill_running`] takes it too on Windows.
 fn locked(child: &Shared) -> std::sync::MutexGuard<'_, Box<dyn process_wrap::std::ChildWrapper>> {
     child
@@ -570,7 +574,7 @@ pub(crate) type KillHandle = u32;
 #[cfg(windows)]
 pub(crate) type KillHandle = Shared;
 
-/// The CLIs this process runs.
+/// The CLIs this process runs through [`spawn_listed`].
 struct Running {
     handles: Vec<KillHandle>,
     /// Set by [`kill_running`]: the process is ending, and a CLI started past
@@ -624,8 +628,8 @@ impl Drop for Listed {
     }
 }
 
-/// Kill every running CLI and start no other: once this process is gone,
-/// nothing holds one to its limit.
+/// Kill every [listed](spawn_listed) CLI and list no other: once this process
+/// is gone, nothing holds one to its limit.
 pub(crate) fn kill_running() {
     let mut running = running();
     running.closed = true;
@@ -1475,6 +1479,58 @@ mod tests {
             0,
             "the finished run is still listed"
         );
+    }
+
+    /// A quit's kill waits for a spawn in flight, then takes the CLI it listed:
+    /// the list's lock spans the spawn.
+    #[test]
+    fn a_quit_during_a_spawn_kills_the_cli_it_lists() {
+        /// Far past a kill's own time when nothing holds the list's lock.
+        const AHEAD: Duration = Duration::from_millis(200);
+        let (started, spawning) = std::sync::mpsc::channel();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let spawner = std::thread::spawn(move || {
+            spawn_listed(
+                || {
+                    let _ = started.send(());
+                    let _ = held.recv();
+                    #[cfg(unix)]
+                    let hangs = {
+                        let mut sleep = std::process::Command::new("sleep");
+                        sleep.arg(HANG.as_secs().to_string());
+                        sleep
+                    };
+                    #[cfg(windows)]
+                    let hangs = {
+                        let mut ping = std::process::Command::new("ping");
+                        ping.args(["-n", &HANG.as_secs().to_string(), "127.0.0.1"]);
+                        ping
+                    };
+                    let mut command = process_wrap::std::CommandWrap::from(hangs);
+                    command.command_mut().stdout(std::process::Stdio::null());
+                    #[cfg(unix)]
+                    command.wrap(process_wrap::std::ProcessGroup::leader());
+                    #[cfg(windows)]
+                    command.wrap(process_wrap::std::JobObject);
+                    Ok(std::sync::Arc::new(std::sync::Mutex::new(command.spawn()?)))
+                },
+                handle_of,
+            )
+        });
+        spawning.recv().expect("the spawn begins");
+        let killer = std::thread::spawn(kill_running);
+        let waited = std::time::Instant::now();
+        while !killer.is_finished() && waited.elapsed() < AHEAD {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let _ = release.send(());
+        let (child, _listed) = spawner.join().expect("the spawner").expect("the spawn");
+        killer.join().expect("the kill");
+        let ended = pixtuoid_core::harness::wait_until("the listed CLI's end", SLACK, || {
+            Ok(locked(&child).try_wait()?.is_some())
+        });
+        let _ = locked(&child).start_kill();
+        ended.expect("the kill missed the CLI its spawn listed");
     }
 
     /// A quit's kill closes the way to new CLIs: one asked to run past it never
