@@ -926,8 +926,7 @@ mod tests {
         let at = default_now();
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
         let mut fold = Fold::default();
-        fold.feed(&drive, [tool_line()], at);
-        fold.feed(&drive, [exit.to_string()], at);
+        fold.feed(&drive, [tool_line(), exit.to_string()], at);
         let resumed = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
         fold.tick(resumed);
         assert_eq!(fold.driven().registered(), 0, "the first life walked out");
@@ -945,8 +944,7 @@ mod tests {
         let at = default_now();
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
         let mut fold = Fold::default();
-        fold.feed(&drive, [tool_line()], at);
-        fold.feed(&drive, [exit.to_string()], at);
+        fold.feed(&drive, [tool_line(), exit.to_string()], at);
         let after = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
         fold.tick(after);
         let fed = fold.driven().events.len();
@@ -1046,8 +1044,11 @@ mod tests {
         let head = serde_json::json!({"type": "session", "cwd": "/repo/head"});
         let exit = serde_json::json!({"type": "custom", "customType": "session_exit"});
         let mut fold = Fold::default();
-        fold.feed(&drive, [head.to_string(), tool_line()], at);
-        fold.feed(&drive, [exit.to_string()], at);
+        fold.feed(
+            &drive,
+            [head.to_string(), tool_line(), exit.to_string()],
+            at,
+        );
         let resumed = at + crate::state::reducer::EXIT_GRACE_WINDOW + CASCADE_TICK;
         fold.tick(resumed);
         let fed = fold.driven().events.len();
