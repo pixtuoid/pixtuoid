@@ -100,8 +100,8 @@ enforces the invariants at build time (one default live channel, unique ids,
 assets present, features↔showcase bijection).
 
 **Adding a demo channel**: one `showcase.json` entry + `just gen-media --only site`
-assets (a `clip` channel also adds its render + `encode_clip` block in
-`scripts/gen-media.py`). No component edits.
+assets (a `clip` channel also adds its `"kind": "clip"` job, named by the
+channel's `asset`, to `scripts/media.json`). No component edits.
 
 **Adding a theme**: one row in `src/themes.json` + `just gen-media --only site`. Chips,
 counts, retint, and renders all pick it up automatically.
