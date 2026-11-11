@@ -156,7 +156,7 @@ jobs:
           echo "approved=$approved" >> "$GITHUB_OUTPUT"
 
   # Holds the bot's write token, so it runs nothing from the tree
-  # (`bot-publish-runs-no-tree-code`).
+  # (`bot-publish-runs-no-tree-code`, `write-token-jobs-run-no-tree-code`).
   publish:
     name: open the bump PR for ${{ matrix.source }}
     needs: check

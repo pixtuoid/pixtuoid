@@ -29,8 +29,8 @@ fi
 count=$(jq 'length' <<<"$contracts")
 
 # The document a `parse-runs` contract judges: each `run` beside its bash AST
-# from shfmt, the maintained parser, or null where shfmt refuses it, so an
-# assert over the AST fails closed on what it cannot read.
+# from shfmt, or null where shfmt refuses it, which an assert must judge red
+# itself.
 with_run_asts() {
     local document=$1 path ast
     command -v shfmt >/dev/null || {
@@ -42,6 +42,14 @@ with_run_asts() {
         document=$(jq -c --argjson p "$path" --argjson ast "$ast" 'setpath($p + ["run_ast"]; $ast)' <<<"$document")
     done < <(jq -c 'paths(objects | .run | type == "string")' <<<"$document")
     printf '%s\n' "$document"
+}
+
+# The current contract's verdict on a document, committed or broken, so both
+# sides are judged on the same input.
+judge() {
+    local document=$1
+    [[ $parse_runs != true ]] || document=$(with_run_asts "$document") || return
+    jq -e --arg expected "$expected" --argjson against "$against" "$assertion" <<<"$document"
 }
 
 failed=0
@@ -80,9 +88,7 @@ for ((i = 0; i < count; i++)); do
             failed=1
             continue
         fi
-        judged=$document
-        [[ $parse_runs != true ]] || judged=$(with_run_asts "$document")
-        if ! jq -e --arg expected "$expected" --argjson against "$against" "$assertion" <<<"$judged" >/dev/null; then
+        if ! judge "$document" >/dev/null; then
             printf 'error: %s breaks contract %s\n  %s\n' "$file" "$id" "$(jq -r ".[$i].why" <<<"$contracts")" >&2
             failed=1
             continue
@@ -95,8 +101,7 @@ for ((i = 0; i < count; i++)); do
                 failed=1
                 continue
             fi
-            [[ $parse_runs != true ]] || broken=$(with_run_asts "$broken")
-            if jq -e --arg expected "$expected" --argjson against "$against" "$assertion" <<<"$broken" >/dev/null 2>&1; then
+            if judge "$broken" >/dev/null 2>&1; then
                 printf 'error: %s still passes on %s after this break, so that clause cannot fire:\n%s\n' "$id" "$file" "$breakage" >&2
                 failed=1
             fi
