@@ -393,21 +393,21 @@ fn snap_back_routes_via_the_approach_cell_then_settles_onto_the_chair() {
         matches!(pose, Pose::Walking { .. }),
         "snap-back must be Walking, got {pose:?}"
     );
-    let snap = rig.walks[&slot.agent_id]
+    let route = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
         .expect("the snap-back leg records its route");
     assert_eq!(
-        snap.last(),
+        route.last(),
         Some(&chair),
         "snap-back must settle onto the chair; got {:?}",
-        snap
+        route
     );
     assert_eq!(
-        snap[snap.len() - 2],
+        route[route.len() - 2],
         approach,
         "snap-back must arrive via the N/E/W approach cell, not straight at the chair; got {:?}",
-        snap
+        route
     );
 }
 
@@ -958,8 +958,8 @@ fn entry_walk_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = entry_slot(now);
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 150);
-    assert!(walking > 20, "entry walk should render many frames");
+    let (max_step, drawn) = max_top_left_step(&slot, &l, now, 150);
+    assert!(drawn > 20, "entry walk should render many frames");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
         "entry walk teleported: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
@@ -1047,17 +1047,17 @@ fn desk_entry_routes_around_the_desk_then_settles_onto_the_chair() {
         "a fresh entry must be Walking, got {pose:?}"
     );
 
-    let snap = rig.walks[&slot.agent_id]
+    let route = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
         .expect("the entry leg records its route");
     assert_eq!(
-        *snap,
+        *route,
         vec![door, approach, chair],
         "the leg must go door→approach→chair, settling onto the chair"
     );
     assert_ne!(
-        *snap,
+        *route,
         vec![door, chair],
         "entry must not straight-line door→chair through the desk body"
     );
@@ -1097,36 +1097,36 @@ fn wander_legs_approach_the_desk_via_an_allowed_side_not_through_the_front() {
     for i in 0..6000u32 {
         let t = now + PAINT_FRAME * i;
         let _ = derive_with_routing(&slot, t, &l, &mut rig.rctx());
-        let Some(snap) = rig
+        let Some(route) = rig
             .walks
             .get(&trip_id)
             .and_then(|walk| walk.walk_path.as_ref())
         else {
             continue;
         };
-        if let (Some(&f), Some(&la)) = (snap.first(), snap.last())
+        if let (Some(&f), Some(&la)) = (route.first(), route.last())
             && !seen_ends.contains(&(f, la))
         {
             seen_ends.push((f, la));
         }
-        if snap.first() == Some(&chair) {
+        if route.first() == Some(&chair) {
             saw_out = true;
             assert_eq!(
-                snap.get(1),
+                route.get(1),
                 Some(&approach),
                 "walk-out must leave the desk via the N/E/W approach cell, not \
                  straight through the south front; got {:?}",
-                snap
+                route
             );
         }
-        if snap.last() == Some(&chair) && snap.len() >= 2 {
+        if route.last() == Some(&chair) && route.len() >= 2 {
             saw_back = true;
             assert_eq!(
-                snap[snap.len() - 2],
+                route[route.len() - 2],
                 approach,
                 "walk-back must arrive at the desk via the N/E/W approach cell, \
                  not the south front; got {:?}",
-                snap
+                route
             );
         }
     }
@@ -1147,8 +1147,8 @@ fn exit_walk_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = exiting_slot(now, now - Duration::from_secs(60));
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 200);
-    assert!(walking > 20, "exit walk should render many frames");
+    let (max_step, drawn) = max_top_left_step(&slot, &l, now, 200);
+    assert!(drawn > 20, "exit walk should render many frames");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
         "exit walk teleported: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
@@ -1181,22 +1181,22 @@ fn exit_from_desk_rises_off_the_chair_via_the_approach_cell() {
         "a fresh exit must be Walking, got {pose:?}"
     );
 
-    let snap = rig.walks[&slot.agent_id]
+    let route = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
         .expect("the exit leg records its route");
     assert_eq!(
-        snap.first(),
+        route.first(),
         Some(&chair),
         "exit must START at the chair (Settle::Start glides off it); got {:?}",
-        snap
+        route
     );
     assert_eq!(
-        snap.get(1),
+        route.get(1),
         Some(&approach),
         "exit must rise off the chair via the N/E/W approach cell, not dip south; \
          got {:?}",
-        snap
+        route
     );
 }
 

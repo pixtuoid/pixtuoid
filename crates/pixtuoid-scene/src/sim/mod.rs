@@ -356,7 +356,6 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     // still needed to place its character.
     let poses: HashMap<AgentId, Option<Pose>> = agents
         .iter()
-        .filter(|a| layout.home_desk_of(a).is_some())
         .map(|a| {
             let p = pose::derive_with_routing(
                 a,

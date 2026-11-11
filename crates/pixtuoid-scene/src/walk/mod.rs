@@ -125,8 +125,8 @@ impl WanderKind {
 #[derive(Debug, Clone)]
 pub struct WanderState {
     /// Wander cycle counter, incremented each time a cycle ends, seated or home
-    /// from its trip (`sit_down`) — selects the waypoint destination (mirrors
-    /// `pose::pure`'s derivation).
+    /// from its trip (`sit_down`) — selects whether the cycle trips
+    /// (`takes_trip`) and where to (`resolve_wander_target`).
     pub(crate) cycle_n: u64,
     /// Current phase of the wander cycle.
     pub(crate) phase: WanderPhase,

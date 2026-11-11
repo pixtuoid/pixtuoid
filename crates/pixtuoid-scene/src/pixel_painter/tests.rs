@@ -2592,6 +2592,33 @@ fn sim_rig() -> (
     (scene, layout, id, now0, pack)
 }
 
+/// The walkable debug layer draws every recorded route, so an agent whose desk
+/// this layout lacks keeps none: its last walk ended with that desk.
+#[test]
+fn sim_step_clears_the_route_of_an_agent_without_a_desk_in_the_layout() {
+    let (mut scene, layout, id, now0, pack) = sim_rig();
+    if let Some(slot) = scene.agents.get_mut(&id) {
+        slot.desk = Some(FloorDesk::new(0, 999));
+    }
+    let mut owned = OwnedSimStores::new();
+    owned.route.walks.insert(
+        id,
+        crate::walk::WalkState {
+            walk_path: Some(vec![Point { x: 5, y: 5 }, Point { x: 80, y: 80 }]),
+            ..Default::default()
+        },
+    );
+    sim_and_paint(&mut owned, &scene, &layout, &pack, now0);
+    assert_eq!(
+        owned
+            .route
+            .walks
+            .get(&id)
+            .and_then(|walk| walk.walk_path.clone()),
+        None
+    );
+}
+
 /// `sim_step` must hand the sign the room's VERDICT, not its smoothed level: the
 /// level trails the verdict by the length of its ease, so a level-based join
 /// starves the sign in the gap after a populated room's last agent walks out.

@@ -304,21 +304,27 @@ mod tests {
             scene.agents.insert(id, slot(id));
         }
         let mut walks: HashMap<AgentId, WalkState> = HashMap::new();
+        walks.insert(id_nopath, WalkState::default());
+        // id_absent is intentionally NOT in the walks map.
+
+        let bg = Rgb { r: 0, g: 0, b: 0 };
+        let painted = |walks: &HashMap<AgentId, WalkState>| {
+            let mut buf = RgbBuffer::filled(50, 50, bg);
+            paint_routes(&mut buf, &scene, walks);
+            (0..50u16)
+                .flat_map(|y| (0..50u16).map(move |x| (x, y)))
+                .any(|(x, y)| buf.get(x, y) != bg)
+        };
+        assert!(
+            !painted(&walks),
+            "an agent with no walk_path, or no walk at all, draws nothing"
+        );
         let ms_path = WalkState {
             walk_path: Some(vec![Point { x: 5, y: 5 }, Point { x: 80, y: 80 }]),
             ..WalkState::default()
         };
         walks.insert(id_path, ms_path);
-        walks.insert(id_nopath, WalkState::default());
-        // id_absent is intentionally NOT in the walks map.
-
-        let bg = Rgb { r: 0, g: 0, b: 0 };
-        let mut buf = RgbBuffer::filled(50, 50, bg);
-        paint_routes(&mut buf, &scene, &walks);
-        let painted = (0..50u16)
-            .flat_map(|y| (0..50u16).map(move |x| (x, y)))
-            .any(|(x, y)| buf.get(x, y) != bg);
-        assert!(painted, "the walk_path must draw a route polyline");
+        assert!(painted(&walks), "the walk_path must draw a route polyline");
     }
 
     #[test]
