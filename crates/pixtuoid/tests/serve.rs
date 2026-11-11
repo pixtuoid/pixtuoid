@@ -629,6 +629,68 @@ fn a_link_by_name_says_nothing_of_moving() {
     assert!(!said.contains("This address can change"), "{said}");
 }
 
+/// The App pairs from the QR, and the owner reads how long its code lasts.
+#[test]
+fn pair_prints_a_qr_of_its_link_and_the_minutes_it_lasts() {
+    let world = World::new();
+    let out = world.run(&["pair", "--host", "studio.local"]);
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8(out.stdout).expect("UTF-8");
+    let link = said
+        .lines()
+        .find(|line| line.starts_with(PAIR_LINK))
+        .expect("pair prints the link");
+    assert_eq!(scanned(&said).as_deref(), Some(link), "{said}");
+
+    let minutes: u64 = said
+        .split("Scan within ")
+        .nth(1)
+        .and_then(|rest| rest.split(' ').next())
+        .and_then(|minutes| minutes.parse().ok())
+        .unwrap_or_else(|| panic!("no minute count in {said}"));
+    let link: PairLink = link.parse().expect("a link");
+    let said_left = Duration::from_secs(minutes * 60);
+    let left = link.expires.duration_since(SystemTime::now());
+    let left = left.expect("an unexpired code");
+    let lasts = format!("{left:?} left, said {minutes} minutes");
+    assert!(left <= said_left && said_left - left < PATIENCE, "{lasts}");
+}
+
+/// What a camera reads off the QR in `said`: each glyph's filled half in the
+/// light foreground its color codes set, the rest on their dark background.
+fn scanned(said: &str) -> Option<String> {
+    let rows: Vec<Vec<char>> = said
+        .lines()
+        .filter(|line| line.contains('\u{1b}'))
+        .map(|line| {
+            let mut cells = Vec::new();
+            let mut chars = line.chars();
+            while let Some(c) = chars.next() {
+                if c == '\u{1b}' {
+                    chars.by_ref().find(|&c| c == 'm');
+                } else {
+                    cells.push(c);
+                }
+            }
+            cells
+        })
+        .collect();
+    let width = rows.first()?.len();
+    let height = rows.len() * 2;
+    let light = |x: usize, y: usize| match rows[y / 2].get(x) {
+        Some('\u{2588}') => true,
+        Some('\u{2580}') => y.is_multiple_of(2),
+        Some('\u{2584}') => !y.is_multiple_of(2),
+        _ => false,
+    };
+    let mut image = rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| {
+        if light(x, y) { u8::MAX } else { 0 }
+    });
+    let grids = image.detect_grids();
+    let (_, content) = grids.first()?.decode().ok()?;
+    Some(content)
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_that_cant_go_in_a_link_leaves_the_printed_code_good() {
     let world = World::new();

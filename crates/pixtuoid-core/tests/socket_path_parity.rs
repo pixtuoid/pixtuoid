@@ -68,12 +68,8 @@ fn shim_and_daemon_resolve_identical_socket_paths_in_all_three_branches() {
             shim,
             PathBuf::from(format!("/tmp/pixtuoid-{uid}/pixtuoid.sock"))
         );
-        // The shim's pre-connect ownership guard derives its owned-dir from that same
-        // fallback endpoint.
-        assert_eq!(
-            hook_paths::owned_tmp_socket_dir(&shim),
-            Some(PathBuf::from(format!("/tmp/pixtuoid-{uid}"))),
-        );
+        // The shim checks its connected peer on exactly that endpoint.
+        assert!(hook_paths::is_our_rendezvous(&shim));
     });
 }
 
@@ -98,6 +94,8 @@ fn shim_and_daemon_resolve_identical_pipe_names_in_all_branches() {
         let (shim, daemon) = temp_env::with_var_unset("PIXTUOID_SOCKET", both);
         assert_eq!(shim, daemon, "USERNAME default branch diverged");
         assert_eq!(shim, PathBuf::from(r"\\.\pipe\pixtuoid-parity"));
+        // The shim checks its pipe's server on exactly that endpoint.
+        assert!(hook_paths::is_our_rendezvous(&shim));
     });
 
     temp_env::with_var_unset("PIXTUOID_SOCKET", || {
