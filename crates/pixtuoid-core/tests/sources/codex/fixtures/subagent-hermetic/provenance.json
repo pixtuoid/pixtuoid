@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.167.0",
-  "captured": "2026-11-06",
+  "version": "codex-cli 0.167.1",
+  "captured": "2026-11-11",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -13,7 +13,6 @@
   "dropped": {
     "os": "macos",
     "at": {
-      "/payload/name": [],
       "/payload/type": [
         "item_completed",
         "message",
@@ -30,12 +29,12 @@
     }
   },
   "sentinel_reads": {
-    "rollout-2026-11-06T15-41-13-01a1b185-6ae6-79c1-aa68-489ad67df0ff.jsonl": [
+    "rollout-2026-11-11T15-54-10-01a1cb51-13a0-7db3-8a96-7807657d707d.jsonl": [
       "16:/payload/info/last_token_usage/cached_input_tokens",
       "23:/payload/info/last_token_usage/cached_input_tokens",
       "30:/payload/info/last_token_usage/cached_input_tokens"
     ],
-    "rollout-2026-11-06T15-41-16-01a1b185-7867-74b0-bc78-6a8313288f44.jsonl": [
+    "rollout-2026-11-11T15-54-13-01a1cb51-201c-7863-a355-b2bbb0bb25f9.jsonl": [
       "16:/payload/info/last_token_usage/cached_input_tokens",
       "22:/payload/info/last_token_usage/cached_input_tokens"
     ]
