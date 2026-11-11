@@ -1,7 +1,7 @@
 //! What the capture rig asks of the host: the sandbox its CLIs run in, a known
 //! folder as the shell resolves it, a directory no other local user can write into, whether this process
 //! owns a path, a lock on a file it owns, a removal that waits out a process
-//! holding the tree, whether a registry key exists, and a pipe no reader drains.
+//! holding the tree, and whether a registry key exists.
 
 use std::ffi::{OsStr, OsString};
 use std::io::Write;
@@ -403,7 +403,8 @@ pub fn hold_lock(path: &Path) -> std::io::Result<std::fs::File> {
 
 /// A pipe that is full and that nobody reads, so the next write to it waits
 /// for good: a stalled reader. The reader is returned for the caller to hold
-/// open.
+/// open. Not the rig's: the binary's stall tests, its stalled log sink and its
+/// fatal report into a stalled stderr, share it here.
 ///
 /// # Errors
 ///

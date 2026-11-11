@@ -517,9 +517,9 @@ pub(crate) fn output_within(
         if std::time::Instant::now() >= deadline {
             child.start_kill()?;
             // Reaped, so no zombie outlives the run. Windows leaves none, and
-            // a Job Object's wait is for every process in it, whose exit
-            // message is "not guaranteed" (learn.microsoft.com,
-            // `JOBOBJECT_ASSOCIATE_COMPLETION_PORT`).
+            // process-wrap's wait there waits out every process in the job,
+            // whose exit message is "not guaranteed"
+            // (<https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_associate_completion_port>).
             #[cfg(unix)]
             child.wait()?;
             return Ok(None);
