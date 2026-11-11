@@ -12,32 +12,12 @@ import Install from '../components/Install.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
 import ElevatorShaft from '../components/ElevatorShaft.astro';
-import { asset, REPO, CRATES, floorById, floorName } from '../consts';
+import { asset, floorById, floorName } from '../consts';
 
 const amenities = floorById('amenities');
-
-// Homepage structured data for the search-engine rich result. The version is
-// the latest release TAG, with Cargo.toml as the tag-less fallback.
-const SITE = Astro.site;
-const softwareJsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'SoftwareApplication',
-  name: 'pixtuoid',
-  description:
-    'A terminal-native pixel-art office that visualizes your AI coding agents (Claude Code, Codex, and more) as animated coworkers.',
-  applicationCategory: 'DeveloperApplication',
-  operatingSystem: 'macOS, Linux, Windows',
-  url: new URL(asset(''), SITE).href,
-  downloadUrl: CRATES,
-  softwareVersion: __PIXTUOID_VERSION__,
-  license: 'https://opensource.org/licenses/MIT',
-  codeRepository: REPO,
-  author: { '@type': 'Person', name: 'Ivan Wang', url: REPO },
-  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-};
 ---
 
-<Base preloadImage={asset('demos/hero-wide.png')} jsonLd={softwareJsonLd}>
+<Base preloadImage={asset('demos/hero-wide.png')}>
   <span id="top"></span>
   <OfficeBackdrop />
   <Nav floating />
