@@ -3,7 +3,7 @@
   "private": true,
   "description": "The type checkers `just lint` runs over the repo's JavaScript and Python.",
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "pyright": "^1.1.414",
     "typescript": "^7.0.2"
   },
