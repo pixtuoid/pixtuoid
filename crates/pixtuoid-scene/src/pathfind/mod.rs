@@ -4,7 +4,7 @@
 //! (`cell_walkable`/`snap`/`CoarseGrid`/`CELL_SIZE`) are the SHARED
 //! `layout::coarse` ones `layout::reach` also rides, so router reachability
 //! can't drift from `ReachSet`. Routes are memoized per `(from, to, aim)` until a
-//! new layout, or [`PATH_CACHE_CAP`]'s overflow, clears them.
+//! new layout, or the cache outgrowing its cap, clears them.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
