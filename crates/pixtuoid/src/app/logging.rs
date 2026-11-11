@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::doctor::DriftSeen;
 use crate::run_log::LogLocation;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
@@ -18,7 +18,7 @@ use tracing_subscriber::Layer;
 /// screen owns the terminal, so the log file is the only place a runtime error
 /// can surface — at a `warn` floor unless $RUST_LOG, $PIXTUOID_LOG or
 /// --log-level raises it. Every other mode goes to stderr.
-pub(crate) fn init(file_log: bool, log_level: &'static str) -> (DriftSeen, Option<WorkerGuard>) {
+pub(crate) fn init(file_log: bool, log_level: &'static str) -> (DriftSeen, Option<LogFlush>) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     let rust_log = pixtuoid_core::platform::text_env("RUST_LOG");
@@ -86,10 +86,40 @@ pub(crate) fn init(file_log: bool, log_level: &'static str) -> (DriftSeen, Optio
 /// `writer` behind a queue only its worker thread writes from, so a stalled
 /// reader or a hung disk parks that thread, never a `tracing` caller (the
 /// reducer's task, a painter's loop, a quit's own `shutting down`). A line that
-/// finds the queue full is dropped: the queue's lossy default. Dropping the guard
-/// flushes what is queued, so it outlives every runtime.
-fn queued(writer: impl Write + Send + 'static) -> (NonBlocking, WorkerGuard) {
-    tracing_appender::non_blocking(writer)
+/// finds the queue full is dropped: the queue's lossy default.
+fn queued(writer: impl Write + Send + 'static) -> (NonBlocking, LogFlush) {
+    let (sink, guard) = tracing_appender::non_blocking(writer);
+    (sink, LogFlush(Some(guard)))
+}
+
+/// The queue's guard, whose drop flushes what is queued, so it outlives every
+/// runtime. Its own drop runs on a thread of its own, waited on for its bound:
+/// with the queue full it `println!`s (tracing-appender 0.2.5,
+/// `src/non_blocking.rs:296`), which waits for good on a stalled stdout, and a
+/// quit must still end.
+pub(crate) struct LogFlush(Option<WorkerGuard>);
+
+impl Drop for LogFlush {
+    fn drop(&mut self) {
+        /// `WorkerGuard::drop`'s own two timeouts, its shutdown send and its
+        /// flush wait (`src/non_blocking.rs:286`, `:293`): past them it is
+        /// stuck in that `println!`.
+        const GUARD_TIMEOUTS: Duration =
+            Duration::from_millis(100).saturating_add(Duration::from_secs(1));
+        let Some(guard) = self.0.take() else {
+            return;
+        };
+        let (dropped, done) = std::sync::mpsc::channel();
+        let flushing = std::thread::Builder::new()
+            .name("log-flush".into())
+            .spawn(move || {
+                drop(guard);
+                let _ = dropped.send(());
+            });
+        if flushing.is_ok() {
+            let _ = done.recv_timeout(GUARD_TIMEOUTS);
+        }
+    }
 }
 
 /// The formatting layer, its field values escaped by [`EscapedFields`] and its
@@ -372,19 +402,70 @@ mod tests {
         }
     }
 
+    /// Stdout swapped for a pipe that is full and that nobody reads, until
+    /// this drops.
+    #[cfg(unix)]
+    struct StalledStdout(std::os::fd::OwnedFd);
+
+    #[cfg(unix)]
+    impl StalledStdout {
+        fn install() -> Self {
+            use std::os::fd::{AsRawFd as _, FromRawFd as _};
+            let (reader, mut writer) = std::io::pipe().expect("a pipe");
+            let fd = writer.as_raw_fd();
+            let blocking = |on: bool| {
+                // SAFETY: fcntl on the pipe this test just made.
+                unsafe {
+                    let flags = libc::fcntl(fd, libc::F_GETFL);
+                    let flags = if on {
+                        flags & !libc::O_NONBLOCK
+                    } else {
+                        flags | libc::O_NONBLOCK
+                    };
+                    libc::fcntl(fd, libc::F_SETFL, flags);
+                }
+            };
+            blocking(false);
+            // Byte by byte at the end, so not even a short line fits.
+            while writer.write(&[0; 4096]).is_ok() {}
+            while writer.write(&[0]).is_ok() {}
+            blocking(true);
+            // Never closed, so a write waits rather than fails.
+            std::mem::forget(reader);
+            // SAFETY: dup and dup2 of fds this process holds open.
+            unsafe {
+                let saved = std::os::fd::OwnedFd::from_raw_fd(libc::dup(libc::STDOUT_FILENO));
+                libc::dup2(fd, libc::STDOUT_FILENO);
+                Self(saved)
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for StalledStdout {
+        fn drop(&mut self) {
+            use std::os::fd::AsRawFd as _;
+            // SAFETY: dup2 of the stdout this process saved.
+            unsafe {
+                libc::dup2(self.0.as_raw_fd(), libc::STDOUT_FILENO);
+            }
+        }
+    }
+
     /// Past a stalled sink's first line, a logger fills the queue and goes on:
     /// it never waits on the sink, and each line past the queue is lost, by
-    /// design.
+    /// design. A quit with the queue full still ends, though the guard's own
+    /// drop then writes to a stdout stalled as well.
     #[test]
     fn a_stalled_sink_parks_only_its_worker_and_drops_past_its_queue() {
         use tracing_appender::non_blocking::DEFAULT_BUFFERED_LINES_LIMIT;
         use tracing_subscriber::layer::SubscriberExt;
         const OVER: usize = 3;
-        // Far past the flood's own time on a loaded machine; a logger that
-        // waits on the sink never ends.
+        // Far past the flood's own time on a loaded machine, and the guard's
+        // own bound; a logger or a quit that waits on a stalled pipe never ends.
         const BOUND: std::time::Duration = std::time::Duration::from_secs(60);
         let (took, taken) = std::sync::mpsc::channel();
-        let (sink, _flush) = queued(Stalled(took));
+        let (sink, flush) = queued(Stalled(took));
         let dropped = sink.error_counter();
         let subscriber = tracing_subscriber::registry().with(fmt_layer().with_writer(sink));
         let (done, logged) = std::sync::mpsc::channel();
@@ -402,6 +483,18 @@ mod tests {
             .recv_timeout(BOUND)
             .expect("a logger waited on a stalled sink");
         assert_eq!(dropped.dropped_lines(), OVER);
+
+        #[cfg(unix)]
+        let stalled = StalledStdout::install();
+        let (ended, quit) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(flush);
+            let _ = ended.send(());
+        });
+        let ended = quit.recv_timeout(BOUND);
+        #[cfg(unix)]
+        drop(stalled);
+        ended.expect("a quit waited on the full queue's guard");
     }
 
     #[test]
