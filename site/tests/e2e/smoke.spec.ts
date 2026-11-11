@@ -3279,19 +3279,21 @@ for (const viewport of [
   }) => {
     const context = await browser.newContext({ javaScriptEnabled: false, viewport });
     const page = await context.newPage();
-    await page.goto('./config/');
-    const links = page.locator('#nav-links a');
-    expect(await links.count()).toBeGreaterThan(0);
-    for (const link of await links.all()) await expect(link).toBeVisible();
-    for (const button of ['#nav-burger', '#docs-btn', '#theme-toggle'])
-      await expect(page.locator(button)).toBeHidden();
-    // The open links sit above the page, never over it.
-    const nav = (await page.locator('header.nav').boundingBox())!;
-    expect((await page.locator('main').boundingBox())!.y).toBeGreaterThanOrEqual(
-      nav.y + nav.height
-    );
+    // The home page's floating nav, whose floors the script-only statusline otherwise carries.
+    for (const path of ['./config/', './']) {
+      await page.goto(path);
+      const links = page.locator('#nav-links a');
+      expect(await links.count()).toBeGreaterThan(0);
+      for (const link of await links.all()) await expect(link, path).toBeVisible();
+      for (const button of ['#nav-burger', '#docs-btn', '#theme-toggle'])
+        await expect(page.locator(button), path).toBeHidden();
+      // The open links sit above the page, never over it.
+      const nav = (await page.locator('header.nav').boundingBox())!;
+      expect((await page.locator('main').boundingBox())!.y, path).toBeGreaterThanOrEqual(
+        nav.y + nav.height
+      );
+    }
 
-    await page.goto('./');
     const install = page.locator('#install');
     await install.scrollIntoViewIfNeeded();
     await expect(install.locator('.section-head.reveal')).toHaveCSS('opacity', '1');
