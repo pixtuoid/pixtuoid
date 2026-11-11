@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Tests for generate.mjs — the per-platform package generator — and the
-// launcher that runs what it packages; ci-lint.yml's `npm-gen` job runs them via
+// launcher that runs what it packages; ci-lint.yml's `node-tests` job runs them via
 // `just npm-check`.
 
 import { test } from "node:test";
