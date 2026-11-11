@@ -270,6 +270,32 @@ mod tests {
             assert_eq!(reported.recv_timeout(DEADLINE), Ok(path));
         }
 
+        #[test]
+        fn following_a_missing_path_is_silent() {
+            let dir = tempfile::tempdir().unwrap();
+            let (follower, _reported) = follower();
+            let logs = crate::test_capture::capture_logs(|| {
+                assert!(!follower.follow(&dir.path().join("absent.jsonl")));
+            });
+            assert!(!logs.contains("cannot follow"), "{logs}");
+        }
+
+        /// ENOTDIR stands in for the EMFILE or EACCES a real follow can meet.
+        #[test]
+        fn a_follow_error_other_than_not_found_warns() {
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("f");
+            drop(held(&file));
+            let (follower, _reported) = follower();
+            let logs = crate::test_capture::capture_logs(|| {
+                assert!(!follower.follow(&file.join("t.jsonl")));
+            });
+            assert!(
+                logs.contains("cannot follow a held-open transcript"),
+                "{logs}"
+            );
+        }
+
         /// omp rewrites its transcript as temp + rename, and re-opens the new
         /// inode to keep appending.
         #[test]
