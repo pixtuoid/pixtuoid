@@ -28,14 +28,7 @@ impl StubRouter {
 
 impl Router for StubRouter {
     fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &crate::walkable::OccupancyOverlay,
-        from: Point,
-        to: Point,
-        _: Point,
-    ) -> Vec<Point> {
+    fn route(&mut self, _: &WalkableMask, from: Point, to: Point, _: Point) -> Vec<Point> {
         if self.path.is_empty() {
             vec![from, to]
         } else {
@@ -49,7 +42,7 @@ fn layout() -> SceneLayout {
 }
 
 /// Returns a stable polyline (`first`) for its first few calls then a DIFFERENT
-/// one (`rest`) — an overlay-driven A* reroute mid-walk. Counts calls.
+/// one (`rest`) — an A* reroute mid-walk. Counts calls.
 #[derive(Debug)]
 struct ChangingRouter {
     calls: usize,
@@ -58,14 +51,7 @@ struct ChangingRouter {
 }
 impl Router for ChangingRouter {
     fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &crate::walkable::OccupancyOverlay,
-        _from: Point,
-        _to: Point,
-        _: Point,
-    ) -> Vec<Point> {
+    fn route(&mut self, _: &WalkableMask, _from: Point, _to: Point, _: Point) -> Vec<Point> {
         self.calls += 1;
         // Frame 1 makes two calls (entry-profile snapshot + route_walking_pose)
         // that must agree, so only call #3+ can be a later-frame reroute.
@@ -162,9 +148,9 @@ fn entry_slot(arrived_at: SystemTime) -> AgentSlot {
     s
 }
 
-/// The entry walk runs from a slot's arrival, never its age, in the stateless
-/// pose, the routed one and the door's frames: an old slot that just arrived
-/// walks in, and a fresh one that never arrived sits at its desk.
+/// The entry walk runs from a slot's arrival, never its age, in the routed pose
+/// and the door's frames: an old slot that just arrived walks in, and a fresh one
+/// that never arrived sits at its desk.
 #[test]
 fn the_entry_walk_keys_on_arrival_not_age() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
@@ -179,8 +165,6 @@ fn the_entry_walk_keys_on_arrival_not_age() {
         ..running_slot(now, now)
     };
     let walking = |pose: Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
-    assert!(walking(crate::pose::pure::derive(&arrived, probe, &l)));
-    assert!(!walking(crate::pose::pure::derive(&seated, probe, &l)));
     let mut rig = RouteRig::new(StubRouter::straight());
     assert!(walking(derive_with_routing(
         &arrived,
@@ -1063,14 +1047,12 @@ const MAX_FRAME_STEP_PX: i32 = 20;
 
 /// Step `slot` for `frames` frames of [`PAINT_FRAME`], sampling
 /// `character_top_left` against a real `AStarRouter`. Returns
-/// `(max_chebyshev_step, walking_frame_count)`. `churn` toggles an interior
-/// obstacle every other frame to force A* cache invalidation.
+/// `(max_chebyshev_step, walking_frame_count)`.
 fn max_top_left_step(
     slot: &AgentSlot,
     l: &SceneLayout,
     start: SystemTime,
     frames: u32,
-    churn: bool,
 ) -> (i32, usize) {
     use crate::pathfind::AStarRouter;
     use crate::sim::anchors::character_top_left;
@@ -1078,23 +1060,11 @@ fn max_top_left_step(
     let mut rig = RouteRig::new(AStarRouter::new());
     rig.router.new_layout(l.corridor);
 
-    let ob = Point {
-        x: l.corridor.x + l.corridor.width / 2,
-        y: l.corridor.y + 2,
-    };
-
     let mut prev: Option<Point> = None;
     let mut max_step = 0i32;
     let mut walking = 0usize;
     for i in 0..frames {
         let now = start + PAINT_FRAME * i;
-        if churn {
-            rig.overlay.clear();
-            if i % 2 == 0 {
-                rig.overlay
-                    .add(ob.x.saturating_sub(5), ob.y.saturating_sub(5), 12, 12);
-            }
-        }
         if let Some(a) = character_top_left(slot, l, now, &mut rig.rctx()) {
             if let Some(p) = prev {
                 let step = (i32::from(a.x) - i32::from(p.x))
@@ -1114,7 +1084,7 @@ fn entry_walk_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = entry_slot(now);
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 150, true);
+    let (max_step, walking) = max_top_left_step(&slot, &l, now, 150);
     assert!(walking > 20, "entry walk should render many frames");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
@@ -1303,7 +1273,7 @@ fn exit_walk_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = exiting_slot(now, now - Duration::from_secs(60));
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 200, true);
+    let (max_step, walking) = max_top_left_step(&slot, &l, now, 200);
     assert!(walking > 20, "exit walk should render many frames");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
@@ -1357,7 +1327,7 @@ fn exit_from_desk_rises_off_the_chair_via_the_approach_cell() {
 }
 
 #[test]
-fn wander_coffee_run_coordinates_continuous_under_churn() {
+fn wander_coffee_run_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let trip_id = (0u64..1000)
@@ -1372,7 +1342,7 @@ fn wander_coffee_run_coordinates_continuous_under_churn() {
 
     // 1500 frames ≈ 50 s — several full Seated→WalkingOut→AtWaypoint→WalkingBack
     // cycles, so every leg and boundary is exercised.
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 1500, true);
+    let (max_step, walking) = max_top_left_step(&slot, &l, now, 1500);
     assert!(walking > 1000, "idle agent should render every frame");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
@@ -1998,7 +1968,7 @@ fn wander_continuous_across_layouts_and_agents() {
             slot.desk = Some(FloorDesk::new(0, k));
             slot.last_event_at = old;
             // ~20 s ⇒ 2–3 full wander cycles per agent.
-            let (max_step, _) = max_top_left_step(&slot, &l, now, 600, true);
+            let (max_step, _) = max_top_left_step(&slot, &l, now, 600);
             assert!(
                 max_step <= MAX_FRAME_STEP_PX,
                 "geometry {w}x{h} seed={seed} desk={k}: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
@@ -2016,14 +1986,7 @@ struct FlipRouter {
 }
 impl Router for FlipRouter {
     fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &crate::walkable::OccupancyOverlay,
-        _from: Point,
-        _to: Point,
-        _: Point,
-    ) -> Vec<Point> {
+    fn route(&mut self, _: &WalkableMask, _from: Point, _to: Point, _: Point) -> Vec<Point> {
         if self.flipped {
             self.b.clone()
         } else {
@@ -2104,70 +2067,12 @@ fn frozen_leg_anchor_continuous_across_router_shape_change() {
     );
 }
 
-#[test]
-fn multiple_agents_share_overlay_without_teleport() {
-    // NOTE: the real AStarRouter is stable enough that this scenario does not by
-    // itself reproduce the freeze regression —
-    // `frozen_leg_anchor_continuous_across_router_shape_change` is that guard.
-    use crate::pathfind::AStarRouter;
-    use crate::sim::anchors::character_top_left;
-
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let n = l.home_desks.len().min(3);
-    let old = now - Duration::from_secs(120);
-    let slots: Vec<AgentSlot> = (0..n)
-        .map(|k| {
-            let mut s = entry_slot(old);
-            s.agent_id = AgentId::from_transcript_path(&format!("/multi/{k}.jsonl"));
-            s.desk = Some(FloorDesk::new(0, k));
-            s.last_event_at = old;
-            s
-        })
-        .collect();
-
-    let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.new_layout(l.corridor);
-    let mut prev: HashMap<AgentId, Point> = HashMap::new();
-    let mut max_step = 0i32;
-
-    for i in 0..700u32 {
-        let t = now + PAINT_FRAME * i;
-        // Rebuild the shared overlay as the pixel pass does — this is the churn
-        // that re-routes the other walkers.
-        rig.overlay.clear();
-        for s in &slots {
-            if let Some(Pose::AtWaypoint { wp, .. }) = derive(s, t, &l)
-                && let Some(w) = l.waypoints.get(wp)
-            {
-                rig.overlay
-                    .add(w.pos.x.saturating_sub(4), w.pos.y.saturating_sub(6), 8, 12);
-            }
-        }
-        for s in &slots {
-            if let Some(a) = character_top_left(s, &l, t, &mut rig.rctx()) {
-                if let Some(p) = prev.get(&s.agent_id) {
-                    let step = (i32::from(a.x) - i32::from(p.x))
-                        .abs()
-                        .max((i32::from(a.y) - i32::from(p.y)).abs());
-                    max_step = max_step.max(step);
-                }
-                prev.insert(s.agent_id, a);
-            }
-        }
-    }
-    assert!(
-        max_step <= MAX_FRAME_STEP_PX,
-        "agents sharing a churning overlay must not teleport (max frame jump {max_step}px)"
-    );
-}
-
 fn unit_slot(now: SystemTime) -> AgentSlot {
     running_slot(now, now - Duration::from_secs(60))
 }
 
 #[test]
-fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_clears_walk_path() {
+fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_freezes_its_path() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = unit_slot(now);
@@ -2199,11 +2104,13 @@ fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_clears_walk_path() {
         }
         other => panic!("expected straight Walking, got {other:?}"),
     }
-    assert!(
+    assert_eq!(
         rig.walks
             .get(&slot.agent_id)
-            .is_some_and(|walk| walk.walk_path.is_none()),
-        "straight 2-point walk must clear walk_path"
+            .and_then(|walk| walk.walk_path.as_ref())
+            .map(|wp| wp.path.clone()),
+        Some(vec![from, to]),
+        "a straight leg freezes as a cornered one does"
     );
     assert_eq!(
         drawn_at,

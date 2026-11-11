@@ -17,11 +17,11 @@ use crate::walk::{
     LegPlan, Lifted, Planner, Settle, WalkLeg, WalkPathSnapshot, WalkState, WanderKind,
     WanderPhase, advance_wander, snapshot_leg_profile,
 };
-use crate::walkable::{OccupancyOverlay, WalkableMask};
+use crate::walkable::WalkableMask;
 
 pub(crate) use pure::{
-    ENTRY_ANIMATION_MS, STALE_RESUME_GAP_BASE_MS, WANDER_DWELL_EST_MS, arriving, derive,
-    derive_state_only, dwell_ms, stale_resume_gap_ms,
+    ENTRY_ANIMATION_MS, STALE_RESUME_GAP_BASE_MS, WANDER_DWELL_EST_MS, arriving, derive_state_only,
+    dwell_ms, stale_resume_gap_ms,
 };
 pub(crate) use pure::{LegPose, Pose};
 #[cfg(test)]
@@ -55,7 +55,6 @@ pub(crate) struct RouteCtx<'a> {
 #[cfg(test)]
 pub(crate) struct RouteRig<R> {
     pub(crate) router: R,
-    pub(crate) overlay: OccupancyOverlay,
     pub(crate) history: PoseHistory,
     pub(crate) walks: HashMap<AgentId, WalkState>,
     pub(crate) motion: crate::anim::Motion,
@@ -67,7 +66,6 @@ impl<R: Router> RouteRig<R> {
     pub(crate) fn new(router: R) -> Self {
         Self {
             router,
-            overlay: OccupancyOverlay::new(),
             history: PoseHistory::new(),
             walks: HashMap::new(),
             motion: crate::anim::Motion::Full,
@@ -79,7 +77,6 @@ impl<R: Router> RouteRig<R> {
         RouteCtx {
             planner: Planner {
                 router: &mut self.router,
-                overlay: &self.overlay,
                 motion: self.motion,
             },
             history: &mut self.history,
@@ -227,9 +224,8 @@ fn exit_elapsed_ms(profile: &WalkProfile, elapsed_ms: u64) -> u64 {
     }
 }
 
-/// Routed variant of `derive`: Walking poses trace an A*-routed polyline
-/// (layout mask + per-frame [`Planner::overlay`]) corner-by-corner instead of
-/// cutting through obstacles or other agents.
+/// Routed variant of `derive_state_only`: Walking poses trace an A*-routed polyline over
+/// the layout mask corner-by-corner instead of cutting through obstacles.
 ///
 /// [`RouteCtx::walks`] drives entry/exit physics — the A* path length is
 /// snapshotted into a `WalkProfile` on first sighting (commit-to-route), and
@@ -408,8 +404,6 @@ fn routed_pose(
                 settle,
             ));
         }
-        // DO NOT call `derive()` here — it re-fires the linear entry override
-        // and causes a double-walk. Fall through to the state-driven pose.
     }
 
     // Gates on Idle, NOT the entry window: that fixed gate sat a near-desk agent in `idle_pose`
@@ -481,8 +475,6 @@ fn routed_pose(
         walk.wander.target.kind = WanderKind::Aimless;
     }
 
-    // derive_state_only, NOT derive: derive() re-triggers the linear entry/exit
-    // overrides and produces a double-walk.
     let raw = derive_state_only(slot, now, layout)?;
 
     let since_state = crate::anim::elapsed_ms(now, slot.state_started_at);
@@ -648,7 +640,6 @@ fn route_walking_pose(
     settle: Settle,
 ) -> (Pose, Option<Point>) {
     let router = &mut *rctx.planner.router;
-    let overlay = rctx.planner.overlay;
     let walks = &mut *rctx.walks;
     let LegPose {
         from,
@@ -664,8 +655,7 @@ fn route_walking_pose(
         match &walk.walk_path {
             Some(wp) if wp.from == from && wp.to == to => wp.path.clone(),
             _ => {
-                let mut p =
-                    route_jittered(router, &layout.walkable, overlay, slot.agent_id, from, to);
+                let mut p = route_jittered(router, &layout.walkable, slot.agent_id, from, to);
                 match settle {
                     Settle::End(s) if p.last() != Some(&s) => p.push(s),
                     Settle::Start(s) if p.first() != Some(&s) => p.insert(0, s),
@@ -680,18 +670,11 @@ fn route_walking_pose(
                     }
                     _ => {}
                 }
-                // Only CORNERED routes (>2 points): freezing a straight 2-point walk
-                // sticks a transient `find_path` miss — a walk through walls — for the
-                // whole leg, where unfrozen the next frame recovers.
-                if p.len() > 2 {
-                    walk.walk_path = Some(WalkPathSnapshot {
-                        from,
-                        to,
-                        path: p.clone(),
-                    });
-                } else {
-                    walk.walk_path = None;
-                }
+                walk.walk_path = Some(WalkPathSnapshot {
+                    from,
+                    to,
+                    path: p.clone(),
+                });
                 p
             }
         }
@@ -738,12 +721,11 @@ pub(crate) fn jitter_aim(id: AgentId, p: Point) -> Point {
 pub(crate) fn route_jittered(
     router: &mut dyn Router,
     mask: &WalkableMask,
-    overlay: &OccupancyOverlay,
     id: AgentId,
     from: Point,
     to: Point,
 ) -> Vec<Point> {
-    router.route(mask, overlay, from, to, jitter_aim(id, to))
+    router.route(mask, from, to, jitter_aim(id, to))
 }
 
 #[cfg(test)]

@@ -2,14 +2,13 @@
 //! (`layout`) can ask "is this cell actually *routable*?" without depending on
 //! the pathfind layer. It rides the SHARED `super::coarse` primitives that
 //! [`crate::pathfind`]'s `AStarRouter` rides, so "reachable here" means the same
-//! thing A\* will find at route time BY CONSTRUCTION. Reachability is over STATIC
-//! geometry only, so it passes an EMPTY occupancy overlay.
+//! thing A\* will find at route time BY CONSTRUCTION.
 
 use std::collections::VecDeque;
 
 use super::{CoarseGrid, Point, cell_dims, cell_holding, grid_origin, snap, snap_cell};
 use crate::grid::Grid;
-use crate::walkable::{OccupancyOverlay, WalkableMask};
+use crate::walkable::WalkableMask;
 
 /// How far (in coarse cells) to snap a blocked seed to the nearest walkable
 /// coarse cell — mirrors the router's start-snap so a seed sitting on a blocked
@@ -38,10 +37,9 @@ impl ReachSet {
         if cell_w == 0 || cell_h == 0 {
             return ReachSet { grid, origin };
         }
-        let empty = OccupancyOverlay::new();
         let seed_cell = snap_cell(mask, seed);
-        if let Some(start) = snap(mask, &empty, seed_cell, cell_w, cell_h, SEED_SNAP_CELLS) {
-            let mut coarse = CoarseGrid::new(mask, &empty);
+        if let Some(start) = snap(mask, seed_cell, cell_w, cell_h, SEED_SNAP_CELLS) {
+            let mut coarse = CoarseGrid::new(mask);
             let mut q = VecDeque::new();
             grid.set(start.0, start.1, true);
             q.push_back(start);

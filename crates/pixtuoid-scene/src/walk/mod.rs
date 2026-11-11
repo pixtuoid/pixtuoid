@@ -7,7 +7,7 @@ use crate::physics::{
     LegProgress, WalkIntent, WalkProfile, octile_distance, octile_path_len, walk_arrived,
     walk_profile,
 };
-use crate::walkable::{OccupancyOverlay, WalkableMask};
+use crate::walkable::WalkableMask;
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::AgentSlot;
 
@@ -21,9 +21,9 @@ use crate::pose::{
 use crate::pose::{desk_leg_endpoint, route_jittered};
 
 /// Frozen A* polyline for one in-flight walk leg. Snapshotted when the leg's
-/// `(from, to)` first appear and reused unchanged: per-frame occupancy churn
-/// invalidates the A* cache, and mapping the frozen profile's progress `t` onto
-/// a re-routed shape mid-stride makes the sprite visibly jump.
+/// `(from, to)` first appear and reused unchanged, so the frozen profile's
+/// progress `t` maps onto the shape it measured: mapped onto another shape
+/// mid-stride, the sprite visibly jumps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WalkPathSnapshot {
     /// Leg start point.
@@ -113,7 +113,7 @@ impl WanderKind {
         }
     }
 
-    /// Shared by the pure `idle_pose` overlay and the routed
+    /// Shared by the pure `idle_pose` and the routed
     /// `derive_with_routing` so the two can't drift.
     pub(crate) fn at_pose(self, dest: Point) -> crate::pose::Pose {
         match self {
@@ -387,8 +387,6 @@ pub(crate) fn advance_wander(
             match poll_walk_leg(&profile, elapsed_phase, may_transition) {
                 WalkLegStatus::InFlight(t) => (WanderPhase::WalkingOut(profile), t),
                 WalkLegStatus::Arrived { walk_total } => {
-                    // Snapshot the walk-back profile now — the overlay may differ
-                    // by the time the dwell ends.
                     let back = snapshot_back_profile(slot, walk, layout, desk, planner);
                     walk.wander.phase = WanderPhase::AtWaypoint(back);
                     advance_phase_clock(walk, walk_total);
@@ -483,7 +481,7 @@ fn sit_down(walk: &mut WalkState, walk_total: u64) {
 
 /// Delegates to the ONE stateless resolver `crate::pose::resolve_wander_target`,
 /// which `idle_pose` also calls, so the routed walk path and the stateless
-/// overlay can never drift to different destinations. `origin` is the agent's
+/// `idle_pose` can never drift to different destinations. `origin` is the agent's
 /// home desk, kept identical to `idle_pose`'s `desk`.
 fn pick_wander_dest(
     id: AgentId,
@@ -576,8 +574,6 @@ pub(crate) struct LegPlan {
 pub(crate) struct Planner<'a> {
     /// The A* router for this frame.
     pub(crate) router: &'a mut dyn Router,
-    /// Live occupancy overlay (shared, read-only here).
-    pub(crate) overlay: &'a OccupancyOverlay,
     /// How much of the office moves.
     pub(crate) motion: Motion,
 }
@@ -614,7 +610,7 @@ fn routed_profile(
     id: AgentId,
     leg: LegPlan,
 ) -> WalkProfile {
-    let path = route_jittered(planner.router, mask, planner.overlay, id, leg.from, leg.to);
+    let path = route_jittered(planner.router, mask, id, leg.from, leg.to);
     walk_profile(measured_leg_len(&path, leg.settle), leg.intent, id)
 }
 

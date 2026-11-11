@@ -11,7 +11,6 @@ use std::time::{Duration, SystemTime};
 use crate::pack::OfficeArt;
 use crate::physics::{WalkProfile, walk_arrived};
 use crate::sprite::Rgb;
-use crate::walkable::OccupancyOverlay;
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::{AgentSlot, SceneState};
 
@@ -148,8 +147,6 @@ impl FloorPlace {
 pub struct FloorCtx {
     /// This floor's A\* pathfinder.
     pub(crate) router: AStarRouter,
-    /// Per-tick walkable-cell occupancy (routing steers around occupied cells).
-    pub(crate) overlay: OccupancyOverlay,
     /// Per-agent pose history for the routed pose derivation.
     pub history: PoseHistory,
     /// This floor's indoor-lighting fade state.
@@ -189,7 +186,6 @@ impl FloorCtx {
     pub(crate) fn new() -> Self {
         Self {
             router: AStarRouter::new(),
-            overlay: OccupancyOverlay::new(),
             history: PoseHistory::new(),
             vacancy_dim: VacancyDim::new(),
             neon: NeonState::new(),
@@ -221,7 +217,6 @@ impl FloorCtx {
     ) -> SimStores<'a> {
         SimStores {
             router: &mut self.router,
-            overlay: &mut self.overlay,
             history: &mut self.history,
             walks: &mut self.walks,
             vacancy_dim: &mut self.vacancy_dim,

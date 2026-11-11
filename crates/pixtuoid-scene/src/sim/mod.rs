@@ -14,7 +14,6 @@ use std::collections::hash_map::Entry;
 use std::time::{Duration, SystemTime};
 
 use crate::pack::OfficeArt;
-use crate::walkable::OccupancyOverlay;
 use pixtuoid_core::source::daemon::DaemonInstanceKey;
 use pixtuoid_core::state::{ActivityState, DaemonLiveness, DaemonState, FloorLocalDeskIndex};
 use pixtuoid_core::{AgentId, AgentSlot, SceneState};
@@ -50,7 +49,6 @@ pub use anchors::seated_top_left;
 /// The mutable world state one `sim_step` advances.
 pub(crate) struct SimStores<'a> {
     pub router: &'a mut dyn Router,
-    pub overlay: &'a mut OccupancyOverlay,
     pub history: &'a mut PoseHistory,
     pub walks: &'a mut HashMap<AgentId, WalkState>,
     pub vacancy_dim: &'a mut VacancyDim,
@@ -351,51 +349,6 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         timing,
     );
 
-    // Per-frame occupancy from STATIONARY agent positions only, BEFORE the
-    // routed pose pass (which routes Walking poses against THIS overlay).
-    // Walkers are deliberately excluded: their position interpolates every
-    // frame, which would change the overlay signature every frame, wipe the
-    // path cache, recompute A*, and snap walkers to new path segments (the
-    // visible "flash"). Sitters at desks are already covered by the static desk
-    // mask, so only waypoint visitors — stable across frames — contribute.
-    stores.overlay.clear();
-    // Only a walk that takes time routes around a wanderer (`Motion::motions_take_time`).
-    let mobile = if conditions.motion.motions_take_time() {
-        &agents[..]
-    } else {
-        &[][..]
-    };
-    for agent in mobile {
-        // A lifted one stands nowhere its timeline says.
-        if stores
-            .walks
-            .get(&agent.agent_id)
-            .is_some_and(|w| w.lifted.is_some())
-        {
-            continue;
-        }
-        let Some(origin) = layout.home_desk_of(agent) else {
-            continue;
-        };
-        let Some(pose) = pose::derive(agent, now, layout) else {
-            continue;
-        };
-        if let Pose::AtWaypoint { wp, .. } = pose
-            && let Some(w) = layout.waypoints.get(wp)
-        {
-            // Reserve the cell the agent actually stands on, NOT the
-            // blocked furniture center — else another agent's A* routes
-            // straight through the stander.
-            let stand = layout.stand_point(w.kind, w.pos, origin.at, w.facing);
-            stores.overlay.add(
-                stand.x.saturating_sub(CHARACTER_SPRITE_W / 2),
-                stand.y.saturating_sub(WALKING_Y_OFF / 2),
-                CHARACTER_SPRITE_W,
-                WALKING_Y_OFF,
-            );
-        }
-    }
-
     // The AUTHORITATIVE pose derivation, ONCE per frame: it runs the
     // advance_wander / walk_path / history side effects, and placement
     // resolution below looks the result up instead of re-deriving (a second
@@ -412,7 +365,6 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
                 &mut pose::RouteCtx {
                     planner: crate::walk::Planner {
                         router: &mut *stores.router,
-                        overlay: &*stores.overlay,
                         motion: conditions.motion,
                     },
                     history: &mut *stores.history,
@@ -451,7 +403,6 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         layout,
         planner: crate::walk::Planner {
             router: &mut *stores.router,
-            overlay: &*stores.overlay,
             motion: conditions.motion,
         },
     };

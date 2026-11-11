@@ -44,14 +44,13 @@ fn frame_layout_memo_matches_fresh_compute_across_hits_resizes_and_none() {
 }
 
 /// A new layout drops the router's cached paths, a height-only resize's and
-/// an inset change's that keeps the corridor too: `route` revalidates a cached
-/// path against the overlay alone, never the mask, so a stale one would walk
-/// through the new layout's walls.
+/// an inset change's that keeps the corridor too: `route` never revalidates a
+/// cached path against the mask, so a stale one would walk through the new
+/// layout's walls.
 #[test]
 fn a_new_layout_drops_the_routers_cached_paths() {
     use crate::layout::Insets;
     use crate::pathfind::Router;
-    use crate::walkable::OccupancyOverlay;
     let now = t0();
     let cache_a_route = |ctx: &mut FloorCtx, l: &crate::layout::SceneLayout| {
         let mut walkable = (0..l.buf_h)
@@ -59,8 +58,7 @@ fn a_new_layout_drops_the_routers_cached_paths() {
             .filter(|p| l.is_walkable(p.x, p.y));
         let from = walkable.next().expect("a walkable cell");
         let to = walkable.next_back().expect("another walkable cell");
-        ctx.router
-            .route(&l.walkable, &OccupancyOverlay::new(), from, to, to);
+        ctx.router.route(&l.walkable, from, to, to);
         assert!(!ctx.router.is_empty(), "the route was cached");
     };
     let mut ctx = FloorCtx::new();
@@ -3695,72 +3693,6 @@ fn a_drop_and_the_next_lift_between_two_steps_both_land() {
             }
         }
     }
-}
-
-/// A lifted agent stands at no waypoint, whatever its timeline says: in hand,
-/// or walking home, it reserves no cell another's route steps around.
-#[test]
-fn a_lifted_agent_reserves_no_cell() {
-    use crate::interact::{Figure, Gesture};
-    use crate::layout::Point;
-    use crate::pose::Pose;
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let viewport = Viewport::full(160, 96);
-    let layout =
-        crate::layout::SceneLayout::compute(viewport, None, floor_seed(0)).expect("lays out");
-    let at_waypoint = |slot: &AgentSlot, now| {
-        matches!(
-            crate::pose::derive(slot, now, &layout),
-            Some(Pose::AtWaypoint { .. })
-        )
-    };
-    // Long enough at its waypoint to be lifted, set down and walk a step.
-    let stays = Duration::from_millis(500);
-    let mut scene = make_scene(8, 8);
-    let (id, t) = scene
-        .agents
-        .values()
-        .find_map(|a| {
-            (1..3_000u64)
-                .map(|tenth| t0 + Duration::from_millis(100 * tenth))
-                .find(|&t| at_waypoint(a, t) && at_waypoint(a, t + stays))
-                .map(|t| (a.agent_id, t))
-        })
-        .expect("a timeline stands someone at a waypoint");
-    scene.agents.retain(|&a, _| a == id);
-    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
-    let step = |session: &mut FloorSession, now| {
-        session
-            .step(
-                FloorInputs {
-                    scene: &scene,
-                    now,
-                    conditions: Conditions::default(),
-                    pets: PetInputs::default(),
-                },
-                viewport,
-            )
-            .expect("lays out")
-    };
-    step(&mut session, t);
-    assert!(
-        !session.floor().ctx.overlay.is_empty(),
-        "standing there, it reserves its cell"
-    );
-    let at = Point { x: 40, y: 70 };
-    session.floor_mut().grip(&Gesture::Lift {
-        figure: Figure::Agent(id),
-        at,
-    });
-    step(&mut session, t + Duration::from_millis(100));
-    assert!(session.floor().ctx.overlay.is_empty(), "in hand");
-    session.floor_mut().grip(&Gesture::Drop(at));
-    let home = step(&mut session, t + Duration::from_millis(200));
-    assert!(
-        matches!(home.frame.poses[&id], Some(Pose::Walking { .. })),
-        "set down, it walks home"
-    );
-    assert!(session.floor().ctx.overlay.is_empty(), "walking home");
 }
 
 /// A pet or a mascot in hand is in front of the whole room, as an agent in

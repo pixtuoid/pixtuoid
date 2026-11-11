@@ -1,5 +1,5 @@
-//! Pure state → pose derivation: `derive(slot, now, layout)` is a function of
-//! the snapshot inputs only — no routing, no per-frame history. The routed
+//! Pure state → pose derivation: `derive_state_only(slot, now, layout)` is a
+//! function of the snapshot inputs only — no routing, no per-frame history. The routed
 //! variant (composing against a `Router` and a `PoseHistory` cache) is the
 //! sibling `pose/mod.rs` (`derive_with_routing`).
 
@@ -23,10 +23,10 @@ pub(crate) const STALE_RESUME_GAP_BASE_MS: u64 = 7_000;
 /// Maximum extra time added per agent — jitter range is `[0, RANGE)`.
 pub(crate) const STALE_RESUME_GAP_RANGE_MS: u64 = 6_000;
 
-/// Stateless-overlay estimate of one wander walk leg. Exact coherence with the
-/// routed timeline is impossible (this half does no routing, and walk legs are
+/// Stateless estimate of one wander walk leg. Exact coherence with the routed
+/// timeline is impossible (this half does no routing, and walk legs are
 /// physics-timed only on the routed path), and `idle_pose` only needs an
-/// approximate timeline to place the occupancy overlay.
+/// approximate timeline.
 pub(crate) const WANDER_WALK_EST_MS: u64 = 3_500;
 /// Companion estimate: the at-waypoint dwell beat (paired with `WANDER_WALK_EST_MS`).
 pub(crate) const WANDER_DWELL_EST_MS: u64 = 18_000;
@@ -202,70 +202,16 @@ impl LegPose {
     }
 }
 
-/// Returns `None` if the slot has no desk in `layout`.
+/// Pure state → pose derivation, with no entry or exit walk: those are the
+/// routed layer's (`pose::derive_with_routing`).
 ///
-/// Priority, first match wins: exit override (walk to the door, then `None`
-/// once the window passes) → entry override (door → desk, regardless of state
-/// changes) → the state-driven pose.
-pub(crate) fn derive(slot: &AgentSlot, now: SystemTime, layout: &SceneLayout) -> Option<Pose> {
-    let desk = layout.home_desk_of(slot)?;
-
-    // The target is `door_threshold` (the on-floor point below the door), not
-    // the door itself, so the character doesn't paint through the wall trim.
-    if let Some(exit_time) = slot.exiting_at {
-        let target = layout.door_threshold;
-        let since_exit = now
-            .duration_since(exit_time)
-            .unwrap_or(Duration::ZERO)
-            .as_millis() as u64;
-        if since_exit < ENTRY_ANIMATION_MS {
-            return Some(linear_walk_pose(
-                since_exit,
-                desk_walk_anchor_facing(desk.at, desk.facing, layout.inner),
-                target,
-            ));
-        }
-        return None;
-    }
-
-    // The entry walk ends at the seated anchor, not inside the desk obstacle:
-    // otherwise the A* router detours around the desk and always approaches
-    // from one side.
-    let from = layout.door_threshold;
-    if let Some(arrived) = arriving(slot, now) {
-        return Some(linear_walk_pose(
-            crate::anim::elapsed_ms(now, arrived),
-            from,
-            desk_walk_anchor_facing(desk.at, desk.facing, layout.inner),
-        ));
-    }
-
-    state_driven_pose(slot, desk, layout, now)
-}
-
-/// The shared `Walking` pose for the stateless entry/exit overrides: a LINEAR
-/// (not physics-timed) interpolation over `ENTRY_ANIMATION_MS`. Deliberately
-/// distinct from the routed path's kinematic profiles — the overlay/snapshot
-/// path stays linear so it has no per-frame history.
-fn linear_walk_pose(since_ms: u64, from: Point, to: Point) -> Pose {
-    LegPose {
-        from,
-        to,
-        progress: LegProgress::of(since_ms, ENTRY_ANIMATION_MS),
-        carrying_coffee: false,
-    }
-    .straight()
-}
-
-/// The state→pose tail shared by `derive` and `derive_state_only`, applied
-/// AFTER each caller's own override guards — one place, so the two entry points
-/// can't drift.
-fn state_driven_pose(
+/// Returns `None` when the slot has no desk in `layout`.
+pub(crate) fn derive_state_only(
     slot: &AgentSlot,
-    desk: HomeDesk,
-    layout: &SceneLayout,
     now: SystemTime,
+    layout: &SceneLayout,
 ) -> Option<Pose> {
+    let desk = layout.home_desk_of(slot)?;
     let elapsed = now
         .duration_since(slot.state_started_at)
         .unwrap_or(Duration::ZERO)
@@ -276,21 +222,6 @@ fn state_driven_pose(
         ActivityState::RequiresAction { .. } => Some(Pose::SeatedIdle),
         ActivityState::Idle => Some(idle_pose(slot, desk, layout, elapsed)),
     }
-}
-
-/// Pure state → pose derivation, **excluding** the exit and entry override
-/// blocks at the top of `derive` — the seam `pose::derive_with_routing` uses so
-/// a physics-driven entry already in flight doesn't restart a redundant linear
-/// entry walk.
-///
-/// Returns `None` when the slot has no desk in `layout`.
-pub(crate) fn derive_state_only(
-    slot: &AgentSlot,
-    now: SystemTime,
-    layout: &SceneLayout,
-) -> Option<Pose> {
-    let desk = layout.home_desk_of(slot)?;
-    state_driven_pose(slot, desk, layout, now)
 }
 
 /// Per-(agent, cycle) seed for `pick_aimless_dest`, shared by the stateless
@@ -409,10 +340,9 @@ impl SpotClaims {
 /// `idle_pose` calls it then maps the [`WanderTarget`] to a [`Pose`].
 ///
 /// `idle_pose` passes an EMPTY `claimed` set because the pure half has no
-/// occupancy knowledge, so the two DO diverge on a contested seat: the A\*
-/// occupancy prepass then reserves the loser's cell and a walker may clip a real
-/// sitter. Accepted — rare and cosmetic, and it keeps the pure half a function
-/// of its snapshot inputs, so the overlay's cache signature stays frame-stable.
+/// occupancy knowledge, so the two DO diverge on a contested seat. Accepted —
+/// rare and cosmetic, and it keeps the pure half a function of its snapshot
+/// inputs.
 ///
 /// A named waypoint whose only reachable side is its excluded backrest (or a
 /// fully-blocked obstacle) yields `approach_point == wp.pos`, the "no valid
@@ -479,8 +409,8 @@ fn idle_pose(slot: &AgentSlot, desk: HomeDesk, layout: &SceneLayout, elapsed_ms:
     let at_wp_end = walk_out_end + WANDER_DWELL_EST_MS;
 
     // Seat claims are EMPTY here: this half has no occupancy knowledge (see
-    // `resolve_wander_target`), and its job is a cache-stable overlay estimate,
-    // not the authoritative placement.
+    // `resolve_wander_target`), and its job is an estimate, not the
+    // authoritative placement.
     let target =
         resolve_wander_target(slot.agent_id, cycle_n, layout, desk, &SpotClaims::default());
     let dest = target.dest;

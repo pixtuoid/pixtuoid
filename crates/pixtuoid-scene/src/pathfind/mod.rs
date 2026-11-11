@@ -3,15 +3,14 @@
 //! `AStarRouter` runs A* on a coarsened cell grid whose primitives
 //! (`cell_walkable`/`snap`/`CoarseGrid`/`CELL_SIZE`) are the SHARED
 //! `layout::coarse` ones `layout::reach` also rides, so router reachability
-//! can't drift from `ReachSet`. Routes are memoized per `(from, to, aim)`, and
-//! an overlay change evicts the ones it crosses, so per-frame agent movement
-//! still routes around live agents.
+//! can't drift from `ReachSet`. Routes are memoized per `(from, to, aim)` until a
+//! new layout, or [`PATH_CACHE_CAP`]'s overflow, clears them.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 
 use crate::grid::Grid;
-use crate::walkable::{OccupancyOverlay, WalkableMask};
+use crate::walkable::WalkableMask;
 
 use crate::layout::{
     Bounds, COARSE_CELL_SIZE, CoarseGrid, Point, cell_anchor, cell_center, cell_dims, cell_holding,
@@ -24,20 +23,12 @@ use crate::physics::{OCTILE_DIAGONAL_COST, OCTILE_STRAIGHT_COST, octile_cost};
 /// coarsening.
 pub(crate) const CELL_SIZE: u16 = COARSE_CELL_SIZE;
 
-/// Abstract pathfinder — routes from `from` to `to` over the supplied mask +
-/// overlay, returning a polyline (first = `from`, last = `to`, intermediate =
-/// corners).
+/// Abstract pathfinder — routes from `from` to `to` over the supplied mask,
+/// returning a polyline (first = `from`, last = `to`, intermediate = corners).
 pub(crate) trait Router: std::fmt::Debug {
     /// Compute or look up the route, coming in toward `aim`: a caller sets it
     /// apart from `to` to vary the way in, and to `to` for the plain route.
-    fn route(
-        &mut self,
-        mask: &WalkableMask,
-        overlay: &OccupancyOverlay,
-        from: Point,
-        to: Point,
-        aim: Point,
-    ) -> Vec<Point>;
+    fn route(&mut self, mask: &WalkableMask, from: Point, to: Point, aim: Point) -> Vec<Point>;
 
     /// Route over a new layout from here, keeping nothing routed over the
     /// last, and bias the cost function toward `zone` (the office corridor) so
@@ -49,16 +40,15 @@ pub(crate) trait Router: std::fmt::Debug {
 /// floor. The key space is unbounded in steady state — aimless wander
 /// mints a fresh destination every cycle and snap-back/exit legs route from live
 /// interpolated origins — so an always-on office would accumulate keys forever.
-/// Overflowing clears the whole map, which is safe: cornered in-flight legs are
-/// frozen on `WalkState.walk_path` and never re-consult the router, and every
-/// other evicted route just re-routes under the CURRENT overlay.
+/// Overflowing clears the whole map, which is safe: in-flight legs are frozen on
+/// `WalkState.walk_path` and never re-consult the router, and an evicted route
+/// re-routes to the same path.
 const PATH_CACHE_CAP: usize = 512;
 
 /// A* router with an internal path cache.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct AStarRouter {
     paths: HashMap<(Point, Point, Point), Vec<Point>>,
-    last_overlay_sig: u64,
     /// Cells inside this zone get a cost discount during A*.
     preferred_zone: Option<Bounds>,
 }
@@ -83,72 +73,27 @@ impl AStarRouter {
 }
 
 impl Router for AStarRouter {
-    fn route(
-        &mut self,
-        mask: &WalkableMask,
-        overlay: &OccupancyOverlay,
-        from: Point,
-        to: Point,
-        aim: Point,
-    ) -> Vec<Point> {
-        let overlay_sig = overlay.signature();
-        // Invalidate only the entries that actually conflict with the new
-        // overlay — paths in unaffected corridors stay cached.
-        if overlay_sig != self.last_overlay_sig {
-            self.paths.retain(|_, path| path_clear_under(path, overlay));
-            self.last_overlay_sig = overlay_sig;
-        }
+    fn route(&mut self, mask: &WalkableMask, from: Point, to: Point, aim: Point) -> Vec<Point> {
         if let Some(p) = self.paths.get(&(from, to, aim)) {
             return p.clone();
         }
-        // Cache ONLY real routes. `path_clear_under` validates cached entries
-        // against the OVERLAY only, never the static mask, so a straight
-        // [from, to] fallback minted while a transient blocker severed the grid
-        // would survive every retain() and serve a walk-through-walls line for
-        // that key forever. Left uncached it re-routes next call.
-        match find_path(mask, overlay, self.preferred_zone, from, to, aim) {
-            Some(path) => {
-                self.paths.insert((from, to, aim), path.clone());
-                if self.paths.len() > PATH_CACHE_CAP {
-                    self.paths.clear();
-                }
-                path
-            }
-            None => vec![from, to],
+        // Only a new layout changes a pair's route, so a pair the layout can't
+        // route caches its straight line as any route caches.
+        let path =
+            find_path(mask, self.preferred_zone, from, to, aim).unwrap_or_else(|| vec![from, to]);
+        self.paths.insert((from, to, aim), path.clone());
+        if self.paths.len() > PATH_CACHE_CAP {
+            self.paths.clear();
         }
+        path
     }
 
     fn new_layout(&mut self, zone: Bounds) {
-        // `route` revalidates a cached path against the overlay alone, never
-        // the mask, so one routed over the last layout could cross a wall.
+        // Every cached path was routed over the last layout's mask, so one could
+        // cross a wall in this layout.
         self.paths.clear();
         self.preferred_zone = Some(zone);
     }
-}
-
-/// Is `path` still walkable under the current `overlay`? Samples each segment at
-/// a small stride, so it tolerates a tiny overshoot (a 1-px clip into an obstacle
-/// won't invalidate, but a real intersection at any corner will).
-fn path_clear_under(path: &[Point], overlay: &OccupancyOverlay) -> bool {
-    const SAMPLE_STRIDE_PX: i32 = 4;
-    if overlay.is_empty() {
-        return true;
-    }
-    for w in path.windows(2) {
-        let (a, b) = (w[0], w[1]);
-        let dx = i32::from(b.x) - i32::from(a.x);
-        let dy = i32::from(b.y) - i32::from(a.y);
-        let steps = dx.abs().max(dy.abs()).max(1) / SAMPLE_STRIDE_PX;
-        let n = steps.max(2);
-        for i in 0..=n {
-            let x = (i32::from(a.x) + dx * i / n) as u16;
-            let y = (i32::from(a.y) + dy * i / n) as u16;
-            if overlay.blocks(x, y) {
-                return false;
-            }
-        }
-    }
-    true
 }
 
 #[derive(Eq, PartialEq)]
@@ -199,10 +144,9 @@ fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
 /// Max rings the A\* start/goal snap probes for a walkable coarse cell.
 const MAX_SNAP_RADIUS: u16 = 12;
 
-/// Run A* on the layout's walkability mask + per-frame occupancy.
+/// Run A* on the layout's walkability mask.
 pub(crate) fn find_path(
     mask: &WalkableMask,
-    overlay: &OccupancyOverlay,
     preferred: Option<Bounds>,
     from: Point,
     to: Point,
@@ -211,25 +155,14 @@ pub(crate) fn find_path(
     let Some((cell_w, cell_h)) = grid_dims(mask) else {
         return Some(vec![from, to]);
     };
-    let cell_near = |p: Point| {
-        snap(
-            mask,
-            overlay,
-            snap_cell(mask, p),
-            cell_w,
-            cell_h,
-            MAX_SNAP_RADIUS,
-        )
-    };
+    let cell_near = |p: Point| snap(mask, snap_cell(mask, p), cell_w, cell_h, MAX_SNAP_RADIUS);
     let start = cell_near(from)?;
-    let mut coarse = CoarseGrid::new(mask, overlay);
+    let mut coarse = CoarseGrid::new(mask);
     let mut search = |goal| Some((goal, a_star(&mut coarse, mask, preferred, start, goal)?));
     // `aim`'s cell stands in for `to`'s own only where A* reaches it and the last step,
-    // from that cell's anchor to `to`, stays on open floor and clear of the agents.
-    let aimed = cell_near(aim).filter(|&(cx, cy)| {
-        let anchor = cell_anchor(mask, cx, cy);
-        segment_clear(mask, anchor, to) && path_clear_under(&[anchor, to], overlay)
-    });
+    // from that cell's anchor to `to`, stays on open floor.
+    let aimed =
+        cell_near(aim).filter(|&(cx, cy)| segment_clear(mask, cell_anchor(mask, cx, cy), to));
     let (goal, came_from) = match aimed.and_then(&mut search) {
         Some(reached) => reached,
         None => search(cell_near(to)?)?,
@@ -306,13 +239,11 @@ pub fn point_in_walkable_cell(mask: &WalkableMask, p: Point) -> bool {
     let Some((cell_w, cell_h)) = grid_dims(mask) else {
         return false;
     };
-    cell_holding(grid_origin(mask), p).is_some_and(|(cx, cy)| {
-        cx < cell_w && cy < cell_h && cell_walkable(mask, &OccupancyOverlay::new(), cx, cy)
-    })
+    cell_holding(grid_origin(mask), p)
+        .is_some_and(|(cx, cy)| cx < cell_w && cy < cell_h && cell_walkable(mask, cx, cy))
 }
 
-/// Snap a pixel-space `Point` into the nearest walkable coarse CELL on
-/// the STATIC mask. `None` when the grid is degenerate or no walkable cell exists
+/// Snap a pixel-space `Point` into the nearest walkable coarse CELL. `None` when the grid is degenerate or no walkable cell exists
 /// within `MAX_SNAP_RADIUS`. Distinct from `find_path`'s internal snapping, whose
 /// `reconstruct` overwrites the polyline endpoints with the RAW `from`/`to` — a
 /// caller that needs a guaranteed-walkable endpoint must re-anchor with this.
@@ -327,13 +258,12 @@ pub(crate) fn snap_point_where(
     mut fits: impl FnMut(Point) -> bool,
 ) -> Option<Point> {
     let (cell_w, cell_h) = grid_dims(mask)?;
-    let empty = OccupancyOverlay::new();
     let (cx, cy) = snap_where(
         snap_cell(mask, p),
         cell_w,
         cell_h,
         MAX_SNAP_RADIUS,
-        |(cx, cy)| cell_walkable(mask, &empty, cx, cy) && fits(cell_anchor(mask, cx, cy)),
+        |(cx, cy)| cell_walkable(mask, cx, cy) && fits(cell_anchor(mask, cx, cy)),
     )?;
     Some(cell_anchor(mask, cx, cy))
 }

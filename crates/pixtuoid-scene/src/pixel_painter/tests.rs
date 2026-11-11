@@ -2559,7 +2559,6 @@ impl OwnedSimStores {
     fn stores(&mut self) -> SimStores<'_> {
         SimStores {
             router: &mut self.route.router,
-            overlay: &mut self.route.overlay,
             history: &mut self.route.history,
             walks: &mut self.route.walks,
             vacancy_dim: &mut self.vacancy_dim,
@@ -5107,7 +5106,7 @@ fn keep_sprite_inside_bounds_differ_by_pivot() {
 /// The canvas-edge fixtures: per agent, the earliest second its PURE pose is
 /// aimless past the east rim, soonest first.
 ///
-/// Probing `pose::derive` rather than the routed twin keeps the search cheap —
+/// Probing `pose::derive_state_only` rather than the routed twin keeps the search cheap —
 /// only the survivors are worth an A* run — but a cold routing store answers
 /// `Walking`, so a caller must still drive its agent second by second up to the
 /// returned target.
@@ -5125,7 +5124,7 @@ fn east_rim_targets(layout: &SceneLayout, now0: SystemTime) -> Vec<(u32, u64)> {
             (1..900u64)
                 .find(|&secs| {
                     matches!(
-                        pose::derive(&slot, now0 + Duration::from_secs(secs), layout),
+                        pose::derive_state_only(&slot, now0 + Duration::from_secs(secs), layout),
                         Some(Pose::AimlessAt { dest })
                             if waypoint_top_left(dest, w).x + w > layout.buf_w
                     )

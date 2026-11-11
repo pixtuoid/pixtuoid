@@ -1,8 +1,5 @@
 //! Walkability primitives — pure data, no terminal deps. Coordinates are
 //! `(x, y)` u16 pixel positions; origin top-left.
-//!
-//! The static [`WalkableMask`] is kept separate from the per-frame
-//! [`OccupancyOverlay`] so the mask is built once per layout.
 
 use crate::grid::Grid;
 use crate::layout::Bounds;
@@ -94,107 +91,6 @@ impl WalkableMask {
     #[inline]
     pub(crate) fn is_walkable(&self, x: u16, y: u16) -> bool {
         self.open.get_or(x, y, false)
-    }
-}
-
-/// Dynamic per-frame occupancy — rebuilt each render tick from current agent
-/// positions, so routers can avoid live agents without touching the mask.
-#[derive(Debug, Clone, Default)]
-pub struct OccupancyOverlay {
-    /// `(x, y, width, height)` of each blocked rect.
-    rects: Vec<(u16, u16, u16, u16)>,
-}
-
-impl OccupancyOverlay {
-    /// An empty overlay — no rects blocked.
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    /// Drop every blocked rect, ready to rebuild for the next frame.
-    pub(crate) fn clear(&mut self) {
-        self.rects.clear();
-    }
-
-    /// Block the rect at `(x, y)` of size `w × h`.
-    pub(crate) fn add(&mut self, x: u16, y: u16, w: u16, h: u16) {
-        self.rects.push((x, y, w, h));
-    }
-
-    /// The number of blocked rects.
-    #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
-        self.rects.len()
-    }
-
-    /// True when no rect is blocked.
-    #[inline]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.rects.is_empty()
-    }
-
-    /// True if (`x`, `y`) falls inside any current occupancy rect.
-    /// Linear scan — fine while N stays in the low tens.
-    #[inline]
-    pub(crate) fn blocks(&self, x: u16, y: u16) -> bool {
-        self.rects.iter().any(|&(rx, ry, rw, rh)| {
-            x >= rx && x < rx.saturating_add(rw) && y >= ry && y < ry.saturating_add(rh)
-        })
-    }
-
-    /// Order-stable hash of the current occupancy set — rects are sorted
-    /// before hashing, so push order cannot change the signature the router
-    /// cache invalidates on.
-    pub(crate) fn signature(&self) -> u64 {
-        let mut sorted: Vec<(u16, u16, u16, u16)> = self.rects.clone();
-        sorted.sort_unstable();
-        pixtuoid_core::id::fnv1a(
-            sorted
-                .iter()
-                .flat_map(|&(x, y, w, h)| [x, y, w, h])
-                .map(u64::from),
-        )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn overlay_blocks_inside_rects() {
-        let mut o = OccupancyOverlay::new();
-        assert_eq!(o.len(), 0);
-        o.add(10, 10, 5, 5);
-        o.add(20, 20, 3, 3);
-        assert_eq!(o.len(), 2);
-        assert!(o.blocks(12, 12));
-        assert!(!o.blocks(9, 10));
-        assert!(!o.blocks(15, 10));
-        o.clear();
-        assert_eq!(o.len(), 0);
-    }
-
-    #[test]
-    fn overlay_signature_changes_with_contents() {
-        let mut o = OccupancyOverlay::new();
-        let s_empty = o.signature();
-        o.add(1, 2, 3, 4);
-        let s_one = o.signature();
-        assert_ne!(s_empty, s_one);
-        o.clear();
-        assert_eq!(o.signature(), s_empty);
-    }
-
-    #[test]
-    fn overlay_signature_is_order_independent() {
-        let mut a = OccupancyOverlay::new();
-        a.add(10, 20, 5, 5);
-        a.add(30, 40, 8, 8);
-        let mut b = OccupancyOverlay::new();
-        b.add(30, 40, 8, 8);
-        b.add(10, 20, 5, 5);
-        assert_eq!(a.signature(), b.signature());
     }
 }
 
