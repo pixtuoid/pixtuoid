@@ -889,7 +889,7 @@ mod tests {
         assert_eq!(
             (v[2].1, v[3].0),
             (c - DOOR_GAP / 2, c + DOOR_GAP / 2),
-            "door centers on the trimmed run (legacy v2_center)"
+            "door centers on the trimmed run"
         );
     }
 
