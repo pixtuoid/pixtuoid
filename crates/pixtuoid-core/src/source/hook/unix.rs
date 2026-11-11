@@ -57,8 +57,13 @@ impl AcceptBackoff {
 /// creating/validating the REAL per-user dir, which would race a live
 /// daemon. Keep it a pure substitution into [`vet_owned_tmp_path_in`]: any
 /// logic added HERE becomes unmeasurable.
+///
+/// # Errors
+///
+/// As [`vet_owned_tmp_path_in`]'s, for this process's dir and uid.
 #[cfg(unix)]
-fn vet_owned_tmp_path(path: &Path) -> Result<()> {
+#[doc(hidden)]
+pub fn vet_owned_tmp_path(path: &Path) -> Result<()> {
     vet_owned_tmp_path_in(path, &owned_tmp_dir(), rustix::process::getuid().as_raw())
 }
 
@@ -68,7 +73,8 @@ fn vet_owned_tmp_path(path: &Path) -> Result<()> {
 ///
 /// # Errors
 ///
-/// If `path` lies in `owned` and `owned` is not, and can't be made, `uid`'s and `0700`.
+/// If `path` lies in `owned`, and `owned` can't be created or exists as anything
+/// but a directory `uid` owns that no group or other can reach.
 #[cfg(unix)]
 #[doc(hidden)]
 pub fn vet_owned_tmp_path_in(path: &Path, owned: &Path, uid: u32) -> Result<()> {

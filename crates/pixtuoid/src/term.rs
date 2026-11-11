@@ -103,14 +103,13 @@ pub(crate) fn color_preflight(
 
 /// The bixense `$CLICOLOR_FORCE` convention: set and `!= 0` forces color "no
 /// matter what" — including into a pipe. Shared by [`color_preflight`] (the
-/// `$NO_COLOR` override) and [`stream_color_under`] (every stream pixtuoid
-/// writes SGR to), so the two can't parse the variable differently.
+/// `$NO_COLOR` override) and [`stream_color_under`], so the two can't parse the
+/// variable differently.
 pub(crate) fn clicolor_forced(v: Option<&str>) -> bool {
     matches!(v.map(str::trim), Some(v) if !v.is_empty() && v != "0")
 }
 
-/// This process's color environment, the one read behind every decision on
-/// color.
+/// This process's color environment.
 pub(crate) struct ColorEnv {
     pub(crate) preflight: ColorPreflight,
     clicolor_force: Option<String>,
@@ -131,8 +130,7 @@ impl ColorEnv {
         }
     }
 
-    /// Whether a stream, a `tty` or not, may carry ANSI color: the one rule
-    /// every stream pixtuoid writes SGR to follows.
+    /// Whether a stream, a `tty` or not, may carry ANSI color.
     pub(crate) fn stream_color(&self, tty: bool) -> bool {
         stream_color_under(tty, self.preflight, self.clicolor_force.as_deref())
     }

@@ -116,21 +116,11 @@ pub(crate) fn open_private_append(
 /// per-user `/tmp` dir is refused whichever way it is reached.
 fn log_guard() -> impl Fn(&Path) -> std::io::Result<()> {
     #[cfg(unix)]
-    return log_guard_in(
-        pixtuoid_core::source::hook::owned_tmp_dir(),
-        rustix::process::getuid().as_raw(),
-    );
+    return |path: &Path| {
+        pixtuoid_core::source::hook::vet_owned_tmp_path(path).map_err(std::io::Error::other)
+    };
     #[cfg(not(unix))]
     |_: &Path| Ok(())
-}
-
-/// [`log_guard`] over a given per-user dir and uid, so a test can squat one.
-#[cfg(unix)]
-fn log_guard_in(owned: PathBuf, uid: u32) -> impl Fn(&Path) -> std::io::Result<()> {
-    move |path| {
-        pixtuoid_core::source::hook::vet_owned_tmp_path_in(path, &owned, uid)
-            .map_err(std::io::Error::other)
-    }
 }
 
 /// [`open_private_append`] with its guard on the shared `/tmp` dir passed in,
@@ -490,8 +480,8 @@ mod tests {
         open_private_append(Path::new("/dev/null"), OpenOptions::new()).expect("opens");
     }
 
-    /// The guard writes and reads take refuses a per-user dir another uid owns
-    /// or a group can write, so planted logs are neither appended to nor read.
+    /// Behind core's guard (`log_guard`'s, over a given dir and uid), writes and
+    /// reads refuse a per-user dir another uid owns or a group can write.
     #[cfg(unix)]
     #[test]
     fn the_log_guard_refuses_a_squatted_dir_on_write_and_read() {
@@ -503,7 +493,13 @@ mod tests {
         std::fs::set_permissions(&owned, std::fs::Permissions::from_mode(0o700)).unwrap();
         std::fs::write(logs.join("1.log"), "planted\n").unwrap();
         let uid = rustix::process::getuid().as_raw();
-        let guard = |uid| log_guard_in(owned.clone(), uid);
+        let guard = |uid| {
+            let owned = owned.clone();
+            move |path: &Path| {
+                pixtuoid_core::source::hook::vet_owned_tmp_path_in(path, &owned, uid)
+                    .map_err(std::io::Error::other)
+            }
+        };
         let runs = LogLocation::Runs(logs.clone());
         assert_eq!(runs.read_vetted(guard(uid)), ("planted\n".to_owned(), None));
         let theirs = uid.wrapping_add(1);

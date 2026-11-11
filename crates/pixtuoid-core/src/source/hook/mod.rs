@@ -22,7 +22,7 @@ pub(crate) use unix::SOCKET_FILE_NAME;
 // Mechanism, not contract (hence `doc(hidden)`): the binary's logs share the
 // socket's per-user `/tmp` fallback and its guard.
 #[cfg(unix)]
-pub use unix::{owned_tmp_dir, vet_owned_tmp_path_in};
+pub use unix::{owned_tmp_dir, vet_owned_tmp_path, vet_owned_tmp_path_in};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]

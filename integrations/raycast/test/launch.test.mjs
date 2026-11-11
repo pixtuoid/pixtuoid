@@ -55,7 +55,9 @@ test("a failed launch's stderr with no error report is its message whole", async
 });
 
 test("a binary that cannot be spawned fails the launch", async () => {
-  await assert.rejects(launchUntilReady(join(tmpdir(), "no-such-pixtuoid"), [], PREFIX), { code: "ENOENT" });
+  await assert.rejects(launchUntilReady(join(mkdtempSync(join(tmpdir(), "launch-")), "no-such-pixtuoid"), [], PREFIX), {
+    code: "ENOENT",
+  });
 });
 
 test("a child that never says it is up is killed at the deadline", { timeout: 15_000 }, async () => {

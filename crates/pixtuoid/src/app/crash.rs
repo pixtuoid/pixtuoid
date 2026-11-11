@@ -3,7 +3,7 @@
 //! pre-filled GitHub issue URL.
 
 pub(crate) fn install_crash_hook() {
-    // Read now, not in the panic, so a launcher reading it through a pipe gets
+    // stderr's color rule, so a launcher reading the notice through a pipe gets
     // plain text.
     let color = crate::term::stderr_color();
     std::panic::set_hook(Box::new(move |info| {
@@ -239,7 +239,6 @@ mod tests {
         let (sent, received) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let mut out = Vec::new();
-            // The master reads EIO once the child's end closes.
             let _ = std::io::Read::read_to_end(&mut reader, &mut out);
             let _ = sent.send(out);
         });
@@ -252,7 +251,6 @@ mod tests {
                 .unwrap(),
         );
         let mut run = on_tty.spawn().unwrap();
-        // Only the child's end may stay open, or the master never reads its close.
         drop((on_tty, pty.slave));
         run.wait().unwrap();
         let stderr = received
