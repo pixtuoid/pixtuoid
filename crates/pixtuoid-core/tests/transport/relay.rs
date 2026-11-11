@@ -23,7 +23,7 @@ const POLL: Duration = Duration::from_millis(25);
 
 /// `name`'s endpoint and the directory that keeps it private to this test.
 fn endpoint(name: &str) -> (tempfile::TempDir, Endpoint) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir_in(pixtuoid_core::harness::socket_root()).unwrap();
     let at = Endpoint::in_dir(dir.path(), name);
     (dir, at)
 }

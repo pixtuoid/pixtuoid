@@ -1291,6 +1291,8 @@ pub fn pixtuoid_core::state::reducer::Reducer::counting(self, fn(std::time::Syst
 pub fn pixtuoid_core::state::reducer::Reducer::new() -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::reconcile_connected(&self, &mut pixtuoid_core::state::SceneState, &std::collections::hash::set::HashSet<alloc::string::String>, std::time::SystemTime)
 pub fn pixtuoid_core::state::reducer::Reducer::tick(&mut self, &mut pixtuoid_core::state::SceneState, std::time::SystemTime)
+impl core::clone::Clone for pixtuoid_core::state::reducer::Reducer
+pub fn pixtuoid_core::state::reducer::Reducer::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::state::reducer::Reducer
@@ -2103,6 +2105,8 @@ pub fn pixtuoid_core::state::reducer::Reducer::counting(self, fn(std::time::Syst
 pub fn pixtuoid_core::state::reducer::Reducer::new() -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::reconcile_connected(&self, &mut pixtuoid_core::state::SceneState, &std::collections::hash::set::HashSet<alloc::string::String>, std::time::SystemTime)
 pub fn pixtuoid_core::state::reducer::Reducer::tick(&mut self, &mut pixtuoid_core::state::SceneState, std::time::SystemTime)
+impl core::clone::Clone for pixtuoid_core::state::reducer::Reducer
+pub fn pixtuoid_core::state::reducer::Reducer::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::state::reducer::Reducer

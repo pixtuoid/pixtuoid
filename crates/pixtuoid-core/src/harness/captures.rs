@@ -1198,7 +1198,7 @@ mod tests {
     #[test]
     fn a_run_dirs_driver_copy_is_never_capture_data() {
         let d = tempfile::tempdir().expect("run dir");
-        std::fs::write(d.path().join("hook-payloads.jsonl"), "{}\n").expect("write");
+        std::fs::write(d.path().join(HOOK_PAYLOADS), "{}\n").expect("write");
         std::fs::create_dir_all(d.path().join(DRIVER_COPY).join("deep")).expect("mkdir");
         std::fs::write(d.path().join(DRIVER_COPY).join("x.jsonl"), "{}\n").expect("write");
         std::fs::write(d.path().join(DRIVER_COPY).join("deep/y.jsonl"), "{}\n").expect("write");
@@ -1210,10 +1210,7 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            [
-                PathBuf::from("hook-payloads.jsonl"),
-                PathBuf::from("s/t.jsonl")
-            ]
+            [PathBuf::from(HOOK_PAYLOADS), PathBuf::from("s/t.jsonl")]
         );
     }
 

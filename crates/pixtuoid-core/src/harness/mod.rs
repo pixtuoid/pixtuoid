@@ -67,6 +67,17 @@ pub fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
+/// The root a test's socket directory goes under. A unix socket's path must
+/// fit `sun_path`, and TMPDIR may sit too deep for that (a nested sandbox),
+/// so unix takes `/tmp`; a Windows pipe fits under any root.
+pub fn socket_root() -> PathBuf {
+    if cfg!(unix) {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    }
+}
+
 /// A registered id as the modules for its CLI spell it (`claude-code` →
 /// `claude_code`): its decoder, its profile, its test module and their dirs.
 pub fn module_of(source: &str) -> String {
@@ -131,7 +142,7 @@ impl std::fmt::Display for LineFailure {
 }
 
 /// Everything the pipeline observed.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Driven {
     /// The folded scene — what a painter would observe.
     pub scene: SceneState,
@@ -498,7 +509,7 @@ fn joined<S: AsRef<str>>(lines: impl Iterator<Item = S>) -> Vec<u8> {
 
 /// The harness's one reducer fold: batches of lines from any drives, each at
 /// its own instant, and ticks between them.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fold {
     reducer: Reducer,
     driven: Driven,
@@ -508,7 +519,7 @@ pub struct Fold {
 
 /// A seeded transcript's claim and its head: the first read stands in for the
 /// file head the watcher reads back.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Sighted {
     sight: Sight,
     head: Vec<u8>,

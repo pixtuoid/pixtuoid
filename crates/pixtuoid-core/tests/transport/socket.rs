@@ -4,6 +4,7 @@
 #![cfg(unix)]
 use std::time::Duration;
 
+use pixtuoid_core::harness::socket_root;
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -15,7 +16,7 @@ use pixtuoid_core::source::{AgentEvent, Source, Transport};
 
 #[tokio::test]
 async fn listener_parses_line_and_emits_event() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(16);
@@ -48,7 +49,7 @@ async fn listener_parses_line_and_emits_event() {
 
 #[tokio::test]
 async fn listener_skips_malformed_line_and_keeps_going() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(16);
     let listener = HookSocketListener::bind(path.clone()).await.unwrap();
@@ -80,7 +81,7 @@ async fn listener_skips_malformed_line_and_keeps_going() {
 
 #[tokio::test]
 async fn listener_drops_slow_connection_via_timeout() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(16);
     let listener = HookSocketListener::bind(path.clone()).await.unwrap();
@@ -124,7 +125,7 @@ async fn listener_drops_slow_connection_via_timeout() {
 // arm than the malformed-JSON serde warn the sibling test hits.
 #[tokio::test]
 async fn listener_survives_non_utf8_read_error() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(16);
     let listener = HookSocketListener::bind(path.clone()).await.unwrap();
@@ -161,7 +162,7 @@ async fn listener_survives_non_utf8_read_error() {
 // hook-borne signal vanishing.
 #[tokio::test]
 async fn bind_bails_when_a_live_listener_holds_the_path() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(16);
     let listener = HookSocketListener::bind(path.clone()).await.unwrap();
@@ -215,7 +216,7 @@ async fn bind_bails_when_a_live_listener_holds_the_path() {
 // yields ECONNREFUSED on macOS.
 #[tokio::test]
 async fn bind_reclaims_a_stale_socket_file() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     drop(HookSocketListener::bind(path.clone()).await.unwrap());
     assert!(
@@ -255,7 +256,7 @@ async fn bind_reclaims_a_stale_socket_file() {
 // (REVIEW.md: a pre-existing endpoint is hostile).
 #[tokio::test]
 async fn bind_refuses_to_reclaim_a_file_that_is_not_a_socket() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("notes.txt");
     std::fs::write(&path, "precious").unwrap();
     let err = HookSocketListener::bind(path.clone())
@@ -269,7 +270,7 @@ async fn bind_refuses_to_reclaim_a_file_that_is_not_a_socket() {
 
 #[tokio::test]
 async fn bind_refuses_to_replace_a_dangling_symlink() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     std::os::unix::fs::symlink(dir.path().join("gone"), &path).unwrap();
     HookSocketListener::bind(path.clone())
@@ -288,7 +289,7 @@ async fn bind_refuses_to_replace_a_dangling_symlink() {
 // alone can still be too long.
 #[tokio::test]
 async fn bind_takes_a_path_of_its_budget_and_refuses_one_byte_more() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     // SAFETY: sockaddr_un is plain old data; all-zero is a valid value.
     let sun_path = unsafe { std::mem::zeroed::<libc::sockaddr_un>() }
         .sun_path
@@ -333,7 +334,7 @@ async fn bind_takes_a_path_of_its_budget_and_refuses_one_byte_more() {
 // never as an arithmetic panic in the length check.
 #[tokio::test]
 async fn bind_refuses_a_trailing_slash_path_without_panicking() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let mut path = dir.path().join("x").into_os_string();
     path.push("//////");
     HookSocketListener::bind(std::path::PathBuf::from(path))
@@ -343,7 +344,7 @@ async fn bind_refuses_a_trailing_slash_path_without_panicking() {
 
 #[tokio::test]
 async fn bind_leaves_a_live_socket_at_its_temp_name_alone() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let other = dir.path().join("foo.tmp");
     let (tx, _rx) = mpsc::channel::<(Transport, AgentEvent)>(16);
     let owner = HookSocketListener::bind(other.clone()).await.unwrap();
@@ -376,7 +377,7 @@ async fn bind_leaves_a_live_socket_at_its_temp_name_alone() {
 
 #[tokio::test]
 async fn bind_refuses_to_reclaim_a_file_at_its_temp_name() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let file = dir.path().join("notes.tmp");
     std::fs::write(&file, "precious").unwrap();
     let endpoint = dir.path().join("notes");
@@ -408,7 +409,7 @@ fn assert_names_both_settings(text: &str) {
 #[tokio::test]
 async fn bound_socket_is_owner_only_with_no_temp_residue() {
     use std::os::unix::fs::PermissionsExt;
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     let _listener = HookSocketListener::bind(path.clone()).await.unwrap();
 
@@ -445,7 +446,7 @@ async fn bound_socket_is_owner_only_with_no_temp_residue() {
 // — the old "stale" verdict. The lock must still arbitrate.
 #[tokio::test]
 async fn bind_respects_lock_arbitration_even_without_a_socket_file() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     let _owner = HookSocketListener::bind(path.clone()).await.unwrap();
     std::fs::remove_file(&path).unwrap();
@@ -466,7 +467,7 @@ async fn bind_respects_lock_arbitration_even_without_a_socket_file() {
 // path that reaches that probe; every other trips the try-lock first.
 #[tokio::test]
 async fn bind_defers_to_a_lockless_live_listener_via_the_connect_probe() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
 
     // A raw listener creates the socket file and no `.lock` sibling, and need
@@ -497,7 +498,7 @@ async fn bind_defers_to_a_lockless_live_listener_via_the_connect_probe() {
 
 #[tokio::test]
 async fn listener_handles_concurrent_connections() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
     let listener = HookSocketListener::bind(path.clone()).await.unwrap();
@@ -547,7 +548,7 @@ async fn hook_router_tee_captures_child_ends_from_the_shared_socket() {
     use pixtuoid_core::AgentId;
     use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let sock = dir.path().join("pixtuoid.sock");
 
     let unclaims = ChildEndUnclaims::new();
@@ -606,7 +607,7 @@ async fn hook_router_tee_captures_child_ends_from_the_shared_socket() {
 #[tokio::test]
 async fn a_held_lock_with_no_socket_file_is_silent() {
     use pixtuoid_core::source::hook::{EndpointStatus, endpoint_status};
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");
     let _owner = HookSocketListener::bind(path.clone()).await.unwrap();
     std::fs::remove_file(&path).unwrap();
