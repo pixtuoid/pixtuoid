@@ -932,6 +932,25 @@ mod tests {
         assert!(peer.ended().await.is_err());
     }
 
+    /// The stream's `select!` drops a read an office line overtakes, which
+    /// leaves its bytes in `line`: the cap is the line's, not each read's.
+    #[tokio::test]
+    async fn a_line_across_an_overtaken_read_still_ends_at_the_cap() {
+        use futures_util::FutureExt;
+        let (mut device, ours) = duplex(ROOMY);
+        let mut ours = BufReader::new(ours);
+        let mut line = Vec::new();
+        let half = [b' '; MAX_LINE_BYTES / 2];
+
+        device.write_all(&half).await.expect("sent");
+        let overtaken = next_line(&mut ours, &mut line).now_or_never();
+        assert!(overtaken.is_none(), "{overtaken:?}");
+        assert_eq!(line.len(), half.len(), "the overtaken read kept its bytes");
+        device.write_all(&half).await.expect("sent");
+        let read = next_line(&mut ours, &mut line).now_or_never();
+        assert!(matches!(read, Some(Err(_))), "{read:?}");
+    }
+
     /// Reads end anywhere: two lines in one, or one across two.
     #[tokio::test]
     async fn an_ask_may_share_a_write_or_span_two() {
