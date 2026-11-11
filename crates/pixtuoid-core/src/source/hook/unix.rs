@@ -62,6 +62,7 @@ impl AcceptBackoff {
 ///
 /// If `path` lies in the dir and the dir is not, and can't be made, ours and `0700`.
 #[cfg(unix)]
+#[doc(hidden)]
 pub fn vet_private_tmp_path(path: &Path) -> Result<()> {
     vet_private_tmp_path_in(path, &private_tmp_dir(), rustix::process::getuid().as_raw())
 }
@@ -90,6 +91,7 @@ pub(crate) const SOCKET_FILE_NAME: &str = "pixtuoid.sock";
 /// its own copy in `pixtuoid-hook/src/paths.rs` — no dep edge is allowed between
 /// the two crates — pinned to this one by `tests/socket_path_parity.rs`.)
 #[cfg(unix)]
+#[doc(hidden)]
 pub fn private_tmp_dir() -> std::path::PathBuf {
     let uid = rustix::process::getuid().as_raw();
     std::path::PathBuf::from(format!("/tmp/pixtuoid-{uid}"))

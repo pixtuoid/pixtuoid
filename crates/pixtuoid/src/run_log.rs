@@ -103,7 +103,8 @@ fn prune_runs(dir: &Path, now: SystemTime) {
 ///
 /// # Errors
 ///
-/// If the directory can't be created or the file can't be opened.
+/// If the directory can't be created or vetted, or the file can't be opened or
+/// is not ours alone.
 pub(crate) fn open_private_append(
     path: &Path,
     mut opts: OpenOptions,
@@ -132,7 +133,21 @@ pub(crate) fn open_private_append(
         use std::os::unix::fs::OpenOptionsExt;
         opts.custom_flags(libc::O_NOFOLLOW);
     }
-    opts.open(path)
+    let file = opts.open(path)?;
+    // A file already there keeps its maker's mode: another user's, or a hard
+    // link to a file they read, would hand them the log.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let md = file.metadata()?;
+        if md.uid() != rustix::process::geteuid().as_raw() || md.nlink() != 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "the file there is another user's or hard-linked",
+            ));
+        }
+    }
+    Ok(file)
 }
 
 /// One-deep rotation at startup of the file `$PIXTUOID_LOG` names (log →
@@ -408,6 +423,21 @@ mod tests {
         std::os::unix::fs::symlink(&victim, &log).unwrap();
         assert!(open_private_append(&log, OpenOptions::new()).is_err());
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "theirs");
+    }
+
+    /// A file already at a log's path keeps its maker's mode, so a hard link
+    /// to a file its planter reads is refused; the run's own file reopens.
+    #[cfg(unix)]
+    #[test]
+    fn a_hard_link_planted_at_a_log_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("pixtuoid.log");
+        drop(open_private_append(&log, OpenOptions::new()).expect("creates"));
+        drop(open_private_append(&log, OpenOptions::new()).expect("reopens its own"));
+        let theirs = dir.path().join("theirs");
+        std::fs::hard_link(&log, &theirs).unwrap();
+        let refused = open_private_append(&log, OpenOptions::new()).expect_err("a linked log");
+        assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
     #[test]

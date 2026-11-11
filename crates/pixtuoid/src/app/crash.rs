@@ -32,12 +32,8 @@ pub(crate) fn install_crash_hook() {
 
         // Owner-only: a backtrace carries the same project paths and agent ids
         // the runtime log does.
-        if let Ok(mut f) =
-            crate::run_log::open_private_append(&crash_path, std::fs::OpenOptions::new())
-        {
-            use std::io::Write;
-            let _ = f.write_all(report.as_bytes());
-        }
+        let saved = crate::run_log::open_private_append(&crash_path, std::fs::OpenOptions::new())
+            .and_then(|mut f| std::io::Write::write_all(&mut f, report.as_bytes()));
 
         let issue_url = build_issue_url(version, &panic_msg, &location, &bt_str, &crash_path);
 
@@ -47,6 +43,16 @@ pub(crate) fn install_crash_hook() {
             crate::strip_lines(&panic_msg, "\n  "),
             crate::display_path(&crash_path),
         );
+        let saved = match saved {
+            Ok(()) => format!(
+                "\x20 Full backtrace saved to \x1b[2m{path}\x1b[0m\n\
+                 \x20 \x1b[2m(attach if the reviewer asks — the link above only carries a truncated trace)\x1b[0m\n\n"
+            ),
+            Err(e) => format!(
+                "\x20 Couldn't save the full backtrace to \x1b[2m{path}\x1b[0m: {}\n\n",
+                crate::strip_control_chars(&e.to_string())
+            ),
+        };
         let notice = format!(
             "\n\x1b[1;31mpixtuoid v{version} crashed — sorry about that.\x1b[0m\n\n\
              \x20 \x1b[2m{msg}\x1b[0m\n\
@@ -54,8 +60,7 @@ pub(crate) fn install_crash_hook() {
              \x20 \x1b[1mHelp fix it\x1b[0m — open this link to file a pre-filled bug report\n\
              \x20 (panic + backtrace already included, no typing needed):\n\n\
              \x20 \x1b[4m{issue_url}\x1b[0m\n\n\
-             \x20 Full backtrace saved to \x1b[2m{path}\x1b[0m\n\
-             \x20 \x1b[2m(attach if the reviewer asks — the link above only carries a truncated trace)\x1b[0m\n\n"
+             {saved}"
         );
         // Not `eprintln!`: a panic inside the hook aborts the process.
         let _ = std::io::Write::write_all(&mut std::io::stderr(), notice.as_bytes());
@@ -212,6 +217,37 @@ mod tests {
         assert!(
             stderr.contains("crashed"),
             "the crash report itself still belongs on stderr: {stderr:?}"
+        );
+    }
+
+    /// A crash log that can't be written is said to be unsaved, with why.
+    #[cfg(unix)]
+    #[test]
+    fn the_hook_says_the_backtrace_is_saved_only_when_it_is() {
+        const CHILD: &str = "PIXTUOID_CRASH_HOOK_SAVE_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            install_crash_hook();
+            panic!("deliberate panic: the crash-hook save probe");
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        // A file where the state dir goes, so the crash log's dir can't be made.
+        let state = tmp.path().join("state");
+        std::fs::write(&state, "").unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &this_test("the_hook_says_the_backtrace_is_saved_only_when_it_is"),
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("XDG_STATE_HOME", &state)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!stderr.contains("saved to"), "{stderr:?}");
+        assert!(
+            stderr.contains("Couldn't save the full backtrace"),
+            "{stderr:?}"
         );
     }
 
