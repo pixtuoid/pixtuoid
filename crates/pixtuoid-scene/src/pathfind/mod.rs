@@ -130,6 +130,7 @@ impl Router for AStarRouter {
 /// a small stride, so it tolerates a tiny overshoot (a 1-px clip into an obstacle
 /// won't invalidate, but a real intersection at any corner will).
 fn path_clear_under(path: &[Point], overlay: &OccupancyOverlay) -> bool {
+    const SAMPLE_STRIDE_PX: i32 = 4;
     if overlay.is_empty() {
         return true;
     }
@@ -137,7 +138,7 @@ fn path_clear_under(path: &[Point], overlay: &OccupancyOverlay) -> bool {
         let (a, b) = (w[0], w[1]);
         let dx = i32::from(b.x) - i32::from(a.x);
         let dy = i32::from(b.y) - i32::from(a.y);
-        let steps = dx.abs().max(dy.abs()).max(1) / 4;
+        let steps = dx.abs().max(dy.abs()).max(1) / SAMPLE_STRIDE_PX;
         let n = steps.max(2);
         for i in 0..=n {
             let x = (i32::from(a.x) + dx * i / n) as u16;

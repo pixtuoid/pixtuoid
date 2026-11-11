@@ -722,9 +722,10 @@ const JITTER_SPAN: u64 = (2 * JITTER_MAX_PX + 1) as u64;
 /// measures a differently-shaped polyline than the one rendered AND mints a
 /// second router-cache key per leg.
 pub(crate) fn jitter_dest(id: AgentId, p: Point) -> Point {
+    const Y_HASH_SHIFT: u32 = 16;
     let h = id.raw();
     let jx = ((h % JITTER_SPAN) as i32 - JITTER_MAX_PX) as i16;
-    let jy = (((h >> 16) % JITTER_SPAN) as i32 - JITTER_MAX_PX) as i16;
+    let jy = (((h >> Y_HASH_SHIFT) % JITTER_SPAN) as i32 - JITTER_MAX_PX) as i16;
     Point {
         x: p.x.saturating_add_signed(jx),
         y: p.y.saturating_add_signed(jy),
