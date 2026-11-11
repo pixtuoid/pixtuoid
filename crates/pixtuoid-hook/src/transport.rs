@@ -29,33 +29,20 @@ pub(crate) fn arm_watchdog() -> Option<TimeBound> {
         .map(|_| TimeBound(()))
 }
 
-/// Write `line` to `peer`, reached at `endpoint`, unless that is our own
-/// predictable rendezvous and `is_us` can't prove the peer runs as us: a
-/// co-located user who squatted it would else receive the payload (#485, #495).
-/// Any other endpoint is the user's own trust decision (it may point at a
-/// cross-uid system daemon). `is_us` is a parameter because a single-user host
-/// can stage no peer of another user.
+/// Write `line` to `peer`, reached at `endpoint`, unless that is
+/// [our own rendezvous](crate::paths::is_our_rendezvous) and `is_us` can't prove
+/// the peer runs as us: a squatter there would else receive the payload. `is_us`
+/// is a parameter because a single-user host can stage no peer of another user.
 fn deliver<P: std::io::Write>(
     mut peer: P,
     endpoint: &std::path::Path,
     line: &[u8],
     is_us: impl FnOnce(&P) -> bool,
 ) {
-    if is_our_rendezvous(endpoint) && !is_us(&peer) {
+    if crate::paths::is_our_rendezvous(endpoint) && !is_us(&peer) {
         return;
     }
     let _ = peer.write_all(line);
-}
-
-/// The no-XDG `/tmp/pixtuoid-{uid}/` fallback we own.
-#[cfg(unix)]
-fn is_our_rendezvous(endpoint: &std::path::Path) -> bool {
-    crate::paths::owned_tmp_socket_dir(endpoint).is_some()
-}
-
-#[cfg(windows)]
-fn is_our_rendezvous(endpoint: &std::path::Path) -> bool {
-    endpoint == std::path::Path::new(&crate::paths::default_windows_pipe_name())
 }
 
 #[cfg(unix)]
@@ -121,7 +108,8 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::net::{UnixListener, UnixStream};
 
-    /// Our own rendezvous as the shim resolves it with no override.
+    /// Our `/tmp` fallback rendezvous, which the shim resolves with neither
+    /// `PIXTUOID_SOCKET` nor `XDG_RUNTIME_DIR`.
     #[cfg(unix)]
     fn ours() -> std::path::PathBuf {
         // Safety: getuid is always safe on Unix.
@@ -135,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    fn our_own_rendezvous_gets_the_line_only_from_a_peer_proven_us() {
+    fn our_own_rendezvous_gets_the_line_only_when_its_peer_is_proven_us() {
         let elsewhere = std::path::PathBuf::from("/explicit/path.sock");
         for (endpoint, proven, delivered) in [
             (ours(), true, true),
@@ -155,7 +143,7 @@ mod tests {
     /// The only peer of another uid a single-user host can stage is none at all.
     #[cfg(unix)]
     #[test]
-    fn a_peer_whose_uid_cant_be_read_is_not_us() {
+    fn an_unconnected_socket_is_not_us() {
         use std::os::fd::FromRawFd;
         // Safety: socket(2) takes no pointers; a non-negative fd is ours to own.
         let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0) };
@@ -306,11 +294,11 @@ mod peer {
     }
 }
 
-// No in-process tests for `send_line` ON PURPOSE: it spawns a watchdog that
-// exit(0)s the whole process a `WRITE_TIMEOUT` later, which would kill sibling tests under
-// `cargo test`'s shared-process runner. Its coverage lives at the child-process
-// level (tests/shim.rs and its Windows twin tests/shim_pipe.rs), where
-// exit-is-the-contract is observable, not fatal.
+// No in-process tests for `send_line` ON PURPOSE: its `TimeBound` stands for
+// `arm_watchdog`'s watchdog, which exit(0)s the process a `WRITE_TIMEOUT` later and
+// would kill sibling tests under `cargo test`'s shared-process runner. Its coverage
+// lives at the child-process level (tests/shim.rs and its Windows twin
+// tests/shim_pipe.rs), where exit-is-the-contract is observable, not fatal.
 
 #[cfg(all(windows, test))]
 mod win_peer_tests {

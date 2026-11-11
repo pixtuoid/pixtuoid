@@ -413,8 +413,8 @@ mod tests {
         );
     }
 
-    /// Our own name as the kernel cuts it, which a test binary's runs past: a
-    /// name decoded wrong hides every interposer shell from the walk (#896).
+    /// A test binary's name runs past the kernel's cut, so this pins the cut too:
+    /// a name decoded wrong hides every interposer shell from the walk (#896).
     #[cfg(target_os = "macos")]
     #[test]
     fn the_macos_row_reader_names_this_binary() {

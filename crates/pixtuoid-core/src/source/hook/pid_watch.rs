@@ -12,8 +12,9 @@
 //!
 //! A pid wrong on EVERY hook does not self-heal: acting on the first sighting
 //! walked the sprite out and back in for a whole session (#896). So a
-//! shim-GUESSED pid arms only when an agent reports it twice in a row; a pid the
-//! source stamped itself arms on sight.
+//! shim-GUESSED pid arms only when an agent reports it twice in a row, unless its
+//! [`Corroboration`](crate::source::registry::Corroboration) is `OnceViaShell`; a
+//! pid the source stamped itself arms on sight.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

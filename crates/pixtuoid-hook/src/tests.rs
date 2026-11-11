@@ -362,34 +362,25 @@ fn default_socket_path_branches() {
 
 #[cfg(unix)]
 #[test]
-fn owned_tmp_socket_dir_matches_only_the_tmp_fallback() {
+fn is_our_rendezvous_matches_only_the_tmp_fallback() {
     // Safety: getuid is always safe on Unix.
     let uid = unsafe { libc::getuid() };
-    let owned = std::path::PathBuf::from(format!("/tmp/pixtuoid-{uid}"));
-    assert_eq!(
-        paths::owned_tmp_socket_dir(std::path::Path::new(&format!(
-            "/tmp/pixtuoid-{uid}/pixtuoid.sock"
-        ))),
-        Some(owned),
-        "the /tmp fallback endpoint resolves its owned dir"
+    let ours = |endpoint: &str| paths::is_our_rendezvous(std::path::Path::new(endpoint));
+    assert!(
+        ours(&format!("/tmp/pixtuoid-{uid}/pixtuoid.sock")),
+        "the /tmp fallback endpoint"
     );
-    assert_eq!(
-        paths::owned_tmp_socket_dir(std::path::Path::new("/run/user/1000/pixtuoid.sock")),
-        None,
+    assert!(
+        !ours("/run/user/1000/pixtuoid.sock"),
         "XDG_RUNTIME_DIR is systemd's, not ours to police"
     );
-    assert_eq!(
-        paths::owned_tmp_socket_dir(std::path::Path::new("/explicit/path.sock")),
-        None,
+    assert!(
+        !ours("/explicit/path.sock"),
         "an explicit PIXTUOID_SOCKET override is the user's, not ours"
     );
-    // A different uid's tmp dir is not ours either.
-    assert_eq!(
-        paths::owned_tmp_socket_dir(std::path::Path::new(&format!(
-            "/tmp/pixtuoid-{}/pixtuoid.sock",
-            uid + 1
-        ))),
-        None
+    assert!(
+        !ours(&format!("/tmp/pixtuoid-{}/pixtuoid.sock", uid + 1)),
+        "a different uid's tmp dir is not ours either"
     );
 }
 
