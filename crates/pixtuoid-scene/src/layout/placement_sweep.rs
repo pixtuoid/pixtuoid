@@ -812,9 +812,7 @@ fn no_route_on_a_short_floor_passes_through_a_wall() {
         })
         .collect();
     let check = |&(w, h, seed): &(u16, u16, u64)| {
-        let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
-            panic!("{w}x{h} seed {seed}: refused above the floor");
-        };
+        let l = swept_layout(Viewport::full(w, h), seed);
         let mut v = corner_routes_through_walls(w, h, seed, &l);
         v.extend(wander_legs(&l).into_iter().filter_map(|leg| {
             let (p, wall) = route_through_wall(&l, leg.path.as_ref()?)?;
@@ -1103,13 +1101,7 @@ fn short_band_connectivity_boundary_scan() {
     for h in super::compute::MIN_LAYOUT_H..60 {
         for &w in &[super::compute::MIN_LAYOUT_W, 80, 120, 200] {
             for seed in SWEEP_SEEDS {
-                let Some(l) = SceneLayout::compute(Viewport::full(w, h), None, seed) else {
-                    panic!("{w}x{h} seed {seed}: refused above the floor");
-                };
-                assert!(
-                    !l.home_desks.is_empty(),
-                    "{w}x{h} seed {seed}: lays out with no desk to seat anyone"
-                );
+                let l = swept_layout(Viewport::full(w, h), seed);
                 assert_walkable_connected(w, h, seed, &l);
                 assert_home_desk_approaches_are_routable(w, h, seed, &l);
             }
