@@ -309,7 +309,7 @@ fn every_aimless_wander_destination_is_routable_from_its_home_desk() {
 /// instead of a fresh A* run. A `router.len()` assertion cannot do this —
 /// `route`'s miss arm re-`insert`s the SAME key, so it is green either way. The
 /// mask is a sound probe because the cache is deliberately mask-BLIND: it keys
-/// on `(from, to, aim)`, and only a new layout clears it.
+/// on `(from, to, aim)` alone and never reads the mask.
 #[test]
 fn router_serves_the_cached_path_instead_of_re_running_astar() {
     let l = make_layout();

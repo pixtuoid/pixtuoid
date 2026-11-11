@@ -1,6 +1,6 @@
 use super::*;
 use crate::character::test_support::make_slot;
-use crate::pose::{RouteRig, is_aimless_cycle, waypoint_index_for_cycle};
+use crate::pose::{RouteRig, is_aimless_cycle, resolve_wander_target, waypoint_index_for_cycle};
 use pixtuoid_core::AgentId;
 
 #[test]
@@ -821,7 +821,7 @@ fn wander_dest_for_pantry_is_the_home_desk_stand_point() {
 }
 
 #[test]
-fn pick_wander_dest_falls_back_to_aimless_when_boxed_in() {
+fn resolve_wander_target_falls_back_to_aimless_when_boxed_in() {
     use crate::layout::ReachSet;
 
     let mut l = layout();
@@ -838,7 +838,7 @@ fn pick_wander_dest_falls_back_to_aimless_when_boxed_in() {
         .expect("should find a directed-trip agent");
 
     let origin = l.home_desks[0];
-    let target = pick_wander_dest(id, 0, &l, origin, &SpotClaims::default());
+    let target = resolve_wander_target(id, 0, &l, origin, &SpotClaims::default());
 
     assert!(
         matches!(target.kind, WanderKind::Aimless),
@@ -863,7 +863,7 @@ fn wander_named_seat_is_some_iff_the_destination_is_sat_on() {
             continue;
         }
         if let WanderKind::Named { kind, seat, .. } =
-            pick_wander_dest(id, 0, &l, origin, &SpotClaims::default()).kind
+            resolve_wander_target(id, 0, &l, origin, &SpotClaims::default()).kind
         {
             assert_eq!(
                 seat.is_some(),
@@ -959,7 +959,7 @@ fn a_claimed_seat_sends_the_agent_to_the_next_seat_of_the_same_venue() {
             if !takes_trip(id, 0) || is_aimless_cycle(id, 0) {
                 return None;
             }
-            match pick_wander_dest(id, 0, &l, origin, &SpotClaims::default()).kind {
+            match resolve_wander_target(id, 0, &l, origin, &SpotClaims::default()).kind {
                 WanderKind::Named {
                     wp_idx,
                     kind: WaypointKind::MeetingSofa | WaypointKind::MeetingChair,
@@ -980,7 +980,7 @@ fn a_claimed_seat_sends_the_agent_to_the_next_seat_of_the_same_venue() {
 
     let mut claims = SpotClaims::default();
     claims.claim(taken);
-    let target = pick_wander_dest(id, 0, &l, origin, &claims);
+    let target = resolve_wander_target(id, 0, &l, origin, &claims);
     let WanderKind::Named { wp_idx, kind, .. } = target.kind else {
         panic!("a claimed seat must not strand the agent into an aimless amble");
     };

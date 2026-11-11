@@ -241,6 +241,7 @@ mod progress {
         pub(crate) const DONE: Self = Self(SCALE);
 
         /// `done` of `total`, in [`steps`].
+        #[cfg(test)]
         pub(crate) fn of(done: u64, total: u64) -> Self {
             Self(steps(done, total))
         }

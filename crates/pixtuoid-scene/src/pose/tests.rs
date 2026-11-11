@@ -522,14 +522,40 @@ fn at_waypoint_pose_records_position_to_history() {
     );
 }
 
+/// An unseated agent, or one at a desk past this layout's, has no pose to
+/// be drawn in.
 #[test]
-fn delegates_to_derive_for_oob_desk() {
+fn derive_with_routing_returns_none_without_a_desk_in_the_layout() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let mut slot = running_slot(now, now - Duration::from_secs(60));
     slot.desk = Some(FloorDesk::new(0, 999));
     let mut rig = RouteRig::new(StubRouter::straight());
     assert!(derive_with_routing(&slot, now, &l, &mut rig.rctx()).is_none());
+    slot.desk = None;
+    assert!(derive_with_routing(&slot, now, &l, &mut rig.rctx()).is_none());
+}
+
+/// RequiresAction gets NO pose of its own — it rides `SeatedIdle`, so a back-turned
+/// desk needs no extra art and the cue reads identically whichever way the seat
+/// faces. The RENDER side splits it back out (`sim::resolve_characters` forces
+/// the awake `seated` base), because the sleeping sprite reads as the opposite
+/// of "wants you".
+#[test]
+fn requires_action_state_stays_seated_and_lets_the_bubble_say_so() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let l = layout();
+    let slot = AgentSlot {
+        state: ActivityState::RequiresAction {
+            reason: Some("perm".into()),
+        },
+        ..running_slot(now, now - Duration::from_secs(60))
+    };
+    let mut rig = RouteRig::new(StubRouter::straight());
+    assert_eq!(
+        derive_with_routing(&slot, now, &l, &mut rig.rctx()),
+        Some(Pose::SeatedIdle)
+    );
 }
 
 #[test]
@@ -895,7 +921,7 @@ const MAX_FRAME_STEP_PX: i32 = 20;
 
 /// Step `slot` for `frames` frames of [`PAINT_FRAME`], sampling
 /// `character_top_left` against a real `AStarRouter`. Returns
-/// `(max_chebyshev_step, walking_frame_count)`.
+/// `(max_chebyshev_step, drawn_frame_count)`.
 fn max_top_left_step(
     slot: &AgentSlot,
     l: &SceneLayout,
@@ -910,7 +936,7 @@ fn max_top_left_step(
 
     let mut prev: Option<Point> = None;
     let mut max_step = 0i32;
-    let mut walking = 0usize;
+    let mut drawn = 0usize;
     for i in 0..frames {
         let now = start + PAINT_FRAME * i;
         if let Some(a) = character_top_left(slot, l, now, &mut rig.rctx()) {
@@ -921,10 +947,10 @@ fn max_top_left_step(
                 max_step = max_step.max(step);
             }
             prev = Some(a);
-            walking += 1;
+            drawn += 1;
         }
     }
-    (max_step, walking)
+    (max_step, drawn)
 }
 
 #[test]
@@ -2247,6 +2273,32 @@ fn tripping(rig: &RouteRig<StubRouter>, id: AgentId) -> bool {
         rig.walks[&id].wander.phase,
         crate::walk::WanderPhase::WalkingOut(_)
     )
+}
+
+/// The walkable debug layer draws every recorded route, so a leg's route lasts
+/// as long as the leg: a dwell or a desk shows no finished line.
+#[test]
+fn only_a_walking_frame_records_a_route() {
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let slot = tripper(t0);
+    let id = slot.agent_id;
+    let mut rig = RouteRig::new(StubRouter::straight());
+    let mut walked = false;
+    let mut stopped = false;
+    for i in 0..3_000 {
+        let pose = derive_with_routing(&slot, t0 + PAINT_FRAME * i, &l, &mut rig.rctx());
+        let walking = matches!(pose, Some(Pose::Walking { .. }));
+        let route = rig.walks.get(&id).and_then(|walk| walk.walk_path.as_ref());
+        assert_eq!(
+            route.is_some(),
+            walking,
+            "frame {i}: {pose:?} with route {route:?}"
+        );
+        stopped |= walked && !walking;
+        walked |= walking;
+    }
+    assert!(stopped, "premise: the trip walks a leg and then stops");
 }
 
 /// A walk back made instant leaves the agent drawn at its chair, so an exit

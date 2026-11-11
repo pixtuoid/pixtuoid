@@ -1,10 +1,9 @@
-//! Pure state → pose derivation: `derive_state_only(slot, now, layout)` is a
-//! function of the snapshot inputs only — no routing, no per-frame history. The routed
-//! variant (composing against a `Router` and a `PoseHistory` cache) is the
-//! sibling `pose/mod.rs` (`derive_with_routing`).
+//! The pose layer's stateless half: functions of the snapshot inputs only — no
+//! routing, no per-frame history. The routed `derive_with_routing` in the sibling
+//! `pose/mod.rs` composes them against a `Router` and a `PoseHistory` cache.
 
 use std::num::NonZeroU16;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use crate::layout::{
     Bounds, DwellWindow, HomeDesk, Point, SceneLayout, WaypointKind, desk_furniture_def,
@@ -14,7 +13,7 @@ use crate::physics::LegProgress;
 use crate::sprite::Sprite;
 use crate::walk::{WanderKind, WanderTarget};
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{ActivityState, AgentSlot};
+use pixtuoid_core::state::AgentSlot;
 
 /// Base of the stale-resume / off-screen-gap sentinel in
 /// `walk::advance_wander` — above on-screen frame cadence, below a
@@ -23,10 +22,8 @@ pub(crate) const STALE_RESUME_GAP_BASE_MS: u64 = 7_000;
 /// Maximum extra time added per agent — jitter range is `[0, RANGE)`.
 pub(crate) const STALE_RESUME_GAP_RANGE_MS: u64 = 6_000;
 
-/// Stateless estimate of one wander walk leg. Exact coherence with the routed
-/// timeline is impossible (this half does no routing, and walk legs are
-/// physics-timed only on the routed path), and `idle_pose` only needs an
-/// approximate timeline.
+/// Stateless estimate of one wander walk leg: the real leg is physics-timed on
+/// its route, which `est_wander_cycle_ms` can't run.
 pub(crate) const WANDER_WALK_EST_MS: u64 = 3_500;
 /// Companion estimate: the at-waypoint dwell beat (paired with `WANDER_WALK_EST_MS`).
 pub(crate) const WANDER_DWELL_EST_MS: u64 = 18_000;
@@ -95,8 +92,7 @@ pub fn seated_dwell_ms(agent_id: AgentId) -> u64 {
 }
 
 /// Estimated full wander-cycle wall-time for an agent (desk dwell + two walk
-/// legs + one waypoint dwell). Shared by `idle_pose` and `advance_wander`'s
-/// bootstrap so both place a long-idle agent on the same approximate cycle.
+/// legs + one waypoint dwell).
 pub fn est_wander_cycle_ms(agent_id: AgentId) -> u64 {
     seated_dwell_ms(agent_id) + 2 * WANDER_WALK_EST_MS + WANDER_DWELL_EST_MS
 }
@@ -192,41 +188,7 @@ pub(crate) struct LegPose {
     pub(crate) carrying_coffee: bool,
 }
 
-impl LegPose {
-    /// Drawn as the one straight segment between its own ends: no route bends it.
-    pub(crate) fn straight(self) -> Pose {
-        Pose::Walking {
-            segment: crate::physics::Segment::straight(self.from, self.to, self.progress),
-            carrying_coffee: self.carrying_coffee,
-        }
-    }
-}
-
-/// Pure state → pose derivation, with no entry or exit walk: those are the
-/// routed layer's (`pose::derive_with_routing`).
-///
-/// Returns `None` when the slot has no desk in `layout`.
-pub(crate) fn derive_state_only(
-    slot: &AgentSlot,
-    now: SystemTime,
-    layout: &SceneLayout,
-) -> Option<Pose> {
-    let desk = layout.home_desk_of(slot)?;
-    let elapsed = now
-        .duration_since(slot.state_started_at)
-        .unwrap_or(Duration::ZERO)
-        .as_millis() as u64;
-
-    match &slot.state {
-        ActivityState::Running { .. } => Some(Pose::SeatedTyping),
-        ActivityState::RequiresAction { .. } => Some(Pose::SeatedIdle),
-        ActivityState::Idle => Some(idle_pose(slot, desk, layout, elapsed)),
-    }
-}
-
-/// Per-(agent, cycle) seed for `pick_aimless_dest`, shared by the stateless
-/// `idle_pose` and the routed `pick_wander_dest` so the two can't drift to
-/// different aimless destinations.
+/// Per-(agent, cycle) seed for `pick_aimless_dest`.
 pub(crate) fn aimless_wander_seed(agent_id: AgentId, cycle_n: u64) -> u64 {
     agent_id.raw() ^ cycle_n.wrapping_mul(PHI3_GAMMA)
 }
@@ -236,9 +198,6 @@ pub(crate) fn aimless_wander_seed(agent_id: AgentId, cycle_n: u64) -> u64 {
 /// the window strip and pantry are where people drift on a break, the meeting
 /// room is a rare drift-in. Falls back to the nearest walkable corridor-midline
 /// cell, then to `home_desk`'s walk anchor — never a cell inside furniture.
-///
-/// `home_desk` is the same desk on both callers, so the result stays
-/// deterministic in `(layout, seed)` across them.
 pub(crate) fn pick_aimless_dest(layout: &SceneLayout, seed: u64, home_desk: HomeDesk) -> Point {
     let window_strip = Bounds {
         x: layout.cubicle_band.x,
@@ -334,15 +293,7 @@ impl SpotClaims {
 }
 
 /// Resolve the wander destination for `(agent_id, cycle_n)` on `layout`, with
-/// `origin` (the home desk) as the approach-side tiebreaker. The ONE stateless
-/// wander-destination resolver: the stateful walk authority
-/// (`walk::advance_wander` via `pick_wander_dest`) delegates to it, and
-/// `idle_pose` calls it then maps the [`WanderTarget`] to a [`Pose`].
-///
-/// `idle_pose` passes an EMPTY `claimed` set because the pure half has no
-/// occupancy knowledge, so the two DO diverge on a contested seat. Accepted —
-/// rare and cosmetic, and it keeps the pure half a function of its snapshot
-/// inputs.
+/// `origin` (the home desk) as the approach-side tiebreaker.
 ///
 /// A named waypoint whose only reachable side is its excluded backrest (or a
 /// fully-blocked obstacle) yields `approach_point == wp.pos`, the "no valid
@@ -392,54 +343,6 @@ pub(crate) fn resolve_wander_target(
             kind: wp.kind,
             seat,
         },
-    }
-}
-
-fn idle_pose(slot: &AgentSlot, desk: HomeDesk, layout: &SceneLayout, elapsed_ms: u64) -> Pose {
-    let cycle_ms = est_wander_cycle_ms(slot.agent_id);
-    let cycle_n = elapsed_ms / cycle_ms;
-    let phase_t = elapsed_ms % cycle_ms;
-
-    if !takes_trip(slot.agent_id, cycle_n) || layout.waypoints.is_empty() {
-        return Pose::SeatedIdle;
-    }
-
-    let seated_end = seated_dwell_ms(slot.agent_id);
-    let walk_out_end = seated_end + WANDER_WALK_EST_MS;
-    let at_wp_end = walk_out_end + WANDER_DWELL_EST_MS;
-
-    // Seat claims are EMPTY here: this half has no occupancy knowledge (see
-    // `resolve_wander_target`), and its job is an estimate, not the
-    // authoritative placement.
-    let target =
-        resolve_wander_target(slot.agent_id, cycle_n, layout, desk, &SpotClaims::default());
-    let dest = target.dest;
-    let at_dest_pose: Pose = target.kind.at_pose(target.dest);
-
-    if phase_t < seated_end {
-        Pose::SeatedIdle
-    } else if phase_t < walk_out_end {
-        let span = walk_out_end - seated_end;
-        let t = LegProgress::of(phase_t - seated_end, span);
-        LegPose {
-            from: desk.at,
-            to: dest,
-            progress: t,
-            carrying_coffee: false,
-        }
-        .straight()
-    } else if phase_t < at_wp_end {
-        at_dest_pose
-    } else {
-        let span = cycle_ms - at_wp_end;
-        let t = LegProgress::of(phase_t - at_wp_end, span);
-        LegPose {
-            from: dest,
-            to: desk.at,
-            progress: t,
-            carrying_coffee: target.kind.carries_coffee(),
-        }
-        .straight()
     }
 }
 
