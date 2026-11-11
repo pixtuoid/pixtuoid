@@ -196,9 +196,10 @@ impl OfficeRenderer {
             return Press::Resize;
         };
         let unit = unit_at(cursor, at);
-        // The slop in this window's units, at least one.
+        // A wander of the slop crosses as many unit edges as the units it
+        // spans, rounded up, and a `Slop` lifts on reaching its count.
         let slop_px = DRAG_SLOP_DIP * pressing.scale_factor;
-        let units = (slop_px / f64::from(at.scale().get())).ceil().max(1.0) as u16;
+        let units = ((slop_px / f64::from(at.scale().get())).ceil() as u16).saturating_add(1);
         let slop = pixtuoid_scene::interact::Slop { x: units, y: units };
         let petting = self.session.showing_pets(&self.pets, pressing.now).petting;
         let down = self.pointer.down(hit, unit, slop, petting);
@@ -1060,6 +1061,31 @@ mod tests {
             },
         );
         assert!(!renderer.carrying(), "the next press sets it down");
+    }
+
+    /// A press may wander [`DRAG_SLOP_DIP`] and still click, at a scale where
+    /// that is one unit: from a unit's last pixel the wander crosses its
+    /// edge, and a pixel more crosses the next.
+    #[test]
+    fn a_press_wanders_the_drag_slop_and_still_clicks() {
+        let (mut renderer, at, size, now, _) = one_agent_office();
+        let unit = f64::from(at.scale().get());
+        let pressing = Pressing {
+            scale_factor: unit / DRAG_SLOP_DIP,
+            now,
+        };
+        let on_agent = agent_point(&renderer, at);
+        let edge = ((on_agent.0 / unit).floor() + 1.0) * unit - 1.0;
+        let wander = |px: f64| (edge + px, on_agent.1);
+        let slop_px = DRAG_SLOP_DIP * pressing.scale_factor;
+        assert_eq!(
+            renderer.press_at(wander(0.0), size, pressing),
+            Press::Pointer
+        );
+        assert!(!renderer.pointer_moved(wander(slop_px)), "lifted");
+        assert!(renderer.release(wander(slop_px)).is_some(), "no click");
+        renderer.press_at(wander(0.0), size, pressing);
+        assert!(renderer.pointer_moved(wander(slop_px + 1.0)), "past it");
     }
 
     /// The footer counts the floor showing, beside the breadcrumb's whole

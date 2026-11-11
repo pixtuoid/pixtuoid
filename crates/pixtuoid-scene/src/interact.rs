@@ -12,8 +12,8 @@ use crate::hit::{HoverTarget, PetHover};
 use crate::layout::Point;
 use crate::pet::{PetKind, PetState};
 
-/// How far a press may wander, in layout units on each axis, and still be a
-/// click: past it, it lifts what it pressed, and a release there clicks
+/// The least move, in layout units on either axis, that ends a press's
+/// click: a move that far lifts what it pressed, and a release there clicks
 /// nothing. The painter's, whose pointer moves in its own steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Slop {
