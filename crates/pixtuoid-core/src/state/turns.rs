@@ -43,7 +43,7 @@ pub(crate) enum End {
 }
 
 /// Every agent's open turn and recently closed turns.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct TurnLedger {
     open: HashMap<AgentId, TurnKey>,
     closed: HashMap<(AgentId, TurnKey), SystemTime>,
