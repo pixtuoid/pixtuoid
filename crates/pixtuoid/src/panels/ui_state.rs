@@ -28,7 +28,7 @@ pub struct RenderFrames {
     pub appearance: AppearanceFrame,
     pub version_popup: VersionPopupFrame,
     pub help_open: bool,
-    /// [`crate::doctor::footer_warning`]'s.
+    /// [`footer_warning`]'s.
     pub warning: Option<String>,
     pub dashboard: DashboardFrame,
     pub connection: ConnectionFrame,
@@ -529,7 +529,7 @@ impl UiState {
             .filter(|&(_, &failed)| failed)
             .map(|(setting, _)| setting.name())
             .collect();
-        let warning = crate::doctor::footer_warning(health, &unsaved, &self.drift.prefixes());
+        let warning = footer_warning(health, &unsaved, &self.drift.prefixes());
 
         // Re-anchor the selection by AgentId — an agent may have exited.
         let dashboard_frame = if self.dashboard.open {
@@ -618,6 +618,49 @@ impl UiState {
     pub(crate) fn read_conn_log(&self) -> String {
         self.log.as_ref().map(|at| at.read().0).unwrap_or_default()
     }
+}
+
+/// The one footer warning every painter shows: a source's death (HIGHEST
+/// priority — the office is partially frozen), else each setting named
+/// `unsaved`, which the user just changed and which reverts at the next launch,
+/// else a passive decode-drift nudge naming each `drifted` source prefix.
+pub fn footer_warning(
+    deaths: &[SourceDeath],
+    unsaved: &[&str],
+    drifted: &[&str],
+) -> Option<String> {
+    match deaths {
+        [] => {}
+        [d] => {
+            return Some(format!(
+                "{} source died — its agents are frozen; restart pixtuoid (see log)",
+                d.source
+            ));
+        }
+        many => {
+            return Some(format!(
+                "{} sources died — restart pixtuoid (see log)",
+                many.len()
+            ));
+        }
+    }
+    if !unsaved.is_empty() {
+        return Some(format!(
+            "{} not saved — reverts at the next launch (see log)",
+            unsaved.join(", ")
+        ));
+    }
+    if drifted.is_empty() {
+        return None;
+    }
+    let prefixes = drifted
+        .iter()
+        .map(|p| format!("{p}·"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    // No leading `⚠`: the footer painter (`footer.rs` `" ⚠ {warn} "`) owns the
+    // glyph, so embedding one here double-prints it (`⚠ ⚠ decode drift`).
+    Some(format!("decode drift: {prefixes} — run `pixtuoid doctor`"))
 }
 
 #[cfg(test)]

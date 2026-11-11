@@ -784,6 +784,19 @@ fn conn_state(no_cli: bool, connected: bool) -> ConnState {
     }
 }
 
+/// A source's worst diagnostic as its Sources row shows it, glyph-prefixed:
+/// install-broken (hooks can't fire) outranks decode drift.
+pub(crate) fn row_health(d: &crate::doctor::SourceDiagnostics) -> Option<String> {
+    if let Some(i) = d.broken_install() {
+        return Some(format!("⚠ install broken: {}", i.issues.join("; ")));
+    }
+    let n = d.drift.total();
+    if n > 0 {
+        return Some(format!("⚠ {n} decode drift — run `pixtuoid doctor`"));
+    }
+    None
+}
+
 pub(crate) fn build_rows_from(inputs: Vec<RowInput>) -> Vec<ConnectionRow> {
     inputs
         .into_iter()
@@ -827,7 +840,7 @@ pub(crate) fn build_rows(connected: &HashSet<String>, log: &str) -> Vec<Connecti
                 facts,
                 connected,
                 health: connected
-                    .then(|| crate::doctor::diagnose(d.name, log, None).summary())
+                    .then(|| row_health(&crate::doctor::diagnose(d.name, log, None)))
                     .flatten(),
             }
         })

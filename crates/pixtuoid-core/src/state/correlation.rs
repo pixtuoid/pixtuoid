@@ -245,10 +245,16 @@ impl CopyHolders {
         }
     }
 
-    /// How many ids it keeps.
+    /// How many ids it keeps and holds. The release queue is not counted: by
+    /// design it keeps each release [`COPY_RETENTION`], past any test's stream.
     #[cfg(test)]
     pub(super) fn len(&self) -> usize {
-        self.ids.len()
+        let Self {
+            ids,
+            held,
+            expiry: _,
+        } = self;
+        ids.len() + held.values().map(HashSet::len).sum::<usize>()
     }
 }
 

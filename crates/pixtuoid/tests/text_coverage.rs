@@ -14,7 +14,8 @@ use syn::visit::Visit;
 const RENDERERS: [&str; 3] = ["../pixtuoid-core/src", "../pixtuoid-scene/src", "src"];
 
 /// What [`RENDERERS`] holds that no painter draws: the doctor's report, which
-/// it prints to the terminal.
+/// it prints to the terminal. What a painter shows of it, the footer warning
+/// and a Sources row's health, lives beside that painter.
 const NEVER_PAINTED: [&str; 2] = ["src/doctor.rs", "src/doctor"];
 
 /// What world text (the badges, the board, the bubbles, the floor sign) is

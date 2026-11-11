@@ -201,49 +201,6 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DriftSeen {
     }
 }
 
-/// The one footer warning every painter shows: a source's death (HIGHEST
-/// priority — the office is partially frozen), else each setting named
-/// `unsaved`, which the user just changed and which reverts at the next launch,
-/// else a passive decode-drift nudge naming each `drifted` source prefix.
-pub fn footer_warning(
-    deaths: &[pixtuoid_core::source::manager::SourceDeath],
-    unsaved: &[&str],
-    drifted: &[&str],
-) -> Option<String> {
-    match deaths {
-        [] => {}
-        [d] => {
-            return Some(format!(
-                "{} source died — its agents are frozen; restart pixtuoid (see log)",
-                d.source
-            ));
-        }
-        many => {
-            return Some(format!(
-                "{} sources died — restart pixtuoid (see log)",
-                many.len()
-            ));
-        }
-    }
-    if !unsaved.is_empty() {
-        return Some(format!(
-            "{} not saved — reverts at the next launch (see log)",
-            unsaved.join(", ")
-        ));
-    }
-    if drifted.is_empty() {
-        return None;
-    }
-    let prefixes = drifted
-        .iter()
-        .map(|p| format!("{p}·"))
-        .collect::<Vec<_>>()
-        .join(" ");
-    // No leading `⚠`: the footer painter (`footer.rs` `" ⚠ {warn} "`) owns the
-    // glyph, so embedding one here double-prints it (`⚠ ⚠ decode drift`).
-    Some(format!("decode drift: {prefixes} — run `pixtuoid doctor`"))
-}
-
 /// Windows "installed but no sprite": `HOME` set and differing from
 /// `%USERPROFILE%` can put hooks where the CLI never reads. A SAFETY NET only —
 /// the CodeWhale and OpenClaw targets already mirror their HOME-first
@@ -303,19 +260,6 @@ impl SourceDiagnostics {
 
     pub(crate) fn is_broken(&self) -> bool {
         self.broken_install().is_some()
-    }
-
-    /// The single worst issue as a one-line, glyph-prefixed summary. Priority:
-    /// install-broken (hooks can't fire) > decode-drift.
-    pub(crate) fn summary(&self) -> Option<String> {
-        if let Some(i) = self.broken_install() {
-            return Some(format!("⚠ install broken: {}", i.issues.join("; ")));
-        }
-        let n = self.drift.total();
-        if n > 0 {
-            return Some(format!("⚠ {n} decode drift — run `pixtuoid doctor`"));
-        }
-        None
     }
 }
 
@@ -1499,6 +1443,7 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::panels::ui_state::footer_warning;
     use crate::run_log::LogLocation;
     use crate::test_capture::capture;
     #[cfg(unix)]
@@ -2594,7 +2539,7 @@ mod tests {
             LogScanResult::default(),
         );
         assert!(!d.is_broken());
-        assert_eq!(d.summary(), None);
+        assert_eq!(crate::sources::row_health(&d), None);
     }
 
     #[test]
@@ -2611,7 +2556,7 @@ mod tests {
             },
         );
         assert!(d.is_broken());
-        let s = d.summary().unwrap();
+        let s = crate::sources::row_health(&d).unwrap();
         assert!(
             s.contains("install broken") && s.contains("shim binary missing"),
             "{s}"
@@ -2629,7 +2574,11 @@ mod tests {
             },
         );
         assert!(!d.is_broken());
-        assert!(d.summary().unwrap().contains("3 decode drift"));
+        assert!(
+            crate::sources::row_health(&d)
+                .unwrap()
+                .contains("3 decode drift")
+        );
     }
 
     #[test]
@@ -2643,14 +2592,14 @@ mod tests {
             LogScanResult::default(),
         );
         assert!(!d.is_broken());
-        assert_eq!(d.summary(), None);
+        assert_eq!(crate::sources::row_health(&d), None);
     }
 
     #[test]
     fn diagnostics_no_install_check_is_not_broken() {
         let d = diag(None, LogScanResult::default());
         assert!(!d.is_broken());
-        assert_eq!(d.summary(), None);
+        assert_eq!(crate::sources::row_health(&d), None);
     }
 
     #[test]
@@ -2672,7 +2621,7 @@ mod tests {
             d.is_broken(),
             "an install with a missing shim must read broken through the injected root"
         );
-        let s = d.summary().unwrap();
+        let s = crate::sources::row_health(&d).unwrap();
         assert!(
             s.contains("install broken") && s.contains("shim binary missing"),
             "unexpected summary: {s:?}"

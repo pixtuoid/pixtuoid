@@ -334,15 +334,13 @@ fn a_lagging_jsonl_start_never_reopens_its_call(run: &Run) {
 
 /// On a source that brackets its turns (codex's registry row), a turn the
 /// stream delivered open shows its agent working in `m`'s order: its start
-/// arrived, and its end has not. Whether the order opens a turn at all.
-fn a_delivered_open_turn_is_never_idle(run: &Run, m: &Merged) -> bool {
-    let mut opened = false;
+/// arrived, and its end has not.
+fn a_delivered_open_turn_is_never_idle(run: &Run, m: &Merged) {
     let mut open: BTreeMap<AgentId, TurnKey> = BTreeMap::new();
     for s in &m.steps {
         match &s.event {
             AgentEvent::TurnStart { agent_id, turn } => {
                 open.insert(*agent_id, turn.clone());
-                opened = true;
             }
             AgentEvent::TurnEnd { agent_id, turn }
                 if turn.is_none() || open.get(agent_id) == turn.as_ref() =>
@@ -364,13 +362,20 @@ fn a_delivered_open_turn_is_never_idle(run: &Run, m: &Merged) -> bool {
             );
         }
     }
-    opened
+}
+
+/// Whether `m`'s order opens a turn at all.
+fn opens_a_turn(m: &Merged) -> bool {
+    (m.steps.iter()).any(|s| matches!(s.event, AgentEvent::TurnStart { .. }))
 }
 
 /// A turn delivered open shows its agent working in every order of `run`.
 fn turns_stay_working(run: &Run) {
     let mut opened = false;
-    run.each(|m| opened |= a_delivered_open_turn_is_never_idle(run, m));
+    run.each(|m| {
+        a_delivered_open_turn_is_never_idle(run, m);
+        opened |= opens_a_turn(m);
+    });
     assert!(opened, "{}: no order opens a turn", run.name);
 }
 
@@ -382,7 +387,8 @@ fn requests_and_turns_hold(run: &Run) {
     run.each(|m| {
         a_request_stands_until_its_resolution(run, &requests, m);
         a_top_level_request_resolves_by_its_calls_output(run, &requests, m);
-        opened |= a_delivered_open_turn_is_never_idle(run, m);
+        a_delivered_open_turn_is_never_idle(run, m);
+        opened |= opens_a_turn(m);
     });
     assert!(opened, "{}: no order opens a turn", run.name);
 }

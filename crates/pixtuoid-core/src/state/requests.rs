@@ -404,9 +404,11 @@ impl ActionRequests {
         self.open.contains_key(id)
     }
 
+    /// How many requests stand and calls are pending.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.open.len()
+        let Self { open, pending } = self;
+        open.len() + pending.values().map(Vec::len).sum::<usize>()
     }
 }
 

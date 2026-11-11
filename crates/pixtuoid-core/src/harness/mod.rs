@@ -68,8 +68,8 @@ pub fn sources_root() -> PathBuf {
 }
 
 /// The root a test's socket directory goes under. A unix socket's path must
-/// fit `sun_path`, and TMPDIR may sit too deep for that (a mutants copy, a
-/// nested sandbox), so unix takes `/tmp`; a Windows pipe fits under any root.
+/// fit `sun_path`, and TMPDIR may sit too deep for that (a nested sandbox),
+/// so unix takes `/tmp`; a Windows pipe fits under any root.
 pub fn socket_root() -> PathBuf {
     if cfg!(unix) {
         PathBuf::from("/tmp")
