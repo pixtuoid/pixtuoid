@@ -104,15 +104,30 @@ fn prune_runs(dir: &Path, now: SystemTime) {
 /// # Errors
 ///
 /// If the directory can't be created or vetted, or the file can't be opened or
-/// is not ours alone.
+/// is not ours alone (a character device such as `/dev/null` aside).
 pub(crate) fn open_private_append(
     path: &Path,
-    mut opts: OpenOptions,
+    opts: OpenOptions,
 ) -> std::io::Result<std::fs::File> {
-    // `recursive` keeps a directory that exists, whoever made it, so the shared
-    // `/tmp` one must be ours first.
     #[cfg(unix)]
-    pixtuoid_core::source::hook::vet_owned_tmp_path(path).map_err(std::io::Error::other)?;
+    let vet = |path: &Path| {
+        pixtuoid_core::source::hook::vet_owned_tmp_path(path).map_err(std::io::Error::other)
+    };
+    #[cfg(not(unix))]
+    let vet = |_: &Path| Ok(());
+    open_private_append_vetted(path, opts, vet)
+}
+
+/// [`open_private_append`] with its guard on the shared `/tmp` dir passed in,
+/// so a test can refuse without squatting the real one.
+fn open_private_append_vetted(
+    path: &Path,
+    mut opts: OpenOptions,
+    vet: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<std::fs::File> {
+    // `recursive` keeps a directory that exists, whoever made it (std 1.99.1
+    // `fs.rs:3591`), so the shared `/tmp` one must be ours first.
+    vet(path)?;
     if let Some(parent) = path.parent() {
         #[cfg(unix)]
         {
@@ -134,13 +149,18 @@ pub(crate) fn open_private_append(
         opts.custom_flags(libc::O_NOFOLLOW);
     }
     let file = opts.open(path)?;
-    // A file already there keeps its maker's mode: another user's, or a hard
-    // link to a file they read, would hand them the log.
+    // `O_CREAT` leaves a file already there as its maker made it (POSIX `open`,
+    // https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html):
+    // another user's, or a hard link to one they read, would hand them the log.
+    // A character device is exempt: only a privileged caller makes one (mknod(2),
+    // https://man7.org/linux/man-pages/man2/mknod.2.html; FreeBSD's "requires
+    // super-user privileges"), so `/dev/null` was never another user's plant.
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
         let md = file.metadata()?;
-        if md.uid() != rustix::process::geteuid().as_raw() || md.nlink() != 1 {
+        let ours = md.uid() == rustix::process::geteuid().as_raw() && md.nlink() == 1;
+        if !ours && !md.file_type().is_char_device() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "the file there is another user's or hard-linked",
@@ -444,6 +464,29 @@ mod tests {
         std::fs::hard_link(&log, &theirs).unwrap();
         let refused = open_private_append(&log, OpenOptions::new()).expect_err("a linked log");
         assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    /// `PIXTUOID_LOG=/dev/null` throws the log away, as it always did: a
+    /// character device is root's, which no other user can plant.
+    #[cfg(unix)]
+    #[test]
+    fn a_log_into_dev_null_opens() {
+        open_private_append(Path::new("/dev/null"), OpenOptions::new()).expect("opens");
+    }
+
+    /// The guard runs before anything is made: a refused path leaves neither
+    /// the log nor its directory, and an allowed one opens.
+    #[test]
+    fn a_log_the_guard_refuses_is_never_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("logs").join("run.log");
+        let refuse = |_: &Path| Err(std::io::Error::other("squatted"));
+        assert!(open_private_append_vetted(&log, OpenOptions::new(), refuse).is_err());
+        assert!(
+            !log.parent().unwrap().exists(),
+            "the guard ran after a create"
+        );
+        open_private_append_vetted(&log, OpenOptions::new(), |_| Ok(())).expect("opens");
     }
 
     #[test]

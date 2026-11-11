@@ -46,9 +46,9 @@ impl AcceptBackoff {
 
 /// Ensure [`owned_tmp_dir`] is a private, us-owned `0700` directory BEFORE a
 /// file in it is opened — the bind's lock and socket, a run's log — but ONLY when
-/// `path` lies in it, the fallback we manage (#485). `XDG_RUNTIME_DIR` is
-/// systemd-managed 0700, and any other parent is the user's choice — neither is
-/// ours to create or police, so both are left untouched.
+/// `path` lies in it (#485). Every other parent is outside a shared `/tmp`:
+/// `XDG_RUNTIME_DIR` is systemd-managed 0700, an explicit `PIXTUOID_SOCKET` or
+/// `PIXTUOID_LOG` is the user's own, and the default log dir is under their home.
 ///
 /// TOCTOU-safe: `mkdir(0700)` is atomic create-if-absent, and `/tmp`'s sticky bit
 /// stops another uid swapping the validated `lstat` result before the open.

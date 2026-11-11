@@ -3,7 +3,11 @@
 //! pre-filled GitHub issue URL.
 
 pub(crate) fn install_crash_hook() {
-    std::panic::set_hook(Box::new(|info| {
+    // Read now, not in the panic: the notice colors as the one stream rule says
+    // for stderr, so a launcher reading it through a pipe gets plain text.
+    let color = crate::term::ColorEnv::read()
+        .stream_color(std::io::IsTerminal::is_terminal(&std::io::stderr()));
+    std::panic::set_hook(Box::new(move |info| {
         // stdout is the stream `setup_terminal` ENTERED the alt screen on, so the
         // restore must go there — on stderr, `pixtuoid run 2>/dev/null` strands it.
         let _ = crate::tui::unwind_terminal_modes(
@@ -48,23 +52,31 @@ pub(crate) fn install_crash_hook() {
             crate::strip_lines(&panic_msg, "\n  "),
             crate::display_path(&crash_path),
         );
+        let sgr = |code: &'static str| if color { code } else { "" };
+        let (red, dim, bold, line, off) = (
+            sgr("\x1b[1;31m"),
+            sgr("\x1b[2m"),
+            sgr("\x1b[1m"),
+            sgr("\x1b[4m"),
+            sgr("\x1b[0m"),
+        );
         let saved = match saved {
             Ok(()) => format!(
-                "\x20 Full backtrace saved to \x1b[2m{path}\x1b[0m\n\
-                 \x20 \x1b[2m(attach if the reviewer asks — the link above only carries a truncated trace)\x1b[0m\n\n"
+                "\x20 Full backtrace saved to {dim}{path}{off}\n\
+                 \x20 {dim}(attach if the reviewer asks — the link above only carries a truncated trace){off}\n\n"
             ),
             Err(e) => format!(
-                "\x20 Couldn't save the full backtrace to \x1b[2m{path}\x1b[0m: {}\n\n",
+                "\x20 Couldn't save the full backtrace to {dim}{path}{off}: {}\n\n",
                 crate::strip_control_chars(&e.to_string())
             ),
         };
         let notice = format!(
-            "\n\x1b[1;31mpixtuoid v{version} crashed — sorry about that.\x1b[0m\n\n\
-             \x20 \x1b[2m{msg}\x1b[0m\n\
-             \x20 \x1b[2mat {location}\x1b[0m\n\n\
-             \x20 \x1b[1mHelp fix it\x1b[0m — open this link to file a pre-filled bug report\n\
+            "\n{red}pixtuoid v{version} crashed — sorry about that.{off}\n\n\
+             \x20 {dim}{msg}{off}\n\
+             \x20 {dim}at {location}{off}\n\n\
+             \x20 {bold}Help fix it{off} — open this link to file a pre-filled bug report\n\
              \x20 (panic + backtrace already included, no typing needed):\n\n\
-             \x20 \x1b[4m{issue_url}\x1b[0m\n\n\
+             \x20 {line}{issue_url}{off}\n\n\
              {saved}"
         );
         // Not `eprintln!`: a panic inside the hook aborts the process.
@@ -186,6 +198,39 @@ mod tests {
     /// The panic hook is process-global and writes to a real fd, so the only way
     /// to observe which stream it chose is from outside: re-exec this test binary
     /// with the child marker, let a real panic fire the hook, read the pipes apart.
+    /// The notice colors as the one stream rule says for stderr: plain into a
+    /// pipe, as a launcher reading it gets, unless `$CLICOLOR_FORCE` forces it.
+    #[cfg(unix)]
+    #[test]
+    fn the_crash_notice_colors_by_the_one_stream_rule() {
+        const CHILD: &str = "PIXTUOID_CRASH_HOOK_COLOR_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            install_crash_hook();
+            panic!("deliberate panic: the crash-hook color probe");
+        }
+        let state = tempfile::tempdir().unwrap();
+        for (force, colored) in [(None, false), (Some("1"), true)] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    &this_test("the_crash_notice_colors_by_the_one_stream_rule"),
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("XDG_STATE_HOME", state.path())
+                .env("TERM", "xterm-256color")
+                .env_remove("NO_COLOR")
+                .env_remove("CLICOLOR_FORCE");
+            if let Some(force) = force {
+                child.env("CLICOLOR_FORCE", force);
+            }
+            let stderr = String::from_utf8_lossy(&child.output().unwrap().stderr).into_owned();
+            assert!(stderr.contains("crashed"), "{stderr:?}");
+            assert_eq!(stderr.contains('\u{1b}'), colored, "{force:?}: {stderr:?}");
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn the_hook_restores_on_stdout_and_keeps_the_report_on_stderr() {

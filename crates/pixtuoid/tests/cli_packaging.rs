@@ -311,10 +311,10 @@ fn a_log_on_stderr_colors_by_the_one_stream_rule() {
     }
 }
 
-/// Raycast's Start Floating passes the contract's args, reads its exit code
-/// as a binary older than them, and cuts a failed boot's stderr from the last
-/// line its error prefix starts: this binary takes the args, exits with the
-/// code on a command line it doesn't know, and starts its fatal report so.
+/// Start Floating spawns the contract's `args`, reads an exit with `usage_exit`
+/// as a binary too old for them, and shows a failed boot's stderr from its last
+/// line starting with `error_prefix`. So this binary accepts the args, exits
+/// `usage_exit` on an unknown flag, and starts its fatal report with the prefix.
 #[test]
 fn the_floating_launch_contract_holds() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

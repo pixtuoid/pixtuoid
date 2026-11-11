@@ -57,3 +57,26 @@ test("a failed launch's stderr with no error report is its message whole", async
 test("a binary that cannot be spawned fails the launch", async () => {
   await assert.rejects(launchUntilReady(join(tmpdir(), "no-such-pixtuoid"), [], PREFIX), { code: "ENOENT" });
 });
+
+test("a child that never says it is up is killed at the deadline", { timeout: 15_000 }, async () => {
+  const pidFile = join(mkdtempSync(join(tmpdir(), "launch-")), "pid");
+  const hung = "require('fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000);";
+  const deadlineMs = 2_000;
+  await assert.rejects(
+    launchUntilReady(process.execPath, ["-e", hung, pidFile], PREFIX, deadlineMs),
+    /did not open its window/,
+  );
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  const gone = () => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  for (let waited = 0; !gone() && waited < deadlineMs; waited += 50) {
+    await new Promise((settle) => setTimeout(settle, 50));
+  }
+  assert.ok(gone(), "the hung child outlived its deadline");
+});

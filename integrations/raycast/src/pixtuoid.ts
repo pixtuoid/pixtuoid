@@ -137,8 +137,8 @@ export async function startFloating(): Promise<void> {
   await launchUntilReady(await resolveBinary(), floatingLaunch.args, floatingLaunch.error_prefix);
 }
 
-/** Whether `e` is the binary refusing that launch's command line, as one older
- *  than it does. */
+/** Whether `e` is an exit with the contract's `usage_exit`: a binary too old for
+ *  the launch's args rejects them so. */
 export function predatesFloatingLaunch(e: unknown): boolean {
   return e instanceof LaunchFailedError && e.code === floatingLaunch.usage_exit;
 }
