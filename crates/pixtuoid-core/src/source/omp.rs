@@ -608,6 +608,14 @@ const SESSION: &str = "session";
 /// READS are re-served context, not new spend.
 const MESSAGE: &str = "message";
 
+/// A model call outside the conversation, its `usage` a turn's shape: a
+/// session title since 18.18.4, a judgment, a cache-warm refresh. omp's own
+/// totals count it beside the turns, and none appears as a turn too
+/// (`docs/session.md:214-220`,
+/// `packages/coding-agent/src/session/session-stats.ts:72-93` at v18.18.8;
+/// can1357/oh-my-pi#18491).
+const MODEL_USAGE: &str = "model_usage";
+
 /// The `custom` entry envelope. Its `customType:"tool_execution_start"` duplicates
 /// each toolCall right before execution and is deliberately NOT decoded — the same
 /// `tool_use_id` would double-count `tool_call_count`.
@@ -722,6 +730,29 @@ fn entry_copy(entry: &serde_json::Map<String, Value>, tail: &str) -> Option<Stri
     Some(format!("{id}@{stamp}{tail}"))
 }
 
+/// The fresh spend (see [`MESSAGE`]) of the `usage` its `entry` carries, a
+/// turn's or a side call's.
+fn omp_usage(
+    acting: AgentId,
+    entry: &serde_json::Map<String, Value>,
+    usage: Option<&Value>,
+) -> Option<AgentEvent> {
+    let usage = usage?.as_object()?;
+    let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let fresh = field("input")
+        .saturating_add(field("cacheWrite"))
+        .saturating_add(field("output"));
+    (fresh > 0).then(|| AgentEvent::Usage {
+        agent_id: acting,
+        fresh_tokens: fresh,
+        // A prune or compaction rewrites the file whole with each entry's own
+        // id (v18.15.0 `session-manager.ts` `#serializeBody`), so an entry read
+        // twice counts once.
+        reading_id: non_empty(entry, "id").map(str::to_owned),
+        copy_id: entry_copy(entry, "").map(CopyId::new),
+    })
+}
+
 /// Decode one omp session JSONL line into zero or more `AgentEvent`s.
 /// Unknown entry types / roles and malformed shapes return `vec![]` — the
 /// upstream loader is itself lenient (`parseJsonlLenient`).
@@ -766,23 +797,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                             effort: None,
                         });
                     }
-                    if let Some(usage) = msg.get("usage").and_then(|u| u.as_object()) {
-                        let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-                        let fresh = field("input")
-                            .saturating_add(field("cacheWrite"))
-                            .saturating_add(field("output"));
-                        if fresh > 0 {
-                            out.push(AgentEvent::Usage {
-                                agent_id: acting,
-                                fresh_tokens: fresh,
-                                // A prune or compaction rewrites the file whole with
-                                // each entry's own id (v18.15.0 `session-manager.ts`
-                                // `#serializeBody`), so an entry read twice counts once.
-                                reading_id: non_empty(obj, "id").map(str::to_owned),
-                                copy_id: entry_copy(obj, "").map(CopyId::new),
-                            });
-                        }
-                    }
+                    out.extend(omp_usage(acting, obj, msg.get("usage")));
                     let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
                         return out;
                     };
@@ -832,6 +847,9 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                 _ => vec![],
             }
         }
+        MODEL_USAGE => omp_usage(acting, obj, obj.get("usage"))
+            .into_iter()
+            .collect(),
         CUSTOM if obj.get("customType").and_then(|c| c.as_str()) == Some(SESSION_EXIT) => {
             vec![AgentEvent::SessionEnd {
                 agent_id: acting,
@@ -1158,6 +1176,8 @@ mod tests {
                                                 "timestamp": "t", "thinkingLevel": "high"}),
                 TITLE | TITLE_CHANGE => json!({"type": ty, "id": "x", "parentId": null,
                                                "timestamp": "t", "title": "Named session"}),
+                MODEL_USAGE => json!({"type": ty, "id": "x", "parentId": null,
+                                      "timestamp": "t", "usage": {"output": 1}}),
                 _ => json!({"type": ty, "version": 3, "id": "x", "timestamp": "t",
                             "cwd": "/home/u/proj"}),
             };
@@ -1174,10 +1194,32 @@ mod tests {
             THINKING_LEVEL_CHANGE,
             TITLE,
             TITLE_CHANGE,
+            MODEL_USAGE,
         ] {
             assert!(drive(ty), "{ty} must reach a real arm");
         }
         assert!(!drive("checkpoint"), "an unread entry type reaches neither");
+    }
+
+    /// A side call's spend reads as a turn's, named by its own entry, so a
+    /// re-read of it counts once.
+    #[test]
+    fn a_side_calls_usage_reads_its_fresh_spend_under_its_entry() {
+        let line = json!({"type": MODEL_USAGE, "id": "c8cd345b", "parentId": "1675707c",
+                          "timestamp": "2026-11-11T15:38:10.475Z", "purpose": "title",
+                          "api": "openai-completions", "provider": "aimock", "model": "gpt-4.1",
+                          "usage": {"input": 3716, "output": 32, "cacheRead": 7,
+                                    "cacheWrite": 5, "totalTokens": 3760},
+                          "stopReason": "stop"});
+        assert_eq!(
+            decode_omp_line(ROOT, SOURCE_NAME, line),
+            [AgentEvent::Usage {
+                agent_id: root(),
+                fresh_tokens: 3716 + 5 + 32,
+                reading_id: Some("c8cd345b".to_owned()),
+                copy_id: Some(CopyId::new("c8cd345b@2026-11-11T15:38:10.475Z")),
+            }]
+        );
     }
 
     /// The length gate is EXCLUSIVE: `<19-char ts>_` is the longest stem that still

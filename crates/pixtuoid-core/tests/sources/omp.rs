@@ -334,32 +334,47 @@ fn a_recorded_switch_ends_the_previous_session_and_starts_the_current() {
 }
 
 /// A prune or a compaction rewrites the session file shorter, and the watcher
-/// re-reads it from its top: the usage it had read counts nothing again.
+/// re-reads it from its top: the usage it had read, a side call's too, counts
+/// nothing again.
 #[test]
 fn a_rewritten_sessions_re_read_counts_no_reading_twice() {
-    let t = super::captures::transcript_in(
-        &super::captures::sources_root().join("omp/fixtures/tool-run-hermetic"),
-    );
-    let lines = super::captures::fixture_lines(&t);
-    let expected: u64 = (lines.iter())
-        .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("recorded JSON"))
-        .filter(|v| v["type"] == "message" && v["message"]["role"] == "assistant")
-        .map(|v| {
-            let usage = &v["message"]["usage"];
-            ["input", "cacheWrite", "output"]
+    let mut side_calls = 0;
+    // approve's TUI run names its session, and the title's spend is a side call.
+    for scenario in ["tool-run-hermetic", "approve-hermetic"] {
+        let t = super::captures::transcript_in(
+            &super::captures::sources_root()
+                .join("omp/fixtures")
+                .join(scenario),
+        );
+        let lines = super::captures::fixture_lines(&t);
+        let mut expected = 0;
+        for v in lines.iter().map(|l| parsed(l)) {
+            let usage = match v["type"].as_str() {
+                Some("message") if v["message"]["role"] == "assistant" => &v["message"]["usage"],
+                Some("model_usage") => {
+                    side_calls += 1;
+                    &v["usage"]
+                }
+                _ => continue,
+            };
+            expected += ["input", "cacheWrite", "output"]
                 .iter()
                 .filter_map(|k| usage[k].as_u64())
-                .sum::<u64>()
-        })
-        .sum();
+                .sum::<u64>();
+        }
+        assert!(
+            expected > 0,
+            "{scenario}: no recorded usage here, so this recording proves nothing"
+        );
+        let d = Drive::transcript_at("omp", &t)
+            .expect("omp has a line decoder")
+            .seeded()
+            .lines(lines.iter().chain(&lines));
+        let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
+        assert_eq!(meter, expected, "{scenario}");
+    }
     assert!(
-        expected > 0,
-        "no recorded usage here, so this recording proves nothing"
+        side_calls > 0,
+        "no recorded side call, so its arm is unproven"
     );
-    let d = Drive::transcript_at("omp", &t)
-        .expect("omp has a line decoder")
-        .seeded()
-        .lines(lines.iter().chain(&lines));
-    let meter: u64 = d.scene.agents.values().map(|a| a.tokens_used).sum();
-    assert_eq!(meter, expected);
 }
