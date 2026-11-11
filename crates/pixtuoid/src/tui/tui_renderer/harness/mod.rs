@@ -41,10 +41,7 @@ pub(super) fn slot(id: AgentId, floor: usize, desk: usize, started: SystemTime) 
 
 /// What a click reaches from a harness test: `focus` on `scene`'s agents,
 /// and no page, since a harness click names none.
-pub(super) fn click_cx(
-    scene: &SceneState,
-    focus: impl FnMut(&AgentSlot),
-) -> crate::panels::ClickCtx<'_, impl FnMut(&AgentSlot), impl FnMut(&str)> {
+pub(super) fn click_cx(scene: &SceneState, focus: fn(&AgentSlot)) -> crate::panels::ClickCtx<'_> {
     crate::panels::ClickCtx {
         scene: Some(scene),
         focus,

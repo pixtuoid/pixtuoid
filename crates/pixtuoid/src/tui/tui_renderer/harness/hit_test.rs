@@ -397,7 +397,7 @@ where
     let click = |r: &mut TuiRenderer<B>,
                  ui: &mut crate::panels::ui_state::UiState,
                  at,
-                 focus: &mut dyn FnMut(&AgentSlot),
+                 focus: fn(&AgentSlot),
                  now| {
         crate::tui::handle_mouse_event(
             event(MouseEventKind::Down(MouseButton::Left), at),
@@ -410,21 +410,18 @@ where
             event(MouseEventKind::Up(MouseButton::Left), at),
             ui,
             r,
-            click_cx(&scene, |slot| focus(slot)),
+            click_cx(&scene, focus),
             now,
         );
     };
     let on_agent = cell(r, &|h| matches!(h, SceneHit::Figure(HoverTarget::Agent(_))))
         .expect("an agent's cell");
-    let mut focused = None;
-    click(
-        r,
-        &mut ui,
-        on_agent,
-        &mut |slot| focused = Some(slot.agent_id),
-        now,
+    click(r, &mut ui, on_agent, crate::panels::noted::focus, now);
+    assert_eq!(
+        crate::panels::noted::take_focused(),
+        [id],
+        "the click focuses the agent it hits"
     );
-    assert_eq!(focused, Some(id), "the click focuses the agent it hits");
     let on_pet =
         cell(r, &|h| matches!(h, SceneHit::Figure(HoverTarget::Pet(_)))).expect("the pet's cell");
     // What a click there names, carried out by no one.
@@ -436,13 +433,7 @@ where
     assert_eq!(names(r), pets, "premise: a click there pets the cat");
     assert_eq!(names(r), pets, "premise: and naming it records nothing");
     let mut pet = |r: &mut TuiRenderer<B>, at| {
-        click(
-            r,
-            &mut ui,
-            on_pet,
-            &mut |_| panic!("the pet is no agent"),
-            at,
-        );
+        click(r, &mut ui, on_pet, |_| panic!("the pet is no agent"), at);
         names(r)
     };
     assert_eq!(pet(r, now), None, "the click pets the cat: it purrs");

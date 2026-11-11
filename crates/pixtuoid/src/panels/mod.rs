@@ -252,15 +252,15 @@ pub(crate) trait Office {
 }
 
 /// What a click reaches outside the office.
-pub(crate) struct ClickCtx<'a, F: FnMut(&AgentSlot), O: FnMut(&str)> {
+pub(crate) struct ClickCtx<'a> {
     /// The office a focused agent is looked up in, as the painter's keys read
     /// it; `None` before one runs.
     pub(crate) scene: Option<&'a pixtuoid_core::state::SceneState>,
     /// Injected because the real `crate::focus::focus_slot` raises a terminal,
     /// so a test's click would drive the developer's desktop.
-    pub(crate) focus: F,
+    pub(crate) focus: fn(&AgentSlot),
     /// Injected because the real `crate::open_url` launches a browser.
-    pub(crate) open: O,
+    pub(crate) open: fn(&str),
 }
 
 /// The mouse ladder both painters run: [`modal_mouse`], then `office`. Only a
@@ -276,10 +276,10 @@ pub(crate) fn mouse_ladder(
     at: Option<(u16, u16)>,
     screen: impl FnOnce() -> Option<(u16, u16)>,
     office: &mut impl Office,
-    mut cx: ClickCtx<'_, impl FnMut(&AgentSlot), impl FnMut(&str)>,
+    cx: ClickCtx<'_>,
 ) -> ModalMouse {
     let left_down = at.filter(|_| event == PointerEvent::Press);
-    let modal = modal_mouse(ui, popup_scale, left_down, screen, &mut cx.open);
+    let modal = modal_mouse(ui, popup_scale, left_down, screen, cx.open);
     match event {
         PointerEvent::Press => {
             if modal == ModalMouse::Office {
@@ -315,7 +315,7 @@ fn modal_mouse(
     popup_scale: f32,
     left_down: Option<(u16, u16)>,
     screen: impl FnOnce() -> Option<(u16, u16)>,
-    open: impl FnOnce(&str),
+    open: fn(&str),
 ) -> ModalMouse {
     if ui.onboarding_open() {
         return ModalMouse::Inert;
@@ -728,6 +728,9 @@ pub(crate) struct KeyCtx<'a, H: Host> {
     /// The agent CLIs installed here, injected because the real
     /// `crate::sources::detect` reads the developer's own machine.
     pub(crate) installed: fn() -> Vec<&'static str>,
+    /// Injected because the real `crate::focus::focus_slot` raises a terminal,
+    /// so a test's focus key would drive the developer's desktop.
+    pub(crate) focus: fn(&AgentSlot),
 }
 
 /// Apply one decoded [`KeyAction`], returning whether it asked to QUIT — the single piece
@@ -798,7 +801,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
                 .dashboard_focus()
                 .and_then(|id| cx.snapshot.agents.get(&id))
             {
-                crate::focus::focus_slot(slot);
+                (cx.focus)(slot);
             }
         }
         KeyAction::ToggleConnection => {
@@ -1885,12 +1888,45 @@ impl Office for NotedOffice {
     }
 }
 
+/// The desktop calls a test's click or key makes, noted per thread in place of
+/// `crate::focus::focus_slot` and `crate::open_url`, which an injected `fn`
+/// can reach only through shared state.
+#[cfg(test)]
+pub(crate) mod noted {
+    use std::cell::RefCell;
+
+    use pixtuoid_core::{AgentId, AgentSlot};
+
+    thread_local! {
+        static FOCUSED: RefCell<Vec<AgentId>> = const { RefCell::new(Vec::new()) };
+        static OPENED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(crate) fn focus(slot: &AgentSlot) {
+        FOCUSED.with_borrow_mut(|focused| focused.push(slot.agent_id));
+    }
+
+    pub(crate) fn open(url: &str) {
+        OPENED.with_borrow_mut(|opened| opened.push(url.to_owned()));
+    }
+
+    /// The agents focused since the last take.
+    pub(crate) fn take_focused() -> Vec<AgentId> {
+        FOCUSED.take()
+    }
+
+    /// The pages opened since the last take.
+    pub(crate) fn take_opened() -> Vec<String> {
+        OPENED.take()
+    }
+}
+
 #[cfg(test)]
 mod mouse_tests {
     use std::sync::Arc;
 
     use super::{
-        ClickCtx, ModalMouse, NotedOffice, PointerEvent, modal_mouse, mouse_ladder,
+        ClickCtx, ModalMouse, NotedOffice, PointerEvent, modal_mouse, mouse_ladder, noted,
         ui_state::UiState, welcome::WelcomeUi,
     };
     use pixtuoid_core::state::SceneState;
@@ -1933,7 +1969,6 @@ mod mouse_tests {
         event: PointerEvent,
     ) -> (ModalMouse, Carried) {
         let pets_before = office.pets.len();
-        let mut carried = Carried::default();
         let modal = mouse_ladder(
             ui,
             0.0,
@@ -1943,11 +1978,15 @@ mod mouse_tests {
             office,
             ClickCtx {
                 scene,
-                focus: |slot| carried.focused.push(slot.agent_id),
-                open: |url| carried.opened.push(url.to_owned()),
+                focus: noted::focus,
+                open: noted::open,
             },
         );
-        carried.petted = office.pets[pets_before..].to_vec();
+        let carried = Carried {
+            focused: noted::take_focused(),
+            opened: noted::take_opened(),
+            petted: office.pets[pets_before..].to_vec(),
+        };
         (modal, carried)
     }
 

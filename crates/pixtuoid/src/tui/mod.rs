@@ -421,7 +421,7 @@ fn handle_mouse_event<B: ratatui::backend::Backend<Error: Send + Sync + 'static>
     m: crossterm::event::MouseEvent,
     ui: &mut ui_state::UiState,
     renderer: &mut TuiRenderer<B>,
-    cx: ClickCtx<'_, impl FnMut(&pixtuoid_core::AgentSlot), impl FnMut(&str)>,
+    cx: ClickCtx<'_>,
     now: SystemTime,
 ) {
     let event = match m.kind {
@@ -578,6 +578,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                                 now,
                                 respawn: crate::audio::respawn,
                                 installed: crate::sources::detect,
+                                focus: crate::focus::focus_slot,
                             },
                         );
                         if quit {
@@ -1294,6 +1295,7 @@ mod apply_key_action_tests {
                     now: SystemTime::UNIX_EPOCH,
                     respawn: no_respawn,
                     installed: self.installed,
+                    focus: crate::panels::noted::focus,
                 },
             )
         }
@@ -1545,6 +1547,22 @@ mod apply_key_action_tests {
             h.ui.connection.selected, start,
             "ConnectionUp must undo ConnectionDown, not advance further"
         );
+    }
+
+    /// The focus key focuses the agent on the selected dashboard row, and only
+    /// that one.
+    #[test]
+    fn the_focus_key_focuses_the_selected_rows_agent() {
+        let mut h = Harness::new();
+        h.seed_agents(3);
+        h.apply(KeyAction::ToggleDashboard);
+        let first = h.ui.dashboard.selected;
+        h.apply(KeyAction::DashboardDown);
+        let chosen = h.ui.dashboard.selected.expect("a selected row");
+        assert_ne!(Some(chosen), first, "premise: the row is not the first one");
+        crate::panels::noted::take_focused();
+        h.apply(KeyAction::DashboardFocus);
+        assert_eq!(crate::panels::noted::take_focused(), [chosen]);
     }
 
     /// A commit persists the theme it showed, and no look where the picker

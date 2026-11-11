@@ -1002,20 +1002,19 @@ mod tests {
         let bare = version_popup_url_rect(bounds, &[], 1.0).expect("a link");
         let held = version_popup_url_rect(bounds, ui.version_notices(), 1.0).expect("a link");
         assert_ne!(bare, held, "the notices move the link");
-        let press = |ui: &mut UiState, at: ratatui::layout::Rect, open: &mut dyn FnMut(&str)| {
+        let press = |ui: &mut UiState, at: ratatui::layout::Rect, open: fn(&str)| {
             crate::panels::modal_mouse(ui, 1.0, Some((at.x, at.y)), || Some(screen), open)
         };
         assert_eq!(
-            press(&mut ui, bare, &mut |url: &str| panic!("opened {url}")),
+            press(&mut ui, bare, |url| panic!("opened {url}")),
             crate::panels::ModalMouse::Inert
         );
-        let mut opened = Vec::new();
         assert_eq!(
-            press(&mut ui, held, &mut |url: &str| opened.push(url.to_owned())),
+            press(&mut ui, held, crate::panels::noted::open),
             crate::panels::ModalMouse::Took
         );
         let page = crate::panels::widgets::release_url(env!("CARGO_PKG_VERSION"));
-        assert_eq!(opened, [page]);
+        assert_eq!(crate::panels::noted::take_opened(), [page]);
     }
 
     /// Only the run an upgrade booted says it updated, even on a

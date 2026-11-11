@@ -78,7 +78,7 @@ pub(crate) fn mouse_ladder(
     window: (u32, u32),
     shown: Option<PixelFit>,
     office: &mut impl crate::panels::Office,
-    cx: crate::panels::ClickCtx<'_, impl FnMut(&pixtuoid_core::AgentSlot), impl FnMut(&str)>,
+    cx: crate::panels::ClickCtx<'_>,
 ) -> crate::panels::ModalMouse {
     let cells = shown.map(|at| {
         let cell = chrome_cell(at);

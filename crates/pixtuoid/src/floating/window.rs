@@ -312,8 +312,8 @@ impl FloatingApp {
         }
     }
 
-    /// `event` at the pointer through the mouse ladder, as the TUI's
-    /// ([`super::overlays::mouse_ladder`]); `None` with no window.
+    /// `event` at the pointer through the shared mouse ladder in the window's
+    /// panel cells ([`super::overlays::mouse_ladder`]); `None` with no window.
     fn mouse(&mut self, event: crate::panels::PointerEvent) -> Option<crate::panels::ModalMouse> {
         let window = self.window.as_deref()?;
         let size = window.inner_size();
@@ -388,6 +388,7 @@ impl FloatingApp {
                 now,
                 respawn: crate::audio::respawn,
                 installed: crate::sources::detect,
+                focus: crate::focus::focus_slot,
             },
         )
     }
