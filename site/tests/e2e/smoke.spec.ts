@@ -2598,8 +2598,6 @@ for (const { width, rootPx } of [
     const settle = () => settleAnimations(page);
     await page.setViewportSize({ width, height: 900 });
     await page.goto('./');
-    // Let the hero's `rise` entrance settle first — a one-shot mouse.move to a mid-animation center lands off the settled chip.
-    await page.waitForLoadState('networkidle');
     await page.evaluate((px) => (document.documentElement.style.fontSize = `${px}px`), rootPx);
     const chips = page.locator('.hero__badges .hero__badge');
     const watched = ['.hero__copy h1', '.hero__prompt', '.hero__badges', '.hero__cta'];
