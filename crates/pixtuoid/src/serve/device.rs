@@ -1044,23 +1044,41 @@ mod tests {
         assert_eq!(peer.answer().await, Answer::Unsupported);
     }
 
-    /// A read holds the gate until its blocking work returns, though the
+    /// An ask holds the gate until its blocking work returns, though the
     /// connection that asked ends: a device that reconnects can't start a second.
-    #[tokio::test]
-    async fn one_read_runs_at_a_time_across_connections() {
-        let mut held = held();
-        let fixture = fixture_reading(Arc::clone(&held.rows));
+    async fn one_at_a_time_across_connections(
+        fixture: &Fixture,
+        mut held: Held,
+        ask: impl Future<Output = Result<Answer>> + Send + 'static,
+    ) {
         let gate = &fixture.devices.gate;
-        let read = tokio::spawn(fixture.devices.sources());
+        let asked = tokio::spawn(ask);
         held.started.recv().await.expect("it starts");
         // A connection's end aborts its ask; the handle returns once the task's
         // locals are dropped (https://docs.rs/tokio/latest/tokio/task/index.html#cancellation).
-        read.abort();
-        assert!(read.await.expect_err("aborted mid-read").is_cancelled());
+        asked.abort();
+        assert!(asked.await.expect_err("aborted mid-ask").is_cancelled());
         assert_eq!(gate.available_permits(), 0, "the gate left with the ask");
 
         held.release.send(()).expect("it waits");
         let _given_back = gate.acquire().await.expect("an open gate");
+    }
+
+    #[tokio::test]
+    async fn one_read_runs_at_a_time_across_connections() {
+        let held = held();
+        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let read = fixture.devices.sources();
+        one_at_a_time_across_connections(&fixture, held, read).await;
+    }
+
+    #[tokio::test]
+    async fn one_write_runs_at_a_time_across_connections() {
+        let held = held();
+        let fixture = fixture_with(Arc::new(Vec::new), Arc::clone(&held.pause));
+        let device = Hashed::of(&paired(&fixture));
+        let write = fixture.devices.change(device, "copilot".into(), true);
+        one_at_a_time_across_connections(&fixture, held, write).await;
     }
 
     /// The device reaches the change, and so its audit line, by a short hash.
