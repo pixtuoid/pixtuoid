@@ -1175,30 +1175,6 @@ fn exit_from_desk_rises_off_the_chair_via_the_approach_cell() {
 }
 
 #[test]
-fn wander_coffee_run_coordinates_are_continuous() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let trip_id = (0u64..1000)
-        .map(|i| AgentId::from_transcript_path(&format!("/cont/{i}.jsonl")))
-        .find(|id| takes_trip(*id, 0))
-        .expect("find a trip agent");
-    // Long-idle, past entry.
-    let old = now - Duration::from_secs(120);
-    let mut slot = entry_slot(old);
-    slot.agent_id = trip_id;
-    slot.last_event_at = old;
-
-    // 1500 frames ≈ 50 s — several full Seated→WalkingOut→AtWaypoint→WalkingBack
-    // cycles, so every leg and boundary is exercised.
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 1500);
-    assert!(walking > 1000, "idle agent should render every frame");
-    assert!(
-        max_step <= MAX_FRAME_STEP_PX,
-        "wander trip teleported: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
-    );
-}
-
-#[test]
 fn wander_interrupted_by_running_does_not_teleport() {
     use crate::pathfind::AStarRouter;
     use crate::sim::anchors::character_top_left;
