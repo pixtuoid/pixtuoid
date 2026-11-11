@@ -81,5 +81,3 @@ git_release_draft = true
 # Titled as its tag: the default prefixes the package in a multi-package
 # workspace (release-plz.dev/docs/config, `git_release_name`).
 git_release_name = "v{{ version }}"
-# `-rc.N` tags become pre-releases, replacing release.yml's own `prerelease:` test.
-git_release_type = "auto"

@@ -39,9 +39,7 @@ pub(crate) fn default_socket_path() -> PathBuf {
         // co-located user could squat/lock a flat `pixtuoid-{uid}.sock` and
         // silently disable the hook plane (#485); a 0700 subdir they cannot
         // write into makes the daemon's bind fail loudly instead.
-        // Safety: getuid is always safe on Unix.
-        let uid = unsafe { libc::getuid() };
-        PathBuf::from(format!("/tmp/pixtuoid-{uid}")).join("pixtuoid.sock")
+        tmp_fallback_dir().join("pixtuoid.sock")
     }
     #[cfg(windows)]
     {
@@ -53,9 +51,6 @@ pub(crate) fn default_socket_path() -> PathBuf {
 /// `PIXTUOID_SOCKET` override short-circuit. The security boundary is the
 /// server-side DACL; the NAME is namespacing only. Backslashes are sanitized:
 /// pipe names can't contain them, and enterprise boxes set USERNAME=DOMAIN\user.
-/// The shim compares the resolved endpoint against this to SCOPE its #495
-/// peer-cred check to our own predictable rendezvous — an explicit
-/// `PIXTUOID_SOCKET` pipe stays the user's trust decision.
 #[cfg(windows)]
 pub(crate) fn default_windows_pipe_name() -> String {
     let user = std::env::var_os("USERNAME")
@@ -66,15 +61,25 @@ pub(crate) fn default_windows_pipe_name() -> String {
     format!(r"\\.\pipe\pixtuoid-{user}")
 }
 
-/// The per-user tmp dir we OWN (`/tmp/pixtuoid-{uid}`) when `endpoint` is the
-/// no-XDG `/tmp` FALLBACK — else `None`. PURE (no I/O), so it stays parity-safe.
-/// SCOPES the shim's connected-peer-uid check (#485) to that fallback: the XDG /
-/// explicit-override branches are systemd's / the user's trust decision, not
-/// ours to police (an override may legitimately point at a cross-uid daemon).
 #[cfg(unix)]
-pub(crate) fn owned_tmp_socket_dir(endpoint: &std::path::Path) -> Option<PathBuf> {
+fn tmp_fallback_dir() -> PathBuf {
     // Safety: getuid is always safe on Unix.
     let uid = unsafe { libc::getuid() };
-    let owned = PathBuf::from(format!("/tmp/pixtuoid-{uid}"));
-    (endpoint.parent() == Some(owned.as_path())).then_some(owned)
+    PathBuf::from(format!("/tmp/pixtuoid-{uid}"))
+}
+
+/// Whether `endpoint` is our own predictable rendezvous, the one a co-located
+/// user could squat (#485, #495): a socket in the no-XDG `/tmp` fallback dir, or
+/// the default pipe. PURE (no I/O), so it stays parity-safe. The XDG and
+/// explicit-override endpoints are systemd's or the user's trust decision, not
+/// ours to police (an override may legitimately point at a cross-uid daemon).
+pub(crate) fn is_our_rendezvous(endpoint: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        endpoint.parent() == Some(tmp_fallback_dir().as_path())
+    }
+    #[cfg(windows)]
+    {
+        endpoint == std::path::Path::new(&default_windows_pipe_name())
+    }
 }

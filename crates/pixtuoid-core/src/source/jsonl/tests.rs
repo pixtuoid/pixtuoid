@@ -9,6 +9,7 @@ use super::*;
 use crate::AgentId;
 use crate::source::claude_code::{cc_activity_recency, decode_cc_line};
 use crate::source::decoder::{accept_all_paths, default_id_from_path};
+use crate::source::first_sight::{Registration, first_sight_start};
 use crate::source::{AgentEvent, Transport};
 
 fn snap(pairs: &[(&str, i32)]) -> ProbeSnapshot {
@@ -1584,7 +1585,10 @@ async fn unclaim_for_foreign_id_stays_pending_and_leaves_local_claims_alone() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
     walk_once(&path, Duration::from_secs(3600), &cursors, &seen).await;
-    assert!(matches!(seen.lock().await.get(&path), Some(Sight::Claimed)));
+    assert!(matches!(
+        seen.lock().await.get(&path),
+        Some(Sight::Claimed(_))
+    ));
 
     let unclaims = ChildEndUnclaims::new();
     let foreign = AgentId::from_parts("codex", "not-claimed-here");
@@ -1603,7 +1607,7 @@ async fn unclaim_for_foreign_id_stays_pending_and_leaves_local_claims_alone() {
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     assert!(
-        matches!(seen.lock().await.get(&path), Some(Sight::Claimed)),
+        matches!(seen.lock().await.get(&path), Some(Sight::Claimed(_))),
         "a foreign id must not end this watcher's claims"
     );
     assert_eq!(
@@ -1649,7 +1653,7 @@ async fn child_end_unclaim_ends_only_the_matched_ids_own_path() {
         std::fs::write(p, "{\"type\":\"assistant\"}\n").unwrap();
         walk_once(p, Duration::from_secs(3600), &cursors, &seen).await;
         assert!(
-            matches!(seen.lock().await.get(p), Some(Sight::Claimed)),
+            matches!(seen.lock().await.get(p), Some(Sight::Claimed(_))),
             "fixture: registered"
         );
     }
@@ -1678,7 +1682,7 @@ async fn child_end_unclaim_ends_only_the_matched_ids_own_path() {
         "the ended child's claim is ended"
     );
     assert!(
-        matches!(seen.lock().await.get(&sibling), Some(Sight::Claimed)),
+        matches!(seen.lock().await.get(&sibling), Some(Sight::Claimed(_))),
         "the sibling session's claim must survive another child's un-claim"
     );
 }
@@ -2668,6 +2672,35 @@ async fn oversized_attach_ended_session_skips_task_scan() {
     );
 }
 
+/// The oversized twin of a live read: a claimed path whose skipped append shows
+/// life emits its first sight's registration again, renaming nothing.
+#[tokio::test]
+async fn a_claimed_paths_oversized_live_append_emits_its_registration_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("claimed-big.jsonl");
+    tokio::fs::write(&path, HEAD_LINE).await.unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
+
+    let full = oversized_body(&[task_dispatch_line("tu_task")]);
+    tokio::fs::write(&path, &full).await.unwrap();
+    let events = walk_omp(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let registration: Vec<_> = (events.iter())
+        .filter(|(_, e)| {
+            matches!(
+                e,
+                AgentEvent::SessionStart { .. } | AgentEvent::Rename { .. }
+            )
+        })
+        .collect();
+    assert!(
+        matches!(registration[..], [(_, AgentEvent::SessionStart { .. })]),
+        "{events:?}"
+    );
+    assert_eq!(task_start_tuids(&events), ["tu_task"], "{events:?}");
+}
+
 #[tokio::test]
 async fn oversized_attach_unregistered_skips_task_scan() {
     let dir = tempfile::tempdir().unwrap();
@@ -3239,7 +3272,17 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
     // `seen` is pre-claimed so this takes the normal-walk truncation arm (the
     // first-sight gate is skipped for a known file).
     let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), 999u64)])));
-    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Claimed)])));
+    let claimed = Sight::Claimed(Registration {
+        start: first_sight_start(
+            &path,
+            "test",
+            default_id_from_path(&path),
+            "/repo".into(),
+            None,
+        ),
+        label: Some("cc·repo".into()),
+    });
+    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), claimed)])));
 
     let events = walk_once_with(
         &path,
@@ -4236,7 +4279,10 @@ mod follow {
             follower: Some(&follower),
         };
         scan_root(dir.path(), t_decoders(), &ctx, &mut RootRead::default()).await;
-        assert!(matches!(seen.lock().await.get(&path), Some(Sight::Claimed)));
+        assert!(matches!(
+            seen.lock().await.get(&path),
+            Some(Sight::Claimed(_))
+        ));
         assert!(!follower.follows(&path));
     }
 
@@ -4297,18 +4343,20 @@ mod backlog {
     enum Sent {
         Start,
         Rename,
+        Hint,
         Usage,
         Tool,
         End,
         Opens,
         Closes,
     }
-    use Sent::{Closes, End, Opens, Rename, Start, Tool, Usage};
+    use Sent::{Closes, End, Hint, Opens, Rename, Start, Tool, Usage};
 
     fn sent(event: &AgentEvent) -> Sent {
         match event {
             AgentEvent::SessionStart { .. } => Start,
             AgentEvent::Rename { .. } => Rename,
+            AgentEvent::LabelHint { .. } => Hint,
             AgentEvent::Usage { .. } => Usage,
             AgentEvent::ToolUseStart { .. } => Tool,
             AgentEvent::SessionEnd { .. } => End,
@@ -4588,7 +4636,7 @@ mod backlog {
                         Boot,
                         &[Start, Rename, Closes, Usage, Tool, Opens],
                     ),
-                    (Append(TOOL), Walk, &[Opens, Tool]),
+                    (Append(TOOL), Walk, &[Start, Hint, Opens, Tool]),
                 ],
             ),
             (
@@ -4607,8 +4655,8 @@ mod backlog {
                 "a truncation replays between a close and an open",
                 &[
                     (Append(WORK), Walk, &[Start, Rename, Opens, Usage, Tool]),
-                    (Rewrite(TOOL), Walk, &[Closes, Tool, Opens]),
-                    (Append(TOOL), Walk, &[Opens, Tool]),
+                    (Rewrite(TOOL), Walk, &[Start, Hint, Closes, Tool, Opens]),
+                    (Append(TOOL), Walk, &[Start, Hint, Opens, Tool]),
                 ],
             ),
             (
@@ -4649,7 +4697,7 @@ mod backlog {
                 "an oversized skip replays nothing and its next read opens",
                 &[
                     (Oversized, Boot, &[Start, Rename]),
-                    (Append(TOOL), Walk, &[Opens, Tool]),
+                    (Append(TOOL), Walk, &[Start, Hint, Opens, Tool]),
                 ],
             ),
         ];
@@ -4723,7 +4771,10 @@ async fn a_life_after_its_own_end_registers_again_within_one_read() {
         lifecycle(&replay),
         ["start", "tool", "end", "start", "tool"]
     );
-    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Claimed));
+    assert!(matches!(
+        seen.lock().await.get(&path),
+        Some(Sight::Claimed(_))
+    ));
 
     let mut f = tokio::fs::OpenOptions::new()
         .append(true)
@@ -4737,7 +4788,10 @@ async fn a_life_after_its_own_end_registers_again_within_one_read() {
     drop(f);
     let live = walk_omp(&path, window, &cursors, &seen).await;
     assert_eq!(lifecycle(&live), ["end", "start", "tool"]);
-    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Claimed));
+    assert!(matches!(
+        seen.lock().await.get(&path),
+        Some(Sight::Claimed(_))
+    ));
 }
 
 /// A life after its own end on a claimed path registers from the transcript's
@@ -4756,7 +4810,10 @@ async fn a_claimed_paths_life_after_its_end_registers_from_the_head() {
     let seen = Arc::new(Mutex::new(HashMap::new()));
     let window = Duration::from_secs(3600);
     walk_omp(&path, window, &cursors, &seen).await;
-    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Claimed));
+    assert!(matches!(
+        seen.lock().await.get(&path),
+        Some(Sight::Claimed(_))
+    ));
 
     let mut f = tokio::fs::OpenOptions::new()
         .append(true)
@@ -4776,4 +4833,55 @@ async fn a_claimed_paths_life_after_its_end_registers_from_the_head() {
         })
         .collect();
     assert_eq!(cwds, [Path::new("/repo/head")], "{live:?}");
+}
+
+/// A claimed path's re-registration hints the last name a read gave its own
+/// session, never a child's.
+#[tokio::test]
+async fn a_claimed_paths_hint_carries_its_own_last_rename() {
+    /// [`t_decode_lifecycle`], and a `rename` line naming the transcript's
+    /// own session, or a child's when it says `child`.
+    fn decode(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
+        let Some(label) = v.get("rename").and_then(|l| l.as_str()) else {
+            return t_decode_lifecycle(t, s, v);
+        };
+        let session = if v.get("child").is_some() { "child" } else { t };
+        vec![AgentEvent::Rename {
+            agent_id: AgentId::from_parts(s, session),
+            label: label.to_owned(),
+        }]
+    }
+    const TOOL: &str = "{\"type\":\"tool_use\"}\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("t.jsonl");
+    std::fs::write(&path, "").unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    let mut hints = Vec::new();
+    for named in [
+        "",
+        "{\"rename\":\"Draft\"}\n{\"rename\":\"Fix login\"}\n",
+        "{\"rename\":\"Sisko\",\"child\":true}\n",
+        "",
+    ] {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(format!("{named}{TOOL}").as_bytes()).unwrap();
+        drop(file);
+        let read = walk_once_with(&path, Duration::from_secs(3600), decode, &cursors, &seen).await;
+        hints.push(
+            (read.into_iter())
+                .filter_map(|(_, e)| match e {
+                    AgentEvent::LabelHint { label, .. } => Some(label),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(
+        hints,
+        [vec![], vec!["t"], vec!["Fix login"], vec!["Fix login"]]
+    );
 }

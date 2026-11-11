@@ -29,24 +29,31 @@ pub(crate) fn arm_watchdog() -> Option<TimeBound> {
         .map(|_| TimeBound(()))
 }
 
+/// Write `line` to `peer`, reached at `endpoint`, unless that is
+/// [our own rendezvous](crate::paths::is_our_rendezvous) and `is_us` can't prove
+/// the peer runs as us: a squatter there would else receive the payload. `is_us`
+/// is a parameter because a single-user host can stage no peer of another user.
+fn deliver<P: std::io::Write>(
+    mut peer: P,
+    endpoint: &std::path::Path,
+    line: &[u8],
+    is_us: impl FnOnce(&P) -> bool,
+) {
+    if crate::paths::is_our_rendezvous(endpoint) && !is_us(&peer) {
+        return;
+    }
+    let _ = peer.write_all(line);
+}
+
 #[cfg(unix)]
 pub(crate) fn send_line(_bound: &TimeBound, endpoint: &std::path::Path, line: &[u8]) {
-    use std::io::Write;
     // `UnixStream::connect` has no timeout knob, and a backlog-saturated
     // listener parks it indefinitely — past the budget `set_write_timeout` only
     // enforces AFTER a successful connect (#167) — the caller's `TimeBound`
     // covers it.
-    if let Ok(mut s) = std::os::unix::net::UnixStream::connect(endpoint) {
-        // For the `/tmp/pixtuoid-{uid}/` fallback we own, verify the connected
-        // PEER is us BEFORE writing (#485) — on the connected fd, atomic w.r.t.
-        // the connection, closing a TOCTOU a pre-connect path stat can't. Scoped
-        // to the fallback: an XDG or explicit PIXTUOID_SOCKET endpoint is the
-        // user's own trust decision (it may point at a cross-uid system daemon).
-        if crate::paths::owned_tmp_socket_dir(endpoint).is_some() && !peer_is_us(&s) {
-            return;
-        }
+    if let Ok(s) = std::os::unix::net::UnixStream::connect(endpoint) {
         let _ = s.set_write_timeout(Some(WRITE_TIMEOUT));
-        let _ = s.write_all(line);
+        deliver(s, endpoint, line, peer_is_us);
     }
 }
 
@@ -72,7 +79,7 @@ fn peer_uid(fd: std::os::unix::io::RawFd) -> Option<u32> {
         gid: 0,
     };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    // Safety: `fd` is a live connected socket; the kernel writes `cred`/`len`.
+    // Safety: `cred` and `len` are live locals the kernel writes; it checks `fd` itself.
     let rc = unsafe {
         libc::getsockopt(
             fd,
@@ -89,16 +96,75 @@ fn peer_uid(fd: std::os::unix::io::RawFd) -> Option<u32> {
 fn peer_uid(fd: std::os::unix::io::RawFd) -> Option<u32> {
     let mut euid: libc::uid_t = 0;
     let mut egid: libc::gid_t = 0;
-    // Safety: `fd` is a live connected socket; the kernel writes the out-params.
+    // Safety: the out-params are live locals the kernel writes; it checks `fd` itself.
     let rc = unsafe { libc::getpeereid(fd, &mut euid, &mut egid) };
     (rc == 0).then_some(euid)
 }
 
-#[cfg(all(unix, test))]
+#[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::peer_is_us;
+    #[cfg(unix)]
     use std::os::unix::net::{UnixListener, UnixStream};
 
+    /// Our `/tmp` fallback rendezvous, which the shim resolves with neither
+    /// `PIXTUOID_SOCKET` nor `XDG_RUNTIME_DIR`.
+    #[cfg(unix)]
+    fn ours() -> std::path::PathBuf {
+        // Safety: getuid is always safe on Unix.
+        let uid = unsafe { libc::getuid() };
+        format!("/tmp/pixtuoid-{uid}/pixtuoid.sock").into()
+    }
+
+    #[cfg(windows)]
+    fn ours() -> std::path::PathBuf {
+        crate::paths::default_windows_pipe_name().into()
+    }
+
+    #[test]
+    fn our_own_rendezvous_gets_the_line_only_when_its_peer_is_proven_us() {
+        let elsewhere = std::path::PathBuf::from("/explicit/path.sock");
+        for (endpoint, proven, delivered) in [
+            (ours(), true, true),
+            (ours(), false, false),
+            (elsewhere, false, true),
+        ] {
+            let mut got = Vec::new();
+            super::deliver(&mut got, &endpoint, b"line\n", |_| proven);
+            assert_eq!(
+                got == b"line\n",
+                delivered,
+                "{endpoint:?}, proven us: {proven}"
+            );
+        }
+    }
+
+    /// The only peer of another uid a single-user host can stage is none at all.
+    #[cfg(unix)]
+    #[test]
+    fn an_unconnected_socket_is_not_us() {
+        use std::os::fd::FromRawFd;
+        // Safety: socket(2) takes no pointers; a non-negative fd is ours to own.
+        let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0) };
+        assert!(fd >= 0, "a socket");
+        // Safety: `fd` is a fresh socket nothing else owns.
+        let unconnected = unsafe { UnixStream::from_raw_fd(fd) };
+        assert!(!peer_is_us(&unconnected));
+    }
+
+    /// A failed read is no uid: the out-param starts at uid 0, so a read taken without
+    /// its result would prove root a peer it never saw.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_read_names_no_peer_uid() {
+        use std::os::fd::AsRawFd;
+        let file = tempfile::tempfile().expect("a file");
+        assert_eq!(super::peer_uid(file.as_raw_fd()), None, "no socket");
+        assert_eq!(super::peer_uid(-1), None, "no fd");
+    }
+
+    #[cfg(unix)]
     #[test]
     fn peer_is_us_for_a_self_connection() {
         let tmp = tempfile::TempDir::new().expect("tempdir");
@@ -113,7 +179,6 @@ mod tests {
 
 #[cfg(windows)]
 pub(crate) fn send_line(_bound: &TimeBound, endpoint: &std::path::Path, line: &[u8]) {
-    use std::io::Write;
     // Named pipes have no SO_SNDTIMEO equivalent for sync writes, so the timeout
     // invariant is enforced solely by the watchdog's hard exit — hence the
     // `TimeBound` parameter: the ERROR_PIPE_BUSY retry below is unbounded without
@@ -122,20 +187,7 @@ pub(crate) fn send_line(_bound: &TimeBound, endpoint: &std::path::Path, line: &[
     const PIPE_BUSY_RETRY_BACKOFF_MS: u64 = 10;
     loop {
         match open_pipe(endpoint) {
-            Ok(mut f) => {
-                // #495: before writing, verify the pipe SERVER runs as US — a
-                // co-located user who squatted our predictable default pipe (so
-                // our daemon's create failed → SocketBusy) would else
-                // receive the payload. Scoped to our default rendezvous; an
-                // explicit PIXTUOID_SOCKET pipe is the user's trust call.
-                if endpoint == std::path::Path::new(&crate::paths::default_windows_pipe_name())
-                    && !peer::server_is_us(&f)
-                {
-                    return;
-                }
-                let _ = f.write_all(line);
-                return;
-            }
+            Ok(f) => return deliver(f, endpoint, line, peer::server_is_us),
             // Retry until the watchdog fires (all server instances mid-handshake).
             Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY) => {
                 std::thread::sleep(Duration::from_millis(PIPE_BUSY_RETRY_BACKOFF_MS));
@@ -301,6 +353,14 @@ mod win_peer_tests {
             super::peer::server_is_us(&client),
             "our own process's pipe server must verify as us"
         );
+    }
+
+    /// The only server of another user a single-user host can stage is none at all.
+    #[test]
+    fn a_handle_with_no_pipe_server_is_not_us() {
+        let exe = std::env::current_exe().expect("our own path");
+        let not_a_pipe = std::fs::File::open(exe).expect("our own image opens");
+        assert!(!super::peer::server_is_us(&not_a_pipe));
     }
 
     /// What a pipe server gets once it has read the shim's line, read the way a

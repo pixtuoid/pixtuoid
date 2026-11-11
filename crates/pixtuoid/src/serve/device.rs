@@ -687,6 +687,29 @@ mod tests {
         assert_eq!(started.elapsed(), HELLO_TIMEOUT);
     }
 
+    /// The deadline is the one `serve` sets before TLS, which the peer holding
+    /// the slot may never start.
+    #[tokio::test(start_paused = true)]
+    async fn a_peer_that_never_starts_tls_loses_its_slot_at_the_deadline() {
+        let fixture = fixture();
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("a port");
+        let address = listener.local_addr().expect("bound");
+        let _silent = TcpStream::connect(address).await.expect("it connects");
+        let (tcp, _) = listener.accept().await.expect("it accepts");
+        let key = rcgen::KeyPair::generate().expect("a key");
+        let acceptor = crate::serve::tls_acceptor(&key).expect("an acceptor");
+        let admitted = Admission::new().admit(Ipv4Addr::LOCALHOST);
+        let admitted = admitted.expect("an empty admission's slot");
+
+        let started = Instant::now();
+        let served = fixture.devices.clone().serve(tcp, acceptor, admitted);
+        let served = timeout(HELLO_TIMEOUT * 2, served).await;
+        assert!(served.expect("it ends").is_err());
+        assert_eq!(started.elapsed(), HELLO_TIMEOUT);
+    }
+
     /// One host's silent connections, however many it opens, leave a paired
     /// device on another address a slot.
     #[tokio::test]
@@ -909,6 +932,25 @@ mod tests {
         assert!(peer.ended().await.is_err());
     }
 
+    /// The stream's `select!` drops a read an office line overtakes, which
+    /// leaves its bytes in `line`: the cap is the line's, not each read's.
+    #[tokio::test]
+    async fn a_line_across_an_overtaken_read_still_ends_at_the_cap() {
+        use futures_util::FutureExt;
+        let (mut device, ours) = duplex(ROOMY);
+        let mut ours = BufReader::new(ours);
+        let mut line = Vec::new();
+        let half = [b' '; MAX_LINE_BYTES / 2];
+
+        device.write_all(&half).await.expect("sent");
+        let overtaken = next_line(&mut ours, &mut line).now_or_never();
+        assert!(overtaken.is_none(), "{overtaken:?}");
+        assert_eq!(line.len(), half.len(), "the overtaken read kept its bytes");
+        device.write_all(&half).await.expect("sent");
+        let read = next_line(&mut ours, &mut line).now_or_never();
+        assert!(matches!(read, Some(Err(_))), "{read:?}");
+    }
+
     /// Reads end anywhere: two lines in one, or one across two.
     #[tokio::test]
     async fn an_ask_may_share_a_write_or_span_two() {
@@ -1002,23 +1044,41 @@ mod tests {
         assert_eq!(peer.answer().await, Answer::Unsupported);
     }
 
-    /// A read holds the gate until its blocking work returns, though the
+    /// An ask holds the gate until its blocking work returns, though the
     /// connection that asked ends: a device that reconnects can't start a second.
-    #[tokio::test]
-    async fn one_read_runs_at_a_time_across_connections() {
-        let mut held = held();
-        let fixture = fixture_reading(Arc::clone(&held.rows));
+    async fn one_at_a_time_across_connections(
+        fixture: &Fixture,
+        mut held: Held,
+        ask: impl Future<Output = Result<Answer>> + Send + 'static,
+    ) {
         let gate = &fixture.devices.gate;
-        let read = tokio::spawn(fixture.devices.sources());
+        let asked = tokio::spawn(ask);
         held.started.recv().await.expect("it starts");
         // A connection's end aborts its ask; the handle returns once the task's
         // locals are dropped (https://docs.rs/tokio/latest/tokio/task/index.html#cancellation).
-        read.abort();
-        assert!(read.await.expect_err("aborted mid-read").is_cancelled());
+        asked.abort();
+        assert!(asked.await.expect_err("aborted mid-ask").is_cancelled());
         assert_eq!(gate.available_permits(), 0, "the gate left with the ask");
 
         held.release.send(()).expect("it waits");
         let _given_back = gate.acquire().await.expect("an open gate");
+    }
+
+    #[tokio::test]
+    async fn one_read_runs_at_a_time_across_connections() {
+        let held = held();
+        let fixture = fixture_reading(Arc::clone(&held.rows));
+        let read = fixture.devices.sources();
+        one_at_a_time_across_connections(&fixture, held, read).await;
+    }
+
+    #[tokio::test]
+    async fn one_write_runs_at_a_time_across_connections() {
+        let held = held();
+        let fixture = fixture_with(Arc::new(Vec::new), Arc::clone(&held.pause));
+        let device = Hashed::of(&paired(&fixture));
+        let write = fixture.devices.change(device, "copilot".into(), true);
+        one_at_a_time_across_connections(&fixture, held, write).await;
     }
 
     /// The device reaches the change, and so its audit line, by a short hash.
