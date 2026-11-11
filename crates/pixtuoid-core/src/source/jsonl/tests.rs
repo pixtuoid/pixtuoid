@@ -1205,15 +1205,17 @@ async fn a_live_read_that_works_and_ends_walks_in_and_out() {
     assert_eq!(seen.lock().await.get(&path), Some(&Sight::Ended));
 }
 
-/// A resume a decoder bears, its call and its shutdown in one read: read live, the
-/// session walks in and out with its call counted; replayed, the read registers
-/// nothing, the resume's own start included.
+/// A resume a decoder bears, a child it spawns, its call and its shutdown in one
+/// read: read live, the session walks in and out with its call counted; replayed,
+/// the read registers nothing, the resume's own start included, and still sends
+/// the child's.
 #[tokio::test]
 async fn a_resume_that_ends_in_one_read_walks_in_live_and_nowhere_replayed() {
     const SHUTDOWN: &str = r#"{"type":"session.shutdown","data":{"shutdownType":"routine"},"id":"s1","timestamp":"t"}"#;
     const RESUME: &str =
         r#"{"type":"session.resume","data":{"context":{"cwd":"/repo"}},"id":"r1","timestamp":"t"}"#;
     const CALL: &str = r#"{"type":"tool.execution_start","data":{"toolCallId":"c1","toolName":"view","arguments":{"path":"/repo"}}}"#;
+    const SPAWN: &str = r#"{"type":"subagent.started","data":{"toolCallId":"call_c","agentName":"a","agentDisplayName":"A"},"id":"a1","timestamp":"t","parentId":"r1","agentId":"call_c"}"#;
     let decoders = SourceDecoders {
         decode_line: crate::source::copilot::decode_copilot_line,
         id_derive: super::folded::FoldedDeriver::new(crate::source::copilot::copilot_id_from_path),
@@ -1234,15 +1236,22 @@ async fn a_resume_that_ends_in_one_read_walks_in_live_and_nowhere_replayed() {
             .append(true)
             .open(&path)
             .unwrap();
-        std::io::Write::write_all(&mut f, format!("{RESUME}\n{CALL}\n{SHUTDOWN}\n").as_bytes())
-            .unwrap();
+        std::io::Write::write_all(
+            &mut f,
+            format!("{RESUME}\n{SPAWN}\n{CALL}\n{SHUTDOWN}\n").as_bytes(),
+        )
+        .unwrap();
         let events =
             walk_decoded(&path, Duration::from_secs(3600), decoders, &cursors, &seen).await;
-        let starts = (events.iter())
-            .filter(|(_, e)| matches!(e, AgentEvent::SessionStart { .. }))
-            .count();
+        let starts = |child: bool| {
+            (events.iter())
+                .filter(|(_, e)| {
+                    matches!(e, AgentEvent::SessionStart { parent_id, .. } if parent_id.is_some() == child)
+                })
+                .count()
+        };
         if replayed {
-            assert_eq!(starts, 0, "{events:?}");
+            assert_eq!((starts(false), starts(true)), (0, 1), "{events:?}");
         } else {
             assert_eq!(
                 walked_in_and_out(&office_after(&events)),
