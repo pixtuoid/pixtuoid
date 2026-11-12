@@ -18,7 +18,6 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
         with:
-          components: rustfmt
           enable-cache: 'false'
       - run: just fmt-check
 
@@ -32,8 +31,6 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-cargo-just
-        with:
-          components: clippy
       - run: just clippy
 
   deny:
