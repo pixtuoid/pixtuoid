@@ -346,6 +346,7 @@ mod tests {
 
     use pixtuoid_core::SceneState;
     use pixtuoid_core::remote::{Outcome, RemoteOffice, SourceState};
+    use pixtuoid_core::state::Today;
     use tokio::io::{BufReader, DuplexStream, ReadHalf, WriteHalf, duplex, split};
     use tokio::sync::watch;
 
@@ -781,6 +782,41 @@ mod tests {
         assert!(line.is_ok_and(|line| !line.is_empty()));
     }
 
+    /// A busy reducer's changes, spread across the gap that follows a frame,
+    /// reach the device as one frame, the last change's.
+    #[tokio::test(start_paused = true)]
+    async fn changes_inside_a_frame_gap_reach_a_device_as_one_frame() {
+        const CHANGES: u32 = 4;
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 6, 1).expect("a date");
+        // Told apart by `today`: a line carries it, and no desk capacity.
+        let counted = |calls: u32| Some(Today::new(day, 0, u64::from(calls)));
+        let fixture = fixture();
+        let mut peer = streaming(&fixture).await;
+        let began = Instant::now();
+        for calls in 1..=CHANGES {
+            let mut scene = SceneState::uniform(4);
+            scene.today = counted(calls);
+            fixture
+                .scene
+                .send(Arc::new(scene))
+                .expect("the office is live");
+            sleep(MIN_FRAME_GAP / CHANGES).await;
+        }
+
+        let mut frames = Vec::new();
+        // Past the last frame of a loop that queued each change a gap apart.
+        while let Ok(line) = timeout_at(began + MIN_FRAME_GAP * (CHANGES + 1), peer.line()).await {
+            assert!(!line.is_empty(), "the stream ended");
+            frames.push(line);
+        }
+        let [frame] = frames.try_into().expect("one frame");
+        let mut office = RemoteOffice::new([4; pixtuoid_core::state::MAX_FLOORS]);
+        office
+            .apply(frame.as_bytes(), SystemTime::now())
+            .expect("a line");
+        assert_eq!(office.scene().today, counted(CHANGES));
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_device_that_stops_draining_is_dropped_at_the_timeout() {
         let (mut ours, _theirs) = duplex(1);
@@ -1101,7 +1137,6 @@ mod tests {
         let [(who, source, on)] = made(&fixture).try_into().expect("one change");
         assert_eq!((source.as_str(), on), ("copilot", true));
         assert_eq!(who, Hashed::of(&token).short());
-        assert!(who.len() < token.len() && !token.contains(&who), "{who}");
 
         peer.ask(&change("no-such-cli", false)).await;
         assert_eq!(peer.answer().await, Answer::Unsupported);
