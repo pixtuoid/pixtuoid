@@ -2,16 +2,14 @@
 //! real sim produces a `SimFrame`, the real layout is computed at LOGICAL size,
 //! and `look::render` paints it into a buffer sized in pixels at `--scale`.
 //!
-//! Usage:
-//!   cargo run --release --example cutaway_snapshot -- <out.png> [--scale N]
-//!       [--agents N] [--theme T] [--logical WxH] [--now-hour H] [--floor I]
-//!       [--weather W] [--now-day D] [--now-sec S] [--repos a,b,...]
+//! Usage: `cargo run --release --example cutaway_snapshot -- <out.png> [OPTIONS]`
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, anyhow};
+use clap::Parser;
 use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid_core::source::claude_code;
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
@@ -88,55 +86,56 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String],
     }
 }
 
-fn main() -> Result<()> {
-    let mut args = std::env::args().skip(1);
-    let out = args
-        .next()
-        .ok_or_else(|| anyhow!("usage: see the `//!` header of examples/cutaway_snapshot.rs"))?;
+#[derive(Debug, Parser)]
+struct CutawayArgs {
+    out: PathBuf,
+    #[arg(long)]
+    scale: Option<u16>,
+    #[arg(long, default_value_t = DEFAULT_AGENTS)]
+    agents: usize,
+    #[arg(long, default_value = "tokyo-night")]
+    theme: String,
+    #[arg(long, value_name = "WxH", value_parser = parse_logical)]
+    logical: Option<(u16, u16)>,
+    #[arg(long)]
+    now_hour: Option<u32>,
+    /// 1 = `pixtuoid_scene::localclock`'s day 0, as the classic snapshot's `--now-day`.
+    #[arg(long, default_value_t = 1, requires = "now_hour", value_parser = clap::value_parser!(u32).range(1..))]
+    now_day: u32,
+    /// Seconds past `--now-hour`, fine enough to sample a weather transition.
+    #[arg(long, default_value_t = 0, requires = "now_hour", value_parser = clap::value_parser!(u64).range(0..3600))]
+    now_sec: u64,
+    #[arg(long)]
+    weather: Option<String>,
+    #[arg(long, value_delimiter = ',', default_values_t = pixtuoid_scene::DEMO_REPOS[..pixtuoid_scene::DEMO_TEAMS].iter().map(|r| r.to_string()))]
+    repos: Vec<String>,
+    #[arg(long, default_value_t = 0)]
+    floor: usize,
+}
 
-    let (mut scale_n, mut agents, mut theme_name) =
-        (None, DEFAULT_AGENTS, "tokyo-night".to_string());
-    let (mut now_hour, mut now_sec, mut floor) = (None::<u32>, 0u64, 0usize);
-    // 1 = localclock's day 0, as the classic snapshot's `--now-day`.
-    let mut now_day = 1u32;
-    let mut weather = None::<String>;
-    let mut repos: Vec<String> = pixtuoid_scene::DEMO_REPOS[..pixtuoid_scene::DEMO_TEAMS]
-        .iter()
-        .map(|&r| r.to_string())
-        .collect();
-    let (mut lw, mut lh) = DEFAULT_LOGICAL;
-    let rest: Vec<String> = args.collect();
-    let mut i = 0;
-    while i < rest.len() {
-        let val = |k: &str| -> Result<String> {
-            rest.get(i + 1)
-                .cloned()
-                .ok_or_else(|| anyhow!("{k} needs a value"))
-        };
-        match rest[i].as_str() {
-            "--scale" => scale_n = Some(val("--scale")?.parse().context("bad --scale")?),
-            "--agents" => agents = val("--agents")?.parse().context("bad --agents")?,
-            "--theme" => theme_name = val("--theme")?,
-            "--logical" => {
-                let v = val("--logical")?;
-                let (w, h) = v
-                    .split_once('x')
-                    .ok_or_else(|| anyhow!("--logical wants WxH"))?;
-                lw = w.parse().context("bad --logical width")?;
-                lh = h.parse().context("bad --logical height")?;
-            }
-            "--now-hour" => now_hour = Some(val("--now-hour")?.parse().context("bad --now-hour")?),
-            "--now-day" => now_day = val("--now-day")?.parse().context("bad --now-day")?,
-            // Seconds past `--now-hour`, fine enough to sample a weather
-            // transition.
-            "--now-sec" => now_sec = val("--now-sec")?.parse().context("bad --now-sec")?,
-            "--weather" => weather = Some(val("--weather")?),
-            "--repos" => repos = val("--repos")?.split(',').map(str::to_string).collect(),
-            "--floor" => floor = val("--floor")?.parse().context("bad --floor index")?,
-            other => return Err(anyhow!("unexpected arg: {other}")),
-        }
-        i += 2;
-    }
+fn parse_logical(s: &str) -> Result<(u16, u16), String> {
+    let side = |n: &str| n.parse::<u16>().map_err(|e| format!("{n:?}: {e}"));
+    let (w, h) = s
+        .split_once('x')
+        .ok_or_else(|| format!("{s:?}: want WxH"))?;
+    Ok((side(w)?, side(h)?))
+}
+
+fn main() -> Result<()> {
+    let CutawayArgs {
+        out,
+        scale: scale_n,
+        agents,
+        theme: theme_name,
+        logical,
+        now_hour,
+        now_day,
+        now_sec,
+        weather,
+        repos,
+        floor,
+    } = CutawayArgs::parse();
+    let (lw, lh) = logical.unwrap_or(DEFAULT_LOGICAL);
     let theme =
         theme_by_name(&theme_name).ok_or_else(|| anyhow!("unknown theme {theme_name:?}"))?;
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack()?);
@@ -153,13 +152,10 @@ fn main() -> Result<()> {
             )
         })?;
     let now = match now_hour {
-        Some(h) => pixtuoid_scene::localclock::try_on_day(now_day.saturating_sub(1), h)
+        Some(h) => pixtuoid_scene::localclock::try_on_day(now_day - 1, h)
             .with_context(|| format!("invalid --now-day/--now-hour {now_day}:{h}"))?,
         None => SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000),
     };
-    if now_sec >= 3600 || (now_sec > 0 && now_hour.is_none()) {
-        return Err(anyhow!("--now-sec wants 0..3600 and a --now-hour"));
-    }
     let now = now + Duration::from_secs(now_sec);
     let conditions = Conditions::default().with_weather(policy);
 
@@ -208,10 +204,12 @@ fn main() -> Result<()> {
         let (x, y) = (i as u32 % u32::from(bw), i as u32 / u32::from(bw));
         img.put_pixel(x, y, ImgRgb([px.r, px.g, px.b]));
     }
-    img.save(&out).with_context(|| format!("writing {out}"))?;
+    img.save(&out)
+        .with_context(|| format!("writing {}", out.display()))?;
     eprintln!(
-        "wrote {out} ({bw}x{bh} = {lw}x{lh} logical @{scale_n}x, \
+        "wrote {} ({bw}x{bh} = {lw}x{lh} logical @{scale_n}x, \
          {} desks, {} agents)",
+        out.display(),
         layout.home_desks.len(),
         picture
             .hits
@@ -220,4 +218,21 @@ fn main() -> Result<()> {
             .count()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The day is read only beside an hour, so a day alone would render the
+    /// default instant's sky, unasked.
+    #[test]
+    fn now_day_refuses_zero_and_wants_now_hour() {
+        let parses = |flags: &[&str]| {
+            CutawayArgs::try_parse_from([&["cutaway", "o.png"], flags].concat()).is_ok()
+        };
+        assert!(parses(&["--now-hour", "22", "--now-day", "1"]));
+        assert!(!parses(&["--now-hour", "22", "--now-day", "0"]));
+        assert!(!parses(&["--now-day", "5"]));
+    }
 }

@@ -232,6 +232,10 @@ test = true
 name = "corpus_check"
 test = true
 
+[[example]]
+name = "cutaway_snapshot"
+test = true
+
 [[bench]]
 name              = "render_tiles"
 harness           = false

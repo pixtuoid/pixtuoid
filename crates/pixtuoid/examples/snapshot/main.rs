@@ -157,7 +157,7 @@ struct SnapshotArgs {
     now_hour: Option<u32>,
 
     /// Override the local day (1 = `pixtuoid_scene::localclock`'s day 0) used by time-of-day.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+    #[arg(long, default_value_t = 1, requires = "now_hour", value_parser = clap::value_parser!(u32).range(1..))]
     now_day: u32,
 
     /// Seconds past `--now-hour` (0–3599), fine enough to sample a weather
@@ -1034,6 +1034,16 @@ mod tests {
     fn max_desks_refuses_zero() {
         assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "0"]).is_err());
         assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "1"]).is_ok());
+    }
+
+    /// The day is read only beside an hour, so a day alone would render the
+    /// default instant's sky, unasked.
+    #[test]
+    fn now_day_refuses_zero_and_wants_now_hour() {
+        let parses = |argv: &[&str]| SnapshotArgs::try_parse_from(argv).is_ok();
+        assert!(parses(&["snapshot", "--now-hour", "22", "--now-day", "1"]));
+        assert!(!parses(&["snapshot", "--now-hour", "22", "--now-day", "0"]));
+        assert!(!parses(&["snapshot", "--now-day", "5"]));
     }
 
     #[test]
