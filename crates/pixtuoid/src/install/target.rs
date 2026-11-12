@@ -229,7 +229,8 @@ pub struct HostRegistration {
     /// What brings a rewrite of the plugin's files to the CLI: `None` when it picks
     /// one up on its own.
     pub pickup: Option<Pickup>,
-    /// `None` when no released pixtuoid ever merged hooks into the CLI's own config.
+    /// Set only where what an older pixtuoid merged into the CLI's own config breaks
+    /// the CLI when left.
     pub legacy: Option<LegacyConfig>,
 }
 

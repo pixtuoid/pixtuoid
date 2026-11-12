@@ -282,8 +282,15 @@ mod tests {
             .filter(|t| t.host.is_some_and(|h| h.legacy.is_some()))
     }
 
-    static LEGACY_HOSTS: std::sync::LazyLock<Vec<&'static str>> =
-        std::sync::LazyLock::new(|| legacy_hosts().map(|t| t.core_source).collect());
+    /// Every host a reconnect notice names, a released pixtuoid having merged
+    /// hooks into each.
+    static LEGACY_HOSTS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+        REPLUGGED
+            .iter()
+            .chain([&target::HERMES, &target::ANTIGRAVITY].iter())
+            .map(|t| t.core_source)
+            .collect()
+    });
 
     fn versions(previous: &str, current: &str) -> Versions {
         Versions {

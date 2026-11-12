@@ -1605,40 +1605,6 @@ fn claude_install_registers_the_plugin() {
     });
 }
 
-/// A 0.19.0 install merged a sentinel group per event into Claude Code's own
-/// settings.json; left beside the plugin, every event would fire twice.
-#[test]
-fn claude_connect_strips_the_hooks_an_older_pixtuoid_merged_into_its_settings() {
-    with_fake_hosts(|_| {
-        let user = serde_json::json!({
-            "matcher": "",
-            "hooks": [{ "type": "command", "command": "notify-send done" }],
-        });
-        let legacy = serde_json::json!({
-            SENTINEL_KEY: true,
-            "matcher": ".*",
-            "hooks": [{ "type": "command", "command": "PIXTUOID_SOURCE=claude-code 'pixtuoid-hook'" }],
-        });
-        std::fs::write(
-            cc_settings(),
-            serde_json::json!({ "theme": "dark", "hooks": { "Stop": [user, legacy] } }).to_string(),
-        )
-        .unwrap();
-        let tmp = tempfile::TempDir::new().unwrap();
-        let hooks = plugin_hooks_path(tmp.path());
-        install_target_from(
-            &CLAUDE,
-            Some(hooks),
-            Some(PathBuf::from("/fake/pixtuoid-hook")),
-        )
-        .unwrap();
-        let settings: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(cc_settings()).unwrap()).unwrap();
-        assert_eq!(settings["hooks"]["Stop"], serde_json::json!([user]));
-        assert_eq!(settings["theme"], "dark");
-    });
-}
-
 #[test]
 fn claude_verify_flags_an_unregistered_plugin() {
     with_fake_hosts(|_| {
@@ -2007,29 +1973,6 @@ fn a_connect_without_the_host_cli_leaves_the_legacy_hooks() {
     });
 }
 
-/// A legacy config the strip cannot parse fails the disconnect, but only after the
-/// plugin is deregistered.
-#[test]
-fn a_disconnect_removes_the_plugin_before_an_unparsable_legacy_config_fails_it() {
-    with_fake_hosts(|fake| {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let manifest = reasonix_manifest_path(tmp.path());
-        install_target_from(
-            &REASONIX,
-            Some(manifest.clone()),
-            Some(PathBuf::from("/fake/pixtuoid-hook")),
-        )
-        .unwrap();
-        std::fs::write(reasonix_settings(), "{not json").unwrap();
-        assert!(uninstall_target(&REASONIX, Some(manifest)).is_err());
-        let calls = std::fs::read_to_string(fake.join("calls.log")).unwrap();
-        assert!(
-            calls.contains("reasonix plugin remove pixtuoid --yes"),
-            "calls: {calls}"
-        );
-    });
-}
-
 /// Each host reads its own state file: absent is not registered, and one it cannot
 /// parse is an error rather than a guess.
 #[test]
@@ -2159,20 +2102,12 @@ fn codex_connect_fails_when_adding_the_plugin_fails_and_leaves_no_hooks() {
 fn a_connect_over_an_unparsable_legacy_config_errs_and_rewrites_nothing() {
     with_fake_hosts(|fake| {
         let tmp = tempfile::TempDir::new().unwrap();
-        for (t, legacy, primary, register) in [
-            (
-                &CODEX,
-                codex_config(),
-                plugin_hooks_path(tmp.path()),
-                "codex plugin",
-            ),
-            (
-                &REASONIX,
-                reasonix_settings(),
-                reasonix_manifest_path(tmp.path()),
-                "reasonix plugin",
-            ),
-        ] {
+        for (t, legacy, primary, register) in [(
+            &CODEX,
+            codex_config(),
+            plugin_hooks_path(tmp.path()),
+            "codex plugin",
+        )] {
             std::fs::write(&legacy, "{ not = = valid [[[").unwrap();
             let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
             assert!(
@@ -2226,20 +2161,9 @@ fn reasonix_manifest_path(tmp: &std::path::Path) -> PathBuf {
         .join("reasonix-plugin.json")
 }
 
-fn reasonix_settings() -> PathBuf {
-    reasonix_packages().with_file_name("settings.json")
-}
-
 #[test]
-fn reasonix_connect_links_the_plugin_and_strips_the_hooks_an_older_pixtuoid_merged() {
+fn reasonix_connect_links_the_plugin() {
     with_fake_hosts(|fake| {
-        let user = serde_json::json!({ "command": "notify-send done" });
-        let legacy = serde_json::json!({ SENTINEL_KEY: true, "command": "PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'" });
-        std::fs::write(
-            reasonix_settings(),
-            serde_json::json!({ "hooks": { "Stop": [user, legacy] } }).to_string(),
-        )
-        .unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
         let manifest = reasonix_manifest_path(tmp.path());
         let hook = Some(std::env::current_exe().unwrap());
@@ -2254,9 +2178,6 @@ fn reasonix_connect_links_the_plugin_and_strips_the_hooks_an_older_pixtuoid_merg
             )),
             "calls: {calls}"
         );
-        let settings: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(reasonix_settings()).unwrap()).unwrap();
-        assert_eq!(settings["hooks"]["Stop"], serde_json::json!([user]));
         assert!(has_hooks(&REASONIX, Some(manifest.clone())));
         let v = verify_target(&REASONIX, Some(manifest.clone()));
         assert!(v.is_sound(), "{:?}", v.issues);
@@ -2364,23 +2285,9 @@ fn reasonix_connect_fails_when_linking_fails_and_leaves_no_hooks() {
     });
 }
 
-/// The shared hooks file an older pixtuoid merged into, under the fake's `HOME`.
-fn agy_legacy_hooks() -> PathBuf {
-    let legacy = ANTIGRAVITY.host.unwrap().legacy.as_ref().unwrap();
-    let path = (legacy.path)().expect("inside with_fake_hosts");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    path
-}
-
 #[test]
-fn antigravity_connect_writes_its_plugin_and_strips_the_hook_an_older_pixtuoid_merged() {
+fn antigravity_connect_writes_and_enables_its_plugin() {
     with_fake_hosts(|fake| {
-        let legacy = agy_legacy_hooks();
-        std::fs::write(
-            &legacy,
-            r#"{"lint": {"Stop": []}, "pixtuoid": {"Stop": [{"command": "old"}]}}"#,
-        )
-        .unwrap();
         let hook = Some(std::env::current_exe().unwrap());
         let r = install_target_from(&ANTIGRAVITY, None, hook).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::Installed));
@@ -2388,11 +2295,6 @@ fn antigravity_connect_writes_its_plugin_and_strips_the_hook_an_older_pixtuoid_m
         assert_eq!(calls_of(fake, "agy"), ["agy plugin enable pixtuoid"]);
         let primary = (ANTIGRAVITY.default_config_path)().unwrap();
         assert!(primary.with_file_name("plugin.json").exists());
-        let shared = std::fs::read_to_string(&legacy).unwrap();
-        assert!(
-            shared.contains("lint") && !shared.contains("pixtuoid"),
-            "{shared}"
-        );
         assert!(has_hooks(&ANTIGRAVITY, None));
         let v = verify_target(&ANTIGRAVITY, None);
         assert!(v.is_sound(), "{:?}", v.issues);
@@ -2498,13 +2400,8 @@ fn calls_of(fake: &std::path::Path, cli: &str) -> Vec<String> {
 }
 
 #[test]
-fn hermes_connect_enables_the_plugin_and_strips_the_shell_hooks_an_older_pixtuoid_merged() {
+fn hermes_connect_enables_the_plugin() {
     with_fake_hosts(|fake| {
-        std::fs::write(
-            hermes_config(),
-            "model: gpt\nhooks:\n  on_session_start:\n    - command: notify\n    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      _pixtuoid: true\n",
-        )
-        .unwrap();
         let hook = Some(std::env::current_exe().unwrap());
         let r = install_target_from(&HERMES, None, hook).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::Installed));
@@ -2513,13 +2410,6 @@ fn hermes_connect_enables_the_plugin_and_strips_the_shell_hooks_an_older_pixtuoi
         let manifest =
             std::fs::read_to_string(hermes_plugin().with_file_name("plugin.yaml")).unwrap();
         assert!(manifest.starts_with("name: pixtuoid\n"), "{manifest}");
-        let config = std::fs::read_to_string(hermes_config()).unwrap();
-        assert!(
-            config.contains("notify")
-                && config.contains("model: gpt")
-                && !config.contains(SENTINEL_KEY),
-            "{config}"
-        );
         assert!(has_hooks(&HERMES, None));
         let v = verify_target(&HERMES, None);
         assert!(v.is_sound(), "{:?}", v.issues);

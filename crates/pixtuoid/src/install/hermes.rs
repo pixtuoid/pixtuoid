@@ -6,22 +6,16 @@
 //! `hermes plugins enable`, the documented path for a user plugin
 //! (`website/docs/user-guide/features/plugins.md:97` at v0.22.5), which also loads
 //! it into a running gateway.
-//!
-//! An older pixtuoid merged shell hooks into `config.yaml` instead, and their
-//! payload's `cwd` is the gateway's own dir. Connect and disconnect strip them
-//! ([`LegacyConfig`]); that YAML rewrite keeps the user's other keys but drops
-//! comments (a saphyr limitation).
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use saphyr::{MappingOwned, ScalarOwned, YamlOwned};
 
-use crate::install::SENTINEL_KEY;
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge::{self, SentinelPlugin};
-use crate::install::target::{HostRegistration, LegacyConfig, MergeOutcome, Pickup, Unregistered};
+use crate::install::target::{HostRegistration, MergeOutcome, Pickup, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 
 pub(crate) const HOST: HostRegistration = HostRegistration {
@@ -30,10 +24,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     unregister,
     is_registered,
     pickup: Some(Pickup::Reload(reload)),
-    legacy: Some(LegacyConfig {
-        path: config_path,
-        strip: strip_shell_hooks,
-    }),
+    legacy: None,
 };
 
 const CLI: io::HostCli = io::HostCli { command: "hermes" };
@@ -81,8 +72,7 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     Ok(home()?.join(PLUGINS).join(NAME).join(PLUGIN_FILE))
 }
 
-/// The `config.yaml` hermes keeps its plugin lists in, and an older pixtuoid its
-/// shell hooks.
+/// The `config.yaml` hermes keeps its plugin lists in.
 fn config_path() -> Result<PathBuf> {
     Ok(home()?.join("config.yaml"))
 }
@@ -204,10 +194,6 @@ fn ystr(s: &str) -> YamlOwned {
     YamlOwned::Value(ScalarOwned::String(s.to_string()))
 }
 
-fn ybool(b: bool) -> YamlOwned {
-    YamlOwned::Value(ScalarOwned::Boolean(b))
-}
-
 fn parse_root_mapping(content: &str) -> Result<MappingOwned> {
     match merge::single_yaml_doc(content, "config.yaml")? {
         None => Ok(MappingOwned::new()),
@@ -216,121 +202,10 @@ fn parse_root_mapping(content: &str) -> Result<MappingOwned> {
     }
 }
 
-/// `root` as the config.yaml `content` held.
-fn emit(content: &str, root: &MappingOwned) -> Result<String> {
-    merge::emit_yaml(content, &YamlOwned::Mapping(root.clone()), "config.yaml")
-}
-
-fn is_managed(entry: &YamlOwned) -> bool {
-    matches!(entry, YamlOwned::Mapping(m) if m.get(&ystr(SENTINEL_KEY)) == Some(&ybool(true)))
-}
-
-/// Remove every `hooks:` entry an older pixtuoid merged (its `_pixtuoid: true`
-/// sentinel), dropping an event, and then `hooks:` itself, it emptied.
-pub(crate) fn strip_shell_hooks(content: &str) -> Result<MergeOutcome> {
-    let mut root = parse_root_mapping(content).context("refusing to overwrite config.yaml")?;
-    let hooks_key = ystr("hooks");
-    let Some(YamlOwned::Mapping(hooks)) = root.get_mut(&hooks_key) else {
-        return Ok(MergeOutcome {
-            content: emit(content, &root)?,
-            changed: false,
-        });
-    };
-
-    let mut changed = false;
-    let mut emptied_events: Vec<YamlOwned> = Vec::new();
-    for (k, v) in hooks.iter_mut() {
-        if let YamlOwned::Sequence(seq) = v {
-            let before = seq.len();
-            seq.retain(|e| !is_managed(e));
-            if seq.len() != before {
-                changed = true;
-                if seq.is_empty() {
-                    emptied_events.push(k.clone());
-                }
-            }
-        }
-    }
-    for k in emptied_events {
-        hooks.remove(&k);
-    }
-    // Gated on `changed` so an already-empty user `hooks:` is never touched.
-    if changed && matches!(root.get(&hooks_key), Some(YamlOwned::Mapping(m)) if m.is_empty()) {
-        root.remove(&hooks_key);
-    }
-
-    Ok(MergeOutcome {
-        content: emit(content, &root)?,
-        changed,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::install::merge::HOOK_PLACEHOLDER;
-
-    /// What an older pixtuoid merged, beside a user's own hook and key.
-    const LEGACY: &str = "model: gpt\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh\n    - command: \"'/opt/pixtuoid-hook' --source hermes\"\n      timeout: 5\n      _pixtuoid: true\n  on_session_finalize:\n    - command: \"'/opt/pixtuoid-hook' --source hermes\"\n      timeout: 5\n      _pixtuoid: true\n";
-
-    #[test]
-    fn the_legacy_strip_ends_with_a_newline_in_the_files_line_ending() {
-        for ending in ["\n", "\r\n"] {
-            let out = strip_shell_hooks(&LEGACY.replace('\n', ending)).unwrap();
-            assert!(out.changed);
-            assert!(out.content.ends_with(ending), "{:?}", out.content);
-            assert_eq!(
-                out.content.matches('\n').count(),
-                out.content.matches(ending).count(),
-                "{:?}",
-                out.content
-            );
-        }
-    }
-
-    #[test]
-    fn the_legacy_strip_refuses_a_second_document_rather_than_dropping_it() {
-        let err = strip_shell_hooks(&format!("{LEGACY}---\nmodel: other\n")).unwrap_err();
-        assert!(
-            format!("{err:#}").contains("more than one YAML document"),
-            "{err:#}"
-        );
-    }
-
-    #[test]
-    fn the_legacy_strip_removes_only_managed_hooks_and_keeps_the_users() {
-        let out = strip_shell_hooks(LEGACY).unwrap();
-        assert!(out.changed);
-        let root = parse_root_mapping(&out.content).unwrap();
-        assert_eq!(root.get(&ystr("model")), Some(&ystr("gpt")));
-        let Some(YamlOwned::Mapping(hooks)) = root.get(&ystr("hooks")) else {
-            panic!("the user's hook went: {}", out.content);
-        };
-        let Some(YamlOwned::Sequence(seq)) = hooks.get(&ystr("pre_tool_call")) else {
-            panic!("{}", out.content);
-        };
-        assert_eq!(seq.len(), 1, "{}", out.content);
-        assert!(
-            hooks.get(&ystr("on_session_finalize")).is_none(),
-            "an emptied event is dropped: {}",
-            out.content
-        );
-        assert!(!strip_shell_hooks(&out.content).unwrap().changed);
-    }
-
-    #[test]
-    fn the_legacy_strip_drops_a_hooks_mapping_it_emptied_but_never_a_users_empty_one() {
-        let only_ours =
-            "model: gpt\nhooks:\n  on_session_start:\n    - command: x\n      _pixtuoid: true\n";
-        let out = strip_shell_hooks(only_ours).unwrap();
-        let root = parse_root_mapping(&out.content).unwrap();
-        assert!(root.get(&ystr("hooks")).is_none(), "{}", out.content);
-        assert_eq!(root.get(&ystr("model")), Some(&ystr("gpt")));
-        assert!(!strip_shell_hooks("hooks: {}\n").unwrap().changed);
-        assert!(!strip_shell_hooks("").unwrap().changed);
-        let refused = strip_shell_hooks("- 1\n- 2\n").unwrap_err();
-        assert!(format!("{refused:#}").contains("refusing to overwrite"));
-    }
 
     #[test]
     fn the_rendered_plugin_bakes_the_shim_and_verifies_sound() {

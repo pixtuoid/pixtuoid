@@ -3,9 +3,6 @@
 //! "Manual plugin installation"), so pixtuoid writes only its own files. `agy plugin
 //! install` would only copy a dir to that same place.
 //!
-//! An older pixtuoid merged its hooks into the shared `~/.gemini/config/hooks.json`;
-//! connect and disconnect strip them ([`LegacyConfig`]).
-//!
 //! agy's payload names no event, so each command bakes [`HOOK_EVENT_FLAG`] and the
 //! event for the shim to stamp.
 
@@ -18,7 +15,7 @@ use crate::install::hook_cmd::HOOK_EVENT_FLAG;
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-use crate::install::target::{HostRegistration, LegacyConfig, MergeOutcome, Unregistered};
+use crate::install::target::{HostRegistration, MergeOutcome, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef, assemble, shell_shim_ref};
 use pixtuoid_core::source::antigravity::{CLI_APP_DATA_DIR, SOURCE_NAME, gemini_dir};
 
@@ -28,10 +25,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     unregister,
     is_registered,
     pickup: None,
-    legacy: Some(LegacyConfig {
-        path: legacy_hooks_path,
-        strip: strip_legacy_hooks,
-    }),
+    legacy: None,
 };
 
 const CLI: io::HostCli = io::HostCli { command: "agy" };
@@ -71,10 +65,6 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("plugins").join(NAME).join(HOOKS_FILE))
 }
 
-fn legacy_hooks_path() -> Result<PathBuf> {
-    Ok(config_dir()?.join(HOOKS_FILE))
-}
-
 /// agy creates its app data dir on first run; `~/.gemini` alone is Gemini CLI's
 /// too.
 pub(crate) fn detect_installed() -> bool {
@@ -105,15 +95,6 @@ pub(crate) fn uninstall(content: &str) -> Result<MergeOutcome> {
     Ok(MergeOutcome {
         content: "{}\n".to_string(),
         changed: ours,
-    })
-}
-
-fn strip_legacy_hooks(content: &str) -> Result<MergeOutcome> {
-    merge::flat_json_merge_outcome_uninstall(content, |mut doc| {
-        if let Some(root) = doc.as_object_mut() {
-            root.remove(NAME);
-        }
-        doc
     })
 }
 
@@ -304,19 +285,6 @@ mod tests {
                 assert!(set[event][0].get("hooks").is_none(), "{event} is flat");
             }
         }
-    }
-
-    #[test]
-    fn the_legacy_strip_removes_only_pixtuoids_hook() {
-        let user = r#"{"lint": {"Stop": []}}"#;
-        let with = json!({ "lint": {"Stop": []}, NAME: hook_set(CMD) }).to_string();
-        let out = strip_legacy_hooks(&with).expect("strip");
-        assert!(out.changed);
-        let doc: Value = serde_json::from_str(&out.content).expect("json");
-        assert!(doc.get(NAME).is_none());
-        assert_eq!(doc["lint"], json!({"Stop": []}));
-        assert!(!strip_legacy_hooks(user).expect("absent").changed);
-        assert!(!strip_legacy_hooks("").expect("empty").changed);
     }
 
     #[test]
