@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import sourcesData from '../../src/sources.json' with { type: 'json' };
-import { E2E_STAR_COUNT } from '../../config/gh-stars.mjs';
+import { E2E_STAR_COUNT } from '../../config/github.mjs';
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
 const supportedSources = (sourcesData as SourceRow[]).filter((s) => s.status === 'supported');
@@ -1874,7 +1874,7 @@ test('first visit: splash displays 4-line log with per-line dwell (~390ms)', asy
   await expect(page.locator('#boot .boot__log')).toContainText('booting office');
   await expect(page.locator('#boot .boot__log')).toContainText('loading themes');
   await expect(page.locator('#boot .boot__log')).toContainText(
-    `${sourcesData.length} CLIs connected`
+    `${supportedSources.length} CLIs connected`
   );
   // ~2.1s nominal: 4 lines at the 390ms dwell, plus the 460ms fade.
   await expect(page.locator('html')).not.toHaveAttribute('data-booting', '1', {

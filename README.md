@@ -15,7 +15,9 @@
 
 <p align="center">
   <a href="https://github.com/pixtuoid/pixtuoid/releases"><img src="https://img.shields.io/github/v/release/pixtuoid/pixtuoid?label=version&style=flat-square" alt="Version" /></a>
-  <a href="https://pixtuoid.dev/#tools"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpixtuoid%2Fpixtuoid%2Fmain%2Fsite%2Fsrc%2Fsources.json&query=%24.length&label=agents%20supported&style=flat-square&color=8957e5" alt="Supported agents" /></a>
+<!-- agents-badge:start · generated from site/src/sources.json by `just gen-readme` — edit the JSON, not this badge -->
+  <a href="https://pixtuoid.dev/#tools"><img src="https://img.shields.io/badge/agents%20supported-15-8957e5?style=flat-square" alt="Supported agents" /></a>
+<!-- agents-badge:end -->
   <a href="https://github.com/pixtuoid/pixtuoid/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/pixtuoid/pixtuoid/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
   <a href="https://github.com/pixtuoid/pixtuoid/actions/workflows/github-code-scanning/codeql"><img src="https://img.shields.io/github/actions/workflow/status/pixtuoid/pixtuoid/github-code-scanning/codeql?style=flat-square&label=CodeQL" alt="CodeQL" /></a>
   <a href="https://codecov.io/github/pixtuoid/pixtuoid"><img src="https://img.shields.io/codecov/c/github/pixtuoid/pixtuoid?style=flat-square&label=coverage" alt="Codecov" /></a>

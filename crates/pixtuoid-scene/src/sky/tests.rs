@@ -1069,8 +1069,8 @@ fn the_transition_found_changes_the_weather() {
 /// before, some a minute after.
 #[test]
 fn nightfall_begins_when_nightfall_on_says() {
-    let day = crate::localclock::at_hour(9);
-    let start = nightfall_on(day).expect("a local evening");
+    let morning = crate::localclock::at_hour(9);
+    let start = nightfall_on(morning).expect("a local evening");
     let minute = Duration::from_secs(60);
     assert_eq!(nightfall(local_hour_frac(start - minute)), 0.0);
     assert!(nightfall(local_hour_frac(start + minute)) > 0.0);

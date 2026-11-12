@@ -3,7 +3,7 @@ description: 'Sets up the Rust toolchain, rust-cache, and just plus the given mi
 
 inputs:
   components:
-    description: 'Comma-separated list of toolchain components'
+    description: 'Comma-separated components beyond rust-toolchain.toml''s'
     required: false
     default: ''
   targets:

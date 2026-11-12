@@ -155,6 +155,14 @@ regenSection(
     ...experimentalNotes.map((n) => `\n${n}`),
   ].join('\n')
 );
+// A static badge, so the count is this tree's and --check sees it: a shields
+// query on the JSON counted the planned rows and named a URL no gate parses.
+regenSection(
+  'agents badge',
+  '<!-- agents-badge:start · generated from site/src/sources.json by `just gen-readme` — edit the JSON, not this badge -->',
+  '<!-- agents-badge:end -->',
+  `  <a href="${SITE}/#tools"><img src="https://img.shields.io/badge/agents%20supported-${supported.length}-8957e5?style=flat-square" alt="Supported agents" /></a>`
+);
 
 // Half the docs jobs' render width, so a 2x screen draws each pixel.
 const README_IMAGE_WIDTH = 768;

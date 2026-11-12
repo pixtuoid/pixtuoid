@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { REPO_BLOB } from '../../config/github.mjs';
 
 // Runs against the PRODUCTION build (see playwright.config.ts).
 
@@ -23,6 +25,26 @@ test('docs mount the statusline: route path left, install chip right, no landing
   await expect(bar.locator('[data-floor-toggle]')).toHaveCount(0);
   await expect(bar.locator('.sl__feed')).toHaveCount(0);
   expect(errors()).toEqual([]);
+});
+
+test("every doc page's source link names its own file in this repo", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./config/');
+  const pages = await page
+    .locator('.docs__sidebar .docs__list:not(.docs__list--building) a')
+    .evaluateAll((links) => links.map((a) => (a as HTMLAnchorElement).href));
+  expect(pages.length, 'the docs wing lists no page').toBeGreaterThan(0);
+  const hrefs = new Set<string>();
+  for (const url of pages) {
+    await page.goto(url);
+    const href = (await page.locator('.docs__source a').getAttribute('href')) ?? '';
+    expect(href.startsWith(`${REPO_BLOB}/`), `${url} links ${href}`).toBe(true);
+    const file = new URL(`../../../${href.slice(REPO_BLOB.length + 1)}`, import.meta.url);
+    expect(existsSync(file), `${url} links ${href}, no file of this repo`).toBe(true);
+    hrefs.add(href);
+  }
+  // Each page renders a different doc, so a link that names another page's file repeats.
+  expect(hrefs.size, `the source links repeat: ${[...hrefs]}`).toBe(pages.length);
 });
 
 test('404 mounts the statusline too', async ({ page }) => {
@@ -108,12 +130,32 @@ test('tenant board: hw-panel screen, LED dots with shape distinction, sr-only va
   await expect(page.locator('#tools')).toHaveAttribute('data-floor', '2F');
 });
 
-test('the star plaque hangs beside the tenant board', async ({ page }) => {
+// The lobby row wraps (`flex-wrap`), so the plaque sits beside the board only
+// where the row fits both.
+test('the star plaque hangs beside the tenant board when wide and under it on a phone', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./');
   const plaque = page.locator('#tools .tools__plaque');
-  await expect(plaque).toHaveClass(/hw-panel/);
-  await expect(plaque).toContainText('★');
+  const board = page.locator('#tools .tools__board');
+  for (const [width, beside] of [
+    [1280, true],
+    [390, false],
+  ] as const) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('./');
+    await expect(plaque).toHaveClass(/hw-panel/);
+    await expect(plaque).toContainText('★');
+    const p = (await plaque.boundingBox())!;
+    const b = (await board.boundingBox())!;
+    if (beside) {
+      expect(p.x, `${width}px: right of the board`).toBeGreaterThanOrEqual(b.x + b.width);
+      expect(p.y, `${width}px: on the board's row`).toBeLessThan(b.y + b.height);
+    } else {
+      expect(p.y, `${width}px: under the board`).toBeGreaterThanOrEqual(b.y + b.height);
+    }
+  }
 });
 
 test('pantry FAQ: an indented answer stays inside the chat column', async ({ page }) => {

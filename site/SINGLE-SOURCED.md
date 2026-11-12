@@ -9,7 +9,7 @@ only carries what no gate can.
 
 | Rendered output                                                          | Source of truth                                                                                                                                                                  | Regen             | Drift gate                                                                                                |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------- |
-| Root `README.md` features table + install block + tools glimpse + images | `src/features.json` / `src/install.json` / `src/sources.json`; each image's `caption` in `scripts/media.json`; its site links' origin from the workspace `Cargo.toml` `homepage` | `just gen-readme` | `just gen-readme-check` (CI `generated drift` job)                                                        |
+| Root `README.md`: features, install, tools glimpse, agents badge, images | `src/features.json` / `src/install.json` / `src/sources.json`; each image's `caption` in `scripts/media.json`; its site links' origin from the workspace `Cargo.toml` `homepage` | `just gen-readme` | `just gen-readme-check` (CI `generated drift` job)                                                        |
 | Graphics protocol names (README features table, the site's roster)       | `src/features.json` `protocols`, filled by `config/feature-text.mjs`                                                                                                             | `just gen-readme` | `gen-readme-check`; Rust `the_site_names_every_image_protocol` holds it to `ImageProtocol`                |
 | `public/demos/*` stills + clips                                          | `scripts/media.json` → `gen-media.py` (real TuiRenderer; wasm `hero_still` for `hero-wide.png` / `vibing-poster.png`)                                                            | `just site-demos` | none: gitignored, rendered per CI build (`.github/actions/gen-demos`)                                     |
 | `src/assets/pix-icons/*.png`                                             | sprite pack palette (`pack.toml`) → `gen-pix-icons.py`                                                                                                                           | `just gen-icons`  | `just gen-icons-check` (decode-compared); `config/pix-icons.test.mjs` bridges `features.json` `pix` names |
@@ -52,12 +52,11 @@ Notes no gate carries:
   pixelated canvas from `Office.overlay_json()`, the painters' badge/neon_sign
   model (the web `labels == badges` test): a badge's name in its activity tone
   on its plate, ringed in its CLI's hue and framed by the engine's
-  `badge_insets`, never a copy of its numbers. Rules:
-  captions pop in only after the roll settles; `JSON.parse` try/caught;
-  `.textContent` never `innerHTML` (cwds are untrusted); reduced-motion is
-  `display:none`; the board's legibility is HALO-carried by design (raw hues are
-  deliberately not WCAG-gated against office pixels). Pinned by
-  `smoke.spec.ts` "crisp AA captions overlay the live office".
+  `badge_insets`, never a copy of its numbers. Rules: captions pop in only after
+  the roll settles; `.textContent` never `innerHTML` (cwds are untrusted);
+  reduced-motion is `display:none`; the board's legibility is HALO-carried by
+  design (raw hues are deliberately not WCAG-gated against office pixels).
+  Pinned by `smoke.spec.ts` "crisp AA captions overlay the live office".
 - **Contrast has FOUR populations**, each swept: bare-over-office
   ("bare hero text clears WCAG AA…" — `officeGrounds` scrolls the element in
   AND asserts the read hit painted canvas, else `getImageData` grades "dimmer

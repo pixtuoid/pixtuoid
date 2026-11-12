@@ -2,15 +2,13 @@ import themesData from './themes.json';
 import weatherData from './weather.json';
 import showcaseData from './showcase.json';
 import featuresData from './features.json';
-import { REPO_SLUG } from '../config/gh-stars.mjs';
 import { featureText } from '../config/feature-text.mjs';
 
-// Base is '/' today, but every internal URL still goes through asset()/BASE_URL
-// so a base change can never silently break links.
-export const REPO = `https://github.com/${REPO_SLUG}`;
 export const CRATES = 'https://crates.io/crates/pixtuoid';
 export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
 
+// Base is '/' today, but every internal URL still goes through asset()/BASE_URL
+// so a base change can never silently break links.
 const BASE = import.meta.env.BASE_URL;
 export const asset = (p: string): string => `${BASE.replace(/\/$/, '')}/${p.replace(/^\//, '')}`;
 

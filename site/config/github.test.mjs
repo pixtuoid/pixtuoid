@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import process from 'node:process';
 import { readFileSync } from 'node:fs';
-import { E2E_STAR_COUNT, REPO_SLUG, fetchStarCount } from './gh-stars.mjs';
+import { E2E_STAR_COUNT, REPO, REPO_SLUG, fetchStarCount } from './github.mjs';
+import { workspacePackageField } from './workspace-package.mjs';
 
 const ok = (count) =>
   /** @type {any} */ ({ ok: true, json: async () => ({ stargazers_count: count }) });
@@ -81,4 +82,9 @@ test("install.json's GitHub links name REPO_SLUG, the copy JSON can't import", (
   const slugs = [...json.matchAll(/github\.com\/([\w.-]+\/[\w.-]+)/g)].map((m) => m[1]);
   assert.ok(slugs.length > 0, 'install.json names no GitHub repository');
   for (const slug of slugs) assert.equal(slug, REPO_SLUG);
+});
+
+test("REPO is Cargo.toml's `repository`, the URL the Rust crates link", () => {
+  const cargo = readFileSync(new URL('../../Cargo.toml', import.meta.url), 'utf8');
+  assert.equal(REPO, workspacePackageField(cargo, 'repository'));
 });

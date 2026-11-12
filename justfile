@@ -867,7 +867,7 @@ gen-banner-check:
 gen-fonts:
     {{ UV_DEV }} python3 scripts/gen-fonts.py
 
-[doc('Sync README install/features/tools sections from site/src/*.json, its images from scripts/media.json + docs/images, and its links from Cargo.toml homepage')]
+[doc("Sync README's generated blocks from site/src/*.json, its images from scripts/media.json + docs/images, and its links from Cargo.toml homepage")]
 [group('gen')]
 gen-readme:
     node scripts/gen-readme.mjs
@@ -1014,10 +1014,10 @@ stage-notices dir:
         cp "$notice" "$dest"
     done
 
-# The npm packages' tests, their only run before a tag-push, and every
+# The npm packages' tests, their only run before a tag-push, and every JS
 # plugin's selftest, which executes it against `plugin-contract.json`; a
 # selftest is found by its name, the one the census pairs with its plugin.
-[doc('Node tests: the npm generator and launcher, and every plugin selftest (CI)')]
+[doc('Node tests: the npm generator and launcher, and every JS plugin selftest (CI)')]
 [group('release')]
 npm-check:
     node --test 'npm/*.test.mjs' 'scripts/*.test.mjs'

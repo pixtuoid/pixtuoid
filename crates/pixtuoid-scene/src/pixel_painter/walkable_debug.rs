@@ -1,6 +1,6 @@
-//! Live debug layer toggled by the walkable key: the walkable mask (red), allowed approach
-//! sides (green) / on-furniture seat cells (magenta), and the live A* route
-//! polylines of walking agents (cyan), composited over the finished scene.
+//! The walkable debug layer ([`RenderInputs::debug_walkable`](crate::look::RenderInputs::debug_walkable)):
+//! the walkable mask (red), allowed approach sides (green) / on-furniture seat cells (magenta), and the
+//! live A* route polylines of walking agents (cyan), composited over the finished scene.
 //!
 //! A VIEW over the SAME data the renderer + router already use — never a second
 //! source.
@@ -136,7 +136,7 @@ fn paint_approach(buf: &mut RgbBuffer, layout: &SceneLayout) {
         // SEAT last: the 3x3 blobs overlap when the approach cell lands a pixel off the chair.
         for (dx, dy) in DIRS {
             // The desk's OWN facing, as production reads it — a fixed South here
-            // mirrors the blobs on every back-turned desk, and this overlay is
+            // mirrors the blobs on every back-turned desk, and this layer is
             // what the next reader reaches for to check that very geometry.
             if !desk_def.approach.allows(facing, (dx, dy)) {
                 continue;
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_marks_seat_approach_sides_distinct_from_the_seat_cell() {
+    fn debug_layer_marks_seat_approach_sides_distinct_from_the_seat_cell() {
         let l = SceneLayout::compute(crate::layout::Viewport::full(200, 130), Some(8), 0).unwrap();
         let couch = l
             .waypoints
@@ -218,7 +218,7 @@ mod tests {
             buf.get(couch.pos.x, couch.pos.y)
         );
 
-        // Expected cells come from the SIM's own scan, so this asserts the overlay
+        // Expected cells come from the SIM's own scan, so this asserts the layer
         // marks where the router routes — not "something green near the couch".
         let def = furniture_def(couch.kind.furniture());
         let found_green_approach = DIRS.iter().any(|&(dx, dy)| {
@@ -233,31 +233,52 @@ mod tests {
     }
 
     #[test]
-    fn overlay_marks_desk_approach_distinct_from_the_chair() {
+    fn debug_layer_marks_desk_approach_distinct_from_the_chair() {
         use crate::layout::{Facing, Furniture};
         let l = SceneLayout::compute(crate::layout::Viewport::full(200, 130), Some(8), 0).unwrap();
-        let desk = *l.home_desks.first().expect("a home desk");
-        let chair = desk_walk_anchor_facing(desk.at, desk.facing, l.inner);
+        // A south-only layout paints the same blobs whichever facing the layer reads.
+        assert!(
+            l.home_desks.iter().any(|d| d.facing == Facing::North),
+            "no desk faces north"
+        );
         let mut buf = RgbBuffer::filled(l.buf_w, l.buf_h, Rgb { r: 0, g: 0, b: 0 });
         paint_approach(&mut buf, &l);
 
-        assert!(
-            magentaish(buf.get(chair.x, chair.y)),
-            "the desk chair must be tinted toward SEAT (magenta), got {:?}",
-            buf.get(chair.x, chair.y)
-        );
-
-        // Scan from the CHAIR (== production `desk_approach_cell`), not the desk corner.
         let def = furniture_def(Furniture::Desk);
-        let found_green_approach = DIRS.iter().any(|&(dx, dy)| {
-            def.approach.allows(Facing::South, (dx, dy))
-                && first_reachable_on_side(&l, chair, dx, dy)
-                    .is_some_and(|c| greenish(buf.get(c.x, c.y)))
-        });
-        assert!(
-            found_green_approach,
-            "at least one allowed, reachable desk approach cell must be tinted green"
-        );
+        for desk in &l.home_desks {
+            let chair = desk_walk_anchor_facing(desk.at, desk.facing, l.inner);
+            assert!(
+                magentaish(buf.get(chair.x, chair.y)),
+                "{desk:?}: the chair must be tinted toward SEAT (magenta), got {:?}",
+                buf.get(chair.x, chair.y)
+            );
+            // Scan from the CHAIR (== production `desk_approach_cell`), not the desk corner.
+            // A cell beside the chair sits under the SEAT blob painted last, so the
+            // green shows one step further along the scan, at its blob's far edge.
+            let far_green = |c: Point, (dx, dy): (i32, i32)| {
+                let x = u16::try_from(i32::from(c.x) + dx).unwrap();
+                let y = u16::try_from(i32::from(c.y) + dy).unwrap();
+                greenish(buf.get(x, y))
+            };
+            let mut found_green_approach = false;
+            for &dir in &DIRS {
+                let Some(c) = first_reachable_on_side(&l, chair, dir.0, dir.1) else {
+                    continue;
+                };
+                if def.approach.allows(desk.facing, dir) {
+                    found_green_approach |= greenish(buf.get(c.x, c.y)) || far_green(c, dir);
+                } else {
+                    assert!(
+                        !far_green(c, dir),
+                        "{desk:?}: the side {dir:?} its facing forbids is tinted green"
+                    );
+                }
+            }
+            assert!(
+                found_green_approach,
+                "{desk:?}: an approach cell its own facing allows must be tinted green"
+            );
+        }
     }
 
     fn slot(id: AgentId) -> pixtuoid_core::AgentSlot {

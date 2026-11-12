@@ -15,7 +15,7 @@ import '../styles/global.css';
 import { asset, THEMES, THEME_BG, THEME_STORAGE_KEY, VALID_THEMES } from '../consts';
 import sources from '../sources.json';
 
-const CLI_COUNT = sources.length;
+const CLI_COUNT = sources.filter((s) => s.status === 'supported').length;
 
 interface Props {
   title?: string;

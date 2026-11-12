@@ -4,15 +4,17 @@ import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import { REPO, asset, DOCS, FLOORS, type DocId } from '../consts';
+import { posix } from 'node:path';
+import { asset, DOCS, FLOORS, type DocId } from '../consts';
+import { REPO_BLOB } from '../../config/github.mjs';
 
 interface Props {
   title: string;
   description: string;
   headings: MarkdownHeading[];
   current: DocId;
-  /** repo-relative, e.g. docs/CONFIGURATION.md */
-  sourcePath: string;
+  /** The rendered collection entry, whose file the source line links. */
+  entry: { filePath?: string };
   sourceNote?: string;
 }
 
@@ -21,9 +23,13 @@ const {
   description,
   headings,
   current,
-  sourcePath,
+  entry,
   sourceNote = 'this page renders it verbatim.',
 } = Astro.props;
+
+// The glob loader keeps `filePath` relative to the project root (site/), which sits in the repo root.
+if (!entry.filePath) throw new Error(`Docs.astro: the "${current}" entry carries no filePath`);
+const sourcePath = posix.relative('..', entry.filePath);
 
 const idx = DOCS.findIndex((d) => d.id === current);
 const prev = idx > 0 ? DOCS[idx - 1] : undefined;
@@ -94,7 +100,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
 
       <p class="docs__source">
         Source of truth:
-        <a href={`${REPO}/blob/main/${sourcePath}`} target="_blank" rel="noreferrer">
+        <a href={`${REPO_BLOB}/${sourcePath}`} target="_blank" rel="noreferrer">
           {sourcePath}
         </a>
         — {sourceNote}

@@ -104,7 +104,7 @@ Run this checklist before each render you send in a beautify loop, and state eac
 | Color distinctness | New elements use colors distinct from immediate neighbours. |
 | Alive | The asset ships what makes it alive — idle frames (`frame_ms`), a state-driven change, a response to weather or window light, or variety across agents — named in the PR body. |
 | `just test` | The connectivity tests pass (§6 step 3). |
-| `--debug-walkable` | Rendered the overlay and visually checked no narrow / isolated walkable pockets near the new element. |
+| `--debug-walkable` | Rendered the walkable debug layer and visually checked no narrow / isolated walkable pockets near the new element. |
 
 ## Workflow when adding a NEW decoration
 

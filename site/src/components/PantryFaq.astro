@@ -4,7 +4,8 @@
 // from the shared 4F .container, and role="region" restores the landmark a bare
 // div's generic role would drop its aria-label from.
 import faq from '../faq.json';
-import { asset, REPO } from '../consts';
+import { asset } from '../consts';
+import { REPO_BLOB } from '../../config/github.mjs';
 ---
 
 <div
@@ -37,7 +38,7 @@ import { asset, REPO } from '../consts';
               unset var() in calc() computes to 0s, so an un-turned cite would
               appear from frame one */}
         <p class="pantry__cite" style={`--turn:${i * 2 + 1}`}>
-          — <a href={`${REPO}/blob/main/${f.src}`} target="_blank" rel="noreferrer">{f.cite}</a>
+          — <a href={`${REPO_BLOB}/${f.src}`} target="_blank" rel="noreferrer">{f.cite}</a>
         </p>
       </li>)}
     </ol>

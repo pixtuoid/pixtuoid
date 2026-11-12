@@ -524,12 +524,12 @@ pub(crate) fn local_hour_frac(now: SystemTime) -> f32 {
     local.hour() as f32 + local.minute() as f32 / 60.0
 }
 
-/// When nightfall begins on `day`'s local date: where `just pace-check --run
+/// When nightfall begins on `at`'s local date: where `just pace-check --run
 /// dusk` starts its clock. `None` where that local time doesn't exist.
 #[doc(hidden)]
-pub fn nightfall_on(day: SystemTime) -> Option<SystemTime> {
+pub fn nightfall_on(at: SystemTime) -> Option<SystemTime> {
     use chrono::Timelike;
-    crate::localclock::on_date_of(day, DUSK.hour(), DUSK.minute())
+    crate::localclock::on_date_of(at, DUSK.hour(), DUSK.minute())
 }
 
 /// The local time of day nightfall begins at.
