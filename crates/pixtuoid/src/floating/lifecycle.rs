@@ -40,6 +40,9 @@ pub(super) trait Teardown {
     /// Flush audio state and join the device thread, which can wait out a
     /// synthesis build ([`crate::audio::AudioHandle::shutdown`]).
     fn stop_audio(&mut self);
+    /// Wait, at most [`EXIT_WAIT`](crate::EXIT_WAIT), for the saves the steps
+    /// above queued: AppKit's terminate exits the process once this returns.
+    fn flush_saves(&mut self);
 }
 
 /// The loop's end: the window is hidden before the audio join, so a quit does
@@ -52,6 +55,7 @@ pub(super) fn tear_down(parts: &mut impl Teardown) {
     parts.hide_window();
     parts.release_surface();
     parts.stop_audio();
+    parts.flush_saves();
 }
 
 #[cfg(test)]
@@ -184,10 +188,13 @@ mod tests {
         fn stop_audio(&mut self) {
             self.log.push("audio join");
         }
+        fn flush_saves(&mut self) {
+            self.log.push("saves flushed");
+        }
     }
 
-    /// The geometry is saved while the window is still held, and the window
-    /// is hidden before the audio join starts.
+    /// The geometry is saved while the window is still held, the window is
+    /// hidden before the audio join starts, and the saves they queued are written last.
     #[test]
     fn the_run_persists_before_the_window_goes_and_hides_it_before_the_audio_join() {
         let mut parts = Parts::default();
@@ -198,7 +205,8 @@ mod tests {
                 "persisted",
                 "window hidden",
                 "surface released",
-                "audio join"
+                "audio join",
+                "saves flushed"
             ]
         );
     }

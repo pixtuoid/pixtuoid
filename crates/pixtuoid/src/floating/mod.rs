@@ -34,11 +34,11 @@ use window::{FloatingApp, FloatingEvent};
 /// `winit`'s event loop must own the main thread, so the source pipeline runs on a
 /// background tokio runtime (spawned, NEVER `block_on` — that would stall the window),
 /// and scene changes reach the loop via an `EventLoopProxy`. BLOCKS until the window
-/// closes; `rt`, which the source tasks run on, lives across the call.
+/// closes; the runtime, which the source tasks run on, lives across the call.
 ///
 /// # Errors
 ///
-/// If the sprite pack cannot be loaded, the tokio runtime or the winit event loop cannot be built, the event loop exits with an error, or the window or its GPU fails to start or is lost.
+/// If the sprite pack cannot be loaded, the tokio runtime or the winit event loop cannot be built, its config writes cannot start, the event loop exits with an error, or the window or its GPU fails to start or is lost.
 pub(crate) fn run(
     cfg: RunConfig,
     notify_ready: bool,
@@ -61,70 +61,68 @@ pub(crate) fn run(
         .context("loading the bundled sprite pack for the floating window")?;
     let min = geometry::min_window(pack.max_density_variant());
     let floating_cfg = floating.at_least(min.width, min.height);
-
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .context("building the floating tokio runtime")?;
     let connected = ConnectedSources::new(connected);
     let socket_path = socket.unwrap_or_else(ClaudeCodeSource::default_socket_path);
 
-    let mut builder = EventLoop::<FloatingEvent>::with_user_event();
-    #[cfg(target_os = "macos")]
-    {
-        // Accessory: no Dock icon, doesn't steal focus — an ambient companion.
-        use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
-        builder.with_activation_policy(ActivationPolicy::Accessory);
-    }
-    let event_loop = builder
-        .build()
-        .context("building the floating event loop")?;
-    let proxy = event_loop.create_proxy();
-    let quit = {
-        // The unix handlers register with the runtime's signal driver.
-        let _in_rt = rt.enter();
-        crate::runtime::QuitArms::arm().signalled()
-    };
-    let quit_proxy = proxy.clone();
-    let fired = std::sync::Arc::new(std::sync::OnceLock::new());
-    let fired_by = std::sync::Arc::clone(&fired);
-    rt.spawn(async move {
-        let _ = fired_by.set(quit.await);
-        let _ = quit_proxy.send_event(FloatingEvent::Quit);
-    });
+    crate::runtime::on_runtime(|rt| {
+        let mut builder = EventLoop::<FloatingEvent>::with_user_event();
+        #[cfg(target_os = "macos")]
+        {
+            // Accessory: no Dock icon, doesn't steal focus — an ambient companion.
+            use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+            builder.with_activation_policy(ActivationPolicy::Accessory);
+        }
+        let event_loop = builder
+            .build()
+            .context("building the floating event loop")?;
+        let proxy = event_loop.create_proxy();
+        let quit = {
+            // The unix handlers register with the runtime's signal driver.
+            let _in_rt = rt.enter();
+            crate::runtime::QuitArms::arm().signalled()
+        };
+        let quit_proxy = proxy.clone();
+        let fired = std::sync::Arc::new(std::sync::OnceLock::new());
+        let fired_by = std::sync::Arc::clone(&fired);
+        rt.spawn(async move {
+            let _ = fired_by.set(quit.await);
+            let _ = quit_proxy.send_event(FloatingEvent::Quit);
+        });
 
-    // After every fallible `?` boot step: `app` owns the audio device thread (see
-    // `crate::audio::AudioController::new`).
-    let mut app = FloatingApp::new(
-        floating_cfg,
-        window::Appearance {
-            theme,
-            motion: motion.or(pixtuoid_scene::anim::Motion::Full),
-        },
-        pack,
-        pets,
-        window::Settings {
-            config_path,
-            audio,
-            log,
-            first_run,
-            drift,
-            notify_ready,
-        },
-        PipelineBoot {
-            socket_path,
-            connected,
-            proxy,
-            rt: rt.handle().clone(),
-        },
-    );
-    let ran = event_loop.run_app(&mut app);
-    // The window's own failure is the cause; a loop error after it is not.
-    if let Some(failure) = app.into_failure() {
-        return Err(failure);
-    }
-    ran.context("running the floating window event loop")?;
-    Ok(fired.get().copied())
+        // After every fallible `?` boot step: `app` owns the audio device thread (see
+        // `crate::audio::AudioController::new`).
+        let mut app = FloatingApp::new(
+            floating_cfg,
+            window::Appearance {
+                theme,
+                motion: motion.or(pixtuoid_scene::anim::Motion::Full),
+            },
+            pack,
+            pets,
+            window::Settings {
+                config_path,
+                audio,
+                log,
+                first_run,
+                drift,
+                notify_ready,
+            },
+            PipelineBoot {
+                socket_path,
+                connected,
+                proxy,
+                rt: rt.handle().clone(),
+            },
+        )
+        .context("starting the floating window's config writes")?;
+        let ran = event_loop.run_app(&mut app);
+        // The window's own failure is the cause; a loop error after it is not.
+        if let Some(failure) = app.into_failure() {
+            return Err(failure);
+        }
+        ran.context("running the floating window event loop")?;
+        Ok(fired.get().copied())
+    })?
 }
 
 /// Everything the pipeline needs, held by [`FloatingApp`] until `resumed` can

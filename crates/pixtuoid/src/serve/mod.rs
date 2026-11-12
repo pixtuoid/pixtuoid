@@ -120,9 +120,6 @@ const ACCEPT_BACKOFF: Duration = Duration::from_secs(1);
 ///
 /// If the port is taken or the pairing state is unreadable.
 pub(crate) fn run(cfg: RunConfig, port: u16) -> Result<QuitSignal> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
     let RunConfig {
         socket,
         config_path,
@@ -130,20 +127,10 @@ pub(crate) fn run(cfg: RunConfig, port: u16) -> Result<QuitSignal> {
         drift,
         ..
     } = cfg;
-    run_then_quit(runtime, serve(socket, config_path, connected, drift, port))
-}
-
-/// How long a quit waits on blocking work: past a store write, short of a CLI's
-/// run. A device's write it abandons leaves whole files for the next connect to heal.
-const QUIT_GRACE: Duration = Duration::from_secs(1);
-
-/// `work` on `runtime`, then at most [`QUIT_GRACE`] for its blocking work,
-/// which a dropped runtime would wait for without end
-/// (<https://docs.rs/tokio/latest/tokio/runtime/struct.Runtime.html#shutdown>).
-fn run_then_quit<F: Future>(runtime: tokio::runtime::Runtime, work: F) -> F::Output {
-    let done = runtime.block_on(work);
-    runtime.shutdown_timeout(QUIT_GRACE);
-    done
+    // A device's write the quit abandons leaves whole files for the next connect to heal.
+    crate::runtime::on_runtime(|rt| {
+        rt.block_on(serve(socket, config_path, connected, drift, port))
+    })?
 }
 
 async fn serve(
@@ -483,29 +470,6 @@ mod tests {
     fn a_probe_names_the_source_its_route_gives() {
         let source = source_toward(Ipv4Addr::LOCALHOST).expect("loopback routes");
         assert_eq!(source, IpAddr::V4(Ipv4Addr::LOCALHOST));
-    }
-
-    /// A read still running when a quit comes is left behind, not waited for.
-    #[test]
-    fn a_quit_leaves_blocking_work_behind() {
-        /// Past [`QUIT_GRACE`], so a quit that waits for this work fails, not hangs.
-        const HELD: Duration = Duration::from_secs(10);
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .build()
-            .expect("a runtime");
-        let (_release, held) = std::sync::mpsc::channel::<()>();
-        let (done, is_done) = std::sync::mpsc::channel();
-        run_then_quit(runtime, async {
-            let (up, is_up) = tokio::sync::oneshot::channel();
-            tokio::task::spawn_blocking(move || {
-                let _ = up.send(());
-                let _ = done.send(held.recv_timeout(HELD));
-            });
-            is_up.await.expect("it runs");
-        });
-        let waited = is_done.try_recv();
-        let running = Err(std::sync::mpsc::TryRecvError::Empty);
-        assert_eq!(waited, running, "the quit waited for its blocking work");
     }
 
     #[test]

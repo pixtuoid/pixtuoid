@@ -306,3 +306,77 @@ fn a_quit_signal_unwinds_a_headless_run_then_ends_it_by_that_signal() {
     assert!(stderr.contains("shutting down"), "no unwind ran:\n{stderr}");
     assert_eq!(status.signal(), Some(libc::SIGTERM), "status {status:?}");
 }
+
+/// A read a stalled disk holds forever, here the reducer's of the day's count
+/// from a FIFO no one writes, keeps a quit from ending the run only as long as
+/// the exit's own bounds: the run still dies by its signal.
+#[test]
+fn a_quit_leaves_a_stalled_read_behind_and_still_ends_by_its_signal() {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::process::ExitStatusExt;
+    /// Far past the exit's own bounds, and short of the hang this pins.
+    const STALLED_EXIT_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+
+    let home = tempfile::tempdir().expect("home");
+    let state = home.path().join(".local/state/pixtuoid");
+    std::fs::create_dir_all(&state).expect("state dir");
+    let fifo = state.join("today.json");
+    let at = std::ffi::CString::new(fifo.as_os_str().as_bytes()).expect("no NUL");
+    // SAFETY: `at` is a NUL-terminated path this test owns.
+    assert_eq!(unsafe { libc::mkfifo(at.as_ptr(), 0o600) }, 0, "mkfifo");
+    let err = tempfile::NamedTempFile::new().expect("stderr file");
+    let child = common::isolated(&["run", "--headless"], home.path())
+        .args(["--log-level", "info"])
+        .stdout(std::process::Stdio::null())
+        .stderr(err.reopen().expect("stderr handle"))
+        .spawn()
+        .expect("spawn pixtuoid run --headless");
+    let mut child = Reaped(child);
+
+    // Logged past the arming, so the signal is the run's to handle.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !std::fs::read_to_string(err.path()).is_ok_and(|s| s.contains("headless mode")) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the loop never started"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    // A nonblocking open for writing fails until a reader waits on the FIFO,
+    // and held open, never written, it keeps that read waiting (POSIX `open`'s
+    // "When opening a FIFO", `read`'s "an empty pipe or FIFO").
+    let _held = loop {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&fifo)
+        {
+            Ok(writer) => break writer,
+            Err(_) => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "nothing read the count"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+    };
+
+    // SAFETY: signalling a child this test spawned and still owns.
+    unsafe {
+        libc::kill(child.0.id().cast_signed(), libc::SIGTERM);
+    }
+    let quit = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.0.try_wait().expect("wait") {
+            break status;
+        }
+        assert!(
+            quit.elapsed() < STALLED_EXIT_WITHIN,
+            "the exit waited on the stalled read"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    assert_eq!(status.signal(), Some(libc::SIGTERM), "status {status:?}");
+}

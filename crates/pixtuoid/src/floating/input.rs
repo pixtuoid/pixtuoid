@@ -272,6 +272,8 @@ mod tests {
         connected: crate::runtime::ConnectedSources,
         snapshot: SceneState,
         config_path: std::path::PathBuf,
+        saves: crate::panels::Saves,
+        landed: tokio::sync::mpsc::UnboundedReceiver<crate::panels::Landed>,
         _tmp: tempfile::TempDir,
     }
 
@@ -282,6 +284,9 @@ mod tests {
         fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let config_path = tmp.path().join("config.toml");
+            let (landing, landed) = tokio::sync::mpsc::unbounded_channel();
+            let saves =
+                crate::panels::Saves::spawn(config_path.clone(), landing).expect("a save thread");
             let theme = pixtuoid_scene::theme::ALL_THEMES[0];
             Self {
                 ui: crate::panels::ui_state::UiState::new(
@@ -301,7 +306,7 @@ mod tests {
                         muted: true,
                         volume: 1.0,
                     },
-                    config_path.clone(),
+                    saves.clone(),
                     no_respawn,
                 ),
                 connected: crate::runtime::ConnectedSources::default(),
@@ -317,6 +322,8 @@ mod tests {
                     scene_with(vec![root, child, running_on("/p/up.jsonl", 1, 0)], 4)
                 },
                 config_path,
+                saves,
+                landed,
                 _tmp: tmp,
             }
         }
@@ -360,7 +367,7 @@ mod tests {
                     snapshot: &self.snapshot,
                     now: SystemTime::UNIX_EPOCH,
                     respawn: no_respawn,
-                    installed: Vec::new,
+                    saves: &self.saves,
                     focus: |_| panic!("a window key focuses nothing"),
                     job_tx: &tokio::sync::mpsc::unbounded_channel().0,
                     run_job: |_| panic!("a window key here changes no source"),
@@ -374,7 +381,15 @@ mod tests {
             quit
         }
 
-        fn saved_theme(&self) -> Option<String> {
+        /// Take in what the saves made so far came to, as the loop does.
+        fn land_saves(&mut self) {
+            for outcome in crate::panels::noted::saved(&self.saves, &mut self.landed) {
+                self.ui.note_save(outcome);
+            }
+        }
+
+        fn saved_theme(&mut self) -> Option<String> {
+            self.land_saves();
             crate::config::load(&self.config_path, &mut Vec::new()).theme
         }
     }
@@ -509,7 +524,7 @@ mod tests {
             None,
             crate::doctor::DriftSeen::default(),
         );
-        k.ui.open_version_popup(&std::collections::HashSet::new(), &[]);
+        k.ui.open_version_popup(&std::collections::HashSet::new());
         assert!(k.ui.modal().version_popup_open);
         assert!(!k.press(KeyCode::Esc), "Esc quit");
         assert!(!k.ui.modal().version_popup_open, "the popup is still up");
@@ -552,9 +567,7 @@ mod tests {
     fn an_unwritable_config_keeps_the_committed_theme() {
         use crossterm::event::KeyCode;
         let mut k = Keys::new();
-        let blocker = k._tmp.path().join("missing");
-        std::fs::write(&blocker, "a file, not a dir").expect("write");
-        k.config_path = blocker.join("config.toml");
+        std::fs::create_dir(&k.config_path).expect("a dir where the config goes");
         k.press(KeyCode::Char('t'));
         k.press(KeyCode::Char('j'));
         assert!(!k.press(KeyCode::Enter));
@@ -576,6 +589,7 @@ mod tests {
         ] {
             assert!(!k.press(code));
         }
+        k.land_saves();
         let frames = k.ui.build_frames(SystemTime::UNIX_EPOCH, &k.snapshot, &[]);
         let at = super::super::geometry::window_geometry(
             winit::dpi::PhysicalSize::new(960, 640),
