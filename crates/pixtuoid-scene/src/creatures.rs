@@ -195,7 +195,7 @@ impl Walk {
             return None;
         }
         let planner = &mut ground.planner;
-        let path = (planner.router).route(&ground.layout.walkable, planner.overlay, from, to, to);
+        let path = (planner.router).route(&ground.layout.walkable, from, to, to);
         let len = octile_path_len(&path);
         (len > 0).then(|| Walk {
             started_at: now,
@@ -661,7 +661,6 @@ mod tests {
     use crate::pathfind::{AStarRouter, point_in_walkable_cell};
     use crate::pet::{Pet, PetState};
     use crate::sim::SimFrame;
-    use crate::walkable::OccupancyOverlay;
 
     fn test_pack() -> OfficeArt {
         crate::pack::test_office()
@@ -705,12 +704,10 @@ mod tests {
         (from_ms, to_ms): (u64, u64),
     ) -> Vec<Option<Stance>> {
         let mut router = AStarRouter::new();
-        let overlay = OccupancyOverlay::new();
         let mut ground = Ground {
             layout,
             planner: Planner {
                 router: &mut router,
-                overlay: &overlay,
                 motion,
             },
         };
@@ -1134,12 +1131,10 @@ mod tests {
         let roam = Roam::pet(pack.inner().stride(PetKind::Cat.walk_anim()));
         let l = layout(192, 80);
         let mut router = AStarRouter::new();
-        let overlay = OccupancyOverlay::new();
         let mut ground = Ground {
             layout: &l,
             planner: Planner {
                 router: &mut router,
-                overlay: &overlay,
                 motion: Motion::Full,
             },
         };

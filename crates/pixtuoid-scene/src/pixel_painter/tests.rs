@@ -2559,7 +2559,6 @@ impl OwnedSimStores {
     fn stores(&mut self) -> SimStores<'_> {
         SimStores {
             router: &mut self.route.router,
-            overlay: &mut self.route.overlay,
             history: &mut self.route.history,
             walks: &mut self.route.walks,
             vacancy_dim: &mut self.vacancy_dim,
@@ -2591,6 +2590,33 @@ fn sim_rig() -> (
     let mut scene = SceneState::uniform(16);
     scene.agents.insert(id, slot);
     (scene, layout, id, now0, pack)
+}
+
+/// The walkable debug layer draws every recorded route, so an agent whose desk
+/// this layout lacks keeps none: its last walk ended with that desk.
+#[test]
+fn sim_step_clears_the_route_of_an_agent_without_a_desk_in_the_layout() {
+    let (mut scene, layout, id, now0, pack) = sim_rig();
+    if let Some(slot) = scene.agents.get_mut(&id) {
+        slot.desk = Some(FloorDesk::new(0, 999));
+    }
+    let mut owned = OwnedSimStores::new();
+    owned.route.walks.insert(
+        id,
+        crate::walk::WalkState {
+            walk_path: Some(vec![Point { x: 5, y: 5 }, Point { x: 80, y: 80 }]),
+            ..Default::default()
+        },
+    );
+    sim_and_paint(&mut owned, &scene, &layout, &pack, now0);
+    assert_eq!(
+        owned
+            .route
+            .walks
+            .get(&id)
+            .and_then(|walk| walk.walk_path.clone()),
+        None
+    );
 }
 
 /// `sim_step` must hand the sign the room's VERDICT, not its smoothed level: the
@@ -5104,33 +5130,33 @@ fn keep_sprite_inside_bounds_differ_by_pivot() {
     );
 }
 
-/// The canvas-edge fixtures: per agent, the earliest second its PURE pose is
-/// aimless past the east rim, soonest first.
+/// The canvas-edge fixtures: per agent, the second into Idle that the wander's
+/// estimated cycle first stands it aimless past the east rim, soonest first.
 ///
-/// Probing `pose::derive` rather than the routed twin keeps the search cheap —
-/// only the survivors are worth an A* run — but a cold routing store answers
-/// `Walking`, so a caller must still drive its agent second by second up to the
-/// returned target.
-fn east_rim_targets(layout: &SceneLayout, now0: SystemTime) -> Vec<(u32, u64)> {
-    use crate::pose::Pose;
-    use std::time::Duration;
+/// Reading `resolve_wander_target` per cycle rather than the routed wander keeps
+/// the search cheap — only the survivors are worth an A* run — but the routed
+/// legs keep physics time, not the estimate's, so a caller must still drive its
+/// agent second by second up to the returned target.
+fn east_rim_targets(layout: &SceneLayout) -> Vec<(u32, u64)> {
+    use crate::pose::{SpotClaims, WANDER_WALK_EST_MS, resolve_wander_target, takes_trip};
+    use crate::walk::WanderKind;
     let w = CHARACTER_SPRITE_W;
     let mut targets: Vec<(u32, u64)> = (0..48u32)
         .filter_map(|aid| {
-            let mut slot = make_slot(edge_agent_id(aid), ActivityState::Idle);
-            slot.created_at = now0;
-            slot.arrived_at = Some(slot.created_at);
-            slot.state_started_at = now0;
-            slot.last_event_at = now0;
-            (1..900u64)
-                .find(|&secs| {
-                    matches!(
-                        pose::derive(&slot, now0 + Duration::from_secs(secs), layout),
-                        Some(Pose::AimlessAt { dest })
-                            if waypoint_top_left(dest, w).x + w > layout.buf_w
-                    )
+            let id = edge_agent_id(aid);
+            let desk = layout.home_desk_of(&make_slot(id, ActivityState::Idle))?;
+            let cycle_ms = pose::est_wander_cycle_ms(id);
+            let arrives_ms = pose::seated_dwell_ms(id) + WANDER_WALK_EST_MS;
+            (0u64..)
+                .map(|n| (n, (n * cycle_ms + arrives_ms).div_ceil(1000)))
+                .take_while(|&(_, secs)| secs < 900)
+                .find(|&(n, _)| {
+                    let target = resolve_wander_target(id, n, layout, desk, &SpotClaims::default());
+                    takes_trip(id, n)
+                        && matches!(target.kind, WanderKind::Aimless)
+                        && waypoint_top_left(target.dest, w).x + w > layout.buf_w
                 })
-                .map(|secs| (aid, secs))
+                .map(|(_, secs)| (aid, secs))
         })
         .collect();
     targets.sort_by_key(|&(_, secs)| secs);
@@ -5159,7 +5185,7 @@ fn a_wandering_character_is_never_sliced_by_the_canvas_edge() {
 
     // Three agents, not every target — the earliest arrivals cost the fewest steps.
     let mut hit = 0usize;
-    for &(aid, target) in east_rim_targets(&layout, now0).iter().take(3) {
+    for &(aid, target) in east_rim_targets(&layout).iter().take(3) {
         let id = edge_agent_id(aid);
         let mut slot = make_slot(id, ActivityState::Idle);
         slot.created_at = now0;
@@ -5485,15 +5511,10 @@ fn only_a_placement_that_breathes_takes_the_breath() {
         let [p] = <[_; 1]>::try_from(placements).expect("one agent, one placement");
         p
     };
-    let walker = place(
-        crate::pose::LegPose {
-            from: mid,
-            to: mid,
-            progress: LegProgress::ZERO,
-            carrying_coffee: false,
-        }
-        .straight(),
-    );
+    let walker = place(Pose::Walking {
+        segment: crate::physics::Segment::straight(mid, mid, LegProgress::ZERO),
+        carrying_coffee: false,
+    });
     let idler = place(Pose::AimlessAt { dest: mid });
     let sitter = place(Pose::SeatedTyping);
     assert!(!walker.breathes && idler.breathes && sitter.breathes);
@@ -5566,7 +5587,7 @@ fn a_badge_follows_its_sprite_fitted_to_the_canvas_rim() {
     let w = CHARACTER_SPRITE_W;
 
     let mut at_the_rim = 0usize;
-    for &(aid, target) in east_rim_targets(&layout, now0).iter().take(3) {
+    for &(aid, target) in east_rim_targets(&layout).iter().take(3) {
         let id = edge_agent_id(aid);
         let mut slot = make_slot(id, ActivityState::Idle);
         slot.created_at = now0;

@@ -6,7 +6,7 @@
 
 use super::{Bounds, Point};
 use crate::grid::Grid;
-use crate::walkable::{OccupancyOverlay, WalkableMask};
+use crate::walkable::WalkableMask;
 
 /// Coarse-cell edge in px. Smaller = more accurate paths, more work per query.
 /// `pathfind::CELL_SIZE` re-exports this value.
@@ -97,7 +97,7 @@ pub(crate) fn cell_center(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
 /// walker turning on the centre would stand in it.
 pub(crate) fn cell_anchor(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
     let centre = cell_center(mask, cx, cy);
-    let piece = walk_piece(mask, &OccupancyOverlay::new(), cx, cy);
+    let piece = walk_piece(mask, cx, cy);
     cell_pixels(mask, cx, cy)
         .filter(|&(bit, _)| piece & bit != 0)
         .map(|(_, p)| p)
@@ -143,12 +143,12 @@ const WEST_COLUMN: CellBits = {
 const EAST_COLUMN: CellBits = WEST_COLUMN << (COARSE_CELL_SIZE - 1);
 
 /// Where a walker stands in coarse cell `(cx, cy)`: the largest 4-connected
-/// piece of its [`open`] pixels, the first in row order among equals. A wall's
+/// piece of its walkable pixels, the first in row order among equals. A wall's
 /// corner can split a cell's open pixels into pieces touching only diagonally,
 /// and a walker crossing between them cuts that corner.
-fn walk_piece(mask: &WalkableMask, overlay: &OccupancyOverlay, cx: u16, cy: u16) -> CellBits {
+fn walk_piece(mask: &WalkableMask, cx: u16, cy: u16) -> CellBits {
     let open_bits = cell_pixels(mask, cx, cy)
-        .filter(|&(_, p)| open(mask, overlay, p.x, p.y))
+        .filter(|&(_, p)| mask.is_walkable(p.x, p.y))
         .fold(0, |bits, (bit, _)| bits | bit);
     let mut unseen = open_bits;
     let mut largest: CellBits = 0;
@@ -174,22 +174,10 @@ fn walk_piece(mask: &WalkableMask, overlay: &OccupancyOverlay, cx: u16, cy: u16)
     largest
 }
 
-/// Is pixel `(x, y)` open — walkable on the static `mask` and clear of the
-/// per-frame `overlay`?
-fn open(mask: &WalkableMask, overlay: &OccupancyOverlay, x: u16, y: u16) -> bool {
-    mask.is_walkable(x, y) && (overlay.is_empty() || !overlay.blocks(x, y))
-}
-
 /// Is coarse cell `(cx, cy)` walkable — ≥ `COARSE_CELL_WALKABLE_MIN` pixels
-/// of [`walk_piece`]? The reach BFS passes an EMPTY overlay (static geometry only);
-/// the router passes the live occupancy overlay.
-pub(crate) fn cell_walkable(
-    mask: &WalkableMask,
-    overlay: &OccupancyOverlay,
-    cx: u16,
-    cy: u16,
-) -> bool {
-    piece_walkable(walk_piece(mask, overlay, cx, cy))
+/// of [`walk_piece`]?
+pub(crate) fn cell_walkable(mask: &WalkableMask, cx: u16, cy: u16) -> bool {
+    piece_walkable(walk_piece(mask, cx, cy))
 }
 
 /// Is a cell whose [`walk_piece`] is `piece` walkable?
@@ -236,14 +224,13 @@ enum Memo {
     Yes,
 }
 
-/// One search's view of the coarse grid over a `mask` and an `overlay`: each
+/// One search's view of the coarse grid over a `mask`: each
 /// cell's [`walk_piece`] and each edge's crossability is computed at most
 /// once, then read by every step. The A\* expansion and the reach BFS both step
 /// through [`CoarseGrid::neighbors`], so "reachable" and "routable" share ONE
 /// neighbour rule.
 pub(crate) struct CoarseGrid<'a> {
     mask: &'a WalkableMask,
-    overlay: &'a OccupancyOverlay,
     pieces: Grid<Option<CellBits>>,
     /// Crossability from each cell to its east neighbour.
     east: Grid<Memo>,
@@ -252,11 +239,10 @@ pub(crate) struct CoarseGrid<'a> {
 }
 
 impl<'a> CoarseGrid<'a> {
-    pub(crate) fn new(mask: &'a WalkableMask, overlay: &'a OccupancyOverlay) -> Self {
+    pub(crate) fn new(mask: &'a WalkableMask) -> Self {
         let (w, h) = cell_dims(mask);
         CoarseGrid {
             mask,
-            overlay,
             pieces: Grid::filled(w, h, None),
             east: Grid::filled(w, h, Memo::Unknown),
             south: Grid::filled(w, h, Memo::Unknown),
@@ -267,7 +253,7 @@ impl<'a> CoarseGrid<'a> {
         if let Some(piece) = self.pieces.get_or(cx, cy, None) {
             return piece;
         }
-        let piece = walk_piece(self.mask, self.overlay, cx, cy);
+        let piece = walk_piece(self.mask, cx, cy);
         self.pieces.set(cx, cy, Some(piece));
         piece
     }
@@ -342,14 +328,13 @@ fn memo(grid: &mut Grid<Memo>, x: u16, y: u16, f: impl FnOnce() -> bool) -> bool
 /// none is in range.
 pub(crate) fn snap(
     mask: &WalkableMask,
-    overlay: &OccupancyOverlay,
     cell: (u16, u16),
     cell_w: u16,
     cell_h: u16,
     max_radius: u16,
 ) -> Option<(u16, u16)> {
     snap_where(cell, cell_w, cell_h, max_radius, |(x, y)| {
-        cell_walkable(mask, overlay, x, y)
+        cell_walkable(mask, x, y)
     })
 }
 
@@ -394,8 +379,7 @@ mod tests {
     use super::*;
 
     fn neighbours(mask: &WalkableMask, cell: (u16, u16)) -> Vec<(u16, u16)> {
-        let overlay = OccupancyOverlay::new();
-        CoarseGrid::new(mask, &overlay)
+        CoarseGrid::new(mask)
             .neighbors(cell)
             .map(|(c, _)| c)
             .collect()
@@ -428,8 +412,8 @@ mod tests {
         // half: both walkable, their open halves touching at one pixel corner.
         m.mark_blocked(s, s + s / 2, s, s / 2, 0);
         m.mark_blocked(2 * s, s, s, s / 2, 0);
-        assert!(cell_walkable(&m, &OccupancyOverlay::new(), 1, 1));
-        assert!(cell_walkable(&m, &OccupancyOverlay::new(), 2, 1));
+        assert!(cell_walkable(&m, 1, 1));
+        assert!(cell_walkable(&m, 2, 1));
         assert!(!neighbours(&m, (1, 1)).contains(&(2, 1)));
         assert!(!neighbours(&m, (2, 1)).contains(&(1, 1)));
     }
@@ -448,11 +432,8 @@ mod tests {
             .filter(|&(_, p)| m.is_walkable(p.x, p.y))
             .count();
         assert_eq!(open, usize::from(COARSE_CELL_WALKABLE_MIN));
-        assert!(!cell_walkable(&m, &OccupancyOverlay::new(), 1, 1));
+        assert!(!cell_walkable(&m, 1, 1));
         m.mark_walkable(s, s + 1, 1, 1);
-        assert!(
-            cell_walkable(&m, &OccupancyOverlay::new(), 1, 1),
-            "joined into one piece, it stands"
-        );
+        assert!(cell_walkable(&m, 1, 1), "joined into one piece, it stands");
     }
 }

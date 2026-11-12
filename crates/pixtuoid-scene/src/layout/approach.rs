@@ -5,11 +5,6 @@
 //! furniture is a blocked cell — an agent can't stand on it. [`stand_point`]
 //! resolves the walkable cell just off the footprint, on the side nearest the
 //! agent's home desk.
-//!
-//! Pure geometry over [`WalkableMask`] — no A*, no terminal deps — so the
-//! stateless `pose::pure::idle_pose` and the stateful `walk` destinations
-//! stay in lockstep with where the render stands the sprite (all three call
-//! this with the same `origin = home desk`).
 
 use super::decor::{Facing, Furniture, WaypointKind, furniture_def};
 use super::reach::ReachSet;

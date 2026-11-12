@@ -1,39 +1,9 @@
 use super::*;
 use crate::character::test_support::make_slot;
 use crate::pack::{Piece, Walk};
-use crate::physics::{LegProgress, Segment};
-use pixtuoid_core::state::{FloorDesk, ToolKind, ToolUse};
-use std::path::PathBuf;
+use crate::physics::Segment;
+use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 use std::time::Duration;
-
-/// Is `segment`'s `travelled` between a straight walk of its own ends `lo` and
-/// `hi` fifths through?
-fn within_fifths(segment: Segment, lo: u64, hi: u64) -> bool {
-    let at = |fifths| {
-        Segment::straight(segment.from(), segment.to(), LegProgress::of(fifths, 5)).travelled()
-    };
-    (at(lo)..=at(hi)).contains(&segment.travelled())
-}
-
-fn slot(state: ActivityState, age_ms: u64) -> (AgentSlot, SystemTime) {
-    let id = AgentId::from_transcript_path("/p/a.jsonl");
-    let started = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let now = started + Duration::from_millis(age_ms);
-    // Arrived well before `started` so the entry-animation override
-    // doesn't fire in tests that probe regular state→pose mapping.
-    let created = started - Duration::from_secs(60);
-    let s = AgentSlot {
-        session_id: std::sync::Arc::from("abc"),
-        cwd: std::sync::Arc::from(PathBuf::from("/repo").as_path()),
-        label: "cc".into(),
-        state_started_at: started,
-        created_at: created,
-        arrived_at: Some(created),
-        last_event_at: created,
-        ..make_slot(id, state)
-    };
-    (s, now)
-}
 
 fn layout() -> SceneLayout {
     SceneLayout::compute(crate::layout::Viewport::full(120, 96), Some(4), 0).expect("fits")
@@ -49,30 +19,13 @@ fn typing() -> ActivityState {
     }
 }
 
-/// Phase boundary helper mirroring idle_pose's absolute estimate timeline.
-fn phases(agent_id: AgentId) -> (u64, u64, u64, u64) {
-    let seated_end = seated_dwell_ms(agent_id);
-    let walk_out_end = seated_end + WANDER_WALK_EST_MS;
-    let at_wp_end = walk_out_end + WANDER_DWELL_EST_MS;
-    (
-        seated_end,
-        walk_out_end,
-        at_wp_end,
-        est_wander_cycle_ms(agent_id),
-    )
-}
-
-fn first_trip_cycle(agent_id: AgentId) -> u64 {
-    (0u64..1000)
-        .find(|n| takes_trip(agent_id, *n))
-        .expect("agent should trip within first 1000 cycles")
-}
-
 #[test]
-fn running_state_is_seated_typing_with_cycling_frame() {
-    let (s, now) = slot(typing(), 0);
-    let l = layout();
-    assert_eq!(derive(&s, now, &l), Some(Pose::SeatedTyping));
+fn a_typist_keys_every_frame_and_rests_on_the_first() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let s = AgentSlot {
+        state_started_at: now,
+        ..make_slot(AgentId::from_transcript_path("/p/a.jsonl"), typing())
+    };
     let pack = crate::pack::test_office();
     let anim = pack.piece(Piece::Typing);
     let ms = u64::from(anim.frame_ms());
@@ -84,86 +37,6 @@ fn running_state_is_seated_typing_with_cycling_frame() {
         0,
         "at rest a typist holds the first frame"
     );
-}
-
-/// RequiresAction gets NO pose of its own — it rides `SeatedIdle`, so a back-turned
-/// desk needs no extra art and the cue reads identically whichever way the seat
-/// faces. The RENDER side splits it back out (`sim::resolve_characters` forces
-/// the awake `seated` base), because the sleeping sprite reads as the opposite
-/// of "wants you".
-#[test]
-fn requires_action_state_stays_seated_and_lets_the_bubble_say_so() {
-    let (s, now) = slot(
-        ActivityState::RequiresAction {
-            reason: Some("perm".into()),
-        },
-        5_000,
-    );
-    let l = layout();
-    assert_eq!(derive(&s, now, &l), Some(Pose::SeatedIdle));
-}
-
-#[test]
-fn idle_phase_0_is_seated_idle() {
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let (seated_end, _, _, _) = phases(test_slot.agent_id);
-    let (s, now) = slot(ActivityState::Idle, seated_end - 1);
-    let l = layout();
-    assert_eq!(derive(&s, now, &l), Some(Pose::SeatedIdle));
-}
-
-#[test]
-fn idle_phase_1_is_walking_out() {
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let (seated_end, walk_out_end, _, _) = phases(test_slot.agent_id);
-    let cycle = est_wander_cycle_ms(test_slot.agent_id);
-    let trip_n = first_trip_cycle(test_slot.agent_id);
-    let midpoint = trip_n * cycle + seated_end + (walk_out_end - seated_end) / 2;
-    let (s, now) = slot(ActivityState::Idle, midpoint);
-    let l = layout();
-    match derive(&s, now, &l).expect("pose") {
-        Pose::Walking { segment, .. } => {
-            let travelled = segment.travelled();
-            assert!(
-                within_fifths(segment, 2, 3),
-                "travelled={travelled} of {segment:?}"
-            );
-            assert!(travelled > 0, "halfway down the leg, it has walked");
-        }
-        other => panic!("expected Walking, got {other:?}"),
-    }
-}
-
-#[test]
-fn idle_phase_2_is_at_waypoint() {
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let (_, walk_out_end, at_wp_end, _) = phases(test_slot.agent_id);
-    let cycle = est_wander_cycle_ms(test_slot.agent_id);
-    let trip_n = first_trip_cycle(test_slot.agent_id);
-    let midpoint = trip_n * cycle + walk_out_end + (at_wp_end - walk_out_end) / 2;
-    let (s, now) = slot(ActivityState::Idle, midpoint);
-    let l = layout();
-    match derive(&s, now, &l).expect("pose") {
-        Pose::AtWaypoint { wp, .. } => assert!(wp < l.waypoints.len()),
-        Pose::AimlessAt { .. } => {}
-        other => panic!("expected AtWaypoint or AimlessAt, got {other:?}"),
-    }
-}
-
-#[test]
-fn idle_phase_3_is_walking_back() {
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let (_, _, at_wp_end, cycle) = phases(test_slot.agent_id);
-    let trip_n = first_trip_cycle(test_slot.agent_id);
-    let midpoint = trip_n * cycle + at_wp_end + (cycle - at_wp_end) / 2;
-    let (s, now) = slot(ActivityState::Idle, midpoint);
-    let l = layout();
-    match derive(&s, now, &l).expect("pose") {
-        Pose::Walking { segment, .. } => {
-            assert!(within_fifths(segment, 2, 3), "{segment:?}");
-        }
-        other => panic!("expected Walking, got {other:?}"),
-    }
 }
 
 /// Regression: a pantry-bound agent must walk to a WALKABLE stand cell, not the
@@ -189,22 +62,12 @@ fn pantry_walk_destination_is_walkable() {
         })
         .expect("some agent lands at the pantry");
 
-    let (seated_end, walk_out_end, _, cycle) = phases(id);
-    let midpoint = n * cycle + seated_end + (walk_out_end - seated_end) / 2;
-    let started = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let now = started + Duration::from_millis(midpoint);
-    let mut s = slot(ActivityState::Idle, 0).0;
-    s.agent_id = id; // desk 0 is valid for the 4-agent layout
-
-    match derive(&s, now, &l).expect("pose") {
-        Pose::Walking { segment, .. } => assert!(
-            l.walkable.is_walkable(segment.to().x, segment.to().y),
-            "pantry walk dest {:?} is not walkable (center={:?})",
-            segment.to(),
-            l.waypoints[pantry_idx].pos
-        ),
-        other => panic!("expected Walking at walk-out midpoint, got {other:?}"),
-    }
+    let dest = resolve_wander_target(id, n, &l, l.home_desks[0], &SpotClaims::default()).dest;
+    assert!(
+        l.walkable.is_walkable(dest.x, dest.y),
+        "pantry walk dest {dest:?} is not walkable (center={:?})",
+        l.waypoints[pantry_idx].pos
+    );
 }
 
 fn aid(i: usize) -> AgentId {
@@ -256,27 +119,6 @@ fn seated_dwell_and_est_cycle_are_consistent() {
 }
 
 #[test]
-fn idle_pose_holds_at_waypoint_for_the_whole_dwell_window() {
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let (_, walk_out_end, at_wp_end, cycle) = phases(test_slot.agent_id);
-    let trip_n = first_trip_cycle(test_slot.agent_id);
-    let l = layout();
-    let window = at_wp_end - walk_out_end;
-    assert!(
-        window >= WANDER_DWELL_EST_MS,
-        "dwell window too short: {window}"
-    );
-    for k in 0..=10 {
-        let t = trip_n * cycle + walk_out_end + (k * window / 10).min(window - 1);
-        let (s, now) = slot(ActivityState::Idle, t);
-        match derive(&s, now, &l).expect("pose") {
-            Pose::AtWaypoint { .. } | Pose::AimlessAt { .. } => {}
-            other => panic!("at t={t} (k={k}) expected resting pose, got {other:?}"),
-        }
-    }
-}
-
-#[test]
 fn personality_varies_across_agents() {
     let ps: Vec<Personality> = (0..20)
         .map(|i| personality_for(AgentId::from_transcript_path(&format!("/p/{i}.jsonl"))))
@@ -294,112 +136,9 @@ fn personality_varies_across_agents() {
 }
 
 #[test]
-fn non_trip_cycle_is_seated_idle_throughout() {
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let id = test_slot.agent_id;
-    let cycle = est_wander_cycle_ms(id);
-    let stay_n = (0u64..100)
-        .find(|n| !takes_trip(id, *n))
-        .expect("agent should have a non-trip cycle");
-    for k in 0..10 {
-        let t = stay_n * cycle + (k * cycle / 10);
-        let (s, now) = slot(ActivityState::Idle, t);
-        let l = layout();
-        assert_eq!(
-            derive(&s, now, &l),
-            Some(Pose::SeatedIdle),
-            "t={t} should be SeatedIdle on non-trip cycle"
-        );
-    }
-}
-
-#[test]
-fn entry_animation_overrides_normal_pose_while_it_runs() {
-    let id = AgentId::from_transcript_path("/p/entry.jsonl");
-    let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    // arrived_at == now0, so the time since arrival is the probe offset
-    let s = AgentSlot {
-        session_id: std::sync::Arc::from("abc"),
-        cwd: std::sync::Arc::from(PathBuf::from("/repo").as_path()),
-        label: "cc".into(),
-        state_started_at: now0,
-        created_at: now0,
-        arrived_at: Some(now0),
-        last_event_at: now0,
-        ..make_slot(id, ActivityState::Idle)
-    };
-    let probe = now0 + Duration::from_millis(ENTRY_ANIMATION_MS * 3 / 8);
-    let l = layout();
-    match derive(&s, probe, &l).expect("pose") {
-        Pose::Walking { segment, .. } => {
-            assert_eq!(
-                segment,
-                Segment::straight(segment.from(), segment.to(), LegProgress::of(3, 8))
-            );
-        }
-        other => panic!("expected Walking entry, got {other:?}"),
-    }
-}
-
-/// An unseated agent, or one at a desk past this layout's, has no pose to
-/// be drawn in.
-#[test]
-fn derive_returns_none_without_a_desk_in_the_layout() {
-    let (mut s, now) = slot(ActivityState::Idle, 0);
-    s.desk = Some(FloorDesk::new(0, 999));
-    assert!(derive(&s, now, &layout()).is_none());
-    s.desk = None;
-    assert!(derive(&s, now, &layout()).is_none());
-}
-
-#[test]
-fn exit_override_walks_desk_to_door_within_window() {
-    let (mut s, now) = slot(ActivityState::Idle, 0);
-    s.exiting_at = Some(now - Duration::from_secs(1));
-    let l = layout();
-    let desk = l.home_desks[s.desk.expect("holds a desk").index.0];
-    match derive(&s, now, &l).expect("pose") {
-        Pose::Walking { segment, .. } => {
-            let from = segment.from();
-            let to = segment.to();
-            assert_eq!(
-                from,
-                desk_walk_anchor_facing(desk.at, desk.facing, l.inner),
-                "exit walk starts at desk anchor"
-            );
-            assert_eq!(to, l.door_threshold, "exit walk targets the door threshold");
-        }
-        other => panic!("expected exit Walking, got {other:?}"),
-    }
-}
-
-#[test]
-fn exit_override_returns_none_past_window() {
-    let (mut s, now) = slot(ActivityState::Idle, 0);
-    s.exiting_at = Some(now - Duration::from_millis(ENTRY_ANIMATION_MS + 1000));
-    assert!(derive(&s, now, &layout()).is_none());
-}
-
-#[test]
 fn waypoint_index_is_zero_when_no_waypoints() {
     let id = AgentId::from_transcript_path("/p/wp.jsonl");
     assert_eq!(waypoint_index_for_cycle(id, 3, 0), 0);
-}
-
-#[test]
-fn entry_window_fall_through_uses_state_driven_pose() {
-    // Arrived ENTRY_ANIMATION_MS or more ago, so the entry override's `if` is false
-    // and derive falls through.
-    let (mut s, now) = slot(
-        ActivityState::RequiresAction {
-            reason: Some("perm".into()),
-        },
-        ENTRY_ANIMATION_MS + 5_000,
-    );
-    let l = layout();
-    s.created_at = now - Duration::from_millis(ENTRY_ANIMATION_MS + 10_000);
-    s.arrived_at = Some(s.created_at);
-    assert_eq!(derive(&s, now, &l), Some(Pose::SeatedIdle));
 }
 
 #[test]
@@ -424,176 +163,19 @@ fn stale_resume_gap_ms_varies_across_agents() {
 #[test]
 fn waypoint_choice_changes_across_cycles_for_same_agent() {
     let l = layout();
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let cycle = est_wander_cycle_ms(test_slot.agent_id);
-    let (_, walk_out_end, at_wp_end, _) = phases(test_slot.agent_id);
-    let mid_at_wp = walk_out_end + (at_wp_end - walk_out_end) / 2;
-
-    let mut dest_xs = std::collections::HashSet::new();
-    for n in 0..50u64 {
-        let t = n * cycle + mid_at_wp;
-        let (s, now) = slot(ActivityState::Idle, t);
-        match derive(&s, now, &l) {
-            Some(Pose::AtWaypoint { wp, .. }) => {
-                dest_xs.insert(l.waypoints[wp].pos.x);
-            }
-            Some(Pose::AimlessAt { dest }) => {
-                dest_xs.insert(dest.x);
-            }
-            _ => {}
-        }
-    }
+    let id = AgentId::from_transcript_path("/p/a.jsonl");
+    let dest_xs: std::collections::HashSet<u16> = (0..50u64)
+        .filter(|&n| takes_trip(id, n))
+        .map(|n| {
+            resolve_wander_target(id, n, &l, l.home_desks[0], &SpotClaims::default())
+                .dest
+                .x
+        })
+        .collect();
     assert!(
         dest_xs.len() >= 2,
         "destination should vary across cycles, got {dest_xs:?}"
     );
-}
-
-/// An Idle agent's pose reads its state's clock alone: however recently it
-/// worked, nothing holds it at the desk (owner: only real signals).
-#[test]
-fn an_idle_agents_pose_ignores_how_recently_it_worked() {
-    let l = layout();
-    for age_ms in [5_000, 60_000, 600_000] {
-        let (mut s, now) = slot(ActivityState::Idle, age_ms);
-        s.created_at = now - Duration::from_secs(3_600);
-        s.arrived_at = Some(s.created_at);
-        s.last_event_at = now - Duration::from_secs(1);
-        let recent = derive(&s, now, &l);
-        s.last_event_at = s.created_at;
-        assert_eq!(recent, derive(&s, now, &l), "{age_ms} ms into Idle");
-    }
-}
-
-fn first_trip_cycle_to_kind(
-    agent_id: AgentId,
-    layout: &SceneLayout,
-    target_kind: WaypointKind,
-) -> Option<u64> {
-    (0u64..2000).find(|n| {
-        takes_trip(agent_id, *n) && !is_aimless_cycle(agent_id, *n) && {
-            let idx = waypoint_index_for_cycle(agent_id, *n, layout.waypoints.len());
-            layout.waypoints[idx].kind == target_kind
-        }
-    })
-}
-
-#[test]
-fn walk_back_from_pantry_carries_coffee() {
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let l = layout();
-    let cycle = est_wander_cycle_ms(test_slot.agent_id);
-    let (_, _, at_wp_end, _) = phases(test_slot.agent_id);
-    let trip_n = first_trip_cycle_to_kind(test_slot.agent_id, &l, WaypointKind::Pantry)
-        .expect("agent should visit Pantry within 2000 cycles");
-    let midpoint = trip_n * cycle + at_wp_end + (cycle - at_wp_end) / 2;
-    let (s, now) = slot(ActivityState::Idle, midpoint);
-    match derive(&s, now, &l).expect("pose") {
-        Pose::Walking {
-            carrying_coffee, ..
-        } => {
-            assert!(carrying_coffee, "walk-back from Pantry must carry coffee");
-        }
-        other => panic!("expected Walking, got {other:?}"),
-    }
-}
-
-#[test]
-fn walk_back_from_non_pantry_no_coffee() {
-    let (test_slot, _) = slot(ActivityState::Idle, 0);
-    let l = layout();
-    let cycle = est_wander_cycle_ms(test_slot.agent_id);
-    let (_, _, at_wp_end, _) = phases(test_slot.agent_id);
-    let trip_n = (0u64..2000)
-        .find(|n| {
-            takes_trip(test_slot.agent_id, *n) && !is_aimless_cycle(test_slot.agent_id, *n) && {
-                let idx = waypoint_index_for_cycle(test_slot.agent_id, *n, l.waypoints.len());
-                l.waypoints[idx].kind != WaypointKind::Pantry
-            }
-        })
-        .expect("agent should visit a non-Pantry waypoint within 2000 cycles");
-    let midpoint = trip_n * cycle + at_wp_end + (cycle - at_wp_end) / 2;
-    let (s, now) = slot(ActivityState::Idle, midpoint);
-    match derive(&s, now, &l).expect("pose") {
-        Pose::Walking {
-            carrying_coffee, ..
-        } => {
-            assert!(
-                !carrying_coffee,
-                "walk-back from non-Pantry must NOT carry coffee"
-            );
-        }
-        other => panic!("expected Walking, got {other:?}"),
-    }
-}
-
-#[test]
-fn entry_walk_does_not_carry_coffee() {
-    let id = AgentId::from_transcript_path("/p/entry-coffee.jsonl");
-    let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let s = AgentSlot {
-        session_id: std::sync::Arc::from("abc"),
-        cwd: std::sync::Arc::from(PathBuf::from("/repo").as_path()),
-        label: "cc".into(),
-        state_started_at: now0,
-        created_at: now0,
-        arrived_at: Some(now0),
-        last_event_at: now0,
-        ..make_slot(id, ActivityState::Idle)
-    };
-    let probe = now0 + Duration::from_millis(1500);
-    let l = layout();
-    match derive(&s, probe, &l).expect("pose") {
-        Pose::Walking {
-            carrying_coffee, ..
-        } => {
-            assert!(!carrying_coffee, "entry walk must not carry coffee");
-        }
-        other => panic!("expected Walking (entry), got {other:?}"),
-    }
-}
-
-/// `derive_state_only` must NOT emit the door→desk entry Walking pose `derive`
-/// would return here — that would double-walk an agent whose routed walk
-/// layer is already driving its own entry walk.
-#[test]
-fn derive_state_only_skips_entry_override() {
-    let id = AgentId::from_transcript_path("/p/entry-so.jsonl");
-    let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    // Slot with arrived_at == now0; probe at 1500 ms → inside entry window.
-    let s = AgentSlot {
-        session_id: std::sync::Arc::from("abc"),
-        cwd: std::sync::Arc::from(PathBuf::from("/repo").as_path()),
-        label: "cc".into(),
-        state_started_at: now0,
-        created_at: now0,
-        arrived_at: Some(now0),
-        last_event_at: now0,
-        ..make_slot(
-            id,
-            ActivityState::Running {
-                item: Some(ToolUse {
-                    tool_use_id: Some("t".into()),
-                    detail: Some("Edit".into()),
-                    kind: ToolKind::Edit,
-                }),
-            },
-        )
-    };
-    let probe = now0 + Duration::from_millis(1500);
-    let l = layout();
-
-    match derive(&s, probe, &l).expect("derive pose") {
-        Pose::Walking { .. } => {} // expected — entry override fires in derive
-        other => panic!("derive should return Walking in entry window, got {other:?}"),
-    }
-
-    match derive_state_only(&s, probe, &l).expect("derive_state_only pose") {
-        Pose::SeatedTyping => {}
-        other => panic!(
-            "derive_state_only should return SeatedTyping for Running slot in entry window, got {other:?}"
-        ),
-    }
 }
 
 /// Forcing the fallback needs a mask with ONE small open pocket, so the seeds
@@ -659,9 +241,8 @@ fn aimless_fallback_on_a_fully_blocked_mask_returns_the_desk_anchor() {
     }
 }
 
-/// A walking person steps by the ground covered, never the clock: a short
-/// leg and a long one walked in the same time (so at different speeds) turn
-/// their frames once per `stride / frames` of ground each.
+/// A walking person steps by the ground covered, never the clock: walks at
+/// different paces turn their frames once per `stride / frames` of ground each.
 #[test]
 fn a_walking_person_never_slides() {
     use crate::physics::{SPEED_MULT_MAX, WalkIntent, speed_mult, walk_profile, walk_progress};
@@ -687,22 +268,6 @@ fn a_walking_person_never_slides() {
             "{what}: {turns} steps over {px} px, {expected} by its stride"
         );
     };
-    for length in [12u16, 70] {
-        let (from, to) = (
-            Point { x: 10, y: 40 },
-            Point {
-                x: 10 + length,
-                y: 40,
-            },
-        );
-        let turns = steps(ENTRY_ANIMATION_MS, &|ms| {
-            let Pose::Walking { segment, .. } = linear_walk_pose(ms, from, to) else {
-                panic!("a walk");
-            };
-            segment.travelled()
-        });
-        judge("the entry walk", turns, f32::from(length));
-    }
     // every routed walk at the fastest agent's pace, snap-back the fastest of all
     let fastest = (0..256)
         .map(|i| AgentId::from_transcript_path(&format!("/p/fast{i}.jsonl")))

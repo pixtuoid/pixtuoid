@@ -7,7 +7,7 @@ use crate::physics::{
     LegProgress, WalkIntent, WalkProfile, octile_distance, octile_path_len, walk_arrived,
     walk_profile,
 };
-use crate::walkable::{OccupancyOverlay, WalkableMask};
+use crate::walkable::WalkableMask;
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::AgentSlot;
 
@@ -15,24 +15,10 @@ use crate::anim::Motion;
 use crate::layout::{HomeDesk, Point, SceneLayout, WaypointKind};
 use crate::pathfind::Router;
 use crate::pose::{
-    SpotClaims, WANDER_DWELL_EST_MS, dwell_ms, est_wander_cycle_ms, seated_dwell_ms,
-    stale_resume_gap_ms, takes_trip,
+    SpotClaims, WANDER_DWELL_EST_MS, dwell_ms, est_wander_cycle_ms, resolve_wander_target,
+    seated_dwell_ms, stale_resume_gap_ms, takes_trip,
 };
 use crate::pose::{desk_leg_endpoint, route_jittered};
-
-/// Frozen A* polyline for one in-flight walk leg. Snapshotted when the leg's
-/// `(from, to)` first appear and reused unchanged: per-frame occupancy churn
-/// invalidates the A* cache, and mapping the frozen profile's progress `t` onto
-/// a re-routed shape mid-stride makes the sprite visibly jump.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WalkPathSnapshot {
-    /// Leg start point.
-    pub(crate) from: Point,
-    /// Leg end point.
-    pub(crate) to: Point,
-    /// The frozen A* polyline from `from` to `to`.
-    pub(crate) path: Vec<Point>,
-}
 
 /// Phase the wander cycle is currently in for a given agent.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -113,8 +99,6 @@ impl WanderKind {
         }
     }
 
-    /// Shared by the pure `idle_pose` overlay and the routed
-    /// `derive_with_routing` so the two can't drift.
     pub(crate) fn at_pose(self, dest: Point) -> crate::pose::Pose {
         match self {
             WanderKind::Named { wp_idx, kind, .. } => {
@@ -141,8 +125,8 @@ impl WanderKind {
 #[derive(Debug, Clone)]
 pub struct WanderState {
     /// Wander cycle counter, incremented each time a cycle ends, seated or home
-    /// from its trip (`sit_down`) — selects the waypoint destination (mirrors
-    /// `pose::pure`'s derivation).
+    /// from its trip (`sit_down`) — selects whether the cycle trips
+    /// (`takes_trip`) and where to (`resolve_wander_target`).
     pub(crate) cycle_n: u64,
     /// Current phase of the wander cycle.
     pub(crate) phase: WanderPhase,
@@ -179,10 +163,9 @@ pub struct WalkState {
     /// The elastic cyclic-wander timeline state machine. See [`WanderState`].
     pub(crate) wander: WanderState,
 
-    /// Frozen A* polyline for the current walk leg, `None` while not walking.
-    /// Re-snapshotted when the leg's `(from, to)` change. See
-    /// [`WalkPathSnapshot`].
-    pub(crate) walk_path: Option<WalkPathSnapshot>,
+    /// The route this frame's walk leg follows, `None` on a frame that isn't
+    /// walking; the walkable debug layer draws it.
+    pub(crate) walk_path: Option<Vec<Point>>,
 
     /// Lifted by a pointer, and walking home after: overrides the wander and
     /// the state's pose until it arrives.
@@ -286,9 +269,9 @@ impl WanderState {
 /// is computed from the existing phase WITHOUT mutating any wander field, so a
 /// repeat call at the same `now` changes nothing.
 ///
-/// On the first call for a fresh Idle slot, `cycle_n` is fast-forwarded so
-/// destination selection agrees with what the stateless `pose::pure::idle_pose` would
-/// have derived for an agent that was Idle before the first render.
+/// On the first call for a fresh Idle slot, `cycle_n` is fast-forwarded by the
+/// estimated cycle, so an agent Idle before the first render takes up its trip
+/// sequence where its idle time puts it, not at cycle 0.
 pub(crate) fn advance_wander(
     slot: &AgentSlot,
     now: SystemTime,
@@ -325,7 +308,7 @@ pub(crate) fn advance_wander(
 
     if is_fresh || is_stale_resume {
         let elapsed_idle = crate::anim::elapsed_ms(now, slot.state_started_at);
-        // The estimated full cycle (matches idle_pose), NOT stale_resume_gap_ms.
+        // The estimated full cycle, NOT stale_resume_gap_ms.
         let cycle = est_wander_cycle_ms(id);
 
         // Fast-forward `cycle_n`, but ALWAYS (re)start the phase clock cleanly in
@@ -358,9 +341,8 @@ pub(crate) fn advance_wander(
                     walk.wander.cycle_n += 1;
                     walk.wander.phase_started_at += Duration::from_millis(seated_dur);
                 } else {
-                    // The origin must match pose::pure::idle_pose's `desk` so the
-                    // stateless/stateful destinations stay in lockstep.
-                    let target = pick_wander_dest(id, walk.wander.cycle_n, layout, desk, &claimed);
+                    let target =
+                        resolve_wander_target(id, walk.wander.cycle_n, layout, desk, &claimed);
                     walk.wander.target = target;
                     let dest = target.dest;
                     let seat = target.kind.seat();
@@ -387,8 +369,6 @@ pub(crate) fn advance_wander(
             match poll_walk_leg(&profile, elapsed_phase, may_transition) {
                 WalkLegStatus::InFlight(t) => (WanderPhase::WalkingOut(profile), t),
                 WalkLegStatus::Arrived { walk_total } => {
-                    // Snapshot the walk-back profile now — the overlay may differ
-                    // by the time the dwell ends.
                     let back = snapshot_back_profile(slot, walk, layout, desk, planner);
                     walk.wander.phase = WanderPhase::AtWaypoint(back);
                     advance_phase_clock(walk, walk_total);
@@ -481,20 +461,6 @@ fn sit_down(walk: &mut WalkState, walk_total: u64) {
     advance_phase_clock(walk, walk_total);
 }
 
-/// Delegates to the ONE stateless resolver `crate::pose::resolve_wander_target`,
-/// which `idle_pose` also calls, so the routed walk path and the stateless
-/// overlay can never drift to different destinations. `origin` is the agent's
-/// home desk, kept identical to `idle_pose`'s `desk`.
-fn pick_wander_dest(
-    id: AgentId,
-    cycle_n: u64,
-    layout: &SceneLayout,
-    origin: HomeDesk,
-    claimed: &SpotClaims,
-) -> WanderTarget {
-    crate::pose::resolve_wander_target(id, cycle_n, layout, origin, claimed)
-}
-
 /// The exclusive-spot waypoints every OTHER agent on this floor is out on a trip
 /// to — the exclusion set that keeps a single-occupancy spot to one occupant.
 /// Read from the live wander targets, so it must be built BEFORE the caller
@@ -576,8 +542,6 @@ pub(crate) struct LegPlan {
 pub(crate) struct Planner<'a> {
     /// The A* router for this frame.
     pub(crate) router: &'a mut dyn Router,
-    /// Live occupancy overlay (shared, read-only here).
-    pub(crate) overlay: &'a OccupancyOverlay,
     /// How much of the office moves.
     pub(crate) motion: Motion,
 }
@@ -614,15 +578,13 @@ fn routed_profile(
     id: AgentId,
     leg: LegPlan,
 ) -> WalkProfile {
-    let path = route_jittered(planner.router, mask, planner.overlay, id, leg.from, leg.to);
+    let path = route_jittered(planner.router, mask, id, leg.from, leg.to);
     walk_profile(measured_leg_len(&path, leg.settle), leg.intent, id)
 }
 
 /// Freeze the WanderBack profile, untimed until the walk back sets off. The
 /// endpoint is the desk APPROACH cell
-/// (matching `seated_top_left` via the chair-glide) so there's no jump on arrival;
-/// this intentionally differs from `pose::pure::idle_pose`'s raw `to: desk`, since
-/// only the routed path is user-visible.
+/// (matching `seated_top_left` via the chair-glide) so there's no jump on arrival.
 fn snapshot_back_profile(
     slot: &AgentSlot,
     walk: &WalkState,

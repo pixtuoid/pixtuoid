@@ -758,12 +758,11 @@ fn route_through_wall(l: &SceneLayout, path: &[Point]) -> Option<(Point, WallPie
 /// through a wall, described.
 fn corner_routes_through_walls(w: u16, h: u16, seed: u64, l: &SceneLayout) -> Vec<String> {
     use crate::pathfind::find_path;
-    let overlay = crate::walkable::OccupancyOverlay::new();
     let mut v = Vec::new();
     for probes in wall_corner_probes(l) {
         for (i, &from) in probes.iter().enumerate() {
             for &to in &probes[i + 1..] {
-                let Some(path) = find_path(&l.walkable, &overlay, None, from, to, to) else {
+                let Some(path) = find_path(&l.walkable, None, from, to, to) else {
                     continue;
                 };
                 if let Some((p, wall)) = route_through_wall(l, &path) {
@@ -942,7 +941,6 @@ impl std::fmt::Display for WanderLeg {
 /// approach.
 fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
     use crate::pathfind::find_path;
-    let overlay = crate::walkable::OccupancyOverlay::new();
     // Deduped: the desk loop otherwise re-routes one `(origin, approach)` pair
     // once per desk sharing that approach cell.
     let mut seen: std::collections::HashSet<(Point, Point)> = std::collections::HashSet::new();
@@ -969,7 +967,7 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
                 kind: wp.kind,
                 origin,
                 approach: a,
-                path: find_path(&l.walkable, &overlay, None, origin, a, a),
+                path: find_path(&l.walkable, None, origin, a, a),
             });
         }
     }
@@ -983,7 +981,6 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
 /// straight `door→chair` line through furniture.
 fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &SceneLayout) {
     use crate::pathfind::find_path;
-    let overlay = crate::walkable::OccupancyOverlay::new();
     let door = l.door_threshold;
     for (i, &desk) in l.home_desks.iter().enumerate() {
         let approach = crate::pose::desk_approach_cell(desk, l).unwrap_or_else(|| {
@@ -992,13 +989,12 @@ fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &Scene
                  side — every leg to it falls back to a straight line through the desk"
             )
         });
-        let path =
-            find_path(&l.walkable, &overlay, None, door, approach, approach).unwrap_or_else(|| {
-                panic!(
-                    "{w}x{h} seed {seed}: home desk {i} at {desk:?} has approach {approach:?} \
+        let path = find_path(&l.walkable, None, door, approach, approach).unwrap_or_else(|| {
+            panic!(
+                "{w}x{h} seed {seed}: home desk {i} at {desk:?} has approach {approach:?} \
                  unroutable from the door {door:?} — the coarse grid is severed"
-                )
-            });
+            )
+        });
         if let Some((p, wall)) = route_through_wall(l, &path) {
             panic!(
                 "{w}x{h} seed {seed}: the leg {door:?}->{approach:?} passes {p:?} inside {:?}",
@@ -2130,7 +2126,6 @@ fn no_jittered_leg_crosses_blocked_floor() {
             })
         })
         .collect();
-    let overlay = crate::walkable::OccupancyOverlay::new();
     let check = |&(viewport, seed): &(Viewport, u64)| {
         let l = swept_layout(viewport, seed);
         let mut router = AStarRouter::new();
@@ -2141,8 +2136,7 @@ fn no_jittered_leg_crosses_blocked_floor() {
             let (to, _) = crate::pose::desk_leg_endpoint(desk, &l);
             for agent in 0..8 {
                 let id = pixtuoid_core::AgentId::from_parts("probe", &format!("agent-{agent}"));
-                let path =
-                    crate::pose::route_jittered(&mut router, &l.walkable, &overlay, id, from, to);
+                let path = crate::pose::route_jittered(&mut router, &l.walkable, id, from, to);
                 let blocked = path
                     .windows(2)
                     .flat_map(|segment| crate::physics::segment_pixels(segment[0], segment[1]))

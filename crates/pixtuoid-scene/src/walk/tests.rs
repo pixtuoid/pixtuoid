@@ -1,6 +1,6 @@
 use super::*;
 use crate::character::test_support::make_slot;
-use crate::pose::{RouteRig, is_aimless_cycle, waypoint_index_for_cycle};
+use crate::pose::{RouteRig, is_aimless_cycle, resolve_wander_target, waypoint_index_for_cycle};
 use pixtuoid_core::AgentId;
 
 #[test]
@@ -52,7 +52,7 @@ use crate::pose::{
     WANDER_DWELL_EST_MS, dwell_ms, est_wander_cycle_ms, seated_dwell_ms, stale_resume_gap_ms,
     takes_trip,
 };
-use crate::walkable::{OccupancyOverlay, WalkableMask};
+use crate::walkable::WalkableMask;
 use pixtuoid_core::state::ActivityState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -61,14 +61,7 @@ use std::sync::Arc;
 struct Straight;
 impl Router for Straight {
     fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &OccupancyOverlay,
-        from: Point,
-        to: Point,
-        _: Point,
-    ) -> Vec<Point> {
+    fn route(&mut self, _: &WalkableMask, from: Point, to: Point, _: Point) -> Vec<Point> {
         vec![from, to]
     }
 }
@@ -81,14 +74,7 @@ struct Recording {
 }
 impl Router for Recording {
     fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &OccupancyOverlay,
-        from: Point,
-        to: Point,
-        aim: Point,
-    ) -> Vec<Point> {
+    fn route(&mut self, _: &WalkableMask, from: Point, to: Point, aim: Point) -> Vec<Point> {
         self.calls.push((from, to, aim));
         vec![from, to]
     }
@@ -102,14 +88,7 @@ struct FixedLen {
 }
 impl Router for FixedLen {
     fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &OccupancyOverlay,
-        from: Point,
-        _to: Point,
-        _: Point,
-    ) -> Vec<Point> {
+    fn route(&mut self, _: &WalkableMask, from: Point, _to: Point, _: Point) -> Vec<Point> {
         let steps = (self.octile_len / crate::physics::OCTILE_STRAIGHT_COST) as u16;
         let mid = Point {
             x: from.x + steps / 2,
@@ -206,7 +185,6 @@ impl<R: Router> WanderRig<R> {
             desk,
             &mut Planner {
                 router: &mut self.route.router,
-                overlay: &self.route.overlay,
                 motion: self.route.motion,
             },
             &mut self.route.walks,
@@ -484,7 +462,6 @@ fn snapshot_leg_profile_measures_the_routed_leg_plus_settles() {
     use crate::physics::{WalkIntent, walk_profile};
 
     let mask = WalkableMask::new_open(64, 64);
-    let overlay = OccupancyOverlay::new();
     let id = AgentId::from_parts("test", "leg-profile");
     let from = Point { x: 4, y: 8 };
     let to = Point { x: 40, y: 8 };
@@ -495,7 +472,6 @@ fn snapshot_leg_profile_measures_the_routed_leg_plus_settles() {
     let got = snapshot_leg_profile(
         &mut Planner {
             router: &mut Straight,
-            overlay: &overlay,
             motion: crate::anim::Motion::Full,
         },
         &mask,
@@ -507,7 +483,7 @@ fn snapshot_leg_profile_measures_the_routed_leg_plus_settles() {
             intent: WalkIntent::WanderOut,
         },
     );
-    let path = route_jittered(&mut Straight, &mask, &overlay, id, from, to);
+    let path = route_jittered(&mut Straight, &mask, id, from, to);
     let expect = walk_profile(
         measured_leg_len(&path, Settle::End(seat)),
         WalkIntent::WanderOut,
@@ -519,7 +495,6 @@ fn snapshot_leg_profile_measures_the_routed_leg_plus_settles() {
     let no_settle = snapshot_leg_profile(
         &mut Planner {
             router: &mut Straight,
-            overlay: &overlay,
             motion: crate::anim::Motion::Full,
         },
         &mask,
@@ -770,14 +745,12 @@ fn back_profile_aims_at_the_jittered_desk_goal_the_render_uses() {
         ..idle_slot("/dummy", now)
     };
     let l = layout();
-    let overlay = OccupancyOverlay::new();
     let mut router = Recording { calls: Vec::new() };
     let mut walk = WalkState::default();
     walk.wander.target.dest = Point { x: 40, y: 60 };
 
     let mut planner = Planner {
         router: &mut router,
-        overlay: &overlay,
         motion: crate::anim::Motion::Full,
     };
     let _ = snapshot_back_profile(&slot, &walk, &l, l.home_desks[0], &mut planner);
@@ -848,7 +821,7 @@ fn wander_dest_for_pantry_is_the_home_desk_stand_point() {
 }
 
 #[test]
-fn pick_wander_dest_falls_back_to_aimless_when_boxed_in() {
+fn resolve_wander_target_falls_back_to_aimless_when_boxed_in() {
     use crate::layout::ReachSet;
 
     let mut l = layout();
@@ -865,7 +838,7 @@ fn pick_wander_dest_falls_back_to_aimless_when_boxed_in() {
         .expect("should find a directed-trip agent");
 
     let origin = l.home_desks[0];
-    let target = pick_wander_dest(id, 0, &l, origin, &SpotClaims::default());
+    let target = resolve_wander_target(id, 0, &l, origin, &SpotClaims::default());
 
     assert!(
         matches!(target.kind, WanderKind::Aimless),
@@ -890,7 +863,7 @@ fn wander_named_seat_is_some_iff_the_destination_is_sat_on() {
             continue;
         }
         if let WanderKind::Named { kind, seat, .. } =
-            pick_wander_dest(id, 0, &l, origin, &SpotClaims::default()).kind
+            resolve_wander_target(id, 0, &l, origin, &SpotClaims::default()).kind
         {
             assert_eq!(
                 seat.is_some(),
@@ -986,7 +959,7 @@ fn a_claimed_seat_sends_the_agent_to_the_next_seat_of_the_same_venue() {
             if !takes_trip(id, 0) || is_aimless_cycle(id, 0) {
                 return None;
             }
-            match pick_wander_dest(id, 0, &l, origin, &SpotClaims::default()).kind {
+            match resolve_wander_target(id, 0, &l, origin, &SpotClaims::default()).kind {
                 WanderKind::Named {
                     wp_idx,
                     kind: WaypointKind::MeetingSofa | WaypointKind::MeetingChair,
@@ -1007,7 +980,7 @@ fn a_claimed_seat_sends_the_agent_to_the_next_seat_of_the_same_venue() {
 
     let mut claims = SpotClaims::default();
     claims.claim(taken);
-    let target = pick_wander_dest(id, 0, &l, origin, &claims);
+    let target = resolve_wander_target(id, 0, &l, origin, &claims);
     let WanderKind::Named { wp_idx, kind, .. } = target.kind else {
         panic!("a claimed seat must not strand the agent into an aimless amble");
     };

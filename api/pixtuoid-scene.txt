@@ -2381,20 +2381,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::walk::WanderState
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::walk::WanderState
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::walk::WanderState
 pub mod pixtuoid_scene::walkable
-pub struct pixtuoid_scene::walkable::OccupancyOverlay
-impl core::clone::Clone for pixtuoid_scene::walkable::OccupancyOverlay
-pub fn pixtuoid_scene::walkable::OccupancyOverlay::clone(&self) -> Self
-impl core::default::Default for pixtuoid_scene::walkable::OccupancyOverlay
-pub fn pixtuoid_scene::walkable::OccupancyOverlay::default() -> Self
-impl core::fmt::Debug for pixtuoid_scene::walkable::OccupancyOverlay
-pub fn pixtuoid_scene::walkable::OccupancyOverlay::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_scene::walkable::OccupancyOverlay
-impl core::marker::Send for pixtuoid_scene::walkable::OccupancyOverlay
-impl core::marker::Sync for pixtuoid_scene::walkable::OccupancyOverlay
-impl core::marker::Unpin for pixtuoid_scene::walkable::OccupancyOverlay
-impl core::marker::UnsafeUnpin for pixtuoid_scene::walkable::OccupancyOverlay
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::walkable::OccupancyOverlay
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::walkable::OccupancyOverlay
 pub struct pixtuoid_scene::walkable::WalkableMask
 impl core::clone::Clone for pixtuoid_scene::walkable::WalkableMask
 pub fn pixtuoid_scene::walkable::WalkableMask::clone(&self) -> Self

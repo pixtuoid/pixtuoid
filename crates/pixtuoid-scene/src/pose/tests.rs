@@ -28,14 +28,7 @@ impl StubRouter {
 
 impl Router for StubRouter {
     fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &crate::walkable::OccupancyOverlay,
-        from: Point,
-        to: Point,
-        _: Point,
-    ) -> Vec<Point> {
+    fn route(&mut self, _: &WalkableMask, from: Point, to: Point, _: Point) -> Vec<Point> {
         if self.path.is_empty() {
             vec![from, to]
         } else {
@@ -46,93 +39,6 @@ impl Router for StubRouter {
 
 fn layout() -> SceneLayout {
     SceneLayout::compute(crate::layout::Viewport::full(120, 96), Some(4), 0).expect("fits")
-}
-
-/// Returns a stable polyline (`first`) for its first few calls then a DIFFERENT
-/// one (`rest`) — an overlay-driven A* reroute mid-walk. Counts calls.
-#[derive(Debug)]
-struct ChangingRouter {
-    calls: usize,
-    first: Vec<Point>,
-    rest: Vec<Point>,
-}
-impl Router for ChangingRouter {
-    fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &crate::walkable::OccupancyOverlay,
-        _from: Point,
-        _to: Point,
-        _: Point,
-    ) -> Vec<Point> {
-        self.calls += 1;
-        // Frame 1 makes two calls (entry-profile snapshot + route_walking_pose)
-        // that must agree, so only call #3+ can be a later-frame reroute.
-        if self.calls <= 2 {
-            self.first.clone()
-        } else {
-            self.rest.clone()
-        }
-    }
-}
-
-#[test]
-fn walk_leg_freezes_path_against_midleg_reroute() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let door = l.door_threshold;
-    let desk = l.home_desks[0];
-    let desk_target = Point {
-        x: desk.at.x + 6,
-        y: desk.at.y + 4,
-    };
-    let mid_a = Point {
-        x: door.x,
-        y: u16::midpoint(door.y, desk_target.y),
-    };
-    let mid_b = Point {
-        x: desk_target.x,
-        y: door.y,
-    };
-    assert_ne!(mid_a, mid_b, "test setup: corners must differ");
-
-    let mut rig = RouteRig::new(ChangingRouter {
-        calls: 0,
-        first: vec![door, mid_a, desk_target],
-        rest: vec![door, mid_b, desk_target],
-    });
-
-    let slot1 = entry_slot(now - Duration::from_millis(200));
-    let _ = derive_with_routing(&slot1, now, &l, &mut rig.rctx());
-    let calls_after_frame1 = rig.router.calls;
-
-    let slot2 = entry_slot(now - Duration::from_millis(200));
-    let later = now + Duration::from_millis(100);
-    let _ = derive_with_routing(&slot2, later, &l, &mut rig.rctx());
-
-    assert_eq!(
-        rig.router.calls,
-        calls_after_frame1,
-        "frozen leg must not re-route on a later frame (got {} extra calls)",
-        rig.router.calls - calls_after_frame1
-    );
-
-    let frozen = rig
-        .walks
-        .get(&slot2.agent_id)
-        .and_then(|walk| walk.walk_path.as_ref())
-        .expect("walk_path must be snapshotted while walking");
-    assert!(
-        frozen.path.contains(&mid_a),
-        "frozen path must keep the first leg's corner {mid_a:?}, got {:?}",
-        frozen.path
-    );
-    assert!(
-        !frozen.path.contains(&mid_b),
-        "frozen path must NOT adopt the rerouted corner {mid_b:?} mid-leg, got {:?}",
-        frozen.path
-    );
 }
 
 fn running_slot(state_started_at: SystemTime, arrived_at: SystemTime) -> AgentSlot {
@@ -162,9 +68,9 @@ fn entry_slot(arrived_at: SystemTime) -> AgentSlot {
     s
 }
 
-/// The entry walk runs from a slot's arrival, never its age, in the stateless
-/// pose, the routed one and the door's frames: an old slot that just arrived
-/// walks in, and a fresh one that never arrived sits at its desk.
+/// The entry walk runs from a slot's arrival, never its age, in the routed pose
+/// and the door's frames: an old slot that just arrived walks in, and a fresh one
+/// that never arrived sits at its desk.
 #[test]
 fn the_entry_walk_keys_on_arrival_not_age() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
@@ -179,8 +85,6 @@ fn the_entry_walk_keys_on_arrival_not_age() {
         ..running_slot(now, now)
     };
     let walking = |pose: Option<Pose>| matches!(pose, Some(Pose::Walking { .. }));
-    assert!(walking(crate::pose::pure::derive(&arrived, probe, &l)));
-    assert!(!walking(crate::pose::pure::derive(&seated, probe, &l)));
     let mut rig = RouteRig::new(StubRouter::straight());
     assert!(walking(derive_with_routing(
         &arrived,
@@ -290,77 +194,6 @@ fn snap_back_origin_is_frozen_across_frames() {
              the interruption point {prev0:?} for the whole leg"
         );
     }
-}
-
-#[test]
-fn snap_back_cornered_leg_freezes_path_no_reroute() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let desk = l.home_desks[0];
-    let snap_target = Point {
-        x: desk.at.x + 6,
-        y: desk.at.y + 4,
-    };
-    let prev0 = Point {
-        x: desk.at.x + 50,
-        y: desk.at.y + 30,
-    };
-    let corner_a = Point {
-        x: prev0.x,
-        y: snap_target.y,
-    };
-    let corner_b = Point {
-        x: snap_target.x,
-        y: prev0.y,
-    };
-    assert_ne!(corner_a, corner_b, "test setup: corners must differ");
-
-    let mut rig = RouteRig::new(ChangingRouter {
-        calls: 0,
-        first: vec![prev0, corner_a, snap_target],
-        rest: vec![prev0, corner_b, snap_target],
-    });
-
-    // State flipped 100ms ago — inside `SNAP_BACK_MS` on both frames.
-    let slot = running_slot(
-        now - Duration::from_millis(100),
-        now - Duration::from_secs(60),
-    );
-    rig.history.set(slot.agent_id, Some(prev0));
-
-    // The arm routes once and route_walking_pose once — both inside
-    // ChangingRouter's `first` window, so they agree on the shape.
-    let _ = derive_with_routing(&slot, now, &l, &mut rig.rctx());
-    let calls_after_frame1 = rig.router.calls;
-    assert!(
-        calls_after_frame1 >= 1,
-        "frame 1 must route once to snapshot the cornered leg"
-    );
-
-    let later = now + Duration::from_millis(100);
-    let _ = derive_with_routing(&slot, later, &l, &mut rig.rctx());
-
-    assert_eq!(
-        rig.router.calls,
-        calls_after_frame1,
-        "frozen cornered snap-back must not re-route on a later frame (got {} extra calls)",
-        rig.router.calls - calls_after_frame1
-    );
-    let frozen = rig
-        .walks
-        .get(&slot.agent_id)
-        .and_then(|walk| walk.walk_path.as_ref())
-        .expect("walk_path must be snapshotted while snapping back");
-    assert!(
-        frozen.path.contains(&corner_a),
-        "frozen path must keep the first corner {corner_a:?}, got {:?}",
-        frozen.path
-    );
-    assert!(
-        !frozen.path.contains(&corner_b),
-        "frozen path must NOT adopt the rerouted corner {corner_b:?} mid-leg, got {:?}",
-        frozen.path
-    );
 }
 
 /// A record is the last place the agent was drawn: one drawn seated since it
@@ -560,21 +393,21 @@ fn snap_back_routes_via_the_approach_cell_then_settles_onto_the_chair() {
         matches!(pose, Pose::Walking { .. }),
         "snap-back must be Walking, got {pose:?}"
     );
-    let snap = rig.walks[&slot.agent_id]
+    let route = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
-        .expect("the cornered snap-back leg is frozen (… approach, chair, len > 2)");
+        .expect("the snap-back leg records its route");
     assert_eq!(
-        snap.path.last(),
+        route.last(),
         Some(&chair),
         "snap-back must settle onto the chair; got {:?}",
-        snap.path
+        route
     );
     assert_eq!(
-        snap.path[snap.path.len() - 2],
+        route[route.len() - 2],
         approach,
         "snap-back must arrive via the N/E/W approach cell, not straight at the chair; got {:?}",
-        snap.path
+        route
     );
 }
 
@@ -689,14 +522,40 @@ fn at_waypoint_pose_records_position_to_history() {
     );
 }
 
+/// An unseated agent, or one at a desk past this layout's, has no pose to
+/// be drawn in.
 #[test]
-fn delegates_to_derive_for_oob_desk() {
+fn derive_with_routing_returns_none_without_a_desk_in_the_layout() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let mut slot = running_slot(now, now - Duration::from_secs(60));
     slot.desk = Some(FloorDesk::new(0, 999));
     let mut rig = RouteRig::new(StubRouter::straight());
     assert!(derive_with_routing(&slot, now, &l, &mut rig.rctx()).is_none());
+    slot.desk = None;
+    assert!(derive_with_routing(&slot, now, &l, &mut rig.rctx()).is_none());
+}
+
+/// RequiresAction gets NO pose of its own — it rides `SeatedIdle`, so a back-turned
+/// desk needs no extra art and the cue reads identically whichever way the seat
+/// faces. The RENDER side splits it back out (`sim::resolve_characters` forces
+/// the awake `seated` base), because the sleeping sprite reads as the opposite
+/// of "wants you".
+#[test]
+fn requires_action_state_stays_seated_and_lets_the_bubble_say_so() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let l = layout();
+    let slot = AgentSlot {
+        state: ActivityState::RequiresAction {
+            reason: Some("perm".into()),
+        },
+        ..running_slot(now, now - Duration::from_secs(60))
+    };
+    let mut rig = RouteRig::new(StubRouter::straight());
+    assert_eq!(
+        derive_with_routing(&slot, now, &l, &mut rig.rctx()),
+        Some(Pose::SeatedIdle)
+    );
 }
 
 #[test]
@@ -756,8 +615,7 @@ fn snap_back_progress_is_physics_eased_not_linear() {
             let route = &rig.walks[&slot_q.agent_id]
                 .walk_path
                 .as_ref()
-                .expect("the chair settle corners the route, so it is frozen")
-                .path;
+                .expect("the walk records its route");
             let linear = Segment::on_route(route, LegProgress::of(dur_ms / 4, dur_ms)).travelled();
             assert!(
                 travelled < linear,
@@ -1063,14 +921,13 @@ const MAX_FRAME_STEP_PX: i32 = 20;
 
 /// Step `slot` for `frames` frames of [`PAINT_FRAME`], sampling
 /// `character_top_left` against a real `AStarRouter`. Returns
-/// `(max_chebyshev_step, walking_frame_count)`. `churn` toggles an interior
-/// obstacle every other frame to force A* cache invalidation.
+/// `(max_chebyshev_step, walking_frame_count)`, a walking frame being one that
+/// records a route.
 fn max_top_left_step(
     slot: &AgentSlot,
     l: &SceneLayout,
     start: SystemTime,
     frames: u32,
-    churn: bool,
 ) -> (i32, usize) {
     use crate::pathfind::AStarRouter;
     use crate::sim::anchors::character_top_left;
@@ -1078,23 +935,11 @@ fn max_top_left_step(
     let mut rig = RouteRig::new(AStarRouter::new());
     rig.router.new_layout(l.corridor);
 
-    let ob = Point {
-        x: l.corridor.x + l.corridor.width / 2,
-        y: l.corridor.y + 2,
-    };
-
     let mut prev: Option<Point> = None;
     let mut max_step = 0i32;
     let mut walking = 0usize;
     for i in 0..frames {
         let now = start + PAINT_FRAME * i;
-        if churn {
-            rig.overlay.clear();
-            if i % 2 == 0 {
-                rig.overlay
-                    .add(ob.x.saturating_sub(5), ob.y.saturating_sub(5), 12, 12);
-            }
-        }
         if let Some(a) = character_top_left(slot, l, now, &mut rig.rctx()) {
             if let Some(p) = prev {
                 let step = (i32::from(a.x) - i32::from(p.x))
@@ -1103,6 +948,12 @@ fn max_top_left_step(
                 max_step = max_step.max(step);
             }
             prev = Some(a);
+        }
+        if rig
+            .walks
+            .get(&slot.agent_id)
+            .is_some_and(|walk| walk.walk_path.is_some())
+        {
             walking += 1;
         }
     }
@@ -1114,8 +965,8 @@ fn entry_walk_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = entry_slot(now);
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 150, true);
-    assert!(walking > 20, "entry walk should render many frames");
+    let (max_step, walking) = max_top_left_step(&slot, &l, now, 150);
+    assert!(walking > 20, "the entry walk should walk many frames");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
         "entry walk teleported: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
@@ -1203,17 +1054,17 @@ fn desk_entry_routes_around_the_desk_then_settles_onto_the_chair() {
         "a fresh entry must be Walking, got {pose:?}"
     );
 
-    let snap = rig.walks[&slot.agent_id]
+    let route = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
-        .expect("the cornered entry+settle leg is frozen (len > 2)");
+        .expect("the entry leg records its route");
     assert_eq!(
-        snap.path,
+        *route,
         vec![door, approach, chair],
         "the leg must go door→approach→chair, settling onto the chair"
     );
     assert_ne!(
-        snap.path,
+        *route,
         vec![door, chair],
         "entry must not straight-line door→chair through the desk body"
     );
@@ -1253,36 +1104,36 @@ fn wander_legs_approach_the_desk_via_an_allowed_side_not_through_the_front() {
     for i in 0..6000u32 {
         let t = now + PAINT_FRAME * i;
         let _ = derive_with_routing(&slot, t, &l, &mut rig.rctx());
-        let Some(snap) = rig
+        let Some(route) = rig
             .walks
             .get(&trip_id)
             .and_then(|walk| walk.walk_path.as_ref())
         else {
             continue;
         };
-        if let (Some(&f), Some(&la)) = (snap.path.first(), snap.path.last())
+        if let (Some(&f), Some(&la)) = (route.first(), route.last())
             && !seen_ends.contains(&(f, la))
         {
             seen_ends.push((f, la));
         }
-        if snap.path.first() == Some(&chair) {
+        if route.first() == Some(&chair) {
             saw_out = true;
             assert_eq!(
-                snap.path.get(1),
+                route.get(1),
                 Some(&approach),
                 "walk-out must leave the desk via the N/E/W approach cell, not \
                  straight through the south front; got {:?}",
-                snap.path
+                route
             );
         }
-        if snap.path.last() == Some(&chair) && snap.path.len() >= 2 {
+        if route.last() == Some(&chair) && route.len() >= 2 {
             saw_back = true;
             assert_eq!(
-                snap.path[snap.path.len() - 2],
+                route[route.len() - 2],
                 approach,
                 "walk-back must arrive at the desk via the N/E/W approach cell, \
                  not the south front; got {:?}",
-                snap.path
+                route
             );
         }
     }
@@ -1303,8 +1154,8 @@ fn exit_walk_coordinates_are_continuous() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = exiting_slot(now, now - Duration::from_secs(60));
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 200, true);
-    assert!(walking > 20, "exit walk should render many frames");
+    let (max_step, walking) = max_top_left_step(&slot, &l, now, 200);
+    assert!(walking > 20, "the exit walk should walk many frames");
     assert!(
         max_step <= MAX_FRAME_STEP_PX,
         "exit walk teleported: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
@@ -1337,46 +1188,22 @@ fn exit_from_desk_rises_off_the_chair_via_the_approach_cell() {
         "a fresh exit must be Walking, got {pose:?}"
     );
 
-    let snap = rig.walks[&slot.agent_id]
+    let route = rig.walks[&slot.agent_id]
         .walk_path
         .as_ref()
-        .expect("the cornered exit leg is frozen (chair → approach → door, len > 2)");
+        .expect("the exit leg records its route");
     assert_eq!(
-        snap.path.first(),
+        route.first(),
         Some(&chair),
         "exit must START at the chair (Settle::Start glides off it); got {:?}",
-        snap.path
+        route
     );
     assert_eq!(
-        snap.path.get(1),
+        route.get(1),
         Some(&approach),
         "exit must rise off the chair via the N/E/W approach cell, not dip south; \
          got {:?}",
-        snap.path
-    );
-}
-
-#[test]
-fn wander_coffee_run_coordinates_continuous_under_churn() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let trip_id = (0u64..1000)
-        .map(|i| AgentId::from_transcript_path(&format!("/cont/{i}.jsonl")))
-        .find(|id| takes_trip(*id, 0))
-        .expect("find a trip agent");
-    // Long-idle, past entry.
-    let old = now - Duration::from_secs(120);
-    let mut slot = entry_slot(old);
-    slot.agent_id = trip_id;
-    slot.last_event_at = old;
-
-    // 1500 frames ≈ 50 s — several full Seated→WalkingOut→AtWaypoint→WalkingBack
-    // cycles, so every leg and boundary is exercised.
-    let (max_step, walking) = max_top_left_step(&slot, &l, now, 1500, true);
-    assert!(walking > 1000, "idle agent should render every frame");
-    assert!(
-        max_step <= MAX_FRAME_STEP_PX,
-        "wander trip teleported: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
+        route
     );
 }
 
@@ -1998,7 +1825,7 @@ fn wander_continuous_across_layouts_and_agents() {
             slot.desk = Some(FloorDesk::new(0, k));
             slot.last_event_at = old;
             // ~20 s ⇒ 2–3 full wander cycles per agent.
-            let (max_step, _) = max_top_left_step(&slot, &l, now, 600, true);
+            let (max_step, _) = max_top_left_step(&slot, &l, now, 600);
             assert!(
                 max_step <= MAX_FRAME_STEP_PX,
                 "geometry {w}x{h} seed={seed} desk={k}: max frame jump {max_step}px (> {MAX_FRAME_STEP_PX})"
@@ -2007,167 +1834,12 @@ fn wander_continuous_across_layouts_and_agents() {
     }
 }
 
-/// Returns shape `a` until `flipped`, then `b` — switches the A* result mid-leg.
-#[derive(Debug)]
-struct FlipRouter {
-    flipped: bool,
-    a: Vec<Point>,
-    b: Vec<Point>,
-}
-impl Router for FlipRouter {
-    fn new_layout(&mut self, _: crate::layout::Bounds) {}
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &crate::walkable::OccupancyOverlay,
-        _from: Point,
-        _to: Point,
-        _: Point,
-    ) -> Vec<Point> {
-        if self.flipped {
-            self.b.clone()
-        } else {
-            self.a.clone()
-        }
-    }
-}
-
-#[test]
-fn frozen_leg_anchor_continuous_across_router_shape_change() {
-    // The freeze-specific guard: it fails when the freeze is reverted.
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let door = l.door_threshold;
-    let desk = l.home_desks[0];
-    let desk_t = Point {
-        x: desk.at.x + 6,
-        y: desk.at.y + 4,
-    };
-    // Shape A is a long DOWN-then-across detour so the walk lasts many frames;
-    // shape B is short and very differently routed. Both share the endpoints.
-    let a = vec![
-        door,
-        Point {
-            x: door.x,
-            y: door.y + 40,
-        },
-        Point {
-            x: desk_t.x,
-            y: door.y + 40,
-        },
-        desk_t,
-    ];
-    let b = vec![
-        door,
-        Point {
-            x: desk_t.x,
-            y: door.y,
-        },
-        desk_t,
-    ];
-
-    // ~40% of the frozen entry duration — mid-walk, where A and B diverge most.
-    let entry_id = entry_slot(now).agent_id;
-    let dur = walk_profile(octile_path_len(&a).max(1), WalkIntent::Entry, entry_id).duration_ms;
-    let flip_frame = frames_in(Duration::from_millis(dur * 2 / 5)).max(2);
-
-    let mut rig = RouteRig::new(FlipRouter {
-        flipped: false,
-        a,
-        b,
-    });
-
-    let mut prev: Option<Point> = None;
-    let mut max_step = 0i32;
-    for i in 0..(flip_frame + 8) {
-        if i == flip_frame {
-            rig.router.flipped = true;
-        }
-        let slot = entry_slot(now - Duration::from_millis(200));
-        let t = now + PAINT_FRAME * i;
-        if let Some(Pose::Walking { segment, .. }) =
-            derive_with_routing(&slot, t, &l, &mut rig.rctx())
-        {
-            let pos = segment.at();
-            if let Some(p) = prev {
-                let step = (i32::from(pos.x) - i32::from(p.x))
-                    .abs()
-                    .max((i32::from(pos.y) - i32::from(p.y)).abs());
-                max_step = max_step.max(step);
-            }
-            prev = Some(pos);
-        }
-    }
-    assert!(
-        max_step <= 20,
-        "frozen leg must keep the anchor continuous despite a mid-leg router shape change (max jump {max_step}px)"
-    );
-}
-
-#[test]
-fn multiple_agents_share_overlay_without_teleport() {
-    // NOTE: the real AStarRouter is stable enough that this scenario does not by
-    // itself reproduce the freeze regression —
-    // `frozen_leg_anchor_continuous_across_router_shape_change` is that guard.
-    use crate::pathfind::AStarRouter;
-    use crate::sim::anchors::character_top_left;
-
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let n = l.home_desks.len().min(3);
-    let old = now - Duration::from_secs(120);
-    let slots: Vec<AgentSlot> = (0..n)
-        .map(|k| {
-            let mut s = entry_slot(old);
-            s.agent_id = AgentId::from_transcript_path(&format!("/multi/{k}.jsonl"));
-            s.desk = Some(FloorDesk::new(0, k));
-            s.last_event_at = old;
-            s
-        })
-        .collect();
-
-    let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.new_layout(l.corridor);
-    let mut prev: HashMap<AgentId, Point> = HashMap::new();
-    let mut max_step = 0i32;
-
-    for i in 0..700u32 {
-        let t = now + PAINT_FRAME * i;
-        // Rebuild the shared overlay as the pixel pass does — this is the churn
-        // that re-routes the other walkers.
-        rig.overlay.clear();
-        for s in &slots {
-            if let Some(Pose::AtWaypoint { wp, .. }) = derive(s, t, &l)
-                && let Some(w) = l.waypoints.get(wp)
-            {
-                rig.overlay
-                    .add(w.pos.x.saturating_sub(4), w.pos.y.saturating_sub(6), 8, 12);
-            }
-        }
-        for s in &slots {
-            if let Some(a) = character_top_left(s, &l, t, &mut rig.rctx()) {
-                if let Some(p) = prev.get(&s.agent_id) {
-                    let step = (i32::from(a.x) - i32::from(p.x))
-                        .abs()
-                        .max((i32::from(a.y) - i32::from(p.y)).abs());
-                    max_step = max_step.max(step);
-                }
-                prev.insert(s.agent_id, a);
-            }
-        }
-    }
-    assert!(
-        max_step <= MAX_FRAME_STEP_PX,
-        "agents sharing a churning overlay must not teleport (max frame jump {max_step}px)"
-    );
-}
-
 fn unit_slot(now: SystemTime) -> AgentSlot {
     running_slot(now, now - Duration::from_secs(60))
 }
 
 #[test]
-fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_clears_walk_path() {
+fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_records_its_route() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = unit_slot(now);
@@ -2199,11 +1871,12 @@ fn route_walking_pose_straight_leg_is_drawn_at_the_lerp_and_clears_walk_path() {
         }
         other => panic!("expected straight Walking, got {other:?}"),
     }
-    assert!(
+    assert_eq!(
         rig.walks
             .get(&slot.agent_id)
-            .is_some_and(|walk| walk.walk_path.is_none()),
-        "straight 2-point walk must clear walk_path"
+            .and_then(|walk| walk.walk_path.clone()),
+        Some(vec![from, to]),
+        "a straight leg records its route as a cornered one does"
     );
     assert_eq!(
         drawn_at,
@@ -2607,6 +2280,32 @@ fn tripping(rig: &RouteRig<StubRouter>, id: AgentId) -> bool {
         rig.walks[&id].wander.phase,
         crate::walk::WanderPhase::WalkingOut(_)
     )
+}
+
+/// The walkable debug layer draws every recorded route, so a leg's route lasts
+/// as long as the leg: a dwell or a desk shows no finished line.
+#[test]
+fn only_a_walking_frame_records_a_route() {
+    let l = layout();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let slot = tripper(t0);
+    let id = slot.agent_id;
+    let mut rig = RouteRig::new(StubRouter::straight());
+    let mut walked = false;
+    let mut stopped = false;
+    for i in 0..3_000 {
+        let pose = derive_with_routing(&slot, t0 + PAINT_FRAME * i, &l, &mut rig.rctx());
+        let walking = matches!(pose, Some(Pose::Walking { .. }));
+        let route = rig.walks.get(&id).and_then(|walk| walk.walk_path.as_ref());
+        assert_eq!(
+            route.is_some(),
+            walking,
+            "frame {i}: {pose:?} with route {route:?}"
+        );
+        stopped |= walked && !walking;
+        walked |= walking;
+    }
+    assert!(stopped, "premise: the trip walks a leg and then stops");
 }
 
 /// A walk back made instant leaves the agent drawn at its chair, so an exit
